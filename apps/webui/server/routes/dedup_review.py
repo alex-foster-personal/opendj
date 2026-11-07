@@ -64,6 +64,7 @@ from ..playlist_store import PlaylistStore
 from .playlist_write import get_playlist_store
 
 router = APIRouter(prefix="/dedup", tags=["dedup-review"])
+MOUNT_UNDER_API_PREFIX = True
 
 # Re-export so existing tests can monkeypatch this name or the decisions module.
 _decision_file_lock = decision_file_lock

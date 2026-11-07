@@ -27,6 +27,7 @@ from ..shell_output_health import data_dir_from_state_db
 from ..state_paths import resolve_state_db_path
 
 router = APIRouter(prefix="/performance/telemetry", tags=["performance-telemetry"])
+MOUNT_UNDER_API_PREFIX = True
 log = logging.getLogger(__name__)
 
 DEFAULT_PROCESS_LOG_DIRS = (

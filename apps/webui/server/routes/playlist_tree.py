@@ -25,6 +25,7 @@ from ..backend import StateBackend
 from ..deps import get_library_data_dir, get_write_state
 
 router = APIRouter(prefix="/playlist-tree", tags=["playlists-write"])
+MOUNT_UNDER_API_PREFIX = True
 
 
 class PlaylistTreeOrderIn(BaseModel):

@@ -27,6 +27,7 @@ from apps.webui.server.routes import ingest as ingest_routes
 from apps.webui.server.routes.ingest_job import tracks_on_disk
 
 router = APIRouter(prefix="/coverage-outcomes", tags=["coverage-drain"])
+MOUNT_UNDER_API_PREFIX = True
 
 
 class NoSourceMarkOut(BaseModel):

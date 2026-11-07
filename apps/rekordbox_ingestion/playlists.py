@@ -25,7 +25,6 @@ of the same name under the folder is reported and left untouched.
 from __future__ import annotations
 
 import datetime as dt
-import hashlib
 import os
 import shutil
 import subprocess
@@ -37,6 +36,7 @@ from typing import Any
 import psutil
 
 from apps.rekordbox_ingestion.config import CFG
+from apps.shared.hashing import sha256_file_hex
 from apps.shared.rekordbox_db import is_plain_sqlite
 from apps.shared.rekordbox_writeback import require_writeback_enabled
 
@@ -144,14 +144,6 @@ def _db_set_paths(db_path: Path) -> list[Path]:
     return [p for p in paths if p.exists()]
 
 
-def _sha256(path: Path) -> str:
-    digest = hashlib.sha256()
-    with path.open("rb") as handle:
-        for chunk in iter(lambda: handle.read(1 << 20), b""):
-            digest.update(chunk)
-    return digest.hexdigest()
-
-
 def backup_db_set(db_path: Path, backup_root: Path) -> BackupSet:
     """Copy master.db + -wal + -shm + masterPlaylists6.xml; verify each by sha256."""
     stamp = dt.datetime.now(dt.UTC).strftime("%Y%m%dT%H%M%SZ")
@@ -168,7 +160,7 @@ def backup_db_set(db_path: Path, backup_root: Path) -> BackupSet:
     for source in sources:
         destination = directory / source.name
         shutil.copy2(source, destination)
-        source_hash, copy_hash = _sha256(source), _sha256(destination)
+        source_hash, copy_hash = sha256_file_hex(source), sha256_file_hex(destination)
         if source_hash != copy_hash:
             raise RuntimeError(f"backup copy differs from source: {source} -> {destination}")
         copied.append(destination)

@@ -8,7 +8,8 @@ verdict:missing` and nothing told anyone. e2e.yml routes a main push's gate to t
 opt-in CI_RUNS_ON_E2E_TRUNK lane (E2ELANE-01); this watchdog is the backstop for when
 that lane is off, offline, or the dispatcher orphans the job anyway.
 
-Run by .github/workflows/e2e-main-starvation.yml every 10 minutes:
+Run by .github/workflows/e2e-main-starvation.yml on a ten-minute cron, best effort since
+GitHub does not guarantee schedule delivery (ADR-NEW-starvation-watchdog-cron-only):
 
     python -m scripts.ci_e2e_main_starvation --repo owner/name            # act
     python -m scripts.ci_e2e_main_starvation --repo owner/name --dry-run  # report only

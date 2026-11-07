@@ -36,6 +36,7 @@ from apps.webui.server.auth import SessionUser
 from apps.webui.server.routes.auth import signed_in_user
 
 router = APIRouter(prefix="/cloudsync/fleet", tags=["cloudsync"])
+MOUNT_UNDER_API_PREFIX = True
 
 
 class FleetErrorBody(BaseModel):

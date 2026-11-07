@@ -52,6 +52,7 @@ from . import ingest
 from .ingest_scope import ORDERABLE_ANALYSIS_KINDS
 
 router = APIRouter(prefix="/analysis-queue", tags=["analysis"])
+MOUNT_UNDER_API_PREFIX = True
 
 MAX_ITEMS: int = 1000
 DEFAULT_ITEMS: int = 200

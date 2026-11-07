@@ -33,6 +33,7 @@ import type { GridQualityRow } from './analysis-issues';
 import type { LyricsRowSummary } from './lyrics/types';
 import { anlzQuery, defaultAnlzPoints } from './runtime-policy-points';
 import { artworkUrl } from './artwork-url';
+import type { TempoCurveData } from '$lib/components/rb/wave/tempo-marks';
 import {
 	isUsbTrackId,
 	loadStickSessionEdits,
@@ -435,6 +436,8 @@ export interface PlaylistTrackRowWire {
 	lyrics?: LyricsRowSummary | null;
 	/** Stored beatgrid verdict (GRIDFLAG-02). Optional for older payloads. */
 	grid_quality?: GridQualityRow | null;
+	/** Row strip tempo curve (TEMPOROW-8874c); null when steady or never judged. Optional for older payloads. */
+	tempo_curve?: TempoCurveData | null;
 	is_remix?: boolean | null;
 	is_radio_edit?: boolean | null;
 }

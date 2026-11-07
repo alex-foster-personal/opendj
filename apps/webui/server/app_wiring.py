@@ -6,14 +6,17 @@ factory stays under the complexity and file-size ratchets.
 """
 from __future__ import annotations
 
+import importlib
 import logging
 import os
+import pkgutil
 import socket
 import sqlite3
 import threading
 from collections.abc import AsyncIterator, Callable, Sequence
 from contextlib import asynccontextmanager, suppress
 from pathlib import Path
+from types import ModuleType
 from typing import Any
 
 from fastapi import APIRouter, FastAPI
@@ -77,133 +80,17 @@ from .errors import (
 from .http_guards import HttpGuardMiddleware
 from .playlist_add import AlreadyExistsError, BulkLimitError, SmartlistImmutableError
 from .playlist_move import SliceNotContiguousError, TargetInsideSliceError
-from .routes import ahead_analysis as ahead_analysis_routes
-from .routes import analysis as analysis_routes
-from .routes import analysis_backfill as analysis_backfill_routes
-from .routes import analysis_queue as analysis_queue_routes
-from .routes import analysis_source as analysis_source_routes
-from .routes import artwork_suggestions as artwork_suggestions_routes
-from .routes import audio_output_health as audio_output_health_routes
-from .routes import audio_quality as audio_quality_routes
-from .routes import auth as auth_routes
-from .routes import auto_gain as auto_gain_routes
-from .routes import autolists as autolists_routes
-from .routes import beatgrid_flags as beatgrid_flags_routes
-from .routes import source_flags as source_flags_routes
-from .routes import bench as bench_routes
-from .routes import bulk_edit as bulk_edit_routes
+from . import routes as routes_package
 from .routes import client_errors as client_errors_routes
 from .routes import client_events as client_events_routes
-from .routes import cloud_offload as cloud_offload_routes
-from .routes import cloudsync as cloudsync_routes
-from .routes import cloudsync_config as cloudsync_config_routes
-from .routes import cloudsync_fleet as cloudsync_fleet_routes
-from .routes import cloudsync_ops as cloudsync_ops_routes
-from .routes import cloudsync_policy as cloudsync_policy_routes
-from .routes import cloudsync_status as cloudsync_status_routes
-from .routes import cmdk_ai as cmdk_ai_routes
-from .routes import commands as commands_routes
-from .routes import copilot as copilot_routes
-from .routes import coverage_drain as coverage_drain_routes
-from .routes import coverage_terminal as coverage_terminal_routes
-from .routes import dedup_review as dedup_review_routes
-from .routes import dj_transition as dj_transition_routes
-from .routes import dj_transitions_record as dj_transitions_record_routes
-from .routes import dj_try as dj_try_routes
-from .routes import energy as energy_routes
-from .routes import enrich as enrich_routes
-from .routes import error_feed as error_feed_routes
-from .routes import feedback as feedback_routes
-from .routes import feedback_attachments as feedback_attachments_routes
-from .routes import feedback_performance_marks as feedback_performance_marks_routes
-from .routes import feedback_pins as feedback_pins_routes
-from .routes import feedback_replies as feedback_replies_routes
-from .routes import feedback_summary as feedback_summary_routes
-from .routes import feedback_sync as feedback_sync_routes
-from .routes import find_replace as find_replace_routes
-from .routes import genres as genres_routes
-from .routes import rekordbox_analyse as rekordbox_analyse_routes
-from .routes import grid_edit as grid_edit_routes
-from .routes import grid_phase_precompute as grid_phase_precompute_routes
-from .routes import grid_provenance as grid_provenance_routes
-from .routes import tempo_stability as tempo_stability_routes
-from .routes import health as health_routes
-from .routes import ingest as ingest_routes
 from .routes import ingest_cli_procs
-from .routes import ingest_enrichment as ingest_enrichment_routes
-from .routes import ingest_materialize as ingest_materialize_routes
-from .routes import ingest_pending as ingest_pending_routes
-from .routes import ingest_upload as ingest_upload_routes
-from .routes import library as library_routes
-from .routes import library_jobs as library_jobs_routes
-from .routes import lifecycle as lifecycle_routes
-from .routes import lyrics_search as lyrics_search_routes
-from .routes import lyrics_words as lyrics_words_routes
-from .routes import midi_maps as midi_maps_routes
-from .routes import practice as practice_routes
-from .routes import mytag as mytag_routes
-from .routes import pair_transition as pair_transition_routes
-from .routes import pairing_capture as pairing_capture_routes
-from .routes import pairings as pairings_routes
-from .routes import performance_headphones as performance_headphones_routes
 from .routes import performance_remote_speaker as performance_remote_speaker_routes
-from .routes import performance_telemetry as performance_telemetry_routes
-from .routes import play_it as play_it_routes
-from .routes import playlist_components as playlist_components_routes
-from .routes import playlist_history as playlist_history_routes
-from .routes import library_org as library_org_routes
-from .routes import library_works as library_works_routes
-from .routes import playlist_sets as playlist_sets_routes
-from .routes import set_target as set_target_routes
-from .routes import playlist_tree as playlist_tree_routes
 from .routes import playlist_write as playlist_write_routes
-from .routes import playlist_writeback as playlist_writeback_routes
-from .routes import playlists as playlists_routes
-from .routes import preflight as preflight_routes
-from .routes import progress as progress_routes
-from .routes import quality as quality_routes
-from .routes import queues as queues_routes
-from .routes import rb_assets as rb_assets_routes
-from .routes import rb_djay_sync as rb_djay_sync_routes
-from .routes import rb_hot_cues as rb_hot_cues_routes
-from .routes import reconcile as reconcile_routes
-from .routes import rekordbox_gate as rekordbox_gate_routes
-from .routes import relocate as relocate_routes
-from .routes import track_locations as track_locations_routes
-from .routes import rescue_snapshots as rescue_snapshots_routes
-from .routes import search as search_routes
-from .routes import settings as settings_routes
-from .routes import settings_ai as settings_ai_routes
-from .routes import share as share_routes
-from .routes import shell as shell_routes
-from .routes import smartlists as smartlists_routes
-from .routes import spotify as spotify_routes
-from .routes import sql_playground as sql_playground_routes
-from .routes import state as state_routes
-from .routes import stem_cache as stem_cache_routes
-from .routes import stem_tiers as stem_tiers_routes
-from .routes import stems as stems_routes
-from .routes import stems_assets as stems_assets_routes
 from .routes import sync_billing_proxy as sync_billing_proxy_routes
-from .routes import system_audio as system_audio_routes
 from .routes import telemetry as telemetry_routes
-from .routes import telemetry_consent as telemetry_consent_routes
-from .routes import title_fix as title_fix_routes
-from .routes import track_handoff as track_handoff_routes
-from .routes import track_plays as track_plays_routes
-from .routes import played_length as played_length_routes
-from .routes import tracks as tracks_routes
-from .routes import transition_in_cue as transition_in_cue_routes
-from .routes import ui_prefs as ui_prefs_routes
-from .routes import ui_url as ui_url_routes
-from .routes import usb_eject as usb_eject_routes
-from .routes import usb_export as usb_export_routes
-from .routes import usb_tracks as usb_tracks_routes
-from .routes import usb_volumes as usb_volumes_routes
 from .routes import usb_volumes_sim as usb_volumes_sim_routes
 from .routes import vocals as vocals_routes
 from .routes import voice_probe as voice_probe_routes
-from .routes import worktree_ports as worktree_ports_routes
 from .sets_master_tap import OrderBusMasterTap
 from .share_gate import ShareConfig
 from .stem_cache_enforcer import StemCacheEnforcer
@@ -687,134 +574,35 @@ def _configure_http_middleware(app: FastAPI, bind_host: str) -> None:
     app.add_middleware(HttpGuardMiddleware, bind_host=bind_host)
 
 
+def _routers_under(package: ModuleType) -> list[APIRouter]:
+    """Routers of the modules in ``package`` that set ``MOUNT_UNDER_API_PREFIX``.
+
+    Modules are imported in name order, so the mount order is stable and needs no
+    hand list; a module without the flag is left alone (helpers, child modules
+    that add to a parent's router, and the conditional routers below).
+    """
+    routers: list[APIRouter] = []
+    for info in sorted(pkgutil.iter_modules(package.__path__), key=lambda i: i.name):
+        module = importlib.import_module(f"{package.__name__}.{info.name}")
+        if getattr(module, "MOUNT_UNDER_API_PREFIX", False) is not True:
+            continue
+        router = getattr(module, "router", None)
+        if not isinstance(router, APIRouter):
+            raise TypeError(
+                f"{module.__name__} sets MOUNT_UNDER_API_PREFIX but has no "
+                "module-level APIRouter named 'router'"
+            )
+        routers.append(router)
+    return routers
+
+
 def _mount_api_routers(app: FastAPI) -> None:
     api_prefix = "/api/v1"
-    prefixed = (
-        played_length_routes.router,
-        tracks_routes.router,
-        track_handoff_routes.router,
-        beatgrid_flags_routes.router,
-        source_flags_routes.router,
-        audio_quality_routes.router,
-        auto_gain_routes.router,
-        client_errors_routes.router,
-        telemetry_consent_routes.router,
-        error_feed_routes.router,
-        client_events_routes.router,
-        performance_telemetry_routes.router,
-        performance_headphones_routes.router,
-        performance_remote_speaker_routes.router,
-        rescue_snapshots_routes.router,
-        bench_routes.router,
-        bulk_edit_routes.router,
-        find_replace_routes.router,
-        title_fix_routes.router,
-        mytag_routes.router,
-        playlists_routes.router,
-        playlist_write_routes.router,
-        playlist_tree_routes.router,
-        library_org_routes.router,
-        library_works_routes.router,
-        playlist_sets_routes.router,
-        set_target_routes.router,
-        playlist_components_routes.router,
+    for router in (
+        *_routers_under(routes_package),
         create_set_notes_router(get_write_state),
-        playlist_history_routes.router,
-        play_it_routes.router,
-        playlist_writeback_routes.router,
-        pairings_routes.router,
-        pairing_capture_routes.router,
-        queues_routes.router,
-        dedup_review_routes.router,
-        feedback_routes.router,
-        feedback_attachments_routes.router,
-        feedback_performance_marks_routes.router,
-        feedback_pins_routes.router,
-        feedback_replies_routes.router,
-        feedback_summary_routes.router,
-        feedback_sync_routes.router,
-        share_routes.router,
-        rb_assets_routes.router,
-        grid_provenance_routes.router,
-        tempo_stability_routes.router,
-        search_routes.router,
-        rb_hot_cues_routes.router,
-        grid_edit_routes.router,
-        transition_in_cue_routes.router,
-        track_plays_routes.router,
-        progress_routes.router,
-        quality_routes.router,
-        worktree_ports_routes.router,
-        sql_playground_routes.router,
-        smartlists_routes.router,
-        autolists_routes.router,
-        stems_routes.router,
-        stems_assets_routes.router,
-        stem_cache_routes.router,
-        stem_tiers_routes.router,
-        rb_djay_sync_routes.router,
-        reconcile_routes.router,
-        rekordbox_gate_routes.router,
-        relocate_routes.router,
-        track_locations_routes.router,
-        copilot_routes.router,
-        analysis_routes.router,
-        audio_output_health_routes.router,
-        analysis_backfill_routes.router,
-        analysis_queue_routes.router,
-        library_jobs_routes.router,
-        genres_routes.router,
-        rekordbox_analyse_routes.router,
-        energy_routes.router,
-        cmdk_ai_routes.router,
-        coverage_drain_routes.router,
-        ahead_analysis_routes.router,
-        grid_phase_precompute_routes.router,
-        ingest_enrichment_routes.router,
-        artwork_suggestions_routes.router,
-        enrich_routes.router,
-        coverage_terminal_routes.router,
-        analysis_source_routes.router,
-        auth_routes.router,
-        ingest_routes.router,
-        ingest_upload_routes.router,
-        ingest_materialize_routes.router,
-        ingest_pending_routes.router,
-        library_routes.router,
-        lifecycle_routes.router,
-        lyrics_search_routes.router,
-        lyrics_words_routes.router,
-        health_routes.router,
-        ui_url_routes.router,
-        preflight_routes.router,
-        settings_routes.router,
-        settings_ai_routes.router,
-        midi_maps_routes.router,
-        practice_routes.router,
-        state_routes.router,
-        commands_routes.router,
-        dj_try_routes.router,
-        dj_transition_routes.router,
-        dj_transitions_record_routes.router,
-        pair_transition_routes.router,
-        shell_routes.router,
-        ui_prefs_routes.router,
-        cloudsync_routes.router,
-        cloudsync_ops_routes.router,
-        cloudsync_policy_routes.router,
-        cloudsync_status_routes.router,
-        cloudsync_config_routes.router,
-        cloudsync_fleet_routes.router,
-        cloud_offload_routes.router,
-        spotify_routes.router,
-        usb_export_routes.router,
-        usb_eject_routes.router,
-        usb_volumes_routes.router,
-        usb_tracks_routes.router,
-        system_audio_routes.router,
         flags_router,
-    )
-    for router in prefixed:
+    ):
         app.include_router(router, prefix=api_prefix)
     if app.state.usb_simulation_enabled:
         # Test/dev only (MDT_USB_SIMULATION=1): production apps never mount

@@ -1,9 +1,15 @@
 /**
  * Track-table column headers that must stay icons rather than words.
  *
- * SOURCE-SHAPE ON PURPOSE, same reason as capability-gating-markup.test.mjs:
- * this harness is node:test + esbuild with no component mount, so a .svelte
- * file cannot be rendered and queried.
+ * The column-header checks below are SOURCE-SHAPE ON PURPOSE, same reason as
+ * capability-gating-markup.test.mjs: TrackTable.svelte is too large to mount
+ * under node:test, so its header markup is read as source.
+ *
+ * The QualityBadge twin test further down is different: it mounts the REAL
+ * QualityBadge.svelte and QualityBadge.tsx through
+ * quality-badge-client-harness.mjs (only the DOM and loadHover are doubled),
+ * flips trackKey, and resolves controlled loadHover promises to pin the
+ * summary fallback and stale-response rejection (PRRT_kwDOSEvNd860kFHb).
  *
  * Pin e28577797642 (the maintainer, Wed 2 Sep 2026): "artwork col header -> icon.
  * (regression)." The artwork column is 54px of thumbnails; the word "Artwork"

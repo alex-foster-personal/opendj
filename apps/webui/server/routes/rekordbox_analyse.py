@@ -10,4 +10,6 @@ from __future__ import annotations
 
 from apps.rekordbox_analyse.http import router
 
+MOUNT_UNDER_API_PREFIX = True
+
 __all__ = ["router"]

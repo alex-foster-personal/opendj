@@ -36,6 +36,7 @@ from ..deps import get_read_state, get_write_state
 from ..etag import compute_etag
 
 router = APIRouter(prefix="/find-replace", tags=["find-replace"])
+MOUNT_UNDER_API_PREFIX = True
 
 FindReplaceField = Literal["notes", "genre", "comments"]
 FindReplaceMode = Literal["literal", "regex"]

@@ -25,6 +25,7 @@ from apps.shared.telemetry.sink import (
 from ..client_logs import DEFAULT_LOG_DIR, append_json_record, daily_log_path
 
 router = APIRouter(prefix="/client-errors", tags=["client-errors"])
+MOUNT_UNDER_API_PREFIX = True
 log = logging.getLogger(__name__)
 
 ContextValue = str | int | float | bool | None

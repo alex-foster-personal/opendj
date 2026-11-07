@@ -28,6 +28,7 @@
 		faderControlId,
 		isKnobSelected,
 		nudgeKnobOrSelection,
+		noteKnobHandInput,
 		registerKnob,
 		selectedKnobIds,
 		setKnobHovered,
@@ -147,6 +148,7 @@
 		dragVirtualValue += delta;
 		const next = _clamp01(dragVirtualValue);
 		dragReleaseValue = next;
+		noteKnobHandInput(controlId);
 		onchange(next);
 	}
 
@@ -184,6 +186,7 @@
 		if (!up && !down) return;
 		e.preventDefault();
 		const delta = up ? KNOB_CFG.keyStep : -KNOB_CFG.keyStep;
+		noteKnobHandInput(controlId);
 		if (_inGroupSelection()) {
 			nudgeKnobOrSelection(controlId, delta);
 			return;
@@ -195,6 +198,7 @@
 	}
 
 	function handleWheelAdjust(next: number): void {
+		noteKnobHandInput(controlId);
 		onWheelFaderAdjust(deckId, value, next, pointerOnFader);
 		onchange(next);
 	}

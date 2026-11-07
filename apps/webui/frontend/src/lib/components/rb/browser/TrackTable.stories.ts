@@ -3,6 +3,8 @@ import { http, HttpResponse } from 'msw';
 import { expect, fireEvent, fn, userEvent, waitFor, within } from 'storybook/test';
 
 import type { components } from '$lib/api-types';
+import { applySettingChange, readSettingValue } from '$lib/settings/apply';
+import { customiseScreen } from '$lib/settings/customise-screens';
 import { EMPTY_OVERLAY } from '$lib/rb/library-works';
 import { browserRows } from '../../../../sandbox/fixtures/browser-rows';
 import { createPaneStore, makeClientRowProvider } from './pane-contract.svelte';
@@ -29,7 +31,13 @@ const NO_LIBRARY_ASSETS: components['schemas']['RowAssetsOut'] = { assets: {}, p
 
 /** A fixture row's play counts: never played anywhere. */
 function neverPlayed(stableId: string): components['schemas']['TrackPlaysOut'] {
-	return { stable_id: stableId, opendj_play_count: 0, rekordbox_play_count: 0, play_count: 0, opendj_last_played_at: null };
+	return {
+		stable_id: stableId,
+		opendj_play_count: 0,
+		rekordbox_play_count: 0,
+		play_count: 0,
+		opendj_last_played_at: null
+	};
 }
 
 const meta = {
@@ -68,10 +76,23 @@ const meta = {
 				http.get('/api/v1/works/overlay', () => HttpResponse.json(EMPTY_OVERLAY)),
 				http.post('/api/v1/works/suggestion-flags', () => HttpResponse.json({ member_ids: [] })),
 				// The grid-quality scan starts once the boot window closes (LIBM-138); a long story outlives it.
-				http.post('/api/v1/beatgrid-flags/scan', () => HttpResponse.json({ started: true }, { status: 202 })),
+				http.post('/api/v1/beatgrid-flags/scan', () =>
+					HttpResponse.json({ started: true }, { status: 202 })
+				),
+				http.post('/api/v1/audio-quality/scan', () =>
+					HttpResponse.json({ started: true }, { status: 202 })
+				),
 				http.get('/api/v1/ui-prefs', () =>
 					HttpResponse.json({ library_optional_columns: [], library_classical_layout: false })
-				)
+				),
+				http.put('/api/v1/ui-prefs', async ({ request }) => {
+					const patch = (await request.json()) as Record<string, unknown>;
+					return HttpResponse.json({
+						library_optional_columns: [],
+						library_classical_layout: false,
+						...patch
+					});
+				})
 			]
 		}
 	},
@@ -125,7 +146,10 @@ export const KeepsScrollWindowAcrossDeckLoad: Story = {
 	parameters: { layout: 'fullscreen' },
 	decorators: [() => ({ Component: TrackTableScrollStoryDock })],
 	args: {
-		provider: makeClientRowProvider(() => browserRows(80), () => false),
+		provider: makeClientRowProvider(
+			() => browserRows(80),
+			() => false
+		),
 		loadedIds: new Set(['fixture-5']),
 		browseScroll: { order: 5, direction: 1, revision: 1 },
 		scrollTop: 0,
@@ -215,6 +239,60 @@ export const RendersEveryRow: Story = {
 	}
 };
 
+/** #9443: the Library customise screen's density row is an enum; each value maps to a distinct row height on TrackTable. */
+export const DensitySwitchesRowHeight: Story = {
+	play: async ({ canvasElement }) => {
+		const screen = customiseScreen('library');
+		const densityRow = screen.groups
+			.flatMap((g) => g.rows)
+			.find((r) => r.row.id === 'library_density');
+		await expect(densityRow, 'library_density row').toBeDefined();
+		await expect(densityRow?.def?.control.kind).toBe('enum');
+
+		const canvas = within(canvasElement);
+		await canvas.findByTestId('track-table');
+
+		const readRoot = () =>
+			canvasElement.ownerDocument.querySelector<HTMLElement>('.tt-root[data-density]');
+		const readFirstRow = () =>
+			canvasElement.ownerDocument.querySelector<HTMLElement>('tr[data-testid="track-row"]');
+
+		try {
+			applySettingChange('library_density', 'compact');
+			await waitFor(() => expect(readSettingValue('library_density')).toBe('compact'));
+			await waitFor(() => expect(readRoot()?.dataset.density).toBe('compact'));
+			let compactH = 0;
+			await waitFor(() => {
+				const row = readFirstRow();
+				expect(row).not.toBeNull();
+				compactH = row!.getBoundingClientRect().height;
+				expect(compactH).toBeGreaterThan(10);
+			});
+
+			applySettingChange('library_density', 'cosy');
+			await waitFor(() => expect(readSettingValue('library_density')).toBe('cosy'));
+			await waitFor(() => expect(readRoot()?.dataset.density).toBe('cosy'));
+			await waitFor(() => {
+				const row = readFirstRow();
+				expect(row).not.toBeNull();
+				expect(row!.getBoundingClientRect().height).toBeGreaterThan(compactH + 4);
+			});
+
+			applySettingChange('library_density', 'compact');
+			await waitFor(() => expect(readSettingValue('library_density')).toBe('compact'));
+			await waitFor(() => expect(readRoot()?.dataset.density).toBe('compact'));
+			await waitFor(() => {
+				const row = readFirstRow();
+				expect(row).not.toBeNull();
+				expect(row!.getBoundingClientRect().height).toBeLessThanOrEqual(compactH + 0.5);
+			});
+		} finally {
+			applySettingChange('library_density', 'compact');
+			await waitFor(() => expect(readSettingValue('library_density')).toBe('compact'));
+		}
+	}
+};
+
 /** A single click selects: the parent hears onselectrow with that row. */
 export const ClickSelectsRow: Story = {
 	play: async ({ canvasElement, args }) => {
@@ -267,8 +345,8 @@ export const EmptyStatesTheReason: Story = {
 
 /** The rendered row whose order cell reads `order`. */
 function rowByOrder(root: HTMLElement, order: number): HTMLElement {
-	const row = [...root.querySelectorAll<HTMLElement>('tr[data-testid="track-row"]')].find(
-		(tr) => tr.querySelector('td.c-order')?.textContent?.trim().endsWith(String(order))
+	const row = [...root.querySelectorAll<HTMLElement>('tr[data-testid="track-row"]')].find((tr) =>
+		tr.querySelector('td.c-order')?.textContent?.trim().endsWith(String(order))
 	);
 	if (row === undefined) throw new Error(`no rendered row with order ${order}`);
 	return row;
@@ -291,11 +369,19 @@ const memberProvider = () =>
  * crossing gets no dragover first; a target that only cancels dragover is
  * never dropped on.
  */
-async function webkitDrag(source: HTMLElement, target: HTMLElement): Promise<{ enterAccepted: boolean }> {
+async function webkitDrag(
+	source: HTMLElement,
+	target: HTMLElement
+): Promise<{ enterAccepted: boolean }> {
 	const dataTransfer = new DataTransfer();
 	const clientY = target.getBoundingClientRect().top + 1;
 	await fireEvent.dragStart(source, { dataTransfer });
-	const enter = new DragEvent('dragenter', { bubbles: true, cancelable: true, dataTransfer, clientY });
+	const enter = new DragEvent('dragenter', {
+		bubbles: true,
+		cancelable: true,
+		dataTransfer,
+		clientY
+	});
 	target.dispatchEvent(enter);
 	if (enter.defaultPrevented) await fireEvent.drop(target, { dataTransfer, clientY });
 	await fireEvent.dragEnd(source, { dataTransfer });
@@ -314,7 +400,11 @@ export const RowDragReordersPlaylist: Story = {
 		const { enterAccepted } = await webkitDrag(source, target);
 		await expect(enterAccepted, 'the table body accepts on dragenter (WebKit)').toBe(true);
 		await expect(args.onmoveentries).toHaveBeenCalledTimes(1);
-		await expect(args.onmoveentries).toHaveBeenCalledWith({ item_ids: ['item-2'], section_ids: [], before_item_id: 'item-5' });
+		await expect(args.onmoveentries).toHaveBeenCalledWith({
+			item_ids: ['item-2'],
+			section_ids: [],
+			before_item_id: 'item-5'
+		});
 	}
 };
 
@@ -323,7 +413,9 @@ export const RowDragReordersPlaylist: Story = {
 /** A pointer y inside the table body that opens gap `gap` (gapFromPointer). */
 function yForGap(root: HTMLElement, gap: number): number {
 	const body = root.querySelector('tbody')!.getBoundingClientRect();
-	const rowHeight = root.querySelector<HTMLElement>('tr[data-testid="track-row"]')!.getBoundingClientRect().height;
+	const rowHeight = root
+		.querySelector<HTMLElement>('tr[data-testid="track-row"]')!
+		.getBoundingClientRect().height;
 	return body.top + gap * rowHeight + 2;
 }
 
@@ -365,7 +457,11 @@ export const MoveDragDrawsTheInsertionLine: Story = {
 		await waitFor(() => expect(translateYPx(rowStyle(canvasElement, 6))).toBe(rowHeight));
 		await fireEvent.drop(target, { dataTransfer, clientY: yForGap(canvasElement, 6) });
 		await waitFor(() => expect(translateYPx(rowStyle(canvasElement, 4))).toBeNull());
-		await expect(args.onmoveentries).toHaveBeenCalledWith({ item_ids: ['item-2'], section_ids: [], before_item_id: 'item-7' });
+		await expect(args.onmoveentries).toHaveBeenCalledWith({
+			item_ids: ['item-2'],
+			section_ids: [],
+			before_item_id: 'item-7'
+		});
 		await fireEvent.dragEnd(source, { dataTransfer });
 	}
 };
@@ -391,7 +487,11 @@ export const MoveDragLineClearsOnLeaveAndEnd: Story = {
 	}
 };
 
-const SECTIONED = arrangeSections(MEMBERS.slice(0, 12), [{ id: 'S1', title: 'Peak', before_position: 4 }], new Set());
+const SECTIONED = arrangeSections(
+	MEMBERS.slice(0, 12),
+	[{ id: 'S1', title: 'Peak', before_position: 4 }],
+	new Set()
+);
 
 /** Section boundaries: the gap just below a divider shifts that section's rows. */
 export const MoveDragLineInsideASection: Story = {
@@ -413,12 +513,26 @@ export const MoveDragLineInsideASection: Story = {
 		const gapSlot = header.slot + 1;
 		const rowHeight = firstInSection.getBoundingClientRect().height;
 		await fireEvent.dragStart(source, { dataTransfer });
-		await fireEvent.dragOver(firstInSection, { dataTransfer, clientY: yForGap(canvasElement, gapSlot) });
+		await fireEvent.dragOver(firstInSection, {
+			dataTransfer,
+			clientY: yForGap(canvasElement, gapSlot)
+		});
 		await waitFor(() => expect(translateYPx(firstInSection.style.transform)).toBe(rowHeight));
-		const divider = canvasElement.querySelector<HTMLElement>('tbody tr:not([data-testid="track-row"]):not(.tt-spacer)')!;
-		await expect(firstInSection.getBoundingClientRect().top).toBeGreaterThan(divider.getBoundingClientRect().bottom - 1);
-		await fireEvent.drop(firstInSection, { dataTransfer, clientY: yForGap(canvasElement, gapSlot) });
-		await expect(args.onmoveentries).toHaveBeenCalledWith({ item_ids: ['item-1'], section_ids: [], before_item_id: 'item-5' });
+		const divider = canvasElement.querySelector<HTMLElement>(
+			'tbody tr:not([data-testid="track-row"]):not(.tt-spacer)'
+		)!;
+		await expect(firstInSection.getBoundingClientRect().top).toBeGreaterThan(
+			divider.getBoundingClientRect().bottom - 1
+		);
+		await fireEvent.drop(firstInSection, {
+			dataTransfer,
+			clientY: yForGap(canvasElement, gapSlot)
+		});
+		await expect(args.onmoveentries).toHaveBeenCalledWith({
+			item_ids: ['item-1'],
+			section_ids: [],
+			before_item_id: 'item-5'
+		});
 		await fireEvent.dragEnd(source, { dataTransfer });
 	}
 };
@@ -436,15 +550,20 @@ export const MoveDropKeepsEveryRowNode: Story = {
 				() => pane.rows,
 				() => false
 			),
-			onmoveentries: fn((move: { item_ids: string[]; section_ids: string[]; before_item_id?: string }) => {
-				applyOptimisticEntriesMove(pane, [], () => {}, move);
-			})
+			onmoveentries: fn(
+				(move: { item_ids: string[]; section_ids: string[]; before_item_id?: string }) => {
+					applyOptimisticEntriesMove(pane, [], () => {}, move);
+				}
+			)
 		};
 	})(),
 	play: async ({ canvasElement, args }) => {
 		await waitFor(() => expect(canvasElement.querySelectorAll('.grip').length).toBeGreaterThan(5));
 		const nodeById = new Map(
-			[...canvasElement.querySelectorAll<HTMLElement>('tr[data-testid="track-row"]')].map((tr) => [tr.dataset.stableId, tr])
+			[...canvasElement.querySelectorAll<HTMLElement>('tr[data-testid="track-row"]')].map((tr) => [
+				tr.dataset.stableId,
+				tr
+			])
 		);
 		const moved = rowByOrder(canvasElement, 2);
 		const movedId = moved.dataset.stableId;
@@ -452,11 +571,18 @@ export const MoveDropKeepsEveryRowNode: Story = {
 			moved.querySelector<HTMLElement>('td.c-title')!,
 			rowByOrder(canvasElement, 5).querySelector<HTMLElement>('td.c-title')!
 		);
-		await expect(args.onmoveentries).toHaveBeenCalledWith({ item_ids: ['item-2'], section_ids: [], before_item_id: 'item-5' });
+		await expect(args.onmoveentries).toHaveBeenCalledWith({
+			item_ids: ['item-2'],
+			section_ids: [],
+			before_item_id: 'item-5'
+		});
 		await waitFor(() => expect(rowByOrder(canvasElement, 4).dataset.stableId).toBe(movedId));
 		await expect(rowByOrder(canvasElement, 4), 'the moved row is the same DOM node').toBe(moved);
 		for (const tr of canvasElement.querySelectorAll<HTMLElement>('tr[data-testid="track-row"]')) {
-			await expect(nodeById.get(tr.dataset.stableId), `row ${tr.dataset.stableId} was not remounted`).toBe(tr);
+			await expect(
+				nodeById.get(tr.dataset.stableId),
+				`row ${tr.dataset.stableId} was not remounted`
+			).toBe(tr);
 		}
 	}
 };
@@ -469,7 +595,11 @@ export const GripDragReordersPlaylist: Story = {
 		const grip = rowByOrder(canvasElement, 2).querySelector<HTMLElement>('.grip')!;
 		const target = rowByOrder(canvasElement, 5).querySelector<HTMLElement>('td.c-title')!;
 		await webkitDrag(grip, target);
-		await expect(args.onmoveentries).toHaveBeenCalledWith({ item_ids: ['item-2'], section_ids: [], before_item_id: 'item-5' });
+		await expect(args.onmoveentries).toHaveBeenCalledWith({
+			item_ids: ['item-2'],
+			section_ids: [],
+			before_item_id: 'item-5'
+		});
 	}
 };
 

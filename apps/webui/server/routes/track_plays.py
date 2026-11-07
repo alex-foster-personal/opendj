@@ -31,6 +31,7 @@ from ..deps import get_read_state, get_write_state
 from ..rb_vendor_pkg.track_rows import bulk_rb_meta
 
 router = APIRouter(prefix="/tracks", tags=["track-plays"])
+MOUNT_UNDER_API_PREFIX = True
 
 
 class TrackPlayIn(BaseModel):

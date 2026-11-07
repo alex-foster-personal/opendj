@@ -16,6 +16,7 @@ from pydantic import BaseModel, ConfigDict, Field
 from .feedback import _dir, _load, _save
 
 router = APIRouter(prefix="/feedback", tags=["feedback"])
+MOUNT_UNDER_API_PREFIX = True
 
 _MARKS_FILE = "performance-marks.json"
 _MARKS_LOCK = threading.Lock()

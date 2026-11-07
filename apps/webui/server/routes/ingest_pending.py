@@ -16,6 +16,7 @@ from apps.shared.paths import AUDIO_EXTENSIONS
 from apps.webui.server.routes import ingest as ingest_cfg
 
 router = APIRouter(prefix="/ingest", tags=["ingest"])
+MOUNT_UNDER_API_PREFIX = True
 
 RB_IMPORTED_MARKER = ".rb-imported"
 

@@ -19,15 +19,10 @@ from pydantic import BaseModel, Field
 
 from apps.shared.events import publish
 
-from .store import (
-    Geometry,
-    StaleRevision,
-    load_set_note,
-    note_to_wire,
-    open_set_notes,
-    save_set_note,
-    validate_scope,
-)
+from .connection import open_set_notes
+from .revision import StaleRevision, stale_rev_detail
+from .store import load_set_note, save_set_note, validate_scope
+from .wire import geometry_from_optional, note_to_wire
 
 
 class SetNoteOut(BaseModel):
@@ -110,7 +105,7 @@ def create_router(write_guard: Callable[..., object]) -> APIRouter:
                     conn,
                     scope,
                     body.body_md,
-                    Geometry(x=body.x, y=body.y, w=body.w, h=body.h),
+                    geometry_from_optional(body.x, body.y, body.w, body.h),
                     body.visible,
                     body.base_rev,
                 )
@@ -119,7 +114,7 @@ def create_router(write_guard: Callable[..., object]) -> APIRouter:
                 conn.rollback()
                 raise HTTPException(
                     status_code=status.HTTP_409_CONFLICT,
-                    detail={"error": "stale_rev", "current_rev": exc.current_rev},
+                    detail=stale_rev_detail(exc.current_rev),
                 ) from None
             publish("library.changed", {"kind": "set_notes", "ids": [scope]})
             return SetNoteOut(**note_to_wire(note))

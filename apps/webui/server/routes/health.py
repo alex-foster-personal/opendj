@@ -27,6 +27,7 @@ from ..state_paths import resolve_state_db_path
 from ..ui_url import resolve_ui_address
 
 router = APIRouter(prefix="/health", tags=["health"])
+MOUNT_UNDER_API_PREFIX = True
 
 # HEALTH-POOL-01 (issue reported Mon 5 Oct 2026, silver preview): /health is
 # a liveness probe and must answer regardless of how busy the shared AnyIO

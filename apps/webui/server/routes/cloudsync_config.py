@@ -31,6 +31,7 @@ from .cloudsync_ops import LOCAL_ONLY_RESPONSE, require_local_operator
 from .cloudsync_status import UNREADABLE_RESPONSES, ConfigSourceOut, cloudsync_data_dir
 
 router = APIRouter(prefix="/cloudsync", tags=["cloudsync"])
+MOUNT_UNDER_API_PREFIX = True
 
 CONFIG_RESPONSES: dict[int | str, dict[str, Any]] = {
     **LOCAL_ONLY_RESPONSE,

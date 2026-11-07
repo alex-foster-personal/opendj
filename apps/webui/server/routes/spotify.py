@@ -43,6 +43,7 @@ from ..backend import NotFoundError, StateBackend
 from ..deps import get_read_state
 
 router = APIRouter(prefix="/spotify", tags=["spotify"])
+MOUNT_UNDER_API_PREFIX = True
 
 _HTTP_URL = TypeAdapter(HttpUrl)
 

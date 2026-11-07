@@ -65,6 +65,7 @@ from ..deps import get_library_data_dir, get_library_state_db
 from ..errors import ErrorBody
 
 router = APIRouter(prefix="/dj/try", tags=["dj-try"])
+MOUNT_UNDER_API_PREFIX = True
 _log = logging.getLogger(__name__)
 
 #: The candidate fields the try-er contract ((private path) section 2) promises.

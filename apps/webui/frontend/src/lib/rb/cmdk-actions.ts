@@ -226,20 +226,27 @@ export function commandCandidates(decks: readonly ActionDeck[], query: string): 
 	return out;
 }
 
+/** Frecency key, stable across reloads of a deck (`eject-2:7` → `eject-2`). */
+export function commandKey(action: CommandAction): string {
+	return action.id.split(':')[0]!;
+}
+
 /**
  * The "Commands and settings" group: commands whose label matches every
  * token, then the settings the overlay's own search returned (already in
  * catalog order), capped at `limit`. An empty query offers nothing here.
+ * When `ranked` is true, `commands` are already filtered and ordered by rankCommands.
  */
 export function actionRows(
 	query: string,
 	commands: readonly CommandAction[],
 	settings: readonly SettingAction[],
-	limit = ACTION_LIMIT
+	limit = ACTION_LIMIT,
+	ranked = false
 ): CmdkAction[] {
 	const tokens = actionTokens(query);
 	if (tokens.length === 0) return [];
-	const cmds = commands.filter((cmd) => matchesAll(`${cmd.label} ${cmd.id.replace(/-/g, ' ')}`, tokens));
+	const cmds = ranked ? commands : commands.filter((cmd) => matchesAll(`${cmd.label} ${cmd.id.replace(/-/g, ' ')}`, tokens));
 	return [...cmds, ...settings].slice(0, limit);
 }
 
@@ -325,7 +332,10 @@ export function layoutGroups<T>(input: {
 	pairs?: readonly { row: T; aligned: boolean; basis?: string | undefined }[];
 	/** A row's stable id, so recent loads already listed as pairs are not listed twice. */
 	idOf?: (row: T) => string;
+	/** Commands came through rankCommands: matched and ordered for this query; frecency first when nothing is typed. */
+	commandsRanked?: boolean;
 }): { groups: CmdkEntryGroup<T>[]; keepTyping: boolean } {
+	const commandsRanked = input.commandsRanked ?? false;
 	const tracks = (rows: readonly T[]): CmdkEntry<T>[] => rows.map((row) => ({ kind: 'track', row }));
 	const acts = (rows: readonly CmdkAction[]): CmdkEntry<T>[] => rows.map((action) => ({ kind: 'action', action }));
 	const groups: CmdkEntryGroup<T>[] = [];
@@ -346,14 +356,14 @@ export function layoutGroups<T>(input: {
 		return { groups, keepTyping: false };
 	}
 	if (!tracksAllowed(input.query)) {
-		push({ id: 'actions', entries: acts(actionRows(input.query, input.commands, input.settings)) });
+		push({ id: 'actions', entries: acts(actionRows(input.query, input.commands, input.settings, undefined, commandsRanked)) });
 		push({ id: 'recent', entries: tracks(recent) });
 		return { groups, keepTyping: true };
 	}
 	push({ id: 'playlist', total: input.playlist.total, entries: tracks(input.playlist.rows) });
 	push({ id: 'collection', total: input.collection.total, entries: tracks(input.collection.rows) });
 	push({ id: 'settings', entries: acts(input.settings.slice(0, SETTINGS_UNDER_TRACKS)) });
-	push({ id: 'commands', entries: acts(actionRows(input.query, input.commands, [])) });
+	push({ id: 'commands', entries: acts(actionRows(input.query, input.commands, [], undefined, commandsRanked)) });
 	return { groups, keepTyping: false };
 }
 

@@ -300,6 +300,7 @@ export function rowFromPlaylistWire(wire: PlaylistTrackRowWire, order: number): 
 		match_context: null,
 		lyrics: wire.lyrics ?? null,
 		grid_quality: wire.grid_quality ?? null,
+		tempo_curve: wire.tempo_curve ?? null,
 		is_remix: wire.is_remix ?? null,
 		is_radio_edit: wire.is_radio_edit ?? null
 	};

@@ -24,6 +24,7 @@ from ..shell_output_health import (
 from ..state_paths import resolve_state_db_path
 
 router = APIRouter(prefix="/audio", tags=["audio"])
+MOUNT_UNDER_API_PREFIX = True
 
 
 class AudioOutputHealthOut(BaseModel):

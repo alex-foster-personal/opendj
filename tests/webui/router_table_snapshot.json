@@ -1,0 +1,7110 @@
+{
+ "routes": [
+  {
+   "endpoint": "apps.webui.server.app_wiring._mount_frontend_or_placeholder.<locals>._index_placeholder",
+   "methods": [
+    "GET"
+   ],
+   "path": "/"
+  },
+  {
+   "endpoint": "apps.play_analytics.http.create_router.<locals>.get_play_analytics",
+   "methods": [
+    "GET"
+   ],
+   "path": "/api/play-analytics"
+  },
+  {
+   "endpoint": "apps.sets.api.api_list_sessions",
+   "methods": [
+    "GET"
+   ],
+   "path": "/api/sets"
+  },
+  {
+   "endpoint": "apps.sets.api.api_deck_observation_status",
+   "methods": [
+    "GET"
+   ],
+   "path": "/api/sets/deck-observations"
+  },
+  {
+   "endpoint": "apps.sets.api.api_submit_deck_observations",
+   "methods": [
+    "POST"
+   ],
+   "path": "/api/sets/deck-observations"
+  },
+  {
+   "endpoint": "apps.sets.api.api_recorder_status",
+   "methods": [
+    "GET"
+   ],
+   "path": "/api/sets/recorder"
+  },
+  {
+   "endpoint": "apps.sets.api.api_recorder_devices",
+   "methods": [
+    "GET"
+   ],
+   "path": "/api/sets/recorder/devices"
+  },
+  {
+   "endpoint": "apps.sets.api.api_recorder_remembered_input",
+   "methods": [
+    "GET"
+   ],
+   "path": "/api/sets/recorder/remembered-input"
+  },
+  {
+   "endpoint": "apps.sets.api.api_recorder_start",
+   "methods": [
+    "POST"
+   ],
+   "path": "/api/sets/recorder/start"
+  },
+  {
+   "endpoint": "apps.sets.api.api_recorder_master_pcm",
+   "methods": [
+    "POST"
+   ],
+   "path": "/api/sets/recorder/{session_id}/master-pcm"
+  },
+  {
+   "endpoint": "apps.sets.api.api_recorder_recover",
+   "methods": [
+    "POST"
+   ],
+   "path": "/api/sets/recorder/{session_id}/recover"
+  },
+  {
+   "endpoint": "apps.sets.api.api_recorder_stop",
+   "methods": [
+    "POST"
+   ],
+   "path": "/api/sets/recorder/{session_id}/stop"
+  },
+  {
+   "endpoint": "apps.sets.api.api_get_session",
+   "methods": [
+    "GET"
+   ],
+   "path": "/api/sets/{session_id}"
+  },
+  {
+   "endpoint": "apps.sets.api.api_audio",
+   "methods": [
+    "GET"
+   ],
+   "path": "/api/sets/{session_id}/audio/{segment}"
+  },
+  {
+   "endpoint": "apps.sets.api.api_get_metadata_share",
+   "methods": [
+    "GET"
+   ],
+   "path": "/api/sets/{session_id}/share"
+  },
+  {
+   "endpoint": "apps.sets.api.api_publish_metadata_share",
+   "methods": [
+    "POST"
+   ],
+   "path": "/api/sets/{session_id}/share"
+  },
+  {
+   "endpoint": "apps.sets.api.api_get_soundcloud_export",
+   "methods": [
+    "GET"
+   ],
+   "path": "/api/sets/{session_id}/soundcloud-export"
+  },
+  {
+   "endpoint": "apps.sets.api.api_post_soundcloud_export",
+   "methods": [
+    "POST"
+   ],
+   "path": "/api/sets/{session_id}/soundcloud-export"
+  },
+  {
+   "endpoint": "apps.sets.api.api_timeline_stream",
+   "methods": [
+    "GET"
+   ],
+   "path": "/api/sets/{session_id}/timeline"
+  },
+  {
+   "endpoint": "apps.sets.api.api_transitions",
+   "methods": [
+    "GET"
+   ],
+   "path": "/api/sets/{session_id}/transitions"
+  },
+  {
+   "endpoint": "apps.sets.api.api_relabel",
+   "methods": [
+    "POST"
+   ],
+   "path": "/api/sets/{session_id}/transitions/{idx}/label"
+  },
+  {
+   "endpoint": "apps.webui.server.routes.worktree_ports.get_worktree_ports",
+   "methods": [
+    "GET"
+   ],
+   "path": "/api/v1/admin/ports"
+  },
+  {
+   "endpoint": "apps.webui.server.routes.quality.get_quality_ratchet",
+   "methods": [
+    "GET"
+   ],
+   "path": "/api/v1/admin/quality-ratchet"
+  },
+  {
+   "endpoint": "apps.webui.server.routes.sql_playground.sql_query",
+   "methods": [
+    "POST"
+   ],
+   "path": "/api/v1/admin/sql-query"
+  },
+  {
+   "endpoint": "apps.webui.server.routes.ahead_analysis.post_bump",
+   "methods": [
+    "POST"
+   ],
+   "path": "/api/v1/ahead-analysis/bump/{stable_id}"
+  },
+  {
+   "endpoint": "apps.webui.server.routes.ahead_analysis.get_coverage",
+   "methods": [
+    "GET"
+   ],
+   "path": "/api/v1/ahead-analysis/coverage"
+  },
+  {
+   "endpoint": "apps.webui.server.routes.ahead_analysis.put_next_up",
+   "methods": [
+    "PUT"
+   ],
+   "path": "/api/v1/ahead-analysis/next-up"
+  },
+  {
+   "endpoint": "apps.webui.server.routes.ahead_analysis.post_retry",
+   "methods": [
+    "POST"
+   ],
+   "path": "/api/v1/ahead-analysis/retry"
+  },
+  {
+   "endpoint": "apps.webui.server.routes.analysis_queue.get_analysis_queue",
+   "methods": [
+    "GET"
+   ],
+   "path": "/api/v1/analysis-queue"
+  },
+  {
+   "endpoint": "apps.webui.server.routes.analysis_queue.get_track_analysis_orders",
+   "methods": [
+    "GET"
+   ],
+   "path": "/api/v1/analysis-queue/orders/{stable_id}"
+  },
+  {
+   "endpoint": "apps.webui.server.routes.analysis_queue.order_track_analysis",
+   "methods": [
+    "POST"
+   ],
+   "path": "/api/v1/analysis-queue/orders/{stable_id}/{kind}"
+  },
+  {
+   "endpoint": "apps.webui.server.routes.analysis_queue.run_analysis_queue",
+   "methods": [
+    "POST"
+   ],
+   "path": "/api/v1/analysis-queue/run"
+  },
+  {
+   "endpoint": "apps.webui.server.routes.analysis_backfill.list_backfill_batches",
+   "methods": [
+    "GET"
+   ],
+   "path": "/api/v1/analysis/backfill/batches"
+  },
+  {
+   "endpoint": "apps.webui.server.routes.analysis_backfill.cancel_backfill",
+   "methods": [
+    "POST"
+   ],
+   "path": "/api/v1/analysis/backfill/cancel"
+  },
+  {
+   "endpoint": "apps.webui.server.routes.analysis_backfill.enqueue_backfill",
+   "methods": [
+    "POST"
+   ],
+   "path": "/api/v1/analysis/backfill/enqueue"
+  },
+  {
+   "endpoint": "apps.webui.server.routes.analysis_backfill.get_backfill_progress",
+   "methods": [
+    "GET"
+   ],
+   "path": "/api/v1/analysis/backfill/progress"
+  },
+  {
+   "endpoint": "apps.webui.server.routes.analysis_backfill.resume_backfill",
+   "methods": [
+    "POST"
+   ],
+   "path": "/api/v1/analysis/backfill/resume"
+  },
+  {
+   "endpoint": "apps.webui.server.routes.analysis_source.get_analysis_source",
+   "methods": [
+    "GET"
+   ],
+   "path": "/api/v1/analysis/source"
+  },
+  {
+   "endpoint": "apps.webui.server.routes.analysis_source.put_analysis_source",
+   "methods": [
+    "PUT"
+   ],
+   "path": "/api/v1/analysis/source"
+  },
+  {
+   "endpoint": "apps.webui.server.routes.artwork_suggestions.get_suggestions",
+   "methods": [
+    "GET"
+   ],
+   "path": "/api/v1/artwork/suggestions"
+  },
+  {
+   "endpoint": "apps.webui.server.routes.artwork_suggestions.post_decide",
+   "methods": [
+    "POST"
+   ],
+   "path": "/api/v1/artwork/suggestions/decide"
+  },
+  {
+   "endpoint": "apps.webui.server.routes.artwork_suggestions.get_suggestion_image",
+   "methods": [
+    "GET"
+   ],
+   "path": "/api/v1/artwork/suggestions/{stable_id}/image"
+  },
+  {
+   "endpoint": "apps.webui.server.routes.audio_quality.list_audio_quality",
+   "methods": [
+    "GET"
+   ],
+   "path": "/api/v1/audio-quality"
+  },
+  {
+   "endpoint": "apps.webui.server.routes.audio_quality.get_scan_status",
+   "methods": [
+    "GET"
+   ],
+   "path": "/api/v1/audio-quality/scan"
+  },
+  {
+   "endpoint": "apps.webui.server.routes.audio_quality.start_scan",
+   "methods": [
+    "POST"
+   ],
+   "path": "/api/v1/audio-quality/scan"
+  },
+  {
+   "endpoint": "apps.webui.server.routes.audio_quality.stop_scan",
+   "methods": [
+    "POST"
+   ],
+   "path": "/api/v1/audio-quality/scan/stop"
+  },
+  {
+   "endpoint": "apps.webui.server.routes.audio_quality.get_track_quality",
+   "methods": [
+    "GET"
+   ],
+   "path": "/api/v1/audio-quality/{stable_id}"
+  },
+  {
+   "endpoint": "apps.webui.server.routes.audio_output_health.post_acoustic_proof",
+   "methods": [
+    "POST"
+   ],
+   "path": "/api/v1/audio/acoustic-proof"
+  },
+  {
+   "endpoint": "apps.webui.server.routes.audio_output_health.get_input_devices",
+   "methods": [
+    "GET"
+   ],
+   "path": "/api/v1/audio/input-devices"
+  },
+  {
+   "endpoint": "apps.webui.server.routes.audio_output_health.get_output_health",
+   "methods": [
+    "GET"
+   ],
+   "path": "/api/v1/audio/output-health"
+  },
+  {
+   "endpoint": "apps.webui.server.routes.audio_output_health.post_reconnect_speaker",
+   "methods": [
+    "POST"
+   ],
+   "path": "/api/v1/audio/reconnect-speaker"
+  },
+  {
+   "endpoint": "apps.webui.server.routes.audio_output_health.post_switch_output",
+   "methods": [
+    "POST"
+   ],
+   "path": "/api/v1/audio/switch-output"
+  },
+  {
+   "endpoint": "apps.webui.server.routes.auth.finish_login",
+   "methods": [
+    "GET"
+   ],
+   "path": "/api/v1/auth/callback"
+  },
+  {
+   "endpoint": "apps.webui.server.routes.auth.start_login",
+   "methods": [
+    "POST"
+   ],
+   "path": "/api/v1/auth/login"
+  },
+  {
+   "endpoint": "apps.webui.server.routes.auth.logout",
+   "methods": [
+    "POST"
+   ],
+   "path": "/api/v1/auth/logout"
+  },
+  {
+   "endpoint": "apps.webui.server.routes.auth.whoami",
+   "methods": [
+    "GET"
+   ],
+   "path": "/api/v1/auth/me"
+  },
+  {
+   "endpoint": "apps.webui.server.routes.auto_gain.get_track_auto_gain",
+   "methods": [
+    "GET"
+   ],
+   "path": "/api/v1/auto-gain/tracks/{stable_id}"
+  },
+  {
+   "endpoint": "apps.webui.server.routes.auto_gain.put_track_auto_gain_user_offset",
+   "methods": [
+    "PUT"
+   ],
+   "path": "/api/v1/auto-gain/tracks/{stable_id}/user-offset"
+  },
+  {
+   "endpoint": "apps.webui.server.routes.pair_transition.delete_pair",
+   "methods": [
+    "DELETE"
+   ],
+   "path": "/api/v1/autodj/pair-transition"
+  },
+  {
+   "endpoint": "apps.webui.server.routes.pair_transition.get_pair",
+   "methods": [
+    "GET"
+   ],
+   "path": "/api/v1/autodj/pair-transition"
+  },
+  {
+   "endpoint": "apps.webui.server.routes.pair_transition.put_pair",
+   "methods": [
+    "PUT"
+   ],
+   "path": "/api/v1/autodj/pair-transition"
+  },
+  {
+   "endpoint": "apps.webui.server.routes.pair_transition.get_capture",
+   "methods": [
+    "GET"
+   ],
+   "path": "/api/v1/autodj/pair-transition/capture"
+  },
+  {
+   "endpoint": "apps.webui.server.routes.pair_transition.post_played",
+   "methods": [
+    "POST"
+   ],
+   "path": "/api/v1/autodj/pair-transition/played"
+  },
+  {
+   "endpoint": "apps.webui.server.routes.autolists.list_buckets",
+   "methods": [
+    "GET"
+   ],
+   "path": "/api/v1/autolists/buckets"
+  },
+  {
+   "endpoint": "apps.webui.server.routes.autolists.list_groups",
+   "methods": [
+    "GET"
+   ],
+   "path": "/api/v1/autolists/groups"
+  },
+  {
+   "endpoint": "apps.webui.server.routes.autolists.get_index",
+   "methods": [
+    "GET"
+   ],
+   "path": "/api/v1/autolists/index"
+  },
+  {
+   "endpoint": "apps.webui.server.routes.autolists.query_autolists",
+   "methods": [
+    "POST"
+   ],
+   "path": "/api/v1/autolists/query"
+  },
+  {
+   "endpoint": "apps.webui.server.routes.beatgrid_flags.list_beatgrid_flags",
+   "methods": [
+    "GET"
+   ],
+   "path": "/api/v1/beatgrid-flags"
+  },
+  {
+   "endpoint": "apps.webui.server.routes.beatgrid_flags.list_audio_fit",
+   "methods": [
+    "GET"
+   ],
+   "path": "/api/v1/beatgrid-flags/audio-fit"
+  },
+  {
+   "endpoint": "apps.webui.server.routes.beatgrid_flags.get_audio_fit_scan_status",
+   "methods": [
+    "GET"
+   ],
+   "path": "/api/v1/beatgrid-flags/audio-fit/scan"
+  },
+  {
+   "endpoint": "apps.webui.server.routes.beatgrid_flags.start_audio_fit_scan",
+   "methods": [
+    "POST"
+   ],
+   "path": "/api/v1/beatgrid-flags/audio-fit/scan"
+  },
+  {
+   "endpoint": "apps.webui.server.routes.beatgrid_flags.get_scan_status",
+   "methods": [
+    "GET"
+   ],
+   "path": "/api/v1/beatgrid-flags/scan"
+  },
+  {
+   "endpoint": "apps.webui.server.routes.beatgrid_flags.start_scan",
+   "methods": [
+    "POST"
+   ],
+   "path": "/api/v1/beatgrid-flags/scan"
+  },
+  {
+   "endpoint": "apps.webui.server.routes.beatgrid_flags.get_track_audio_fit",
+   "methods": [
+    "GET"
+   ],
+   "path": "/api/v1/beatgrid-flags/{stable_id}/audio-fit"
+  },
+  {
+   "endpoint": "apps.webui.server.routes.beatgrid_flags.set_flag_dismissed",
+   "methods": [
+    "PUT"
+   ],
+   "path": "/api/v1/beatgrid-flags/{stable_id}/dismissed"
+  },
+  {
+   "endpoint": "apps.webui.server.routes.bench.get_kpi_ledger",
+   "methods": [
+    "GET"
+   ],
+   "path": "/api/v1/bench/kpi"
+  },
+  {
+   "endpoint": "apps.webui.server.routes.lyrics_words.get_lyrics_kpi_ledger",
+   "methods": [
+    "GET"
+   ],
+   "path": "/api/v1/bench/lyrics-kpi"
+  },
+  {
+   "endpoint": "apps.webui.server.routes.bench.get_perf_kpi_ledger",
+   "methods": [
+    "GET"
+   ],
+   "path": "/api/v1/bench/perf-kpi"
+  },
+  {
+   "endpoint": "apps.webui.server.routes.bench.list_ratings",
+   "methods": [
+    "GET"
+   ],
+   "path": "/api/v1/bench/ratings"
+  },
+  {
+   "endpoint": "apps.webui.server.routes.bench.save_ratings",
+   "methods": [
+    "POST"
+   ],
+   "path": "/api/v1/bench/ratings"
+  },
+  {
+   "endpoint": "apps.webui.server.routes.bench.get_ratings_file",
+   "methods": [
+    "GET"
+   ],
+   "path": "/api/v1/bench/ratings/{filename}"
+  },
+  {
+   "endpoint": "apps.webui.server.routes.bulk_edit.bulk_edit",
+   "methods": [
+    "PATCH"
+   ],
+   "path": "/api/v1/bulk-edit"
+  },
+  {
+   "endpoint": "apps.webui.server.routes.client_errors.list_client_errors",
+   "methods": [
+    "GET"
+   ],
+   "path": "/api/v1/client-errors"
+  },
+  {
+   "endpoint": "apps.webui.server.routes.client_errors.capture_client_error",
+   "methods": [
+    "POST"
+   ],
+   "path": "/api/v1/client-errors"
+  },
+  {
+   "endpoint": "apps.webui.server.routes.client_errors.triage_client_error",
+   "methods": [
+    "PATCH"
+   ],
+   "path": "/api/v1/client-errors/{event_id}"
+  },
+  {
+   "endpoint": "apps.webui.server.routes.client_events.capture_client_event",
+   "methods": [
+    "POST"
+   ],
+   "path": "/api/v1/client-events"
+  },
+  {
+   "endpoint": "apps.webui.server.routes.cloudsync_config.get_config",
+   "methods": [
+    "GET"
+   ],
+   "path": "/api/v1/cloudsync/config"
+  },
+  {
+   "endpoint": "apps.webui.server.routes.cloudsync_config.put_config",
+   "methods": [
+    "PUT"
+   ],
+   "path": "/api/v1/cloudsync/config"
+  },
+  {
+   "endpoint": "apps.webui.server.routes.cloudsync_policy.get_data_classes",
+   "methods": [
+    "GET"
+   ],
+   "path": "/api/v1/cloudsync/data-classes"
+  },
+  {
+   "endpoint": "apps.webui.server.routes.cloudsync_ops.mint_enrollment_grant",
+   "methods": [
+    "POST"
+   ],
+   "path": "/api/v1/cloudsync/enrollment-grants"
+  },
+  {
+   "endpoint": "apps.webui.server.routes.cloudsync_ops.get_fleet",
+   "methods": [
+    "GET"
+   ],
+   "path": "/api/v1/cloudsync/fleet"
+  },
+  {
+   "endpoint": "apps.webui.server.routes.cloudsync_fleet.adopt_machine",
+   "methods": [
+    "POST"
+   ],
+   "path": "/api/v1/cloudsync/fleet/adopt"
+  },
+  {
+   "endpoint": "apps.webui.server.routes.cloudsync_fleet.read_credentials",
+   "methods": [
+    "GET"
+   ],
+   "path": "/api/v1/cloudsync/fleet/credentials"
+  },
+  {
+   "endpoint": "apps.webui.server.routes.cloudsync_fleet.revoke_machine",
+   "methods": [
+    "POST"
+   ],
+   "path": "/api/v1/cloudsync/fleet/revoke"
+  },
+  {
+   "endpoint": "apps.webui.server.routes.cloudsync_status.get_identity_backlog",
+   "methods": [
+    "GET"
+   ],
+   "path": "/api/v1/cloudsync/identity-backlog"
+  },
+  {
+   "endpoint": "apps.webui.server.routes.cloudsync.list_machines",
+   "methods": [
+    "GET"
+   ],
+   "path": "/api/v1/cloudsync/machines"
+  },
+  {
+   "endpoint": "apps.webui.server.routes.cloudsync.get_overview",
+   "methods": [
+    "GET"
+   ],
+   "path": "/api/v1/cloudsync/overview"
+  },
+  {
+   "endpoint": "apps.webui.server.routes.cloudsync.list_playlist_pins",
+   "methods": [
+    "GET"
+   ],
+   "path": "/api/v1/cloudsync/playlist-pins"
+  },
+  {
+   "endpoint": "apps.webui.server.routes.cloudsync.put_playlist_pin",
+   "methods": [
+    "PUT"
+   ],
+   "path": "/api/v1/cloudsync/playlist-pins"
+  },
+  {
+   "endpoint": "apps.webui.server.routes.cloudsync.list_policies",
+   "methods": [
+    "GET"
+   ],
+   "path": "/api/v1/cloudsync/policies"
+  },
+  {
+   "endpoint": "apps.webui.server.routes.cloudsync.put_policy",
+   "methods": [
+    "PUT"
+   ],
+   "path": "/api/v1/cloudsync/policies"
+  },
+  {
+   "endpoint": "apps.webui.server.routes.cloudsync_policy.apply_policies",
+   "methods": [
+    "POST"
+   ],
+   "path": "/api/v1/cloudsync/policies/apply"
+  },
+  {
+   "endpoint": "apps.webui.server.routes.cloudsync_policy.plan_policies",
+   "methods": [
+    "POST"
+   ],
+   "path": "/api/v1/cloudsync/policies/plan"
+  },
+  {
+   "endpoint": "apps.webui.server.routes.cloudsync_policy.validate_policies",
+   "methods": [
+    "POST"
+   ],
+   "path": "/api/v1/cloudsync/policies/validate"
+  },
+  {
+   "endpoint": "apps.webui.server.routes.cloudsync_policy.delete_policy",
+   "methods": [
+    "DELETE"
+   ],
+   "path": "/api/v1/cloudsync/policies/{machine_id}/{asset_kind}"
+  },
+  {
+   "endpoint": "apps.webui.server.routes.cloudsync_ops.resume_scheduler_owed",
+   "methods": [
+    "POST"
+   ],
+   "path": "/api/v1/cloudsync/scheduler/resume-owed"
+  },
+  {
+   "endpoint": "apps.webui.server.routes.cloudsync_status.get_status",
+   "methods": [
+    "GET"
+   ],
+   "path": "/api/v1/cloudsync/status"
+  },
+  {
+   "endpoint": "apps.webui.server.routes.cloudsync_ops.run_sync_round",
+   "methods": [
+    "POST"
+   ],
+   "path": "/api/v1/cloudsync/sync"
+  },
+  {
+   "endpoint": "apps.webui.server.routes.cmdk_ai.ai_search",
+   "methods": [
+    "POST"
+   ],
+   "path": "/api/v1/cmdk/ai-search"
+  },
+  {
+   "endpoint": "apps.webui.server.routes.cmdk_ai.ai_status",
+   "methods": [
+    "GET"
+   ],
+   "path": "/api/v1/cmdk/ai-status"
+  },
+  {
+   "endpoint": "apps.webui.server.routes.commands.post_command",
+   "methods": [
+    "POST"
+   ],
+   "path": "/api/v1/commands"
+  },
+  {
+   "endpoint": "apps.webui.server.routes.commands.next_command",
+   "methods": [
+    "GET"
+   ],
+   "path": "/api/v1/commands/next"
+  },
+  {
+   "endpoint": "apps.webui.server.routes.commands.complete_command",
+   "methods": [
+    "POST"
+   ],
+   "path": "/api/v1/commands/{order_id}/result"
+  },
+  {
+   "endpoint": "apps.webui.server.routes.copilot.peak_pressure_route",
+   "methods": [
+    "POST"
+   ],
+   "path": "/api/v1/copilot/peak-pressure"
+  },
+  {
+   "endpoint": "apps.webui.server.routes.copilot.suggest_next_route",
+   "methods": [
+    "POST"
+   ],
+   "path": "/api/v1/copilot/suggest-next"
+  },
+  {
+   "endpoint": "apps.webui.server.routes.coverage_drain.drain_config",
+   "methods": [
+    "PUT"
+   ],
+   "path": "/api/v1/coverage-drain/config"
+  },
+  {
+   "endpoint": "apps.webui.server.routes.coverage_drain.drain_retry",
+   "methods": [
+    "POST"
+   ],
+   "path": "/api/v1/coverage-drain/retry"
+  },
+  {
+   "endpoint": "apps.webui.server.routes.coverage_drain.drain_start",
+   "methods": [
+    "POST"
+   ],
+   "path": "/api/v1/coverage-drain/start"
+  },
+  {
+   "endpoint": "apps.webui.server.routes.coverage_drain.drain_status",
+   "methods": [
+    "GET"
+   ],
+   "path": "/api/v1/coverage-drain/status"
+  },
+  {
+   "endpoint": "apps.webui.server.routes.coverage_drain.drain_stop",
+   "methods": [
+    "POST"
+   ],
+   "path": "/api/v1/coverage-drain/stop"
+  },
+  {
+   "endpoint": "apps.webui.server.routes.coverage_terminal.list_stems_no_source",
+   "methods": [
+    "GET"
+   ],
+   "path": "/api/v1/coverage-outcomes/stems/no-source"
+  },
+  {
+   "endpoint": "apps.webui.server.routes.coverage_terminal.mark_stems_no_source",
+   "methods": [
+    "POST"
+   ],
+   "path": "/api/v1/coverage-outcomes/stems/no-source"
+  },
+  {
+   "endpoint": "apps.webui.server.routes.coverage_terminal.clear_stems_no_source",
+   "methods": [
+    "DELETE"
+   ],
+   "path": "/api/v1/coverage-outcomes/stems/no-source/{stable_id}"
+  },
+  {
+   "endpoint": "apps.webui.server.routes.dedup_review.get_dedup_clusters",
+   "methods": [
+    "GET"
+   ],
+   "path": "/api/v1/dedup/clusters"
+  },
+  {
+   "endpoint": "apps.webui.server.routes.dedup_review.post_dedup_apply",
+   "methods": [
+    "POST"
+   ],
+   "path": "/api/v1/dedup/clusters/{cluster_id}/apply"
+  },
+  {
+   "endpoint": "apps.webui.server.routes.dedup_review.post_dedup_decision",
+   "methods": [
+    "POST"
+   ],
+   "path": "/api/v1/dedup/clusters/{cluster_id}/decision"
+  },
+  {
+   "endpoint": "apps.webui.server.routes.dedup_review.post_dedup_undo",
+   "methods": [
+    "POST"
+   ],
+   "path": "/api/v1/dedup/clusters/{cluster_id}/undo"
+  },
+  {
+   "endpoint": "apps.webui.server.routes.dedup_review.get_dedup_scan",
+   "methods": [
+    "GET"
+   ],
+   "path": "/api/v1/dedup/scan"
+  },
+  {
+   "endpoint": "apps.webui.server.routes.dedup_review.post_dedup_scan",
+   "methods": [
+    "POST"
+   ],
+   "path": "/api/v1/dedup/scan"
+  },
+  {
+   "endpoint": "apps.webui.server.routes.dj_transition.autoplay_decision",
+   "methods": [
+    "GET"
+   ],
+   "path": "/api/v1/dj/transition/autoplay-decision"
+  },
+  {
+   "endpoint": "apps.webui.server.routes.dj_transition.decide_transition",
+   "methods": [
+    "POST"
+   ],
+   "path": "/api/v1/dj/transition/decide"
+  },
+  {
+   "endpoint": "apps.webui.server.routes.dj_transition.plan_transition",
+   "methods": [
+    "POST"
+   ],
+   "path": "/api/v1/dj/transition/plan"
+  },
+  {
+   "endpoint": "apps.webui.server.routes.dj_transition.prepare_transition",
+   "methods": [
+    "POST"
+   ],
+   "path": "/api/v1/dj/transition/prepare"
+  },
+  {
+   "endpoint": "apps.webui.server.routes.dj_transitions_record.get_last",
+   "methods": [
+    "GET"
+   ],
+   "path": "/api/v1/dj/transitions/last"
+  },
+  {
+   "endpoint": "apps.webui.server.routes.dj_transitions_record.post_verdict",
+   "methods": [
+    "POST"
+   ],
+   "path": "/api/v1/dj/transitions/verdict"
+  },
+  {
+   "endpoint": "apps.webui.server.routes.dj_try.start_try",
+   "methods": [
+    "POST"
+   ],
+   "path": "/api/v1/dj/try"
+  },
+  {
+   "endpoint": "apps.webui.server.routes.dj_try.get_try",
+   "methods": [
+    "GET"
+   ],
+   "path": "/api/v1/dj/try/{job_id}"
+  },
+  {
+   "endpoint": "apps.webui.server.routes.dj_try.candidate_audio",
+   "methods": [
+    "GET"
+   ],
+   "path": "/api/v1/dj/try/{job_id}/candidates/{candidate_id}/audio"
+  },
+  {
+   "endpoint": "apps.webui.server.routes.dj_try.candidate_lanes",
+   "methods": [
+    "GET"
+   ],
+   "path": "/api/v1/dj/try/{job_id}/candidates/{candidate_id}/lanes"
+  },
+  {
+   "endpoint": "apps.webui.server.routes.dj_try.undo_pick",
+   "methods": [
+    "DELETE"
+   ],
+   "path": "/api/v1/dj/try/{job_id}/pick"
+  },
+  {
+   "endpoint": "apps.webui.server.routes.dj_try.pick_candidate",
+   "methods": [
+    "POST"
+   ],
+   "path": "/api/v1/dj/try/{job_id}/pick"
+  },
+  {
+   "endpoint": "apps.webui.server.routes.energy.backfill_collect",
+   "methods": [
+    "POST"
+   ],
+   "path": "/api/v1/energy/backfill/collect"
+  },
+  {
+   "endpoint": "apps.webui.server.routes.energy.backfill_plan",
+   "methods": [
+    "POST"
+   ],
+   "path": "/api/v1/energy/backfill/plan"
+  },
+  {
+   "endpoint": "apps.webui.server.routes.energy.backfill_share_route",
+   "methods": [
+    "POST"
+   ],
+   "path": "/api/v1/energy/backfill/share"
+  },
+  {
+   "endpoint": "apps.webui.server.routes.energy.backfill_stage",
+   "methods": [
+    "POST"
+   ],
+   "path": "/api/v1/energy/backfill/stage"
+  },
+  {
+   "endpoint": "apps.webui.server.routes.energy.energy_status",
+   "methods": [
+    "GET"
+   ],
+   "path": "/api/v1/energy/status"
+  },
+  {
+   "endpoint": "apps.webui.server.routes.enrich.put_decision",
+   "methods": [
+    "PUT"
+   ],
+   "path": "/api/v1/enrich/decisions/{lane}"
+  },
+  {
+   "endpoint": "apps.webui.server.routes.enrich.get_summary",
+   "methods": [
+    "GET"
+   ],
+   "path": "/api/v1/enrich/summary"
+  },
+  {
+   "endpoint": "apps.webui.server.routes.error_feed.list_errors",
+   "methods": [
+    "GET"
+   ],
+   "path": "/api/v1/errors"
+  },
+  {
+   "endpoint": "apps.webui.server.routes.feedback.archive_feedback",
+   "methods": [
+    "POST"
+   ],
+   "path": "/api/v1/feedback/archive"
+  },
+  {
+   "endpoint": "apps.webui.server.routes.feedback_attachments.get_attachment",
+   "methods": [
+    "GET"
+   ],
+   "path": "/api/v1/feedback/attachments/{attachment_id}"
+  },
+  {
+   "endpoint": "apps.webui.server.routes.feedback.list_comments",
+   "methods": [
+    "GET"
+   ],
+   "path": "/api/v1/feedback/comments"
+  },
+  {
+   "endpoint": "apps.webui.server.routes.feedback.create_comment",
+   "methods": [
+    "POST"
+   ],
+   "path": "/api/v1/feedback/comments"
+  },
+  {
+   "endpoint": "apps.webui.server.routes.feedback_summary.comments_summary",
+   "methods": [
+    "GET"
+   ],
+   "path": "/api/v1/feedback/comments/summary"
+  },
+  {
+   "endpoint": "apps.webui.server.routes.feedback_pins.update_comment",
+   "methods": [
+    "PATCH"
+   ],
+   "path": "/api/v1/feedback/comments/{comment_id}"
+  },
+  {
+   "endpoint": "apps.webui.server.routes.feedback_pins.archive_comment",
+   "methods": [
+    "POST"
+   ],
+   "path": "/api/v1/feedback/comments/{comment_id}/archive"
+  },
+  {
+   "endpoint": "apps.webui.server.routes.feedback_attachments.upload_attachment",
+   "methods": [
+    "POST"
+   ],
+   "path": "/api/v1/feedback/comments/{comment_id}/attachment"
+  },
+  {
+   "endpoint": "apps.webui.server.routes.feedback_pins.follow_on_comment",
+   "methods": [
+    "POST"
+   ],
+   "path": "/api/v1/feedback/comments/{comment_id}/follow-on"
+  },
+  {
+   "endpoint": "apps.webui.server.routes.feedback_replies.add_reply",
+   "methods": [
+    "POST"
+   ],
+   "path": "/api/v1/feedback/comments/{comment_id}/replies"
+  },
+  {
+   "endpoint": "apps.webui.server.routes.feedback.get_general",
+   "methods": [
+    "GET"
+   ],
+   "path": "/api/v1/feedback/general"
+  },
+  {
+   "endpoint": "apps.webui.server.routes.feedback.put_general",
+   "methods": [
+    "PUT"
+   ],
+   "path": "/api/v1/feedback/general"
+  },
+  {
+   "endpoint": "apps.webui.server.routes.feedback_performance_marks.get_performance_marks",
+   "methods": [
+    "GET"
+   ],
+   "path": "/api/v1/feedback/performance-marks"
+  },
+  {
+   "endpoint": "apps.webui.server.routes.feedback_performance_marks.create_performance_mark",
+   "methods": [
+    "POST"
+   ],
+   "path": "/api/v1/feedback/performance-marks"
+  },
+  {
+   "endpoint": "apps.webui.server.routes.feedback_sync.post_feedback_sync",
+   "methods": [
+    "POST"
+   ],
+   "path": "/api/v1/feedback/sync"
+  },
+  {
+   "endpoint": "apps.webui.server.routes.feedback_sync.get_feedback_sync_status",
+   "methods": [
+    "GET"
+   ],
+   "path": "/api/v1/feedback/sync/status"
+  },
+  {
+   "endpoint": "apps.webui.server.routes.feedback.list_todos",
+   "methods": [
+    "GET"
+   ],
+   "path": "/api/v1/feedback/todos"
+  },
+  {
+   "endpoint": "apps.webui.server.routes.feedback.create_todo",
+   "methods": [
+    "POST"
+   ],
+   "path": "/api/v1/feedback/todos"
+  },
+  {
+   "endpoint": "apps.webui.server.routes.feedback.patch_todo",
+   "methods": [
+    "PATCH"
+   ],
+   "path": "/api/v1/feedback/todos/{todo_id}"
+  },
+  {
+   "endpoint": "apps.webui.server.routes.find_replace.apply",
+   "methods": [
+    "POST"
+   ],
+   "path": "/api/v1/find-replace/apply"
+  },
+  {
+   "endpoint": "apps.webui.server.routes.find_replace.preview",
+   "methods": [
+    "POST"
+   ],
+   "path": "/api/v1/find-replace/preview"
+  },
+  {
+   "endpoint": "apps.feature_flags.http.read_flags",
+   "methods": [
+    "GET"
+   ],
+   "path": "/api/v1/flags"
+  },
+  {
+   "endpoint": "apps.webui.server.routes.genres.get_genres",
+   "methods": [
+    "GET"
+   ],
+   "path": "/api/v1/genres"
+  },
+  {
+   "endpoint": "apps.webui.server.routes.genres.get_config",
+   "methods": [
+    "GET"
+   ],
+   "path": "/api/v1/genres/config"
+  },
+  {
+   "endpoint": "apps.webui.server.routes.genres.put_config",
+   "methods": [
+    "PUT"
+   ],
+   "path": "/api/v1/genres/config"
+  },
+  {
+   "endpoint": "apps.webui.server.routes.genres.enqueue",
+   "methods": [
+    "POST"
+   ],
+   "path": "/api/v1/genres/enqueue"
+  },
+  {
+   "endpoint": "apps.webui.server.routes.genres.attach_finding",
+   "methods": [
+    "POST"
+   ],
+   "path": "/api/v1/genres/findings"
+  },
+  {
+   "endpoint": "apps.webui.server.routes.genres.remove_finding",
+   "methods": [
+    "DELETE"
+   ],
+   "path": "/api/v1/genres/findings/{stable_id}/{provider}"
+  },
+  {
+   "endpoint": "apps.webui.server.routes.genres.infer_now",
+   "methods": [
+    "POST"
+   ],
+   "path": "/api/v1/genres/infer"
+  },
+  {
+   "endpoint": "apps.webui.server.routes.genres.put_key",
+   "methods": [
+    "PUT"
+   ],
+   "path": "/api/v1/genres/keys/{name}"
+  },
+  {
+   "endpoint": "apps.webui.server.routes.genres.genre_status",
+   "methods": [
+    "GET"
+   ],
+   "path": "/api/v1/genres/status"
+  },
+  {
+   "endpoint": "apps.webui.server.routes.genres.tag_journal",
+   "methods": [
+    "GET"
+   ],
+   "path": "/api/v1/genres/tags/journal"
+  },
+  {
+   "endpoint": "apps.webui.server.routes.genres.undo_tag",
+   "methods": [
+    "POST"
+   ],
+   "path": "/api/v1/genres/tags/undo"
+  },
+  {
+   "endpoint": "apps.webui.server.routes.genres.write_tag",
+   "methods": [
+    "POST"
+   ],
+   "path": "/api/v1/genres/tags/write"
+  },
+  {
+   "endpoint": "apps.webui.server.routes.genres.similar",
+   "methods": [
+    "GET"
+   ],
+   "path": "/api/v1/genres/{stable_id}/similar"
+  },
+  {
+   "endpoint": "apps.webui.server.routes.grid_phase_precompute.get_status",
+   "methods": [
+    "GET"
+   ],
+   "path": "/api/v1/grid-phase-precompute"
+  },
+  {
+   "endpoint": "apps.webui.server.routes.track_handoff.list_handoff_apps",
+   "methods": [
+    "GET"
+   ],
+   "path": "/api/v1/handoff/apps"
+  },
+  {
+   "endpoint": "apps.webui.server.routes.health.health",
+   "methods": [
+    "GET"
+   ],
+   "path": "/api/v1/health"
+  },
+  {
+   "endpoint": "apps.webui.server.routes.ingest_materialize.materialize_batch",
+   "methods": [
+    "POST"
+   ],
+   "path": "/api/v1/ingest/batch/{batch}/materialize"
+  },
+  {
+   "endpoint": "apps.webui.server.routes.ingest.get_config",
+   "methods": [
+    "GET"
+   ],
+   "path": "/api/v1/ingest/config"
+  },
+  {
+   "endpoint": "apps.webui.server.routes.ingest.put_config",
+   "methods": [
+    "PUT"
+   ],
+   "path": "/api/v1/ingest/config"
+  },
+  {
+   "endpoint": "apps.webui.server.routes.ingest.get_coverage",
+   "methods": [
+    "GET"
+   ],
+   "path": "/api/v1/ingest/coverage"
+  },
+  {
+   "endpoint": "apps.webui.server.routes.ingest_enrichment.get_enrichment",
+   "methods": [
+    "GET"
+   ],
+   "path": "/api/v1/ingest/enrichment"
+  },
+  {
+   "endpoint": "apps.webui.server.routes.ingest_enrichment.post_rerun",
+   "methods": [
+    "POST"
+   ],
+   "path": "/api/v1/ingest/enrichment/rerun"
+  },
+  {
+   "endpoint": "apps.webui.server.routes.ingest_enrichment.get_batch",
+   "methods": [
+    "GET"
+   ],
+   "path": "/api/v1/ingest/enrichment/{batch_id}"
+  },
+  {
+   "endpoint": "apps.webui.server.routes.ingest_pending.list_pending",
+   "methods": [
+    "GET"
+   ],
+   "path": "/api/v1/ingest/pending"
+  },
+  {
+   "endpoint": "apps.webui.server.routes.ingest_pending.confirm_pending",
+   "methods": [
+    "POST"
+   ],
+   "path": "/api/v1/ingest/pending/{batch}/confirm"
+  },
+  {
+   "endpoint": "apps.webui.server.routes.ingest.start_refresh",
+   "methods": [
+    "POST"
+   ],
+   "path": "/api/v1/ingest/refresh"
+  },
+  {
+   "endpoint": "apps.webui.server.routes.ingest.refresh_status",
+   "methods": [
+    "GET"
+   ],
+   "path": "/api/v1/ingest/refresh/status"
+  },
+  {
+   "endpoint": "apps.webui.server.routes.ingest_upload.upload",
+   "methods": [
+    "POST"
+   ],
+   "path": "/api/v1/ingest/upload"
+  },
+  {
+   "endpoint": "apps.webui.server.routes.ingest_upload.decide_upload",
+   "methods": [
+    "POST"
+   ],
+   "path": "/api/v1/ingest/upload/decide"
+  },
+  {
+   "endpoint": "apps.webui.server.routes.library_jobs.list_library_jobs",
+   "methods": [
+    "GET"
+   ],
+   "path": "/api/v1/library-jobs"
+  },
+  {
+   "endpoint": "apps.webui.server.routes.library_jobs.enqueue_library_jobs",
+   "methods": [
+    "POST"
+   ],
+   "path": "/api/v1/library-jobs/enqueue"
+  },
+  {
+   "endpoint": "apps.webui.server.routes.library_jobs.reorder_library_job",
+   "methods": [
+    "PATCH"
+   ],
+   "path": "/api/v1/library-jobs/{lane}/{stable_id}"
+  },
+  {
+   "endpoint": "apps.webui.server.routes.library_jobs.cancel_library_job",
+   "methods": [
+    "POST"
+   ],
+   "path": "/api/v1/library-jobs/{lane}/{stable_id}/cancel"
+  },
+  {
+   "endpoint": "apps.webui.server.routes.library.post_preview_strips",
+   "methods": [
+    "POST"
+   ],
+   "path": "/api/v1/library/preview-strips"
+  },
+  {
+   "endpoint": "apps.webui.server.routes.library.get_library_readiness",
+   "methods": [
+    "GET"
+   ],
+   "path": "/api/v1/library/readiness"
+  },
+  {
+   "endpoint": "apps.webui.server.routes.library.post_row_assets",
+   "methods": [
+    "POST"
+   ],
+   "path": "/api/v1/library/row-assets"
+  },
+  {
+   "endpoint": "apps.webui.server.routes.library.reanchor_share_root",
+   "methods": [
+    "POST"
+   ],
+   "path": "/api/v1/library/share-root/reanchor"
+  },
+  {
+   "endpoint": "apps.webui.server.routes.library.get_library_wheel",
+   "methods": [
+    "GET"
+   ],
+   "path": "/api/v1/library/wheel"
+  },
+  {
+   "endpoint": "apps.webui.server.routes.library.get_library_wheel_axes",
+   "methods": [
+    "GET"
+   ],
+   "path": "/api/v1/library/wheel/axes"
+  },
+  {
+   "endpoint": "apps.webui.server.routes.lifecycle.request_shell_quit",
+   "methods": [
+    "POST"
+   ],
+   "path": "/api/v1/lifecycle/quit"
+  },
+  {
+   "endpoint": "apps.webui.server.routes.lyrics_words.list_lyric_verdicts",
+   "methods": [
+    "GET"
+   ],
+   "path": "/api/v1/lyrics"
+  },
+  {
+   "endpoint": "apps.webui.server.routes.lyrics_words.get_lyrics_config",
+   "methods": [
+    "GET"
+   ],
+   "path": "/api/v1/lyrics/config"
+  },
+  {
+   "endpoint": "apps.webui.server.routes.lyrics_words.put_lyrics_config",
+   "methods": [
+    "PUT"
+   ],
+   "path": "/api/v1/lyrics/config"
+  },
+  {
+   "endpoint": "apps.webui.server.routes.lyrics_words.get_lyric_jobs",
+   "methods": [
+    "GET"
+   ],
+   "path": "/api/v1/lyrics/jobs"
+  },
+  {
+   "endpoint": "apps.webui.server.routes.lyrics_words.post_lyric_job",
+   "methods": [
+    "POST"
+   ],
+   "path": "/api/v1/lyrics/jobs"
+  },
+  {
+   "endpoint": "apps.webui.server.routes.lyrics_words.post_lyrics_purge",
+   "methods": [
+    "POST"
+   ],
+   "path": "/api/v1/lyrics/purge"
+  },
+  {
+   "endpoint": "apps.webui.server.routes.lyrics_search.search_lyrics",
+   "methods": [
+    "GET"
+   ],
+   "path": "/api/v1/lyrics/search"
+  },
+  {
+   "endpoint": "apps.webui.server.routes.lyrics_words.get_lyrics_summary",
+   "methods": [
+    "GET"
+   ],
+   "path": "/api/v1/lyrics/summary"
+  },
+  {
+   "endpoint": "apps.webui.server.routes.lyrics_words.post_lyrics_verdicts_backfill",
+   "methods": [
+    "POST"
+   ],
+   "path": "/api/v1/lyrics/verdicts/backfill"
+  },
+  {
+   "endpoint": "apps.webui.server.routes.midi_maps.search_midi_catalog",
+   "methods": [
+    "GET"
+   ],
+   "path": "/api/v1/midi/catalog"
+  },
+  {
+   "endpoint": "apps.webui.server.routes.midi_maps.list_midi_maps",
+   "methods": [
+    "GET"
+   ],
+   "path": "/api/v1/midi/maps"
+  },
+  {
+   "endpoint": "apps.webui.server.routes.midi_maps.delete_midi_map",
+   "methods": [
+    "DELETE"
+   ],
+   "path": "/api/v1/midi/maps/{map_id}"
+  },
+  {
+   "endpoint": "apps.webui.server.routes.midi_maps.get_midi_map",
+   "methods": [
+    "GET"
+   ],
+   "path": "/api/v1/midi/maps/{map_id}"
+  },
+  {
+   "endpoint": "apps.webui.server.routes.midi_maps.put_midi_map",
+   "methods": [
+    "PUT"
+   ],
+   "path": "/api/v1/midi/maps/{map_id}"
+  },
+  {
+   "endpoint": "apps.webui.server.routes.mytag.list_mytags",
+   "methods": [
+    "GET"
+   ],
+   "path": "/api/v1/mytags"
+  },
+  {
+   "endpoint": "apps.webui.server.routes.library_org.create_tag",
+   "methods": [
+    "POST"
+   ],
+   "path": "/api/v1/mytags"
+  },
+  {
+   "endpoint": "apps.webui.server.routes.mytag.assign_mytags",
+   "methods": [
+    "POST"
+   ],
+   "path": "/api/v1/mytags/assign"
+  },
+  {
+   "endpoint": "apps.webui.server.routes.library_org.tag_assignments",
+   "methods": [
+    "GET"
+   ],
+   "path": "/api/v1/mytags/assignments"
+  },
+  {
+   "endpoint": "apps.webui.server.routes.library_org.assign_tags",
+   "methods": [
+    "POST"
+   ],
+   "path": "/api/v1/mytags/assignments"
+  },
+  {
+   "endpoint": "apps.webui.server.routes.library_org.tag_catalog",
+   "methods": [
+    "GET"
+   ],
+   "path": "/api/v1/mytags/catalog"
+  },
+  {
+   "endpoint": "apps.webui.server.routes.mytag.delete_mytag",
+   "methods": [
+    "POST"
+   ],
+   "path": "/api/v1/mytags/delete"
+  },
+  {
+   "endpoint": "apps.webui.server.routes.mytag.rename_mytag",
+   "methods": [
+    "POST"
+   ],
+   "path": "/api/v1/mytags/rename"
+  },
+  {
+   "endpoint": "apps.webui.server.routes.library_org.suggest_tags",
+   "methods": [
+    "GET"
+   ],
+   "path": "/api/v1/mytags/suggest"
+  },
+  {
+   "endpoint": "apps.webui.server.routes.library_org.delete_tag",
+   "methods": [
+    "DELETE"
+   ],
+   "path": "/api/v1/mytags/{name:path}"
+  },
+  {
+   "endpoint": "apps.webui.server.routes.library_org.patch_tag",
+   "methods": [
+    "PATCH"
+   ],
+   "path": "/api/v1/mytags/{name:path}"
+  },
+  {
+   "endpoint": "apps.webui.server.routes.cloud_offload.list_operations",
+   "methods": [
+    "GET"
+   ],
+   "path": "/api/v1/offload/operations"
+  },
+  {
+   "endpoint": "apps.webui.server.routes.cloud_offload.get_operation",
+   "methods": [
+    "GET"
+   ],
+   "path": "/api/v1/offload/operations/{op_id}"
+  },
+  {
+   "endpoint": "apps.webui.server.routes.cloud_offload.cancel_operation",
+   "methods": [
+    "POST"
+   ],
+   "path": "/api/v1/offload/operations/{op_id}/cancel"
+  },
+  {
+   "endpoint": "apps.webui.server.routes.cloud_offload.offload_playlist",
+   "methods": [
+    "POST"
+   ],
+   "path": "/api/v1/offload/playlists/{playlist_id}"
+  },
+  {
+   "endpoint": "apps.webui.server.routes.cloud_offload.restore_playlist",
+   "methods": [
+    "POST"
+   ],
+   "path": "/api/v1/offload/playlists/{playlist_id}/restore"
+  },
+  {
+   "endpoint": "apps.webui.server.routes.cloud_offload.restore_tracks",
+   "methods": [
+    "POST"
+   ],
+   "path": "/api/v1/offload/restore"
+  },
+  {
+   "endpoint": "apps.webui.server.routes.cloud_offload.get_summary",
+   "methods": [
+    "GET"
+   ],
+   "path": "/api/v1/offload/summary"
+  },
+  {
+   "endpoint": "apps.webui.server.routes.cloud_offload.run_sweep",
+   "methods": [
+    "POST"
+   ],
+   "path": "/api/v1/offload/sweep"
+  },
+  {
+   "endpoint": "apps.webui.server.routes.cloud_offload.track_states",
+   "methods": [
+    "GET"
+   ],
+   "path": "/api/v1/offload/tracks"
+  },
+  {
+   "endpoint": "apps.webui.server.routes.cloud_offload.offload_tracks",
+   "methods": [
+    "POST"
+   ],
+   "path": "/api/v1/offload/tracks"
+  },
+  {
+   "endpoint": "apps.webui.server.routes.pairings.list_pairings",
+   "methods": [
+    "GET"
+   ],
+   "path": "/api/v1/pairings"
+  },
+  {
+   "endpoint": "apps.webui.server.routes.pairings.create_pairing",
+   "methods": [
+    "POST"
+   ],
+   "path": "/api/v1/pairings"
+  },
+  {
+   "endpoint": "apps.webui.server.routes.pairing_capture.list_alignments",
+   "methods": [
+    "GET"
+   ],
+   "path": "/api/v1/pairings/alignments"
+  },
+  {
+   "endpoint": "apps.webui.server.routes.pairing_capture.create_alignment",
+   "methods": [
+    "POST"
+   ],
+   "path": "/api/v1/pairings/alignments"
+  },
+  {
+   "endpoint": "apps.webui.server.routes.pairing_capture.list_sync_snapshots",
+   "methods": [
+    "GET"
+   ],
+   "path": "/api/v1/pairings/sync-snapshots"
+  },
+  {
+   "endpoint": "apps.webui.server.routes.pairing_capture.create_sync_snapshot",
+   "methods": [
+    "POST"
+   ],
+   "path": "/api/v1/pairings/sync-snapshots"
+  },
+  {
+   "endpoint": "apps.webui.server.routes.pairings.delete_pairing",
+   "methods": [
+    "DELETE"
+   ],
+   "path": "/api/v1/pairings/{pairing_id}"
+  },
+  {
+   "endpoint": "apps.webui.server.routes.performance_headphones.get_headphones",
+   "methods": [
+    "GET"
+   ],
+   "path": "/api/v1/performance/headphones"
+  },
+  {
+   "endpoint": "apps.webui.server.routes.performance_headphones.post_headphone_alignment_mode",
+   "methods": [
+    "POST"
+   ],
+   "path": "/api/v1/performance/headphones/alignment-mode"
+  },
+  {
+   "endpoint": "apps.webui.server.routes.performance_headphones.post_headphone_calibrate",
+   "methods": [
+    "POST"
+   ],
+   "path": "/api/v1/performance/headphones/calibrate"
+  },
+  {
+   "endpoint": "apps.webui.server.routes.performance_headphones.post_headphone_calibrate_abort",
+   "methods": [
+    "POST"
+   ],
+   "path": "/api/v1/performance/headphones/calibrate/abort"
+  },
+  {
+   "endpoint": "apps.webui.server.routes.performance_headphones.post_channel_cue",
+   "methods": [
+    "POST"
+   ],
+   "path": "/api/v1/performance/headphones/channel-cue"
+  },
+  {
+   "endpoint": "apps.webui.server.routes.performance_headphones.post_head_delay_ms",
+   "methods": [
+    "POST"
+   ],
+   "path": "/api/v1/performance/headphones/head-delay"
+  },
+  {
+   "endpoint": "apps.webui.server.routes.performance_headphones.post_headphone_input_select",
+   "methods": [
+    "POST"
+   ],
+   "path": "/api/v1/performance/headphones/inputs/select"
+  },
+  {
+   "endpoint": "apps.webui.server.routes.performance_headphones.post_headphone_level",
+   "methods": [
+    "POST"
+   ],
+   "path": "/api/v1/performance/headphones/level"
+  },
+  {
+   "endpoint": "apps.webui.server.routes.performance_headphones.post_master_delay_ms",
+   "methods": [
+    "POST"
+   ],
+   "path": "/api/v1/performance/headphones/master-delay"
+  },
+  {
+   "endpoint": "apps.webui.server.routes.performance_headphones.post_headphone_mix",
+   "methods": [
+    "POST"
+   ],
+   "path": "/api/v1/performance/headphones/mix"
+  },
+  {
+   "endpoint": "apps.webui.server.routes.performance_headphones.post_output_mode",
+   "methods": [
+    "POST"
+   ],
+   "path": "/api/v1/performance/headphones/output-mode"
+  },
+  {
+   "endpoint": "apps.webui.server.routes.performance_headphones.post_headphone_master_select",
+   "methods": [
+    "POST"
+   ],
+   "path": "/api/v1/performance/headphones/outputs/master"
+  },
+  {
+   "endpoint": "apps.webui.server.routes.performance_headphones.post_headphone_outputs_refresh",
+   "methods": [
+    "POST"
+   ],
+   "path": "/api/v1/performance/headphones/outputs/refresh"
+  },
+  {
+   "endpoint": "apps.webui.server.routes.performance_headphones.post_headphone_output_select",
+   "methods": [
+    "POST"
+   ],
+   "path": "/api/v1/performance/headphones/outputs/select"
+  },
+  {
+   "endpoint": "apps.webui.server.routes.performance_headphones.post_preview_cue",
+   "methods": [
+    "POST"
+   ],
+   "path": "/api/v1/performance/headphones/preview"
+  },
+  {
+   "endpoint": "apps.webui.server.routes.performance_headphones.post_preview_stop",
+   "methods": [
+    "POST"
+   ],
+   "path": "/api/v1/performance/headphones/preview/stop"
+  },
+  {
+   "endpoint": "apps.webui.server.routes.performance_remote_speaker.get_link",
+   "methods": [
+    "GET"
+   ],
+   "path": "/api/v1/performance/remote-speaker/link"
+  },
+  {
+   "endpoint": "apps.webui.server.routes.performance_remote_speaker.post_link",
+   "methods": [
+    "POST"
+   ],
+   "path": "/api/v1/performance/remote-speaker/link"
+  },
+  {
+   "endpoint": "apps.webui.server.routes.performance_remote_speaker.post_link_offer",
+   "methods": [
+    "POST"
+   ],
+   "path": "/api/v1/performance/remote-speaker/link/offer"
+  },
+  {
+   "endpoint": "apps.webui.server.routes.performance_remote_speaker.post_link_report",
+   "methods": [
+    "POST"
+   ],
+   "path": "/api/v1/performance/remote-speaker/link/report"
+  },
+  {
+   "endpoint": "apps.webui.server.routes.performance_remote_speaker.get_speaker",
+   "methods": [
+    "GET"
+   ],
+   "path": "/api/v1/performance/remote-speaker/speaker"
+  },
+  {
+   "endpoint": "apps.webui.server.routes.performance_remote_speaker.post_speaker_report",
+   "methods": [
+    "POST"
+   ],
+   "path": "/api/v1/performance/remote-speaker/speaker/report"
+  },
+  {
+   "endpoint": "apps.webui.server.routes.performance_remote_speaker.post_speaker_start",
+   "methods": [
+    "POST"
+   ],
+   "path": "/api/v1/performance/remote-speaker/speaker/start"
+  },
+  {
+   "endpoint": "apps.webui.server.routes.performance_remote_speaker.post_speaker_stop",
+   "methods": [
+    "POST"
+   ],
+   "path": "/api/v1/performance/remote-speaker/speaker/stop"
+  },
+  {
+   "endpoint": "apps.webui.server.routes.performance_remote_speaker.post_unlink",
+   "methods": [
+    "POST"
+   ],
+   "path": "/api/v1/performance/remote-speaker/unlink"
+  },
+  {
+   "endpoint": "apps.webui.server.routes.rescue_snapshots.post_rescue_snapshot",
+   "methods": [
+    "POST"
+   ],
+   "path": "/api/v1/performance/rescue-snapshots"
+  },
+  {
+   "endpoint": "apps.webui.server.routes.rescue_snapshots.get_rescue_snapshot_index",
+   "methods": [
+    "GET"
+   ],
+   "path": "/api/v1/performance/rescue-snapshots/index"
+  },
+  {
+   "endpoint": "apps.webui.server.routes.rescue_snapshots.get_latest_rescue_snapshot",
+   "methods": [
+    "GET"
+   ],
+   "path": "/api/v1/performance/rescue-snapshots/latest"
+  },
+  {
+   "endpoint": "apps.webui.server.routes.performance_telemetry.latest_client_performance_sample",
+   "methods": [
+    "GET"
+   ],
+   "path": "/api/v1/performance/telemetry/client-samples"
+  },
+  {
+   "endpoint": "apps.webui.server.routes.performance_telemetry.capture_client_performance",
+   "methods": [
+    "POST"
+   ],
+   "path": "/api/v1/performance/telemetry/client-samples"
+  },
+  {
+   "endpoint": "apps.webui.server.routes.performance_telemetry.machine_pressure",
+   "methods": [
+    "GET"
+   ],
+   "path": "/api/v1/performance/telemetry/pressure"
+  },
+  {
+   "endpoint": "apps.webui.server.routes.performance_telemetry.latest_process_telemetry",
+   "methods": [
+    "GET"
+   ],
+   "path": "/api/v1/performance/telemetry/processes"
+  },
+  {
+   "endpoint": "apps.webui.server.routes.play_it.solve_play_it",
+   "methods": [
+    "POST"
+   ],
+   "path": "/api/v1/play-it/{playlist_id}/solve"
+  },
+  {
+   "endpoint": "apps.webui.server.routes.playlist_history.get_playlist_history",
+   "methods": [
+    "GET"
+   ],
+   "path": "/api/v1/playlist-history"
+  },
+  {
+   "endpoint": "apps.webui.server.routes.playlist_history.jump_playlist_history",
+   "methods": [
+    "POST"
+   ],
+   "path": "/api/v1/playlist-history/jump"
+  },
+  {
+   "endpoint": "apps.webui.server.routes.playlist_history.redo_playlist_edit",
+   "methods": [
+    "POST"
+   ],
+   "path": "/api/v1/playlist-history/redo"
+  },
+  {
+   "endpoint": "apps.webui.server.routes.playlist_history.undo_playlist_edit",
+   "methods": [
+    "POST"
+   ],
+   "path": "/api/v1/playlist-history/undo"
+  },
+  {
+   "endpoint": "apps.webui.server.routes.playlist_tree.get_playlist_tree_order",
+   "methods": [
+    "GET"
+   ],
+   "path": "/api/v1/playlist-tree/order"
+  },
+  {
+   "endpoint": "apps.webui.server.routes.playlist_tree.put_playlist_tree_order",
+   "methods": [
+    "PUT"
+   ],
+   "path": "/api/v1/playlist-tree/order"
+  },
+  {
+   "endpoint": "apps.webui.server.routes.library_org.list_organization",
+   "methods": [
+    "GET"
+   ],
+   "path": "/api/v1/playlist-tree/organization"
+  },
+  {
+   "endpoint": "apps.webui.server.routes.playlists.list_playlists",
+   "methods": [
+    "GET"
+   ],
+   "path": "/api/v1/playlists"
+  },
+  {
+   "endpoint": "apps.webui.server.routes.playlist_write.create_playlist",
+   "methods": [
+    "POST"
+   ],
+   "path": "/api/v1/playlists"
+  },
+  {
+   "endpoint": "apps.webui.server.routes.playlists.list_deleted_playlists",
+   "methods": [
+    "GET"
+   ],
+   "path": "/api/v1/playlists/deleted"
+  },
+  {
+   "endpoint": "apps.webui.server.routes.playlist_write.delete_playlist",
+   "methods": [
+    "DELETE"
+   ],
+   "path": "/api/v1/playlists/{playlist_id}"
+  },
+  {
+   "endpoint": "apps.webui.server.routes.playlists.get_playlist",
+   "methods": [
+    "GET"
+   ],
+   "path": "/api/v1/playlists/{playlist_id}"
+  },
+  {
+   "endpoint": "apps.webui.server.routes.playlist_write.rename_playlist",
+   "methods": [
+    "PATCH"
+   ],
+   "path": "/api/v1/playlists/{playlist_id}"
+  },
+  {
+   "endpoint": "apps.webui.server.routes.playlist_components.list_playlist_components",
+   "methods": [
+    "GET"
+   ],
+   "path": "/api/v1/playlists/{playlist_id}/components"
+  },
+  {
+   "endpoint": "apps.webui.server.routes.playlist_components.create_playlist_component",
+   "methods": [
+    "POST"
+   ],
+   "path": "/api/v1/playlists/{playlist_id}/components"
+  },
+  {
+   "endpoint": "apps.webui.server.routes.playlist_components.delete_playlist_component",
+   "methods": [
+    "DELETE"
+   ],
+   "path": "/api/v1/playlists/{playlist_id}/components/{component_id}"
+  },
+  {
+   "endpoint": "apps.webui.server.routes.playlist_components.update_playlist_component",
+   "methods": [
+    "PATCH"
+   ],
+   "path": "/api/v1/playlists/{playlist_id}/components/{component_id}"
+  },
+  {
+   "endpoint": "apps.webui.server.routes.playlist_write.duplicate_playlist",
+   "methods": [
+    "POST"
+   ],
+   "path": "/api/v1/playlists/{playlist_id}/duplicate"
+  },
+  {
+   "endpoint": "apps.webui.server.routes.library_org.move_entries",
+   "methods": [
+    "POST"
+   ],
+   "path": "/api/v1/playlists/{playlist_id}/entries:move"
+  },
+  {
+   "endpoint": "apps.webui.server.routes.playlist_write.delete_playlist_item",
+   "methods": [
+    "DELETE"
+   ],
+   "path": "/api/v1/playlists/{playlist_id}/items/{item_id}"
+  },
+  {
+   "endpoint": "apps.webui.server.routes.playlist_write.add_playlist_items",
+   "methods": [
+    "POST"
+   ],
+   "path": "/api/v1/playlists/{playlist_id}/items:add"
+  },
+  {
+   "endpoint": "apps.webui.server.routes.playlist_write.move_playlist_items",
+   "methods": [
+    "POST"
+   ],
+   "path": "/api/v1/playlists/{playlist_id}/items:move"
+  },
+  {
+   "endpoint": "apps.webui.server.routes.playlist_write.remove_playlist_items",
+   "methods": [
+    "POST"
+   ],
+   "path": "/api/v1/playlists/{playlist_id}/items:remove"
+  },
+  {
+   "endpoint": "apps.webui.server.routes.library_org.organize_playlist",
+   "methods": [
+    "PUT"
+   ],
+   "path": "/api/v1/playlists/{playlist_id}/organization"
+  },
+  {
+   "endpoint": "apps.webui.server.routes.playlists.get_playlist_rb_djay_diff",
+   "methods": [
+    "GET"
+   ],
+   "path": "/api/v1/playlists/{playlist_id}/rb-djay-diff"
+  },
+  {
+   "endpoint": "apps.webui.server.routes.playlist_components.list_playlist_routes",
+   "methods": [
+    "GET"
+   ],
+   "path": "/api/v1/playlists/{playlist_id}/routes"
+  },
+  {
+   "endpoint": "apps.webui.server.routes.library_org.list_sections_of_list",
+   "methods": [
+    "GET"
+   ],
+   "path": "/api/v1/playlists/{playlist_id}/sections"
+  },
+  {
+   "endpoint": "apps.webui.server.routes.set_target.put_set_skip",
+   "methods": [
+    "PUT"
+   ],
+   "path": "/api/v1/playlists/{playlist_id}/set-skips/{stable_id}"
+  },
+  {
+   "endpoint": "apps.webui.server.routes.set_target.get_set_summary",
+   "methods": [
+    "GET"
+   ],
+   "path": "/api/v1/playlists/{playlist_id}/set-summary"
+  },
+  {
+   "endpoint": "apps.webui.server.routes.set_target.put_set_target",
+   "methods": [
+    "PUT"
+   ],
+   "path": "/api/v1/playlists/{playlist_id}/set-target"
+  },
+  {
+   "endpoint": "apps.webui.server.routes.playlist_sets.list_sets",
+   "methods": [
+    "GET"
+   ],
+   "path": "/api/v1/playlists/{playlist_id}/sets"
+  },
+  {
+   "endpoint": "apps.webui.server.routes.playlist_sets.create_set",
+   "methods": [
+    "POST"
+   ],
+   "path": "/api/v1/playlists/{playlist_id}/sets"
+  },
+  {
+   "endpoint": "apps.webui.server.routes.playlist_sets.get_set",
+   "methods": [
+    "GET"
+   ],
+   "path": "/api/v1/playlists/{playlist_id}/sets/{set_id}"
+  },
+  {
+   "endpoint": "apps.webui.server.routes.playlist_sets.update_parts",
+   "methods": [
+    "PUT"
+   ],
+   "path": "/api/v1/playlists/{playlist_id}/sets/{set_id}/parts"
+  },
+  {
+   "endpoint": "apps.webui.server.routes.playlist_sets.create_run",
+   "methods": [
+    "POST"
+   ],
+   "path": "/api/v1/playlists/{playlist_id}/sets/{set_id}/runs"
+  },
+  {
+   "endpoint": "apps.webui.server.routes.playlists.get_playlist_thumbnail",
+   "methods": [
+    "GET"
+   ],
+   "path": "/api/v1/playlists/{playlist_id}/thumbnail"
+  },
+  {
+   "endpoint": "apps.webui.server.routes.playlists.list_playlist_tracks",
+   "methods": [
+    "GET"
+   ],
+   "path": "/api/v1/playlists/{playlist_id}/tracks"
+  },
+  {
+   "endpoint": "apps.webui.server.routes.playlist_write.replace_playlist_tracks",
+   "methods": [
+    "PUT"
+   ],
+   "path": "/api/v1/playlists/{playlist_id}/tracks"
+  },
+  {
+   "endpoint": "apps.webui.server.routes.playlist_write.transfer_playlist_tracks",
+   "methods": [
+    "POST"
+   ],
+   "path": "/api/v1/playlists/{playlist_id}/tracks/transfer"
+  },
+  {
+   "endpoint": "apps.webui.server.routes.playlist_writeback.apply_writeback",
+   "methods": [
+    "POST"
+   ],
+   "path": "/api/v1/playlists/{playlist_id}/writeback/apply"
+  },
+  {
+   "endpoint": "apps.webui.server.routes.playlist_writeback.get_writeback_capabilities",
+   "methods": [
+    "GET"
+   ],
+   "path": "/api/v1/playlists/{playlist_id}/writeback/capabilities"
+  },
+  {
+   "endpoint": "apps.webui.server.routes.playlist_writeback.get_writeback_plan",
+   "methods": [
+    "GET"
+   ],
+   "path": "/api/v1/playlists/{playlist_id}/writeback/plan"
+  },
+  {
+   "endpoint": "apps.webui.server.routes.playlist_writeback.rollback_writeback",
+   "methods": [
+    "POST"
+   ],
+   "path": "/api/v1/playlists/{playlist_id}/writeback/rollback"
+  },
+  {
+   "endpoint": "apps.webui.server.routes.playlist_writeback.get_writeback_targets",
+   "methods": [
+    "GET"
+   ],
+   "path": "/api/v1/playlists/{playlist_id}/writeback/targets"
+  },
+  {
+   "endpoint": "apps.webui.server.routes.playlist_write.undelete_playlist",
+   "methods": [
+    "POST"
+   ],
+   "path": "/api/v1/playlists/{playlist_id}:undelete"
+  },
+  {
+   "endpoint": "apps.webui.server.routes.practice.list_practice_devices",
+   "methods": [
+    "GET"
+   ],
+   "path": "/api/v1/practice/devices"
+  },
+  {
+   "endpoint": "apps.webui.server.routes.practice.get_practice_device",
+   "methods": [
+    "GET"
+   ],
+   "path": "/api/v1/practice/devices/{device}"
+  },
+  {
+   "endpoint": "apps.webui.server.routes.preflight.read_preflight",
+   "methods": [
+    "GET"
+   ],
+   "path": "/api/v1/preflight"
+  },
+  {
+   "endpoint": "apps.webui.server.routes.progress.get_progress",
+   "methods": [
+    "GET"
+   ],
+   "path": "/api/v1/progress"
+  },
+  {
+   "endpoint": "apps.webui.server.routes.progress.patch_progress_node",
+   "methods": [
+    "PATCH"
+   ],
+   "path": "/api/v1/progress/nodes/{node_id}"
+  },
+  {
+   "endpoint": "apps.webui.server.routes.progress.get_progress_schema",
+   "methods": [
+    "GET"
+   ],
+   "path": "/api/v1/progress/schema"
+  },
+  {
+   "endpoint": "apps.webui.server.routes.queues.get_queue",
+   "methods": [
+    "GET"
+   ],
+   "path": "/api/v1/queues/{kind}"
+  },
+  {
+   "endpoint": "apps.webui.server.routes.rb_djay_sync.rb_djay_sync_analysis_apply",
+   "methods": [
+    "POST"
+   ],
+   "path": "/api/v1/rb-djay-sync/analysis/apply"
+  },
+  {
+   "endpoint": "apps.webui.server.routes.rb_djay_sync.rb_djay_sync_cues_apply",
+   "methods": [
+    "POST"
+   ],
+   "path": "/api/v1/rb-djay-sync/cues/apply"
+  },
+  {
+   "endpoint": "apps.webui.server.routes.rb_djay_sync.rb_djay_sync_cues_plan",
+   "methods": [
+    "POST"
+   ],
+   "path": "/api/v1/rb-djay-sync/cues/plan"
+  },
+  {
+   "endpoint": "apps.webui.server.routes.rb_djay_sync.rb_djay_sync_djay_playlists",
+   "methods": [
+    "GET"
+   ],
+   "path": "/api/v1/rb-djay-sync/djay/playlists"
+  },
+  {
+   "endpoint": "apps.webui.server.routes.rb_djay_sync.rb_djay_sync_match",
+   "methods": [
+    "POST"
+   ],
+   "path": "/api/v1/rb-djay-sync/match"
+  },
+  {
+   "endpoint": "apps.webui.server.routes.rb_djay_sync.rb_djay_sync_metadata_plan",
+   "methods": [
+    "POST"
+   ],
+   "path": "/api/v1/rb-djay-sync/metadata/plan"
+  },
+  {
+   "endpoint": "apps.webui.server.routes.rb_djay_sync.rb_djay_sync_playlists_apply",
+   "methods": [
+    "POST"
+   ],
+   "path": "/api/v1/rb-djay-sync/playlists/apply"
+  },
+  {
+   "endpoint": "apps.webui.server.routes.rb_djay_sync.rb_djay_sync_playlists_plan",
+   "methods": [
+    "POST"
+   ],
+   "path": "/api/v1/rb-djay-sync/playlists/plan"
+  },
+  {
+   "endpoint": "apps.webui.server.routes.rb_djay_sync.rb_djay_sync_ratings_apply",
+   "methods": [
+    "POST"
+   ],
+   "path": "/api/v1/rb-djay-sync/ratings/apply"
+  },
+  {
+   "endpoint": "apps.webui.server.routes.rb_djay_sync.rb_djay_sync_status",
+   "methods": [
+    "GET"
+   ],
+   "path": "/api/v1/rb-djay-sync/status"
+  },
+  {
+   "endpoint": "apps.webui.server.routes.reconcile.list_broken_tracks",
+   "methods": [
+    "GET"
+   ],
+   "path": "/api/v1/reconcile/broken"
+  },
+  {
+   "endpoint": "apps.webui.server.routes.reconcile.reconcile_summary",
+   "methods": [
+    "GET"
+   ],
+   "path": "/api/v1/reconcile/summary"
+  },
+  {
+   "endpoint": "apps.rekordbox_analyse.http.post_adopt",
+   "methods": [
+    "POST"
+   ],
+   "path": "/api/v1/rekordbox/analyse/adopt"
+  },
+  {
+   "endpoint": "apps.rekordbox_analyse.http.post_apply",
+   "methods": [
+    "POST"
+   ],
+   "path": "/api/v1/rekordbox/analyse/apply"
+  },
+  {
+   "endpoint": "apps.rekordbox_analyse.http.get_plan",
+   "methods": [
+    "GET"
+   ],
+   "path": "/api/v1/rekordbox/analyse/plan"
+  },
+  {
+   "endpoint": "apps.webui.server.routes.rekordbox_gate.read_writeback_gate",
+   "methods": [
+    "GET"
+   ],
+   "path": "/api/v1/rekordbox/writeback-gate"
+  },
+  {
+   "endpoint": "apps.webui.server.routes.relocate.get_candidates",
+   "methods": [
+    "GET"
+   ],
+   "path": "/api/v1/relocate/candidates/{stable_id}"
+  },
+  {
+   "endpoint": "apps.webui.server.routes.relocate.apply_relocate",
+   "methods": [
+    "POST"
+   ],
+   "path": "/api/v1/relocate/{stable_id}/apply"
+  },
+  {
+   "endpoint": "apps.webui.server.routes.search.search_collection",
+   "methods": [
+    "GET"
+   ],
+   "path": "/api/v1/search"
+  },
+  {
+   "endpoint": "apps.webui.server.routes.library_org.list_sections",
+   "methods": [
+    "GET"
+   ],
+   "path": "/api/v1/sections"
+  },
+  {
+   "endpoint": "apps.webui.server.routes.library_org.add_section",
+   "methods": [
+    "POST"
+   ],
+   "path": "/api/v1/sections"
+  },
+  {
+   "endpoint": "apps.webui.server.routes.library_org.delete_section",
+   "methods": [
+    "DELETE"
+   ],
+   "path": "/api/v1/sections/{section_id}"
+  },
+  {
+   "endpoint": "apps.webui.server.routes.library_org.update_section",
+   "methods": [
+    "PATCH"
+   ],
+   "path": "/api/v1/sections/{section_id}"
+  },
+  {
+   "endpoint": "apps.set_notes.routes.create_router.<locals>.get_set_note",
+   "methods": [
+    "GET"
+   ],
+   "path": "/api/v1/set-notes/{scope}"
+  },
+  {
+   "endpoint": "apps.set_notes.routes.create_router.<locals>.put_set_note",
+   "methods": [
+    "PUT"
+   ],
+   "path": "/api/v1/set-notes/{scope}"
+  },
+  {
+   "endpoint": "apps.webui.server.routes.settings.get_settings",
+   "methods": [
+    "GET"
+   ],
+   "path": "/api/v1/settings"
+  },
+  {
+   "endpoint": "apps.webui.server.routes.settings_ai.ai_apply",
+   "methods": [
+    "POST"
+   ],
+   "path": "/api/v1/settings/ai-apply"
+  },
+  {
+   "endpoint": "apps.webui.server.routes.settings_ai.ai_search",
+   "methods": [
+    "POST"
+   ],
+   "path": "/api/v1/settings/ai-search"
+  },
+  {
+   "endpoint": "apps.webui.server.routes.share.share_session",
+   "methods": [
+    "GET"
+   ],
+   "path": "/api/v1/share/session"
+  },
+  {
+   "endpoint": "apps.webui.server.routes.shell.post_shell_navigate",
+   "methods": [
+    "POST"
+   ],
+   "path": "/api/v1/shell/navigate"
+  },
+  {
+   "endpoint": "apps.webui.server.routes.shell.ack_shell_navigate",
+   "methods": [
+    "POST"
+   ],
+   "path": "/api/v1/shell/navigate/ack"
+  },
+  {
+   "endpoint": "apps.webui.server.routes.shell.get_shell_navigate_pending",
+   "methods": [
+    "GET"
+   ],
+   "path": "/api/v1/shell/navigate/pending"
+  },
+  {
+   "endpoint": "apps.webui.server.routes.smartlists.list_smartlists",
+   "methods": [
+    "GET"
+   ],
+   "path": "/api/v1/smartlists"
+  },
+  {
+   "endpoint": "apps.webui.server.routes.smartlists.create_smartlist",
+   "methods": [
+    "POST"
+   ],
+   "path": "/api/v1/smartlists"
+  },
+  {
+   "endpoint": "apps.webui.server.routes.smartlists.delete_smartlist",
+   "methods": [
+    "DELETE"
+   ],
+   "path": "/api/v1/smartlists/{smartlist_id}"
+  },
+  {
+   "endpoint": "apps.webui.server.routes.smartlists.get_smartlist",
+   "methods": [
+    "GET"
+   ],
+   "path": "/api/v1/smartlists/{smartlist_id}"
+  },
+  {
+   "endpoint": "apps.webui.server.routes.smartlists.update_smartlist",
+   "methods": [
+    "PUT"
+   ],
+   "path": "/api/v1/smartlists/{smartlist_id}"
+  },
+  {
+   "endpoint": "apps.webui.server.routes.smartlists.duplicate_smartlist",
+   "methods": [
+    "POST"
+   ],
+   "path": "/api/v1/smartlists/{smartlist_id}/duplicate"
+  },
+  {
+   "endpoint": "apps.webui.server.routes.smartlists.get_smartlist_tracks",
+   "methods": [
+    "GET"
+   ],
+   "path": "/api/v1/smartlists/{smartlist_id}/tracks"
+  },
+  {
+   "endpoint": "apps.webui.server.routes.source_flags.list_source_flags",
+   "methods": [
+    "GET"
+   ],
+   "path": "/api/v1/source-flags"
+  },
+  {
+   "endpoint": "apps.webui.server.routes.source_flags.scan_source_flags",
+   "methods": [
+    "POST"
+   ],
+   "path": "/api/v1/source-flags/scan"
+  },
+  {
+   "endpoint": "apps.webui.server.routes.source_flags.get_source_flags",
+   "methods": [
+    "GET"
+   ],
+   "path": "/api/v1/source-flags/{stable_id}"
+  },
+  {
+   "endpoint": "apps.webui.server.routes.spotify.put_account_client_id",
+   "methods": [
+    "PUT"
+   ],
+   "path": "/api/v1/spotify/account/client-id"
+  },
+  {
+   "endpoint": "apps.webui.server.routes.spotify.get_account_connect",
+   "methods": [
+    "GET"
+   ],
+   "path": "/api/v1/spotify/account/connect"
+  },
+  {
+   "endpoint": "apps.webui.server.routes.spotify.start_account_connect",
+   "methods": [
+    "POST"
+   ],
+   "path": "/api/v1/spotify/account/connect"
+  },
+  {
+   "endpoint": "apps.webui.server.routes.spotify.get_account_playlists",
+   "methods": [
+    "GET"
+   ],
+   "path": "/api/v1/spotify/account/playlists"
+  },
+  {
+   "endpoint": "apps.webui.server.routes.spotify.get_pending_tracks",
+   "methods": [
+    "GET"
+   ],
+   "path": "/api/v1/spotify/playlists/{playlist_id}/pending-tracks"
+  },
+  {
+   "endpoint": "apps.webui.server.routes.spotify.get_recently_played",
+   "methods": [
+    "GET"
+   ],
+   "path": "/api/v1/spotify/recently-played"
+  },
+  {
+   "endpoint": "apps.webui.server.routes.spotify.get_status",
+   "methods": [
+    "GET"
+   ],
+   "path": "/api/v1/spotify/status"
+  },
+  {
+   "endpoint": "apps.webui.server.routes.state.close_ui_mirror",
+   "methods": [
+    "DELETE"
+   ],
+   "path": "/api/v1/state/ui-mirror"
+  },
+  {
+   "endpoint": "apps.webui.server.routes.state.get_ui_mirror",
+   "methods": [
+    "GET"
+   ],
+   "path": "/api/v1/state/ui-mirror"
+  },
+  {
+   "endpoint": "apps.webui.server.routes.state.publish_ui_mirror",
+   "methods": [
+    "PUT"
+   ],
+   "path": "/api/v1/state/ui-mirror"
+  },
+  {
+   "endpoint": "apps.webui.server.routes.state.get_ui_mirror_lease",
+   "methods": [
+    "GET"
+   ],
+   "path": "/api/v1/state/ui-mirror/lease"
+  },
+  {
+   "endpoint": "apps.webui.server.routes.stems_assets.bulk_hydrate_stems",
+   "methods": [
+    "POST"
+   ],
+   "path": "/api/v1/stems/bulk-hydrate"
+  },
+  {
+   "endpoint": "apps.webui.server.routes.stem_cache.enforce_stem_cache",
+   "methods": [
+    "POST"
+   ],
+   "path": "/api/v1/stems/cache/enforce"
+  },
+  {
+   "endpoint": "apps.webui.server.routes.stem_cache.get_stem_cache_settings",
+   "methods": [
+    "GET"
+   ],
+   "path": "/api/v1/stems/cache/settings"
+  },
+  {
+   "endpoint": "apps.webui.server.routes.stem_cache.put_stem_cache_settings",
+   "methods": [
+    "PUT"
+   ],
+   "path": "/api/v1/stems/cache/settings"
+  },
+  {
+   "endpoint": "apps.webui.server.routes.stem_cache.get_stem_cache_status",
+   "methods": [
+    "GET"
+   ],
+   "path": "/api/v1/stems/cache/status"
+  },
+  {
+   "endpoint": "apps.webui.server.routes.stem_tiers.estimate",
+   "methods": [
+    "GET"
+   ],
+   "path": "/api/v1/stems/estimate"
+  },
+  {
+   "endpoint": "apps.webui.server.routes.stem_tiers.estimate_batch",
+   "methods": [
+    "GET"
+   ],
+   "path": "/api/v1/stems/estimate/batch"
+  },
+  {
+   "endpoint": "apps.webui.server.routes.stem_tiers.generate",
+   "methods": [
+    "POST"
+   ],
+   "path": "/api/v1/stems/generate"
+  },
+  {
+   "endpoint": "apps.webui.server.routes.stems_assets.build_stem_index",
+   "methods": [
+    "POST"
+   ],
+   "path": "/api/v1/stems/index/build"
+  },
+  {
+   "endpoint": "apps.webui.server.routes.stem_tiers.job_status",
+   "methods": [
+    "GET"
+   ],
+   "path": "/api/v1/stems/jobs/{job_id}"
+  },
+  {
+   "endpoint": "apps.webui.server.routes.stems_assets.push_missing_stems",
+   "methods": [
+    "POST"
+   ],
+   "path": "/api/v1/stems/push-missing"
+  },
+  {
+   "endpoint": "apps.webui.server.routes.stem_tiers.list_tiers",
+   "methods": [
+    "GET"
+   ],
+   "path": "/api/v1/stems/tiers"
+  },
+  {
+   "endpoint": "apps.webui.server.routes.stems_assets.hydrate_stem",
+   "methods": [
+    "POST"
+   ],
+   "path": "/api/v1/stems/{stable_id}/hydrate"
+  },
+  {
+   "endpoint": "apps.webui.server.routes.sync_billing_proxy.billing_checkout",
+   "methods": [
+    "POST"
+   ],
+   "path": "/api/v1/sync/billing/checkout"
+  },
+  {
+   "endpoint": "apps.webui.server.routes.sync_billing_proxy.billing_eligibility",
+   "methods": [
+    "GET"
+   ],
+   "path": "/api/v1/sync/billing/eligibility"
+  },
+  {
+   "endpoint": "apps.webui.server.routes.sync_billing_proxy.billing_portal",
+   "methods": [
+    "POST"
+   ],
+   "path": "/api/v1/sync/billing/portal"
+  },
+  {
+   "endpoint": "apps.webui.server.routes.sync_billing_proxy.billing_refresh",
+   "methods": [
+    "POST"
+   ],
+   "path": "/api/v1/sync/billing/refresh"
+  },
+  {
+   "endpoint": "apps.sync_hub.service.digest",
+   "methods": [
+    "GET"
+   ],
+   "path": "/api/v1/sync/digest"
+  },
+  {
+   "endpoint": "apps.sync_hub.service.enroll",
+   "methods": [
+    "POST"
+   ],
+   "path": "/api/v1/sync/enroll"
+  },
+  {
+   "endpoint": "apps.sync_hub.service.hash_pending_list",
+   "methods": [
+    "GET"
+   ],
+   "path": "/api/v1/sync/hash-pending"
+  },
+  {
+   "endpoint": "apps.sync_hub.service.hello",
+   "methods": [
+    "POST"
+   ],
+   "path": "/api/v1/sync/hello"
+  },
+  {
+   "endpoint": "apps.sync_hub.service_lyrics_asr_assets.get_lyrics_asr_presign",
+   "methods": [
+    "GET"
+   ],
+   "path": "/api/v1/sync/lyrics-asr/{stable_id}"
+  },
+  {
+   "endpoint": "apps.sync_hub.service_plugins.get_plugin_index",
+   "methods": [
+    "GET"
+   ],
+   "path": "/api/v1/sync/plugins/index"
+  },
+  {
+   "endpoint": "apps.sync_hub.service.pull",
+   "methods": [
+    "GET"
+   ],
+   "path": "/api/v1/sync/pull"
+  },
+  {
+   "endpoint": "apps.sync_hub.service.push",
+   "methods": [
+    "POST"
+   ],
+   "path": "/api/v1/sync/push"
+  },
+  {
+   "endpoint": "apps.sync_hub.service.rows",
+   "methods": [
+    "GET"
+   ],
+   "path": "/api/v1/sync/rows"
+  },
+  {
+   "endpoint": "apps.sync_hub.service.stale_check",
+   "methods": [
+    "POST"
+   ],
+   "path": "/api/v1/sync/stale-check"
+  },
+  {
+   "endpoint": "apps.sync_hub.service.status",
+   "methods": [
+    "GET"
+   ],
+   "path": "/api/v1/sync/status"
+  },
+  {
+   "endpoint": "apps.sync_hub.service_stem_assets.get_bundle_presign",
+   "methods": [
+    "GET"
+   ],
+   "path": "/api/v1/sync/stems/bundle-presign"
+  },
+  {
+   "endpoint": "apps.sync_hub.service_stem_assets.get_bundle_size",
+   "methods": [
+    "GET"
+   ],
+   "path": "/api/v1/sync/stems/bundle-size"
+  },
+  {
+   "endpoint": "apps.sync_hub.service_stem_assets.get_stem_index",
+   "methods": [
+    "GET"
+   ],
+   "path": "/api/v1/sync/stems/index"
+  },
+  {
+   "endpoint": "apps.webui.server.routes.system_audio.get_system_volume",
+   "methods": [
+    "GET"
+   ],
+   "path": "/api/v1/system/audio/volume"
+  },
+  {
+   "endpoint": "apps.webui.server.routes.system_audio.put_system_volume",
+   "methods": [
+    "PUT"
+   ],
+   "path": "/api/v1/system/audio/volume"
+  },
+  {
+   "endpoint": "apps.webui.server.routes.library_org.list_tag_meta",
+   "methods": [
+    "GET"
+   ],
+   "path": "/api/v1/tag-meta"
+  },
+  {
+   "endpoint": "apps.webui.server.routes.library_org.put_tag_meta",
+   "methods": [
+    "PUT"
+   ],
+   "path": "/api/v1/tag-meta/{name}"
+  },
+  {
+   "endpoint": "apps.webui.server.routes.library_org.list_tag_synonyms",
+   "methods": [
+    "GET"
+   ],
+   "path": "/api/v1/tag-synonyms"
+  },
+  {
+   "endpoint": "apps.webui.server.routes.library_org.put_tag_synonym",
+   "methods": [
+    "POST"
+   ],
+   "path": "/api/v1/tag-synonyms"
+  },
+  {
+   "endpoint": "apps.webui.server.routes.library_org.list_tag_types",
+   "methods": [
+    "GET"
+   ],
+   "path": "/api/v1/tag-types"
+  },
+  {
+   "endpoint": "apps.webui.server.routes.library_org.create_tag_type",
+   "methods": [
+    "POST"
+   ],
+   "path": "/api/v1/tag-types"
+  },
+  {
+   "endpoint": "apps.webui.server.routes.library_org.delete_tag_type",
+   "methods": [
+    "DELETE"
+   ],
+   "path": "/api/v1/tag-types/{type_id}"
+  },
+  {
+   "endpoint": "apps.webui.server.routes.library_org.update_tag_type",
+   "methods": [
+    "PATCH"
+   ],
+   "path": "/api/v1/tag-types/{type_id}"
+  },
+  {
+   "endpoint": "apps.webui.server.routes.telemetry.list_clients",
+   "methods": [
+    "GET"
+   ],
+   "path": "/api/v1/telemetry/clients"
+  },
+  {
+   "endpoint": "apps.webui.server.routes.telemetry_consent.get_consent",
+   "methods": [
+    "GET"
+   ],
+   "path": "/api/v1/telemetry/consent"
+  },
+  {
+   "endpoint": "apps.webui.server.routes.telemetry_consent.put_consent",
+   "methods": [
+    "PUT"
+   ],
+   "path": "/api/v1/telemetry/consent"
+  },
+  {
+   "endpoint": "apps.webui.server.routes.telemetry.record_heartbeat",
+   "methods": [
+    "POST"
+   ],
+   "path": "/api/v1/telemetry/heartbeat"
+  },
+  {
+   "endpoint": "apps.webui.server.routes.title_fix.apply_title_fix_proposals",
+   "methods": [
+    "POST"
+   ],
+   "path": "/api/v1/title-fix/apply"
+  },
+  {
+   "endpoint": "apps.webui.server.routes.title_fix.list_title_fix_batches",
+   "methods": [
+    "GET"
+   ],
+   "path": "/api/v1/title-fix/batches"
+  },
+  {
+   "endpoint": "apps.webui.server.routes.title_fix.undo_title_fix_batch",
+   "methods": [
+    "POST"
+   ],
+   "path": "/api/v1/title-fix/batches/{batch_id}/undo"
+  },
+  {
+   "endpoint": "apps.webui.server.routes.title_fix.get_title_fix_config",
+   "methods": [
+    "GET"
+   ],
+   "path": "/api/v1/title-fix/config"
+  },
+  {
+   "endpoint": "apps.webui.server.routes.title_fix.put_title_fix_config",
+   "methods": [
+    "PUT"
+   ],
+   "path": "/api/v1/title-fix/config"
+  },
+  {
+   "endpoint": "apps.webui.server.routes.title_fix.delete_title_fix_key",
+   "methods": [
+    "DELETE"
+   ],
+   "path": "/api/v1/title-fix/key"
+  },
+  {
+   "endpoint": "apps.webui.server.routes.title_fix.put_title_fix_key",
+   "methods": [
+    "PUT"
+   ],
+   "path": "/api/v1/title-fix/key"
+  },
+  {
+   "endpoint": "apps.webui.server.routes.title_fix.list_title_fix_proposals",
+   "methods": [
+    "GET"
+   ],
+   "path": "/api/v1/title-fix/proposals"
+  },
+  {
+   "endpoint": "apps.webui.server.routes.title_fix.reject_title_fix_proposals",
+   "methods": [
+    "POST"
+   ],
+   "path": "/api/v1/title-fix/reject"
+  },
+  {
+   "endpoint": "apps.webui.server.routes.title_fix.list_title_fix_scans",
+   "methods": [
+    "GET"
+   ],
+   "path": "/api/v1/title-fix/scans"
+  },
+  {
+   "endpoint": "apps.webui.server.routes.title_fix.start_title_fix_scan",
+   "methods": [
+    "POST"
+   ],
+   "path": "/api/v1/title-fix/scans"
+  },
+  {
+   "endpoint": "apps.webui.server.routes.title_fix.get_title_fix_scan",
+   "methods": [
+    "GET"
+   ],
+   "path": "/api/v1/title-fix/scans/{scan_id}"
+  },
+  {
+   "endpoint": "apps.webui.server.routes.tracks.list_tracks",
+   "methods": [
+    "GET"
+   ],
+   "path": "/api/v1/tracks"
+  },
+  {
+   "endpoint": "apps.webui.server.routes.tracks.list_deleted_tracks",
+   "methods": [
+    "GET"
+   ],
+   "path": "/api/v1/tracks/deleted"
+  },
+  {
+   "endpoint": "apps.webui.server.routes.tracks.get_track_index",
+   "methods": [
+    "GET"
+   ],
+   "path": "/api/v1/tracks/index"
+  },
+  {
+   "endpoint": "apps.webui.server.routes.tracks.get_lyrics_cached_ids",
+   "methods": [
+    "GET"
+   ],
+   "path": "/api/v1/tracks/lyrics-cached-ids"
+  },
+  {
+   "endpoint": "apps.webui.server.routes.played_length.tracks_played_length",
+   "methods": [
+    "POST"
+   ],
+   "path": "/api/v1/tracks/played-length"
+  },
+  {
+   "endpoint": "apps.webui.server.routes.tracks.get_quality_ladder",
+   "methods": [
+    "GET"
+   ],
+   "path": "/api/v1/tracks/quality-ladder"
+  },
+  {
+   "endpoint": "apps.webui.server.routes.tracks.get_library_revision",
+   "methods": [
+    "GET"
+   ],
+   "path": "/api/v1/tracks/revision"
+  },
+  {
+   "endpoint": "apps.webui.server.routes.tracks.get_track",
+   "methods": [
+    "GET"
+   ],
+   "path": "/api/v1/tracks/{stable_id}"
+  },
+  {
+   "endpoint": "apps.webui.server.routes.tracks.patch_track",
+   "methods": [
+    "PATCH"
+   ],
+   "path": "/api/v1/tracks/{stable_id}"
+  },
+  {
+   "endpoint": "apps.webui.server.routes.rb_assets.get_track_anlz",
+   "methods": [
+    "GET"
+   ],
+   "path": "/api/v1/tracks/{stable_id}/anlz"
+  },
+  {
+   "endpoint": "apps.webui.server.routes.rb_assets.get_track_artwork",
+   "methods": [
+    "GET"
+   ],
+   "path": "/api/v1/tracks/{stable_id}/artwork"
+  },
+  {
+   "endpoint": "apps.webui.server.routes.rb_assets_audio.get_track_audio",
+   "methods": [
+    "GET"
+   ],
+   "path": "/api/v1/tracks/{stable_id}/audio"
+  },
+  {
+   "endpoint": "apps.webui.server.routes.rb_assets_audio.get_track_audio",
+   "methods": [
+    "HEAD"
+   ],
+   "path": "/api/v1/tracks/{stable_id}/audio"
+  },
+  {
+   "endpoint": "apps.webui.server.routes.analysis.get_auto_cues",
+   "methods": [
+    "GET"
+   ],
+   "path": "/api/v1/tracks/{stable_id}/auto-cues"
+  },
+  {
+   "endpoint": "apps.webui.server.routes.analysis.get_beatgrid_fallback",
+   "methods": [
+    "GET"
+   ],
+   "path": "/api/v1/tracks/{stable_id}/beatgrid-fallback"
+  },
+  {
+   "endpoint": "apps.webui.server.routes.grid_edit.clear_bpm_pick",
+   "methods": [
+    "DELETE"
+   ],
+   "path": "/api/v1/tracks/{stable_id}/bpm-pick"
+  },
+  {
+   "endpoint": "apps.webui.server.routes.grid_edit.set_bpm_pick",
+   "methods": [
+    "PUT"
+   ],
+   "path": "/api/v1/tracks/{stable_id}/bpm-pick"
+  },
+  {
+   "endpoint": "apps.webui.server.routes.library_works.get_classical",
+   "methods": [
+    "GET"
+   ],
+   "path": "/api/v1/tracks/{stable_id}/classical"
+  },
+  {
+   "endpoint": "apps.webui.server.routes.library_works.set_classical",
+   "methods": [
+    "PATCH"
+   ],
+   "path": "/api/v1/tracks/{stable_id}/classical"
+  },
+  {
+   "endpoint": "apps.webui.server.routes.library_works.read_file_tags",
+   "methods": [
+    "GET"
+   ],
+   "path": "/api/v1/tracks/{stable_id}/classical/file-tags"
+  },
+  {
+   "endpoint": "apps.webui.server.routes.grid_edit.reset_grid_edit",
+   "methods": [
+    "DELETE"
+   ],
+   "path": "/api/v1/tracks/{stable_id}/grid-edit"
+  },
+  {
+   "endpoint": "apps.webui.server.routes.grid_edit.get_grid_edit",
+   "methods": [
+    "GET"
+   ],
+   "path": "/api/v1/tracks/{stable_id}/grid-edit"
+  },
+  {
+   "endpoint": "apps.webui.server.routes.grid_edit.set_grid_edit",
+   "methods": [
+    "PUT"
+   ],
+   "path": "/api/v1/tracks/{stable_id}/grid-edit"
+  },
+  {
+   "endpoint": "apps.webui.server.routes.grid_edit.nudge_grid_edit",
+   "methods": [
+    "POST"
+   ],
+   "path": "/api/v1/tracks/{stable_id}/grid-edit/nudge"
+  },
+  {
+   "endpoint": "apps.webui.server.routes.grid_provenance.get_track_grid_provenance",
+   "methods": [
+    "GET"
+   ],
+   "path": "/api/v1/tracks/{stable_id}/grid-provenance"
+  },
+  {
+   "endpoint": "apps.webui.server.routes.rb_hot_cues.list_hot_cue_slots",
+   "methods": [
+    "GET"
+   ],
+   "path": "/api/v1/tracks/{stable_id}/hot-cues"
+  },
+  {
+   "endpoint": "apps.webui.server.routes.rb_hot_cues.clear_hot_cue",
+   "methods": [
+    "DELETE"
+   ],
+   "path": "/api/v1/tracks/{stable_id}/hot-cues/{slot}"
+  },
+  {
+   "endpoint": "apps.webui.server.routes.rb_hot_cues.save_hot_cue",
+   "methods": [
+    "PUT"
+   ],
+   "path": "/api/v1/tracks/{stable_id}/hot-cues/{slot}"
+  },
+  {
+   "endpoint": "apps.webui.server.routes.rb_hot_cues.restore_hot_cue",
+   "methods": [
+    "PUT"
+   ],
+   "path": "/api/v1/tracks/{stable_id}/hot-cues/{slot}/restore"
+  },
+  {
+   "endpoint": "apps.webui.server.routes.track_locations.list_track_locations",
+   "methods": [
+    "GET"
+   ],
+   "path": "/api/v1/tracks/{stable_id}/locations"
+  },
+  {
+   "endpoint": "apps.webui.server.routes.track_locations.add_track_location",
+   "methods": [
+    "POST"
+   ],
+   "path": "/api/v1/tracks/{stable_id}/locations"
+  },
+  {
+   "endpoint": "apps.webui.server.routes.track_locations.remove_track_location",
+   "methods": [
+    "DELETE"
+   ],
+   "path": "/api/v1/tracks/{stable_id}/locations/{location_id}"
+  },
+  {
+   "endpoint": "apps.webui.server.routes.tracks.get_track_lyrics",
+   "methods": [
+    "GET"
+   ],
+   "path": "/api/v1/tracks/{stable_id}/lyrics"
+  },
+  {
+   "endpoint": "apps.webui.server.routes.lyrics_words.put_lyric_override",
+   "methods": [
+    "PUT"
+   ],
+   "path": "/api/v1/tracks/{stable_id}/lyrics/override"
+  },
+  {
+   "endpoint": "apps.webui.server.routes.lyrics_words.get_track_karaoke_words",
+   "methods": [
+    "GET"
+   ],
+   "path": "/api/v1/tracks/{stable_id}/lyrics/words"
+  },
+  {
+   "endpoint": "apps.webui.server.routes.tracks.list_track_playlists",
+   "methods": [
+    "GET"
+   ],
+   "path": "/api/v1/tracks/{stable_id}/playlists"
+  },
+  {
+   "endpoint": "apps.webui.server.routes.track_plays.get_track_plays",
+   "methods": [
+    "GET"
+   ],
+   "path": "/api/v1/tracks/{stable_id}/plays"
+  },
+  {
+   "endpoint": "apps.webui.server.routes.track_plays.record_track_play",
+   "methods": [
+    "POST"
+   ],
+   "path": "/api/v1/tracks/{stable_id}/plays"
+  },
+  {
+   "endpoint": "apps.webui.server.routes.rb_assets.get_track_rb_meta",
+   "methods": [
+    "GET"
+   ],
+   "path": "/api/v1/tracks/{stable_id}/rb-meta"
+  },
+  {
+   "endpoint": "apps.webui.server.routes.stems.get_stem_manifest",
+   "methods": [
+    "GET"
+   ],
+   "path": "/api/v1/tracks/{stable_id}/stems"
+  },
+  {
+   "endpoint": "apps.webui.server.routes.stems.mark_stem_deck_closed",
+   "methods": [
+    "POST"
+   ],
+   "path": "/api/v1/tracks/{stable_id}/stems/deck-close"
+  },
+  {
+   "endpoint": "apps.webui.server.routes.stems.mark_stem_deck_open",
+   "methods": [
+    "POST"
+   ],
+   "path": "/api/v1/tracks/{stable_id}/stems/deck-open"
+  },
+  {
+   "endpoint": "apps.webui.server.routes.stems.hydrate_stem_bundle",
+   "methods": [
+    "POST"
+   ],
+   "path": "/api/v1/tracks/{stable_id}/stems/hydrate"
+  },
+  {
+   "endpoint": "apps.webui.server.routes.stems.get_stem_state",
+   "methods": [
+    "GET"
+   ],
+   "path": "/api/v1/tracks/{stable_id}/stems/state"
+  },
+  {
+   "endpoint": "apps.webui.server.routes.stems.get_stem_file",
+   "methods": [
+    "GET"
+   ],
+   "path": "/api/v1/tracks/{stable_id}/stems/{part}"
+  },
+  {
+   "endpoint": "apps.webui.server.routes.stems.get_stem_waveform",
+   "methods": [
+    "GET"
+   ],
+   "path": "/api/v1/tracks/{stable_id}/stems/{part}/waveform"
+  },
+  {
+   "endpoint": "apps.webui.server.routes.tempo_stability.get_track_tempo_stability",
+   "methods": [
+    "GET"
+   ],
+   "path": "/api/v1/tracks/{stable_id}/tempo-stability"
+  },
+  {
+   "endpoint": "apps.webui.server.routes.transition_in_cue.clear_transition_in",
+   "methods": [
+    "DELETE"
+   ],
+   "path": "/api/v1/tracks/{stable_id}/transition-in"
+  },
+  {
+   "endpoint": "apps.webui.server.routes.transition_in_cue.read_transition_in",
+   "methods": [
+    "GET"
+   ],
+   "path": "/api/v1/tracks/{stable_id}/transition-in"
+  },
+  {
+   "endpoint": "apps.webui.server.routes.transition_in_cue.set_transition_in",
+   "methods": [
+    "PUT"
+   ],
+   "path": "/api/v1/tracks/{stable_id}/transition-in"
+  },
+  {
+   "endpoint": "apps.webui.server.routes.track_handoff.open_track_in_app",
+   "methods": [
+    "POST"
+   ],
+   "path": "/api/v1/tracks/{stable_id}:open-in"
+  },
+  {
+   "endpoint": "apps.webui.server.routes.tracks.remove_track_from_library",
+   "methods": [
+    "POST"
+   ],
+   "path": "/api/v1/tracks/{stable_id}:remove"
+  },
+  {
+   "endpoint": "apps.webui.server.routes.tracks.reveal_track",
+   "methods": [
+    "POST"
+   ],
+   "path": "/api/v1/tracks/{stable_id}:reveal"
+  },
+  {
+   "endpoint": "apps.webui.server.routes.tracks.undelete_track_from_library",
+   "methods": [
+    "POST"
+   ],
+   "path": "/api/v1/tracks/{stable_id}:undelete"
+  },
+  {
+   "endpoint": "apps.webui.server.routes.ui_prefs.get_ui_prefs",
+   "methods": [
+    "GET"
+   ],
+   "path": "/api/v1/ui-prefs"
+  },
+  {
+   "endpoint": "apps.webui.server.routes.ui_prefs.put_ui_prefs",
+   "methods": [
+    "PUT"
+   ],
+   "path": "/api/v1/ui-prefs"
+  },
+  {
+   "endpoint": "apps.webui.server.routes.ui_prefs.post_library_key_filter",
+   "methods": [
+    "POST"
+   ],
+   "path": "/api/v1/ui-prefs/library-key-filter"
+  },
+  {
+   "endpoint": "apps.webui.server.routes.ui_prefs.post_library_tabs",
+   "methods": [
+    "POST"
+   ],
+   "path": "/api/v1/ui-prefs/library-tabs"
+  },
+  {
+   "endpoint": "apps.webui.server.routes.ui_prefs.validate_watcher_folders",
+   "methods": [
+    "POST"
+   ],
+   "path": "/api/v1/ui-prefs/watcher-folders:validate"
+  },
+  {
+   "endpoint": "apps.webui.server.routes.ui_url.ui_url",
+   "methods": [
+    "GET"
+   ],
+   "path": "/api/v1/ui-url"
+  },
+  {
+   "endpoint": "apps.webui.server.routes.library_org.undo",
+   "methods": [
+    "POST"
+   ],
+   "path": "/api/v1/undo"
+  },
+  {
+   "endpoint": "apps.webui.server.routes.usb_export.apply_export",
+   "methods": [
+    "POST"
+   ],
+   "path": "/api/v1/usb-export/apply"
+  },
+  {
+   "endpoint": "apps.webui.server.routes.usb_export.plan_export",
+   "methods": [
+    "POST"
+   ],
+   "path": "/api/v1/usb-export/plan"
+  },
+  {
+   "endpoint": "apps.webui.server.routes.usb_export.readback_export",
+   "methods": [
+    "POST"
+   ],
+   "path": "/api/v1/usb-export/readback"
+  },
+  {
+   "endpoint": "apps.webui.server.routes.usb_eject.eject_usb_volume",
+   "methods": [
+    "POST"
+   ],
+   "path": "/api/v1/usb/eject"
+  },
+  {
+   "endpoint": "apps.webui.server.routes.usb_tracks.get_usb_track",
+   "methods": [
+    "GET"
+   ],
+   "path": "/api/v1/usb/tracks/{track_id}"
+  },
+  {
+   "endpoint": "apps.webui.server.routes.usb_tracks.get_usb_track_anlz",
+   "methods": [
+    "GET"
+   ],
+   "path": "/api/v1/usb/tracks/{track_id}/anlz"
+  },
+  {
+   "endpoint": "apps.webui.server.routes.usb_tracks_files.get_usb_track_artwork",
+   "methods": [
+    "GET"
+   ],
+   "path": "/api/v1/usb/tracks/{track_id}/artwork"
+  },
+  {
+   "endpoint": "apps.webui.server.routes.usb_tracks_files.get_usb_track_audio",
+   "methods": [
+    "GET"
+   ],
+   "path": "/api/v1/usb/tracks/{track_id}/audio"
+  },
+  {
+   "endpoint": "apps.webui.server.routes.usb_tracks_files.get_usb_track_audio",
+   "methods": [
+    "HEAD"
+   ],
+   "path": "/api/v1/usb/tracks/{track_id}/audio"
+  },
+  {
+   "endpoint": "apps.webui.server.routes.usb_tracks.list_usb_track_hot_cue_slots",
+   "methods": [
+    "GET"
+   ],
+   "path": "/api/v1/usb/tracks/{track_id}/hot-cues"
+  },
+  {
+   "endpoint": "apps.webui.server.routes.usb_volumes.get_usb_volumes",
+   "methods": [
+    "GET"
+   ],
+   "path": "/api/v1/usb/volumes"
+  },
+  {
+   "endpoint": "apps.webui.server.routes.usb_volumes.usb_volume_events",
+   "methods": [
+    "GET"
+   ],
+   "path": "/api/v1/usb/volumes/events"
+  },
+  {
+   "endpoint": "apps.webui.server.routes.usb_tracks.get_usb_stick_library",
+   "methods": [
+    "GET"
+   ],
+   "path": "/api/v1/usb/volumes/{volume_id}/library"
+  },
+  {
+   "endpoint": "apps.webui.server.routes.vocals.analyze_vocals",
+   "methods": [
+    "POST"
+   ],
+   "path": "/api/v1/vocals/analyze"
+  },
+  {
+   "endpoint": "apps.webui.server.routes.vocals.get_vocal_status",
+   "methods": [
+    "GET"
+   ],
+   "path": "/api/v1/vocals/{stable_id}/status"
+  },
+  {
+   "endpoint": "apps.webui.server.routes.voice_probe.probe",
+   "methods": [
+    "POST"
+   ],
+   "path": "/api/v1/voice/probe"
+  },
+  {
+   "endpoint": "apps.webui.server.routes.library_org.list_works",
+   "methods": [
+    "GET"
+   ],
+   "path": "/api/v1/works"
+  },
+  {
+   "endpoint": "apps.webui.server.routes.library_org.create_work",
+   "methods": [
+    "POST"
+   ],
+   "path": "/api/v1/works"
+  },
+  {
+   "endpoint": "apps.webui.server.routes.library_org.dismiss_pair",
+   "methods": [
+    "POST"
+   ],
+   "path": "/api/v1/works/dismissals"
+  },
+  {
+   "endpoint": "apps.webui.server.routes.library_works.link_candidates",
+   "methods": [
+    "GET"
+   ],
+   "path": "/api/v1/works/link-candidates"
+  },
+  {
+   "endpoint": "apps.webui.server.routes.library_works.works_overlay",
+   "methods": [
+    "GET"
+   ],
+   "path": "/api/v1/works/overlay"
+  },
+  {
+   "endpoint": "apps.webui.server.routes.library_works.work_stack",
+   "methods": [
+    "GET"
+   ],
+   "path": "/api/v1/works/stack"
+  },
+  {
+   "endpoint": "apps.webui.server.routes.library_works.suggest_versions",
+   "methods": [
+    "GET"
+   ],
+   "path": "/api/v1/works/suggest"
+  },
+  {
+   "endpoint": "apps.webui.server.routes.library_works.suggestion_flags",
+   "methods": [
+    "POST"
+   ],
+   "path": "/api/v1/works/suggestion-flags"
+  },
+  {
+   "endpoint": "apps.webui.server.routes.library_org.delete_work",
+   "methods": [
+    "DELETE"
+   ],
+   "path": "/api/v1/works/{work_id}"
+  },
+  {
+   "endpoint": "apps.webui.server.routes.library_org.update_work",
+   "methods": [
+    "PATCH"
+   ],
+   "path": "/api/v1/works/{work_id}"
+  },
+  {
+   "endpoint": "apps.webui.server.routes.library_org.list_members",
+   "methods": [
+    "GET"
+   ],
+   "path": "/api/v1/works/{work_id}/members"
+  },
+  {
+   "endpoint": "apps.webui.server.routes.library_org.link_member",
+   "methods": [
+    "POST"
+   ],
+   "path": "/api/v1/works/{work_id}/members"
+  },
+  {
+   "endpoint": "apps.webui.server.routes.library_org.unlink_member",
+   "methods": [
+    "DELETE"
+   ],
+   "path": "/api/v1/works/{work_id}/members/{member_kind}/{member_id}"
+  },
+  {
+   "endpoint": "apps.webui.server.routes.library_works.update_member",
+   "methods": [
+    "PATCH"
+   ],
+   "path": "/api/v1/works/{work_id}/members/{member_kind}/{member_id}"
+  },
+  {
+   "endpoint": "apps.webui.server.routes.library_works.move_members",
+   "methods": [
+    "POST"
+   ],
+   "path": "/api/v1/works/{work_id}/members:move"
+  },
+  {
+   "endpoint": "apps.webui.server.routes.library_org.set_work_pref",
+   "methods": [
+    "PUT"
+   ],
+   "path": "/api/v1/works/{work_id}/pref"
+  },
+  {
+   "endpoint": "apps.webui.server.routes.library_works.merge_works",
+   "methods": [
+    "POST"
+   ],
+   "path": "/api/v1/works/{work_id}:merge"
+  },
+  {
+   "endpoint": "apps.webui.server.routes.library_works.link_tracks",
+   "methods": [
+    "POST"
+   ],
+   "path": "/api/v1/works:link"
+  },
+  {
+   "endpoint": "fastapi.applications.FastAPI.setup.<locals>.swagger_ui_html",
+   "methods": [
+    "GET",
+    "HEAD"
+   ],
+   "path": "/docs"
+  },
+  {
+   "endpoint": "fastapi.applications.FastAPI.setup.<locals>.swagger_ui_redirect",
+   "methods": [
+    "GET",
+    "HEAD"
+   ],
+   "path": "/docs/oauth2-redirect"
+  },
+  {
+   "endpoint": "fastapi.applications.FastAPI.setup.<locals>.openapi",
+   "methods": [
+    "GET",
+    "HEAD"
+   ],
+   "path": "/openapi.json"
+  },
+  {
+   "endpoint": "fastapi.applications.FastAPI.setup.<locals>.redoc_html",
+   "methods": [
+    "GET",
+    "HEAD"
+   ],
+   "path": "/redoc"
+  },
+  {
+   "endpoint": "apps.sets.share_page.shared_set_page",
+   "methods": [
+    "GET"
+   ],
+   "path": "/sets/shared/{session_id}"
+  }
+ ],
+ "winners": [
+  {
+   "method": "GET",
+   "path": "/",
+   "url": "/",
+   "winner": "apps.webui.server.app_wiring._mount_frontend_or_placeholder.<locals>._index_placeholder"
+  },
+  {
+   "method": "GET",
+   "path": "/api/play-analytics",
+   "url": "/api/play-analytics",
+   "winner": "apps.play_analytics.http.create_router.<locals>.get_play_analytics"
+  },
+  {
+   "method": "GET",
+   "path": "/api/sets",
+   "url": "/api/sets",
+   "winner": "apps.sets.api.api_list_sessions"
+  },
+  {
+   "method": "GET",
+   "path": "/api/sets/deck-observations",
+   "url": "/api/sets/deck-observations",
+   "winner": "apps.sets.api.api_deck_observation_status"
+  },
+  {
+   "method": "POST",
+   "path": "/api/sets/deck-observations",
+   "url": "/api/sets/deck-observations",
+   "winner": "apps.sets.api.api_submit_deck_observations"
+  },
+  {
+   "method": "GET",
+   "path": "/api/sets/recorder",
+   "url": "/api/sets/recorder",
+   "winner": "apps.sets.api.api_recorder_status"
+  },
+  {
+   "method": "GET",
+   "path": "/api/sets/recorder/devices",
+   "url": "/api/sets/recorder/devices",
+   "winner": "apps.sets.api.api_recorder_devices"
+  },
+  {
+   "method": "GET",
+   "path": "/api/sets/recorder/remembered-input",
+   "url": "/api/sets/recorder/remembered-input",
+   "winner": "apps.sets.api.api_recorder_remembered_input"
+  },
+  {
+   "method": "POST",
+   "path": "/api/sets/recorder/start",
+   "url": "/api/sets/recorder/start",
+   "winner": "apps.sets.api.api_recorder_start"
+  },
+  {
+   "method": "POST",
+   "path": "/api/sets/recorder/{session_id}/master-pcm",
+   "url": "/api/sets/recorder/sample/master-pcm",
+   "winner": "apps.sets.api.api_recorder_master_pcm"
+  },
+  {
+   "method": "POST",
+   "path": "/api/sets/recorder/{session_id}/recover",
+   "url": "/api/sets/recorder/sample/recover",
+   "winner": "apps.sets.api.api_recorder_recover"
+  },
+  {
+   "method": "POST",
+   "path": "/api/sets/recorder/{session_id}/stop",
+   "url": "/api/sets/recorder/sample/stop",
+   "winner": "apps.sets.api.api_recorder_stop"
+  },
+  {
+   "method": "GET",
+   "path": "/api/sets/{session_id}",
+   "url": "/api/sets/sample",
+   "winner": "apps.sets.api.api_get_session"
+  },
+  {
+   "method": "GET",
+   "path": "/api/sets/{session_id}/audio/{segment}",
+   "url": "/api/sets/sample/audio/sample",
+   "winner": "apps.sets.api.api_audio"
+  },
+  {
+   "method": "GET",
+   "path": "/api/sets/{session_id}/share",
+   "url": "/api/sets/sample/share",
+   "winner": "apps.sets.api.api_get_metadata_share"
+  },
+  {
+   "method": "POST",
+   "path": "/api/sets/{session_id}/share",
+   "url": "/api/sets/sample/share",
+   "winner": "apps.sets.api.api_publish_metadata_share"
+  },
+  {
+   "method": "GET",
+   "path": "/api/sets/{session_id}/soundcloud-export",
+   "url": "/api/sets/sample/soundcloud-export",
+   "winner": "apps.sets.api.api_get_soundcloud_export"
+  },
+  {
+   "method": "POST",
+   "path": "/api/sets/{session_id}/soundcloud-export",
+   "url": "/api/sets/sample/soundcloud-export",
+   "winner": "apps.sets.api.api_post_soundcloud_export"
+  },
+  {
+   "method": "GET",
+   "path": "/api/sets/{session_id}/timeline",
+   "url": "/api/sets/sample/timeline",
+   "winner": "apps.sets.api.api_timeline_stream"
+  },
+  {
+   "method": "GET",
+   "path": "/api/sets/{session_id}/transitions",
+   "url": "/api/sets/sample/transitions",
+   "winner": "apps.sets.api.api_transitions"
+  },
+  {
+   "method": "POST",
+   "path": "/api/sets/{session_id}/transitions/{idx}/label",
+   "url": "/api/sets/sample/transitions/sample/label",
+   "winner": "apps.sets.api.api_relabel"
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/admin/ports",
+   "url": "/api/v1/admin/ports",
+   "winner": "apps.webui.server.routes.worktree_ports.get_worktree_ports"
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/admin/quality-ratchet",
+   "url": "/api/v1/admin/quality-ratchet",
+   "winner": "apps.webui.server.routes.quality.get_quality_ratchet"
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/admin/sql-query",
+   "url": "/api/v1/admin/sql-query",
+   "winner": "apps.webui.server.routes.sql_playground.sql_query"
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/ahead-analysis/bump/{stable_id}",
+   "url": "/api/v1/ahead-analysis/bump/sample",
+   "winner": "apps.webui.server.routes.ahead_analysis.post_bump"
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/ahead-analysis/coverage",
+   "url": "/api/v1/ahead-analysis/coverage",
+   "winner": "apps.webui.server.routes.ahead_analysis.get_coverage"
+  },
+  {
+   "method": "PUT",
+   "path": "/api/v1/ahead-analysis/next-up",
+   "url": "/api/v1/ahead-analysis/next-up",
+   "winner": "apps.webui.server.routes.ahead_analysis.put_next_up"
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/ahead-analysis/retry",
+   "url": "/api/v1/ahead-analysis/retry",
+   "winner": "apps.webui.server.routes.ahead_analysis.post_retry"
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/analysis-queue",
+   "url": "/api/v1/analysis-queue",
+   "winner": "apps.webui.server.routes.analysis_queue.get_analysis_queue"
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/analysis-queue/orders/{stable_id}",
+   "url": "/api/v1/analysis-queue/orders/sample",
+   "winner": "apps.webui.server.routes.analysis_queue.get_track_analysis_orders"
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/analysis-queue/orders/{stable_id}/{kind}",
+   "url": "/api/v1/analysis-queue/orders/sample/sample",
+   "winner": "apps.webui.server.routes.analysis_queue.order_track_analysis"
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/analysis-queue/run",
+   "url": "/api/v1/analysis-queue/run",
+   "winner": "apps.webui.server.routes.analysis_queue.run_analysis_queue"
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/analysis/backfill/batches",
+   "url": "/api/v1/analysis/backfill/batches",
+   "winner": "apps.webui.server.routes.analysis_backfill.list_backfill_batches"
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/analysis/backfill/cancel",
+   "url": "/api/v1/analysis/backfill/cancel",
+   "winner": "apps.webui.server.routes.analysis_backfill.cancel_backfill"
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/analysis/backfill/enqueue",
+   "url": "/api/v1/analysis/backfill/enqueue",
+   "winner": "apps.webui.server.routes.analysis_backfill.enqueue_backfill"
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/analysis/backfill/progress",
+   "url": "/api/v1/analysis/backfill/progress",
+   "winner": "apps.webui.server.routes.analysis_backfill.get_backfill_progress"
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/analysis/backfill/resume",
+   "url": "/api/v1/analysis/backfill/resume",
+   "winner": "apps.webui.server.routes.analysis_backfill.resume_backfill"
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/analysis/source",
+   "url": "/api/v1/analysis/source",
+   "winner": "apps.webui.server.routes.analysis_source.get_analysis_source"
+  },
+  {
+   "method": "PUT",
+   "path": "/api/v1/analysis/source",
+   "url": "/api/v1/analysis/source",
+   "winner": "apps.webui.server.routes.analysis_source.put_analysis_source"
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/artwork/suggestions",
+   "url": "/api/v1/artwork/suggestions",
+   "winner": "apps.webui.server.routes.artwork_suggestions.get_suggestions"
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/artwork/suggestions/decide",
+   "url": "/api/v1/artwork/suggestions/decide",
+   "winner": "apps.webui.server.routes.artwork_suggestions.post_decide"
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/artwork/suggestions/{stable_id}/image",
+   "url": "/api/v1/artwork/suggestions/sample/image",
+   "winner": "apps.webui.server.routes.artwork_suggestions.get_suggestion_image"
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/audio-quality",
+   "url": "/api/v1/audio-quality",
+   "winner": "apps.webui.server.routes.audio_quality.list_audio_quality"
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/audio-quality/scan",
+   "url": "/api/v1/audio-quality/scan",
+   "winner": "apps.webui.server.routes.audio_quality.get_scan_status"
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/audio-quality/scan",
+   "url": "/api/v1/audio-quality/scan",
+   "winner": "apps.webui.server.routes.audio_quality.start_scan"
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/audio-quality/scan/stop",
+   "url": "/api/v1/audio-quality/scan/stop",
+   "winner": "apps.webui.server.routes.audio_quality.stop_scan"
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/audio-quality/{stable_id}",
+   "url": "/api/v1/audio-quality/sample",
+   "winner": "apps.webui.server.routes.audio_quality.get_track_quality"
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/audio/acoustic-proof",
+   "url": "/api/v1/audio/acoustic-proof",
+   "winner": "apps.webui.server.routes.audio_output_health.post_acoustic_proof"
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/audio/input-devices",
+   "url": "/api/v1/audio/input-devices",
+   "winner": "apps.webui.server.routes.audio_output_health.get_input_devices"
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/audio/output-health",
+   "url": "/api/v1/audio/output-health",
+   "winner": "apps.webui.server.routes.audio_output_health.get_output_health"
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/audio/reconnect-speaker",
+   "url": "/api/v1/audio/reconnect-speaker",
+   "winner": "apps.webui.server.routes.audio_output_health.post_reconnect_speaker"
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/audio/switch-output",
+   "url": "/api/v1/audio/switch-output",
+   "winner": "apps.webui.server.routes.audio_output_health.post_switch_output"
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/auth/callback",
+   "url": "/api/v1/auth/callback",
+   "winner": "apps.webui.server.routes.auth.finish_login"
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/auth/login",
+   "url": "/api/v1/auth/login",
+   "winner": "apps.webui.server.routes.auth.start_login"
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/auth/logout",
+   "url": "/api/v1/auth/logout",
+   "winner": "apps.webui.server.routes.auth.logout"
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/auth/me",
+   "url": "/api/v1/auth/me",
+   "winner": "apps.webui.server.routes.auth.whoami"
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/auto-gain/tracks/{stable_id}",
+   "url": "/api/v1/auto-gain/tracks/sample",
+   "winner": "apps.webui.server.routes.auto_gain.get_track_auto_gain"
+  },
+  {
+   "method": "PUT",
+   "path": "/api/v1/auto-gain/tracks/{stable_id}/user-offset",
+   "url": "/api/v1/auto-gain/tracks/sample/user-offset",
+   "winner": "apps.webui.server.routes.auto_gain.put_track_auto_gain_user_offset"
+  },
+  {
+   "method": "DELETE",
+   "path": "/api/v1/autodj/pair-transition",
+   "url": "/api/v1/autodj/pair-transition",
+   "winner": "apps.webui.server.routes.pair_transition.delete_pair"
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/autodj/pair-transition",
+   "url": "/api/v1/autodj/pair-transition",
+   "winner": "apps.webui.server.routes.pair_transition.get_pair"
+  },
+  {
+   "method": "PUT",
+   "path": "/api/v1/autodj/pair-transition",
+   "url": "/api/v1/autodj/pair-transition",
+   "winner": "apps.webui.server.routes.pair_transition.put_pair"
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/autodj/pair-transition/capture",
+   "url": "/api/v1/autodj/pair-transition/capture",
+   "winner": "apps.webui.server.routes.pair_transition.get_capture"
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/autodj/pair-transition/played",
+   "url": "/api/v1/autodj/pair-transition/played",
+   "winner": "apps.webui.server.routes.pair_transition.post_played"
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/autolists/buckets",
+   "url": "/api/v1/autolists/buckets",
+   "winner": "apps.webui.server.routes.autolists.list_buckets"
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/autolists/groups",
+   "url": "/api/v1/autolists/groups",
+   "winner": "apps.webui.server.routes.autolists.list_groups"
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/autolists/index",
+   "url": "/api/v1/autolists/index",
+   "winner": "apps.webui.server.routes.autolists.get_index"
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/autolists/query",
+   "url": "/api/v1/autolists/query",
+   "winner": "apps.webui.server.routes.autolists.query_autolists"
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/beatgrid-flags",
+   "url": "/api/v1/beatgrid-flags",
+   "winner": "apps.webui.server.routes.beatgrid_flags.list_beatgrid_flags"
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/beatgrid-flags/audio-fit",
+   "url": "/api/v1/beatgrid-flags/audio-fit",
+   "winner": "apps.webui.server.routes.beatgrid_flags.list_audio_fit"
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/beatgrid-flags/audio-fit/scan",
+   "url": "/api/v1/beatgrid-flags/audio-fit/scan",
+   "winner": "apps.webui.server.routes.beatgrid_flags.get_audio_fit_scan_status"
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/beatgrid-flags/audio-fit/scan",
+   "url": "/api/v1/beatgrid-flags/audio-fit/scan",
+   "winner": "apps.webui.server.routes.beatgrid_flags.start_audio_fit_scan"
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/beatgrid-flags/scan",
+   "url": "/api/v1/beatgrid-flags/scan",
+   "winner": "apps.webui.server.routes.beatgrid_flags.get_scan_status"
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/beatgrid-flags/scan",
+   "url": "/api/v1/beatgrid-flags/scan",
+   "winner": "apps.webui.server.routes.beatgrid_flags.start_scan"
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/beatgrid-flags/{stable_id}/audio-fit",
+   "url": "/api/v1/beatgrid-flags/sample/audio-fit",
+   "winner": "apps.webui.server.routes.beatgrid_flags.get_track_audio_fit"
+  },
+  {
+   "method": "PUT",
+   "path": "/api/v1/beatgrid-flags/{stable_id}/dismissed",
+   "url": "/api/v1/beatgrid-flags/sample/dismissed",
+   "winner": "apps.webui.server.routes.beatgrid_flags.set_flag_dismissed"
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/bench/kpi",
+   "url": "/api/v1/bench/kpi",
+   "winner": "apps.webui.server.routes.bench.get_kpi_ledger"
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/bench/lyrics-kpi",
+   "url": "/api/v1/bench/lyrics-kpi",
+   "winner": "apps.webui.server.routes.lyrics_words.get_lyrics_kpi_ledger"
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/bench/perf-kpi",
+   "url": "/api/v1/bench/perf-kpi",
+   "winner": "apps.webui.server.routes.bench.get_perf_kpi_ledger"
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/bench/ratings",
+   "url": "/api/v1/bench/ratings",
+   "winner": "apps.webui.server.routes.bench.list_ratings"
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/bench/ratings",
+   "url": "/api/v1/bench/ratings",
+   "winner": "apps.webui.server.routes.bench.save_ratings"
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/bench/ratings/{filename}",
+   "url": "/api/v1/bench/ratings/sample",
+   "winner": "apps.webui.server.routes.bench.get_ratings_file"
+  },
+  {
+   "method": "PATCH",
+   "path": "/api/v1/bulk-edit",
+   "url": "/api/v1/bulk-edit",
+   "winner": "apps.webui.server.routes.bulk_edit.bulk_edit"
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/client-errors",
+   "url": "/api/v1/client-errors",
+   "winner": "apps.webui.server.routes.client_errors.list_client_errors"
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/client-errors",
+   "url": "/api/v1/client-errors",
+   "winner": "apps.webui.server.routes.client_errors.capture_client_error"
+  },
+  {
+   "method": "PATCH",
+   "path": "/api/v1/client-errors/{event_id}",
+   "url": "/api/v1/client-errors/sample",
+   "winner": "apps.webui.server.routes.client_errors.triage_client_error"
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/client-events",
+   "url": "/api/v1/client-events",
+   "winner": "apps.webui.server.routes.client_events.capture_client_event"
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/cloudsync/config",
+   "url": "/api/v1/cloudsync/config",
+   "winner": "apps.webui.server.routes.cloudsync_config.get_config"
+  },
+  {
+   "method": "PUT",
+   "path": "/api/v1/cloudsync/config",
+   "url": "/api/v1/cloudsync/config",
+   "winner": "apps.webui.server.routes.cloudsync_config.put_config"
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/cloudsync/data-classes",
+   "url": "/api/v1/cloudsync/data-classes",
+   "winner": "apps.webui.server.routes.cloudsync_policy.get_data_classes"
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/cloudsync/enrollment-grants",
+   "url": "/api/v1/cloudsync/enrollment-grants",
+   "winner": "apps.webui.server.routes.cloudsync_ops.mint_enrollment_grant"
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/cloudsync/fleet",
+   "url": "/api/v1/cloudsync/fleet",
+   "winner": "apps.webui.server.routes.cloudsync_ops.get_fleet"
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/cloudsync/fleet/adopt",
+   "url": "/api/v1/cloudsync/fleet/adopt",
+   "winner": "apps.webui.server.routes.cloudsync_fleet.adopt_machine"
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/cloudsync/fleet/credentials",
+   "url": "/api/v1/cloudsync/fleet/credentials",
+   "winner": "apps.webui.server.routes.cloudsync_fleet.read_credentials"
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/cloudsync/fleet/revoke",
+   "url": "/api/v1/cloudsync/fleet/revoke",
+   "winner": "apps.webui.server.routes.cloudsync_fleet.revoke_machine"
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/cloudsync/identity-backlog",
+   "url": "/api/v1/cloudsync/identity-backlog",
+   "winner": "apps.webui.server.routes.cloudsync_status.get_identity_backlog"
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/cloudsync/machines",
+   "url": "/api/v1/cloudsync/machines",
+   "winner": "apps.webui.server.routes.cloudsync.list_machines"
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/cloudsync/overview",
+   "url": "/api/v1/cloudsync/overview",
+   "winner": "apps.webui.server.routes.cloudsync.get_overview"
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/cloudsync/playlist-pins",
+   "url": "/api/v1/cloudsync/playlist-pins",
+   "winner": "apps.webui.server.routes.cloudsync.list_playlist_pins"
+  },
+  {
+   "method": "PUT",
+   "path": "/api/v1/cloudsync/playlist-pins",
+   "url": "/api/v1/cloudsync/playlist-pins",
+   "winner": "apps.webui.server.routes.cloudsync.put_playlist_pin"
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/cloudsync/policies",
+   "url": "/api/v1/cloudsync/policies",
+   "winner": "apps.webui.server.routes.cloudsync.list_policies"
+  },
+  {
+   "method": "PUT",
+   "path": "/api/v1/cloudsync/policies",
+   "url": "/api/v1/cloudsync/policies",
+   "winner": "apps.webui.server.routes.cloudsync.put_policy"
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/cloudsync/policies/apply",
+   "url": "/api/v1/cloudsync/policies/apply",
+   "winner": "apps.webui.server.routes.cloudsync_policy.apply_policies"
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/cloudsync/policies/plan",
+   "url": "/api/v1/cloudsync/policies/plan",
+   "winner": "apps.webui.server.routes.cloudsync_policy.plan_policies"
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/cloudsync/policies/validate",
+   "url": "/api/v1/cloudsync/policies/validate",
+   "winner": "apps.webui.server.routes.cloudsync_policy.validate_policies"
+  },
+  {
+   "method": "DELETE",
+   "path": "/api/v1/cloudsync/policies/{machine_id}/{asset_kind}",
+   "url": "/api/v1/cloudsync/policies/sample/sample",
+   "winner": "apps.webui.server.routes.cloudsync_policy.delete_policy"
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/cloudsync/scheduler/resume-owed",
+   "url": "/api/v1/cloudsync/scheduler/resume-owed",
+   "winner": "apps.webui.server.routes.cloudsync_ops.resume_scheduler_owed"
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/cloudsync/status",
+   "url": "/api/v1/cloudsync/status",
+   "winner": "apps.webui.server.routes.cloudsync_status.get_status"
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/cloudsync/sync",
+   "url": "/api/v1/cloudsync/sync",
+   "winner": "apps.webui.server.routes.cloudsync_ops.run_sync_round"
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/cmdk/ai-search",
+   "url": "/api/v1/cmdk/ai-search",
+   "winner": "apps.webui.server.routes.cmdk_ai.ai_search"
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/cmdk/ai-status",
+   "url": "/api/v1/cmdk/ai-status",
+   "winner": "apps.webui.server.routes.cmdk_ai.ai_status"
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/commands",
+   "url": "/api/v1/commands",
+   "winner": "apps.webui.server.routes.commands.post_command"
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/commands/next",
+   "url": "/api/v1/commands/next",
+   "winner": "apps.webui.server.routes.commands.next_command"
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/commands/{order_id}/result",
+   "url": "/api/v1/commands/sample/result",
+   "winner": "apps.webui.server.routes.commands.complete_command"
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/copilot/peak-pressure",
+   "url": "/api/v1/copilot/peak-pressure",
+   "winner": "apps.webui.server.routes.copilot.peak_pressure_route"
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/copilot/suggest-next",
+   "url": "/api/v1/copilot/suggest-next",
+   "winner": "apps.webui.server.routes.copilot.suggest_next_route"
+  },
+  {
+   "method": "PUT",
+   "path": "/api/v1/coverage-drain/config",
+   "url": "/api/v1/coverage-drain/config",
+   "winner": "apps.webui.server.routes.coverage_drain.drain_config"
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/coverage-drain/retry",
+   "url": "/api/v1/coverage-drain/retry",
+   "winner": "apps.webui.server.routes.coverage_drain.drain_retry"
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/coverage-drain/start",
+   "url": "/api/v1/coverage-drain/start",
+   "winner": "apps.webui.server.routes.coverage_drain.drain_start"
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/coverage-drain/status",
+   "url": "/api/v1/coverage-drain/status",
+   "winner": "apps.webui.server.routes.coverage_drain.drain_status"
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/coverage-drain/stop",
+   "url": "/api/v1/coverage-drain/stop",
+   "winner": "apps.webui.server.routes.coverage_drain.drain_stop"
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/coverage-outcomes/stems/no-source",
+   "url": "/api/v1/coverage-outcomes/stems/no-source",
+   "winner": "apps.webui.server.routes.coverage_terminal.list_stems_no_source"
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/coverage-outcomes/stems/no-source",
+   "url": "/api/v1/coverage-outcomes/stems/no-source",
+   "winner": "apps.webui.server.routes.coverage_terminal.mark_stems_no_source"
+  },
+  {
+   "method": "DELETE",
+   "path": "/api/v1/coverage-outcomes/stems/no-source/{stable_id}",
+   "url": "/api/v1/coverage-outcomes/stems/no-source/sample",
+   "winner": "apps.webui.server.routes.coverage_terminal.clear_stems_no_source"
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/dedup/clusters",
+   "url": "/api/v1/dedup/clusters",
+   "winner": "apps.webui.server.routes.dedup_review.get_dedup_clusters"
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/dedup/clusters/{cluster_id}/apply",
+   "url": "/api/v1/dedup/clusters/sample/apply",
+   "winner": "apps.webui.server.routes.dedup_review.post_dedup_apply"
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/dedup/clusters/{cluster_id}/decision",
+   "url": "/api/v1/dedup/clusters/sample/decision",
+   "winner": "apps.webui.server.routes.dedup_review.post_dedup_decision"
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/dedup/clusters/{cluster_id}/undo",
+   "url": "/api/v1/dedup/clusters/sample/undo",
+   "winner": "apps.webui.server.routes.dedup_review.post_dedup_undo"
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/dedup/scan",
+   "url": "/api/v1/dedup/scan",
+   "winner": "apps.webui.server.routes.dedup_review.get_dedup_scan"
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/dedup/scan",
+   "url": "/api/v1/dedup/scan",
+   "winner": "apps.webui.server.routes.dedup_review.post_dedup_scan"
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/dj/transition/autoplay-decision",
+   "url": "/api/v1/dj/transition/autoplay-decision",
+   "winner": "apps.webui.server.routes.dj_transition.autoplay_decision"
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/dj/transition/decide",
+   "url": "/api/v1/dj/transition/decide",
+   "winner": "apps.webui.server.routes.dj_transition.decide_transition"
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/dj/transition/plan",
+   "url": "/api/v1/dj/transition/plan",
+   "winner": "apps.webui.server.routes.dj_transition.plan_transition"
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/dj/transition/prepare",
+   "url": "/api/v1/dj/transition/prepare",
+   "winner": "apps.webui.server.routes.dj_transition.prepare_transition"
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/dj/transitions/last",
+   "url": "/api/v1/dj/transitions/last",
+   "winner": "apps.webui.server.routes.dj_transitions_record.get_last"
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/dj/transitions/verdict",
+   "url": "/api/v1/dj/transitions/verdict",
+   "winner": "apps.webui.server.routes.dj_transitions_record.post_verdict"
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/dj/try",
+   "url": "/api/v1/dj/try",
+   "winner": "apps.webui.server.routes.dj_try.start_try"
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/dj/try/{job_id}",
+   "url": "/api/v1/dj/try/sample",
+   "winner": "apps.webui.server.routes.dj_try.get_try"
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/dj/try/{job_id}/candidates/{candidate_id}/audio",
+   "url": "/api/v1/dj/try/sample/candidates/sample/audio",
+   "winner": "apps.webui.server.routes.dj_try.candidate_audio"
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/dj/try/{job_id}/candidates/{candidate_id}/lanes",
+   "url": "/api/v1/dj/try/sample/candidates/sample/lanes",
+   "winner": "apps.webui.server.routes.dj_try.candidate_lanes"
+  },
+  {
+   "method": "DELETE",
+   "path": "/api/v1/dj/try/{job_id}/pick",
+   "url": "/api/v1/dj/try/sample/pick",
+   "winner": "apps.webui.server.routes.dj_try.undo_pick"
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/dj/try/{job_id}/pick",
+   "url": "/api/v1/dj/try/sample/pick",
+   "winner": "apps.webui.server.routes.dj_try.pick_candidate"
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/energy/backfill/collect",
+   "url": "/api/v1/energy/backfill/collect",
+   "winner": "apps.webui.server.routes.energy.backfill_collect"
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/energy/backfill/plan",
+   "url": "/api/v1/energy/backfill/plan",
+   "winner": "apps.webui.server.routes.energy.backfill_plan"
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/energy/backfill/share",
+   "url": "/api/v1/energy/backfill/share",
+   "winner": "apps.webui.server.routes.energy.backfill_share_route"
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/energy/backfill/stage",
+   "url": "/api/v1/energy/backfill/stage",
+   "winner": "apps.webui.server.routes.energy.backfill_stage"
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/energy/status",
+   "url": "/api/v1/energy/status",
+   "winner": "apps.webui.server.routes.energy.energy_status"
+  },
+  {
+   "method": "PUT",
+   "path": "/api/v1/enrich/decisions/{lane}",
+   "url": "/api/v1/enrich/decisions/sample",
+   "winner": "apps.webui.server.routes.enrich.put_decision"
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/enrich/summary",
+   "url": "/api/v1/enrich/summary",
+   "winner": "apps.webui.server.routes.enrich.get_summary"
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/errors",
+   "url": "/api/v1/errors",
+   "winner": "apps.webui.server.routes.error_feed.list_errors"
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/feedback/archive",
+   "url": "/api/v1/feedback/archive",
+   "winner": "apps.webui.server.routes.feedback.archive_feedback"
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/feedback/attachments/{attachment_id}",
+   "url": "/api/v1/feedback/attachments/sample",
+   "winner": "apps.webui.server.routes.feedback_attachments.get_attachment"
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/feedback/comments",
+   "url": "/api/v1/feedback/comments",
+   "winner": "apps.webui.server.routes.feedback.list_comments"
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/feedback/comments",
+   "url": "/api/v1/feedback/comments",
+   "winner": "apps.webui.server.routes.feedback.create_comment"
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/feedback/comments/summary",
+   "url": "/api/v1/feedback/comments/summary",
+   "winner": "apps.webui.server.routes.feedback_summary.comments_summary"
+  },
+  {
+   "method": "PATCH",
+   "path": "/api/v1/feedback/comments/{comment_id}",
+   "url": "/api/v1/feedback/comments/sample",
+   "winner": "apps.webui.server.routes.feedback_pins.update_comment"
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/feedback/comments/{comment_id}/archive",
+   "url": "/api/v1/feedback/comments/sample/archive",
+   "winner": "apps.webui.server.routes.feedback_pins.archive_comment"
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/feedback/comments/{comment_id}/attachment",
+   "url": "/api/v1/feedback/comments/sample/attachment",
+   "winner": "apps.webui.server.routes.feedback_attachments.upload_attachment"
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/feedback/comments/{comment_id}/follow-on",
+   "url": "/api/v1/feedback/comments/sample/follow-on",
+   "winner": "apps.webui.server.routes.feedback_pins.follow_on_comment"
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/feedback/comments/{comment_id}/replies",
+   "url": "/api/v1/feedback/comments/sample/replies",
+   "winner": "apps.webui.server.routes.feedback_replies.add_reply"
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/feedback/general",
+   "url": "/api/v1/feedback/general",
+   "winner": "apps.webui.server.routes.feedback.get_general"
+  },
+  {
+   "method": "PUT",
+   "path": "/api/v1/feedback/general",
+   "url": "/api/v1/feedback/general",
+   "winner": "apps.webui.server.routes.feedback.put_general"
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/feedback/performance-marks",
+   "url": "/api/v1/feedback/performance-marks",
+   "winner": "apps.webui.server.routes.feedback_performance_marks.get_performance_marks"
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/feedback/performance-marks",
+   "url": "/api/v1/feedback/performance-marks",
+   "winner": "apps.webui.server.routes.feedback_performance_marks.create_performance_mark"
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/feedback/sync",
+   "url": "/api/v1/feedback/sync",
+   "winner": "apps.webui.server.routes.feedback_sync.post_feedback_sync"
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/feedback/sync/status",
+   "url": "/api/v1/feedback/sync/status",
+   "winner": "apps.webui.server.routes.feedback_sync.get_feedback_sync_status"
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/feedback/todos",
+   "url": "/api/v1/feedback/todos",
+   "winner": "apps.webui.server.routes.feedback.list_todos"
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/feedback/todos",
+   "url": "/api/v1/feedback/todos",
+   "winner": "apps.webui.server.routes.feedback.create_todo"
+  },
+  {
+   "method": "PATCH",
+   "path": "/api/v1/feedback/todos/{todo_id}",
+   "url": "/api/v1/feedback/todos/sample",
+   "winner": "apps.webui.server.routes.feedback.patch_todo"
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/find-replace/apply",
+   "url": "/api/v1/find-replace/apply",
+   "winner": "apps.webui.server.routes.find_replace.apply"
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/find-replace/preview",
+   "url": "/api/v1/find-replace/preview",
+   "winner": "apps.webui.server.routes.find_replace.preview"
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/flags",
+   "url": "/api/v1/flags",
+   "winner": "apps.feature_flags.http.read_flags"
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/genres",
+   "url": "/api/v1/genres",
+   "winner": "apps.webui.server.routes.genres.get_genres"
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/genres/config",
+   "url": "/api/v1/genres/config",
+   "winner": "apps.webui.server.routes.genres.get_config"
+  },
+  {
+   "method": "PUT",
+   "path": "/api/v1/genres/config",
+   "url": "/api/v1/genres/config",
+   "winner": "apps.webui.server.routes.genres.put_config"
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/genres/enqueue",
+   "url": "/api/v1/genres/enqueue",
+   "winner": "apps.webui.server.routes.genres.enqueue"
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/genres/findings",
+   "url": "/api/v1/genres/findings",
+   "winner": "apps.webui.server.routes.genres.attach_finding"
+  },
+  {
+   "method": "DELETE",
+   "path": "/api/v1/genres/findings/{stable_id}/{provider}",
+   "url": "/api/v1/genres/findings/sample/sample",
+   "winner": "apps.webui.server.routes.genres.remove_finding"
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/genres/infer",
+   "url": "/api/v1/genres/infer",
+   "winner": "apps.webui.server.routes.genres.infer_now"
+  },
+  {
+   "method": "PUT",
+   "path": "/api/v1/genres/keys/{name}",
+   "url": "/api/v1/genres/keys/sample",
+   "winner": "apps.webui.server.routes.genres.put_key"
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/genres/status",
+   "url": "/api/v1/genres/status",
+   "winner": "apps.webui.server.routes.genres.genre_status"
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/genres/tags/journal",
+   "url": "/api/v1/genres/tags/journal",
+   "winner": "apps.webui.server.routes.genres.tag_journal"
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/genres/tags/undo",
+   "url": "/api/v1/genres/tags/undo",
+   "winner": "apps.webui.server.routes.genres.undo_tag"
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/genres/tags/write",
+   "url": "/api/v1/genres/tags/write",
+   "winner": "apps.webui.server.routes.genres.write_tag"
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/genres/{stable_id}/similar",
+   "url": "/api/v1/genres/sample/similar",
+   "winner": "apps.webui.server.routes.genres.similar"
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/grid-phase-precompute",
+   "url": "/api/v1/grid-phase-precompute",
+   "winner": "apps.webui.server.routes.grid_phase_precompute.get_status"
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/handoff/apps",
+   "url": "/api/v1/handoff/apps",
+   "winner": "apps.webui.server.routes.track_handoff.list_handoff_apps"
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/health",
+   "url": "/api/v1/health",
+   "winner": "apps.webui.server.routes.health.health"
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/ingest/batch/{batch}/materialize",
+   "url": "/api/v1/ingest/batch/sample/materialize",
+   "winner": "apps.webui.server.routes.ingest_materialize.materialize_batch"
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/ingest/config",
+   "url": "/api/v1/ingest/config",
+   "winner": "apps.webui.server.routes.ingest.get_config"
+  },
+  {
+   "method": "PUT",
+   "path": "/api/v1/ingest/config",
+   "url": "/api/v1/ingest/config",
+   "winner": "apps.webui.server.routes.ingest.put_config"
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/ingest/coverage",
+   "url": "/api/v1/ingest/coverage",
+   "winner": "apps.webui.server.routes.ingest.get_coverage"
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/ingest/enrichment",
+   "url": "/api/v1/ingest/enrichment",
+   "winner": "apps.webui.server.routes.ingest_enrichment.get_enrichment"
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/ingest/enrichment/rerun",
+   "url": "/api/v1/ingest/enrichment/rerun",
+   "winner": "apps.webui.server.routes.ingest_enrichment.post_rerun"
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/ingest/enrichment/{batch_id}",
+   "url": "/api/v1/ingest/enrichment/sample",
+   "winner": "apps.webui.server.routes.ingest_enrichment.get_batch"
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/ingest/pending",
+   "url": "/api/v1/ingest/pending",
+   "winner": "apps.webui.server.routes.ingest_pending.list_pending"
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/ingest/pending/{batch}/confirm",
+   "url": "/api/v1/ingest/pending/sample/confirm",
+   "winner": "apps.webui.server.routes.ingest_pending.confirm_pending"
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/ingest/refresh",
+   "url": "/api/v1/ingest/refresh",
+   "winner": "apps.webui.server.routes.ingest.start_refresh"
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/ingest/refresh/status",
+   "url": "/api/v1/ingest/refresh/status",
+   "winner": "apps.webui.server.routes.ingest.refresh_status"
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/ingest/upload",
+   "url": "/api/v1/ingest/upload",
+   "winner": "apps.webui.server.routes.ingest_upload.upload"
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/ingest/upload/decide",
+   "url": "/api/v1/ingest/upload/decide",
+   "winner": "apps.webui.server.routes.ingest_upload.decide_upload"
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/library-jobs",
+   "url": "/api/v1/library-jobs",
+   "winner": "apps.webui.server.routes.library_jobs.list_library_jobs"
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/library-jobs/enqueue",
+   "url": "/api/v1/library-jobs/enqueue",
+   "winner": "apps.webui.server.routes.library_jobs.enqueue_library_jobs"
+  },
+  {
+   "method": "PATCH",
+   "path": "/api/v1/library-jobs/{lane}/{stable_id}",
+   "url": "/api/v1/library-jobs/sample/sample",
+   "winner": "apps.webui.server.routes.library_jobs.reorder_library_job"
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/library-jobs/{lane}/{stable_id}/cancel",
+   "url": "/api/v1/library-jobs/sample/sample/cancel",
+   "winner": "apps.webui.server.routes.library_jobs.cancel_library_job"
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/library/preview-strips",
+   "url": "/api/v1/library/preview-strips",
+   "winner": "apps.webui.server.routes.library.post_preview_strips"
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/library/readiness",
+   "url": "/api/v1/library/readiness",
+   "winner": "apps.webui.server.routes.library.get_library_readiness"
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/library/row-assets",
+   "url": "/api/v1/library/row-assets",
+   "winner": "apps.webui.server.routes.library.post_row_assets"
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/library/share-root/reanchor",
+   "url": "/api/v1/library/share-root/reanchor",
+   "winner": "apps.webui.server.routes.library.reanchor_share_root"
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/library/wheel",
+   "url": "/api/v1/library/wheel",
+   "winner": "apps.webui.server.routes.library.get_library_wheel"
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/library/wheel/axes",
+   "url": "/api/v1/library/wheel/axes",
+   "winner": "apps.webui.server.routes.library.get_library_wheel_axes"
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/lifecycle/quit",
+   "url": "/api/v1/lifecycle/quit",
+   "winner": "apps.webui.server.routes.lifecycle.request_shell_quit"
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/lyrics",
+   "url": "/api/v1/lyrics",
+   "winner": "apps.webui.server.routes.lyrics_words.list_lyric_verdicts"
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/lyrics/config",
+   "url": "/api/v1/lyrics/config",
+   "winner": "apps.webui.server.routes.lyrics_words.get_lyrics_config"
+  },
+  {
+   "method": "PUT",
+   "path": "/api/v1/lyrics/config",
+   "url": "/api/v1/lyrics/config",
+   "winner": "apps.webui.server.routes.lyrics_words.put_lyrics_config"
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/lyrics/jobs",
+   "url": "/api/v1/lyrics/jobs",
+   "winner": "apps.webui.server.routes.lyrics_words.get_lyric_jobs"
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/lyrics/jobs",
+   "url": "/api/v1/lyrics/jobs",
+   "winner": "apps.webui.server.routes.lyrics_words.post_lyric_job"
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/lyrics/purge",
+   "url": "/api/v1/lyrics/purge",
+   "winner": "apps.webui.server.routes.lyrics_words.post_lyrics_purge"
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/lyrics/search",
+   "url": "/api/v1/lyrics/search",
+   "winner": "apps.webui.server.routes.lyrics_search.search_lyrics"
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/lyrics/summary",
+   "url": "/api/v1/lyrics/summary",
+   "winner": "apps.webui.server.routes.lyrics_words.get_lyrics_summary"
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/lyrics/verdicts/backfill",
+   "url": "/api/v1/lyrics/verdicts/backfill",
+   "winner": "apps.webui.server.routes.lyrics_words.post_lyrics_verdicts_backfill"
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/midi/catalog",
+   "url": "/api/v1/midi/catalog",
+   "winner": "apps.webui.server.routes.midi_maps.search_midi_catalog"
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/midi/maps",
+   "url": "/api/v1/midi/maps",
+   "winner": "apps.webui.server.routes.midi_maps.list_midi_maps"
+  },
+  {
+   "method": "DELETE",
+   "path": "/api/v1/midi/maps/{map_id}",
+   "url": "/api/v1/midi/maps/sample",
+   "winner": "apps.webui.server.routes.midi_maps.delete_midi_map"
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/midi/maps/{map_id}",
+   "url": "/api/v1/midi/maps/sample",
+   "winner": "apps.webui.server.routes.midi_maps.get_midi_map"
+  },
+  {
+   "method": "PUT",
+   "path": "/api/v1/midi/maps/{map_id}",
+   "url": "/api/v1/midi/maps/sample",
+   "winner": "apps.webui.server.routes.midi_maps.put_midi_map"
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/mytags",
+   "url": "/api/v1/mytags",
+   "winner": "apps.webui.server.routes.mytag.list_mytags"
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/mytags",
+   "url": "/api/v1/mytags",
+   "winner": "apps.webui.server.routes.library_org.create_tag"
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/mytags/assign",
+   "url": "/api/v1/mytags/assign",
+   "winner": "apps.webui.server.routes.mytag.assign_mytags"
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/mytags/assignments",
+   "url": "/api/v1/mytags/assignments",
+   "winner": "apps.webui.server.routes.library_org.tag_assignments"
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/mytags/assignments",
+   "url": "/api/v1/mytags/assignments",
+   "winner": "apps.webui.server.routes.library_org.assign_tags"
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/mytags/catalog",
+   "url": "/api/v1/mytags/catalog",
+   "winner": "apps.webui.server.routes.library_org.tag_catalog"
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/mytags/delete",
+   "url": "/api/v1/mytags/delete",
+   "winner": "apps.webui.server.routes.mytag.delete_mytag"
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/mytags/rename",
+   "url": "/api/v1/mytags/rename",
+   "winner": "apps.webui.server.routes.mytag.rename_mytag"
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/mytags/suggest",
+   "url": "/api/v1/mytags/suggest",
+   "winner": "apps.webui.server.routes.library_org.suggest_tags"
+  },
+  {
+   "method": "DELETE",
+   "path": "/api/v1/mytags/{name:path}",
+   "url": "/api/v1/mytags/sample/leaf",
+   "winner": "apps.webui.server.routes.library_org.delete_tag"
+  },
+  {
+   "method": "PATCH",
+   "path": "/api/v1/mytags/{name:path}",
+   "url": "/api/v1/mytags/sample/leaf",
+   "winner": "apps.webui.server.routes.library_org.patch_tag"
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/offload/operations",
+   "url": "/api/v1/offload/operations",
+   "winner": "apps.webui.server.routes.cloud_offload.list_operations"
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/offload/operations/{op_id}",
+   "url": "/api/v1/offload/operations/sample",
+   "winner": "apps.webui.server.routes.cloud_offload.get_operation"
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/offload/operations/{op_id}/cancel",
+   "url": "/api/v1/offload/operations/sample/cancel",
+   "winner": "apps.webui.server.routes.cloud_offload.cancel_operation"
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/offload/playlists/{playlist_id}",
+   "url": "/api/v1/offload/playlists/sample",
+   "winner": "apps.webui.server.routes.cloud_offload.offload_playlist"
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/offload/playlists/{playlist_id}/restore",
+   "url": "/api/v1/offload/playlists/sample/restore",
+   "winner": "apps.webui.server.routes.cloud_offload.restore_playlist"
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/offload/restore",
+   "url": "/api/v1/offload/restore",
+   "winner": "apps.webui.server.routes.cloud_offload.restore_tracks"
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/offload/summary",
+   "url": "/api/v1/offload/summary",
+   "winner": "apps.webui.server.routes.cloud_offload.get_summary"
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/offload/sweep",
+   "url": "/api/v1/offload/sweep",
+   "winner": "apps.webui.server.routes.cloud_offload.run_sweep"
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/offload/tracks",
+   "url": "/api/v1/offload/tracks",
+   "winner": "apps.webui.server.routes.cloud_offload.track_states"
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/offload/tracks",
+   "url": "/api/v1/offload/tracks",
+   "winner": "apps.webui.server.routes.cloud_offload.offload_tracks"
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/pairings",
+   "url": "/api/v1/pairings",
+   "winner": "apps.webui.server.routes.pairings.list_pairings"
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/pairings",
+   "url": "/api/v1/pairings",
+   "winner": "apps.webui.server.routes.pairings.create_pairing"
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/pairings/alignments",
+   "url": "/api/v1/pairings/alignments",
+   "winner": "apps.webui.server.routes.pairing_capture.list_alignments"
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/pairings/alignments",
+   "url": "/api/v1/pairings/alignments",
+   "winner": "apps.webui.server.routes.pairing_capture.create_alignment"
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/pairings/sync-snapshots",
+   "url": "/api/v1/pairings/sync-snapshots",
+   "winner": "apps.webui.server.routes.pairing_capture.list_sync_snapshots"
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/pairings/sync-snapshots",
+   "url": "/api/v1/pairings/sync-snapshots",
+   "winner": "apps.webui.server.routes.pairing_capture.create_sync_snapshot"
+  },
+  {
+   "method": "DELETE",
+   "path": "/api/v1/pairings/{pairing_id}",
+   "url": "/api/v1/pairings/sample",
+   "winner": "apps.webui.server.routes.pairings.delete_pairing"
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/performance/headphones",
+   "url": "/api/v1/performance/headphones",
+   "winner": "apps.webui.server.routes.performance_headphones.get_headphones"
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/performance/headphones/alignment-mode",
+   "url": "/api/v1/performance/headphones/alignment-mode",
+   "winner": "apps.webui.server.routes.performance_headphones.post_headphone_alignment_mode"
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/performance/headphones/calibrate",
+   "url": "/api/v1/performance/headphones/calibrate",
+   "winner": "apps.webui.server.routes.performance_headphones.post_headphone_calibrate"
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/performance/headphones/calibrate/abort",
+   "url": "/api/v1/performance/headphones/calibrate/abort",
+   "winner": "apps.webui.server.routes.performance_headphones.post_headphone_calibrate_abort"
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/performance/headphones/channel-cue",
+   "url": "/api/v1/performance/headphones/channel-cue",
+   "winner": "apps.webui.server.routes.performance_headphones.post_channel_cue"
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/performance/headphones/head-delay",
+   "url": "/api/v1/performance/headphones/head-delay",
+   "winner": "apps.webui.server.routes.performance_headphones.post_head_delay_ms"
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/performance/headphones/inputs/select",
+   "url": "/api/v1/performance/headphones/inputs/select",
+   "winner": "apps.webui.server.routes.performance_headphones.post_headphone_input_select"
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/performance/headphones/level",
+   "url": "/api/v1/performance/headphones/level",
+   "winner": "apps.webui.server.routes.performance_headphones.post_headphone_level"
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/performance/headphones/master-delay",
+   "url": "/api/v1/performance/headphones/master-delay",
+   "winner": "apps.webui.server.routes.performance_headphones.post_master_delay_ms"
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/performance/headphones/mix",
+   "url": "/api/v1/performance/headphones/mix",
+   "winner": "apps.webui.server.routes.performance_headphones.post_headphone_mix"
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/performance/headphones/output-mode",
+   "url": "/api/v1/performance/headphones/output-mode",
+   "winner": "apps.webui.server.routes.performance_headphones.post_output_mode"
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/performance/headphones/outputs/master",
+   "url": "/api/v1/performance/headphones/outputs/master",
+   "winner": "apps.webui.server.routes.performance_headphones.post_headphone_master_select"
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/performance/headphones/outputs/refresh",
+   "url": "/api/v1/performance/headphones/outputs/refresh",
+   "winner": "apps.webui.server.routes.performance_headphones.post_headphone_outputs_refresh"
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/performance/headphones/outputs/select",
+   "url": "/api/v1/performance/headphones/outputs/select",
+   "winner": "apps.webui.server.routes.performance_headphones.post_headphone_output_select"
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/performance/headphones/preview",
+   "url": "/api/v1/performance/headphones/preview",
+   "winner": "apps.webui.server.routes.performance_headphones.post_preview_cue"
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/performance/headphones/preview/stop",
+   "url": "/api/v1/performance/headphones/preview/stop",
+   "winner": "apps.webui.server.routes.performance_headphones.post_preview_stop"
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/performance/remote-speaker/link",
+   "url": "/api/v1/performance/remote-speaker/link",
+   "winner": "apps.webui.server.routes.performance_remote_speaker.get_link"
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/performance/remote-speaker/link",
+   "url": "/api/v1/performance/remote-speaker/link",
+   "winner": "apps.webui.server.routes.performance_remote_speaker.post_link"
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/performance/remote-speaker/link/offer",
+   "url": "/api/v1/performance/remote-speaker/link/offer",
+   "winner": "apps.webui.server.routes.performance_remote_speaker.post_link_offer"
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/performance/remote-speaker/link/report",
+   "url": "/api/v1/performance/remote-speaker/link/report",
+   "winner": "apps.webui.server.routes.performance_remote_speaker.post_link_report"
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/performance/remote-speaker/speaker",
+   "url": "/api/v1/performance/remote-speaker/speaker",
+   "winner": "apps.webui.server.routes.performance_remote_speaker.get_speaker"
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/performance/remote-speaker/speaker/report",
+   "url": "/api/v1/performance/remote-speaker/speaker/report",
+   "winner": "apps.webui.server.routes.performance_remote_speaker.post_speaker_report"
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/performance/remote-speaker/speaker/start",
+   "url": "/api/v1/performance/remote-speaker/speaker/start",
+   "winner": "apps.webui.server.routes.performance_remote_speaker.post_speaker_start"
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/performance/remote-speaker/speaker/stop",
+   "url": "/api/v1/performance/remote-speaker/speaker/stop",
+   "winner": "apps.webui.server.routes.performance_remote_speaker.post_speaker_stop"
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/performance/remote-speaker/unlink",
+   "url": "/api/v1/performance/remote-speaker/unlink",
+   "winner": "apps.webui.server.routes.performance_remote_speaker.post_unlink"
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/performance/rescue-snapshots",
+   "url": "/api/v1/performance/rescue-snapshots",
+   "winner": "apps.webui.server.routes.rescue_snapshots.post_rescue_snapshot"
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/performance/rescue-snapshots/index",
+   "url": "/api/v1/performance/rescue-snapshots/index",
+   "winner": "apps.webui.server.routes.rescue_snapshots.get_rescue_snapshot_index"
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/performance/rescue-snapshots/latest",
+   "url": "/api/v1/performance/rescue-snapshots/latest",
+   "winner": "apps.webui.server.routes.rescue_snapshots.get_latest_rescue_snapshot"
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/performance/telemetry/client-samples",
+   "url": "/api/v1/performance/telemetry/client-samples",
+   "winner": "apps.webui.server.routes.performance_telemetry.latest_client_performance_sample"
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/performance/telemetry/client-samples",
+   "url": "/api/v1/performance/telemetry/client-samples",
+   "winner": "apps.webui.server.routes.performance_telemetry.capture_client_performance"
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/performance/telemetry/pressure",
+   "url": "/api/v1/performance/telemetry/pressure",
+   "winner": "apps.webui.server.routes.performance_telemetry.machine_pressure"
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/performance/telemetry/processes",
+   "url": "/api/v1/performance/telemetry/processes",
+   "winner": "apps.webui.server.routes.performance_telemetry.latest_process_telemetry"
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/play-it/{playlist_id}/solve",
+   "url": "/api/v1/play-it/sample/solve",
+   "winner": "apps.webui.server.routes.play_it.solve_play_it"
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/playlist-history",
+   "url": "/api/v1/playlist-history",
+   "winner": "apps.webui.server.routes.playlist_history.get_playlist_history"
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/playlist-history/jump",
+   "url": "/api/v1/playlist-history/jump",
+   "winner": "apps.webui.server.routes.playlist_history.jump_playlist_history"
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/playlist-history/redo",
+   "url": "/api/v1/playlist-history/redo",
+   "winner": "apps.webui.server.routes.playlist_history.redo_playlist_edit"
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/playlist-history/undo",
+   "url": "/api/v1/playlist-history/undo",
+   "winner": "apps.webui.server.routes.playlist_history.undo_playlist_edit"
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/playlist-tree/order",
+   "url": "/api/v1/playlist-tree/order",
+   "winner": "apps.webui.server.routes.playlist_tree.get_playlist_tree_order"
+  },
+  {
+   "method": "PUT",
+   "path": "/api/v1/playlist-tree/order",
+   "url": "/api/v1/playlist-tree/order",
+   "winner": "apps.webui.server.routes.playlist_tree.put_playlist_tree_order"
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/playlist-tree/organization",
+   "url": "/api/v1/playlist-tree/organization",
+   "winner": "apps.webui.server.routes.library_org.list_organization"
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/playlists",
+   "url": "/api/v1/playlists",
+   "winner": "apps.webui.server.routes.playlists.list_playlists"
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/playlists",
+   "url": "/api/v1/playlists",
+   "winner": "apps.webui.server.routes.playlist_write.create_playlist"
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/playlists/deleted",
+   "url": "/api/v1/playlists/deleted",
+   "winner": "apps.webui.server.routes.playlists.list_deleted_playlists"
+  },
+  {
+   "method": "DELETE",
+   "path": "/api/v1/playlists/{playlist_id}",
+   "url": "/api/v1/playlists/sample",
+   "winner": "apps.webui.server.routes.playlist_write.delete_playlist"
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/playlists/{playlist_id}",
+   "url": "/api/v1/playlists/sample",
+   "winner": "apps.webui.server.routes.playlists.get_playlist"
+  },
+  {
+   "method": "PATCH",
+   "path": "/api/v1/playlists/{playlist_id}",
+   "url": "/api/v1/playlists/sample",
+   "winner": "apps.webui.server.routes.playlist_write.rename_playlist"
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/playlists/{playlist_id}/components",
+   "url": "/api/v1/playlists/sample/components",
+   "winner": "apps.webui.server.routes.playlist_components.list_playlist_components"
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/playlists/{playlist_id}/components",
+   "url": "/api/v1/playlists/sample/components",
+   "winner": "apps.webui.server.routes.playlist_components.create_playlist_component"
+  },
+  {
+   "method": "DELETE",
+   "path": "/api/v1/playlists/{playlist_id}/components/{component_id}",
+   "url": "/api/v1/playlists/sample/components/sample",
+   "winner": "apps.webui.server.routes.playlist_components.delete_playlist_component"
+  },
+  {
+   "method": "PATCH",
+   "path": "/api/v1/playlists/{playlist_id}/components/{component_id}",
+   "url": "/api/v1/playlists/sample/components/sample",
+   "winner": "apps.webui.server.routes.playlist_components.update_playlist_component"
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/playlists/{playlist_id}/duplicate",
+   "url": "/api/v1/playlists/sample/duplicate",
+   "winner": "apps.webui.server.routes.playlist_write.duplicate_playlist"
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/playlists/{playlist_id}/entries:move",
+   "url": "/api/v1/playlists/sample/entries:move",
+   "winner": "apps.webui.server.routes.library_org.move_entries"
+  },
+  {
+   "method": "DELETE",
+   "path": "/api/v1/playlists/{playlist_id}/items/{item_id}",
+   "url": "/api/v1/playlists/sample/items/sample",
+   "winner": "apps.webui.server.routes.playlist_write.delete_playlist_item"
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/playlists/{playlist_id}/items:add",
+   "url": "/api/v1/playlists/sample/items:add",
+   "winner": "apps.webui.server.routes.playlist_write.add_playlist_items"
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/playlists/{playlist_id}/items:move",
+   "url": "/api/v1/playlists/sample/items:move",
+   "winner": "apps.webui.server.routes.playlist_write.move_playlist_items"
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/playlists/{playlist_id}/items:remove",
+   "url": "/api/v1/playlists/sample/items:remove",
+   "winner": "apps.webui.server.routes.playlist_write.remove_playlist_items"
+  },
+  {
+   "method": "PUT",
+   "path": "/api/v1/playlists/{playlist_id}/organization",
+   "url": "/api/v1/playlists/sample/organization",
+   "winner": "apps.webui.server.routes.library_org.organize_playlist"
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/playlists/{playlist_id}/rb-djay-diff",
+   "url": "/api/v1/playlists/sample/rb-djay-diff",
+   "winner": "apps.webui.server.routes.playlists.get_playlist_rb_djay_diff"
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/playlists/{playlist_id}/routes",
+   "url": "/api/v1/playlists/sample/routes",
+   "winner": "apps.webui.server.routes.playlist_components.list_playlist_routes"
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/playlists/{playlist_id}/sections",
+   "url": "/api/v1/playlists/sample/sections",
+   "winner": "apps.webui.server.routes.library_org.list_sections_of_list"
+  },
+  {
+   "method": "PUT",
+   "path": "/api/v1/playlists/{playlist_id}/set-skips/{stable_id}",
+   "url": "/api/v1/playlists/sample/set-skips/sample",
+   "winner": "apps.webui.server.routes.set_target.put_set_skip"
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/playlists/{playlist_id}/set-summary",
+   "url": "/api/v1/playlists/sample/set-summary",
+   "winner": "apps.webui.server.routes.set_target.get_set_summary"
+  },
+  {
+   "method": "PUT",
+   "path": "/api/v1/playlists/{playlist_id}/set-target",
+   "url": "/api/v1/playlists/sample/set-target",
+   "winner": "apps.webui.server.routes.set_target.put_set_target"
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/playlists/{playlist_id}/sets",
+   "url": "/api/v1/playlists/sample/sets",
+   "winner": "apps.webui.server.routes.playlist_sets.list_sets"
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/playlists/{playlist_id}/sets",
+   "url": "/api/v1/playlists/sample/sets",
+   "winner": "apps.webui.server.routes.playlist_sets.create_set"
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/playlists/{playlist_id}/sets/{set_id}",
+   "url": "/api/v1/playlists/sample/sets/sample",
+   "winner": "apps.webui.server.routes.playlist_sets.get_set"
+  },
+  {
+   "method": "PUT",
+   "path": "/api/v1/playlists/{playlist_id}/sets/{set_id}/parts",
+   "url": "/api/v1/playlists/sample/sets/sample/parts",
+   "winner": "apps.webui.server.routes.playlist_sets.update_parts"
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/playlists/{playlist_id}/sets/{set_id}/runs",
+   "url": "/api/v1/playlists/sample/sets/sample/runs",
+   "winner": "apps.webui.server.routes.playlist_sets.create_run"
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/playlists/{playlist_id}/thumbnail",
+   "url": "/api/v1/playlists/sample/thumbnail",
+   "winner": "apps.webui.server.routes.playlists.get_playlist_thumbnail"
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/playlists/{playlist_id}/tracks",
+   "url": "/api/v1/playlists/sample/tracks",
+   "winner": "apps.webui.server.routes.playlists.list_playlist_tracks"
+  },
+  {
+   "method": "PUT",
+   "path": "/api/v1/playlists/{playlist_id}/tracks",
+   "url": "/api/v1/playlists/sample/tracks",
+   "winner": "apps.webui.server.routes.playlist_write.replace_playlist_tracks"
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/playlists/{playlist_id}/tracks/transfer",
+   "url": "/api/v1/playlists/sample/tracks/transfer",
+   "winner": "apps.webui.server.routes.playlist_write.transfer_playlist_tracks"
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/playlists/{playlist_id}/writeback/apply",
+   "url": "/api/v1/playlists/sample/writeback/apply",
+   "winner": "apps.webui.server.routes.playlist_writeback.apply_writeback"
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/playlists/{playlist_id}/writeback/capabilities",
+   "url": "/api/v1/playlists/sample/writeback/capabilities",
+   "winner": "apps.webui.server.routes.playlist_writeback.get_writeback_capabilities"
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/playlists/{playlist_id}/writeback/plan",
+   "url": "/api/v1/playlists/sample/writeback/plan",
+   "winner": "apps.webui.server.routes.playlist_writeback.get_writeback_plan"
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/playlists/{playlist_id}/writeback/rollback",
+   "url": "/api/v1/playlists/sample/writeback/rollback",
+   "winner": "apps.webui.server.routes.playlist_writeback.rollback_writeback"
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/playlists/{playlist_id}/writeback/targets",
+   "url": "/api/v1/playlists/sample/writeback/targets",
+   "winner": "apps.webui.server.routes.playlist_writeback.get_writeback_targets"
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/playlists/{playlist_id}:undelete",
+   "url": "/api/v1/playlists/sample:undelete",
+   "winner": "apps.webui.server.routes.playlist_write.undelete_playlist"
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/practice/devices",
+   "url": "/api/v1/practice/devices",
+   "winner": "apps.webui.server.routes.practice.list_practice_devices"
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/practice/devices/{device}",
+   "url": "/api/v1/practice/devices/sample",
+   "winner": "apps.webui.server.routes.practice.get_practice_device"
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/preflight",
+   "url": "/api/v1/preflight",
+   "winner": "apps.webui.server.routes.preflight.read_preflight"
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/progress",
+   "url": "/api/v1/progress",
+   "winner": "apps.webui.server.routes.progress.get_progress"
+  },
+  {
+   "method": "PATCH",
+   "path": "/api/v1/progress/nodes/{node_id}",
+   "url": "/api/v1/progress/nodes/sample",
+   "winner": "apps.webui.server.routes.progress.patch_progress_node"
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/progress/schema",
+   "url": "/api/v1/progress/schema",
+   "winner": "apps.webui.server.routes.progress.get_progress_schema"
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/queues/{kind}",
+   "url": "/api/v1/queues/sample",
+   "winner": "apps.webui.server.routes.queues.get_queue"
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/rb-djay-sync/analysis/apply",
+   "url": "/api/v1/rb-djay-sync/analysis/apply",
+   "winner": "apps.webui.server.routes.rb_djay_sync.rb_djay_sync_analysis_apply"
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/rb-djay-sync/cues/apply",
+   "url": "/api/v1/rb-djay-sync/cues/apply",
+   "winner": "apps.webui.server.routes.rb_djay_sync.rb_djay_sync_cues_apply"
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/rb-djay-sync/cues/plan",
+   "url": "/api/v1/rb-djay-sync/cues/plan",
+   "winner": "apps.webui.server.routes.rb_djay_sync.rb_djay_sync_cues_plan"
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/rb-djay-sync/djay/playlists",
+   "url": "/api/v1/rb-djay-sync/djay/playlists",
+   "winner": "apps.webui.server.routes.rb_djay_sync.rb_djay_sync_djay_playlists"
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/rb-djay-sync/match",
+   "url": "/api/v1/rb-djay-sync/match",
+   "winner": "apps.webui.server.routes.rb_djay_sync.rb_djay_sync_match"
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/rb-djay-sync/metadata/plan",
+   "url": "/api/v1/rb-djay-sync/metadata/plan",
+   "winner": "apps.webui.server.routes.rb_djay_sync.rb_djay_sync_metadata_plan"
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/rb-djay-sync/playlists/apply",
+   "url": "/api/v1/rb-djay-sync/playlists/apply",
+   "winner": "apps.webui.server.routes.rb_djay_sync.rb_djay_sync_playlists_apply"
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/rb-djay-sync/playlists/plan",
+   "url": "/api/v1/rb-djay-sync/playlists/plan",
+   "winner": "apps.webui.server.routes.rb_djay_sync.rb_djay_sync_playlists_plan"
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/rb-djay-sync/ratings/apply",
+   "url": "/api/v1/rb-djay-sync/ratings/apply",
+   "winner": "apps.webui.server.routes.rb_djay_sync.rb_djay_sync_ratings_apply"
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/rb-djay-sync/status",
+   "url": "/api/v1/rb-djay-sync/status",
+   "winner": "apps.webui.server.routes.rb_djay_sync.rb_djay_sync_status"
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/reconcile/broken",
+   "url": "/api/v1/reconcile/broken",
+   "winner": "apps.webui.server.routes.reconcile.list_broken_tracks"
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/reconcile/summary",
+   "url": "/api/v1/reconcile/summary",
+   "winner": "apps.webui.server.routes.reconcile.reconcile_summary"
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/rekordbox/analyse/adopt",
+   "url": "/api/v1/rekordbox/analyse/adopt",
+   "winner": "apps.rekordbox_analyse.http.post_adopt"
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/rekordbox/analyse/apply",
+   "url": "/api/v1/rekordbox/analyse/apply",
+   "winner": "apps.rekordbox_analyse.http.post_apply"
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/rekordbox/analyse/plan",
+   "url": "/api/v1/rekordbox/analyse/plan",
+   "winner": "apps.rekordbox_analyse.http.get_plan"
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/rekordbox/writeback-gate",
+   "url": "/api/v1/rekordbox/writeback-gate",
+   "winner": "apps.webui.server.routes.rekordbox_gate.read_writeback_gate"
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/relocate/candidates/{stable_id}",
+   "url": "/api/v1/relocate/candidates/sample",
+   "winner": "apps.webui.server.routes.relocate.get_candidates"
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/relocate/{stable_id}/apply",
+   "url": "/api/v1/relocate/sample/apply",
+   "winner": "apps.webui.server.routes.relocate.apply_relocate"
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/search",
+   "url": "/api/v1/search",
+   "winner": "apps.webui.server.routes.search.search_collection"
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/sections",
+   "url": "/api/v1/sections",
+   "winner": "apps.webui.server.routes.library_org.list_sections"
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/sections",
+   "url": "/api/v1/sections",
+   "winner": "apps.webui.server.routes.library_org.add_section"
+  },
+  {
+   "method": "DELETE",
+   "path": "/api/v1/sections/{section_id}",
+   "url": "/api/v1/sections/sample",
+   "winner": "apps.webui.server.routes.library_org.delete_section"
+  },
+  {
+   "method": "PATCH",
+   "path": "/api/v1/sections/{section_id}",
+   "url": "/api/v1/sections/sample",
+   "winner": "apps.webui.server.routes.library_org.update_section"
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/set-notes/{scope}",
+   "url": "/api/v1/set-notes/sample",
+   "winner": "apps.set_notes.routes.create_router.<locals>.get_set_note"
+  },
+  {
+   "method": "PUT",
+   "path": "/api/v1/set-notes/{scope}",
+   "url": "/api/v1/set-notes/sample",
+   "winner": "apps.set_notes.routes.create_router.<locals>.put_set_note"
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/settings",
+   "url": "/api/v1/settings",
+   "winner": "apps.webui.server.routes.settings.get_settings"
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/settings/ai-apply",
+   "url": "/api/v1/settings/ai-apply",
+   "winner": "apps.webui.server.routes.settings_ai.ai_apply"
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/settings/ai-search",
+   "url": "/api/v1/settings/ai-search",
+   "winner": "apps.webui.server.routes.settings_ai.ai_search"
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/share/session",
+   "url": "/api/v1/share/session",
+   "winner": "apps.webui.server.routes.share.share_session"
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/shell/navigate",
+   "url": "/api/v1/shell/navigate",
+   "winner": "apps.webui.server.routes.shell.post_shell_navigate"
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/shell/navigate/ack",
+   "url": "/api/v1/shell/navigate/ack",
+   "winner": "apps.webui.server.routes.shell.ack_shell_navigate"
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/shell/navigate/pending",
+   "url": "/api/v1/shell/navigate/pending",
+   "winner": "apps.webui.server.routes.shell.get_shell_navigate_pending"
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/smartlists",
+   "url": "/api/v1/smartlists",
+   "winner": "apps.webui.server.routes.smartlists.list_smartlists"
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/smartlists",
+   "url": "/api/v1/smartlists",
+   "winner": "apps.webui.server.routes.smartlists.create_smartlist"
+  },
+  {
+   "method": "DELETE",
+   "path": "/api/v1/smartlists/{smartlist_id}",
+   "url": "/api/v1/smartlists/sample",
+   "winner": "apps.webui.server.routes.smartlists.delete_smartlist"
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/smartlists/{smartlist_id}",
+   "url": "/api/v1/smartlists/sample",
+   "winner": "apps.webui.server.routes.smartlists.get_smartlist"
+  },
+  {
+   "method": "PUT",
+   "path": "/api/v1/smartlists/{smartlist_id}",
+   "url": "/api/v1/smartlists/sample",
+   "winner": "apps.webui.server.routes.smartlists.update_smartlist"
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/smartlists/{smartlist_id}/duplicate",
+   "url": "/api/v1/smartlists/sample/duplicate",
+   "winner": "apps.webui.server.routes.smartlists.duplicate_smartlist"
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/smartlists/{smartlist_id}/tracks",
+   "url": "/api/v1/smartlists/sample/tracks",
+   "winner": "apps.webui.server.routes.smartlists.get_smartlist_tracks"
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/source-flags",
+   "url": "/api/v1/source-flags",
+   "winner": "apps.webui.server.routes.source_flags.list_source_flags"
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/source-flags/scan",
+   "url": "/api/v1/source-flags/scan",
+   "winner": "apps.webui.server.routes.source_flags.scan_source_flags"
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/source-flags/{stable_id}",
+   "url": "/api/v1/source-flags/sample",
+   "winner": "apps.webui.server.routes.source_flags.get_source_flags"
+  },
+  {
+   "method": "PUT",
+   "path": "/api/v1/spotify/account/client-id",
+   "url": "/api/v1/spotify/account/client-id",
+   "winner": "apps.webui.server.routes.spotify.put_account_client_id"
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/spotify/account/connect",
+   "url": "/api/v1/spotify/account/connect",
+   "winner": "apps.webui.server.routes.spotify.get_account_connect"
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/spotify/account/connect",
+   "url": "/api/v1/spotify/account/connect",
+   "winner": "apps.webui.server.routes.spotify.start_account_connect"
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/spotify/account/playlists",
+   "url": "/api/v1/spotify/account/playlists",
+   "winner": "apps.webui.server.routes.spotify.get_account_playlists"
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/spotify/playlists/{playlist_id}/pending-tracks",
+   "url": "/api/v1/spotify/playlists/sample/pending-tracks",
+   "winner": "apps.webui.server.routes.spotify.get_pending_tracks"
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/spotify/recently-played",
+   "url": "/api/v1/spotify/recently-played",
+   "winner": "apps.webui.server.routes.spotify.get_recently_played"
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/spotify/status",
+   "url": "/api/v1/spotify/status",
+   "winner": "apps.webui.server.routes.spotify.get_status"
+  },
+  {
+   "method": "DELETE",
+   "path": "/api/v1/state/ui-mirror",
+   "url": "/api/v1/state/ui-mirror",
+   "winner": "apps.webui.server.routes.state.close_ui_mirror"
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/state/ui-mirror",
+   "url": "/api/v1/state/ui-mirror",
+   "winner": "apps.webui.server.routes.state.get_ui_mirror"
+  },
+  {
+   "method": "PUT",
+   "path": "/api/v1/state/ui-mirror",
+   "url": "/api/v1/state/ui-mirror",
+   "winner": "apps.webui.server.routes.state.publish_ui_mirror"
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/state/ui-mirror/lease",
+   "url": "/api/v1/state/ui-mirror/lease",
+   "winner": "apps.webui.server.routes.state.get_ui_mirror_lease"
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/stems/bulk-hydrate",
+   "url": "/api/v1/stems/bulk-hydrate",
+   "winner": "apps.webui.server.routes.stems_assets.bulk_hydrate_stems"
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/stems/cache/enforce",
+   "url": "/api/v1/stems/cache/enforce",
+   "winner": "apps.webui.server.routes.stem_cache.enforce_stem_cache"
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/stems/cache/settings",
+   "url": "/api/v1/stems/cache/settings",
+   "winner": "apps.webui.server.routes.stem_cache.get_stem_cache_settings"
+  },
+  {
+   "method": "PUT",
+   "path": "/api/v1/stems/cache/settings",
+   "url": "/api/v1/stems/cache/settings",
+   "winner": "apps.webui.server.routes.stem_cache.put_stem_cache_settings"
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/stems/cache/status",
+   "url": "/api/v1/stems/cache/status",
+   "winner": "apps.webui.server.routes.stem_cache.get_stem_cache_status"
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/stems/estimate",
+   "url": "/api/v1/stems/estimate",
+   "winner": "apps.webui.server.routes.stem_tiers.estimate"
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/stems/estimate/batch",
+   "url": "/api/v1/stems/estimate/batch",
+   "winner": "apps.webui.server.routes.stem_tiers.estimate_batch"
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/stems/generate",
+   "url": "/api/v1/stems/generate",
+   "winner": "apps.webui.server.routes.stem_tiers.generate"
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/stems/index/build",
+   "url": "/api/v1/stems/index/build",
+   "winner": "apps.webui.server.routes.stems_assets.build_stem_index"
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/stems/jobs/{job_id}",
+   "url": "/api/v1/stems/jobs/sample",
+   "winner": "apps.webui.server.routes.stem_tiers.job_status"
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/stems/push-missing",
+   "url": "/api/v1/stems/push-missing",
+   "winner": "apps.webui.server.routes.stems_assets.push_missing_stems"
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/stems/tiers",
+   "url": "/api/v1/stems/tiers",
+   "winner": "apps.webui.server.routes.stem_tiers.list_tiers"
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/stems/{stable_id}/hydrate",
+   "url": "/api/v1/stems/sample/hydrate",
+   "winner": "apps.webui.server.routes.stems_assets.hydrate_stem"
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/sync/billing/checkout",
+   "url": "/api/v1/sync/billing/checkout",
+   "winner": "apps.webui.server.routes.sync_billing_proxy.billing_checkout"
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/sync/billing/eligibility",
+   "url": "/api/v1/sync/billing/eligibility",
+   "winner": "apps.webui.server.routes.sync_billing_proxy.billing_eligibility"
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/sync/billing/portal",
+   "url": "/api/v1/sync/billing/portal",
+   "winner": "apps.webui.server.routes.sync_billing_proxy.billing_portal"
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/sync/billing/refresh",
+   "url": "/api/v1/sync/billing/refresh",
+   "winner": "apps.webui.server.routes.sync_billing_proxy.billing_refresh"
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/sync/digest",
+   "url": "/api/v1/sync/digest",
+   "winner": "apps.sync_hub.service.digest"
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/sync/enroll",
+   "url": "/api/v1/sync/enroll",
+   "winner": "apps.sync_hub.service.enroll"
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/sync/hash-pending",
+   "url": "/api/v1/sync/hash-pending",
+   "winner": "apps.sync_hub.service.hash_pending_list"
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/sync/hello",
+   "url": "/api/v1/sync/hello",
+   "winner": "apps.sync_hub.service.hello"
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/sync/lyrics-asr/{stable_id}",
+   "url": "/api/v1/sync/lyrics-asr/sample",
+   "winner": "apps.sync_hub.service_lyrics_asr_assets.get_lyrics_asr_presign"
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/sync/plugins/index",
+   "url": "/api/v1/sync/plugins/index",
+   "winner": "apps.sync_hub.service_plugins.get_plugin_index"
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/sync/pull",
+   "url": "/api/v1/sync/pull",
+   "winner": "apps.sync_hub.service.pull"
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/sync/push",
+   "url": "/api/v1/sync/push",
+   "winner": "apps.sync_hub.service.push"
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/sync/rows",
+   "url": "/api/v1/sync/rows",
+   "winner": "apps.sync_hub.service.rows"
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/sync/stale-check",
+   "url": "/api/v1/sync/stale-check",
+   "winner": "apps.sync_hub.service.stale_check"
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/sync/status",
+   "url": "/api/v1/sync/status",
+   "winner": "apps.sync_hub.service.status"
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/sync/stems/bundle-presign",
+   "url": "/api/v1/sync/stems/bundle-presign",
+   "winner": "apps.sync_hub.service_stem_assets.get_bundle_presign"
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/sync/stems/bundle-size",
+   "url": "/api/v1/sync/stems/bundle-size",
+   "winner": "apps.sync_hub.service_stem_assets.get_bundle_size"
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/sync/stems/index",
+   "url": "/api/v1/sync/stems/index",
+   "winner": "apps.sync_hub.service_stem_assets.get_stem_index"
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/system/audio/volume",
+   "url": "/api/v1/system/audio/volume",
+   "winner": "apps.webui.server.routes.system_audio.get_system_volume"
+  },
+  {
+   "method": "PUT",
+   "path": "/api/v1/system/audio/volume",
+   "url": "/api/v1/system/audio/volume",
+   "winner": "apps.webui.server.routes.system_audio.put_system_volume"
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/tag-meta",
+   "url": "/api/v1/tag-meta",
+   "winner": "apps.webui.server.routes.library_org.list_tag_meta"
+  },
+  {
+   "method": "PUT",
+   "path": "/api/v1/tag-meta/{name}",
+   "url": "/api/v1/tag-meta/sample",
+   "winner": "apps.webui.server.routes.library_org.put_tag_meta"
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/tag-synonyms",
+   "url": "/api/v1/tag-synonyms",
+   "winner": "apps.webui.server.routes.library_org.list_tag_synonyms"
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/tag-synonyms",
+   "url": "/api/v1/tag-synonyms",
+   "winner": "apps.webui.server.routes.library_org.put_tag_synonym"
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/tag-types",
+   "url": "/api/v1/tag-types",
+   "winner": "apps.webui.server.routes.library_org.list_tag_types"
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/tag-types",
+   "url": "/api/v1/tag-types",
+   "winner": "apps.webui.server.routes.library_org.create_tag_type"
+  },
+  {
+   "method": "DELETE",
+   "path": "/api/v1/tag-types/{type_id}",
+   "url": "/api/v1/tag-types/sample",
+   "winner": "apps.webui.server.routes.library_org.delete_tag_type"
+  },
+  {
+   "method": "PATCH",
+   "path": "/api/v1/tag-types/{type_id}",
+   "url": "/api/v1/tag-types/sample",
+   "winner": "apps.webui.server.routes.library_org.update_tag_type"
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/telemetry/clients",
+   "url": "/api/v1/telemetry/clients",
+   "winner": "apps.webui.server.routes.telemetry.list_clients"
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/telemetry/consent",
+   "url": "/api/v1/telemetry/consent",
+   "winner": "apps.webui.server.routes.telemetry_consent.get_consent"
+  },
+  {
+   "method": "PUT",
+   "path": "/api/v1/telemetry/consent",
+   "url": "/api/v1/telemetry/consent",
+   "winner": "apps.webui.server.routes.telemetry_consent.put_consent"
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/telemetry/heartbeat",
+   "url": "/api/v1/telemetry/heartbeat",
+   "winner": "apps.webui.server.routes.telemetry.record_heartbeat"
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/title-fix/apply",
+   "url": "/api/v1/title-fix/apply",
+   "winner": "apps.webui.server.routes.title_fix.apply_title_fix_proposals"
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/title-fix/batches",
+   "url": "/api/v1/title-fix/batches",
+   "winner": "apps.webui.server.routes.title_fix.list_title_fix_batches"
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/title-fix/batches/{batch_id}/undo",
+   "url": "/api/v1/title-fix/batches/sample/undo",
+   "winner": "apps.webui.server.routes.title_fix.undo_title_fix_batch"
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/title-fix/config",
+   "url": "/api/v1/title-fix/config",
+   "winner": "apps.webui.server.routes.title_fix.get_title_fix_config"
+  },
+  {
+   "method": "PUT",
+   "path": "/api/v1/title-fix/config",
+   "url": "/api/v1/title-fix/config",
+   "winner": "apps.webui.server.routes.title_fix.put_title_fix_config"
+  },
+  {
+   "method": "DELETE",
+   "path": "/api/v1/title-fix/key",
+   "url": "/api/v1/title-fix/key",
+   "winner": "apps.webui.server.routes.title_fix.delete_title_fix_key"
+  },
+  {
+   "method": "PUT",
+   "path": "/api/v1/title-fix/key",
+   "url": "/api/v1/title-fix/key",
+   "winner": "apps.webui.server.routes.title_fix.put_title_fix_key"
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/title-fix/proposals",
+   "url": "/api/v1/title-fix/proposals",
+   "winner": "apps.webui.server.routes.title_fix.list_title_fix_proposals"
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/title-fix/reject",
+   "url": "/api/v1/title-fix/reject",
+   "winner": "apps.webui.server.routes.title_fix.reject_title_fix_proposals"
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/title-fix/scans",
+   "url": "/api/v1/title-fix/scans",
+   "winner": "apps.webui.server.routes.title_fix.list_title_fix_scans"
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/title-fix/scans",
+   "url": "/api/v1/title-fix/scans",
+   "winner": "apps.webui.server.routes.title_fix.start_title_fix_scan"
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/title-fix/scans/{scan_id}",
+   "url": "/api/v1/title-fix/scans/sample",
+   "winner": "apps.webui.server.routes.title_fix.get_title_fix_scan"
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/tracks",
+   "url": "/api/v1/tracks",
+   "winner": "apps.webui.server.routes.tracks.list_tracks"
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/tracks/deleted",
+   "url": "/api/v1/tracks/deleted",
+   "winner": "apps.webui.server.routes.tracks.list_deleted_tracks"
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/tracks/index",
+   "url": "/api/v1/tracks/index",
+   "winner": "apps.webui.server.routes.tracks.get_track_index"
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/tracks/lyrics-cached-ids",
+   "url": "/api/v1/tracks/lyrics-cached-ids",
+   "winner": "apps.webui.server.routes.tracks.get_lyrics_cached_ids"
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/tracks/played-length",
+   "url": "/api/v1/tracks/played-length",
+   "winner": "apps.webui.server.routes.played_length.tracks_played_length"
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/tracks/quality-ladder",
+   "url": "/api/v1/tracks/quality-ladder",
+   "winner": "apps.webui.server.routes.tracks.get_quality_ladder"
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/tracks/revision",
+   "url": "/api/v1/tracks/revision",
+   "winner": "apps.webui.server.routes.tracks.get_library_revision"
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/tracks/{stable_id}",
+   "url": "/api/v1/tracks/sample",
+   "winner": "apps.webui.server.routes.tracks.get_track"
+  },
+  {
+   "method": "PATCH",
+   "path": "/api/v1/tracks/{stable_id}",
+   "url": "/api/v1/tracks/sample",
+   "winner": "apps.webui.server.routes.tracks.patch_track"
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/tracks/{stable_id}/anlz",
+   "url": "/api/v1/tracks/sample/anlz",
+   "winner": "apps.webui.server.routes.rb_assets.get_track_anlz"
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/tracks/{stable_id}/artwork",
+   "url": "/api/v1/tracks/sample/artwork",
+   "winner": "apps.webui.server.routes.rb_assets.get_track_artwork"
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/tracks/{stable_id}/audio",
+   "url": "/api/v1/tracks/sample/audio",
+   "winner": "apps.webui.server.routes.rb_assets_audio.get_track_audio"
+  },
+  {
+   "method": "HEAD",
+   "path": "/api/v1/tracks/{stable_id}/audio",
+   "url": "/api/v1/tracks/sample/audio",
+   "winner": "apps.webui.server.routes.rb_assets_audio.get_track_audio"
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/tracks/{stable_id}/auto-cues",
+   "url": "/api/v1/tracks/sample/auto-cues",
+   "winner": "apps.webui.server.routes.analysis.get_auto_cues"
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/tracks/{stable_id}/beatgrid-fallback",
+   "url": "/api/v1/tracks/sample/beatgrid-fallback",
+   "winner": "apps.webui.server.routes.analysis.get_beatgrid_fallback"
+  },
+  {
+   "method": "DELETE",
+   "path": "/api/v1/tracks/{stable_id}/bpm-pick",
+   "url": "/api/v1/tracks/sample/bpm-pick",
+   "winner": "apps.webui.server.routes.grid_edit.clear_bpm_pick"
+  },
+  {
+   "method": "PUT",
+   "path": "/api/v1/tracks/{stable_id}/bpm-pick",
+   "url": "/api/v1/tracks/sample/bpm-pick",
+   "winner": "apps.webui.server.routes.grid_edit.set_bpm_pick"
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/tracks/{stable_id}/classical",
+   "url": "/api/v1/tracks/sample/classical",
+   "winner": "apps.webui.server.routes.library_works.get_classical"
+  },
+  {
+   "method": "PATCH",
+   "path": "/api/v1/tracks/{stable_id}/classical",
+   "url": "/api/v1/tracks/sample/classical",
+   "winner": "apps.webui.server.routes.library_works.set_classical"
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/tracks/{stable_id}/classical/file-tags",
+   "url": "/api/v1/tracks/sample/classical/file-tags",
+   "winner": "apps.webui.server.routes.library_works.read_file_tags"
+  },
+  {
+   "method": "DELETE",
+   "path": "/api/v1/tracks/{stable_id}/grid-edit",
+   "url": "/api/v1/tracks/sample/grid-edit",
+   "winner": "apps.webui.server.routes.grid_edit.reset_grid_edit"
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/tracks/{stable_id}/grid-edit",
+   "url": "/api/v1/tracks/sample/grid-edit",
+   "winner": "apps.webui.server.routes.grid_edit.get_grid_edit"
+  },
+  {
+   "method": "PUT",
+   "path": "/api/v1/tracks/{stable_id}/grid-edit",
+   "url": "/api/v1/tracks/sample/grid-edit",
+   "winner": "apps.webui.server.routes.grid_edit.set_grid_edit"
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/tracks/{stable_id}/grid-edit/nudge",
+   "url": "/api/v1/tracks/sample/grid-edit/nudge",
+   "winner": "apps.webui.server.routes.grid_edit.nudge_grid_edit"
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/tracks/{stable_id}/grid-provenance",
+   "url": "/api/v1/tracks/sample/grid-provenance",
+   "winner": "apps.webui.server.routes.grid_provenance.get_track_grid_provenance"
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/tracks/{stable_id}/hot-cues",
+   "url": "/api/v1/tracks/sample/hot-cues",
+   "winner": "apps.webui.server.routes.rb_hot_cues.list_hot_cue_slots"
+  },
+  {
+   "method": "DELETE",
+   "path": "/api/v1/tracks/{stable_id}/hot-cues/{slot}",
+   "url": "/api/v1/tracks/sample/hot-cues/sample",
+   "winner": "apps.webui.server.routes.rb_hot_cues.clear_hot_cue"
+  },
+  {
+   "method": "PUT",
+   "path": "/api/v1/tracks/{stable_id}/hot-cues/{slot}",
+   "url": "/api/v1/tracks/sample/hot-cues/sample",
+   "winner": "apps.webui.server.routes.rb_hot_cues.save_hot_cue"
+  },
+  {
+   "method": "PUT",
+   "path": "/api/v1/tracks/{stable_id}/hot-cues/{slot}/restore",
+   "url": "/api/v1/tracks/sample/hot-cues/sample/restore",
+   "winner": "apps.webui.server.routes.rb_hot_cues.restore_hot_cue"
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/tracks/{stable_id}/locations",
+   "url": "/api/v1/tracks/sample/locations",
+   "winner": "apps.webui.server.routes.track_locations.list_track_locations"
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/tracks/{stable_id}/locations",
+   "url": "/api/v1/tracks/sample/locations",
+   "winner": "apps.webui.server.routes.track_locations.add_track_location"
+  },
+  {
+   "method": "DELETE",
+   "path": "/api/v1/tracks/{stable_id}/locations/{location_id}",
+   "url": "/api/v1/tracks/sample/locations/sample",
+   "winner": "apps.webui.server.routes.track_locations.remove_track_location"
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/tracks/{stable_id}/lyrics",
+   "url": "/api/v1/tracks/sample/lyrics",
+   "winner": "apps.webui.server.routes.tracks.get_track_lyrics"
+  },
+  {
+   "method": "PUT",
+   "path": "/api/v1/tracks/{stable_id}/lyrics/override",
+   "url": "/api/v1/tracks/sample/lyrics/override",
+   "winner": "apps.webui.server.routes.lyrics_words.put_lyric_override"
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/tracks/{stable_id}/lyrics/words",
+   "url": "/api/v1/tracks/sample/lyrics/words",
+   "winner": "apps.webui.server.routes.lyrics_words.get_track_karaoke_words"
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/tracks/{stable_id}/playlists",
+   "url": "/api/v1/tracks/sample/playlists",
+   "winner": "apps.webui.server.routes.tracks.list_track_playlists"
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/tracks/{stable_id}/plays",
+   "url": "/api/v1/tracks/sample/plays",
+   "winner": "apps.webui.server.routes.track_plays.get_track_plays"
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/tracks/{stable_id}/plays",
+   "url": "/api/v1/tracks/sample/plays",
+   "winner": "apps.webui.server.routes.track_plays.record_track_play"
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/tracks/{stable_id}/rb-meta",
+   "url": "/api/v1/tracks/sample/rb-meta",
+   "winner": "apps.webui.server.routes.rb_assets.get_track_rb_meta"
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/tracks/{stable_id}/stems",
+   "url": "/api/v1/tracks/sample/stems",
+   "winner": "apps.webui.server.routes.stems.get_stem_manifest"
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/tracks/{stable_id}/stems/deck-close",
+   "url": "/api/v1/tracks/sample/stems/deck-close",
+   "winner": "apps.webui.server.routes.stems.mark_stem_deck_closed"
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/tracks/{stable_id}/stems/deck-open",
+   "url": "/api/v1/tracks/sample/stems/deck-open",
+   "winner": "apps.webui.server.routes.stems.mark_stem_deck_open"
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/tracks/{stable_id}/stems/hydrate",
+   "url": "/api/v1/tracks/sample/stems/hydrate",
+   "winner": "apps.webui.server.routes.stems.hydrate_stem_bundle"
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/tracks/{stable_id}/stems/state",
+   "url": "/api/v1/tracks/sample/stems/state",
+   "winner": "apps.webui.server.routes.stems.get_stem_state"
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/tracks/{stable_id}/stems/{part}",
+   "url": "/api/v1/tracks/sample/stems/sample",
+   "winner": "apps.webui.server.routes.stems.get_stem_file"
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/tracks/{stable_id}/stems/{part}/waveform",
+   "url": "/api/v1/tracks/sample/stems/sample/waveform",
+   "winner": "apps.webui.server.routes.stems.get_stem_waveform"
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/tracks/{stable_id}/tempo-stability",
+   "url": "/api/v1/tracks/sample/tempo-stability",
+   "winner": "apps.webui.server.routes.tempo_stability.get_track_tempo_stability"
+  },
+  {
+   "method": "DELETE",
+   "path": "/api/v1/tracks/{stable_id}/transition-in",
+   "url": "/api/v1/tracks/sample/transition-in",
+   "winner": "apps.webui.server.routes.transition_in_cue.clear_transition_in"
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/tracks/{stable_id}/transition-in",
+   "url": "/api/v1/tracks/sample/transition-in",
+   "winner": "apps.webui.server.routes.transition_in_cue.read_transition_in"
+  },
+  {
+   "method": "PUT",
+   "path": "/api/v1/tracks/{stable_id}/transition-in",
+   "url": "/api/v1/tracks/sample/transition-in",
+   "winner": "apps.webui.server.routes.transition_in_cue.set_transition_in"
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/tracks/{stable_id}:open-in",
+   "url": "/api/v1/tracks/sample:open-in",
+   "winner": "apps.webui.server.routes.track_handoff.open_track_in_app"
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/tracks/{stable_id}:remove",
+   "url": "/api/v1/tracks/sample:remove",
+   "winner": "apps.webui.server.routes.tracks.remove_track_from_library"
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/tracks/{stable_id}:reveal",
+   "url": "/api/v1/tracks/sample:reveal",
+   "winner": "apps.webui.server.routes.tracks.reveal_track"
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/tracks/{stable_id}:undelete",
+   "url": "/api/v1/tracks/sample:undelete",
+   "winner": "apps.webui.server.routes.tracks.undelete_track_from_library"
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/ui-prefs",
+   "url": "/api/v1/ui-prefs",
+   "winner": "apps.webui.server.routes.ui_prefs.get_ui_prefs"
+  },
+  {
+   "method": "PUT",
+   "path": "/api/v1/ui-prefs",
+   "url": "/api/v1/ui-prefs",
+   "winner": "apps.webui.server.routes.ui_prefs.put_ui_prefs"
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/ui-prefs/library-key-filter",
+   "url": "/api/v1/ui-prefs/library-key-filter",
+   "winner": "apps.webui.server.routes.ui_prefs.post_library_key_filter"
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/ui-prefs/library-tabs",
+   "url": "/api/v1/ui-prefs/library-tabs",
+   "winner": "apps.webui.server.routes.ui_prefs.post_library_tabs"
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/ui-prefs/watcher-folders:validate",
+   "url": "/api/v1/ui-prefs/watcher-folders:validate",
+   "winner": "apps.webui.server.routes.ui_prefs.validate_watcher_folders"
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/ui-url",
+   "url": "/api/v1/ui-url",
+   "winner": "apps.webui.server.routes.ui_url.ui_url"
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/undo",
+   "url": "/api/v1/undo",
+   "winner": "apps.webui.server.routes.library_org.undo"
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/usb-export/apply",
+   "url": "/api/v1/usb-export/apply",
+   "winner": "apps.webui.server.routes.usb_export.apply_export"
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/usb-export/plan",
+   "url": "/api/v1/usb-export/plan",
+   "winner": "apps.webui.server.routes.usb_export.plan_export"
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/usb-export/readback",
+   "url": "/api/v1/usb-export/readback",
+   "winner": "apps.webui.server.routes.usb_export.readback_export"
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/usb/eject",
+   "url": "/api/v1/usb/eject",
+   "winner": "apps.webui.server.routes.usb_eject.eject_usb_volume"
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/usb/tracks/{track_id}",
+   "url": "/api/v1/usb/tracks/sample",
+   "winner": "apps.webui.server.routes.usb_tracks.get_usb_track"
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/usb/tracks/{track_id}/anlz",
+   "url": "/api/v1/usb/tracks/sample/anlz",
+   "winner": "apps.webui.server.routes.usb_tracks.get_usb_track_anlz"
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/usb/tracks/{track_id}/artwork",
+   "url": "/api/v1/usb/tracks/sample/artwork",
+   "winner": "apps.webui.server.routes.usb_tracks_files.get_usb_track_artwork"
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/usb/tracks/{track_id}/audio",
+   "url": "/api/v1/usb/tracks/sample/audio",
+   "winner": "apps.webui.server.routes.usb_tracks_files.get_usb_track_audio"
+  },
+  {
+   "method": "HEAD",
+   "path": "/api/v1/usb/tracks/{track_id}/audio",
+   "url": "/api/v1/usb/tracks/sample/audio",
+   "winner": "apps.webui.server.routes.usb_tracks_files.get_usb_track_audio"
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/usb/tracks/{track_id}/hot-cues",
+   "url": "/api/v1/usb/tracks/sample/hot-cues",
+   "winner": "apps.webui.server.routes.usb_tracks.list_usb_track_hot_cue_slots"
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/usb/volumes",
+   "url": "/api/v1/usb/volumes",
+   "winner": "apps.webui.server.routes.usb_volumes.get_usb_volumes"
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/usb/volumes/events",
+   "url": "/api/v1/usb/volumes/events",
+   "winner": "apps.webui.server.routes.usb_volumes.usb_volume_events"
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/usb/volumes/{volume_id}/library",
+   "url": "/api/v1/usb/volumes/sample/library",
+   "winner": "apps.webui.server.routes.usb_tracks.get_usb_stick_library"
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/vocals/analyze",
+   "url": "/api/v1/vocals/analyze",
+   "winner": "apps.webui.server.routes.vocals.analyze_vocals"
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/vocals/{stable_id}/status",
+   "url": "/api/v1/vocals/sample/status",
+   "winner": "apps.webui.server.routes.vocals.get_vocal_status"
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/voice/probe",
+   "url": "/api/v1/voice/probe",
+   "winner": "apps.webui.server.routes.voice_probe.probe"
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/works",
+   "url": "/api/v1/works",
+   "winner": "apps.webui.server.routes.library_org.list_works"
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/works",
+   "url": "/api/v1/works",
+   "winner": "apps.webui.server.routes.library_org.create_work"
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/works/dismissals",
+   "url": "/api/v1/works/dismissals",
+   "winner": "apps.webui.server.routes.library_org.dismiss_pair"
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/works/link-candidates",
+   "url": "/api/v1/works/link-candidates",
+   "winner": "apps.webui.server.routes.library_works.link_candidates"
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/works/overlay",
+   "url": "/api/v1/works/overlay",
+   "winner": "apps.webui.server.routes.library_works.works_overlay"
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/works/stack",
+   "url": "/api/v1/works/stack",
+   "winner": "apps.webui.server.routes.library_works.work_stack"
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/works/suggest",
+   "url": "/api/v1/works/suggest",
+   "winner": "apps.webui.server.routes.library_works.suggest_versions"
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/works/suggestion-flags",
+   "url": "/api/v1/works/suggestion-flags",
+   "winner": "apps.webui.server.routes.library_works.suggestion_flags"
+  },
+  {
+   "method": "DELETE",
+   "path": "/api/v1/works/{work_id}",
+   "url": "/api/v1/works/sample",
+   "winner": "apps.webui.server.routes.library_org.delete_work"
+  },
+  {
+   "method": "PATCH",
+   "path": "/api/v1/works/{work_id}",
+   "url": "/api/v1/works/sample",
+   "winner": "apps.webui.server.routes.library_org.update_work"
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/works/{work_id}/members",
+   "url": "/api/v1/works/sample/members",
+   "winner": "apps.webui.server.routes.library_org.list_members"
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/works/{work_id}/members",
+   "url": "/api/v1/works/sample/members",
+   "winner": "apps.webui.server.routes.library_org.link_member"
+  },
+  {
+   "method": "DELETE",
+   "path": "/api/v1/works/{work_id}/members/{member_kind}/{member_id}",
+   "url": "/api/v1/works/sample/members/sample/sample",
+   "winner": "apps.webui.server.routes.library_org.unlink_member"
+  },
+  {
+   "method": "PATCH",
+   "path": "/api/v1/works/{work_id}/members/{member_kind}/{member_id}",
+   "url": "/api/v1/works/sample/members/sample/sample",
+   "winner": "apps.webui.server.routes.library_works.update_member"
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/works/{work_id}/members:move",
+   "url": "/api/v1/works/sample/members:move",
+   "winner": "apps.webui.server.routes.library_works.move_members"
+  },
+  {
+   "method": "PUT",
+   "path": "/api/v1/works/{work_id}/pref",
+   "url": "/api/v1/works/sample/pref",
+   "winner": "apps.webui.server.routes.library_org.set_work_pref"
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/works/{work_id}:merge",
+   "url": "/api/v1/works/sample:merge",
+   "winner": "apps.webui.server.routes.library_works.merge_works"
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/works:link",
+   "url": "/api/v1/works:link",
+   "winner": "apps.webui.server.routes.library_works.link_tracks"
+  },
+  {
+   "method": "GET",
+   "path": "/sets/shared/{session_id}",
+   "url": "/sets/shared/sample",
+   "winner": "apps.sets.share_page.shared_set_page"
+  }
+ ]
+}

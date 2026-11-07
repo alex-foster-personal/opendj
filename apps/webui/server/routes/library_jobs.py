@@ -32,6 +32,7 @@ from ..backend import StateBackend
 from ..deps import get_write_state
 
 router = APIRouter(prefix="/library-jobs", tags=["library-jobs"])
+MOUNT_UNDER_API_PREFIX = True
 
 Lane = Literal["stems", "lyrics", "genre"]
 Placement = Literal["next", "tail"]

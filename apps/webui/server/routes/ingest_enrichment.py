@@ -21,6 +21,7 @@ from pydantic import BaseModel, ConfigDict
 from apps.webui.server import ingest_enrichment
 
 router = APIRouter(prefix="/ingest/enrichment", tags=["ingest"])
+MOUNT_UNDER_API_PREFIX = True
 
 
 class RerunIn(BaseModel):

@@ -18,6 +18,7 @@ from apps.webui.server.headphone_reports import (
 from .commands import page_is_open, submit_single_command
 
 router = APIRouter(prefix="/performance/headphones", tags=["performance-headphones"])
+MOUNT_UNDER_API_PREFIX = True
 
 HEADPHONE_IPC_ROUTES: dict[str, tuple[str, str]] = {
     "headphone_mix": ("POST", "/api/v1/performance/headphones/mix"),

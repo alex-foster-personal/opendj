@@ -58,6 +58,7 @@ from ..backend import NotFoundError, StateBackend
 from ..deps import get_read_state
 
 router = APIRouter(prefix="/tracks", tags=["analysis"])
+MOUNT_UNDER_API_PREFIX = True
 
 AUTO_CUES_SOURCE: str = "apps.analysis.auto_cues"
 UNANALYZED_BACKEND: str = "none"

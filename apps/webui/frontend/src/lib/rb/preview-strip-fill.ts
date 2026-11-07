@@ -3,12 +3,12 @@
  *
  * A long-lived page keeps each row's strip as it was LISTED. Strips written
  * since (the ahead-analysis drain, a mirrored ANLZ) only reached a row when it
- * was clicked. This asks `POST /library/preview-strips` for the strip-less ids
- * in view (plus margin), debounced, one batch at a time, never one request
- * per row and never the same id twice at once. An id the server reports
- * `pending` (the drain was bumped for it) is asked again with backoff while it
- * stays in view; a filled or not-pending id is left alone until it scrolls
- * away and back.
+ * was clicked. This asks `POST /library/row-assets` (LIBM-172) for the
+ * strip-less ids in view (plus margin), debounced, one batch at a time, never
+ * one request per row and never the same id twice at once. An id the server
+ * reports `pending` (the drain was bumped for it) is asked again with backoff
+ * while it stays in view; a filled or not-pending id is left alone until it
+ * scrolls away and back.
  *
  * Requirements (mini-PRD):
  *   ✔︎ rows in view fill without a click

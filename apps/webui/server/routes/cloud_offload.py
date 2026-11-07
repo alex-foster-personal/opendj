@@ -33,6 +33,7 @@ from ..cloud_offload_service import Operation, service_for
 from ..deps import get_read_state
 
 router = APIRouter(prefix="/offload", tags=["cloud-offload"])
+MOUNT_UNDER_API_PREFIX = True
 
 MAX_IDS = 5000
 

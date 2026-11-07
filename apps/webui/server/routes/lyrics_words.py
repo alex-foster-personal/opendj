@@ -66,6 +66,7 @@ from .lyrics_words_models import (
 )
 
 router = APIRouter(tags=["lyrics"])
+MOUNT_UNDER_API_PREFIX = True
 
 _SQLITE_MAX_SIGNED_INT = 9223372036854775807  # 2**63 - 1
 

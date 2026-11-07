@@ -38,6 +38,7 @@ from ..library_tabs_prefs import (
 )
 
 router = APIRouter(prefix="/ui-prefs", tags=["ui-prefs"])
+MOUNT_UNDER_API_PREFIX = True
 
 _write_lock = threading.Lock()
 

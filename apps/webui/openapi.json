@@ -26013,6 +26013,16 @@
             ],
             "title": "Streaming Provider"
           },
+          "tempo_curve": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/TempoCurveRowOut"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "title": {
             "anyOf": [
               {
@@ -34001,6 +34011,16 @@
               }
             ],
             "title": "Streaming Provider"
+          },
+          "tempo_curve": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/TempoCurveRowOut"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "title": {
             "anyOf": [

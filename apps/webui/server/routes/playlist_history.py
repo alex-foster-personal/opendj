@@ -32,6 +32,7 @@ from ..playlist_store import PlaylistRow, PlaylistStore
 from .playlist_write import PlaylistWriteOut, get_playlist_store
 
 router = APIRouter(prefix="/playlist-history", tags=["playlists-write"])
+MOUNT_UNDER_API_PREFIX = True
 StateDep = Annotated[StateBackend, Depends(get_write_state)]
 StoreDep = Annotated[PlaylistStore, Depends(get_playlist_store)]
 

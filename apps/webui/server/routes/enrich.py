@@ -23,6 +23,7 @@ from apps.webui.server.routes import ingest as ingest_routes
 from apps.webui.server.routes.ingest_coverage_out import read_coverage
 
 router = APIRouter(prefix="/enrich", tags=["enrich"])
+MOUNT_UNDER_API_PREFIX = True
 
 
 class DecisionIn(BaseModel):

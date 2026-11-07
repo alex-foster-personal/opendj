@@ -21,6 +21,7 @@ from ..deps import get_library_data_dir, get_library_state_db, get_read_state
 from ..models import TrackRowOut
 
 router = APIRouter(prefix="/search", tags=["search"])
+MOUNT_UNDER_API_PREFIX = True
 
 DEFAULT_LIMIT = 50
 MAX_LIMIT = 200

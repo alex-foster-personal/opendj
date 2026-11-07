@@ -9,6 +9,7 @@ from fastapi import APIRouter, HTTPException, Request
 from apps.webui.server.grid_phase_precompute import GridPhasePrecompute
 
 router = APIRouter(prefix="/grid-phase-precompute", tags=["grid-phase-precompute"])
+MOUNT_UNDER_API_PREFIX = True
 NOT_ARMED_CODE: str = "GRID_PHASE_PRECOMPUTE_NOT_ARMED"
 
 

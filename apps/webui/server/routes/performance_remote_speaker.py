@@ -48,6 +48,7 @@ from .commands import page_is_open, page_is_open_on_app, submit_single_command_t
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/performance/remote-speaker", tags=["performance-remote-speaker"])
+MOUNT_UNDER_API_PREFIX = True
 
 #: The page command each route sends, for the TS-side parity test.
 REMOTE_SPEAKER_PAGE_COMMANDS: dict[str, str] = {

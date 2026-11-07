@@ -32,6 +32,7 @@ from ..etag import compute_etag
 from . import ui_prefs
 
 router = APIRouter(prefix="/auto-gain", tags=["auto-gain"])
+MOUNT_UNDER_API_PREFIX = True
 
 USER_FIELD = "auto_gain_user_db"
 

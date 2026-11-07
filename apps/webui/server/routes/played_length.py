@@ -22,6 +22,7 @@ from ..backend import StateBackend
 from ..deps import get_read_state
 
 router = APIRouter(prefix="/tracks", tags=["tracks"])
+MOUNT_UNDER_API_PREFIX = True
 
 
 class PlayedLengthIn(BaseModel):

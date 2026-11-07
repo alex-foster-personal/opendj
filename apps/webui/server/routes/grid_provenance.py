@@ -39,6 +39,7 @@ from .rb_assets import _canonical_beatgrid_record
 from .rb_assets_beatgrid_source import beatgrid_source_for_track
 
 router = APIRouter(prefix="/tracks", tags=["rb-assets"])
+MOUNT_UNDER_API_PREFIX = True
 
 
 class GridProvenanceOut(BaseModel):

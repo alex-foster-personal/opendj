@@ -4,8 +4,9 @@ Regression lines:
   - if the watchdog binds to the general e2e pool then broken
   - if the watchdog lacks actions: write and issues: write then broken
   - if the watchdog does not invoke scripts.ci_e2e_main_starvation then broken
-  - if the watchdog wakes on E2E `requested` as well as `completed` then it starts twice the
-    runs on the main-fix reserve for no earlier alarm
+  - if the watchdog wakes on E2E `workflow_run` again then it starts about 1,350 runs a day on
+    the main-fix reserve for an alarm at most one cron gap earlier
+  - if the ten-minute cron goes then nothing wakes the watchdog
 """
 
 from __future__ import annotations
@@ -38,21 +39,18 @@ def test_e2e_main_starvation_runs_on_the_main_fix_reserve() -> None:
         assert general_pool not in runs_on, f"{general_pool} is the backlog, not the reserve"
 
 
-def test_e2e_main_starvation_has_write_permissions_and_e2e_triggers() -> None:
+def test_e2e_main_starvation_has_write_permissions_and_wakes_on_its_cron_only() -> None:
     workflow = _workflow()
     permissions = workflow.get("permissions") or {}
     assert permissions.get("actions") == "write"
     assert permissions.get("issues") == "write"
 
     on = workflow[True]
-    assert "workflow_run" in on
-    assert on["workflow_run"]["workflows"] == ["E2E"]
-    # One wake per E2E run, not two (ADR-NEW-starvation-watchdog-wakes-on-completed): of its
-    # 1,177 runs in 24 h from Thu 5 Nov 03:00Z only 53 came from the cron; the rest were E2E
-    # workflow_run sweeps, about one a minute against a 30-minute threshold, on the main-fix reserve.
-    assert on["workflow_run"]["types"] == ["completed"]
-    assert "schedule" in on
-    assert "workflow_dispatch" in on
+    # The cron alone (ADR-NEW-starvation-watchdog-cron-only): it delivered 134 of 144 slots on
+    # Fri 6 Nov (max gap 33.4 min) while the E2E workflow_run wake started about 1,350 sweeps a
+    # day, one a minute against a 30-minute threshold, on the main-fix reserve.
+    assert set(on) == {"schedule", "workflow_dispatch"}
+    assert on["schedule"] == [{"cron": "3,13,23,33,43,53 * * * *"}]
 
 
 def test_e2e_main_starvation_invokes_watch_script() -> None:

@@ -54,6 +54,7 @@ from ..etag import compute_etag
 from ..grid_quality_scan import ScanScope
 
 router = APIRouter(prefix="/beatgrid-flags", tags=["beatgrid-flags"])
+MOUNT_UNDER_API_PREFIX = True
 
 GridClassFilter = Literal["flagged", "suspect", "variable_tempo", "unknown", "ok", "all"]
 Availability = Literal["present", "all"]

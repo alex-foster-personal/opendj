@@ -36,6 +36,7 @@ from apps.shared.rekordbox_writeback import (
 )
 
 router = APIRouter(prefix="/rekordbox", tags=["rekordbox-gate"])
+MOUNT_UNDER_API_PREFIX = True
 
 
 class WriteSurfaceOut(BaseModel):

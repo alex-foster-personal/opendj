@@ -26,7 +26,6 @@ not importable on that path.
 
 from __future__ import annotations
 
-import hashlib
 import logging
 import re
 import shutil
@@ -37,6 +36,8 @@ import urllib.request
 from collections.abc import Callable
 from pathlib import Path
 from typing import Literal
+
+from apps.shared.hashing import sha256_file_hex as sha256_of
 
 # ----------------------------------------------------------------------------- config
 # Pinned Sat 10 Oct 2026 05:35Z from the upstream release page. Both hashes were computed on
@@ -83,14 +84,6 @@ class CarabinerProvisionError(RuntimeError):
 
 
 # ----------------------------------------------------------------------------- verdicts (pure)
-def sha256_of(path: Path) -> str:
-    digest = hashlib.sha256()
-    with path.open("rb") as handle:
-        for block in iter(lambda: handle.read(1 << 20), b""):
-            digest.update(block)
-    return digest.hexdigest()
-
-
 def verify_sha256(path: Path, pinned: str, what: str) -> None:
     """Raise ``checksum_mismatch`` unless ``path`` hashes to ``pinned``."""
     actual = sha256_of(path)

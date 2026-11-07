@@ -198,6 +198,17 @@ test('CMDK-12: booleans flip, links open, and unbuilt or slider rows are not off
 	}
 });
 
+test('CMDK-9465: command rows rank through rankCommands; frecency notes come from the page prop', () => {
+	const bar = readFileSync(`${SRC}lib/components/rb/CommandBarV2.svelte`, 'utf8');
+	const page = readFileSync(`${SRC}routes/performance/+page.svelte`, 'utf8');
+	assert.match(bar, /rankCommands\(commandActions, query/);
+	assert.match(bar, /commandsRanked: true/);
+	assert.match(bar, /return rankSettings\(out, query\);/);
+	assert.match(bar, /noteCommandPick\(commandKey\(/);
+	assert.doesNotMatch(bar, /from '\$lib\/rb\/prefs\.svelte'/);
+	assert.match(page, /noteCommandPick=\{noteCmdkCommandPick\}/);
+});
+
 test('CMDK-12: the bar renders the hint only on the highlighted or hovered row', () => {
 	const bar = readFileSync(`${SRC}lib/components/rb/CommandBarV2.svelte`, 'utf8');
 	assert.match(bar, /\.act \.ent \{[^}]*visibility: hidden;/);

@@ -42,6 +42,10 @@ after(async () => {
 	if (daemon) await daemon.stop();
 });
 
+function toastBody(t) {
+	return t.detail ?? t.message;
+}
+
 async function waitForToast(predicate) {
 	const deadline = Date.now() + SETTLE_TIMEOUT_MS;
 	while (Date.now() < deadline) {
@@ -50,7 +54,7 @@ async function waitForToast(predicate) {
 		await new Promise((resolve) => setTimeout(resolve, 250));
 	}
 	throw new Error(
-		`no matching toast within ${SETTLE_TIMEOUT_MS} ms; toasts: ${JSON.stringify(mod.toasts.map((t) => t.message))}`
+		`no matching toast within ${SETTLE_TIMEOUT_MS} ms; toasts: ${JSON.stringify(mod.toasts.map((t) => toastBody(t)))}`
 	);
 }
 
@@ -58,22 +62,25 @@ test('Re-analyze runs the batch it enqueues, through the daemon, to a terminal t
 	const sid = daemon.reanalyzeSid;
 	await mod.runReanalyze([sid]);
 
-	const queued = await waitForToast((t) => /\(batch qb_[0-9a-f]+\)/.test(t.message));
-	const batchId = /\(batch (qb_[0-9a-f]+)\)/.exec(queued.message)[1];
+	const queued = await waitForToast((toast) => /\(batch qb_[0-9a-f]+\)/.test(toastBody(toast)));
+	const queuedText = toastBody(queued);
+	const batchId = /\(batch (qb_[0-9a-f]+)\)/.exec(queuedText)[1];
 	assert.doesNotMatch(
-		queued.message,
+		queuedText,
 		/nothing queued/i,
 		'positive control: the daemon admitted the track'
 	);
 
-	const terminal = await waitForToast(
-		(t) => t.message.includes(': complete ') && t.message.includes(batchId)
-	);
-	const counts = /done (\d+), failed (\d+), skipped (\d+)/.exec(terminal.message);
-	assert.ok(counts, `the terminal toast names its counts: ${terminal.message}`);
+	const terminal = await waitForToast((toast) => {
+		const body = toastBody(toast);
+		return body.includes(': complete ') && body.includes(batchId);
+	});
+	const terminalText = toastBody(terminal);
+	const counts = /done (\d+), failed (\d+), skipped (\d+)/.exec(terminalText);
+	assert.ok(counts, `the terminal toast names its counts: ${terminalText}`);
 	const [done, failed, skipped] = counts.slice(1).map(Number);
 	assert.equal(done + failed + skipped, 1, 'the one admitted item was settled by the runner');
-	assert.equal(done, daemon.beatgrid.available ? 1 : 0, terminal.message);
+	assert.equal(done, daemon.beatgrid.available ? 1 : 0, terminalText);
 
 	// The daemon's own record of the batch, read back over its real endpoint.
 	const res = await fetch(

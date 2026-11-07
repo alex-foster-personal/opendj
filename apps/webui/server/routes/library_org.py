@@ -34,6 +34,7 @@ from ..playlist_store import PlaylistStore
 from .playlist_write import get_playlist_store
 
 router = APIRouter(tags=["library-organization"])
+MOUNT_UNDER_API_PREFIX = True
 
 _STATUS: dict[str, int] = {
     "NOT_FOUND": status.HTTP_404_NOT_FOUND,

@@ -70,6 +70,7 @@ from .usb_volumes import (
 )
 
 router = APIRouter(prefix="/usb", tags=["usb"])
+MOUNT_UNDER_API_PREFIX = True
 
 _VOLUME_ID_PREFIX = "vol:"
 _PATH_VOLUME_ID_PREFIX = "path:"

@@ -37,6 +37,7 @@ from ..audio_quality_scan import MAX_WORKERS
 from ..deps import get_library_state_db
 
 router = APIRouter(prefix="/audio-quality", tags=["audio-quality"])
+MOUNT_UNDER_API_PREFIX = True
 
 LetterFilter = Literal["all", "A", "B", "C", "D", "unchecked", "issues", "failed"]
 

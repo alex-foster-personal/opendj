@@ -49,6 +49,7 @@ from ..backend import StateBackend
 from ..deps import get_read_state, get_write_state
 
 router = APIRouter(prefix="/tracks", tags=["rb-hot-cues"])
+MOUNT_UNDER_API_PREFIX = True
 
 HotCueSlot = Literal["A", "B", "C", "D", "E", "F", "G", "H"]
 

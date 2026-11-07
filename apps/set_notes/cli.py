@@ -21,15 +21,11 @@ from typing import TextIO
 from apps.shared.argparse_types import nonnegative_int
 from apps.shared.paths import DATA_DIR
 
-from .store import (
-    Geometry,
-    StaleRevision,
-    list_set_notes,
-    load_set_note,
-    note_to_wire,
-    open_set_notes,
-    save_set_note,
-)
+from .connection import open_set_notes
+from .models import Geometry
+from .revision import StaleRevision, stale_rev_detail
+from .store import list_set_notes, load_set_note, save_set_note
+from .wire import note_to_wire
 
 
 def _build_parser() -> argparse.ArgumentParser:
@@ -91,7 +87,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             _emit(_put(conn, args))
     except StaleRevision as exc:
         conn.rollback()
-        _emit({"error": "stale_rev", "current_rev": exc.current_rev}, sys.stderr)
+        _emit(stale_rev_detail(exc.current_rev), sys.stderr)
         return 3
     except LookupError:
         _emit({"error": "not_found", "scope": args.scope}, sys.stderr)

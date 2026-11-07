@@ -45,6 +45,7 @@ _TAG_READER_UNAVAILABLE_MESSAGE = (
 )
 
 router = APIRouter(prefix="/ingest", tags=["ingest"])
+MOUNT_UNDER_API_PREFIX = True
 _log = logging.getLogger(__name__)
 
 Verdict = Literal["new", "possible_duplicate", "skipped_duplicate"]

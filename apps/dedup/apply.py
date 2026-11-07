@@ -37,9 +37,12 @@ import shutil
 import sqlite3
 import subprocess
 import sys
+from collections.abc import Iterator
+from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
 
+from apps.dedup.db_paths import resolve_dedup_db
 from apps.shared import paths
 from apps.shared.rekordbox_writeback import require_writeback_enabled
 
@@ -88,13 +91,21 @@ def _load_rewrite_plan(
     ]
 
 
+@contextmanager
+def _open_rb_sqlite(rb_db_path: Path) -> Iterator[sqlite3.Connection]:
+    conn = sqlite3.connect(rb_db_path)
+    try:
+        yield conn
+    finally:
+        conn.close()
+
+
 def _enrich_with_rb(
     plan: list[RewritePlanRow], rb_db_path: Path
 ) -> list[RewritePlanRow]:
     if not rb_db_path.exists():
         return plan
-    conn = sqlite3.connect(rb_db_path)
-    try:
+    with _open_rb_sqlite(rb_db_path) as conn:
         for row in plan:
             ids = [
                 str(r[0])
@@ -121,8 +132,6 @@ def _enrich_with_rb(
                 except sqlite3.Error:
                     names = []
                 row.playlist_names = names
-    finally:
-        conn.close()
     return plan
 
 
@@ -264,8 +273,7 @@ def _verify_rewrites(
     plan: list[RewritePlanRow], rb_db_path: Path
 ) -> list[str]:
     bad: list[str] = []
-    conn = sqlite3.connect(rb_db_path)
-    try:
+    with _open_rb_sqlite(rb_db_path) as conn:
         for row in plan:
             for cid in row.rb_content_ids:
                 got = conn.execute(
@@ -276,8 +284,6 @@ def _verify_rewrites(
                     bad.append(
                         f"id={cid} expected={row.canonical_path!r} got={got!r}"
                     )
-    finally:
-        conn.close()
     return bad
 
 
@@ -322,7 +328,7 @@ def run_apply(
             plan_md=plan_md or cfg.plan_md,
             backup_dir=backup_dir or cfg.backup_dir,
         )
-    dedup_db = cfg.dedup_db_path or paths.DEDUP_FALLBACK_DB
+    dedup_db = resolve_dedup_db(cfg.dedup_db_path)
     rb_db = cfg.rb_db_path or paths.REKORDBOX_WORKING_DB
     plan_csv = cfg.plan_csv or paths.DEDUP_REWRITE_PLAN_CSV
     plan_md = cfg.plan_md or paths.DEDUP_REWRITE_SUMMARY_MD

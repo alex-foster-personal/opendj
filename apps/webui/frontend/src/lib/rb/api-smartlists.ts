@@ -28,6 +28,8 @@ import {
 } from './api-rb';
 import type { TrackQuality } from './library-types';
 
+import type { TempoCurveData } from '$lib/components/rb/wave/tempo-marks';
+
 import { ApiError, api, unwrap } from '../api/client';
 
 // ----------------------------------------------------------- types
@@ -94,6 +96,8 @@ export interface SmartlistTrackRow {
 	has_rb_mapping: boolean;
 	artwork_available: boolean | null;
 	artwork_status: 'ok' | 'no_image_path' | 'unresolved' | 'file_missing';
+	/** Row strip tempo curve (TEMPOROW-8874c); null when steady or never judged. Optional for older payloads. */
+	tempo_curve?: TempoCurveData | null;
 }
 
 /** GET /smartlists/{id}/tracks -- live evaluation result. */

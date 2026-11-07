@@ -101,6 +101,101 @@ def _projection_has_servable_lane(conn: sqlite3.Connection) -> bool:
     )
 
 
+def _append_stable_ids_to_needy_groups(
+    conn: sqlite3.Connection,
+    needy_keys: set[tuple[str, str]],
+    hash_list: list[str],
+) -> dict[tuple[str, str], list[str]]:
+    """Fill ``groups`` with stable_ids from rows whose hash is in ``hash_list``."""
+    hash_placeholders = ",".join("?" * len(hash_list))
+    groups: dict[tuple[str, str], list[str]] = {key: [] for key in needy_keys}
+    for sid, path, digest in conn.execute(
+        "SELECT stable_id, file_path, audio_hash FROM tracks "
+        "WHERE deleted_at IS NULL AND audio_hash IS NOT NULL AND "
+        f"audio_hash IN ({hash_placeholders})",
+        hash_list,
+    ):
+        if not path or not digest:
+            continue
+        key = (sibling_path_key(str(path)), str(digest))
+        if key in groups:
+            groups[key].append(str(sid))
+    return groups
+
+
+def _path_sibling_identity_groups(
+    conn: sqlite3.Connection,
+    ids: list[str],
+    needy: list[str],
+) -> tuple[
+    dict[str, tuple[str, str]],
+    set[tuple[str, str]],
+    dict[tuple[str, str], list[str]],
+]:
+    """Resolve path+hash identity for ``ids`` and group stable_ids per needy key.
+
+    Runs the hash-wide tracks query only when ``needy_keys`` is non-empty.
+    """
+    placeholders = ",".join("?" * len(ids))
+    identity: dict[str, tuple[str, str]] = {}
+    for sid, path, digest in conn.execute(
+        "SELECT stable_id, file_path, audio_hash FROM tracks "
+        f"WHERE stable_id IN ({placeholders})",
+        ids,
+    ):
+        if path and digest:
+            identity[str(sid)] = (sibling_path_key(str(path)), str(digest))
+    needy_keys = {identity[sid] for sid in needy if sid in identity}
+    if not needy_keys:
+        return identity, needy_keys, {}
+    hash_list = list({digest for _path, digest in needy_keys})
+    groups = _append_stable_ids_to_needy_groups(conn, needy_keys, hash_list)
+    return identity, needy_keys, groups
+
+
+def _lane_donors_for_needy(
+    sid: str,
+    key: tuple[str, str],
+    groups: dict[tuple[str, str], list[str]],
+    donated: dict[str, dict[str, EffectiveField]],
+) -> dict[str, list[tuple[str, str]]]:
+    """Collect per-lane donor candidates for one needy stable_id (excludes self)."""
+    donors_by_lane: dict[str, list[tuple[str, str]]] = {}
+    for other in sorted(groups.get(key, [])):
+        if other == sid:
+            continue
+        views = donated.get(other, {})
+        for lane, names in FIELDS_BY_LANE.items():
+            status = _donor_lane_status(views, names)
+            if status is None:
+                continue
+            donors_by_lane.setdefault(lane, []).append((other, status))
+    return donors_by_lane
+
+
+def _copy_absent_lanes_from_donors(
+    sid: str,
+    fields: dict[str, dict[str, EffectiveField]],
+    donors_by_lane: dict[str, list[tuple[str, str]]],
+    donated: dict[str, dict[str, EffectiveField]],
+) -> None:
+    """Mutate ``fields[sid]`` with chosen donor views where the lane is absent."""
+    for lane, candidates in donors_by_lane.items():
+        names = FIELDS_BY_LANE[lane]
+        if not _lane_is_absent(fields[sid], names):
+            continue
+        chosen = choose_lane_donor(candidates)
+        if chosen is None:
+            continue
+        for name in names:
+            view = donated.get(chosen, {}).get(name)
+            if view is None or view.status == "missing":
+                continue
+            current = fields[sid].get(name)
+            if current is None or current.status == "missing":
+                fields[sid][name] = view
+
+
 def _borrow_path_sibling_lanes(
     conn: sqlite3.Connection,
     fields: dict[str, dict[str, EffectiveField]],
@@ -122,62 +217,17 @@ def _borrow_path_sibling_lanes(
     if not needy or not _projection_has_servable_lane(conn):
         return fields
     ids = list(fields)
-    placeholders = ",".join("?" * len(ids))
-    identity: dict[str, tuple[str, str]] = {}
-    for sid, path, digest in conn.execute(
-        "SELECT stable_id, file_path, audio_hash FROM tracks "
-        f"WHERE stable_id IN ({placeholders})",
-        ids,
-    ):
-        if path and digest:
-            identity[str(sid)] = (sibling_path_key(str(path)), str(digest))
-    needy_keys = {identity[sid] for sid in needy if sid in identity}
+    identity, needy_keys, groups = _path_sibling_identity_groups(conn, ids, needy)
     if not needy_keys:
         return fields
-    hash_list = list({digest for _path, digest in needy_keys})
-    hash_placeholders = ",".join("?" * len(hash_list))
-    groups: dict[tuple[str, str], list[str]] = {key: [] for key in needy_keys}
-    for sid, path, digest in conn.execute(
-        "SELECT stable_id, file_path, audio_hash FROM tracks "
-        "WHERE deleted_at IS NULL AND audio_hash IS NOT NULL AND "
-        f"audio_hash IN ({hash_placeholders})",
-        hash_list,
-    ):
-        if not path or not digest:
-            continue
-        key = (sibling_path_key(str(path)), str(digest))
-        if key in groups:
-            groups[key].append(str(sid))
-    donor_ids = sorted({sid for group in groups.values() for sid in group})
+    donor_ids = sorted({s for group in groups.values() for s in group})
     donated = analysis_selection.own_projection_fields(conn, donor_ids)
     for sid in needy:
         key = identity.get(sid)
         if key is None:
             continue
-        donors_by_lane: dict[str, list[tuple[str, str]]] = {}
-        for other in sorted(groups.get(key, [])):
-            if other == sid:
-                continue
-            views = donated.get(other, {})
-            for lane, names in FIELDS_BY_LANE.items():
-                status = _donor_lane_status(views, names)
-                if status is None:
-                    continue
-                donors_by_lane.setdefault(lane, []).append((other, status))
-        for lane, candidates in donors_by_lane.items():
-            names = FIELDS_BY_LANE[lane]
-            if not _lane_is_absent(fields[sid], names):
-                continue
-            chosen = choose_lane_donor(candidates)
-            if chosen is None:
-                continue
-            for name in names:
-                view = donated.get(chosen, {}).get(name)
-                if view is None or view.status == "missing":
-                    continue
-                current = fields[sid].get(name)
-                if current is None or current.status == "missing":
-                    fields[sid][name] = view
+        donors_by_lane = _lane_donors_for_needy(sid, key, groups, donated)
+        _copy_absent_lanes_from_donors(sid, fields, donors_by_lane, donated)
     return fields
 
 

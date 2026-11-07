@@ -10,6 +10,7 @@ from fastapi.responses import RedirectResponse
 from ..share_gate import AUTH_TOKEN, SHARE_COOKIE, configured_share
 
 router = APIRouter(tags=["share"])
+MOUNT_UNDER_API_PREFIX = True
 
 
 @router.get("/share/session")

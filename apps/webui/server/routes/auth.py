@@ -41,6 +41,7 @@ from apps.webui.server.auth_timing import AuthTimer, last_capture
 from apps.webui.server.ui_url import NAMED_LOCAL_HOST
 
 router = APIRouter(prefix="/auth", tags=["auth"])
+MOUNT_UNDER_API_PREFIX = True
 
 _LOOPBACK_HOSTS: frozenset[str] = frozenset({"127.0.0.1", "localhost", "::1"})
 

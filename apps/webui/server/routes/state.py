@@ -43,6 +43,7 @@ from apps.shared.sync_runtime_gates import mirror_is_stale
 from apps.shared.telemetry import MIRROR_RECEIVED_MONOTONIC_KEY
 
 router = APIRouter(prefix="/state", tags=["agent-state"])
+MOUNT_UNDER_API_PREFIX = True
 _LOG = logging.getLogger(__name__)
 
 # AGENT-18: one writer per engine. A page that sends the lease header claims the

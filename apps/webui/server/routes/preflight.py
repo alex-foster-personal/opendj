@@ -43,6 +43,7 @@ from ..preflight_checks import run_preflight
 from ..state_paths import resolve_state_db_path
 
 router = APIRouter(prefix="/preflight", tags=["preflight"])
+MOUNT_UNDER_API_PREFIX = True
 
 
 @router.get("", response_model=PreflightOut)

@@ -47,6 +47,7 @@ from ..backend import StateBackend
 from ..deps import get_write_state
 
 router = APIRouter(prefix="/pairings", tags=["pairings-capture"])
+MOUNT_UNDER_API_PREFIX = True
 
 
 # ----------------------------------------------------------- schemas
@@ -144,7 +145,7 @@ def _alignment_out(row: Alignment) -> AlignmentOut:
 
 
 def _db_path(request: Request) -> Path:
-    return Path(getattr(request.app.state, "state_db_path", "data/state/state.db"))
+    return Path(getattr(request.app.state, "state_db_path", "(private path)"))
 
 
 def _unavailable(db_path: Path) -> HTTPException:

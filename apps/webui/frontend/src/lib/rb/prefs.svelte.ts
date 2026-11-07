@@ -158,7 +158,14 @@ import {
 	putDiskPrefsVerified,
 	syncDiskPrefs
 } from './prefs-hydrate';
-import { parseAutoSync, parseLastPlaylist, parseLevelCalibration, parseSpotifyLibrary } from './prefs-fields';
+import { notePick, type CommandPick } from '../palette/rank';
+import {
+	parseAutoSync,
+	parseCmdkCommandPicks,
+	parseLastPlaylist,
+	parseLevelCalibration,
+	parseSpotifyLibrary
+} from './prefs-fields';
 import type { AutoSyncPrefs, LastPlaylistPref, LevelCalibrationPrefs, SpotifyLibraryPref } from './prefs-types';
 import { makeSpotifyLibrarySetters } from './spotify-library-prefs';
 import { validateActiveScheme } from './theme-tokens';
@@ -328,6 +335,11 @@ export interface RbUiPrefs
 	 * the daemon ui-prefs schema does not have this field.
 	 */
 	pin_visible_days: number;
+	/**
+	 * CMDK-9465: Cmd K command picks for frecency ranking. Local-only: the daemon
+	 * ui-prefs schema does not have this field.
+	 */
+	cmdk_command_picks: CommandPick[];
 	/** DECKUX-19: per-stem mini-waveforms under deck wavestack rows. Default off. */
 	show_stems: boolean;
 	/** Mixer S button (the maintainer, Mon 2 Nov 2026): stem level dials VOCAL/INST/BASS
@@ -451,6 +463,7 @@ const DEFAULTS: RbUiPrefs = {
 	jog_radial_waveform: false,
 	show_agent_pins: true,
 	pin_visible_days: PIN_VISIBLE_DAYS_DEFAULT,
+	cmdk_command_picks: [],
 	show_stems: false,
 	mixer_stems: false,
 	deck_hover_link: true,
@@ -999,6 +1012,7 @@ function _assembleLoadedPrefs(
 		confirm: { ...confirm },
 		last_playlist: lastPlaylist,
 		spotify_library: parseSpotifyLibrary(parsed.spotify_library, STORAGE_KEY),
+		cmdk_command_picks: parseCmdkCommandPicks(parsed.cmdk_command_picks, STORAGE_KEY),
 		deck_layout: deckLayout ?? DEFAULTS.deck_layout,
 		deck_layout_animate: deckLayoutAnimate ?? DEFAULTS.deck_layout_animate,
 		deck_layout_duration_ms: deckLayoutDurationMs ?? DEFAULTS.deck_layout_duration_ms,
@@ -1365,6 +1379,12 @@ export function setPinVisibleDays(next: number): void {
 		);
 	}
 	uiPrefs.pin_visible_days = next;
+	_persist();
+}
+
+/** Local-only: remember a Cmd K command pick for frecency (CMDK-9465). */
+export function noteCmdkCommandPick(key: string): void {
+	uiPrefs.cmdk_command_picks = notePick(uiPrefs.cmdk_command_picks, key, Date.now());
 	_persist();
 }
 

@@ -28,6 +28,7 @@ from ..deps import get_library_state_db
 from ..errors import ErrorBody
 
 router = APIRouter(prefix="/dj/transitions", tags=["dj-transition"])
+MOUNT_UNDER_API_PREFIX = True
 
 Verdict = Literal["good", "meh", "bad"]
 

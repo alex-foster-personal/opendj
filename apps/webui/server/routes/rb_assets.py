@@ -43,6 +43,7 @@ from .rb_assets_beatgrid_source import beatgrid_source_for_track, phrase_source_
 from .vocals import _own_vocals_for_serve, _request_vocals_ctx
 
 router = APIRouter(prefix="/tracks", tags=["rb-assets"])
+MOUNT_UNDER_API_PREFIX = True
 
 _CACHE_AUDIO = "no-store"  # files can move (apps/reconcile repairs)
 _CACHE_ARTWORK = "public, max-age=86400"

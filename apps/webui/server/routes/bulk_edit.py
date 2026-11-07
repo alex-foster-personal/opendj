@@ -21,6 +21,7 @@ from ..deps import get_write_state
 from ..etag import compute_etag
 
 router = APIRouter(prefix="/bulk-edit", tags=["bulk-edit"])
+MOUNT_UNDER_API_PREFIX = True
 
 # Same cap as find_replace.py's _MAX_STABLE_IDS: an unbounded batch has no
 # input-layer rejection, so it is only ever stopped deep inside the backend

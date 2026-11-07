@@ -19,6 +19,7 @@ from apps.shared.state import library_works as works
 from .library_org import Reader, RowsOut, Session, WriteOut, _set, _Strict, _written
 
 router = APIRouter(tags=["library-organization"])
+MOUNT_UNDER_API_PREFIX = True
 
 Role = Literal["original", "recording", "remix", "cover", "edit", "live", "mashup"]
 

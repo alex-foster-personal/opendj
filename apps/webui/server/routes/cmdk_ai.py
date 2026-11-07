@@ -33,6 +33,7 @@ from ..backend import StateBackend, Track
 from ..deps import get_read_state
 
 router = APIRouter(prefix="/cmdk", tags=["cmdk"])
+MOUNT_UNDER_API_PREFIX = True
 
 KEY_MISSING_CODE = "ai_search_key_missing"
 DISABLED_CODE = "ai_search_disabled"

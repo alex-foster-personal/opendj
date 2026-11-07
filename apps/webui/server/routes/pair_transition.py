@@ -41,6 +41,7 @@ from ..deps import get_library_state_db
 from ..errors import ErrorBody
 
 router = APIRouter(prefix="/autodj", tags=["autodj"])
+MOUNT_UNDER_API_PREFIX = True
 
 Source = Literal["planner", "captured", "edited"]
 _NOT_FOUND: dict[int | str, dict[str, Any]] = {404: {"model": ErrorBody}}

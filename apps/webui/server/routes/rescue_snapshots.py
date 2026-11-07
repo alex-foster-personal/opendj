@@ -16,6 +16,7 @@ from apps.shared.paths import DATA_DIR
 _service = build_service()
 
 router = APIRouter(prefix="/performance/rescue-snapshots", tags=["performance-rescue"])
+MOUNT_UNDER_API_PREFIX = True
 
 
 class RescueAppendOut(BaseModel):

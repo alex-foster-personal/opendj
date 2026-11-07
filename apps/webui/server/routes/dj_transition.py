@@ -52,6 +52,7 @@ from ..errors import ErrorBody
 from .dj_try import ServingTrackSource, _serving_origin
 
 router = APIRouter(prefix="/dj/transition", tags=["dj-transition"])
+MOUNT_UNDER_API_PREFIX = True
 _log = logging.getLogger(__name__)
 #: One prepare at a time: it already fans out to the render workers, and a set only needs the current pair.
 _PREPARE_POOL = ThreadPoolExecutor(max_workers=1, thread_name_prefix="transition-prepare")

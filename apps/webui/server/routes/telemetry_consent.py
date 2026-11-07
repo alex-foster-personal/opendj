@@ -33,6 +33,7 @@ from apps.shared.telemetry.consent import (
 )
 
 router = APIRouter(prefix="/telemetry", tags=["telemetry"])
+MOUNT_UNDER_API_PREFIX = True
 log = logging.getLogger(__name__)
 
 #: A checkout's way to get replay: the open-dj-fe DSN in .env.

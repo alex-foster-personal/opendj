@@ -27,6 +27,7 @@ from ..models import (
 from .tracks import AvailableFilter, keep_by_availability
 
 router = APIRouter(prefix="/playlists", tags=["playlists"])
+MOUNT_UNDER_API_PREFIX = True
 
 AvailabilitySummary = Literal["all", "skip"]
 

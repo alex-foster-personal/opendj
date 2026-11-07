@@ -28,6 +28,7 @@ from pydantic import BaseModel, ConfigDict, Field
 from apps.shared import artwork_sources
 
 router = APIRouter(prefix="/artwork/suggestions", tags=["artwork"])
+MOUNT_UNDER_API_PREFIX = True
 
 CONSENT_NOTE: str = (
     "* Deezer and iTunes terms do not allow caching their content; only save covers "

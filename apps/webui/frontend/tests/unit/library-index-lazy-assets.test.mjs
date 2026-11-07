@@ -224,6 +224,24 @@ test('a row-assets answer fills stems, vocals and cover for the asked rows only'
 	});
 	const originalFetch = globalThis.fetch;
 	const asked = [];
+	const tempoPayload = {
+		verdict: 'changes',
+		nominal_bpm: 128,
+		largest_change_pct: 4,
+		segments: [
+			{
+				start_s: 0,
+				end_s: 4,
+				bpm: 128,
+				bpm_start: 126,
+				bpm_end: 128,
+				delta_pct: 2,
+				kind: 'ramp',
+				severity: 0.4,
+				direction: 'faster'
+			}
+		]
+	};
 	globalThis.fetch = async (input) => {
 		const request = input instanceof Request ? input : new Request(input);
 		asked.push({ url: request.url, body: await request.json() });
@@ -235,7 +253,8 @@ test('a row-assets answer fills stems, vocals and cover for the asked rows only'
 					vocals: { status: 'no_vocals', fps: 10, regions: [] },
 					artwork_available: true,
 					artwork_status: 'ok',
-					stems: { status: 'invalid', error: 'bad bundle' }
+					stems: { status: 'invalid', error: 'bad bundle' },
+					tempo: tempoPayload
 				}
 			},
 			pending: []
@@ -262,6 +281,7 @@ test('a row-assets answer fills stems, vocals and cover for the asked rows only'
 		assert.deepEqual(rows[0].stems, { status: 'invalid', error: 'bad bundle' });
 		assert.equal(rows[0].vocals.status, 'no_vocals');
 		assert.equal(rows[0].artwork_available, true);
+		assert.deepEqual(rows[0].tempo_curve, tempoPayload);
 		assert.deepEqual(rows[1], row('t2'), 'a row not asked for is untouched');
 		assert.deepEqual(out, { strips: { t1: { preview_b64: STRIP, preview_max: 5 } }, pending: [] });
 	} finally {

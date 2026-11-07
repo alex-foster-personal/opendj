@@ -63,6 +63,7 @@ from pydantic import BaseModel, ConfigDict, Field
 from apps.shared.source_tree import dev_only_refusal, is_repo_checkout
 
 router = APIRouter(prefix="/bench", tags=["bench"])
+MOUNT_UNDER_API_PREFIX = True
 
 REPO_ROOT: Path = Path(__file__).resolve().parents[4]
 # Module-level so tests can monkeypatch to a tmp ledger / tmp ratings dir.

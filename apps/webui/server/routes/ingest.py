@@ -94,6 +94,7 @@ from apps.webui.server.routes.ingest_scope import RefreshIn, resolve_scope, unma
 from apps.webui.server.routes.ingest_track import select_track_target
 
 router = APIRouter(prefix="/ingest", tags=["ingest"])
+MOUNT_UNDER_API_PREFIX = True
 
 
 def _stem_roots(app: FastAPI) -> tuple[Path, ...]:

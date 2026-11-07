@@ -10,9 +10,21 @@ from pathlib import Path
 import pytest
 
 from apps.dedup import scan as scan_mod
+from apps.dedup.db_paths import resolve_dedup_db
+from apps.shared import paths
 from apps.shared.fingerprints import ChromaprintMissing, FingerprintCache
 
 from tests.dedup.phase7_support import PHASE7_DEDUP_AUDIO_COUNT, patch_chromaprint_backend_missing
+
+# ---------------------------------------------------------- db path default
+
+
+@pytest.mark.requirement("META-03")
+def test_resolve_dedup_db_explicit_and_default(tmp_path: Path) -> None:
+    explicit = tmp_path / "dedup.sqlite"
+    assert resolve_dedup_db(explicit) == explicit
+    assert resolve_dedup_db(None) == paths.DEDUP_FALLBACK_DB
+
 
 # ---------------------------------------------------------------- smoke
 

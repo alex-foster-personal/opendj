@@ -62,6 +62,12 @@ from apps.plugins.manifest import (
     parse_manifest,
     semver_key,
 )
+from apps.plugins.receipts import (
+    RECEIPTS_DIRNAME,
+    manifest_bytes as read_manifest_bytes,
+    read_capped,
+    receipt_paths,
+)
 from apps.plugins.regular import NotRegularFileError, open_regular_file
 from apps.plugins.state import STATE_FILENAME, write_atomic
 from apps.shared.semver import parse_semver
@@ -74,7 +80,6 @@ STAGING_DIRNAME: str = ".staging"
 _MAX_TOKEN_BYTES = 64
 #: A receipt's signature file is held to the cap the catalog fetch applies.
 _MAX_SIGNATURE_BYTES = MAX_SIGNATURE_BYTES
-RECEIPTS_DIRNAME: str = "receipts"
 
 
 class InstallError(ValueError):
@@ -243,7 +248,7 @@ def _restore_receipt(root: Path, final: Path) -> None:
     backup = _receipt_backup(root, final)
     if not backup.is_dir():
         return
-    paths = _receipt_paths(root, final.parent.name, final.name)
+    paths = receipt_paths(root, final.parent.name, final.name)
     # A plain file in a receipt folder's place would stop this restore part way and strand the old copy.
     folder = _receipt_folder(root, final.parent.name)
     for path, limit in zip(paths, (MAX_INDEX_BYTES, _MAX_SIGNATURE_BYTES), strict=True):
@@ -251,7 +256,7 @@ def _restore_receipt(root: Path, final: Path) -> None:
         if path.is_dir() and not path.is_symlink():
             _remove_path(path)  # a folder in a receipt file's place would stop the restore part way
         # A saved copy past its cap was never written by this installer and could never verify.
-        data = _read_capped(saved, limit) if saved.is_file() else None
+        data = read_capped(saved, limit) if saved.is_file() else None
         if data is not None:
             folder.mkdir(parents=True, exist_ok=True)
             write_atomic(path, data)
@@ -535,8 +540,8 @@ def _source_manifest(source: Path, environ: Mapping[str, str] | None) -> tuple[b
     if not manifest_path.is_file():
         raise InstallError("bad-archive", f"{source} has no {MANIFEST_FILENAME}")
     try:
-        manifest_bytes = _manifest_bytes(manifest_path)
-        return manifest_bytes, parse_manifest(manifest_bytes)
+        payload = read_manifest_bytes(manifest_path)
+        return payload, parse_manifest(payload)
     except NotRegularFileError as exc:
         raise InstallError("bad-archive", f"{source}: {exc}") from exc
     except ManifestError as exc:
@@ -610,7 +615,7 @@ def _source_size(source: Path, rel: str) -> int:
 def read_installed_manifest(root: Path, plugin_id: str, version: str) -> PluginManifest:
     path = _contained(root, install_dir(root, plugin_id, version)) / MANIFEST_FILENAME
     try:
-        manifest = parse_manifest(_manifest_bytes(path))
+        manifest = parse_manifest(read_manifest_bytes(path))
     except NotRegularFileError as exc:  # a pipe or device in its place was put there, never installed
         raise InstallError("tampered", f"{plugin_id} {version}: {exc}") from exc
     except OSError as exc:
@@ -710,20 +715,15 @@ def snapshot_python(root: Path, manifest: PluginManifest, dest: Path) -> Path:
     return dest / "python" / "apps"
 
 
-def _receipt_paths(root: Path, plugin_id: str, version: str) -> tuple[Path, Path]:
-    index = root / RECEIPTS_DIRNAME / plugin_id / f"{version}.index.json"
-    return index, index.with_name(index.name + ".sig")
-
-
 def receipt_archive_sha256(root: Path, plugin_id: str, version: str) -> str | None:
     """The archive SHA-256 the installed build's receipt names, or None when there is none to read.
 
     Unverified: it only decides whether the store offers a same-version
     rebuild. Installing that build verifies everything again.
     """
-    index, _ = _receipt_paths(root, plugin_id, version)
+    index, _ = receipt_paths(root, plugin_id, version)
     try:
-        payload = _read_capped(index, MAX_INDEX_BYTES)
+        payload = read_capped(index, MAX_INDEX_BYTES)
         if payload is None:  # larger than any signed index: unreadable, so the store offers the repair build
             return None
         raw = json.loads(payload)
@@ -754,7 +754,7 @@ def check_app_version(manifest: PluginManifest, app_version: str) -> None:
 
 def write_receipt(root: Path, manifest: PluginManifest, payload: bytes, signature: bytes) -> None:
     """Keep the signed index a store install came from, outside the plugin's own files."""
-    index, sig = _receipt_paths(root, manifest.plugin_id, manifest.version)
+    index, sig = receipt_paths(root, manifest.plugin_id, manifest.version)
     _receipt_folder(root, manifest.plugin_id)  # a stray file there would fail every install of this plugin
     index.parent.mkdir(parents=True, exist_ok=True)
     _contained(root, index)
@@ -772,13 +772,13 @@ def receipt_written(root: Path, manifest: PluginManifest, payload: bytes, signat
     """
     final = install_dir(root, manifest.plugin_id, manifest.version)
     backup = _receipt_backup(root, final)
-    paths = _receipt_paths(root, manifest.plugin_id, manifest.version)
+    paths = receipt_paths(root, manifest.plugin_id, manifest.version)
     _contained(root, paths[0].parent)
     if not backup.exists():  # a backup already there is the older, still-uncommitted state
         partial = _aside(root, final, f"receipt-{uuid.uuid4().hex}")
         partial.mkdir(parents=True)
         for path, limit in zip(paths, (MAX_INDEX_BYTES, _MAX_SIGNATURE_BYTES), strict=True):
-            saved = _read_capped(path, limit) if path.is_file() else None
+            saved = read_capped(path, limit) if path.is_file() else None
             if saved is not None:  # one past its cap can never verify, so it is not kept to be put back
                 (partial / path.name).write_bytes(saved)
         os.replace(partial, backup)
@@ -790,29 +790,14 @@ def receipt_written(root: Path, manifest: PluginManifest, payload: bytes, signat
         raise
 
 
-def _manifest_bytes(path: Path) -> bytes:
-    """A manifest's bytes, refused unread past the size of a whole signed index (ManifestError)."""
-    data = _read_capped(path, MAX_INDEX_BYTES)
-    if data is None:
-        raise ManifestError(f"{path.name} is larger than {MAX_INDEX_BYTES} bytes, more than any signed index holds")
-    return data
-
-
-def _read_capped(path: Path, limit: int) -> bytes | None:
-    """At most ``limit`` bytes of ``path``, or None when it holds more (never read whole)."""
-    with open_regular_file(path) as handle:
-        data = handle.read(limit + 1)
-    return data if len(data) <= limit else None
-
-
 def verify_receipt(
     root: Path, manifest: PluginManifest, channel: str, *, trusted: Mapping[str, str] | None = None
 ) -> None:
     """The installed manifest must be the one a trusted key signed. Raises 'tampered'."""
     label = f"{manifest.plugin_id} {manifest.version}"
-    index, sig = _receipt_paths(root, manifest.plugin_id, manifest.version)
+    index, sig = receipt_paths(root, manifest.plugin_id, manifest.version)
     try:
-        payload, signature = _read_capped(index, MAX_INDEX_BYTES), _read_capped(sig, _MAX_SIGNATURE_BYTES)
+        payload, signature = read_capped(index, MAX_INDEX_BYTES), read_capped(sig, _MAX_SIGNATURE_BYTES)
     except OSError as exc:
         raise InstallError("tampered", f"{label} has no signed install receipt ({exc})") from exc
     if payload is None or signature is None:

@@ -41,6 +41,7 @@ from ..etag import require_current_etag
 from .relocate import CandidateFile, _mutate_with_candidate_guard, _open_candidate_file
 
 router = APIRouter(prefix="/tracks", tags=["track-locations"])
+MOUNT_UNDER_API_PREFIX = True
 
 
 class TrackLocationOut(BaseModel):

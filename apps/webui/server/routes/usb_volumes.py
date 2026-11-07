@@ -62,6 +62,7 @@ from apps.webui.server.routes.usb_root_access import (
 log = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/usb", tags=["usb"])
+MOUNT_UNDER_API_PREFIX = True
 
 _MIN_SCAN_INTERVAL_S = 5.0
 _VOLUMES_ROOT = Path("/Volumes")

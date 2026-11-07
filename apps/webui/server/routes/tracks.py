@@ -59,6 +59,7 @@ from ..track_loudness import track_loudness
 from .ingest_job import valid_lyrics_ids
 
 router = APIRouter(prefix="/tracks", tags=["tracks"])
+MOUNT_UNDER_API_PREFIX = True
 
 # FR-1 item 5 (agent parity for the UI "Hide broken links" toggle). Any
 # other value is a 422 straight from FastAPI's Literal validation.

@@ -53,6 +53,7 @@ from ..rb_vendor_pkg.own_lane_store import state_conn_ro, table_present
 from .rb_assets_beatgrid_source import beatgrid_source_for_track
 
 router = APIRouter(prefix="/tracks", tags=["grid-edit"])
+MOUNT_UNDER_API_PREFIX = True
 
 #: ``library.changed`` kind every write publishes (mirrored in events-bus.ts).
 EVENT_KIND = "beatgrid_edit"

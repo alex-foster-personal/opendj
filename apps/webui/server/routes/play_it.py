@@ -49,6 +49,7 @@ from ..etag import compute_etag
 from ..track_features import track_to_feature
 
 router = APIRouter(prefix="/play-it", tags=["play-it"])
+MOUNT_UNDER_API_PREFIX = True
 
 _MISSING_FIELD_LIMIT: float = 0.05
 

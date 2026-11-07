@@ -15,6 +15,7 @@ from ..errors import precondition_required
 from ..models import PairingCreate, PairingOut
 
 router = APIRouter(prefix="/pairings", tags=["pairings"])
+MOUNT_UNDER_API_PREFIX = True
 
 
 def _to_out(p: Pairing) -> PairingOut:

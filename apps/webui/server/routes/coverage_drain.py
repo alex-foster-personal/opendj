@@ -26,6 +26,7 @@ from pydantic import BaseModel, ConfigDict
 from apps.webui.server.coverage_drain import CoverageDrain
 
 router = APIRouter(prefix="/coverage-drain", tags=["coverage-drain"])
+MOUNT_UNDER_API_PREFIX = True
 
 NOT_ARMED_CODE: str = "COVERAGE_DRAIN_NOT_ARMED"
 

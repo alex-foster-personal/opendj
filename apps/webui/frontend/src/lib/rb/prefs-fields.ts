@@ -12,6 +12,7 @@ import type {
 	LevelCalibrationPrefs,
 	SpotifyLibraryPref
 } from './prefs-types';
+import { PICKS_CAP, type CommandPick } from '../palette/rank';
 import { SPOTIFY_PINNED_CAP, SPOTIFY_RECENT_CAP } from './spotify-playlist-rank';
 
 /** Bounds mirror `_CAL_MIN_DBFS`/`_CAL_MAX_DBFS`/`_CAL_CEILING_MAX_DBFS` in
@@ -198,4 +199,43 @@ export function parseSpotifyLibrary(raw: unknown, storageKey: string): SpotifyLi
 		pinned_ids: _parseSpotifyIdList(obj.pinned_ids, storageKey, 'pinned_ids', SPOTIFY_PINNED_CAP),
 		recent_ids: _parseSpotifyIdList(obj.recent_ids, storageKey, 'recent_ids', SPOTIFY_RECENT_CAP)
 	};
+}
+
+/** CMDK-9465: local-only Cmd K command picks for frecency ranking. */
+export function parseCmdkCommandPicks(raw: unknown, storageKey: string): CommandPick[] {
+	if (raw === undefined) return [];
+	if (!Array.isArray(raw)) {
+		throw new Error(
+			`${storageKey}: malformed prefs blob (cmdk_command_picks must be an array of {key, weight, at}) - clear the localStorage key to recover`
+		);
+	}
+	const out: CommandPick[] = [];
+	const seen = new Set<string>();
+	for (const entry of raw) {
+		if (entry === null || typeof entry !== 'object') {
+			throw new Error(
+				`${storageKey}: malformed prefs blob (cmdk_command_picks must be an array of {key, weight, at}) - clear the localStorage key to recover`
+			);
+		}
+		const obj = entry as Record<string, unknown>;
+		if (typeof obj.key !== 'string' || obj.key.length === 0) {
+			throw new Error(
+				`${storageKey}: malformed prefs blob (cmdk_command_picks must be an array of {key, weight, at}) - clear the localStorage key to recover`
+			);
+		}
+		if (typeof obj.weight !== 'number' || !Number.isFinite(obj.weight) || obj.weight < 0) {
+			throw new Error(
+				`${storageKey}: malformed prefs blob (cmdk_command_picks must be an array of {key, weight, at}) - clear the localStorage key to recover`
+			);
+		}
+		if (typeof obj.at !== 'number' || !Number.isFinite(obj.at)) {
+			throw new Error(
+				`${storageKey}: malformed prefs blob (cmdk_command_picks must be an array of {key, weight, at}) - clear the localStorage key to recover`
+			);
+		}
+		if (seen.has(obj.key)) continue;
+		seen.add(obj.key);
+		out.push({ key: obj.key, weight: obj.weight, at: obj.at });
+	}
+	return out.slice(0, PICKS_CAP);
 }

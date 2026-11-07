@@ -25,6 +25,7 @@ from apps.webui.server.models import RowAssetOut, RowAssetsOut
 from apps.webui.server.rb_vendor_pkg.track_rows import bulk_preview_strips
 
 router = APIRouter(prefix="/library", tags=["library"])
+MOUNT_UNDER_API_PREFIX = True
 
 _AxisKey = Literal[
     "genre", "decade", "play_count", "popularity", "overplayed_ness", "playlist", "set_played_in"

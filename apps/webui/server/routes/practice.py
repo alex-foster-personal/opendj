@@ -25,6 +25,7 @@ from fastapi import APIRouter, HTTPException
 from apps.shared.platform_paths import PROJECT_ROOT
 
 router = APIRouter(prefix="/practice", tags=["practice"])
+MOUNT_UNDER_API_PREFIX = True
 
 DEVICES_DIR = PROJECT_ROOT / "tools" / "deck-diagrams" / "devices"
 PANEL_FORMAT = "opendj-panel-layout/1"

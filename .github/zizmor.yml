@@ -23,11 +23,6 @@ rules:
       # on every checkout, and the same R2 artifact secrets the pull_request run already
       # had. The repository is private, so no fork head reaches it. Review with the rest.
       - e2e.yml:24
-      # e2e-main-starvation.yml (Thu 5 Nov 2026): workflow_run of E2E by design, to wake the
-      # main-gate starvation watchdog on PR E2E load. It checks out the default branch only
-      # (no `ref:`, `persist-credentials: false`), never reads the triggering run's head, and
-      # runs main's own scripts/ci_e2e_main_starvation.py. Same class as the two above.
-      - e2e-main-starvation.yml:21
   github-env:
     ignore:
       # The two port-lane steps write MUSIC_DJ_PORT_LANE from RUNNER_NAME alone (the

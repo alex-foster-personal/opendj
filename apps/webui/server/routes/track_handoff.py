@@ -10,6 +10,7 @@ from ..deps import get_read_state
 from ..handoff_apps import HANDOFF_APPS, HandoffApp, HandoffError, open_in_app, resolve_target
 
 router = APIRouter(tags=["tracks"])
+MOUNT_UNDER_API_PREFIX = True
 
 
 class HandoffAppOut(BaseModel):

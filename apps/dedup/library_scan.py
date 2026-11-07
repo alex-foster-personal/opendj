@@ -24,6 +24,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, Literal
 
+from apps.dedup.db_paths import resolve_dedup_db
 from apps.shared import fs_residency, paths
 from apps.shared.fingerprints import (
     ChromaprintMissing,
@@ -90,7 +91,7 @@ def run_library_scan(
     """Fingerprint the library, then cluster. Raises ChromaprintMissing when
     no fingerprint backend exists (nothing could be fingerprinted)."""
     use_state = state_db if state_db is not None else paths.STATE_DB
-    use_db = db_path if db_path is not None else paths.DEDUP_FALLBACK_DB
+    use_db = resolve_dedup_db(db_path)
     prog = progress if progress is not None else LibraryScanProgress()
     lock = threading.Lock()
 

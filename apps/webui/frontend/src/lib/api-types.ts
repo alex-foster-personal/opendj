@@ -19862,6 +19862,7 @@ export interface components {
             };
             /** Streaming Provider */
             streaming_provider?: ("spotify" | "tidal" | "soundcloud" | "unknown") | null;
+            tempo_curve?: components["schemas"]["TempoCurveRowOut"] | null;
             /** Title */
             title: string | null;
             /** Vocals */
@@ -22658,6 +22659,7 @@ export interface components {
             };
             /** Streaming Provider */
             streaming_provider?: ("spotify" | "tidal" | "soundcloud" | "unknown") | null;
+            tempo_curve?: components["schemas"]["TempoCurveRowOut"] | null;
             /** Title */
             title: string | null;
             /** Vocals */

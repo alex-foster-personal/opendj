@@ -18,6 +18,7 @@ import pytest
 
 from apps.rekordbox_ingestion import playlists, status
 from apps.shared import platform_paths
+from apps.shared.hashing import sha256_file_hex
 
 pytestmark = pytest.mark.skipif(
     os.environ.get("MDT_LIVE_LIBRARY") != "1", reason="needs the real rekordbox DB (MDT_LIVE_LIBRARY=1)"
@@ -48,7 +49,7 @@ def test_create_on_a_copy_changes_only_playlists_and_usn(tmp_path: Path, monkeyp
     before_rows = _all_rows(db)
     # _all_rows opened + closed the copy, which checkpoints its WAL; re-hash so the
     # backup is compared with the files exactly as the write found them.
-    source_hashes = {f.name: playlists._sha256(f) for f in copy_dir.iterdir()}
+    source_hashes = {f.name: sha256_file_hex(f) for f in copy_dir.iterdir()}
     before_xml = playlists._xml_nodes(copy_dir / "masterPlaylists6.xml")
     monkeypatch.setenv("MDT_REKORDBOX_WRITEBACK_ENABLED", "1")
 
@@ -66,7 +67,7 @@ def test_create_on_a_copy_changes_only_playlists_and_usn(tmp_path: Path, monkeyp
     assert len(after_xml) == len(before_xml) + 3
     assert backup is not None and (backup.directory / "MANIFEST.sha256").is_file()
     # the backup is the set exactly as found, byte for byte, taken before any open
-    assert {f.name: playlists._sha256(f) for f in backup.files} == source_hashes
+    assert {f.name: sha256_file_hex(f) for f in backup.files} == source_hashes
     # second run is a no-op on the DB rows
     again, _, _ = playlists.create_blank_playlists(db, "_ingest_test", ["probe-a"], backup_root=tmp_path / "bk")
     assert again is None
@@ -85,10 +86,10 @@ def test_backup_keeps_the_wal_when_the_source_has_one(tmp_path: Path, monkeypatc
         if src.exists():
             shutil.copy2(src, copy_dir / src.name)
     shutil.copy2(live.parent / "masterPlaylists6.xml", copy_dir / "masterPlaylists6.xml")
-    wal_hash = playlists._sha256(copy_dir / f"{live.name}-wal")
+    wal_hash = sha256_file_hex(copy_dir / f"{live.name}-wal")
     monkeypatch.setenv("MDT_REKORDBOX_WRITEBACK_ENABLED", "1")
     backup, _, _ = playlists.create_blank_playlists(
         copy_dir / live.name, "_ingest_test", ["probe-wal"], backup_root=tmp_path / "bk"
     )
     assert backup is not None
-    assert playlists._sha256(backup.directory / f"{live.name}-wal") == wal_hash
+    assert sha256_file_hex(backup.directory / f"{live.name}-wal") == wal_hash

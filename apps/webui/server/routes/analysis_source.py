@@ -36,6 +36,7 @@ from ..backend import InMemoryBackend, StateBackend
 from ..deps import get_write_state
 
 router = APIRouter(prefix="/analysis", tags=["analysis"])
+MOUNT_UNDER_API_PREFIX = True
 
 
 class LaneSourceOut(BaseModel):

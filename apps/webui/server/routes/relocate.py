@@ -74,6 +74,7 @@ from ..deps import get_read_state, get_write_state
 from ..etag import require_current_etag
 
 router = APIRouter(prefix="/relocate", tags=["relocate"])
+MOUNT_UNDER_API_PREFIX = True
 _REKORDBOX_WRITE_LOCK = threading.Lock()
 _MutationResult = TypeVar("_MutationResult")
 

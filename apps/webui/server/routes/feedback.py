@@ -74,6 +74,7 @@ from .feedback_storage import (  # noqa: F401
 )
 
 router = APIRouter(prefix="/feedback", tags=["feedback"])
+MOUNT_UNDER_API_PREFIX = True
 
 _COMMENT_STATE_FILTERS = frozenset({"regressed", "harvested"})
 

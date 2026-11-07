@@ -29,6 +29,7 @@ from .feedback import (
 )
 
 router = APIRouter(prefix="/feedback", tags=["feedback"])
+MOUNT_UNDER_API_PREFIX = True
 
 
 def _seed_replies_from_agent_note(item: dict[str, Any], now: str) -> None:

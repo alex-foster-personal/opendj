@@ -36,6 +36,7 @@ from ..backend import StateBackend
 from ..deps import get_backend, get_library_data_dir, get_lock_status, get_write_state
 
 router = APIRouter(prefix="/energy", tags=["energy"])
+MOUNT_UNDER_API_PREFIX = True
 
 REFUSED_CODE = "energy_backfill_refused"
 

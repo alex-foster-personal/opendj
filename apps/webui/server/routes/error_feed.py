@@ -16,6 +16,7 @@ from apps.webui.server.error_feed import (
 )
 
 router = APIRouter(prefix="/errors", tags=["errors"])
+MOUNT_UNDER_API_PREFIX = True
 
 
 class ErrorFeedEvent(BaseModel):

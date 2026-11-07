@@ -54,6 +54,7 @@ from apps.webui.server.local_operator import local_operator_refusal
 from .cloudsync_status import data_dir_for_request
 
 router = APIRouter(prefix="/cloudsync", tags=["cloudsync"])
+MOUNT_UNDER_API_PREFIX = True
 
 logger = logging.getLogger(__name__)
 

@@ -12,20 +12,14 @@ name: E2E Main Starvation
 # 1 on main's tip only). scripts/ci_e2e_main_starvation.py holds the rules and their
 # MINI-PRD; the run reads red whenever it alarms.
 #
-# TRIGGERS. Not cron alone: sub-hourly schedule delivery fell to about 2% a day from
-# Sat 3 Oct 2026 (#5694). Starvation needs PR e2e traffic to happen at all (that is what
-# takes the runners), and every E2E run that completes fires workflow_run
-# here, so the watchdog is woken by the very load that starves main. The
-# cron stays as a best-effort backstop. The concurrency group keeps one sweep running
-# and at most one pending, so a burst of E2E events costs a couple of 30 s sweeps.
+# TRIGGERS. The ten-minute cron alone (ADR-NEW-starvation-watchdog-cron-only, Sat 7 Nov
+# 2026). It used to wake on every E2E completion as well, because sub-hourly schedule
+# delivery fell to about 2% a day from Sat 3 Oct 2026 (#5694); that was about 1,350 sweeps
+# a day, one a minute against a 30-minute threshold, on the main-fix reserve. Measured on
+# this workflow since it reached main (Thu 5 Nov 17:18Z), the cron delivered 134 of 144
+# slots on Fri 6 Nov, longest gap 33.4 min, so an alarm comes at most one cron gap later.
+# The concurrency group keeps one sweep running and at most one pending.
 on:
-  workflow_run:
-    workflows: [E2E]
-    # Completed only (ADR-NEW-starvation-watchdog-wakes-on-completed): a completion is when
-    # a runner frees and the dispatcher picks main's gate or passes it over. `requested`
-    # too doubled the sweeps on the main-fix reserve, about one a minute against a
-    # 30-minute threshold, for no earlier alarm.
-    types: [completed]
   schedule:
     - cron: "3,13,23,33,43,53 * * * *"
   workflow_dispatch:
@@ -39,8 +33,8 @@ env:
   # Keep .pyc out of the reused self-hosted workspace (same ratchet as trunk-tip-only.yml).
   PYTHONDONTWRITEBYTECODE: "1"
 
-# workflow_run uses the default branch's workflow definition and this job never checks
-# out or runs the triggering SHA, only main's own checkout of this script.
+# Schedule and dispatch run the default branch's workflow definition, and this job runs only
+# main's own checkout of this script.
 permissions:
   # Cancel and re-run the starved E2E run.
   actions: write

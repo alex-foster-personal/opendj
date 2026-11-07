@@ -33,6 +33,9 @@ def _clean_cloudsync_env(monkeypatch: pytest.MonkeyPatch) -> None:
 LIVE_POLICY_ROWS = "SELECT COUNT(*) FROM sync_policies WHERE deleted_at IS NULL"
 CHANGELOG_ROWS = f"SELECT COUNT(*) FROM local_changelog WHERE table_name = '{POLICIES_TABLE}'"
 _HUB = "https://hub.example-tailnet.ts.net:8871"
+# A well-formed id: register_machine writes the adopted id to the data dir's machine-id file,
+# which accepts only 32 lowercase hex characters (782eb8a0a6).
+_ADOPTED_ID = "adadadadadadadadadadadadadadadad"
 
 
 def _enable_cloudsync(data_dir: Path) -> None:
@@ -175,7 +178,7 @@ def test_adopted_machine_identity_is_the_seed_target(tmp_path: Path) -> None:
         name = conn.execute("SELECT name FROM machines WHERE machine_id = ?", (file_id,)).fetchone()[0]
         conn.execute(
             "UPDATE machines SET machine_id = ? WHERE machine_id = ?",
-            ("restored-identity", file_id),
+            (_ADOPTED_ID, file_id),
         )
     finally:
         conn.close()
@@ -189,6 +192,6 @@ def test_adopted_machine_identity_is_the_seed_target(tmp_path: Path) -> None:
     assert result.status == "seeded", result
     rows = count(
         data_dir,
-        "SELECT COUNT(*) FROM sync_policies WHERE machine_id = 'restored-identity' AND deleted_at IS NULL",
+        f"SELECT COUNT(*) FROM sync_policies WHERE machine_id = '{_ADOPTED_ID}' AND deleted_at IS NULL",
     )
     assert rows == len(FILE_POLICY.artifacts)

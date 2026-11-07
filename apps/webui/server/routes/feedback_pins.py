@@ -42,6 +42,7 @@ from .feedback import (
 from .feedback_replies import append_agent_note_to_replies
 
 router = APIRouter(prefix="/feedback", tags=["feedback"])
+MOUNT_UNDER_API_PREFIX = True
 
 # `archived` is only ever reached through POST /comments/{id}/archive, which
 # performs the archive-file transaction alongside the removal. Allowing it

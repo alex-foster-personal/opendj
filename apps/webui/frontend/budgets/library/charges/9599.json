@@ -1,0 +1,9 @@
+{
+  "bytes": 2048,
+  "measured_main": 327968,
+  "measured_with_pr": 329251,
+  "sha": "0572022a12",
+  "date": "Sat 7 Nov 2026",
+  "reason": "PR #9599 adds Cmd K fuzzy/frecency ranking (rank.ts, prefs cmdk_command_picks, CommandBarV2 wiring). Library grew 1283 B gzip because cmdk-actions/prefs load with the shell; ceiled to KiB.",
+  "payback": "none planned; ranking stays in the existing Cmd K catalog path"
+}

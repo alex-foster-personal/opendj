@@ -39,6 +39,7 @@ from apps.webui.server.cloudsync_policy_http import (
 from apps.webui.server.routes.cloudsync import get_cloudsync_conn, get_cloudsync_write_conn
 
 router = APIRouter(prefix="/cloudsync", tags=["cloudsync"])
+MOUNT_UNDER_API_PREFIX = True
 
 
 def _out(outcome: policy_store.PolicyOutcome) -> PolicyOutcomeOut:

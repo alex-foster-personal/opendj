@@ -30,6 +30,7 @@ from ..shell_output_health import lyric_index_data_dir_from_state_db
 from .search import SearchHit, SearchResults
 
 router = APIRouter(prefix="/lyrics/search", tags=["lyrics"])
+MOUNT_UNDER_API_PREFIX = True
 
 
 def _lyric_index_data_dir(request: Request) -> Path:

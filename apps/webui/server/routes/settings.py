@@ -35,6 +35,7 @@ from apps.shared.runtime_policy import settings_items as runtime_policy_items
 from apps.webui.server.frontend_build import frontend_build_dir
 
 router = APIRouter(prefix="/settings", tags=["settings"])
+MOUNT_UNDER_API_PREFIX = True
 
 _FRONTEND_BUILD_DIR = frontend_build_dir()
 

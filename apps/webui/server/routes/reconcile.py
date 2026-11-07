@@ -91,6 +91,7 @@ from ..sqlite_backend import SqliteBackend
 log = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/reconcile", tags=["reconcile"])
+MOUNT_UNDER_API_PREFIX = True
 
 # Full-library scan guard: 1000 pages x MAX_LIMIT (1000) = 1M tracks. A scan
 # that deep means a pagination bug (cursor not advancing) -- fail loudly.

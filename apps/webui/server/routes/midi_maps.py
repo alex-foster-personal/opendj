@@ -52,6 +52,7 @@ from apps.webui.server.deps import get_write_state
 WriteGate = Annotated[StateBackend, Depends(get_write_state)]
 
 router = APIRouter(prefix="/midi", tags=["midi"])
+MOUNT_UNDER_API_PREFIX = True
 
 _MAPS_SUBDIR = "controller-maps"
 

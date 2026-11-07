@@ -37,6 +37,7 @@ from apps.webui.server.routes.ui_prefs import persist_master_muted
 from apps.webui.server.shell_commands import shell_broker
 
 router = APIRouter(prefix="/commands", tags=["agent-commands"])
+MOUNT_UNDER_API_PREFIX = True
 
 #: AGENT-24: ``plan`` arms the page's transition-plan executor and answers at
 #: once; ``plan_amend`` aborts, finishes or extends the armed plan.

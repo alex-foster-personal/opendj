@@ -12,7 +12,6 @@ playlists that hold them, from ``state.db`` opened read-only.
 
 from __future__ import annotations
 
-import hashlib
 import shutil
 import sqlite3
 import tempfile
@@ -21,6 +20,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from apps.rekordbox_analyse.plan import OdjTrack, RbPlaylist, RbTrack
+from apps.shared.hashing import sha256_file_hex as sha256_file
 from apps.shared.rekordbox_db import decrypt_to_plain, is_plain_sqlite
 
 #: djmdPlaylist.Attribute: 0 playlist, 1 folder, 4 smart playlist.
@@ -36,14 +36,6 @@ class RbSnapshot:
 
 # -----------------------------------------------------------------------------
 # Helpers
-
-
-def sha256_file(path: Path) -> str:
-    digest = hashlib.sha256()
-    with path.open("rb") as handle:
-        for chunk in iter(lambda: handle.read(1 << 20), b""):
-            digest.update(chunk)
-    return digest.hexdigest()
 
 
 def _connect_ro(path: Path) -> sqlite3.Connection:

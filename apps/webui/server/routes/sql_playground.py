@@ -19,6 +19,7 @@ from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel, Field
 
 router = APIRouter(prefix="/admin", tags=["admin"])
+MOUNT_UNDER_API_PREFIX = True
 
 READONLY_KEYWORDS = frozenset({"SELECT", "WITH", "VALUES", "EXPLAIN"})
 _ALLOWED_AUTH = frozenset(

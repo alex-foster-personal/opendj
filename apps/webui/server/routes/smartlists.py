@@ -78,6 +78,7 @@ from .smartlists_models import (
 )
 
 router = APIRouter(prefix="/smartlists", tags=["smartlists"])
+MOUNT_UNDER_API_PREFIX = True
 
 _COLS: str = (
     "id, name, rule, rule_schema_version, referenced_fields, order_by, "

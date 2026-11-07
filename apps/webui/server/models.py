@@ -603,6 +603,8 @@ class TrackRowOut(BaseModel):
     loudness_reason: str | None
     lyrics: LyricsRowSummaryOut | None = None
     grid_quality: GridQualityRowOut | None = None
+    #: Row strip tempo curve (TEMPOROW-8874c); null when steady or never judged.
+    tempo_curve: TempoCurveRowOut | None = None
     analysis_hints: TrackAnalysisHintsOut | None = None
     is_remix: bool = False
     is_radio_edit: bool = False

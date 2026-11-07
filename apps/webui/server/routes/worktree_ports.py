@@ -19,6 +19,7 @@ from pydantic import BaseModel
 from apps.webui.port_config import PortConfigError, WorktreeUnavailableError, show_ports
 
 router = APIRouter(prefix="/admin", tags=["admin"])
+MOUNT_UNDER_API_PREFIX = True
 
 
 class WorktreePortsOut(BaseModel):

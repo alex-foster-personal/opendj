@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import os
 import tempfile
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
@@ -42,16 +43,22 @@ def _ring_has_data(index: RescueIndex) -> bool:
     return any(slot.bytes > 0 for slot in index.slots)
 
 
-def _rescue_dir(data_dir: Path) -> Path:
-    return data_dir / "state" / "rescue"
+@dataclass(frozen=True)
+class _RescueRingPaths:
+    """On-disk locations for the rescue ring under ``<data-dir>/state/rescue/``."""
 
+    rescue_dir: Path
 
-def _ring_path(rescue_dir: Path, slot: int) -> Path:
-    return rescue_dir / f"ring-{slot}.json"
+    @classmethod
+    def from_data_dir(cls, data_dir: Path) -> _RescueRingPaths:
+        return cls(data_dir / "state" / "rescue")
 
+    @property
+    def index_file(self) -> Path:
+        return self.rescue_dir / "index.json"
 
-def _index_path(rescue_dir: Path) -> Path:
-    return rescue_dir / "index.json"
+    def ring_slot(self, slot: int) -> Path:
+        return self.rescue_dir / f"ring-{slot}.json"
 
 
 def write_atomic(path: Path, text: str) -> None:
@@ -120,8 +127,8 @@ def _index_to_dict(index: RescueIndex) -> dict[str, Any]:
     }
 
 
-def _load_index(rescue_dir: Path) -> RescueIndex:
-    path = _index_path(rescue_dir)
+def _load_index(paths: _RescueRingPaths) -> RescueIndex:
+    path = paths.index_file
     if not path.is_file():
         return _empty_index()
     try:
@@ -153,8 +160,8 @@ def _validate_snapshot(payload: dict[str, Any]) -> int:
     return size
 
 
-def _read_slot_snapshot(rescue_dir: Path, slot: int) -> dict[str, Any] | None:
-    path = _ring_path(rescue_dir, slot)
+def _read_slot_snapshot(paths: _RescueRingPaths, slot: int) -> dict[str, Any] | None:
+    path = paths.ring_slot(slot)
     if not path.is_file():
         return None
     try:
@@ -165,13 +172,13 @@ def _read_slot_snapshot(rescue_dir: Path, slot: int) -> dict[str, Any] | None:
 
 
 def read_index(data_dir: Path) -> RescueIndex:
-    return _load_index(_rescue_dir(data_dir))
+    return _load_index(_RescueRingPaths.from_data_dir(data_dir))
 
 
 def read_latest(data_dir: Path) -> dict[str, Any] | None:
-    rescue_dir = _rescue_dir(data_dir)
+    paths = _RescueRingPaths.from_data_dir(data_dir)
     try:
-        index = _load_index(rescue_dir)
+        index = _load_index(paths)
     except RescueSnapshotInvalidError:
         return None
     if not _ring_has_data(index):
@@ -181,7 +188,7 @@ def read_latest(data_dir: Path) -> dict[str, Any] | None:
         meta = index.slots[slot]
         if meta.bytes == 0:
             continue
-        snapshot = _read_slot_snapshot(rescue_dir, slot)
+        snapshot = _read_slot_snapshot(paths, slot)
         if snapshot is not None:
             return snapshot
     return None
@@ -189,15 +196,15 @@ def read_latest(data_dir: Path) -> dict[str, Any] | None:
 
 def append_snapshot(data_dir: Path, payload: dict[str, Any]) -> dict[str, Any]:
     size = _validate_snapshot(payload)
-    rescue_dir = _rescue_dir(data_dir)
-    index = _load_index(rescue_dir)
+    paths = _RescueRingPaths.from_data_dir(data_dir)
+    index = _load_index(paths)
     next_slot = (index.newest_slot + 1) % RING_SIZE if _ring_has_data(index) else 0
     captured_at_ms = int(payload["captured_at_ms"])
 
-    write_atomic(_ring_path(rescue_dir, next_slot), _compact_json(payload) + "\n")
+    write_atomic(paths.ring_slot(next_slot), _compact_json(payload) + "\n")
 
     slots = list(index.slots)
     slots[next_slot] = RescueSlotMeta(slot=next_slot, captured_at_ms=captured_at_ms, bytes=size)
     updated = RescueIndex(schema=_SCHEMA, newest_slot=next_slot, slots=tuple(slots))
-    write_atomic(_index_path(rescue_dir), json.dumps(_index_to_dict(updated), indent=2) + "\n")
+    write_atomic(paths.index_file, json.dumps(_index_to_dict(updated), indent=2) + "\n")
     return {"slot": next_slot, "captured_at_ms": captured_at_ms, "bytes": size}

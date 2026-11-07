@@ -9,6 +9,7 @@ from ..deps import get_read_state
 from ..models import QueueItemOut, QueueOut
 
 router = APIRouter(prefix="/queues", tags=["queues"])
+MOUNT_UNDER_API_PREFIX = True
 
 _VALID_KINDS = {"dedup", "bad_beatgrid", "auto_cue"}
 

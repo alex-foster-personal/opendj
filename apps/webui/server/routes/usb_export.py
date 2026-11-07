@@ -18,6 +18,7 @@ from apps.webui.server.routes.usb_gate import usb_export_gate
 from apps.webui.server.routes.usb_volume_lock import VolumeBusy, volume_operation
 
 router = APIRouter(prefix="/usb-export", tags=["usb-export"])
+MOUNT_UNDER_API_PREFIX = True
 
 
 class PlaylistModel(BaseModel):

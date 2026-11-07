@@ -19,6 +19,7 @@ from pydantic import BaseModel, Field
 from apps.shared import system_volume
 
 router = APIRouter(tags=["system"])
+MOUNT_UNDER_API_PREFIX = True
 
 
 class SystemVolumeOut(BaseModel):

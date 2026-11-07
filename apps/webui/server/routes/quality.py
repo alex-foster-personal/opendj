@@ -30,6 +30,7 @@ from typing import Any
 from fastapi import APIRouter, HTTPException
 
 router = APIRouter(prefix="/admin", tags=["admin"])
+MOUNT_UNDER_API_PREFIX = True
 
 REPO_ROOT: Path = Path(__file__).resolve().parents[4]
 # Module-level so tests can monkeypatch to a tmp baseline.

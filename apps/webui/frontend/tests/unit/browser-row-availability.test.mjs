@@ -81,6 +81,33 @@ describe('a playlist with more than 16 pending rows loads', () => {
 		assert.equal(pendingOf(rows).length, 24);
 	});
 
+	it('copies tempo_curve from wire when present and defaults older payloads to null', () => {
+		const base = clone(captured.find((r) => r.file_availability === 'present'));
+		const noCurve = wire.rowFromPlaylistWire(base, 1);
+		assert.equal(noCurve.tempo_curve, null);
+		const withCurve = clone(base);
+		withCurve.tempo_curve = {
+			verdict: 'changes',
+			nominal_bpm: 128,
+			largest_change_pct: 6,
+			segments: [
+				{
+					start_s: 0,
+					end_s: 8,
+					bpm: 128,
+					bpm_start: 120,
+					bpm_end: 128,
+					delta_pct: 6,
+					kind: 'ramp',
+					severity: 0.6,
+					direction: 'faster'
+				}
+			]
+		};
+		const mapped = wire.rowFromPlaylistWire(withCurve, 1);
+		assert.deepEqual(mapped.tempo_curve, withCurve.tempo_curve);
+	});
+
 	it('hide-broken drops pending and absent rows and keeps present ones', () => {
 		const rows = captured.map((w, i) => wire.rowFromPlaylistWire(w, i + 1));
 		const missing = clone(captured[0]);

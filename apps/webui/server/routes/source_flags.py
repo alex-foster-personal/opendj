@@ -25,6 +25,7 @@ from apps.reconcile.http import read_store, scan, write_store
 from apps.shared.events import publish
 
 router = APIRouter(prefix="/source-flags", tags=["source-flags"])
+MOUNT_UNDER_API_PREFIX = True
 
 CodeFilter = Literal["all", "length_mismatch", "stems_other_recording", "hardlinked_write"]
 

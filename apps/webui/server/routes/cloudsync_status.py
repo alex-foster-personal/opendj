@@ -15,6 +15,7 @@ from apps.sync_hub import status as sync_status
 from apps.sync_hub import sync_set
 
 router = APIRouter(prefix="/cloudsync", tags=["cloudsync"])
+MOUNT_UNDER_API_PREFIX = True
 
 ConfigSourceOut = Literal["env", "file", "default"]
 

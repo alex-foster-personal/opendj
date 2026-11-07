@@ -23,6 +23,7 @@ from . import progress as progress_module
 from .feedback import _COMMENTS_FILE, _dir, _load
 
 router = APIRouter(prefix="/feedback", tags=["feedback"])
+MOUNT_UNDER_API_PREFIX = True
 
 _ISSUE_URL_RE = re.compile(r"github\.com/([A-Za-z0-9_.-]+)/([A-Za-z0-9_.-]+)/issues/(\d+)(?:$|[/?#])")
 _REPO_REF_RE = re.compile(r"\b([A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+)#(\d+)\b")

@@ -27,6 +27,7 @@ from apps.stems import tiers as tiercfg
 from apps.webui.server.routes.stems_parity_guard import guard_stems_parity_call
 
 router = APIRouter(prefix="/stems", tags=["stem-tiers"])
+MOUNT_UNDER_API_PREFIX = True
 
 
 class TierOut(BaseModel):

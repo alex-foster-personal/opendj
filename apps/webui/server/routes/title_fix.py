@@ -50,6 +50,7 @@ from ..local_operator import local_operator_refusal
 from ..state_paths import resolve_state_db_path
 
 router = APIRouter(prefix="/title-fix", tags=["title-fix"])
+MOUNT_UNDER_API_PREFIX = True
 
 Policy = Literal["off", "safe_tier", "gate_approved"]
 TagFamily = Literal["version", "context", "cover", "project"]

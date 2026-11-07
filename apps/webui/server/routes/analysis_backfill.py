@@ -62,6 +62,7 @@ from ..backend import StateBackend
 from ..deps import get_write_state
 
 router = APIRouter(prefix="/analysis/backfill", tags=["analysis"])
+MOUNT_UNDER_API_PREFIX = True
 
 #: Cap on listed items in one progress response. The COUNTS are never capped.
 MAX_ITEMS: int = 1000

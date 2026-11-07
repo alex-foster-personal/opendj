@@ -70,6 +70,7 @@ from ..backend import StateBackend
 from ..deps import get_write_state
 
 router = APIRouter(prefix="/progress", tags=["progress"])
+MOUNT_UNDER_API_PREFIX = True
 logger = logging.getLogger(__name__)
 
 REPO_ROOT: Path = Path(__file__).resolve().parents[4]

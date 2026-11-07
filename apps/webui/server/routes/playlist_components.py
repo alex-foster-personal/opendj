@@ -35,6 +35,7 @@ from ..deps import get_read_state, get_write_state
 from .playlist_sets import _ensure_playlist, _open_conn
 
 router = APIRouter(prefix="/playlists", tags=["playlist-sets"])
+MOUNT_UNDER_API_PREFIX = True
 
 
 class ComponentOut(BaseModel):

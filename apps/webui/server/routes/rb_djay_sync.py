@@ -28,6 +28,7 @@ from apps.sync.djay_sync_service import (
 )
 
 router = APIRouter(prefix="/rb-djay-sync", tags=["rb-djay-sync"])
+MOUNT_UNDER_API_PREFIX = True
 
 
 def _http_error(exc: RbDjaySyncError) -> HTTPException:

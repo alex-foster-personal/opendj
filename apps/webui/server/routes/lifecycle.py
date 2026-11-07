@@ -32,6 +32,7 @@ from apps.shared.events import publish
 from .cloudsync_ops import LOCAL_ONLY_RESPONSE, _refuse, require_local_operator
 
 router = APIRouter(prefix="/lifecycle", tags=["lifecycle"])
+MOUNT_UNDER_API_PREFIX = True
 
 
 class LifecycleQuitIn(BaseModel):

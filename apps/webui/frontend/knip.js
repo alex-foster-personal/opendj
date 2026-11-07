@@ -150,7 +150,14 @@ export default {
 		'src/lib/context-menu/permutations.ts',
 		// K1 selector tree (#9393): pure spatial-navigation core, consumed by unit tests until
 		// key binding (K3) wires it into the UI.
-		'src/lib/keyboard/selector-tree.ts'
+		'src/lib/keyboard/selector-tree.ts',
+		// D3 commanded-move runner (#9454): driven by unit tests until digit commands (D2, #9453)
+		// call it from the UI.
+		'src/lib/rb/commanded-move-runner.svelte.ts',
+		// #9456 transition presets: pure planner/runner until Cmd-K wires the registry.
+		'src/lib/rb/transition-presets.ts',
+		// #9456 preset.run.* commands until palette epic imports the registry.
+		'src/lib/keyboard/command-registry.ts'
 	],
 	// Both Storybooks (Svelte in .storybook/, React twins in .storybook-react/):
 	// knip's storybook plugin reads each main.ts for stories, addons and the

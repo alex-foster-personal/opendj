@@ -34,6 +34,7 @@ from ..deps import get_read_state
 from .rb_assets import served_anlz_payload
 
 router = APIRouter(prefix="/tracks", tags=["rb-assets"])
+MOUNT_UNDER_API_PREFIX = True
 
 #: The served waveform is not read here; ask for the smallest one `/anlz` builds.
 _POINTS = runtime_policy.ANLZ_POINTS_MIN

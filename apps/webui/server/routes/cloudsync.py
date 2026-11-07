@@ -91,6 +91,7 @@ from apps.webui.server.cloudsync_policy_http import (
 )
 
 router = APIRouter(prefix="/cloudsync", tags=["cloudsync"])
+MOUNT_UNDER_API_PREFIX = True
 
 AssetKind = Literal[
     "audio",

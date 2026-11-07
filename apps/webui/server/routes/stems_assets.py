@@ -28,6 +28,7 @@ from apps.webui.server.routes.stems_parity_guard import (
 from apps.webui.server.routes.sync_hub_route_errors import HubErrorResponse
 
 router = APIRouter(tags=["stems"])
+MOUNT_UNDER_API_PREFIX = True
 
 STEM_HYDRATE_RESPONSES: dict[int | str, dict[str, Any]] = {
     400: {

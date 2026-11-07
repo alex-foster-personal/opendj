@@ -26,6 +26,7 @@ from apps.webui.server.ahead_analysis import AheadDrain
 from apps.webui.server.routes.state import LEASE_HEADER, live_mirror_lease
 
 router = APIRouter(prefix="/ahead-analysis", tags=["ahead-analysis"])
+MOUNT_UNDER_API_PREFIX = True
 
 NOT_ARMED_CODE: str = "AHEAD_ANALYSIS_NOT_ARMED"
 

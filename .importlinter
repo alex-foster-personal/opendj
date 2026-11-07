@@ -188,6 +188,8 @@ composition_roots =
 ; scripts.suite_census_mutation compiles a mutated copy of a module's AST to test the suite against it (#5636).
 ; scripts.bench.four_stem_common loads its sibling shootout_spec.py by path, because the Modal bench
 ; images import it as a top-level module with only the standard library on hand (#9250).
+; apps.webui.server.app_wiring discovers the route modules that set
+; MOUNT_UNDER_API_PREFIX, so a new route needs no hand list (#9493).
 ; The gate also refuses an entry that no
 ; longer loads that way, so this list only shrinks; add to it only in a PR that says why
 ; the target cannot be named in source.
@@ -202,6 +204,7 @@ dynamic_loaders =
     apps.sets.classify
     apps.sets.classify.model
     apps.vocals.from_stems
+    apps.webui.server.app_wiring
     scripts.arch_contract_schema
     scripts.bench.four_stem_common
     scripts.build_engine_payload

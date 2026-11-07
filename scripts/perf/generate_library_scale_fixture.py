@@ -46,7 +46,6 @@ Usage::
 from __future__ import annotations
 
 import argparse
-import hashlib
 import json
 import math
 import os
@@ -58,6 +57,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from random import Random
 
+from apps.shared.hashing import sha256_file_hex
 from apps.shared.state import db as state_db
 from apps.shared.state.writer import StateWriter
 
@@ -171,17 +171,9 @@ def _seed_state(data_dir: Path, spec: FixtureSpec, audio_path: Path) -> None:
         connection.close()
 
 
-def _sha256(path: Path) -> str:
-    digest = hashlib.sha256()
-    with path.open("rb") as handle:
-        for chunk in iter(lambda: handle.read(1 << 20), b""):
-            digest.update(chunk)
-    return digest.hexdigest()
-
-
 def _write_manifest(data_dir: Path, spec: FixtureSpec, audio_path: Path) -> None:
     manifest = {
-        "audio_sha256": _sha256(audio_path),
+        "audio_sha256": sha256_file_hex(audio_path),
         "generator_revision": FIXTURE_REVISION,
         "release_evidence": False,
         "release_evidence_reason": (

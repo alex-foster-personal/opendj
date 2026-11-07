@@ -69,6 +69,7 @@ from ..errors import ErrorBody
 from ..track_features import camelot_or_none, energy_of, track_to_feature
 
 router = APIRouter(prefix="/copilot", tags=["copilot"])
+MOUNT_UNDER_API_PREFIX = True
 _read_state = Depends(get_read_state)
 
 

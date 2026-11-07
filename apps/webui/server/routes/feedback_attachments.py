@@ -42,6 +42,7 @@ from .feedback import (
 )
 
 router = APIRouter(prefix="/feedback", tags=["feedback"])
+MOUNT_UNDER_API_PREFIX = True
 
 # CFG: the size/type policy an agent or reviewer can rely on without reading
 # this file. 8 MiB comfortably covers a full-screen screenshot; PNG/JPEG/GIF/

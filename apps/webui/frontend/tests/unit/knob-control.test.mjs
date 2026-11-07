@@ -1125,3 +1125,103 @@ test('a press on the settings backdrop released over the panel does not close Se
 	handlers.onBackdrop({ target: backdrop, currentTarget: backdrop });
 	assert.equal(closed, 1, 'a stale release closed Settings');
 });
+
+// ============================================ onKnobHandInput (#9454)
+
+test('onKnobHandInput: hand paths report ids; setter path is silent', () => {
+	const seen = [];
+	const off = knobs.onKnobHandInput((ids) => seen.push([...ids]));
+	const a = addDial('1:low', 0.5);
+	const b = addDial('2:low', 0.5);
+	knobs.setKnobFromDrag(a, 0.5, 0.6, null, null);
+	assert.ok(seen.some((batch) => batch.includes(a)));
+	seen.length = 0;
+	knobs.beginSelectionDrag(a);
+	assert.ok(seen.some((batch) => batch.includes(a)));
+	seen.length = 0;
+	knobs.shiftClickKnob(a);
+	knobs.shiftClickKnob(b);
+	knobs.beginSelectionDrag(a);
+	assert.ok(seen.some((batch) => batch.includes(a) && batch.includes(b)));
+	seen.length = 0;
+	const padStart = knobs.beginPadDrag();
+	assert.ok(padStart);
+	assert.ok(seen.length > 0);
+	seen.length = 0;
+	knobs.stepSelectionDrag(padStart, 0.05, false);
+	assert.ok(seen.some((batch) => batch.includes(a)));
+	seen.length = 0;
+	knobs.stepPadDrag(padStart, 0.05, -0.05);
+	assert.ok(seen.length > 0);
+	seen.length = 0;
+	knobs.nudgeKnobOrSelection(a, 0.02);
+	assert.ok(seen.some((batch) => batch.includes(a)));
+	seen.length = 0;
+	knobs.nudgeSelection(0.02);
+	assert.ok(seen.length > 0);
+	seen.length = 0;
+	const bridge = globalThis.window.__mdtKnobSelection;
+	bridge.nudge(0.01);
+	assert.ok(seen.length > 0);
+	seen.length = 0;
+	bridge.drag(0, knobs.KNOB_CFG.dragVerticalPx * 0.05);
+	assert.ok(seen.some((batch) => batch.includes(a) || batch.includes(b)));
+	seen.length = 0;
+	knobs.setKnobAbsolute(a, 0.7);
+	knobs.nudgeKnob(a, 0.01);
+	assert.equal(seen.length, 0);
+	off();
+	knobs.nudgeKnobOrSelection(a, 0.01);
+	assert.equal(seen.length, 0);
+});
+
+test('setKnobFromBaseline and silent setters do not fire hand input', () => {
+	const seen = [];
+	const off = knobs.onKnobHandInput((ids) => seen.push([...ids]));
+	const a = addDial('1:low', 0.5);
+	knobs.setKnobAbsolute(a, 0.7);
+	knobs.nudgeKnob(a, 0.01);
+	knobs.setKnobFromBaseline(a, 0.5, 0.6, null, null);
+	assert.equal(seen.length, 0);
+	off();
+});
+
+test('setKnobFromDrag matches setKnobFromBaseline and fires hand input', () => {
+	const a = addDial('1:low', 0.5);
+	knobs.setKnobFromDrag(a, 0.5, 0.65, null, null);
+	assert.equal(knobs.readKnobValue(a), 0.65);
+	const seen = [];
+	knobs.onKnobHandInput((ids) => seen.push([...ids]));
+	knobs.setKnobFromDrag(a, 0.65, 0.7, null, null);
+	assert.ok(seen.length > 0);
+	const baseline = knobs.setKnobFromBaseline(a, 0.7, 0.75, null, null);
+	assert.deepEqual(baseline, { primary: 0.75, secondary: null });
+});
+
+test('setKnobFromBaseline returns null when unmounted and linked pair when linked', () => {
+	assert.equal(knobs.setKnobFromBaseline('9:low', 0, 1, null, null), null);
+	const a = addDial('1:low', 0.5);
+	assert.deepEqual(knobs.setKnobFromBaseline(a, 0.5, 0.6, null, null), {
+		primary: 0.6,
+		secondary: null
+	});
+	const b = addDial('2:low', 0.5);
+	knobs.altClickKnob(a);
+	knobs.altClickKnob(b);
+	const linked = knobs.setKnobFromBaseline(a, 0.5, 0.7, b, 0.5);
+	const expected = knobs.applyLinkedDelta(0.5, 0.5, 0.2);
+	assert.ok(Math.abs(linked.primary - expected.primary) < 1e-9);
+	assert.ok(Math.abs(linked.secondary - expected.secondary) < 1e-9);
+});
+
+test('noteKnobHandInput expands the Alt-link partner', () => {
+	const a = addDial('1:low', 0.5);
+	const b = addDial('2:low', 0.5);
+	knobs.altClickKnob(a);
+	knobs.altClickKnob(b);
+	const seen = [];
+	knobs.onKnobHandInput((ids) => seen.push([...ids]));
+	knobs.noteKnobHandInput(a);
+	assert.ok(seen.some((batch) => batch.includes(a) && batch.includes(b)));
+});
+

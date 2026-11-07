@@ -28,7 +28,6 @@ from __future__ import annotations
 import contextlib
 import logging
 import os
-import socket
 import subprocess
 import sys
 import threading
@@ -38,7 +37,14 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Literal, NoReturn
 
-from apps.ableton_link.carabiner import parse_status_line
+from apps.ableton_link.carabiner_probes import answers_status, port_is_open
+from apps.ableton_link.carabiner_provision_policy import (
+    RESPAWN_BACKOFF_S,
+    Decision,
+    decide_provision,
+    respawn_delay_s,
+    unmanaged_note,
+)
 from apps.ableton_link.carabiner_provider import CarabinerProvisionError
 from apps.shared.sandbox import is_sandboxed, store_build_refusal_message
 
@@ -46,73 +52,14 @@ from apps.shared.sandbox import is_sandboxed, store_build_refusal_message
 SERVICE_ID: str = "com.af.opendj.carabiner"
 #: A freshly spawned Carabiner must answer ``status`` within this, or it is ``not_answering``.
 ANSWER_DEADLINE_S: float = 10.0
-PROBE_TIMEOUT_S: float = 0.5
-#: Seconds before respawn attempt 1, 2, 3 ...; the last value repeats (capped, never a hot loop).
-RESPAWN_BACKOFF_S: tuple[float, ...] = (0.5, 1.0, 2.0, 4.0, 8.0)
 #: A child that stayed up this long before exiting resets the back-off to its first step.
 STABLE_AFTER_S: float = 30.0
 TERMINATE_GRACE_S: float = 3.0
 LOG_TAIL_BYTES: int = 600
 
-Decision = Literal["reuse", "spawn", "refuse_platform", "refuse_sandbox", "refuse_port_held"]
 Source = Literal["idle", "external", "installing", "starting", "supervised", "respawning", "failed", "unmanaged"]
 
 _LOG = logging.getLogger(__name__)
-
-
-# ----------------------------------------------------------------------------- pure decisions
-def decide_provision(*, port_open: bool, answers_status: bool, platform: str, sandboxed: bool) -> Decision:
-    """What to do after the client's dial found nothing: reuse, spawn, or refuse (and why)."""
-    if port_open and answers_status:
-        return "reuse"
-    if port_open:
-        return "refuse_port_held"
-    if platform != "darwin":
-        return "refuse_platform"
-    if sandboxed:
-        return "refuse_sandbox"
-    return "spawn"
-
-
-def respawn_delay_s(attempt: int, backoff: tuple[float, ...] = RESPAWN_BACKOFF_S) -> float:
-    """Seconds before respawn ``attempt`` (1-based), capped at the last step."""
-    return backoff[min(max(attempt, 1), len(backoff)) - 1]
-
-
-def unmanaged_note(platform: str) -> str:
-    return (f"Open DJ starts Carabiner by itself only on macOS; on {platform} start Carabiner yourself "
-            "(docs/b2b-link/FRIEND-SETUP.md).")
-
-
-# ----------------------------------------------------------------------------- probes
-def port_is_open(port: int, timeout_s: float = PROBE_TIMEOUT_S) -> bool:
-    try:
-        with socket.create_connection(("127.0.0.1", port), timeout=timeout_s):
-            return True
-    except OSError:
-        return False
-
-
-def answers_status(port: int, timeout_s: float = PROBE_TIMEOUT_S) -> bool:
-    """True when 127.0.0.1:``port`` answers ``status`` with a parseable Carabiner status line."""
-    deadline = time.monotonic() + timeout_s
-    try:
-        with socket.create_connection(("127.0.0.1", port), timeout=timeout_s) as sock:
-            sock.sendall(b"status\n")
-            buffer = b""
-            while time.monotonic() < deadline:
-                sock.settimeout(max(deadline - time.monotonic(), 0.01))
-                chunk = sock.recv(4096)
-                if not chunk:
-                    return False
-                buffer += chunk
-                while b"\n" in buffer:
-                    raw, buffer = buffer.split(b"\n", 1)
-                    if parse_status_line(raw.decode("utf-8", "replace")) is not None:
-                        return True
-    except (OSError, ValueError):
-        return False
-    return False
 
 
 # ----------------------------------------------------------------------------- supervisor

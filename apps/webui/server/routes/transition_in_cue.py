@@ -43,6 +43,7 @@ from . import rb_assets
 from .rb_hot_cues import _duration_ms, _rekordbox_content, _state_db_path, _vendor_cues
 
 router = APIRouter(prefix="/tracks", tags=["transition-in-cue"])
+MOUNT_UNDER_API_PREFIX = True
 
 
 class TransitionInSetIn(BaseModel):

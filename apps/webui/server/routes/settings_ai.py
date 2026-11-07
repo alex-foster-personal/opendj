@@ -16,6 +16,7 @@ from pydantic import BaseModel, ConfigDict, Field
 from apps.webui.server.settings_xai import chat_json, load_xai_config
 
 router = APIRouter(prefix="/settings", tags=["settings-ai"])
+MOUNT_UNDER_API_PREFIX = True
 
 AllowedValue = bool | str
 

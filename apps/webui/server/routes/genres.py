@@ -42,6 +42,7 @@ from ..backend import StateBackend
 from ..deps import get_library_data_dir, get_write_state
 
 router = APIRouter(prefix="/genres", tags=["genres"])
+MOUNT_UNDER_API_PREFIX = True
 
 KEY_MISSING_CODE = "genre_key_missing"
 

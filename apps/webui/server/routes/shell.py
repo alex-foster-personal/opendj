@@ -15,6 +15,7 @@ from fastapi import APIRouter, HTTPException, Request
 from apps.webui.server.shell_navigate import ShellNavigateStore, validate_shell_route
 
 router = APIRouter(prefix="/shell", tags=["shell"])
+MOUNT_UNDER_API_PREFIX = True
 log = logging.getLogger(__name__)
 
 

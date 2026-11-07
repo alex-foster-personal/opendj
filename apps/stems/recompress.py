@@ -85,6 +85,7 @@ from collections.abc import Callable, Iterable, Sequence
 from pathlib import Path, PurePath
 from typing import Any
 
+from apps.shared.hashing import sha256_file_hex
 from apps.shared.shared_read_open import open_read_shared
 from apps.shared.state import locations as state_locations
 from apps.shared.state import machine_identity
@@ -521,14 +522,6 @@ def bundle_fingerprint(bundle_dir: Path) -> str:
 _UNRECORDED_SHA256 = "0" * 64
 
 
-def _file_sha256(path: Path) -> str:
-    digest = hashlib.sha256()
-    with path.open("rb") as handle:
-        for chunk in iter(lambda: handle.read(1 << 20), b""):
-            digest.update(chunk)
-    return digest.hexdigest()
-
-
 def _recorded_source_sha256(raw: dict[str, Any]) -> str | None:
     """The source hash the separation recorded, or None when it recorded none."""
     source = raw.get("source")
@@ -548,7 +541,7 @@ def _require_recorded_source(stable_id: str, raw: dict[str, Any], source_path: P
     is judged by path and duration alone. Returns the hash, which the swap
     checks again so a source rewritten during the encode is caught too.
     """
-    digest = _file_sha256(source_path)
+    digest = sha256_file_hex(source_path)
     recorded = _recorded_source_sha256(raw)
     if recorded is not None and recorded != digest:
         raise BundleChangedError(
@@ -1202,7 +1195,7 @@ def recompress_bundle(
         # Every part's hash, as register-stems writes them: the lyrics stems
         # hydrate path fetches parts by these and refuses a manifest without
         # them (Codex on #6820).
-        manifest["files_sha256"] = {part: _file_sha256(new_dir / rel) for part, rel in manifest["files"].items()}
+        manifest["files_sha256"] = {part: sha256_file_hex(new_dir / rel) for part, rel in manifest["files"].items()}
         (new_dir / "manifest.json").write_text(
             json.dumps(manifest, indent=2) + "\n", encoding="utf-8", newline="\n"
         )
@@ -1226,7 +1219,7 @@ def recompress_bundle(
         def source_bytes_unchanged() -> None:
             # Outside the lock: a whole mix is read, and the swap's re-check
             # of the source's marks under the lock catches a write after it.
-            if _file_sha256(source_path) != source_digest:
+            if sha256_file_hex(source_path) != source_digest:
                 raise BundleChangedError(
                     f"{stable_id}: the source {source_path} changed while this pass encoded it; left as it is"
                 )

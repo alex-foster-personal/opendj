@@ -14,6 +14,7 @@ from pydantic import BaseModel
 from ..ui_url import NAMED_LOCAL_HOST, resolve_ui_address
 
 router = APIRouter(prefix="/ui-url", tags=["health"])
+MOUNT_UNDER_API_PREFIX = True
 
 
 class UiUrlOut(BaseModel):

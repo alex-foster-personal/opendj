@@ -23,6 +23,7 @@ from apps.cloud import stem_cache_budget, stem_index
 from apps.webui.server import stem_cache_enforcer
 
 router = APIRouter(tags=["stems"])
+MOUNT_UNDER_API_PREFIX = True
 
 STEM_CACHE_ERROR_RESPONSES: dict[int | str, dict[str, Any]] = {
     422: {

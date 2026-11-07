@@ -22,6 +22,7 @@ from ..deps import get_read_state, get_write_state
 from ..etag import compute_etag
 
 router = APIRouter(prefix="/mytags", tags=["mytags"])
+MOUNT_UNDER_API_PREFIX = True
 _SCAN_PAGE_LIMIT = 1000
 # Same cap as find_replace.py's _MAX_STABLE_IDS: an unbounded batch has no
 # input-layer rejection, so it is only ever stopped deep inside the backend.

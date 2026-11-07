@@ -38,6 +38,7 @@ from apps.webui.server.routes.usb_root_access import (
 from apps.webui.server.routes.usb_volume_lock import VolumeBusy, eject_operation, hold_unsettled_eject
 
 router = APIRouter(prefix="/usb", tags=["usb"])
+MOUNT_UNDER_API_PREFIX = True
 
 _DISKUTIL_TIMEOUT_S = 30.0
 #: How long a timed-out eject keeps every volume held after it returns.

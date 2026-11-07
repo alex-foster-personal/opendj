@@ -119,6 +119,7 @@ helper_carried_paths:
   - "apps/shared/fingerprints.py"
   - "apps/shared/fs_residency.py"
   - "apps/shared/harmonic.py"
+  - "apps/shared/hashing.py"
   - "apps/shared/lazy_event_bus.py"
   - "apps/shared/library_mode.py"
   - "apps/shared/pairings/__init__.py"

@@ -106,6 +106,40 @@ const _registry = new Map<string, KnobRef[]>();
 let _wheelBound = false;
 let _clearBound = false;
 
+type KnobHandListener = (ids: readonly string[]) => void;
+const _handListeners = new Set<KnobHandListener>();
+
+/**
+ * Subscribe to hand input (pointer drag start or move, wheel, arrow nudge, pad,
+ * selection wheel, the bridge's nudge/drag) on knob ids. The setter path
+ * (`nudgeKnob`, `setKnobAbsolute`) never fires it, so a programmatic writer such
+ * as the commanded-move runner can listen without cancelling itself.
+ * Each id is reported with its Alt-link partner. Returns an unsubscribe.
+ */
+export function onKnobHandInput(listener: KnobHandListener): () => void {
+	_handListeners.add(listener);
+	return () => {
+		_handListeners.delete(listener);
+	};
+}
+
+function _noteHandInput(ids: readonly string[]): void {
+	if (_handListeners.size === 0 || ids.length === 0) return;
+	const expanded = new Set<string>();
+	for (const id of ids) {
+		expanded.add(id);
+		const partner = _partnerOf(id);
+		if (partner !== null) expanded.add(partner);
+	}
+	const batch = [...expanded];
+	for (const listener of _handListeners) listener(batch);
+}
+
+/** Report hand input on one control whose component writes `onchange` directly (VFader). */
+export function noteKnobHandInput(id: string): void {
+	_noteHandInput([id]);
+}
+
 function _activeRef(id: string): KnobRef | undefined {
 	return _registry.get(id)?.at(-1);
 }
@@ -465,6 +499,36 @@ export function setKnobAbsolute(id: string, value: number): void {
 }
 
 /**
+ * Write `targetPrimary` from fixed baselines (link-aware), so stagger does not accumulate across
+ * frames. Silent: reports no hand input. Returns what was written, or null when `id` is unmounted.
+ */
+export function setKnobFromBaseline(
+	id: string,
+	startPrimary: number,
+	targetPrimary: number,
+	partnerId: string | null,
+	startSecondary: number | null
+): { primary: number; secondary: number | null } | null {
+	const primary = _activeRef(id);
+	if (primary === undefined) return null;
+	const target = clamp01(targetPrimary);
+	if (partnerId === null || startSecondary === null) {
+		primary.setValue(target);
+		return { primary: target, secondary: null };
+	}
+	const secondary = _activeRef(partnerId);
+	if (secondary === undefined) {
+		primary.setValue(target);
+		return { primary: target, secondary: null };
+	}
+	const delta = target - startPrimary;
+	const next = applyLinkedDelta(startPrimary, startSecondary, delta);
+	primary.setValue(next.primary);
+	secondary.setValue(next.secondary);
+	return { primary: next.primary, secondary: next.secondary };
+}
+
+/**
  * Drag helper: recompute from pointer-down baselines so stagger does not
  * accumulate across pointermove frames.
  */
@@ -475,22 +539,8 @@ export function setKnobFromDrag(
 	partnerId: string | null,
 	startSecondary: number | null
 ): void {
-	const primary = _activeRef(id);
-	if (primary === undefined) return;
-	const target = clamp01(targetPrimary);
-	if (partnerId === null || startSecondary === null) {
-		primary.setValue(target);
-		return;
-	}
-	const secondary = _activeRef(partnerId);
-	if (secondary === undefined) {
-		primary.setValue(target);
-		return;
-	}
-	const delta = target - startPrimary;
-	const next = applyLinkedDelta(startPrimary, startSecondary, delta);
-	primary.setValue(next.primary);
-	secondary.setValue(next.secondary);
+	_noteHandInput([id]);
+	setKnobFromBaseline(id, startPrimary, targetPrimary, partnerId, startSecondary);
 }
 
 /** Registered selected dials and their current values, in selection order. */
@@ -534,6 +584,7 @@ export function nudgeSelection(delta: number, opts: GroupNudgeOptions = {}): voi
 	if (!Number.isFinite(delta) || delta === 0) return;
 	const { ids, baselines } = _selectionBaselines();
 	if (ids.length === 0) return;
+	_noteHandInput(ids);
 	if (ids.length === 1) {
 		nudgeKnob(ids[0], delta);
 		return;
@@ -551,6 +602,7 @@ export function nudgeSelection(delta: number, opts: GroupNudgeOptions = {}): voi
  * (link-aware). `flip` is Opt held during the wheel (R3).
  */
 export function nudgeKnobOrSelection(id: string, delta: number, flip: boolean = false): void {
+	_noteHandInput([id]);
 	if (isKnobSelected(id) && knobUi.selectedIds.length >= 2) nudgeSelection(delta, { leadId: id, flip });
 	else nudgeKnob(id, delta);
 }
@@ -590,11 +642,17 @@ export interface SelectionDragStart {
 	offsets: Record<string, number>;
 }
 
-/** Start a group drag led by `id` when it is selected and 2+ registered controls are. */
+/**
+ * Start a group drag led by `id` when it is selected and 2+ registered controls are.
+ * Also reports hand input on `id`: every Knob and VFader pointerdown calls this, so a drag start
+ * cancels a commanded move before the first pointermove.
+ */
 export function beginSelectionDrag(id: string): SelectionDragStart | null {
+	_noteHandInput([id]);
 	if (!isKnobSelected(id)) return null;
 	const start = _selectionBaselines();
 	if (start.ids.length < 2) return null;
+	_noteHandInput(start.ids);
 	const offsets: Record<string, number> = {};
 	for (const sid of start.ids) offsets[sid] = 0;
 	return { ...start, leadId: id, offsets };
@@ -614,6 +672,7 @@ export function groupDragTargets(start: Readonly<SelectionDragStart>): Record<st
  */
 export function stepSelectionDrag(start: SelectionDragStart, delta: number, flip: boolean): void {
 	if (!Number.isFinite(delta) || delta === 0) return;
+	_noteHandInput(start.ids);
 	const signs = leadDragSigns(start.ids, start.leadId, flip);
 	for (const id of start.ids) start.offsets[id] = (start.offsets[id] ?? 0) + signs[id] * delta;
 	_applyTargets(applyLinkToTargets(start.ids, start.baselines, groupDragTargets(start), knobUi.link));
@@ -625,6 +684,7 @@ export function stepSelectionDrag(start: SelectionDragStart, delta: number, flip
  */
 export function stepPadDrag(start: SelectionDragStart, dx: number, dy: number): void {
 	if (!Number.isFinite(dx) || !Number.isFinite(dy) || (dx === 0 && dy === 0)) return;
+	_noteHandInput(start.ids);
 	const axes = padAxes(start.ids);
 	for (const id of start.ids) start.offsets[id] = (start.offsets[id] ?? 0) + (axes.x.includes(id) ? dx : dy);
 	_applyTargets(applyLinkToTargets(start.ids, start.baselines, groupDragTargets(start), knobUi.link));
@@ -634,6 +694,7 @@ export function stepPadDrag(start: SelectionDragStart, dx: number, dy: number): 
 export function beginPadDrag(): SelectionDragStart | null {
 	const start = _selectionBaselines();
 	if (start.ids.length < 2) return null;
+	_noteHandInput(start.ids);
 	const offsets: Record<string, number> = {};
 	for (const id of start.ids) offsets[id] = 0;
 	return { ...start, leadId: start.ids[0], offsets };
@@ -732,10 +793,12 @@ export function installKnobSelectionGlobal(): void {
 			// moves both surfaces alike (Sol P1, PR #6829).
 			const gained = gainedStraightDrag(dx, dy);
 			if (ids.length >= 2) {
+				_noteHandInput(ids);
 				const unit = KNOB_CFG.dragVerticalPx;
 				const targets = padDragTargets(ids, baselines, gained.dx / unit, gained.dy / unit) ?? {};
 				_applyTargets(applyLinkToTargets(ids, baselines, targets, knobUi.link));
 			} else if (ids.length === 1) {
+				_noteHandInput([ids[0]]);
 				nudgeKnob(ids[0], singleDragDelta(gained.dx, gained.dy));
 			}
 		},

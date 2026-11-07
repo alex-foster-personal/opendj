@@ -71,6 +71,7 @@ from ..errors import precondition_required
 from ..playlist_store import PlaylistRow, PlaylistStore
 
 router = APIRouter(prefix="/playlists", tags=["playlists-write"])
+MOUNT_UNDER_API_PREFIX = True
 
 _STORE_INIT_LOCK = threading.Lock()
 
@@ -191,7 +192,7 @@ def get_playlist_store(request: Request) -> PlaylistStore:
         if store is not None:
             return store
         db_path = Path(
-            getattr(request.app.state, "state_db_path", "data/state/state.db")
+            getattr(request.app.state, "state_db_path", "(private path)")
         )
         try:
             store = PlaylistStore(db_path)

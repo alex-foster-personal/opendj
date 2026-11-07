@@ -72,6 +72,7 @@ from apps.webui.server.routes.sync_hub_route_errors import (
 )
 
 router = APIRouter(prefix="/tracks", tags=["stems"])
+MOUNT_UNDER_API_PREFIX = True
 
 log = logging.getLogger(__name__)
 

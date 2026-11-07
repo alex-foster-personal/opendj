@@ -44,6 +44,7 @@ from apps.sync_hub.transport import is_wire_version_refusal
 from .feedback_replica import PinSyncStatus, pin_statuses, reconcile
 
 router = APIRouter(prefix="/feedback", tags=["feedback"])
+MOUNT_UNDER_API_PREFIX = True
 
 # One sync at a time per process: the button, an agent and the scheduler all
 # arrive here, and two overlapping round trips against one state DB would

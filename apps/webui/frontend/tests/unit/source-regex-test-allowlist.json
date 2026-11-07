@@ -194,6 +194,10 @@
 			"reason": "pre-existing (ratchet seed 2026-10-07)"
 		},
 		{
+			"file": "commanded-move-runner.test.mjs",
+			"reason": "ANIM-9454 / issue #9454: pins VFader.svelte hand-input wiring on wheel, arrow and single-fader drag paths; pointer and keyboard handlers do not run during SSR, and the runner math is tested directly in the same file"
+		},
+		{
 			"file": "color-contrast.test.mjs",
 			"reason": "pre-existing (on main before the ratchet merged in #5857, Sat 31 Oct 2026; its seed predated them)"
 		},

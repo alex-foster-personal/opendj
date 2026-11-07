@@ -28,6 +28,7 @@ from ..models import TrackRowOut
 from .smartlists import get_smartlists_conn
 
 router = APIRouter(prefix="/autolists", tags=["autolists"])
+MOUNT_UNDER_API_PREFIX = True
 
 _DEFAULT_LIMIT = 500
 _MAX_LIMIT = 500

@@ -69,10 +69,12 @@
 	import { setCmdkAiToast } from '$lib/rb/cmdk-ai-toast';
 	import { afterAlignedLoad, alignedPlan, alignedPlay, alignedSeek, beforeAlignedLoad, cmdkEntryKey, cmdkWireId, leadFor, pairBasis, ratioInRange, reanchorSelection, seekStalled, SEEK_CORRECTIONS, SEEK_SETTLE_MS, type PairCommand, type PairSnapshot } from '$lib/rb/cmdk-pairs';
 	import { cmdkPairs, requestCmdkPairs } from '$lib/rb/cmdk-pairs-data.svelte';
+	import { rankCommands, type CommandPick } from '$lib/palette/rank';
 	import {
 		actionableSetting,
 		actionTokens,
 		commandCandidates,
+		commandKey,
 		ejectAction,
 		layoutGroups,
 		noteRecentLoad,
@@ -144,7 +146,8 @@
 		deckCommands,
 		deckPending,
 		registerAdapter,
-		aiToast
+		aiToast,
+		noteCommandPick
 	}: {
 		rows: readonly CmdkRow[];
 		playlistTitle: string;
@@ -169,6 +172,7 @@
 			wave_palette: string;
 			show_dev_ui: boolean;
 			hide_todo_settings: boolean;
+			cmdk_command_picks: readonly CommandPick[];
 		};
 		setAvailableOfflineFilter: (next: boolean) => void;
 		setHideBrokenLinks: (next: boolean) => void;
@@ -199,6 +203,8 @@
 		registerAdapter: (adapter: CmdkAdapter) => () => void;
 		/** The red toast the AI search's no-key state raises (CMDK-21); the page wires `pushToast`. */
 		aiToast: (message: string) => void;
+		/** The page's frecency recorder (prefs), so this bar does not import prefs.svelte. */
+		noteCommandPick: (key: string) => void;
 	} = $props();
 
 	/** Rows each group draws at once; the header count says when there are more. */
@@ -353,6 +359,10 @@
 					query
 				)
 			: []
+	);
+	// CMDK-9465: commands ranked VS Code style (fuzzy, word starts, runs), recent picks first (3-day half-life).
+	const rankedCommands = $derived(
+		rankCommands(commandActions, query, { key: commandKey, picks: uiPrefs.cmdk_command_picks })
 	);
 	// ---- CMDK-17..19: the master deck's pairs on open ----
 
@@ -515,10 +525,11 @@
 				recent: recentRows,
 				playlist: groups.playlist,
 				collection: groups.collection,
-				commands: commandActions,
+				commands: rankedCommands,
 				settings: settingActions,
 				pairs: pairRows,
-				idOf: (row) => row.stable_id
+				idOf: (row) => row.stable_id,
+				commandsRanked: true
 			});
 		}
 		const out: CmdkEntryGroup<CmdkRow>[] = [];
@@ -613,6 +624,7 @@
 		}
 		const command = action.command;
 		if (command.type === 'open_settings') {
+			if (source === 'user-ui') noteCommandPick(commandKey(action));
 			closeBar();
 			const { openSettings } = await import('$lib/settings/overlay.svelte');
 			openSettings(command.query);
@@ -668,6 +680,7 @@
 		if (barSession === session) ejectGuard = null;
 		// The eject carries the source of the pick that asked for it: an agent's confirmed eject is an agent stop (PLAY-18).
 		const result = await runCommand({ type: 'unload', deck: command.deck }, source);
+		if (result.ok && source === 'user-ui') noteCommandPick(commandKey(action));
 		return result.ok ? null : fail(`Deck ${command.deck} did not eject (${result.reason})`);
 	}
 
