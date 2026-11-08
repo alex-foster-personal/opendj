@@ -68,6 +68,7 @@ class AudioEngineStartIn(BaseModel):
 class AudioEngineLoadIn(BaseModel):
     deck: int = Field(ge=1, le=4)
     stable_id: str = Field(min_length=1)
+    out_ms: int | None = Field(default=None, gt=0)
 
 
 class AudioEngineLoadOut(BaseModel):
@@ -159,7 +160,7 @@ def add_audio_engine_routes(app: FastAPI, supervisor: AudioEngineSupervisor) -> 
         except ValueError as exc:
             grid = EngineGrid([], None, None, str(exc))
         try:
-            supervisor.command(load_command(body.deck, str(picked.path), grid))
+            supervisor.command(load_command(body.deck, str(picked.path), grid, body.out_ms))
         except AudioEngineError as exc:
             return refusal(exc)
         return AudioEngineLoadOut(

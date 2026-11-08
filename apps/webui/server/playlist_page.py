@@ -45,17 +45,22 @@ function at 10k. ``INDEXED BY`` also fails loudly if the v22 index is absent.
 """
 
 WINDOW_SQL = (
-    "SELECT stable_id, item_id FROM playlist_memberships "
+    "SELECT stable_id, item_id, edit_id FROM playlist_memberships "
     "WHERE playlist_id = ? AND deleted_at IS NULL "
     f"ORDER BY {MEMBERSHIP_ORDER_BY} LIMIT ? OFFSET ?"
 )
 
 
-def playlist_from_header(row: sqlite3.Row, items: list[str], item_ids: list[str]) -> Playlist:
+def playlist_from_header(
+    row: sqlite3.Row,
+    items: list[str],
+    item_ids: list[str],
+    edit_ids: list[str | None] | None = None,
+) -> Playlist:
     return Playlist(
         playlist_id=row["playlist_id"], name=row["name"],
         vendor=row["vendor"], vendor_pl_id=row["vendor_pl_id"], items=items,
-        item_ids=item_ids,
+        item_ids=item_ids, edit_ids=list(edit_ids or [None] * len(items)),
         created_at=row["created_at"], updated_at=row["updated_at"],
         forbid_duplicates=bool(row["forbid_duplicates"]),
     )
@@ -89,7 +94,12 @@ def read_playlist_page(
     finally:
         conn.execute("COMMIT")
     return PlaylistPage(
-        playlist=playlist_from_header(header, [r[0] for r in rows], [r[1] or "" for r in rows]),
+        playlist=playlist_from_header(
+            header,
+            [r[0] for r in rows],
+            [r[1] or "" for r in rows],
+            [r[2] for r in rows],
+        ),
         total=total,
     )
 

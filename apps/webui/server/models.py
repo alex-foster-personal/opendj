@@ -76,6 +76,8 @@ class TrackOut(BaseModel):
     rating: int | None = None
     tags: list[str] = []
     notes: str | None = None
+    #: Cmd+K and index listings use the user comment string (may duplicate ``notes``).
+    comments: str | None = None
     last_played_at: str | None = None
     # PREF-01: user-set preferred tempo + playable range, keyed by stable_id
     # (not vendor bpm). Null when never set for this track.
@@ -367,6 +369,15 @@ class TrackListItemOut(TrackOut):
     genre_source: str | None = None
     genre_reason: str | None = None
     genre_guess: GenreGuessOut | None = None
+    # LIBEDIT-9179: a virtual row reuses its source audio and overlays this window.
+    edit_id: str | None = None
+    in_ms: int | None = None
+    out_ms: int | None = None
+    fx: dict[str, Any] | None = None
+    edit_label: str | None = None
+    created_by: str | None = None
+    is_edit: bool = False
+    valid: bool = True
 
 
 class LyricLineOut(BaseModel):
@@ -427,10 +438,6 @@ class TrackIndexItemOut(TrackListItemOut):
     lyrics_available: SkipJsonSchema[bool] = Field(default=False, exclude=True)
     auto_cues_available: SkipJsonSchema[bool] = Field(default=False, exclude=True)
     stems_available: SkipJsonSchema[bool] = Field(default=False, exclude=True)
-    #: CMDK-04: the Cmd K v2 bar searches comments across the whole collection from
-    #: this index, so the index carries them (a string the backend already holds per
-    #: track; no disk read). Listing rows (``GET /tracks``) do not.
-    comments: str | None = None
 
 
 class TrackIndexOut(BaseModel):
@@ -531,6 +538,14 @@ class TrackRowOut(BaseModel):
 
     stable_id: str
     item_id: str | None = None
+    edit_id: str | None = None
+    in_ms: int | None = None
+    out_ms: int | None = None
+    fx: dict[str, Any] | None = None
+    edit_label: str | None = None
+    created_by: str | None = None
+    is_edit: bool = False
+    valid: bool = True
     title: str | None
     artist: str | None
     key: str | None

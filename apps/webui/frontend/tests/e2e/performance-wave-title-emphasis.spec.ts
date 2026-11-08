@@ -1,5 +1,5 @@
 import { expect, test } from '@playwright/test';
-import type { APIRequestContext, Page } from '@playwright/test';
+import type { APIRequestContext, Locator, Page } from '@playwright/test';
 
 /**
  * Pin e585d3b67f4d (the maintainer, live on /performance): "Waveform (top) album art
@@ -99,17 +99,25 @@ async function _deckOneLoaded(page: Page, request: APIRequestContext): Promise<v
  *    collected as `blockers` and asserted empty, so the day one appears the
  *    test fails loudly instead of quietly reporting a colour nothing is
  *    painted in.
+ * 4. `getComputedStyle(...).color` is not what Chromium paints when
+ *    `-webkit-text-fill-color` is set, so a text-fill override can stay green
+ *    on a `color`-only read (PR #1723 review r3980074231).
  *
- * The whole measurement is one `page.evaluate` because its body runs in the
+ * The whole measurement is one `target.evaluate` because its body runs in the
  * browser and cannot see anything from this module's scope - one copy rather
  * than the same helpers redeclared per test.
  */
-interface TitlePaint {
-	/** The leaf's own `color`, uncomposited - what the token comparison needs. */
+interface Paint {
+	/** `-webkit-text-fill-color`, falling back to `color`, uncomposited. */
 	painted: string;
+	/** Raw `getComputedStyle(...).color` on the leaf. */
+	color: string;
+	/** Raw `-webkit-text-fill-color` on the leaf (may be empty or `currentcolor`). */
+	fill: string;
 	dim: string;
 	primary: string;
-	/** `color` alpha x accumulated ancestor opacity, in [0, 1]. */
+	border: string;
+	/** `painted` alpha x accumulated ancestor opacity, in [0, 1]. */
 	effectiveAlpha: number;
 	/** The first fully opaque background behind the text. */
 	backdrop: [number, number, number] | null;
@@ -118,142 +126,35 @@ interface TitlePaint {
 	blockers: string[];
 }
 
-async function _measureTitlePaint(page: Page): Promise<TitlePaint> {
-	return await page
-		.locator('.wave-track-name')
-		.first()
-		.evaluate((node): TitlePaint => {
-			const leaf = node.querySelector(':scope > span') ?? node;
-			const channels = (value: string): number[] | null => {
-				// Only rgb()/rgba(). Chromium normally flattens color-mix() before
-				// serializing, but `.rb-waverow.deck-focus` IS declared as
-				// `color-mix(in srgb, rgba(255,255,255,0.08) 50%, var(--rb-bg))`
-				// (WaveRow.svelte), and a digit scrape of an UNRESOLVED color-mix
-				// string harvests a percentage and two colours' channels as
-				// though they were one colour - a number about nothing, silently.
-				// Returning null instead makes the caller report no backdrop,
-				// which the assertions treat as a hard failure. Blinded review.
-				if (!/^rgba?\(/.test(value)) return null;
-				const parts = value.match(/[\d.]+/g);
-				if (parts === null || parts.length < 3) return null;
-				return parts.map(Number);
-			};
-			const alphaOf = (value: string): number => {
-				const parsed = channels(value);
-				if (parsed === null) return 0;
-				return parsed.length >= 4 ? parsed[3] : 1;
-			};
-
-			// Both tokens through a real probe, so this compares the same rgb()
-			// values the compositor uses rather than string-matching theme.css.
-			const scope = node.closest('.perf-root') ?? document.body;
-			const probe = document.createElement('span');
-			scope.appendChild(probe);
-			const resolve = (token: string): string => {
-				probe.style.color = `var(${token})`;
-				return getComputedStyle(probe).color;
-			};
-			const dim = resolve('--rb-text-dim');
-			const primary = resolve('--rb-text');
-			probe.remove();
-
-			const painted = getComputedStyle(leaf).color;
-			const paintedChannels = channels(painted);
-			let alpha = alphaOf(painted);
-			let backdrop: [number, number, number] | null = null;
-			const blockers: string[] = [];
-			let element: Element | null = leaf;
-			while (element !== null) {
-				const style = getComputedStyle(element);
-				const name = element.className === '' ? element.tagName : String(element.className);
-				if (style.filter !== 'none') blockers.push(`${name}: filter ${style.filter}`);
-				if (style.mixBlendMode !== 'normal') {
-					blockers.push(`${name}: mix-blend-mode ${style.mixBlendMode}`);
-				}
-				// `display: contents` returns a computed background and opacity from
-				// `getComputedStyle` while generating no box and painting nothing.
-				// Treating one as the backdrop would report a colour that is never
-				// on screen, so it is skipped for paint purposes entirely - its
-				// opacity has no effect either. Blinded review.
-				const paints = style.display !== 'contents';
-				if (backdrop === null && paints) {
-					if (style.backgroundImage !== 'none') {
-						blockers.push(`${name}: background-image ${style.backgroundImage}`);
-					}
-					const bg = channels(style.backgroundColor);
-					const bgAlpha = alphaOf(style.backgroundColor);
-					if (bg !== null && bgAlpha === 1) {
-						backdrop = [bg[0], bg[1], bg[2]];
-						// Opacity at and above the backdrop dims text and surface
-						// alike, so it stops counting here. The BLOCKER scan does
-						// not stop with it: a filter or mix-blend-mode on an
-						// ancestor ABOVE this element (`.perf-root` carries the
-						// app shell's own rules) re-composites the "opaque"
-						// backdrop against whatever is behind it, so a contrast
-						// ratio measured against this token would again be a
-						// number about nothing. Blinded review, Thu 10 Sep 2026.
-					} else if (bg === null) {
-						// Unparseable and therefore undecidable: an unresolved
-						// color-mix() may well paint. Falling through to the
-						// opacity branch would drop a real layer and report a
-						// ratio that is too FLATTERING, with nothing red to show
-						// for it. Blocking is the honest answer. Blinded review.
-						blockers.push(`${name}: unparseable background ${style.backgroundColor}`);
-					} else if (bgAlpha > 0) {
-						// Translucent: a genuine compositing layer this helper does
-						// not blend. Same reasoning - a silently optimistic ratio is
-						// the failure this file exists to prevent. A hovered
-						// `.rb-waverow.secondary.deck-focus` is exactly this case.
-						blockers.push(`${name}: translucent background ${style.backgroundColor}`);
-					} else {
-						alpha *= Number(style.opacity);
-					}
-				} else if (backdrop === null) {
-					alpha *= Number(style.opacity);
-				}
-				element = element.parentElement;
-			}
-
-			const composited: [number, number, number] | null =
-				paintedChannels === null || backdrop === null
-					? null
-					: ([0, 1, 2].map((i) => paintedChannels[i] * alpha + backdrop![i] * (1 - alpha)) as [
-							number,
-							number,
-							number
-						]);
-
-			return { painted, dim, primary, effectiveAlpha: alpha, backdrop, composited, blockers };
-		});
+/** Why the loaded title is NOT in the primary token, or [] when it is. */
+function _titleTokenViolations(m: Paint): string[] {
+	if (m.dim === m.primary) {
+		return ['dim and primary tokens are identical; proves nothing'];
+	}
+	if (m.painted !== m.primary) {
+		return [
+			`title paints ${m.painted} (fill ${m.fill}, color ${m.color}), not primary ${m.primary}`
+		];
+	}
+	return [];
 }
 
-// REQ: DECKUX-40
-test('the waveform track title paints the primary text token', async ({ page, request }) => {
-	await _deckOneLoaded(page, request);
-	const measured = await _measureTitlePaint(page);
-	expect(measured.dim, 'the dim and primary tokens must differ, or this proves nothing').not.toBe(
-		measured.primary
-	);
-	expect(measured.painted, 'DECKUX-40 paints the title in the primary text token').toBe(
-		measured.primary
-	);
-});
+/** Why the empty deck's only text is NOT subdued, or [] when it is. */
+function _emptyStateViolations(m: Paint): string[] {
+	if (m.border === m.primary) {
+		return ['border and primary tokens are identical; proves nothing'];
+	}
+	if (m.painted === m.primary) {
+		return ['empty deck number paints the primary token (too loud)'];
+	}
+	if (m.painted !== m.border) {
+		return [`empty deck number paints ${m.painted}, not the subdued --rb-border ${m.border}`];
+	}
+	return [];
+}
 
-// REQ: A11Y-03
-test('the painted title clears the 4.5:1 AA floor against what is actually behind it', async ({
-	page,
-	request
-}) => {
-	await _deckOneLoaded(page, request);
-	const measured = await _measureTitlePaint(page);
-	expect(
-		measured.blockers,
-		'filter/mix-blend-mode/gradient change the painted result in ways this arithmetic ' +
-			'cannot model - the ratio below would be a number about nothing'
-	).toEqual([]);
-	expect(measured.backdrop, 'some ancestor must paint an opaque background').not.toBeNull();
-	expect(measured.composited, 'the title must have a resolvable painted colour').not.toBeNull();
-
+function _contrastRatio(m: Paint): number | null {
+	if (m.composited === null || m.backdrop === null) return null;
 	const luminance = (rgb: [number, number, number]): number => {
 		const [r, g, b] = rgb
 			.map((channel) => channel / 255)
@@ -262,16 +163,205 @@ test('the painted title clears the 4.5:1 AA floor against what is actually behin
 			);
 		return 0.2126 * r + 0.7152 * g + 0.0722 * b;
 	};
-	const [lighter, darker] = [luminance(measured.composited!), luminance(measured.backdrop!)].sort(
+	const [lighter, darker] = [luminance(m.composited), luminance(m.backdrop)].sort(
 		(left, right) => right - left
 	);
-	const ratio = (lighter + 0.05) / (darker + 0.05);
+	return (lighter + 0.05) / (darker + 0.05);
+}
+
+/** Injects a real stylesheet, measures, then removes it. */
+async function _withCss<T>(page: Page, css: string, run: () => Promise<T>): Promise<T> {
+	const tag = await page.addStyleTag({ content: css });
+	try {
+		return await run();
+	} finally {
+		await tag.evaluate((n) => (n as Element).remove());
+	}
+}
+
+async function _measurePaint(target: Locator): Promise<Paint> {
+	return await target.evaluate((node): Paint => {
+		const leaf = node.querySelector(':scope > span') ?? node;
+		const channels = (value: string): number[] | null => {
+			// Only rgb()/rgba(). Chromium normally flattens color-mix() before
+			// serializing, but `.rb-waverow.deck-focus` IS declared as
+			// `color-mix(in srgb, rgba(255,255,255,0.08) 50%, var(--rb-bg))`
+			// (WaveRow.svelte), and a digit scrape of an UNRESOLVED color-mix
+			// string harvests a percentage and two colours' channels as
+			// though they were one colour - a number about nothing, silently.
+			// Returning null instead makes the caller report no backdrop,
+			// which the assertions treat as a hard failure. Blinded review.
+			if (!/^rgba?\(/.test(value)) return null;
+			const parts = value.match(/[\d.]+/g);
+			if (parts === null || parts.length < 3) return null;
+			return parts.map(Number);
+		};
+		const alphaOf = (value: string): number => {
+			const parsed = channels(value);
+			if (parsed === null) return 0;
+			return parsed.length >= 4 ? parsed[3] : 1;
+		};
+
+		// Both tokens through a real probe, so this compares the same rgb()
+		// values the compositor uses rather than string-matching theme.css.
+		const scope = node.closest('.perf-root') ?? document.body;
+		const probe = document.createElement('span');
+		scope.appendChild(probe);
+		const resolve = (token: string): string => {
+			probe.style.color = `var(${token})`;
+			return getComputedStyle(probe).color;
+		};
+		const dim = resolve('--rb-text-dim');
+		const primary = resolve('--rb-text');
+		const border = resolve('--rb-border');
+		probe.remove();
+
+		const fillOf = (el: Element): { fill: string; color: string; painted: string } => {
+			const style = getComputedStyle(el);
+			const color = style.color;
+			const fill = style.getPropertyValue('-webkit-text-fill-color').trim();
+			const painted = /^rgba?\(/.test(fill) ? fill : color;
+			return { fill, color, painted };
+		};
+		const { fill, color, painted } = fillOf(leaf);
+		const paintedChannels = channels(painted);
+		let alpha = alphaOf(painted);
+		let backdrop: [number, number, number] | null = null;
+		const blockers: string[] = [];
+		let element: Element | null = leaf;
+		while (element !== null) {
+			const style = getComputedStyle(element);
+			const name = element.className === '' ? element.tagName : String(element.className);
+			if (style.filter !== 'none') blockers.push(`${name}: filter ${style.filter}`);
+			if (style.mixBlendMode !== 'normal') {
+				blockers.push(`${name}: mix-blend-mode ${style.mixBlendMode}`);
+			}
+			// `display: contents` returns a computed background and opacity from
+			// `getComputedStyle` while generating no box and painting nothing.
+			// Treating one as the backdrop would report a colour that is never
+			// on screen, so it is skipped for paint purposes entirely - its
+			// opacity has no effect either. Blinded review.
+			const paints = style.display !== 'contents';
+			if (backdrop === null && paints) {
+				if (style.backgroundImage !== 'none') {
+					blockers.push(`${name}: background-image ${style.backgroundImage}`);
+				}
+				const bg = channels(style.backgroundColor);
+				const bgAlpha = alphaOf(style.backgroundColor);
+				if (bg !== null && bgAlpha === 1) {
+					backdrop = [bg[0], bg[1], bg[2]];
+					// Opacity at and above the backdrop dims text and surface
+					// alike, so it stops counting here. The BLOCKER scan does
+					// not stop with it: a filter or mix-blend-mode on an
+					// ancestor ABOVE this element (`.perf-root` carries the
+					// app shell's own rules) re-composites the "opaque"
+					// backdrop against whatever is behind it, so a contrast
+					// ratio measured against this token would again be a
+					// number about nothing. Blinded review, Thu 10 Sep 2026.
+				} else if (bg === null) {
+					// Unparseable and therefore undecidable: an unresolved
+					// color-mix() may well paint. Falling through to the
+					// opacity branch would drop a real layer and report a
+					// ratio that is too FLATTERING, with nothing red to show
+					// for it. Blocking is the honest answer. Blinded review.
+					blockers.push(`${name}: unparseable background ${style.backgroundColor}`);
+				} else if (bgAlpha > 0) {
+					// Translucent: a genuine compositing layer this helper does
+					// not blend. Same reasoning - a silently optimistic ratio is
+					// the failure this file exists to prevent. A hovered
+					// `.rb-waverow.secondary.deck-focus` is exactly this case.
+					blockers.push(`${name}: translucent background ${style.backgroundColor}`);
+				} else {
+					alpha *= Number(style.opacity);
+				}
+			} else if (backdrop === null) {
+				alpha *= Number(style.opacity);
+			}
+			element = element.parentElement;
+		}
+
+		const composited: [number, number, number] | null =
+			paintedChannels === null || backdrop === null
+				? null
+				: ([0, 1, 2].map((i) => paintedChannels[i] * alpha + backdrop![i] * (1 - alpha)) as [
+						number,
+						number,
+						number
+					]);
+
+		return {
+			painted,
+			color,
+			fill,
+			dim,
+			primary,
+			border,
+			effectiveAlpha: alpha,
+			backdrop,
+			composited,
+			blockers
+		};
+	});
+}
+
+// REQ: DECKUX-40
+test('the waveform track title paints the primary text token', async ({ page, request }) => {
+	await _deckOneLoaded(page, request);
+	const title = page.locator('.wave-track-name').first();
+	const measured = await _measurePaint(title);
+	expect(_titleTokenViolations(measured)).toEqual([]);
+
+	const mutated = await _withCss(
+		page,
+		'.wave-track-name > span { -webkit-text-fill-color: var(--rb-text-dim) !important; }',
+		() => _measurePaint(title)
+	);
 	expect(
-		ratio,
-		`title ${JSON.stringify(measured.painted)} at effective alpha ` +
+		mutated.color,
+		'the mutation leaves `color` primary, so a color-only read stays green'
+	).toBe(mutated.primary);
+	expect(_titleTokenViolations(mutated), 'a text-fill override must be caught').not.toEqual([]);
+
+	const restored = await _measurePaint(title);
+	expect(_titleTokenViolations(restored)).toEqual([]);
+});
+
+// REQ: A11Y-03
+test('the painted title clears the 4.5:1 AA floor against what is actually behind it', async ({
+	page,
+	request
+}) => {
+	await _deckOneLoaded(page, request);
+	const title = page.locator('.wave-track-name').first();
+	const measured = await _measurePaint(title);
+	expect(
+		measured.blockers,
+		'filter/mix-blend-mode/gradient change the painted result in ways this arithmetic ' +
+			'cannot model - the ratio below would be a number about nothing'
+	).toEqual([]);
+	expect(measured.backdrop, 'some ancestor must paint an opaque background').not.toBeNull();
+	expect(measured.composited, 'the title must have a resolvable painted colour').not.toBeNull();
+
+	const ratio = _contrastRatio(measured);
+	expect(ratio, 'contrast ratio must be computable').not.toBeNull();
+	expect(
+		ratio!,
+		`title painted ${JSON.stringify(measured.painted)} (fill ${JSON.stringify(measured.fill)}, ` +
+			`color ${JSON.stringify(measured.color)}) at effective alpha ` +
 			`${measured.effectiveAlpha} composites to ${JSON.stringify(measured.composited)} ` +
-			`on ${JSON.stringify(measured.backdrop)} and measures ${ratio.toFixed(2)}:1`
+			`on ${JSON.stringify(measured.backdrop)} and measures ${ratio!.toFixed(2)}:1`
 	).toBeGreaterThanOrEqual(AA_CONTRAST_FLOOR);
+
+	const backdrop = measured.backdrop!;
+	const backdropCss = `rgb(${backdrop[0]}, ${backdrop[1]}, ${backdrop[2]})`;
+	const mutated = await _withCss(
+		page,
+		`.wave-track-name > span { -webkit-text-fill-color: ${backdropCss} !important; }`,
+		() => _measurePaint(title)
+	);
+	const mutatedRatio = _contrastRatio(mutated);
+	expect(mutatedRatio, 'fill matched to backdrop must yield a failing ratio').not.toBeNull();
+	expect(mutatedRatio!).toBeLessThan(AA_CONTRAST_FLOOR);
 });
 
 // REQ: DECKUX-40
@@ -310,7 +400,28 @@ test('an empty deck shows only its number', async ({ page }) => {
 	await expect(gutter.locator('.deck-num')).toHaveText('1');
 	await expect(gutter.locator('.wave-track-summary')).toHaveCount(0);
 	await expect(gutter.locator('.wave-art')).toHaveCount(0);
+	await expect(gutter.locator('.wave-track-name')).toHaveCount(0);
 	expect((await gutter.innerText()).trim(), 'nothing but the deck number is painted').toBe('1');
+
+	const emptyNum = gutter.locator('.deck-num.empty');
+	await expect(emptyNum).toHaveCount(1);
+	const measured = await _measurePaint(emptyNum);
+	expect(_emptyStateViolations(measured)).toEqual([]);
+
+	const mutated = await _withCss(
+		page,
+		'.rb-waverow .gutter .deck-num.empty { -webkit-text-fill-color: var(--rb-text) !important; }',
+		() => _measurePaint(emptyNum)
+	);
+	expect(mutated.color, 'only the text fill should change under this mutation').toBe(
+		mutated.border
+	);
+	expect(_emptyStateViolations(mutated), 'a text-fill override must be caught').toEqual([
+		'empty deck number paints the primary token (too loud)'
+	]);
+
+	const restored = await _measurePaint(emptyNum);
+	expect(_emptyStateViolations(restored)).toEqual([]);
 });
 
 // REQ: DECKUX-40

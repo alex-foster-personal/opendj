@@ -7,6 +7,11 @@
 	import { getTrack, patchTrack, ConflictError } from '$lib/api';
 	import { clampToViewport } from '$lib/ui/clamp-to-viewport';
 	import { pushToast } from '$lib/stores.svelte';
+	import {
+		tempoPrefFieldValue,
+		tempoPrefPatchValue,
+		tempoPrefRangeInvalid
+	} from '$lib/rb/tempo-pref-fields';
 	import TempoPrefPopoverView from './TempoPrefPopoverView.svelte';
 
 	let { stableId, x, y, onclose }: { stableId: string; x: number; y: number; onclose: () => void } =
@@ -16,15 +21,16 @@
 	let loadError = $state<string | null>(null);
 	let etag = $state('');
 	// NUMBERS, not strings. `bind:value` on `<input type="number">` writes a
-	// number (or null when the field is empty), so holding these as strings
+	// number (or undefined when the field is emptied, which the
+	// tempo-pref-fields helpers treat as unset), so holding these as strings
 	// meant every keystroke replaced the string with a number and the string
 	// parser below then threw `raw.trim is not a function` out of a $derived.
 	// That killed the range-invalid message and the Save handler, silently:
 	// the popover stayed open with no error shown. svelte-check cannot see
 	// this, because the coercion happens inside the binding.
-	let regular = $state<number | null>(null);
-	let min = $state<number | null>(null);
-	let max = $state<number | null>(null);
+	let regular = $state<number | null | undefined>(null);
+	let min = $state<number | null | undefined>(null);
+	let max = $state<number | null | undefined>(null);
 	let saving = $state(false);
 	let saveError = $state<string | null>(null);
 	let panelEl: HTMLDivElement | undefined = $state();
@@ -53,19 +59,15 @@
 		void placePanel();
 	});
 
-	function _fmt(v: number | null | undefined): number | null {
-		return v ?? null;
-	}
-
 	async function _load(): Promise<void> {
 		loading = true;
 		loadError = null;
 		try {
 			const { track, etag: fresh } = await getTrack(stableId);
 			etag = fresh;
-			regular = _fmt(track.tempo_pref?.regular);
-			min = _fmt(track.tempo_pref?.min);
-			max = _fmt(track.tempo_pref?.max);
+			regular = tempoPrefFieldValue(track.tempo_pref?.regular);
+			min = tempoPrefFieldValue(track.tempo_pref?.min);
+			max = tempoPrefFieldValue(track.tempo_pref?.max);
 		} catch (exc) {
 			loadError = `Failed to load track: ${String(exc)}`;
 		} finally {
@@ -74,7 +76,7 @@
 	}
 	void _load();
 
-	const rangeInvalid = $derived(min !== null && max !== null && min >= max);
+	const rangeInvalid = $derived(tempoPrefRangeInvalid(min, max));
 
 	async function _save(): Promise<void> {
 		if (rangeInvalid) return;
@@ -84,8 +86,7 @@
 			// All three unset means "no preference" - the API models that as
 			// tempo_pref: null, not an object of nulls (a non-null object with
 			// no values still shows as a set preference + provenance on reread).
-			const tempoPref =
-				regular === null && min === null && max === null ? null : { regular, min, max };
+			const tempoPref = tempoPrefPatchValue(regular, min, max);
 			const { etag: fresh } = await patchTrack(stableId, etag, {
 				tempo_pref: tempoPref
 			});
@@ -95,9 +96,9 @@
 			if (exc instanceof ConflictError) {
 				saveError = 'This track changed elsewhere - reloading current values.';
 				etag = exc.etag;
-				regular = _fmt(exc.current.tempo_pref?.regular);
-				min = _fmt(exc.current.tempo_pref?.min);
-				max = _fmt(exc.current.tempo_pref?.max);
+				regular = tempoPrefFieldValue(exc.current.tempo_pref?.regular);
+				min = tempoPrefFieldValue(exc.current.tempo_pref?.min);
+				max = tempoPrefFieldValue(exc.current.tempo_pref?.max);
 				return;
 			}
 			const message = `Save failed: ${String(exc)}`;

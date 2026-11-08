@@ -1,4 +1,5 @@
 import { _controlSegmentAt, _emptyRuntime, type _DeckProcessor, type _DeckRuntime, type DeckTransportClock } from '$lib/rb/deck-runtime';
+import { truncateAtOutPoint } from '$lib/rb/edit-window-buffer';
 export { installAutomaticRejoinRunner, type AutomaticRejoinRunner } from './automatic-handoff-runners';
 import {
 	SILENT_METER_READING,
@@ -290,6 +291,7 @@ import {
 } from '$lib/player/headphones';
 import {
 	_assertKeyShift,
+	assertKeyShiftPitch,
 	camelotKeysAreCompatible,
 	composeStretchSemitones,
 	deriveKeySyncNudge,
@@ -1189,6 +1191,11 @@ import {
 	naturalEndNeedsRevisionedStop,
 	transportNeedsScheduledMutation,
 	type TransportMutationActivity,
+	KEY_SHIFT_RAMP_DURATION_SEC,
+	KEY_SHIFT_RAMP_STEP_SEC,
+	KEY_SHIFT_RAMP_MAX_CENTS,
+	planKeyShiftRamp,
+	type KeyShiftRampStep,
 	planKeyShiftMutation,
 	type KeyShiftMutationPlan,
 	applyPausedDeckControlSettings,
@@ -1224,6 +1231,11 @@ export {
 	naturalEndNeedsRevisionedStop,
 	transportNeedsScheduledMutation,
 	type TransportMutationActivity,
+	KEY_SHIFT_RAMP_DURATION_SEC,
+	KEY_SHIFT_RAMP_STEP_SEC,
+	KEY_SHIFT_RAMP_MAX_CENTS,
+	planKeyShiftRamp,
+	type KeyShiftRampStep,
 	planKeyShiftMutation,
 	type KeyShiftMutationPlan,
 	applyPausedDeckControlSettings,
@@ -1318,6 +1330,7 @@ function _queueKeySyncFollow(): void {
 
 /** No plan yet (live deck before presentation) waits for the next presented revision. */
 async function _applyKeySyncFollow(deck: DeckId): Promise<void> {
+	if (_rt[deck].keyShiftRampTargetSemitones !== null) return;
 	const plan = keySyncPreview(deck);
 	if (plan !== null && plan.targetManualShiftSemitones !== _desiredKeyShiftSemitones(deck)) await _setDeckKeyShift(deck, plan.targetManualShiftSemitones);
 }
@@ -1470,6 +1483,16 @@ function _releaseReanchorRampOwner(deck: DeckId, generation: number): void {
 	if (rt.reanchorRampOwnerGeneration === generation) rt.reanchorRampOwnerGeneration = null;
 }
 
+function _bumpKeyShiftRampOperation(deck: DeckId): number {
+	const rt = _rt[deck];
+	rt.keyShiftRampGeneration += 1;
+	return rt.keyShiftRampGeneration;
+}
+
+function _keyShiftRampOperationIsCurrent(deck: DeckId, generation: number): boolean {
+	return _rt[deck].keyShiftRampGeneration === generation;
+}
+
 function _handleAudibleTransition(deck: DeckId, wasAudible: boolean, audible: boolean): void {
 	void wasAudible;
 	void audible;
@@ -1559,7 +1582,8 @@ async function _scheduleDeck(
 	loop?: LoopState | null,
 	keyShiftSemitones?: number,
 	pressT0Ms?: number,
-	reanchorGeneration?: number
+	reanchorGeneration?: number,
+	keyRampGeneration?: number
 ): Promise<number> {
 	const scheduleSession = _engineSession;
 	const isCurrent = (): boolean => scheduleSession === _engineSession;
@@ -1605,7 +1629,8 @@ async function _scheduleDeck(
 			loop,
 			keyShiftSemitones,
 			pressT0Ms,
-			reanchorGeneration
+			reanchorGeneration,
+			keyRampGeneration
 		);
 	} catch (error) {
 		// Reconcile the optimistic write to the STANDING intent, not to the value
@@ -1660,7 +1685,8 @@ async function _scheduleDeckSerial(
 	loop: LoopState | null | undefined,
 	keyShiftSemitones: number | undefined,
 	pressT0Ms: number | undefined,
-	reanchorGeneration?: number
+	reanchorGeneration?: number,
+	keyRampGeneration?: number
 ): Promise<number> {
 	const scheduleSession = _engineSession;
 	const isCurrent = (): boolean => scheduleSession === _engineSession;
@@ -1681,7 +1707,7 @@ async function _scheduleDeckSerial(
 	const earliestWhen = supersedingScheduleTime(minimumSafeWhen, latestPendingStart, minimumSafeWhen);
 	const requestedWhen = typeof when === 'function' ? when(earliestWhen) : when;
 	const safeRequestedWhen = Math.max(requestedWhen, minimumSafeWhen);
-	// A re-anchor ramp is a sequence of future rate steps. Treating each tail
+	// Re-anchor and key-shift ramps are sequences of future DSP steps. Treating each tail
 	// step as a superseding command pulls it back onto the first step's time
 	// (min(requested, pending)), so every step fires at once, the
 	// phase-compensation shortfall is never consumed, and a 1.00 -> 1.10
@@ -1689,7 +1715,7 @@ async function _scheduleDeckSerial(
 	// (issue #5993 / #4071). A later ramp step has no earlier pending to
 	// replace: pass null so the requested offset stands.
 	const pendingBoundary =
-		reanchorGeneration !== undefined &&
+		(reanchorGeneration !== undefined || keyRampGeneration !== undefined) &&
 		latestPendingStart !== null &&
 		safeRequestedWhen > latestPendingStart
 			? null
@@ -1722,7 +1748,7 @@ async function _scheduleDeckSerial(
 		masterTempoEnabled ?? latestPending?.masterTempoEnabled ?? rt.controlMasterTempoEnabled;
 	const scheduledKeyShiftSemitones =
 		keyShiftSemitones ?? latestPending?.keyShiftSemitones ?? rt.controlKeyShiftSemitones;
-	_assertKeyShift(scheduledKeyShiftSemitones);
+	assertKeyShiftPitch(scheduledKeyShiftSemitones);
 	const scheduledLoop = loop === undefined ? st.loop : loop;
 	const requestedInputSec =
 		typeof inputSec === 'function' ? inputSec(effectiveWhen) : inputSec;
@@ -1759,6 +1785,12 @@ async function _scheduleDeckSerial(
 	) {
 		return scheduledInputSec;
 	}
+	if (
+		keyRampGeneration !== undefined &&
+		!_keyShiftRampOperationIsCurrent(deck, keyRampGeneration)
+	) {
+		return scheduledInputSec;
+	}
 	recordPerfTiming(row.kind, scheduleStages, deck, row.labels);
 	// LATENCY-03: rt.latencySec is a snapshot taken once at load, but Signalsmith
 	// re-reads both latency terms from WASM at the end of every configure() and
@@ -1777,7 +1809,7 @@ async function _scheduleDeckSerial(
 		startPositionSec: scheduledInputSec,
 		tempoRatio: scheduledTempoRatio,
 		masterTempoEnabled: scheduledMasterTempoEnabled,
-		keyShiftSemitones: scheduledKeyShiftSemitones
+		keyShiftSemitones: rt.keyShiftRampTargetSemitones ?? scheduledKeyShiftSemitones
 	});
 	st.pitch = scheduledTempoRatio;
 	st.master_tempo_enabled = scheduledMasterTempoEnabled;
@@ -1854,21 +1886,44 @@ async function _setDeckKeyShift(deck: DeckId, keyShiftSemitones: number): Promis
 		return;
 	}
 	if (_ctx === null) throw new Error('set key shift: audio graph not initialised');
-	await _scheduleDeck(
-		deck,
-		_futureScheduleTime(deck),
-		(effectiveWhen) => _projectPositionAt(deck, effectiveWhen),
-		plan.active,
-		undefined,
-		undefined,
-		undefined,
-		keyShiftSemitones
-	);
+	const fromSemitones =
+		rt.pending[rt.pending.length - 1]?.keyShiftSemitones ?? rt.controlKeyShiftSemitones;
+	const steps = planKeyShiftRamp(fromSemitones, keyShiftSemitones);
+	const generation = _bumpKeyShiftRampOperation(deck);
+	rt.keyShiftRampTargetSemitones = keyShiftSemitones;
+	st.key_shift_semitones = keyShiftSemitones;
+	const rampStart = _futureScheduleTime(deck);
+	try {
+		for (const step of steps) {
+			if (!_keyShiftRampOperationIsCurrent(deck, generation)) return;
+			await _scheduleDeck(
+				deck,
+				rampStart + step.offsetSec,
+				(effectiveWhen) => _projectPositionAt(deck, effectiveWhen),
+				plan.active,
+				undefined,
+				undefined,
+				undefined,
+				step.keyShiftSemitones,
+				undefined,
+				undefined,
+				generation
+			);
+		}
+	} finally {
+		if (_keyShiftRampOperationIsCurrent(deck, generation)) {
+			rt.keyShiftRampTargetSemitones = null;
+		}
+	}
 }
 
 function _desiredKeyShiftSemitones(deck: DeckId): number {
 	const rt = _rt[deck];
-	return rt.pending[rt.pending.length - 1]?.keyShiftSemitones ?? rt.controlKeyShiftSemitones;
+	return (
+		rt.keyShiftRampTargetSemitones ??
+		rt.pending[rt.pending.length - 1]?.keyShiftSemitones ??
+		rt.controlKeyShiftSemitones
+	);
 }
 
 function _keySyncSource(deck: DeckId): KeySyncEffectiveOffsetSource {
@@ -2085,6 +2140,9 @@ export function deckMasterAtContextSec(
 
 /** DECKMOVE-01 deck move: the instant each deck's fader handover automation ends (0 = none). */
 const _handoverUntilSec: Record<DeckId, number> = { 1: 0, 2: 0, 3: 0, 4: 0 };
+/** Bumps on each `scheduleDeckHandover`; both affected decks share the same value until the next schedule. */
+let _handoverGeneration = 0;
+const _handoverToken: Record<DeckId, number> = { 1: 0, 2: 0, 3: 0, 4: 0 };
 
 /**
  * DECKMOVE-01 deck move: start a paused, loaded `deck` on the audio clock at the
@@ -2140,6 +2198,8 @@ export function scheduleDeckHandover(from: DeckId, to: DeckId, startSec: number,
 		target.fader.gain.setValueCurveAtTime(curves.target, at, durationSec);
 	}
 	_handoverUntilSec[from] = _handoverUntilSec[to] = at + durationSec;
+	_handoverGeneration += 1;
+	_handoverToken[from] = _handoverToken[to] = _handoverGeneration;
 	return at;
 }
 
@@ -2151,6 +2211,16 @@ export async function waitForContextSec(sec: number, pollMs = 20): Promise<void>
 		if (ctx.state === 'closed' || _ctx !== ctx) throw new Error('waitForContextSec: the audio context ended before the handover finished');
 		await new Promise((resolve) => setTimeout(resolve, pollMs));
 	}
+}
+
+/** DECKMOVE-01: last audio-clock second covered by fader handover automation (0 = none / cancelled). */
+export function deckHandoverUntilSec(deck: DeckId): number {
+	return _handoverUntilSec[deck];
+}
+
+/** DECKMOVE-01: which `scheduleDeckHandover` batch last touched `deck` (0 = never). */
+export function deckHandoverToken(deck: DeckId): number {
+	return _handoverToken[deck];
 }
 
 /** Render/control-clock position in seconds, with manual loop wrap. This is
@@ -2332,6 +2402,9 @@ function _clearLoadedTrackState(st: DeckState): void {
 	const stranded = _beatgridResyncPorts.takePending(deck); _resyncTracking.clearForDeck(deck);
 	_beatgridGuards.beforeClear(deck, stranded, 'reload');
 	st.stable_id = null;
+	st.edit_id = null;
+	st.edit_in_ms = null;
+	st.edit_out_ms = null;
 	st.source_path = null;
 	st.title = null;
 	st.artist = null;
@@ -3133,7 +3206,18 @@ async function _upgradeDeckStems(
 		const decoded = await time('decodeStems', decodeStemBuffers(ctx, encodedParts, layoutParts, { deck, stale, onDeferred: () => phase('waiting', null, STEM_HELD_BY_PRESSURE), onStart: () => phase('decoding') }));
 		if (stale()) return;
 		// STEM-8302: trailing codec slack (an extra MP3 packet, resample rounding) is conformed to the source; a real mismatch still refuses below.
-		const stemBuffers = conformStemBuffersToFrameCount(ctx, decoded.buffers, mixBuffer.length, mixBuffer.sampleRate);
+		const outMs = st.edit_out_ms;
+		const buffersForConform: StemBuffers = {};
+		for (const [part, buffer] of Object.entries(decoded.buffers)) {
+			if (buffer === undefined) continue;
+			buffersForConform[part as keyof StemBuffers] = truncateAtOutPoint(ctx, buffer, outMs);
+		}
+		const stemBuffers = conformStemBuffersToFrameCount(
+			ctx,
+			buffersForConform,
+			mixBuffer.length,
+			mixBuffer.sampleRate
+		);
 		const created = await time(
 			'stemProcessorCreate',
 			AlignedStemDeckProcessor.create(ctx, stemBuffers, {
@@ -3351,6 +3435,12 @@ class RbAudioEngine implements AudioEngine {
 		if (options.stems !== undefined && typeof options.stems !== 'boolean') {
 			throw new TypeError('load: options.stems must be boolean when provided');
 		}
+		if (
+			(options.in_ms !== undefined || options.out_ms !== undefined) &&
+			(options.in_ms === undefined || options.out_ms === undefined || options.in_ms < 0 || options.in_ms >= options.out_ms)
+		) {
+			throw new RangeError('load: edit window must satisfy 0 <= in_ms < out_ms');
+		}
 		const loadStems = options.stems ?? true;
 		const st = deckStates[deck];
 		const rt = _rt[deck];
@@ -3436,7 +3526,7 @@ class RbAudioEngine implements AudioEngine {
 			track = trackRes.track;
 			anlz = requiredAnlz;
 			hotCueSlots = requiredHotCueSlots;
-			buffer = decodedMix;
+			buffer = truncateAtOutPoint(ctx, decodedMix, options.out_ms ?? null);
 			await time('stretchLoad', mixProcessor.load(buffer));
 			processor = mixProcessor;
 			// `loading`, not `unavailable`: the probe has not run yet and _upgradeDeckStems settles it. A stems-off load
@@ -3527,6 +3617,9 @@ class RbAudioEngine implements AudioEngine {
 			rt.desiredActive = false;
 			st.stable_id = stable_id;
 			publishDeckAutoGain(deck, candidateAutoGain);
+			st.edit_id = options.edit_id ?? null;
+			st.edit_in_ms = options.in_ms ?? null;
+			st.edit_out_ms = options.out_ms ?? null;
 			st.source_path =
 				typeof candidateTrack.file_path === 'string' && candidateTrack.file_path.length > 0
 					? candidateTrack.file_path
@@ -3543,7 +3636,7 @@ class RbAudioEngine implements AudioEngine {
 			_queueKeySyncFollow(); // KEYSYNC-01: a follower targeting this deck re-follows its new key
 			// The decoded buffer is the audio actually scheduled. Metadata can
 			// differ, so it must not define waveform bounds or transport truth.
-			st.duration_ms = decodedTransportDurationMs(candidateBuffer.duration);
+			st.duration_ms = decodedTransportDurationMs(rt.durationSec);
 			rt.metadataDurationMs = candidateTrack.duration_ms ?? null;
 			const latestAnlzEntry = getAnlzEntry(stable_id);
 			const usableAnlz = isAnlzEntryUsable(latestAnlzEntry) ? (latestAnlzEntry.data as AnlzWithVocals) : null;
@@ -3734,16 +3827,29 @@ class RbAudioEngine implements AudioEngine {
 			}
 			if (!rt.desiredActive) return; // already paused is a valid state
 			_bumpReanchorOperation(deck);
+			const keyRampTarget = rt.keyShiftRampTargetSemitones;
+			const keyRampGeneration = _bumpKeyShiftRampOperation(deck);
 			if (_ctx === null) throw new Error('pause: audio graph not initialised');
 			const pauseBeats = _quantizeGrid(st);
 			const when = _futureScheduleTime(deck);
-			const positionSec = await _schedulePress(
-				deck,
-				when,
-				(effectiveWhen) => _projectPositionAt(deck, effectiveWhen),
-				false,
-				pressT0Ms
-			);
+			let positionSec: number;
+			try {
+				positionSec = await _scheduleDeck(
+					deck,
+					when,
+					(effectiveWhen) => _projectPositionAt(deck, effectiveWhen),
+					false,
+					undefined,
+					undefined,
+					undefined,
+					keyRampTarget ?? undefined,
+					pressT0Ms
+				);
+			} finally {
+				if (_keyShiftRampOperationIsCurrent(deck, keyRampGeneration)) {
+					rt.keyShiftRampTargetSemitones = null;
+				}
+			}
 			const cueMs = pauseBeats !== null
 				? snappedPositionMs(pauseBeats, st.anlz?.phrases, positionSec * 1000, st.quantize_grid_beats)
 				: positionSec * 1000;

@@ -19,10 +19,12 @@ import pytest
 from fastapi.testclient import TestClient
 
 from apps.shared.state import db as state_db
+from apps.shared.state import library_edits
 from apps.shared.state.events import FakeEventBus
 from apps.shared.state.writer import StateWriter
 from apps.webui.server.app import create_app
 from apps.webui.server.playlist_store import PlaylistStore
+from apps.webui.server.routes import playlist_write
 from apps.webui.server.sqlite_backend import SqliteBackend
 
 TRACK_IDS: list[str] = ["t-001", "t-002", "t-003", "t-004"]
@@ -63,6 +65,7 @@ def client(db_path: Path) -> Iterator[TestClient]:
     )
     with TestClient(app) as c:
         yield c
+    playlist_write.close_store(app)
 
 
 def _create(client: TestClient, name: str) -> tuple[str, str]:
@@ -86,6 +89,22 @@ def _get_items(client: TestClient, pid: str) -> list[str]:
     r = client.get(f"/api/v1/playlists/{pid}")
     assert r.status_code == 200, r.text
     return [t["stable_id"] for t in r.json()["tracks"]]
+
+
+def _get_membership_edit_ids(db_path: Path, playlist_id: str) -> list[str | None]:
+    conn = sqlite3.connect(str(db_path))
+    try:
+        return [
+            row[0]
+            for row in conn.execute(
+                "SELECT edit_id FROM playlist_memberships "
+                "WHERE playlist_id = ? AND deleted_at IS NULL "
+                "ORDER BY COALESCE(order_key, printf('%08d', position)), position",
+                (playlist_id,),
+            )
+        ]
+    finally:
+        conn.close()
 
 
 def _get_etag(client: TestClient, pid: str) -> str:
@@ -147,6 +166,43 @@ def test_copy_adds_to_dest_preserves_source(client: TestClient) -> None:
     assert r.status_code == 200, r.text
     assert _get_items(client, pid_b) == ["t-003", "t-001"]
     assert _get_items(client, pid_a) == ["t-001", "t-002"]
+
+
+@pytest.mark.requirement("LIBEDIT-9179")
+def test_transfer_preserves_edit_membership_on_copy(client: TestClient, db_path: Path) -> None:
+    """[if] a playlist row names an edit [then] adding a plain track must not drop it, [else stop]."""
+    pid_b, etag_b = _create(client, "B-with-edit")
+    etag_b = _put_tracks(client, pid_b, etag_b, ["t-001"])
+    conn = state_db.open_rw(db_path)
+    try:
+        writer = StateWriter(conn, bus=FakeEventBus(), actor="edit-seed")
+        try:
+            library_edits.create_edit(
+                writer,
+                "xfer-session",
+                source_track_id="t-001",
+                label="Cut",
+                in_ms=1_000,
+                out_ms=10_000,
+                created_by="tests",
+                playlist_id=pid_b,
+            )
+        finally:
+            writer.close()
+    finally:
+        conn.close()
+
+    etag_b = _get_etag(client, pid_b)
+    before_edits = _get_membership_edit_ids(db_path, pid_b)
+    assert before_edits[0] is None
+    assert before_edits[1] is not None
+
+    r = _transfer(client, pid_b, etag_b, stable_ids=["t-002"], mode="add")
+    assert r.status_code == 200, r.text
+
+    after = _get_membership_edit_ids(db_path, pid_b)
+    assert after[: len(before_edits)] == before_edits
+    assert len(after) == len(before_edits) + 1
 
 
 def test_copy_skip_already_present_is_idempotent(client: TestClient) -> None:
@@ -335,12 +391,16 @@ def test_interrupt_second_write_rolls_back(db_path: Path) -> None:
         calls = 0
         original = store._writer.set_playlist_memberships
 
-        def boom(playlist_id: str, stable_ids: list[str]) -> None:
+        def boom(
+            playlist_id: str,
+            stable_ids: list[str],
+            edit_ids: list[str | None] | None = None,
+        ) -> None:
             nonlocal calls
             calls += 1
             if calls == 2:
                 raise RuntimeError("simulated interrupt")
-            original(playlist_id, stable_ids)
+            original(playlist_id, stable_ids, edit_ids)
 
         with patch.object(store._writer, "set_playlist_memberships", side_effect=boom):
             with pytest.raises(RuntimeError, match="simulated interrupt"):

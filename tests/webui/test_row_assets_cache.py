@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import base64
 import errno
+import gc
 import os
 import shutil
 import struct
@@ -547,6 +548,10 @@ def test_no_descriptor_is_left_open(share: Path, tmp_path: Path) -> None:
     out = look_alike_outside(tmp_path)
 
     def open_descriptors() -> int:
+        # Finalize garbage an EARLIER test left behind first: its file objects close
+        # whenever the collector runs, which on main run 42478731366 (97030a8c4f)
+        # was inside this window and read as 17 == 18. A leak here only ever adds.
+        gc.collect()
         return len(os.listdir("/dev/fd"))
 
     before = open_descriptors()
@@ -559,4 +564,10 @@ def test_no_descriptor_is_left_open(share: Path, tmp_path: Path) -> None:
     os.symlink(out / "ANLZ0000.2EX", leaf)
     for _round in range(5):
         call()  # refused leaf
-    assert open_descriptors() == before
+    # A leak persists across samples; a descriptor another thread holds for an
+    # instant does not, so the quietest of a few samples is the one that counts.
+    samples: list[int] = []
+    for _sample in range(5):
+        time.sleep(0.01)
+        samples.append(open_descriptors())
+    assert min(samples) <= before, f"descriptors before {before}, after {samples}"

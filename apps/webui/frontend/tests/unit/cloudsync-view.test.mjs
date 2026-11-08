@@ -752,6 +752,70 @@ test('statusHeadline leads with a plain sentence and a next step for every state
 	}
 });
 
+test('headlineStripAction picks Sync now, Refresh, or Set up from status fields', () => {
+	/** if null status does not offer Refresh while loading then broken */
+	assert.equal(view.headlineStripAction(null), 'refresh');
+
+	const notSetUp = status();
+	assert.equal(view.headlineStripAction(notSetUp), 'set-up');
+
+	const manualOnly = status({
+		configured: false,
+		endpoint: 'http://hub:8686',
+		endpoint_source: 'file'
+	});
+	assert.equal(view.headlineStripAction(manualOnly), 'sync-now');
+	assert.notEqual(view.headlineStripAction(notSetUp), view.headlineStripAction(manualOnly));
+
+	const inSync = status({
+		configured: true,
+		running: true,
+		enabled: true,
+		last_push_at: '2026-09-14T11:48:00.000Z',
+		last_result: { status: 'ok', message: '' }
+	});
+	assert.equal(view.headlineStripAction(inSync), 'sync-now');
+
+	const syncing = status({ configured: true, running: true, last_result: null });
+	assert.equal(view.headlineStripAction(syncing), 'refresh');
+
+	const transportError = status({
+		configured: true,
+		running: true,
+		last_result: { status: 'error', message: '[Errno 61] Connection refused' }
+	});
+	assert.equal(view.headlineStripAction(transportError), 'sync-now');
+
+	const updateRequired = status({
+		configured: true,
+		running: true,
+		enabled: true,
+		endpoint: 'http://hub:8686',
+		update_required: {
+			code: 'SYNC_WIRE_VERSION',
+			local_wire_version: 3,
+			peer_wire_version: 4,
+			action: 'install the latest Open DJ'
+		}
+	});
+	assert.equal(view.headlineStripAction(updateRequired), 'refresh');
+
+	const waiting = status({
+		configured: true,
+		running: true,
+		reason: `${view.WAITING_FOR_HUB_PREFIX}: hub starting`,
+		last_result: { status: 'error', message: 'connection refused' }
+	});
+	assert.equal(view.headlineStripAction(waiting), 'refresh');
+
+	const disabledAfterError = status({
+		configured: false,
+		endpoint: null,
+		last_result: { status: 'error', message: 'Connection refused' }
+	});
+	assert.equal(view.headlineStripAction(disabledAfterError), 'set-up');
+});
+
 // REQ: CLOUDSYNC-16
 test('identityBacklogNote states the consequence and hands over no command (#3252)', () => {
 	/** if a zero or missing backlog still shows a note then broken */

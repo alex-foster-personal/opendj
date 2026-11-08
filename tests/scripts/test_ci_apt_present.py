@@ -129,7 +129,12 @@ PRESENCE_PREFIX = re.compile(
 # probe, on the line before the install, instead of by a package check: any
 # LLVM's libclang serves bindgen, so libclang1 installs only when none loads
 # (the rest of that step is pinned by tests/scripts/test_ci_libclang_present.py).
-CAPABILITY_PROBES = {"libclang1": "python -m scripts.ci_libclang_present || {"}
+CAPABILITY_PROBES = {
+    "libclang1": (
+        "python -m scripts.ci_libclang_present || {",
+        "python3 -m scripts.ci_libclang_present || {",
+    ),
+}
 
 
 def _locked_install_sites() -> list[tuple[str, str, str]]:

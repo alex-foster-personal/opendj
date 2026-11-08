@@ -434,6 +434,13 @@ class MeasurementFailure:
     detail: str
 
 
+def _exception_detail(exc: BaseException) -> str:
+    """`ValueError: bad json` -- the type name keeps a non-RuntimeError crash legible."""
+    text = str(exc).strip()
+    name = type(exc).__name__
+    return f"{name}: {text}" if text else name
+
+
 @dataclass
 class Evaluator:
     name: str
@@ -1607,12 +1614,19 @@ def _eval_sync_drift() -> list[Metric]:
 # ----- hotspots (report only) ----------------------------------------------
 
 
-def _hotspots() -> HotspotResult:
-    """Churn x size, or an explicit UNKNOWN when git cannot measure it."""
+def _hotspots(repo: Path | None = None) -> HotspotResult:
+    """Churn x size, or an explicit UNKNOWN when git cannot measure it.
+
+    `repo` defaults to this run's checkout, looked up at call time rather than
+    bound as a default, so a test can aim the real `git log` at a fixture tree
+    (directly, or by setting `REPO` for a whole `main()` run) instead of faking
+    `_run_capture` (issue #3430).
+    """
+    root = REPO if repo is None else repo
     code, log, stderr = _run_capture([
         "git", "log", f"--since={CFG.CHURN_DAYS}.days", "--no-renames",
         "--name-only", "--pretty=format:",
-    ])
+    ], cwd=root)
     if code != 0:
         detail = f"git log ... exited {code}; stderr: {stderr[-2000:]}"
         return HotspotResult([], "UNKNOWN", detail)
@@ -1621,7 +1635,7 @@ def _hotspots() -> HotspotResult:
     )
     rows: list[tuple[str, int, int, int]] = []
     for rel, commits in churn.items():
-        path = REPO / rel
+        path = root / rel
         if not path.is_file() or path.suffix not in {".py", ".ts", ".svelte"}:
             continue
         if _is_vendored(rel):
@@ -2512,8 +2526,8 @@ def main(argv: list[str] | None = None) -> int:
     measurement_failures: list[MeasurementFailure] = []
     try:
         _preflight(selected)
-    except RuntimeError as exc:
-        measurement_failures.append(MeasurementFailure("preflight", str(exc)))
+    except Exception as exc:  # reporting boundary; BLE001 ignored for scripts/** in pyproject
+        measurement_failures.append(MeasurementFailure("preflight", _exception_detail(exc)))
 
     metrics: list[Metric] = []
     owner_of: dict[str, str] = {}
@@ -2522,9 +2536,14 @@ def main(argv: list[str] | None = None) -> int:
             print(f"[quality] {evaluator.name}: {evaluator.title}", flush=True)
             try:
                 measured = evaluator.run()
-            except RuntimeError as exc:
-                measurement_failures.append(MeasurementFailure(evaluator.name, str(exc)))
-                print(f"[quality] UNKNOWN: {evaluator.name}: {exc}")
+            # Broad on purpose: this loop is the gate's reporting boundary. A
+            # parser ValueError or KeyError must become a named UNKNOWN with
+            # artifacts and exit 2, not a traceback that writes no report
+            # (issue #3430). BLE001 is already ignored for scripts/** in pyproject.
+            except Exception as exc:
+                detail = _exception_detail(exc)
+                measurement_failures.append(MeasurementFailure(evaluator.name, detail))
+                print(f"[quality] UNKNOWN: {evaluator.name}: {detail}")
                 continue
             # Record which evaluator owns each metric so an inherited re-measure
             # can re-run just that evaluator on the merge-base tree (Q-11).

@@ -30,6 +30,10 @@ from typing import Any
 
 SCHEMA_VERSION: int = 2
 
+# Path the schema-drift scan classifies; sync_drift_subject imports this module
+# directly so the quality gate never loads apps.autodj.http (pydantic).
+TRY_PICKS_SCHEMA_SOURCE = "apps/autodj/try_picks.py"
+
 _V1: list[str] = [
     """
     CREATE TABLE IF NOT EXISTS transition_try_jobs (

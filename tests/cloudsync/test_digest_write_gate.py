@@ -26,7 +26,7 @@ import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
-from apps.shared.state import migrations_v21, migrations_v26
+from apps.shared.state import migrations_v21, migrations_v26, migrations_v30
 from apps.shared.state.machine_identity import IS_HUB_ENV
 from apps.sync_hub import client, digest_gate, engine, protocol, service, sync_set
 from apps.sync_hub.engine_identity_map import REMAP_TABLE, ensure_identity_remap_table
@@ -89,7 +89,11 @@ class Since:
 
 # ----- helpers ----------------------------------------------------------------
 
-_ALL_TOKEN_TABLES = (*migrations_v21.WRITE_TOKEN_TABLES, *migrations_v26.V26_WRITE_TOKEN_TABLES)
+_ALL_TOKEN_TABLES = (
+    *migrations_v21.WRITE_TOKEN_TABLES,
+    *migrations_v26.V26_WRITE_TOKEN_TABLES,
+    *migrations_v30.V30_WRITE_TOKEN_TABLES,
+)
 
 
 def _settled_pair(spoke: Path, hub: _TestClientTransport) -> None:

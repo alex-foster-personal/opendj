@@ -146,12 +146,19 @@ test.describe('W28 right-click registry smokes', () => {
 		await closeMenus(page);
 	});
 
-	test('library source tabs: no menu, no browser menu', async ({ page }) => {
+	test('library source tabs: source menu, not Quick Draw', async ({ page }) => {
 		const tabs = page.locator('[data-menu-target="library-source"]').first();
 		await expect(tabs).toBeVisible();
 		await tabs.click({ button: 'right', position: { x: 4, y: 4 } });
 		await expect(page.locator(QUICK_DRAW)).toHaveCount(0);
-		await expect(page.locator(MENU)).toHaveCount(0);
+		await expect(page.locator(MENU)).toBeVisible();
+		await expect(page.getByRole('menuitem', { name: 'Refresh library' })).toBeVisible();
+		const finder = page.getByRole('menuitem', { name: 'Show in Finder' });
+		await expect(finder).toBeVisible();
+		await expect(finder).toBeDisabled();
+		await expect(finder).toHaveAttribute('title', /.+/);
+		await expect(page.getByRole('menuitem', { name: 'Source settings...' })).toBeVisible();
+		await closeMenus(page);
 		expect(await browserMenuSuppressed(tabs)).toBe(true);
 	});
 
@@ -207,7 +214,14 @@ test.describe('W28 right-click registry smokes', () => {
 		const topbar = page.locator('.perf-root').first();
 		await topbar.click({ button: 'right', position: { x: 2, y: 2 } });
 		await expect(page.locator(QUICK_DRAW)).toBeVisible();
-		await expect(page.locator(`${QUICK_DRAW} .qd-ctx`)).toContainText('No target actions');
+		const ctx = page.locator(`${QUICK_DRAW} .qd-ctx`);
+		await expect(ctx).not.toContainText('No target actions');
+		await expect(ctx).toContainText('Settings...');
+		const layoutChecks = ctx.getByRole('menuitemcheckbox', { name: /^Layout:/ });
+		await expect(layoutChecks).toHaveCount(4);
+		await expect(
+			ctx.locator('[role="menuitemcheckbox"][aria-checked="true"]', { hasText: 'Layout:' })
+		).toHaveCount(1);
 		await closeMenus(page);
 	});
 });

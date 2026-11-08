@@ -7,7 +7,7 @@ since Mon 31 Aug 2026 and nobody noticed, while two others had been silently
 refuted by a tool that hardened in review. Staleness and absence were both
 invisible.
 
-Two rules shape the output, both from .claude/rules/verification.md:
+Two rules shape the output, both from (private path):
 
 - A scenario nobody can score reads UNMEASURED, never PASS. A board with zero
   failing checks because it has zero checks is the defect this tool is built to
@@ -52,8 +52,19 @@ from scripts.perf.kpi_readings import (
     _cohort_mismatch_reason,
     _missing_rejected_reasons,
     newest_reading,
+    reading_or_date_error,
 )
 from scripts.perf.kpi_readings import age_in_days as age_in_days  # re-exported for callers
+
+__all__ = [
+    "UNKNOWN",
+    "UNMEASURED",
+    "Reading",
+    "age_in_days",
+    "newest_reading",
+    "score_scenarios",
+    "verdict_for",
+]
 
 _REPO_ROOT = Path(__file__).resolve().parents[2]
 _SPEC = _REPO_ROOT / "specs" / "perf-latency-program.md"
@@ -140,7 +151,7 @@ def score_scenarios(kpi_map: dict, entries: list[dict], today: _dt.date) -> list
     tool exists to prevent.
 
     A required reading that cannot be trusted scores nothing, per
-    .claude/rules/verification.md: refuse rather than assume. Two ways a
+    (private path): refuse rather than assume. Two ways a
     reading fails that trust without being absent: a unit the map does not
     expect, or a date missing, malformed, or in the future. Either used to
     fall through to verdict_for anyway - a wrong unit produced a false
@@ -168,7 +179,7 @@ def score_scenarios(kpi_map: dict, entries: list[dict], today: _dt.date) -> list
     scores: list[Score] = []
     for sid, cfg in kpi_map["scenarios"].items():
         required = resolve_required(cfg)
-        readings = tuple(newest_reading(entries, name) for name in cfg.get("kpis", []))
+        readings = tuple(reading_or_date_error(entries, name) for name in cfg.get("kpis", []))
         by_name = {r.kpi: r for r in readings}
 
         missing: list[str] = []
@@ -244,6 +255,36 @@ def score_scenarios(kpi_map: dict, entries: list[dict], today: _dt.date) -> list
 # ---------------------------------------------------------------- output
 
 
+def _render_reading_line(s: Score, r: Reading, method: str) -> str:
+    """One KPI line beneath a scenario header in the text scorecard."""
+    if r.measured:
+        cohort = f", capture={r.capture_id}" if r.capture_id else ""
+        method_suffix = f"  method={method or r.source}"
+        return (
+            f"       {r.kpi} = {r.value} {r.unit}{method_suffix}  "
+            f"({r.date}, {r.machine}, {r.source}{cohort})"
+        )
+    if r.superseded:
+        return f"       {r.kpi} = SUPERSEDED, not scored"
+    if s.verdict == UNKNOWN and method:
+        return f"       {r.kpi} = UNKNOWN  method={method}"
+    if r.date_error:
+        return f"       {r.kpi} = REJECTED, {r.date_error}"
+    return f"       {r.kpi} = never recorded"
+
+
+def _render_scenario_note(s: Score) -> str | None:
+    if not s.note:
+        return None
+    if s.verdict == UNMEASURED:
+        label = "WHY UNMEASURED"
+    elif s.verdict == UNKNOWN:
+        label = "WHY UNKNOWN"
+    else:
+        label = "READ THIS WITH THE VERDICT"
+    return f"       {label}: {s.note}"
+
+
 def render(scores: list[Score], max_stale_days: int | None) -> list[str]:
     lines = ["", f"{'':4} {'class':5} {'verdict':11} {'age':>5}  scenario", "-" * 96]
     for s in scores:
@@ -254,29 +295,12 @@ def render(scores: list[Score], max_stale_days: int | None) -> list[str]:
         lines.append(f"{s.scenario:4} {s.ux_class:5} {s.verdict:11} {age:>5}  {s.title}{stale}")
         method = s.capture_method
         for r in s.readings:
-            if r.measured:
-                cohort = f", capture={r.capture_id}" if r.capture_id else ""
-                method_suffix = f"  method={method or r.source}"
-                lines.append(
-                    f"       {r.kpi} = {r.value} {r.unit}{method_suffix}  "
-                    f"({r.date}, {r.machine}, {r.source}{cohort})"
-                )
-                if r.note:
-                    lines.append(f"         note: {r.note}")
-            elif r.superseded:
-                lines.append(f"       {r.kpi} = SUPERSEDED, not scored")
-            elif s.verdict == UNKNOWN and method:
-                lines.append(f"       {r.kpi} = UNKNOWN  method={method}")
-            else:
-                lines.append(f"       {r.kpi} = never recorded")
-        if s.note:
-            if s.verdict == UNMEASURED:
-                label = "WHY UNMEASURED"
-            elif s.verdict == UNKNOWN:
-                label = "WHY UNKNOWN"
-            else:
-                label = "READ THIS WITH THE VERDICT"
-            lines.append(f"       {label}: {s.note}")
+            lines.append(_render_reading_line(s, r, method))
+            if r.measured and r.note:
+                lines.append(f"         note: {r.note}")
+        note_line = _render_scenario_note(s)
+        if note_line is not None:
+            lines.append(note_line)
     counts: dict[str, int] = {}
     for s in scores:
         counts[s.verdict] = counts.get(s.verdict, 0) + 1
@@ -315,6 +339,7 @@ def _score_to_json(s: Score) -> dict:
                 "note": r.note,
                 "superseded": r.superseded,
                 "capture_id": r.capture_id,
+                "date_error": r.date_error,
             }
             for r in s.readings
         ],

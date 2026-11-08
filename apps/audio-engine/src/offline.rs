@@ -390,7 +390,13 @@ impl TrackCache {
                     self.sample_rate,
                     u64::MAX,
                     head_frames,
-                    |h| on_head(Arc::new(Track::head(h.sample_rate, h.pcm, h.frames, spec.beats.clone(), spec.bpm, load_id))),
+                    |h| {
+                        let mut head = Track::head(
+                            h.sample_rate, h.pcm, h.frames, spec.beats.clone(), spec.bpm, load_id,
+                        );
+                        head.set_end_ms(spec.end_ms);
+                        on_head(Arc::new(head))
+                    },
                     on_grow,
                 )?;
                 let pcm = Arc::new(d.pcm);
@@ -400,6 +406,7 @@ impl TrackCache {
         };
         let mut track = Track::new(sr, pcm, spec.beats.clone(), spec.bpm).with_source(source);
         track.load_id = load_id;
+        track.set_end_ms(spec.end_ms);
         Ok(Arc::new(track))
     }
 }
@@ -1041,7 +1048,7 @@ mod tests {
             p
         };
         let (a, b) = (write("a.wav"), write("b.wav"));
-        let spec = LoadSpec { deck: 1, path: String::new(), beats: vec![], bpm: None };
+        let spec = LoadSpec { deck: 1, path: String::new(), beats: vec![], bpm: None, end_ms: None };
         let cache = Arc::new(TrackCache::default());
         // A load of a.wav mid-decode: its entry cloned out of the map and
         // locked, exactly as `load` holds it across `decode_open_within`.
@@ -1091,7 +1098,7 @@ mod tests {
         };
         write(0.25);
         let key = FileKey::of(&path);
-        let spec = LoadSpec { deck: 1, path: "a.wav".into(), beats: vec![], bpm: None };
+        let spec = LoadSpec { deck: 1, path: "a.wav".into(), beats: vec![], bpm: None, end_ms: None };
         let cache = TrackCache::default();
         let first = cache.load(&path, &spec).unwrap();
         let kept = std::fs::metadata(&path).unwrap().modified().unwrap();
@@ -1150,7 +1157,7 @@ mod tests {
         std::fs::create_dir_all(&d).unwrap();
         write(&d.join("a.wav"), 0.25);
         write(&d.join("b.wav"), 0.5);
-        let spec = |path: &str| LoadSpec { deck: 1, path: path.into(), beats: vec![], bpm: None };
+        let spec = |path: &str| LoadSpec { deck: 1, path: path.into(), beats: vec![], bpm: None, end_ms: None };
         let cache = TrackCache::default();
         let mut offline = file_loader(d.clone());
         type Load<'a> = Box<dyn FnMut(&str) -> Arc<Track> + 'a>;
@@ -1180,7 +1187,7 @@ mod tests {
         let p = tmp.path().join("a.wav");
         let pcm: Vec<f32> = (0..9600).map(|i| (i % 97) as f32 / 97.0).collect();
         crate::wav::write_f32(&mut std::io::BufWriter::new(std::fs::File::create(&p).unwrap()), 48000, &pcm).unwrap();
-        let spec = LoadSpec { deck: 1, path: "a.wav".into(), beats: vec![], bpm: Some(120.0) };
+        let spec = LoadSpec { deck: 1, path: "a.wav".into(), beats: vec![], bpm: Some(120.0), end_ms: None };
         let cache = TrackCache::at(48000);
         let mut heads = Vec::new();
         let whole = cache.load_progressive(&p, &spec, 41, 1000, |h| heads.push(h)).unwrap();
@@ -1222,7 +1229,7 @@ mod tests {
         crate::wav::write_f32(&mut f, 48000, &[0.0; 960]).unwrap();
         drop(f);
         let id = SourceId::of(&std::fs::File::open(&p).unwrap()).unwrap();
-        let spec = LoadSpec { deck: 1, path: "a.wav".into(), beats: vec![], bpm: None };
+        let spec = LoadSpec { deck: 1, path: "a.wav".into(), beats: vec![], bpm: None, end_ms: None };
         let cache = TrackCache::default();
         let first = cache.load(&p, &spec).unwrap();
         let second = cache.load(&p, &spec).unwrap();

@@ -4,9 +4,8 @@
 	 *
 	 * mode="boot": mounted once at the app root while the gate is unresolved
 	 * (see +layout.svelte). Polls only while the last response was not a
-	 * clean pass, and stops the instant it is -- the parent layout then swaps
-	 * this out for the real app, which IS the auto-advance; this component
-	 * holds no "advance past the gate" logic of its own, only the checks.
+	 * clean pass, or while setup is still pending (issue #2653), and stops
+	 * when every check passes including library-attached.
 	 * mode="admin": mounted in the admin/diagnostics area as a read-only,
 	 * always-live-polling reference. Same rows, same data, no navigation
 	 * side effect either way -- this component never calls goto().
@@ -32,6 +31,11 @@
 	 *     separate, lifecycle-hook-free component).
 	 *     [if] this state renders no control, or a disabled/inert one, while
 	 *     the daemon is reachable [then ⛔️] broken
+	 *   ✔︎ 🎯 issue #2653: after a dismissed-empty pass clears the gate, the
+	 *     non-blocking strip keeps the library-attached row and its Run setup
+	 *     control on screen until that row passes.
+	 *     [if] the control vanishes while library-attached is still fail/pending
+	 *     [then ⛔️] broken
 	 *
 	 * NAVIGATION IS INJECTED, never imported, exactly for the reason
 	 * `run-setup.ts` documents: `$app/navigation` only exists inside a
@@ -39,7 +43,8 @@
 	 * use and pass it straight through to PreflightCheckRow.
 	 */
 	import { onDestroy, onMount } from 'svelte';
-	import { bootGateHeading, needsImportAction } from '$lib/preflight/boot-copy';
+	import { bootGateHeading, needsImportAction, setupStillPending } from '$lib/preflight/boot-copy';
+	import { LIBRARY_ATTACHED_CHECK_ID } from '$lib/preflight/fresh-install';
 	import { bootCheckDetail, bootCheckLabel } from '$lib/preflight/preflight-boot-copy';
 	import {
 		checkPreflight,
@@ -75,7 +80,16 @@
 	} = $props();
 
 	const hiddenIds = $derived(new Set(hideCheckIds));
-	const visibleChecks = $derived(preflightGate.checks.filter((check) => !hiddenIds.has(check.id)));
+	const setupPending = $derived(
+		mode === 'boot' && !blocking && setupStillPending(preflightGate.cleared, preflightGate.checks)
+	);
+	const visibleChecks = $derived.by(() => {
+		const base = preflightGate.checks.filter((check) => !hiddenIds.has(check.id));
+		if (setupPending) {
+			return base.filter((check) => check.id === LIBRARY_ATTACHED_CHECK_ID);
+		}
+		return base;
+	});
 
 	let timer: ReturnType<typeof setInterval> | null = null;
 	let pendingAction = $state<PreflightActionId | null>(null);
@@ -122,7 +136,7 @@
 			ensurePolling();
 			return;
 		}
-		if (preflightGate.cleared) {
+		if (preflightGate.cleared && !needsImportAction(preflightGate.checks)) {
 			stopPolling();
 		} else {
 			ensurePolling();
@@ -143,12 +157,16 @@
 			firstRunGate.hasError
 	);
 
-	const visibleActions = $derived<PreflightActionId[]>([
-		...(mode === 'boot' && blocking && firstRunGate.hasError ? (['retry-setup'] as const) : []),
-		...(showImportCta ? (['import'] as const) : []),
-		'recheck',
-		'permissions'
-	]);
+	const visibleActions = $derived<PreflightActionId[]>(
+		setupPending
+			? ['recheck']
+			: [
+					...(mode === 'boot' && blocking && firstRunGate.hasError ? (['retry-setup'] as const) : []),
+					...(showImportCta ? (['import'] as const) : []),
+					'recheck',
+					'permissions'
+				]
+	);
 	const disabledActions = $derived<PreflightActionId[]>(
 		runSetupBlocked() !== null || !navigate ? ['import'] : []
 	);

@@ -3,6 +3,8 @@
 - if one source disappears from the report then the transfer is broken
 - if a low-confidence row reaches a live write before LLM resolution then it is broken
 - if selected provider durations exceed tolerance then acceptance is broken
+- if the live playlist does not follow source playlist order then the transfer is broken
+- if a live run with no matches calls the target write then the report is lost
 """
 
 from __future__ import annotations
@@ -360,7 +362,7 @@ def execute_transfer(
     live: bool,
     sharing: str,
 ) -> TransferReport:
-    """Run real searches, one LLM batch, then at most one target mutation."""
+    """Run real searches, one LLM batch, then at most one target mutation in source order; skip it when nothing matched."""
     candidates = {track.spotify_uri: target.search_tracks(track) for track in source.tracks}
     plan = plan_transfer(
         source,
@@ -374,8 +376,14 @@ def execute_transfer(
     if not live:
         return report
     target_by_urn = {candidate.urn: candidate for rows in candidates.values() for candidate in rows}
+    matched_by_source = {row.source_uri: row for row in report.matched}
     selected = tuple(
-        target_by_urn[row.target_uri] for row in report.matched if row.target_uri is not None
+        target_by_urn[row.target_uri]
+        for track in source.tracks
+        if (row := matched_by_source.get(track.spotify_uri)) is not None
+        and row.target_uri is not None
     )
+    if not selected:
+        return report
     playlist_id = target.create_playlist(source.name, selected, sharing=sharing)
     return replace(report, target_playlist_id=playlist_id)

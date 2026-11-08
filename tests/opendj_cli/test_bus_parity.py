@@ -41,7 +41,7 @@ _SAMPLE_TOKENS = (
     "1", "8", "true", "false", "0.5", "sample", "0 1000", "1:5000",
     "A", "bad", "beat", "low", "next", "top", "vocal",
     "beatgrid", "own", "practice", "hybrid", "pickup", "tri-band", "mono-dev", "mono", "auto", "ai",
-    "phase-meter", "smooth", "in", "elastic", "tone", "sections", "space", "stems", "exact", "move",
+    "phase-meter", "smooth", "in", "elastic", "tone", "sections", "space", "stems", "exact", "move", "halo",
 )
 
 
@@ -170,6 +170,16 @@ def test_set_perf_view_and_show_pads_build_the_bus_commands() -> None:
     assert parse_invocation(["show_pads", "false"]).command == {"type": "show_pads", "enabled": False}
     with pytest.raises(InvocationError):
         parse_invocation(["set_perf_view", "grid"])
+
+
+def test_set_deck_number_art_builds_the_bus_command() -> None:
+    """[if] set_deck_number_art halo does not build the typed command [then] agents lose parity with the Appearance setting."""
+    assert parse_invocation(["set_deck_number_art", "halo"]).command == {
+        "type": "set_deck_number_art",
+        "mode": "halo",
+    }
+    with pytest.raises(InvocationError):
+        parse_invocation(["set_deck_number_art", "tinted"])
 
 
 def test_autoplay_verdict_builds_the_bus_command() -> None:

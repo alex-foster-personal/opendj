@@ -62,6 +62,7 @@ from pathlib import Path
 
 from scripts.ci_pr_scope import (
     CI_FIXED_JOBS,
+    CI_JOBS_ONLY_ON_PULL_REQUEST,
     IN_RUN_PULL_REQUEST_SCOPES,
     ci_fixed_jobs_to_skip,
     e2e_gate_scripts,
@@ -147,12 +148,14 @@ def decide_skipped_jobs(
 ) -> tuple[str, ...]:
     """The ci.yml fixed jobs the scope job skips by footprint, in `CI_FIXED_JOBS` order.
 
-    Empty for e2e.yml (its one gate has no per-job table), for every event but a
-    pull_request (push and dispatch runs run every job), and for an out-of-scope
-    change set (every job is already skipped by `in_scope`).
+    Empty for e2e.yml (its one gate has no per-job table) and for an out-of-scope change
+    set (every job is already skipped by `in_scope`). A push or a dispatch runs every job
+    but `CI_JOBS_ONLY_ON_PULL_REQUEST`, whose tests `contracts` runs on those events.
     """
-    if workflow != SKIP_WORKFLOW or event_name != "pull_request" or not in_scope:
+    if workflow != SKIP_WORKFLOW or not in_scope:
         return ()
+    if event_name != "pull_request":
+        return CI_JOBS_ONLY_ON_PULL_REQUEST
     return tuple(ci_fixed_jobs_to_skip(changed_files))
 
 

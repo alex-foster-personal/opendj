@@ -1,0 +1,9 @@
+{
+  "bytes": 1024,
+  "measured_main": 406594,
+  "measured_with_pr": 407320,
+  "sha": "71fbf451a1",
+  "date": "Sun 8 Nov 2026",
+  "reason": "PR #9591 (feat(webui): context menu parity for tracks, library sources and perf empty (#9451)) grows the performance surface. Measured: CI bundle check of 71fbf451a1, +726 B gzip; ceiled to KiB.",
+  "payback": "none planned; the growth is the feature's own code on this surface"
+}

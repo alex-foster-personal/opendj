@@ -23,6 +23,7 @@ import { WAVE_EQ_REFLECT_SETTING } from './wave-eq-reflect-setting';
 import { WAVE_ZOOM_SETTINGS } from './wave-zoom-setting';
 import { DEV_UI_SETTING, HIDE_TODO_SETTING } from './dev-ui-setting';
 import { SHOW_SECTIONS_SETTING } from './show-sections-setting';
+import { DECK_NUMBER_ART_SETTING } from './deck-number-art-setting';
 import { SPEAKER_AUTO_RECOVER_SETTING } from './speaker-link-setting';
 import { TEMPO_LANE_SETTINGS } from './tempo-lane-setting';
 import {
@@ -353,6 +354,7 @@ export const SETTINGS_CATALOG: readonly SettingDef[] = [
 	AUTO_GAIN_ENABLED_SETTING,
 	AUTO_GAIN_TARGET_SETTING,
 	SHOW_SECTIONS_SETTING,
+	DECK_NUMBER_ART_SETTING,
 	SPEAKER_AUTO_RECOVER_SETTING,
 	...TEMPO_LANE_SETTINGS,
 	{

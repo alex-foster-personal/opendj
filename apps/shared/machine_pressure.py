@@ -40,7 +40,7 @@ import subprocess
 import threading
 import time
 from collections import deque
-from collections.abc import Callable, Iterable, Mapping, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from typing import Any
 
@@ -56,6 +56,7 @@ from apps.shared.process_family_rule import (
     WEBKIT_ASSOCIATION_WINDOW_SECONDS,
     WEBKIT_ROLES,
     associate_family,
+    descendants,
     opendj_process_name,
     process_role,
     shell_candidates,
@@ -304,21 +305,6 @@ def _default_process_iter() -> list[ProcessInfo]:
             ProcessInfo(pid=pid, ppid=ppid, command=command, rss_bytes=rss_bytes, start_time=start_time)
         )
     return rows
-
-
-def _descendant_pids(rows: Iterable[ProcessInfo], root_pid: int) -> set[int]:
-    children: dict[int, list[int]] = {}
-    for row in rows:
-        children.setdefault(row.ppid, []).append(row.pid)
-    found: set[int] = set()
-    pending = list(children.get(root_pid, []))
-    while pending:
-        pid = pending.pop()
-        if pid in found:
-            continue
-        found.add(pid)
-        pending.extend(children.get(pid, []))
-    return found
 
 
 # What a process RUNS AS, not what its command line merely mentions: the
@@ -739,12 +725,12 @@ def _collect_live_process_family(
     by_pid = {row.pid: row for row in rows}
     root_pid = _family_root_pid(by_pid, engine_pid, shell_pid)
     family_pids: set[int] = {root_pid, engine_pid}
-    family_pids.update(_descendant_pids(rows, root_pid))
+    family_pids.update(descendants(rows, root_pid))
     shell_tree: set[int] = set()
     if shell_pid is not None and root_pid == shell_pid:
         shell_tree |= family_pids
     if registered_shell_pid is not None and registered_shell_pid in by_pid:
-        shell_tree |= {registered_shell_pid} | _descendant_pids(rows, registered_shell_pid)
+        shell_tree |= {registered_shell_pid} | descendants(rows, registered_shell_pid)
         family_pids |= shell_tree
     family_pids &= by_pid.keys()
 

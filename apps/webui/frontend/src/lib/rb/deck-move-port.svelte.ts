@@ -8,15 +8,26 @@
  */
 import { colorFx, applyColorFxSettings } from '$lib/rb/color-fx.svelte';
 import {
+	deckHandoverToken,
+	deckHandoverUntilSec,
 	engine,
 	getMasterMode,
 	scheduleDeckHandover,
 	startDeckAlignedTo,
 	waitForContextSec
 } from '$lib/rb/audio-engine.svelte';
+import { recordPerfEvent } from '$lib/rb/perf-event-log';
 import { deckStates, mixerState, pitchRanges } from '$lib/player/state.svelte';
 import type { DeckId } from './deck-id';
 import type { DeckMovePort } from './deck-move';
+
+type DeckMoveRetireRunner = (from: DeckId, to: DeckId, work: () => Promise<void>) => Promise<void>;
+let _runRetire: DeckMoveRetireRunner | null = null;
+
+/** Installed from performance-ipc so post-fade retire claims [from, to, sync] once all three are idle, without importing ipc here. */
+export function installDeckMoveRetireRunner(runner: DeckMoveRetireRunner): void {
+	_runRetire = runner;
+}
 
 // ----- configuration ------------------------------------------------------
 /** A same-track stem load is a cache hit; this bounds a cold one. */
@@ -36,8 +47,11 @@ async function _waitStemsReady(deck: DeckId): Promise<void> {
 	}
 }
 
+let _port: DeckMovePort | null = null;
+
+/** One binding for the one engine: deck-move keeps per-port in-flight move state, so every command must see the same port. */
 export function webAudioDeckMovePort(): DeckMovePort {
-	return {
+	_port ??= {
 		deck: (deck) => deckStates[deck],
 		channel: (deck) => mixerState.channels[deck],
 		colorFx: (deck) => ({ effect: colorFx[deck].effect, echo_beats: colorFx[deck].echo_beats }),
@@ -72,6 +86,14 @@ export function webAudioDeckMovePort(): DeckMovePort {
 		startAlignedTo: startDeckAlignedTo,
 		scheduleHandover: scheduleDeckHandover,
 		waitUntilContextSec: (sec) => waitForContextSec(sec),
+		handoverUntilSec: deckHandoverUntilSec,
+		handoverToken: deckHandoverToken,
+		runRetireTransaction: (from, to, work) => {
+			if (_runRetire === null) throw new Error('deck-move retire runner not installed');
+			return _runRetire(from, to, work);
+		},
+		reportCleanupError: (error) => recordPerfEvent('deck-move-cleanup-failed', String(error), null, 'warn'),
 		setDeckMaster: (deck, options) => engine.setDeckMaster(deck, options)
 	};
+	return _port;
 }

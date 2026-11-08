@@ -27,6 +27,7 @@
 		type SyncPolicy
 	} from '$lib/api-cloudsync';
 	import CloudSyncFleetTab from '$lib/components/cloudsync/CloudSyncFleetTab.svelte';
+	import CloudSyncHeadlineStrip from '$lib/components/cloudsync/CloudSyncHeadlineStrip.svelte';
 	import CloudSyncPolicyCell from '$lib/components/cloudsync/CloudSyncPolicyCell.svelte';
 	import CloudSyncStatusTab from '$lib/components/cloudsync/CloudSyncStatusTab.svelte';
 	import {
@@ -200,6 +201,8 @@
 	time this page loads on them or they sync with the hub; the Status tab shows whether this
 	machine's background scheduler is actually running.
 </p>
+
+<CloudSyncHeadlineStrip onSelectStatusTab={() => selectTab('status')} />
 
 <div class="tabbar" role="tablist" aria-label="CloudSync sections">
 	{#each TABS as t (t.id)}

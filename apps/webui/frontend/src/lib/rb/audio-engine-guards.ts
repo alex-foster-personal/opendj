@@ -19,7 +19,7 @@ import {
 	FILTER_LP_CEILING_HZ,
 	FILTER_LP_FLOOR_HZ
 } from '$lib/player/constants';
-import { _assertKeyShift } from '$lib/player/key/camelot';
+import { _assertKeyShift, assertKeyShiftPitch } from '$lib/player/key/camelot';
 import type { DeckState } from '$lib/rb/deck-state-types';
 import type { PresentedTransportObservation } from '$lib/player/transport/presentation';
 
@@ -266,6 +266,46 @@ export interface KeyShiftMutationPlan {
 	kind: 'immediate' | 'scheduled';
 	active: boolean;
 	publishedKeyShiftSemitones: number | null;
+}
+
+export const KEY_SHIFT_RAMP_DURATION_SEC = 0.05;
+export const KEY_SHIFT_RAMP_STEP_SEC = 0.005;
+export const KEY_SHIFT_RAMP_MAX_CENTS = 30;
+
+export interface KeyShiftRampStep {
+	offsetSec: number;
+	keyShiftSemitones: number;
+}
+
+/** Explicit Signalsmith pitch ramp for a live key change. The cadence fixes
+ * the +3 st design point at ten steps while the cents cap increases the step
+ * count for any larger move. */
+export function planKeyShiftRamp(
+	fromSemitones: number,
+	toSemitones: number
+): readonly KeyShiftRampStep[] {
+	assertKeyShiftPitch(fromSemitones);
+	_assertKeyShift(toSemitones);
+	if (fromSemitones === toSemitones) {
+		return [{ offsetSec: 0, keyShiftSemitones: toSemitones }];
+	}
+	const deltaCents = Math.abs(toSemitones - fromSemitones) * 100;
+	const stepCount = Math.max(
+		Math.round(KEY_SHIFT_RAMP_DURATION_SEC / KEY_SHIFT_RAMP_STEP_SEC),
+		Math.ceil(deltaCents / KEY_SHIFT_RAMP_MAX_CENTS),
+		1
+	);
+	const stepSec = KEY_SHIFT_RAMP_DURATION_SEC / stepCount;
+	return Array.from({ length: stepCount }, (_, index) => {
+		const progress = (index + 1) / stepCount;
+		return {
+			offsetSec: index * stepSec,
+			keyShiftSemitones:
+				index === stepCount - 1
+					? toSemitones
+					: fromSemitones + (toSemitones - fromSemitones) * progress
+		};
+	});
 }
 
 /** A stop acknowledged by the processor can remain audible at the output.

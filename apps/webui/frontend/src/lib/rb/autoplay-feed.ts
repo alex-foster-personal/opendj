@@ -21,7 +21,7 @@ export interface AutoPlayFeedSnapshot {
 		filterKey?: string,
 		membershipHydrating?: boolean
 	): AutoPlayFeedDecision;
-	matches(viewRows: readonly Pick<AutoPlayTrackRow, 'stable_id'>[]): boolean;
+	matches(viewRows: readonly Pick<AutoPlayTrackRow, 'stable_id' | 'edit_id'>[]): boolean;
 	readonly active: boolean;
 }
 
@@ -34,12 +34,14 @@ export function createAutoPlayFeedSnapshot(): AutoPlayFeedSnapshot {
 		get active(): boolean {
 			return active;
 		},
-		matches(viewRows: readonly Pick<AutoPlayTrackRow, 'stable_id'>[]): boolean {
+		matches(viewRows: readonly Pick<AutoPlayTrackRow, 'stable_id' | 'edit_id'>[]): boolean {
 			return (
 				active &&
 				snapshotIds !== null &&
 				snapshotIds.length === viewRows.length &&
-				snapshotIds.every((id, index) => id === viewRows[index].stable_id)
+				snapshotIds.every(
+					(id, index) => id === (viewRows[index].edit_id ?? viewRows[index].stable_id)
+				)
 			);
 		},
 		step(
@@ -68,7 +70,7 @@ export function createAutoPlayFeedSnapshot(): AutoPlayFeedSnapshot {
 					// Preserve the activation sort for a plain re-sort, but honor
 					// the operator's current filter as the candidate membership.
 					activeFilterKey = filterKey;
-					snapshotIds = viewRows.map((row) => row.stable_id);
+					snapshotIds = viewRows.map((row) => row.edit_id ?? row.stable_id);
 					return { publish: viewRows.slice(), snapshotted: false };
 				}
 				return { publish: null, snapshotted: false };
@@ -84,7 +86,7 @@ export function createAutoPlayFeedSnapshot(): AutoPlayFeedSnapshot {
 			activePlaylistScope = playlistScope;
 			active = true;
 			activeFilterKey = filterKey;
-			snapshotIds = viewRows.map((row) => row.stable_id);
+			snapshotIds = viewRows.map((row) => row.edit_id ?? row.stable_id);
 			return { publish: viewRows.slice(), snapshotted: true };
 		}
 	};

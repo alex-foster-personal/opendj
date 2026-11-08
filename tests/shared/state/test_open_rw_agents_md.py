@@ -370,10 +370,10 @@ def test_open_rw_tolerates_permission_error_reading_agents_md_sidecar(
         raise PermissionError(13, "Permission denied", str(path))
 
     # regenerate_agents_md_cached imports sidecar_carries_cache_line inside the
-    # function body (not at agents_md_cache module scope), so the name is
-    # resolved from generate_agents_md on each call and this patch is live.
+    # function body, so the name is resolved from the shared generator on each
+    # call and this patch is live.
     monkeypatch.setattr(
-        "apps.database.generate_agents_md.sidecar_carries_cache_line",
+        "apps.shared.agents_md.generator.sidecar_carries_cache_line",
         deny_sidecar_read,
     )
 
@@ -445,7 +445,7 @@ def test_open_rw_tolerates_oserror_on_agents_md_replace_permission_error(
     open_rw(db_path).close()
     if marker_present:
         monkeypatch.setattr(
-            "apps.database.generate_agents_md.sidecar_carries_cache_line",
+            "apps.shared.agents_md.generator.sidecar_carries_cache_line",
             lambda path, marker: False,
         )
     else:
@@ -482,7 +482,7 @@ def test_open_rw_survives_enospc_on_agents_md_temp_write(
     marker = _marker_for_db(db_path)
     if marker_present:
         monkeypatch.setattr(
-            "apps.database.generate_agents_md.sidecar_carries_cache_line",
+            "apps.shared.agents_md.generator.sidecar_carries_cache_line",
             lambda path, marker: False,
         )
     else:
@@ -535,7 +535,7 @@ def test_open_rw_survives_eio_on_agents_md_replace(
     marker = _marker_for_db(db_path)
     if marker_present:
         monkeypatch.setattr(
-            "apps.database.generate_agents_md.sidecar_carries_cache_line",
+            "apps.shared.agents_md.generator.sidecar_carries_cache_line",
             lambda path, marker: False,
         )
     else:

@@ -3,6 +3,12 @@
 INTERPRETER FLOOR: like the rest of this package, this module runs under
 ``/usr/bin/python3`` (3.9 on current macOS) and is stdlib-only. No 3.10+/3.11+
 runtime syntax; annotations are exempt because they are deferred.
+
+``parse_byte_count`` here is the install-payload copy of
+``apps.shared.byte_count.parse_byte_count``. ``just probe-install`` copies this
+directory verbatim into the launchd payload, where ``apps`` is not importable,
+so it must not import it (guarded by
+``tests/scripts/test_opendj_performance_probe_install.py``).
 """
 
 from __future__ import annotations

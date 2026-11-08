@@ -157,7 +157,9 @@ export function rowWindow(
 /** The gap nearest a pointer `y` pixels below the first slot's top. Gap g
  * opens above slot g; the last gap is below the last slot. */
 export function gapFromPointer(y: number, rowHeight: number, slotCount: number): number {
-	return Math.max(0, Math.min(slotCount, Math.round(y / rowHeight)));
+	// Half-up to the nearest gap so tie breaks match the insertion-line midpoint contract
+	// (Math.round uses IEEE-754 banker's rounding and can pick the wrong gap in Node).
+	return Math.max(0, Math.min(slotCount, Math.floor((y + rowHeight / 2) / rowHeight)));
 }
 
 /** The line directly below gap `gap`. This is the one definition of where a

@@ -33,6 +33,8 @@ from apps.sync_hub.engine_identity import (
     SyncIdentityPreflightError,
     assert_identity_ready,
     hub_library_size,
+    losers_with_children,
+    remap_track_children,
 )
 from tests.cloudsync.test_hub_sync import (
     _DEV_A,
@@ -705,6 +707,159 @@ def test_surviving_row_remaps_locations_fields_vendor_ids_and_memberships(
             "SELECT COUNT(*) FROM tracks WHERE stable_id = ?", (_STORED_PK,)
         ).fetchone()[0]
         assert leftover == 0
+    finally:
+        conn.close()
+
+
+def test_losers_with_children_sees_playlist_only_reference(tmp_path: Path) -> None:
+    """Thread PRRT_kwDOSEvNd860v7kt: playlist-only refs must count as children."""
+    conn = _open_hub(tmp_path)
+    try:
+        _insert_identified_track(
+            conn,
+            _STORED_PK,
+            title="silver",
+            content_hash=_HASH_A,
+            updated_at=_T0,
+            origin=_DEV_A,
+        )
+        _insert_playlist(conn, "pl-1", name="crate", updated_at=_T0, origin=_DEV_A)
+        _set_members(conn, "pl-1", (_STORED_PK,), updated_at=_T0, origin=_DEV_A)
+        conn.commit()
+        assert losers_with_children(conn, [_STORED_PK]) == {_STORED_PK}
+    finally:
+        conn.close()
+
+
+def test_remap_track_children_moves_memberships_including_edit_rows(
+    tmp_path: Path,
+) -> None:
+    """Edit-bearing playlist rows must survive collapse onto the survivor (PRRT_kwDOSEvNd860v7kt)."""
+    edit_id = "edit-membership-1"
+    loser = _STORED_PK
+    survivor = _INCOMING_PK
+    conn = _open_hub(tmp_path)
+    try:
+        _insert_identified_track(
+            conn,
+            loser,
+            title="silver",
+            content_hash=_HASH_A,
+            updated_at=_T0,
+            origin=_DEV_A,
+        )
+        _insert_identified_track(
+            conn,
+            survivor,
+            title="air",
+            content_hash=_HASH_A,
+            updated_at=_T1,
+            origin=_DEV_B,
+        )
+        conn.execute(
+            """
+            INSERT INTO track_edit(
+                id, source_track_id, label, in_ms, out_ms, fx,
+                created_by, created_at, updated_at, origin_device_id, deleted_at
+            )
+            VALUES (?, ?, 'cut', 0, 5000, '{}', 'test', ?, ?, ?, NULL)
+            """,
+            (edit_id, loser, _T0, _T0, _DEV_A),
+        )
+        _insert_playlist(conn, "pl-1", name="crate", updated_at=_T0, origin=_DEV_A)
+        for position, stable_id, member_edit in (
+            (0, survivor, None),
+            (1, loser, None),
+            (2, loser, edit_id),
+        ):
+            conn.execute(
+                """
+                INSERT INTO playlist_memberships(
+                    playlist_id, stable_id, position, item_id, order_key,
+                    updated_at, origin_device_id, edit_id
+                )
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    "pl-1",
+                    stable_id,
+                    position,
+                    f"item-{position}",
+                    f"ord-{position}",
+                    _T0,
+                    _DEV_A,
+                    member_edit,
+                ),
+            )
+        conn.commit()
+
+        remap_track_children(conn, loser, survivor)
+        conn.execute("DELETE FROM tracks WHERE stable_id = ?", (loser,))
+        conn.commit()
+
+        rows = conn.execute(
+            "SELECT stable_id, edit_id FROM playlist_memberships "
+            "WHERE playlist_id = 'pl-1' ORDER BY position"
+        ).fetchall()
+        assert rows == [(survivor, None), (survivor, edit_id)]
+        assert (
+            conn.execute(
+                "SELECT COUNT(*) FROM playlist_memberships WHERE stable_id = ?",
+                (loser,),
+            ).fetchone()[0]
+            == 0
+        )
+    finally:
+        conn.close()
+
+
+def test_identity_collapse_remaps_track_edit_source_column(
+    tmp_path: Path,
+) -> None:
+    """Virtual edits reference ``tracks`` via ``source_track_id``; collapse must remap it."""
+    edit_id = "edit-collapse-1"
+    conn = _open_hub(tmp_path)
+    try:
+        _insert_identified_track(
+            conn,
+            _STORED_PK,
+            title="silver",
+            content_hash=_HASH_A,
+            updated_at=_T0,
+            origin=_DEV_A,
+        )
+        conn.execute(
+            """
+            INSERT INTO track_edit(
+                id, source_track_id, label, in_ms, out_ms, fx,
+                created_by, created_at, updated_at, origin_device_id, deleted_at
+            )
+            VALUES (?, ?, 'cut', 0, 5000, '{}', 'test', ?, ?, ?, NULL)
+            """,
+            (edit_id, _STORED_PK, _T0, _T0, _DEV_A),
+        )
+        conn.commit()
+
+        result = engine.hub_apply(
+            conn,
+            [
+                _incoming_track(
+                    conn,
+                    _INCOMING_PK,
+                    title="air",
+                    content_hash=_HASH_A,
+                    updated_at=_T1,
+                )
+            ],
+        )
+        assert result.quarantined == 0
+        assert (
+            conn.execute(
+                "SELECT source_track_id FROM track_edit WHERE id = ?",
+                (edit_id,),
+            ).fetchone()[0]
+            == _INCOMING_PK
+        )
     finally:
         conn.close()
 

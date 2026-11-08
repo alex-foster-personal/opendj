@@ -653,6 +653,7 @@ describe('TOPVIEW-05: focused deck and the track record', () => {
 			rating: 3,
 			tags: ['x'],
 			notes: 'n',
+			comments: 'c',
 			file_path: '/Volumes/GIG-A/Contents/t.mp3',
 			play_count: 1,
 			last_played_at: '2026-10-03T00:00:00Z',
@@ -700,6 +701,9 @@ describe('TOPVIEW-05: focused deck and the track record', () => {
 		const pending = gridProv.usbGridProvenance(id, { stable_id: id, anlz: null, anlz_error: null });
 		assert.equal(pending.value, 'unavailable');
 		assert.match(pending.title, /has not loaded on the deck yet/);
+		const noDeck = gridProv.usbGridProvenance(id, undefined);
+		assert.equal(noDeck.value, 'unavailable', 'a row-opened overlay with no deck never guesses');
+		assert.match(noDeck.title, /has not loaded on the deck yet/);
 		// Another track's ANLZ still on the deck is not this track's provenance.
 		const stale = { ...anlz(512), stable_id: 'usb-0A1B-7' };
 		assert.equal(gridProv.usbGridProvenance(id, { stable_id: id, anlz: stale, anlz_error: null }).value, 'unavailable');
@@ -711,7 +715,10 @@ describe('TOPVIEW-05: focused deck and the track record', () => {
 		const overlay = read('lib/components/rb/TrackInfoOverlay.svelte');
 		assert.match(overlay, /if \(!isUsbTrackId\(id\)\) requestGridProvenance\(id\);/);
 		assert.equal(overlay.match(/requestGridProvenance\(/g).length, 1, 'one guarded call site only');
-		assert.match(overlay, /isUsbTrackId\(stableId\)\s*\?\s*usbGridProvenance\(stableId, deckStates\[deckId\]\)/);
+		assert.match(
+			overlay,
+			/isUsbTrackId\(stableId\)\s*\?\s*usbGridProvenance\(stableId, deckId !== null \? deckStates\[deckId\] : undefined\)/
+		);
 		assert.match(overlay, /<dd data-testid="track-info-grid" title=\{grid\.title\}>\{grid\.value\}<\/dd>/);
 		assert.match(overlay, /:\s*libraryGridProvenance\(gridProvenanceFor\(stableId\)\)/);
 		// The load effect tracks stableId only: the provenance store read inside

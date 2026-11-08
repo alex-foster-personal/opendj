@@ -125,6 +125,14 @@ def old_index_items(request: Request, tracks: list[Any]) -> list[TrackIndexItemO
                 genre_source=row.get("genre_source"),
                 genre_reason=row.get("genre_reason"),
                 genre_guess=row.get("genre_guess"),
+                edit_id=None,
+                in_ms=None,
+                out_ms=None,
+                fx=None,
+                edit_label=None,
+                created_by=None,
+                is_edit=False,
+                valid=True,
                 offload=row["offload"],
             )
         )

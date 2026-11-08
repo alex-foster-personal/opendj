@@ -239,6 +239,8 @@ def test_apply_rank_orders_parents_below_children() -> None:
     """A direct read of the helper, so a call-site failure is not the only signal."""
     assert apply_rank("tracks", source="unit") < apply_rank("track_locations", source="unit")
     assert apply_rank("tracks", source="unit") < apply_rank("playlists", source="unit")
+    assert apply_rank("tracks", source="unit") < apply_rank("track_edit", source="unit")
+    assert apply_rank("track_edit", source="unit") < apply_rank("playlists", source="unit")
 
 
 def test_apply_rank_names_its_caller_in_the_refusal() -> None:

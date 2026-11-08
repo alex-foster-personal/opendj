@@ -666,3 +666,33 @@ def test_stale_red_identities_asks_advanced_past_about_the_right_two_shas():
         advanced_past=spy,
     )
     assert seen == [("c" * 40, "d" * 40)]
+
+
+@pytest.mark.requirement("OPS-39")
+def test_stale_red_identities_keeps_an_identity_fresh_while_any_source_is_fresh():
+    """[if] one source is still fresh [then] the identity excuses, [else stop]."""
+    identities_by_sha = {
+        "old" + "0" * 37: frozenset({"FAILED tests/t.py::X", "FAILED tests/t.py::Y"}),
+        "new" + "0" * 37: frozenset({"FAILED tests/t.py::X"}),
+    }
+    stale = stale_red_identities(
+        identities_by_sha,
+        "pr" + "0" * 38,
+        advanced_past=lambda measured, _pr: measured == "old" + "0" * 37,
+    )
+    assert stale == frozenset({"FAILED tests/t.py::Y"})
+
+
+@pytest.mark.requirement("OPS-39")
+def test_stale_red_identities_marks_an_identity_stale_once_every_source_is_stale():
+    """[if] every source is advanced past [then] the identity is stale, [else stop]."""
+    identities_by_sha = {
+        "old1" + "0" * 36: frozenset({"FAILED tests/t.py::X"}),
+        "old2" + "0" * 36: frozenset({"FAILED tests/t.py::X"}),
+    }
+    stale = stale_red_identities(
+        identities_by_sha,
+        "pr" + "0" * 38,
+        advanced_past=lambda _measured, _pr: True,
+    )
+    assert stale == frozenset({"FAILED tests/t.py::X"})

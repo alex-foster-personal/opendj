@@ -4,12 +4,25 @@ import { trackDragRefusal, type DraggableRow } from './track-drag-refusal';
 
 type DeckLoadCommand =
 	| { type: 'unload'; deck: DeckId }
-	| { type: 'load'; deck: DeckId; stable_id: string; key_shift?: number };
+	| {
+			type: 'load';
+			deck: DeckId;
+			stable_id: string;
+			key_shift?: number;
+			edit_id?: string;
+			in_ms?: number;
+			out_ms?: number;
+	  };
 
 /** A dragged row's refusal flags plus the key shift its row displayed
  * (KEYSHIFT-03: a row the compatible filter matched after a shift loads
  * shifted, whether it is double-clicked or dragged). */
-export type DraggedDeckRow = DraggableRow & { key_shift?: number };
+export type DraggedDeckRow = DraggableRow & {
+	key_shift?: number;
+	edit_id?: string;
+	in_ms?: number;
+	out_ms?: number;
+};
 
 export async function applyDeckTrackDrop(args: {
 	deckId: DeckId;
@@ -32,11 +45,15 @@ export async function applyDeckTrackDrop(args: {
 			await args.dispatch({ type: 'unload', deck: args.deckId });
 		}
 		const shift = args.row?.key_shift ?? 0;
+		const row = args.row;
 		await args.dispatch({
 			type: 'load',
 			deck: args.deckId,
 			stable_id: args.stableId,
-			...(shift === 0 ? {} : { key_shift: shift })
+			...(shift === 0 ? {} : { key_shift: shift }),
+			...(row?.edit_id ? { edit_id: row.edit_id } : {}),
+			...(row?.in_ms != null ? { in_ms: row.in_ms } : {}),
+			...(row?.out_ms != null ? { out_ms: row.out_ms } : {})
 		});
 	} catch (error: unknown) {
 		const message = error instanceof Error ? error.message : String(error);
@@ -52,6 +69,9 @@ export interface DragSourceRow {
 	is_streaming?: boolean | null;
 	rb_meta?: { is_streaming?: boolean | null } | null;
 	offload?: { state: string } | null | undefined;
+	edit_id?: string | null;
+	in_ms?: number | null;
+	out_ms?: number | null;
 }
 
 /** Drag metadata for EVERY dragged id, not just the row under the pointer: a
@@ -61,13 +81,20 @@ export interface DragSourceRow {
 export function draggedDeckRows<R extends DragSourceRow>(
 	ids: readonly string[],
 	rows: readonly R[],
-	shiftFor: (row: R) => number
+	shiftFor: (row: R) => number,
+	primary?: R | null
 ): Record<string, DraggedDeckRow> {
 	const byId = new Map(rows.map((r) => [r.stable_id, r] as const));
 	const out: Record<string, DraggedDeckRow> = {};
 	for (const id of ids) {
 		const row = byId.get(id);
 		if (row === undefined) continue;
+		const primaryRow =
+			primary !== undefined && primary !== null && primary.stable_id === id ? primary : null;
+		const editSource = primaryRow ?? row;
+		const eid = editSource.edit_id;
+		const inMs = editSource.in_ms;
+		const outMs = editSource.out_ms;
 		out[id] = {
 			file_exists: row.file_exists,
 			...(row.file_availability === undefined ? {} : { file_availability: row.file_availability }),
@@ -75,7 +102,10 @@ export function draggedDeckRows<R extends DragSourceRow>(
 			...(row.offload === undefined || row.offload === null
 				? {}
 				: { offload: { state: row.offload.state } }),
-			key_shift: shiftFor(row)
+			key_shift: shiftFor(row),
+			...(eid ? { edit_id: eid } : {}),
+			...(inMs != null ? { in_ms: inMs } : {}),
+			...(outMs != null ? { out_ms: outMs } : {})
 		};
 	}
 	return out;

@@ -39,6 +39,7 @@ class PlaylistSnapshot:
     vendor: str
     vendor_pl_id: str
     items: list[str] = field(default_factory=list)
+    edit_ids: list[str | None] | None = None
     members: list[dict[str, Any]] | None = None
 
     def to_dict(self) -> dict[str, Any]:
@@ -49,6 +50,8 @@ class PlaylistSnapshot:
             "vendor_pl_id": self.vendor_pl_id,
             "items": list(self.items),
         }
+        if self.edit_ids is not None:
+            out["edit_ids"] = list(self.edit_ids)
         if self.members is not None:
             out["members"] = list(self.members)
         return out
@@ -62,6 +65,7 @@ class PlaylistSnapshot:
             vendor=data["vendor"],
             vendor_pl_id=data["vendor_pl_id"],
             items=list(data.get("items") or []),
+            edit_ids=None if data.get("edit_ids") is None else list(data.get("edit_ids") or []),
             members=None if members_raw is None else list(members_raw),
         )
 

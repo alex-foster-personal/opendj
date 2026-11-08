@@ -566,7 +566,7 @@ test('key shift composes with Master Tempo compensation in the native Signalsmit
 		) <
 			1e-12
 	);
-	assert.throws(() => audio.composeStretchSemitones(1, true, 1.5), /integer/i);
+	assert.equal(audio.composeStretchSemitones(1, true, 1.5), 1.5);
 	assert.throws(() => audio.composeStretchSemitones(1, true, 13), /-12\.\.12/i);
 
 	// composeStretchSemitones(1, true, n) returns exactly n for n in -12..12

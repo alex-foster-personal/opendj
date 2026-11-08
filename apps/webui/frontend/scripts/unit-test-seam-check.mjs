@@ -1011,6 +1011,8 @@ async function _loadBundledModule(relativePath, cache) {
 	globalThis.__musicDjToolsTestState.raw = (value) => value;
 	globalThis.__musicDjToolsTestState.snapshot = (value) =>
 		value === undefined ? undefined : JSON.parse(JSON.stringify(value));
+	globalThis.__musicDjToolsTestDerived = (value) => value;
+	globalThis.__musicDjToolsTestDerived.by = (fn) => (typeof fn === 'function' ? fn() : fn);
 	// A temp-file import, not a data: URL: V8 names every stack frame after the
 	// module URL, so a data: URL repeats the whole bundle per frame in CI logs.
 	const mod = await importBundledSource(text, relativePath);

@@ -22,9 +22,9 @@
 		position: { x: number; y: number };
 		loading: boolean;
 		loadError: string | null;
-		regular: number | null;
-		min: number | null;
-		max: number | null;
+		regular: number | null | undefined;
+		min: number | null | undefined;
+		max: number | null | undefined;
 		rangeInvalid: boolean;
 		saving: boolean;
 		saveError: string | null;

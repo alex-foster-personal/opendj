@@ -10,6 +10,7 @@
 	import type { DeckState } from '$lib/rb/deck-state-types';
 	import { deckKeyAtPlayheadNow } from '$lib/player/key-playhead-lazy.svelte';
 	import WaveTrackSummaryView from './WaveTrackSummaryView.svelte';
+	import { uiPrefs } from '$lib/rb/prefs.svelte';
 
 	const { deck }: { deck: DeckState } = $props();
 	const fullTitle = $derived.by(() => {
@@ -64,6 +65,8 @@
 	liveKey={liveKeyLabel}
 	{keyColor}
 	{liveBpm}
+	deckNumber={deck.deck_id}
+	deckNumberArt={uiPrefs.deck_number_art}
 	onArtworkLoad={() => coverLoaded(loadedStableId())}
 	onArtworkError={() => coverFailed(loadedStableId())}
 />

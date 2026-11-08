@@ -59,6 +59,8 @@ pub struct LoadSpec {
     pub path: String,
     pub beats: Vec<Beat>,
     pub bpm: Option<f64>,
+    /// Virtual edit out point in source milliseconds, when set.
+    pub end_ms: Option<f64>,
 }
 
 /// A `set_beatgrid`: new analysis for the track a deck already holds.
@@ -115,7 +117,18 @@ const LATER: &[(&str, &str)] = &[
     ("headphone_master_select", "device routing arrives in plan 20-06"),
     ("preview_cue", "the headphone cue bus arrives with device output (plan 20-06)"),
     ("preview_stop", "the headphone cue bus arrives with device output (plan 20-06)"),
+    ("echo_out", TRANSITION_FX_LATER),
+    ("deck_brake", TRANSITION_FX_LATER),
+    ("deck_backspin", TRANSITION_FX_LATER),
+    ("fx_reset", TRANSITION_FX_LATER),
 ];
+
+/// Why the transition FX commands and the `fx_echo` / `fx_dry` plan ramps are
+/// refused here (FXTRANS-03): no FX kernel exists in this engine yet.
+pub(crate) const TRANSITION_FX_LATER: &str = "transition FX are Web Audio only until their kernels are ported (FXTRANS-03)";
+
+/// Plan ramp knobs that are transition FX controls, refused by name.
+const TRANSITION_FX_KNOBS: &[&str] = &["fx_echo", "fx_dry"];
 
 type Obj = Map<String, Value>;
 
@@ -144,7 +157,7 @@ fn command_keys(ty: &str) -> Option<&'static [&'static str]> {
     Some(match ty {
         "load" => &[
             "type", "deck", "path", "stable_id", "refuseIfMaster", "stems", "suppressCommandErrorToast", "bpm",
-            "beatgrid", "beatgrid_ms",
+            "beatgrid", "beatgrid_ms", "out_ms",
         ],
         "set_beatgrid" => &["type", "deck", "bpm", "beatgrid", "beatgrid_ms"],
         "unload" => &["type", "deck", "refuseIfMaster"],
@@ -182,6 +195,11 @@ fn command_keys(ty: &str) -> Option<&'static [&'static str]> {
         "headphone_output_select" | "headphone_master_select" => &["type", "device_id"],
         "preview_cue" => &["type", "stable_id", "ratio", "bpm"],
         "preview_stop" => &["type"],
+        // Transition FX (spec fx-fanout-20261108/09 sections 4.1, 4.2, 4.4, 4.5).
+        "echo_out" => &["type", "deck", "beats", "division", "at"],
+        "deck_brake" => &["type", "deck", "beats", "curve", "quantize"],
+        "deck_backspin" => &["type", "deck", "beats"],
+        "fx_reset" => &["type", "deck"],
         _ => return None,
     })
 }
@@ -425,6 +443,7 @@ fn check_later(o: &Obj, ty: &str) -> Result<(), ProtoError> {
             }
         }
         "output_mode" => one_of(o, ty, "mode", &["practice", "two_outputs", "split_cable"])?,
+        "echo_out" | "deck_brake" | "deck_backspin" | "fx_reset" => drop(deck_of(o, ty)?),
         "headphone_output_select" | "headphone_master_select" => non_empty(o, ty, "device_id")?,
         "preview_cue" => {
             non_empty(o, ty, "stable_id")?;
@@ -477,7 +496,11 @@ pub fn parse_command(v: &Value) -> Result<Command, ProtoError> {
             if bpm.is_some_and(|b| b <= 0.0) {
                 return Err(invalid("load.bpm must be positive".into()));
             }
-            Ok(Command::Load(LoadSpec { deck, path, beats: beats(o, ty)?, bpm }))
+            let out_ms = opt_num(o, ty, "out_ms")?;
+            if out_ms.is_some_and(|m| m <= 0.0) {
+                return Err(invalid("load.out_ms must be positive".into()));
+            }
+            Ok(Command::Load(LoadSpec { deck, path, beats: beats(o, ty)?, bpm, end_ms: out_ms }))
         }
         "set_beatgrid" => {
             let deck = deck_of(o, ty)?;
@@ -688,6 +711,10 @@ pub fn parse_knob(o: &Obj) -> Result<KnobTarget, ProtoError> {
         "filter" => KnobTarget::Filter(deck_of(o, ty)?),
         "fader" => KnobTarget::Fader(deck_of(o, ty)?),
         "tempo" => KnobTarget::Tempo(deck_of(o, ty)?),
+        fx if TRANSITION_FX_KNOBS.contains(&fx) => {
+            deck_of(o, fx)?;
+            return Err(ProtoError::new(ErrorCode::NotImplemented, format!("{fx}: {TRANSITION_FX_LATER}")));
+        }
         other => return Err(invalid(format!("{other} cannot be ramped"))),
     })
 }
@@ -873,6 +900,16 @@ mod tests {
     }
 
     #[test]
+    fn load_accepts_out_ms_and_rejects_non_positive() {
+        assert!(matches!(
+            cmd(json!({"type": "load", "deck": 1, "path": "x.wav", "out_ms": 5000.0})),
+            Ok(Command::Load(spec)) if spec.end_ms == Some(5000.0)
+        ));
+        assert!(cmd(json!({"type": "load", "deck": 1, "path": "x.wav", "out_ms": 0.0})).is_err());
+        assert!(cmd(json!({"type": "load", "deck": 1, "path": "x.wav", "out_ms": -3.0})).is_err());
+    }
+
+    #[test]
     fn page_command_shapes_parse() {
         assert!(matches!(
             cmd(json!({"type": "play", "deck": 1, "playing": true})),
@@ -930,6 +967,10 @@ mod tests {
             json!({"type": "headphone_master_select", "device_id": "d"}),
             json!({"type": "preview_cue", "stable_id": "s", "ratio": 0.25}),
             json!({"type": "preview_stop"}),
+            json!({"type": "echo_out", "deck": 1}),
+            json!({"type": "deck_brake", "deck": 2}),
+            json!({"type": "deck_backspin", "deck": 3}),
+            json!({"type": "fx_reset", "deck": 4}),
         ];
         // Every deferred command is covered here, and has a field list.
         for (t, _) in LATER {
@@ -1520,6 +1561,54 @@ mod tests {
             let (id, c) = parse_line(line);
             assert!(id.is_none(), "{line}");
             assert!(c.unwrap_err().message.contains("id must be a string or a number"), "{line}");
+        }
+    }
+
+    #[test]
+    fn transition_fx_commands_are_refused_by_name_with_the_fxtrans_reason() {
+        for ty in ["echo_out", "deck_brake", "deck_backspin", "fx_reset"] {
+            let e = cmd(json!({"type": ty, "deck": 1})).unwrap_err();
+            assert_eq!(e.code, ErrorCode::NotImplemented, "{ty}");
+            assert_eq!(e.message, format!("{ty}: {TRANSITION_FX_LATER}"));
+        }
+        // Optional page fields are taken; a malformed command is still refused as malformed.
+        let full = cmd(json!({"type": "echo_out", "deck": 2, "beats": 2, "division": 0.5, "at": 97})).unwrap_err();
+        assert_eq!(full.code, ErrorCode::NotImplemented);
+        for bad in [
+            json!({"type": "echo_out", "deck": 5}),
+            json!({"type": "deck_brake"}),
+            json!({"type": "deck_backspin", "deck": 1, "speed": 3}),
+        ] {
+            assert_ne!(cmd(bad.clone()).unwrap_err().code, ErrorCode::NotImplemented, "{bad}");
+        }
+    }
+
+    #[test]
+    fn fx_ramp_knobs_are_not_implemented_and_other_unknown_knobs_stay_invalid() {
+        for ty in TRANSITION_FX_KNOBS {
+            let o = json!({"type": ty, "deck": 1, "to": 0.5, "over": {"ms": 10}});
+            let e = parse_knob(o.as_object().unwrap()).unwrap_err();
+            assert_eq!(e.code, ErrorCode::NotImplemented, "{ty}");
+            assert_eq!(e.message, format!("{ty}: {TRANSITION_FX_LATER}"));
+        }
+        let o = json!({"type": "fx_wash", "deck": 1, "to": 0.5, "over": {"ms": 10}});
+        let e = parse_knob(o.as_object().unwrap()).unwrap_err();
+        assert_eq!(e.code, ErrorCode::Invalid);
+        assert_eq!(e.message, "fx_wash cannot be ramped");
+        // Control: a real knob still parses.
+        let o = json!({"type": "crossfader", "to": 1.0, "over": {"ms": 10}});
+        assert!(matches!(parse_knob(o.as_object().unwrap()), Ok(KnobTarget::Crossfader)));
+    }
+
+    #[test]
+    fn the_capability_reply_lists_the_transition_fx_as_not_built() {
+        let built: Vec<&str> = LATER.iter().map(|(t, _)| *t).collect();
+        for ty in ["echo_out", "deck_brake", "deck_backspin", "fx_reset"] {
+            assert!(built.contains(&ty), "{ty} missing from not_built");
+        }
+        // Existing refusals are unchanged.
+        for (ty, why) in [("stem_mute", "stems arrive in plan 20-04"), ("headphone_mix", "the headphone cue bus arrives with device output (plan 20-06)")] {
+            assert!(LATER.contains(&(ty, why)), "{ty}");
         }
     }
 }

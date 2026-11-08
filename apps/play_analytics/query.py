@@ -128,6 +128,30 @@ def _event_metadata(value_json: str | None) -> tuple[str | None, str | None]:
     return title, artist
 
 
+def _validate_query_inputs(
+    share_state: ShareState | None,
+    limit: int,
+    min_audible_s: float,
+    events_table: EventsTable,
+) -> None:
+    if share_state is not None and share_state not in _SHARE_STATES:
+        raise ValueError(f"unsupported share_state: {share_state!r}")
+    if not 1 <= limit <= 200:
+        raise ValueError("limit must be between 1 and 200")
+    if min_audible_s < 0:
+        raise ValueError("min_audible_s must not be negative")
+    if events_table not in {"events", "set_events"}:
+        raise ValueError(f"unsupported events_table: {events_table!r}")
+
+
+def _share_state_where_clause(
+    share_state: ShareState | None,
+) -> tuple[str, tuple[str, ...]]:
+    if share_state is None:
+        return "", ()
+    return "WHERE share_state = ?", (share_state,)
+
+
 def query_play_analytics(
     db_path: Path,
     *,
@@ -148,20 +172,12 @@ def query_play_analytics(
     regardless, so changing it re-derives the tracklist of a set recorded
     months ago instead of silently having discarded it at capture.
     """
-    if share_state is not None and share_state not in _SHARE_STATES:
-        raise ValueError(f"unsupported share_state: {share_state!r}")
-    if not 1 <= limit <= 200:
-        raise ValueError("limit must be between 1 and 200")
-    if min_audible_s < 0:
-        raise ValueError("min_audible_s must not be negative")
-    if events_table not in {"events", "set_events"}:
-        raise ValueError(f"unsupported events_table: {events_table!r}")
+    _validate_query_inputs(share_state, limit, min_audible_s, events_table)
 
     connection = _open_readonly(db_path)
     try:
         _require_schema(connection, events_table)
-        where = "WHERE share_state = ?" if share_state is not None else ""
-        parameters: tuple[str, ...] = (share_state,) if share_state is not None else ()
+        where, parameters = _share_state_where_clause(share_state)
         session_rows = connection.execute(
             f"""
             SELECT session_id, started_at, ended_at, share_state

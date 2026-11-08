@@ -1,0 +1,9 @@
+{
+  "bytes": 2048,
+  "measured_main": 474951,
+  "measured_with_pr": 476102,
+  "sha": "71fbf451a1",
+  "date": "Sun 8 Nov 2026",
+  "reason": "PR #9591 (feat(webui): context menu parity for tracks, library sources and perf empty (#9451)) grows the other-lazy surface. Measured: CI bundle check of 71fbf451a1, +1151 B gzip; ceiled to KiB.",
+  "payback": "none planned; the growth is the feature's own code on this surface"
+}

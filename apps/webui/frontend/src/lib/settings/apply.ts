@@ -45,6 +45,8 @@ import {
 	setMixerStems,
 	setDeckHoverLink,
 	setShowSections,
+	setDeckNumberArt,
+	requireDeckNumberArt,
 	setSpeakerAutoRecover,
 	setShowTempoLane,
 	setTempoLaneScale,
@@ -179,6 +181,7 @@ export const ALLOWED_SETTING_KEYS = [
 	'show_stems',
 	'deck_hover_link',
 	'show_sections',
+	'deck_number_art',
 	'speaker_auto_recover',
 	'show_tempo_lane',
 	'tempo_lane_scale',
@@ -334,6 +337,7 @@ const _APPEARANCE_AND_DECK_UI_PREF_KEYS = [
 	'show_stems',
 	'deck_hover_link',
 	'show_sections',
+	'deck_number_art',
 	'speaker_auto_recover',
 	'show_tempo_lane',
 	'tempo_lane_scale',
@@ -377,6 +381,8 @@ function _readAppearanceAndDeckUiPref(key: _AppearanceAndDeckUiPrefKey): Setting
 			return uiPrefs.deck_hover_link;
 		case 'show_sections':
 			return uiPrefs.show_sections;
+		case 'deck_number_art':
+			return uiPrefs.deck_number_art;
 		case 'speaker_auto_recover':
 			return uiPrefs.speaker_auto_recover;
 		case 'show_tempo_lane':
@@ -633,6 +639,9 @@ export function applySettingChange(key: string, value: SettingValue): void {
 			return;
 		case 'show_sections':
 			setShowSections(_asBool(value, key));
+			return;
+		case 'deck_number_art':
+			setDeckNumberArt(requireDeckNumberArt(value, key));
 			return;
 		case 'speaker_auto_recover': {
 			const pref = parseSpeakerAutoRecover(value);

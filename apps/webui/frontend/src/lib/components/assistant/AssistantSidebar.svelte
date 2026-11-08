@@ -22,6 +22,7 @@
 		type ChatMessage
 	} from '$lib/assistant/assistant-api';
 	import AssistantSidebarView from './AssistantSidebarView.svelte';
+	import type { OjFillMode, OjFillPhase } from './oj-fill';
 
 	let { visible }: { visible: boolean } = $props();
 
@@ -36,6 +37,9 @@
 	let sendError = $state<string | null>(null);
 	let controller: AbortController | null = null;
 	let log: HTMLDivElement | null = $state(null);
+	let fillPhase = $state<OjFillPhase>('idle');
+	// #9474 (O4 motion policy) will pass policy.fillMode here.
+	const fillMode: OjFillMode = 'animated';
 
 	const canSend = $derived(
 		status?.configured === true && streaming === null && draft.trim().length > 0
@@ -74,20 +78,26 @@
 		sendError = null;
 		messages = [...messages, { role: 'user', content: question }];
 		streaming = '';
+		// Only a landed reply drains; stop or error snap empty so drain always means the answer arrived.
+		fillPhase = 'waiting';
 		scrollToLatest();
 
 		controller = new AbortController();
 		try {
 			for await (const chunk of streamChat(messages, controller.signal)) {
 				streaming = (streaming ?? '') + chunk;
+				if (fillPhase === 'waiting') fillPhase = 'streaming';
 				scrollToLatest();
 			}
 			if (streaming.length === 0) {
 				sendError = 'The assistant did not return a reply. Try again.';
+				fillPhase = 'idle';
 			} else {
 				messages = [...messages, { role: 'assistant', content: streaming }];
+				fillPhase = 'done';
 			}
 		} catch (error: unknown) {
+			fillPhase = 'idle';
 			if (controller.signal.aborted) return;
 			sendError = 'The assistant could not answer right now. Try again.';
 		} finally {
@@ -111,4 +121,6 @@
 	bind:log
 	{send}
 	onStop={() => controller?.abort()}
+	{fillPhase}
+	{fillMode}
 />

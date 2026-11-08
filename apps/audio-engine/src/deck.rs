@@ -57,6 +57,8 @@ pub struct Track {
     pub bpm: Option<f64>,
     /// The file the samples were decoded from, as opened, when known.
     pub source: Option<crate::decode::SourceId>,
+    /// Exclusive end frame for virtual edits (source timeline); None = file end.
+    pub end_frame: Option<usize>,
 }
 
 impl Track {
@@ -70,7 +72,32 @@ impl Track {
             .filter(|(_, b)| b.downbeat)
             .map(|(i, _)| i)
             .collect();
-        Track { sample_rate, pcm, frames, decoding: false, load_id: 0, beats, downbeats, bpm, source: None }
+        Track {
+            sample_rate,
+            pcm,
+            frames,
+            decoding: false,
+            load_id: 0,
+            beats,
+            downbeats,
+            bpm,
+            source: None,
+            end_frame: None,
+        }
+    }
+
+    pub fn set_end_ms(&mut self, end_ms: Option<f64>) {
+        self.end_frame = end_ms.and_then(|ms| {
+            if !(ms.is_finite() && ms > 0.0) {
+                return None;
+            }
+            let frame = (ms * self.sample_rate as f64 / 1000.0).round() as usize;
+            Some(frame.clamp(1, self.frames))
+        });
+    }
+
+    pub fn play_end_frame(&self) -> usize {
+        self.end_frame.unwrap_or(self.frames).min(self.frames)
     }
 
     /// The head of a track whose decode is still running: `pcm` is its first
@@ -98,12 +125,13 @@ impl Track {
     pub fn with_grid(&self, beats: Vec<Beat>, bpm: Option<f64>) -> Track {
         let mut t = Track::new(self.sample_rate, self.pcm.clone(), beats, bpm);
         // A head stays a head, with the length it was given.
-        (t.frames, t.decoding, t.load_id) = (self.frames, self.decoding, self.load_id);
+        (t.frames, t.decoding, t.load_id, t.end_frame) =
+            (self.frames, self.decoding, self.load_id, self.end_frame);
         t
     }
 
     pub fn duration_ms(&self) -> f64 {
-        self.frames as f64 * 1000.0 / self.sample_rate as f64
+        self.play_end_frame() as f64 * 1000.0 / self.sample_rate as f64
     }
 
     pub fn ms_to_frames(&self, ms: f64) -> f64 {
@@ -580,7 +608,7 @@ impl Deck {
     /// on, as the page's pause does); play at the end restarts
     /// from 0 (`audio-engine.svelte.ts` CUE and transport semantics).
     pub fn play(&mut self, playing: bool) -> Result<(), EngineError> {
-        let frames = self.track()?.frames as f64;
+        let frames = self.track()?.play_end_frame() as f64;
         if playing {
             if self.pos >= frames {
                 self.pos = 0.0;
@@ -996,7 +1024,11 @@ impl Deck {
         // (an estimate for some MP3s): the whole track decides that.
         let frames = track.available();
         let decoding = track.decoding;
-        let end = if decoding { f64::INFINITY } else { frames as f64 };
+        let decoded_end = if decoding { f64::INFINITY } else { frames as f64 };
+        let end = track
+            .end_frame
+            .map(|cap| decoded_end.min(cap as f64))
+            .unwrap_or(decoded_end);
         let step = self.tempo * track.sample_rate as f64 / engine_sr;
         if self.pos != self.rendered_pos || step != self.anchor_step {
             self.anchor = self.pos;
@@ -1978,6 +2010,61 @@ mod tests {
         d.load(Arc::new(silent(48000, 0.5, one_in)));
         d.beat_jump(1.0).unwrap();
         assert_eq!(d.pos, 400.0 * 48.0);
+    }
+
+    #[test]
+    fn a_virtual_edit_out_frame_stops_at_the_bound_not_the_file_end() {
+        let sr = 48000u32;
+        let total_frames = sr as usize * 5;
+        let mut track = Track::new(sr, vec![0.5; total_frames * 2], vec![], None);
+        track.set_end_ms(Some(1000.0));
+        let end = track.play_end_frame();
+        let mut d = Deck::new(sr as f64);
+        d.load(Arc::new(track));
+        assert_eq!(d.loaded().unwrap().duration_ms(), 1000.0);
+        d.play(true).unwrap();
+        let mut buf = vec![0.0f32; total_frames * 2];
+        let (at_end, past) = buf.split_at_mut(end * 2);
+        // A deck stops on the buffer that plays its last frame (22e3c3a221), and the
+        // virtual-edit out frame is that last frame: every frame up to it plays.
+        assert_eq!(d.render_track(at_end, sr as f64), end);
+        assert!(!d.playing);
+        assert_eq!(d.pos, end as f64);
+        d.render_add(past, sr as f64);
+        assert!(!d.playing);
+        assert_eq!(d.pos, end as f64);
+    }
+
+    #[test]
+    fn seek_past_a_virtual_edit_out_frame_is_refused() {
+        let sr = 48000u32;
+        let mut track = Track::new(sr, vec![0.0; sr as usize * 4 * 2], vec![], None);
+        track.set_end_ms(Some(1000.0));
+        let mut d = Deck::new(sr as f64);
+        d.load(Arc::new(track));
+        assert!(d.seek_with_quantize(500.0, false).is_ok());
+        assert!(d.seek_with_quantize(1500.0, false).is_err());
+    }
+
+    #[test]
+    fn a_progressive_tail_swap_keeps_the_whole_tracks_virtual_edit_end() {
+        let sr = 48000u32;
+        let total = sr as usize * 5;
+        let head_n = sr as usize;
+        let mut whole = Track::new(sr, vec![0.25; total * 2], vec![], None);
+        whole.set_end_ms(Some(2000.0));
+        whole.load_id = 11;
+        let mut head =
+            Track::head(sr, whole.pcm[..head_n * 2].to_vec(), Some(total as u64), vec![], None, 11);
+        head.set_end_ms(Some(2000.0));
+        let mut d = Deck::new(sr as f64);
+        d.load(Arc::new(head));
+        // Track is not Clone, so read the whole track's ends before the deck takes it.
+        let (end_frame, play_end_frame) = (whole.end_frame, whole.play_end_frame());
+        d.extend(Arc::new(whole)).unwrap();
+        let on_deck = d.loaded().unwrap();
+        assert_eq!(on_deck.end_frame, end_frame);
+        assert_eq!(on_deck.play_end_frame(), play_end_frame);
     }
 
     #[test]

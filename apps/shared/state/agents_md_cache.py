@@ -6,7 +6,7 @@ samples in a 10k-row listing walk. :func:`regenerate_agents_md_cached` skips
 that when BOTH halves of the cache agree:
 
 - a ``schema_meta_markers`` row keyed on
-  :func:`apps.database.generate_agents_md.agents_md_cache_marker` (sqlite's
+  :func:`apps.shared.agents_md.generator.agents_md_cache_marker` (sqlite's
   own ``PRAGMA schema_version``, a content hash of ``sqlite_master``, the
   owned tables, and the generator version), and
 - the sidecar beside this DB ending with that marker's cache line (a tail
@@ -17,14 +17,15 @@ A miss runs the real generator (``MissingColumnDocsError`` still raises
 before any write) and then records the marker idempotently: two opens that
 both miss must not abort on the primary key.
 
-The gate lives here, beside its only production caller ``open_rw``, rather
-than in ``apps.database``: ``apps.shared`` already imports ``apps.database``,
-and the reverse import would make the two packages a cycle.
+The gate lives here beside its only production caller ``open_rw``; the
+generator implementation lives in :mod:`apps.shared.agents_md` so this
+stable-core path has no dependency on :mod:`apps.database`.
 """
 
 from __future__ import annotations
 
 import logging
+import os
 import sqlite3
 from pathlib import Path
 
@@ -50,7 +51,6 @@ def _regenerate_agents_md_tolerating_sidecar_failures(
     *,
     owned_tables: frozenset[str] | None,
     marker: str,
-    regenerate_agents_md_if_writable,
 ) -> bool:
     """Regenerate the doc sidecar; never abort ``open_rw`` on sidecar I/O.
 
@@ -58,13 +58,21 @@ def _regenerate_agents_md_tolerating_sidecar_failures(
     ``OSError`` during regeneration log at error and may reach Sentry, but
     still return False so the database open continues and a later open retries.
     """
-    from apps.database.generate_agents_md import (
+    from apps.shared.agents_md.generator import (
         ExistingSidecarAccessError,
         SidecarReplacePermissionError,
+        write_agents_md,
     )
 
     try:
-        return regenerate_agents_md_if_writable(conn, state_dir, owned_tables=owned_tables, cache_marker=marker)
+        if not os.access(state_dir, os.W_OK):
+            return False
+        write_agents_md(
+            conn,
+            state_dir / "AGENTS.md",
+            owned_tables=owned_tables,
+            cache_marker=marker,
+        )
     except (ExistingSidecarAccessError, SidecarReplacePermissionError) as exc:
         _log.warning(
             "AGENTS.md sidecar access failed (%s); skipping this open",
@@ -80,6 +88,8 @@ def _regenerate_agents_md_tolerating_sidecar_failures(
         )
         _capture_sidecar_write_failure(exc)
         return False
+    else:
+        return True
 
 
 def regenerate_agents_md_cached(
@@ -91,13 +101,9 @@ def regenerate_agents_md_cached(
     """Regenerate ``<state_dir>/AGENTS.md`` unless the cache proves it current.
 
     Returns True when it wrote the sidecar, and False on a cache hit or an
-    unwritable ``state_dir`` (see
-    :func:`apps.database.regenerate_agents_md_if_writable`).
+    unwritable ``state_dir``.
     """
-    # Local imports for the same reason open_rw defers apps.database: see
-    # apps/database/generate_agents_md.py's module docstring.
-    from apps.database import regenerate_agents_md_if_writable
-    from apps.database.generate_agents_md import (
+    from apps.shared.agents_md.generator import (
         GENERATOR_VERSION,
         agents_md_cache_marker,
         schema_fingerprint,
@@ -129,7 +135,6 @@ def regenerate_agents_md_cached(
         state_dir,
         owned_tables=owned_tables,
         marker=marker,
-        regenerate_agents_md_if_writable=regenerate_agents_md_if_writable,
     )
     if wrote and schema_markers.table_exists(conn, schema_markers.MARKER_TABLE):
         _record_marker_without_waiting(conn, marker)

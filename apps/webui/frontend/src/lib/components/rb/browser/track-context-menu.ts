@@ -1,6 +1,6 @@
 /** Track context-menu targeting and first-action runners (issue #2286). */
 
-import { createPairing, getTrack } from '$lib/api';
+import { ConflictError, createPairing, getTrack, patchTrack } from '$lib/api';
 import { backfillProgress, enqueueBackfill } from '$lib/rb/api-analysis-backfill';
 import {
 	describeReanalyzePlan,
@@ -15,6 +15,8 @@ import { revealTrack } from '$lib/rb/api-track-reveal';
 import { isUsbTrackId } from '$lib/rb/track-source';
 import { pushToast } from '$lib/stores.svelte';
 import { announcePairingsChanged } from '$lib/rb/pairings-changed';
+import { normalizeRating } from '$lib/rating';
+import { invalidateLibraryIndex } from '$lib/rb/library-index';
 
 export const REVEAL_TRACK_TITLE = 'POST /api/v1/tracks/{stable_id}:reveal';
 
@@ -210,6 +212,51 @@ export async function runReanalyze(
 		}
 	} catch (error) {
 		deps.pushToast(error instanceof Error ? error.message : String(error), 'error');
+	}
+}
+
+/** Issue #9451: set star rating 0-5 on one or more library rows (same PATCH path as BrowserPanel). */
+export async function runSetRating(
+	targetIds: readonly string[],
+	rating: number,
+	deps: {
+		getTrack: typeof getTrack;
+		patchTrack: typeof patchTrack;
+		pushToast: ToastFn;
+	} = { getTrack, patchTrack, pushToast }
+): Promise<void> {
+	let ok = 0;
+	let firstError: string | null = null;
+	for (const id of targetIds) {
+		if (isUsbTrackId(id)) {
+			firstError = firstError ?? 'stick tracks are read only: the rating was not saved';
+			continue;
+		}
+		try {
+			let etag = '';
+			const first = await deps.getTrack(id);
+			etag = first.etag;
+			await deps.patchTrack(id, etag, { rating });
+			ok += 1;
+		} catch (error) {
+			if (error instanceof ConflictError) {
+				try {
+					await deps.patchTrack(id, error.etag, { rating });
+					ok += 1;
+				} catch (e2) {
+					if (firstError === null) firstError = e2 instanceof Error ? e2.message : String(e2);
+				}
+			} else if (firstError === null) {
+				firstError = error instanceof Error ? error.message : String(error);
+			}
+		}
+	}
+	if (ok > 0) {
+		invalidateLibraryIndex();
+		deps.pushToast(`Rating set (${normalizeRating(rating) ?? rating}) on ${ok} track${ok === 1 ? '' : 's'}`, 'info');
+	}
+	if (firstError !== null) {
+		deps.pushToast(firstError, 'error');
 	}
 }
 

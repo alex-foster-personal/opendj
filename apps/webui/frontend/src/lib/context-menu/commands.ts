@@ -67,6 +67,13 @@ export const MENU_COMMANDS = {
 	'track.reveal': http('POST', '/api/v1/tracks/{stable_id}:reveal'),
 	'track.playlists': http('GET', '/api/v1/tracks/{stable_id}/playlists'),
 	'track.read': http('GET', '/api/v1/tracks/{stable_id}'),
+	/** Issue #9451: open TOPVIEW-05 for a browser row (PerformanceCommand). */
+	'track.info_open': ipc('track_info_open'),
+	'track.related': http('GET', '/api/v1/genres/{stable_id}/similar'),
+	'library.refresh': http('POST', '/api/v1/ingest/refresh'),
+	'library.folders': http('GET', '/api/v1/setup/folders'),
+	'perf.view': ipc('set_perf_view'),
+	'app.settings': http('GET', '/api/v1/settings'),
 	'track.transition_in.set': http(
 		'PUT',
 		'/api/v1/tracks/{stable_id}/transition-in',

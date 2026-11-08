@@ -66,6 +66,7 @@ from .probe_process_family import (
     WEBKIT_AND_SHELL_ROLES,
     associate_process_family,
     bundle_build_identity,
+    descendants,
     find_shell,
     opendj_process_name,
     process_table,
@@ -227,7 +228,7 @@ class OpenDJProbe:
         if self.pid is None and self.match is None:
             family, association = associate_process_family(rows, shell, self.native)
         else:
-            descendant_pids = _descendant_pids(rows, shell.pid)
+            descendant_pids = descendants(rows, shell.pid)
             selected = [row for row in rows if row.pid == shell.pid or row.pid in descendant_pids]
             family = [
                 (row, "selected-root" if row.pid == shell.pid else "selected-descendant")
@@ -290,20 +291,6 @@ def _sample_totals(processes: list[dict[str, Any]]) -> dict[str, Any]:
         "cpu_percent": round(sum(float(process["cpu_percent"] or 0) for process in processes), 2),
         "process_count": len(processes),
     }
-
-
-def _descendant_pids(rows: list[ProcessRow], root_pid: int) -> set[int]:
-    children: dict[int, list[int]] = {}
-    for row in rows:
-        children.setdefault(row.ppid, []).append(row.pid)
-    found: set[int] = set()
-    pending = list(children.get(root_pid, []))
-    while pending:
-        pid = pending.pop()
-        if pid not in found:
-            found.add(pid)
-            pending.extend(children.get(pid, []))
-    return found
 
 
 def _parse_args(argv: list[str]) -> argparse.Namespace:

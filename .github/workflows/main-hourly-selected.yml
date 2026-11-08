@@ -39,7 +39,13 @@ permissions:
 jobs:
   hourly:
     name: main hourly selected
-    runs-on: [self-hosted, linux, linux-light]
+    # Sun 8 Nov 2026 (rails): the hourly is a MAIN verdict, so it runs on the main-only reserve
+    # (vars.CI_RUNS_ON_MAIN, the seats ci.yml's push-to-main jobs use; fleet-af ADR-1066) and not in
+    # the PR pool. On linux-light it queued behind PR shards and hit the 14-minute wall cap while
+    # the pool was saturated (run 42515123830, 19:27Z: job green, result inconclusive reason=wall-cap),
+    # so the trunk-checkpoint owner's hourly red hold kept 35 landable PRs waiting on a red that
+    # #9711 had already fixed. An unset variable (a fork) keeps the old label.
+    runs-on: ${{ fromJSON(vars.CI_RUNS_ON_MAIN || '["self-hosted","linux","linux-light"]') }}
     timeout-minutes: 40
     env:
       # Same process settings as ci.yml's pytest fast lane (tests/scripts/test_ci_thread_caps.py).

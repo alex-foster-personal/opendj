@@ -20,11 +20,21 @@ before(async () => {
 
 test('queue scopes isolate deck loads and coordinate only sync-sensitive commands', () => {
 	assert.deepEqual(ipc.PERFORMANCE_PRESET_COMMAND_SCOPES, [
-		1, 2, 3, 4, 'persistence-1', 'persistence-2', 'persistence-3', 'persistence-4', 'sync', 'headphone'
+		1,
+		2,
+		3,
+		4,
+		'persistence-1',
+		'persistence-2',
+		'persistence-3',
+		'persistence-4',
+		'sync',
+		'headphone'
 	]);
-	assert.deepEqual(ipc.performanceCommandQueueScopes({ type: 'load', deck: 1, stable_id: 'a' }), [
-		1
-	]);
+	assert.deepEqual(
+		ipc.performanceCommandQueueScopes({ type: 'load', deck: 1, stable_id: 'a' }),
+		[1]
+	);
 	assert.deepEqual(
 		ipc.performanceCommandQueueScopes({ type: 'pitch_range', deck: 1, range: 8 }),
 		[1]
@@ -52,36 +62,92 @@ test('queue scopes isolate deck loads and coordinate only sync-sensitive command
 	);
 	assert.deepEqual(ipc.performanceCommandQueueScopes({ type: 'master', deck: 4 }), [4, 'sync']);
 	assert.deepEqual(
-		ipc.performanceCommandQueueScopes({ type: 'hot_cue_save', deck: 4, slot: 'A', in_ms: 1000, revision: 'etag' }),
+		ipc.performanceCommandQueueScopes({
+			type: 'hot_cue_save',
+			deck: 4,
+			slot: 'A',
+			in_ms: 1000,
+			revision: 'etag'
+		}),
 		['persistence-4']
 	);
 	assert.deepEqual(ipc.performanceCommandQueueScopes({ type: 'key_sync', deck: 4 }), [4, 'sync']);
-	assert.deepEqual(ipc.performanceCommandQueueScopes({ type: 'channel_cue', deck: 4, enabled: true }), [4]);
-	assert.deepEqual(ipc.performanceCommandQueueScopes({ type: 'headphone_outputs_refresh' }), ['headphone']);
-	assert.deepEqual(ipc.performanceCommandQueueScopes({ type: 'headphone_output_acquire' }), ['headphone']);
-	assert.deepEqual(ipc.performanceCommandQueueScopes({ type: 'headphone_output_select', device_id: 'usb' }), ['headphone']);
-	assert.deepEqual(ipc.performanceCommandQueueScopes({ type: 'headphone_master_select', device_id: 'speakers' }), ['headphone']);
-	assert.deepEqual(ipc.performanceCommandQueueScopes({ type: 'headphone_input_select', device_id: 'mic' }), ['headphone']);
-	assert.deepEqual(ipc.performanceCommandQueueScopes({ type: 'output_mode', mode: 'practice' }), ['headphone']);
-	assert.deepEqual(ipc.performanceCommandQueueScopes({ type: 'output_mode', mode: 'two_outputs' }), ['headphone']);
-	assert.deepEqual(ipc.performanceCommandQueueScopes({ type: 'output_mode', mode: 'split_cable' }), ['headphone']);
-	assert.deepEqual(ipc.performanceCommandQueueScopes({ type: 'head_delay_ms', value: 40 }), ['headphone']);
 	assert.deepEqual(
-		ipc.performanceCommandQueueScopes({ type: 'analysis_source', feature: 'beatgrid', source: 'own' }),
+		ipc.performanceCommandQueueScopes({ type: 'channel_cue', deck: 4, enabled: true }),
+		[4]
+	);
+	assert.deepEqual(ipc.performanceCommandQueueScopes({ type: 'headphone_outputs_refresh' }), [
+		'headphone'
+	]);
+	assert.deepEqual(ipc.performanceCommandQueueScopes({ type: 'headphone_output_acquire' }), [
+		'headphone'
+	]);
+	assert.deepEqual(
+		ipc.performanceCommandQueueScopes({ type: 'headphone_output_select', device_id: 'usb' }),
+		['headphone']
+	);
+	assert.deepEqual(
+		ipc.performanceCommandQueueScopes({ type: 'headphone_master_select', device_id: 'speakers' }),
+		['headphone']
+	);
+	assert.deepEqual(
+		ipc.performanceCommandQueueScopes({ type: 'headphone_input_select', device_id: 'mic' }),
+		['headphone']
+	);
+	assert.deepEqual(ipc.performanceCommandQueueScopes({ type: 'output_mode', mode: 'practice' }), [
+		'headphone'
+	]);
+	assert.deepEqual(
+		ipc.performanceCommandQueueScopes({ type: 'output_mode', mode: 'two_outputs' }),
+		['headphone']
+	);
+	assert.deepEqual(
+		ipc.performanceCommandQueueScopes({ type: 'output_mode', mode: 'split_cable' }),
+		['headphone']
+	);
+	assert.deepEqual(ipc.performanceCommandQueueScopes({ type: 'head_delay_ms', value: 40 }), [
+		'headphone'
+	]);
+	assert.deepEqual(
+		ipc.performanceCommandQueueScopes({
+			type: 'analysis_source',
+			feature: 'beatgrid',
+			source: 'own'
+		}),
 		[1, 2, 3, 4, 'sync']
 	);
-	assert.deepEqual(ipc.performanceCommandQueueScopes({ type: 'key_nudge', deck: 4, semitones: -1 }), [4, 'sync']);
-	assert.deepEqual(ipc.performanceCommandQueueScopes({ type: 'slip', deck: 4, enabled: true }), [4]);
+	assert.deepEqual(
+		ipc.performanceCommandQueueScopes({ type: 'key_nudge', deck: 4, semitones: -1 }),
+		[4, 'sync']
+	);
+	assert.deepEqual(
+		ipc.performanceCommandQueueScopes({ type: 'slip', deck: 4, enabled: true }),
+		[4]
+	);
 	assert.equal(ipc.performanceCommandQueueScopes({ type: 'trim', deck: 2, value: 0.7 }), null);
 	assert.equal(ipc.performanceCommandQueueScopes({ type: 'filter', deck: 2, value: 0.7 }), null);
-	assert.equal(ipc.performanceCommandQueueScopes({ type: 'stem_gain', deck: 2, stem: 'vocal', value: 0.7 }), null);
-	assert.equal(ipc.performanceCommandQueueScopes({ type: 'stem_eq_mode', deck: 2, enabled: true }), null);
+	assert.equal(
+		ipc.performanceCommandQueueScopes({ type: 'stem_gain', deck: 2, stem: 'vocal', value: 0.7 }),
+		null
+	);
+	assert.equal(
+		ipc.performanceCommandQueueScopes({ type: 'stem_eq_mode', deck: 2, enabled: true }),
+		null
+	);
 	assert.equal(ipc.performanceCommandQueueScopes({ type: 'crossfader', value: 0.3 }), null);
 	assert.equal(ipc.performanceCommandQueueScopes({ type: 'pairing_snapshot_open' }), null);
 	assert.equal(ipc.performanceCommandQueueScopes({ type: 'track_info_toggle' }), null);
 	assert.equal(ipc.performanceCommandQueueScopes({ type: 'track_info_close' }), null);
 	assert.equal(
-		ipc.performanceCommandQueueScopes({ type: 'pairing_snapshot_remove_eq_adjuster', deck: 1, band: 'low' }),
+		ipc.performanceCommandQueueScopes({ type: 'track_info_open', stable_id: 'x' }),
+		null
+	);
+	assert.equal(
+		ipc.performanceCommandQueueScopes({
+			type: 'pairing_snapshot_remove_eq_adjuster',
+			deck: 1,
+			band: 'low'
+		}),
 		null
 	);
 	assert.equal(ipc.performanceCommandQueueScopes({ type: 'auto_play_two_track' }), null);
@@ -112,16 +178,59 @@ test('load suppressCommandErrorToast parses through parsePerformanceCommandForTe
 	);
 });
 
+test('web audio browser load without stems passes undefined stems through to engine.load', async () => {
+	const src = await readFrontendSource('src/lib/rb/performance-ipc.svelte.ts');
+	assert.match(src, /await engine\.load\(command\.deck, command\.stable_id, \{[\s\S]*stems: command\.stems,/);
+	assert.doesNotMatch(src, /stems: command\.stems \?\? false/);
+});
+
+test('virtual edit load parses a complete bounded window and rejects partial windows', () => {
+	assert.deepEqual(
+		ipc.parsePerformanceCommandForTest({
+			type: 'load',
+			deck: 2,
+			stable_id: 'source-a',
+			edit_id: 'edit-a',
+			in_ms: 1_000,
+			out_ms: 9_000
+		}),
+		{
+			type: 'load',
+			deck: 2,
+			stable_id: 'source-a',
+			edit_id: 'edit-a',
+			in_ms: 1_000,
+			out_ms: 9_000
+		}
+	);
+	assert.throws(
+		() => ipc.parsePerformanceCommandForTest({ type: 'load', deck: 2, stable_id: 'source-a', in_ms: 1_000 }),
+		/edit window/
+	);
+	assert.throws(
+		() => ipc.parsePerformanceCommandForTest({ type: 'load', deck: 2, stable_id: 'source-a', in_ms: 9_000, out_ms: 9_000 }),
+		/edit window/
+	);
+});
+
 test('pairing snapshot freezes deck state, removes only real adjustments, and saves only the selected pair', async () => {
 	const originalFetch = globalThis.fetch;
 	const requests = [];
 	globalThis.fetch = async (request) => {
 		const body = JSON.parse(await request.clone().text());
 		requests.push(body);
-		return new Response(JSON.stringify({
-			pairing_id: 'pairing-1', ...body, direction: '->', source: 'manual', notes: null,
-			created_at: '2026-09-05T00:00:00.000000Z', updated_at: '2026-09-05T00:00:00.000000Z'
-		}), { status: 201, headers: { 'content-type': 'application/json' } });
+		return new Response(
+			JSON.stringify({
+				pairing_id: 'pairing-1',
+				...body,
+				direction: '->',
+				source: 'manual',
+				notes: null,
+				created_at: '2026-09-05T00:00:00.000000Z',
+				updated_at: '2026-09-05T00:00:00.000000Z'
+			}),
+			{ status: 201, headers: { 'content-type': 'application/json' } }
+		);
 	};
 	globalThis.window = {};
 	const uninstall = pairing.installPerformanceBrowserIpc();
@@ -133,21 +242,40 @@ test('pairing snapshot freezes deck state, removes only real adjustments, and sa
 			deck.title = deckId <= 3 ? `Track ${deckId}` : null;
 			deck.position_ms = deckId * 1000;
 			deck.anlz = null;
-			Object.assign(pairing.mixerState.channels[deckId], { eq_low: 0.2, eq_mid: 0.5, eq_high: 0.8 });
+			Object.assign(pairing.mixerState.channels[deckId], {
+				eq_low: 0.2,
+				eq_mid: 0.5,
+				eq_high: 0.8
+			});
 		}
 		await pairing.dispatchPerformanceCommand({ type: 'pairing_snapshot_open' });
 		pairing.deckStates[1].position_ms = 99999;
 		pairing.mixerState.channels[1].eq_low = 0.9;
-		await pairing.dispatchPerformanceCommand({ type: 'pairing_snapshot_remove_eq_adjuster', deck: 1, band: 'low' });
+		await pairing.dispatchPerformanceCommand({
+			type: 'pairing_snapshot_remove_eq_adjuster',
+			deck: 1,
+			band: 'low'
+		});
 		await assert.rejects(
-			pairing.dispatchPerformanceCommand({ type: 'pairing_snapshot_remove_eq_adjuster', deck: 1, band: 'mid' }),
+			pairing.dispatchPerformanceCommand({
+				type: 'pairing_snapshot_remove_eq_adjuster',
+				deck: 1,
+				band: 'mid'
+			}),
 			/has no mid EQ adjustment/
 		);
-		await pairing.dispatchPerformanceCommand({ type: 'pairing_snapshot_save', from_deck: 1, to_deck: 3 });
+		await pairing.dispatchPerformanceCommand({
+			type: 'pairing_snapshot_save',
+			from_deck: 1,
+			to_deck: 3
+		});
 		const snapshot = pairing.queryPerformanceState().pairing_snapshot;
 		assert.equal(snapshot.decks[0].position_ms, 1000);
 		assert.deepEqual(snapshot.decks[0].eq_adjusts, [{ band: 'high', value: 0.8 }]);
-		assert.deepEqual(requests[0].snapshot.decks.map((deck) => deck.deck_id), [1, 3]);
+		assert.deepEqual(
+			requests[0].snapshot.decks.map((deck) => deck.deck_id),
+			[1, 3]
+		);
 	} finally {
 		uninstall();
 		globalThis.fetch = originalFetch;
@@ -164,29 +292,72 @@ test('TOPVIEW-05: the (i) overlay opens and closes through the dispatcher and th
 			pairing.dispatchPerformanceCommand({ type: 'track_info_toggle' }),
 			/no deck holds a track/
 		);
-		assert.deepEqual(pairing.queryPerformanceState().track_info, { open: false, deck: null, stable_id: null });
+		assert.deepEqual(pairing.queryPerformanceState().track_info, {
+			open: false,
+			deck: null,
+			stable_id: null
+		});
 
 		pairing.deckStates[1].stable_id = 'track-a';
 		await pairing.dispatchPerformanceCommand({ type: 'track_info_toggle' });
-		assert.deepEqual(pairing.queryPerformanceState().track_info, { open: true, deck: 1, stable_id: 'track-a' });
+		assert.deepEqual(pairing.queryPerformanceState().track_info, {
+			open: true,
+			deck: 1,
+			stable_id: 'track-a'
+		});
 		await pairing.dispatchPerformanceCommand({ type: 'track_info_toggle' });
-		assert.equal(pairing.queryPerformanceState().track_info.open, false, 'a second toggle closes it');
+		assert.equal(
+			pairing.queryPerformanceState().track_info.open,
+			false,
+			'a second toggle closes it'
+		);
 
 		await pairing.dispatchPerformanceCommand({ type: 'track_info_toggle' });
 		pairing.deckStates[1].stable_id = 'track-b';
 		assert.equal(
 			pairing.queryPerformanceState().track_info.open,
 			false,
-			'the record opened for track-a is not reported open on the deck\'s new track'
+			"the record opened for track-a is not reported open on the deck's new track"
 		);
 		await pairing.dispatchPerformanceCommand({ type: 'track_info_close' });
 		// Control: once closed, a toggle opens for the deck's current track.
 		await pairing.dispatchPerformanceCommand({ type: 'track_info_toggle' });
-		assert.deepEqual(pairing.queryPerformanceState().track_info, { open: true, deck: 1, stable_id: 'track-b' });
+		assert.deepEqual(pairing.queryPerformanceState().track_info, {
+			open: true,
+			deck: 1,
+			stable_id: 'track-b'
+		});
 		await pairing.dispatchPerformanceCommand({ type: 'track_info_close' });
 		assert.equal(pairing.queryPerformanceState().track_info.open, false);
 	} finally {
 		pairing.deckStates[1].stable_id = null;
+		uninstall();
+		delete globalThis.window;
+	}
+});
+
+test('track_info_open opens a browser-row record with deck null (issue #9451, PRRT_kwDOSEvNd860wEnM)', async () => {
+	globalThis.window = {};
+	const uninstall = pairing.installPerformanceBrowserIpc();
+	try {
+		await pairing.dispatchPerformanceCommand({ type: 'track_info_open', stable_id: 'row-x' });
+		// deckId null: library/context-menu open is not tied to a loaded deck.
+		assert.deepEqual(pairing.queryPerformanceState().track_info, {
+			open: true,
+			deck: null,
+			stable_id: 'row-x'
+		});
+		await pairing.dispatchPerformanceCommand({ type: 'track_info_close' });
+		assert.deepEqual(pairing.queryPerformanceState().track_info, {
+			open: false,
+			deck: null,
+			stable_id: null
+		});
+		assert.throws(
+			() => ipc.parsePerformanceCommandForTest({ type: 'track_info_open', stable_id: '' }),
+			/stable_id must be a non-empty string/
+		);
+	} finally {
 		uninstall();
 		delete globalThis.window;
 	}
@@ -215,7 +386,10 @@ test('pairing snapshot falls back to time units when a deck has no beat to stamp
 		assert.equal(snapshot.beat_sync_max, false);
 		assert.deepEqual(
 			snapshot.decks.map((deck) => [deck.deck_id, deck.timestamp.unit, deck.timestamp.value]),
-			[[1, 'time', 500], [2, 'time', 0]]
+			[
+				[1, 'time', 500],
+				[2, 'time', 0]
+			]
 		);
 	} finally {
 		uninstall();
@@ -236,18 +410,28 @@ test('pairing snapshot captures a beat for decks parked in the lead-in before th
 			deck.stable_id = deckId <= 2 ? `track-lead-in-${deckId}` : null;
 			deck.title = deckId <= 2 ? `Lead-in ${deckId}` : null;
 			deck.position_ms = deckId === 1 ? 0 : 1000;
-			deck.anlz = deckId <= 2
-				? { beatgrid: { beats: [
-						{ n: 1, bpm: 120, t: 0.05 }, { n: 2, bpm: 120, t: 0.55 }, { n: 3, bpm: 120, t: 1.05 }
-					] } }
-				: null;
+			deck.anlz =
+				deckId <= 2
+					? {
+							beatgrid: {
+								beats: [
+									{ n: 1, bpm: 120, t: 0.05 },
+									{ n: 2, bpm: 120, t: 0.55 },
+									{ n: 3, bpm: 120, t: 1.05 }
+								]
+							}
+						}
+					: null;
 		}
 		await pairing.dispatchPerformanceCommand({ type: 'pairing_snapshot_open' });
 		const decks = pairing.queryPerformanceState().pairing_snapshot.decks;
-		assert.deepEqual(decks.map((deck) => [deck.deck_id, deck.timestamp]), [
-			[1, { unit: 'beats', value: 4 }],
-			[2, { unit: 'beats', value: 2 }]
-		]);
+		assert.deepEqual(
+			decks.map((deck) => [deck.deck_id, deck.timestamp]),
+			[
+				[1, { unit: 'beats', value: 4 }],
+				[2, { unit: 'beats', value: 2 }]
+			]
+		);
 	} finally {
 		uninstall();
 		delete globalThis.window;
@@ -285,7 +469,10 @@ test('a beatgrid-landed resync claims only its own deck, and widening never make
 	// could close the cycle.
 	const source = readFrontendSource('src/lib/rb/performance-ipc.svelte.ts');
 	const start = source.indexOf('installScopedSyncRunner((_deck, run) => {');
-	assert.ok(start > 0, 'installScopedSyncRunner call not found - this test is reading the wrong file');
+	assert.ok(
+		start > 0,
+		'installScopedSyncRunner call not found - this test is reading the wrong file'
+	);
 	const end = source.indexOf('\nlet _commandGeneration', start);
 	assert.ok(end > start, 'end of installScopedSyncRunner call not found');
 	const body = source.slice(start, end);
@@ -295,11 +482,18 @@ test('a beatgrid-landed resync claims only its own deck, and widening never make
 		'installScopedSyncRunner must claim ONLY [_deck] up front - reserving the wide scopes too, ' +
 			'even for a settlement that turns out narrow, reopens the r3913693383 finding'
 	);
-	assert.doesNotMatch(body, /\breserve\(/, 'installScopedSyncRunner must not call the removed reserve() primitive');
+	assert.doesNotMatch(
+		body,
+		/\breserve\(/,
+		'installScopedSyncRunner must not call the removed reserve() primitive'
+	);
 	const widenStart = body.indexOf('const widen: WidenScope = (work) => {');
 	assert.ok(widenStart > 0, 'widen closure not found');
 	const runCallStart = body.indexOf('.run([_deck],');
-	assert.ok(runCallStart > widenStart, 'widen must be defined BEFORE the [_deck] claim so it can be passed in, never awaited by it');
+	assert.ok(
+		runCallStart > widenStart,
+		'widen must be defined BEFORE the [_deck] claim so it can be passed in, never awaited by it'
+	);
 	const widenBody = body.slice(widenStart, runCallStart);
 	assert.match(
 		widenBody,
@@ -351,7 +545,10 @@ test('the deferred resync is counted in performanceCommandStatus while it holds 
 	// outer [_deck] claim's, so the aggregate field sees it too.
 	const source = readFrontendSource('src/lib/rb/performance-ipc.svelte.ts');
 	const start = source.indexOf('installScopedSyncRunner((_deck, run) => {');
-	assert.ok(start > 0, 'installScopedSyncRunner call not found - this test is reading the wrong file');
+	assert.ok(
+		start > 0,
+		'installScopedSyncRunner call not found - this test is reading the wrong file'
+	);
 	const end = source.indexOf('\nlet _commandGeneration', start);
 	const body = source.slice(start, end);
 	for (const bump of [
@@ -376,7 +573,7 @@ test('the deferred resync is counted in performanceCommandStatus while it holds 
 	assert.ok(
 		widenBody.includes('performanceCommandStatus.queued += 1'),
 		"widen's own wide claim must bump queued when it is scheduled, not just deck_pending - " +
-			'otherwise queryPerformanceState()\'s aggregate command_pending (active > 0 || queued > 0) ' +
+			"otherwise queryPerformanceState()'s aggregate command_pending (active > 0 || queued > 0) " +
 			'never sees the wide phase, even though the per-deck field does (discussion_r3914921214)'
 	);
 	assert.ok(
@@ -407,7 +604,10 @@ test('startPerformancePresetTransaction and stopPerformancePresetTransaction pol
 	const pollFnStart = source.indexOf('async function _pollUntilSettled(');
 	assert.ok(pollFnStart > 0, '_pollUntilSettled not found - this test is reading the wrong file');
 	const pollFnEnd = source.indexOf('\nasync function _awaitCommandQueueIdle', pollFnStart);
-	assert.ok(pollFnEnd > pollFnStart, '_awaitCommandQueueIdle marker not found after _pollUntilSettled');
+	assert.ok(
+		pollFnEnd > pollFnStart,
+		'_awaitCommandQueueIdle marker not found after _pollUntilSettled'
+	);
 	const pollFnBody = source.slice(pollFnStart, pollFnEnd);
 	assert.ok(
 		pollFnBody.includes('setTimeout') &&
@@ -420,15 +620,24 @@ test('startPerformancePresetTransaction and stopPerformancePresetTransaction pol
 			'unmount stop cleanup, pending forever even after the command queue has drained'
 	);
 	const idleFnStart = source.indexOf('async function _awaitCommandQueueIdle(');
-	assert.ok(idleFnStart > 0, '_awaitCommandQueueIdle not found - this test is reading the wrong file');
+	assert.ok(
+		idleFnStart > 0,
+		'_awaitCommandQueueIdle not found - this test is reading the wrong file'
+	);
 	const idleFnBody = source.slice(idleFnStart, source.indexOf('\n/**', idleFnStart));
 	assert.ok(
 		idleFnBody.includes('!state.command_pending && state.command_queued === 0'),
 		'_awaitCommandQueueIdle must poll queryPerformanceState() itself, not a snapshot taken once before the loop'
 	);
 	for (const [name, marker] of [
-		['startPerformancePresetTransaction', 'export async function startPerformancePresetTransaction<T>('],
-		['stopPerformancePresetTransaction', 'export async function stopPerformancePresetTransaction<T>(']
+		[
+			'startPerformancePresetTransaction',
+			'export async function startPerformancePresetTransaction<T>('
+		],
+		[
+			'stopPerformancePresetTransaction',
+			'export async function stopPerformancePresetTransaction<T>('
+		]
 	]) {
 		const fnStart = source.indexOf(marker);
 		assert.ok(fnStart > 0, `${name} not found - this test is reading the wrong file`);
@@ -467,8 +676,14 @@ test('a preset publishes ready only once every deck has presented its desired sc
 	// opposite of what r3919411682 asks for. So the fix is the postcondition.
 	const source = readFrontendSource('src/lib/rb/performance-ipc.svelte.ts');
 	const assertStart = source.indexOf('function _assertPresetSettled(');
-	assert.ok(assertStart > 0, '_assertPresetSettled not found - this test is reading the wrong file');
-	const assertBody = source.slice(assertStart, source.indexOf('\nfunction _recordPresetFailure', assertStart));
+	assert.ok(
+		assertStart > 0,
+		'_assertPresetSettled not found - this test is reading the wrong file'
+	);
+	const assertBody = source.slice(
+		assertStart,
+		source.indexOf('\nfunction _recordPresetFailure', assertStart)
+	);
 	assert.ok(
 		assertBody.includes('state.command_pending || state.command_queued !== 0'),
 		'the readiness assertion must still reject a non-idle command queue'
@@ -478,8 +693,14 @@ test('a preset publishes ready only once every deck has presented its desired sc
 		'the readiness assertion must ALSO reject a deck whose desired schedule revision has not been presented'
 	);
 	for (const [name, marker] of [
-		['startPerformancePresetTransaction', 'export async function startPerformancePresetTransaction<T>('],
-		['stopPerformancePresetTransaction', 'export async function stopPerformancePresetTransaction<T>(']
+		[
+			'startPerformancePresetTransaction',
+			'export async function startPerformancePresetTransaction<T>('
+		],
+		[
+			'stopPerformancePresetTransaction',
+			'export async function stopPerformancePresetTransaction<T>('
+		]
 	]) {
 		const fnStart = source.indexOf(marker);
 		const fnBody = source.slice(fnStart, source.indexOf('\nexport', fnStart + 1));
@@ -507,8 +728,14 @@ test('a preset settle failure raised after the work returned still mutes and sto
 	// So the transaction re-creates the boundary itself.
 	const source = readFrontendSource('src/lib/rb/performance-ipc.svelte.ts');
 	const compStart = source.indexOf('async function _compensateLateSettlement(');
-	assert.ok(compStart > 0, '_compensateLateSettlement not found - this test is reading the wrong file');
-	const compBody = source.slice(compStart, source.indexOf('\nfunction _recordPresetFailure', compStart));
+	assert.ok(
+		compStart > 0,
+		'_compensateLateSettlement not found - this test is reading the wrong file'
+	);
+	const compBody = source.slice(
+		compStart,
+		source.indexOf('\nfunction _recordPresetFailure', compStart)
+	);
 	const muteIndex = compBody.indexOf('engine.setMaster(MUTED_MASTER_VOLUME)');
 	const stopIndex = compBody.indexOf('await _enqueuePresetPhase(id, compensate)');
 	assert.ok(muteIndex > 0, 'the compensation must hard-mute the master output');
@@ -527,16 +754,28 @@ test('a preset settle failure raised after the work returned still mutes and sto
 		'a rollback that itself fails must be reported alongside the settle failure, not instead of it'
 	);
 	for (const [name, marker, phase] of [
-		['startPerformancePresetTransaction', 'export async function startPerformancePresetTransaction<T>(', 'ready'],
-		['stopPerformancePresetTransaction', 'export async function stopPerformancePresetTransaction<T>(', 'idle']
+		[
+			'startPerformancePresetTransaction',
+			'export async function startPerformancePresetTransaction<T>(',
+			'ready'
+		],
+		[
+			'stopPerformancePresetTransaction',
+			'export async function stopPerformancePresetTransaction<T>(',
+			'idle'
+		]
 	]) {
 		const fnStart = source.indexOf(marker);
 		const fnBody = source.slice(fnStart, source.indexOf('\nexport', fnStart + 1));
 		assert.ok(
-			fnBody.includes('compensate: (driver: PerformancePresetTransactionDriver) => Promise<unknown>'),
+			fnBody.includes(
+				'compensate: (driver: PerformancePresetTransactionDriver) => Promise<unknown>'
+			),
 			`${name} must take the caller's compensating action - only the caller knows the preset's deck order`
 		);
-		const catchIndex = fnBody.indexOf('await _compensateLateSettlement(id, settleError, compensate)');
+		const catchIndex = fnBody.indexOf(
+			'await _compensateLateSettlement(id, settleError, compensate)'
+		);
 		const releaseIndex = fnBody.indexOf(`_releasePreset(id, '${phase}', null)`);
 		assert.ok(
 			catchIndex > 0,
@@ -548,7 +787,8 @@ test('a preset settle failure raised after the work returned still mutes and sto
 			`${name} must only publish '${phase}' after the settle block has passed`
 		);
 		assert.ok(
-			fnBody.indexOf('await _awaitCommandQueueIdle()') > fnBody.indexOf('_enqueuePresetPhase(id, work)'),
+			fnBody.indexOf('await _awaitCommandQueueIdle()') >
+				fnBody.indexOf('_enqueuePresetPhase(id, work)'),
 			`${name} must not move the settle waits back inside the all-scope claim (r3913492572 deadlock)`
 		);
 	}
@@ -595,11 +835,19 @@ test('analysis-source commands are validated through the typed all-deck schedule
 	const uninstall = ipc.installPerformanceBrowserIpc();
 	try {
 		await assert.rejects(
-			window.musicDjToolsPerformance.dispatch({ type: 'analysis_source', feature: 'vocals', source: 'own' }),
+			window.musicDjToolsPerformance.dispatch({
+				type: 'analysis_source',
+				feature: 'vocals',
+				source: 'own'
+			}),
 			/feature must be one of beatgrid, key, waveform, loudness, vocal, phrase; got vocals/i
 		);
 		await assert.rejects(
-			window.musicDjToolsPerformance.dispatch({ type: 'analysis_source', feature: 'beatgrid', source: 'invalid' }),
+			window.musicDjToolsPerformance.dispatch({
+				type: 'analysis_source',
+				feature: 'beatgrid',
+				source: 'invalid'
+			}),
 			/source must be rekordbox or own/i
 		);
 	} finally {
@@ -624,7 +872,12 @@ test('key controls validate through IPC and round-trip serializable shift state'
 			/non-zero integer from -12 to 12/i
 		);
 		await assert.rejects(
-			window.musicDjToolsPerformance.dispatch({ type: 'key_sync', deck: 1, enabled: true, extra: true }),
+			window.musicDjToolsPerformance.dispatch({
+				type: 'key_sync',
+				deck: 1,
+				enabled: true,
+				extra: true
+			}),
 			/unexpected fields/i
 		);
 		await assert.rejects(
@@ -641,16 +894,37 @@ test('key controls validate through IPC and round-trip serializable shift state'
 // requirement: KEYSYNC-01
 test('key_sync takes an optional mode and target deck, validated on the wire, and the snapshot shows them', async () => {
 	const parse = ipc.parsePerformanceCommandForTest;
-	assert.deepEqual(parse({ type: 'key_sync', deck: 2, enabled: true }), { type: 'key_sync', deck: 2, enabled: true });
-	assert.deepEqual(parse({ type: 'key_sync', deck: 2, enabled: true, mode: 'relative', target: 3 }), {
-		type: 'key_sync', deck: 2, enabled: true, mode: 'relative', target: 3
+	assert.deepEqual(parse({ type: 'key_sync', deck: 2, enabled: true }), {
+		type: 'key_sync',
+		deck: 2,
+		enabled: true
 	});
+	assert.deepEqual(
+		parse({ type: 'key_sync', deck: 2, enabled: true, mode: 'relative', target: 3 }),
+		{
+			type: 'key_sync',
+			deck: 2,
+			enabled: true,
+			mode: 'relative',
+			target: 3
+		}
+	);
 	assert.deepEqual(parse({ type: 'key_sync', deck: 2, enabled: true, target: 'master' }), {
-		type: 'key_sync', deck: 2, enabled: true, target: 'master'
+		type: 'key_sync',
+		deck: 2,
+		enabled: true,
+		target: 'master'
 	});
-	assert.throws(() => parse({ type: 'key_sync', deck: 2, enabled: true, mode: 'loose' }), /mode must be exact, relative or compatible/);
+	assert.throws(
+		() => parse({ type: 'key_sync', deck: 2, enabled: true, mode: 'loose' }),
+		/mode must be exact, relative or compatible/
+	);
 	assert.throws(() => parse({ type: 'key_sync', deck: 2, enabled: true, target: 5 }), /target/);
-	assert.deepEqual(parse({ type: 'key_shift', deck: 1, semitones: 0 }), { type: 'key_shift', deck: 1, semitones: 0 });
+	assert.deepEqual(parse({ type: 'key_shift', deck: 1, semitones: 0 }), {
+		type: 'key_shift',
+		deck: 1,
+		semitones: 0
+	});
 	assert.throws(() => parse({ type: 'key_shift', deck: 1, semitones: 13 }), /-12 to 12/);
 	assert.throws(() => parse({ type: 'key_shift', deck: 1, semitones: 1.5 }), /-12 to 12/);
 	globalThis.window = {};
@@ -660,7 +934,10 @@ test('key_sync takes an optional mode and target deck, validated on the wire, an
 		assert.equal(initial.key_sync_mode, 'exact', 'exact is the default (the maintainer)');
 		assert.equal(initial.key_sync_target, 'master');
 		assert.deepEqual(initial.key_options, {}, 'no loaded keyed decks, no ladder');
-		const mirrorSource = await readFile(new URL('../../src/lib/rb/ui-mirror.ts', import.meta.url), 'utf8');
+		const mirrorSource = await readFile(
+			new URL('../../src/lib/rb/ui-mirror.ts', import.meta.url),
+			'utf8'
+		);
 		assert.match(
 			mirrorSource,
 			/key_sync: \{ mode: deck\.key_sync_mode, target: deck\.key_sync_target, status: deck\.key_sync_status, shift_semitones: deck\.key_shift_semitones, options: deck\.key_options \}/,
@@ -674,7 +951,10 @@ test('key_sync takes an optional mode and target deck, validated on the wire, an
 
 // requirement: PREF-02
 test('the feedback thumbs use thumb glyphs and routes every mark through the typed dispatcher', async () => {
-	const source = await readFile(new URL('../../src/lib/components/rb/FeedbackThumbs.svelte', import.meta.url), 'utf8');
+	const source = await readFile(
+		new URL('../../src/lib/components/rb/FeedbackThumbs.svelte', import.meta.url),
+		'utf8'
+	);
 	assert.match(source, /recordFeedback\('bad', event\)/);
 	assert.match(source, /event\.shiftKey \? 'great' : 'good'/);
 	assert.match(source, /type: 'feedback_mark'/);
@@ -706,18 +986,30 @@ test('hot-cue controls are strict IPC commands with serializable slot state', as
 	try {
 		const initial = ipc.queryPerformanceState().decks[1];
 		assert.equal(initial.hot_cue_slots.length, 8);
-		assert.deepEqual(initial.hot_cue_slots.map((slot) => slot.slot), ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H']);
+		assert.deepEqual(
+			initial.hot_cue_slots.map((slot) => slot.slot),
+			['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H']
+		);
 		assert.ok(initial.hot_cue_slots.every((slot) => typeof slot.revision === 'string'));
 		assert.equal(initial.hot_cue_reversal, null);
 		await assert.rejects(
 			window.musicDjToolsPerformance.dispatch({
-				type: 'hot_cue_save', deck: 1, slot: 'I', in_ms: 1000, revision: 'etag'
+				type: 'hot_cue_save',
+				deck: 1,
+				slot: 'I',
+				in_ms: 1000,
+				revision: 'etag'
 			}),
 			/hot-cue slot must be A through H/i
 		);
 		await assert.rejects(
 			window.musicDjToolsPerformance.dispatch({
-				type: 'hot_cue_restore', deck: 1, slot: 'A', revision: 'etag', reversal_id: 'token', extra: true
+				type: 'hot_cue_restore',
+				deck: 1,
+				slot: 'A',
+				revision: 'etag',
+				reversal_id: 'token',
+				extra: true
 			}),
 			/unexpected fields/i
 		);
@@ -730,12 +1022,18 @@ test('hot-cue controls are strict IPC commands with serializable slot state', as
 		readFile('src/lib/rb/performance-ipc.svelte.ts', 'utf8')
 	]);
 	assert.match(deckSource, /type: 'hot_cue_save' as const/);
-	assert.match(deckSource, /type: 'hot_cue_restore', deck: deckId, slot, revision, reversal_id: reversalId/);
+	assert.match(
+		deckSource,
+		/type: 'hot_cue_restore', deck: deckId, slot, revision, reversal_id: reversalId/
+	);
 	assert.match(
 		ipcSource,
 		/await saveHotCue\(\s*stableId, command\.slot, savedPositionMs, command\.revision, command\.comment, command\.out_ms \?\? null\s*\)/
 	);
-	assert.match(ipcSource, /await restoreHotCue\(stableId, command\.slot, command\.revision, command\.reversal_id\)/);
+	assert.match(
+		ipcSource,
+		/await restoreHotCue\(stableId, command\.slot, command\.revision, command\.reversal_id\)/
+	);
 });
 
 test('hot-cue IPC dispatch sends CAS revisions and exposes one-time reversal state', async () => {
@@ -778,26 +1076,43 @@ test('hot-cue IPC dispatch sends CAS revisions and exposes one-time reversal sta
 	globalThis.window = {};
 	const resetDriver = ipc.installPerformanceHotCueDriverForTest({
 		stableId: () => 'loaded-track',
-		refresh: async () => {},
+		refresh: async () => {}
 	});
 	const uninstall = ipc.installPerformanceBrowserIpc();
 	try {
 		const saved = await window.musicDjToolsPerformance.dispatch({
-			type: 'hot_cue_save', deck: 1, slot: 'A', in_ms: 1000, revision: 'empty-revision'
+			type: 'hot_cue_save',
+			deck: 1,
+			slot: 'A',
+			in_ms: 1000,
+			revision: 'empty-revision'
 		});
 		assert.deepEqual(saved.decks[1].hot_cue_reversal, {
-			slot: 'A', revision: 'save-revision', reversal_id: 'save-token'
+			slot: 'A',
+			revision: 'save-revision',
+			reversal_id: 'save-token'
 		});
 		await window.musicDjToolsPerformance.dispatch({
-			type: 'hot_cue_clear', deck: 1, slot: 'A', revision: 'save-revision'
+			type: 'hot_cue_clear',
+			deck: 1,
+			slot: 'A',
+			revision: 'save-revision'
 		});
 		const restored = await window.musicDjToolsPerformance.dispatch({
-			type: 'hot_cue_restore', deck: 1, slot: 'A', revision: 'clear-revision', reversal_id: 'clear-token'
+			type: 'hot_cue_restore',
+			deck: 1,
+			slot: 'A',
+			revision: 'clear-revision',
+			reversal_id: 'clear-token'
 		});
 		assert.equal(restored.decks[1].hot_cue_reversal, null);
 		await assert.rejects(
 			window.musicDjToolsPerformance.dispatch({
-				type: 'hot_cue_restore', deck: 1, slot: 'A', revision: 'clear-revision', reversal_id: 'clear-token'
+				type: 'hot_cue_restore',
+				deck: 1,
+				slot: 'A',
+				revision: 'clear-revision',
+				reversal_id: 'clear-token'
 			}),
 			/HOT_CUE_REVERSAL_CONSUMED/i
 		);
@@ -824,13 +1139,17 @@ test('hot_cue_save reaches the network for any loaded deck, mapped or not (CUES-
 	globalThis.window = {};
 	const resetDriver = ipc.installPerformanceHotCueDriverForTest({
 		stableId: () => 'loaded-track',
-		refresh: async () => {},
+		refresh: async () => {}
 	});
 	const uninstall = ipc.installPerformanceBrowserIpc();
 	try {
 		await assert.rejects(
 			window.musicDjToolsPerformance.dispatch({
-				type: 'hot_cue_save', deck: 1, slot: 'A', in_ms: 1000, revision: 'etag'
+				type: 'hot_cue_save',
+				deck: 1,
+				slot: 'A',
+				in_ms: 1000,
+				revision: 'etag'
 			}),
 			(error) => {
 				assert.doesNotMatch(String(error), /rekordbox mapping/i);
@@ -861,7 +1180,15 @@ const TRIGGER_PQTZ_BEATS = [
 ];
 
 function triggerDriverStub({ playing, loopEngaged, positionSec, contextTimeNowSec }) {
-	const cue = { slot: 'A', in_ms: 4000, out_ms: null, is_loop: false, beat_loop_size: null, color_table_index: null, comment: null };
+	const cue = {
+		slot: 'A',
+		in_ms: 4000,
+		out_ms: null,
+		is_loop: false,
+		beat_loop_size: null,
+		color_table_index: null,
+		comment: null
+	};
 	const jumpCalls = [];
 	const armCalls = [];
 	let clockSec = contextTimeNowSec;
@@ -911,7 +1238,9 @@ test('hot_cue_trigger jumps immediately unless BeatSyncMax, playing and unlooped
 			const uninstall = ipc.installPerformanceBrowserIpc();
 			try {
 				const state = await window.musicDjToolsPerformance.dispatch({
-					type: 'hot_cue_trigger', deck: 1, slot: 'A'
+					type: 'hot_cue_trigger',
+					deck: 1,
+					slot: 'A'
 				});
 				assert.deepEqual(jumpCalls, [{ deck: 1, positionMs: 4000 }], label);
 				assert.deepEqual(armCalls, [], label);
@@ -941,7 +1270,9 @@ test('hot_cue_trigger arms for the next downbeat and exposes a live, self-expiri
 	const uninstall = ipc.installPerformanceBrowserIpc();
 	try {
 		const state = await window.musicDjToolsPerformance.dispatch({
-			type: 'hot_cue_trigger', deck: 1, slot: 'A'
+			type: 'hot_cue_trigger',
+			deck: 1,
+			slot: 'A'
 		});
 		// positionSec 1.8 -> next downbeat is 2.025, not the nearer-but-past one.
 		assert.deepEqual(armCalls, [{ deck: 1, positionMs: 4000, armAtPositionSec: 2.025 }]);
@@ -950,12 +1281,19 @@ test('hot_cue_trigger arms for the next downbeat and exposes a live, self-expiri
 		assert.equal(armed.slot, 'A');
 		assert.equal(armed.target_position_ms, 4000);
 		assert.ok(armed.remaining_ms > 0, 'a freshly-armed trigger reports a positive countdown');
-		assert.equal(Math.round(armed.remaining_ms), 225, 'remaining_ms derives from the live clock, not a cached value');
+		assert.equal(
+			Math.round(armed.remaining_ms),
+			225,
+			'remaining_ms derives from the live clock, not a cached value'
+		);
 		// The countdown is recomputed live, not cached: advancing the stubbed
 		// clock changes the NEXT read without a new command.
 		advanceClock(0.1);
 		const midway = ipc.queryPerformanceState().decks[1].hot_cue_armed;
-		assert.ok(midway.remaining_ms < armed.remaining_ms, 'remaining_ms must fall as the clock advances');
+		assert.ok(
+			midway.remaining_ms < armed.remaining_ms,
+			'remaining_ms must fall as the clock advances'
+		);
 		// Once the target context time is reached, the armed record self-clears.
 		advanceClock(1);
 		const landed = ipc.queryPerformanceState().decks[1].hot_cue_armed;
@@ -978,7 +1316,13 @@ test('hot_cue_trigger rejects an empty slot before touching jump or arm (#884)',
 	});
 	const resetDriver = ipc.installPerformanceHotCueDriverForTest({
 		...driver,
-		triggerState: () => ({ cue: null, playing: true, loopEngaged: false, positionSec: 1.8, beats: TRIGGER_PQTZ_BEATS })
+		triggerState: () => ({
+			cue: null,
+			playing: true,
+			loopEngaged: false,
+			positionSec: 1.8,
+			beats: TRIGGER_PQTZ_BEATS
+		})
 	});
 	const uninstall = ipc.installPerformanceBrowserIpc();
 	try {
@@ -1000,7 +1344,11 @@ test('queryPerformanceState serializes has_rb_mapping so a browser/CLI agent can
 	const uninstall = ipc.installPerformanceBrowserIpc();
 	try {
 		const initial = ipc.queryPerformanceState().decks[1];
-		assert.equal(initial.has_rb_mapping, true, 'a fresh unloaded deck defaults has_rb_mapping true');
+		assert.equal(
+			initial.has_rb_mapping,
+			true,
+			'a fresh unloaded deck defaults has_rb_mapping true'
+		);
 	} finally {
 		uninstall();
 		delete globalThis.window;
@@ -1085,7 +1433,11 @@ test('stem commands are strict typed IPC and default state never claims artifact
 		);
 		await assert.rejects(
 			window.musicDjToolsPerformance.dispatch({
-				type: 'stem_solo', deck: 1, stem: 'bass', solo: true, exclusive: 'yes'
+				type: 'stem_solo',
+				deck: 1,
+				stem: 'bass',
+				solo: true,
+				exclusive: 'yes'
 			}),
 			/exclusive must be boolean/i
 		);
@@ -1132,10 +1484,7 @@ test('jog SLIP control dispatches only through the typed performance dispatcher'
 test('jog live BPM uses PQTZ playbackBpm, not tag BPM times pitch', async () => {
 	const jogSource = await readFile('src/lib/components/rb/deck/JogDial.svelte', 'utf8');
 	assert.match(jogSource, /playbackBpm/);
-	assert.doesNotMatch(
-		jogSource,
-		/deck\.bpm === null \? null : deck\.bpm \* deck\.pitch/
-	);
+	assert.doesNotMatch(jogSource, /deck\.bpm === null \? null : deck\.bpm \* deck\.pitch/);
 });
 
 test('continuous mixer controls execute through IPC immediately and round-trip in query state', async () => {
@@ -1172,108 +1521,120 @@ test('continuous mixer controls execute through IPC immediately and round-trip i
 		assert.equal(state.command_pending, false);
 		assert.equal(state.command_queued, 0);
 		assert.deepEqual(state.mixer, {
-		crossfader: 0.3,
-		master: 0.6,
-		headphones: {
-			mix: 0.25,
-			level: 0.75,
-			selected_output_device_id: null,
-			selected_master_output_device_id: null,
-			selected_input_device_id: null,
-			output_mode: 'practice',
-			split_reason: null,
-			launch_restore: null,
-			fidelity_guard: null,
-			head_delay_ms: 0,
-			alignment_mode: 'hybrid',
-			master_delay_ms: 0,
-			calibration: {
-				step: 'idle',
-				cue_latency_ms: null,
-				master_latency_ms: null,
-				offset_ms: null,
-				verify_residual_ms: null,
-				probe: null,
-				error: null,
-				diagnostics: {
-					probe: 'chirp', alternate_probe: 'unavailable', failure: null,
-					master_measurements_ms: [], cue_measurements_ms: [], spread_ms: null
+			crossfader: 0.3,
+			master: 0.6,
+			headphones: {
+				mix: 0.25,
+				level: 0.75,
+				selected_output_device_id: null,
+				selected_master_output_device_id: null,
+				selected_input_device_id: null,
+				output_mode: 'practice',
+				split_reason: null,
+				launch_restore: null,
+				fidelity_guard: null,
+				head_delay_ms: 0,
+				alignment_mode: 'hybrid',
+				master_delay_ms: 0,
+				calibration: {
+					step: 'idle',
+					cue_latency_ms: null,
+					master_latency_ms: null,
+					offset_ms: null,
+					verify_residual_ms: null,
+					probe: null,
+					error: null,
+					diagnostics: {
+						probe: 'chirp',
+						alternate_probe: 'unavailable',
+						failure: null,
+						master_measurements_ms: [],
+						cue_measurements_ms: [],
+						spread_ms: null
+					}
+				},
+				routes: {
+					master: { state: 'default', selected: false },
+					cue: { state: 'default', selected: false }
+				},
+				signals: Object.fromEntries(
+					['master', 'cue', 'input'].map((bus) => [
+						bus,
+						{
+							state: bus === 'input' ? 'inactive' : 'unavailable',
+							rms: null,
+							peak: null,
+							measured_at: null,
+							source: bus === 'input' ? 'captured_input' : 'application_bus',
+							physical_output_proven: false
+						}
+					])
+				),
+				outputs: [],
+				inputs: [],
+				device_access: {
+					status: 'not_checked',
+					action: 'retry',
+					message:
+						'Audio devices have not been checked yet. Audio plays through the system default output.',
+					detail: null,
+					output_pinning: true,
+					notices: []
+				},
+				supported: false,
+				active: false,
+				error: null
+			},
+			channels: {
+				1: {
+					deck_id: 1,
+					trim: 0.5,
+					eq_high: 0.5,
+					eq_mid: 0.5,
+					eq_low: 0.5,
+					filter: 0.5,
+					fader: 1,
+					assign: 'A',
+					cue_enabled: false,
+					stem_eq_mode: false
+				},
+				2: {
+					deck_id: 2,
+					trim: 0.7,
+					eq_high: 0.5,
+					eq_mid: 0.25,
+					eq_low: 0.5,
+					filter: 0.9,
+					fader: 0.8,
+					assign: 'THRU',
+					cue_enabled: true,
+					stem_eq_mode: false
+				},
+				3: {
+					deck_id: 3,
+					trim: 0.5,
+					eq_high: 0.5,
+					eq_mid: 0.5,
+					eq_low: 0.5,
+					filter: 0.5,
+					fader: 1,
+					assign: 'A',
+					cue_enabled: false,
+					stem_eq_mode: false
+				},
+				4: {
+					deck_id: 4,
+					trim: 0.5,
+					eq_high: 0.5,
+					eq_mid: 0.5,
+					eq_low: 0.5,
+					filter: 0.5,
+					fader: 1,
+					assign: 'B',
+					cue_enabled: false,
+					stem_eq_mode: false
 				}
-			},
-			routes: {
-				master: { state: 'default', selected: false },
-				cue: { state: 'default', selected: false }
-			},
-			signals: Object.fromEntries(['master', 'cue', 'input'].map((bus) => [bus, {
-				state: bus === 'input' ? 'inactive' : 'unavailable',
-				rms: null, peak: null, measured_at: null,
-				source: bus === 'input' ? 'captured_input' : 'application_bus',
-				physical_output_proven: false
-			}])),
-			outputs: [],
-			inputs: [],
-			device_access: {
-				status: 'not_checked',
-				action: 'retry',
-				message: 'Audio devices have not been checked yet. Audio plays through the system default output.',
-				detail: null,
-				output_pinning: true,
-				notices: []
-			},
-			supported: false,
-			active: false,
-			error: null
-		},
-		channels: {
-			1: {
-				deck_id: 1,
-				trim: 0.5,
-				eq_high: 0.5,
-				eq_mid: 0.5,
-				eq_low: 0.5,
-				filter: 0.5,
-				fader: 1,
-				assign: 'A',
-				cue_enabled: false,
-				stem_eq_mode: false
-			},
-			2: {
-				deck_id: 2,
-				trim: 0.7,
-				eq_high: 0.5,
-				eq_mid: 0.25,
-				eq_low: 0.5,
-				filter: 0.9,
-				fader: 0.8,
-				assign: 'THRU',
-				cue_enabled: true,
-				stem_eq_mode: false
-			},
-			3: {
-				deck_id: 3,
-				trim: 0.5,
-				eq_high: 0.5,
-				eq_mid: 0.5,
-				eq_low: 0.5,
-				filter: 0.5,
-				fader: 1,
-				assign: 'A',
-				cue_enabled: false,
-				stem_eq_mode: false
-			},
-			4: {
-				deck_id: 4,
-				trim: 0.5,
-				eq_high: 0.5,
-				eq_mid: 0.5,
-				eq_low: 0.5,
-				filter: 0.5,
-				fader: 1,
-				assign: 'B',
-				cue_enabled: false,
-				stem_eq_mode: false
 			}
-		}
 		});
 
 		await ipc.dispatchPerformanceCommand({ type: 'trim', deck: 2, value: 0.5 });
@@ -1314,7 +1675,10 @@ test('mixer headphone controls use the typed dispatcher from every visible contr
 	assert.match(headphones, /function handleSetOutputs\(\): void \{[^}]*openIo\(\);/);
 	assert.match(headphones, /aria-label="SHOW AUDIO I\/O"[^>]*onclick=\{handleSetOutputs\}/);
 	assert.match(headphones, /Choose output \/ allow device access/);
-	assert.match(headphones, /Device access can open an output chooser or microphone permission prompt/);
+	assert.match(
+		headphones,
+		/Device access can open an output chooser or microphone permission prompt/
+	);
 	assert.match(strip, /aria-pressed=\{cueEnabled\}/);
 	assert.match(headphones, /aria-label="headphone output device"/);
 	assert.match(headphones, /ondelay/);
@@ -1474,14 +1838,23 @@ test('load play intent is strictly validated, immediate, and visible to agents',
 		new URL('../../src/lib/rb/performance-ipc.svelte.ts', import.meta.url),
 		'utf8'
 	);
-	assert.match(source, /type: 'load_play_intent'; deck: DeckId; generation: number; desired_play: boolean/);
+	assert.match(
+		source,
+		/type: 'load_play_intent'; deck: DeckId; generation: number; desired_play: boolean/
+	);
 	assert.match(source, /_exactKeys\(record, \['type', 'deck', 'generation', 'desired_play'\]\)/);
 	assert.match(source, /generation must be a positive safe integer/);
 	// Any number of sibling types (line comments between them allowed) may share the
 	// load_play_intent early-return group; a fixed
 	// character window broke when PREF-02 appended feedback_mark to it (main red, Fri 11 Sep 2026).
-	assert.match(source, /command\.type === 'load_play_intent'(?:\s*(?:\/\/[^\n]*\n\s*)*\|\| command\.type === '[a-z_]+')*\s*\)\s*\{\s*return null;/);
-	assert.match(source, /load_play_intent: Record<DeckId, \{ generation: number; desired_play: boolean \} \| null>/);
+	assert.match(
+		source,
+		/command\.type === 'load_play_intent'(?:\s*(?:\/\/[^\n]*\n\s*)*\|\| command\.type === '[a-z_]+')*\s*\)\s*\{\s*return null;/
+	);
+	assert.match(
+		source,
+		/load_play_intent: Record<DeckId, \{ generation: number; desired_play: boolean \} \| null>/
+	);
 });
 
 test('queryPerformanceState publishes browser pane search, sort, and selected row from the adapter', () => {
@@ -1546,10 +1919,20 @@ test('a slow playlist load answers complete:false, then the queried state flips 
 		readSnapshot: () => ({ search: null, sort: null, selected_row: null, load: { ...pane } })
 	});
 	try {
-		const answered = await ipc.dispatchPerformanceCommand({ type: 'browser_select_playlist', playlist_id: 'all' });
-		assert.deepEqual(answered.browser.load, { complete: false, rows_loaded: 500 }, 'a partial list says so');
+		const answered = await ipc.dispatchPerformanceCommand({
+			type: 'browser_select_playlist',
+			playlist_id: 'all'
+		});
+		assert.deepEqual(
+			answered.browser.load,
+			{ complete: false, rows_loaded: 500 },
+			'a partial list says so'
+		);
 		Object.assign(pane, { complete: true, rows_loaded: 9000 });
-		assert.deepEqual(ipc.queryPerformanceState().browser.load, { complete: true, rows_loaded: 9000 });
+		assert.deepEqual(ipc.queryPerformanceState().browser.load, {
+			complete: true,
+			rows_loaded: 9000
+		});
 	} finally {
 		unregister();
 		uninstall();
@@ -1572,7 +1955,11 @@ test('master mute and browser playlist selection are bus commands with queryable
 		const muted = await ipc.dispatchPerformanceCommand({ type: 'master_mute', muted: true });
 		assert.equal(muted.master.muted, true);
 		assert.equal(muted.history.at(-1).type, 'master_mute');
-		const observed = await ipc.dispatchPerformanceCommand({ type: 'pitch_range', deck: 1, range: 8 });
+		const observed = await ipc.dispatchPerformanceCommand({
+			type: 'pitch_range',
+			deck: 1,
+			range: 8
+		});
 		assert.equal(observed.decks[1].last_command_id, observed.history.at(-1).id);
 
 		const selected = await ipc.dispatchPerformanceCommand({
@@ -1618,7 +2005,10 @@ test('auto_play_two_track is a registered performance command that completes wit
 	globalThis.window = {};
 	const uninstall = ipc.installPerformanceBrowserIpc();
 	try {
-		const state = await ipc.dispatchPerformanceCommand({ type: 'auto_play_two_track', enabled: true });
+		const state = await ipc.dispatchPerformanceCommand({
+			type: 'auto_play_two_track',
+			enabled: true
+		});
 		assert.equal(state.history.at(-1)?.type, 'auto_play_two_track');
 		assert.equal(state.last_error, null);
 		assert.doesNotMatch(JSON.stringify(state), /auto_play_two_track: not_implemented/);
@@ -1630,7 +2020,10 @@ test('auto_play_two_track is a registered performance command that completes wit
 
 test('TOPVIEW-06 two-track AutoPlay has a queue scope and the checkbox uses the typed dispatcher', async () => {
 	// [if] auto_play_two_track has no queue scope [then] every IPC/CLI call throws, [else stop].
-	assert.equal(ipc.performanceCommandQueueScopes({ type: 'auto_play_two_track', enabled: true }), null);
+	assert.equal(
+		ipc.performanceCommandQueueScopes({ type: 'auto_play_two_track', enabled: true }),
+		null
+	);
 	// [if] the TopBar checkbox writes the pref directly [then] it bypasses the shared dispatcher, [else stop].
 	const source = await readFile('src/lib/components/rb/TopBar.svelte', 'utf8');
 	assert.match(source, /runPerformanceCommandFromUi\(\{\s*type: 'auto_play_two_track',/);
@@ -1648,12 +2041,18 @@ test('AGENT-48 AutoPlay intent selector dispatches auto_play_next_intent through
 	assert.match(topBar, /runPerformanceCommandFromUi\(\{\s*type: 'auto_play_next_intent'/);
 	assert.doesNotMatch(topBar, /autoPlayNextState\.intent\s*=/);
 	for (const intent of plan.TRANSITION_INTENTS) {
-		assert.deepEqual(ipc.parsePerformanceCommandForTest({ type: 'auto_play_next_intent', intent }), {
-			type: 'auto_play_next_intent',
-			intent
-		});
+		assert.deepEqual(
+			ipc.parsePerformanceCommandForTest({ type: 'auto_play_next_intent', intent }),
+			{
+				type: 'auto_play_next_intent',
+				intent
+			}
+		);
 	}
-	assert.throws(() => ipc.parsePerformanceCommandForTest({ type: 'auto_play_next_intent' }), /unknown intent/);
+	assert.throws(
+		() => ipc.parsePerformanceCommandForTest({ type: 'auto_play_next_intent' }),
+		/unknown intent/
+	);
 	assert.throws(
 		() => ipc.parsePerformanceCommandForTest({ type: 'auto_play_next_intent', intent: 'teleport' }),
 		/unknown intent/
@@ -1673,14 +2072,30 @@ test('TOPVIEW-01..04 view icons and PAD are typed, query-visible dispatcher comm
 	assert.equal(ipc.performanceCommandQueueScopes({ type: 'show_pads', enabled: false }), null);
 	// [if] the parser accepts a view outside PERF_VIEWS or an extra key [then] an agent can write a bad pref, [else stop].
 	for (const view of ['waveform', 'list', 'phase-scope', 'phase-meter']) {
-		assert.deepEqual(ipc.parsePerformanceCommandForTest({ type: 'set_perf_view', view }), { type: 'set_perf_view', view });
+		assert.deepEqual(ipc.parsePerformanceCommandForTest({ type: 'set_perf_view', view }), {
+			type: 'set_perf_view',
+			view
+		});
 	}
-	assert.throws(() => ipc.parsePerformanceCommandForTest({ type: 'set_perf_view', view: 'grid' }), /set_perf_view view must be one of/);
-	assert.throws(() => ipc.parsePerformanceCommandForTest({ type: 'set_perf_view' }), /set_perf_view view must be one of/);
-	assert.throws(() => ipc.parsePerformanceCommandForTest({ type: 'set_perf_view', view: 'list', deck: 1 }));
-	assert.deepEqual(ipc.parsePerformanceCommandForTest({ type: 'show_pads', enabled: false }), { type: 'show_pads', enabled: false });
+	assert.throws(
+		() => ipc.parsePerformanceCommandForTest({ type: 'set_perf_view', view: 'grid' }),
+		/set_perf_view view must be one of/
+	);
+	assert.throws(
+		() => ipc.parsePerformanceCommandForTest({ type: 'set_perf_view' }),
+		/set_perf_view view must be one of/
+	);
+	assert.throws(() =>
+		ipc.parsePerformanceCommandForTest({ type: 'set_perf_view', view: 'list', deck: 1 })
+	);
+	assert.deepEqual(ipc.parsePerformanceCommandForTest({ type: 'show_pads', enabled: false }), {
+		type: 'show_pads',
+		enabled: false
+	});
 	assert.throws(() => ipc.parsePerformanceCommandForTest({ type: 'show_pads', enabled: 'no' }));
-	assert.throws(() => ipc.parsePerformanceCommandForTest({ type: 'show_pads', enabled: true, deck: 1 }));
+	assert.throws(() =>
+		ipc.parsePerformanceCommandForTest({ type: 'show_pads', enabled: true, deck: 1 })
+	);
 	// [if] the query snapshot omits either pref [then] an agent cannot observe the controls, [else stop].
 	const ipcSource = await readFile('src/lib/rb/performance-ipc.svelte.ts', 'utf8');
 	assert.match(ipcSource, /perf_view: uiPrefs\.perf_view,/);
@@ -1690,9 +2105,15 @@ test('TOPVIEW-01..04 view icons and PAD are typed, query-visible dispatcher comm
 	// [if] a TopBar control writes the pref directly [then] it bypasses the shared dispatcher, [else stop].
 	const source = await readFile('src/lib/components/rb/TopBar.svelte', 'utf8');
 	for (const view of ['waveform', 'list', 'phase-scope', 'phase-meter']) {
-		assert.match(source, new RegExp(`runPerformanceCommandFromUi\\(\\{ type: 'set_perf_view', view: '${view}' \\}\\)`));
+		assert.match(
+			source,
+			new RegExp(`runPerformanceCommandFromUi\\(\\{ type: 'set_perf_view', view: '${view}' \\}\\)`)
+		);
 	}
-	assert.match(source, /runPerformanceCommandFromUi\(\{ type: 'show_pads', enabled: !uiPrefs\.show_pads \}\)/);
+	assert.match(
+		source,
+		/runPerformanceCommandFromUi\(\{ type: 'show_pads', enabled: !uiPrefs\.show_pads \}\)/
+	);
 	assert.doesNotMatch(source, /setPerfView\(/);
 	assert.doesNotMatch(source, /setShowPads\(/);
 });
@@ -1850,10 +2271,7 @@ test('DECKUX-4985 play on an empty deck refuses without play: no track loaded', 
 			/Deck 1 is empty - load a track before play/
 		);
 		assert.match(ipc.performanceCommandStatus.last_error ?? '', /Deck 1 is empty/);
-		assert.doesNotMatch(
-			ipc.performanceCommandStatus.last_error ?? '',
-			/no track loaded on deck/
-		);
+		assert.doesNotMatch(ipc.performanceCommandStatus.last_error ?? '', /no track loaded on deck/);
 	} finally {
 		uninstall();
 		delete globalThis.window;
@@ -1896,7 +2314,10 @@ test('RESCUE-02 rescue_resume and rescue_stop_all parse, scope all decks, and lo
 	assert.deepEqual(
 		ipc.performanceCommandQueueScopes({
 			type: 'rescue_resume',
-			decks: [{ deck: 1, position_ms: 5000 }, { deck: 3, position_ms: 12_000 }],
+			decks: [
+				{ deck: 1, position_ms: 5000 },
+				{ deck: 3, position_ms: 12_000 }
+			],
 			master_deck: 1
 		}),
 		ipc.PERFORMANCE_RESCUE_COMMAND_SCOPES
@@ -1945,10 +2366,10 @@ test('RESCUE-02 rescue_resume and rescue_stop_all parse, scope all decks, and lo
 });
 
 test('master command accepts optional lock and query exposes master_mode', async () => {
-	assert.deepEqual(
-		ipc.performanceCommandQueueScopes({ type: 'master', deck: 4, lock: true }),
-		[4, 'sync']
-	);
+	assert.deepEqual(ipc.performanceCommandQueueScopes({ type: 'master', deck: 4, lock: true }), [
+		4,
+		'sync'
+	]);
 	globalThis.window = {};
 	const uninstall = ipc.installPerformanceBrowserIpc();
 	try {
@@ -1969,20 +2390,38 @@ test('master command accepts optional lock and query exposes master_mode', async
 // check runs at the command's turn in the deck queue, so a load of another
 // track queued ahead of it is never reloaded on the probe's behalf.
 test('stem_load parses an optional stable_id and refuses an empty one', () => {
-	assert.deepEqual(ipc.parsePerformanceCommandForTest({ type: 'stem_load', deck: 2 }), { type: 'stem_load', deck: 2 });
-	assert.deepEqual(ipc.parsePerformanceCommandForTest({ type: 'stem_load', deck: 2, stable_id: 'track-a' }), {
+	assert.deepEqual(ipc.parsePerformanceCommandForTest({ type: 'stem_load', deck: 2 }), {
 		type: 'stem_load',
-		deck: 2,
-		stable_id: 'track-a'
+		deck: 2
 	});
-	assert.throws(() => ipc.parsePerformanceCommandForTest({ type: 'stem_load', deck: 2, stable_id: ' ' }), /non-empty string/);
-	assert.deepEqual(ipc.parsePerformanceCommandForTest({ type: 'stem_separate', deck: 2, stable_id: 'a' }), {
-		type: 'stem_separate',
-		deck: 2,
-		stable_id: 'a'
-	});
-	assert.throws(() => ipc.parsePerformanceCommandForTest({ type: 'stem_separate', deck: 2, stable_id: '' }), /non-empty string/);
-	assert.throws(() => ipc.parsePerformanceCommandForTest({ type: 'stem_separate', deck: 2, extra: 'a' }), /unexpected fields/);
+	assert.deepEqual(
+		ipc.parsePerformanceCommandForTest({ type: 'stem_load', deck: 2, stable_id: 'track-a' }),
+		{
+			type: 'stem_load',
+			deck: 2,
+			stable_id: 'track-a'
+		}
+	);
+	assert.throws(
+		() => ipc.parsePerformanceCommandForTest({ type: 'stem_load', deck: 2, stable_id: ' ' }),
+		/non-empty string/
+	);
+	assert.deepEqual(
+		ipc.parsePerformanceCommandForTest({ type: 'stem_separate', deck: 2, stable_id: 'a' }),
+		{
+			type: 'stem_separate',
+			deck: 2,
+			stable_id: 'a'
+		}
+	);
+	assert.throws(
+		() => ipc.parsePerformanceCommandForTest({ type: 'stem_separate', deck: 2, stable_id: '' }),
+		/non-empty string/
+	);
+	assert.throws(
+		() => ipc.parsePerformanceCommandForTest({ type: 'stem_separate', deck: 2, extra: 'a' }),
+		/unexpected fields/
+	);
 });
 
 test('a stem_load for a track the deck no longer holds does nothing, with no error, toast or deck banner', async () => {
@@ -1994,7 +2433,11 @@ test('a stem_load for a track the deck no longer holds does nothing, with no err
 		// The deck now holds track-b: a probe for track-a arrives after the swap.
 		deck.stable_id = 'track-b';
 		await pairing.dispatchPerformanceCommand({ type: 'stem_load', deck: 4, stable_id: 'track-a' });
-		const result = await pairing.runPerformanceCommandFromUi({ type: 'stem_load', deck: 4, stable_id: 'track-a' });
+		const result = await pairing.runPerformanceCommandFromUi({
+			type: 'stem_load',
+			deck: 4,
+			stable_id: 'track-a'
+		});
 		assert.equal(result.ok, true, 'skipped, not failed');
 		assert.equal(pairing.performanceCommandStatus.deck_errors[4], null, 'no deck banner');
 		assert.equal(pairing.performanceCommandStatus.last_error, null, 'no command error');
@@ -2005,7 +2448,11 @@ test('a stem_load for a track the deck no longer holds does nothing, with no err
 			{ type: 'stem_load', deck: 4, stable_id: 'track-b' },
 			{ type: 'stem_load', deck: 4 }
 		]) {
-			await assert.rejects(pairing.dispatchPerformanceCommand(command), /retryStems/, JSON.stringify(command));
+			await assert.rejects(
+				pairing.dispatchPerformanceCommand(command),
+				/retryStems/,
+				JSON.stringify(command)
+			);
 		}
 	} finally {
 		deck.stable_id = before;

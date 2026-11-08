@@ -311,7 +311,14 @@ def test_any_identity_hold_handles_five_column_candidate_row(tmp_path: Path) -> 
     conn = state_db.open_rw(client.state_db_path(tmp_path / "spoke"))
     try:
         _insert_identified_track(
-            conn, "trk-identity-hold", title="held", updated_at=_T0, origin=_DEV_A
+            conn,
+            "trk-identity-hold",
+            title="held",
+            updated_at=_T0,
+            origin=_DEV_A,
+            tier="inferred",
+            content_hash=None,
+            isrc=None,
         )
         conn.commit()
 

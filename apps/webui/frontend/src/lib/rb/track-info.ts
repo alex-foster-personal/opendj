@@ -130,6 +130,7 @@ export const TRACK_INFO_FIELD_ROWS: { [K in keyof TrackInfoRecord]-?: RowBuilder
 		provenance: prov('tags')
 	}),
 	notes: (t, _p, prov) => ({ label: 'Notes', value: _text(t.notes), provenance: prov('notes') }),
+	comments: (t, _p, prov) => ({ label: 'Comments', value: _text(t.comments), provenance: prov('comments') }),
 	file_path: (t, _p, prov) => ({ label: 'File', value: _text(t.file_path), provenance: prov('file_path') }),
 	play_count: (t, plays) => ({
 		label: 'Plays',

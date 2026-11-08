@@ -47,6 +47,15 @@ CHANGELOG_CLASSES: tuple[DataClass, ...] = (
         (fk("library-tracks"),),
     ),
     fixed(
+        "virtual-track-edits",
+        "Non-destructive virtual track edits",
+        state_tables("track_edit"),
+        "sync_hub_changelog",
+        "Edit labels, bounded playback windows and stored FX metadata; the "
+        f"source audio never rides in this row. {_LIBRARY_RULE}",
+        (fk("library-tracks"),),
+    ),
+    fixed(
         "library-playlists",
         "Playlists and crates",
         state_tables("playlists"),
@@ -62,7 +71,7 @@ CHANGELOG_CLASSES: tuple[DataClass, ...] = (
         "Never pushed on its own: rides as a whole-playlist bundle attached to "
         "its playlists row and replaces the peer copy when that row wins LWW "
         f"(ADR-0004 c5). {_LIBRARY_RULE}",
-        (fk("library-tracks"), fk("library-playlists")),
+        (fk("library-tracks"), fk("library-playlists"), fk("virtual-track-edits")),
     ),
     fixed(
         "track-vendor-ids",

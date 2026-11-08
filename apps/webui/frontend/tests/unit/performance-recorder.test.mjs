@@ -167,7 +167,7 @@ test('the live performance rail opens the in-app input picker instead of window.
 	assert.doesNotMatch(iconRail, /recordings - future apps\/sets/);
 	assert.match(iconRail, /action: 'record'/);
 	assert.match(iconRail, /disabled=\{isInert \|\| \(isRecord && recordingBusy\)\}/);
-	assert.match(iconRail, /isRecord \? onrecord : undefined/);
+	assert.match(iconRail, /isRecord \? onrecord : isUsb \? onusb : undefined/);
 	// Gig mounts the recording rail; Library mode passes recordable=false (no REC).
 	assert.match(browserPanel, /<PerformanceRecorderRail \{source\} onspotify=\{selectSpotifySource\} oncollection=\{selectCollectionSource\} recordable=\{library === null\} \/>/);
 	assert.doesNotMatch(performanceRecorderRail, /window\.prompt/);

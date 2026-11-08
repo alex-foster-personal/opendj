@@ -1,15 +1,19 @@
 /**
  * Practice replica bindings: join a panel layout control to the SAME DeviceMap the real
  * controller drives (ADR-0137). The layout stores only the wire identity a control sends
- * (channel, note|cc, number); the action comes from the map, so an on-screen press and a
- * hardware press resolve through one table and cannot disagree.
+ * (channel, note|cc, number); the action usually comes from the map, so an on-screen press
+ * and a hardware press resolve through one table and cannot disagree. For a few FLX4 wires
+ * the map lists as hints only while Open DJ already has a matching MidiAction (issue #9405,
+ * SKIN-9564), the replica adds a local supplement below so practice can fire that action;
+ * a real FLX4 press on those wires still hits `unmapped` until FLX4_MAP binds them.
  *
  * Requirements (mini-PRD):
  *   ✔︎ resolveControl returns the map's binding for the control's wire source.
  *     [if] the FLX4 replica's deck 1 PLAY resolves to anything but deck_play_toggle deck 1 [then] ⛔️
  *   ✔︎ A control whose source is only a map HINT resolves to kind 'inert' carrying the hint
  *     label, and renders inert with the PARITY-TODO tooltip (house rule: no fake behavior).
- *     [if] JOG resolves to a bound action while the map only hints it [then] ⛔️
+ *     [if] a hint-only control with no supplement row (JOG, BEAT JUMP, PAD FX, SAMPLER, FX) resolves bound [then] ⛔️
+ *     [if] BEAT SYNC on deck N does not fire deck_sync_toggle deck N [then] ⛔️
  *   ✔︎ A control the map neither binds nor hints throws: the layout and map disagree.
  *     [if] a layout control with a wire number absent from the map resolves silently [then] ⛔️
  */
@@ -57,6 +61,32 @@ export interface PanelLayout {
 	controls: PanelControl[];
 }
 
+/** Must match `FLX4_MAP.nameMatch` in `apps/webui/frontend/src/lib/rb/midi/maps/ddj-flx4.ts`. */
+const _FLX4_NAME_MATCH = 'DDJ-FLX4';
+
+/**
+ * Replica-only bindings for FLX4 wires that FLX4_MAP documents as hints only (#9405); changing
+ * the shipped map is out of scope, while Pioneer-style maps elsewhere already bind the same
+ * actions to these wires. PAD FX and SAMPLER are omitted: `instant_fx` and `sampler` pad modes are
+ * not available yet (`selectControllerPadMode`), and replica performance pads still fire
+ * `deck_hot_cue` regardless of pad mode, so binding those wires would look functional while pad
+ * presses still seek hot cues (review PRRT_kwDOSEvNd860tQ87).
+ */
+export const PRACTICE_WIRE_BINDINGS: readonly MidiBinding[] = (() => {
+	const rows: MidiBinding[] = [];
+	const note = (ch: 1 | 2, id: number, action: MidiAction): void => {
+		rows.push({ source: { ch, kind: 'note', id }, action });
+	};
+	for (const deck of [1, 2] as const) {
+		const ch = deck;
+		note(ch, 88, { type: 'deck_sync_toggle', deck });
+		note(ch, 16, { type: 'deck_manual_loop_cycle', deck });
+		note(ch, 17, { type: 'deck_manual_loop_cycle', deck });
+		note(ch, 27, { type: 'controller_pad_mode', deck, mode: 'hot_cue' });
+	}
+	return rows;
+})();
+
 /** `wire` is what the control sends on the resolved layer (base, or SHIFT's row). */
 export type ResolvedControl =
 	| { kind: 'bound'; control: PanelControl; wire: PanelWire; binding: MidiBinding }
@@ -64,6 +94,11 @@ export type ResolvedControl =
 
 function _sameSource(a: PanelWire, b: MidiBinding['source']): boolean {
 	return a.ch === b.ch && a.kind === b.kind && a.id === b.id;
+}
+
+function _practiceSupplementBinding(map: DeviceMap, wire: PanelWire): MidiBinding | undefined {
+	if (map.nameMatch !== _FLX4_NAME_MATCH) return undefined;
+	return PRACTICE_WIRE_BINDINGS.find((b) => _sameSource(wire, b.source));
 }
 
 /** Join one panel control to the device map on the active layer. Like the hardware, a held
@@ -80,6 +115,8 @@ export function resolveControl(
 		(shiftHeld ? onWire.find((b) => b.shift === true) : undefined) ??
 		onWire.find((b) => b.shift !== true);
 	if (binding !== undefined) return { kind: 'bound', control, wire, binding };
+	const supplement = _practiceSupplementBinding(map, wire);
+	if (supplement !== undefined) return { kind: 'bound', control, wire, binding: supplement };
 	const hint = (map.hints ?? []).find((h) => _sameSource(wire, h.source));
 	if (hint !== undefined) return { kind: 'inert', control, wire, hint: hint.label };
 	const { ch, kind, id } = wire;

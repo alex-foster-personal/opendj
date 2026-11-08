@@ -116,6 +116,7 @@ _MCP_COMMAND = "mcp"
 _UPDATE_COMMAND = "update"
 _DJ_COMMAND = "dj"
 _WORK_COMMAND = "work"
+_EDIT_COMMAND = "edit"
 
 
 class _Parser(argparse.ArgumentParser):
@@ -729,6 +730,7 @@ _STANDALONE_COMMANDS = frozenset(
     {
         _TRACK_COMMAND,
         _WORK_COMMAND,
+        _EDIT_COMMAND,
         _FEEDBACK_COMMAND,
         _ENRICHMENT_COMMAND,
         _ARTWORK_COMMAND,
@@ -750,10 +752,11 @@ def _run_standalone(head: str, rest: list[str], args: argparse.Namespace) -> int
         from apps.opendj_cli import track_cli
 
         return track_cli.run(rest, as_json=args.json, state_db=args.state_db)
-    if head == _WORK_COMMAND:
-        from apps.opendj_cli import work_cli
+    if head in {_WORK_COMMAND, _EDIT_COMMAND}:
+        from apps.opendj_cli import edit_cli, work_cli
 
-        return work_cli.run(rest, as_json=args.json, lock=args.lock)
+        runner = {_WORK_COMMAND: work_cli.run, _EDIT_COMMAND: edit_cli.run}[head]
+        return runner(rest, as_json=args.json, lock=args.lock)
     if head == _FEEDBACK_COMMAND:
         from apps.opendj_cli import feedback_cli
 

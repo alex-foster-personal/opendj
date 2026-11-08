@@ -94,6 +94,29 @@ describe('applyDeckTrackDrop', () => {
 		assert.deepEqual(dispatches, [{ type: 'load', deck: 1, stable_id: 'SID-1' }]);
 	});
 
+	it('forwards virtual edit window fields on deck load', async () => {
+		const { dispatches, toasts } = await runDrop({
+			row: {
+				file_exists: true,
+				is_streaming: false,
+				edit_id: 'ed-1',
+				in_ms: 1000,
+				out_ms: 5000
+			}
+		});
+		assert.equal(toasts.length, 0);
+		assert.deepEqual(dispatches, [
+			{
+				type: 'load',
+				deck: 1,
+				stable_id: 'SID-1',
+				edit_id: 'ed-1',
+				in_ms: 1000,
+				out_ms: 5000
+			}
+		]);
+	});
+
 	it('unloads then loads when the deck is occupied', async () => {
 		const { dispatches, toasts } = await runDrop({
 			row: { file_exists: true, is_streaming: false },
@@ -196,6 +219,63 @@ describe('draggedDeckRows', () => {
 		assert.equal(meta.A.key_shift, -1, 'the first selected id keeps its shift');
 		assert.equal(meta.B.key_shift, 0);
 		assert.equal(meta.B.is_streaming, false);
+	});
+
+	it('uses only the primary row for edit fields when source and edit share stable_id', () => {
+		const source = {
+			stable_id: 'SID',
+			file_exists: true,
+			is_streaming: false,
+			edit_id: null,
+			in_ms: null,
+			out_ms: null
+		};
+		const edit = {
+			stable_id: 'SID',
+			file_exists: true,
+			is_streaming: false,
+			edit_id: 'ed-1',
+			in_ms: 100,
+			out_ms: 500
+		};
+		const rows = [source, edit];
+		const fromSource = draggedDeckRows(['SID'], rows, () => 0, source);
+		assert.deepEqual(fromSource.SID, {
+			file_exists: true,
+			is_streaming: false,
+			key_shift: 0
+		});
+		const fromEdit = draggedDeckRows(['SID'], rows, () => 0, edit);
+		assert.deepEqual(fromEdit.SID, {
+			file_exists: true,
+			is_streaming: false,
+			key_shift: 0,
+			edit_id: 'ed-1',
+			in_ms: 100,
+			out_ms: 500
+		});
+	});
+
+	it('includes edit_id and in_ms/out_ms in drag metadata', () => {
+		const rows = [
+			{
+				stable_id: 'A',
+				file_exists: true,
+				is_streaming: false,
+				edit_id: 'e1',
+				in_ms: 10,
+				out_ms: 99
+			}
+		];
+		const meta = draggedDeckRows(['A'], rows, () => 0);
+		assert.deepEqual(meta.A, {
+			file_exists: true,
+			is_streaming: false,
+			key_shift: 0,
+			edit_id: 'e1',
+			in_ms: 10,
+			out_ms: 99
+		});
 	});
 
 	it('the first selected id of a multi-row drop loads shifted', async () => {

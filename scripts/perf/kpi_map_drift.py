@@ -332,6 +332,9 @@ def _per_kpi_drift(sid: str, cfg: dict, cells: dict[str, str]) -> list[str]:
     absence of candidates the code cannot tell apart from a stale number
     nobody meant to leave unchecked.
 
+    Nested `cache_state_bands` are validated by `_cache_state_band_drift`
+    separately; the entry's outer `unverifiable_columns` does not opt them out.
+
     A DICT entry also carries its OWN `lower_is_better` and `acceptable_strict`,
     each of which can diverge from the scenario headline `threshold_drift`
     already checks once, scenario-wide, against the target cell. Once a
@@ -356,6 +359,7 @@ def _per_kpi_drift(sid: str, cfg: dict, cells: dict[str, str]) -> list[str]:
         rank = family_rank.get(family, 0) + 1
         family_rank[family] = rank
         unverifiable = set(req.get("unverifiable_columns", []))
+        problems.extend(_cache_state_band_drift(sid, req, cells))
         for column, value in (
             ("target", req.get("budget")),
             ("acceptable", req.get("acceptable")),
@@ -415,6 +419,149 @@ def _per_kpi_operator_problem(
                 f"beside its own number in spec cell {cell!r}"
             )
     return None
+
+
+def _cache_state_numeric_pair(band: object) -> tuple[float, float] | None:
+    """Budget and acceptable floats when the nested band is well-formed."""
+    if not isinstance(band, dict):
+        return None
+    budget = band.get("budget")
+    acceptable = band.get("acceptable")
+    bad = (
+        isinstance(budget, bool)
+        or not isinstance(budget, (int, float))
+        or isinstance(acceptable, bool)
+        or not isinstance(acceptable, (int, float))
+    )
+    if bad:
+        return None
+    return float(budget), float(acceptable)
+
+
+def _cache_state_naming_columns(state: object, cells: dict[str, str]) -> list[str]:
+    needle = str(state).lower()
+    return [
+        col
+        for col in ("target", "acceptable")
+        if re.search(rf"\b{re.escape(needle)}\b", str(cells.get(col, "")).lower())
+    ]
+
+
+def _cache_state_threshold_problems(
+    sid: str,
+    kpi: str,
+    state: object,
+    band: dict,
+    unit: str,
+    cells: dict[str, str],
+    naming: list[str],
+) -> list[str]:
+    if len(naming) == 2:
+        field_checks = (
+            ("budget", "target", float(band["budget"])),
+            ("acceptable", "acceptable", float(band["acceptable"])),
+        )
+    else:
+        col = naming[0]
+        field_checks = (
+            ("budget", col, float(band["budget"])),
+            ("acceptable", col, float(band["acceptable"])),
+        )
+    problems: list[str] = []
+    for field, col, value in field_checks:
+        cell = str(cells.get(col, ""))
+        matches = _threshold_matches_cell(value, unit, cell)
+        if matches is False:
+            problems.append(
+                f"{sid} {kpi} cache_state_bands.{state}.{field}: map records "
+                f"{band[field]!r}, not found in spec cell {cell!r}"
+            )
+        elif matches is None:
+            problems.append(
+                f"{sid} {kpi} cache_state_bands.{state}.{field}: map records "
+                f"{band[field]!r}, but spec cell {cell!r} states no comparable number "
+                "to check it against"
+            )
+    return problems
+
+
+def _cache_state_order_problem(
+    sid: str,
+    kpi: str,
+    state: object,
+    budget: float,
+    acceptable: float,
+    breaking: object,
+    lower: bool,
+) -> str | None:
+    if breaking is None:
+        return None
+    br = float(breaking)
+    out_of_order = (budget > acceptable or acceptable > br) if lower else (budget < acceptable or acceptable < br)
+    if not out_of_order:
+        return None
+    return (
+        f"{sid} {kpi} cache_state_bands.{state}: band budget={budget!r}/"
+        f"acceptable={acceptable!r} against breaking={breaking!r} is out of "
+        "order, so verdict_for can never reach BREAKING"
+    )
+
+
+def _cache_state_one_band_drift(
+    sid: str,
+    kpi: str,
+    unit: str,
+    state: object,
+    band: object,
+    cells: dict[str, str],
+    breaking: object,
+    lower: bool,
+) -> list[str]:
+    """Drift findings for one nested cache_state band entry."""
+    problems: list[str] = []
+    pair = _cache_state_numeric_pair(band)
+    if pair is None:
+        problems.append(
+            f"{sid} {kpi} cache_state_bands.{state}: band must carry numeric budget "
+            f"and acceptable, got {band!r}"
+        )
+        return problems
+    budget_f, acceptable_f = pair
+    naming = _cache_state_naming_columns(state, cells)
+    if not naming:
+        problems.append(
+            f"{sid} {kpi} cache_state_bands.{state}: no spec target/acceptable cell names "
+            f"{state!r}, so its band cannot be checked against the spec"
+        )
+    else:
+        assert isinstance(band, dict)
+        problems.extend(_cache_state_threshold_problems(sid, kpi, state, band, unit, cells, naming))
+    order = _cache_state_order_problem(sid, kpi, state, budget_f, acceptable_f, breaking, lower)
+    if order is not None:
+        problems.append(order)
+    return problems
+
+
+def _cache_state_band_drift(sid: str, req: dict, cells: dict[str, str]) -> list[str]:
+    """Each nested cache_state band against the spec cell that names its state.
+
+    PR #1632 thread r3979674318: `_resolve_cache_state_band` feeds these numbers
+    into `verdict_for`, so they are scoring thresholds like budget/acceptable.
+    The required entry's outer `unverifiable_columns` does NOT apply here.
+    """
+    bands = req.get("cache_state_bands")
+    if not bands:
+        return []
+    kpi = str(req.get("kpi", "?"))
+    unit = str(req.get("unit", ""))
+    lower = bool(req.get("lower_is_better", True))
+    breaking = req.get("breaking")
+    if not isinstance(bands, dict) or not bands:
+        return [f"{sid} {kpi} cache_state_bands: must be a non-empty dict, got {bands!r}"]
+    problems: list[str] = []
+    for state, band in bands.items():
+        problems.extend(_cache_state_one_band_drift(sid, kpi, unit, state, band, cells, breaking, lower))
+    return problems
 
 
 def threshold_drift(kpi_map: dict) -> list[str]:

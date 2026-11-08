@@ -17,9 +17,11 @@
 
 	let { onclose }: { onclose: () => void } = $props();
 
-	let Overlay = $state<Component<{ deckId: DeckId; stableId: string; onclose: () => void }> | null>(
-		null
-	);
+	let Overlay = $state<Component<{
+		deckId: DeckId | null;
+		stableId: string;
+		onclose: () => void;
+	}> | null>(null);
 
 	const decks = $derived<TrackInfoDeck[]>(
 		DECK_IDS.map((id) => ({

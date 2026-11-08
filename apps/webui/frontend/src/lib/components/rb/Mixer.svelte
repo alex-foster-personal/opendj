@@ -27,6 +27,7 @@
 	import type { StemControl } from '$lib/rb/stem-types';
 	import { setDeckLayoutMode, uiPrefs } from '$lib/rb/prefs.svelte';
 	import { deckArtworkUrl } from '$lib/rb/artwork-url';
+	import ArtworkDeckNumber from './ArtworkDeckNumber.svelte';
 	import { coverFailed, coverLoaded, coverSrc, coverVisible } from '$lib/rb/artwork-cover.svelte';
 	import { librarySongCapacity } from '$lib/rb/library-song-capacity.svelte';
 	import AssignMatrix from './mixer/AssignMatrix.svelte';
@@ -260,16 +261,19 @@
 				{#if librarySongCapacity.showMixerColumnArt}
 					<div class="col-art" data-mixer-column-art={deck}>
 						{#if artId !== null && coverVisible(artId)}
-							<img
-								class="col-art-img"
-								src={coverSrc(deckArtworkUrl(artId, 's'), artId)}
-								data-expected-resource-error="artwork-404"
-								alt=""
-								title="Track artwork"
-								draggable="false"
-								onload={() => coverLoaded(artId)}
-								onerror={() => coverFailed(artId)}
-							/>
+							<span class="col-art-frame">
+								<img
+									class="col-art-img"
+									src={coverSrc(deckArtworkUrl(artId, 's'), artId)}
+									data-expected-resource-error="artwork-404"
+									alt=""
+									title="Track artwork"
+									draggable="false"
+									onload={() => coverLoaded(artId)}
+									onerror={() => coverFailed(artId)}
+								/>
+								<ArtworkDeckNumber {deck} mode={uiPrefs.deck_number_art} sizePx={40} />
+							</span>
 						{:else}
 							<div
 								class="col-art-empty"
@@ -483,6 +487,10 @@
 		justify-content: flex-start;
 		gap: 2px;
 		overflow: hidden;
+	}
+	.col-art-frame {
+		position: relative;
+		display: block;
 	}
 	.col-art-img,
 	.col-art-empty {

@@ -239,6 +239,14 @@ export function rowFromPlaylistWire(wire: PlaylistTrackRowWire, order: number): 
 	return {
 		stable_id: wire.stable_id,
 		item_id: wire.item_id ?? null,
+		edit_id: wire.edit_id ?? null,
+		in_ms: wire.in_ms ?? null,
+		out_ms: wire.out_ms ?? null,
+		fx: wire.fx ?? null,
+		edit_label: wire.edit_label ?? null,
+		created_by: wire.created_by ?? null,
+		is_edit: wire.is_edit === true,
+		valid: wire.valid !== false,
 		order,
 		title: wire.title,
 		artist: wire.artist,
@@ -334,6 +342,14 @@ export function rowFromListWire(track: TrackListItemWire, order: number): Browse
 	return {
 		stable_id: track.stable_id,
 		item_id: null,
+		edit_id: track.edit_id ?? null,
+		in_ms: track.in_ms ?? null,
+		out_ms: track.out_ms ?? null,
+		fx: track.fx ?? null,
+		edit_label: track.edit_label ?? null,
+		created_by: track.created_by ?? null,
+		is_edit: track.is_edit === true,
+		valid: track.valid !== false,
 		order,
 		// TrackOut spells its nullable fields optional; a BrowserRow wants one
 		// spelling of "unknown", so absent collapses onto null here.

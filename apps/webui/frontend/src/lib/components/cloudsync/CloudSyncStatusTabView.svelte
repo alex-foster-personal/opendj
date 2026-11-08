@@ -12,7 +12,6 @@
 	import type { CloudSyncConfigOut } from '$lib/api-cloudsync-ops';
 	import type {
 		ConfigFormFields,
-		StatusHeadline,
 		SyncNowDecision,
 		envOverrideNotes as EnvOverrideNotes,
 		presentCloudSyncResultError as PresentCloudSyncResultError
@@ -38,7 +37,6 @@
 		syncDecision,
 		forceSyncDecision,
 		showForceSync,
-		headline,
 		backlogNote,
 		technicalDetailsLabel,
 		forceSyncLabel,
@@ -59,7 +57,6 @@
 		syncDecision: SyncNowDecision;
 		forceSyncDecision: SyncNowDecision;
 		showForceSync: boolean;
-		headline: StatusHeadline;
 		backlogNote: string | null;
 		technicalDetailsLabel: string;
 		forceSyncLabel: string;
@@ -103,9 +100,6 @@
 		{#if status === null}
 			<p class="muted">Loading status...</p>
 		{:else}
-			<p class="headline" class:err={headline.tone === 'error'} class:warn={headline.tone === 'warn'} class:ok={headline.tone === 'ok'} data-testid="cloudsync-status-headline">
-				{headline.text}
-			</p>
 			{#if backlogNote !== null}
 				<p
 					class="headline warn"

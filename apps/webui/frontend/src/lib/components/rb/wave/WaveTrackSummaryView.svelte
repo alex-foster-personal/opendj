@@ -5,6 +5,8 @@
 	// key and tempo at the playhead; this file owns only the artwork load state
 	// and the hover scrub.
 	import { gutterTrackTitle } from './track-title-display';
+	import type { DeckNumberArt } from '$lib/rb/deck-number-art';
+	import ArtworkDeckNumber from '../ArtworkDeckNumber.svelte';
 
 	const {
 		fullTitle,
@@ -13,7 +15,9 @@
 		keyColor,
 		liveBpm,
 		onArtworkLoad,
-		onArtworkError
+		onArtworkError,
+		deckNumber = null,
+		deckNumberArt = 'off'
 	}: {
 		/** The loaded track's full title, shown whole on hover. */
 		fullTitle: string;
@@ -29,10 +33,15 @@
 		onArtworkLoad: () => void;
 		/** The artwork image failed to load. */
 		onArtworkError: () => void;
+		/** ARTNUM-9649b: the deck number drawn over the loaded artwork, or null for none. */
+		deckNumber?: number | null;
+		/** ARTNUM-9649: the Deck number on artwork pref. */
+		deckNumberArt?: DeckNumberArt;
 	} = $props();
 
 	const trackName = $derived(gutterTrackTitle(fullTitle));
 	let artworkLoaded = $state(false);
+	let artSizePx = $state(0);
 	let trackNameEl = $state<HTMLSpanElement | null>(null);
 	let trackNameScrubPx = $state(0);
 	let trackNameScrubbing = $state(false);
@@ -55,7 +64,11 @@
 
 <div class="wave-track-summary">
 	{#if artworkSrc !== null}
-		<span class="wave-art" title={artworkLoaded ? 'Track artwork' : 'Loading artwork'}>
+		<span
+			class="wave-art"
+			title={artworkLoaded ? 'Track artwork' : 'Loading artwork'}
+			bind:clientHeight={artSizePx}
+		>
 			<img
 				class:loaded={artworkLoaded}
 				src={artworkSrc}
@@ -70,6 +83,9 @@
 					onArtworkError();
 				}}
 			/>
+			{#if artworkLoaded && deckNumber !== null}
+				<ArtworkDeckNumber deck={deckNumber} mode={deckNumberArt} sizePx={artSizePx} />
+			{/if}
 		</span>
 	{:else}
 		<span

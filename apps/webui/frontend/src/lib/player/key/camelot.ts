@@ -164,6 +164,18 @@ export function _assertKeyShift(semitones: number): asserts semitones is number 
 	}
 }
 
+/** Validate a DSP pitch sample during a live key-shift ramp. Public key-shift
+ * commands remain integer-only through `_assertKeyShift`; Signalsmith accepts
+ * the fractional intermediates that join those command values. */
+export function assertKeyShiftPitch(semitones: number): asserts semitones is number {
+	if (!Number.isFinite(semitones)) {
+		throw new TypeError(`key-shift pitch must be finite, got ${semitones}`);
+	}
+	if (semitones < -12 || semitones > 12) {
+		throw new RangeError(`key-shift pitch must be within -12..12 semitones, got ${semitones}`);
+	}
+}
+
 function _shiftCamelotKey(key: CamelotKey, semitones: number): CamelotKey {
 	_assertKeyShift(semitones);
 	const root = _pitchClass(key.root + semitones);
@@ -555,7 +567,7 @@ export function composeStretchSemitones(
 	masterTempoEnabled: boolean,
 	keyShiftSemitones: number
 ): number {
-	_assertKeyShift(keyShiftSemitones);
+	assertKeyShiftPitch(keyShiftSemitones);
 	return masterTempoSemitones(tempoRatio, masterTempoEnabled) + keyShiftSemitones;
 }
 

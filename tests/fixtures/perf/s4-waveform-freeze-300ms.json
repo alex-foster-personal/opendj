@@ -1,0 +1,35 @@
+{
+  "_provenance": "NOT a genuine live capture: no rAF frame-timing instrument exists yet. One constructed S4 capture session of three ledger rows (healthy p95, sub-5% dropped share, single 300 ms stall) for issue #1773.",
+  "rows": [
+    {
+      "kpi": "waveform_frame_delta_ms_p95",
+      "value": 16.7,
+      "unit": "ms p95 frame delta",
+      "date": "2026-09-09",
+      "machine": "silver",
+      "source": "constructed fixture (no frame-timing instrument yet)",
+      "capture_id": "s4-freeze-300ms",
+      "note": "n=10s capture window at 60Hz, one 300ms stall"
+    },
+    {
+      "kpi": "waveform_dropped_frame_pct_10s",
+      "value": 3.0,
+      "unit": "% dropped frames per 10s window",
+      "date": "2026-09-09",
+      "machine": "silver",
+      "source": "constructed fixture (no frame-timing instrument yet)",
+      "capture_id": "s4-freeze-300ms",
+      "note": "n=10s capture window at 60Hz, one 300ms stall"
+    },
+    {
+      "kpi": "waveform_frame_delta_ms_max",
+      "value": 300,
+      "unit": "ms max frame delta per 10s window",
+      "date": "2026-09-09",
+      "machine": "silver",
+      "source": "constructed fixture (no frame-timing instrument yet)",
+      "capture_id": "s4-freeze-300ms",
+      "note": "n=10s capture window at 60Hz, one 300ms stall"
+    }
+  ]
+}

@@ -9,7 +9,13 @@
 	} from '$lib/rb/library-tags.svelte';
 	import TagCell from './TagCell.svelte';
 
-	export { TagCell, tagTypeChooserEntries, tagTypeColumns, toggleTagTypeColumn, toggleTagTypeInTags };
+	export {
+		TagCell,
+		tagTypeChooserEntries,
+		tagTypeColumns,
+		toggleTagTypeColumn,
+		toggleTagTypeInTags
+	};
 </script>
 
 <script lang="ts">
@@ -18,7 +24,11 @@
 	import ContextMenu from '../ContextMenu.svelte';
 	import ColumnChooserMenu, { type ColumnChooserPrefs } from './ColumnChooserMenu.svelte';
 	import { bindMenuItems, type BoundMenuItem, type MenuRunners } from '$lib/context-menu/bind';
-	import { loadMenuRegistry, menuRegistry, preloadMenuRegistry } from '$lib/context-menu/lazy.svelte';
+	import {
+		loadMenuRegistry,
+		menuRegistry,
+		preloadMenuRegistry
+	} from '$lib/context-menu/lazy.svelte';
 	import { ensureTagsLoaded, openTagEditor, tagState } from '$lib/rb/library-tags.svelte';
 	import { isUsbTrackId } from '$lib/rb/track-source';
 	import TagEditorPopover from './TagEditorPopover.svelte';
@@ -32,8 +42,10 @@
 		runCopyPaths,
 		runPairTracks,
 		runReanalyze,
-		runRevealTracks
+		runRevealTracks,
+		runSetRating
 	} from './track-context-menu';
+	import { runPerformanceCommandFromUi } from '$lib/rb/performance-ipc.svelte';
 	import type { TrackEditModalKind } from './track-edit-menu';
 	import { libraryWorkspace } from '$lib/library/library-workspace.svelte';
 	import { linkVersionsFromMenu, openWorkEditor } from '$lib/rb/works-menu';
@@ -169,7 +181,7 @@
 							: 'collection',
 				audio: trackAudioOf(row),
 				stems: row.stems?.status === 'ready' ? 'ready' : 'none',
-				// LIBWS-03: the registry drops deck loads and worker starters here.
+				// LIBWS-03/06: Library mode hides worker starters; deck loads hand the track to Gig.
 				workspace: libraryWorkspace.active ? 'library' : 'performance'
 			}
 		);
@@ -177,6 +189,22 @@
 			onopeneditmodal ? () => onopeneditmodal(kind) : undefined;
 		const runners: MenuRunners = {
 			...Object.fromEntries(DECKS.map((deck) => [`load-${deck}`, () => onloadrow(row, deck)])),
+			'track-info': () => {
+				if (libraryWorkspace.active) {
+					document
+						.querySelector('[data-testid="track-inspector"]')
+						?.scrollIntoView({ block: 'nearest' });
+					return;
+				}
+				// PRRT_kwDOSEvNd860wEnM: same typed dispatcher as an agent's track_info_open.
+				void runPerformanceCommandFromUi({
+					type: 'track_info_open',
+					stable_id: targetIds.length === 1 ? targetIds[0]! : row.stable_id
+				});
+			},
+			...Object.fromEntries(
+				[0, 1, 2, 3, 4, 5].map((n) => [`rate-${n}`, () => runSetRating(targetIds, n)])
+			),
 			'add-playlist': onaddtoplaylist ? () => onaddtoplaylist(targetIds) : undefined,
 			'bulk-edit': editModal('bulk-edit'),
 			'find-replace': editModal('find-replace'),
@@ -219,7 +247,10 @@
 {/if}
 {#if menu !== null && menuRegistry() !== null}
 	<ContextMenu
-		items={[...menu.lead, ...trackMenuItems(menuRegistry()!, menu.row, menu.targetIds, menu.rowCount, menu.x, menu.y)]}
+		items={[
+			...menu.lead,
+			...trackMenuItems(menuRegistry()!, menu.row, menu.targetIds, menu.rowCount, menu.x, menu.y)
+		]}
 		x={menu.x}
 		y={menu.y}
 		onclose={() => (menu = null)}

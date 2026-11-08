@@ -516,6 +516,15 @@ class _Snapshot:
 _KEEP_FIELDS = ("id", "status", "product_id", "ended_at", "current_period_end", "canceled_at")
 
 
+def _reconciled_within(reconciled_at: float, now: float, within_s: float) -> bool:
+    """True when the snapshot is not from the future and still inside ``within_s``.
+
+    A negative age means the clock moved back since the row was written, so it
+    proves nothing about freshness and must not be served without asking Polar.
+    """
+    return 0 <= now - reconciled_at < within_s
+
+
 def _slim(sub: Mapping[str, Any]) -> dict[str, Any]:
     """Only the fields the mapping reads: no customer email or address on disk."""
     return {key: sub.get(key) for key in _KEEP_FIELDS}
@@ -563,7 +572,7 @@ class PolarEntitlementSource:
         with subject_lock:
             if not force:
                 cached = self._snapshot.get(subject)
-                if cached is not None and 0 <= self._clock() - cached[1] < REFRESH_AFTER_S:
+                if cached is not None and _reconciled_within(cached[1], self._clock(), REFRESH_AFTER_S):
                     return cached[0]
             started = self._clock()
             subs = [_slim(s) for s in self._fetch(subject)]
@@ -578,16 +587,14 @@ class PolarEntitlementSource:
     def _subscriptions(self, subject: str) -> list[dict[str, Any]]:
         cached = self._snapshot.get(subject)
         now = self._clock()
-        # A negative age means the clock moved back since the row was written: it proves
-        # nothing about freshness, so it is never served without asking Polar.
-        if cached is not None and 0 <= now - cached[1] < REFRESH_AFTER_S:
+        if cached is not None and _reconciled_within(cached[1], now, REFRESH_AFTER_S):
             return cached[0]
         try:
             return self.reconcile(subject, force=False)
         except PolarUnavailable as exc:
             cached = self._snapshot.get(subject)  # Another request may have stored a newer answer meanwhile.
             now = self._clock()  # The failed request took time: judge the outage window as of now.
-            if cached is not None and 0 <= now - cached[1] < HONOR_SNAPSHOT_FOR_S:
+            if cached is not None and _reconciled_within(cached[1], now, HONOR_SNAPSHOT_FOR_S):
                 log.warning(
                     "polar unreachable for %s, honoring snapshot from %.0fs ago: %s",
                     subject,

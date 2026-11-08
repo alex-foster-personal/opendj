@@ -42,6 +42,7 @@ from apps.sync_hub.engine_identity_queries import (
     matches_by_isrc,
 )
 from apps.sync_hub.protocol import MEMBERSHIP_TABLE, SPEC_BY_TABLE, RowChange
+from apps.sync_hub.sync_set import PARENT_KEYS
 
 log = logging.getLogger("apps.sync_hub.engine")
 
@@ -187,6 +188,59 @@ def _follow_remap(remap: Mapping[str, str], pk: str) -> str:
     return current
 
 
+def _rewrite_incoming_stable_id(
+    change: RowChange,
+    values: dict[str, Any],
+    pk: list[str],
+    remap: Mapping[str, str],
+) -> bool:
+    old = as_text(values.get("stable_id"))
+    if old is None or old not in remap:
+        return False
+    survivor = _follow_remap(remap, old)
+    values["stable_id"] = survivor
+    spec = SPEC_BY_TABLE.get(change.table)
+    if spec is not None:
+        for index, column in enumerate(spec.pk):
+            if column == "stable_id":
+                pk[index] = survivor
+    return True
+
+
+def _rewrite_incoming_parent_tracks(
+    change: RowChange,
+    values: dict[str, Any],
+    remap: Mapping[str, str],
+) -> bool:
+    rewritten = False
+    for parent, column in PARENT_KEYS.get(change.table, ()):
+        if parent != "tracks":
+            continue
+        old_parent = as_text(values.get(column))
+        if old_parent is not None and old_parent in remap:
+            values[column] = _follow_remap(remap, old_parent)
+            rewritten = True
+    return rewritten
+
+
+def _rewrite_incoming_members(
+    members: tuple[dict[str, Any], ...] | None,
+    remap: Mapping[str, str],
+) -> tuple[tuple[dict[str, Any], ...] | None, bool]:
+    if members is None:
+        return None, False
+    new_members: list[dict[str, Any]] = []
+    rewritten = False
+    for member in members:
+        item = dict(member)
+        member_id = as_text(item.get("stable_id"))
+        if member_id is not None and member_id in remap:
+            item["stable_id"] = _follow_remap(remap, member_id)
+            rewritten = True
+        new_members.append(item)
+    return tuple(new_members), rewritten
+
+
 def rewrite_incoming_change(change: RowChange, remap: Mapping[str, str]) -> RowChange:
     """Rewrite loser PKs in a later row of the same batch onto the survivor.
 
@@ -199,28 +253,10 @@ def rewrite_incoming_change(change: RowChange, remap: Mapping[str, str]) -> RowC
         return change
     values = dict(change.values)
     pk = list(change.pk)
-    rewritten = False
-    old = as_text(values.get("stable_id"))
-    if old is not None and old in remap:
-        survivor = _follow_remap(remap, old)
-        values["stable_id"] = survivor
-        rewritten = True
-        spec = SPEC_BY_TABLE.get(change.table)
-        if spec is not None:
-            for index, column in enumerate(spec.pk):
-                if column == "stable_id":
-                    pk[index] = survivor
-    members = change.members
-    if members is not None:
-        new_members: list[dict[str, Any]] = []
-        for member in members:
-            item = dict(member)
-            member_id = as_text(item.get("stable_id"))
-            if member_id is not None and member_id in remap:
-                item["stable_id"] = _follow_remap(remap, member_id)
-                rewritten = True
-            new_members.append(item)
-        members = tuple(new_members)
+    rewritten = _rewrite_incoming_stable_id(change, values, pk, remap)
+    rewritten = _rewrite_incoming_parent_tracks(change, values, remap) or rewritten
+    members, members_rewritten = _rewrite_incoming_members(change.members, remap)
+    rewritten = members_rewritten or rewritten
     if not rewritten:
         return change
     return RowChange(
@@ -238,23 +274,35 @@ def names_held_parent(change: RowChange, held: set[str]) -> bool:
     sid = as_text(change.values.get("stable_id"))
     if sid is not None and sid in held:
         return True
+    for parent, column in PARENT_KEYS.get(change.table, ()):
+        if parent != "tracks":
+            continue
+        ref = as_text(change.values.get(column))
+        if ref is not None and ref in held:
+            return True
     if change.members:
         return any((as_text(member.get("stable_id")) or "") in held for member in change.members)
     return False
 
 
-def _child_tables(conn: sqlite3.Connection) -> tuple[tuple[str, tuple[str, ...]], ...]:
-    """Tables whose FK ``from`` column is ``stable_id`` referencing ``tracks``."""
-    found: list[tuple[str, tuple[str, ...]]] = []
+def _child_tables(conn: sqlite3.Connection) -> tuple[tuple[str, tuple[str, ...], str], ...]:
+    """Tables with an FK column referencing ``tracks``, and that column's name."""
+    found: list[tuple[str, tuple[str, ...], str]] = []
     for (name,) in conn.execute("SELECT name FROM sqlite_master WHERE type = 'table' ORDER BY 1"):
         table = str(name)
         if not _IDENT.match(table) or table == "tracks":
             continue
         fks = conn.execute(f"PRAGMA foreign_key_list({table})").fetchall()
-        if not any(fk[2] == "tracks" and fk[3] == "stable_id" for fk in fks):
-            continue
-        pk = tuple(str(row[1]) for row in conn.execute(f"PRAGMA table_info({table})") if row[5])
-        found.append((table, pk))
+        for fk in fks:
+            if fk[2] != "tracks":
+                continue
+            to_column = fk[4]
+            if to_column not in (None, "stable_id"):
+                continue
+            column = str(fk[3])
+            pk = tuple(str(row[1]) for row in conn.execute(f"PRAGMA table_info({table})") if row[5])
+            found.append((table, pk, column))
+            break
     return tuple(found)
 
 
@@ -410,22 +458,31 @@ def _remap_memberships(conn: sqlite3.Connection, loser: str, survivor: str) -> N
                 (str(row[0]), str(row[1]))
                 for row in conn.execute(
                     "SELECT playlist_id, position FROM playlist_memberships "
-                    "WHERE playlist_id = ? AND stable_id = ?",
+                    "WHERE playlist_id = ? AND stable_id = ? AND edit_id IS NULL",
                     (playlist_id, loser),
                 )
             ]
             conn.execute(
-                "DELETE FROM playlist_memberships WHERE playlist_id = ? AND stable_id = ?",
+                "DELETE FROM playlist_memberships "
+                "WHERE playlist_id = ? AND stable_id = ? AND edit_id IS NULL",
                 (playlist_id, loser),
             )
             _rekey_child_changelog(
                 conn, MEMBERSHIP_TABLE, [(pk, None) for pk in discarded]
             )
-            continue
         conn.execute(
             "UPDATE playlist_memberships SET stable_id = ? WHERE playlist_id = ? AND stable_id = ?",
             (survivor, playlist_id, loser),
         )
+
+
+def _remap_child_column(
+    conn: sqlite3.Connection, table: str, column: str, loser: str, survivor: str,
+) -> None:
+    conn.execute(
+        f"UPDATE {_ident(table)} SET {_ident(column)} = ? WHERE {_ident(column)} = ?",
+        (survivor, loser),
+    )
 
 
 def _remap_update(conn: sqlite3.Connection, table: str, loser: str, survivor: str) -> None:
@@ -448,20 +505,21 @@ _CHILD_PROBE_CHUNK: int = 500
 def losers_with_children(conn: sqlite3.Connection, losers: Iterable[str]) -> set[str]:
     """The ``losers`` that still own a row in some ``tracks(stable_id)`` child table.
 
-    :func:`remap_track_children` only reads and writes rows WHERE
-    ``stable_id = loser`` in exactly these tables, so for every other loser it
-    is a no-op. A read, safe outside any transaction.
+    :func:`remap_track_children` only reads and writes rows WHERE the discovered
+    FK column equals ``loser`` in exactly these tables, so for every other loser
+    it is a no-op. A read, safe outside any transaction.
     """
     wanted = list(dict.fromkeys(losers))
     found: set[str] = set()
-    for table, _pk in _child_tables(conn):
+    for table, _pk, column in _child_tables(conn):
         for start in range(0, len(wanted), _CHILD_PROBE_CHUNK):
             chunk = wanted[start : start + _CHILD_PROBE_CHUNK]
             placeholders = ", ".join("?" for _ in chunk)
             found.update(
                 str(row[0])
                 for row in conn.execute(
-                    f"SELECT DISTINCT stable_id FROM {_ident(table)} WHERE stable_id IN ({placeholders})",
+                    f"SELECT DISTINCT {_ident(column)} FROM {_ident(table)} "
+                    f"WHERE {_ident(column)} IN ({placeholders})",
                     chunk,
                 )
             )
@@ -473,7 +531,7 @@ def remap_track_children(conn: sqlite3.Connection, loser: str, survivor: str) ->
     row can be dropped without CASCADE-deleting those children."""
     if loser == survivor:
         return
-    for table, pk in _child_tables(conn):
+    for table, pk, column in _child_tables(conn):
         if table == "track_locations":
             _remap_locations(conn, loser, survivor)
             continue
@@ -481,6 +539,9 @@ def remap_track_children(conn: sqlite3.Connection, loser: str, survivor: str) ->
             _remap_memberships(conn, loser, survivor)
             continue
         columns = _table_columns(conn, table)
+        if column != "stable_id":
+            _remap_child_column(conn, table, column, loser, survivor)
+            continue
         if "stable_id" in pk:
             _remap_pk_includes_stable_id(conn, table, columns, pk, loser, survivor)
             continue

@@ -23,7 +23,9 @@ const meta = {
 		canSend: false,
 		draft: '',
 		send: fn(async () => {}),
-		onStop: fn()
+		onStop: fn(),
+		fillPhase: 'idle',
+		fillMode: 'animated'
 	}
 } satisfies Meta<typeof AssistantSidebarView>;
 
@@ -46,7 +48,27 @@ export const Streaming: Story = {
 			{ role: 'assistant', content: 'Warehouse Warmups has 128 tracks, Deep Cuts 311.' },
 			{ role: 'user', content: 'And which are missing artwork?' }
 		],
-		streaming: 'Looking at the import so far, 14 tracks in Deep Cuts'
+		streaming: 'Looking at the import so far, 14 tracks in Deep Cuts',
+		fillPhase: 'streaming'
+	}
+};
+
+/** Waiting for the first token: juice at 0.3 with no streamed text yet. */
+export const WaitingForReply: Story = {
+	args: { streaming: '', fillPhase: 'waiting' }
+};
+
+/** Streaming with static fill: layer visible, no transition class, no bubbles. */
+export const StaticFill: Story = {
+	args: {
+		messages: [
+			{ role: 'user', content: 'Which playlists are biggest?' },
+			{ role: 'assistant', content: 'Warehouse Warmups has 128 tracks, Deep Cuts 311.' },
+			{ role: 'user', content: 'And which are missing artwork?' }
+		],
+		streaming: 'Looking at the import so far, 14 tracks in Deep Cuts',
+		fillPhase: 'streaming',
+		fillMode: 'static'
 	}
 };
 

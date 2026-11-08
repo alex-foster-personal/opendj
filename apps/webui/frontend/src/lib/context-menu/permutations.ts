@@ -62,7 +62,10 @@ export const MENU_CONTEXT_SPACE: { [K in MenuTargetKind]: Space<MenuContextByKin
 		assign: ['A', 'B', 'THRU']
 	},
 	'mixer-control': { animating: [false, true] },
-	'perf-empty': {}
+	'perf-empty': {
+		browser: [false, true],
+		view: ['waveform', 'list', 'phase-scope', 'phase-meter']
+	}
 };
 
 /** Combinations that cannot happen in the app; the harness never asks for them. */

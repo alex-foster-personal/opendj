@@ -278,4 +278,26 @@ mod tests {
         // Control: the engine command it would have routed to is a plan event.
         assert!(parse_plan(&plan(json!({"type": "crossfader", "value": 1.0}))).is_ok());
     }
+
+    #[test]
+    fn an_fx_ramp_in_a_plan_is_not_implemented_naming_the_event() {
+        for knob in ["fx_echo", "fx_dry"] {
+            let plan = json!({"end": {"ms": 10}, "events": [
+                {"at": {"ms": 0}, "cmd": {"type": "crossfader", "value": 1.0}},
+                {"at": {"ms": 5}, "ramp": {"type": knob, "deck": 1, "to": 0.0, "over": {"ms": 5}}},
+            ]});
+            let e = parse_plan(&plan).unwrap_err();
+            assert_eq!(e.code, ErrorCode::NotImplemented, "{knob}");
+            assert_eq!(e.message, format!("events[1].ramp: {knob}: {}", crate::protocol::TRANSITION_FX_LATER));
+        }
+    }
+
+    #[test]
+    fn a_transition_fx_command_in_a_plan_is_not_implemented_naming_the_event() {
+        let plan = json!({"end": {"ms": 10}, "events": [{"at": {"ms": 0}, "cmd": {"type": "fx_reset", "deck": 1}}]});
+        let e = parse_plan(&plan).unwrap_err();
+        assert_eq!(e.code, ErrorCode::NotImplemented);
+        assert!(e.message.starts_with("events[0]"), "{}", e.message);
+        assert!(e.message.contains("fx_reset: transition FX are Web Audio only"), "{}", e.message);
+    }
 }

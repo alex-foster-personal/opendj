@@ -36,6 +36,14 @@ def test_parse_byte_count_rejects_unparseable(raw: str) -> None:
     assert parse_byte_count(raw) is None
 
 
+def test_apps_copies_share_one_byte_count_parser() -> None:
+    from apps.diagnostics import probe_types
+    from apps.shared import byte_count, machine_metrics
+
+    assert probe_types.parse_byte_count is byte_count.parse_byte_count
+    assert machine_metrics.parse_byte_count is byte_count.parse_byte_count
+
+
 def test_round_mb_matches_mib_division() -> None:
     assert round_mb(MIB) == 1.0
     assert round_mb(MIB // 2) == 0.5

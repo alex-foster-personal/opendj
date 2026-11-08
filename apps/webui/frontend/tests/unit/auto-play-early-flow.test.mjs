@@ -212,6 +212,7 @@ async function withSet(options, run) {
 
 test('under the target the engine is not asked', async () => {
 	await withSet({ position: 60_000 }, async ({ mod, calls }) => {
+		await until(() => mod.autoPlayDecision.due_ms !== null, 'due_ms');
 		await new Promise((resolve) => setTimeout(resolve, 600));
 		assert.deepEqual(calls.decide, [], 'if AutoPlay decides before its target then broken');
 		assert.equal(mod.autoPlayDecision.phase, 'idle');

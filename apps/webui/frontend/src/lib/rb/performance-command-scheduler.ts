@@ -9,6 +9,9 @@
  * Route-session invalidation clears current tails and rejects every old
  * command that has not begun. In-flight work remains the audio engine's
  * disposal responsibility.
+ *
+ * `runWhenAllIdle` defers a claim until every listed scope is idle without
+ * reserving any of them while it waits (background cleanup uses this path).
  */
 export class ScopedCommandInvalidatedError extends Error {
 	constructor(reason: string) {
@@ -96,6 +99,49 @@ export class ScopedCommandScheduler<Scope extends PropertyKey> {
 		});
 		return result;
 	}
+
+	/** Background cleanup: wait until every scope is idle, then claim all of them
+	 * at once. Reserves no scope while waiting, so unrelated transport on other
+	 * decks never queues behind a slow command on a deck this claim shares. Once
+	 * the claim is held, later commands on its scopes queue behind it, so
+	 * validation and mutation inside `command` stay atomic. */
+	async runWhenAllIdle<T>(scopes: readonly Scope[], command: () => Promise<T>): Promise<T> {
+		if (scopes.length === 0) throw new Error('command requires at least one scope');
+		const uniqueScopes = new Set(scopes);
+		if (uniqueScopes.size !== scopes.length) throw new Error('command contains a duplicate scope');
+		const generation = this.#generation;
+
+		for (;;) {
+			if (generation !== this.#generation) {
+				throw new ScopedCommandInvalidatedError(this.#invalidationReason);
+			}
+			const busyTails: Promise<void>[] = [];
+			for (const scope of uniqueScopes) {
+				const tail = this.#tails.get(scope);
+				if (tail !== undefined) busyTails.push(tail);
+			}
+			if (busyTails.length === 0) {
+				const result = Promise.resolve().then(() => {
+					if (generation !== this.#generation) {
+						throw new ScopedCommandInvalidatedError(this.#invalidationReason);
+					}
+					return command();
+				});
+				const tail = result.then(
+					() => undefined,
+					() => undefined
+				);
+				for (const scope of uniqueScopes) this.#tails.set(scope, tail);
+				void tail.then(() => {
+					for (const scope of uniqueScopes) {
+						if (this.#tails.get(scope) === tail) this.#tails.delete(scope);
+					}
+				});
+				return result;
+			}
+			await Promise.all(busyTails);
+		}
+	}
 }
 
 /** A scheduler that tells `onSchedule` the scopes of everything it queues, and
@@ -113,6 +159,11 @@ export class ObservedCommandScheduler<Scope extends PropertyKey> extends ScopedC
 	override run<T>(scopes: readonly Scope[], command: () => Promise<T>): Promise<T> {
 		this.#onSchedule(scopes);
 		return super.run(scopes, command);
+	}
+
+	override runWhenAllIdle<T>(scopes: readonly Scope[], command: () => Promise<T>): Promise<T> {
+		this.#onSchedule(scopes);
+		return super.runWhenAllIdle(scopes, command);
 	}
 
 	override invalidateQueued(reason: string): void {

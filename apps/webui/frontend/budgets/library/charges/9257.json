@@ -1,0 +1,9 @@
+{
+  "bytes": 1024,
+  "measured_main": 329868,
+  "measured_with_pr": 330355,
+  "sha": "b5eb34d0fa",
+  "date": "Sun 8 Nov 2026",
+  "reason": "PR #9257 (Release deck_move sync scope before crossfade wait with guarded retire) grows the library surface. Measured: CI bundle check of b5eb34d0fa, +487 B gzip; ceiled to KiB.",
+  "payback": "none planned; the growth is the feature's own code on this surface"
+}

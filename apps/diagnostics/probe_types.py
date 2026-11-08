@@ -7,11 +7,12 @@ runtime syntax; annotations are exempt because they are deferred.
 
 from __future__ import annotations
 
-import re
 import subprocess
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
+
+from apps.shared.byte_count import parse_byte_count  # noqa: F401  (re-export for probe modules)
 
 MIB = 1024 * 1024
 DEFAULT_INTERVAL_SECONDS = 15.0
@@ -24,16 +25,6 @@ DEFAULT_OUTPUT_DIR = Path.home() / ".local/share/music-dj-tools/performance"
 # is still installed on machines that have not taken a new dmg. Both are tried,
 # newest-write-wins, the same candidate-list shape as virgin_boot.sh.
 DEFAULT_BUNDLE_IDS = ("com.opendj.desktop", "com.opendj.desktop.lane-b")
-
-_BYTE_COUNT_PATTERN = re.compile(r"([0-9.]+)([KMGTP])?", re.IGNORECASE)
-_BYTE_UNIT_SCALE: dict[str, int] = {
-    "": 1,
-    "K": 1024,
-    "M": MIB,
-    "G": 1024 * MIB,
-    "T": 1024**4,
-    "P": 1024**5,
-}
 
 
 class ProbeUnavailable(RuntimeError):
@@ -60,15 +51,6 @@ def run_text(command: list[str], timeout: float = 4.0) -> str:
 
 def round_mb(value: int) -> float:
     return round(value / MIB, 1)
-
-
-def parse_byte_count(raw: str) -> int | None:
-    match = _BYTE_COUNT_PATTERN.fullmatch(raw.strip())
-    if not match:
-        return None
-    value = float(match.group(1))
-    unit = (match.group(2) or "").upper()
-    return int(value * _BYTE_UNIT_SCALE[unit])
 
 
 def utc_now() -> str:

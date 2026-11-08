@@ -18,6 +18,8 @@
 	// KEY SYNC with the key readout and nudge arrows stacked under it,
 	// BEAT SYNC and exclusive MASTER stacked at the right.
 	import { deckArtworkUrl } from '$lib/rb/artwork-url';
+	import { uiPrefs } from '$lib/rb/prefs.svelte';
+	import ArtworkDeckNumber from '../ArtworkDeckNumber.svelte';
 	import { coverFailed, coverLoaded, coverSrc, coverVisible } from '$lib/rb/artwork-cover.svelte';
 	import { offloadOps } from '$lib/offload/offload-ops.svelte';
 	import { operationPercent } from '$lib/offload/api-offload';
@@ -599,6 +601,7 @@
 						onload={() => coverLoaded(sid)}
 						onerror={() => coverFailed(sid)}
 					/>
+					<ArtworkDeckNumber deck={deckId} mode={uiPrefs.deck_number_art} sizePx={67} />
 				{:else}
 					<span
 						class="art placeholder"
@@ -1036,6 +1039,10 @@
 		opacity: 0;
 		pointer-events: none;
 		text-shadow: 0 1px 4px #000;
+	}
+	/* The number dims with the art so the unload affordance wins on hover. */
+	.art-btn:hover :global(.deck-num-art) {
+		opacity: 0.35;
 	}
 	.art-btn:hover .art-eject {
 		opacity: 1;

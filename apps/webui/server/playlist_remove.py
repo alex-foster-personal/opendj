@@ -27,6 +27,7 @@ def _snapshot_with_members(
         {
             "item_id": m.item_id,
             "stable_id": m.stable_id,
+            "edit_id": m.edit_id,
             "order_key": m.order_key,
             "position": m.position,
         }
@@ -45,8 +46,11 @@ def apply_membership_snapshot(
         if live is None:
             raise BackendError("memberships inverse is missing live row")
         return store.replace_memberships(
-            live.playlist_id, list(snap.items),
-            expected_etag=live.etag, record_edit=False,
+            live.playlist_id,
+            list(snap.items),
+            expected_etag=live.etag,
+            record_edit=False,
+            edit_ids=list(snap.edit_ids) if snap.edit_ids is not None else None,
         )
     if live is None:
         raise BackendError("memberships inverse is missing live row")
@@ -63,8 +67,11 @@ def apply_membership_snapshot(
         # membership rows, so the snapshot's item_ids no longer exist. Restore
         # by track identity instead; tombstoning alone would empty the list.
         return store.replace_memberships(
-            live.playlist_id, list(snap.items),
-            expected_etag=live.etag, record_edit=False,
+            live.playlist_id,
+            list(snap.items),
+            expected_etag=live.etag,
+            record_edit=False,
+            edit_ids=list(snap.edit_ids) if snap.edit_ids is not None else None,
         )
     to_tombstone = list(live_ids - desired)
     to_restore = list(desired & tombstone_ids)

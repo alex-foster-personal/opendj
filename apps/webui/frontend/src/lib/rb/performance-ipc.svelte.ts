@@ -116,7 +116,7 @@ import {
 } from '$lib/rb/grid-edit-command';
 import { executeInRustEngine, initRustMode, rustMode } from '$lib/audio-engine/rust-mode.svelte';
 import { DECK_MOVE_DEFAULT_CROSSFADE_BEATS, DECK_MOVE_MAX_CROSSFADE_BEATS, moveDeck, type DeckMoveMode } from '$lib/rb/deck-move';
-import { webAudioDeckMovePort } from '$lib/rb/deck-move-port.svelte';
+import { installDeckMoveRetireRunner, webAudioDeckMovePort } from '$lib/rb/deck-move-port.svelte';
 import { onPerformanceArmedContextReset } from '$lib/rb/performance-armed-context-reset';
 import { deckFacingMessage, reportFoldedLaunch } from '$lib/rb/deck-load-context';
 import { DECK_LOAD_ERROR_TOAST_MS, reportDeckLoadCommandFailure } from '$lib/rb/deck-load-context';
@@ -156,6 +156,9 @@ import {
 	setPerfView,
 	setShowPads,
 	setWaveformDesign,
+	setDeckNumberArt,
+	requireDeckNumberArt,
+	type DeckNumberArt,
 	setShowSections,
 	setLyricsWaveformOverlay,
 	setLyricsHoverScrub,
@@ -226,6 +229,7 @@ import { deckLoadErrors } from '$lib/player/state.svelte';
 import { onDeckLoadStart } from '$lib/rb/mixer-selection.svelte';
 import {
 	closeTrackInfo,
+	openTrackInfoForRow,
 	toggleTrackInfo,
 	trackInfoSnapshot,
 	type TrackInfoDeck
@@ -314,6 +318,9 @@ export type PerformanceCommand =
 			deck: DeckId;
 			stable_id: string;
 			refuseIfMaster?: boolean;
+			edit_id?: string;
+			in_ms?: number;
+			out_ms?: number;
 			stems?: boolean;
 			// Caller shows its own failure toast (Trackify skip): mutes this dispatcher's
 			// toast AND the engine's (#4036); deck_errors and the server report remain.
@@ -340,6 +347,8 @@ export type PerformanceCommand =
 	| { type: 'seek'; deck: DeckId; position_ms: number; exact?: boolean }
 	| { type: 'waveform_seek'; deck: DeckId; position_ms: number; snap: WaveformSeekSnap }
 	| { type: 'set_waveform_design'; design: WaveformDesignPref }
+	/** ARTNUM-9649: the deck number drawn over each deck's artwork. */
+	| { type: 'set_deck_number_art'; mode: DeckNumberArt }
 	/** WAVEQS-8348e: the quick-settings popover's overlay switches (waveform-overlay-command.ts). */
 	| { type: 'set_waveform_overlay'; overlay: WaveformOverlay; enabled: boolean }
 	/** WAVEZOOM-6802: the main waveform's zoom step. deck only matters while unlinked. */
@@ -507,6 +516,8 @@ export type PerformanceCommand =
 	// no engine write, shared by the button and agents (Codex P1 4300879440).
 	| { type: 'track_info_toggle' }
 	| { type: 'track_info_close' }
+	/** Issue #9451: open the overlay for a library row (context menu Track info). */
+	| { type: 'track_info_open'; stable_id: string }
 	| { type: 'pairing_snapshot_open' }
 	| { type: 'pairing_snapshot_remove_eq_adjuster'; deck: DeckId; band: EqBand }
 	| { type: 'pairing_snapshot_save'; from_deck: DeckId; to_deck: DeckId }
@@ -750,6 +761,8 @@ export interface PerformanceState {
 		track_load_reset: TrackLoadResetPrefs;
 		/** DECKGAP-7691b: the key nudge arrows' step size. */
 		key_nudge_step: KeyNudgeStep;
+		/** ARTNUM-9649: the deck number drawn over each deck's artwork. */
+		deck_number_art: DeckNumberArt;
 		/** Stored pref; 'auto' follows the skin. */
 		waveform_design: WaveformDesignPref;
 		/** What the waveforms actually paint (auto resolved through the skin). */
@@ -1388,6 +1401,12 @@ installAutomaticRejoinRunner((work) => {
 		});
 });
 installAutomaticMasterElectionRunner((work) => _commandScheduler.run([...DECK_IDS, 'sync'], work));
+// PRRT_kwDOSEvNd860mzuu: post-fade retire waits for [from, to, sync] idle together and
+// reserves none of them while waiting, so a slow load on either deck never holds sync
+// against other decks' transport.
+installDeckMoveRetireRunner((from, to, work) =>
+	_commandScheduler.runWhenAllIdle([from, to, 'sync'], work)
+);
 let _commandGeneration = 0;
 let _commandStatusGeneration = 0;
 let _activeCommandSession: { generation: number } | null = null;
@@ -1825,6 +1844,13 @@ function _parseCommand(message: unknown): PerformanceCommand {
 		_exactKeys(record, ['type']);
 		return { type };
 	}
+	if (type === 'track_info_open') {
+		_exactKeys(record, ['type', 'stable_id']);
+		if (typeof record.stable_id !== 'string' || record.stable_id.trim() === '') {
+			throw new TypeError('track_info_open stable_id must be a non-empty string');
+		}
+		return { type, stable_id: record.stable_id };
+	}
 	if (type === 'tech_mode_peek') {
 		_exactKeys(record, ['type', 'peeking']);
 		return { type, peeking: _boolean('peeking', record.peeking) };
@@ -1991,6 +2017,10 @@ function _parseCommand(message: unknown): PerformanceCommand {
 		if (playhead === undefined) throw new TypeError('playhead is required');
 		return { type, playhead, linked: _boolean('linked', record.linked) };
 	}
+	if (type === 'set_deck_number_art') {
+		_exactKeys(record, ['type', 'mode']);
+		return { type, mode: requireDeckNumberArt(record.mode, 'mode') };
+	}
 	if (type === 'set_waveform_overlay') {
 		_exactKeys(record, ['type', 'overlay', 'enabled']);
 		return { type, overlay: parseWaveformOverlay(record.overlay), enabled: _boolean('enabled', record.enabled) };
@@ -2014,6 +2044,9 @@ function _parseCommand(message: unknown): PerformanceCommand {
 			'type',
 			'deck',
 			'stable_id',
+			'edit_id',
+			'in_ms',
+			'out_ms',
 			'refuseIfMaster',
 			'stems',
 			'suppressCommandErrorToast',
@@ -2022,6 +2055,19 @@ function _parseCommand(message: unknown): PerformanceCommand {
 		]);
 		if (typeof record.stable_id !== 'string' || record.stable_id.trim() === '') {
 			throw new TypeError('stable_id must be a non-empty string');
+		}
+		const editId = record.edit_id;
+		if (editId !== undefined && (typeof editId !== 'string' || editId.trim() === '')) {
+			throw new TypeError('edit_id must be a non-empty string when provided');
+		}
+		const inMs = record.in_ms === undefined ? undefined : _finite('in_ms', record.in_ms);
+		const outMs = record.out_ms === undefined ? undefined : _finite('out_ms', record.out_ms);
+		if (
+			(inMs === undefined) !== (outMs === undefined) ||
+			(inMs !== undefined &&
+				(!Number.isInteger(inMs) || !Number.isInteger(outMs) || inMs < 0 || inMs >= (outMs as number)))
+		) {
+			throw new RangeError('edit window must satisfy integer 0 <= in_ms < out_ms');
 		}
 		const refuseIfMaster = record.refuseIfMaster === undefined
 			? undefined
@@ -2049,6 +2095,8 @@ function _parseCommand(message: unknown): PerformanceCommand {
 			type,
 			deck,
 			stable_id: record.stable_id,
+			...(editId === undefined ? {} : { edit_id: editId }),
+			...(inMs === undefined ? {} : { in_ms: inMs, out_ms: outMs as number }),
 			...(keyShift === undefined || keyShift === 0 ? {} : { key_shift: keyShift }),
 			...(refuseIfMaster === undefined ? {} : { refuseIfMaster }),
 			...(stems === undefined ? {} : { stems }),
@@ -2794,6 +2842,7 @@ export function queryPerformanceState(): PerformanceState {
 			show_pads: uiPrefs.show_pads,
 			track_load_reset: { ...readTrackLoadReset() },
 			key_nudge_step: readKeyNudgeStep(),
+			deck_number_art: uiPrefs.deck_number_art,
 			waveform_design: uiPrefs.waveform_design,
 			waveform_design_effective: effectiveWaveformDesign(uiPrefs.waveform_design, uiPrefs.ui_skin),
 			ui_skin: uiPrefs.ui_skin,
@@ -2967,6 +3016,7 @@ export function performanceCommandQueueScopes(
 	}
 	if (command.type === 'analysis_source') return [...DECK_IDS, 'sync'];
 	// DECKMOVE-01: both decks and the master election (the master follows the audio).
+	// The fade wait stays outside this claim (moveDeck returns after scheduleHandover); post-fade retire is runWhenAllIdle([from, to, 'sync'], ...).
 	if (command.type === 'deck_move') return [command.from, command.to, 'sync'];
 	const deck = _commandDeck(command);
 	// AUTOGAIN-04: an awaited server write then a trim-stage apply. It holds
@@ -3021,6 +3071,7 @@ export function performanceCommandQueueScopes(
 		command.type === 'track_load_reset' ||
 		command.type === 'key_nudge_step' ||
 		command.type === 'set_waveform_design' ||
+		command.type === 'set_deck_number_art' ||
 		command.type === 'set_waveform_overlay' ||
 		command.type === 'set_skin' ||
 		command.type === 'set_wave_zoom' ||
@@ -3040,6 +3091,7 @@ export function performanceCommandQueueScopes(
 		command.type === 'tech_mode_edge_hover'
 		|| command.type === 'track_info_toggle'
 		|| command.type === 'track_info_close'
+		|| command.type === 'track_info_open'
 		|| command.type === 'pairing_snapshot_open'
 		|| command.type === 'pairing_snapshot_remove_eq_adjuster'
 		|| command.type === 'pairing_snapshot_save'
@@ -3247,8 +3299,14 @@ async function _execute(command: PerformanceCommand, pressT0Ms?: number): Promis
 		try {
 			await engine.load(command.deck, command.stable_id, {
 				stems: command.stems,
-				suppressFailureToast: command.suppressCommandErrorToast
+				suppressFailureToast: command.suppressCommandErrorToast === true,
+				...(command.edit_id !== undefined ? { edit_id: command.edit_id } : {}),
+				...(command.in_ms !== undefined ? { in_ms: command.in_ms } : {}),
+				...(command.out_ms !== undefined ? { out_ms: command.out_ms } : {})
 			});
+			if (command.in_ms !== undefined) {
+				await engine.quantizedSeek(command.deck, command.in_ms, true);
+			}
 		} finally {
 			deckLoadSettled();
 		}
@@ -3534,6 +3592,8 @@ async function _execute(command: PerformanceCommand, pressT0Ms?: number): Promis
 		engine.setFilter(command.deck, plan.value, pressT0Ms);
 	} else if (command.type === 'autoplay') {
 		setAutoPlayEnabled(command.enabled);
+	} else if (command.type === 'set_deck_number_art') {
+		setDeckNumberArt(command.mode);
 	} else if (command.type === 'set_waveform_overlay') {
 		const setOverlay = {
 			sections: setShowSections,
@@ -3713,6 +3773,8 @@ async function _execute(command: PerformanceCommand, pressT0Ms?: number): Promis
 		setEdgeHovered(command.edge, command.hovered);
 	} else if (command.type === 'track_info_toggle') {
 		toggleTrackInfo(_trackInfoDecks());
+	} else if (command.type === 'track_info_open') {
+		openTrackInfoForRow(command.stable_id);
 	} else if (command.type === 'track_info_close') {
 		closeTrackInfo();
 	} else if (command.type === 'pairing_snapshot_open') {

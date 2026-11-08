@@ -18,12 +18,14 @@ An engine that never armed the drain answers 503 COVERAGE_DRAIN_NOT_ARMED:
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from typing import Any
 
 from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel, ConfigDict
 
 from apps.webui.server.coverage_drain import CoverageDrain
+from apps.webui.server.routes.armed_service import armed_service
 
 router = APIRouter(prefix="/coverage-drain", tags=["coverage-drain"])
 MOUNT_UNDER_API_PREFIX = True
@@ -76,17 +78,11 @@ class DrainRetryOut(BaseModel):
     status: DrainStatusOut
 
 
-def _drain(request: Request) -> CoverageDrain:
-    drain = getattr(request.app.state, "coverage_drain", None)
-    if drain is None:
-        raise HTTPException(
-            status_code=503,
-            detail={
-                "code": NOT_ARMED_CODE,
-                "message": "the coverage auto-drain is not armed in this engine process",
-            },
-        )
-    return drain
+_drain: Callable[[Request], CoverageDrain] = armed_service(
+    "coverage_drain",
+    code=NOT_ARMED_CODE,
+    message="the coverage auto-drain is not armed in this engine process",
+)
 
 
 def _out(drain: CoverageDrain) -> DrainStatusOut:

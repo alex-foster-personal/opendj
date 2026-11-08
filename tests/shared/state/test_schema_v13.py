@@ -67,15 +67,16 @@ def test_v12_db_migrates_memberships_backfill(tmp_path: Path) -> None:
         for sid in ["t-a", "t-b", "t-c"]:
             conn.execute(
                 "INSERT INTO tracks(stable_id, stable_id_tier, title, "
-                "created_at, updated_at) "
+                "created_at, updated_at, origin_device_id) "
                 "VALUES (?, 'inferred', ?, '2026-01-01T00:00:00Z', "
-                "'2026-01-01T00:00:00Z')",
+                "'2026-01-01T00:00:00Z', 'dev-machine')",
                 (sid, sid),
             )
         for pos, sid in enumerate(["t-a", "t-b", "t-c"]):
             conn.execute(
                 "INSERT INTO playlist_memberships(playlist_id, stable_id, position, "
-                "updated_at) VALUES ('pl-1', ?, ?, '2026-01-01T00:00:00Z')",
+                "updated_at, origin_device_id) VALUES ('pl-1', ?, ?, "
+                "'2026-01-01T00:00:00Z', 'dev-machine')",
                 (sid, pos),
             )
         conn.commit()
@@ -108,6 +109,7 @@ def test_v12_db_migrates_memberships_backfill(tmp_path: Path) -> None:
     fresh = sqlite3.connect(":memory:")
     state_schema.apply_migrations(fresh)
     migrated = sqlite3.connect(str(path))
+    state_schema.apply_migrations(migrated)
     assert _columns(migrated, "playlist_memberships") == _columns(
         fresh,
         "playlist_memberships",
@@ -138,14 +140,15 @@ def test_v13_order_key_is_text_and_order_preserved(tmp_path: Path) -> None:
         for pos, sid in enumerate(["t-a", "t-b", "t-c"]):
             conn.execute(
                 "INSERT INTO tracks(stable_id, stable_id_tier, title, "
-                "created_at, updated_at) "
+                "created_at, updated_at, origin_device_id) "
                 "VALUES (?, 'inferred', ?, '2026-01-01T00:00:00Z', "
-                "'2026-01-01T00:00:00Z')",
+                "'2026-01-01T00:00:00Z', 'dev-machine')",
                 (sid, sid),
             )
             conn.execute(
                 "INSERT INTO playlist_memberships(playlist_id, stable_id, position, "
-                "updated_at) VALUES ('pl-1', ?, ?, '2026-01-01T00:00:00Z')",
+                "updated_at, origin_device_id) VALUES ('pl-1', ?, ?, "
+                "'2026-01-01T00:00:00Z', 'dev-machine')",
                 (sid, pos),
             )
         conn.commit()

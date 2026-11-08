@@ -17,6 +17,9 @@
  * - if a move ends with the source still loaded or playing then broken
  * - if a move onto a playing deck runs without force, or a move from an empty deck or onto the same deck runs at all then broken
  * - if the opendj verb, the bus validator or the MCP tool lose deck_move, or the artwork menu stops listing every other deck, then broken
+ * - if a playing move's awaited moveDeck stays on waitUntilContextSec then broken (command queue holds sync for the whole crossfade; issue #8836)
+ * - if a later move on the same decks lets the first cleanup unload the newer target, or cleanup restores a target fader the operator took over, or retire pause/unload runs outside a [from, to, sync] claim, then broken (PRRT_kwDOSEvNd860gRRp, PRRT_kwDOSEvNd860gRRs, PRRT_kwDOSEvNd860gRRw)
+ * - if a move chained from a deck still receiving a handover (1 -> 4, then 4 -> 2 before the first cleanup) schedules a level other than the first move's level, starts its curve before the first one ends, leaves the first source loaded, or loses the master role, then broken (PRRT_kwDOSEvNd861D6KW)
  */
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
@@ -26,6 +29,7 @@ import { fileURLToPath } from 'node:url';
 import {
 	DECK_MOVE_DEFAULT_CROSSFADE_BEATS,
 	DeckMoveRefused,
+	HANDOVER_SETTLE_SEC,
 	captureDeckClone,
 	deckMoveMenuEntries,
 	handoverCurves,
@@ -35,6 +39,19 @@ import {
 	refuseDeckMove
 } from '../../src/lib/rb/deck-move.ts';
 import { loadTypeScriptModule } from './load-typescript.mjs';
+
+function deferred() {
+	let resolve;
+	const promise = new Promise((done) => {
+		resolve = done;
+	});
+	return { promise, resolve };
+}
+
+/** Next macrotask after microtasks (playing-move cleanup chains). */
+function nextTask() {
+	return new Promise((r) => setImmediate(r));
+}
 
 const ROOT = fileURLToPath(new URL('../../', import.meta.url));
 const REPO = fileURLToPath(new URL('../../../../../', import.meta.url));
@@ -90,7 +107,18 @@ const flatChannel = (id) => ({
 const playingTarget = () => ({ ...emptyDeck(4), stable_id: 'other', duration_ms: 1000, bpm: 100, playing: true });
 
 /** A test double of the engine port: the real engine's state shapes, recording every call. */
-function fakePort({ from = 1, to = 4, source = sourceDeck(), target, srcChannel, dstChannel, lateBySec = 0 } = {}) {
+function fakePort({
+	from = 1,
+	to = 4,
+	source = sourceDeck(),
+	target,
+	srcChannel,
+	dstChannel,
+	lateBySec = 0,
+	waitGate = null,
+	trackRetire = false,
+	runRetireTransaction = (f, t, work) => work()
+} = {}) {
 	const decks = { 1: emptyDeck(1), 2: emptyDeck(2), 3: emptyDeck(3), 4: emptyDeck(4) };
 	decks[from] = { ...source, deck_id: from };
 	if (target !== undefined) decks[to] = target;
@@ -102,17 +130,36 @@ function fakePort({ from = 1, to = 4, source = sourceDeck(), target, srcChannel,
 	fx[from] = { effect: 'echo', echo_beats: 0.75 };
 	const ranges = { 1: 8, 2: 8, 3: 8, 4: 8 };
 	ranges[from] = 16;
+	/** @type {Record<number, number>} */
+	const handoverUntil = { 1: 0, 2: 0, 3: 0, 4: 0 };
+	/** @type {Record<number, number>} */
+	const handoverTokenByDeck = { 1: 0, 2: 0, 3: 0, 4: 0 };
+	let handoverGeneration = 0;
+	let retireResolve;
+	const retireDone = trackRetire
+		? new Promise((r) => {
+				retireResolve = r;
+			})
+		: null;
 	const calls = [];
 	const rec = (name, ...args) => calls.push([name, ...args]);
 	return {
-		calls, decks, channels, fx, ranges,
+		calls, decks, channels, fx, ranges, handoverUntil, handoverTokenByDeck,
+		...(retireDone !== null ? { retireDone } : {}),
 		deck: (d) => decks[d],
 		channel: (d) => channels[d],
 		colorFx: (d) => fx[d],
 		pitchRange: (d) => ranges[d],
 		masterLocked: () => false,
 		async load(d, sid) { rec('load', d, sid); decks[d] = { ...emptyDeck(d), stable_id: sid, duration_ms: source.duration_ms, bpm: source.bpm }; },
-		async unload(d) { rec('unload', d); decks[d] = emptyDeck(d); },
+		async unload(d) {
+			rec('unload', d);
+			decks[d] = emptyDeck(d);
+			if (trackRetire && d === from && retireResolve) {
+				retireResolve();
+				retireResolve = undefined;
+			}
+		},
 		async pause(d) { rec('pause', d); decks[d].playing = false; },
 		setPitchRange(d, r) { rec('setPitchRange', d, r); ranges[d] = r; },
 		async setTempoRatio(d, r) { rec('setTempoRatio', d, r); decks[d].pitch = r; },
@@ -141,12 +188,36 @@ function fakePort({ from = 1, to = 4, source = sourceDeck(), target, srcChannel,
 		setStemMute(d, s, v) { rec('setStemMute', d, s, v); decks[d].stems.controls[s].muted = v; },
 		setStemSolo(d, s, v) { rec('setStemSolo', d, s, v); decks[d].stems.controls[s].solo = v; },
 		setStemGain(d, s, v) { rec('setStemGain', d, s, v); decks[d].stems.controls[s].gain = v; },
-		setFader(d, v) { rec('setFader', d, v); channels[d].fader = v; },
+		setFader(d, v) {
+			rec('setFader', d, v);
+			channels[d].fader = v;
+			if (handoverUntil[d] > 0) handoverUntil[d] = 0;
+		},
 		assignChannel(d, v) { rec('assignChannel', d, v); channels[d].assign = v; },
 		async seekPaused(d, ms) { rec('seekPaused', d, ms); decks[d].position_ms = ms; },
 		async startAlignedTo(d, f) { rec('startAlignedTo', d, f); decks[d].playing = true; return 12.5; },
-		scheduleHandover(f, t, start, dur, level) { rec('scheduleHandover', f, t, start, dur, level); return start + lateBySec; },
-		async waitUntilContextSec(sec) { rec('waitUntilContextSec', sec); },
+		scheduleHandover(f, t, start, dur, level) {
+			rec('scheduleHandover', f, t, start, dur, level);
+			const at = start + lateBySec;
+			handoverUntil[f] = handoverUntil[t] = at + dur;
+			handoverGeneration += 1;
+			handoverTokenByDeck[f] = handoverTokenByDeck[t] = handoverGeneration;
+			return at;
+		},
+		handoverUntilSec(d) {
+			return handoverUntil[d] ?? 0;
+		},
+		handoverToken(d) {
+			return handoverTokenByDeck[d] ?? 0;
+		},
+		runRetireTransaction,
+		reportCleanupError(error) {
+			rec('reportCleanupError', error);
+		},
+		async waitUntilContextSec(sec) {
+			rec('waitUntilContextSec', sec);
+			if (waitGate !== null) await waitGate.promise;
+		},
 		async setDeckMaster(d, o) { rec('setDeckMaster', d, o); }
 	};
 }
@@ -174,6 +245,7 @@ test('a move clones every listed state field onto the target (manual key shift)'
 	const port = fakePort();
 	const before = snapshot(port);
 	await moveDeck(port, MOVE);
+	await nextTask();
 	assertClonedEverything(port, before);
 	assert.ok(port.calls.some((c) => c[0] === 'setKeyShift' && c[1] === 4 && c[2] === -2), 'KEYSYNC-01 absolute key shift');
 });
@@ -182,6 +254,7 @@ test('a move clones an armed KEY SYNC (mode and target) and lets it derive the s
 	const port = fakePort({ source: sourceDeck({ key_sync_enabled: true, key_sync_mode: 'compatible', key_sync_target: 2, key_shift_semitones: 3 }) });
 	const before = snapshot(port);
 	await moveDeck(port, MOVE);
+	await nextTask();
 	assertClonedEverything(port, before);
 	assert.equal(port.calls.some((c) => c[0] === 'setKeyShift'), false, 'a manual shift would disarm the follow');
 	assert.deepEqual(port.calls.find((c) => c[0] === 'setKeySync').slice(1), [4, true, { mode: 'compatible', target: 2 }]);
@@ -282,15 +355,24 @@ test('the crossfade is 8 beats by default at the playing tempo; 0 beats is a cut
 });
 
 test('a move runs the handover on the audio clock and ends with the source stopped and unloaded', async () => {
-	const port = fakePort();
-	const result = await moveDeck(port, MOVE);
+	const waitGate = deferred();
+	const port = fakePort({ waitGate, trackRetire: true });
+	const done = moveDeck(port, MOVE);
+	const result = await done;
 	const handover = port.calls.find((c) => c[0] === 'scheduleHandover');
 	const duration = (8 * 60) / (124 * 1.0325);
 	assert.deepEqual(handover.slice(0, 4), ['scheduleHandover', 1, 4, 12.5]);
 	assert.ok(Math.abs(handover[4] - duration) < 1e-12);
 	assert.equal(handover[5], 0.85, 'the target ends at the source fader level');
+	const waitCall = port.calls.find((c) => c[0] === 'waitUntilContextSec');
+	assert.ok(waitCall[1] >= 12.5 + duration);
+	assert.equal(port.decks[1].stable_id, 'trk-bass', 'foreground return before cleanup');
+	assert.equal(port.decks[1].playing, true);
+	assert.equal(result.start_context_sec, 12.5);
+	assert.ok(Math.abs(result.crossfade_sec - duration) < 1e-12);
+	waitGate.resolve();
+	await port.retireDone;
 	const waitAt = port.calls.findIndex((c) => c[0] === 'waitUntilContextSec');
-	assert.ok(port.calls[waitAt][1] >= 12.5 + duration);
 	const pauseAt = port.calls.findIndex((c) => c[0] === 'pause' && c[1] === 1);
 	const unloadAt = port.calls.findIndex((c) => c[0] === 'unload' && c[1] === 1);
 	assert.ok(waitAt < pauseAt && pauseAt < unloadAt, 'stop only after the source gain reached 0');
@@ -299,16 +381,300 @@ test('a move runs the handover on the audio clock and ends with the source stopp
 	assert.equal(port.decks[4].playing, true, 'the target keeps playing');
 	assert.equal(port.channels[1].fader, 0.85, 'the source strip is left where the hand left it');
 	assert.ok(port.calls.some((c) => c[0] === 'setDeckMaster' && c[1] === 4), 'master follows the audio');
-	assert.equal(result.start_context_sec, 12.5);
-	assert.ok(Math.abs(result.crossfade_sec - duration) < 1e-12);
 });
 
 test('a handover the await chain started late still waits out the whole fade before stopping the source', async () => {
-	const port = fakePort({ lateBySec: 0.3 });
-	await moveDeck(port, MOVE);
+	const waitGate = deferred();
+	const port = fakePort({ lateBySec: 0.3, waitGate, trackRetire: true });
+	const done = moveDeck(port, MOVE);
+	await done;
 	const duration = (8 * 60) / (124 * 1.0325);
 	const wait = port.calls.find((c) => c[0] === 'waitUntilContextSec');
 	assert.ok(wait[1] >= 12.5 + 0.3 + duration, `waited only to ${wait[1]}`);
+	assert.equal(port.decks[1].stable_id, 'trk-bass');
+	waitGate.resolve();
+	await port.retireDone;
+	assert.equal(port.decks[1].stable_id, null);
+});
+
+test('playing move releases sync before waitUntilContextSec: another deck can play during the held wait', async () => {
+	const waitGate = deferred();
+	const port = fakePort({ waitGate });
+	const { ScopedCommandScheduler } = await loadTypeScriptModule('src/lib/rb/performance-command-scheduler.ts');
+	const scheduler = new ScopedCommandScheduler();
+	const started = [];
+	const moveP = scheduler.run([1, 4, 'sync'], () => moveDeck(port, MOVE));
+	await nextTask();
+	assert.equal(started.length, 0);
+	const playP = scheduler.run([2, 'sync'], async () => {
+		started.push('play');
+	});
+	await playP;
+	assert.deepEqual(started, ['play']);
+	waitGate.resolve();
+	await moveP;
+	await nextTask();
+});
+
+test('guarded retire skips when the source deck was replaced after the foreground return', async () => {
+	const waitGate = deferred();
+	const port = fakePort({ waitGate });
+	await moveDeck(port, MOVE);
+	port.decks[1].stable_id = 'other-track';
+	waitGate.resolve();
+	await nextTask();
+	assert.equal(port.calls.some((c) => c[0] === 'pause' && c[1] === 1), false);
+	assert.equal(port.calls.some((c) => c[0] === 'unload' && c[1] === 1), false);
+});
+
+test('guarded retire skips when a source fader hand cancelled the handover curve', async () => {
+	const waitGate = deferred();
+	const port = fakePort({ waitGate });
+	await moveDeck(port, MOVE);
+	port.handoverUntil[1] = 0;
+	waitGate.resolve();
+	await nextTask();
+	assert.equal(port.calls.some((c) => c[0] === 'pause' && c[1] === 1), false);
+	assert.equal(port.calls.some((c) => c[0] === 'unload' && c[1] === 1), false);
+});
+
+test('guarded retire skips when the target deck no longer holds the cloned track', async () => {
+	const waitGate = deferred();
+	const port = fakePort({ waitGate });
+	await moveDeck(port, MOVE);
+	port.decks[4].stable_id = 'replaced-on-target';
+	waitGate.resolve();
+	await nextTask();
+	assert.equal(port.calls.some((c) => c[0] === 'pause' && c[1] === 1), false);
+	assert.equal(port.calls.some((c) => c[0] === 'unload' && c[1] === 1), false);
+});
+
+test('overlapping reverse move does not let the first cleanup unload the new target (PRRT_kwDOSEvNd860gRRp)', async () => {
+	const waitGate = deferred();
+	const port = fakePort({ waitGate });
+	const first = moveDeck(port, MOVE);
+	await first;
+	const tokAfterFirst = port.handoverTokenByDeck[1];
+	assert.equal(tokAfterFirst, port.handoverTokenByDeck[4]);
+	await moveDeck(port, { from: 4, to: 1, force: true, crossfade_beats: 16, mode: 'move' });
+	assert.ok(port.handoverTokenByDeck[1] > tokAfterFirst);
+	assert.equal(port.handoverTokenByDeck[1], port.handoverTokenByDeck[4]);
+	waitGate.resolve();
+	await nextTask();
+	const unloads1 = port.calls.filter((c) => c[0] === 'unload' && c[1] === 1);
+	assert.equal(unloads1.length, 1, 'only the reverse move foreground replaces deck 1');
+	assert.equal(port.decks[1].stable_id, 'trk-bass');
+	assert.equal(port.decks[1].playing, true);
+	assert.equal(port.decks[4].stable_id, null);
+});
+
+const CHAIN = { from: 4, to: 2, crossfade_beats: 8, mode: 'move' };
+const handovers = (port) => port.calls.filter((c) => c[0] === 'scheduleHandover');
+
+test('chained move from a handover target keeps the handover level (PRRT_kwDOSEvNd861D6KW)', async () => {
+	const waitGate = deferred();
+	const port = fakePort({ waitGate });
+	await moveDeck(port, MOVE);
+	await moveDeck(port, CHAIN);
+	const [first, second] = handovers(port);
+	assert.equal(first[5], 0.85);
+	assert.equal(second[5], 0.85, 'the chained handover must not capture the zeroed target fader');
+	const firstEnd = first[3] + first[4];
+	assert.ok(second[3] >= firstEnd + HANDOVER_SETTLE_SEC, `chained curve starts ${second[3]}, before the first ends ${firstEnd}`);
+	waitGate.resolve();
+	await nextTask();
+	await nextTask();
+});
+
+test('the first cleanup still retires the original source after a chained move, without touching the chained source fader (PRRT_kwDOSEvNd861D6KW)', async () => {
+	const waitGate = deferred();
+	const port = fakePort({ waitGate });
+	await moveDeck(port, MOVE);
+	await moveDeck(port, CHAIN);
+	const secondAt = port.calls.findIndex((c) => c[0] === 'scheduleHandover' && c[1] === 4);
+	waitGate.resolve();
+	await nextTask();
+	await nextTask();
+	await nextTask();
+	assert.equal(port.decks[1].stable_id, null);
+	assert.equal(port.decks[1].playing, false);
+	assert.equal(port.decks[4].stable_id, null, 'the chained cleanup retires deck 4');
+	assert.equal(port.decks[2].stable_id, 'trk-bass');
+	assert.equal(port.decks[2].playing, true);
+	assert.equal(port.channels[2].fader, 0.85);
+	const unload4At = port.calls.findIndex((c) => c[0] === 'unload' && c[1] === 4 && port.calls.indexOf(c) > secondAt);
+	assert.ok(unload4At > secondAt);
+	const fader4 = port.calls.slice(secondAt, unload4At).filter((c) => c[0] === 'setFader' && c[1] === 4);
+	assert.deepEqual(fader4, [], 'the first cleanup must leave the chained source fader to its handover');
+	const masters = port.calls.filter((c) => c[0] === 'setDeckMaster');
+	assert.equal(masters.at(-1)?.[1], 2, 'the master role follows the track to the chained target');
+});
+
+test('a chained move after a target fader grab uses the hand level, not the stale handover level', async () => {
+	const waitGate = deferred();
+	const port = fakePort({ waitGate });
+	await moveDeck(port, MOVE);
+	port.setFader(4, 0.6);
+	await moveDeck(port, CHAIN);
+	const second = handovers(port)[1];
+	assert.equal(second[5], 0.6);
+	assert.equal(second[3], 12.5, 'no deferral once the hand cancelled the running handover');
+	waitGate.resolve();
+	await nextTask();
+	await nextTask();
+});
+
+test('target fader takeover is kept while the source still retires (PRRT_kwDOSEvNd860gRRs)', async () => {
+	const waitGate = deferred();
+	const port = fakePort({ waitGate, trackRetire: true });
+	await moveDeck(port, MOVE);
+	port.setFader(4, 0);
+	const opSetFaderIdx = port.calls.findLastIndex((c) => c[0] === 'setFader' && c[1] === 4 && c[2] === 0);
+	assert.ok(opSetFaderIdx >= 0);
+	waitGate.resolve();
+	await port.retireDone;
+	const afterOp = port.calls.slice(opSetFaderIdx + 1);
+	assert.equal(
+		afterOp.some((c) => c[0] === 'setFader' && c[1] === 4 && c[2] === 0.85),
+		false,
+		'cleanup must not restore the clone fader over the operator grab'
+	);
+	assert.equal(port.channels[4].fader, 0);
+	assert.equal(port.decks[1].stable_id, null);
+	assert.equal(port.decks[1].playing, false);
+});
+
+test('retire waits behind a deck-1 load and revalidates inside the claim (PRRT_kwDOSEvNd860gRRw)', async () => {
+	const { ScopedCommandScheduler } = await loadTypeScriptModule('src/lib/rb/performance-command-scheduler.ts');
+	const scheduler = new ScopedCommandScheduler();
+	const waitGate = deferred();
+	const loadEntered = deferred();
+	let releaseLoad;
+	const port = fakePort({
+		waitGate,
+		runRetireTransaction: (f, t, work) => scheduler.runWhenAllIdle([f, t, 'sync'], work)
+	});
+	await moveDeck(port, MOVE);
+	const loadP = scheduler.run([1], async () => {
+		loadEntered.resolve();
+		await new Promise((r) => {
+			releaseLoad = r;
+		});
+		port.decks[1].stable_id = 'newer-load';
+	});
+	await loadEntered.promise;
+	waitGate.resolve();
+	await nextTask();
+	assert.equal(port.calls.some((c) => c[0] === 'pause' && c[1] === 1), false, 'cleanup must not run pause while deck 1 load holds scope 1');
+	releaseLoad();
+	await loadP;
+	await nextTask();
+	assert.equal(port.calls.some((c) => c[0] === 'unload' && c[1] === 1), false, 'stable_id mismatch skips retire after load');
+});
+
+test('retire reclaims [from, to, sync] so a deck-1 command waits for pause/unload (PRRT_kwDOSEvNd860gRRw)', async () => {
+	const { ScopedCommandScheduler } = await loadTypeScriptModule('src/lib/rb/performance-command-scheduler.ts');
+	const scheduler = new ScopedCommandScheduler();
+	const waitGate = deferred();
+	const retirePauseGate = deferred();
+	const order = [];
+	const timeline = [];
+	let holdRetirePause = false;
+
+	const port = fakePort({
+		waitGate,
+		runRetireTransaction: (f, t, w) =>
+			scheduler.runWhenAllIdle([f, t, 'sync'], async () => {
+				order.push('retire-enter');
+				await w();
+				order.push('retire-exit');
+			})
+	});
+
+	const innerPause = port.pause.bind(port);
+	port.pause = async (d) => {
+		await innerPause(d);
+		if (holdRetirePause && d === 1) {
+			timeline.push('pause-held');
+			await retirePauseGate.promise;
+			timeline.push('pause-released');
+		}
+	};
+	const innerUnload = port.unload.bind(port);
+	port.unload = async (d) => {
+		timeline.push(`unload-${d}`);
+		return innerUnload(d);
+	};
+
+	await moveDeck(port, MOVE);
+	holdRetirePause = true;
+	waitGate.resolve();
+	await nextTask();
+	assert.ok(order.includes('retire-enter'), order);
+	assert.ok(timeline.includes('pause-held'), `expected retire to block on pause hold, got ${timeline}`);
+
+	const unloadBeforeCompete = port.calls.filter((c) => c[0] === 'unload' && c[1] === 1).length;
+	assert.equal(unloadBeforeCompete, 0, 'unload(1) must not run until after pause hold releases');
+
+	const compete = scheduler.run([1], async () => {
+		timeline.push('compete-start');
+		order.push('after-retire');
+	});
+	await nextTask();
+	assert.equal(
+		timeline.includes('compete-start'),
+		false,
+		'competing deck-1 work must not start while retire still holds scopes 1,4,sync'
+	);
+
+	retirePauseGate.resolve();
+	await compete;
+
+	const u = timeline.indexOf('unload-1');
+	const c = timeline.indexOf('compete-start');
+	assert.ok(u >= 0 && c >= 0, `expected unload-1 and compete-start on timeline, got ${timeline}`);
+	assert.ok(u < c, 'unload(1) must complete before the competing deck-1 command starts');
+
+	const retireExitAt = order.indexOf('retire-exit');
+	const afterAt = order.indexOf('after-retire');
+	assert.ok(retireExitAt >= 0 && afterAt >= 0);
+	assert.ok(retireExitAt < afterAt, 'deck 1 work runs only after retire releases scopes 1,4,sync');
+});
+
+test('retire does not hold sync while a deck-1 load runs: another deck plays meanwhile (PRRT_kwDOSEvNd860mzuu)', async () => {
+	const { ScopedCommandScheduler } = await loadTypeScriptModule('src/lib/rb/performance-command-scheduler.ts');
+	const scheduler = new ScopedCommandScheduler();
+	const waitGate = deferred();
+	const loadEntered = deferred();
+	let releaseLoad;
+	const port = fakePort({
+		waitGate,
+		runRetireTransaction: (f, t, work) => scheduler.runWhenAllIdle([f, t, 'sync'], work)
+	});
+	await moveDeck(port, MOVE);
+	const loadP = scheduler.run([1], async () => {
+		loadEntered.resolve();
+		await new Promise((r) => {
+			releaseLoad = r;
+		});
+	});
+	await loadEntered.promise;
+	waitGate.resolve();
+	await nextTask();
+	assert.equal(port.calls.some((c) => c[0] === 'pause' && c[1] === 1), false);
+	assert.equal(port.calls.some((c) => c[0] === 'unload' && c[1] === 1), false);
+
+	let playRan = false;
+	const playP = scheduler.run([2, 'sync'], async () => {
+		playRan = true;
+	});
+	await playP;
+	assert.equal(playRan, true, 'deck 2 play must run while deck 1 load is still pending');
+
+	releaseLoad();
+	await loadP;
+	await nextTask();
+	assert.ok(port.calls.some((c) => c[0] === 'unload' && c[1] === 1), 'retire unloads source once scopes are idle');
 });
 
 test('the target fader is closed before the target starts, so there is no double-level bump', async () => {

@@ -2806,6 +2806,42 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/edits": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Track Edits */
+        get: operations["list_track_edits_api_v1_edits_get"];
+        put?: never;
+        /** Create Track Edit */
+        post: operations["create_track_edit_api_v1_edits_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/edits/{edit_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** Delete Track Edit */
+        delete: operations["delete_track_edit_api_v1_edits__edit_id__delete"];
+        options?: never;
+        head?: never;
+        /** Update Track Edit */
+        patch: operations["update_track_edit_api_v1_edits__edit_id__patch"];
+        trace?: never;
+    };
     "/api/v1/energy/backfill/collect": {
         parameters: {
             query?: never;
@@ -5578,6 +5614,29 @@ export interface paths {
         get: operations["list_deleted_playlists"];
         put?: never;
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/playlists/import": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Import M3U Playlist
+         * @description DJIMPORT-10225: an M3U/M3U8 file becomes a new playlist, matched to the collection by file path.
+         *
+         *     Tracks keep file order; a path listed twice is added once. Unmatched paths are reported. A file
+         *     with no match creates nothing and answers 422 with the unmatched count.
+         */
+        post: operations["import_m3u_playlist_api_v1_playlists_import_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -10963,6 +11022,8 @@ export interface components {
         AudioEngineLoadIn: {
             /** Deck */
             deck: number;
+            /** Out Ms */
+            out_ms?: number | null;
             /** Stable Id */
             stable_id: string;
         };
@@ -14025,6 +14086,43 @@ export interface components {
             updated_at: number | null;
             /** Waiting On Stems */
             waiting_on_stems: number;
+        };
+        /** EditCreateIn */
+        EditCreateIn: {
+            /** After Item Id */
+            after_item_id?: string | null;
+            /** Created By */
+            created_by?: string | null;
+            /** Fx */
+            fx?: {
+                [key: string]: unknown;
+            };
+            /** In Ms */
+            in_ms: number;
+            /**
+             * Label
+             * @default
+             */
+            label: string;
+            /** Out Ms */
+            out_ms: number;
+            /** Playlist Id */
+            playlist_id?: string | null;
+            /** Source Track Id */
+            source_track_id: string;
+        };
+        /** EditUpdateIn */
+        EditUpdateIn: {
+            /** Fx */
+            fx?: {
+                [key: string]: unknown;
+            } | null;
+            /** In Ms */
+            in_ms?: number | null;
+            /** Label */
+            label?: string | null;
+            /** Out Ms */
+            out_ms?: number | null;
         };
         /** EligibilityResponse */
         EligibilityResponse: {
@@ -18084,6 +18182,35 @@ export interface components {
              */
             name?: string | null;
         };
+        /** PlaylistImportIn */
+        PlaylistImportIn: {
+            /**
+             * Base Dir
+             * @description Absolute folder of the file; relative lines resolve against it
+             */
+            base_dir: string;
+            /**
+             * M3U
+             * @description The M3U or M3U8 file's text
+             */
+            m3u: string;
+            /**
+             * Name
+             * @description Display name of the new playlist
+             */
+            name: string;
+        };
+        /** PlaylistImportOut */
+        PlaylistImportOut: {
+            /** Matched */
+            matched: number;
+            /** Name */
+            name: string;
+            /** Playlist Id */
+            playlist_id: string;
+            /** Unmatched */
+            unmatched: string[];
+        };
         /** PlaylistModel */
         PlaylistModel: {
             /** Name */
@@ -19759,8 +19886,14 @@ export interface components {
             cloud_transfer?: components["schemas"]["CloudTransferOut"] | null;
             /** Comments */
             comments: string | null;
+            /** Created By */
+            created_by?: string | null;
             /** Duration Ms */
             duration_ms: number | null;
+            /** Edit Id */
+            edit_id?: string | null;
+            /** Edit Label */
+            edit_label?: string | null;
             /** Energy */
             energy: number | null;
             /** Energy Reason */
@@ -19778,6 +19911,10 @@ export interface components {
             file_exists: boolean | null;
             /** File Path */
             file_path?: string | null;
+            /** Fx */
+            fx?: {
+                [key: string]: unknown;
+            } | null;
             /** Genre */
             genre: string | null;
             genre_guess?: components["schemas"]["GenreGuessOut"] | null;
@@ -19790,6 +19927,13 @@ export interface components {
             has_rb_mapping: boolean;
             /** Has Remote Copy */
             has_remote_copy: boolean;
+            /** In Ms */
+            in_ms?: number | null;
+            /**
+             * Is Edit
+             * @default false
+             */
+            is_edit: boolean;
             /**
              * Is Radio Edit
              * @default false
@@ -19835,6 +19979,8 @@ export interface components {
             /** Match Context */
             match_context: string;
             offload?: components["schemas"]["OffloadOut"] | null;
+            /** Out Ms */
+            out_ms?: number | null;
             /**
              * Play Count
              * @default 0
@@ -19865,6 +20011,11 @@ export interface components {
             tempo_curve?: components["schemas"]["TempoCurveRowOut"] | null;
             /** Title */
             title: string | null;
+            /**
+             * Valid
+             * @default true
+             */
+            valid: boolean;
             /** Vocals */
             vocals: {
                 [key: string]: unknown;
@@ -22018,8 +22169,14 @@ export interface components {
             cloud_transfer?: components["schemas"]["CloudTransferOut"] | null;
             /** Comments */
             comments?: string | null;
+            /** Created By */
+            created_by?: string | null;
             /** Duration Ms */
             duration_ms?: number | null;
+            /** Edit Id */
+            edit_id?: string | null;
+            /** Edit Label */
+            edit_label?: string | null;
             /** Energy */
             energy: number | null;
             /** Energy Reason */
@@ -22035,6 +22192,10 @@ export interface components {
             file_exists: boolean | null;
             /** File Path */
             file_path?: string | null;
+            /** Fx */
+            fx?: {
+                [key: string]: unknown;
+            } | null;
             /** Genre */
             genre?: string | null;
             genre_guess?: components["schemas"]["GenreGuessOut"] | null;
@@ -22047,6 +22208,13 @@ export interface components {
             has_rb_mapping: boolean;
             /** Has Remote Copy */
             has_remote_copy: boolean;
+            /** In Ms */
+            in_ms?: number | null;
+            /**
+             * Is Edit
+             * @default false
+             */
+            is_edit: boolean;
             /**
              * Is Radio Edit
              * @default false
@@ -22085,6 +22253,8 @@ export interface components {
             /** Notes */
             notes?: string | null;
             offload?: components["schemas"]["OffloadOut"] | null;
+            /** Out Ms */
+            out_ms?: number | null;
             /**
              * Play Count
              * @default 0
@@ -22101,6 +22271,11 @@ export interface components {
             streaming_provider?: ("spotify" | "tidal" | "soundcloud" | "unknown") | null;
             /** Title */
             title?: string | null;
+            /**
+             * Valid
+             * @default true
+             */
+            valid: boolean;
         };
         /**
          * TrackIndexOut
@@ -22190,10 +22365,18 @@ export interface components {
             /** Bpm Status */
             bpm_status?: ("ok" | "failed" | "missing" | "available-not-selected" | "too_short" | "no_pulse") | null;
             cloud_transfer?: components["schemas"]["CloudTransferOut"] | null;
+            /** Comments */
+            comments?: string | null;
             /** Created At */
             created_at: string;
+            /** Created By */
+            created_by?: string | null;
             /** Duration Ms */
             duration_ms?: number | null;
+            /** Edit Id */
+            edit_id?: string | null;
+            /** Edit Label */
+            edit_label?: string | null;
             /** Energy */
             energy: number | null;
             /** Energy Reason */
@@ -22209,6 +22392,10 @@ export interface components {
             file_exists: boolean | null;
             /** File Path */
             file_path?: string | null;
+            /** Fx */
+            fx?: {
+                [key: string]: unknown;
+            } | null;
             /** Genre */
             genre?: string | null;
             genre_guess?: components["schemas"]["GenreGuessOut"] | null;
@@ -22221,6 +22408,13 @@ export interface components {
             has_rb_mapping: boolean;
             /** Has Remote Copy */
             has_remote_copy: boolean;
+            /** In Ms */
+            in_ms?: number | null;
+            /**
+             * Is Edit
+             * @default false
+             */
+            is_edit: boolean;
             /**
              * Is Radio Edit
              * @default false
@@ -22263,6 +22457,8 @@ export interface components {
             /** Notes */
             notes?: string | null;
             offload?: components["schemas"]["OffloadOut"] | null;
+            /** Out Ms */
+            out_ms?: number | null;
             /**
              * Play Count
              * @default 0
@@ -22304,6 +22500,11 @@ export interface components {
             title?: string | null;
             /** Updated At */
             updated_at: string;
+            /**
+             * Valid
+             * @default true
+             */
+            valid: boolean;
             /** Vocals */
             vocals: {
                 [key: string]: unknown;
@@ -22390,6 +22591,8 @@ export interface components {
             auto_cues_available: boolean;
             /** Bpm */
             bpm?: number | null;
+            /** Comments */
+            comments?: string | null;
             /** Created At */
             created_at: string;
             /** Duration Ms */
@@ -22558,8 +22761,14 @@ export interface components {
             cloud_transfer?: components["schemas"]["CloudTransferOut"] | null;
             /** Comments */
             comments: string | null;
+            /** Created By */
+            created_by?: string | null;
             /** Duration Ms */
             duration_ms: number | null;
+            /** Edit Id */
+            edit_id?: string | null;
+            /** Edit Label */
+            edit_label?: string | null;
             /** Energy */
             energy: number | null;
             /** Energy Reason */
@@ -22577,6 +22786,10 @@ export interface components {
             file_exists: boolean | null;
             /** File Path */
             file_path?: string | null;
+            /** Fx */
+            fx?: {
+                [key: string]: unknown;
+            } | null;
             /** Genre */
             genre: string | null;
             genre_guess?: components["schemas"]["GenreGuessOut"] | null;
@@ -22589,6 +22802,13 @@ export interface components {
             has_rb_mapping: boolean;
             /** Has Remote Copy */
             has_remote_copy: boolean;
+            /** In Ms */
+            in_ms?: number | null;
+            /**
+             * Is Edit
+             * @default false
+             */
+            is_edit: boolean;
             /**
              * Is Radio Edit
              * @default false
@@ -22632,6 +22852,8 @@ export interface components {
             loudness_status: "ok" | "failed" | "missing" | "available-not-selected";
             lyrics?: components["schemas"]["LyricsRowSummaryOut"] | null;
             offload?: components["schemas"]["OffloadOut"] | null;
+            /** Out Ms */
+            out_ms?: number | null;
             /**
              * Play Count
              * @default 0
@@ -22662,6 +22884,11 @@ export interface components {
             tempo_curve?: components["schemas"]["TempoCurveRowOut"] | null;
             /** Title */
             title: string | null;
+            /**
+             * Valid
+             * @default true
+             */
+            valid: boolean;
             /** Vocals */
             vocals: {
                 [key: string]: unknown;
@@ -29727,6 +29954,142 @@ export interface operations {
             };
         };
     };
+    list_track_edits_api_v1_edits_get: {
+        parameters: {
+            query?: {
+                source_track_id?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RowsOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    create_track_edit_api_v1_edits_post: {
+        parameters: {
+            query?: never;
+            header: {
+                "X-Undo-Session": string;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["EditCreateIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WriteOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delete_track_edit_api_v1_edits__edit_id__delete: {
+        parameters: {
+            query?: never;
+            header: {
+                "X-Undo-Session": string;
+            };
+            path: {
+                edit_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DeleteOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    update_track_edit_api_v1_edits__edit_id__patch: {
+        parameters: {
+            query?: never;
+            header: {
+                "X-Undo-Session": string;
+            };
+            path: {
+                edit_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["EditUpdateIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WriteOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     backfill_collect_api_v1_energy_backfill_collect_post: {
         parameters: {
             query?: never;
@@ -34405,6 +34768,39 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["DeletedPlaylistOut"][];
+                };
+            };
+        };
+    };
+    import_m3u_playlist_api_v1_playlists_import_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PlaylistImportIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PlaylistImportOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };

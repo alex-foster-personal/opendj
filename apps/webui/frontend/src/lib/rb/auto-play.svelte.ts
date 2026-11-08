@@ -361,7 +361,19 @@ function _noteNoPlayingMaster(noSource: boolean, snaps: readonly AutoPlayDeckSna
 
 /** A follower load, shifted when the pick fits the master's heard key only after a shift. */
 function _loadCommand(deck: DeckId, stable_id: string, keyShift: number) {
-	return { type: 'load' as const, deck, stable_id, ...(keyShift !== 0 ? { key_shift: keyShift } : {}) };
+	// The picker intentionally treats duplicate stable ids as one recording.
+	// Use the first visible membership: an edit-only membership carries its
+	// window, while source-then-edit keeps the source as the candidate.
+	const row = getAutoPlayPlaylist().find((candidate) => candidate.stable_id === stable_id);
+	return {
+		type: 'load' as const,
+		deck,
+		stable_id,
+		...(row?.edit_id ? { edit_id: row.edit_id } : {}),
+		...(row?.in_ms != null ? { in_ms: row.in_ms } : {}),
+		...(row?.out_ms != null ? { out_ms: row.out_ms } : {}),
+		...(keyShift !== 0 ? { key_shift: keyShift } : {})
+	};
 }
 
 /** AUTOPLAY-HEARD: the key and tempo the master is heard at: its own key plus the applied shift, its BPM times its pitch. */

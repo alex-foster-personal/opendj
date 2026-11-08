@@ -1,0 +1,133 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://opendj.app/schemas/lighting/fixture-profile.schema.json",
+  "title": "Open DJ fixture profile",
+  "description": "What each DMX channel of a fixture does, per mode. Validated by apps/lighting/fixtures/profile.py load_profile, which also enforces rules JSON Schema cannot: ranges on one channel never overlap, pan_fine / tilt_fine name a pan / tilt channel by offset, and fine_of names another, coarse channel of the same mode.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "id",
+    "name",
+    "kind",
+    "modes"
+  ],
+  "properties": {
+    "id": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Stable profile id, for example acme-par-7."
+    },
+    "name": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Display name."
+    },
+    "kind": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Fixture kind, for example par, moving_head, strobe, bar."
+    },
+    "modes": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "$ref": "#/$defs/mode"
+      }
+    }
+  },
+  "$defs": {
+    "mode": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "name",
+        "channels"
+      ],
+      "properties": {
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Mode name, unique in the profile, for example 7ch."
+        },
+        "channels": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 512,
+          "description": "Channels by offset: index 0 is the fixture's start address.",
+          "items": {
+            "$ref": "#/$defs/channel"
+          }
+        }
+      }
+    },
+    "channel": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "capability"
+      ],
+      "properties": {
+        "capability": {
+          "enum": [
+            "intensity",
+            "red",
+            "green",
+            "blue",
+            "white",
+            "amber",
+            "uv",
+            "strobe",
+            "pan",
+            "pan_fine",
+            "tilt",
+            "tilt_fine",
+            "pt_speed",
+            "color_wheel",
+            "gobo",
+            "shutter",
+            "macro",
+            "generic"
+          ]
+        },
+        "fine_of": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Offset of the coarse channel this channel refines (16-bit pair). Required for pan_fine and tilt_fine."
+        },
+        "ranges": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/range"
+          },
+          "description": "DMX value spans and what they mean; spans on one channel must not overlap."
+        }
+      }
+    },
+    "range": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "from",
+        "to",
+        "meaning"
+      ],
+      "properties": {
+        "from": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 255
+        },
+        "to": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 255
+        },
+        "meaning": {
+          "type": "string",
+          "minLength": 1,
+          "description": "For example off, or slow..fast."
+        }
+      }
+    }
+  }
+}

@@ -50,6 +50,11 @@ export function toggleTrackInfo(decks: readonly TrackInfoDeck[]): void {
 	trackInfo.opened = { deckId, stableId };
 }
 
+/** Open the TOPVIEW-05 overlay for a library/browser stable id (deck may be empty). Issue #9451. */
+export function openTrackInfoForRow(stableId: string): void {
+	trackInfo.opened = { deckId: null, stableId };
+}
+
 export function closeTrackInfo(): void {
 	trackInfo.opened = null;
 }

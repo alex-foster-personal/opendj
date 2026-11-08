@@ -132,7 +132,8 @@ export const SCHEDULE_DECK_ANCHOR =
   "\tloop?: LoopState | null,\n" +
   "\tkeyShiftSemitones?: number,\n" +
   "\tpressT0Ms?: number,\n" +
-  "\treanchorGeneration?: number\n" +
+  "\treanchorGeneration?: number,\n" +
+  "\tkeyRampGeneration?: number\n" +
   "): Promise<number> {";
 
 // Update here when `_scheduleDeckSerial` signature changes; stale-reanchor-ramp
@@ -148,7 +149,8 @@ export const SCHEDULE_DECK_SERIAL_ANCHOR =
   "\tloop: LoopState | null | undefined,\n" +
   "\tkeyShiftSemitones: number | undefined,\n" +
   "\tpressT0Ms: number | undefined,\n" +
-  "\treanchorGeneration?: number\n" +
+  "\treanchorGeneration?: number,\n" +
+  "\tkeyRampGeneration?: number\n" +
   "): Promise<number> {";
 
 // Sliced from instrumentation at load time so LATENCY-03 guards never drift on

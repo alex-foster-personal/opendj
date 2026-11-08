@@ -750,6 +750,7 @@
 		compatibleReferenceKey = null as string | null,
 		onremovefromlibrary = undefined,
 		onrelocated = undefined,
+		oneditrefresh = undefined,
 		onaddtoplaylist = undefined
 	}: {
 		/** Read contract: { rows, total, truncated, fetchWindow } - see
@@ -880,6 +881,7 @@
 		/** FLOW-07: called after a relocate apply succeeds, so the pane can
 		 * reload and pick up the row's fresh file_exists/broken state. */
 		onrelocated?: (() => void) | undefined;
+		oneditrefresh?: (() => void) | undefined;
 		/** Open the add-to-playlist picker for the selected tracks. */
 		onaddtoplaylist?: (stableIds: string[]) => void;
 		/** Genre chip / post-filter gestures. */
@@ -888,7 +890,7 @@
 		genreFilterUntil?: number;
 		/** Live pane search (for same-tag toggle + active chip). */
 		searchQuery?: string;
-		/** In-place find highlight (≥3 chars); empty = off. */
+		/** In-place find highlight (>=3 chars); empty = off. */
 		findQuery?: string;
 		/** Suggest-next hover: temporarily highlight + scroll to this row. */
 		suggestHoverId?: string | null;
@@ -1027,6 +1029,87 @@
 	/** The Genre cell's raw text: the listing's choice, else rekordbox's unless the precedence hides it. */
 	function genreText(row: BrowserRow): string {
 		return listingGenre(row) ?? '';
+	}
+
+	function editTime(ms: number | null | undefined): string {
+		if (ms == null) return '--:--.-';
+		const seconds = Math.max(0, ms) / 1000;
+		const minutes = Math.floor(seconds / 60);
+		return `${String(minutes).padStart(2, '0')}:${(seconds % 60).toFixed(1).padStart(4, '0')}`;
+	}
+
+	function editFx(row: BrowserRow): string {
+		return row.fx == null || Object.keys(row.fx).length === 0
+			? '{}'
+			: Object.keys(row.fx).sort().join(',');
+	}
+
+	async function editRequest(path: string, method: 'POST' | 'PATCH' | 'DELETE', body?: object): Promise<void> {
+		const response = await fetch(path, {
+			method,
+			headers: { 'X-Undo-Session': 'webui-edits', ...(body === undefined ? {} : { 'Content-Type': 'application/json' }) },
+			...(body === undefined ? {} : { body: JSON.stringify(body) })
+		});
+		if (!response.ok) throw new Error(`${method} ${path}: ${response.status} ${await response.text()}`);
+		oneditrefresh?.();
+	}
+
+	async function createVirtualEdit(row: BrowserRow): Promise<void> {
+		const label = window.prompt('Edit label', `${row.title ?? 'Edit'} edit`);
+		if (label === null) return;
+		const inText = window.prompt('In point (milliseconds)', '0');
+		if (inText === null) return;
+		const outText = window.prompt('Out point (milliseconds)', String(row.duration_ms ?? ''));
+		if (outText === null) return;
+		const fxText = window.prompt('FX parameters (JSON object)', '{}');
+		if (fxText === null) return;
+		try {
+			const fx = JSON.parse(fxText) as unknown;
+			if (typeof fx !== 'object' || fx === null || Array.isArray(fx)) throw new Error('FX must be a JSON object');
+			await editRequest('/api/v1/edits', 'POST', {
+				source_track_id: row.stable_id,
+				label,
+				in_ms: Number(inText),
+				out_ms: Number(outText),
+				fx,
+				...(stackPlaylistId !== null ? { playlist_id: stackPlaylistId } : {}),
+				...(row.item_id !== null ? { after_item_id: row.item_id } : {})
+			});
+		} catch (error) {
+			onrefused?.(error instanceof Error ? error.message : String(error));
+		}
+	}
+
+	async function updateVirtualEdit(row: BrowserRow): Promise<void> {
+		const editId = row.edit_id;
+		if (!editId) return;
+		const label = window.prompt('Edit label', row.edit_label ?? '');
+		if (label === null) return;
+		const inText = window.prompt('In point (milliseconds)', String(row.in_ms ?? 0));
+		if (inText === null) return;
+		const outText = window.prompt('Out point (milliseconds)', String(row.out_ms ?? ''));
+		if (outText === null) return;
+		const fxText = window.prompt('FX parameters (JSON object)', JSON.stringify(row.fx ?? {}));
+		if (fxText === null) return;
+		try {
+			const fx = JSON.parse(fxText) as unknown;
+			if (typeof fx !== 'object' || fx === null || Array.isArray(fx)) throw new Error('FX must be a JSON object');
+			await editRequest(`/api/v1/edits/${encodeURIComponent(editId)}`, 'PATCH', {
+				label, in_ms: Number(inText), out_ms: Number(outText), fx
+			});
+		} catch (error) {
+			onrefused?.(error instanceof Error ? error.message : String(error));
+		}
+	}
+
+	async function deleteVirtualEdit(row: BrowserRow): Promise<void> {
+		const editId = row.edit_id;
+		if (!editId || !window.confirm(`Delete virtual edit "${row.edit_label ?? row.title ?? ''}"?`)) return;
+		try {
+			await editRequest(`/api/v1/edits/${encodeURIComponent(editId)}`, 'DELETE');
+		} catch (error) {
+			onrefused?.(error instanceof Error ? error.message : String(error));
+		}
 	}
 
 
@@ -2007,7 +2090,7 @@
 	}
 
 	function shownTitle(row: BrowserRow): string {
-		const title = row.title ?? '';
+		const title = row.is_edit && row.edit_label ? row.edit_label : (row.title ?? '');
 		return worksView.classicalLayout
 			? classicalTitle(worksView.overlay, row.stable_id, title)
 			: title;
@@ -2102,7 +2185,7 @@
 		// with the drag, so a drop onto a deck loads it shifted like a double-click.
 		// Every selected id gets an entry: a multi-row drop loads the first of them.
 		if (reorderBlocked !== null) _showReorderHint();
-		beginTrackDrag(ids, draggedDeckRows(ids, rows, (r) => keyMatch(r.key)?.shift ?? 0));
+		beginTrackDrag(ids, draggedDeckRows(ids, rows, (r) => keyMatch(r.key)?.shift ?? 0, row));
 	}
 
 	/** LIBUX-8676: the last plain press on a row (row-click-intent.ts). */
@@ -2217,7 +2300,7 @@
 	<th
 		class={`h-${key} sortable`}
 		style={`width:${colWidths[col]}px`}
-		use:columnExplainer={{ text: columnHeaderTitle(col, `Sort by ${label} (asc → desc → clear)`) }}
+		use:columnExplainer={{ text: columnHeaderTitle(col, `Sort by ${label} (asc -> desc -> clear)`) }}
 		onclick={(e) => {
 			if ((e.target as HTMLElement).closest('.col-resize')) return;
 			onsort(key);
@@ -2441,7 +2524,7 @@
 						class:sorted={sortKey === 'grid'}
 						style={`width:${colWidths.err}px`}
 						use:columnExplainer={{
-							text: 'Err - detected analysis data-quality issues, hover a square for detail. Orange: uneven beatgrid, Beat Sync may wander. Gray: variable tempo. Hollow: beatgrid not checked. Click to sort flagged beatgrids to the top (asc → desc → clear).'
+							text: 'Err - detected analysis data-quality issues, hover a square for detail. Orange: uneven beatgrid, Beat Sync may wander. Gray: variable tempo. Hollow: beatgrid not checked. Click to sort flagged beatgrids to the top (asc -> desc -> clear).'
 						}}
 						onclick={(e) => {
 							if ((e.target as HTMLElement).closest('.col-resize')) return;
@@ -2560,7 +2643,7 @@
 						use:columnExplainer={{
 							text: columnHeaderTitle(
 								'key',
-								'Key - sort by key (asc → desc → clear)'
+								'Key - sort by key (asc -> desc -> clear)'
 							)
 						}}
 						onclick={(e) => {
@@ -2592,7 +2675,7 @@
 						use:columnExplainer={{
 							text: columnHeaderTitle(
 								'bpm',
-								'BPM - sort by BPM (asc → desc → clear)'
+								'BPM - sort by BPM (asc -> desc -> clear)'
 							)
 						}}
 						onclick={(e) => {
@@ -2638,7 +2721,7 @@
 						class:h-icon={true}
 						class:sortable={true}
 						style={`width:${colWidths.plays}px`}
-						use:columnExplainer={{ text: columnHeaderTitle('plays', 'Sort by plays (asc → desc → clear)') }}
+						use:columnExplainer={{ text: columnHeaderTitle('plays', 'Sort by plays (asc -> desc -> clear)') }}
 						onclick={(e) => {
 							if ((e.target as HTMLElement).closest('.col-resize')) return;
 							onsort('plays');
@@ -2777,7 +2860,7 @@
 						<td colspan={colCount}></td>
 					</tr>
 				{/if}
-				{#each visibleRows as row, i (row.item_id ?? `${row.stable_id}:${row.order}`)}
+				{#each visibleRows as row, i (row.edit_id ?? row.item_id ?? `${row.stable_id}:${row.order}`)}
 					{@const cloudView = trackCloudView({
 						fileExists: row.file_exists === true,
 						isStreaming: row.is_streaming ?? row.rb_meta?.is_streaming ?? false,
@@ -2879,7 +2962,7 @@
 									class="audio-cache-chevron"
 									title="Audio cached for fast deck load"
 									aria-hidden="true"
-								>▸</span>
+								>&gt;</span>
 							{:else if audioPrefetchStatus(row.stable_id) === 'loading'}
 								<span
 									class="audio-cache-dot"
@@ -3076,6 +3159,15 @@
 											class="find-hit">{part.text}</mark
 										>{:else}{part.text}{/if}{/each}</span
 							>
+							{#if row.is_edit}
+								<span class="edit-badge" data-testid="edit-badge" title={row.edit_label ?? 'Virtual edit'}>
+									{editTime(row.in_ms)}-{editTime(row.out_ms)} / {editFx(row)}
+								</span>
+								<button class="edit-action" title="Edit virtual edit" onclick={(e) => { e.stopPropagation(); void updateVirtualEdit(row); }}>E</button>
+								<button class="edit-action" title="Delete virtual edit" onclick={(e) => { e.stopPropagation(); void deleteVirtualEdit(row); }}>x</button>
+							{:else}
+								<button class="edit-action create-edit" title="Create virtual edit" onclick={(e) => { e.stopPropagation(); void createVirtualEdit(row); }}>cut</button>
+							{/if}
 							{#if indicatorFor(row) !== null}
 								<button
 									type="button"
@@ -3449,6 +3541,30 @@
 		flex: 0 1 auto;
 		min-width: 0;
 	}
+	.edit-badge {
+		flex: none;
+		margin-left: 5px;
+		padding: 0 4px;
+		border: 1px solid #2f9d62;
+		border-radius: 3px;
+		color: #62d993;
+		font-size: 9px;
+		line-height: 14px;
+		white-space: nowrap;
+	}
+	.edit-action {
+		flex: none;
+		margin-left: 2px;
+		padding: 0 2px;
+		border: 0;
+		background: transparent;
+		color: #62d993;
+		cursor: pointer;
+		font: inherit;
+	}
+	.create-edit { opacity: 0; }
+	.c-title:hover .create-edit,
+	.create-edit:focus-visible { opacity: 1; }
 	.stack-indicator {
 		flex: none;
 		background: none;
@@ -3798,7 +3914,7 @@
 		position: relative;
 		overflow: hidden;
 	}
-	/* Subtle TL→BR white sweep (same 135deg idea as Deck.svelte
+	/* Subtle TL-to-BR white sweep (same 135deg idea as Deck.svelte
 	 * .rb-deck.loading::after / deck-load-sweep) so blank row-pad gaps
 	 * feel alive while scrolling. Lower opacity + slower than deck load;
 	 * ::after only - must not change spacer height math (padding stays 0). */
@@ -4184,7 +4300,7 @@
 	}
 	/* Key and BPM are auto-fit to their widest text in the skin font
 	 * (musical-column-fit.ts), so a narrower column is a user drag: clip it,
-	 * never trade two characters for an ellipsis (Gothic showed "8…"). */
+	 * never trade two characters for an ellipsis (Gothic showed "8..."). */
 	.c-key,
 	.c-bpm {
 		text-overflow: clip;
@@ -4264,7 +4380,7 @@
 	.c-bpm.bpm-danger { box-shadow: inset 0 0 0 1px var(--rb-bpm-mismatch-ring, #e14238); }
 	.c-bpm.bpm-critical { box-shadow: inset 0 0 0 2px var(--rb-bpm-mismatch-ring, #ff2f25); }
 	/* PAIR-09 (the maintainer, Thu 8 Oct 2026): a paired row gets a purple zigzag ring,
-	 * "as if being microwaved". the maintainer picked the Cmd K bar's "G · Comet" edge
+	 * "as if being microwaved". the maintainer picked the Cmd K bar's "G . Comet" edge
 	 * (Cmd K thread, round 3, same day), so both surfaces draw the same ring:
 	 * --rb-pair mixed 62% with --rb-text-dim at 40% opacity, drawn inside the
 	 * row on a rect inset 1px, with jags every 5px alternating in and out

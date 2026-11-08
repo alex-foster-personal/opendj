@@ -133,10 +133,19 @@ E2E_PATHS_IGNORE: tuple[str, ...] = (
 #:   requests): #6474 broke the `public_surface` contract on main after a green pull
 #:   request run because the ratchet, which carries that gate, runs on main only.
 #:
+#: - `audio-rust` (odj-audio's cargo nextest, the same invocation `contracts` makes; 6 to
+#:   7 s on a warm runner) runs when the crate, the nextest config or the cargo wrapper
+#:   changes (Sun 8 Nov 2026, ADR-NEW-audio-rust-tests-on-pull-requests): with the Rust
+#:   tests on main only, a crate whose tests did not compile landed twice in three days
+#:   (Fri 6 Nov, 19 red main runs; Sun 8 Nov, #9179). It is the one job that runs on a
+#:   pull request ONLY (`CI_JOBS_ONLY_ON_PULL_REQUEST`): on every other event
+#:   `contracts` runs the same tests.
+#:
 #: `test` keeps its own selector (scripts/ci_test_selection.py) and is never listed here.
-#: Pushes and dispatches run every job: the decision is pull_request only. ADR:
-#: (private path).
+#: Pushes and dispatches run every job but `CI_JOBS_ONLY_ON_PULL_REQUEST`: the footprint
+#: decision is pull_request only. ADR: (private path).
 CI_JOB_PATHS: dict[str, tuple[str, ...]] = {
+    "audio-rust": ("apps/audio-engine/**", "(private path)", "scripts/ci_cargo_selfheal.sh"),
     "contracts": (),
     "frontend": ("apps/webui/frontend/**", "apps/desktop/electron/**"),
     "frontend-build": ("apps/webui/frontend/**", "apps/desktop/electron/**"),
@@ -150,6 +159,11 @@ CI_FIXED_JOBS: tuple[str, ...] = tuple(CI_JOB_PATHS)
 #: The fixed jobs that never run on a pull_request (empty list above). ci.yml's `if:` on
 #: each also carries `github.event_name != 'pull_request'`, so the YAML says it too.
 CI_JOBS_NEVER_ON_PULL_REQUEST: tuple[str, ...] = tuple(job for job, patterns in CI_JOB_PATHS.items() if not patterns)
+
+#: The fixed jobs that run on a pull_request only. On a push or a dispatch the scope job names
+#: them in `skip_jobs`, because `contracts` runs the same tests there; ci.yml's `if:` on each
+#: also carries `github.event_name == 'pull_request'`.
+CI_JOBS_ONLY_ON_PULL_REQUEST: tuple[str, ...] = ("audio-rust",)
 
 #: Workflow file -> (`paths`, `paths-ignore`) its in-run scope job evaluates for a
 #: pull_request event. Exactly one of the pair is set, the same shape

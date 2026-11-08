@@ -44,6 +44,7 @@ from __future__ import annotations
 import argparse
 import json
 import re
+import subprocess
 import sys
 import time
 import traceback
@@ -51,6 +52,7 @@ from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from enum import IntEnum
+from pathlib import Path
 
 from scripts.ci_failure_ids import (
     JobClassification,
@@ -88,7 +90,7 @@ from scripts.ci_wait_core import (
     lifecycle_wait_status,
     poll_until_terminal,
 )
-from scripts.review_coverage_carry import fetch_commits, is_ancestor
+from scripts.review_coverage_carry import _git, fetch_commits, is_ancestor
 from scripts.review_gate_freshness import CHECKOUT_ROOT
 from scripts.review_gh import TriageError, _gh
 from scripts.trunk_job_verdict_core import PASSING_JOB_CONCLUSIONS
@@ -110,19 +112,40 @@ class Exit(IntEnum):
     CLOSED = 5
 
 
-def _advanced_past(measured_sha: str, pr_head_sha: str) -> bool:
-    """True when the pull request's history already contains `measured_sha` (issue #3344):
-    its merge base is at or after that commit, so a baseline measured there cannot say main
-    is still red on it for THIS pull request. Fetches the shas by name first -- never via
-    FETCH_HEAD, which concurrent agents in this shared checkout overwrite (CLAUDE.md).
+def _merge_base(root: Path, first: str, second: str) -> str:
+    """The one merge base `git merge-base` names for two commits; TriageError when git cannot say."""
+    proc = subprocess.run(
+        [_git(), "-C", str(root), "merge-base", first, second],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    base = proc.stdout.strip()
+    if proc.returncode != 0 or not base:
+        detail = proc.stderr.strip() or "no common ancestor"
+        raise TriageError(f"git merge-base {first} {second} failed: {detail}")
+    return base
+
+
+def _advanced_past(measured_sha: str, pr_head_sha: str, main_sha: str, root: Path = CHECKOUT_ROOT) -> bool:
+    """True when the pull request's merge base with main is strictly after `measured_sha`
+    (issues #3344, #3388): not whether the PR head contains the commit -- a PR that branched
+    at C and added commits contains C but has not advanced past it. Fetches the shas by name
+    first -- never via FETCH_HEAD, which concurrent agents in this shared checkout overwrite
+    (CLAUDE.md).
 
     An unmeasurable ancestry (a git failure, a missing object `fetch_commits` could not
     resolve) comes back True: undeterminable must not preserve the excuse, the same
     direction `stale_red_identities` documents for its own seam.
+
+    `main_sha` is the main head the cached baseline was taken at; if the PR already merged
+    main commits newer than `main_sha`, merge base against `main_sha` can under-report
+    staleness for a C equal to `main_sha`. The cache is refreshed, so the window is small.
     """
     try:
-        fetch_commits(CHECKOUT_ROOT, measured_sha, pr_head_sha)
-        return is_ancestor(CHECKOUT_ROOT, measured_sha, pr_head_sha)
+        fetch_commits(root, measured_sha, pr_head_sha, main_sha)
+        base = _merge_base(root, pr_head_sha, main_sha)
+        return not is_ancestor(root, base, measured_sha)
     except TriageError:
         return True
 
@@ -136,7 +159,7 @@ class FailureWatch:
     emit: Callable[[str], None]
     clock: Callable[[], float] = time.monotonic
     pr_head_sha: str = ""
-    advanced_past: Callable[[str, str], bool] = _advanced_past
+    advanced_past: Callable[[str, str, str], bool] = _advanced_past
     verdicts: dict[int, JobClassification | None] = field(default_factory=dict)
     excerpts: dict[int, list[str]] = field(default_factory=dict)
     started: float | None = None
@@ -224,7 +247,11 @@ class FailureWatch:
         """
         if not identities or residual_identities(identities, red.identities):
             return False
-        stale = stale_red_identities(red.identities_by_sha, self.pr_head_sha, self.advanced_past)
+        stale = stale_red_identities(
+            red.identities_by_sha,
+            self.pr_head_sha,
+            lambda measured, pr_head: self.advanced_past(measured, pr_head, red.main_sha),
+        )
         return bool(identities & stale)
 
 

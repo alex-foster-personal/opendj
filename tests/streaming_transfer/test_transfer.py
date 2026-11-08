@@ -16,15 +16,25 @@ from dataclasses import replace
 
 import pytest
 
-from apps.spotify.client import parse_playlist_payload
+from apps.spotify.client import SpotifyTrack, parse_playlist_payload
 from apps.streaming_transfer.llm import (
+    LlmDecision,
     LlmMatchError,
     batch_id_for,
     build_batch_request,
     parse_batch_response,
 )
-from apps.streaming_transfer.service import TransferContractError, plan_transfer, resolve_transfer
-from apps.streaming_transfer.soundcloud import build_playlist_payload, parse_tracks_payload
+from apps.streaming_transfer.service import (
+    TransferContractError,
+    execute_transfer,
+    plan_transfer,
+    resolve_transfer,
+)
+from apps.streaming_transfer.soundcloud import (
+    SoundCloudTrack,
+    build_playlist_payload,
+    parse_tracks_payload,
+)
 
 
 def _spotify_item(
@@ -90,6 +100,29 @@ SOUNDCLOUD_STUDIO_WITHOUT_ISRC = {
         }
     ]
 }
+
+class _RecordingTarget:
+    def __init__(self, candidates: dict[str, tuple[SoundCloudTrack, ...]]) -> None:
+        self._candidates = candidates
+        self.created: list[tuple[SoundCloudTrack, ...]] = []
+
+    def search_tracks(self, source: SpotifyTrack) -> tuple[SoundCloudTrack, ...]:
+        return self._candidates[source.spotify_uri]
+
+    def create_playlist(
+        self, title: str, tracks: tuple[SoundCloudTrack, ...], *, sharing: str
+    ) -> str:
+        self.created.append(tracks)
+        return "soundcloud:playlists:1"
+
+
+class _FixedLlm:
+    def __init__(self, decisions: tuple[LlmDecision, ...]) -> None:
+        self._decisions = decisions
+
+    def resolve(self, escalations: object) -> tuple[LlmDecision, ...]:
+        return self._decisions
+
 
 SOUNDCLOUD_LIVE_PREVIEW = {
     "collection": [
@@ -268,3 +301,85 @@ def test_non_finite_confidence_is_rejected(monkeypatch: pytest.MonkeyPatch) -> N
             confidence_threshold=0.70,
             duration_tolerance_ms=2_000,
         )
+
+
+@pytest.mark.requirement("META-05")
+def test_live_playlist_follows_source_order_not_bucket_order() -> None:
+    """[if] matches resolve out of source order [then] the playlist keeps source order, [else stop]."""
+    source_capture = parse_playlist_payload(SPOTIFY_CAPTURE)
+    tracks = source_capture.tracks
+    source = replace(source_capture, tracks=(tracks[1], tracks[0]))
+    target_candidates = {
+        tracks[0].spotify_uri: parse_tracks_payload(SOUNDCLOUD_STUDIO_WITH_ISRC),
+        tracks[1].spotify_uri: (
+            replace(
+                parse_tracks_payload(SOUNDCLOUD_STUDIO_WITHOUT_ISRC)[0],
+                urn="soundcloud:tracks:718846079",
+            ),
+        ),
+    }
+    plan = plan_transfer(
+        source,
+        target_service="soundcloud",
+        candidates=target_candidates,
+        confidence_threshold=0.70,
+        duration_tolerance_ms=2_000,
+    )
+    batch_id = batch_id_for(plan.escalations)
+    llm = _FixedLlm(
+        (
+            LlmDecision(
+                source_id="spotify:track:6qYkmqFsXbj8CQjAdbYz07",
+                target_id="soundcloud:tracks:718846079",
+                confidence=0.99,
+                evidence_urls=(
+                    "https://open.spotify.com/track/6qYkmqFsXbj8CQjAdbYz07",
+                    "https://soundcloud.com/theweeknd/blinding-lights",
+                ),
+                web_search_batch_id=batch_id,
+                web_search_requests=1,
+            ),
+        )
+    )
+    target = _RecordingTarget(target_candidates)
+    report = execute_transfer(
+        source,
+        target=target,
+        llm=llm,
+        confidence_threshold=0.70,
+        duration_tolerance_ms=2_000,
+        live=True,
+        sharing="private",
+    )
+    assert [track.urn for track in target.created[0]] == [
+        "soundcloud:tracks:718846079",
+        "soundcloud:tracks:718846078",
+    ]
+    assert [row.source_uri for row in report.matched] == [
+        "spotify:track:0VjIjW4GlUZAMYd2vXMi3b",
+        "spotify:track:6qYkmqFsXbj8CQjAdbYz07",
+    ]
+    assert report.target_playlist_id == "soundcloud:playlists:1"
+
+
+@pytest.mark.requirement("META-05")
+def test_live_run_with_no_matches_skips_target_write() -> None:
+    """[if] a live run matches nothing [then] no playlist write occurs, [else stop]."""
+    source_capture = parse_playlist_payload(SPOTIFY_CAPTURE)
+    source = replace(source_capture, tracks=(source_capture.tracks[3],))
+    target_candidates = {source.tracks[0].spotify_uri: ()}
+    target = _RecordingTarget(target_candidates)
+    llm = _FixedLlm(())
+    report = execute_transfer(
+        source,
+        target=target,
+        llm=llm,
+        confidence_threshold=0.70,
+        duration_tolerance_ms=2_000,
+        live=True,
+        sharing="private",
+    )
+    assert target.created == []
+    assert report.matched == ()
+    assert report.target_playlist_id is None
+    assert report.as_dict()["counts"]["ungradable"] == 1

@@ -1,0 +1,9 @@
+{
+  "bytes": 1024,
+  "measured_main": 406587,
+  "measured_with_pr": 407057,
+  "sha": "0a9f2a6426",
+  "date": "Sun 8 Nov 2026",
+  "reason": "PR #9649 adds the Deck number on artwork overlay (ARTNUM-9649): one ArtworkDeckNumber component mounted in the deck header, waveform gutter and mixer column, its pref, setting row and bus command. Measured: CI bundle check of 0a9f2a6426, +470 B gzip; ceiled to KiB",
+  "payback": "none planned; the overlay is a new appearance option and this is its intended shape"
+}

@@ -12,6 +12,7 @@
 	} from '$lib/sets/recorder-status-retry';
 	import { showWholeCollectionFromChrome } from '$lib/rb/playlist-history-chrome.svelte';
 	import IconRail from './IconRail.svelte';
+	import { openUsbExport } from '$lib/rb/usb-export.svelte';
 	import { setRecordingEnabled } from '$lib/sets/recording-flag';
 
 	let {
@@ -198,6 +199,7 @@
 	recordingWaiting={rail.waiting}
 	recordingTip={rail.tip}
 	onrecord={() => void togglePerformanceRecording()}
+	onusb={openUsbExport}
 />
 
 {#if RecordInputPicker !== null}

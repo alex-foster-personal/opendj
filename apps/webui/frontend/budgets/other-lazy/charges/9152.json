@@ -1,0 +1,9 @@
+{
+  "bytes": 2048,
+  "measured_main": 474951,
+  "measured_with_pr": 475952,
+  "sha": "63eb6f1451",
+  "date": "Sun 8 Nov 2026",
+  "reason": "PR #9152 (feat(cloudsync): shared headline strip above every tab (#8720)) grows the other-lazy surface. Measured: CI bundle check of 63eb6f1451, +1001 B gzip; ceiled to KiB.",
+  "payback": "none planned; the growth is the feature's own code on this surface"
+}

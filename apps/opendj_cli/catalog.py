@@ -78,6 +78,7 @@ WAVEFORM_SEEK_SNAP_VALUES: tuple[str, ...] = ("downbeat", "beat", "exact")
 COLOR_FX_EFFECT_VALUES: tuple[str, ...] = ("filter", "space", "echo", "next")
 COLOR_FX_ECHO_BEAT_VALUES: tuple[float, ...] = (0.25, 0.5, 0.75, 1.0)
 WAVEFORM_DESIGN_VALUES: tuple[str, ...] = ("auto", "tri-band", "mono", "line", "blocks")
+DECK_NUMBER_ART_VALUES: tuple[str, ...] = ("off", "halo")
 #: WAVEQS-8348e: mirrors WAVEFORM_OVERLAYS in src/lib/rb/waveform-overlay-command.ts.
 WAVEFORM_OVERLAY_VALUES: tuple[str, ...] = ("sections", "lyrics", "lyrics_scrub", "jog_radial")
 WAVE_ZOOM_VALUES: tuple[str, ...] = ("4", "8", "16", "32", "64", "whole")
@@ -449,6 +450,9 @@ _VERBS: tuple[Verb, ...] = (
          observes=(Observe(("autoplay_enabled",), "enabled"),),
          note="AGENT-20: the AutoPlay switch; the mirror's autoplay_armed says if it will hand off. "
               "PLAY-18: off is refused unless by_user is true (a person asked)."),
+    Verb("set_deck_number_art", "set_deck_number_art", (
+        arg("mode", "enum", enum_value(DECK_NUMBER_ART_VALUES), "off|halo"),
+    ), note="ARTNUM-9649: deck number outline over each deck's artwork; default off."),
     Verb("set_waveform_design", "set_waveform_design", (
         arg("design", "enum", enum_value(WAVEFORM_DESIGN_VALUES), "auto|tri-band|mono|line|blocks"),
     )),

@@ -20,6 +20,7 @@
  */
 import { rustCommandUnsupported } from '$lib/audio-engine/rust-mode.svelte';
 import { deckStates } from '$lib/rb/audio-engine.svelte';
+import { getAutoPlayPlaylist } from '$lib/rb/auto-play';
 import {
 	armAutoPlayNext,
 	autoPlayNextState,
@@ -164,13 +165,22 @@ async function _cue(
 	keyShift: number,
 	heldAtStart: string | null
 ): Promise<boolean> {
+	const row = getAutoPlayPlaylist().find((candidate) => candidate.stable_id === track);
 	const held = deckStates[deck].stable_id;
 	if (held === track) return true;
 	if (deckStates[deck].playing || (held !== null && held !== heldAtStart)) return false;
 	if (held !== null)
 		await dispatchPerformanceCommand({ type: 'unload', deck }, undefined, 'autoplay-handoff');
 	await dispatchPerformanceCommand(
-		{ type: 'load', deck, stable_id: track, ...(keyShift !== 0 ? { key_shift: keyShift } : {}) },
+		{
+			type: 'load',
+			deck,
+			stable_id: track,
+			...(row?.edit_id ? { edit_id: row.edit_id } : {}),
+			...(row?.in_ms != null ? { in_ms: row.in_ms } : {}),
+			...(row?.out_ms != null ? { out_ms: row.out_ms } : {}),
+			...(keyShift !== 0 ? { key_shift: keyShift } : {})
+		},
 		undefined,
 		'autoplay-handoff'
 	);

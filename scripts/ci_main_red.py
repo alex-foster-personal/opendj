@@ -339,16 +339,18 @@ def stale_red_identities(
     watched. `identities_by_sha` empty (no per-commit provenance) yields nothing stale, the
     same as before this existed.
 
-    `advanced_past` is a seam over `git merge-base --is-ancestor measured_sha pr_head_sha`;
-    an undeterminable answer must come back True (advanced past), never False, or an ancestry
-    check that fails closed would open the same excuse this function exists to close.
+    An identity is stale only when EVERY commit that measured it has been advanced past,
+    because one fresh measurement still proves main is red on it (#3388).
+
+    `advanced_past` is a seam over whether the pull request's merge base with main is
+    strictly after `measured_sha`; an undeterminable answer must come back True (advanced
+    past), never False, or an ancestry check that fails closed would open the same excuse
+    this function exists to close.
     """
-    return frozenset(
-        identity
-        for sha, identities in identities_by_sha.items()
-        if advanced_past(sha, pr_head_sha)
-        for identity in identities
-    )
+    advanced = {sha: advanced_past(sha, pr_head_sha) for sha in identities_by_sha}
+    fresh = frozenset().union(*(ids for sha, ids in identities_by_sha.items() if not advanced[sha]))
+    stale = frozenset().union(*(ids for sha, ids in identities_by_sha.items() if advanced[sha]))
+    return stale - fresh
 
 
 def _runs_of(workflow: str) -> list[dict]:

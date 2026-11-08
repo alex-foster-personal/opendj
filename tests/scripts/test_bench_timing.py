@@ -17,28 +17,56 @@ been shown to go red is not cover.
 
 from __future__ import annotations
 
-import time
+import json
+import subprocess
+import sys
+from pathlib import Path
 
 import pytest
 
-from scripts.bench.timing import interleaved_samples, time_call
+from scripts.bench.timing import interleaved_samples
 
+REPO_ROOT = Path(__file__).resolve().parents[2]
 #: A stall long enough that no clock resolution question arises.
 STALL_S = 0.25
+# A fresh interpreter runs no thread but its own, so the process CPU time charged during the
+# sleep is the instrument's alone. In-process, a thread another test left running in the same
+# fast-tier leg was charged too: 125.2 and 133.3 ms on main's control runs of Sat 7 Nov 18:05Z
+# and Sun 8 Nov 00:15Z 2026.
+_STALL_IN_A_FRESH_PROCESS = (
+    "import json, time\n"
+    "from scripts.bench.timing import time_call\n"
+    f"sample = time_call(lambda: time.sleep({STALL_S}))\n"
+    "print(json.dumps([sample.cpu_ms, sample.wall_ms]))\n"
+)
+
+
+def _stall_in_a_fresh_process() -> tuple[float, float]:
+    """(cpu_ms, wall_ms) of time_call around a STALL_S sleep, measured in a new interpreter."""
+    out = subprocess.run(
+        [sys.executable, "-c", _STALL_IN_A_FRESH_PROCESS],
+        cwd=REPO_ROOT,
+        capture_output=True,
+        text=True,
+        check=True,
+        timeout=60,
+    ).stdout
+    cpu_ms, wall_ms = json.loads(out)
+    return cpu_ms, wall_ms
 
 
 def test_a_stalled_call_is_not_charged_the_stall() -> None:
     """if wall time reaches the verdict then a busy box reads as a slow kernel"""
-    sample = time_call(lambda: time.sleep(STALL_S))
+    cpu_ms, wall_ms = _stall_in_a_fresh_process()
 
     # Control first: prove the stall actually happened, so the cpu_ms assertion
     # below is measuring an instrument rather than a call that never ran.
-    assert sample.wall_ms >= STALL_S * 1000 * 0.9, (
-        f"the stall did not happen: wall_ms={sample.wall_ms:.1f} for a {STALL_S}s sleep, "
+    assert wall_ms >= STALL_S * 1000 * 0.9, (
+        f"the stall did not happen: wall_ms={wall_ms:.1f} for a {STALL_S}s sleep, "
         "so this test proved nothing about the CPU clock"
     )
-    assert sample.cpu_ms < STALL_S * 1000 * 0.2, (
-        f"cpu_ms={sample.cpu_ms:.1f} charged the process for a {STALL_S}s sleep it slept "
+    assert cpu_ms < STALL_S * 1000 * 0.2, (
+        f"cpu_ms={cpu_ms:.1f} charged the process for a {STALL_S}s sleep it slept "
         "through - this is the wall-clock instrument, and it is what made the waveform "
         "bench red whenever the agent fleet was busy"
     )

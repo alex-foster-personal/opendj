@@ -50,8 +50,9 @@ from .migrations_v26 import _V26
 from .migrations_v27 import _V27
 from .migrations_v28 import _V28
 from .migrations_v29 import _V29
+from .migrations_v30 import _V30
 
-SCHEMA_VERSION: int = 29
+SCHEMA_VERSION: int = 30
 
 
 # Each element is the set of SQL statements that take schema from N to N+1.
@@ -86,6 +87,7 @@ MIGRATIONS: list[list[str]] = [
     _V27,
     _V28,
     _V29,
+    _V30,
 ]
 
 
@@ -221,6 +223,8 @@ TABLES: tuple[str, ...] = (
     "work_dismissal",
     "work_pref",
     "undo_journal",
+    # v30 (LIBEDIT-9179). Non-destructive virtual edits over source tracks.
+    "track_edit",
 )
 """Domain tables created by :data:`MIGRATIONS`. ``schema_meta`` is
 intentionally excluded -- it is infrastructure, not domain data. Four of

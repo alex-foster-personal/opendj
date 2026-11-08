@@ -138,6 +138,7 @@ class Playlist:
     vendor_pl_id: str | None = None
     items: list[str] = field(default_factory=list)
     item_ids: list[str] = field(default_factory=list)
+    edit_ids: list[str | None] = field(default_factory=list)
     created_at: str = field(default_factory=_utcnow_iso)
     updated_at: str = field(default_factory=_utcnow_iso)
     forbid_duplicates: bool = False
@@ -354,6 +355,8 @@ def compute_library_revision_summary(
     track_updated_at: str,
     field_updated_at: str,
     changelog_sequence: int,
+    edit_count: int = 0,
+    edit_updated_at: str = "",
 ) -> str:
     """Return a stable revision from the database's cheap change signals."""
     return _library_revision_digest([
@@ -362,6 +365,8 @@ def compute_library_revision_summary(
         track_updated_at,
         field_updated_at,
         changelog_sequence,
+        edit_count,
+        edit_updated_at,
     ])
 
 
@@ -607,7 +612,12 @@ class InMemoryBackend:
         pl = self.get_playlist(playlist_id)
         window = slice(offset, offset + limit)
         return PlaylistPage(
-            playlist=replace(pl, items=pl.items[window], item_ids=pl.item_ids[window]),
+            playlist=replace(
+                pl,
+                items=pl.items[window],
+                item_ids=pl.item_ids[window],
+                edit_ids=pl.edit_ids[window],
+            ),
             total=len(pl.items),
         )
 

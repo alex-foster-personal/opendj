@@ -70,6 +70,16 @@ import type { DeckId } from '$lib/player/constants';
 // Re-exported for the performance IPC, which is at its import fan-out limit.
 export { deckWaveZoom, parseWavePlayheadMode, parseWaveZoom, type WavePlayheadMode, type WaveZoom };
 import {
+	DECK_NUMBER_ART_PREF_DEFAULTS,
+	parseDeckNumberArt,
+	requireDeckNumberArt,
+	validateDeckNumberArtPrefFields,
+	type DeckNumberArt,
+	type DeckNumberArtPrefsState
+} from './deck-number-art';
+// Re-exported for the performance IPC (import fan-out limit).
+export { requireDeckNumberArt, type DeckNumberArt };
+import {
 	SECTION_OVERLAY_PREF_DEFAULTS,
 	makeSectionOverlaySetters,
 	validateSectionOverlayPrefFields,
@@ -236,6 +246,7 @@ export interface RbUiPrefs
 		TopbarViewPrefsState,
 		DeckDefaultPrefs,
 		SectionOverlayPrefsState,
+		DeckNumberArtPrefsState,
 		SpeakerLinkPrefsState,
 		TempoLanePrefsState,
 		WaveZoomPrefsState {
@@ -492,6 +503,7 @@ const DEFAULTS: RbUiPrefs = {
 	horizontal_wheel_knob: 'filter',
 	drag_sensitivity: { base: DRAG_DEFAULTS.base, falloff_px: DRAG_DEFAULTS.falloffPx },
 	...SECTION_OVERLAY_PREF_DEFAULTS,
+	...DECK_NUMBER_ART_PREF_DEFAULTS,
 	...SPEAKER_LINK_PREF_DEFAULTS,
 	...TEMPO_LANE_PREF_DEFAULTS,
 	...WAVE_ZOOM_PREF_DEFAULTS,
@@ -1029,6 +1041,8 @@ function _assembleLoadedPrefs(
 				: validateDragSensitivity(parsed.drag_sensitivity, STORAGE_KEY),
 		...SECTION_OVERLAY_PREF_DEFAULTS,
 		...validateSectionOverlayPrefFields(parsed, STORAGE_KEY),
+		...DECK_NUMBER_ART_PREF_DEFAULTS,
+		...validateDeckNumberArtPrefFields(parsed as Record<string, unknown>, STORAGE_KEY),
 		...SPEAKER_LINK_PREF_DEFAULTS,
 		...validateSpeakerLinkPrefFields(parsed, STORAGE_KEY),
 		...TEMPO_LANE_PREF_DEFAULTS,
@@ -1758,3 +1772,10 @@ function _applySkinFromUrl(): void {
 }
 
 _applySkinFromUrl();
+
+/** ARTNUM-9649: the deck number drawn over each deck's artwork (default off). */
+export function setDeckNumberArt(next: DeckNumberArt): void {
+	if (parseDeckNumberArt(next) === undefined) throw new Error(`deck_number_art must be off|halo, got ${String(next)}`);
+	uiPrefs.deck_number_art = next;
+	_persist();
+}

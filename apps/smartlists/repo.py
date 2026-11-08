@@ -1,4 +1,5 @@
 """``SmartlistsRepo`` -- CRUD over the ``smartlists`` table."""
+
 from __future__ import annotations
 
 import hashlib
@@ -29,9 +30,7 @@ class SmartlistRevisionConflict(SmartlistsRepoError):
     def __init__(self, current: SmartlistRow) -> None:
         self.current = current
         self.current_revision = smartlist_revision(current)
-        super().__init__(
-            f"smartlist {current.id!r} revision does not match current state"
-        )
+        super().__init__(f"smartlist {current.id!r} revision does not match current state")
 
 
 def _now_iso() -> str:
@@ -45,9 +44,7 @@ def _parse_iso(value: str | None) -> datetime | None:
 
 
 def _live_sql(conn: sqlite3.Connection) -> str:
-    columns = {
-        row[1] for row in conn.execute("PRAGMA table_info(smartlists)")
-    }
+    columns = {row[1] for row in conn.execute("PRAGMA table_info(smartlists)")}
     if "deleted_at" not in columns:
         return ""
     return " AND (deleted_at IS NULL OR deleted_at = '')"
@@ -67,11 +64,7 @@ def smartlist_revision(row: SmartlistRow) -> str:
             "rule_schema_version": row.rule_schema_version,
             "referenced_fields": sorted(row.referenced_fields),
             "order_by": row.order_by,
-            "last_evaluated_at": (
-                row.last_evaluated_at.isoformat()
-                if row.last_evaluated_at is not None
-                else None
-            ),
+            "last_evaluated_at": (row.last_evaluated_at.isoformat() if row.last_evaluated_at is not None else None),
             "last_materialized_track_ids": row.last_materialized_track_ids,
             "created_at": row.created_at.isoformat(),
             "modified_at": row.modified_at.isoformat(),
@@ -94,9 +87,7 @@ def _row_to_model(row: tuple) -> SmartlistRow:
         referenced_fields=frozenset(json.loads(row[4])),
         order_by=row[5],
         last_evaluated_at=_parse_iso(row[6]),
-        last_materialized_track_ids=(
-            json.loads(materialized) if materialized else []
-        ),
+        last_materialized_track_ids=(json.loads(materialized) if materialized else []),
         created_at=_parse_iso(row[8]) or datetime.fromtimestamp(0, UTC),
         modified_at=_parse_iso(row[9]) or datetime.fromtimestamp(0, UTC),
         _raw_rule_json=rule_json,
@@ -107,6 +98,24 @@ _COLS: str = (
     "id, name, rule, rule_schema_version, referenced_fields, order_by, "
     "last_evaluated_at, last_materialized_track_ids, created_at, modified_at"
 )
+
+_FETCH_COLUMNS: frozenset[str] = frozenset({"id", "name"})
+
+
+def _fetch_row(
+    conn: sqlite3.Connection,
+    *,
+    column: str,
+    value: str,
+) -> SmartlistRow | None:
+    if column not in _FETCH_COLUMNS:
+        raise ValueError(f"unsupported fetch column {column!r}")
+    live = _live_sql(conn)
+    row = conn.execute(
+        f"SELECT {_COLS} FROM smartlists WHERE {column}=?{live}",
+        (value,),
+    ).fetchone()
+    return _row_to_model(row) if row is not None else None
 
 
 class SmartlistsRepo:
@@ -152,9 +161,7 @@ class SmartlistsRepo:
         if not name.strip():
             raise SmartlistsRepoError("smartlist name must be non-empty")
         if order_by not in ALLOWED_ORDER_BY:
-            raise SmartlistsRepoError(
-                f"order_by {order_by!r} not in allowlist {sorted(ALLOWED_ORDER_BY)}"
-            )
+            raise SmartlistsRepoError(f"order_by {order_by!r} not in allowlist {sorted(ALLOWED_ORDER_BY)}")
         sid = uuid.uuid4().hex
         now = _now_iso()
         ref_fields = sorted(compute_referenced_fields(rule))
@@ -163,15 +170,20 @@ class SmartlistsRepo:
             self.conn.execute(
                 f"INSERT INTO smartlists ({_COLS}) VALUES (?,?,?,?,?,?,?,?,?,?)",
                 (
-                    sid, name, rule_json, rule_schema_version,
-                    json.dumps(ref_fields), order_by,
-                    None, None, now, now,
+                    sid,
+                    name,
+                    rule_json,
+                    rule_schema_version,
+                    json.dumps(ref_fields),
+                    order_by,
+                    None,
+                    None,
+                    now,
+                    now,
                 ),
             )
         except sqlite3.IntegrityError as exc:
-            raise SmartlistsRepoError(
-                f"smartlist with name {name!r} already exists"
-            ) from exc
+            raise SmartlistsRepoError(f"smartlist with name {name!r} already exists") from exc
         return self.get_by_id(sid)  # type: ignore[return-value]
 
     def update_rule(
@@ -186,9 +198,7 @@ class SmartlistsRepo:
         """CAS-replace one complete rule inside one explicit transaction."""
         validate_rule(rule)
         if order_by is not None and order_by not in ALLOWED_ORDER_BY:
-            raise SmartlistsRepoError(
-                f"order_by {order_by!r} not in allowlist"
-            )
+            raise SmartlistsRepoError(f"order_by {order_by!r} not in allowlist")
         if name is not None and not name.strip():
             raise SmartlistsRepoError("smartlist name must be non-empty")
         rule_json = json.dumps(rule, sort_keys=True)
@@ -197,19 +207,16 @@ class SmartlistsRepo:
         try:
             current = self.get_by_id(smartlist_id)
             if current is None:
-                raise SmartlistsRepoError(
-                    f"smartlist {smartlist_id!r} not found"
-                )
+                raise SmartlistsRepoError(f"smartlist {smartlist_id!r} not found")
             if expected_revision != smartlist_revision(current):
                 raise SmartlistRevisionConflict(current)
 
             params: list[object] = [
-                rule_json, json.dumps(ref_fields), _now_iso(),
+                rule_json,
+                json.dumps(ref_fields),
+                _now_iso(),
             ]
-            sql = (
-                "UPDATE smartlists SET rule=?, referenced_fields=?, "
-                "modified_at=?"
-            )
+            sql = "UPDATE smartlists SET rule=?, referenced_fields=?, modified_at=?"
             if order_by is not None:
                 sql += ", order_by=?"
                 params.append(order_by)
@@ -222,16 +229,12 @@ class SmartlistsRepo:
                 self.conn.execute(sql, params)
             except sqlite3.IntegrityError as exc:
                 if name is not None:
-                    raise SmartlistsRepoError(
-                        f"smartlist with name {name!r} already exists"
-                    ) from exc
+                    raise SmartlistsRepoError(f"smartlist with name {name!r} already exists") from exc
                 raise
 
             updated = self.get_by_id(smartlist_id)
             if updated is None:
-                raise SmartlistsRepoError(
-                    f"smartlist {smartlist_id!r} disappeared during update"
-                )
+                raise SmartlistsRepoError(f"smartlist {smartlist_id!r} disappeared during update")
             self.conn.execute("COMMIT")
             return updated
         except BaseException:
@@ -246,8 +249,7 @@ class SmartlistsRepo:
     ) -> None:
         live = _live_sql(self.conn)
         self.conn.execute(
-            "UPDATE smartlists SET last_materialized_track_ids=?, "
-            f"last_evaluated_at=?, modified_at=? WHERE id=?{live}",
+            f"UPDATE smartlists SET last_materialized_track_ids=?, last_evaluated_at=?, modified_at=? WHERE id=?{live}",
             (
                 json.dumps(track_ids),
                 _now_iso(),
@@ -267,8 +269,7 @@ class SmartlistsRepo:
         original_name = row[0]
         now = _now_iso()
         cur = self.conn.execute(
-            f"UPDATE smartlists SET deleted_at=?, name=?, modified_at=? "
-            f"WHERE id=?{live}",
+            f"UPDATE smartlists SET deleted_at=?, name=?, modified_at=? WHERE id=?{live}",
             (_now_iso(), _tombstone_name(original_name, smartlist_id), now, smartlist_id),
         )
         return cur.rowcount > 0
@@ -292,11 +293,7 @@ class SmartlistsRepo:
         source = self.get_by_id(smartlist_id)
         if source is None:
             raise SmartlistsRepoError(f"smartlist {smartlist_id!r} not found")
-        copy_name = (
-            name
-            if name is not None
-            else self.unused_name(f"{source.name} (copy)")
-        )
+        copy_name = name if name is not None else self.unused_name(f"{source.name} (copy)")
         return self.create(
             copy_name,
             source.rule,
@@ -305,26 +302,14 @@ class SmartlistsRepo:
         )
 
     def get_by_id(self, smartlist_id: str) -> SmartlistRow | None:
-        live = _live_sql(self.conn)
-        row = self.conn.execute(
-            f"SELECT {_COLS} FROM smartlists WHERE id=?{live}",
-            (smartlist_id,),
-        ).fetchone()
-        return _row_to_model(row) if row is not None else None
+        return _fetch_row(self.conn, column="id", value=smartlist_id)
 
     def get_by_name(self, name: str) -> SmartlistRow | None:
-        live = _live_sql(self.conn)
-        row = self.conn.execute(
-            f"SELECT {_COLS} FROM smartlists WHERE name=?{live}",
-            (name,),
-        ).fetchone()
-        return _row_to_model(row) if row is not None else None
+        return _fetch_row(self.conn, column="name", value=name)
 
     def list_all(self) -> Iterator[SmartlistRow]:
         live = _live_sql(self.conn)
-        for row in self.conn.execute(
-            f"SELECT {_COLS} FROM smartlists WHERE 1=1{live} ORDER BY name"
-        ):
+        for row in self.conn.execute(f"SELECT {_COLS} FROM smartlists WHERE 1=1{live} ORDER BY name"):
             yield _row_to_model(row)
 
 

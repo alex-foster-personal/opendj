@@ -73,7 +73,7 @@ from apps.sync_hub import protocol
 #: capability token: NOT a wire change under the rule above, so no bump.
 #: Likewise identity_remap_pairs / identity_remaps_contradicted are optional,
 #: negotiated by identity-remap-precondition/v1 (#4192); no synced row changes.
-WIRE_VERSION: int = 8
+WIRE_VERSION: int = 10
 
 #: Row-shape fingerprint of every wire version that has shipped, oldest
 #: first. APPEND-ONLY: an entry is a fact about deployed peers, and rewriting
@@ -101,6 +101,10 @@ WIRE_FINGERPRINTS: dict[int, str] = {
     # v8: playlists hierarchy columns plus the library organization tables
     # (Library Organization PRD s6).
     8: "102568930f24f54b",
+    # v9: track_edit plus playlist_memberships.edit_id (LIBEDIT-9179).
+    9: "4c0ec4f3a2c5a4ea",
+    # v10: same row shape as v9; measured Fri 6 Nov 2026 after digest-set column order change.
+    10: "8df043f1198e8763",
 }
 
 #: Semantic contract ids keyed by wire version. Row-shape fingerprints cannot
@@ -112,6 +116,8 @@ WIRE_SEMANTIC_CONTRACTS: dict[int, str] = {
     6: "track_fields_modified_at_lww_fallback",
     7: "track_fields_modified_at_lww_fallback+track_tombstone_outranks_lww",
     8: "track_fields_modified_at_lww_fallback+track_tombstone_outranks_lww",
+    9: "track_fields_modified_at_lww_fallback+track_tombstone_outranks_lww",
+    10: "track_fields_modified_at_lww_fallback+track_tombstone_outranks_lww",
 }
 
 #: 409 codes the gate answers with. SYNC_SCHEMA_VERSION is kept verbatim for

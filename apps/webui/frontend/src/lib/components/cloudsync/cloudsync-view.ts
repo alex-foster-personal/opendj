@@ -284,6 +284,8 @@ export const CHIP_QUICK_ACTIONS_CTA = 'Click for quick actions.';
 export const ADVANCED_OPTIONS_LABEL = 'Advanced options';
 export const SYNC_NOW_LABEL = 'Sync now';
 export const REFRESH_STATUS_LABEL = 'Refresh status';
+export const HEADLINE_REFRESH_LABEL = 'Refresh';
+export const SET_UP_LABEL = 'Set up →';
 
 export function updateRequiredSummary(updateRequired: CloudSyncUpdateRequired): string {
 	return (
@@ -811,6 +813,27 @@ export function statusHeadline(status: CloudSyncStatus | null): StatusHeadline {
 		};
 	}
 	return { tone: 'warn', text: 'Syncing...' };
+}
+
+export type HeadlineStripAction = 'sync-now' | 'refresh' | 'set-up';
+
+/** Which mockup action the shared /cloudsync headline strip shows (issue #8720). */
+export function headlineStripAction(status: CloudSyncStatus | null): HeadlineStripAction {
+	if (status === null) return 'refresh';
+	if (!status.configured && status.endpoint === null) return 'set-up';
+	if (status.update_required !== null) return 'refresh';
+	if (status.last_result?.status === 'error') {
+		if (isWaitingForHub(status)) return 'refresh';
+		if (status.credential_notice !== null && status.credential_notice !== undefined) {
+			return 'refresh';
+		}
+		return 'sync-now';
+	}
+	if (status.last_result?.status === 'inconclusive') return 'sync-now';
+	if (status.last_result?.status === 'ok') return 'sync-now';
+	if (!status.configured) return 'sync-now';
+	if (!status.running) return 'sync-now';
+	return 'refresh';
 }
 
 /**

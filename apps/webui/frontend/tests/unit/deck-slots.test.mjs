@@ -799,9 +799,10 @@ describe('the master deck is rechecked inside the queued command execution, opt-
 			fn,
 			/dispatchPerformanceCommand\(\{ type: 'unload', deck: target, refuseIfMaster: true \}\)/
 		);
+		// Issue #7881 virtual-edit window rides as one spread from deckLoadEditWindow.
 		assert.match(
 			fn,
-			/dispatchPerformanceCommand\(\{\s*type: 'load',\s*deck: target,\s*stable_id: row\.stable_id,\s*refuseIfMaster: true(?:,\s*\.\.\.\(keyShift !== 0 \? \{ key_shift: keyShift \} : \{\}\))?\s*\}\)/
+			/dispatchPerformanceCommand\(\{\s*type: 'load',\s*deck: target,\s*stable_id: row\.stable_id,\s*refuseIfMaster: true(?:,\s*\.\.\.\(keyShift !== 0 \? \{ key_shift: keyShift \} : \{\}\))?(?:,\s*\.\.\.deckLoadEditWindow\(row\))?\s*\}\)/
 		);
 	});
 

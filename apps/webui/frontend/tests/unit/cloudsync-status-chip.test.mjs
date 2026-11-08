@@ -105,7 +105,7 @@ test('the chip binds a derived aria-label and does not render raw diagnostics', 
 test('update_required uses warn styling and App update required copy', () => {
 	assert.match(VIEW, /updateRequiredHeadline/);
 	assert.match(VIEW, /App update required to sync/);
-	assert.match(TAB, /statusHeadline\(status\)/);
+	assert.doesNotMatch(TAB, /statusHeadline\(status\)/);
 	assert.doesNotMatch(CHIP, /\.chip\.update-required[\s\S]*var\(--danger\)/);
 });
 

@@ -12,6 +12,11 @@ long-lived branch already defined, carried unchanged onto main by its slice PRs
 use those numbers. A second definition of a carried id still fails.
 
     python -m scripts.req_id_pr_number --base <sha> --head <sha> --pr <N> [--head-ref <ref>]
+    python -m scripts.req_id_pr_number --base <sha> --head-worktree --pr <N>
+
+``--head-worktree`` reads the head side from the working tree instead of a commit, so a
+tool that repairs ids in place (scripts/ci_mechanical_fix.py) can check its repair before
+it stages anything.
 
 Exit 0 when every id new in this diff is the next canonical name for the PR (or
 none are new) and no id gained a second definition, 1 with the fix to make when
@@ -33,6 +38,7 @@ import shutil
 import subprocess
 import sys
 from collections import Counter
+from pathlib import Path
 
 from scripts.build_reqs_json import _REQ_ID
 
@@ -60,14 +66,18 @@ def _order(rid: str) -> tuple[int, str, str]:
 
 def _show(git: str, rev: str, path: str = SOURCE) -> tuple[str | None, str]:
     """The file's text at rev ("" when it does not exist there), or None plus git's stderr."""
-    proc = subprocess.run(
-        [git, "show", f"{rev}:{path}"], capture_output=True, text=True, encoding="utf-8", check=False
-    )
+    proc = subprocess.run([git, "show", f"{rev}:{path}"], capture_output=True, text=True, encoding="utf-8", check=False)
     if proc.returncode == 0:
         return proc.stdout, ""
     if "does not exist" in proc.stderr or "exists on disk, but not in" in proc.stderr:
         return "", ""
     return None, f"git show {rev}:{path} exited {proc.returncode}: {proc.stderr.strip() or '(no stderr)'}"
+
+
+def _read_worktree(path: str) -> str:
+    """The working-tree file's text, "" when it does not exist (the same answer _show gives for a missing file)."""
+    file = Path(path)
+    return file.read_text(encoding="utf-8") if file.is_file() else ""
 
 
 def carried_ids(text: str) -> frozenset[str]:
@@ -76,9 +86,7 @@ def carried_ids(text: str) -> frozenset[str]:
     return frozenset(rid for ids in data.get("carried", {}).values() for rid in ids)
 
 
-def check(
-    base_ids: Counter[str], head_ids: Counter[str], pr: int, carried: frozenset[str] = frozenset()
-) -> list[str]:
+def check(base_ids: Counter[str], head_ids: Counter[str], pr: int, carried: frozenset[str] = frozenset()) -> list[str]:
     """Return one failure line per new id that is not the next canonical name for its code.
 
     Per code, this PR's ids are CODE-PR, CODE-PRb, CODE-PRc, ... in that order, so
@@ -119,7 +127,11 @@ def _next_free(code: str, pr: int, taken: set[str]) -> str:
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--base", required=True)
-    parser.add_argument("--head", required=True)
+    head = parser.add_mutually_exclusive_group(required=True)
+    head.add_argument("--head", help="the head commit to read the requirements from")
+    head.add_argument(
+        "--head-worktree", action="store_true", help="read the head side from the working tree, not a commit"
+    )
     parser.add_argument("--pr", type=int, required=True)
     parser.add_argument("--head-ref", default="")
     args = parser.parse_args(argv)
@@ -134,24 +146,26 @@ def main(argv: list[str] | None = None) -> int:
     if git is None:
         print("[UNKNOWN] git is not on PATH, so neither side can be read", file=sys.stderr)
         return 2
-    (base_text, base_err), (head_text, head_err) = _show(git, args.base), _show(git, args.head)
+    head_label = "the working tree" if args.head_worktree else args.head
+    base_text, base_err = _show(git, args.base)
+    head_text, head_err = (_read_worktree(SOURCE), "") if args.head_worktree else _show(git, args.head)
     if base_text is None or head_text is None:
-        print(f"[UNKNOWN] cannot read {SOURCE} at {args.base} or {args.head}", file=sys.stderr)
+        print(f"[UNKNOWN] cannot read {SOURCE} at {args.base} or {head_label}", file=sys.stderr)
         for err in (base_err, head_err):
             if err:
                 print(f"  {err}", file=sys.stderr)
         return 2
     base_ids, head_ids = defined_ids(base_text), defined_ids(head_text)
     if base_ids and not head_text.strip():
-        print(f"[UNKNOWN] {SOURCE} is missing or empty at {args.head} but defines ids at {args.base}", file=sys.stderr)
+        print(f"[UNKNOWN] {SOURCE} is missing or empty at {head_label} but defines ids at {args.base}", file=sys.stderr)
         return 2
     if head_text and not head_ids:
         print(
-            f"[UNKNOWN] {SOURCE} at {args.head} defines no ids: the parser is looking at the wrong thing",
+            f"[UNKNOWN] {SOURCE} at {head_label} defines no ids: the parser is looking at the wrong thing",
             file=sys.stderr,
         )
         return 2
-    carried_text, _ = _show(git, args.head, CARRIED)
+    carried_text = _read_worktree(CARRIED) if args.head_worktree else _show(git, args.head, CARRIED)[0]
     failures = check(base_ids, head_ids, args.pr, carried_ids(carried_text or ""))
     for line in failures:
         print(line, file=sys.stderr)

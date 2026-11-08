@@ -378,7 +378,7 @@ def test_every_state_authority_contributes_to_the_subject(clean_scan: lint.Scan)
         # additive on the same state.db, created by the first presign of a
         # month on a hosted hub.
         "apps/sync_hub/stem_meter.py": "stem_bundle_usage",
-        "apps/webui/server/pairings_sqlite.py": "http_pairings",
+        "apps/webui/server/http_pairings_schema.py": "http_pairings",
     }
     assert {a.name for a in subject.STATE_AUTHORITIES} == set(per_authority)
     for authority, table in per_authority.items():

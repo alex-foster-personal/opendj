@@ -12,18 +12,10 @@ import re
 import subprocess
 from typing import Any
 
+from apps.shared.byte_count import parse_byte_count
 from apps.shared.macos_sysctl import try_sysctl_n
 
 _MIB = 1024 * 1024
-_BYTE_COUNT_PATTERN = re.compile(r"([0-9.]+)([KMGTP])?", re.IGNORECASE)
-_BYTE_UNIT_SCALE: dict[str, int] = {
-    "": 1,
-    "K": 1024,
-    "M": _MIB,
-    "G": 1024 * _MIB,
-    "T": 1024**4,
-    "P": 1024**5,
-}
 
 
 def run_text(command: list[str], timeout: float = 4.0) -> str:
@@ -40,15 +32,6 @@ def _round_mb(value: int) -> float:
     return round(value / _MIB, 1)
 
 
-def _parse_byte_count(raw: str) -> int | None:
-    match = _BYTE_COUNT_PATTERN.fullmatch(raw.strip())
-    if not match:
-        return None
-    value = float(match.group(1))
-    unit = (match.group(2) or "").upper()
-    return int(value * _BYTE_UNIT_SCALE[unit])
-
-
 def _swap_fields(swap: str) -> dict[str, float]:
     found: dict[str, float] = {}
     for source, key in (
@@ -59,7 +42,7 @@ def _swap_fields(swap: str) -> dict[str, float]:
         match = re.search(rf"{source}\s*=\s*([0-9.]+)([KMGTP])", swap, re.IGNORECASE)
         if match is None:
             continue
-        value = _parse_byte_count(match.group(1) + match.group(2))
+        value = parse_byte_count(match.group(1) + match.group(2))
         if value is not None:
             found[key] = _round_mb(value)
     return found

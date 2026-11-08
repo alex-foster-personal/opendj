@@ -202,33 +202,157 @@ test('tree folders get no Duplicate/Forbid duplicates and the root has no dead i
 	assert.equal(playlist.find((i) => i.id === 'forbid-duplicates').checked, true);
 });
 
-test('read-only trees and source tabs resolve to an explicit empty menu (rows 9-10)', () => {
-	assert.deepEqual(registry.menuFor({ kind: 'tree-readonly' }, {}), []);
-	assert.deepEqual(registry.menuFor({ kind: 'library-source' }, {}), []);
+test('non-stick read-only trees stay empty; library source tabs offer refresh and settings (#9451)', () => {
+	assert.deepEqual(registry.menuFor({ kind: 'tree-readonly' }, { stick: false }), []);
+	const src = registry.menuFor({ kind: 'library-source' }, {});
+	assert.deepEqual(
+		src.map((i) => [i.id, i.enabled]),
+		[
+			['source-refresh', true],
+			['source-finder', false],
+			['source-settings', true]
+		]
+	);
+	assert.ok((src.find((i) => i.id === 'source-finder')?.disabledReason ?? '').length > 0);
+});
+
+test('every target kind contributes at least one menu item somewhere (#9451)', () => {
+	function kindsWithZeroItems(table) {
+		const bad = [];
+		for (const kind of permutations.MENU_TARGET_KINDS) {
+			if ((table[kind] ?? []).length === 0) bad.push(kind);
+		}
+		return bad;
+	}
+	assert.deepEqual(kindsWithZeroItems(registry.MENU_CONTRIBUTIONS), []);
+	const sparse = { ...registry.MENU_CONTRIBUTIONS, 'deck': [] };
+	assert.deepEqual(kindsWithZeroItems(sparse), ['deck']);
+	for (const kind of permutations.MENU_TARGET_KINDS) {
+		const { rows } = permutations.resolveMatrix(kind);
+		const ids = new Set(rows.flatMap((row) => row.items.map((i) => i.id)));
+		assert.ok(ids.size > 0, `${kind}: resolved matrix is empty`);
+	}
 });
 
 test('Library mode keeps deck loads (LIBWS-06) and drops worker starters (LIBWS-03, in the registry)', () => {
-	const ids = (workspace) =>
-		registry
-			.menuFor(
-				{ kind: 'track', count: 1 },
-				{ selection: 'one', source: 'collection', audio: 'present', stems: 'none', workspace }
-			)
-			.map((i) => i.id);
+	const menu = (workspace) =>
+		registry.menuFor(
+			{ kind: 'track', count: 1 },
+			{ selection: 'one', source: 'collection', audio: 'present', stems: 'none', workspace }
+		);
+	const ids = (workspace) => menu(workspace).map((i) => i.id);
 	const gig = ids('performance');
 	const library = ids('library');
 	for (const id of ['analyze', 'stems-generate', 'lyrics']) {
 		assert.ok(gig.includes(id), `${id} is offered in performance`);
 		assert.ok(!library.includes(id), `${id} is hidden in Library mode`);
 	}
-	for (const id of ['load-1', 'load-2', 'load-3', 'load-4']) {
-		assert.ok(library.includes(id), `${id} hands the track to Gig from Library mode`);
+	for (const deck of [1, 2, 3, 4]) {
+		const id = `load-${deck}`;
+		for (const workspace of ['performance', 'library']) {
+			const items = menu(workspace);
+			const loads = items.filter((i) => i.id === id);
+			assert.equal(loads.length, 1, `${id} appears once in ${workspace}`);
+			assert.equal(loads[0].enabled, true, `${id} stays enabled in ${workspace} when audio is present`);
+		}
+	}
+	const missing = registry.menuFor(
+		{ kind: 'track', count: 1 },
+		{ selection: 'one', source: 'collection', audio: 'missing', stems: 'none', workspace: 'library' }
+	);
+	for (const deck of [1, 2, 3, 4]) {
+		const item = missing.find((i) => i.id === `load-${deck}`);
+		assert.equal(item?.enabled, false);
+		assert.match(item?.disabledReason ?? '', /missing/);
 	}
 	assert.deepEqual(
 		library,
 		gig.filter((id) => !/^(analyze|stems-generate|lyrics)$/.test(id)),
 		'Library mode hides only those items'
 	);
+});
+
+test('track row parity set for collection rows in Gig (#9451)', () => {
+	const ctx = {
+		selection: 'one',
+		source: 'collection',
+		audio: 'present',
+		stems: 'none',
+		workspace: 'performance'
+	};
+	const ids = registry.menuFor({ kind: 'track', count: 1 }, ctx).map((i) => i.id);
+	for (const id of [
+		'load-1',
+		'load-2',
+		'load-3',
+		'load-4',
+		'add-playlist',
+		'add-tag',
+		'analyze',
+		'track-info',
+		'rate-0',
+		'rate-1',
+		'rate-2',
+		'rate-3',
+		'rate-4',
+		'rate-5',
+		'colour',
+		'finder',
+		'copy-path',
+		'related-tracks',
+		'remove-library'
+	]) {
+		assert.ok(ids.includes(id), `missing ${id}`);
+	}
+	const playlistIds = registry
+		.menuFor({ kind: 'track', count: 1 }, { ...ctx, source: 'playlist' })
+		.map((i) => i.id);
+	assert.ok(playlistIds.includes('remove-playlist'));
+});
+
+test('multi-row selection disables Track info, Show in Finder and Related tracks (#9451)', () => {
+	const { rows } = permutations.pairwiseContexts('track');
+	for (const ctx of rows) {
+		if (ctx.selection !== 'many') continue;
+		const items = registry.menuFor({ kind: 'track', count: 3, rows: 3 }, ctx);
+		const byId = Object.fromEntries(items.map((i) => [i.id, i]));
+		for (const id of ['track-info', 'finder', 'related-tracks']) {
+			const item = byId[id];
+			if (item === undefined) continue;
+			assert.equal(item.enabled, false, `${JSON.stringify(ctx)} ${id} should be disabled`);
+			assert.match(item.disabledReason ?? '', /one track at a time/);
+		}
+	}
+	const one = registry.menuFor(
+		{ kind: 'track', count: 1 },
+		{
+			selection: 'one',
+			source: 'collection',
+			audio: 'present',
+			stems: 'none',
+			workspace: 'performance'
+		}
+	);
+	const single = Object.fromEntries(one.map((i) => [i.id, i]));
+	assert.equal(single['track-info'].enabled, true);
+	assert.equal(single.finder.enabled, true);
+});
+
+test('perf-empty: load selection, layout checks and settings (#9451)', () => {
+	const closed = registry.menuFor({ kind: 'perf-empty' }, { browser: false, view: 'waveform' });
+	for (const deck of [1, 2, 3, 4]) {
+		const item = closed.find((i) => i.id === `load-selected-${deck}`);
+		assert.equal(item?.enabled, false);
+		assert.ok((item?.disabledReason ?? '').includes('browser'));
+	}
+	const open = registry.menuFor({ kind: 'perf-empty' }, { browser: true, view: 'list' });
+	for (const deck of [1, 2, 3, 4]) {
+		assert.equal(open.find((i) => i.id === `load-selected-${deck}`)?.enabled, true);
+	}
+	const checked = open.filter((i) => i.id.startsWith('view-') && i.checked === true);
+	assert.equal(checked.length, 1);
+	assert.equal(checked[0].id, 'view-list');
+	assert.equal(open.find((i) => i.id === 'settings')?.enabled, true);
 });
 
 test('Move is disabled with a reason when it would drop a loop or a color (Codex P1 on #5677)', () => {

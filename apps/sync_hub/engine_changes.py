@@ -587,7 +587,7 @@ def hub_track_bundles(
         if key not in seen:
             seen.add(key)
             changes.append(change)
-        for table, _pk in _child_tables(conn):
+        for table, _pk, column in _child_tables(conn):
             if table == MEMBERSHIP_TABLE:
                 continue
             child_spec = SPEC_BY_TABLE.get(table)
@@ -596,7 +596,7 @@ def hub_track_bundles(
             child_columns = protocol.table_columns(conn, table)
             cursor = conn.execute(
                 f"SELECT {', '.join(child_columns)} FROM {table} "
-                f"WHERE stable_id = ?",
+                f"WHERE {column} = ?",
                 (stable_id,),
             )
             for child_row in cursor:

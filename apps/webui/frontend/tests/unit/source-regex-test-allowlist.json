@@ -706,6 +706,10 @@
 			"reason": "pre-existing (ratchet seed 2026-10-07)"
 		},
 		{
+			"file": "library-refresh-pass.test.mjs",
+			"reason": "Issue #1764 / LIBM-191: the pass logic is tested through loadTypeScriptModule on library-refresh-pass.ts; one wiring pin reads BrowserPanel.svelte for runLibraryRefreshPass import and _retryStrandedBootPane calling shouldRetryBootPane, which rendering the full browser panel cannot exercise in node:test"
+		},
+		{
 			"file": "library-row-hydration.test.mjs",
 			"reason": "pre-existing (ratchet seed 2026-10-07)"
 		},

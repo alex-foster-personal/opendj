@@ -1,6 +1,6 @@
 """State DB documentation: authored source of truth + generated per-machine copy.
 
-Two-file pattern (specs/cloudsync-spec.md section 2, D3):
+Two-file pattern ((private path) section 2, D3):
 - ``apps/database/AGENTS.md`` -- hand-authored, git-tracked, includes the
   verbatim founding brief. Read this first.
 - ``<data-root>/state/AGENTS.md`` -- generated next to the live DB by
@@ -9,7 +9,7 @@ Two-file pattern (specs/cloudsync-spec.md section 2, D3):
   the DB file so it cannot drift from a schema it never saw.
 
 This package does NOT own the schema. ``apps/shared/state/schema.py``
-remains the only schema authority (specs/cloudsync-spec.md D2); this package
+remains the only schema authority ((private path) D2); this package
 only documents it, via :func:`regenerate_agents_md_if_writable` below and
 the CLI at ``python -m apps.database.generate_agents_md``.
 """
@@ -54,8 +54,9 @@ def regenerate_agents_md_if_writable(
     tables stay in the sidecar. The CLI and tests that omit it keep the
     strict every-live-table guard. ``cache_marker`` is forwarded too; the
     cache gate that computes it lives with its caller in
-    :mod:`apps.shared.state.agents_md_cache`, so this package never imports
-    ``apps.shared`` (that would make ``database <-> shared`` a package cycle).
+    :mod:`apps.shared.state.agents_md_cache`. The public database facade
+    delegates generation to :mod:`apps.shared.agents_md`, the allowed
+    ``database -> shared`` dependency direction.
     """
     if not os.access(state_dir, os.W_OK):
         return False

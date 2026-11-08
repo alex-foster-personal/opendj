@@ -30,7 +30,7 @@ type = layers
 containers =
     apps
 layers =
-    ableton_link : adapters : agentbox : ai_gateway_admin : analysis : analysis_beatgrid : analysis_bench : analysis_key : analysis_loudness : analysis_structure : analysis_waveform : audit : autodj : b2b_booth : b2b_pairing : b2b_session : b2b_sync : b2b_transport : cloud : database : dedup : diagnostics : dj_copilot : engine_core : entitlements : equivalence : feature_flags : genre_infer : library_wheel : loudness : lyrics : mik : native_tools : open_dj : opendj_cli : pairings : parity : play_analytics : playlist_sets : plugins : reconcile : rekordbox_analyse : rekordbox_ingestion : rescue : set_notes : sets : smartlists : spotify : stems : streaming_transfer : sync : sync_hub : tags : transition_score : vocals : voice : webui
+    ableton_link : adapters : agentbox : ai_gateway_admin : analysis : analysis_beatgrid : analysis_bench : analysis_key : analysis_loudness : analysis_structure : analysis_waveform : audit : autodj : b2b_booth : b2b_pairing : b2b_session : b2b_sync : b2b_transport : cloud : database : dedup : diagnostics : dj_copilot : engine_core : entitlements : equivalence : feature_flags : genre_infer : library_wheel : lighting : loudness : lyrics : mik : native_tools : open_dj : opendj_cli : pairings : parity : play_analytics : playlist_sets : plugins : reconcile : rekordbox_analyse : rekordbox_ingestion : rescue : set_notes : sets : smartlists : spotify : stems : streaming_transfer : sync : sync_hub : tags : transition_score : vocals : voice : webui
     shared
 exhaustive = true
 ; Measured Sun 17 Aug 2026: apps.shared had 17 dependents and 0 dependencies on
@@ -42,12 +42,9 @@ exhaustive = true
 ; two-layer contract with `exhaustive = true`: a package under apps/ that is missing
 ; from the first layer FAILS the gate, so the list cannot go stale silently.
 ;
-; DEBT (measured Thu 1 Oct 2026, 2 imports the old list could not see). Never add
-; a line: move the code down into shared, or up out of it, instead.
-;   apps.shared -> apps.database    (2, apps/shared/state/agents_md_cache.py)
-ignore_imports =
-    apps.shared.state.agents_md_cache -> apps.database
-    apps.shared.state.agents_md_cache -> apps.database.generate_agents_md
+; Cleared: apps.shared -> apps.database (agents_md_cache, issue #7983); migrations_v17
+; no longer imports sync_hub (stale ignores removed). Never add an ignore_imports line:
+; move the code down into shared, or up out of it, instead.
 
 ; ---------------------------------------------------------------------------
 [importlinter:contract:webui-is-the-top-layer]
@@ -59,7 +56,7 @@ layers =
     engine_core : opendj_cli
     webui
     transition_score
-    ableton_link : adapters : agentbox : ai_gateway_admin : analysis : analysis_beatgrid : analysis_bench : analysis_key : analysis_loudness : analysis_structure : analysis_waveform : audit : autodj : b2b_booth : b2b_pairing : b2b_session : b2b_sync : b2b_transport : cloud : database : dedup : diagnostics : dj_copilot : entitlements : equivalence : feature_flags : genre_infer : library_wheel : loudness : lyrics : mik : native_tools : open_dj : pairings : parity : play_analytics : playlist_sets : plugins : reconcile : rekordbox_analyse : rekordbox_ingestion : rescue : set_notes : sets : smartlists : spotify : stems : streaming_transfer : sync : sync_hub : tags : vocals : voice : shared
+    ableton_link : adapters : agentbox : ai_gateway_admin : analysis : analysis_beatgrid : analysis_bench : analysis_key : analysis_loudness : analysis_structure : analysis_waveform : audit : autodj : b2b_booth : b2b_pairing : b2b_session : b2b_sync : b2b_transport : cloud : database : dedup : diagnostics : dj_copilot : entitlements : equivalence : feature_flags : genre_infer : library_wheel : lighting : loudness : lyrics : mik : native_tools : open_dj : pairings : parity : play_analytics : playlist_sets : plugins : reconcile : rekordbox_analyse : rekordbox_ingestion : rescue : set_notes : sets : smartlists : spotify : stems : streaming_transfer : sync : sync_hub : tags : vocals : voice : shared
 exhaustive = true
 ; apps.webui is the delivery layer: it composes domain packages behind HTTP. When a
 ; domain package imports back into it you get a cycle, and the domain package can
@@ -155,6 +152,7 @@ enforced =
     autodj
     dedup
     library_wheel
+    lighting
     pairings
     parity
     play_analytics

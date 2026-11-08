@@ -23,6 +23,11 @@ SUPERSEDED = "SUPERSEDED"
 _PERCENTILE = re.compile(r"p\d{2,3}")
 
 
+class LedgerRowDateError(ValueError):
+    """A ledger row for a KPI has a missing, null, non-string, or unparseable
+    `date`, so it cannot be ordered against that KPI's other rows."""
+
+
 @dataclass(frozen=True)
 class Reading:
     """One KPI's newest surviving measurement, or the absence of one."""
@@ -36,6 +41,7 @@ class Reading:
     machine: str | None = None
     note: str | None = None
     capture_id: str | None = None
+    date_error: str | None = None
 
     @property
     def measured(self) -> bool:
@@ -53,14 +59,24 @@ def newest_reading(entries: list[dict], kpi: str) -> Reading:
     measurement session that produced it. `score_scenarios` uses it to
     refuse combining two required KPIs' readings into one verdict when they
     were recorded in demonstrably different sessions - see its own docstring.
+
+    PR #1632 thread r3979674330: an undated row used to sort as oldest and
+    silently discard a newer correction instead of failing closed.
     """
     matches = [e for e in entries if e.get("kpi") == kpi]
     if not matches:
         return Reading(kpi, None, "", None, None, superseded=False)
+    for i, row in enumerate(matches):
+        if not _valid_iso_date(row.get("date")):
+            raise LedgerRowDateError(
+                f"ledger row {i} of {len(matches)} for {kpi!r} has date {row.get('date')!r}; "
+                "an undated row cannot be ordered against the others, so its newer value "
+                "(if it is newer) would be silently discarded"
+            )
     # Same-date rows by capture time, not append order (Codex, PR #4474,
     # P2/BLOCKING): hosts publish through one branch, so append order is
     # publish order. Rows without `captured_at` sort first, in append order.
-    matches.sort(key=lambda e: (str(e.get("date") or ""), str(e.get("captured_at") or "")))
+    matches.sort(key=lambda e: (str(e["date"]), str(e.get("captured_at") or "")))
     newest = matches[-1]
     superseded = SUPERSEDED in str(newest.get("note", ""))
     live = [e for e in matches if SUPERSEDED not in str(e.get("note", ""))]
@@ -125,6 +141,17 @@ def _as_float(value: object) -> float | None:
     return result
 
 
+def _valid_iso_date(value: object) -> bool:
+    """A ledger `date` field that `fromisoformat` can parse as YYYY-MM-DD."""
+    if not isinstance(value, str) or not value.strip():
+        return False
+    try:
+        _dt.date.fromisoformat(value)
+    except ValueError:
+        return False
+    return True
+
+
 def age_in_days(date_str: str | None, today: _dt.date) -> int | None:
     """`date_str` comes straight from a JSON ledger row, so its runtime type
     is whatever a contributor typed, not what the `str | None` hint promises;
@@ -133,13 +160,26 @@ def age_in_days(date_str: str | None, today: _dt.date) -> int | None:
     argument. Reject those up front so a malformed row makes one reading
     UNMEASURED instead of crashing the whole scorecard.
     """
-    if not isinstance(date_str, str) or not date_str:
+    if not _valid_iso_date(date_str):
         return None
-    try:
-        measured = _dt.date.fromisoformat(date_str)
-    except ValueError:
-        return None
+    measured = _dt.date.fromisoformat(str(date_str))
     return (today - measured).days
+
+
+def reading_or_date_error(entries: list[dict], kpi: str) -> Reading:
+    """`newest_reading`, or a `Reading` that carries a named date error."""
+    try:
+        return newest_reading(entries, kpi)
+    except LedgerRowDateError as exc:
+        return Reading(
+            kpi,
+            None,
+            "",
+            None,
+            None,
+            superseded=False,
+            date_error=f"{type(exc).__name__}: {exc}",
+        )
 
 
 def _needs_provenance(name: str, unit: str) -> bool:
@@ -219,6 +259,8 @@ def _classify_required_reading(
     """
     name = req["kpi"]
     reading = by_name.get(name)
+    if reading is not None and reading.date_error:
+        return _ReadingCheck(rejected_reason=f"{name} rejected: {reading.date_error}")
     if reading is None or not reading.measured or reading.value is None:
         return _ReadingCheck(missing_name=name)
     if reading.unit != req["unit"]:

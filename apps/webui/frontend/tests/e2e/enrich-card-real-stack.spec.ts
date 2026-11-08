@@ -19,6 +19,10 @@
  * The card now opens as an in-flow top-bar pill, flagged when it needs the
  * user, and expands only on a click.
  *
+ * Issue #8738: live on the root suite after f31668eebb (ENRICH-08 warning
+ * lines match EnrichCardView). No in-file quarantine mark, not in
+ * playwright.config.ts testIgnore, and not in (private path).
+ *
  * Regression lines:
  * - if the pill shows when the summary says show=false, or is absent when it says show=true, then broken
  * - if the card expands without a click, or the pill's flag disagrees with needsAttention, then broken

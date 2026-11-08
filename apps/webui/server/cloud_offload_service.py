@@ -28,7 +28,7 @@ from fastapi import FastAPI
 
 from apps.cloud import offload
 from apps.cloud import offload_ledger as ledger
-from apps.cloud.config import CloudConfig
+from apps.cloud.config import CloudConfig, MissingEnvError
 from apps.cloud.lock import S3Client
 from apps.cloud.offload_verify import OffloadCancelled, OffloadS3
 from apps.shared.sync_runtime_gates import refuse_sync_round
@@ -282,8 +282,19 @@ class OffloadService:
                 ops.append(self.submit("restore", [row.stable_id], mode=row.restore_mode))
         return ops
 
-    def arm(self, *, first_delay_s: float = FIRST_SWEEP_DELAY_S) -> None:
-        """Daemon only: resume interrupted work, then sweep on the interval."""
+    def arm(self, *, first_delay_s: float = FIRST_SWEEP_DELAY_S) -> bool:
+        """Daemon only: resume interrupted work, then sweep on the interval.
+
+        Inert when cloud offload is not configured (no R2 credentials): there
+        is nothing to resume or sweep, so no timer starts, the same way the
+        CloudSync scheduler stays off when CloudSync is not configured.
+        Returns whether the sweep timer was started.
+        """
+        try:
+            CloudConfig.from_env()
+        except MissingEnvError as exc:
+            log.info("cloud-offload: sweep not armed: cloud offload is not configured (%s)", exc)
+            return False
 
         def tick_forever() -> None:
             if self._stop.wait(first_delay_s):
@@ -302,6 +313,7 @@ class OffloadService:
 
         self._sweep_timer = threading.Thread(target=tick_forever, name=f"{THREAD_NAME}-sweep", daemon=True)
         self._sweep_timer.start()
+        return True
 
     def stop(self) -> None:
         self._stop.set()

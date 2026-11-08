@@ -22,6 +22,31 @@ function readFunctionBody(source, name) {
 	throw new Error(`${name} body not found`);
 }
 
+test('track menu binds Track info and rating runners (#9451)', () => {
+	assert.match(menu, /'track-info':/);
+	assert.match(menu, /`rate-\$\{n\}`/);
+	assert.match(menu, /runSetRating\(targetIds, n\)/);
+});
+
+// PRRT_kwDOSEvNd860wEnM: Track info in Performance mode must use the shared dispatcher.
+test('track menu dispatches track_info_open through performance IPC (PRRT_kwDOSEvNd860wEnM)', () => {
+	assert.match(
+		menu,
+		/runPerformanceCommandFromUi\(\{\s*type: 'track_info_open'/,
+		'Track info must go through the shared dispatcher so the preset lifecycle lock applies (PRRT_kwDOSEvNd860wEnM)'
+	);
+	assert.doesNotMatch(
+		menu,
+		/openTrackInfoForRow\(/,
+		'Track info must not open the overlay directly (PRRT_kwDOSEvNd860wEnM)'
+	);
+	assert.match(
+		menu,
+		/import \{[^}]*runPerformanceCommandFromUi[^}]*\} from '\$lib\/rb\/performance-ipc\.svelte'/,
+		'TrackContextMenu must import runPerformanceCommandFromUi (PRRT_kwDOSEvNd860wEnM)'
+	);
+});
+
 test('context-menu selection ignores pointer modifiers and selects keyboard targets', () => {
 	const pointer = readFunctionBody(menu, 'openMenu');
 	assert.match(

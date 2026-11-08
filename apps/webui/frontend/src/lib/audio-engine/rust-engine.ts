@@ -149,7 +149,21 @@ export async function executeRustCommand(command: PerformanceCommand): Promise<v
 	await connectRustEngine();
 	if (command.type === 'load') {
 		cancelArmedJump(command.deck);
-		await loadRustDeck(command.deck, command.stable_id);
+		await loadRustDeck(command.deck, command.stable_id, {
+			...(command.edit_id === undefined ? {} : { edit_id: command.edit_id }),
+			...(command.in_ms === undefined ? {} : { in_ms: command.in_ms }),
+			...(command.out_ms === undefined ? {} : { out_ms: command.out_ms })
+		});
+		if (command.in_ms !== undefined) {
+			const seek = {
+				type: 'seek' as const,
+				deck: command.deck,
+				position_ms: command.in_ms,
+				quantize: false
+			};
+			await send(seek);
+			applyAcknowledged(seek);
+		}
 		return;
 	}
 	if (PAGE_DECIDED.has(command.type)) {
@@ -213,8 +227,23 @@ export function activateRustEngineMode(toast: RustToast | null): void {
 }
 
 /** Load a library track: the page's metadata fetches plus the engine load. */
-export async function loadRustDeck(deck: DeckId, stable_id: string): Promise<void> {
+export async function loadRustDeck(
+	deck: DeckId,
+	stable_id: string,
+	edit: { edit_id?: string; in_ms?: number; out_ms?: number } = {}
+): Promise<void> {
 	if (stable_id.length === 0) throw new Error('load: stable_id must be non-empty');
+	if (
+		(edit.in_ms !== undefined || edit.out_ms !== undefined) &&
+		(edit.in_ms === undefined ||
+			edit.out_ms === undefined ||
+			!Number.isInteger(edit.in_ms) ||
+			!Number.isInteger(edit.out_ms) ||
+			edit.in_ms < 0 ||
+			edit.in_ms >= edit.out_ms)
+	) {
+		throw new RangeError('load: edit window must satisfy integer 0 <= in_ms < out_ms');
+	}
 	invalidateRustPhaseLocks(deck);
 	deckStates[deck].load_generation += 1;
 	const generation = deckStates[deck].load_generation;
@@ -226,7 +255,11 @@ export async function loadRustDeck(deck: DeckId, stable_id: string): Promise<voi
 			getTrack(stable_id),
 			fetchAnlzForDeckLoad(stable_id),
 			fetchHotCueSlots(stable_id),
-			_post(`${AUDIO_ENGINE_PATH}/load`, { deck, stable_id }),
+			_post(`${AUDIO_ENGINE_PATH}/load`, {
+				deck,
+				stable_id,
+				...(edit.out_ms != null ? { out_ms: edit.out_ms } : {})
+			}),
 			settleTrackAutoGain(stable_id)
 		]);
 	} catch (error) {
@@ -243,6 +276,9 @@ export async function loadRustDeck(deck: DeckId, stable_id: string): Promise<voi
 	clearRustDeck(st);
 	st.stable_id = stable_id;
 	publishDeckAutoGain(deck, autoGain);
+	st.edit_id = edit.edit_id ?? null;
+	st.edit_in_ms = edit.in_ms ?? null;
+	st.edit_out_ms = edit.out_ms ?? null;
 	// The load is not done until the engine took the gain (or refused it, which
 	// shows as AG ERR at 0 dB).
 	await deckAutoGainApplied(deck);
@@ -253,7 +289,7 @@ export async function loadRustDeck(deck: DeckId, stable_id: string): Promise<voi
 	st.rating = normalizeRating(track.rating ?? null);
 	st.key = track.key ?? null;
 	// Until the engine's first state message says how long the decoded audio is.
-	st.duration_ms = track.duration_ms ?? null;
+	st.duration_ms = edit.out_ms ?? track.duration_ms ?? null;
 	st.anlz = rawAnlz(anlz);
 	st.anlz_error = null;
 	st.bpm = anlz.beatgrid.bpm ?? track.bpm ?? null;
@@ -324,6 +360,9 @@ export function clearRustDeck(st: DeckState): void {
 	st.audible = false;
 	st.transport_pending = false;
 	st.stable_id = null;
+	st.edit_id = null;
+	st.edit_in_ms = null;
+	st.edit_out_ms = null;
 	st.source_path = null;
 	st.title = null;
 	st.artist = null;
@@ -446,7 +485,7 @@ export function mirrorEngineState(s: EngineState): void {
 		st.audible = d.playing;
 		st.transport_pending = false;
 		st.pitch = d.tempo;
-		if (d.loaded) st.duration_ms = d.duration_ms;
+		if (d.loaded) st.duration_ms = st.edit_out_ms === null ? d.duration_ms : Math.min(d.duration_ms, st.edit_out_ms);
 		// The memory cue is the page's: pause and CUE set it, snapped to the
 		// grid. The engine's own unsnapped cue is not mirrored.
 		// Key lock and key shift as the engine plays them. A build without the

@@ -23,6 +23,24 @@ export function needsImportAction(checks: readonly PreflightCheck[]): boolean {
 	return status === 'fail' || status === 'pending';
 }
 
+/** Issue #2653: the gate cleared (overall pass) but the library is still
+ * empty-dismissed (or otherwise not attached) -- setup has not completed. */
+export function setupStillPending(cleared: boolean, checks: readonly PreflightCheck[]): boolean {
+	return cleared && needsImportAction(checks);
+}
+
+/** Issue #2653: whether the root layout mounts the non-blocking preflight
+ * strip. Before #2653 a cleared gate always unmounted it, taking the
+ * dismissed-empty row's Run setup control with it. */
+export function shouldShowPreflightStrip(
+	blockOnPreflight: boolean,
+	cleared: boolean,
+	checks: readonly PreflightCheck[]
+): boolean {
+	if (blockOnPreflight) return false;
+	return !cleared || needsImportAction(checks);
+}
+
 /** Heading for the boot gate surface. */
 export function bootGateHeading(
 	blocking: boolean,

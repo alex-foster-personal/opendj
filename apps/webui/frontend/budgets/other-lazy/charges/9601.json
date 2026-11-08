@@ -1,0 +1,9 @@
+{
+  "bytes": 1024,
+  "measured_main": 474951,
+  "measured_with_pr": 475694,
+  "sha": "7045b4d74e",
+  "date": "Sun 8 Nov 2026",
+  "reason": "PR #9601 (feat(assistant): juice fill pending state on setup sidebar (#9476)) grows the other-lazy surface. Measured: CI bundle check of 7045b4d74e, +743 B gzip; ceiled to KiB.",
+  "payback": "none planned; the growth is the feature's own code on this surface"
+}

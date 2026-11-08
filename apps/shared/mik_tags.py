@@ -11,15 +11,20 @@ Requirements (mini-PRD):
     [if] a file carries GEOB Key / BeatGrid from mixedinkey [then] key and bpm come back
     [if] a file has no ID3 tag or no MIK frames [then] both are None, never a guess
     [if] a MIK frame holds a key that is not a Camelot key [then] it is ignored
+  ✔︎ ✅ 🎯 mik_geob_json() is the one MIK GEOB reader; apps.analysis_beatgrid.mik_grid reads its
+    BeatGrid through it (issue #8744)
+    [if] a frame's payload is not base64 JSON of an object, or its source is not mixedinkey [then] None
 
 -Claude
 """
+
 from __future__ import annotations
 
 import base64
 import binascii
 import json
 import re
+from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -38,28 +43,38 @@ class MikTagValues:
     bpm: float | None
 
 
-def _geob_json(payload: bytes) -> dict[str, Any] | None:
+GeobFrame = tuple[str, str, str, bytes]
+
+
+def mik_geob_json(frames: Sequence[GeobFrame], description: str) -> dict[str, Any] | None:
+    """The JSON body of the first GEOB frame named ``description``, when Mixed In Key wrote it.
+
+    The one MIK GEOB parser: frames are ``(mime, filename, description, payload)`` and the payload is
+    base64 JSON. None when no frame has that description, its payload is not a JSON object, or its
+    ``source`` is not ``mixedinkey``.
+    """
+    payload = next((frame[3] for frame in frames if frame[2] == description), None)
+    if payload is None:
+        return None
     try:
-        decoded = json.loads(base64.b64decode(payload))
+        body = json.loads(base64.b64decode(payload))
     except (binascii.Error, ValueError):
         return None
-    return decoded if isinstance(decoded, dict) else None
+    if not isinstance(body, dict) or body.get("source") != "mixedinkey":
+        return None
+    return body
 
 
-def values_from_geob(frames: list[tuple[str, str, str, bytes]]) -> MikTagValues:
+def values_from_geob(frames: Sequence[GeobFrame]) -> MikTagValues:
     """MIK key + tempo from GEOB ``(mime, filename, description, payload)`` frames."""
-    key: str | None = None
+    key_body = mik_geob_json(frames, "Key") or {}
+    grid_body = mik_geob_json(frames, "BeatGrid") or {}
+    raw_key, raw_tempo = key_body.get("key"), grid_body.get("tempo")
+    key = raw_key if isinstance(raw_key, str) and _CAMELOT.match(raw_key) else None
     bpm: float | None = None
-    for _mime, _name, description, payload in frames:
-        body = _geob_json(payload)
-        if body is None or body.get("source") != "mixedinkey":
-            continue
-        if description == "Key" and isinstance(body.get("key"), str) and _CAMELOT.match(body["key"]):
-            key = body["key"]
-        elif description == "BeatGrid" and isinstance(body.get("tempo"), (int, float)):
-            tempo = round(float(body["tempo"]), 2)
-            if _BPM_RANGE[0] <= tempo <= _BPM_RANGE[1]:
-                bpm = tempo
+    if isinstance(raw_tempo, (int, float)) and not isinstance(raw_tempo, bool):
+        tempo = round(float(raw_tempo), 2)
+        bpm = tempo if _BPM_RANGE[0] <= tempo <= _BPM_RANGE[1] else None
     return MikTagValues(key=key, bpm=bpm)
 
 

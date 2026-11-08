@@ -48,7 +48,6 @@ export const PLANNED_CONTROLS: Record<string, string> = {
 	'file-browser': 'File browser - opens loose audio files that are not yet in the collection, for a one-off load onto a deck.',
 	'beatport': 'Beatport - browses purchased or streaming Beatport tracks as a library source, with purchase links when a row is streaming-only.',
 	'video-output': 'Video output - sends the master or a chosen deck to a second display or projector for visuals, separate from the headphone cue.',
-	'usb-export': 'USB export - writes the current playlist to a FAT32 stick in rekordbox export layout so a CDJ can play it.',
 	'cloud-lock': 'Cloud library lock - marks this collection as the rekordbox Cloud / private copy so another laptop cannot write it at the same time.',
 	'play-history': 'Play history - lists tracks played this session and previous nights, with the same columns as the collection table.',
 	'master-dropdown': 'Master playlist - pins which playlist the NEXT / compatible filter treats as the master source, independent of which deck is MASTER.',

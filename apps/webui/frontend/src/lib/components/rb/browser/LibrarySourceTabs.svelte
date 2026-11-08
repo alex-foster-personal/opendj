@@ -18,6 +18,7 @@
 		showHistoryTargetFromChrome,
 		undoPlaylistFromChrome
 	} from '$lib/rb/playlist-history-chrome.svelte';
+	import LibrarySourceMenu from './LibrarySourceMenu.svelte';
 
 	export type LibrarySourceTab = 'playlists' | 'taglists' | 'autolists' | 'usbs';
 
@@ -158,22 +159,24 @@
 	);
 </script>
 
-<div class="source-toolbar" data-testid="library-source-tabs" data-menu-target="library-source">
-	<div class="view-tabs" role="tablist" aria-label="library sources">
-		{#each tabs as tab (tab.id)}
-			<button
-				type="button"
-				class="vt"
-				class:active={active === tab.id}
-				role="tab"
-				aria-selected={active === tab.id}
-				data-testid={tab.testid}
-				onclick={() => onchange(tab.id)}
-			>
-				{tab.label}
-			</button>
-		{/each}
-	</div>
+<div class="source-toolbar">
+	<LibrarySourceMenu data-testid="library-source-tabs" data-menu-target="library-source">
+		<div class="view-tabs" role="tablist" aria-label="library sources">
+			{#each tabs as tab (tab.id)}
+				<button
+					type="button"
+					class="vt"
+					class:active={active === tab.id}
+					role="tab"
+					aria-selected={active === tab.id}
+					data-testid={tab.testid}
+					onclick={() => onchange(tab.id)}
+				>
+					{tab.label}
+				</button>
+			{/each}
+		</div>
+	</LibrarySourceMenu>
 	<div class="trailing-actions" data-testid="library-tree-toolbar">
 		<button
 			type="button"
@@ -216,6 +219,53 @@
 				<path d={UNDO_PATH} fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
 			</svg>
 		</button>
+		<!-- LIBUX-51: inside .source-toolbar (position: relative) so top: 100% anchors
+		     the popover under the undo button; as a sibling it resolved against a page
+		     ancestor and opened at the bottom edge of the window (found by the v1 ship
+		     day thread, #5674).
+		     LIBUX-8626: the full history, newest first, interactive. It only opens
+		     after a deliberate 1 s hover (or keyboard focus) and closes shortly after
+		     the pointer leaves both it and the button, so it does not linger over the
+		     playlist rows it overlaps. -->
+		{#if historyOpen && historyAnchor !== null}
+			<div
+				class="history-popover"
+				style:z-index="5"
+				role="dialog"
+				aria-label="Playlist edit history"
+				tabindex="-1"
+				data-testid="playlist-history-popover"
+				bind:this={historyPopover}
+				onmouseenter={keepHistoryOpen}
+				onmouseleave={releaseHistory}
+				onfocusout={releaseHistoryOnBlur}
+				onkeydown={closeHistoryOnEscape}
+			>
+				<p class="history-hint" data-testid="playlist-undo-next">
+					{undoTitle}. Newest first: hover an edit to show it, click to undo back to it.
+				</p>
+				<ol class="history-list" data-testid="playlist-history-list">
+					{#each historyRows as row (row.entry.command_id)}
+						<li>
+							<button
+								type="button"
+								class="history-item"
+								class:pending={!row.applied}
+								data-testid="playlist-history-item"
+								data-command-id={row.entry.command_id}
+								aria-current={row.next ? 'step' : undefined}
+								title={row.action}
+								onmouseenter={() => previewHistoryRow(row)}
+								onfocus={() => previewHistoryRow(row)}
+								onclick={() => void jumpToHistoryRow(row)}
+							>
+								{row.entry.label}
+							</button>
+						</li>
+					{/each}
+				</ol>
+			</div>
+		{/if}
 		<button
 			type="button"
 			class="icon-btn"
@@ -230,53 +280,6 @@
 			</svg>
 		</button>
 	</div>
-	<!-- LIBUX-51: inside .source-toolbar (position: relative) so top: 100% anchors
-	     the popover under the undo button; as a sibling it resolved against a page
-	     ancestor and opened at the bottom edge of the window (found by the v1 ship
-	     day thread, #5674).
-	     LIBUX-8626: the full history, newest first, interactive. It only opens
-	     after a deliberate 1 s hover (or keyboard focus) and closes shortly after
-	     the pointer leaves both it and the button, so it does not linger over the
-	     playlist rows it overlaps. -->
-	{#if historyOpen && historyAnchor !== null}
-		<div
-			class="history-popover"
-			style:z-index="5"
-			role="dialog"
-			aria-label="Playlist edit history"
-			tabindex="-1"
-			data-testid="playlist-history-popover"
-			bind:this={historyPopover}
-			onmouseenter={keepHistoryOpen}
-			onmouseleave={releaseHistory}
-			onfocusout={releaseHistoryOnBlur}
-			onkeydown={closeHistoryOnEscape}
-		>
-			<p class="history-hint" data-testid="playlist-undo-next">
-				{undoTitle}. Newest first: hover an edit to show it, click to undo back to it.
-			</p>
-			<ol class="history-list" data-testid="playlist-history-list">
-				{#each historyRows as row (row.entry.command_id)}
-					<li>
-						<button
-							type="button"
-							class="history-item"
-							class:pending={!row.applied}
-							data-testid="playlist-history-item"
-							data-command-id={row.entry.command_id}
-							aria-current={row.next ? 'step' : undefined}
-							title={row.action}
-							onmouseenter={() => previewHistoryRow(row)}
-							onfocus={() => previewHistoryRow(row)}
-							onclick={() => void jumpToHistoryRow(row)}
-						>
-							{row.entry.label}
-						</button>
-					</li>
-				{/each}
-			</ol>
-		</div>
-	{/if}
 </div>
 
 <style>

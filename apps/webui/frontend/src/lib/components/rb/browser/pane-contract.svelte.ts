@@ -79,6 +79,14 @@ export interface BrowserRow extends Pick<
 	bpm_pick?: BpmAlternativeSource | null;
 	/** v13 playlist_memberships.item_id; null outside playlist detail. */
 	item_id: string | null;
+	edit_id?: string | null;
+	in_ms?: number | null;
+	out_ms?: number | null;
+	fx?: Record<string, unknown> | null;
+	edit_label?: string | null;
+	created_by?: string | null;
+	is_edit?: boolean;
+	valid?: boolean;
 	/** 1-based membership position within the pane playlist (# column). */
 	order: number;
 	title: string | null;

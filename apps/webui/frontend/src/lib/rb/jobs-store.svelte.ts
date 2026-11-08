@@ -26,6 +26,10 @@
  *     resync refetches the whole list.
  *     [if] a second frame for one id grows the list to 2 [then ⛔️] broken
  *     [if] resync fires and no refetch is issued [then ⛔️] broken
+ *     [if] the socket's first open lands while the initial hydrate GET is in
+ *       flight and no catch-up refetch follows it [then ⛔️] broken
+ *     [if] that first open fires a second GET while the first is still in flight
+ *       [then ⛔️] broken
  *   ✔︎ 🎯 cancel()/reenqueue(): mirror the server's guards, and a 409 refusal
  *     surfaces the server's own message verbatim.
  *     [if] a refusal is swallowed or reworded [then ⛔️] broken
@@ -238,6 +242,13 @@ class JobsStore {
 	 * settled. Gates whether an 'initial-connect' resync may skip its own
 	 * refetch - see the comment at that resync subscription. */
 	#initialHydratePending = false;
+	/** True once the deferred initial hydrate's GET has been issued. Before that
+	 * point an 'initial-connect' needs nothing, because the GET will be newer
+	 * than the socket. After that point it needs a catch-up. */
+	#initialHydrateStarted = false;
+	/** Set when 'initial-connect' fires while the initial hydrate GET is in
+	 * flight. When true, one more hydrate runs after it settles. */
+	#catchUpAfterInitialHydrate = false;
 	/** Counts every upsert, and remembers the count at each id's latest one.
 	 * hydrate() compares against the count when its GET started, so a row a
 	 * frame delivered while the GET was in flight is newer than the snapshot
@@ -324,6 +335,8 @@ class JobsStore {
 		this.#holders += 1;
 		if (this.#detachers.length === 0) {
 			this.#initialHydratePending = true;
+			this.#initialHydrateStarted = false;
+			this.#catchUpAfterInitialHydrate = false;
 			this.#detachers.push(
 				bus.subscribe(TOPIC_JOBS_UPDATED, (envelope) => {
 					const job = readJobPayload(envelope.payload);
@@ -350,7 +363,17 @@ class JobsStore {
 					// HTTP snapshot and this socket opening was never delivered
 					// by anything (PR #1656 review round 12, P2 BLOCKING) -
 					// skipping unconditionally left that gap unrepaired.
-					if (reason === 'initial-connect' && this.#initialHydratePending) return;
+					//
+					// A third case: the socket opens while the deferred hydrate's
+					// GET is IN FLIGHT (issue #1764, PR #1656 thread
+					// r3978915633): one catch-up after it settles.
+					if (reason === 'initial-connect' && this.#initialHydratePending) {
+						// In flight: the GET's snapshot predates this socket, so anything that
+						// changed between them reached no one. Do not fire a second GET on top of
+						// it (PERF-R6 window, round 7); queue exactly one catch-up for when it settles.
+						if (this.#initialHydrateStarted) this.#catchUpAfterInitialHydrate = true;
+						return;
+					}
 					void this.hydrate();
 				})
 			);
@@ -362,8 +385,13 @@ class JobsStore {
 			// after boot (the drawer opening) fetches immediately, because
 			// the scheduler is already released by then.
 			scheduler.defer('jobs-store:hydrate', () => {
+				this.#initialHydrateStarted = true;
 				void this.hydrate().finally(() => {
 					this.#initialHydratePending = false;
+					if (!this.#catchUpAfterInitialHydrate) return;
+					this.#catchUpAfterInitialHydrate = false;
+					// A detach while the GET was in flight means nobody is listening.
+					if (this.#detachers.length > 0) void this.hydrate();
 				});
 			});
 		}

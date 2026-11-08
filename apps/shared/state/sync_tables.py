@@ -29,6 +29,8 @@ SYNC_TABLES: tuple[TableSpec, ...] = (
     # to tracks(stable_id), so slot 1 keeps the parent adjacency the comment
     # above describes.
     TableSpec("lyric_verdict", ("stable_id",)),
+    # References tracks(stable_id); playlist_memberships.edit_id needs the row first.
+    TableSpec("track_edit", ("id",)),
     TableSpec("playlists", ("playlist_id",)),
     TableSpec("track_vendor_ids", ("stable_id", "vendor")),
     TableSpec("track_fields", ("stable_id", "field_name")),

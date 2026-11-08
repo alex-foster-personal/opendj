@@ -30,7 +30,7 @@ export const RECORD_MODES: readonly { mode: RecordMode; label: string; title: st
 	}
 ];
 
-// TODO(website): point at our own "record with a loopback" page once it exists.
+// The upstream BlackHole page until Open DJ has its own loopback guide (#10155).
 export const INSTALL_LOOPBACK_URL = 'https://existential.audio/blackhole/';
 
 /** Why MACHINE cannot record the master mix in this page, or null when it

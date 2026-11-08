@@ -34,7 +34,8 @@ export function singleSelectedDeck(selected: readonly DeckId[]): DeckId | null {
 
 /** The deck and track the (i) overlay was opened for, captured at the open. */
 export interface OpenedTrackInfo {
-	deckId: DeckId;
+	/** Null when opened for a library row that is not tied to a loaded deck (#9451). */
+	deckId: DeckId | null;
 	stableId: string;
 }
 
@@ -50,5 +51,6 @@ export function openedTrackInfo(
 	stableIdOf: (deck: DeckId) => string | null
 ): OpenedTrackInfo | null {
 	if (opened === null) return null;
+	if (opened.deckId === null) return opened;
 	return stableIdOf(opened.deckId) === opened.stableId ? opened : null;
 }

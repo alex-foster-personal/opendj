@@ -139,6 +139,15 @@ export interface DeckMovePort {
 	 * target 0 -> level. Returns the instant it starts. */
 	scheduleHandover(from: DeckId, to: DeckId, startSec: number, durationSec: number, level: number): number;
 	waitUntilContextSec(sec: number): Promise<void>;
+	/** Audio clock second through which handover fader automation runs on `deck` (0 if none or cancelled). */
+	handoverUntilSec(deck: DeckId): number;
+	/** Which `scheduleHandover` batch last touched `deck` (0 = none); post-fade cleanup requires the captured value on the
+	 * source, and a superseded target (a chained move took it as its source) only skips the target fader restore. */
+	handoverToken(deck: DeckId): number;
+	/** Claim `[from, to, 'sync']` only once all three are idle (reserves none while waiting), then pause/unload and master follow after the fade wait (separate top-level claim; not nested in `deck_move`). */
+	runRetireTransaction(from: DeckId, to: DeckId, work: () => Promise<void>): Promise<void>;
+	/** Detached post-handover cleanup failure (warn severity; does not throw). */
+	reportCleanupError(error: unknown): void;
 	setDeckMaster(deck: DeckId, options: { lock: boolean }): Promise<void>;
 }
 
@@ -164,6 +173,29 @@ export interface DeckClone {
 	stems: Partial<Record<StemControl, StemControlState>>;
 	channel: MixerChannelState;
 	color_fx: ColorFxSettings;
+}
+
+/** A Move whose fader handover is scheduled but whose source has not retired yet, keyed by its target deck. */
+interface InFlightMove { token: number; level: number; is_master: boolean }
+/** Per port (the engine binding is one long-lived port): a chained move reads the level and master role
+ * its source deck is still being handed, because the channel state holds 0 until the earlier retire. */
+const _inFlightByPort = new WeakMap<DeckMovePort, Map<DeckId, InFlightMove>>();
+
+function _inFlightMoves(port: DeckMovePort): Map<DeckId, InFlightMove> {
+	let moves = _inFlightByPort.get(port);
+	if (moves === undefined) {
+		moves = new Map();
+		_inFlightByPort.set(port, moves);
+	}
+	return moves;
+}
+
+/** The move still handing `deck` its level: its handover generation owns the deck and no fader hand cancelled it. */
+function _inboundMove(port: DeckMovePort, deck: DeckId): InFlightMove | null {
+	const move = _inFlightMoves(port).get(deck);
+	if (move === undefined) return null;
+	if (port.handoverToken(deck) !== move.token || port.handoverUntilSec(deck) === 0) return null;
+	return move;
 }
 
 // ----- pure helpers -------------------------------------------------------
@@ -322,12 +354,49 @@ async function _applyLoop(port: DeckMovePort, to: DeckId, clone: DeckClone): Pro
 	return 'engaged';
 }
 
-async function _retireSource(port: DeckMovePort, from: DeckId, to: DeckId, clone: DeckClone): Promise<void> {
+async function _retireSource(
+	port: DeckMovePort,
+	from: DeckId,
+	to: DeckId,
+	clone: DeckClone,
+	options?: { restoreTargetFader?: boolean }
+): Promise<void> {
 	if (clone.is_master) await port.setDeckMaster(to, { lock: port.masterLocked() });
-	port.setFader(to, clone.channel.fader);
+	if (options?.restoreTargetFader !== false) port.setFader(to, clone.channel.fader);
 	if (port.deck(from).playing) await port.pause(from);
 	await port.unload(from);
 	port.setFader(from, clone.channel.fader);
+}
+
+async function _guardedRetireAfterHandover(
+	port: DeckMovePort,
+	from: DeckId,
+	to: DeckId,
+	clone: DeckClone,
+	untilSec: number,
+	token: number
+): Promise<void> {
+	const moves = _inFlightMoves(port);
+	try {
+		try {
+			await port.waitUntilContextSec(untilSec);
+		} catch (error) {
+			const msg = error instanceof Error ? error.message : String(error);
+			if (msg.includes('audio context ended')) return;
+			throw error;
+		}
+		await port.runRetireTransaction(from, to, async () => {
+			if (port.handoverToken(from) !== token) return; // a newer handover took the source (reverse move): not ours to stop
+			if (port.deck(from).stable_id !== clone.stable_id) return;
+			if (port.deck(to).stable_id !== clone.stable_id) return;
+			if (port.handoverUntilSec(from) === 0) return;
+			// A chained move made `to` its source: its own handover now owns that fader, so leave it alone.
+			const targetOwned = port.handoverToken(to) === token && port.handoverUntilSec(to) !== 0;
+			await _retireSource(port, from, to, clone, { restoreTargetFader: targetOwned });
+		});
+	} finally {
+		if (moves.get(to)?.token === token) moves.delete(to);
+	}
 }
 
 /** The one engine function behind the artwork menu, HTTP, `opendj deck_move` and MCP `deck_move`. */
@@ -337,6 +406,12 @@ export async function moveDeck(port: DeckMovePort, request: DeckMoveRequest): Pr
 	const replaced = port.deck(to).stable_id;
 	if (replaced !== null) await port.unload(to);
 	const clone = captureDeckClone(port, from);
+	// A chained move (1 -> 4, then 4 -> 2 before the first retires) hands on the level and master role deck `from` is still receiving.
+	const inbound = _inboundMove(port, from);
+	if (inbound !== null) {
+		clone.channel.fader = inbound.level;
+		clone.is_master ||= inbound.is_master;
+	}
 	await port.load(to, clone.stable_id);
 	await _applyTransport(port, to, clone);
 	_applyChannel(port, to, clone);
@@ -359,8 +434,17 @@ export async function moveDeck(port: DeckMovePort, request: DeckMoveRequest): Pr
 	if (mode === 'copy') return result;
 	const src = port.deck(from);
 	result.crossfade_sec = handoverDurationSec(request.crossfade_beats, src.bpm, src.pitch);
-	const fadeAt = port.scheduleHandover(from, to, result.start_context_sec, result.crossfade_sec, clone.channel.fader);
-	await port.waitUntilContextSec(fadeAt + result.crossfade_sec + HANDOVER_SETTLE_SEC);
-	await _retireSource(port, from, to, clone);
+	// A chained handover starts after the running one ends on the audio clock: no overlapping curves on `from`'s fader.
+	const handoverFrom = port.handoverUntilSec(from);
+	const startSec = inbound === null || handoverFrom === 0
+		? result.start_context_sec
+		: Math.max(result.start_context_sec, handoverFrom + HANDOVER_SETTLE_SEC);
+	const fadeAt = port.scheduleHandover(from, to, startSec, result.crossfade_sec, clone.channel.fader);
+	const token = port.handoverToken(from);
+	_inFlightMoves(port).set(to, { token, level: clone.channel.fader, is_master: clone.is_master });
+	const untilSec = fadeAt + result.crossfade_sec + HANDOVER_SETTLE_SEC;
+	void _guardedRetireAfterHandover(port, from, to, clone, untilSec, token).catch((error) => {
+		port.reportCleanupError(error);
+	});
 	return result;
 }

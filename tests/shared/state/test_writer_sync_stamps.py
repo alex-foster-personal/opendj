@@ -48,7 +48,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from apps.cloud import hydration
-from apps.shared.state import library_org, sync_stamp
+from apps.shared.state import library_edits, library_org, sync_stamp
 from apps.shared.state import machine_identity as mid
 from apps.shared.state.events import FakeEventBus
 from apps.shared.state.writer import StateWriter
@@ -322,12 +322,21 @@ def _exercise_library_organization(conn: sqlite3.Connection) -> None:
         artists=["x"],
         album=None,
         isrc=None,
-        duration_ms=None,
+        duration_ms=4000,
         file_path=None,
     )
     library_org.link_member(writer, "s", work, member_kind="track", member_id="t", role="remix")
     library_org.dismiss_pair(writer, "s", "a", "b")
     library_org.set_work_pref(writer, "s", work, "t")
+    library_edits.create_edit(
+        writer,
+        "s",
+        source_track_id="t",
+        label="cut",
+        in_ms=0,
+        out_ms=1000,
+        created_by="test",
+    )
 
 
 def _exercise_every_writer_path(conn: sqlite3.Connection, tmp_path: Path, db_path: Path) -> None:
@@ -517,6 +526,12 @@ def test_the_coverage_check_catches_a_writer_that_bypasses_the_chokepoint(
             "INSERT INTO work_pref(work_id, top_member_id, created_at, updated_at, "
             "origin_device_id) VALUES ('raw', 'raw', ?, ?, ?)",
             (stamp, stamp, machine_id),
+        ),
+        "track_edit": (
+            "INSERT INTO track_edit(id, source_track_id, label, in_ms, out_ms, fx, "
+            "created_by, created_at, updated_at, origin_device_id) VALUES ("
+            "'rawedit', ?, 'Raw', 0, 1, '{}', 'tripwire', ?, ?, ?)",
+            (SID, stamp, stamp, machine_id),
         ),
     }
     assert set(bypasses) == set(SYNCED_TABLES), (

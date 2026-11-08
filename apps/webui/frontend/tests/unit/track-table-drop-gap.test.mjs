@@ -13,10 +13,15 @@ import { loadTypeScriptModule } from './load-typescript.mjs';
 let support;
 
 before(async () => {
-	// Load the DOM-free gap helpers plus playlist-sections only; `track-table-support.ts`
-	// re-exports them but bundles analysis-issues and pulls job-progress.svelte, which breaks
-	// Node unit bundling for these assertions.
-	support = await loadTypeScriptModule('src/lib/components/rb/browser/track-table-drop-gap.ts');
+	globalThis.$derived = (value) => value;
+	try {
+		// Load the DOM-free gap helpers plus playlist-sections only; `track-table-support.ts`
+		// re-exports them but bundles analysis-issues and pulls job-progress.svelte, which breaks
+		// Node unit bundling for these assertions.
+		support = await loadTypeScriptModule('src/lib/components/rb/browser/track-table-drop-gap.ts');
+	} finally {
+		delete globalThis.$derived;
+	}
 });
 
 const rows = ['a', 'b', 'c', 'd'].map((item_id) => ({ item_id }));

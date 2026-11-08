@@ -78,7 +78,10 @@ from apps.shared.state import analysis_stale, sync_stamp
 from apps.shared.state import schema as state_schema
 from apps.spotify import state_aux as spotify_aux
 from apps.sync_hub import engine_identity_map, stem_meter
-from apps.webui.server import pairings_sqlite
+from apps.webui.server.http_pairings_schema import (
+    HTTP_PAIRINGS_SCHEMA_SOURCE,
+    ensure_http_pairings_table,
+)
 
 #: Name of the production-shaped, migrated state DB inside :class:`Scan`.
 STATE_LADDER: str = "shared_state"
@@ -334,8 +337,8 @@ STATE_AUTHORITIES: tuple[Authority, ...] = (
         _apply_pairing_capture,
     ),
     Authority(
-        "apps/webui/server/pairings_sqlite.py",
-        lambda conn, _path: pairings_sqlite.ensure_http_pairings_table(conn),
+        HTTP_PAIRINGS_SCHEMA_SOURCE,
+        lambda conn, _path: ensure_http_pairings_table(conn),
     ),
     Authority("apps/shared/play_orders/schema.py", _apply_play_orders),
     Authority(TRY_PICKS_SCHEMA_SOURCE, _apply_try_picks),

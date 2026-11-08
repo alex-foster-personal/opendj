@@ -364,6 +364,14 @@ export interface PlaylistTrackRowWire {
 	stable_id: string;
 	/** v13 membership row id; playlist detail only (LIBM-21). */
 	item_id?: string | null;
+	edit_id?: string | null;
+	in_ms?: number | null;
+	out_ms?: number | null;
+	fx?: Record<string, unknown> | null;
+	edit_label?: string | null;
+	created_by?: string | null;
+	is_edit?: boolean;
+	valid?: boolean;
 	title: string | null;
 	artist: string | null;
 	key: string | null;
@@ -666,6 +674,14 @@ export async function getReconcileSummary(
 export type GenreGuess = { family: string; confidence: number; source: 'jev' };
 
 export type TrackListItemWire = Track & {
+	edit_id?: string | null;
+	in_ms?: number | null;
+	out_ms?: number | null;
+	fx?: Record<string, unknown> | null;
+	edit_label?: string | null;
+	created_by?: string | null;
+	is_edit?: boolean;
+	valid?: boolean;
 	genre?: string | null;
 	genre_reason?: string | null;
 	/** GENRE-04: which provider the shown genre came from. */

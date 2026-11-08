@@ -85,6 +85,7 @@ export async function bundleTypeScriptModule(
 		bundle: true,
 		define: {
 			'$state': 'globalThis.__musicDjToolsTestState',
+			'$derived': 'globalThis.__musicDjToolsTestDerived',
 			'import.meta.env.DEV': dev ? 'true' : 'false',
 			'import.meta.env.VITE_API_BASE':
 				viteApiBase === undefined ? 'undefined' : JSON.stringify(viteApiBase)
@@ -115,6 +116,11 @@ export async function loadTypeScriptModule(relativePath, options = {}) {
 	globalThis.__musicDjToolsTestState.raw = (value) => value;
 	globalThis.__musicDjToolsTestState.snapshot = (value) =>
 		value === undefined ? undefined : JSON.parse(JSON.stringify(value));
+	// $derived mirrors Svelte runes at compile time; the bundled module must see
+	// both plain `$derived(expr)` and `$derived.by(() => ...)`.
+	globalThis.__musicDjToolsTestDerived = (value) => value;
+	globalThis.__musicDjToolsTestDerived.by = (fn) =>
+		typeof fn === 'function' ? fn() : fn;
 	// A temp file, not a data: URL: see import-bundled-source.mjs for the
 	// 26 MB CI log that the base64 stack frames produced.
 	return importBundledSource(text, relativePath);

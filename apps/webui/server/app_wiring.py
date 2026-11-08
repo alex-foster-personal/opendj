@@ -84,6 +84,7 @@ from . import routes as routes_package
 from .routes import client_errors as client_errors_routes
 from .routes import client_events as client_events_routes
 from .routes import ingest_cli_procs
+from .routes import library_edits as library_edits_routes
 from .routes import performance_remote_speaker as performance_remote_speaker_routes
 from .routes import playlist_write as playlist_write_routes
 from .routes import sync_billing_proxy as sync_billing_proxy_routes
@@ -600,6 +601,7 @@ def _mount_api_routers(app: FastAPI) -> None:
     api_prefix = "/api/v1"
     for router in (
         *_routers_under(routes_package),
+        library_edits_routes.router,
         create_set_notes_router(get_write_state),
         flags_router,
     ):

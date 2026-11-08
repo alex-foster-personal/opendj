@@ -34,6 +34,7 @@ PRIMARY_KEYS: dict[str, tuple[str, ...]] = {
     "work_dismissal": ("a_member", "b_member"),
     "work_pref": ("work_id",),
     "track_fields": ("stable_id", "field_name"),
+    "track_edit": ("id",),
 }
 
 #: Table of a journaled tag write. Tag values are ``track_fields`` rows under
@@ -44,7 +45,7 @@ TAGS_FIELD: str = "tags"
 GENERAL_TYPE: str = "general"
 
 #: ``track_fields`` predates ``created_at``; its own clock is ``modified_at``.
-_NO_CREATED_AT: frozenset[str] = frozenset({"track_fields"})
+_NO_CREATED_AT: frozenset[str] = frozenset({"track_fields", "playlist_memberships"})
 
 #: Newest entries kept per session. R-UNDO-1 needs at least 50.
 UNDO_DEPTH: int = 200
@@ -686,5 +687,3 @@ def undo_last(writer: StateWriter, session_id: str) -> UndoResult:
             _store(writer, change["table"], change["key"], fields, current, now)
         conn.execute("UPDATE undo_journal SET undone_at = ? WHERE id = ?", (now, undo_id))
     return UndoResult(undo_id, op)
-
-

@@ -10,7 +10,16 @@ sibling file covers the scenario-level scalar checks.
 
 from __future__ import annotations
 
+import copy
+import json
+from pathlib import Path
+
 from scripts.perf.kpi_map_drift import threshold_drift
+
+
+def _shipped_s5_scenario() -> dict:
+    root = Path(__file__).resolve().parents[2]
+    return copy.deepcopy(json.loads((root / "docs" / "perf" / "kpi-map.json").read_text())["scenarios"]["S5"])
 
 
 def test_per_kpi_drift_now_fails_closed_on_an_unverifiable_required_threshold() -> None:
@@ -276,3 +285,53 @@ def test_per_kpi_drift_stays_silent_on_direction_and_strictness_when_resolved() 
         }
     }
     assert threshold_drift(kpi_map) == []
+
+
+def test_cache_state_band_drift_fires_when_warm_budget_drifts() -> None:
+    s5 = _shipped_s5_scenario()
+    for req in s5["required"]:
+        if req["kpi"] == "packaged_deck_load_total_ms":
+            req["cache_state_bands"]["warm"]["budget"] = 9000
+    findings = [p for p in threshold_drift({"scenarios": {"S5": s5}}) if "cache_state_bands" in p]
+    assert any("cache_state_bands.warm.budget" in f for f in findings)
+
+
+def test_cache_state_band_drift_fires_on_cold_acceptable_and_ordering() -> None:
+    s5 = _shipped_s5_scenario()
+    for req in s5["required"]:
+        if req["kpi"] == "packaged_deck_load_total_ms":
+            req["cache_state_bands"]["cold"]["acceptable"] = 50000
+    findings = [p for p in threshold_drift({"scenarios": {"S5": s5}}) if "cache_state_bands" in p]
+    assert any("not found in spec cell" in f and "cold.acceptable" in f for f in findings)
+    assert any("out of order" in f and "cache_state_bands.cold" in f for f in findings)
+
+
+def test_cache_state_band_drift_shape_rejects_missing_acceptable() -> None:
+    s5 = _shipped_s5_scenario()
+    for req in s5["required"]:
+        if req["kpi"] == "packaged_deck_load_total_ms":
+            del req["cache_state_bands"]["warm"]["acceptable"]
+    findings = [p for p in threshold_drift({"scenarios": {"S5": s5}}) if "cache_state_bands" in p]
+    assert any("cache_state_bands.warm" in f and "budget and acceptable" in f for f in findings)
+
+
+def test_cache_state_band_drift_unknown_state_fails_closed() -> None:
+    s5 = _shipped_s5_scenario()
+    for req in s5["required"]:
+        if req["kpi"] == "packaged_deck_load_total_ms":
+            bands = req["cache_state_bands"]
+            bands["hot"] = bands.pop("warm")
+    findings = [p for p in threshold_drift({"scenarios": {"S5": s5}}) if "cache_state_bands" in p]
+    assert any("no spec target/acceptable cell names 'hot'" in f for f in findings)
+
+
+def test_cache_state_band_drift_shipped_s5_has_no_findings_and_nested_not_opted_out() -> None:
+    s5 = _shipped_s5_scenario()
+    findings = [p for p in threshold_drift({"scenarios": {"S5": s5}}) if "cache_state_bands" in p]
+    assert findings == []
+    for req in s5["required"]:
+        if req.get("kpi") == "packaged_deck_load_total_ms":
+            assert set(req.get("unverifiable_columns", [])) == {"target", "acceptable", "breaking"}
+            break
+    else:
+        raise AssertionError("packaged_deck_load_total_ms entry missing")

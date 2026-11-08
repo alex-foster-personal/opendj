@@ -1864,6 +1864,18 @@
             "title": "Deck",
             "type": "integer"
           },
+          "out_ms": {
+            "anyOf": [
+              {
+                "exclusiveMinimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Out Ms"
+          },
           "stable_id": {
             "minLength": 1,
             "title": "Stable Id",
@@ -10452,6 +10464,126 @@
           "updated_at"
         ],
         "title": "DrainStatusOut",
+        "type": "object"
+      },
+      "EditCreateIn": {
+        "additionalProperties": false,
+        "properties": {
+          "after_item_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "After Item Id"
+          },
+          "created_by": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Created By"
+          },
+          "fx": {
+            "additionalProperties": true,
+            "title": "Fx",
+            "type": "object"
+          },
+          "in_ms": {
+            "title": "In Ms",
+            "type": "integer"
+          },
+          "label": {
+            "default": "",
+            "title": "Label",
+            "type": "string"
+          },
+          "out_ms": {
+            "title": "Out Ms",
+            "type": "integer"
+          },
+          "playlist_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Playlist Id"
+          },
+          "source_track_id": {
+            "minLength": 1,
+            "title": "Source Track Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "source_track_id",
+          "in_ms",
+          "out_ms"
+        ],
+        "title": "EditCreateIn",
+        "type": "object"
+      },
+      "EditUpdateIn": {
+        "additionalProperties": false,
+        "properties": {
+          "fx": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Fx"
+          },
+          "in_ms": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "In Ms"
+          },
+          "label": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Label"
+          },
+          "out_ms": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Out Ms"
+          }
+        },
+        "title": "EditUpdateIn",
         "type": "object"
       },
       "EligibilityResponse": {
@@ -21040,6 +21172,65 @@
         "title": "PlaylistDuplicateIn",
         "type": "object"
       },
+      "PlaylistImportIn": {
+        "properties": {
+          "base_dir": {
+            "description": "Absolute folder of the file; relative lines resolve against it",
+            "minLength": 1,
+            "title": "Base Dir",
+            "type": "string"
+          },
+          "m3u": {
+            "description": "The M3U or M3U8 file's text",
+            "title": "M3U",
+            "type": "string"
+          },
+          "name": {
+            "description": "Display name of the new playlist",
+            "minLength": 1,
+            "title": "Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "m3u",
+          "base_dir"
+        ],
+        "title": "PlaylistImportIn",
+        "type": "object"
+      },
+      "PlaylistImportOut": {
+        "properties": {
+          "matched": {
+            "title": "Matched",
+            "type": "integer"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "playlist_id": {
+            "title": "Playlist Id",
+            "type": "string"
+          },
+          "unmatched": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Unmatched",
+            "type": "array"
+          }
+        },
+        "required": [
+          "playlist_id",
+          "name",
+          "matched",
+          "unmatched"
+        ],
+        "title": "PlaylistImportOut",
+        "type": "object"
+      },
       "PlaylistModel": {
         "properties": {
           "name": {
@@ -25651,6 +25842,17 @@
             ],
             "title": "Comments"
           },
+          "created_by": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Created By"
+          },
           "duration_ms": {
             "anyOf": [
               {
@@ -25661,6 +25863,28 @@
               }
             ],
             "title": "Duration Ms"
+          },
+          "edit_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Edit Id"
+          },
+          "edit_label": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Edit Label"
           },
           "energy": {
             "anyOf": [
@@ -25726,6 +25950,18 @@
             ],
             "title": "File Path"
           },
+          "fx": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Fx"
+          },
           "genre": {
             "anyOf": [
               {
@@ -25785,6 +26021,22 @@
           },
           "has_remote_copy": {
             "title": "Has Remote Copy",
+            "type": "boolean"
+          },
+          "in_ms": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "In Ms"
+          },
+          "is_edit": {
+            "default": false,
+            "title": "Is Edit",
             "type": "boolean"
           },
           "is_radio_edit": {
@@ -25934,6 +26186,17 @@
               }
             ]
           },
+          "out_ms": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Out Ms"
+          },
           "play_count": {
             "default": 0,
             "title": "Play Count",
@@ -26033,6 +26296,11 @@
               }
             ],
             "title": "Title"
+          },
+          "valid": {
+            "default": true,
+            "title": "Valid",
+            "type": "boolean"
           },
           "vocals": {
             "additionalProperties": true,
@@ -31741,6 +32009,17 @@
             ],
             "title": "Comments"
           },
+          "created_by": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Created By"
+          },
           "duration_ms": {
             "anyOf": [
               {
@@ -31751,6 +32030,28 @@
               }
             ],
             "title": "Duration Ms"
+          },
+          "edit_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Edit Id"
+          },
+          "edit_label": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Edit Label"
           },
           "energy": {
             "anyOf": [
@@ -31812,6 +32113,18 @@
             ],
             "title": "File Path"
           },
+          "fx": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Fx"
+          },
           "genre": {
             "anyOf": [
               {
@@ -31871,6 +32184,22 @@
           },
           "has_remote_copy": {
             "title": "Has Remote Copy",
+            "type": "boolean"
+          },
+          "in_ms": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "In Ms"
+          },
+          "is_edit": {
+            "default": false,
+            "title": "Is Edit",
             "type": "boolean"
           },
           "is_radio_edit": {
@@ -32040,6 +32369,17 @@
               }
             ]
           },
+          "out_ms": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Out Ms"
+          },
           "play_count": {
             "default": 0,
             "title": "Play Count",
@@ -32097,6 +32437,11 @@
               }
             ],
             "title": "Title"
+          },
+          "valid": {
+            "default": true,
+            "title": "Valid",
+            "type": "boolean"
           }
         },
         "required": [
@@ -32369,9 +32714,31 @@
               }
             ]
           },
+          "comments": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Comments"
+          },
           "created_at": {
             "title": "Created At",
             "type": "string"
+          },
+          "created_by": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Created By"
           },
           "duration_ms": {
             "anyOf": [
@@ -32383,6 +32750,28 @@
               }
             ],
             "title": "Duration Ms"
+          },
+          "edit_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Edit Id"
+          },
+          "edit_label": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Edit Label"
           },
           "energy": {
             "anyOf": [
@@ -32444,6 +32833,18 @@
             ],
             "title": "File Path"
           },
+          "fx": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Fx"
+          },
           "genre": {
             "anyOf": [
               {
@@ -32503,6 +32904,22 @@
           },
           "has_remote_copy": {
             "title": "Has Remote Copy",
+            "type": "boolean"
+          },
+          "in_ms": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "In Ms"
+          },
+          "is_edit": {
+            "default": false,
+            "title": "Is Edit",
             "type": "boolean"
           },
           "is_radio_edit": {
@@ -32687,6 +33104,17 @@
               }
             ]
           },
+          "out_ms": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Out Ms"
+          },
           "play_count": {
             "default": 0,
             "title": "Play Count",
@@ -32805,6 +33233,11 @@
           "updated_at": {
             "title": "Updated At",
             "type": "string"
+          },
+          "valid": {
+            "default": true,
+            "title": "Valid",
+            "type": "boolean"
           },
           "vocals": {
             "additionalProperties": true,
@@ -33063,6 +33496,17 @@
               }
             ],
             "title": "Bpm"
+          },
+          "comments": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Comments"
           },
           "created_at": {
             "title": "Created At",
@@ -33654,6 +34098,17 @@
             ],
             "title": "Comments"
           },
+          "created_by": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Created By"
+          },
           "duration_ms": {
             "anyOf": [
               {
@@ -33664,6 +34119,28 @@
               }
             ],
             "title": "Duration Ms"
+          },
+          "edit_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Edit Id"
+          },
+          "edit_label": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Edit Label"
           },
           "energy": {
             "anyOf": [
@@ -33729,6 +34206,18 @@
             ],
             "title": "File Path"
           },
+          "fx": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Fx"
+          },
           "genre": {
             "anyOf": [
               {
@@ -33788,6 +34277,22 @@
           },
           "has_remote_copy": {
             "title": "Has Remote Copy",
+            "type": "boolean"
+          },
+          "in_ms": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "In Ms"
+          },
+          "is_edit": {
+            "default": false,
+            "title": "Is Edit",
             "type": "boolean"
           },
           "is_radio_edit": {
@@ -33933,6 +34438,17 @@
               }
             ]
           },
+          "out_ms": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Out Ms"
+          },
           "play_count": {
             "default": 0,
             "title": "Play Count",
@@ -34032,6 +34548,11 @@
               }
             ],
             "title": "Title"
+          },
+          "valid": {
+            "default": true,
+            "title": "Valid",
+            "type": "boolean"
           },
           "vocals": {
             "additionalProperties": true,
@@ -45980,6 +46501,218 @@
         ]
       }
     },
+    "/api/v1/edits": {
+      "get": {
+        "operationId": "list_track_edits_api_v1_edits_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "source_track_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Source Track Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RowsOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Track Edits",
+        "tags": [
+          "library-edits"
+        ]
+      },
+      "post": {
+        "operationId": "create_track_edit_api_v1_edits_post",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "X-Undo-Session",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "X-Undo-Session",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/EditCreateIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WriteOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Create Track Edit",
+        "tags": [
+          "library-edits"
+        ]
+      }
+    },
+    "/api/v1/edits/{edit_id}": {
+      "delete": {
+        "operationId": "delete_track_edit_api_v1_edits__edit_id__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "edit_id",
+            "required": true,
+            "schema": {
+              "title": "Edit Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "X-Undo-Session",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "X-Undo-Session",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DeleteOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Delete Track Edit",
+        "tags": [
+          "library-edits"
+        ]
+      },
+      "patch": {
+        "operationId": "update_track_edit_api_v1_edits__edit_id__patch",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "edit_id",
+            "required": true,
+            "schema": {
+              "title": "Edit Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "X-Undo-Session",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "X-Undo-Session",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/EditUpdateIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WriteOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Update Track Edit",
+        "tags": [
+          "library-edits"
+        ]
+      }
+    },
     "/api/v1/energy/backfill/collect": {
       "post": {
         "operationId": "backfill_collect_api_v1_energy_backfill_collect_post",
@@ -52693,6 +53426,48 @@
         "summary": "List Deleted Playlists",
         "tags": [
           "playlists"
+        ]
+      }
+    },
+    "/api/v1/playlists/import": {
+      "post": {
+        "description": "DJIMPORT-10225: an M3U/M3U8 file becomes a new playlist, matched to the collection by file path.\n\nTracks keep file order; a path listed twice is added once. Unmatched paths are reported. A file\nwith no match creates nothing and answers 422 with the unmatched count.",
+        "operationId": "import_m3u_playlist_api_v1_playlists_import_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PlaylistImportIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PlaylistImportOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Import M3U Playlist",
+        "tags": [
+          "playlists-write"
         ]
       }
     },

@@ -50,6 +50,8 @@ const BRAND_SURFACES = [
 	['lib/components/rb/PlaylistFolderDupModal.svelte', '.m-title'],
 	// DECKUX-40 (the maintainer, Tue 6 Oct 2026): "deck number being large and obvious ... in opendj font".
 	['lib/components/rb/wave/WaveGutterView.svelte', '.deck-num'],
+	// ARTNUM-9649b (#8404 spec): the deck number over artwork is Anybody 800, like the gutter number.
+	['lib/components/rb/ArtworkDeckNumber.svelte', '.deck-num-art'],
 	// BACKSTAGE-6529b (the maintainer, Tue 13 Oct 2026): the Backstage sidebar wordmark and its section label.
 	['lib/shell/BackstageNav.svelte', '.brand'],
 	['lib/shell/BackstageNav.svelte', '.bs-label']

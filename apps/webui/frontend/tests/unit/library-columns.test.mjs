@@ -27,12 +27,7 @@ let widths;
 
 before(async () => {
 	cols = await loadTypeScriptModule('src/lib/rb/library-columns.ts');
-	globalThis.$derived = (value) => value;
-	try {
-		support = await loadTypeScriptModule('src/lib/components/rb/browser/track-table-support.ts');
-	} finally {
-		delete globalThis.$derived;
-	}
+	support = await loadTypeScriptModule('src/lib/components/rb/browser/track-table-support.ts');
 	widths = await loadTypeScriptModule('src/lib/rb/library-column-widths.ts');
 });
 

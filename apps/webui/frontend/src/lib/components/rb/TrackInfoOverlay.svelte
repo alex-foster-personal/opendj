@@ -13,11 +13,19 @@
 	import { fetchTrackPlays } from '$lib/plays/play-counter';
 	import type { DeckId } from '$lib/rb/deck-id';
 	import { gridProvenanceFor, requestGridProvenance } from '$lib/rb/grid-provenance.svelte';
-	import { libraryGridProvenance, usbGridProvenance, type GridProvenanceRow } from '$lib/rb/grid-provenance';
+	import {
+		libraryGridProvenance,
+		usbGridProvenance,
+		type GridProvenanceRow
+	} from '$lib/rb/grid-provenance';
 	import { isUsbTrackId } from '$lib/rb/track-source';
 	import { trackInfoRows, type TrackInfoRow } from '$lib/rb/track-info';
 
-	let { deckId, stableId, onclose }: { deckId: DeckId; stableId: string; onclose: () => void } = $props();
+	let {
+		deckId,
+		stableId,
+		onclose
+	}: { deckId: DeckId | null; stableId: string; onclose: () => void } = $props();
 
 	type Load =
 		| { state: 'loading' }
@@ -56,7 +64,7 @@
 
 	const grid = $derived<GridProvenanceRow>(
 		isUsbTrackId(stableId)
-			? usbGridProvenance(stableId, deckStates[deckId])
+			? usbGridProvenance(stableId, deckId !== null ? deckStates[deckId] : undefined)
 			: libraryGridProvenance(gridProvenanceFor(stableId))
 	);
 
@@ -82,25 +90,41 @@
 <div
 	class="track-info"
 	role="dialog"
-	aria-label={`Track information, deck ${deckId}`}
+	aria-label={deckId === null
+		? 'Track information, library row'
+		: `Track information, deck ${deckId}`}
 	data-testid="track-info-overlay"
 	tabindex="-1"
 	bind:this={panelEl}
 >
 	<header>
-		<span class="deck-chip" title={`The focused deck: deck ${deckId}`}>DECK {deckId}</span>
-		<h2 data-testid="track-info-title">{load.state === 'ready' ? load.title : 'Track information'}</h2>
-		<button type="button" class="close" aria-label="Close track information" onclick={onclose}>x</button>
+		{#if deckId === null}
+			<span class="deck-chip" title="Opened from a library or browser row, not a loaded deck"
+				>LIBRARY</span
+			>
+		{:else}
+			<span class="deck-chip" title={`The focused deck: deck ${deckId}`}>DECK {deckId}</span>
+		{/if}
+		<h2 data-testid="track-info-title">
+			{load.state === 'ready' ? load.title : 'Track information'}
+		</h2>
+		<button type="button" class="close" aria-label="Close track information" onclick={onclose}
+			>x</button
+		>
 	</header>
 	{#if load.state === 'loading'}
 		<p class="status">Loading the track record...</p>
 	{:else if load.state === 'error'}
-		<p class="status error" data-testid="track-info-error">Could not read this track: {load.message}</p>
+		<p class="status error" data-testid="track-info-error">
+			Could not read this track: {load.message}
+		</p>
 	{:else}
 		<dl data-testid="track-info-rows">
 			{#each load.rows as row (row.label)}
 				<dt>{row.label}</dt>
-				<dd title={row.provenance ?? `${row.label}: no provenance stored for this field`}>{row.value}</dd>
+				<dd title={row.provenance ?? `${row.label}: no provenance stored for this field`}>
+					{row.value}
+				</dd>
 			{/each}
 			<dt>Beatgrid</dt>
 			<dd data-testid="track-info-grid" title={grid.title}>{grid.value}</dd>

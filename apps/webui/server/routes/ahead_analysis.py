@@ -16,13 +16,15 @@ An engine that never armed the drain answers 503 AHEAD_ANALYSIS_NOT_ARMED.
 """
 from __future__ import annotations
 
+from collections.abc import Callable
 from typing import Any
 
-from fastapi import APIRouter, Header, HTTPException, Request
+from fastapi import APIRouter, Header, Request
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, ConfigDict, Field
 
 from apps.webui.server.ahead_analysis import AheadDrain
+from apps.webui.server.routes.armed_service import armed_service
 from apps.webui.server.routes.state import LEASE_HEADER, live_mirror_lease
 
 router = APIRouter(prefix="/ahead-analysis", tags=["ahead-analysis"])
@@ -31,14 +33,11 @@ MOUNT_UNDER_API_PREFIX = True
 NOT_ARMED_CODE: str = "AHEAD_ANALYSIS_NOT_ARMED"
 
 
-def _drain(request: Request) -> AheadDrain:
-    drain = getattr(request.app.state, "ahead_analysis", None)
-    if drain is None:
-        raise HTTPException(
-            status_code=503,
-            detail={"code": NOT_ARMED_CODE, "message": "the ahead-analysis drain is not running here"},
-        )
-    return drain
+_drain: Callable[[Request], AheadDrain] = armed_service(
+    "ahead_analysis",
+    code=NOT_ARMED_CODE,
+    message="the ahead-analysis drain is not running here",
+)
 
 
 @router.get("/coverage")

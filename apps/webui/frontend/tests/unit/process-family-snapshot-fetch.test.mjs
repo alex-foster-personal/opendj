@@ -508,10 +508,13 @@ test('a slow walk is not counted twice: the probe ages on from the response, the
 		assert.equal(past.members.filter((m) => m.fromProbe).length, 0);
 		assert.equal(past.probeStale, true);
 
-		// The walk's own expiry stays on the request start (conservative): just
-		// past 30 s from it, nothing is current, though only about 26 s have
-		// passed since the answer.
-		assert.equal(mod.readFreshProcessFamilySnapshot(30_000, before + 30_001), null);
+		// The walk's own expiry stays on the request start (conservative): 1 s
+		// past 30 s from it, nothing is current, though only about 27 s have
+		// passed since the answer (the request took at least 4 s, asserted above,
+		// so an expiry counted from the response would still show it). The 1 s
+		// margin absorbs a GC pause or preemption between `before` and the
+		// module's own request-start stamp on a loaded host; a 1 ms margin did not.
+		assert.equal(mod.readFreshProcessFamilySnapshot(30_000, before + 31_000), null);
 		assert.notEqual(mod.readFreshProcessFamilySnapshot(30_000, before + 29_000), null);
 	} finally {
 		await control('POST', '/test/probe/captured');

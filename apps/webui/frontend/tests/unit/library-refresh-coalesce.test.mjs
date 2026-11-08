@@ -246,10 +246,8 @@ test('BrowserPanel routes its bus-driven refresh through that gate', () => {
 
 test('_refreshLibraryRowsOnce logs library-refresh failures unless the error is a transient abort', () => {
 	const source = readFileSync(BROWSER_PANEL, 'utf8');
-	const refreshFn = source.match(
-		/async function _refreshLibraryRowsOnce\(\): Promise<void> \{[\s\S]*?\n\t\}/
-	)?.[0];
-	assert.ok(refreshFn, '_refreshLibraryRowsOnce body');
+	const refreshFn = source.match(/async function _refreshCountAndPanes\(\): Promise<boolean> \{[\s\S]*?\n\t\}/)?.[0];
+	assert.ok(refreshFn, '_refreshCountAndPanes body');
 	assert.match(
 		refreshFn,
 		/if \(!isTransientNetworkError\(String\(exc\)\)\) \{[\s\S]*\[library-refresh\] track count refresh failed:/

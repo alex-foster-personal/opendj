@@ -4,9 +4,10 @@ import { before, test } from 'node:test';
 import { loadTypeScriptModule } from './load-typescript.mjs';
 
 let ScopedCommandScheduler;
+let isScopedCommandInvalidated;
 
 before(async () => {
-	({ ScopedCommandScheduler } = await loadTypeScriptModule(
+	({ ScopedCommandScheduler, isScopedCommandInvalidated } = await loadTypeScriptModule(
 		'src/lib/rb/performance-command-scheduler.ts'
 	));
 });
@@ -274,4 +275,159 @@ test('session invalidation rejects queued load and play before execution without
 	predecessorGate.resolve();
 	await Promise.all([predecessor, loadRejected, playRejected]);
 	assert.deepEqual(invoked, ['predecessor', 'new-session-load']);
+});
+
+test('a deferred all-idle claim does not reserve sync behind a slow deck load (PRRT_kwDOSEvNd860mzuu)', async () => {
+	const scheduler = new ScopedCommandScheduler();
+	const loadGate = deferred();
+	const started = [];
+
+	const load = scheduler.run([1], async () => {
+		started.push('load');
+		await loadGate.promise;
+		started.push('load-end');
+	});
+	const retire = scheduler.runWhenAllIdle([1, 4, 'sync'], async () => {
+		started.push('retire');
+	});
+	const play = scheduler.run([2, 'sync'], async () => {
+		started.push('play');
+	});
+
+	await new Promise((resolve) => setImmediate(resolve));
+	assert.deepEqual(
+		started,
+		['load', 'play'],
+		'play must run while load is pending; retire must not reserve sync'
+	);
+
+	loadGate.resolve();
+	await Promise.all([load, retire]);
+	assert.ok(
+		started.indexOf('retire') > started.indexOf('load-end'),
+		'retire runs after load completes'
+	);
+
+	// Control: plain run on [1, 4, sync] would block play on deck 2 behind the load.
+	const scheduler2 = new ScopedCommandScheduler();
+	const loadGate2 = deferred();
+	const started2 = [];
+	const load2 = scheduler2.run([1], async () => {
+		started2.push('load');
+		await loadGate2.promise;
+	});
+	const blockingRetire = scheduler2.run([1, 4, 'sync'], async () => {
+		started2.push('retire');
+	});
+	const play2 = scheduler2.run([2, 'sync'], async () => {
+		started2.push('play');
+	});
+	await new Promise((resolve) => setImmediate(resolve));
+	assert.deepEqual(started2, ['load'], 'with run(), play must not start before load ends');
+	loadGate2.resolve();
+	await Promise.all([load2, blockingRetire, play2]);
+	assert.deepEqual(started2, ['load', 'retire', 'play']);
+});
+
+test('a deferred claim on idle scopes claims synchronously and later commands queue behind it', async () => {
+	const scheduler = new ScopedCommandScheduler();
+	const gate = deferred();
+	const started = [];
+	const deferredClaim = scheduler.runWhenAllIdle([1, 'sync'], async () => {
+		started.push('deferred-start');
+		await gate.promise;
+		started.push('deferred-end');
+	});
+	await new Promise((resolve) => setImmediate(resolve));
+	assert.deepEqual(started, ['deferred-start'], 'idle scheduler claims synchronously');
+
+	const late = scheduler.run([1], async () => {
+		started.push('late');
+	});
+	await new Promise((resolve) => setImmediate(resolve));
+	assert.deepEqual(
+		started,
+		['deferred-start'],
+		'late must not start until deferred releases scope 1'
+	);
+
+	gate.resolve();
+	await Promise.all([deferredClaim, late]);
+	assert.deepEqual(started, ['deferred-start', 'deferred-end', 'late']);
+});
+
+test('a deferred claim re-waits when a scope is taken while it waits', async () => {
+	const scheduler = new ScopedCommandScheduler();
+	const loadGate = deferred();
+	const syncGate = deferred();
+	const started = [];
+
+	const load = scheduler.run([1], async () => {
+		started.push('load');
+		await loadGate.promise;
+		started.push('load-end');
+	});
+	const idleClaim = scheduler.runWhenAllIdle([1, 'sync'], async () => {
+		started.push('deferred');
+	});
+	const syncHold = scheduler.run(['sync'], async () => {
+		started.push('sync-hold');
+		await syncGate.promise;
+		started.push('sync-release');
+	});
+
+	await new Promise((resolve) => setImmediate(resolve));
+	assert.deepEqual(started, ['load', 'sync-hold']);
+
+	loadGate.resolve();
+	await load;
+	await new Promise((resolve) => setImmediate(resolve));
+	assert.equal(
+		started.includes('deferred'),
+		false,
+		'deferred must wait while sync-hold occupies sync'
+	);
+
+	syncGate.resolve();
+	await Promise.all([idleClaim, syncHold]);
+	assert.ok(started.includes('deferred'));
+	const deferredAt = started.indexOf('deferred');
+	const syncReleaseAt = started.indexOf('sync-release');
+	assert.ok(deferredAt > syncReleaseAt, 'deferred must run only after sync scope is free');
+});
+
+test('invalidation while a deferred claim waits rejects it before it runs', async () => {
+	const scheduler = new ScopedCommandScheduler();
+	const loadGate = deferred();
+	let cmdInvoked = false;
+
+	const load = scheduler.run([1], async () => {
+		await loadGate.promise;
+	});
+	const idleClaim = scheduler.runWhenAllIdle([1, 'sync'], async () => {
+		cmdInvoked = true;
+	});
+	await new Promise((resolve) => setImmediate(resolve));
+	scheduler.invalidateQueued('performance route session ended');
+	loadGate.resolve();
+	const err = await idleClaim.catch((e) => e);
+	await load;
+	assert.equal(cmdInvoked, false);
+	assert.match(String(err), /performance route session ended/i);
+	assert.equal(isScopedCommandInvalidated(err), true);
+});
+
+test('a deferred claim rejects empty and duplicate scopes without running', async () => {
+	const scheduler = new ScopedCommandScheduler();
+	let calls = 0;
+
+	await assert.rejects(
+		scheduler.runWhenAllIdle([], async () => calls++),
+		/at least one scope/i
+	);
+	await assert.rejects(
+		scheduler.runWhenAllIdle([1, 1], async () => calls++),
+		/duplicate scope/i
+	);
+	assert.equal(calls, 0);
 });

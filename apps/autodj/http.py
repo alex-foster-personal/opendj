@@ -17,6 +17,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 from apps.autodj import try_picks
+from apps.autodj.try_picks import TRY_PICKS_SCHEMA_SOURCE
 
 if TYPE_CHECKING:
     from apps.autodj.composition import (
@@ -89,9 +90,6 @@ if TYPE_CHECKING:
         window_at,
         with_in_track,
     )
-
-# The file the schema-drift scan classifies, and this package's DDL entry point beside it.
-TRY_PICKS_SCHEMA_SOURCE = "apps/autodj/try_picks.py"
 
 __all__ = [
     "ANCHOR_LEAD_BARS",

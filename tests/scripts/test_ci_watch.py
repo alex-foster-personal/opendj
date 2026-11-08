@@ -17,6 +17,9 @@ Regression lines:
 from __future__ import annotations
 
 import inspect
+import os
+import subprocess
+from pathlib import Path
 
 import pytest
 
@@ -25,7 +28,6 @@ from scripts.ci_failure_ids import JobVerdict
 from scripts.ci_main_red import LogUnreadable, MainRed
 from scripts.ci_wait_core import WaitStatus, poll_until_terminal
 from scripts.ci_watch import Exit, FailureWatch, exit_for
-from scripts.review_gh import TriageError
 
 pytestmark = pytest.mark.requirement("OPS-16")
 
@@ -320,9 +322,8 @@ def test_a_baseline_the_pull_request_advanced_past_ends_the_watch_unknown_not_kn
     `classify_job` and absent from `exit_for`'s unmeasured tuple is a rule nobody applies --
     that exact gap was found by mutation on this module earlier and is why this exists.
 
-    Issue #3344: staleness is now about the PULL REQUEST's own merge base, not main's live
-    tip -- `advanced_past` stands in for `git merge-base --is-ancestor measured_sha
-    pr_head_sha`, and answering True here is what used to require comparing against main_sha."""
+    Issue #3344/#3388: staleness is the PULL REQUEST's merge base with main, not whether the
+    head contains the measured commit -- `advanced_past` is the merge-base predicate."""
     lines: list[str] = []
     log = (
         "2026-09-16T09:44:38Z ##[group]Run uv run pytest\n"
@@ -343,7 +344,7 @@ def test_a_baseline_the_pull_request_advanced_past_ends_the_watch_unknown_not_kn
         emit=lines.append,
         clock=lambda: 0.0,
         pr_head_sha="p" * 40,
-        advanced_past=lambda _measured, _pr: True,
+        advanced_past=lambda _measured, _pr, _main: True,
     )
     watch.inspect(_snapshot(_check(7, "pytest fast lane (shard 1 of 5)")))
     assert watch.verdicts[7].verdict is JobVerdict.BASELINE_STALE
@@ -379,7 +380,7 @@ def test_only_the_commit_the_pull_request_advanced_past_makes_its_own_identities
         emit=lines.append,
         clock=lambda: 0.0,
         pr_head_sha="p" * 40,
-        advanced_past=lambda measured, _pr: measured == "o" * 40,
+        advanced_past=lambda measured, _pr, _main: measured == "o" * 40,
     )
     watch.inspect(_snapshot(_check(7, "pytest fast lane (shard 1 of 5)")))
     assert watch.verdicts[7].verdict is JobVerdict.BASELINE_STALE
@@ -409,36 +410,106 @@ def test_a_baseline_the_pull_request_has_not_advanced_past_is_not_stale():
         emit=lines.append,
         clock=lambda: 0.0,
         pr_head_sha="p" * 40,
-        advanced_past=lambda _measured, _pr: False,
+        advanced_past=lambda _measured, _pr, _main: False,
     )
     watch.inspect(_snapshot(_check(7, "pytest fast lane (shard 1 of 5)")))
     assert watch.verdicts[7].verdict is JobVerdict.KNOWN_RED
 
 
-# ----- the real advanced_past seam (issue #3344) -----
+# ----- the real advanced_past seam (issues #3344, #3388) -----
+
+_HUMAN = ("Dev", "dev@example.com")
 
 
-def test_advanced_past_reports_true_when_the_pull_request_contains_the_measured_commit(
-    monkeypatch,
-):
-    monkeypatch.setattr(ci_watch, "fetch_commits", lambda root, *shas: None)
-    monkeypatch.setattr(ci_watch, "is_ancestor", lambda root, ancestor, descendant: True)
-    assert ci_watch._advanced_past("c" * 40, "d" * 40) is True
+def _git_in(repo: Path, *args: str, when: str = "") -> str:
+    env = {
+        **os.environ,
+        "GIT_AUTHOR_NAME": _HUMAN[0],
+        "GIT_AUTHOR_EMAIL": _HUMAN[1],
+        "GIT_COMMITTER_NAME": "GitHub",
+        "GIT_COMMITTER_EMAIL": "committer@example.com",
+        "GIT_CONFIG_GLOBAL": os.devnull,
+        "GIT_CONFIG_NOSYSTEM": "1",
+    }
+    if when:
+        env["GIT_AUTHOR_DATE"] = env["GIT_COMMITTER_DATE"] = when
+    proc = subprocess.run(
+        ["git", "-C", str(repo), *args],
+        env=env,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert proc.returncode == 0, proc.stderr
+    return proc.stdout.strip()
 
 
-def test_advanced_past_reports_false_when_the_pull_request_does_not_contain_it(monkeypatch):
-    monkeypatch.setattr(ci_watch, "fetch_commits", lambda root, *shas: None)
-    monkeypatch.setattr(ci_watch, "is_ancestor", lambda root, ancestor, descendant: False)
-    assert ci_watch._advanced_past("c" * 40, "d" * 40) is False
+def _commit_in(repo: Path, name: str, subject: str, *, when: str = "2026-10-02T10:00:00Z") -> str:
+    (repo / name).write_text(subject, encoding="utf-8")
+    _git_in(repo, "add", name)
+    _git_in(repo, "commit", "-q", "-m", subject, when=when)
+    return _git_in(repo, "rev-parse", "HEAD")
 
 
-def test_advanced_past_fails_closed_on_an_undeterminable_ancestry(monkeypatch):
+def _history(tmp_path: Path) -> tuple[Path, dict[str, str]]:
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    _git_in(repo, "init", "-q", "-b", "main", when="2026-10-01T10:00:00Z")
+    r = _commit_in(repo, "r.txt", "R", when="2026-10-01T11:00:00Z")
+    b = _commit_in(repo, "b.txt", "B", when="2026-10-01T12:00:00Z")
+    c = _commit_in(repo, "c.txt", "C", when="2026-10-01T13:00:00Z")
+    d = _commit_in(repo, "d.txt", "D", when="2026-10-01T14:00:00Z")
+    _git_in(repo, "checkout", "-b", "ahead")
+    p_ahead = _commit_in(repo, "ahead.txt", "ahead", when="2026-10-01T15:00:00Z")
+    _git_in(repo, "checkout", "main")
+    _git_in(repo, "checkout", "-b", "behind", b)
+    p_behind = _commit_in(repo, "behind.txt", "behind", when="2026-10-01T16:00:00Z")
+    _git_in(repo, "checkout", "main")
+    _git_in(repo, "checkout", "-b", "diverged", c)
+    _commit_in(repo, "p1.txt", "p1", when="2026-10-01T17:00:00Z")
+    p_diverged = _commit_in(repo, "p2.txt", "p2", when="2026-10-01T18:00:00Z")
+    _git_in(repo, "checkout", "main")
+    _git_in(repo, "checkout", "-b", "at_c", c)
+    p_at_c = _commit_in(repo, "atc.txt", "at_c", when="2026-10-01T19:00:00Z")
+    _git_in(repo, "checkout", "main")
+    shas = {
+        "r": r,
+        "b": b,
+        "c": c,
+        "d": d,
+        "ahead": p_ahead,
+        "behind": p_behind,
+        "diverged": p_diverged,
+        "at_c": p_at_c,
+    }
+    return repo, shas
+
+
+@pytest.mark.requirement("OPS-39")
+@pytest.mark.parametrize(
+    ("pr_key", "main_key", "expected"),
+    [
+        pytest.param("ahead", "d", True, id="ahead"),
+        pytest.param("behind", "d", False, id="behind"),
+        pytest.param("diverged", "d", False, id="diverged"),
+        pytest.param("at_c", "c", False, id="branched_at_c_main_unmoved"),
+    ],
+)
+def test_advanced_past_uses_merge_base_not_pr_head_ancestry(tmp_path: Path, pr_key: str, main_key: str, expected: bool):
+    """[if] the merge base is at or before C [then] C still excuses, [else stop].
+
+    The diverged row is the #3388 regression: old head-ancestry read stale when the PR
+    branched at C and main moved to D."""
+    repo, shas = _history(tmp_path)
+    measured = shas["c"]
+    main_head = shas[main_key]
+    pr_head = shas[pr_key]
+    assert ci_watch._advanced_past(measured, pr_head, main_head, root=repo) is expected
+
+
+def test_advanced_past_fails_closed_when_commits_cannot_be_fetched(tmp_path: Path):
     """Issue #3344's own seam contract: an ancestry check that could not be answered must
     read as advanced-past, never as fresh, or a git failure would silently reopen the excuse
     this whole mechanism exists to close."""
-
-    def _raise(*_args, **_kwargs):
-        raise TriageError("git fetch failed")
-
-    monkeypatch.setattr(ci_watch, "fetch_commits", _raise)
-    assert ci_watch._advanced_past("c" * 40, "d" * 40) is True
+    repo, shas = _history(tmp_path)
+    assert ci_watch._advanced_past("f" * 40, shas["diverged"], shas["d"], root=repo) is True

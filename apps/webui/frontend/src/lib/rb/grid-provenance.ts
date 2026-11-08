@@ -128,7 +128,18 @@ export interface UsbGridDeck {
  * While the deck holds no ANLZ for this exact track the row says
  * unavailable and why, never a guess.
  */
-export function usbGridProvenance(stableId: string, deck: UsbGridDeck): GridProvenanceRow {
+export function usbGridProvenance(
+	stableId: string,
+	deck: UsbGridDeck | undefined
+): GridProvenanceRow {
+	if (deck === undefined) {
+		return {
+			value: 'unavailable',
+			title:
+				"Grid source unavailable: this USB stick track's ANLZ has not loaded on the deck yet. " +
+				'The library grid-provenance read does not cover stick tracks, so it is not asked.'
+		};
+	}
 	const onDeck = deck.stable_id === stableId;
 	if (onDeck && deck.anlz !== null && deck.anlz.stable_id === stableId) {
 		if (deck.anlz.beatgrid_source !== 'rekordbox') {

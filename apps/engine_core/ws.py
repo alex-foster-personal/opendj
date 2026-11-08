@@ -76,6 +76,7 @@ LIBRARY_CHANGED_KINDS: tuple[str, ...] = (
     "set_target",
     "undo",
     "source_flags",
+    "edits",
 )
 
 

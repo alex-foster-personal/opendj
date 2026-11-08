@@ -289,6 +289,14 @@ def _normalise_pitch_class_pair(value: Any) -> Key | _Missing:
 
 # ----------------------------------------------------------- numeric units
 
+# Shared scale table for kinds whose canonical unit is milliseconds.
+_MILLISECOND_FAMILY_UNITS: Final[dict[str, float]] = {
+    "milliseconds": 1.0,
+    "seconds": 1_000.0,
+    "samples_44100": 1_000.0 / 44_100.0,
+    "samples_48000": 1_000.0 / 48_000.0,
+}
+
 # unit -> multiplier onto the canonical unit for that kind.
 NUMERIC_UNITS: Final[dict[str, dict[str, float]]] = {
     "bpm": {"bpm": 1.0, "centi_bpm": 0.01, "milli_bpm": 0.001},
@@ -299,22 +307,12 @@ NUMERIC_UNITS: Final[dict[str, dict[str, float]]] = {
         "lufs_integrated": 1.0,
         "lufs_short_term": 1.0,
     },
-    "duration": {
-        "milliseconds": 1.0,
-        "seconds": 1_000.0,
-        "samples_44100": 1_000.0 / 44_100.0,
-        "samples_48000": 1_000.0 / 48_000.0,
-    },
+    "duration": dict(_MILLISECOND_FAMILY_UNITS),
     "rating": {"stars_0_5": 1.0},
     # A plain event count. Registered so a source-unique count field still
     # goes through a TOTAL normaliser rather than being trusted raw.
     "count": {"count": 1.0},
-    "time": {
-        "milliseconds": 1.0,
-        "seconds": 1_000.0,
-        "samples_44100": 1_000.0 / 44_100.0,
-        "samples_48000": 1_000.0 / 48_000.0,
-    },
+    "time": dict(_MILLISECOND_FAMILY_UNITS),
 }
 
 # A loudness number is only comparable to another number of the SAME family.

@@ -9,7 +9,7 @@ import subprocess
 import sys
 import tempfile
 import time
-from collections.abc import Iterable, Iterator
+from collections.abc import Callable, Iterable, Iterator
 from contextlib import contextmanager
 from pathlib import Path
 from unittest import mock
@@ -67,6 +67,7 @@ import socketserver
 class Handler(http.server.SimpleHTTPRequestHandler):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, directory={worktree_str!r}, **kwargs)
+socketserver.TCPServer.allow_reuse_address = True
 with socketserver.TCPServer(("127.0.0.1", {port}), Handler) as httpd:
     httpd.serve_forever()
 """
@@ -74,7 +75,8 @@ with socketserver.TCPServer(("127.0.0.1", {port}), Handler) as httpd:
         [sys.executable, "-c", server_code],
         cwd=worktree,
         stdout=subprocess.DEVNULL,
-        stderr=subprocess.DEVNULL,
+        stderr=subprocess.PIPE,
+        text=True,
     )
     deadline = time.monotonic() + 5.0
     while time.monotonic() < deadline:
@@ -85,8 +87,10 @@ with socketserver.TCPServer(("127.0.0.1", {port}), Handler) as httpd:
         time.sleep(0.05)
     else:
         proc.terminate()
+        err = proc.stderr.read() if proc.stderr is not None else ""
         proc.wait(timeout=5)
-        raise AssertionError(f"UI listener on port {port} did not start")
+        detail = f"; stderr: {err.strip()}" if err.strip() else ""
+        raise AssertionError(f"UI listener on port {port} did not start{detail}")
     try:
         yield
     finally:
@@ -104,7 +108,11 @@ def _write_env(root: Path, backend: int, frontend: int) -> None:
     )
 
 
-def _free_ports(count: int, exclude: Iterable[int] = ()) -> list[int]:
+def _free_ports(
+    count: int,
+    exclude: Iterable[int] = (),
+    socket_factory: Callable[..., socket.socket] = socket.socket,
+) -> list[int]:
     """Allocate `count` DISTINCT free ports, none of them in `exclude`.
 
     Every probe is held open until all of them are bound. Binding one socket,
@@ -133,13 +141,19 @@ def _free_ports(count: int, exclude: Iterable[int] = ()) -> list[int]:
     use" met "backend and frontend ports must be different" instead. A rejected
     probe is NOT closed before the batch finishes, so the kernel cannot offer
     the same excluded port twice and the loop terminates.
+
+    `socket_factory` lets the ordering tests observe ONLY this helper's probes.
+    Patching `socket.socket` process-wide also recorded a socket that another
+    thread opened and closed inside the window (main run 42478731366 at
+    97030a8c4f: `['bind', 'close', 'bind', 'close', 'close']`, one close too
+    many and no extra bind), which read as a released probe.
     """
     forbidden = set(exclude)
     probes: list[socket.socket] = []
     chosen: list[int] = []
     try:
         while len(chosen) < count:
-            probe = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            probe = socket_factory(socket.AF_INET, socket.SOCK_STREAM)
             probe.bind(("127.0.0.1", 0))
             probes.append(probe)
             port = int(probe.getsockname()[1])
@@ -182,8 +196,7 @@ def test_free_ports_holds_every_probe_open_until_all_are_bound() -> None:
             events.append("close")
             super().close()  # type: ignore[misc]
 
-    with mock.patch.object(socket, "socket", _Tracking):
-        ports = _free_ports(4)
+    ports = _free_ports(4, socket_factory=_Tracking)
 
     assert len(ports) == 4
     assert len(set(ports)) == 4, f"duplicate ports handed out: {sorted(ports)}"
@@ -237,8 +250,7 @@ def test_free_ports_rejects_a_probe_that_lands_on_an_excluded_port() -> None:
             events.append("close")
             super().close()  # type: ignore[misc]
 
-    with mock.patch.object(socket, "socket", _Racy):
-        ports = _free_ports(1, exclude=(held,))
+    ports = _free_ports(1, exclude=(held,), socket_factory=_Racy)
 
     assert reported == [held], "the emulated collision never fired"
     assert ports != [held], f"an excluded port was handed out: {ports}"

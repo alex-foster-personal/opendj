@@ -407,7 +407,7 @@ fn a_session_lets_go_of_a_track_no_deck_holds() {
     let d = temp_dir("session-pcm");
     write_wav(&d, "a.wav", 48000, &sine(48000, 220.0, 1.0));
     let mut load = odj_audio::offline::session_loader(d.clone());
-    let spec = |deck| LoadSpec { deck, path: "a.wav".into(), beats: vec![], bpm: None };
+    let spec = |deck| LoadSpec { deck, path: "a.wav".into(), beats: vec![], bpm: None, end_ms: None };
     let (a, b) = (load(&spec(1)).unwrap(), load(&spec(2)).unwrap());
     assert!(std::sync::Arc::ptr_eq(&a.pcm, &b.pcm), "a second load copied the samples");
     let samples = std::sync::Arc::downgrade(&a.pcm);
@@ -446,17 +446,17 @@ fn loads_of_one_file_share_its_samples() {
     let d = temp_dir("shared-pcm");
     write_wav(&d, "a.wav", 48000, &sine(48000, 220.0, 1.0));
     let mut load = odj_audio::offline::file_loader_at(d.clone(), Some(48000));
-    let spec = |deck| odj_audio::protocol::LoadSpec { deck, path: "a.wav".into(), beats: vec![], bpm: None };
+    let spec = |deck| odj_audio::protocol::LoadSpec { deck, path: "a.wav".into(), beats: vec![], bpm: None, end_ms: None };
     let (a, b) = (load(&spec(1), u64::MAX).unwrap(), load(&spec(2), u64::MAX).unwrap());
     assert!(std::sync::Arc::ptr_eq(&a.pcm, &b.pcm), "a second load copied the samples");
     // Control: a different file gets its own samples.
     write_wav(&d, "b.wav", 48000, &sine(48000, 330.0, 1.0));
-    let c = load(&odj_audio::protocol::LoadSpec { deck: 3, path: "b.wav".into(), beats: vec![], bpm: None }, u64::MAX).unwrap();
+    let c = load(&odj_audio::protocol::LoadSpec { deck: 3, path: "b.wav".into(), beats: vec![], bpm: None, end_ms: None }, u64::MAX).unwrap();
     assert!(!std::sync::Arc::ptr_eq(&a.pcm, &c.pcm));
     // Codex's case: the same file spelled another way, or through a
     // symlink, is the same file and shares its samples too.
     std::fs::create_dir_all(d.join("sub")).unwrap();
-    let alias = |path: &str| odj_audio::protocol::LoadSpec { deck: 1, path: path.into(), beats: vec![], bpm: None };
+    let alias = |path: &str| odj_audio::protocol::LoadSpec { deck: 1, path: path.into(), beats: vec![], bpm: None, end_ms: None };
     let via_dotdot = load(&alias("sub/../a.wav"), u64::MAX).unwrap();
     assert!(std::sync::Arc::ptr_eq(&a.pcm, &via_dotdot.pcm), "sub/../a.wav decoded again");
     #[cfg(unix)]
@@ -481,7 +481,7 @@ fn a_hard_link_is_the_file_it_links_to() {
     }
     std::fs::hard_link(d.join("a.wav"), d.join("hard.wav")).unwrap();
     std::fs::copy(d.join("a.wav"), d.join("copy.wav")).unwrap();
-    let spec = |path: &str| LoadSpec { deck: 1, path: path.into(), beats: vec![], bpm: None };
+    let spec = |path: &str| LoadSpec { deck: 1, path: path.into(), beats: vec![], bpm: None, end_ms: None };
     let mut offline = odj_audio::offline::file_loader(d.clone());
     let a = offline(&spec("a.wav"), u64::MAX).unwrap();
     // The link shares the samples even with no room left, as a cached file does.
@@ -581,7 +581,7 @@ fn a_hard_link_is_the_file_it_links_to() {
 fn a_file_longer_than_the_room_left_stops_decoding_there() {
     let d = temp_dir("room");
     write_wav(&d, "a.wav", 48000, &sine(48000, 220.0, 1.0));
-    let spec = LoadSpec { deck: 1, path: "a.wav".into(), beats: vec![], bpm: None };
+    let spec = LoadSpec { deck: 1, path: "a.wav".into(), beats: vec![], bpm: None, end_ms: None };
     let e = odj_audio::offline::file_loader(d.clone())(&spec, 47999).unwrap_err();
     assert!(e.message.contains("past the 47999 frames left"), "{}", e.message);
     // Control: exactly enough room loads the whole file.

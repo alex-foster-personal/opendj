@@ -54,7 +54,7 @@ fn a_load_holds_one_copy_of_the_samples() {
     let d = temp_dir("load-peak");
     // 20 s at 48 kHz: 1.92 M samples, 7.7 MB as f32.
     write_wav(&d, "a.wav", 48000, &sine(48000, 220.0, 20.0));
-    let spec = LoadSpec { deck: 1, path: "a.wav".into(), beats: vec![], bpm: None };
+    let spec = LoadSpec { deck: 1, path: "a.wav".into(), beats: vec![], bpm: None, end_ms: None };
     // Decoder state, file buffers and the like, beside the samples.
     let slack = 2 << 20;
     type Load<'a> = Box<dyn FnMut() -> std::sync::Arc<odj_audio::deck::Track> + 'a>;

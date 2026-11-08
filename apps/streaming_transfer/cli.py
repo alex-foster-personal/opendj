@@ -4,11 +4,13 @@ Requirements:
 ✔︎ ✅ 🎯 Source and target are explicit in the command name.
 ✔︎ ✅ 🎯 Dry-run and live modes are mutually exclusive and mandatory.
 ✔︎ ✅ 🎯 Live writes require both risk acknowledgement and source-id confirmation.
-✔︎ ✅ 🎯 The full three-bucket report is written atomically as JSON.
+✔︎ ✅ 🎯 The full three-bucket report is written atomically as JSON, created exclusively unless --overwrite.
+✔︎ ✅ 🎯 A live run with no surviving matches still writes its report and creates no playlist.
 
 - if live mode lacks either safety acknowledgement then provider IO is broken
 - if the output already exists without --overwrite then evidence preservation is broken
 - if an API credential is absent then the command must fail before provider IO
+- if a concurrent run creates the output after the pre-check then it must not be clobbered
 """
 
 from __future__ import annotations
@@ -72,7 +74,11 @@ def _build_parser() -> argparse.ArgumentParser:
     mode.add_argument("--live", action="store_true", help="create the matched SoundCloud playlist")
     transfer.add_argument("--i-understand-the-risks", action="store_true", help="required with --live")
     transfer.add_argument("--confirm-playlist-id", help="required with --live; must equal the Spotify id")
-    transfer.add_argument("--overwrite", action="store_true", help="atomically replace an existing report")
+    transfer.add_argument(
+        "--overwrite",
+        action="store_true",
+        help="replace an existing report (atomic swap); without it the report is created exclusively",
+    )
     return parser
 
 
@@ -92,7 +98,7 @@ def _validate_safety(args: argparse.Namespace, playlist_id: str) -> str | None:
     return None
 
 
-def _write_report(path: Path, payload: dict[str, object]) -> None:
+def _write_report(path: Path, payload: dict[str, object], *, overwrite: bool) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     encoded = json.dumps(payload, indent=2, sort_keys=True, ensure_ascii=False) + "\n"
     descriptor, temporary_name = tempfile.mkstemp(
@@ -101,14 +107,20 @@ def _write_report(path: Path, payload: dict[str, object]) -> None:
         dir=path.parent,
     )
     temporary = Path(temporary_name)
+    reserved = False
     try:
         with os.fdopen(descriptor, "w", encoding="utf-8", newline="") as handle:
             handle.write(encoded)
             handle.flush()
             os.fsync(handle.fileno())
+        if not overwrite:
+            os.close(os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o644))
+            reserved = True
         os.replace(temporary, path)
     except BaseException:
         temporary.unlink(missing_ok=True)
+        if reserved:
+            path.unlink(missing_ok=True)
         raise
 
 
@@ -157,10 +169,22 @@ def _run_spotify_to_soundcloud(args: argparse.Namespace) -> int:
         soundcloud.close()
 
     payload = report.as_dict()
-    _write_report(args.output, payload)
+    try:
+        _write_report(args.output, payload, overwrite=args.overwrite)
+    except FileExistsError:
+        message = f"output exists; pass --overwrite to replace it: {args.output}"
+        if report.target_playlist_id is not None:
+            message += f" (live playlist {report.target_playlist_id} was created; report not written)"
+        print(f"ERROR: {message}", file=sys.stderr)
+        return EXIT_SAFETY
     buckets = payload["buckets"]
     if not isinstance(buckets, dict):
         raise TransferContractError("report buckets are not an object")
+    if args.live and report.target_playlist_id is None:
+        print(
+            "WARNING: no tracks matched; live run created no SoundCloud playlist",
+            file=sys.stderr,
+        )
     print(
         f"report={args.output} matched={len(buckets['matched'])} "
         f"unmatched={len(buckets['unmatched'])} "

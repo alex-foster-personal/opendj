@@ -60,6 +60,10 @@ export interface _DeckRuntime {
 	reanchorOperationGeneration: number;
 	/** When set, equals the generation of the ramp that owns `transport_pending`. */
 	reanchorRampOwnerGeneration: number | null;
+	/** Monotonic token guarding live key-shift ramp tails from superseding shifts. */
+	keyShiftRampGeneration: number;
+	/** Integer public target while DSP schedules carry fractional ramp samples. */
+	keyShiftRampTargetSemitones: number | null;
 	/**
 	 * LAZY-STEMS. A fully built AlignedStemDeckProcessor waiting for the deck to
 	 * be replaceable, held here because the engine forbids swapping a deck's
@@ -112,6 +116,8 @@ export function _emptyRuntime(): _DeckRuntime {
 		metadataDurationMs: null,
 		reanchorOperationGeneration: 0,
 		reanchorRampOwnerGeneration: null,
+		keyShiftRampGeneration: 0,
+		keyShiftRampTargetSemitones: null,
 		pendingStemUpgrade: null,
 		heldNeutralStems: null
 	};

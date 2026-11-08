@@ -1,0 +1,9 @@
+{
+  "bytes": 1024,
+  "measured_main": 474490,
+  "measured_with_pr": 474771,
+  "sha": "1274f5f504",
+  "date": "Fri 6 Nov 2026",
+  "reason": "PR #9179 adds non-destructive virtual track edits (LIBEDIT-9179): the edit API client and its route-level callers in the deferred shell. Measured: CI bundle check of 1274f5f504, +281 B gzip; ceiled to KiB",
+  "payback": "none planned; virtual edits are a new library feature and these paths are its intended shape"
+}

@@ -142,6 +142,7 @@
 		Vocals
 	} from '$lib/rb/api-rb';
 	import type { DeckId, DeckLoadOptions } from '$lib/rb/deck-slots';
+	import { deckLoadEditWindow } from '$lib/rb/deck-load-edit-window';
 	import type { PlaylistNode, RbMeta } from '$lib/rb/library-types';
 	// Deck state remains engine-owned; real load interactions route through
 	// the same validated dispatcher exposed to browser agents.
@@ -334,6 +335,7 @@
 		PlaylistDragPayload,
 		SortKey
 	} from './browser/pane-contract.svelte';
+	import { runLibraryRefreshPass } from './browser/library-refresh-pass';
 	import LibraryNav from './browser/LibraryNav.svelte';
 	import {
 		fetchMissingTrackRows,
@@ -1888,7 +1890,20 @@
 	 * triggers. See the comment on that binding.
 	 */
 	async function _refreshLibraryRowsOnce(): Promise<void> {
-		await Promise.all([_loadIngestCoverage(), _loadReconcileSummary(), _refreshPlaylists()]);
+		await runLibraryRefreshPass({
+			sideLoads: [_loadIngestCoverage, _loadReconcileSummary, _refreshPlaylists],
+			refreshCountAndPanes: _refreshCountAndPanes,
+			retryBootPane: _retryStrandedBootPane,
+			onSideLoadError: (exc) => {
+				if (isPageGoingAway()) return;
+				if (!isTransientNetworkError(String(exc))) {
+					console.error(`[library-refresh] side read failed: ${String(exc)}`);
+				}
+			}
+		});
+	}
+
+	async function _refreshCountAndPanes(): Promise<boolean> {
 		try {
 			// `fresh` because this runs OFF a library-change event: a body
 			// shared from before that change would paint a stale count and
@@ -1904,7 +1919,7 @@
 			allTracksCount = healthRes.health.state_db.tracks;
 			_healthWriteEpoch += 1;
 		} catch (exc) {
-			if (isPageGoingAway()) return;
+			if (isPageGoingAway()) return false;
 			if (!isTransientNetworkError(String(exc))) {
 				console.error(`[library-refresh] track count refresh failed: ${String(exc)}`);
 			}
@@ -1943,7 +1958,7 @@
 				// must not rebuild it from playlist rows.
 				if (!(p === pane && wholeCollectionActive)) pruneSelection(p, result.rows);
 			} catch (exc) {
-				if (isPageGoingAway()) return;
+				if (isPageGoingAway()) return false;
 				if (!isTransientNetworkError(String(exc))) {
 					console.error(
 						`[library-refresh] pane ${requestedPlaylistId} refresh failed: ${String(exc)}`
@@ -1951,6 +1966,10 @@
 				}
 			}
 		}
+		return true;
+	}
+
+	async function _retryStrandedBootPane(): Promise<void> {
 		// A boot health read that joined an in-flight coalesced entry can settle
 		// with a snapshot from BEFORE a change this same trigger exists to react
 		// to (request-coalescer.ts's `forceInFlight: false` on the
@@ -2690,7 +2709,10 @@
 	// reuse this same dispatcher without depending on table-only fields
 	// (strip/rb_meta/revealed) it never has.
 
-	type LoadableRow = Pick<BrowserRow, 'stable_id' | 'file_exists' | 'is_streaming'> & {
+	type LoadableRow = Pick<
+		BrowserRow,
+		'stable_id' | 'file_exists' | 'is_streaming' | 'edit_id' | 'in_ms' | 'out_ms' | 'is_edit' | 'valid'
+	> & {
 		rb_meta?: BrowserRow['rb_meta'];
 		file_availability?: BrowserRow['file_availability'];
 		file_path?: string | null;
@@ -2781,6 +2803,10 @@
 			pane.playlist_id,
 			renderedRows.map((r) => ({
 				stable_id: r.stable_id,
+				...(r.edit_id == null ? {} : { edit_id: r.edit_id }),
+				...(r.in_ms == null ? {} : { in_ms: r.in_ms }),
+				...(r.out_ms == null ? {} : { out_ms: r.out_ms }),
+				...(r.is_edit === true ? { is_edit: true } : {}),
 				key: r.key,
 				bpm: r.bpm,
 				// Pending (null) is not playable yet; AutoPlay skips it like a
@@ -2984,6 +3010,12 @@
 				else pushToast(stickMsg, 'error', DECK_LOAD_ERROR_TOAST_MS);
 				return;
 			}
+			if (row.is_edit === true && row.valid === false) {
+				const message = 'cannot load: virtual edit out point exceeds the source duration';
+				if (deck !== null) recordDeckLoadRefusal(deck, message);
+				else pushToast(message, 'error', DECK_LOAD_ERROR_TOAST_MS);
+				return;
+			}
 			// OFFLOAD: an offloaded track is downloaded first by the shared load hook
 			// (ensureLocalBeforeLoad in dispatchPerformanceCommand), never refused as missing.
 			const offloaded = rowIsOffloaded(row);
@@ -3067,7 +3099,8 @@
 					deck: target,
 					stable_id: row.stable_id,
 					refuseIfMaster: true,
-					...(keyShift !== 0 ? { key_shift: keyShift } : {})
+					...(keyShift !== 0 ? { key_shift: keyShift } : {}),
+					...deckLoadEditWindow(row)
 				});
 				deckLoadTick += 1;
 				deckLoadSeq = { ...deckLoadSeq, [target]: deckLoadTick };
@@ -4220,6 +4253,7 @@
 			onopeneditmodal={(kind) => void openEditModal(kind)}
 			onremovefromlibrary={(ids) => void removeFromLibraryUi(ids)}
 			onrelocated={() => void _reloadActivePane()}
+			oneditrefresh={() => void _reloadActivePane()}
 			onaddtoplaylist={(ids) => openAddToPlaylistPicker(ids)}
 			ongenrefilter={genreFilter}
 			{genreFilterUntil}

@@ -132,7 +132,12 @@ class _PlaylistWriterMixin:
             self.bus.publish(ev)
         return True
 
-    def set_playlist_memberships(self: _WriterHost, playlist_id: str, stable_ids: list[str]) -> None:
+    def set_playlist_memberships(
+        self: _WriterHost,
+        playlist_id: str,
+        stable_ids: list[str],
+        edit_ids: list[str | None] | None = None,
+    ) -> None:
         """Full-replace playlist memberships. Positions become 0..N-1.
 
         Also bumps ``playlists.updated_at`` so row-version etags derived
@@ -143,6 +148,8 @@ class _PlaylistWriterMixin:
         never propagate and would strand the fleet on a permanent digest
         mismatch (round 1 finding 5b).
         """
+        if edit_ids is not None and len(edit_ids) != len(stable_ids):
+            raise ValueError("edit_ids must be None or the same length as stable_ids")
         with self._tx() as conn:
             now = next_playlist_revision(conn, playlist_id, self._now_iso())
             conn.execute(
@@ -151,6 +158,7 @@ class _PlaylistWriterMixin:
             )
             keys = renumbered_keys(len(stable_ids))
             for position, sid in enumerate(stable_ids):
+                edit_id = edit_ids[position] if edit_ids is not None else None
                 member_stamp = self._stamp(
                     MEMBERSHIPS_TABLE,
                     (playlist_id, position),
@@ -158,8 +166,8 @@ class _PlaylistWriterMixin:
                 )
                 conn.execute(
                     "INSERT INTO playlist_memberships(playlist_id, stable_id, "
-                    "position, item_id, order_key, updated_at, origin_device_id) "
-                    "VALUES (?, ?, ?, ?, ?, ?, ?)",
+                    "position, item_id, order_key, updated_at, origin_device_id, edit_id) "
+                    "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
                     (
                         playlist_id,
                         sid,
@@ -168,6 +176,7 @@ class _PlaylistWriterMixin:
                         keys[position],
                         member_stamp.updated_at,
                         member_stamp.origin_device_id,
+                        edit_id,
                     ),
                 )
             stamp = self._stamp(PLAYLISTS_TABLE, (playlist_id,), now)
@@ -189,12 +198,14 @@ class _PlaylistWriterMixin:
     def insert_playlist_memberships(
         self: _WriterHost,
         playlist_id: str,
-        rows: list[tuple[str, str, str]],
+        rows: list[tuple[str, str, str] | tuple[str, str, str, str | None]],
     ) -> None:
-        """O(1) insert of new membership rows (item_id, stable_id, order_key)."""
+        """O(1) insert rows (item_id, stable_id, order_key[, edit_id])."""
         with self._tx() as conn:
             now = next_playlist_revision(conn, playlist_id, self._now_iso())
-            for item_id, stable_id, order_key in rows:
+            for values in rows:
+                item_id, stable_id, order_key = values[:3]
+                edit_id = values[3] if len(values) == 4 else None
                 max_pos = conn.execute(
                     "SELECT COALESCE(MAX(position), -1) FROM playlist_memberships WHERE playlist_id = ?",
                     (playlist_id,),
@@ -207,14 +218,15 @@ class _PlaylistWriterMixin:
                 )
                 conn.execute(
                     "INSERT INTO playlist_memberships(playlist_id, stable_id, "
-                    "position, item_id, order_key, updated_at, origin_device_id) "
-                    "VALUES (?, ?, ?, ?, ?, ?, ?)",
+                    "position, item_id, order_key, edit_id, updated_at, origin_device_id) "
+                    "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
                     (
                         playlist_id,
                         stable_id,
                         slot,
                         item_id,
                         order_key,
+                        edit_id,
                         member_stamp.updated_at,
                         member_stamp.origin_device_id,
                     ),

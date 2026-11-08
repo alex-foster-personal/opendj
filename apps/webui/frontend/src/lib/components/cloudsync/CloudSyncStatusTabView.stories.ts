@@ -11,7 +11,6 @@ import {
 	forceSyncNowRequest,
 	identityBacklogNote,
 	presentCloudSyncResultError,
-	statusHeadline,
 	syncNowRequest
 } from './cloudsync-view';
 
@@ -92,8 +91,7 @@ const derive = (s: CloudSyncStatus | null, c: Config | null, playing = false) =>
 		},
 		syncDecision: syncNowRequest(c, gate),
 		forceSyncDecision: forceSyncNowRequest(c),
-		showForceSync: playing && c?.effective.hub_url != null,
-		headline: statusHeadline(s)
+		showForceSync: playing && c?.effective.hub_url != null
 	};
 };
 

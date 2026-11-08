@@ -1,0 +1,9 @@
+{
+  "bytes": 1024,
+  "measured_main": 326958,
+  "measured_with_pr": 327384,
+  "sha": "1274f5f504",
+  "date": "Fri 6 Nov 2026",
+  "reason": "PR #9179 adds non-destructive virtual track edits (LIBEDIT-9179): the virtual-edit row wiring (browser-row-wire, pane contract and TrackTable virtual badges) loads with the library shell. Measured: CI bundle check of 1274f5f504, +426 B gzip; ceiled to KiB",
+  "payback": "none planned; virtual edits are a new library feature and these paths are its intended shape"
+}

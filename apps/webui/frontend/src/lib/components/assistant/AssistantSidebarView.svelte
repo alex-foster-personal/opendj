@@ -7,6 +7,14 @@
 	 */
 	import type { AssistantPanelMode, AssistantStatus, ChatMessage } from '$lib/assistant/assistant-api';
 	import { AGENT_DETAILS_LABEL, humanAssistantStatusError } from '$lib/setup/present';
+	import {
+		ojFillLevel,
+		ojFillShowsBubbles,
+		ojFillShowsLayer,
+		ojFillTransitionMs,
+		type OjFillMode,
+		type OjFillPhase
+	} from './oj-fill';
 
 	let {
 		visible,
@@ -20,7 +28,9 @@
 		draft = $bindable(),
 		log = $bindable(),
 		send,
-		onStop
+		onStop,
+		fillPhase = 'idle',
+		fillMode = 'animated'
 	}: {
 		visible: boolean;
 		mode: AssistantPanelMode;
@@ -36,7 +46,18 @@
 		send: () => Promise<void>;
 		/** Abort the reply in flight. */
 		onStop: () => void;
+		/** Juice fill phase driven by the container while a reply is in flight. */
+		fillPhase?: OjFillPhase;
+		/** Motion policy fill mode (#9474); until O4 lands the container passes `animated`. */
+		fillMode?: OjFillMode;
 	} = $props();
+
+	const fillLevel = $derived(
+		ojFillLevel({ phase: fillPhase, streamedChars: streaming?.length ?? 0 })
+	);
+	const fillMs = $derived(ojFillTransitionMs(fillPhase));
+	const showFill = $derived(ojFillShowsLayer(fillMode));
+	const showBubbles = $derived(ojFillShowsBubbles(fillMode, fillPhase));
 
 	function onKeydown(event: KeyboardEvent): void {
 		if (event.key === 'Enter' && !event.shiftKey) {
@@ -48,6 +69,22 @@
 
 {#if mode === 'chat'}
 	<aside class="assistant-sidebar" aria-label="Setup assistant">
+		{#if showFill}
+			<div
+				class="oj-fill"
+				class:animated={fillMode === 'animated'}
+				aria-hidden="true"
+				data-oj-fill-mode={fillMode}
+				data-oj-fill-phase={fillPhase}
+				data-oj-fill-level={fillLevel.toFixed(3)}
+				style:--oj-fill-level={fillLevel}
+				style:--oj-fill-ms="{fillMs}ms"
+			>
+				{#if showBubbles}
+					<span class="oj-bubble"></span><span class="oj-bubble"></span><span class="oj-bubble"></span>
+				{/if}
+			</div>
+		{/if}
 		<header>
 			<h2>Assistant</h2>
 			{#if status}
@@ -69,7 +106,10 @@
 			{/each}
 			{#if streaming !== null}
 				<p class="bubble assistant pending">
-					{streaming}<span class="caret" aria-hidden="true"></span>
+					{streaming}
+					{#if streaming === ''}
+						<span class="oj-sr-only">Assistant is answering…</span>
+					{/if}
 				</p>
 			{/if}
 		</div>
@@ -124,6 +164,9 @@
 
 <style>
 	.assistant-sidebar {
+		position: relative;
+		overflow: hidden;
+		isolation: isolate;
 		display: flex;
 		flex-direction: column;
 		min-width: 18rem;
@@ -132,6 +175,70 @@
 		border-left: 1px solid var(--border);
 		padding: 0.8rem;
 		gap: 0.6rem;
+	}
+	.assistant-sidebar > :not(.oj-fill) {
+		position: relative;
+		z-index: 1;
+	}
+	.oj-fill {
+		position: absolute;
+		inset: 0;
+		pointer-events: none;
+		z-index: 0;
+		background: color-mix(in srgb, var(--accent) 16%, transparent);
+		transform: translateY(calc((1 - var(--oj-fill-level, 0)) * 100%));
+		will-change: transform;
+	}
+	.oj-fill.animated {
+		transition: transform var(--oj-fill-ms, 0ms) linear;
+	}
+	.oj-bubble {
+		position: absolute;
+		bottom: 0.5rem;
+		width: 0.45rem;
+		height: 0.45rem;
+		border-radius: 50%;
+		background: color-mix(in srgb, var(--accent) 55%, transparent);
+		animation: oj-bubble-rise 2.4s linear infinite;
+	}
+	.oj-bubble:nth-child(1) {
+		left: 22%;
+		animation-delay: 0s;
+	}
+	.oj-bubble:nth-child(2) {
+		left: 48%;
+		animation-delay: 0.8s;
+	}
+	.oj-bubble:nth-child(3) {
+		left: 74%;
+		animation-delay: 1.6s;
+	}
+	@keyframes oj-bubble-rise {
+		from {
+			transform: translateY(0) scale(0.6);
+		}
+		to {
+			transform: translateY(-12rem) scale(1);
+		}
+	}
+	.oj-sr-only {
+		position: absolute;
+		width: 1px;
+		height: 1px;
+		padding: 0;
+		margin: -1px;
+		overflow: hidden;
+		clip: rect(0, 0, 0, 0);
+		white-space: nowrap;
+		border: 0;
+	}
+	@media (prefers-reduced-motion: reduce) {
+		.oj-fill.animated {
+			transition: none;
+		}
+		.oj-bubble {
+			display: none;
+		}
 	}
 	header {
 		display: flex;
@@ -217,25 +324,6 @@
 	}
 	.bubble.pending {
 		color: var(--muted);
-	}
-	.caret {
-		display: inline-block;
-		width: 0.45em;
-		height: 1em;
-		margin-left: 1px;
-		vertical-align: text-bottom;
-		background: var(--accent);
-		animation: blink 1s step-end infinite;
-	}
-	@keyframes blink {
-		50% {
-			opacity: 0;
-		}
-	}
-	@media (prefers-reduced-motion: reduce) {
-		.caret {
-			animation: none;
-		}
 	}
 	.composer {
 		display: flex;

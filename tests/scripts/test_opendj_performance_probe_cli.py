@@ -259,6 +259,47 @@ def test_match_requires_one_process_instead_of_selecting_table_order(
         probe.sample(deep=False)
 
 
+def test_pid_selector_samples_the_root_and_all_its_descendants(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """--pid selects the root plus its recursive PPID descendants, nothing else."""
+
+    rows = [
+        ProcessRow(pid=10, ppid=1, pgid=10, command="/usr/bin/target"),
+        ProcessRow(pid=11, ppid=10, pgid=10, command="child"),
+        ProcessRow(pid=12, ppid=11, pgid=10, command="grandchild"),
+        ProcessRow(pid=20, ppid=1, pgid=20, command="unrelated"),
+        ProcessRow(pid=21, ppid=20, pgid=20, command="unrelated child"),
+    ]
+    monkeypatch.setattr("scripts.diagnostics.opendj_performance_probe.process_table", lambda: rows)
+    monkeypatch.setattr("scripts.diagnostics.opendj_performance_probe.DarwinProcessMetrics", lambda: None)
+    monkeypatch.setattr("scripts.diagnostics.opendj_performance_probe.bundle_build_identity", lambda shell: {})
+    captured: dict[str, list[tuple[ProcessRow, str]]] = {}
+
+    class _Stop(Exception):
+        pass
+
+    def _capture(
+        self: OpenDJProbe,
+        family: list[tuple[ProcessRow, str]],
+        monotonic_now: float,
+    ) -> list[dict[str, object]]:
+        captured["family"] = family
+        raise _Stop
+
+    monkeypatch.setattr(OpenDJProbe, "_family_metrics", _capture)
+    probe = OpenDJProbe(None, (), pid=10)
+
+    with pytest.raises(_Stop):
+        probe.sample(deep=False)
+
+    assert sorted((row.pid, role) for row, role in captured["family"]) == [
+        (10, "selected-root"),
+        (11, "selected-descendant"),
+        (12, "selected-descendant"),
+    ]
+
+
 def test_trend_exits_distinctly_when_no_engine_port_was_ever_sampled(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:

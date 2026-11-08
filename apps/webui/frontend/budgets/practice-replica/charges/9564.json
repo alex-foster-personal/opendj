@@ -1,0 +1,9 @@
+{
+  "bytes": 1024,
+  "measured_main": 16836,
+  "measured_with_pr": 17015,
+  "sha": "549833f0ad",
+  "date": "Sun 8 Nov 2026",
+  "reason": "PR #9564 (Bind FLX4 practice replica hint-only wires via supplement (#9405)) grows the practice-replica surface. Measured: CI bundle check of 549833f0ad, +179 B gzip; ceiled to KiB.",
+  "payback": "none planned; the growth is the feature's own code on this surface"
+}

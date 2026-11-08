@@ -805,11 +805,21 @@ class SqliteBackend:
                 "SELECT COALESCE(MAX(seq), 0) FROM local_changelog "
                 "WHERE table_name IN ('tracks', 'track_fields')"
             ).fetchone()
+            edit_summary = (
+                conn.execute(
+                    "SELECT COUNT(*), COALESCE(MAX(updated_at), '') FROM track_edit "
+                    "WHERE deleted_at IS NULL"
+                ).fetchone()
+                if self._table_exists(conn, "track_edit")
+                else (0, "")
+            )
         return compute_library_revision_summary(
             int(track_summary[0]),
             str(track_summary[1]),
             str(field_summary[0]),
             int(changelog_summary[0]),
+            int(edit_summary[0]),
+            str(edit_summary[1]),
         )
 
     def get_track(self, stable_id: str) -> Track:
@@ -923,14 +933,17 @@ class SqliteBackend:
             member_rows = []
             if self._table_exists(conn, "playlist_memberships"):
                 member_rows = conn.execute(
-                    "SELECT stable_id, item_id FROM playlist_memberships "
+                    "SELECT stable_id, item_id, edit_id FROM playlist_memberships "
                     "WHERE playlist_id = ? AND deleted_at IS NULL "
                     "ORDER BY COALESCE(order_key, printf('%08d', position)), "
                     "position",
                     (playlist_id,),
                 ).fetchall()
         return playlist_from_header(
-            row, [r[0] for r in member_rows], [r[1] or "" for r in member_rows],
+            row,
+            [r[0] for r in member_rows],
+            [r[1] or "" for r in member_rows],
+            [r[2] for r in member_rows],
         )
 
     def get_playlist_page(
@@ -950,7 +963,10 @@ class SqliteBackend:
                 window = slice(offset, offset + limit)
                 return PlaylistPage(
                     playlist=replace(
-                        pl, items=pl.items[window], item_ids=pl.item_ids[window],
+                        pl,
+                        items=pl.items[window],
+                        item_ids=pl.item_ids[window],
+                        edit_ids=pl.edit_ids[window],
                     ),
                     total=len(pl.items),
                 )

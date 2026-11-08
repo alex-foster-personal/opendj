@@ -366,6 +366,8 @@ test('an initial-connect resync does not duplicate a still-pending deferred boot
 	manual.release();
 	await new Promise((resolve) => setImmediate(resolve));
 	assert.equal(calls, 1, 'the deferred hydrate itself still runs exactly once, once released');
+	await new Promise((resolve) => setImmediate(resolve));
+	assert.equal(calls, 1, 'no catch-up when the socket opened before the hydrate started');
 });
 
 /**
@@ -398,6 +400,82 @@ test('an initial-connect resync AFTER the deferred boot hydrate has settled stil
 		2,
 		'a first connection opening after the deferred hydrate settled must still catch up on the gap between them'
 	);
+});
+
+/** Issue #1764, PR #1656 thread r3978915633: mid-hydrate initial-connect catch-up. */
+async function settleTicks() {
+	for (let i = 0; i < 3; i++) {
+		await new Promise((resolve) => setImmediate(resolve));
+	}
+}
+
+test('an initial-connect resync WHILE the deferred boot hydrate is in flight refetches once it settles', async () => {
+	const fake = makeFakeBus();
+	let calls = 0;
+	/** @type {(value: unknown) => void} */
+	let releaseFirst;
+	const firstGate = new Promise((resolve) => {
+		releaseFirst = resolve;
+	});
+	globalThis.fetch = async () => {
+		calls += 1;
+		if (calls === 1) return jsonResponse(await firstGate);
+		return jsonResponse([job({ id: 'import', status: 'succeeded', progress: 1 })]);
+	};
+	store.attach(fake.bus, immediateBootScheduler());
+	await new Promise((resolve) => setImmediate(resolve));
+	assert.equal(calls, 1, 'the GET is in flight');
+
+	fake.fireResync('initial-connect');
+	await new Promise((resolve) => setImmediate(resolve));
+	assert.equal(calls, 1, 'no duplicate GET on top of the in-flight one');
+
+	releaseFirst([job({ id: 'import', status: 'running', progress: 0.9 })]);
+	await settleTicks();
+	assert.equal(calls, 2);
+	assert.equal(store.jobs[0].status, 'succeeded');
+});
+
+test('several initial-connect resyncs during one in-flight hydrate still catch up exactly once', async () => {
+	const fake = makeFakeBus();
+	let calls = 0;
+	/** @type {(value: unknown) => void} */
+	let releaseFirst;
+	const firstGate = new Promise((resolve) => {
+		releaseFirst = resolve;
+	});
+	globalThis.fetch = async () => {
+		calls += 1;
+		if (calls === 1) return jsonResponse(await firstGate);
+		return jsonResponse([job({ id: 'import', status: 'succeeded', progress: 1 })]);
+	};
+	store.attach(fake.bus, immediateBootScheduler());
+	await new Promise((resolve) => setImmediate(resolve));
+	fake.fireResync('initial-connect');
+	fake.fireResync('initial-connect');
+	releaseFirst([job({ id: 'import', status: 'running', progress: 0.9 })]);
+	await settleTicks();
+	assert.equal(calls, 2, 'not 3');
+});
+
+test('an in-flight initial hydrate with no initial-connect does not refetch on its own', async () => {
+	const fake = makeFakeBus();
+	let calls = 0;
+	/** @type {(value: unknown) => void} */
+	let releaseFirst;
+	const firstGate = new Promise((resolve) => {
+		releaseFirst = resolve;
+	});
+	globalThis.fetch = async () => {
+		calls += 1;
+		if (calls === 1) return jsonResponse(await firstGate);
+		return jsonResponse([]);
+	};
+	store.attach(fake.bus, immediateBootScheduler());
+	await new Promise((resolve) => setImmediate(resolve));
+	releaseFirst([]);
+	await settleTicks();
+	assert.equal(calls, 1);
 });
 
 test('attach is idempotent, so a remount does not double every upsert', async () => {

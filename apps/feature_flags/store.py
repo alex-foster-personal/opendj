@@ -106,6 +106,20 @@ FLAGS: tuple[FlagDef, ...] = (
         sandbox_gated=True,
     ),
     FlagDef(
+        flag_id="lighting.output",
+        default=False,
+        owner="maintainer",
+        note=(
+            "Lighting output (LIGHT-9913): the lighting feed, OS2L, Art-Net, sACN "
+            "and show routes under /api/v1/lighting. OFF until the feed and the "
+            "flash limiter have landed; while off every lighting route refuses "
+            "explicitly with this flag id, never a silent empty stream. Specs: "
+            "(private path)/."
+        ),
+        retire_by="2027-06-01",
+        sandbox_gated=False,
+    ),
+    FlagDef(
         flag_id="local_stems.executor",
         default=True,
         owner="maintainer",

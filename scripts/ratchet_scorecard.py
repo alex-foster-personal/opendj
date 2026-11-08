@@ -115,6 +115,7 @@ WORKFLOW_GATE_JOBS = {
             "production frontend build",
             "frontend unit + check + build",
             "import contracts",
+            "odj-audio Rust tests",
             QUALITY_JOB,
         }
     ),

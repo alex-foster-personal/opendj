@@ -24,6 +24,9 @@ export type MasterReason =
 	| null;
 
 export interface DeckLoadOptions {
+	edit_id?: string | undefined;
+	in_ms?: number | undefined;
+	out_ms?: number | undefined;
 	/** Whether the asynchronous stem probe and decode may run for this load.
 	 * `undefined` means absent (true), so a dispatcher can pass its own
 	 * optional field straight through. */

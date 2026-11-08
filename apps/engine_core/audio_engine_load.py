@@ -66,12 +66,19 @@ def grid_from_anlz(beatgrid: dict[str, Any] | None) -> EngineGrid:
     return EngineGrid(beats, float(bpm) if bpm else None, source, None)
 
 
-def load_command(deck: int, path: str, grid: EngineGrid) -> dict[str, Any]:
+def load_command(
+    deck: int,
+    path: str,
+    grid: EngineGrid,
+    out_ms: int | None = None,
+) -> dict[str, Any]:
     cmd: dict[str, Any] = {"type": "load", "deck": deck, "path": path}
     if grid.beats:
         cmd["beatgrid"] = grid.beats
     if grid.bpm:
         cmd["bpm"] = grid.bpm
+    if out_ms is not None:
+        cmd["out_ms"] = int(out_ms)
     return cmd
 
 

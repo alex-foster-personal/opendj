@@ -12,6 +12,7 @@ on these six endpoints and their etag semantics):
   * ``POST   /api/v1/playlists/{id}/duplicate``  {name?} optional  -> 201 + ETag
   * ``PUT    /api/v1/playlists/{id}/tracks``     {stable_ids: []}  -> 200 + ETag
   * ``POST   /api/v1/playlists/{id}/tracks/transfer``  {stable_ids, mode, ...} -> 200
+  * ``POST   /api/v1/playlists/import``          {name, m3u, base_dir} -> 201 (DJIMPORT-10225)
 
 ETag / error semantics copied from the tracks PATCH:
 
@@ -55,6 +56,7 @@ fallback.
 """
 from __future__ import annotations
 
+import os
 import threading
 from pathlib import Path
 from typing import Literal
@@ -62,11 +64,13 @@ from typing import Literal
 from fastapi import APIRouter, Depends, Header, HTTPException, Request, Response, status
 from pydantic import BaseModel, Field
 
+from apps.adapters.m3u import parse_m3u
 from apps.shared.events import publish
+from apps.shared.state import db as state_db
 from apps.shared.state.writer_playlists import PlaylistNotDeletedError
 
 from ..backend import StateBackend
-from ..deps import get_write_state
+from ..deps import get_library_state_db, get_write_state
 from ..errors import precondition_required
 from ..playlist_store import PlaylistRow, PlaylistStore
 
@@ -80,6 +84,19 @@ _STORE_INIT_LOCK = threading.Lock()
 
 class PlaylistCreateIn(BaseModel):
     name: str = Field(min_length=1, description="Display name (non-empty)")
+
+
+class PlaylistImportIn(BaseModel):
+    name: str = Field(min_length=1, description="Display name of the new playlist")
+    m3u: str = Field(description="The M3U or M3U8 file's text")
+    base_dir: str = Field(min_length=1, description="Absolute folder of the file; relative lines resolve against it")
+
+
+class PlaylistImportOut(BaseModel):
+    playlist_id: str
+    name: str
+    matched: int
+    unmatched: list[str]
 
 
 class PlaylistRenameIn(BaseModel):
@@ -252,6 +269,61 @@ def create_playlist(
     row = store.create_playlist(body.name)
     publish("library.changed", {"kind": "playlists", "ids": [row.playlist_id]})
     return _out(row, response)
+
+
+def _live_stable_ids_by_path(state_db_path: Path) -> dict[str, str]:
+    """Normalised ``file_path`` -> ``stable_id`` for every live track (first row wins)."""
+    connection = state_db.open_ro(state_db_path)
+    try:
+        rows = connection.execute(
+            "SELECT stable_id, file_path FROM tracks WHERE deleted_at IS NULL AND file_path IS NOT NULL "
+            "ORDER BY stable_id"
+        ).fetchall()
+    finally:
+        connection.close()
+    by_path: dict[str, str] = {}
+    for stable_id, file_path in rows:
+        by_path.setdefault(os.path.normpath(file_path), stable_id)
+    return by_path
+
+
+@router.post("/import", response_model=PlaylistImportOut, status_code=status.HTTP_201_CREATED)
+def import_m3u_playlist(
+    body: PlaylistImportIn,
+    response: Response,
+    _backend: StateBackend = Depends(get_write_state),  # noqa: B008
+    store: PlaylistStore = Depends(get_playlist_store),  # noqa: B008
+    state_db_path: Path = Depends(get_library_state_db),  # noqa: B008
+) -> PlaylistImportOut:
+    """DJIMPORT-10225: an M3U/M3U8 file becomes a new playlist, matched to the collection by file path.
+
+    Tracks keep file order; a path listed twice is added once. Unmatched paths are reported. A file
+    with no match creates nothing and answers 422 with the unmatched count.
+    """
+    try:
+        paths = parse_m3u(body.m3u, Path(body.base_dir))
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail={"error": "invalid_import", "message": str(exc)}) from exc
+    by_path = _live_stable_ids_by_path(state_db_path)
+    matched_ids: list[str] = []
+    unmatched: list[str] = []
+    for path in paths:
+        stable_id = by_path.get(path)
+        if stable_id is None:
+            unmatched.append(path)
+        elif stable_id not in matched_ids:
+            matched_ids.append(stable_id)
+    if not matched_ids:
+        raise HTTPException(status_code=422, detail={
+            "error": "no_matches",
+            "message": f"none of the {len(unmatched)} paths in the file match a track in the collection",
+            "unmatched_count": len(unmatched),
+        })
+    created = store.create_playlist(body.name)
+    row = store.replace_memberships(created.playlist_id, matched_ids, expected_etag=created.etag)
+    publish("library.changed", {"kind": "playlists", "ids": [row.playlist_id]})
+    response.headers["ETag"] = row.etag
+    return PlaylistImportOut(playlist_id=row.playlist_id, name=row.name, matched=len(matched_ids), unmatched=unmatched)
 
 
 @router.patch("/{playlist_id}", response_model=PlaylistWriteOut)

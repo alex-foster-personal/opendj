@@ -19,7 +19,7 @@ from pathlib import Path
 import pytest
 
 from apps.engine_core.store import schema as store_schema
-from apps.shared.state import migrations_v26, migrations_v27, migrations_v28, migrations_v29
+from apps.shared.state import migrations_v26, migrations_v27, migrations_v28, migrations_v29, migrations_v30
 from apps.shared.state import schema as state_schema
 
 pytestmark = [
@@ -76,14 +76,17 @@ def _seed_v25_rows(path: Path) -> None:
 
 
 def test_the_ladder_is_linear_with_library_org_at_26() -> None:
-    assert state_schema.SCHEMA_VERSION == 29, "if the state ladder target is not 29 then broken"
-    assert len(state_schema.MIGRATIONS) == 29, "if the ladder has a gap or a duplicate step then broken"
+    assert state_schema.SCHEMA_VERSION == 30, "if the state ladder target is not 30 then broken"
+    assert len(state_schema.MIGRATIONS) == 30, "if the ladder has a gap or a duplicate step then broken"
     assert state_schema.MIGRATIONS[24] is state_schema._V25, "if v25 is not transition memory then broken"
     assert state_schema.MIGRATIONS[25] is migrations_v26._V26, "if v26 is not library organization then broken"
     assert state_schema.MIGRATIONS[26] is migrations_v27._V27, "if v27 is not path_availability mtime then broken"
     assert state_schema.MIGRATIONS[27] is migrations_v28._V28, "if v28 is not AutoPlay decisions then broken"
     assert state_schema.MIGRATIONS[28] is migrations_v29._V29, (
         "if v29 is not the live-by-stable membership index then broken"
+    )
+    assert state_schema.MIGRATIONS[29] is migrations_v30._V30, (
+        "if v30 is not track_edit + playlist_memberships.edit_id then broken"
     )
 
 
@@ -141,7 +144,9 @@ def test_a_db_stamped_v25_by_the_reverted_7886_gains_transition_memory(tmp_path:
         assert conn.execute("SELECT count(*), max(label = 'Vibes') FROM tag_type").fetchone() == (3, 1), (
             "if v26 re-seeds over an edited tag type then broken"
         )
-        assert conn.execute("SELECT table_name, token FROM sync_write_tokens ORDER BY 1").fetchall() == tokens_before
+        tokens_after = conn.execute("SELECT table_name, token FROM sync_write_tokens ORDER BY 1").fetchall()
+        kept = [row for row in tokens_after if row[0] in {name for name, _token in tokens_before}]
+        assert kept == tokens_before, "if v26 re-mints tokens the 7886 db already held then broken"
         stored = {
             str(r[0]): str(r[1]) for r in conn.execute("SELECT name, sql FROM sqlite_master WHERE type = 'trigger'")
         }
@@ -185,18 +190,18 @@ def test_a_db_newer_than_the_code_is_left_alone(tmp_path: Path) -> None:
     path = tmp_path / "state.db"
     _ladder_to(path, 26)
     conn = sqlite3.connect(str(path))
-    conn.execute("INSERT INTO schema_meta(version, applied_at) VALUES (29, 'future')")
+    conn.execute("INSERT INTO schema_meta(version, applied_at) VALUES (31, 'future')")
     conn.commit()
     schema_before = conn.execute("SELECT sql FROM sqlite_master ORDER BY name").fetchall()
     try:
-        assert state_schema.apply_migrations(conn) == 29
+        assert state_schema.apply_migrations(conn) == 31
         assert conn.execute("SELECT sql FROM sqlite_master ORDER BY name").fetchall() == schema_before
     finally:
         conn.close()
 
 
 def test_the_engine_store_holds_both_rungs_fresh_and_adopted(tmp_path: Path) -> None:
-    assert store_schema.SCHEMA_VERSION == 18
+    assert store_schema.SCHEMA_VERSION == 19
     fresh = sqlite3.connect(":memory:")
     store_schema.apply_migrations(fresh)
     assert {"pair_transitions", *_LIBRARY_TABLES} <= _tables(fresh)
@@ -205,7 +210,7 @@ def test_the_engine_store_holds_both_rungs_fresh_and_adopted(tmp_path: Path) -> 
 
     # Adoption takes a db the legacy ladder has already finished, as the runner's own refusal says.
     path = tmp_path / "state.db"
-    _ladder_to(path, 27)
+    _ladder_to(path, store_schema.LEGACY_SHARED_STATE_VERSION)
     adopted = sqlite3.connect(str(path))
     try:
         store_schema.apply_migrations(adopted)

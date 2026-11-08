@@ -1156,6 +1156,7 @@ impl Control {
                 let mut track = Track::new(whole.sample_rate, whole.pcm.clone(), head.beats.clone(), head.bpm)
                     .with_source(whole.source.clone());
                 track.load_id = seq;
+                track.end_frame = whole.end_frame;
                 let bytes = track.pcm.capacity() * std::mem::size_of::<f32>();
                 self.pcm_used.fetch_add(bytes, Ordering::AcqRel);
                 if let Some(p) = self.ids.lock().unwrap().get_mut(&internal) {
@@ -2231,7 +2232,7 @@ mod tests {
     #[test]
     fn a_progressive_load_answers_on_its_head_and_swaps_in_the_whole_track_with_the_deck_grid() {
         let (mut c, mut cmd_rx, out) = control();
-        let spec = |deck: DeckId| LoadSpec { deck, path: "nope.wav".into(), beats: vec![], bpm: None };
+        let spec = |deck: DeckId| LoadSpec { deck, path: "nope.wav".into(), beats: vec![], bpm: None, end_ms: None };
         let text = |out: &Captured| String::from_utf8(out.0.lock().unwrap().clone()).unwrap();
         c.load((STDIO, Some("a".into())), spec(1));
         let a = c.loading[0].unwrap();
@@ -2305,7 +2306,7 @@ mod tests {
         // Codex on 2c3ed9bde: A's tail, parked behind replacement B, was
         // dropped when B failed, leaving A's head to run into silence.
         let (mut c, mut cmd_rx, _out) = control();
-        let spec = || LoadSpec { deck: 1, path: "nope.wav".into(), beats: vec![], bpm: None };
+        let spec = || LoadSpec { deck: 1, path: "nope.wav".into(), beats: vec![], bpm: None, end_ms: None };
         c.load((STDIO, Some("a".into())), spec());
         let a = c.loading[0].unwrap();
         c.head_loaded(a, 1, Arc::new(Track::head(48000, vec![0.0; 960], None, vec![], None, a)));
@@ -2342,7 +2343,7 @@ mod tests {
         // Codex on 2c3ed9bde: each head released the next load at once, so
         // rapid loads piled up decoder threads and whole-track buffers.
         let (mut c, mut cmd_rx, _out) = control();
-        let spec = || LoadSpec { deck: 1, path: "nope.wav".into(), beats: vec![], bpm: None };
+        let spec = || LoadSpec { deck: 1, path: "nope.wav".into(), beats: vec![], bpm: None, end_ms: None };
         let head = |seq| Arc::new(Track::head(48000, vec![0.0; 960], None, vec![], None, seq));
         c.load((STDIO, Some("a".into())), spec());
         let a = c.loading[0].unwrap();
@@ -2379,7 +2380,7 @@ mod tests {
         c.pcm_budget = 4000;
         let used = |c: &Control| c.pcm_used.load(Ordering::Acquire);
         let track = |n: usize| -> Result<Arc<Track>, ProtoError> { Ok(Arc::new(Track::new(48000, vec![0.0; n], vec![], None))) };
-        let spec = |deck: DeckId| LoadSpec { deck, path: "nope.wav".into(), beats: vec![], bpm: None };
+        let spec = |deck: DeckId| LoadSpec { deck, path: "nope.wav".into(), beats: vec![], bpm: None, end_ms: None };
         c.load((STDIO, Some("a".into())), spec(1));
         c.load((STDIO, Some("b".into())), spec(1));
         let a = c.loading[0].unwrap();
@@ -2419,7 +2420,7 @@ mod tests {
         // length its file states.
         let (mut c, mut cmd_rx, _out) = control();
         let used = |c: &Control| c.pcm_used.load(Ordering::Acquire);
-        let spec = |deck: DeckId| LoadSpec { deck, path: "nope.wav".into(), beats: vec![], bpm: None };
+        let spec = |deck: DeckId| LoadSpec { deck, path: "nope.wav".into(), beats: vec![], bpm: None, end_ms: None };
         let f32s = std::mem::size_of::<f32>();
         c.pcm_budget = 2 * 48000 * 2 * f32s;
         c.load((STDIO, Some("a".into())), spec(1));
@@ -2509,7 +2510,7 @@ mod tests {
         // grows (`Meter`), so the budget sees it and holds the next decode.
         let (mut c, mut cmd_rx, _out) = control();
         let used = |c: &Control| c.pcm_used.load(Ordering::Acquire);
-        let spec = |deck: DeckId| LoadSpec { deck, path: "nope.wav".into(), beats: vec![], bpm: None };
+        let spec = |deck: DeckId| LoadSpec { deck, path: "nope.wav".into(), beats: vec![], bpm: None, end_ms: None };
         let estimate = 48000 * UNSTATED_TAIL_S * 2 * std::mem::size_of::<f32>();
         c.pcm_budget = 2 * estimate;
         c.load((STDIO, Some("a".into())), spec(1));
@@ -2554,7 +2555,7 @@ mod tests {
         let path = tmp.path().join("a.wav");
         crate::wav::write_f32(&mut io::BufWriter::new(std::fs::File::create(&path).unwrap()), 48000, &vec![0.1; 96000]).unwrap();
         let (mut c, _cmd_rx, _out) = control();
-        c.load((STDIO, Some("a".into())), LoadSpec { deck: 1, path: path.display().to_string(), beats: vec![], bpm: None });
+        c.load((STDIO, Some("a".into())), LoadSpec { deck: 1, path: path.display().to_string(), beats: vec![], bpm: None, end_ms: None });
         let a = c.loading[0].unwrap();
         decode_threads_done(&c);
         let charged = c.meters[&a].charged.load(Ordering::Acquire);
@@ -2576,6 +2577,7 @@ mod tests {
             path,
             beats: (0..beats).map(|i| Beat { time_ms: i as f64, downbeat: i % 4 == 0, bpm: None }).collect(),
             bpm: None,
+            end_ms: None,
         };
         let big = || spec(1, "nope.wav".into(), LOAD_BYTES / 3 / per_beat);
         let each = load_bytes(&big());
@@ -3582,7 +3584,7 @@ mod tests {
         let p = dir.join("a.wav");
         crate::wav::write_f32(&mut io::BufWriter::new(std::fs::File::create(&p).unwrap()), 48000, &vec![0.1; 960_000]).unwrap();
         let cache = Arc::new(TrackCache::default());
-        let spec = LoadSpec { deck: 1, path: p.display().to_string(), beats: vec![], bpm: None };
+        let spec = LoadSpec { deck: 1, path: p.display().to_string(), beats: vec![], bpm: None, end_ms: None };
         let tracks: Vec<Arc<Track>> = (0..8)
             .map(|_| {
                 let (cache, spec, p) = (cache.clone(), spec.clone(), p.clone());

@@ -283,6 +283,7 @@ TABLES: dict[str, str] = {
     "work_member": "One track or virtual edit linked to a work.",
     "work_dismissal": "A pair the user said is not a version of each other.",
     "work_pref": "Which member a work shows first. Display only.",
+    "track_edit": "A non-destructive playback window and FX parameters over one source track; no audio is copied or changed.",
     "undo_journal": "Before and after snapshots of library organization writes, per undo session. Machine-local.",
     "feedback_pins": (
         "One in-app feedback comment pin, shared across every machine on "

@@ -24,7 +24,7 @@ from apps.shared.mik_tags import MikTagValues
 from apps.shared.non_music import is_non_music
 from apps.shared.paths import STATE_DB
 from apps.shared.state import db as state_db
-from apps.shared.state import deleted_tracks
+from apps.shared.state import deleted_tracks, library_edits
 from apps.shared.state.writer import StateWriter
 from apps.shared.state.writer_tracks import (
     TrackAlreadyRemovedError,
@@ -262,6 +262,7 @@ def _track_own_fields(track: Track) -> dict[str, Any]:
         "rating": track.rating,
         "tags": list(track.tags or []),
         "notes": track.notes,
+        "comments": track.comments,
         "last_played_at": track.last_played_at,
         "tempo_pref": track.tempo_pref,
         "file_path": track.file_path,
@@ -381,6 +382,50 @@ def _listing_row_from_builder(track: Track, row: dict[str, Any]) -> dict[str, An
         # models ignore this extra key, while the shared row still owns the
         # builder-to-wire mapping.
         "comments": row["comments"],
+        # Source rows carry the complete edit shape so INDEX_ROW_FIELDS can
+        # always slice before or after the virtual-row overlay without KeyError.
+        "edit_id": None,
+        "in_ms": None,
+        "out_ms": None,
+        "fx": None,
+        "edit_label": None,
+        "created_by": None,
+        "is_edit": False,
+        "valid": True,
+    }
+
+
+def _edits_by_source(request: Request) -> dict[str, list[dict[str, Any]]]:
+    path = Path(request.app.state.state_db_path)
+    if not path.is_file():
+        return {}
+    conn = state_db.open_ro(path)
+    try:
+        if conn.execute(
+            "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'track_edit'"
+        ).fetchone() is None:
+            return {}
+        rows = library_edits.list_edits(conn)
+    finally:
+        conn.close()
+    grouped: dict[str, list[dict[str, Any]]] = {}
+    for edit in rows:
+        grouped.setdefault(str(edit["source_track_id"]), []).append(edit)
+    return grouped
+
+
+def _edit_listing_row(source: dict[str, Any], edit: dict[str, Any]) -> dict[str, Any]:
+    """Overlay edit identity/window while preserving all source file truth."""
+    return {
+        **source,
+        "edit_id": edit["id"],
+        "in_ms": edit["in_ms"],
+        "out_ms": edit["out_ms"],
+        "fx": edit["fx"],
+        "edit_label": edit["label"],
+        "created_by": edit["created_by"],
+        "is_edit": True,
+        "valid": edit["valid"],
     }
 
 
@@ -488,6 +533,7 @@ def _listing_items(
     lyrics_by_sid = _lyrics_available_bulk(data_dir, stable_ids)
     auto_cues_by_sid = _auto_cues_available_bulk(_analysis_db_path(request), stable_ids)
     items: list[TrackListItemOut] = []
+    edits = _edits_by_source(request)
     non_music_hidden = 0
     for track, row in zip(tracks, rows, strict=False):
         if not keep_by_availability(available, row.get("file_exists")):
@@ -495,13 +541,16 @@ def _listing_items(
         if not include_non_music and is_non_music(track, row.get("tag_genre")):
             non_music_hidden += 1
             continue
-        items.append(
-            TrackListItemOut(
-                **_listing_row_from_builder(track, row),
-                lyrics_available=lyrics_by_sid[track.stable_id],
-                auto_cues_available=auto_cues_by_sid[track.stable_id],
-                stems_available=_stems_available(track.stable_id, row["stems"], request),
-            )
+        source = {
+            **_listing_row_from_builder(track, row),
+            "lyrics_available": lyrics_by_sid[track.stable_id],
+            "auto_cues_available": auto_cues_by_sid[track.stable_id],
+            "stems_available": _stems_available(track.stable_id, row["stems"], request),
+        }
+        items.append(TrackListItemOut(**source))
+        items.extend(
+            TrackListItemOut(**_edit_listing_row(source, edit))
+            for edit in edits.get(track.stable_id, [])
         )
     return items, non_music_hidden
 
@@ -521,6 +570,8 @@ def _index_rows(
     Also returns how many non-music rows were left out (LIBM-178), none when
     ``include_non_music``.
     """
+    if not tracks:
+        return [], 0
     rows = rb_vendor.build_track_rows(
         tracks,
         jobs_store=getattr(request.app.state, "jobs_store", None),
@@ -533,10 +584,14 @@ def _index_rows(
         for track, row in zip(tracks, rows, strict=True)
         if include_non_music or not is_non_music(track, row.get("tag_genre"))
     ]
-    index_rows = [
-        {name: full[name] for name in INDEX_ROW_FIELDS}
-        for full in (_listing_row_from_builder(track, row) for track, row in kept)
-    ]
+    edits = _edits_by_source(request)
+    index_rows: list[dict[str, Any]] = []
+    for track, row in kept:
+        source = _listing_row_from_builder(track, row)
+        index_rows.append({name: source[name] for name in INDEX_ROW_FIELDS})
+        for edit in edits.get(track.stable_id, []):
+            virtual = _edit_listing_row(source, edit)
+            index_rows.append({name: virtual[name] for name in INDEX_ROW_FIELDS})
     return index_rows, len(tracks) - len(kept)
 
 
@@ -566,6 +621,13 @@ def track_index_body(
         if page.next_cursor is None:
             break
         cursor = page.next_cursor
+    # PERF-DRAIN-02: any path that builds the index body (route, golden tests, probes)
+    # must end the ahead drain boot grace, not only the HTTP wrapper.
+    drain = getattr(request.app.state, "ahead_analysis", None)
+    if drain is not None:
+        drain.index_served()
+    # PERF-BOOT-01: same as GET /tracks/index; index body builders must end the grace.
+    boot_grace.for_app(request.app).end()
     index = TrackIndexOut.model_validate(
         {"revision": revision, "items": rows, "non_music_hidden": non_music_hidden}
     )
@@ -600,12 +662,6 @@ def get_track_index(
     body = track_index_body(request, backend, include_non_music)
     etag = f'"{hashlib.sha1(body, usedforsecurity=False).hexdigest()}"'
     headers = {"ETag": etag, "Cache-Control": "no-cache", "Vary": "Accept-Encoding"}
-    # PERF-DRAIN-02: the launch's index is out, so the ahead drain's boot grace may end.
-    drain = getattr(request.app.state, "ahead_analysis", None)
-    if drain is not None:
-        drain.index_served()
-    # PERF-BOOT-01: and the engine boot grace the background scanners wait on ends.
-    boot_grace.for_app(request.app).end()
     if if_none_match == etag:
         return Response(status_code=304, headers=headers)
     if accept_encoding is not None and "gzip" in accept_encoding:

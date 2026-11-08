@@ -151,8 +151,9 @@ test('coverage counts only reachable audio and refetches through the library ref
 	assert.match(source('src/lib/rb/browser-health-probes.ts'), /\$\{coverage\.unreachable\} broken \$\{coverage\.unreachable === 1 \? 'link' : 'links'\}/);
 	assert.match(
 		src,
-		/async function _refreshLibraryRowsOnce\(\): Promise<void> \{\s*await Promise\.all\(\[_loadIngestCoverage\(\), _loadReconcileSummary\(\), _refreshPlaylists\(\)\]\);/
+		/async function _refreshLibraryRowsOnce\(\): Promise<void> \{\s*await runLibraryRefreshPass\(\{\s*sideLoads: \[_loadIngestCoverage, _loadReconcileSummary, _refreshPlaylists\],\s*refreshCountAndPanes: _refreshCountAndPanes,\s*retryBootPane: _retryStrandedBootPane,/
 	);
+	assert.doesNotMatch(src, /await Promise\.all\(\[_loadIngestCoverage\(\), _loadReconcileSummary\(\), _refreshPlaylists\(\)\]\)/);
 	assert.doesNotMatch(src, /import \{ api, unwrap \} from '\$lib\/api\/client';/);
 	const ingest = source('../server/routes/ingest.py');
 	assert.match(ingest, /finally:\s*job\.current_step = None\s*job\.finished_at = time\.time\(\)\s*publish\("library\.changed", \{"kind": "tracks", "ids": \[\]\}\)/);

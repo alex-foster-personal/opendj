@@ -90,26 +90,26 @@ helper_carried_paths:
   - "apps/cloud/stem_cache_budget.py"
   - "apps/cloud/stem_cache_settings.py"
   - "apps/cloud/stem_upload_queue.py"
-  - "apps/database/__init__.py"
-  - "apps/database/column_docs.py"
-  - "apps/database/column_docs_analysis_retention.py"
-  - "apps/database/column_docs_feedback.py"
-  - "apps/database/column_docs_genre.py"
-  - "apps/database/column_docs_library_org.py"
-  - "apps/database/column_docs_lyrics.py"
-  - "apps/database/column_docs_native_analysis.py"
-  - "apps/database/column_docs_pair_transitions.py"
-  - "apps/database/column_docs_pairing_capture.py"
-  - "apps/database/column_docs_playlist_rollback.py"
-  - "apps/database/column_docs_set_target.py"
-  - "apps/database/column_docs_sibling_apps.py"
-  - "apps/database/column_docs_sync_gate.py"
-  - "apps/database/enrollment_table_docs.py"
-  - "apps/database/generate_agents_md.py"
-  - "apps/database/sqlite_introspection.py"
-  - "apps/database/table_docs.py"
   - "apps/shared/__init__.py"
   - "apps/shared/_tagreader.py"
+  - "apps/shared/agents_md/__init__.py"
+  - "apps/shared/agents_md/column_docs.py"
+  - "apps/shared/agents_md/column_docs_analysis_retention.py"
+  - "apps/shared/agents_md/column_docs_feedback.py"
+  - "apps/shared/agents_md/column_docs_genre.py"
+  - "apps/shared/agents_md/column_docs_library_org.py"
+  - "apps/shared/agents_md/column_docs_lyrics.py"
+  - "apps/shared/agents_md/column_docs_native_analysis.py"
+  - "apps/shared/agents_md/column_docs_pair_transitions.py"
+  - "apps/shared/agents_md/column_docs_pairing_capture.py"
+  - "apps/shared/agents_md/column_docs_playlist_rollback.py"
+  - "apps/shared/agents_md/column_docs_set_target.py"
+  - "apps/shared/agents_md/column_docs_sibling_apps.py"
+  - "apps/shared/agents_md/column_docs_sync_gate.py"
+  - "apps/shared/agents_md/enrollment_table_docs.py"
+  - "apps/shared/agents_md/generator.py"
+  - "apps/shared/agents_md/sqlite_introspection.py"
+  - "apps/shared/agents_md/table_docs.py"
   - "apps/shared/audio_quality.py"
   - "apps/shared/dotenv_read.py"
   - "apps/shared/engine_decode.py"
@@ -169,6 +169,7 @@ helper_carried_paths:
   - "apps/shared/state/migrations_v27.py"
   - "apps/shared/state/migrations_v28.py"
   - "apps/shared/state/migrations_v29.py"
+  - "apps/shared/state/migrations_v30.py"
   - "apps/shared/state/migrations_v6_v8.py"
   - "apps/shared/state/migrations_v9.py"
   - "apps/shared/state/paths.py"
@@ -294,7 +295,7 @@ scopes:
   - name: database
     sources: ["apps/database/"]
     tests: ["tests/database/"]
-    dependents: ["ableton_link", "adapters", "agentbox", "agentic_testing", "ai_gateway_admin", "analysis", "analysis_beatgrid", "analysis_bench", "analysis_key", "analysis_loudness", "analysis_structure", "analysis_waveform", "audit", "autodj", "b2b_pairing", "b2b_session", "b2b_sync", "b2b_transport", "beatbench", "bench_tryer_calibration", "cloud", "cloudsync", "dedup", "dj_copilot", "engine_core", "entitlements", "fixtures", "genre_infer", "launcher", "live_core", "loudness", "lyrics", "lyrics_alignment", "mik", "open_dj", "opendj_cli", "pairings", "parity", "perf", "play_analytics", "playlist_sets", "plugins", "quality", "reconcile", "rekordbox_analyse", "rekordbox_ingestion", "scripts", "sets", "shared", "smartlists", "spotify", "standalone", "stems", "streaming_transfer", "sync", "sync_hub", "tags", "vocals", "voice", "webui"]
+    dependents: ["ableton_link", "agentic_testing", "analysis_beatgrid", "analysis_bench", "analysis_key", "analysis_structure", "analysis_waveform", "autodj", "b2b_session", "cloud", "cloudsync", "engine_core", "entitlements", "genre_infer", "lyrics", "opendj_cli", "parity", "perf", "quality", "scripts", "shared", "standalone", "stems", "vocals", "webui"]
   - name: dedup
     sources: ["apps/dedup/"]
     tests: ["tests/dedup/"]
@@ -319,6 +320,10 @@ scopes:
     sources: ["apps/launcher/"]
     tests: ["tests/launcher/"]
     dependents: ["ableton_link", "agentic_testing", "analysis_beatgrid", "analysis_bench", "analysis_key", "analysis_structure", "analysis_waveform", "autodj", "b2b_session", "cloud", "cloudsync", "engine_core", "entitlements", "genre_infer", "lyrics", "opendj_cli", "parity", "perf", "quality", "scripts", "shared", "standalone", "stems", "vocals", "webui"]
+  - name: lighting
+    # Lighting output: beat and phrase feed, OS2L, Art-Net, sACN, fixtures, looks and shows (epic lighting fan-out, Sun 8 Nov 2026).
+    sources: ["apps/lighting/"]
+    tests: ["tests/lighting/"]
   - name: loudness
     sources: ["apps/loudness/"]
     tests: ["tests/loudness/"]

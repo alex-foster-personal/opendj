@@ -89,7 +89,11 @@ export interface MenuContextByKind {
 	/** ANIM-01: one dial or fader (EQ, TRIM, FILTER, stem dial, channel fader, crossfader). */
 	'mixer-control': { animating: boolean };
 	/** Right-click on nothing in particular inside the performance page. */
-	'perf-empty': Record<string, never>;
+	'perf-empty': {
+		/** True when the track browser is mounted so BrowseAdapter can load a selection. */
+		browser: boolean;
+		view: 'waveform' | 'list' | 'phase-scope' | 'phase-meter';
+	};
 }
 
 export type MenuTargetKind = keyof MenuContextByKind;
@@ -146,6 +150,14 @@ export interface ResolvedMenuItem {
 
 const DECKS: readonly DeckNumber[] = [1, 2, 3, 4];
 
+/** Labels for perf-empty layout check items (must match topbar-view-prefs PERF_VIEWS). */
+const VIEW_LABEL: Record<'waveform' | 'list' | 'phase-scope' | 'phase-meter', string> = {
+	waveform: 'Waveform',
+	list: 'List',
+	'phase-scope': 'Phase scope',
+	'phase-meter': 'Phase meter'
+};
+
 const READ_ONLY_SOURCES: ReadonlySet<TrackSource> = new Set(['usb', 'readonly-import']);
 
 function writable(ctx: { source: TrackSource }): boolean {
@@ -199,6 +211,15 @@ const TRACK_MENU: MenuContribution<'track'>[] = [
 		})
 	),
 	{
+		id: 'track-info',
+		label: 'Track info',
+		command: 'track.info_open',
+		when: writable,
+		disabledWhen: oneTrackOnly,
+		title: () => 'IPC track_info_open {stable_id}',
+		testId: () => 'context-menu-track-info'
+	},
+	{
 		id: 'add-playlist',
 		label: 'Add to playlist...',
 		command: 'track.add_to_playlist',
@@ -213,6 +234,29 @@ const TRACK_MENU: MenuContribution<'track'>[] = [
 	{ id: 'find-replace', label: 'Find/replace', command: 'track.edit', when: writable },
 	{ id: 'add-tag', label: 'Add tag...', command: 'track.edit', when: writable },
 	{ id: 'mytag', label: 'My Tag editor', command: 'track.edit', when: writable },
+	...[0, 1, 2, 3, 4, 5].map(
+		(n): MenuContribution<'track'> => ({
+			id: `rate-${n}`,
+			label:
+				n === 0
+					? 'Rating: none'
+					: n === 1
+						? 'Rating: 1 star'
+						: `Rating: ${n} stars`,
+			command: 'track.edit',
+			when: writable,
+			title: () => `PATCH /api/v1/tracks/{stable_id} {"rating": ${n}}`,
+			testId: () => `context-menu-rate-${n}`
+		})
+	),
+	{
+		id: 'colour',
+		label: 'Colour',
+		command: 'track.edit',
+		when: writable,
+		disabledWhen: () => 'no track colour yet - the library stores no row colour',
+		testId: () => 'context-menu-colour'
+	},
 	{
 		// LIBUX-56: opens the row's Comment cell editor (double-click the cell does the same).
 		id: 'edit-comment',
@@ -235,7 +279,7 @@ const TRACK_MENU: MenuContribution<'track'>[] = [
 		label: 'Show in Finder',
 		command: 'track.reveal',
 		when: writable,
-		disabledWhen: (ctx) => NO_LOCAL_AUDIO[ctx.audio]
+		disabledWhen: (ctx) => oneTrackOnly(ctx) ?? NO_LOCAL_AUDIO[ctx.audio]
 	},
 	{
 		id: 'show-in-playlists',
@@ -243,6 +287,15 @@ const TRACK_MENU: MenuContribution<'track'>[] = [
 		command: 'track.playlists',
 		when: writable,
 		disabledWhen: oneTrackOnly
+	},
+	{
+		id: 'related-tracks',
+		label: 'Related tracks',
+		command: 'track.related',
+		when: writable,
+		disabledWhen: (ctx) =>
+			oneTrackOnly(ctx) ?? 'no related-tracks list yet - the similar-tracks route has no view to show it in',
+		testId: () => 'context-menu-related-tracks'
 	},
 	{
 		id: 'copy-path',
@@ -458,7 +511,8 @@ export const MENU_CONTRIBUTIONS: { [K in MenuTargetKind]: MenuContribution<K>[] 
 	],
 	// Empty off a stick: those surfaces have no write API behind them, and an
 	// empty menu means "suppress the wrong menu", not "show the browser's".
-	// A USB stick's tree gets the device rows (USBEXP-04).
+	// Library source tabs (#9451) use their own host menu; a USB stick's tree
+	// gets the device rows (USBEXP-04).
 	'tree-readonly': [
 		{
 			id: 'usb-status',
@@ -482,7 +536,28 @@ export const MENU_CONTRIBUTIONS: { [K in MenuTargetKind]: MenuContribution<K>[] 
 			when: (ctx) => ctx.stick
 		}
 	],
-	'library-source': [],
+	'library-source': [
+		{
+			id: 'source-refresh',
+			label: 'Refresh library',
+			command: 'library.refresh',
+			testId: () => 'context-menu-source-refresh'
+		},
+		{
+			id: 'source-finder',
+			label: 'Show in Finder',
+			command: 'library.folders',
+			disabledWhen: () =>
+				'no route reveals a source folder yet - Source settings lists the folder paths',
+			testId: () => 'context-menu-source-finder'
+		},
+		{
+			id: 'source-settings',
+			label: 'Source settings...',
+			command: 'library.folders',
+			testId: () => 'context-menu-source-settings'
+		}
+	],
 	deck: [
 		{
 			id: 'play',
@@ -615,7 +690,33 @@ export const MENU_CONTRIBUTIONS: { [K in MenuTargetKind]: MenuContribution<K>[] 
 			testId: () => 'quick-draw-animate-stop'
 		}
 	],
-	'perf-empty': []
+	'perf-empty': [
+		...DECKS.map(
+			(deck): MenuContribution<'perf-empty'> => ({
+				id: `load-selected-${deck}`,
+				label: `Load selection to CH${deck}`,
+				command: 'deck.load',
+				disabledWhen: (ctx) =>
+					ctx.browser ? null : 'the track browser is not open - there is no selection to load',
+				testId: () => `quick-draw-load-selected-ch${deck}`
+			})
+		),
+		...(['waveform', 'list', 'phase-scope', 'phase-meter'] as const).map(
+			(view): MenuContribution<'perf-empty'> => ({
+				id: `view-${view}`,
+				label: `Layout: ${VIEW_LABEL[view]}`,
+				command: 'perf.view',
+				checked: (ctx) => ctx.view === view,
+				testId: () => `quick-draw-view-${view}`
+			})
+		),
+		{
+			id: 'settings',
+			label: 'Settings...',
+			command: 'app.settings',
+			testId: () => 'quick-draw-settings'
+		}
+	]
 };
 
 /**

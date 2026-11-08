@@ -22,7 +22,7 @@ const ENTRY = [
 ].join('\n');
 
 /** The only rail entries with a real planned feature behind them (PARITY-TODO). */
-const TODO_IDS = ['usb-export', 'play-history'];
+const TODO_IDS = ['play-history'];
 
 let mod;
 let plannedTitle;
@@ -88,4 +88,19 @@ test('REC stays on the rail (the maintainer, Tue 6 Oct 2026: "important and usef
 	const rail = readFileSync('src/lib/components/rb/browser/IconRail.svelte', 'utf8');
 	assert.match(rail, /action: 'record'/);
 	assert.match(rail, /class:recording=\{isRecord && recording\}/);
+});
+
+// REQ: USBEXP-9746
+test('the USB glyph is live, opens the USB export screen, and says what the bottom bar says', () => {
+	const usb = buttons(renderRail()).find((tag) => tag.includes('data-testid="rail-usb-export"'));
+	assert.ok(usb, 'the rail renders the USB entry');
+	assert.equal(isDisabled(usb), false, 'if the USB glyph is still inert then broken');
+	const panel = readFileSync('src/lib/components/rb/BrowserPanel.svelte', 'utf8');
+	const bottomBarTitle = /data-testid="bottom-bar-export-eject"\s+title="([^"]+)"/.exec(panel)?.[1];
+	assert.ok(bottomBarTitle, 'the bottom bar export/eject entry still exists');
+	assert.equal(unescape(titleOf(usb)), bottomBarTitle, 'the rail tooltip is the built wording');
+	const recorderRail = readFileSync('src/lib/components/rb/browser/PerformanceRecorderRail.svelte', 'utf8');
+	assert.match(recorderRail, /onusb=\{openUsbExport\}/, 'the rail calls the same open path as the bottom bar');
+	assert.match(panel, /onclick=\{openUsbExport\}/, 'the bottom bar opens it through openUsbExport too');
+	assert.throws(() => plannedTitle('usb-export'), /no entry/, 'usb-export is no longer catalogued as planned');
 });

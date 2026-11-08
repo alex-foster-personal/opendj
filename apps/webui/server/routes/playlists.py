@@ -3,12 +3,13 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 from pathlib import Path
-from typing import Literal
+from typing import Any, Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response, status
 from pydantic import BaseModel
 
 from apps.shared.state import db as state_db
+from apps.shared.state import library_edits
 from apps.sync.djay_sync_service import RbDjaySyncError, playlist_rb_djay_diff
 
 from .. import playlist_thumbnail as thumbs
@@ -30,6 +31,33 @@ router = APIRouter(prefix="/playlists", tags=["playlists"])
 MOUNT_UNDER_API_PREFIX = True
 
 AvailabilitySummary = Literal["all", "skip"]
+
+
+def _playlist_edit_map(
+    path: Path, edit_ids: list[str | None]
+) -> dict[str, dict[str, Any]]:
+    wanted = {edit_id for edit_id in edit_ids if edit_id is not None}
+    if not wanted:
+        return {}
+    conn = state_db.open_ro(path)
+    try:
+        return {row["id"]: row for row in library_edits.list_edits(conn) if row["id"] in wanted}
+    finally:
+        conn.close()
+
+
+def _edit_overlay(edit: dict[str, Any] | None) -> dict[str, Any]:
+    if edit is None:
+        return {}
+    return {
+        "in_ms": edit["in_ms"],
+        "out_ms": edit["out_ms"],
+        "fx": edit["fx"],
+        "edit_label": edit["label"],
+        "created_by": edit["created_by"],
+        "is_edit": True,
+        "valid": edit["valid"],
+    }
 
 
 class DeletedPlaylistOut(BaseModel):
@@ -221,9 +249,15 @@ def list_playlist_tracks(
         })
     rows = rb_vendor.build_track_rows([tracks_map[sid] for sid in slice_ids], data_dir=data_dir, state_db_path=state_db)
     tracks: list[TrackRowOut] = []
+    edits = _playlist_edit_map(state_db, list(pl.edit_ids))
     for i, row in enumerate(rows):
         iid = pl.item_ids[i] if i < len(pl.item_ids) else None
-        tracks.append(TrackRowOut(**row, item_id=iid or None))
+        eid = pl.edit_ids[i] if i < len(pl.edit_ids) else None
+        tracks.append(
+            TrackRowOut(
+                **row, item_id=iid or None, edit_id=eid, **_edit_overlay(edits.get(eid))
+            )
+        )
     next_offset = offset + len(slice_ids)
     if next_offset >= total:
         next_offset = None
@@ -304,10 +338,15 @@ def get_playlist(
         })
     rows = rb_vendor.build_track_rows([tracks_map[sid] for sid in pl.items], data_dir=data_dir, state_db_path=state_db)
     item_ids = list(pl.item_ids or [])
+    edit_ids = list(pl.edit_ids or [])
+    edits = _playlist_edit_map(state_db, edit_ids)
     tracks: list[TrackRowOut] = []
     for i, row in enumerate(rows):
         iid = item_ids[i] if i < len(item_ids) else None
-        out = TrackRowOut(**row, item_id=iid or None)
+        eid = edit_ids[i] if i < len(edit_ids) else None
+        out = TrackRowOut(
+            **row, item_id=iid or None, edit_id=eid, **_edit_overlay(edits.get(eid))
+        )
         if keep_by_availability(available, row.get("file_exists")):
             tracks.append(out)
     return PlaylistDetail(

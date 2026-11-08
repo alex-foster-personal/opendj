@@ -39,6 +39,9 @@ const beats = Array.from({ length: beatCount }, (_, i) => ({
 const deckState = (over: Partial<DeckState>): DeckState => ({
 	deck_id: 1,
 	stable_id: 'a'.repeat(40),
+	edit_id: null,
+	edit_in_ms: null,
+	edit_out_ms: null,
 	source_path: '/music/Lumen Fields - Night Drive (Extended Mix).flac',
 	title: TRACK_TITLE,
 	artist: 'Lumen Fields',

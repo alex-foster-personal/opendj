@@ -68,6 +68,7 @@ from .playlist_remove import (
 from .playlist_transfer import (
     apply_dest_write,
     apply_source_write,
+    carry_edit_ids,
     membership_plan,
     skip_writes,
     validate_transfer,
@@ -85,6 +86,7 @@ class PlaylistRow:
     vendor: str
     vendor_pl_id: str
     items: list[str] = field(default_factory=list)
+    edit_ids: list[str | None] = field(default_factory=list)
     created_at: str = ""
     updated_at: str = ""
     forbid_duplicates: bool = False
@@ -175,14 +177,14 @@ class PlaylistStore:
 
     def _load(self, playlist_id: str) -> PlaylistRow:
         row = self._load_header(playlist_id)
-        row.items = [
-            r[0] for r in self._conn.execute(
-                "SELECT stable_id FROM playlist_memberships "
-                f"WHERE playlist_id = ? AND deleted_at IS NULL "
-                f"ORDER BY {MEMBERSHIP_ORDER_BY}",
-                (playlist_id,),
-            )
-        ]
+        members = self._conn.execute(
+            "SELECT stable_id, edit_id FROM playlist_memberships "
+            f"WHERE playlist_id = ? AND deleted_at IS NULL "
+            f"ORDER BY {MEMBERSHIP_ORDER_BY}",
+            (playlist_id,),
+        ).fetchall()
+        row.items = [r[0] for r in members]
+        row.edit_ids = [r[1] for r in members]
         return row
 
     def _load_header(self, playlist_id: str) -> PlaylistRow:
@@ -228,6 +230,7 @@ class PlaylistStore:
             playlist_id=row.playlist_id, name=row.name,
             vendor=row.vendor, vendor_pl_id=row.vendor_pl_id,
             items=list(row.items),
+            edit_ids=list(row.edit_ids),
         )
 
     def _try_load(self, playlist_id: str) -> PlaylistRow | None:
@@ -297,7 +300,9 @@ class PlaylistStore:
                 vendor=snap.vendor, vendor_pl_id=snap.vendor_pl_id,
             )
             self._writer.set_playlist_memberships(
-                snap.playlist_id, list(snap.items),
+                snap.playlist_id,
+                list(snap.items),
+                list(snap.edit_ids) if snap.edit_ids is not None else None,
             )
             return self._load(snap.playlist_id)
 
@@ -483,7 +488,9 @@ class PlaylistStore:
                         new_id, True,
                     )
                 if source.items:
-                    self._writer.set_playlist_memberships(new_id, list(source.items))
+                    self._writer.set_playlist_memberships(
+                        new_id, list(source.items), list(source.edit_ids),
+                    )
                 copy = self._load(new_id)
                 if record_edit:
                     self._record_edit(
@@ -492,8 +499,13 @@ class PlaylistStore:
                 return copy
 
     def replace_memberships(
-        self, playlist_id: str, stable_ids: list[str], *, expected_etag: str,
+        self,
+        playlist_id: str,
+        stable_ids: list[str],
+        *,
+        expected_etag: str,
         record_edit: bool = True,
+        edit_ids: list[str | None] | None = None,
     ) -> PlaylistRow:
         """Full membership replace = add/remove/reorder in one idempotent op.
 
@@ -509,9 +521,14 @@ class PlaylistStore:
                     repeated = first_repeated_stable_id(stable_ids)
                     if repeated is not None:
                         raise AlreadyExistsError(repeated, playlist_id)
-                if list(row.items) == list(stable_ids):
+                carried = (
+                    carry_edit_ids(list(row.items), list(row.edit_ids), list(stable_ids))
+                    if edit_ids is None
+                    else edit_ids
+                )
+                if list(row.items) == list(stable_ids) and list(row.edit_ids) == list(carried):
                     return row
-                self._writer.set_playlist_memberships(playlist_id, list(stable_ids))
+                self._writer.set_playlist_memberships(playlist_id, list(stable_ids), carried)
                 new_row = self._load(playlist_id)
                 if record_edit:
                     self._record_edit(
@@ -613,13 +630,32 @@ class PlaylistStore:
                         self._check_etag(source, source_etag)
 
                 source_items = list(source.items) if source is not None else None
-                dest_items, moved_source, dest_unchanged, source_unchanged = (
-                    membership_plan(list(dest.items), source_items, stable_ids, mode)
+                source_edit_ids = list(source.edit_ids) if source is not None else None
+                (
+                    dest_items,
+                    dest_edit_ids,
+                    moved_source,
+                    moved_edits,
+                    dest_unchanged,
+                    source_unchanged,
+                ) = membership_plan(
+                    list(dest.items),
+                    source_items,
+                    stable_ids,
+                    mode,
+                    dest_edit_ids=list(dest.edit_ids),
+                    source_edit_ids=source_edit_ids,
                 )
                 if skip_writes(mode, dest_unchanged, source_unchanged):
                     return dest, source if mode == "move" else None
 
-                apply_dest_write(self._writer, dest_id, dest_items, dest_unchanged)
+                apply_dest_write(
+                    self._writer,
+                    dest_id,
+                    dest_items,
+                    dest_unchanged,
+                    edit_ids=dest_edit_ids,
+                )
                 apply_source_write(
                     self._writer,
                     source_id,
@@ -627,6 +663,7 @@ class PlaylistStore:
                     mode,
                     source is not None,
                     source_unchanged,
+                    edit_ids=moved_edits,
                 )
                 dest_row = self._load(dest_id)
                 source_row = (

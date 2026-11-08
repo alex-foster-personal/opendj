@@ -39,6 +39,44 @@ describe('auto-play remaining / trigger', () => {
 		assert.equal(remainingMs(10, 0), null);
 	});
 
+	it('uses a virtual edit out point as the duration and handoff boundary', () => {
+		const { remainingMs, shouldTriggerAutoPlay } = mod;
+		const fileDuration = 180_000;
+		const editOutMs = 90_000;
+		assert.equal(remainingMs(89_999, editOutMs), 1);
+		assert.equal(remainingMs(editOutMs, editOutMs), 0);
+		assert.equal(remainingMs(editOutMs, fileDuration), 90_000, 'file end is not the edit clock');
+		assert.equal(
+			shouldTriggerAutoPlay({
+				enabled: true,
+				remaining_ms: remainingMs(editOutMs - 16_000, editOutMs),
+				threshold_ms: 16_000,
+				source_stable_id: 'edit-source',
+				already_triggered_for: null,
+				in_flight: false
+			}),
+			true
+		);
+	});
+
+	it('keeps edit identity and window in the snapshotted candidate feed', () => {
+		const feed = mod.createAutoPlayFeedSnapshot();
+		const edit = {
+			stable_id: 'source-a',
+			edit_id: 'edit-a',
+			in_ms: 1_000,
+			out_ms: 9_000,
+			is_edit: true,
+			key: '8A',
+			bpm: 124,
+			file_exists: true
+		};
+		const decision = feed.step(true, 'playlist-a', [edit]);
+		assert.deepEqual(decision.publish, [edit]);
+		assert.equal(feed.matches([edit]), true);
+		assert.equal(feed.matches([{ ...edit, edit_id: 'edit-b' }]), false);
+	});
+
 	it('triggers once inside threshold, not while in-flight or already armed', () => {
 		const { shouldTriggerAutoPlay, AUTO_PLAY_THRESHOLD_MS } = mod;
 		const base = {
@@ -528,6 +566,28 @@ describe('auto-play track pick', () => {
 			]
 		);
 		assert.deepEqual([...getAutoPlayPlaylistIds()], ['p1', 'p2']);
+	});
+
+	it('keeps edit_id, in_ms and out_ms in the normalized feed rows', () => {
+		const { setAutoPlayTrackFeed, getAutoPlayPlaylist } = mod;
+		setAutoPlayTrackFeed('pl-x', [
+			{
+				stable_id: 'src-1',
+				key: '1A',
+				bpm: 120,
+				file_exists: true,
+				edit_id: 'e1',
+				in_ms: 1000,
+				out_ms: 9000,
+				is_edit: true
+			}
+		]);
+		const row = getAutoPlayPlaylist()[0];
+		assert.equal(row.stable_id, 'src-1');
+		assert.equal(row.edit_id, 'e1');
+		assert.equal(row.in_ms, 1000);
+		assert.equal(row.out_ms, 9000);
+		assert.equal(row.is_edit, true);
 	});
 });
 

@@ -101,6 +101,34 @@ def _split_deck_scope(tokens: Sequence[str]) -> tuple[int | None, list[str]]:
     return None, list(tokens)
 
 
+def _drop_named_deck_matching_scope(scoped: int | None, positionals: list[str]) -> list[str]:
+    """AGENT-9708: a named ``deck=`` beside a deck scope must name the same deck.
+
+    Checked before positional binding: otherwise the scope deck is inserted as the
+    first positional, the named deck overrides it, and the scope number slides into
+    the next argument (``deck 1 fader deck=2`` moved deck 2's fader to full). The
+    same deck named twice is accepted once; a different one is refused.
+    """
+    if scoped is None:
+        return positionals
+    kept: list[str] = []
+    for token in positionals:
+        key, separator, raw = token.partition("=")
+        if not (separator and key == "deck"):
+            kept.append(token)
+            continue
+        try:
+            named = deck_value("deck", raw)
+        except ValueError as error:
+            raise InvocationError(str(error)) from error
+        if named != scoped:
+            raise InvocationError(
+                f"deck was given twice (deck {scoped} as the scope and deck={named}); "
+                "give it once, either as `deck <n> <verb>` or after the verb"
+            )
+    return kept
+
+
 def _verb_for(name: str, scoped: int | None, positionals: list[str]) -> tuple[Verb, list[str]]:
     """Look the verb up and, given a scope prefix, put its deck back in place."""
     try:
@@ -151,6 +179,7 @@ def parse_invocation(tokens: Sequence[str], deck_scope: int | None = None) -> In
     if not rest:
         raise InvocationError("no verb given; run opendj --list-verbs")
     name, *positionals = rest
+    positionals = _drop_named_deck_matching_scope(scoped, positionals)
     verb, positionals = _verb_for(name, scoped, positionals)
     named, positionals = _named_tokens(verb.args, positionals)
     values, leftover = _consume(verb.args, positionals, named)

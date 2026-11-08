@@ -51,19 +51,27 @@ SIMPLE_GENRE_FAMILIES: list[GenreFamily] = [
 ]
 
 
+def _nonblank_genre_tag(tag: str | None) -> str | None:
+    """Stripped tag text, or None when the tag is missing or whitespace-only."""
+    if tag is None:
+        return None
+    stripped = tag.strip()
+    if stripped == "":
+        return None
+    return stripped
+
+
 def simple_genre_family(tag: str | None) -> tuple[str, str] | None:
     """(family_name, color) for a raw genre tag, or None when no family matches.
 
     None also covers a missing/blank tag -- callers bucket those tracks as
     unclassified rather than guessing a family.
     """
-    if tag is None:
-        return None
-    stripped = tag.strip()
-    if stripped == "":
+    lookup = _nonblank_genre_tag(tag)
+    if lookup is None:
         return None
     for family in SIMPLE_GENRE_FAMILIES:
-        if family.pattern.search(stripped):
+        if family.pattern.search(lookup):
             return (family.name, family.color)
     return None
 

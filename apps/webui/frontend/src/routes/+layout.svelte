@@ -42,6 +42,7 @@
 	} from '$lib/preflight/preflight.svelte';
 	import { bootGateYielded } from '$lib/overlays/overlay-stack';
 	import { shouldAutoOpenEmptyLibrarySetup } from '$lib/preflight/fresh-install';
+	import { shouldShowPreflightStrip } from '$lib/preflight/boot-copy';
 	import { accountOverlay } from '$lib/account/overlay.svelte';
 	import { signInOverlay } from '$lib/auth/sign-in-overlay.svelte';
 	import { runFirstRunGate } from '$lib/setup/first-run-gate.svelte';
@@ -208,7 +209,11 @@
 			? [LIBRARY_ATTACHED_CHECK_ID]
 			: []
 	);
-	const showPreflightIndicator = $derived(!blockOnPreflight && !preflightGate.cleared);
+	// Issue #2653: keep the non-blocking strip up while library-attached still
+	// needs setup, even after the boot gate cleared on a dismissed-empty pass.
+	const showPreflightIndicator = $derived(
+		shouldShowPreflightStrip(blockOnPreflight, preflightGate.cleared, preflightGate.checks)
+	);
 
 	// Keep html[data-theme] in sync (prefs module also applies on load/set).
 	$effect(() => {

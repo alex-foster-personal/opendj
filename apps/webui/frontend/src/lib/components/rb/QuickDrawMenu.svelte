@@ -29,6 +29,10 @@
 	import { pushToast } from '$lib/stores.svelte';
 	import { vocalFixMenuItem } from './vocal-correction-menu';
 	import { runTransitionInCue } from './transition-in-menu';
+	import { getBrowseAdapter } from '$lib/rb/midi/browse-adapter';
+	import { uiPrefs } from '$lib/rb/prefs.svelte';
+	import { openSettings } from '$lib/settings/overlay.svelte';
+	import type { PerfView } from '$lib/rb/topbar-view-prefs';
 	import { waveClickAt } from './wave-click';
 	import { transitionTargetOk } from '$lib/rb/auto-play-next.svelte';
 	import { isUsbTrackId } from '$lib/rb/track-source';
@@ -428,8 +432,31 @@
 				// and stops the event, so only stick-less trees reach here.
 				return menuFor({ kind: 'tree-readonly' }, { stick: false }).map((item) => _toCtxItem(item, undefined));
 			case 'library-source':
-			case 'perf-empty':
-				return menuFor({ kind: menuTarget.kind }, {}).map((item) => _toCtxItem(item, undefined));
+				// LibrarySourceMenu stops the event; this fallback has no runners.
+				return menuFor({ kind: 'library-source' }, {}).map((item) => _toCtxItem(item, undefined));
+			case 'perf-empty': {
+				const browser = getBrowseAdapter() !== null;
+				const ctx = { browser, view: uiPrefs.perf_view as PerfView };
+				const runners: Record<string, CtxItem['run']> = {
+					settings: async () => openSettings()
+				};
+				for (const deck of DECK_IDS) {
+					runners[`load-selected-${deck}`] = async () => {
+						const adapter = getBrowseAdapter();
+						if (adapter === null) {
+							pushToast('Select a track in the browser first', 'error');
+							return;
+						}
+						adapter.loadSelected(deck);
+					};
+				}
+				for (const view of ['waveform', 'list', 'phase-scope', 'phase-meter'] as const) {
+					runners[`view-${view}`] = async () => {
+						await runPerformanceCommandFromUi({ type: 'set_perf_view', view });
+					};
+				}
+				return menuFor({ kind: 'perf-empty' }, ctx).map((item) => _toCtxItem(item, runners[item.id]));
+			}
 		}
 	}
 
@@ -438,8 +465,8 @@
 		if (!(t instanceof Element) || !quickDrawClaimsContextMenu(t)) return;
 		e.preventDefault();
 		e.stopPropagation();
-		// W28: a library surface whose registry menu is empty gets no menu at
-		// all, rather than the deck launcher (which is not about that target).
+		// W28: library source tabs open LibrarySourceMenu and stop the event;
+		// read-only trees with no items still suppress Quick Draw (CTXMENU-06).
 		const kind = _targetOf(t, null).kind;
 		if (kind === 'tree-readonly' || kind === 'library-source') {
 			_close();

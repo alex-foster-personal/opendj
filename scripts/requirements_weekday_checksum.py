@@ -23,7 +23,7 @@ from __future__ import annotations
 import argparse
 import re
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import date
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -33,7 +33,21 @@ REQUIREMENTS = ROOT / ".planning" / "REQUIREMENTS.md"
 _DATE_RE = re.compile(
     r"(?<![A-Za-z])(Mon|Tue|Wed|Thu|Fri|Sat|Sun) (\d{1,2}) (Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec) (\d{4})\b"
 )
-_DATE_FORMAT = "%a %d %b %Y"
+# English month tokens only: strptime's %%a/%%b follow LC_TIME and mis-parse REQUIREMENTS on non-English CI.
+_MONTH_NUM: dict[str, int] = {
+    "Jan": 1,
+    "Feb": 2,
+    "Mar": 3,
+    "Apr": 4,
+    "May": 5,
+    "Jun": 6,
+    "Jul": 7,
+    "Aug": 8,
+    "Sep": 9,
+    "Oct": 10,
+    "Nov": 11,
+    "Dec": 12,
+}
 _REQ_RE = re.compile(r"\*\*([A-Z][A-Z0-9]+-\d+)\*\*")
 _FINGERPRINT_LEN = 60
 
@@ -62,8 +76,18 @@ def _line_fingerprint(line: str) -> str:
 
 
 def _weekday_ok(written: str) -> tuple[bool, str]:
-    parsed = datetime.strptime(written, _DATE_FORMAT)  # noqa: DTZ007 -- calendar day
-    expected = parsed.strftime("%a")
+    parts = written.split()
+    if len(parts) != 4:
+        return False, ""
+    _token, day_s, mon_s, year_s = parts
+    month = _MONTH_NUM.get(mon_s)
+    if month is None:
+        return False, ""
+    try:
+        parsed = date(int(year_s), month, int(day_s))
+    except ValueError:
+        return False, ""
+    expected = ("Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun")[parsed.weekday()]
     return written.startswith(expected), expected
 
 

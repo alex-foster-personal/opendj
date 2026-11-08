@@ -32,7 +32,6 @@
 		identityBacklogNote,
 		presentCloudSyncError,
 		presentCloudSyncResultError,
-		statusHeadline,
 		syncNowRequest,
 		syncRuntimeGateReason,
 		type ConfigFormFields,
@@ -193,7 +192,6 @@
 		}
 	}
 
-	const headline = $derived(statusHeadline(status));
 	const backlogNote = $derived(identityBacklogNote(identityBacklogCount));
 </script>
 
@@ -208,7 +206,6 @@
 	{syncDecision}
 	{forceSyncDecision}
 	{showForceSync}
-	{headline}
 	{backlogNote}
 	technicalDetailsLabel={CLOUDSYNC_TECHNICAL_DETAILS_LABEL}
 	forceSyncLabel={FORCE_SYNC_LABEL}

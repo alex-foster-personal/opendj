@@ -1,0 +1,9 @@
+{
+  "bytes": 1024,
+  "measured_main": 406594,
+  "measured_with_pr": 407012,
+  "sha": "df552532e0",
+  "date": "Sun 8 Nov 2026",
+  "reason": "PR #9552 (feat(webui): add performance keyboard selector ring overlay (#9396)) grows the performance surface. Measured: CI bundle check of df552532e0, +418 B gzip; ceiled to KiB.",
+  "payback": "none planned; the growth is the feature's own code on this surface"
+}

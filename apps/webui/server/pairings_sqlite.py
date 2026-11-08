@@ -17,27 +17,8 @@ from typing import Any
 from apps.shared.pairings.repo import PairingsRepo
 
 from .backend import BackendError, ConflictError, NotFoundError, Pairing
+from .http_pairings_schema import ensure_http_pairings_table
 from .playlist_add import AlreadyExistsError
-
-_HTTP_PAIRINGS_DDL: tuple[str, ...] = (
-    """
-    CREATE TABLE IF NOT EXISTS http_pairings (
-        pairing_id     TEXT PRIMARY KEY,
-        from_stable_id TEXT NOT NULL,
-        to_stable_id   TEXT NOT NULL,
-        direction      TEXT NOT NULL CHECK (direction IN ('->', '<->')),
-        source         TEXT NOT NULL CHECK (source IN ('manual', 'learned', 'ai')),
-        notes          TEXT,
-        snapshot_json  TEXT,
-        created_at     TEXT NOT NULL,
-        updated_at     TEXT NOT NULL,
-        graph_owner_stamp TEXT
-    )
-    """,
-    "CREATE INDEX IF NOT EXISTS idx_http_pairings_from ON http_pairings(from_stable_id)",
-    "CREATE INDEX IF NOT EXISTS idx_http_pairings_to ON http_pairings(to_stable_id)",
-    "CREATE INDEX IF NOT EXISTS idx_http_pairings_source ON http_pairings(source)",
-)
 
 _SELECT_HTTP = (
     "pairing_id, from_stable_id, to_stable_id, direction, source, notes, snapshot_json, created_at, updated_at"
@@ -69,16 +50,6 @@ def raise_on_pairing_id_collision(existing: Pairing | None, pairing: Pairing) ->
 def _http_table_exists(conn: sqlite3.Connection) -> bool:
     row = conn.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='http_pairings'").fetchone()
     return row is not None
-
-
-def ensure_http_pairings_table(conn: sqlite3.Connection) -> None:
-    for stmt in _HTTP_PAIRINGS_DDL:
-        conn.execute(stmt)
-    columns = {row[1] for row in conn.execute("PRAGMA table_info(http_pairings)")}
-    if "graph_owner_stamp" not in columns:
-        # Rows from before the marker own no graph edge: delete leaves the
-        # edge in place, the direction that never loses someone else's data.
-        conn.execute("ALTER TABLE http_pairings ADD COLUMN graph_owner_stamp TEXT")
 
 
 def _graph_direction(http_dir: str) -> str:

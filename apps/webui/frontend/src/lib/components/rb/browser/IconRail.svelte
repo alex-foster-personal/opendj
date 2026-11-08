@@ -6,6 +6,10 @@
 	// iTunes, file browser, Beatport, video, cloud lock and the Collection /
 	// iTunes / Devices text tabs) are gone.
 	import { plannedTitle } from '$lib/rb/planned-explainers';
+	import LibrarySourceMenu from './LibrarySourceMenu.svelte';
+
+	/** The bottom bar's export/eject wording (BrowserPanel.svelte), so both entry points say the same thing. */
+	const USB_EXPORT_TIP = 'Export / eject - open the USB screen to write an export to a stick or eject it';
 
 	interface RailIcon {
 		tip?: string;
@@ -14,7 +18,7 @@
 		d: string;
 		mode: 'fill' | 'stroke';
 		source?: 'spotify';
-		action?: 'record' | 'collection';
+		action?: 'record' | 'collection' | 'usb';
 	}
 
 	let {
@@ -26,6 +30,7 @@
 		recordingWaiting = false,
 		recordingTip = null,
 		onrecord = () => {},
+		onusb = () => {},
 		recordable = true,
 		recordingAvailable = true
 	}: {
@@ -40,6 +45,8 @@
 		/** Overrides the REC tooltip, e.g. while waiting for permission. */
 		recordingTip?: string | null;
 		onrecord?: () => void;
+		/** USBEXP-9746: opens the USB export screen (the bottom bar's export/eject path). */
+		onusb?: () => void;
 		/** False hides REC whatever the recording flag says (Library mode). */
 		recordable?: boolean;
 		/** Whether the build allows recording (the sets.recording flag). The parent reads the flag, so this component never touches the backend while it renders. */
@@ -64,12 +71,12 @@
 		},
 		{
 			// save/SD card: notched-corner card with contact pins (SCREENSHOT-SPEC 5a).
-			// Planned entry (PARITY-TODO, id usb-export): the usb-export routes exist;
-			// the UI is not built, so this glyph stays inert.
-			plannedId: 'usb-export',
+			// USBEXP-9746: opens the built USB export screen, like the bottom bar's export/eject.
+			tip: USB_EXPORT_TIP,
 			color: 'currentColor',
 			d: 'M5 2h6.5L13 3.5V14H5zM6.2 3.2v2.6M8 3.2v2.6M9.8 3.2v2.6M11.6 3.7v2.1',
-			mode: 'stroke'
+			mode: 'stroke',
+			action: 'usb'
 		},
 		{
 			// timer/stopwatch: crown button + dial hand (SCREENSHOT-SPEC 5a).
@@ -93,9 +100,11 @@
 </script>
 
 <nav class="rail" aria-label="browser sources" data-menu-target="library-source">
+	<LibrarySourceMenu>
 	{#each ICONS.filter((entry) => entry.action !== 'record' || (recordable && recordingAvailable)) as icon, i (i)}
 		{@const isRecord = icon.action === 'record'}
 		{@const isHome = icon.action === 'collection'}
+		{@const isUsb = icon.action === 'usb'}
 		{@const isInert = icon.source === undefined && icon.action === undefined}
 		{@const tip = isRecord
 			? (recordingTip ??
@@ -105,7 +114,7 @@
 				: (icon.tip ?? '')}
 		<button
 			class="rail-btn"
-			data-testid={isHome ? 'rail-collection-home' : undefined}
+			data-testid={isHome ? 'rail-collection-home' : isUsb ? 'rail-usb-export' : undefined}
 			class:rb-inert={isInert}
 			class:recording={isRecord && recording}
 			class:waiting={isRecord && recordingWaiting}
@@ -114,7 +123,7 @@
 			title={tip}
 			aria-label={tip}
 			aria-pressed={icon.source === 'spotify' ? source === 'spotify' : isRecord ? recording : undefined}
-			onclick={isHome ? oncollection : icon.source === 'spotify' ? onspotify : isRecord ? onrecord : undefined}
+			onclick={isHome ? oncollection : icon.source === 'spotify' ? onspotify : isRecord ? onrecord : isUsb ? onusb : undefined}
 		>
 			<svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true">
 				{#if icon.mode === 'stroke'}
@@ -130,6 +139,7 @@
 			</svg>
 		</button>
 	{/each}
+	</LibrarySourceMenu>
 </nav>
 
 <style>

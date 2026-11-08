@@ -55,6 +55,7 @@ class MembershipRow:
     updated_at: str
     origin_device_id: str | None
     deleted_at: str | None
+    edit_id: str | None = None
 
 
 @dataclass(frozen=True)
@@ -119,7 +120,7 @@ def _load_live_members(
 ) -> list[MembershipRow]:
     rows = conn.execute(
         f"SELECT item_id, stable_id, position, order_key, updated_at, "
-        f"origin_device_id, deleted_at FROM playlist_memberships "
+        f"origin_device_id, deleted_at, edit_id FROM playlist_memberships "
         f"WHERE playlist_id = ? AND deleted_at IS NULL "
         f"ORDER BY {MEMBERSHIP_ORDER_BY}",
         (playlist_id,),
@@ -133,6 +134,7 @@ def _load_live_members(
             updated_at=row[4],
             origin_device_id=row[5],
             deleted_at=row[6],
+            edit_id=row[7],
         )
         for row in rows
     ]
