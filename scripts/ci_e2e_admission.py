@@ -15,6 +15,12 @@ about that event decide the shape of this module:
    still equals the triggering head, and pins the merge commit sha once; every later
    job checks out that sha, never the moving ref.
 
+A pull request's E2E is OPT-IN (ADR-NEW-e2e-opt-in-by-label, Mon 9 Nov 2026): when the
+workflow passes `E2E_OPT_IN_LABEL`, `resolve` admits a green head only if the pull request
+carries that label, and skips every other head with the reason, which `publish` turns into
+a `skipped` verdict. An empty `E2E_OPT_IN_LABEL` (the workflow before that change) admits
+every green head as before, so this module lands first and the workflow switches it on.
+
 Both commands read the workflow's `env:` and write `$GITHUB_OUTPUT`; the GitHub API is
 reached through `gh`, resolved by path (AGENTS.md, "Portable by default"). The decisions
 are pure functions over the API payloads (`resolve_admission`, `publish_payload`), so
@@ -44,6 +50,12 @@ GATE_CHECK_NAME = "ci gate"
 #: `scripts.ci_wait_workflows.WORKFLOW_RUN_PUBLISHED_CHECKS["e2e.yml"]` by the tests.
 PUBLISHED_CHECK_NAME = "e2e verdict"
 REPAIR_LABEL = "ci:trunk-repair"
+#: The pull request label that opts a head in to E2E (ADR-NEW-e2e-opt-in-by-label). Pinned
+#: equal to `scripts.ci_wait_workflows.WORKFLOW_RUN_OPT_IN_LABELS["e2e.yml"]` by the tests,
+#: so ci-wait owes `e2e verdict` on exactly the heads admission can admit.
+OPT_IN_LABEL = "e2e"
+#: The workflow env that switches the opt-in on; empty or unset admits every green head.
+OPT_IN_LABEL_ENV = "E2E_OPT_IN_LABEL"
 #: GitHub computes a pull request's mergeability lazily after a push; the pulls endpoint
 #: answers `mergeable: null` until it has, and asks the client to poll.
 MERGEABILITY_ATTEMPTS = 6
@@ -70,6 +82,8 @@ class RunEvent:
     head_sha: str
     pr_number: str
     pr_base: str
+    #: The label a pull request must carry to be admitted; "" admits every green head.
+    opt_in_label: str = ""
 
     @classmethod
     def from_env(cls, env: Mapping[str, str]) -> RunEvent:
@@ -81,6 +95,7 @@ class RunEvent:
             head_sha=env.get("HEAD_SHA", ""),
             pr_number=env.get("PR_NUMBER", ""),
             pr_base=env.get("PR_BASE", ""),
+            opt_in_label=env.get(OPT_IN_LABEL_ENV, ""),
         )
 
 
@@ -129,8 +144,12 @@ def resolve_admission(event: RunEvent, api: Api, sleep: Callable[[float], None] 
     merge_sha = pull.get("merge_commit_sha") or ""
     if not merge_sha:
         raise AdmissionError(f"pull request #{event.pr_number} is mergeable but names no merge_commit_sha")
-    repair = any(label.get("name") == REPAIR_LABEL for label in pull.get("labels") or [])
+    repair = _has_label(pull, REPAIR_LABEL)
     return Admission(scope_event="pull_request", checkout_ref=merge_sha, repair=repair, pr=event.pr_number, skip="")
+
+
+def _has_label(pull: dict, name: str) -> bool:
+    return any(label.get("name") == name for label in pull.get("labels") or [])
 
 
 def _skip_before_pull(event: RunEvent, api: Api) -> str:
@@ -152,6 +171,13 @@ def _skip_before_pull(event: RunEvent, api: Api) -> str:
 
 
 def _skip_for_pull(event: RunEvent, pull: dict, api: Api, sleep: Callable[[float], None]) -> str:
+    if event.opt_in_label and not _has_label(pull, event.opt_in_label):
+        # First, so an unlabelled head's verdict always says why, and no mergeability poll
+        # (up to six reads) is spent on a head that cannot be admitted.
+        return (
+            f"pull request #{event.pr_number} carries no `{event.opt_in_label}` label; a pull request's E2E "
+            "is opt-in (ADR-NEW-e2e-opt-in-by-label) and main's hourly E2E covers the merge"
+        )
     head = (pull.get("head") or {}).get("sha") or ""
     if head != event.head_sha:
         return (
@@ -192,6 +218,9 @@ class PublishInputs:
     head_sha: str
     pr_number: str
     scope_result: str
+    #: The triggering CI run's conclusion (`workflow_run.conclusion`); empty before the
+    #: workflow passes it. e2e.yml skips its scope job when this is not `success`.
+    run_conclusion: str
     scope_event: str
     skip: str
     in_scope: str
@@ -207,6 +236,7 @@ class PublishInputs:
             head_sha=env.get("HEAD_SHA", ""),
             pr_number=env.get("PR_NUMBER", ""),
             scope_result=_required(env, "SCOPE_RESULT"),
+            run_conclusion=env.get("RUN_CONCLUSION", ""),
             scope_event=env.get("SCOPE_EVENT", ""),
             skip=env.get("SKIP", ""),
             in_scope=env.get("IN_SCOPE", ""),
@@ -224,7 +254,13 @@ def publish_payload(inputs: PublishInputs) -> dict[str, Any] | None:
         return None
     if not inputs.head_sha:
         raise AdmissionError("a pull request's CI run named no head sha to publish the verdict on")
-    if inputs.scope_result != "success":
+    if inputs.scope_result == "skipped" and inputs.run_conclusion and inputs.run_conclusion != "success":
+        # e2e.yml's scope job carries `if: workflow_run.conclusion == 'success'`: a CI run
+        # that ended cancelled or red schedules no E2E job at all (two thirds of the
+        # workflow_run runs on Mon 9 Nov 2026 were these). The head still gets its check.
+        conclusion, title = "skipped", "E2E did not run at this head"
+        summary = f"CI concluded {inputs.run_conclusion}; e2e.yml admits only a green ci gate: {inputs.run_url}"
+    elif inputs.scope_result != "success":
         conclusion, title = "failure", f"e2e scope job {inputs.scope_result}: nothing was admitted"
         summary = f"The scope job did not resolve this run; see {inputs.run_url}."
     elif inputs.scope_event != "pull_request":

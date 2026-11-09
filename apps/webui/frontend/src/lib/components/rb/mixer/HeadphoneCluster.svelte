@@ -47,11 +47,13 @@
 		state: HeadphoneState;
 		onmix: (value: number) => void;
 		onlevel: (value: number) => void;
+		onboothlevel: (value: number) => void;
 		ondelay: (value: number) => void;
 		onrefresh: () => void;
 		onacquire: () => void;
 		onselect: DevicePick;
 		onmaster: DevicePick;
+		onbooth: DevicePick;
 		oninput: DevicePick;
 		onmode: (mode: HeadphoneOutputMode) => void;
 		/** CUEOUT-14: open the mic calibration modal. */
@@ -62,8 +64,12 @@
 		testrun: <T>(work: (stillCurrent: () => boolean, signal: AbortSignal) => Promise<T>) => Promise<T>;
 	}
 
-	let { state: headphoneState, onmix, onlevel, ondelay, onrefresh, onacquire, onselect, onmaster, oninput, onmode, oncalibrate, onAlignmentMode, testrun }: Props =
+	let { state: headphoneState, onmix, onlevel, onboothlevel, ondelay, onrefresh, onacquire, onselect, onmaster, onbooth, oninput, onmode, oncalibrate, onAlignmentMode, testrun }: Props =
 		$props();
+	let boothPickerRevealed = $state(false);
+	const showBoothPicker = $derived(
+		boothPickerRevealed || headphoneState.selected_booth_output_device_id !== null
+	);
 
 	/** I18: the remote speaker build flag (on in dev, off in built apps). */
 	const remoteSpeakerOn = remoteSpeakerBuildFlag() === 'on';
@@ -156,6 +162,11 @@
 			? null
 			: (headphoneState.outputs.find((output) => output.id === headphoneState.selected_master_output_device_id)?.label ?? null)
 	);
+	const boothLabel = $derived(
+		headphoneState.selected_booth_output_device_id === null
+			? null
+			: (headphoneState.outputs.find((output) => output.id === headphoneState.selected_booth_output_device_id)?.label ?? null)
+	);
 	const warningText = $derived(twoOutputsWarning({ outputMode: headphoneState.output_mode, selectedLabel }));
 	const livenessAlert = $derived(headphoneLivenessAlertForState(headphoneState));
 	// IOPIN-14: the panel says whether the lists could be read before it shows them.
@@ -208,6 +219,10 @@
 	const cuePickBullets = [
 		'Headphone CUE sink: wired or Bluetooth. Press CALIBRATE afterwards to time it against the room. Live Bluetooth pairing is CUEOUT-12, not this control.',
 		'Test plays a few beeps on this output. The thin meter is the level on this bus.'
+	];
+	const boothPickBullets = [
+		'BOOTH carries the same room mix as MASTER on a third pinned output. It never carries channel CUE.',
+		'BOOTH GAIN changes only this monitor. Selecting BOOTH never starts cue calibration.'
 	];
 
 	function stepHeadDelay(delta: number): void {
@@ -472,6 +487,11 @@
 		return ioTestDeviceId(bus, headphoneState);
 	}
 
+	async function chooseBooth(deviceId: string): Promise<void> {
+		await onbooth(deviceId);
+		if (deviceId === '') boothPickerRevealed = false;
+	}
+
 	async function playDeviceTest(bus: IoTestBus): Promise<void> {
 		const mine = ++testToken;
 		abortTest();
@@ -552,7 +572,7 @@
 	}
 
 	function meterFill(bus: IoTestBus): number {
-		const reading = headphoneState.signals[bus];
+		const reading = bus === 'booth' ? headphoneState.signals.master : headphoneState.signals[bus];
 		const rms = bus === 'input' ? Math.max(reading?.rms ?? 0, inputLiveRms) : reading?.rms;
 		const envelope = testBus === bus && bus !== 'input' ? ioTestEnvelope((nowMs - testStartedAt) / 1000) : 0;
 		return ioMeterFill(rms, envelope);
@@ -560,7 +580,7 @@
 
 	/** What the meter is showing, with the number, for its hover title. */
 	function meterText(bus: IoTestBus, fill: number): string {
-		const reading = headphoneState.signals[bus];
+		const reading = bus === 'booth' ? headphoneState.signals.master : headphoneState.signals[bus];
 		const testing = testBus === bus && bus !== 'input' && ioTestEnvelope((nowMs - testStartedAt) / 1000) > 0;
 		const source = testing
 			? 'test tone level'
@@ -667,7 +687,6 @@
 				{/if}
 			</section>
 			<section class="hp-section" aria-label="Future routing options">
-				<div class="hp-future"><button type="button" disabled>BOOTH / MONITOR</button><span>Coming soon</span></div>
 				<div class="hp-future"><button type="button" disabled>Advanced channel assignment</button><span>Coming soon</span></div>
 				{#if remoteSpeakerSection}
 					<!-- I18: loaded on demand, so a build with the flag off ships none of it. -->
@@ -691,8 +710,8 @@
 						<p class="hp-context" role="status" data-io-device-notice>{notice}</p>
 					{/each}
 				</div>
-				{#if masterLabel !== null || selectedLabel !== null}
-					<p class="hp-context">{#if masterLabel !== null}MASTER: {masterLabel}. {/if}{#if selectedLabel !== null}CUE: {selectedLabel}.{/if}</p>
+				{#if masterLabel !== null || selectedLabel !== null || boothLabel !== null}
+					<p class="hp-context">{#if masterLabel !== null}MASTER: {masterLabel}. {/if}{#if selectedLabel !== null}CUE: {selectedLabel}. {/if}{#if boothLabel !== null}BOOTH: {boothLabel}.{/if}</p>
 				{/if}
 					{@render outputMenu()}
 					<p class="hp-context">Meters show app-bus or mic level. Test plays a few beeps. Neither proves a speaker you have not heard.</p>
@@ -792,6 +811,40 @@
 				</span>
 			</span>
 		</ControlExplainer>
+		{#if !showBoothPicker}
+			<button type="button" class="hp-acquire" data-add-booth onclick={() => (boothPickerRevealed = true)}>Add booth / monitor</button>
+		{:else}
+			<ControlExplainer title="BOOTH / MONITOR" bullets={boothPickBullets} tooltip={TOOLTIP_HEADPHONE_STACK} placement="right">
+				<span class="hp-pick" data-booth-output-row>
+					<span class="hp-pick-name">BOOTH / MONITOR</span>
+					<span class="hp-pick-row">
+						<select
+							aria-label="booth output device"
+							value={headphoneState.selected_booth_output_device_id ?? ''}
+							disabled={!headphoneState.supported || !access.output_pinning}
+							onchange={(event) => pickThenMirror(event.currentTarget, chooseBooth, () => headphoneState.selected_booth_output_device_id)}
+						>
+							<option value="">None</option>
+							{#each headphoneState.outputs as output (output.id)}
+								<option value={output.id}>{outputOptionLabel(output)}</option>
+							{/each}
+						</select>
+						{@render testAndMeter('booth', 'booth output')}
+					</span>
+					<label class="hp-context">BOOTH GAIN
+						<input
+							type="range"
+							min="0"
+							max="1"
+							step="0.01"
+							value={headphoneState.booth_level}
+							aria-label="booth gain"
+							oninput={(event) => onboothlevel(event.currentTarget.valueAsNumber)}
+						/>
+					</label>
+				</span>
+			</ControlExplainer>
+		{/if}
 		{#if wirelessMain !== null}<p class="hp-context" data-wireless-main-note>{wirelessMain}</p>{/if}
 		{#if selectedLabel !== null && monitorLabelIsBluetooth(selectedLabel)}<p class="hp-context">Bluetooth CUE can drift against MASTER. Use CALIBRATE for a measured starting offset.</p>{/if}
 		{#if livenessAlert !== null}<p class="hp-liveness-alert" role="alert" data-headphone-liveness-alert>{livenessAlert}</p>{/if}
@@ -849,7 +902,7 @@
 {/snippet}
 
 {#snippet volumeMeter(bus: IoTestBus)}
-	{@const reading = headphoneState.signals[bus]}
+	{@const reading = bus === 'booth' ? headphoneState.signals.master : headphoneState.signals[bus]}
 	{@const fill = meterFill(bus)}
 	<span
 		class="hp-vmeter"

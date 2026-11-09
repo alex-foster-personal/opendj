@@ -1,0 +1,9 @@
+{
+ "map_name": "DDJ-REV1",
+ "map_const": "DDJ_REV1_MAP",
+ "map_ts": "apps/webui/frontend/src/lib/rb/midi/maps/ddj-rev1.ts",
+ "panel_w": 526.0,
+ "panel_d": 255.5,
+ "panel_size_source": "DDJ-REV1 product page, Specifications: Dimensions (W x D x H) 526.0 x 255.5 x 59.2 mm",
+ "display_name": "2-deck scratch-style controller"
+}

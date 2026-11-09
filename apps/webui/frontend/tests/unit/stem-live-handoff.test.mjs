@@ -246,6 +246,57 @@ test('a deck that stays busy for every attempt is reported deferred, not dropped
 	assert.ok(!names(log).includes('commit'));
 });
 
+test('AUDFID-02: landStemEngage uses margin 0 on an idle playing deck', async () => {
+	const { deps, log } = deck();
+	assert.equal(await mod.landStemEngage(deps), 'handed_off');
+	const when = log.find((entry) => entry[0] === 'segmentAt')[1];
+	assert.equal(when, 100 + 0.05 + 0.008);
+});
+
+test('AUDFID-02: landStemEngage returns busy with no sleep when the deck is not idle', async () => {
+	const { deps, log, state } = deck();
+	state.snap.intents = 1;
+	assert.equal(await mod.landStemEngage(deps), 'busy');
+	assert.deepEqual(log, []);
+});
+
+/** One Web Audio render quantum at 48 kHz (see PRRT_kwDOSEvNd860e_Uu). */
+const RENDER_QUANTUM_SEC = 128 / 48000;
+
+test('AUDFID-02: engage still hands off when the clock advances one render quantum during the worklet ack', async () => {
+	const { deps, log, state } = deck();
+	deps.scheduleIncoming = async (when) => {
+		log.push(['scheduleIncoming', when]);
+		state.now += RENDER_QUANTUM_SEC;
+	};
+	assert.equal(await mod.landStemEngage(deps), 'handed_off');
+	assert.deepEqual(names(log), [
+		'segmentAt',
+		'scheduleIncoming',
+		'connectIncoming',
+		'stopOutgoing',
+		'commit',
+		'holdCommandsUntil'
+	]);
+	const when = log[1][1];
+	assert.equal(
+		when,
+		100 + 0.05 + 0.008,
+		'scheduled start stays at safeTransportScheduleTime with margin 0'
+	);
+});
+
+test('AUDFID-02: engage returns busy when the ack lands at or after the handoff instant', async () => {
+	const { deps, log, state } = deck();
+	deps.scheduleIncoming = async (when) => {
+		log.push(['scheduleIncoming', when]);
+		state.now = when + 0.01;
+	};
+	assert.equal(await mod.landStemEngage(deps), 'busy');
+	assert.deepEqual(names(log), ['segmentAt', 'scheduleIncoming', 'cancelIncoming']);
+	assert.ok(!names(log).includes('commit') && !names(log).includes('connectIncoming'));
+});
+
 test('each retry gives the acknowledgement more room', () => {
 	const margins = mod.STEM_HANDOFF_MARGINS_SEC;
 	assert.ok(margins.length >= 3);
@@ -531,6 +582,27 @@ test('a stopped deck is adopted through the port, with nothing scheduled', async
 	const { port, log } = landing({ port: { replaceable: () => true } });
 	assert.equal(await mod.landStemsOnDeck(port), 'adopted');
 	assert.deepEqual(names(log), ['serialized', 'adoptStopped']);
+});
+
+test('AUDFID-02: engageStemsOnDeck hands off at safeTransportScheduleTime with margin 0', async () => {
+	const { port, log } = landing();
+	assert.equal(await mod.engageStemsOnDeck(port), 'handed_off');
+	const schedule = log.find((entry) => entry[0] === 'stems.schedule');
+	assert.equal(schedule[1], 100 + 0.05 + 0.008);
+});
+
+test('AUDFID-02: engageStemsOnDeck returns busy and never defers', async () => {
+	const { port, log, runtime } = landing();
+	runtime.scheduleIntentCount = 1;
+	assert.equal(await mod.engageStemsOnDeck(port), 'busy');
+	assert.ok(!names(log).includes('defer') && !names(log).includes('commit'));
+});
+
+test('AUDFID-02: landStemUpgrade still defers on a persistently busy deck', async () => {
+	const { port, log, runtime } = landing();
+	runtime.scheduleIntentCount = 1;
+	assert.equal(await mod.landStemsOnDeck(port), 'deferred');
+	assert.equal(names(log).at(-1), 'defer');
 });
 
 test('a deck with no audio graph rejects and leaves the mix alone', async () => {

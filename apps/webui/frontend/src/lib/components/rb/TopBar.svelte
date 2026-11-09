@@ -175,6 +175,7 @@
 	let modeMenuEl: HTMLDivElement | undefined = $state();
 	// Pin 87d7dac0a9b8: the feature-icon strip is one button unless single-click
 	// is on. Row 2 and row 3 hang under the top bar, so they are measured.
+	let topBarRowEl: HTMLElement | undefined = $state();
 	let featureIconsEl: HTMLDivElement | undefined = $state();
 	let iconClusterEl: HTMLDivElement | undefined = $state();
 	let featureMenuEl: HTMLDivElement | undefined = $state();
@@ -413,6 +414,7 @@
 	$effect(() => {
 		if (featureIconSingleClick()) featureMenuOpen = false;
 		const el = iconClusterEl;
+		const row = topBarRowEl;
 		if (!el) return;
 		const place = (): void => {
 			_placeFeatureExtra();
@@ -421,9 +423,23 @@
 		place();
 		const ro = new ResizeObserver(place);
 		ro.observe(el);
+		let mo: MutationObserver | undefined;
+		if (row) {
+			ro.observe(row);
+			const watchChildren = (): void => {
+				for (const child of Array.from(row.children)) ro.observe(child);
+			};
+			watchChildren();
+			mo = new MutationObserver(() => {
+				watchChildren();
+				place();
+			});
+			mo.observe(row, { childList: true });
+		}
 		window.addEventListener('resize', place);
 		return () => {
 			ro.disconnect();
+			mo?.disconnect();
 			window.removeEventListener('resize', place);
 		};
 	});
@@ -592,6 +608,7 @@
 	class:view-chosen={uiPrefs.perf_view !== 'waveform'}
 	class:single-click={featureIconSingleClick()}
 	class:pads-off={!uiPrefs.show_pads}
+	bind:this={topBarRowEl}
 >	<!-- top-left: PARITY-02 rbx-vs-own source A/B toggle (issue #1002),
 	     ahead of the live audio health + prefetch count and mode dropdown. -->
 	<AnalysisSourceToggle />

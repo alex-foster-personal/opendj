@@ -77,7 +77,8 @@ so both decks' beat boundaries coincide at `syncAtContextTimeSec`.
 | `BAR` (default) | an exact lock must share the master's beat number (`beat.n`). Half/double folds are the fallback when nothing else fits (pin 9bf12adccb45); they warn in orange because phase holds and the bar count does not |
 | `BEAT` | both constraints dropped |
 
-That is the literal mechanism preserving PQTZ 1->1 through 4->4.
+That is the literal mechanism preserving PQTZ 1->1 through 4->4 for an exact lock; a folded
+lock keeps phase but not the bar count.
 
 ### Tempo comes from intervals, never the PQTZ `bpm` field
 
@@ -91,9 +92,11 @@ bias in the grid.
 
 ### When BAR legitimately cannot work
 
-If no anchor satisfies both the bar-number match and an in-range tempo, it throws with a
-remediation message naming the fix (select BEAT, or widen the follower tempo range). Two
-deliberate softenings sit on top:
+BAR prefers an exact anchor on the master's beat number and falls back to a 0.5x/2x fold; it
+throws (`TempoOutOfSyncRangeError`, "follower grid has no phase-capable bar anchor with tempo
+ratio within [min, max] ...") only when no anchor, exact or folded, has a tempo ratio inside
+the follower's pitch range. The pitch range is the one hard limit; the fix is a wider tempo
+range or a closer track. Two deliberate softenings sit on top:
 
 - **Per-follower isolation.** Each follower is planned in its own try/catch, because "one
   unsyncable deck must not abort BeatSyncMax for the rest". A failed follower gets

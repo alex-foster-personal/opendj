@@ -20,7 +20,7 @@ import {
 	type GridEditPorts,
 	type GridEditQueue
 } from './grid-edit-queue';
-import { nudgeGridEdit, resetGridEditPart } from './beatgrid-fallback-api';
+import { nudgeGridEdit, resetGridEditPart, undoGridEdit } from './beatgrid-fallback-api';
 import { isUsbTrackId } from './track-source';
 
 /** Re-read the track's `/anlz` so every deck holding it moves onto the edited
@@ -31,6 +31,7 @@ export function gridEditPorts(): GridEditPorts {
 	return {
 		nudge: nudgeGridEdit,
 		reset: resetGridEditPart,
+		undo: undoGridEdit,
 		refresh: refreshTrackGrid
 	};
 }

@@ -29,9 +29,10 @@ rules:
       # runner's own name, never pull-request content); they predate the workflow_run
       # trigger and this audit only fires alongside a dangerous trigger. Wed 4 Nov 2026.
       # Repinned Fri 6 Nov 2026 (were 922 and 2109, before that 917 and 2102): the same two
-      # steps, moved down by lines added above them.
-      - e2e.yml:926
-      - e2e.yml:2113
+      # steps, moved down by lines added above them. Repinned again Mon 9 Nov 2026 (were 926
+      # and 2113) for the opt-in label, the hourly schedule (ADR-NEW-e2e-opt-in-by-label) and the skip of non-green workflow_run events (#10534).
+      - e2e.yml:962
+      - e2e.yml:2151
   artipacked:
     ignore:
       # These checkouts keep credentials because a later step runs git fetch

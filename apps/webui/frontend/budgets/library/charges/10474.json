@@ -1,0 +1,9 @@
+{
+  "bytes": 1024,
+  "measured_main": 333502,
+  "measured_with_pr": 333760,
+  "sha": "18112d8729",
+  "date": "Mon 9 Nov 2026",
+  "reason": "PR #10474 adds the active memory loop per track that arms on load and engages via the safety loop (#9967). Measured: CI bundle check of 18112d8729, +258 B gzip on library; ceiled to KiB",
+  "payback": "none planned; the growth is the feature's own code"
+}

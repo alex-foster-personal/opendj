@@ -100,14 +100,29 @@ jobs:
             echo "::error::mount point(s) beneath the workspace, refusing to chown across them: $nested"
             exit 1
           }
-          foreign() { sudo env TZ=UTC find "$ws" -xdev \( ! -user "$uid" -o ! -group "$gid" \) "$@"; }
-          entries() { tr -cd '\0' | wc -c; }
-          scanned=$(sudo find "$ws" -xdev -print0 | entries)
-          reclaimed=$(foreign -print0 | entries)
+          # fleet-af #742: on the fleet's CI hosts sudo allows only this helper for workspace ownership.
+          # A runner without it (GitHub-hosted) has unrestricted sudo, so the same verbs run through find.
+          if [ -x /usr/local/sbin/ci-workspace-own ]; then
+            own() { sudo -n /usr/local/sbin/ci-workspace-own "$1" "$ws"; }
+          else
+            foreign() { sudo env TZ=UTC find "$ws" -xdev \( ! -user "$uid" -o ! -group "$gid" \) "$@"; }
+            entries() { tr -cd '\0' | wc -c; }
+            own() {
+              case "$1" in
+                count) sudo find "$ws" -xdev -print0 | entries ;;
+                foreign) foreign -print0 | entries ;;
+                list) foreign -printf '  %u:%g %TY-%Tm-%TdT%TH:%TM:%.2TSZ %p\n' ;;
+                reclaim) foreign -exec chown -h "$uid:$gid" {} + ;;
+                *) echo "::error::own: unknown verb $1"; return 1 ;;
+              esac
+            }
+          fi
+          scanned=$(own count)
+          reclaimed=$(own foreign)
           offenders="$(mktemp)"
           trap 'rm -f "$offenders"' EXIT
           name_offenders() {
-            foreign -printf '  %u:%g %TY-%Tm-%TdT%TH:%TM:%.2TSZ %p\n' >"$offenders"
+            own list >"$offenders"
             head -n "$LIST_CAP" "$offenders"
             [ "$1" -le "$LIST_CAP" ] || echo "  ... and $(( $1 - LIST_CAP )) more"
           }
@@ -115,8 +130,8 @@ jobs:
             echo "[hygiene] entries not owned by uid $uid, listed before the repair:"
             name_offenders "$reclaimed"
           }
-          [ "$reclaimed" -eq 0 ] || foreign -exec chown -h "$uid:$gid" {} +
-          remaining=$(foreign -print0 | entries)
+          [ "$reclaimed" -eq 0 ] || own reclaim >/dev/null
+          remaining=$(own foreign)
           echo "[hygiene] scanned=$scanned reclaimed=$reclaimed remaining=$remaining"
           [ "$remaining" -eq 0 ] || {
             echo "::error::$remaining of $scanned workspace entries are not owned by uid $uid; checkout would fail with EACCES"

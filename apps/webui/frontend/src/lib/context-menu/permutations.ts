@@ -45,7 +45,12 @@ export const MENU_CONTEXT_SPACE: { [K in MenuTargetKind]: Space<MenuContextByKin
 		playing: [false, true],
 		looping: [false, true],
 		synced: [false, true],
-		master: [false, true]
+		master: [false, true],
+		selection: [false, true],
+		keyLock: [false, true],
+		quantize: [false, true],
+		slip: [false, true],
+		otherLoaded: [[], [2]]
 	},
 	'hot-cue': { loaded: [false, true], filled: [false, true], moveLoses: ['nothing', 'color', 'loop'] },
 	waveform: {
@@ -59,9 +64,26 @@ export const MENU_CONTEXT_SPACE: { [K in MenuTargetKind]: Space<MenuContextByKin
 		eqFlat: [false, true],
 		filterFlat: [false, true],
 		cue: [false, true],
-		assign: ['A', 'B', 'THRU']
+		assign: ['A', 'B', 'THRU'],
+		trimUnity: [false, true],
+		autoGain: ['none', 'auto', 'user']
 	},
-	'mixer-control': { animating: [false, true] },
+	'mixer-control': {
+		animating: [false, true],
+		control: ['eq', 'trim', 'filter', 'fader', 'crossfader', 'stem'],
+		value: ['default', 'cut', 'other'],
+		autoGain: ['none', 'auto', 'user']
+	},
+	stem: {
+		loaded: [false, true],
+		stems: ['none', 'ready'],
+		available: [false, true],
+		muted: [false, true],
+		solo: [false, true],
+		levelsUnity: [false, true]
+	},
+	'history-row': {},
+	'history-day': { empty: [false, true] },
 	'perf-empty': {
 		browser: [false, true],
 		view: ['waveform', 'list', 'phase-scope', 'phase-meter']
@@ -74,7 +96,12 @@ const IMPOSSIBLE: { [K in MenuTargetKind]?: (ctx: MenuContextByKind[K]) => boole
 	'hot-cue': (c) => (!c.loaded && c.filled) || (!c.filled && c.moveLoses !== 'nothing'),
 	// A vocal hit is resolved from the same click position the cue uses.
 	waveform: (c) =>
-		(!c.loaded && (c.looping || c.vocalHit || c.cueAt !== 'none')) || (c.vocalHit && c.cueAt === 'none')
+		(!c.loaded && (c.looping || c.vocalHit || c.cueAt !== 'none')) || (c.vocalHit && c.cueAt === 'none'),
+	'mixer-control': (c) =>
+		(c.value === 'cut' && c.control !== 'eq') || (c.control === 'crossfader' && c.autoGain !== 'none'),
+	stem: (c) =>
+		(!c.loaded && (c.stems === 'ready' || c.muted || c.solo || !c.levelsUnity)) ||
+		(c.stems === 'none' && (!c.available || c.muted || c.solo))
 };
 
 /** The target each kind is rendered for. Track rows key their label on count. */
@@ -96,7 +123,20 @@ export function sampleTarget<K extends MenuTargetKind>(
 		'hot-cue': () => ({ kind: 'hot-cue', deck: 1, slot: 'A' }),
 		waveform: () => ({ kind: 'waveform', deck: 1 }),
 		'mixer-channel': () => ({ kind: 'mixer-channel', deck: 1 }),
-		'mixer-control': () => ({ kind: 'mixer-control', label: 'EQ LOW' }),
+		'mixer-control': (c) => {
+			const labels: Record<string, string> = {
+				eq: 'EQ LOW',
+				trim: 'TRIM',
+				filter: 'FILTER',
+				fader: 'FADER',
+				crossfader: 'CROSSFADER',
+				stem: 'VOCAL'
+			};
+			return { kind: 'mixer-control', label: labels[c.control] ?? 'EQ LOW' };
+		},
+		stem: () => ({ kind: 'stem', deck: 1, stem: 'vocal' }),
+		'history-row': () => ({ kind: 'history-row' }),
+		'history-day': () => ({ kind: 'history-day', date: '2026-11-07' }),
 		'perf-empty': () => ({ kind: 'perf-empty' })
 	};
 	return (targets[kind] as (c: MenuContextByKind[K]) => Extract<MenuTarget, { kind: K }>)(ctx);

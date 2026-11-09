@@ -829,6 +829,12 @@ export function planHotCueTrigger(
  * the anchor itself: the grid extended at its edge tempo. A jump that lands
  * back within the grid's span snaps to the nearest real beat there; one that
  * would go below 0 lands at 0.
+ *
+ * `deltaBeats` may also be exactly +-0.5 (DECKUX-10470): the target is then the
+ * midpoint of a grid interval, interpolated between the two real beats the
+ * way fractional beat loops are (paused: the interval next to the anchor beat
+ * in the jump direction; playing: half an interval on, phase kept). A
+ * fractional index past either end clamps to the first or last beat.
  */
 export function beatJumpTargetMs(
 	beats: readonly AnlzBeat[],
@@ -838,14 +844,15 @@ export function beatJumpTargetMs(
 ): number {
 	validateBeatGrid(beats);
 	_assertFiniteNonNegative('positionMs', positionMs);
-	if (!Number.isInteger(deltaBeats) || deltaBeats === 0) {
-		throw new RangeError(`deltaBeats must be a non-zero integer, got ${deltaBeats}`);
-	}
+	_assertBeatJumpDelta(deltaBeats);
+	const half = !Number.isInteger(deltaBeats);
 	const edgeSec = _offGridEdgeIntervalSec(beats, positionMs / 1000);
 	if (edgeSec !== null) {
 		const targetSec = Math.max(0, positionMs / 1000 + deltaBeats * edgeSec);
-		const landed = positionWithinGridSpan(beats, targetSec) ? beats[_nearestBeatIndex(beats, targetSec)].t : targetSec;
-		return landed * 1000;
+		if (!positionWithinGridSpan(beats, targetSec)) return targetSec * 1000;
+		if (!half) return beats[_nearestBeatIndex(beats, targetSec)].t * 1000;
+		const at = gridBeatPosition(beats, targetSec);
+		return (at === null ? beats[beats.length - 1].t : beatTimeAt(beats, Math.floor(at) + 0.5)) * 1000;
 	}
 	const from = keepPhase ? gridBeatPosition(beats, positionMs / 1000) : null;
 	if (from !== null && from + deltaBeats >= 0 && from + deltaBeats <= beats.length - 1) {
@@ -853,7 +860,14 @@ export function beatJumpTargetMs(
 	}
 	const anchorIndex = _nearestBeatIndex(beats, positionMs / 1000);
 	const targetIndex = Math.min(Math.max(anchorIndex + deltaBeats, 0), beats.length - 1);
-	return beats[targetIndex].t * 1000;
+	return beatTimeAt(beats, targetIndex) * 1000;
+}
+
+/** A beat jump moves whole beats or exactly half a beat (DECKUX-10470). */
+function _assertBeatJumpDelta(deltaBeats: number): void {
+	if (!Number.isFinite(deltaBeats) || deltaBeats === 0 || (!Number.isInteger(deltaBeats) && Math.abs(deltaBeats) !== 0.5)) {
+		throw new RangeError(`deltaBeats must be a non-zero integer or +-0.5, got ${deltaBeats}`);
+	}
 }
 
 /**
@@ -872,7 +886,12 @@ export function beatJumpSeekPlan(
 	playing: boolean
 ): { targetMs: number; skipGridQuantize: boolean } {
 	const raw = beatJumpTargetMs(beats, anchorMs, deltaBeats, playing);
-	return { targetMs: beatJumpTargetWithinDurationMs(beats, raw, durationMs), skipGridQuantize: playing };
+	// A half-beat target sits between beats by design: re-quantizing it would
+	// snap it straight back (DECKUX-10470).
+	return {
+		targetMs: beatJumpTargetWithinDurationMs(beats, raw, durationMs),
+		skipGridQuantize: playing || !Number.isInteger(deltaBeats)
+	};
 }
 
 /**

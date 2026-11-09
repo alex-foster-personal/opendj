@@ -183,8 +183,27 @@ export function intentForPress(part: GridEditPart, press: GridEditPress): GridEd
 	return { kind: 'nudge', offset_ms: direction * step, beats: 0 };
 }
 
-/** Arrow keys on a focused button: Left earlier, Right later; null for any other key. */
-export function intentForKey(part: GridEditPart, key: string, shiftKey: boolean): GridEditIntent | null {
+/** Cmd on Apple platforms, Ctrl elsewhere (same platform test as
+ * `assistantChordUsesMeta` in hotkeys-registry). */
+export function primaryModifierHeld(
+	event: { metaKey: boolean; ctrlKey: boolean },
+	platform: string
+): boolean {
+	return /mac|iphone|ipad/i.test(platform)
+		? event.metaKey && !event.ctrlKey
+		: event.ctrlKey && !event.metaKey;
+}
+
+/** Keys on a focused button: Left earlier, Right later, Cmd/Ctrl+Z undo
+ * (GRIDEDIT-10215); null for any other key. Cmd+Shift+Z stays free for a redo
+ * and Cmd+Arrow for the bar jump. */
+export function intentForKey(
+	part: GridEditPart,
+	key: string,
+	shiftKey: boolean,
+	primaryModifier = false
+): GridEditIntent | null {
+	if (primaryModifier) return !shiftKey && key.toLowerCase() === 'z' ? { kind: 'undo' } : null;
 	const direction: GridEditDirection | null =
 		key === 'ArrowLeft' ? -1 : key === 'ArrowRight' ? 1 : null;
 	if (direction === null) return null;
@@ -238,6 +257,7 @@ function _sourceName(source: AnlzBeatgridSource): string {
 	return source === 'own' ? 'own analysis' : 'rekordbox';
 }
 
+const _UNDO_HINT = 'Cmd+Z (Ctrl+Z off Mac) undoes the last grid edit when focused.';
 const _ADJUST_WHAT =
 	'Grid adjust - nudges the beatgrid later or earlier on this deck so downbeats line up with the kick, without changing tempo.';
 const _SHIFT_WHAT =
@@ -251,7 +271,7 @@ export function gridAdjustTitle(anlz: AnlzData | null, unavailable: string | nul
 	return (
 		`${_ADJUST_WHAT} Click the right half to move it ${GRID_ADJUST_STEP_MS} ms later, the left half ` +
 		`${GRID_ADJUST_STEP_MS} ms earlier; Shift for ${GRID_ADJUST_COARSE_STEP_MS} ms steps, hold to repeat, ` +
-		`Alt-click to reset. Arrow keys work when focused. Now: ${formatOffsetMs(offset)} on the ` +
+		`Alt-click to reset. Arrow keys work when focused. ${_UNDO_HINT} Now: ${formatOffsetMs(offset)} on the ` +
 		`${_sourceName(source)} grid (limit ${GRID_ADJUST_MAX_OFFSET_MS} ms either way).`
 	);
 }
@@ -263,7 +283,7 @@ export function gridShiftTitle(anlz: AnlzData | null, unavailable: string | null
 	const shift = currentGridEdit(anlz)?.beat_shift ?? 0;
 	return (
 		`${_SHIFT_WHAT} Click the right half to move bar 1 one beat later, the left half one beat ` +
-		`earlier; Alt-click to reset. Arrow keys work when focused. Now: ${formatBeatShift(shift)} on ` +
+		`earlier; Alt-click to reset. Arrow keys work when focused. ${_UNDO_HINT} Now: ${formatBeatShift(shift)} on ` +
 		`the ${_sourceName(source)} grid.`
 	);
 }

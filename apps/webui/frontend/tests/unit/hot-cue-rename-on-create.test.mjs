@@ -148,12 +148,14 @@ test('a failed rename preserves its open editor and draft for retry', () => {
 
 test('hot_cue_save carries an optional string comment through strict browser IPC', () => {
 	const ipc = source('lib/rb/performance-ipc.svelte.ts');
+	const types = source('lib/rb/performance-ipc-types.ts');
+	const guards = source('lib/rb/performance-ipc-guards.ts');
 	assert.match(
-		ipc,
-		/\{ type: 'hot_cue_save'; deck: DeckId; slot: HotCueSlot; in_ms: number; revision: string; comment\?: string \| null; out_ms\?: number \| null \}/,
+		types,
+		/type:\s*'hot_cue_save';\s*deck:\s*DeckId;\s*slot:\s*HotCueSlot;\s*in_ms:\s*number;\s*revision:\s*string;\s*comment\?:\s*string\s*\|\s*null/,
 		'hot_cue_save must expose the optional comment to agent-native callers'
 	);
-	assert.match(ipc, /_optionalStringOrNull\('comment', record\.comment\)/);
+	assert.match(guards, /_optionalStringOrNull\('comment', record\.comment\)/);
 	assert.match(
 		ipc,
 		/saveHotCue\(\s*stableId, command\.slot, savedPositionMs, command\.revision, command\.comment, command\.out_ms \?\? null\s*\)/

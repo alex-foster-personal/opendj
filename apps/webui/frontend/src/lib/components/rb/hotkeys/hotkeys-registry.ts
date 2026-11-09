@@ -37,6 +37,7 @@
  * This array is the single list the overlay renders. Do not hand-write a
  * second disconnected hotkey list in the Svelte component.
  */
+import type { CommandScope, KeyboardCommandDefinition } from '$lib/keyboard/command-registry';
 import type { HotkeyEntry } from './hotkeys-filter';
 
 export const DECK_LAYOUT_LESS_KEY = '2';
@@ -53,7 +54,8 @@ export const ASSISTANT_CHORD_CODE = 'KeyI';
 /** This browser's `navigator.platform`; the chord helpers take it so a test can name another. */
 export const ASSISTANT_PLATFORM = globalThis.navigator?.platform ?? '';
 /** Apple platforms use Cmd for the assistant chord; every other platform uses Ctrl. */
-export const assistantChordUsesMeta = (platform: string): boolean => /mac|iphone|ipad/i.test(platform);
+export const assistantChordUsesMeta = (platform: string): boolean =>
+	/mac|iphone|ipad/i.test(platform);
 export const assistantChordLabel = (platform: string): string =>
 	assistantChordUsesMeta(platform) ? 'Cmd+I' : 'Ctrl+I';
 export const assistantChordAria = (platform: string): string =>
@@ -120,7 +122,8 @@ export const HOTKEY_REGISTRY: readonly HotkeyEntry[] = [
 	{
 		id: 'performance-space',
 		chord: 'Space',
-		description: 'Stop a playing library preview; otherwise toggle play/pause on the most recent deck',
+		description:
+			'Stop a playing library preview; otherwise toggle play/pause on the most recent deck',
 		group: 'Performance'
 	},
 	{
@@ -197,4 +200,52 @@ export function availableHotkeys(
 	assistantEnabled: boolean
 ): readonly HotkeyEntry[] {
 	return assistantEnabled ? registry : registry.filter((entry) => entry.id !== 'assistant-toggle');
+}
+
+/** LIBUX-10456: the overlay group a registry command is listed under. */
+function _commandGroup(id: string, scope: CommandScope): string {
+	if (id.startsWith('preset.run.')) return 'Transition presets';
+	switch (scope) {
+		case 'global':
+			return 'Performance';
+		case 'deck':
+			return 'Deck';
+		case 'dial':
+			return 'Dials';
+		case 'fader':
+			return 'Faders';
+		case 'library':
+			return 'Library';
+		default: {
+			const _exhaustive: never = scope;
+			throw new Error(`Unhandled command scope: ${String(_exhaustive)}`);
+		}
+	}
+}
+
+/**
+ * LIBUX-10456: one overlay row per performance command registry entry that has at
+ * least one default key, so a registered command is never invisible in the
+ * overlay; a command with no default key yields no (chord-less) row.
+ */
+export function hotkeyEntriesFromCommandRegistry(
+	defs: readonly Pick<KeyboardCommandDefinition, 'id' | 'label' | 'defaultKeys' | 'scope'>[]
+): HotkeyEntry[] {
+	return defs
+		.filter((def) => def.defaultKeys.length > 0)
+		.map((def) => ({
+			id: def.id,
+			chord: def.defaultKeys.join(' / '),
+			description: def.label,
+			group: _commandGroup(def.id, def.scope)
+		}));
+}
+
+/** The hand-written rows plus the registry's, one row per id: a registry row replaces a hand-written one. */
+export function mergeHotkeyEntries(
+	handWritten: readonly HotkeyEntry[],
+	fromRegistry: readonly HotkeyEntry[]
+): HotkeyEntry[] {
+	const registryIds = new Set(fromRegistry.map((entry) => entry.id));
+	return [...handWritten.filter((entry) => !registryIds.has(entry.id)), ...fromRegistry];
 }

@@ -8,11 +8,12 @@ COST. One streamed ffmpeg decode per file, about 0.2 s per 30 s of audio on
 nucbox (so roughly 2.5 s for a 6-minute track). That is minutes to hours for
 a whole library, which is why this is:
 
-- INCREMENTAL. A file whose path, mtime and size match the stored row, under
-  the same scanner rule, is skipped after one `stat`.
+- INCREMENTAL. A file whose path, mtime and size match a stored successful
+  row, under the same scanner rule, is skipped after one `stat`. A stored
+  error is due again.
 - RESUMABLE. Facts are committed every `WRITE_BATCH` files, and `stop()` ends
-  the scan after the files in flight. The next scan picks up where it left
-  off because everything already stored is skipped.
+  the scan after the files in flight. The next scan skips stored successes
+  and retries stored errors.
 - POLITE. ffmpeg runs under `nice -n 10` (below-normal priority on Windows),
   the background scan uses one worker, and it pauses between files.
 
@@ -23,8 +24,9 @@ list request.
 MINI-PRD
 --------
   ✔︎ ✅ 🎯 scan_library(): facts per present track, persisted in batches.
-    [if] a file did not change since the last scan [then] it is not decoded
+    [if] a file did not change since the last successful scan [then] it is not decoded
     [if] the file changed or the scanner rule changed [then] it is re-scanned
+    [if] a stored row has an error [then] it is re-scanned even when identity matches
     [if] a file cannot be decoded [then] its row records the error and the
          scan goes on ⛔️ a crash that ends the scan, or a letter that reads checked
     [if] stop() is called [then] the scan ends after the files in flight and
@@ -179,7 +181,12 @@ def _todo(
             continue
         version, size = identity
         previous = stored.get(stable_id)
-        if previous is not None and previous.file_version == version and previous.rule_version == rule:
+        if (
+            previous is not None
+            and previous.error is None
+            and previous.file_version == version
+            and previous.rule_version == rule
+        ):
             unchanged += 1
             continue
         todo.append((stable_id, path, version, size))

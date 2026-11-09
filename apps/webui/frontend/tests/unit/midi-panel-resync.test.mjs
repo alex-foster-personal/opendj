@@ -17,9 +17,11 @@
 // loadInstalledDeviceMaps() actually succeed, and a fake WebSocket (the same
 // shape events-bus.test.mjs uses) lets this file fire a resync deterministically.
 //
-// Regression line:
+// Regression lines:
 //   if a resync fires with no matching subscribeKind event and the installed
 //     registry does not reload then broken (the exact bug this file guards)
+//   if a midi_maps event during the first installed-map load leaves B unregistered
+//     then broken (stale first snapshot must not win - issue #1772)
 
 import assert from 'node:assert/strict';
 import { after, before, beforeEach, test } from 'node:test';
@@ -305,4 +307,86 @@ test('a failed first load of installed maps still arms the live-refresh listener
 
 	eventsBus.disconnect();
 	await _uninstall('aaa-device');
+});
+
+test('a mid-fetch midi_maps event during the initial load leaves the newest maps registered', async () => {
+	await _install(DOC_A);
+
+	let listGetsCompleted = 0;
+	let barrierResolve;
+	const barrier = new Promise((r) => {
+		barrierResolve = r;
+	});
+	const baseFetch = globalThis.fetch;
+	globalThis.fetch = async (input, init) => {
+		const url = typeof input === 'string' ? input : input.url;
+		const isList =
+			typeof url === 'string' &&
+			url.includes('/api/v1/midi/maps') &&
+			!url.match(/\/api\/v1\/midi\/maps\/[^/]+$/);
+		const response = await baseFetch(input, init);
+		if (isList && listGetsCompleted === 0) {
+			listGetsCompleted += 1;
+			const held = response.clone();
+			await barrier;
+			return held;
+		}
+		if (isList) {
+			listGetsCompleted += 1;
+		}
+		return response;
+	};
+
+	let socket = null;
+	eventsBus.connect(WS_URL, {
+		socketFactory: (url) => {
+			socket = new FakeSocket(url);
+			return socket;
+		},
+		scheduler: makeScheduler()
+	});
+	socket.open();
+	socket.hello({ seq_start: 0 });
+
+	const pending = uiState.requestMidiAccess();
+
+	const gateDeadline = Date.now() + 15_000;
+	while (listGetsCompleted < 1 && Date.now() < gateDeadline) {
+		await new Promise((r) => setTimeout(r, 10));
+	}
+	assert.equal(listGetsCompleted, 1, 'first list GET must complete before mid-fetch install');
+
+	await _install(DOC_B);
+	socket.deliverRaw(
+		JSON.stringify({
+			topic: 'library.changed',
+			seq: 1,
+			ts: new Date().toISOString(),
+			payload: { kind: 'midi_maps', ids: ['bbb-device'] }
+		})
+	);
+
+	const settleDeadline = Date.now() + 500;
+	while (listGetsCompleted < 2 && Date.now() < settleDeadline) {
+		await new Promise((r) => setTimeout(r, 10));
+	}
+
+	barrierResolve();
+	await pending;
+
+	assert.notEqual(await _waitForMap('BbbDevice 1'), null);
+	assert.notEqual(await _waitForMap('AaaDevice 1'), null);
+	assert.equal(uiState.midiUi.installedMapsError, null);
+
+	await new Promise((r) => setTimeout(r, 100));
+	assert.notEqual(
+		webmidi.resolveMapForPort('BbbDevice 1'),
+		null,
+		'stale first snapshot must not unregister B after the coalesced reload'
+	);
+
+	eventsBus.disconnect();
+	globalThis.fetch = baseFetch;
+	await _uninstall('aaa-device');
+	await _uninstall('bbb-device');
 });

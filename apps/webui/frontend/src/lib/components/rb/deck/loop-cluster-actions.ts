@@ -8,6 +8,7 @@
  */
 import type { AnlzBeat } from '$lib/rb/anlz-types';
 import type { DeckState } from '$lib/rb/deck-state-types';
+import { beatSyncInertTip, deckHasPhaseCapableBeatGrid } from '$lib/player/grid-features';
 import { beatLoopFitsWithinDuration, resizedLoopRangeMs } from '$lib/player/transport/loops';
 
 /** Which side of the loop stays fixed while resizing, from click modifiers:
@@ -84,6 +85,7 @@ export function canChooseInterval(args: {
 	const { n, pending, deck, engaged, engagedIntervalLength, gridBeats } = args;
 	if (pending || deck.stable_id === null || deck.duration_ms === null) return false;
 	if (engagedIntervalLength === n) return true;
+	if (!deckHasPhaseCapableBeatGrid(deck)) return false;
 	const startMs = engaged && deck.loop !== null ? deck.loop.in_ms : undefined;
 	return beatLoopFitsWithinDuration(gridBeats, deck.position_ms, n, deck.duration_ms, startMs);
 }
@@ -100,6 +102,7 @@ export function intervalChoiceTip(args: {
 	if (pending) return 'deck command pending';
 	if (deck.stable_id === null) return 'no track loaded';
 	if (gridBeatCount === 0) return 'track has no beatgrid - beat loop unavailable';
+	if (!deckHasPhaseCapableBeatGrid(deck)) return beatSyncInertTip(deck);
 	if (!canChoose) return `${n} beatgrid beats do not fit from here`;
 	if (engagedIntervalLength === n) return 'exit loop';
 	return `loop ${n} beats`;
@@ -116,6 +119,7 @@ export function loopDisabledTip(args: {
 	if (deck.anlz === null || deck.anlz.beatgrid.beats.length === 0) {
 		return 'track has no beatgrid - beat loop unavailable';
 	}
+	if (!deckHasPhaseCapableBeatGrid(deck)) return beatSyncInertTip(deck);
 	if (deck.anlz.beatgrid.beats.length <= beatLength) {
 		return `beatgrid has too few beats for a ${beatLength}-beat loop`;
 	}
@@ -126,10 +130,12 @@ export function loopRestartTip(args: {
 	pending: boolean;
 	engaged: boolean;
 	canRestart: boolean;
+	deck: DeckState;
 }): string {
-	const { pending, engaged, canRestart } = args;
+	const { pending, engaged, canRestart, deck } = args;
 	if (canRestart) return 'restart loop: jump back to the loop start and keep looping';
 	if (pending) return 'deck command pending';
+	if (!deckHasPhaseCapableBeatGrid(deck)) return beatSyncInertTip(deck);
 	if (!engaged) return 'engage a loop first - there is nothing to restart';
 	return 'restart unavailable - this loop is not an exact beat-count loop';
 }
@@ -139,4 +145,80 @@ export function safetyLoopTip(args: { pending: boolean; canSaveSafety: boolean }
 	if (canSaveSafety) return 'save the engaged loop as this deck armed safety loop';
 	if (pending) return 'deck command pending';
 	return 'engage a loop first - there is nothing to save';
+}
+
+export interface ManualLoopButtons {
+	inLit: boolean;
+	outLit: boolean;
+	reloopAvailable: boolean;
+	reloopLabel: 'EXIT' | 'RELOOP';
+	canIn: boolean;
+	canOut: boolean;
+	canReloop: boolean;
+	inTip: string;
+	outTip: string;
+	reloopTip: string;
+}
+
+const LOAD_FIRST_TIP = 'load a track first - nothing to loop';
+const PENDING_TIP = 'deck command pending';
+
+export function manualLoopButtons(args: { deck: DeckState; pending: boolean }): ManualLoopButtons {
+	const { deck, pending } = args;
+	const engaged = deck.loop !== null && deck.loop.engaged;
+	const hasPendingIn = deck.pending_loop_in_ms !== null;
+	const hasLast = deck.last_loop !== null;
+	const unloaded = deck.stable_id === null;
+
+	if (unloaded) {
+		return {
+			inLit: false,
+			outLit: false,
+			reloopAvailable: false,
+			reloopLabel: 'RELOOP',
+			canIn: false,
+			canOut: false,
+			canReloop: false,
+			inTip: LOAD_FIRST_TIP,
+			outTip: LOAD_FIRST_TIP,
+			reloopTip: LOAD_FIRST_TIP
+		};
+	}
+
+	if (pending) {
+		return {
+			inLit: hasPendingIn,
+			outLit: engaged,
+			reloopAvailable: engaged || hasLast,
+			reloopLabel: engaged ? 'EXIT' : 'RELOOP',
+			canIn: false,
+			canOut: false,
+			canReloop: false,
+			inTip: PENDING_TIP,
+			outTip: PENDING_TIP,
+			reloopTip: PENDING_TIP
+		};
+	}
+
+	const canOut = hasPendingIn;
+	const canReloop = engaged || hasLast;
+	const inBase =
+		'loop in: mark the loop start at the playhead' +
+		(deck.quantize_enabled ? ' (snaps to the Q grid)' : '');
+	return {
+		inLit: hasPendingIn,
+		outLit: engaged,
+		reloopAvailable: canReloop,
+		reloopLabel: engaged ? 'EXIT' : 'RELOOP',
+		canIn: true,
+		canOut,
+		canReloop,
+		inTip: inBase,
+		outTip: canOut ? 'loop out: end the loop here and start looping' : 'press LOOP IN first',
+		reloopTip: engaged
+			? 'exit the loop'
+			: canReloop
+				? 'reloop: re-engage the last loop from its start'
+				: 'no previous loop on this track'
+	};
 }

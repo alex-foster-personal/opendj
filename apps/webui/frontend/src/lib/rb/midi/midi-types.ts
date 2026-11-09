@@ -373,6 +373,17 @@ export interface DeviceMap {
 	hints?: ControlHint[];
 }
 
+/** One device map's self-registration, exported by its own module as
+ * DEVICE_MAP_ENTRIES and discovered by maps/entries.ts (#10560). */
+export interface DeviceMapEntry {
+	/** The map's export name, e.g. 'FLX4_MAP' (a practice panel layout's `device_map`). */
+	key: string;
+	map: DeviceMap;
+	/** Registered with the WebMIDI core and exported to the Rust engine (DEVICE_MAP_REGISTRY).
+	 * False for a hints-only map that only a practice replica uses. */
+	live: boolean;
+}
+
 export interface MidiMeterOutput {
 	deck: DeckId;
 	out: { ch: number; cc: number; maxValue: number };

@@ -1,0 +1,9 @@
+{
+  "bytes": 1024,
+  "measured_main": 406594,
+  "measured_with_pr": 407146,
+  "sha": "6d535d0136",
+  "date": "Sun 8 Nov 2026",
+  "reason": "PR #9251 (feat: add pinned booth monitor output) grows the performance surface. Measured: CI bundle check of 6d535d0136, +552 B gzip; ceiled to KiB.",
+  "payback": "none planned; the growth is the feature's own code on this surface"
+}

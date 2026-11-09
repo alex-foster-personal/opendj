@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>CFBundleIdentifier</key><string>com.opendj.trackcatcher</string>
+  <key>CFBundleName</key><string>Open DJ Track Catcher</string>
+  <key>CFBundleDisplayName</key><string>Open DJ Track Catcher</string>
+  <key>CFBundleExecutable</key><string>TrackCatcher</string>
+  <key>CFBundlePackageType</key><string>APPL</string>
+  <key>CFBundleShortVersionString</key><string>0.1.0</string>
+  <key>CFBundleVersion</key><string>1</string>
+  <key>LSMinimumSystemVersion</key><string>14.0</string>
+  <key>LSApplicationCategoryType</key><string>public.app-category.music</string>
+  <key>NSHighResolutionCapable</key><true/>
+  <key>ATSApplicationFontsPath</key><string>Fonts</string>
+  <key>NSMicrophoneUsageDescription</key><string>Track Catcher listens to show the key of what's playing live. Nothing is recorded, and audio never leaves this Mac.</string>
+  <key>NSAppleEventsUsageDescription</key><string>Track Catcher reads the song Spotify or Apple Music is playing, so Now playing can send it to your Inbox.</string>
+</dict>
+</plist>

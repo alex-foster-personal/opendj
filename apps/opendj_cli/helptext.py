@@ -19,6 +19,10 @@ library (opendj api, LIBM-11; library daemon, not the performance bus):
   opendj api GET /api/v1/tracks/{stable_id}
   opendj track key-segments <stable_id>
 
+play history delete (PLAYS-10523; Open DJ play log only, not rekordbox DJPlayCount):
+  opendj history delete-play <stable_id> <play_id>
+  opendj history delete-day <YYYY-MM-DD> [IANA_ZONE]
+
 audio output health (AUDIO-DEVICE-01, issue #923):
   opendj audio_output_health
   opendj audio_switch_output --confirm
@@ -33,14 +37,19 @@ store cover suggestions (LIBM-189; accept only covers for tracks you own and bou
   opendj artwork accept --stable-id S ... | --all
   opendj artwork skip --stable-id S ... | --all
 
+lighting tools (LIGHT-70, LIGHT-10573):
+  opendj lighting monitor [--artnet] [--sacn] [--host H] [--sacn-universe U ...] [--json]
+  opendj lighting replay FILE [--at S] [--json]  (same StageQuery as window.musicDjToolsLightingStage)
+
 session played set (SESSION-PLAYED-01; the green library rows, kept across crashes and relaunches):
   opendj session played | resume | new
 
 desktop window geometry (WINSTATE-01; per monitor, survives updates):
   opendj window state | reset
 
-playlist art thumbnail (ARTTHUMB-8728b, the sidebar and card-grid image):
+playlist art thumbnail (ARTTHUMB-8728b) and tab-separated text track list (LIBORG-10314):
   opendj playlist thumbnail <playlist-id> [--size 64|232] [--out FILE]
+  opendj playlist export <playlist-id> --format txt [--out FILE]
 
 cloud offload (OFFLOAD: free disk, keep the row, get it back any time):
   opendj offload tracks <stable_id>... [--wait] | playlist <playlist_id> [--wait]

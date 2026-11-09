@@ -1,0 +1,9 @@
+{
+  "bytes": 1024,
+  "measured_main": 406749,
+  "measured_with_pr": 407165,
+  "sha": "666ca75230",
+  "date": "Sun 8 Nov 2026",
+  "reason": "PR #10456 grows the performance surface; measured +416 B gzip over main; ceiled to KiB.",
+  "payback": "none planned; the growth is the feature's own code on this surface"
+}

@@ -14,6 +14,9 @@ until issue #4069's rekordbox-UI experiment (see ``cue_kind.KIND_BY_SLOT``).
     (body ``out_ms`` saves a loop hot cue, HOTCUE-LOOP-01)
   * ``DELETE /api/v1/tracks/{stable_id}/hot-cues/{slot}`` -> mutation + reversal token
   * ``PUT    /api/v1/tracks/{stable_id}/hot-cues/{slot}/restore`` -> CAS restore
+  * ``GET    /api/v1/tracks/{stable_id}/memory-cues`` -> memory cues/loops + loop revision
+  * ``PUT    /api/v1/tracks/{stable_id}/memory-cues/{in_ms}/active`` -> flag the one
+    active memory loop (body ``{active: bool}``, same If-Match rule)
 
 ``slot`` is a ``Literal['A'..'H']`` at the route level, so an unverified
 Kind 9-11 slot is unreachable via the API rather than silently guessed at.
@@ -31,11 +34,11 @@ from __future__ import annotations
 
 import sqlite3
 from collections.abc import Callable
-from pathlib import Path
-from typing import Any, Literal, NoReturn
+from pathlib import Path as FsPath
+from typing import Annotated, Any, Literal, NoReturn
 
-from fastapi import APIRouter, Depends, HTTPException, Request, Response
-from pydantic import BaseModel, ConfigDict, Field, StrictInt
+from fastapi import APIRouter, Depends, HTTPException, Path, Request, Response
+from pydantic import BaseModel, ConfigDict, Field, StrictBool, StrictInt
 
 from apps.adapters.rekordbox import config as rb_config
 from apps.shared.events import publish
@@ -147,9 +150,9 @@ def _raise_store_error(exc: cue_store.CueStoreError) -> NoReturn:
     raise HTTPException(status_code=exc.status, detail=exc.detail(), headers=headers) from exc
 
 
-def _state_db_path(request: Request) -> Path:
+def _state_db_path(request: Request) -> FsPath:
     path = getattr(request.app.state, "state_db_path", None)
-    return Path(path) if path is not None else rb_config.STATE_DB
+    return FsPath(path) if path is not None else rb_config.STATE_DB
 
 
 def _rekordbox_content(stable_id: str) -> rb_vendor.RbContent | None:
@@ -331,4 +334,85 @@ def restore_hot_cue(
     return _mutation_response(result, response)
 
 
-__all__ = ["AnlzCueOut", "HotCueMutationOut", "HotCueSaveIn", "HotCueSlotOut", "router"]
+# ---------- active memory loop (CUES-9967) ----------------------------------
+
+
+class MemoryCueOut(BaseModel):
+    """One memory cue or memory loop in the COMPONENT-MAP 2.3 cue shape."""
+
+    kind: Literal["memory", "loop"]
+    slot: Literal[None]
+    in_ms: int
+    out_ms: int | None
+    is_loop: bool
+    active_loop: bool
+    beat_loop_size: int | None
+    color_table_index: int | None
+    comment: str | None
+
+
+class MemoryCuesOut(BaseModel):
+    cues: list[MemoryCueOut]
+    revision: str
+    active: MemoryCueOut | None = None
+
+
+class ActiveLoopIn(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    active: StrictBool
+
+
+@router.get("/{stable_id}/memory-cues", response_model=MemoryCuesOut)
+def list_memory_cues(
+    stable_id: str,
+    request: Request,
+    response: Response,
+    _backend: StateBackend = Depends(get_read_state),  # noqa: B008  # FastAPI DI
+) -> MemoryCuesOut:
+    content = _rekordbox_content(stable_id)
+    conn = state_db.open_ro(_state_db_path(request))
+    try:
+        state = cue_store.load(conn, stable_id, _vendor_cues(content))
+    finally:
+        conn.close()
+    view = cue_store.memory_cues_view(state)
+    response.headers["ETag"] = view["revision"]
+    return MemoryCuesOut(**view, active=cue_store.active_memory_loop(state))
+
+
+@router.put(
+    "/{stable_id}/memory-cues/{in_ms}/active",
+    response_model=MemoryCuesOut,
+    responses={**_MUTATION_RESPONSES, 404: {"description": "No cue starts at in_ms"}},
+    openapi_extra={"parameters": [_IF_MATCH_OPENAPI_PARAMETER]},
+)
+def set_active_memory_loop(
+    stable_id: str,
+    in_ms: Annotated[int, Path(ge=0)],
+    body: ActiveLoopIn,
+    request: Request,
+    response: Response,
+    if_match: str = Depends(_require_if_match),
+    _backend: StateBackend = Depends(get_write_state),  # noqa: B008  # FastAPI DI
+) -> MemoryCuesOut:
+    result = _write_op(
+        request,
+        stable_id,
+        lambda _conn, state, _content, write: cue_store.set_active_loop(
+            state, in_ms, body.active, expected_revision=if_match, write=write
+        ),
+    )
+    response.headers["ETag"] = result["revision"]
+    return MemoryCuesOut(**result)
+
+
+__all__ = [
+    "ActiveLoopIn",
+    "AnlzCueOut",
+    "HotCueMutationOut",
+    "HotCueSaveIn",
+    "HotCueSlotOut",
+    "MemoryCueOut",
+    "MemoryCuesOut",
+    "router",
+]

@@ -678,6 +678,7 @@ class Fixture:
             content.update(neg_data)
             titles = {t["title"] for t in tracks}
             subjects = analysis["subjects"]
+            _fixture_subjects(subjects, unverified)
             tolerance_s = _fixture_numbers(analysis, subjects, unverified)
             missing_subjects = [s["title"] for s in subjects if s["title"] not in titles]
             if missing_subjects or negative["title"] not in titles:
@@ -699,6 +700,33 @@ class Fixture:
             raise Refused(f"fixture {manifest} missing field {exc}", unverified) from exc
         except (TypeError, ValueError) as exc:
             raise Refused(f"fixture {manifest} has a wrong-typed field: {exc}", unverified) from exc
+
+
+def _fixture_subjects(subjects: list[dict[str, Any]], record: FixtureRecord) -> None:
+    """Refuse analysis expectations that would silently drop part of the proof (OPS-60).
+
+    An empty subject list proves nothing; a subject with only one BPM bound would check half a band;
+    ``key_accept: []`` reads like an omitted key and makes no key claim. Omitting ``key_accept`` (a rhythm
+    subject) or both BPM bounds (the key subject) stays valid.
+    """
+    if not isinstance(subjects, list) or not subjects:
+        raise Refused(f"fixture field analysis.subjects must list at least one subject, got {subjects!r}", record)
+    for subject in subjects:
+        title = subject.get("title")
+        bounds = [name for name in ("bpm_min", "bpm_max") if name in subject]
+        if len(bounds) == 1:
+            missing = "bpm_max" if bounds == ["bpm_min"] else "bpm_min"
+            raise Refused(
+                f"fixture field analysis.subjects[{title!r}] has {bounds[0]} but no {missing}: "
+                "supply bpm_min and bpm_max together",
+                record,
+            )
+        if subject.get("key_accept") == []:
+            raise Refused(
+                f"fixture field analysis.subjects[{title!r}].key_accept is an empty list: "
+                "omit it to make no key claim",
+                record,
+            )
 
 
 def _fixture_numbers(analysis: dict[str, Any], subjects: list[dict[str, Any]], record: FixtureRecord) -> float:
@@ -2341,6 +2369,8 @@ def _preflight_fixture_library_tree(src: Path, record: FixtureRecord | None = No
             # before copy so the result carries the load-time fixture record (OPS-56).
             if (path.stat().st_mode & 0o444) == 0:
                 raise Refused(f"fixture staging failed: {path}: [Errno 13] Permission denied", record)
+            if not os.access(path, os.R_OK):
+                raise Refused(f"fixture staging failed: {path}: [Errno 13] Permission denied", record)
             try:
                 path.read_bytes()
             except OSError as exc:
@@ -2510,7 +2540,10 @@ def _begin_acceptance(args: argparse.Namespace, source: Path) -> tuple[dict[str,
     app = Path(args.app).resolve()
     fixture = Fixture.load(source)
     captured = fixture.record()
-    host = _host_name()
+    try:
+        host = _host_name()
+    except Refused as exc:
+        raise Refused(str(exc), captured) from exc
     if host_refused(host):
         raise Refused(f"host {host!r} is silver: the acceptance never runs there (the maintainer's live store)", captured)
     stamp = datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ")
@@ -2529,23 +2562,24 @@ def _begin_acceptance(args: argparse.Namespace, source: Path) -> tuple[dict[str,
     except Refused as exc:
         raise Refused(str(exc), captured) from exc
     try:
-        running = _running_same_identifier(shell)
-    except Refused as exc:
-        raise Refused(str(exc), captured) from exc
-    if running:
-        raise Refused(f"another {shell.identifier} instance is running ({'; '.join(running)}); "
-                      "the single-instance plugin would swallow the launch. Quit it first.", captured)
-    try:
         real_before = _real_store_stat(shell)
-    except StoreUnreadable as exc:
-        raise Refused(f"real store could not be read before launch: {exc}", captured) from exc
+    except StoreUnreadable as err:
+        raise Refused(f"real store could not be read before launch: {err}", captured) from err
     home = _fresh_home(home, captured)
     staged = home / "fixture-library"
     try:
         _stage_fixture_library(fixture.root / "library", staged, captured)
-    except Refused as exc:
-        record = exc.fixture_record if exc.fixture_record is not None else captured
-        raise Refused(str(exc), record) from exc
+    except Refused as err:
+        record = err.fixture_record if err.fixture_record is not None else captured
+        raise Refused(str(err), record) from err
+    try:
+        running = _running_same_identifier(shell)
+    except Refused as err:
+        raise Refused(str(err), captured) from err
+    if running:
+        raise Refused(f"another {shell.identifier} instance is running ({'; '.join(running)}); "
+                      "the single-instance plugin would swallow the launch. Quit it first.", captured)
+
     try:
         fixture = stage_negative_control(fixture, home)
         verify_staged_library(staged, fixture)
@@ -2606,6 +2640,14 @@ def _launch_and_check(run: Run, result: dict[str, Any], checks: list[Check],
         run.memory_boot = {"error": str(exc)}
     stems_check = Check("stems_lyrics")
     checks.extend(_guarded(fn, run) for fn in (check_manifest_sha, check_first_run_import))
+    first_run_import = checks[-1]
+    if first_run_import.verdict != PASS:
+        # OPS-9957: a FAIL or UNKNOWN import means the isolated library is
+        # contaminated or unproven, so every later verdict would be untrusted.
+        # Stop here, as the isolation branch does; the later checks are absent.
+        _log(f"first_run_import is {first_run_import.verdict}: quitting before analysis, stems and playback")
+        _quit_quietly(run)
+        return _finish(result, checks, run, real_before)
     # Analysis before stems: the negative control replaces one track's bytes,
     # and that has to happen before a drain measures the intact carrier.
     # The stems job is scope=pending, so the truncated file is in it and the

@@ -1,0 +1,17 @@
+$ dns-sd -B _os2l._tcp local
+Browsing for _os2l._tcp.local
+DATE: ---Sun 08 Nov 2026---
+21:02:11.402  ...STARTING...
+Timestamp     A/R    Flags  if Domain               Service Type         Instance Name
+21:02:11.404  Add        3  14 local.               _os2l._tcp.          Light Rig
+21:02:11.405  Add        2  14 local.               _os2l._tcp.          Booth Desk 2
+$ dns-sd -L "Light Rig" _os2l._tcp local
+Lookup Light Rig._os2l._tcp.local
+DATE: ---Sun 08 Nov 2026---
+21:02:14.410  ...STARTING...
+21:02:14.412  Light\032Rig._os2l._tcp.local. can be reached at lightpc.local.:4444 (interface 14)
+$ dns-sd -L "Booth Desk 2" _os2l._tcp local
+Lookup Booth Desk 2._os2l._tcp.local
+DATE: ---Sun 08 Nov 2026---
+21:02:16.420  ...STARTING...
+21:02:16.421  Booth\032Desk\0322._os2l._tcp.local. can be reached at booth-desk.local.:50123 (interface 14)

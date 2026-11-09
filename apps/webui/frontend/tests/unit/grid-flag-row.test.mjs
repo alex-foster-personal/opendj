@@ -13,6 +13,7 @@
  * - if `ok` lights anything then every healthy row is noise: broken
  * - if sorting by the flag does not put flagged rows first then the filter
  *   the column offers does not work
+ * - if the UI route drifts from the server route then the UI and the CLI disagree
  */
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
@@ -126,7 +127,20 @@ test('every severity the mapping can produce has a color', () => {
 
 test('SOURCE: the Err cell, the sort key and the dismiss control are wired', () => {
 	const read = (relative) => readFileSync(fileURLToPath(new URL(`../../src/lib/${relative}`, import.meta.url)), 'utf8');
+	const server = readFileSync(
+		fileURLToPath(new URL('../../../server/routes/beatgrid_flags.py', import.meta.url)),
+		'utf8'
+	);
+	assert.match(server, /APIRouter\(prefix="\/beatgrid-flags"/);
+	assert.match(server, /@router\.put\("\/\{stable_id\}\/dismissed"/);
+	const client = read('rb/api-grid-flags.ts');
+	assert.match(
+		client,
+		/\/api\/v1\/beatgrid-flags\/\$\{encodeURIComponent\(stableId\)\}\/dismissed/,
+		'the typed client targets the same dismissed route as the engine'
+	);
 	const table = read('components/rb/browser/TrackTable.svelte');
+	assert.match(table, /setGridFlagDismissed\(row\.stable_id, dismissed\)/, 'the UI uses the one client for this route');
 	assert.match(table, /gridFlag=\{gridFlagFor\(row\)\}/);
 	assert.match(table, /title=\{errColumnTitle\(row\)\}/);
 	assert.match(table, /ongridflagdismiss=\{\(dismissed\) => _setGridFlagDismissed\(row, dismissed\)\}/);
@@ -136,7 +150,13 @@ test('SOURCE: the Err cell, the sort key and the dismiss control are wired', () 
 	const popover = read('components/rb/browser/AnalysisDotsPopover.svelte');
 	assert.match(popover, /data-testid="grid-flag-dismiss"/);
 	assert.match(popover, /Beatgrid flag not \$\{dismissed \? 'dismissed' : 'restored'\}/, 'a refused dismiss is toasted');
-	assert.match(popover, /plannedTitle\('grid-flag-dismiss'\)/, 'no handler means inert with a planned-explainer tooltip');
+	assert.doesNotMatch(popover, /plannedTitle\('grid-flag-dismiss'\)/, 'the dismiss button is wired, not planned');
+	assert.doesNotMatch(popover, /disabled=\{ongridflagdismiss === undefined\}/, 'no inert dismiss button');
+	assert.match(
+		table,
+		/const result = await setGridFlagDismissed\(row\.stable_id, dismissed\);\s*if \(row\.grid_quality\) row\.grid_quality = \{ \.\.\.row\.grid_quality, dismissed: result\.dismissed \}/,
+		'the row (and so the button label) flips only after the engine confirmed'
+	);
 	const dots = read('components/rb/browser/AnalysisDots.svelte');
 	assert.match(dots, /class:unknown=/, 'an unknown grid is drawn differently from ok');
 	const wire = read('components/rb/browser/browser-row-wire.ts');

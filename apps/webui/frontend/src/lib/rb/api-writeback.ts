@@ -61,6 +61,6 @@ export const usbExportRoutes = {
 	apply: (body: UsbSchemas['ApplyRequest']) => unwrap(api.POST('/api/v1/usb-export/apply', { body })),
 	readback: (body: UsbSchemas['ReadbackRequest']) =>
 		unwrap(api.POST('/api/v1/usb-export/readback', { body })),
-	eject: (mountPath: string, volumeId: string) =>
+	eject: async (mountPath: string, volumeId: string): Promise<unknown> =>
 		unwrap(api.POST('/api/v1/usb/eject', { body: { mount_path: mountPath, volume_id: volumeId } }))
 };

@@ -1,0 +1,9 @@
+{
+  "bytes": 2048,
+  "measured_main": 474951,
+  "measured_with_pr": 475980,
+  "sha": "7e249c0015",
+  "date": "Sun 8 Nov 2026",
+  "reason": "PR #9159 (Port KEYSYNC-01 to the Rust engine) grows the other-lazy surface. Measured: CI bundle check of 7e249c0015, +1029 B gzip; ceiled to KiB.",
+  "payback": "none planned; the growth is the feature's own code on this surface"
+}

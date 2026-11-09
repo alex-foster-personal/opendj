@@ -22,6 +22,7 @@ from pydantic import BaseModel
 from apps.analysis import canonical
 from apps.analysis.record import AnalysisRecord
 from apps.analysis_structure.http import build_service as build_structure_service
+from apps.mik.serve_energy import MalformedStoredEnergySegment, merge_mik_energy
 from apps.shared import platform_paths, runtime_policy
 
 from .. import rb_vendor
@@ -511,7 +512,11 @@ def served_anlz_payload(request: Request, stable_id: str, points: int) -> dict[s
         share=getattr(request.state, "share_audience", "local") == "share",
     )
     # GRIDEDIT-6235b: the user's grid adjust / shift for the grid just resolved.
-    return apply_stored_grid_edit(request, stable_id, payload)
+    payload = apply_stored_grid_edit(request, stable_id, payload)
+    try:
+        return merge_mik_energy(payload, stable_id, state_db_path)
+    except MalformedStoredEnergySegment as exc:
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
 
 
 def _anlz_response(request: Request, payload: dict[str, Any]) -> Response:

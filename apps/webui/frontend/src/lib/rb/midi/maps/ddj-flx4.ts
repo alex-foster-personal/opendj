@@ -37,7 +37,13 @@
  * notes, pad modes other than HOT CUE and BEAT LOOP.
  */
 
-import type { ControlHint, DeviceMap, LedRule, MidiBinding } from '$lib/rb/midi/midi-types';
+import type {
+	ControlHint,
+	DeviceMap,
+	DeviceMapEntry,
+	LedRule,
+	MidiBinding
+} from '$lib/rb/midi/midi-types';
 import type { DeckId } from '$lib/rb/deck-slots';
 import {
 	pioneerBrowserAndGlobalBindings,
@@ -216,3 +222,8 @@ export const FLX4_MAP: DeviceMap = {
 		..._globalHints()
 	]
 };
+
+/** Self-registration: maps/entries.ts discovers this export, so no shared list names this map. */
+export const DEVICE_MAP_ENTRIES: readonly DeviceMapEntry[] = [
+	{ key: 'FLX4_MAP', map: FLX4_MAP, live: true }
+];

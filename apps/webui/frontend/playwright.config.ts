@@ -82,6 +82,7 @@ export default defineConfig({
 		// budget too -- Sol P2 BLOCKING on #1463, thread 3961468764. Runs only
 		// under playwright.rekordbox-gate.config.ts (60s timeout) instead.
 		'**/artwork-reader-unavailable.spec.ts', // playwright.rekordbox-gate.config.ts (30s root timeout too tight, #1463 thread 3961468764)
+		'**/echo-headroom-real-audio.spec.ts', // playwright.echo-headroom.config.ts (real-audio echo headroom, own harness)
 		'**/missing-tracks-folder.spec.ts', // playwright.rekordbox-gate.config.ts
 		'**/boot-burst.spec.ts', // playwright.boot-burst.config.ts (real library benchmark)
 		'**/library-playlist-switch-latency.spec.ts', // playwright.playlist-switch-latency.config.ts (PERF-UI-05 gate)
@@ -118,6 +119,7 @@ export default defineConfig({
 		'**/cloudsync-ui.spec.ts', // playwright.cloudsync-ui.config.ts (real hub + spoke engines)
 		'**/savepoint-smoke.spec.ts', // playwright.savepoint.config.ts (real library)
 		'**/webkit-deckload.spec.ts', // playwright.webkit-deckload.config.ts (built artifact)
+		'**/stem-dial-drag-webkit.spec.ts', // playwright.webkit-deckload.config.ts (WebKit pointer capture)
 		'**/deckload-smoke.spec.ts', // playwright.webkit-deckload.config.ts (built artifact, chromium+webkit, #770)
 		'**/playlist-detail.spec.ts', // playwright.webkit-deckload.config.ts (built artifact, fixture playlists, #859)
 		'**/desktop-setup.spec.ts', // playwright.desktop-setup.config.ts (static http.server)
@@ -137,7 +139,8 @@ export default defineConfig({
 		'**/audio-soak.spec.ts', // playwright.audio-soak.config.ts (built artifact, MINUTES; `just test-audio-soak`)
 		'**/autoplay-error-hunt.spec.ts', // playwright.autoplay-error-hunt.config.ts (MINUTES; `just test-autoplay-hunt`)
 		'**/silence-expected-audible.spec.ts', // playwright.silence-expected-audible.config.ts (real backend + bench clips)
-		'**/libm120-scale-bench.spec.ts' // playwright.libm120.config.ts (production build benchmark)
+		'**/libm120-scale-bench.spec.ts', // playwright.libm120.config.ts (production build benchmark)
+		'**/color-fx-placement-render.spec.ts' // playwright.color-fx-placement.config.ts (OfflineAudioContext render, no dev server)
 	],
 	fullyParallel: false,
 	workers: 1,

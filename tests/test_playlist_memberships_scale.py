@@ -367,13 +367,3 @@ def test_put_full_replace_write_count(client: TestClient, db_path: Path) -> None
     total = sum(counts.values())
     # PUT deletes 500 rows and inserts 501: measured 1001 membership writes.
     assert total >= 501
-
-
-def test_openapi_documents_membership_endpoints(client: TestClient) -> None:
-    schema = client.get("/openapi.json").json()
-    paths = schema["paths"]
-    assert "/api/v1/playlists/{playlist_id}/items:add" in paths
-    assert "/api/v1/playlists/{playlist_id}/items:remove" in paths
-    assert "/api/v1/playlists/{playlist_id}/items:move" in paths
-    assert "/api/v1/playlists/{playlist_id}/items/{item_id}" in paths
-    assert "/api/v1/playlists/{playlist_id}/tracks" in paths

@@ -20,6 +20,7 @@
 
 import { detectWheelInputKind, scaledWheelStep } from './wheel-adjust';
 import { gainedStraightDrag } from './drag-sensitivity.svelte';
+import type { StemControl } from './stem-types';
 
 // ----- central sensitivity (tweak here; not buried in components) -----
 
@@ -103,15 +104,25 @@ export const knobUi = $state<{
  * mount order since EqOverlay is strictly nested inside the mixer's lifetime.
  */
 const _registry = new Map<string, KnobRef[]>();
-let _wheelBound = false;
-let _clearBound = false;
+/**
+ * The window listeners that serve a selection (wheel, Esc, click on empty
+ * space), keyed by event type, bound ONLY while a selection exists
+ * (PERF-UI-13). The wheel one is `passive: false`, and a non-passive wheel
+ * listener on `window` makes Chromium wait on the main thread before it can
+ * scroll anything, the library track list included (LIBM-174). Mounting a
+ * knob must therefore never bind it; selecting one does.
+ */
+const _boundWindowListeners = new Set<string>();
 
-type KnobHandListener = (ids: readonly string[]) => void;
+export type KnobInputSource = 'hand' | 'midi';
+
+type KnobHandListener = (ids: readonly string[], source: KnobInputSource) => void;
 const _handListeners = new Set<KnobHandListener>();
 
 /**
- * Subscribe to hand input (pointer drag start or move, wheel, arrow nudge, pad,
- * selection wheel, the bridge's nudge/drag) on knob ids. The setter path
+ * Subscribe to hand or MIDI input on knob ids. Hand: pointer drag start or move,
+ * wheel, arrow nudge, pad, selection wheel, the bridge's nudge/drag. MIDI:
+ * `midi/action-glue.svelte.ts` reports with source `'midi'`. The setter path
  * (`nudgeKnob`, `setKnobAbsolute`) never fires it, so a programmatic writer such
  * as the commanded-move runner can listen without cancelling itself.
  * Each id is reported with its Alt-link partner. Returns an unsubscribe.
@@ -123,7 +134,7 @@ export function onKnobHandInput(listener: KnobHandListener): () => void {
 	};
 }
 
-function _noteHandInput(ids: readonly string[]): void {
+function _noteHandInput(ids: readonly string[], source: KnobInputSource = 'hand'): void {
 	if (_handListeners.size === 0 || ids.length === 0) return;
 	const expanded = new Set<string>();
 	for (const id of ids) {
@@ -132,12 +143,20 @@ function _noteHandInput(ids: readonly string[]): void {
 		if (partner !== null) expanded.add(partner);
 	}
 	const batch = [...expanded];
-	for (const listener of _handListeners) listener(batch);
+	for (const listener of _handListeners) listener(batch, source);
 }
 
-/** Report hand input on one control whose component writes `onchange` directly (VFader). */
-export function noteKnobHandInput(id: string): void {
-	_noteHandInput([id]);
+/** Report hand or MIDI input on one control whose component writes `onchange` directly (VFader). */
+export function noteKnobHandInput(id: string, source: KnobInputSource = 'hand'): void {
+	_noteHandInput([id], source);
+}
+
+export function stemKnobRole(stem: StemControl): KnobRole {
+	if (stem === 'vocal') return 'stem-vocal';
+	if (stem === 'instrumental') return 'stem-instrumental';
+	if (stem === 'bass') return 'stem-bass';
+	if (stem === 'drums') return 'stem-drums';
+	throw new Error(`no mixer stem dial for ${stem}`);
 }
 
 function _activeRef(id: string): KnobRef | undefined {
@@ -344,8 +363,6 @@ export function registerKnob(ref: KnobRef): void {
 	const stack = _registry.get(ref.id);
 	if (stack) stack.push(ref);
 	else _registry.set(ref.id, [ref]);
-	_ensureGlobalWheel();
-	_ensureSelectionClear();
 }
 
 export function unregisterKnob(id: string): void {
@@ -369,6 +386,7 @@ export function unregisterKnob(id: string): void {
 		if (_registry.has(id)) return;
 		if (knobUi.selectedIds.includes(id)) {
 			knobUi.selectedIds = knobUi.selectedIds.filter((s) => s !== id);
+			_syncSelectionWindowListeners();
 		}
 		if (knobUi.linkPendingId === id) knobUi.linkPendingId = null;
 		if (knobUi.hoveredId === id) knobUi.hoveredId = null;
@@ -381,6 +399,12 @@ export function unregisterKnob(id: string): void {
 /** Test-only: clears the module-level registry stack between test cases. */
 export function _resetKnobRegistryForTests(): void {
 	_registry.clear();
+	_syncSelectionWindowListeners();
+}
+
+/** Test-only: the window event types currently bound for the selection. */
+export function _knobWindowListenersForTests(): ReadonlySet<string> {
+	return new Set(_boundWindowListeners);
 }
 
 export function isKnobSelected(id: string): boolean {
@@ -416,6 +440,7 @@ export function setKnobSelection(ids: readonly string[]): void {
 		throw new RangeError(`${GROUP_LIMIT_HINT}; got ${channels.join(', ')}`);
 	}
 	knobUi.selectedIds = next;
+	_syncSelectionWindowListeners();
 }
 
 let _hintTimer: ReturnType<typeof setTimeout> | null = null;
@@ -437,12 +462,14 @@ export function shiftClickKnob(id: string): boolean {
 	}
 	knobUi.groupHint = null;
 	knobUi.selectedIds = toggleKnobSelection(knobUi.selectedIds, id);
+	_syncSelectionWindowListeners();
 	return true;
 }
 
 /** Esc or a click on empty space. */
 export function clearKnobSelection(): void {
 	if (knobUi.selectedIds.length > 0) knobUi.selectedIds = [];
+	_syncSelectionWindowListeners();
 }
 
 /** Alt/Option+click: arm link on first dial, complete on second, clear if same. */
@@ -728,11 +755,6 @@ function _onWindowWheel(e: WheelEvent): void {
 	nudgeSelection(dir * step, { leadId: knobUi.hoveredId, flip: e.altKey });
 }
 
-function _ensureGlobalWheel(): void {
-	if (_wheelBound || typeof window === 'undefined') return;
-	window.addEventListener('wheel', _onWindowWheel, { passive: false });
-	_wheelBound = true;
-}
 
 function _onWindowKeyDown(e: KeyboardEvent): void {
 	if (e.key === 'Escape') clearKnobSelection();
@@ -743,11 +765,27 @@ function _onWindowPointerDown(e: PointerEvent): void {
 	if (isEmptySpaceTarget(e.target)) clearKnobSelection();
 }
 
-function _ensureSelectionClear(): void {
-	if (_clearBound || typeof window === 'undefined') return;
-	window.addEventListener('keydown', _onWindowKeyDown);
-	window.addEventListener('pointerdown', _onWindowPointerDown, { capture: true });
-	_clearBound = true;
+/**
+ * Bind the selection's window listeners when the selection becomes
+ * non-empty and remove them when it empties (PERF-UI-13). Called after every
+ * write to `knobUi.selectedIds`. Idempotent: a second selection while bound
+ * adds nothing, a clear while unbound removes nothing.
+ */
+function _syncSelectionWindowListeners(): void {
+	if (typeof window === 'undefined') return;
+	const wanted = knobUi.selectedIds.length > 0;
+	const bound = _boundWindowListeners.size > 0;
+	if (wanted && !bound) {
+		window.addEventListener('wheel', _onWindowWheel, { passive: false });
+		window.addEventListener('keydown', _onWindowKeyDown);
+		window.addEventListener('pointerdown', _onWindowPointerDown, { capture: true });
+		_boundWindowListeners.add('wheel').add('keydown').add('pointerdown');
+	} else if (!wanted && bound) {
+		window.removeEventListener('wheel', _onWindowWheel);
+		window.removeEventListener('keydown', _onWindowKeyDown);
+		window.removeEventListener('pointerdown', _onWindowPointerDown, { capture: true });
+		_boundWindowListeners.clear();
+	}
 }
 
 /**

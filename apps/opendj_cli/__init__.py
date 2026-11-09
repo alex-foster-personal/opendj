@@ -47,6 +47,8 @@ Bus verbs (``play``, ``open``, ``status``, ``state``, …):
 
 from __future__ import annotations
 
+from apps.opendj_cli.catalog_manual_loop import apply_manual_loop_verbs
+
 EXIT_CONFIRMED = 0
 EXIT_FAILED = 1
 EXIT_NO_ENGINE = 2
@@ -60,3 +62,5 @@ EXIT_BLOCKED = 6
 EXIT_OK = EXIT_CONFIRMED
 EXIT_PRECONDITION = EXIT_NO_PAGE
 EXIT_CONFLICT = EXIT_UNCONFIRMED
+
+apply_manual_loop_verbs()

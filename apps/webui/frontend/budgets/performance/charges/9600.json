@@ -1,0 +1,9 @@
+{
+  "bytes": 4096,
+  "measured_main": 406594,
+  "measured_with_pr": 410132,
+  "sha": "ec5fd907d1",
+  "date": "Sun 8 Nov 2026",
+  "reason": "PR #9600 (feat: palette command registry fed by menu commands and hotkeys (#9464)) grows the performance surface. Measured: CI bundle check of ec5fd907d1, +3538 B gzip; ceiled to KiB.",
+  "payback": "none planned; the growth is the feature's own code on this surface"
+}

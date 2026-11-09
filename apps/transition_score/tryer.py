@@ -153,9 +153,7 @@ class EngineProfiles:
             # trust_env=False: the origin names this engine's own address, so an
             # HTTP(S)_PROXY / ALL_PROXY in the environment must never carry the
             # read elsewhere (a refusing proxy would read as a failed fetch).
-            with httpx.Client(
-                timeout=HTTP_TIMEOUT_S, transport=self._transport, trust_env=False
-            ) as client:
+            with httpx.Client(timeout=HTTP_TIMEOUT_S, transport=self._transport, trust_env=False) as client:
                 response = client.get(f"{self.origin.base_url}{path}")
         except httpx.TransportError as error:
             raise unreachable(self.origin, error) from error
@@ -438,9 +436,7 @@ def rendered_steps(
     timed = [
         (
             event,
-            0.0
-            if autodj.renders_at_start(event, plan, layout)
-            else _render_s(bars[index], plan, out_profile, layout),
+            0.0 if autodj.renders_at_start(event, plan, layout) else _render_s(bars[index], plan, out_profile, layout),
         )
         for index, event in enumerate(plan.events)
     ]
@@ -549,9 +545,7 @@ def incoming_on_render_clock(
     return entry_s, placed
 
 
-def outgoing_natural(
-    path: Path, start_s: float, frames: int, sample_rate: int, out_ratio: float = 1.0
-) -> np.ndarray:
+def outgoing_natural(path: Path, start_s: float, frames: int, sample_rate: int, out_ratio: float = 1.0) -> np.ndarray:
     """The outgoing track's own audio from ``start_s`` for ``frames`` at ``sample_rate`` (round 14): what it would be
     playing alone, the level the scorer holds the mix to. A constant heard load ratio resamples like the incoming
     deck; past the file's end it is silence."""
@@ -646,18 +640,20 @@ def _candidate(index: int, plan: TransitionPlan, job: _Job) -> Candidate:
         score_ms = round((time.perf_counter() - started) * 1000.0, 1)
         # Kept only once validated and scored: a refusal before this point leaves no folder behind.
         kept = _keep_render(render, f"c{index + 1}", job)
-    plan_json, plan_sha256 = _recorded_plan(plan)
+    recorded, plan_sha256 = _recorded_plan(plan)
     return Candidate(
         id=f"c{index + 1}",
-        plan=plan_json,
+        plan_json=json.dumps(recorded),
         plan_sha256=plan_sha256,
         style=plan.style,
         bars=plan.bars,
-        metrics={**result.metrics, "in_trim_db": plan.in_.trim_db, "in_trim_reason": plan.in_.trim_reason},
-        factors=result.factors,
+        metrics_json=json.dumps(
+            {**result.metrics, "in_trim_db": plan.in_.trim_db, "in_trim_reason": plan.in_.trim_reason}
+        ),
+        factors_json=result.factors_json,
         vetoes=result.vetoes,
         measured=result.measured,
-        unknown=result.unknown,
+        unknown_json=result.unknown_json,
         score=result.score,
         scorer_version=SCORER_VERSION,
         render_ms=round(render.render_ms, 1),
@@ -672,18 +668,18 @@ def _candidate_or_refusal(index: int, plan: TransitionPlan, job: _Job) -> Candid
     try:
         return _candidate(index, plan, job)
     except (TryError, RenderPlanError) as error:
-        plan_json, plan_sha256 = _recorded_plan(plan)
+        recorded, plan_sha256 = _recorded_plan(plan)
         return Candidate(
             id=f"c{index + 1}",
-            plan=plan_json,
+            plan_json=json.dumps(recorded),
             plan_sha256=plan_sha256,
             style=plan.style,
             bars=plan.bars,
-            metrics={},
-            factors={},
+            metrics_json="{}",
+            factors_json="{}",
             vetoes=(),
             measured=Measured(k=0, n=len(CORE_FACTORS)),
-            unknown={"render": f"refused: {error}"},
+            unknown_json=json.dumps({"render": f"refused: {error}"}),
             score=None,
             scorer_version=SCORER_VERSION,
             render_ms=None,

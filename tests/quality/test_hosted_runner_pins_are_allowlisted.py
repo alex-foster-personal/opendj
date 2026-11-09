@@ -67,6 +67,10 @@ ALLOWED_HOSTED: dict[tuple[str, str], str] = {
         "third-party vendor runners chosen by the budget gate's label map, by design "
         "(ADR-NEW-runner-canary); no pull_request trigger"
     ),
+    ("track-catcher-core.yml", "core"): (
+        "needs a Swift toolchain for `swift test` against the real engine; the self-hosted "
+        "Linux pool has no swift, so this job stays on the GitHub-hosted image that ships it"
+    ),
 }
 
 

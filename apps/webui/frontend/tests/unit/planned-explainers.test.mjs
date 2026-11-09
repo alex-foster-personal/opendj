@@ -25,6 +25,8 @@
  *   bare PARITY-TODO string again under a new name
  * - if a topbar control is added with no entry then it inherits nothing and
  *   the audit that found these fourteen has to be run by hand again
+ * - if grid-flag-dismiss is back in the planned list then the wired button
+ *   reads as unbuilt
  */
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
@@ -38,6 +40,10 @@ before(async () => {
 });
 
 describe('planned explainers', () => {
+	it('grid-flag-dismiss is built, not planned', () => {
+		assert.ok(!('grid-flag-dismiss' in mod.PLANNED_CONTROLS));
+	});
+
 	it('describes every planned control, distinctly', () => {
 		const { PLANNED_CONTROLS, plannedTitle } = mod;
 		const ids = Object.keys(PLANNED_CONTROLS);

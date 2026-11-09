@@ -17,10 +17,12 @@
 	DECK_IDS,
 	deckStates,
 	getDeckState,
+		engine,
 		mixerState,
 		parseCamelotKey,
 		pitchRanges
 	} from '$lib/rb/audio-engine.svelte';
+	import { fetchMemoryCues, setActiveMemoryLoop as putActiveMemoryLoop } from '$lib/rb/api-rb';
 	import type { PitchRange } from '$lib/rb/audio-engine.svelte';
 	import { bannerSyncError, deckErrorIds, noteDeckError } from '$lib/rb/deck-error-id.svelte';
 	import { deckBannerDismissMs, deckBannerTone } from '$lib/rb/deck-banner-policy';
@@ -58,6 +60,7 @@
 	import type { HotCueSlot } from '$lib/rb/hot-cue-types';
 	import type { StemControl } from '$lib/rb/stem-types';
 	import BeatJump from './deck/BeatJump.svelte';
+	import type { BeatJumpSize } from '$lib/rb/beat-jump-size.svelte';
 	import DeckHeader from './deck/DeckHeader.svelte';
 	import HotCueBank from './deck/HotCueBank.svelte';
 	import JogDial from './deck/JogDial.svelte';
@@ -79,6 +82,9 @@
 		type StemSeparationPort
 	} from '$lib/rb/stem-separation-port';
 	import { stemStatusView } from '$lib/rb/stem-status';
+	import { subscribeLoadedDeckStemsRefresh } from '$lib/rb/loaded-deck-stems-refresh';
+	import { subscribeKind, subscribeResync } from '$lib/api/events-bus';
+	import { rustCommandUnsupported } from '$lib/audio-engine/rust-mode.svelte';
 	import { SeparateEndProbe, lookForBundle, separateRunId } from '$lib/rb/stem-separate-probe';
 	import StripWaveform from './deck/StripWaveform.svelte';
 	import { waveSeekCommand } from './wave/wave-scrub';
@@ -326,6 +332,10 @@
 		await runPerformanceCommandFromUi({ type: 'cue', deck: deckId }, pressT0Ms);
 	}
 
+	async function callMemoryCue(direction: 'prev' | 'next', pressT0Ms?: number): Promise<void> {
+		await runPerformanceCommandFromUi({ type: 'memory_cue_call', deck: deckId, direction }, pressT0Ms);
+	}
+
 	async function engageBeatLoop(beats: number, startMs?: number): Promise<void> {
 		await runPerformanceCommandFromUi(
 			startMs === undefined
@@ -339,12 +349,54 @@
 		return (await runPerformanceCommandFromUi({ type: 'loop', deck: deckId, loop, quantize: false })).ok;
 	}
 
+	/** CUES-9967: set or clear the track's active memory loop, then re-read
+	 * the cues; setting it arms the safety slot now, clearing it disarms the
+	 * slot when the slot holds that loop. */
+	async function setActiveMemoryLoop(
+		loop: { in_ms: number; out_ms: number },
+		active: boolean
+	): Promise<boolean> {
+		const stableId = deck.stable_id;
+		try {
+			if (stableId === null) throw new Error('no track loaded');
+			const { revision } = await fetchMemoryCues(stableId);
+			await putActiveMemoryLoop(stableId, loop.in_ms, active, revision);
+			await engine.refreshHotCues(deckId);
+			if (active) {
+				engine.armActiveLoopFromCues(deckId);
+			} else if (deck.safety_loop?.in_ms === loop.in_ms && deck.safety_loop.out_ms === loop.out_ms) {
+				await armSafetyLoop(false);
+			}
+			return true;
+		} catch (error) {
+			const message = error instanceof Error ? error.message : String(error);
+			pushToast(`Active loop ${active ? 'set' : 'clear'} failed - ${message}`, 'error');
+			return false;
+		}
+	}
+
 	async function disengageLoop(): Promise<boolean> {
 		return (await runPerformanceCommandFromUi({ type: 'loop', deck: deckId, loop: null })).ok;
 	}
 
+	async function loopIn(): Promise<void> {
+		await runPerformanceCommandFromUi({ type: 'loop_in', deck: deckId });
+	}
+
+	async function loopOut(): Promise<void> {
+		await runPerformanceCommandFromUi({ type: 'loop_out', deck: deckId });
+	}
+
+	async function reloop(): Promise<void> {
+		await runPerformanceCommandFromUi({ type: 'reloop', deck: deckId });
+	}
+
 	async function beatJump(beats: number): Promise<void> {
 		await runPerformanceCommandFromUi({ type: 'beat_jump', deck: deckId, beats });
+	}
+
+	async function setBeatJumpSize(beats: BeatJumpSize): Promise<void> {
+		await runPerformanceCommandFromUi({ type: 'beat_jump_size', deck: deckId, beats });
 	}
 
 	async function setLoopIntervalMode(enabled: boolean): Promise<void> {
@@ -408,6 +460,21 @@
 	async function loadStems(): Promise<void> {
 		await runPerformanceCommandFromUi({ type: 'stem_load', deck: deckId });
 	}
+
+	// STEM-9934: a deck on NO STEMS looks for its bundle again when a stems job
+	// (library_jobs) or a library change (tracks) names its track, and on resync,
+	// clearing the cached no-stems flag first (loaded-deck-stems-refresh.ts).
+	$effect(() => {
+		const id = deckId;
+		return subscribeLoadedDeckStemsRefresh({
+			deck: id,
+			state: () => getDeckState(id),
+			subscribeKind,
+			subscribeResync,
+			canLoadStems: () => !rustCommandUnsupported('stem_load'),
+			loadStems: (stable_id) => runPerformanceCommandFromUi({ type: 'stem_load', deck: id, stable_id })
+		});
+	});
 
 	// STEM-77: a deck showing NO STEMS offers to separate the loaded track.
 	const separateId = $derived(
@@ -686,17 +753,19 @@
 		     the HOT CUE pad-mode menu as a two-line button (LYR-14), which frees the
 		     row under the pads for the lyric strip. -->
 		<div class="left-edge">
-			<GridEditButtons
-				{deck}
-				{deckId}
-				press={(edit) => void runPerformanceCommandFromUi({ type: 'grid_edit', deck: deckId, edit })}
-				reportError={(message: string) => pushToast(message, 'error')}
-			/>
-			{#if reactDeck}
-				<ReactIsland load={() => import('./deck/PadModeMenu.tsx')} props={{ deckId, stacked: true }} />
-			{:else}
-				<PadModeMenu {deckId} stacked />
-			{/if}
+			<div class="prio-slot" data-priority="2">
+				<GridEditButtons
+					{deck}
+					{deckId}
+					press={(edit) => void runPerformanceCommandFromUi({ type: 'grid_edit', deck: deckId, edit })}
+					reportError={(message: string) => pushToast(message, 'error')}
+				/>
+				{#if reactDeck}
+					<ReactIsland load={() => import('./deck/PadModeMenu.tsx')} props={{ deckId, stacked: true }} />
+				{:else}
+					<PadModeMenu {deckId} stacked />
+				{/if}
+			</div>
 		</div>
 
 		<!-- The cue column absorbs spare width to preserve control alignment.
@@ -726,9 +795,11 @@
 		</div>
 
 		<!-- Keep the compact transport modifiers together, outside the cue bank. -->
-		<div class="loop-col">
-			<LoopCluster {deck} {deckId} {pending} onEngage={engageBeatLoop} onDisengage={disengageLoop} onSafetySave={saveSafetyLoop} onSafetyArm={armSafetyLoop} onSafetyClear={clearSafetyLoop} onIntervalMode={setLoopIntervalMode} onIntervalBase={setLoopIntervalBase} onStoredLoop={engageStoredLoop} />
-			<BeatJump {deck} {pending} onJump={beatJump} />
+		<div class="loop-col" data-priority="2">
+			<LoopCluster {deck} {deckId} {pending} onEngage={engageBeatLoop} onDisengage={disengageLoop} onSafetySave={saveSafetyLoop} onSafetyArm={armSafetyLoop} onSafetyClear={clearSafetyLoop} onIntervalMode={setLoopIntervalMode} onIntervalBase={setLoopIntervalBase} onStoredLoop={engageStoredLoop} onLoopIn={loopIn} onLoopOut={loopOut} onReloop={reloop} onSetActive={setActiveMemoryLoop} />
+			<div class="prio-slot" data-priority="3">
+				<BeatJump {deck} {pending} onJump={beatJump} onSize={setBeatJumpSize} />
+			</div>
 		</div>
 
 		<TransportCluster
@@ -736,6 +807,7 @@
 			{pending}
 			quantizedLaunchArmed={queryQuantizedLaunchArmed(deckId)}
 			onCue={returnToCue}
+			onMemoryCueCall={callMemoryCue}
 			onPlayPause={playPause}
 		/>
 
@@ -974,6 +1046,24 @@
 		/* This group stays beside the cue bank within main-row's fixed height.
 		 * LoopCluster keeps its own
 		 * fixed 44px width and vertical controls. */
+	}
+	/* SKINLAYOUT-10203: deck tiers by container query, never @media
+	 * (PLAN.md 2.4). Optional parts carry data-priority and drop lowest first.
+	 * compact < 360 px: artwork, pad labels, BeatJump (priority 3).
+	 * narrow  < 300 px: loop column and grid-edit buttons too (priority 2).
+	 * Nothing scales fonts. */
+	.prio-slot {
+		display: contents;
+	}
+	@container deck (max-width: 359px) {
+		.rb-deck :global([data-priority='3']) {
+			display: none;
+		}
+	}
+	@container deck (max-width: 299px) {
+		.rb-deck :global([data-priority='2']) {
+			display: none;
+		}
 	}
 	.cue-flex {
 		flex: 1 1 0;

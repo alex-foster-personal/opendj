@@ -16,25 +16,32 @@
 
 export interface DeckDefaultPrefs {
 	deck_default_quantize: boolean;
+	/** DECKCTL-10421: Needle Lock, a playing deck's overview strip ignores clicks. Default off. */
+	deck_needle_lock: boolean;
 }
 
 export const DECK_DEFAULT_PREF_DEFAULTS: DeckDefaultPrefs = {
-	deck_default_quantize: true
+	deck_default_quantize: true,
+	deck_needle_lock: false
 };
 
 export function mergeDeckDefaultPrefsFromParsed(
 	parsed: Partial<Record<keyof DeckDefaultPrefs, unknown>>,
 	storageKey: string
 ): DeckDefaultPrefs {
-	const value = parsed.deck_default_quantize;
-	if (value === undefined) return { ...DECK_DEFAULT_PREF_DEFAULTS };
-	if (typeof value !== 'boolean') {
-		throw new Error(
-			`${storageKey}: malformed prefs blob (deck_default_quantize is not a boolean) - ` +
-				'clear the localStorage key to recover'
-		);
+	const out = { ...DECK_DEFAULT_PREF_DEFAULTS };
+	for (const key of Object.keys(DECK_DEFAULT_PREF_DEFAULTS) as (keyof DeckDefaultPrefs)[]) {
+		const value = parsed[key];
+		if (value === undefined) continue;
+		if (typeof value !== 'boolean') {
+			throw new Error(
+				`${storageKey}: malformed prefs blob (${key} is not a boolean) - ` +
+					'clear the localStorage key to recover'
+			);
+		}
+		out[key] = value;
 	}
-	return { deck_default_quantize: value };
+	return out;
 }
 
 type DeckDefaultsListener = (prefs: Readonly<DeckDefaultPrefs>) => void;
@@ -56,7 +63,10 @@ export function onDeckDefaultsChange(listener: DeckDefaultsListener): () => void
 }
 
 export function announceDeckDefaults(prefs: Readonly<DeckDefaultPrefs>): void {
-	_current = { deck_default_quantize: prefs.deck_default_quantize };
+	_current = {
+		deck_default_quantize: prefs.deck_default_quantize,
+		deck_needle_lock: prefs.deck_needle_lock
+	};
 	for (const listener of _listeners) listener(prefs);
 }
 
@@ -64,8 +74,17 @@ export function makeDeckDefaultPrefSetters(
 	state: DeckDefaultPrefs,
 	persist: () => void,
 	sync: (patch: Partial<DeckDefaultPrefs>) => void
-): { setDeckDefaultQuantize(next: boolean): void } {
+): { setDeckDefaultQuantize(next: boolean): void; setDeckNeedleLock(next: boolean): void } {
 	return {
+		setDeckNeedleLock(next: boolean): void {
+			if (typeof next !== 'boolean') {
+				throw new Error(`deck_needle_lock must be a boolean, got ${String(next)}`);
+			}
+			state.deck_needle_lock = next;
+			persist();
+			void sync({ deck_needle_lock: next });
+			announceDeckDefaults(state);
+		},
 		setDeckDefaultQuantize(next: boolean): void {
 			if (typeof next !== 'boolean') {
 				throw new Error(`deck_default_quantize must be a boolean, got ${String(next)}`);

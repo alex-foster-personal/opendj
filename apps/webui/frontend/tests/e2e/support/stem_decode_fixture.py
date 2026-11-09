@@ -1,6 +1,6 @@
 """Throwaway library with one real FLAC demucs4 stem bundle for stem-decode bench.
 
-Builds one ingested track plus a schema v2 bundle under ``data/state/stems/``.
+Builds one ingested track plus a schema v2 bundle under ``(private path)/``.
 No mocked APIs: audio is synthesised, FLAC parts are written by ffmpeg, and the
 track row comes from the real folder ingest.
 
@@ -8,6 +8,11 @@ Usage::
 
     uv run --no-sync python -m apps.webui.frontend.tests.e2e.support.stem_decode_fixture \\
         --data-dir /abs/path/to/stem-decode-data [--manifest /abs/manifest.json]
+
+To attach a matching bundle to an already-ingested fixture without rewriting its database::
+
+    uv run --no-sync python -m apps.webui.frontend.tests.e2e.support.stem_decode_fixture \\
+        --data-dir /abs/path/to/existing-data --attach-stable-id TRACK_ID --seconds 60
 
 Acceptance tests (tests/scripts/test_stem_decode_fixture.py):
   [if] --data-dir is relative [then] exit non-zero before writing
@@ -27,6 +32,7 @@ import sys
 from dataclasses import dataclass
 from pathlib import Path
 
+from apps.stems.artifacts import STEM_PARTS
 from apps.webui.frontend.tests.e2e.support.deckload_fixture import (
     FIXTURE_REVISION,
     FixtureTrack,
@@ -34,7 +40,6 @@ from apps.webui.frontend.tests.e2e.support.deckload_fixture import (
     _track_rows,
     ensure_audio,
 )
-from apps.stems.artifacts import STEM_PARTS
 
 FIXTURE_REVISION_STEM: str = f"{FIXTURE_REVISION}-stem-decode-bench-v1"
 BENCH_TRACK = FixtureTrack(
@@ -79,7 +84,18 @@ def _write_flac_part(path: Path, seconds: float, *, frequency_hz: float) -> None
     )
 
 
-def _write_v2_bundle(stems_root: Path, stable_id: str, seconds: float) -> None:
+def write_v2_bundle(stems_root: Path, stable_id: str, seconds: float) -> None:
+    """Write one real four-part FLAC bundle without touching the library database."""
+    if (
+        not stable_id
+        or stable_id in {".", ".."}
+        or "/" in stable_id
+        or "\\" in stable_id
+        or Path(stable_id).name != stable_id
+    ):
+        raise ValueError(f"stable_id must be one path segment, got {stable_id!r}")
+    if not 0 < seconds < float("inf"):
+        raise ValueError(f"seconds must be positive, got {seconds!r}")
     bundle_dir = stems_root / stable_id
     if bundle_dir.exists():
         shutil.rmtree(bundle_dir)
@@ -132,7 +148,7 @@ def build(data_dir: Path) -> StemDecodeFixture:
     files = ensure_audio(audio_dir, (BENCH_TRACK,))
     rows = _ingest_and_verify(data_dir, audio_dir, files, "stem-decode-bench")
     stable_id = rows[0][0]
-    _write_v2_bundle(data_dir / "state" / "stems", stable_id, BENCH_TRACK.seconds)
+    write_v2_bundle(data_dir / "state" / "stems", stable_id, BENCH_TRACK.seconds)
     marker.write_text(f"{FIXTURE_REVISION_STEM}\n", encoding="utf-8")
     return StemDecodeFixture(
         stable_id=stable_id,
@@ -160,6 +176,8 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--data-dir", type=Path, required=True)
     parser.add_argument("--manifest", type=Path, default=None)
+    parser.add_argument("--attach-stable-id", default=None)
+    parser.add_argument("--seconds", type=float, default=BENCH_TRACK.seconds)
     args = parser.parse_args(argv)
     if not args.data_dir.is_absolute():
         print(f"[ERROR] --data-dir must be absolute, got {args.data_dir!r}", file=sys.stderr)
@@ -167,7 +185,30 @@ def main(argv: list[str] | None = None) -> int:
     if args.manifest is not None and not args.manifest.is_absolute():
         print(f"[ERROR] --manifest must be absolute, got {args.manifest!r}", file=sys.stderr)
         return 2
-    fixture = build(args.data_dir)
+    if args.attach_stable_id is None:
+        fixture = build(args.data_dir)
+    else:
+        if not args.data_dir.is_dir():
+            print(f"[ERROR] attach data dir does not exist: {args.data_dir}", file=sys.stderr)
+            return 2
+        if not (args.data_dir / "state" / "state.db").is_file():
+            print("[ERROR] attach data dir has no ingested state database", file=sys.stderr)
+            return 2
+        _require_ffmpeg()
+        try:
+            write_v2_bundle(
+                args.data_dir / "state" / "stems",
+                args.attach_stable_id,
+                args.seconds,
+            )
+        except ValueError as exc:
+            print(f"[ERROR] {exc}", file=sys.stderr)
+            return 2
+        fixture = StemDecodeFixture(
+            stable_id=args.attach_stable_id,
+            layout="demucs4",
+            revision=f"{FIXTURE_REVISION_STEM}-attached",
+        )
     print(
         f"[stem-decode-fixture] revision={fixture.revision} stable_id={fixture.stable_id} "
         f"layout={fixture.layout} data_dir={args.data_dir}"

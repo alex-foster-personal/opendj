@@ -1,0 +1,9 @@
+{
+  "bytes": 4096,
+  "measured_main": 15986,
+  "measured_with_pr": 18950,
+  "sha": "6c467a132c",
+  "date": "Sun 8 Nov 2026",
+  "reason": "PR #10340 adds XDJ_XZ_MAP (the XDJ-XZ practice replica map, with hints for every wired top-panel control) to PRACTICE_DEVICE_MAPS, which the lazy practice-replica chunk imports. measured_main is the surface's committed baseline (5865cedc6a); a main build did not fit the shared-host lock cap.",
+  "payback": "none planned: the hint labels are what the inert controls show; a later pass can table the EFFECT SELECT and CH SELECT position hints into one generated list if the surface needs the bytes back"
+}

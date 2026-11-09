@@ -40,10 +40,14 @@ let unsubKind: (() => void) | null = null;
 let unsubResync: (() => void) | null = null;
 
 async function hydrate(lane: LibraryJobLane): Promise<void> {
-	const listing = await listLibraryJobs(lane, true);
-	if (lane === 'stems') stems = listing.items;
-	else lyrics = listing.items;
-	for (const item of listing.items) upsertReal(item);
+	try {
+		const listing = await listLibraryJobs(lane, true);
+		if (lane === 'stems') stems = listing.items;
+		else lyrics = listing.items;
+		for (const item of listing.items) upsertReal(item);
+	} catch (exc) {
+		console.error('[library-jobs-store] hydrate failed', exc);
+	}
 }
 
 async function hydrateAll(): Promise<void> {

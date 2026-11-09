@@ -6,7 +6,7 @@
  *
  * Requirements (mini-PRD):
  *   ✔︎ every live row names exactly one Settings catalog entry.
- *     [if] a row id is missing, unimplemented, or not boolean/enum [then ⛔️]
+ *     [if] a row id is missing, unimplemented, or not boolean, enum or number [then ⛔️]
  *   ✔︎ a screen has no empty groups and no duplicate ids.
  *     [if] duplicate group or row id, or empty group list [then ⛔️]
  */
@@ -47,7 +47,7 @@ export interface ResolvedCustomiseScreen {
 	groups: readonly ResolvedCustomiseGroup[];
 }
 
-/** Resolve a live row key to its catalog entry; missing, unimplemented or non boolean/enum throws. */
+/** Resolve a live row key to its catalog entry; missing, unimplemented or non boolean/enum/number throws. */
 export function resolveCustomiseSetting(
 	catalog: readonly SettingDef[],
 	id: string,
@@ -56,8 +56,10 @@ export function resolveCustomiseSetting(
 	const def = catalog.find((entry) => entry.id === id);
 	if (def === undefined) throw new Error(`${owner}: no Settings catalog entry ${id}`);
 	if (!def.implemented) throw new Error(`${owner}: catalog entry ${id} is not implemented`);
-	if (def.control.kind !== 'boolean' && def.control.kind !== 'enum') {
-		throw new Error(`${owner}: ${id} is a ${def.control.kind} control, only boolean and enum render here`);
+	if (def.control.kind !== 'boolean' && def.control.kind !== 'enum' && def.control.kind !== 'number') {
+		throw new Error(
+			`${owner}: ${id} is a ${def.control.kind} control, only boolean, enum and number render here`
+		);
 	}
 	return def;
 }

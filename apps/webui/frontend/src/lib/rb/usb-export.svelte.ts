@@ -437,6 +437,14 @@ const READBACK_FIELDS: Record<string, (v: unknown) => boolean> = {
 	track_updates: isRecordList,
 	verified: isBoolean
 };
+/** UsbEjectOut fields the daemon always sends; `ejected` must be the JSON literal
+ * `true`, not a truthy string (Codex 4350837641). */
+const EJECT_OUT_FIELDS: Record<string, (v: unknown) => boolean> = {
+	ejected: (v) => v === true,
+	name: isString,
+	message: isString,
+	mount_path: isString
+};
 
 function malformedFields(answer: unknown, fields: Record<string, (v: unknown) => boolean>, whole: string): string[] {
 	if (!isRecord(answer)) return [whole];
@@ -490,6 +498,33 @@ function bodyShape(body: unknown): string {
 	if (typeof body !== 'object') return typeof body;
 	const keys = Object.keys(body);
 	return keys.length === 0 ? 'empty object' : `object with ${keys.sort().join(', ')}`;
+}
+
+/** When a 200 eject answer is not a whole UsbEjectOut with `ejected: true` for the
+ * mount asked, the stick stays plugged in and nothing says it is safe to pull. */
+function usbEjectUnconfirmedProblem(body: unknown, mountPath: string): UsbProblem | null {
+	if (!isRecord(body)) {
+		return {
+			code: 'eject_unconfirmed',
+			message: `The daemon did not confirm the eject (${bodyShape(body)}). Keep the stick plugged in.`
+		};
+	}
+	const bad = Object.entries(EJECT_OUT_FIELDS)
+		.filter(([key, ok]) => !ok(body[key]))
+		.map(([key]) => key);
+	if (bad.length > 0) {
+		return {
+			code: 'eject_unconfirmed',
+			message: `The daemon did not confirm the eject (${bodyShape(body)}${body.ejected !== undefined ? `, ejected: ${JSON.stringify(body.ejected)}` : ''}). Keep the stick plugged in.`
+		};
+	}
+	if (body.mount_path !== mountPath) {
+		return {
+			code: 'eject_unconfirmed',
+			message: `The daemon confirmed ejecting ${body.mount_path}, not ${mountPath}. Keep the stick plugged in.`
+		};
+	}
+	return null;
 }
 
 /** A code or sentence the error contract can show: a string with words in
@@ -813,24 +848,13 @@ export async function ejectUsbStick(mountPath: string, volumeId: string): Promis
 	try {
 		const body: unknown = await usbExportRoutes.eject(mountPath, volumeId);
 		if (!_owns(token)) return;
-		// Only a whole UsbEjectOut with a literal `ejected: true` for the mount
-		// that was asked says the stick is safe to pull; anything else keeps it
-		// plugged in (Codex 4350837641, 4351947909).
-		if (!isRecord(body) || body.ejected !== true || !isString(body.name) || !isString(body.message) || !isString(body.mount_path)) {
-			usbExport.ejectProblem = {
-				code: 'eject_unconfirmed',
-				message: `The daemon did not confirm the eject (${bodyShape(body)}${isRecord(body) && body.ejected !== undefined ? `, ejected: ${JSON.stringify(body.ejected)}` : ''}). Keep the stick plugged in.`
-			};
+		const unconfirmed = usbEjectUnconfirmedProblem(body, mountPath);
+		if (unconfirmed !== null) {
+			usbExport.ejectProblem = unconfirmed;
 			return;
 		}
-		if (body.mount_path !== mountPath) {
-			usbExport.ejectProblem = {
-				code: 'eject_unconfirmed',
-				message: `The daemon confirmed ejecting ${body.mount_path}, not ${mountPath}. Keep the stick plugged in.`
-			};
-			return;
-		}
-		usbExport.ejectNotice = `${body.name} ejected. You can pull it out.`;
+		const confirmed = body as { name: string; message: string; mount_path: string };
+		usbExport.ejectNotice = `${confirmed.name} ejected. You can pull it out.`;
 		usbExport.ejectWatch = { id: volumeId, others, sinceSeq, afterSeq: usbRefreshSeq() };
 		// The listing already on screen may come from a refresh that ran
 		// alongside the eject; judge it now rather than at the next one.

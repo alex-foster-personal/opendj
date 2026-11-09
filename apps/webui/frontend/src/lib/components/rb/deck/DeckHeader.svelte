@@ -42,7 +42,7 @@
 	import { deckGridWarningText, gridAudioFitFor, requestGridAudioFit } from '$lib/rb/grid-audio-fit.svelte';
 	import { queryMasterMode, runPerformanceCommandFromUi } from '$lib/rb/performance-ipc.svelte';
 	import { MASTER_LOCK_LONG_PRESS_MS } from '$lib/rb/master-election';
-	import { gridFeatureInertTip, gridFeaturesInert } from '$lib/player/grid-features';
+	import { gridFeatureInertTip, gridFeaturesInert, beatSyncFeaturesInert, beatSyncInertTip } from '$lib/player/grid-features';
 	import { deckKeyAtPlayheadNow } from '$lib/player/key-playhead-lazy.svelte';
 	import { keyNudgeSemitones, keySourceHint, keySyncKey, keySyncKeyIsGuess, keySyncStatusTitle, type KeySyncMode, type KeySyncStatus } from '$lib/player/key/camelot';
 	import type { DeckId } from '$lib/rb/deck-slots';
@@ -129,10 +129,9 @@
 	}
 	const bpmTitle = 'Live BPM: the beat grid tempo at the playhead times this deck\'s pitch, the same figure the jog wheel shows';
 	const syncBounds = $derived(tempoBoundsFromPitchRange(pitchRanges[deckId]));
-	// Beat Sync is inert when gridFeaturesInert is true (missing / failed /
-	// static_grid_untrusted: true). A trusted multi-anchor own map is not
-	// gridless; Q and Beat Sync stay live. Transport is still not gated.
+	// Q / quantize uses gridFeaturesInert; Beat Sync / beat loops use phase-capable grid.
 	const gridless: boolean = $derived(gridFeaturesInert(deck));
+	const beatSyncInert: boolean = $derived(beatSyncFeaturesInert(deck));
 	const gridInertTip: string = $derived(gridFeatureInertTip(deck));
 	// BEATSYNC-GRID-02: an uneven or extrapolated grid is said out loud, on
 	// the control it affects, before the DJ leans on the lock. Pure math over
@@ -161,8 +160,8 @@
 		gridless ? null : deckGridWarningText(gridShapeWarning, gridAudioFitFor(deck.stable_id))
 	);
 	const beatSyncTitle: string = $derived(
-		(gridless
-			? gridInertTip
+		(beatSyncInert
+			? beatSyncInertTip(deck)
 			: deck.beat_sync_enabled
 				? 'BEAT SYNC ON - lock beat phase to the tempo MASTER (BAR phase, folding if it must)'
 				: 'BEAT SYNC OFF - this deck keeps its own tempo and phase') +
@@ -576,7 +575,7 @@
 			<span class="deck-cloud-fill" style={`width:${cloudPercent ?? 0}%`}></span>
 		</div>
 	{/if}
-	<div class="art-slot">
+	<div class="art-slot" data-priority="3">
 		{#if deck.stable_id !== null}
 			<button
 				type="button"
@@ -880,15 +879,15 @@
 				<ControlExplainer title={beatSyncTitle} bullets={beatSyncBullets} warning={gridWarning} tooltip={TOOLTIP_ISOLATED}>
 					<button
 						class="rb-lit-button"
-						class:lit={deck.beat_sync_enabled && !gridless}
+						class:lit={deck.beat_sync_enabled && !beatSyncInert}
 						class:grid-uneven={gridWarning !== null}
 						data-grid-warning={gridWarning}
-						disabled={pending || gridless}
+						disabled={pending || beatSyncInert}
 						aria-pressed={deck.beat_sync_enabled}
 						data-performance-control="beat-sync"
 						data-testid={`beat-sync-deck-${deckId}`}
 						aria-label={`beat sync deck ${deckId}`}
-						data-state={gridless ? 'inert' : deck.beat_sync_enabled ? 'on' : 'off'}
+						data-state={beatSyncInert ? 'inert' : deck.beat_sync_enabled ? 'on' : 'off'}
 						onclick={async () => await onBeatSync()}
 					>
 						BEAT SYNC
@@ -1172,6 +1171,7 @@
 	.keysync {
 		flex: 0 0 auto;
 		width: 100%;
+		padding-right: 12px;
 	}
 	.key-stack {
 		display: flex;
@@ -1274,10 +1274,12 @@
 	.key-pair {
 		position: relative;
 	}
+	/* Inside the KEY SYNC button edge: outside it, a clipping deck column hid it in 4-deck view. */
 	.keysync-chevron {
 		position: absolute;
 		top: 0;
-		right: -12px;
+		right: 1px;
+		z-index: 2;
 		width: 11px;
 		height: 18px;
 		padding: 0;

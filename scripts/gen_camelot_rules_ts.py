@@ -28,6 +28,7 @@ def render_camelot_rules_ts() -> str:
             "label": rule.label,
             "example": rule.example,
             "default_on": rule.default_on,
+            "score": rule.score,
             "moves": [{"from": m.from_letter, "to": m.to_letter, "step": m.step} for m in rule.moves],
         }
         for rule in CAMELOT_RULES
@@ -48,6 +49,7 @@ def render_camelot_rules_ts() -> str:
         "\tlabel: string;\n"
         "\texample: string;\n"
         "\tdefault_on: boolean;\n"
+        "\tscore: number;\n"
         "\tmoves: readonly CamelotMove[];\n"
         "}\n\n"
         f"export const CAMELOT_RULES: readonly CamelotRule[] = {body};\n"

@@ -30,6 +30,7 @@
 	import CloudSyncHeadlineStrip from '$lib/components/cloudsync/CloudSyncHeadlineStrip.svelte';
 	import CloudSyncPolicyCell from '$lib/components/cloudsync/CloudSyncPolicyCell.svelte';
 	import CloudSyncStatusTab from '$lib/components/cloudsync/CloudSyncStatusTab.svelte';
+	import SyncHealthPanel from '$lib/components/cloudsync/SyncHealthPanel.svelte';
 	import {
 		CLOUDSYNC_TABS,
 		cloudSyncTabFromUrl,
@@ -365,6 +366,9 @@
 	</section>
 {:else if tab === 'overview' && overview}
 	<section aria-label="Fleet overview">
+		{#if overview.sync}
+			<SyncHealthPanel health={overview.sync} />
+		{/if}
 		<p
 			style="color: var(--muted);"
 			title="Total rows in the tracks table, regardless of any machine's sync policy"

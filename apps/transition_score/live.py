@@ -22,6 +22,7 @@ Acceptance:
 
 from __future__ import annotations
 
+import json
 import logging
 import threading
 import time
@@ -369,9 +370,7 @@ def prepare_live(
         cache.note_cue(key, in_profile.transition_in_bar)
 
         def score(group: list[TransitionPlan]) -> tuple[list[Candidate], float]:
-            renderable, _refused = renderable_plans(
-                group, out_profile, in_profile, LIVE_CONTEXT_BARS, autodj=autodj
-            )
+            renderable, _refused = renderable_plans(group, out_profile, in_profile, LIVE_CONTEXT_BARS, autodj=autodj)
             started = time.perf_counter()
             scored = try_plans(
                 renderable,
@@ -546,13 +545,11 @@ def plan_live(
     pick, dropped = _pick(autodj, pool, plans, request, validate)
     if pick is not None:
         chosen = by_id[pick.cid]
-        plan = _live_trim(
-            autodj, plans[pick.cid], out_profile, in_profile, read, request.out_deck, request.in_deck
-        )
+        plan = _live_trim(autodj, plans[pick.cid], out_profile, in_profile, read, request.out_deck, request.in_deck)
         order = autodj.compile_plan(plan, in_profile, plan_id=f"plan-{uuid.uuid4().hex[:12]}", live=read)
         reason = _reason(plan.style, plan.bars, chosen.score, intent, request.recent_styles)
         ms = round((time.perf_counter() - started) * 1000.0, 1)
-        candidate_out = replace(chosen, plan=plan.to_document())
+        candidate_out = replace(chosen, plan_json=json.dumps(plan.to_document()))
         return replace(
             base,
             order=order,

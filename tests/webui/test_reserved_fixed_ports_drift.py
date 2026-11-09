@@ -17,41 +17,27 @@ discovered (so it could be added without redding anything) then broken too.
 
 from __future__ import annotations
 
-import re
 from pathlib import Path
 
 import pytest
 
 from apps.webui.port_config import RESERVED_FIXED_PORTS
+from scripts.gen_reserved_ports import discovered_fixed_ports as _discover
 
 REPO = Path(__file__).resolve().parents[2]
 E2E_DIR = REPO / "apps/webui/frontend/tests/e2e"
 DESKTOP_DIR = REPO / "apps/desktop"
 
-#: A loopback port pinned as a literal. Same shape tests/scripts/
-#: test_ci_e2e_fixed_port_steps_are_locked.py uses to find a suite's own port.
-FIXED_PORT_LITERAL = re.compile(
-    r"(?:PORT[A-Za-z_]*\s*=\s*|PORT[A-Za-z_]*\s*\?\?\s*|127\.0\.0\.1:|localhost:)(\d{4,5})\b"
-)
-
 
 def discovered_fixed_ports(roots: tuple[Path, ...] = (E2E_DIR, DESKTOP_DIR)) -> dict[int, set[str]]:
     """Every pinned-port literal the candidate configuration trees declare.
 
-    Derived from the files themselves rather than from ``KNOWN_FIXED_PORTS``,
-    which is the list this module exists to police: a suite that adds a fixed
-    port without editing that table would otherwise generate no test at all
-    and pass by omission.
+    The shared discovery in scripts/gen_reserved_ports.py, the same one that
+    generates RESERVED_FIXED_PORTS (#8583). Derived from the files themselves
+    rather than from ``KNOWN_FIXED_PORTS``, which is the list this module
+    exists to police.
     """
-    discovered: dict[int, set[str]] = {}
-    for root in roots:
-        for path in sorted(root.rglob("*.ts")):
-            if "node_modules" in path.parts:
-                continue
-            text = path.read_text(encoding="utf-8", errors="ignore")
-            for literal in FIXED_PORT_LITERAL.findall(text):
-                discovered.setdefault(int(literal), set()).add(str(path.relative_to(root)))
-    return discovered
+    return _discover(roots)
 
 
 @pytest.mark.requirement("INFRA-08")
@@ -64,11 +50,7 @@ def test_every_declared_fixed_port_is_discovered_and_excluded() -> None:
     discovered = discovered_fixed_ports()
     assert discovered, "the discovery probe found no fixed port at all; the probe is broken"
 
-    unguarded = {
-        port: sorted(paths)
-        for port, paths in discovered.items()
-        if port not in RESERVED_FIXED_PORTS
-    }
+    unguarded = {port: sorted(paths) for port, paths in discovered.items() if port not in RESERVED_FIXED_PORTS}
     assert not unguarded, (
         "these configurations pin a port RESERVED_FIXED_PORTS does not exclude, so the "
         f"dynamic allocator could still hand it out (issue #1613): {unguarded}"
@@ -89,6 +71,7 @@ def test_the_discovery_probe_finds_a_port_in_a_new_configuration(tmp_path: Path)
         "export const BRAND_NEW_GATE_PORT = 5398;\n", encoding="utf-8"
     )
     assert discovered_fixed_ports((tmp_path,)) == {5398: {"vite.brand-new-gate.config.ts"}}
+
 
 #: (relative path, exact literal expected in the source, the port it pins).
 #: The literal is the smallest substring that (a) actually appears verbatim in
@@ -346,9 +329,7 @@ KNOWN_FIXED_PORTS: tuple[tuple[str, str, int], ...] = (
     KNOWN_FIXED_PORTS,
     ids=[f"{path}:{port}" for path, _literal, port in KNOWN_FIXED_PORTS],
 )
-def test_known_fixed_port_literal_still_matches_reserved_set(
-    relative_path: str, literal: str, port: int
-) -> None:
+def test_known_fixed_port_literal_still_matches_reserved_set(relative_path: str, literal: str, port: int) -> None:
     """if a suite's own pinned-port literal no longer reads as recorded here
     then broken -- this table and RESERVED_FIXED_PORTS would be silently
     describing a port the suite no longer binds"""

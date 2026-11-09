@@ -244,7 +244,7 @@ test('hidden tab jump writes the final value on the next frame', async () => {
 	assert.equal(pending.length, 0);
 });
 
-test('completed move logs planned and actual end; cancelled move does not', async () => {
+test('every move end is logged with its outcome and reason', async () => {
 	const dial = registerTrackedDial('1:low', 1);
 	const endMs = t + 4 * BEAT_MS;
 	const handle = runner.startCommandedMove('1:low', (from, now) => linearPlan(from, 0, now, endMs));
@@ -255,6 +255,8 @@ test('completed move logs planned and actual end; cancelled move does not', asyn
 	assert.equal(log[0].control_id, '1:low');
 	assert.equal(log[0].planned_end_ms, endMs);
 	assert.ok(Number.isFinite(log[0].actual_end_ms));
+	assert.equal(log[0].outcome, 'completed');
+	assert.equal(log[0].reason, 'completed');
 	runner._resetCommandedMovesForTests();
 	t = 1000;
 	pending = [];
@@ -269,7 +271,72 @@ test('completed move logs planned and actual end; cancelled move does not', asyn
 	await step(16);
 	knobs.nudgeKnobOrSelection('1:low', 0.1);
 	await handle2.done;
-	assert.equal(runner.commandedMoveLog().length, 0);
+	const cancelLog = runner.commandedMoveLog();
+	assert.equal(cancelLog.length, 1);
+	assert.equal(cancelLog[0].outcome, 'cancelled');
+	assert.equal(cancelLog[0].reason, 'hand');
+	void dial;
+});
+
+test('drag cancel logs reason hand', async () => {
+	const dial = registerTrackedDial('1:low', 1);
+	const endMs = t + 4 * BEAT_MS;
+	const handle = runner.startCommandedMove('1:low', (from, now) => linearPlan(from, 0, now, endMs));
+	for (let i = 0; i < 3; i += 1) await step(16);
+	knobs.beginSelectionDrag('1:low');
+	const v = dial.value;
+	dial.value = 0.9;
+	knobs.setKnobFromDrag('1:low', v, 0.9, null, null);
+	assert.equal(runner.commandedMoveLog().at(-1)?.reason, 'hand');
+	await handle.done;
+});
+
+test('noteKnobHandInput with source midi cancels with reason midi in the same tick', async () => {
+	const dial = registerTrackedDial('2:low', 1);
+	const endMs = t + 4 * BEAT_MS;
+	const handle = runner.startCommandedMove('2:low', (from, now) => linearPlan(from, 0, now, endMs));
+	await step(16);
+	const n = dial.writes.length;
+	knobs.noteKnobHandInput('2:low', 'midi');
+	const rec = runner.commandedMoveLog().at(-1);
+	assert.deepEqual(
+		{ control_id: rec.control_id, outcome: rec.outcome, reason: rec.reason },
+		{ control_id: '2:low', outcome: 'cancelled', reason: 'midi' }
+	);
+	const result = await handle.done;
+	assert.equal(result.outcome, 'cancelled');
+	assert.equal(result.reason, 'moved by MIDI controller');
+	for (let i = 0; i < 3; i += 1) await step(16);
+	assert.equal(dial.writes.length, n);
+});
+
+test('midi on the linked partner cancels the move', async () => {
+	registerTrackedDial('1:low', 0.5);
+	registerTrackedDial('2:low', 0.5);
+	knobs.altClickKnob('1:low');
+	knobs.altClickKnob('2:low');
+	const endMs = t + 4 * BEAT_MS;
+	const handle = runner.startCommandedMove('1:low', (from, now) => linearPlan(from, 0.9, now, endMs));
+	await step(16);
+	knobs.noteKnobHandInput('2:low', 'midi');
+	const result = await handle.done;
+	assert.equal(result.outcome, 'cancelled');
+	assert.equal(result.reason, 'moved by MIDI controller');
+	assert.equal(runner.commandedMoveLog().at(-1)?.reason, 'midi');
+});
+
+test('replacement logs reason replaced', async () => {
+	const dial = registerTrackedDial('1:low', 1);
+	const endA = t + 4 * BEAT_MS;
+	const handleA = runner.startCommandedMove('1:low', (from, now) => linearPlan(from, 0, now, endA));
+	for (let i = 0; i < 5; i += 1) await step(16);
+	const endB = t + 4 * BEAT_MS;
+	const handleB = runner.startCommandedMove('1:low', (from, now) => linearPlan(from, 1, now, endB));
+	assert.ok(handleB);
+	const replaced = runner.commandedMoveLog().find((r) => r.control_id === '1:low' && r.outcome === 'replaced');
+	assert.ok(replaced);
+	assert.equal(replaced.reason, 'replaced');
+	await handleA.done;
 	void dial;
 });
 

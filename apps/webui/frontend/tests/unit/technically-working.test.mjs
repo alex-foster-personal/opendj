@@ -209,13 +209,15 @@ test('eq raise only takes effect while overlay mode is active, and toggles', () 
 test('edge hover uses the typed performance dispatcher instead of bypassing its lifecycle lock', async () => {
 	const hotkeys = await readFile('src/lib/rb/technically-working-hotkeys.ts', 'utf8');
 	const dispatcher = await readFile('src/lib/rb/performance-ipc.svelte.ts', 'utf8');
+	const types = await readFile('src/lib/rb/performance-ipc-types.ts', 'utf8');
 	assert.match(
 		hotkeys,
 		/runPerformanceCommandFromUi\(\{ type: 'tech_mode_edge_hover', edge, hovered:/
 	);
+	assert.match(types, /\| \{ type: 'tech_mode_edge_hover'; edge: EdgeRegion; hovered: boolean \}/);
 	assert.match(
-		dispatcher,
-		/\| \{ type: 'tech_mode_edge_hover'; edge: EdgeRegion; hovered: boolean \}/
+		types,
+		/dispatch\(\s*message:\s*unknown,\s*pressT0Ms\?:\s*number\s*\):\s*Promise<PerformanceState>/
 	);
 	assert.match(dispatcher, /setEdgeHovered\(command\.edge, command\.hovered\)/);
 });

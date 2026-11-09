@@ -94,3 +94,17 @@ def test_save_set_note_returns_this_write_when_peer_updates_before_readback(tmp_
     assert on_disk.visible is False
 
     conn1.close()
+
+
+def test_save_set_note_return_geometry_does_not_alias_input(tmp_path: Path) -> None:
+    """[if] save_set_note succeeds [then] mutating input geometry leaves return unchanged, [else stop]."""
+    db = tmp_path / "state.db"
+    init_empty_state_db(db)
+    conn = open_set_notes(db)
+    try:
+        geom = Geometry(x=1, y=2, w=3, h=4)
+        returned = save_set_note(conn, "scratch", "body", geom, True, base_rev=0)
+        geom.x = 99
+        assert returned.geometry.x == 1
+    finally:
+        conn.close()

@@ -1,13 +1,20 @@
 # XDJ-RX3 / XDJ-AZ soundcheck
 
-Neither map has run on hardware. Do this in order, before doors.
+The XDJ-AZ map ran on the unit on Fri 6 Nov 2026 (set build da92dbd1, issue #10288); the RX3 map has not run on hardware. Do this in order, before doors.
 
 1. Connect USB. RX3: UTILITY > MIXER MODE. AZ: SOURCE > SOFTWARE CONTROL, or BROWSE > MIDI as the unit offers.
 2. Open Performance. The footer must show a mapped device, not just a MIDI port. If it is unmapped, the port name does not contain `XDJ-RX3` or `XDJ-AZ`: read the name from the learn log.
-3. Move a channel fader up. AZ risk: the vendor list prints this direction reversed. If the app fader falls, the map needs `invert: true` on the fader row.
+3. Move a channel fader up. AZ: confirmed normal on Fri 6 Nov 2026 (the learn log rose as the faders went up; the vendor list's "Upper Side=0" is the error). RX3: if the app fader falls, the map needs `invert: true` on the fader row.
 4. Press PLAY, CUE, a hot cue pad and CH CUE on each side. AZ: also pads 5 to 8, which use separate channels.
 5. Move TEMPO, crossfader, EQ, COLOR and browse + LOAD.
 6. Confirm audio reaches the booth and the headphones through the unit.
+
+AZ, seen Fri 6 Nov 2026:
+
+- Audio routing: Open DJ's USB output channels 1 and 2 arrive at the unit's mixer channel 1, so channel 1's fader, EQ, trim and filter act on the whole mix, and one deck cannot be pre-listened through the unit. Ride the mix on channel 1 until the routing work in epic #10241 lands. Headphone cue on the unit works.
+- The unit's screens stay blank in software control. That is expected: they are not driven over MIDI.
+- Jogs do nothing while SHIFT is held.
+- The LED test lit nothing on the unit (tracked separately in epic #10241).
 
 Jog: paused it scrubs, playing it nudges the tempo while it turns. There is no scratch or vinyl mode.
 

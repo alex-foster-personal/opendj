@@ -1,0 +1,9 @@
+{
+  "bytes": 1024,
+  "measured_main": 474847,
+  "measured_with_pr": 475042,
+  "sha": "c3512ee754",
+  "date": "Sun 8 Nov 2026",
+  "reason": "PR #10487 (Denon DJ PRIME 4+ practice replica): +195 B gzip on other-lazy in the same nucbox-wsl main vs branch build pair, above the 128 B noise floor; chunk-hash and import ripple from the new map module, no code lands on this surface.",
+  "payback": "none needed if CI measures it as noise; the allowance then goes unused"
+}

@@ -12,6 +12,8 @@
  *     [if] the grid drifts off nominal BPM [then] the target is still a real beat
  *   ✔︎ ✅ 🎯 A jump past either grid end lands on the first/last real beat.
  *     [if] no grid remains in that direction [then] the control reports inert
+ *   ✔︎ ✅ 🎯 A +-0.5 jump lands on a grid interval midpoint (DECKUX-10470).
+ *     [if] a paused deck jumps half a beat [then] it is not re-quantized back
  *   ✔︎ ✅ 🎯 Beat jump reaches the engine only via the typed dispatcher.
  *     [if] a beat_jump payload is malformed [then ⛔️] before the engine is called
  *   ✔︎ ✅ 🎯 The loop interval grid offers base,2x,4x,8x inside MIN/MAX bounds.
@@ -330,6 +332,28 @@ test('beat jump rejects a zero, fractional, or non-finite beat count', () => {
 	assert.throws(() => math.beatJumpTargetMs(DRIFTING_GRID, 608, Number.NaN), /non-zero integer/i);
 });
 
+test('a half-beat jump lands on the interpolated midpoint of a real grid interval (DECKUX-10470)', () => {
+	// Paused: anchor beat 2040ms; the drifting spacing (490ms after, 487ms
+	// before) proves the midpoint is interpolated, not BPM-derived.
+	assertMs(math.beatJumpTargetMs(DRIFTING_GRID, 2040, 0.5), 2285);
+	assertMs(math.beatJumpTargetMs(DRIFTING_GRID, 2040, -0.5), 1796.5);
+	// Playing (keepPhase): from grid position 4.5, half a beat on is beat 5.
+	assertMs(math.beatJumpTargetMs(DRIFTING_GRID, 2285, 0.5, true), 2530);
+	// Past either end clamps to the first or last real beat.
+	assertMs(math.beatJumpTargetMs(DRIFTING_GRID, 4060, 0.5), 4060);
+	assertMs(math.beatJumpTargetMs(DRIFTING_GRID, 135, -0.5), 135);
+});
+
+test('a half-beat seek plan skips the grid re-quantize and still clamps to duration', () => {
+	const paused = math.beatJumpSeekPlan(DRIFTING_GRID, 2040, 0.5, 5000, false);
+	assertMs(paused.targetMs, 2285);
+	assert.equal(paused.skipGridQuantize, true, 'if a paused half jump re-quantizes then the midpoint snaps back: broken');
+	assert.equal(math.beatJumpSeekPlan(DRIFTING_GRID, 2040, 4, 5000, false).skipGridQuantize, false);
+	// 3540 + 0.5 = 3800ms, past a 3700ms decoded duration: the last beat inside.
+	assertMs(math.beatJumpSeekPlan(DRIFTING_GRID, 3540, 0.5, 3700, false).targetMs, 3540);
+	assert.equal(math.beatJumpMovesTransportWithinDuration(DRIFTING_GRID, 2040, 0.5, 5000), true);
+});
+
 test('beat jump refuses a missing or malformed beatgrid instead of guessing', () => {
 	assert.throws(() => math.beatJumpTargetMs([], 608, 4), /at least 2 beats/i);
 	assert.throws(() => math.beatJumpTargetMs(DRIFTING_GRID, -1, 4), /finite and >= 0/i);
@@ -407,6 +431,11 @@ test('malformed beat_jump payloads are rejected before the engine is touched', a
 		await assert.rejects(
 			() => ipcHandle.dispatch({ type: 'beat_jump', deck: 1, beats: 2.5 }),
 			/non-zero integer/i
+		);
+		// A half beat parses and reaches the engine, which refuses it honestly.
+		await assert.rejects(
+			() => ipcHandle.dispatch({ type: 'beat_jump', deck: 1, beats: 0.5 }),
+			/no track loaded/i
 		);
 		await assert.rejects(
 			() => ipcHandle.dispatch({ type: 'beat_jump', deck: 9, beats: 4 }),
@@ -549,7 +578,7 @@ test('e09c63131832 LOOP and JUMP column labels stay side by side', async () => {
 	const jumpSource = await readFile('src/lib/components/rb/deck/BeatJump.svelte', 'utf8');
 	const loopSource = await readFile('src/lib/components/rb/deck/LoopCluster.svelte', 'utf8');
 	const cueFlexOpen = deckSource.indexOf('<div class="cue-flex"');
-	const loopColOpen = deckSource.indexOf('<div class="loop-col">');
+	const loopColOpen = deckSource.indexOf('<div class="loop-col"');
 	assert.ok(cueFlexOpen >= 0 && loopColOpen > cueFlexOpen, 'cue-flex region is present');
 	const loopClusterPos = deckSource.indexOf('<LoopCluster', loopColOpen);
 	const beatJumpPos = deckSource.indexOf('<BeatJump', loopColOpen);
@@ -579,7 +608,7 @@ test('LOOP and JUMP are visible headings in their requested left-to-right column
 	const loopSource = await readFile('src/lib/components/rb/deck/LoopCluster.svelte', 'utf8');
 	// The controls remain out of cue-flex, with LOOP left and JUMP right.
 	const cueFlexOpen = deckSource.indexOf('<div class="cue-flex"');
-	const loopColOpen = deckSource.indexOf('<div class="loop-col">');
+	const loopColOpen = deckSource.indexOf('<div class="loop-col"');
 	assert.ok(cueFlexOpen >= 0 && loopColOpen > cueFlexOpen, 'cue-flex region is present');
 	assert.doesNotMatch(deckSource.slice(cueFlexOpen, loopColOpen), /<BeatJump\b/);
 	const loopClusterPos = deckSource.indexOf('<LoopCluster', loopColOpen);
@@ -590,7 +619,7 @@ test('LOOP and JUMP are visible headings in their requested left-to-right column
 	);
 	assert.match(
 		deckSource.slice(beatJumpPos),
-		/^<BeatJump \{deck\} \{pending\} onJump=\{beatJump\} \/>/
+		/^<BeatJump \{deck\} \{pending\} onJump=\{beatJump\} onSize=\{setBeatJumpSize\} \/>/
 	);
 	assert.match(
 		deckSource,
@@ -598,16 +627,15 @@ test('LOOP and JUMP are visible headings in their requested left-to-right column
 	);
 	assert.match(loopSource, /<span class="column-label">LOOP<\/span>/);
 	assert.match(jumpSource, /<span class="column-label">JUMP<\/span>/);
-	assert.match(jumpSource, /grid-template-columns: repeat\(2, minmax\(18px, 1fr\)\)/);
+	assert.match(jumpSource, /grid-template-columns: repeat\(6, minmax\(0, 1fr\)\)/);
 	assert.match(jumpSource, /width: 38px;/);
 });
 
-test('every beat jump control offers the four -8 -4 +4 +8 steps', async () => {
+test('the two beat jump buttons move back and forward by the deck jump size (DECKUX-10470)', async () => {
 	const jumpSource = await readFile('src/lib/components/rb/deck/BeatJump.svelte', 'utf8');
-	assert.match(jumpSource, /JUMPS: readonly number\[\] = \[-8, -4, 4, 8\]/);
-	assert.match(jumpSource, /\{#each JUMPS as delta \(delta\)\}/);
+	assert.match(jumpSource, /const size: BeatJumpSize = \$derived\(beatJumpSizes\[deck\.deck_id\]\)/);
+	assert.match(jumpSource, /\{#each \[-size, size\] as delta \(delta\)\}/);
 	assert.match(jumpSource, /data-beats=\{delta\}/);
-	assert.match(jumpSource, /\{_label\(delta\)\}/);
 });
 
 test('an inert beat jump explains itself rather than silently doing nothing', async () => {
@@ -765,6 +793,8 @@ test('an untrusted bar phase is not a downbeat for a fresh four-beat loop', () =
 
 test('precedingDownbeatMs refuses a position before every downbeat or a broken grid', () => {
 	assert.throws(() => loops.precedingDownbeatMs(DRIFTING_GRID, 50), /no PQTZ downbeat/i);
+	assert.equal(loops.findPrecedingDownbeatMs(DRIFTING_GRID, 50), null);
+	assert.equal(loops.freshFourBeatAnchorMs(DRIFTING_GRID, 50), undefined);
 	assert.throws(() => loops.precedingDownbeatMs([], 1000), /at least 2 beats/i);
 	assert.throws(() => loops.precedingDownbeatMs(DRIFTING_GRID, -1), /finite and non-negative/i);
 });

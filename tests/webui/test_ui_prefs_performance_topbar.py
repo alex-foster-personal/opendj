@@ -22,7 +22,7 @@ from apps.webui.server.sqlite_backend import SqliteBackend
 
 TOPBAR_DEFAULTS: dict[str, Any] = {
     "beat_sync_max": True,
-    "auto_play_enabled": True,
+    "auto_play_enabled": False,
     "auto_play_enforce_order": False,
     "auto_play_maximize_reach": True,
     "master_muted": False,
@@ -63,9 +63,7 @@ def test_ui_prefs_defaults_include_the_five_topbar_prefs(prefs_client: TestClien
 
 
 @pytest.mark.parametrize("key", tuple(TOPBAR_WRITES))
-def test_ui_prefs_topbar_key_round_trips_to_disk(
-    prefs_client: TestClient, tmp_path: Path, key: str
-) -> None:
+def test_ui_prefs_topbar_key_round_trips_to_disk(prefs_client: TestClient, tmp_path: Path, key: str) -> None:
     value = TOPBAR_WRITES[key]
     r = prefs_client.put("/api/v1/ui-prefs", json={key: value})
     assert r.status_code == 200
@@ -99,9 +97,7 @@ def test_ui_prefs_rejects_a_coercible_deck_autocue(prefs_client: TestClient, bad
     assert prefs_client.get("/api/v1/ui-prefs").json()["deck_autocue"] is False, "a refused value writes nothing"
 
 
-def test_ui_prefs_reads_a_blob_written_before_the_topbar_keys_existed(
-    prefs_client: TestClient, tmp_path: Path
-) -> None:
+def test_ui_prefs_reads_a_blob_written_before_the_topbar_keys_existed(prefs_client: TestClient, tmp_path: Path) -> None:
     path = tmp_path / "data" / "state" / "ui-prefs.json"
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps({"theme": "dark", "confirm": {}}) + "\n", encoding="utf-8")
@@ -110,10 +106,21 @@ def test_ui_prefs_reads_a_blob_written_before_the_topbar_keys_existed(
         assert body[key] == want, key
 
 
-@pytest.mark.parametrize("key", tuple(TOPBAR_DEFAULTS))
-def test_ui_prefs_refuses_a_wrong_typed_topbar_key_on_disk(
-    prefs_client: TestClient, tmp_path: Path, key: str
+def test_ui_prefs_keeps_a_stored_autoplay_on_after_the_default_turned_off(
+    prefs_client: TestClient, tmp_path: Path
 ) -> None:
+    """[if] a profile stored auto_play_enabled true [then] it reads back true despite the off default, [else stop]."""
+    path = tmp_path / "data" / "state" / "ui-prefs.json"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    blob = {"theme": "dark", "confirm": {}, "auto_play_enabled": True}
+    path.write_text(json.dumps(blob) + "\n", encoding="utf-8")
+    assert prefs_client.get("/api/v1/ui-prefs").json()["auto_play_enabled"] is True
+    assert prefs_client.put("/api/v1/ui-prefs", json={"theme": "light"}).status_code == 200
+    assert json.loads(path.read_text())["auto_play_enabled"] is True
+
+
+@pytest.mark.parametrize("key", tuple(TOPBAR_DEFAULTS))
+def test_ui_prefs_refuses_a_wrong_typed_topbar_key_on_disk(prefs_client: TestClient, tmp_path: Path, key: str) -> None:
     path = tmp_path / "data" / "state" / "ui-prefs.json"
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps({"theme": "dark", key: "yes"}) + "\n", encoding="utf-8")

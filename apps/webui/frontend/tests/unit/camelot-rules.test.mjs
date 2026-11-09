@@ -41,7 +41,15 @@ const CASES = [
 	['jaws', '8A', ['3A'], ['3B', '1A', '8A']],
 	['jaws', '1B', ['8B'], ['6B', '8A']],
 	['pay_attention', '8A', ['5A'], ['11A', '5B']],
-	['pay_attention', '2B', ['11B'], ['5B', '11A']]
+	['pay_attention', '2B', ['11B'], ['5B', '11A']],
+	['wrong_way_diagonal', '8B', ['7A'], ['9A', '7B', '8A']],
+	['wrong_way_diagonal', '8A', ['9B'], ['7B', '9A', '8B']],
+	['parallel', '8B', ['5A'], ['11A', '5B', '8A']],
+	['parallel', '5A', ['8B'], ['2B', '8A', '5B']],
+	['minor_third_down', '8A', ['11A'], ['5A', '11B']],
+	['major_third', '10B', ['2B'], ['6B', '2A']],
+	['semitone_down', '8A', ['1A'], ['3A', '1B']],
+	['tritone', '8A', ['2A'], ['2B', '8A']]
 ];
 
 describe('each Camelot rule matches only its move, with its letter', () => {
@@ -58,10 +66,10 @@ describe('each Camelot rule matches only its move, with its letter', () => {
 		assert.deepEqual([...camelot.DEFAULT_CAMELOT_RULE_IDS], ['same_key', 'adjacent', 'relative']);
 	});
 	it('an unknown rule id throws instead of matching nothing', () => {
-		assert.throws(() => camelot.camelotRulesAllow('8A', '8A', ['tritone']), /Unknown Camelot rule/);
+		assert.throws(() => camelot.camelotRulesAllow('8A', '8A', ['not_a_rule']), /Unknown Camelot rule/);
 		// if an earlier rule matches first then a later unknown id must still throw
-		assert.throws(() => camelot.camelotRulesAllow('8A', '8A', ['same_key', 'tritone']), /Unknown Camelot rule/);
-		assert.throws(() => camelot.camelotRulesAllow(null, '8A', ['tritone']), /Unknown Camelot rule/);
+		assert.throws(() => camelot.camelotRulesAllow('8A', '8A', ['same_key', 'not_a_rule']), /Unknown Camelot rule/);
+		assert.throws(() => camelot.camelotRulesAllow(null, '8A', ['not_a_rule']), /Unknown Camelot rule/);
 	});
 	it('an unparseable key matches nothing', () => {
 		assert.equal(camelot.camelotRulesAllow('8A', null, ['same_key']), false);

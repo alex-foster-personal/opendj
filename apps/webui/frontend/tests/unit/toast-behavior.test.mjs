@@ -33,7 +33,7 @@
  */
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import { afterEach, beforeEach, test } from 'node:test';
+import { afterEach, beforeEach, mock, test } from 'node:test';
 import { fileURLToPath } from 'node:url';
 
 import { loadTypeScriptModule } from './load-typescript.mjs';
@@ -184,29 +184,35 @@ test('a hovered toast does not fade', async () => {
 
 test('leaving a hover restarts the FULL delay rather than the remainder', async () => {
 	const stores = await loadStores();
-	stores.pushToast('reset me', 'info', 200);
-	const { logId } = stores.toasts[0];
+	mock.timers.enable({ apis: ['setTimeout'] });
+	try {
+		stores.pushToast('reset me', 'info', 200);
+		const { logId } = stores.toasts[0];
 
-	// Hold with only ~20ms of the original 200ms left. If release resumed the
-	// remainder it would fire ~20ms later; a reset fires ~200ms later. The two
-	// outcomes are 180ms apart, which is what makes this discriminating.
-	await sleep(180);
-	stores.holdToast(logId);
-	await sleep(300);
-	assert.equal(stores.toasts.length, 1, 'still held');
+		// Hold with exactly 20ms of the original 200ms left. Mocked time cannot
+		// overrun, so a loaded runner cannot expire the toast before the hold.
+		mock.timers.tick(180);
+		assert.equal(stores.toasts.length, 1, 'not yet expired at 180ms of 200ms');
+		assert.equal(stores.holdToast(logId), true, 'the hold must find the toast');
+		mock.timers.tick(300);
+		assert.equal(stores.toasts.length, 1, 'still held');
+		assert.equal(stores.toastTimerArmed(logId), false, 'no timer may be armed while held');
 
-	stores.releaseToast(logId);
-	assert.equal(stores.toastTimerArmed(logId), true, 'releasing must re-arm a timer');
-	await sleep(120);
-	assert.equal(
-		stores.toasts.length,
-		1,
-		'120ms after release the toast must still be there; a resumed 20ms remainder would ' +
-			'have fired at 20ms, which is the bug this asserts against'
-	);
+		stores.releaseToast(logId);
+		assert.equal(stores.toastTimerArmed(logId), true, 'releasing must re-arm a timer');
+		mock.timers.tick(199);
+		assert.equal(
+			stores.toasts.length,
+			1,
+			'199ms after release the toast must still be there; a resumed 20ms remainder would ' +
+				'have fired at 20ms, which is the bug this asserts against'
+		);
 
-	await sleep(220);
-	assert.equal(stores.toasts.length, 0, 'and the restarted full delay must still expire');
+		mock.timers.tick(1);
+		assert.equal(stores.toasts.length, 0, 'and the restarted full delay must still expire');
+	} finally {
+		mock.timers.reset();
+	}
 });
 
 test('an unhovered toast fades on its own, so the hold is doing the work', async () => {

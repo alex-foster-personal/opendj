@@ -20,18 +20,42 @@ before(async () => {
 	clamp = await loadTypeScriptModule('src/lib/ui/clamp-to-viewport.ts');
 });
 
+function outputMenuSource(source) {
+	const startMarker = '{#snippet outputMenu()}';
+	const start = source.indexOf(startMarker);
+	assert.ok(start >= 0, 'missing {#snippet outputMenu()}');
+	let depth = 0;
+	let i = start + startMarker.length;
+	while (i < source.length) {
+		if (source.startsWith('{#snippet ', i)) {
+			depth += 1;
+			i += '{#snippet '.length;
+			continue;
+		}
+		if (source.startsWith('{/snippet}', i)) {
+			if (depth === 0) return source.slice(start, i + '{/snippet}'.length);
+			depth -= 1;
+			i += '{/snippet}'.length;
+			continue;
+		}
+		i += 1;
+	}
+	assert.fail('unclosed {#snippet outputMenu()}');
+}
+
 test('every device picker in the output menu opens its explainer to the right', () => {
-	const menu = cluster.slice(cluster.indexOf('{#snippet outputMenu()}'), cluster.indexOf('{/snippet}', cluster.indexOf('{#snippet outputMenu()}')));
+	const menu = outputMenuSource(cluster);
 	const tags = [...menu.matchAll(/<ControlExplainer[^>]*>/g)].map((m) => m[0]);
 	// Rescan lives in the persistent I/O panel's Devices heading (IOPIN-04),
-	// so the click menu keeps the three device pickers plus MIDI.
-	assert.equal(tags.length, 4, 'expected MASTER / MAIN, HEADPHONE CUE, AUDIO IN and MIDI');
-	for (const tag of tags) assert.match(tag, /placement="right"/);
+	// so the click menu keeps the output pickers plus MIDI. BOOTH / MONITOR is
+	// a fourth picker behind `Add booth / monitor` (source still contains its
+	// ControlExplainer in the `{:else}` branch).
+	assert.equal(tags.length, 5, 'expected MASTER / MAIN, HEADPHONE CUE, BOOTH / MONITOR, AUDIO IN and MIDI');
+	for (const tag of tags) assert.match(tag, /placement=["']right["']/);
 });
 
 test('the I/O view the tray opens carries its own MIDI panel entry (CHROME-07)', () => {
-	const start = cluster.indexOf('{#snippet outputMenu()}');
-	const menu = cluster.slice(start, cluster.indexOf('{/snippet}', start));
+	const menu = outputMenuSource(cluster);
 	assert.match(menu, /aria-label="Open MIDI panel from audio I\/O"/);
 	assert.match(menu, /aria-label="Open MIDI panel from audio I\/O"[^>]*onclick=\{openMidiDrawer\}/);
 });

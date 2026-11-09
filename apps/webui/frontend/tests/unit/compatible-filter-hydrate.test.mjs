@@ -82,7 +82,7 @@ test('an invalid disk object is skipped and the rest of the hydrate still applie
 	try {
 		globalThis.fetch = async () =>
 			jsonResponse({
-				compatible_filter: { rules: ['tritone'] },
+				compatible_filter: { rules: ['not_a_rule'] },
 				library_watcher_folders: ['/Users/dj/after']
 			});
 		await prefs.hydrateConfirmPrefsFromDisk();

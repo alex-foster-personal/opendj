@@ -91,9 +91,10 @@ def _stems_root(request: Request) -> Path:
     return _data_dir(request) / "state" / "stems"
 
 
-def _open(request: Request) -> sqlite3.Connection:
+def _open(request: Request, *, provision: bool = True) -> sqlite3.Connection:
     conn = analysis_store.open_conn(_db_path(request))
-    queue_user.ensure_user_schema(conn)
+    if provision or not queue_user.user_schema_ready(conn):
+        queue_user.ensure_user_schema(conn)
     return conn
 
 
@@ -165,7 +166,7 @@ def list_library_jobs(
             status_code=422,
             detail={"code": "unknown_lane", "message": f"unknown lane {lane}"},
         )
-    conn = _open(request)
+    conn = _open(request, provision=False)
     try:
         items = queue_user.list_lane(
             conn, lane, include_settled=(include == "settled")

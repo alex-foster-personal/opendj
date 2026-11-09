@@ -165,3 +165,135 @@ def test_library_jobs_listing_answers_while_a_writer_holds_the_lock(tmp_path: Pa
 
     assert response.status_code == 200, response.text
     assert elapsed < state_db.DEFAULT_BUSY_TIMEOUT_S / 2, f"waited {elapsed:.2f}s on the lock"
+
+
+def _library_jobs_client(db: Path, tmp_path: Path) -> TestClient:
+    app = create_app()
+    app.state.analysis_db_path = db
+    app.state.stem_roots = (tmp_path / "stems",)
+    return TestClient(app)
+
+
+def _insert_standing_batches(conn: sqlite3.Connection) -> None:
+    from apps.analysis import queue_store, queue_user
+    from apps.analysis.time_iso import utc_now_iso
+
+    now = utc_now_iso()
+    model = '{"source":"user-lane","backend":"user","producer_version":"1"}'
+    for lane, batch_id in queue_user.USER_BATCH_IDS.items():
+        conn.execute(
+            """
+            INSERT OR IGNORE INTO analysis_queue_batch
+                (batch_id, created_at, updated_at, state, workers, band,
+                 memory_model, note)
+            VALUES (?, ?, ?, ?, 1, 'user', ?, ?)
+            """,
+            (
+                batch_id,
+                now,
+                now,
+                queue_store.BATCH_QUEUED,
+                model,
+                f"user lane {lane}",
+            ),
+        )
+
+
+@pytest.mark.requirement("STATE-18")
+def test_library_jobs_ready_get_does_not_call_ensure_user_schema(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """[if] queue schema is ready [then] GET skips ensure_user_schema, [else stop]."""
+    from apps.analysis import queue_user
+
+    db = tmp_path / "state.db"
+    client = _library_jobs_client(db, tmp_path)
+    assert client.get("/api/v1/library-jobs", params={"lane": "stems"}).status_code == 200
+
+    calls: list[object] = []
+
+    def spy(_conn: sqlite3.Connection) -> None:
+        calls.append(True)
+        raise AssertionError("ensure_user_schema must not run on a ready schema read")
+
+    monkeypatch.setattr(queue_user, "ensure_user_schema", spy)
+    response = client.get("/api/v1/library-jobs", params={"lane": "stems"})
+    assert response.status_code == 200, response.text
+    assert not calls
+
+
+@pytest.mark.requirement("STATE-18")
+def test_library_jobs_first_get_provisions_empty_db(tmp_path: Path) -> None:
+    """[if] state.db has no queue tables [then] first GET provisions batches, [else stop]."""
+    from apps.analysis import queue_user
+
+    db = tmp_path / "state.db"
+    client = _library_jobs_client(db, tmp_path)
+    response = client.get("/api/v1/library-jobs", params={"lane": "stems"})
+    assert response.status_code == 200, response.text
+    conn = sqlite3.connect(str(db))
+    try:
+        batches = {row[0] for row in conn.execute("SELECT batch_id FROM analysis_queue_batch")}
+    finally:
+        conn.close()
+    assert set(queue_user.USER_BATCH_IDS.values()) <= batches
+
+
+@pytest.mark.requirement("STATE-18")
+def test_library_jobs_first_get_adds_missing_position_column(tmp_path: Path) -> None:
+    """[if] position column is missing [then] first GET adds it, [else stop]."""
+    from apps.analysis import queue_store
+    from apps.analysis.queue_batch_lease import ensure_batch_lease_columns
+
+    db = tmp_path / "state.db"
+    conn = sqlite3.connect(str(db))
+    try:
+        for sql in queue_store.QUEUE_TABLES_SQL:
+            conn.execute(sql)
+        ensure_batch_lease_columns(conn)
+        queue_store.ensure_claimed_audio_hash_column(conn)
+        _insert_standing_batches(conn)
+        conn.commit()
+    finally:
+        conn.close()
+
+    client = _library_jobs_client(db, tmp_path)
+    assert client.get("/api/v1/library-jobs", params={"lane": "stems"}).status_code == 200
+
+    conn = sqlite3.connect(str(db))
+    try:
+        cols = {row[1] for row in conn.execute("PRAGMA table_info(analysis_queue_item)")}
+    finally:
+        conn.close()
+    assert "position" in cols
+
+
+@pytest.mark.requirement("STATE-18")
+def test_library_jobs_first_get_inserts_missing_standing_batch(tmp_path: Path) -> None:
+    """[if] a standing batch row is missing [then] first GET inserts it, [else stop]."""
+    from apps.analysis import queue_user
+
+    db = tmp_path / "state.db"
+    client = _library_jobs_client(db, tmp_path)
+    assert client.get("/api/v1/library-jobs", params={"lane": "stems"}).status_code == 200
+
+    conn = sqlite3.connect(str(db))
+    try:
+        conn.execute(
+            "DELETE FROM analysis_queue_batch WHERE batch_id = ?",
+            (queue_user.USER_BATCH_IDS["genre"],),
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+    assert client.get("/api/v1/library-jobs", params={"lane": "stems"}).status_code == 200
+    conn = sqlite3.connect(str(db))
+    try:
+        row = conn.execute(
+            "SELECT 1 FROM analysis_queue_batch WHERE batch_id = ?",
+            (queue_user.USER_BATCH_IDS["genre"],),
+        ).fetchone()
+    finally:
+        conn.close()
+    assert row is not None

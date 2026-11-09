@@ -22,6 +22,7 @@ never folded into "track not found". See ``_resolve_state_db``.
 
 -Claude
 """
+
 from __future__ import annotations
 
 import json
@@ -73,6 +74,9 @@ TEMPO_VERB = "tempo"
 #: LIBUX-56: the CLI twin of the library's Comment cell editor (double-click
 #: the cell, or right-click a row and choose Edit comment).
 COMMENT_VERB = "comment"
+#: LIBUX-10046: the CLI twin of the library's Related tab and its criteria cog.
+RELATED_VERB = "related"
+_RELATED_FLAGS = ("key", "genre", "color", "rating", "mytag", "artist")
 _GRID_CLASSES = ("flagged", "suspect", "variable_tempo", "unknown", "ok", "all")
 #: QLTSCAN-04: the CLI twin of `/api/v1/audio-quality` (the QLT column's
 #: letter). Same rule as the grid verbs: the engine owns the scan, so these
@@ -91,8 +95,9 @@ _USAGE = (
     "       opendj track grid-flag <stable_id> dismiss|restore\n"
     "       opendj track source-flags [all|length_mismatch|stems_other_recording|\n"
     "                                 hardlinked_write | <stable_id> | scan]\n"
-    "       opendj track grid-edit <stable_id> [show | nudge MS | shift BEATS |\n"
-    "                              set MS BEATS | reset] [rekordbox|own]\n"
+    "       opendj track grid-edit <stable_id> [show | anchors | nudge MS | shift BEATS |\n"
+    "                              set MS BEATS | reset | undo | anchor T_S BPM |\n"
+    "                              unanchor T_S] [rekordbox|own]\n"
     "       opendj track bpm-pick <stable_id> own|mik|clear\n"
     "       opendj track grid-fit [findings|wrong_bpm|off_beat|shifted|no_verdict|fit|unknown|all] [limit N]\n"
     "       opendj track grid-fit <stable_id> [force]\n"
@@ -104,7 +109,9 @@ _USAGE = (
     "       opendj track transition-in <stable_id> [set <ms>|clear]\n"
     "       opendj track tempo <stable_id>\n"
     "       opendj track played-length <stable_id>...\n"
-    "       opendj track comment <stable_id> set <text> | clear"
+    "       opendj track comment <stable_id> set <text> | clear\n"
+    "       opendj track related <stable_id> [limit N] [bpm-percent N]\n"
+    "                            [key|genre|color|rating|mytag|artist 0|1]..."
 )
 
 
@@ -160,7 +167,6 @@ def _grid_flags(args: Sequence[str]) -> int:
     return api_cli.run(["GET", f"{_GRID_FLAGS_PATH}{suffix}"], as_json=True)
 
 
-
 def _source_flags(args: Sequence[str]) -> int:
     """SRCFLAG-01..03: `GET /api/v1/source-flags[?code=]`, one track, or `scan`."""
     if not args:
@@ -174,15 +180,14 @@ def _source_flags(args: Sequence[str]) -> int:
         return api_cli.run(["GET", f"{_SOURCE_FLAGS_PATH}?code={token}"], as_json=True)
     return api_cli.run(["GET", f"{_SOURCE_FLAGS_PATH}/{token}"], as_json=True)
 
+
 def _grid_scan(args: Sequence[str]) -> int:
     """`POST /api/v1/beatgrid-flags/scan`: bring stored verdicts up to date."""
     if any(token not in ("all-tracks", "no-wait") for token in args):
         return _usage_error()
     scope = "all" if "all-tracks" in args else "present"
     wait = "false" if "no-wait" in args else "true"
-    return api_cli.run(
-        ["POST", f"{_GRID_FLAGS_PATH}/scan?scope={scope}&wait={wait}"], as_json=True
-    )
+    return api_cli.run(["POST", f"{_GRID_FLAGS_PATH}/scan?scope={scope}&wait={wait}"], as_json=True)
 
 
 def _grid_flag(args: Sequence[str]) -> int:
@@ -190,9 +195,7 @@ def _grid_flag(args: Sequence[str]) -> int:
     if len(args) != 2 or args[1] not in ("dismiss", "restore"):
         return _usage_error()
     body = json.dumps({"dismissed": args[1] == "dismiss"})
-    return api_cli.run(
-        ["PUT", f"{_GRID_FLAGS_PATH}/{args[0]}/dismissed", "--json", body], as_json=True
-    )
+    return api_cli.run(["PUT", f"{_GRID_FLAGS_PATH}/{args[0]}/dismissed", "--json", body], as_json=True)
 
 
 def _number(token: str, *, integer: bool) -> float | None:
@@ -213,6 +216,12 @@ def _grid_edit_write(action: str, values: Sequence[str]) -> tuple[str, str, dict
         if offset_ms is None or beat_shift is None:
             return None
         return ("PUT", "", {"offset_ms": offset_ms, "beat_shift": beat_shift})
+    if action == "anchor" and len(values) == 2:
+        at_s = _number(values[0], integer=False)
+        bpm = _number(values[1], integer=False)
+        if at_s is None or bpm is None:
+            return None
+        return ("POST", "/anchors", {"at_s": at_s, "bpm": bpm})
     return None
 
 
@@ -221,7 +230,10 @@ def _grid_edit(args: Sequence[str]) -> int:
 
     `nudge MS` is grid adjust (ms, later when positive), `shift BEATS` is grid
     shift (whole beats, later when positive), `set MS BEATS` writes absolute
-    values, `reset` returns to the measured grid. A trailing `rekordbox` or
+    values, `reset` returns to the measured grid, `undo` steps back one stored
+    edit (GRIDEDIT-10215). `anchor T_S BPM` changes tempo from the grid line
+    nearest T_S on, `unanchor T_S` removes that anchor and `anchors` lists them
+    (GRIDEDIT-10220). A trailing `rekordbox` or
     `own` picks the grid; omitted, it is the one the deck is drawing.
     """
     if not args:
@@ -230,15 +242,23 @@ def _grid_edit(args: Sequence[str]) -> int:
     source = rest.pop() if rest and rest[-1] in _GRID_EDIT_SOURCES else None
     action, *values = rest or ["show"]
     path = f"/api/v1/tracks/{stable_id}/grid-edit"
-    if action in ("show", "reset") and not values:
-        query = "" if source is None else f"?source={source}"
-        return api_cli.run(["GET" if action == "show" else "DELETE", f"{path}{query}"], as_json=True)
+    query = "" if source is None else f"?source={source}"
+    if action in ("show", "reset", "anchors") and not values:
+        method = "DELETE" if action == "reset" else "GET"
+        suffix = "/anchors" if action == "anchors" else ""
+        return api_cli.run([method, f"{path}{suffix}{query}"], as_json=True)
+    if action == "undo" and not values:
+        return api_cli.run(["POST", f"{path}/undo{query}"], as_json=True)
+    if action == "unanchor" and len(values) == 1 and _number(values[0], integer=False) is not None:
+        return api_cli.run(["DELETE", f"{path}/anchors/{values[0]}{query}"], as_json=True)
     write = _grid_edit_write(action, values)
     if write is None:
         return _usage_error()
     method, suffix, fields = write
     body = fields if source is None else {"source": source, **fields}
     return api_cli.run([method, f"{path}{suffix}", "--json", json.dumps(body)], as_json=True)
+
+
 def _bpm_pick(args: Sequence[str]) -> int:
     """Serve our tempo or Mixed In Key's where they disagree (`clear` shows the dispute again)."""
     if len(args) != 2 or args[1] not in ("own", "mik", "clear"):
@@ -356,9 +376,7 @@ def _auto_gain(args: Sequence[str]) -> int:
     else:
         return _usage_error()
     body = json.dumps({"offset_db": offset})
-    return api_cli.run(
-        ["PUT", f"{_AUTO_GAIN_PATH}/{args[0]}/user-offset", "--json", body], as_json=True
-    )
+    return api_cli.run(["PUT", f"{_AUTO_GAIN_PATH}/{args[0]}/user-offset", "--json", body], as_json=True)
 
 
 def _transition_in(args: Sequence[str]) -> int:
@@ -386,6 +404,24 @@ def _tempo(args: Sequence[str]) -> int:
     if len(args) != 1:
         return _usage_error()
     return api_cli.run(["GET", f"/api/v1/tracks/{args[0]}/tempo-stability"], as_json=True)
+
+
+def _related(args: Sequence[str]) -> int:
+    """`GET /api/v1/tracks/{id}/related`: only the flags given are sent; the rest use stored prefs."""
+    if not args:
+        return _usage_error()
+    stable_id, rest = args[0], list(args[1:])
+    if len(rest) % 2:
+        return _usage_error()
+    query: list[str] = []
+    for flag, value in zip(rest[::2], rest[1::2], strict=True):
+        name = flag.replace("-", "_")
+        if (name in ("limit", "bpm_percent") and value.isdigit()) or (name in _RELATED_FLAGS and value in ("0", "1")):
+            query.append(f"{name}={value}")
+        else:
+            return _usage_error()
+    qs = f"?{'&'.join(query)}" if query else ""
+    return api_cli.run(["GET", f"/api/v1/tracks/{stable_id}/related{qs}"], as_json=True)
 
 
 def _comment(args: Sequence[str]) -> int:
@@ -550,6 +586,7 @@ __all__ = [
     "TEMPO_VERB",
     "TRANSITION_IN_VERB",
     "run",
+    "run_history",
 ]
 
 
@@ -572,4 +609,66 @@ _API_VERBS: dict[str, Callable[[Sequence[str]], int]] = {
     TEMPO_VERB: _tempo,
     "played-length": _played_length,
     COMMENT_VERB: _comment,
+    RELATED_VERB: _related,
 }
+
+_HISTORY_USAGE = (
+    "usage: opendj history delete-play <stable_id> <play_id> [--json]\n"
+    "       opendj history delete-day <YYYY-MM-DD> [IANA_ZONE] [--json]\n"
+    "\n"
+    "delete-play removes one Open DJ play for the track (the HTTP route is keyed by track).\n"
+    "delete-day removes every play from local 06:00 that day to 06:00 the next.\n"
+    "Optional IANA_ZONE sets the 06:00 boundary (default: server local). For an explicit\n"
+    "tz query use: opendj api DELETE /api/v1/history/<date>?tz=Zone"
+)
+
+
+def _history_delete_play(args: Sequence[str], *, as_json: bool) -> int:
+    if len(args) != 2:
+        print(_HISTORY_USAGE, file=sys.stderr)
+        return 1
+    stable_id, play_id = args
+    return api_cli.run(
+        ["DELETE", f"/api/v1/tracks/{stable_id}/plays/{play_id}"],
+        as_json=as_json,
+    )
+
+
+def _history_delete_day(args: Sequence[str], *, as_json: bool) -> int:
+    if len(args) < 1 or len(args) > 2:
+        print(_HISTORY_USAGE, file=sys.stderr)
+        return 1
+    day_str = args[0]
+    tz = args[1] if len(args) == 2 else None
+    try:
+        from datetime import date
+
+        day = date.fromisoformat(day_str)
+    except ValueError:
+        print(_HISTORY_USAGE, file=sys.stderr)
+        return 1
+    path = f"/api/v1/history/{day.isoformat()}"
+    if tz is not None:
+        from urllib.parse import quote
+
+        path = f"{path}?tz={quote(tz, safe='')}"
+    return api_cli.run(["DELETE", path], as_json=as_json)
+
+
+def run_history(
+    rest: Sequence[str],
+    *,
+    as_json: bool,
+    state_db: Path | None = None,
+) -> int:
+    del state_db  # history verbs use the engine HTTP path like other api_cli wrappers
+    if not rest:
+        print(_HISTORY_USAGE, file=sys.stderr)
+        return 1
+    verb, *args = rest
+    if verb == "delete-play":
+        return _history_delete_play(args, as_json=as_json)
+    if verb == "delete-day":
+        return _history_delete_day(args, as_json=as_json)
+    print(f"unknown history verb: {verb!r}\n{_HISTORY_USAGE}", file=sys.stderr)
+    return 1

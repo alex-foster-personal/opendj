@@ -6,6 +6,10 @@ each module that imports it scores one error per import line. Centralising the
 imports here keeps the count a property of the suite rather than of how its
 files happen to be split: a new test module imports these helpers and adds
 none.
+
+The SDK is imported optionally, so a module that imports these helpers still
+collects without it; each helper that needs the SDK skips only its caller via
+``require_mcp()``.
 """
 
 from __future__ import annotations
@@ -21,17 +25,25 @@ from typing import Any
 
 import pytest
 
-pytest.importorskip(
-    "mcp",
-    reason=(
-        "UNAVAILABLE: the MCP client SDK is not installed here, so the stdio "
-        "session tests cannot run. This is a capability report, not a pass."
-    ),
+MCP_UNAVAILABLE = (
+    "UNAVAILABLE: the MCP client SDK is not installed here, so the stdio "
+    "session tests cannot run. This is a capability report, not a pass."
 )
 
-from mcp import ClientSession
-from mcp.client.stdio import StdioServerParameters, stdio_client
-from mcp.types import CallToolResult, TextContent
+try:
+    from mcp import ClientSession
+    from mcp.client.stdio import StdioServerParameters, stdio_client
+    from mcp.types import CallToolResult, TextContent
+
+    _MCP_IMPORT_ERROR: ImportError | None = None
+except ImportError as exc:  # optional here: only the stdio session tests need it
+    _MCP_IMPORT_ERROR = exc
+
+
+def require_mcp() -> None:
+    """Skip the calling test, and only it, when the MCP client SDK is missing."""
+    if _MCP_IMPORT_ERROR is not None:
+        pytest.skip(f"{MCP_UNAVAILABLE} ({_MCP_IMPORT_ERROR})")
 
 
 def stdio_params(
@@ -41,6 +53,7 @@ def stdio_params(
     timeout_s: float | None = None,
 ) -> StdioServerParameters:
     """Params for one ``opendj mcp`` server, over the lock file given."""
+    require_mcp()
     args = ["-m", "apps.opendj_cli"]
     if lock_path is not None:
         args += ["--lock", str(lock_path)]
@@ -53,6 +66,7 @@ def stdio_params(
 @asynccontextmanager
 async def session(params: StdioServerParameters) -> AsyncIterator[ClientSession]:
     """An initialized session against ``params``, for calls ``call_tool`` cannot make."""
+    require_mcp()
     async with stdio_client(params) as (read, write), ClientSession(read, write) as s:
         await s.initialize()
         yield s
@@ -67,6 +81,7 @@ async def call_tool_async(
     timeout_s: float | None = None,
 ) -> CallToolResult:
     """Call ``tool`` once, over a fresh server process."""
+    require_mcp()
     async with session(stdio_params(lock_path, env=env, timeout_s=timeout_s)) as s:
         return await s.call_tool(tool, arguments)
 
@@ -80,6 +95,7 @@ def call_tool(
     timeout_s: float | None = None,
 ) -> CallToolResult:
     """Blocking form of :func:`call_tool_async`."""
+    require_mcp()
     return asyncio.run(call_tool_async(lock_path, tool, arguments, env=env, timeout_s=timeout_s))
 
 
@@ -101,6 +117,7 @@ async def timed_call_tool_async(
     that needs to know the tool answered promptly uses this; a test that needs
     to know the server starts at all should say so in its own name.
     """
+    require_mcp()
     async with session(stdio_params(lock_path, env=env, timeout_s=timeout_s)) as s:
         started = time.monotonic()
         result = await s.call_tool(tool, arguments)
@@ -118,6 +135,7 @@ def tool_payload(result: CallToolResult) -> dict[str, Any]:
 
 def tool_text(result: CallToolResult) -> str:
     """The text of a tool result's first content block (an error message, for a failed call)."""
+    require_mcp()
     block = result.content[0]
     assert isinstance(block, TextContent), block
     return block.text

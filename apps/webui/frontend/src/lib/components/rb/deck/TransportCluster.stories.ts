@@ -66,6 +66,8 @@ const deckState = (over: Partial<DeckState> = {}): DeckState => ({
 	stems: stems(),
 	loop: null,
 	safety_loop: null,
+	pending_loop_in_ms: null,
+	last_loop: null,
 	hot_cues: [],
 	hot_cue_revisions: { A: '', B: '', C: '', D: '', E: '', F: '', G: '', H: '' },
 	has_rb_mapping: true,
@@ -88,6 +90,7 @@ const meta = {
 		pending: false,
 		quantizedLaunchArmed: null,
 		onCue: fn(async () => {}),
+		onMemoryCueCall: fn(async () => {}),
 		onPlayPause: fn(async () => {})
 	}
 } satisfies Meta<typeof TransportCluster>;

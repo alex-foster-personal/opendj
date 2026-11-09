@@ -47,6 +47,7 @@ const silverJack = () => sink.nativeOutputsAsHeadphoneOutputs([
 const refusedOnHp = (masterId) => ({
 	masterId,
 	cueId: null,
+	boothId: null,
 	autoPinnedMaster: false,
 	cueRefusal: headphones.sameDeviceCueRefusalText('External Headphones')
 });
@@ -78,7 +79,7 @@ test('control: genuinely different devices keep two outputs, and MAIN is never a
 	// An explicit MAIN on the display is the operator's choice: kept.
 	assert.deepEqual(
 		headphones.dualSinkAssignment({ outputs: SILVER_JACK, selectedCueId: HP, selectedMasterId: LG, currentRoomId: HP }),
-		{ masterId: LG, cueId: HP, autoPinnedMaster: false }
+		{ masterId: LG, cueId: HP, boothId: null, autoPinnedMaster: false }
 	);
 	// A USB interface present does not move the room to it: the room is the jack,
 	// so a CUE on the jack is refused rather than MAIN being moved (no hidden default).
@@ -94,7 +95,7 @@ test('control: genuinely different devices keep two outputs, and MAIN is never a
 	);
 	assert.deepEqual(
 		headphones.dualSinkAssignment({ outputs: withUsb, selectedCueId: HP, selectedMasterId: null, currentRoomId: 'native:scarlett' }),
-		{ masterId: null, cueId: HP, autoPinnedMaster: false }
+		{ masterId: null, cueId: HP, boothId: null, autoPinnedMaster: false }
 	);
 });
 

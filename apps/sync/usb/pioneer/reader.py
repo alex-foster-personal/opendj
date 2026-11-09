@@ -32,7 +32,7 @@ import logging
 from collections import Counter
 from collections.abc import Iterator
 from io import BytesIO
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from typing import Any
 
 from kaitaistruct import KaitaiStream
@@ -405,6 +405,21 @@ def _resolve_pioneer_root(pioneer_path: Path) -> Path:
     return pioneer_path
 
 
+def _artwork_files_present(volume_root: Path, artwork_path: str | None) -> bool:
+    """Both artwork sizes exist: the pdb path's ``.jpg`` and its ``_m`` sibling.
+
+    Same two-size rule as ``stick_library._artwork_available`` (not imported:
+    stick_library imports this module).
+    """
+    if not artwork_path:
+        return False
+    pure = PurePosixPath(artwork_path.lstrip("/"))
+    if pure.parts[:2] != ("PIONEER", "Artwork") or pure.suffix.lower() != ".jpg" or ".." in pure.parts:
+        return False
+    medium = pure.with_name(f"{pure.stem}_m{pure.suffix}")
+    return all((volume_root / rel).is_file() for rel in (pure, medium))
+
+
 def read_export_pdb(volume_root: Path) -> dict[str, Any]:
     """Read ``export.pdb`` alone: the fast list path (USBPLAY-03).
 
@@ -434,6 +449,7 @@ def read_export_pdb(volume_root: Path) -> dict[str, Any]:
     tracks = _read_tracks(pdb)
     playlists = _read_playlist_tree(pdb)
     entries = _read_playlist_entries(pdb)
+    artwork_table = _read_artwork(pdb)
     # Denormalize: attach artist/album/genre/key names and anlz path onto
     # each track; attach ordered track_ids onto each playlist.
     for t in tracks:
@@ -445,6 +461,7 @@ def read_export_pdb(volume_root: Path) -> dict[str, Any]:
         # expose the directory portion so consumers can locate ANLZ files.
         ap = t.get("analyze_path")
         t["anlz_path"] = str(Path(ap).parent) if ap else None
+        t["artwork_path"] = artwork_table.get(t["artwork_id"]) if t["artwork_id"] else None
     _attach_ordered_track_ids(
         playlists,
         [(e["playlist_id"], e["entry_index"], e["track_id"]) for e in entries],
@@ -454,7 +471,7 @@ def read_export_pdb(volume_root: Path) -> dict[str, Any]:
         "playlists": playlists,
         "playlist_entries": entries,
         "history": _read_history(pdb),
-        "artwork": _read_artwork(pdb),
+        "artwork": artwork_table,
         **lookups,
         "pioneer_path": pioneer,
         "pdb_path": pdb_path,
@@ -475,7 +492,11 @@ def read_usb_export(pioneer_path: Path) -> dict[str, Any]:
     ``albums``, ``genres``, ``keys``, ``colors``, ``labels``) and
     ``metadata`` (counts and coverage flags). The pdb part is
     :func:`read_export_pdb`; this adds the ``USBANLZ/`` coverage walk (slow,
-    CPU-bound) that the CLI and value verify rely on.
+    CPU-bound) that the CLI and value verify rely on. Each track also
+    carries ``artwork_present``: its pdb artwork path names a ``.jpg`` under
+    ``PIONEER/Artwork/`` and both that file and its ``_m`` sibling exist
+    (the two sizes the stick browser serves); ``metadata`` counts them in
+    ``total_artwork_present``.
     """
     pdb_data = read_export_pdb(pioneer_path)
     pioneer: Path = pdb_data["pioneer_path"]
@@ -486,6 +507,10 @@ def read_usb_export(pioneer_path: Path) -> dict[str, Any]:
     playlists = pdb_data["playlists"]
     entries = pdb_data["playlist_entries"]
     lookup_names = ("artists", "albums", "genres", "keys", "colors", "labels")
+
+    volume_root = pioneer.parent
+    for t in tracks:
+        t["artwork_present"] = _artwork_files_present(volume_root, t["artwork_path"])
 
     # ANLZ coverage summary.
     anlz_meta = _anlz_summary(pioneer / "USBANLZ")
@@ -503,6 +528,7 @@ def read_usb_export(pioneer_path: Path) -> dict[str, Any]:
             "total_artists": len(pdb_data["artists"]),
             "total_albums": len(pdb_data["albums"]),
             "total_genres": len(pdb_data["genres"]),
+            "total_artwork_present": sum(1 for t in tracks if t["artwork_present"]),
             "has_pdb": pdb_data["pdb_path"].exists(),
             "has_extended_pdb": ext_pdb_path.exists(),
             "has_onelibrary": one_lib_path.exists(),

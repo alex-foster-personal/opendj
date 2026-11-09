@@ -35,6 +35,10 @@ import pytest
 from apps.analysis_key import canon, profiles
 from tests.live_core.conftest import AUDIO_STACK_MARKS, COSINE_FLOOR
 
+# The reference tone stacks four harmonics, and any above 10 kHz is left out.
+PARITY_HARMONICS = 4
+PARITY_MAX_HZ = 10_000
+
 RATE = 44100
 
 # Applied only when MDT_REQUIRE_LIVE_CORE_BUILD is not 1 (see conftest.py):
@@ -53,7 +57,7 @@ def _note(buf: np.ndarray, midi: float, start_s: float, dur_s: float, amp: float
     t = np.arange(n) / RATE
     env = np.minimum(t / 0.01, 1.0) * (0.5 + 0.5 * np.exp(-t / dur_s * 2.0)) * np.clip((dur_s - t) / 0.03, 0.0, 1.0)
     f = _midi_hz(midi, cents)
-    tone = sum(np.sin(2 * np.pi * f * h * t) / h for h in range(1, 5) if f * h < 10_000)
+    tone = sum(np.sin(2 * np.pi * f * h * t) / h for h in range(1, PARITY_HARMONICS + 1) if f * h < PARITY_MAX_HZ)
     buf[start : start + n] += amp * env * tone
 
 

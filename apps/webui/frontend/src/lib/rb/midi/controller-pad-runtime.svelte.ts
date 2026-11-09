@@ -14,6 +14,7 @@ import { engagedLoopForHotCue } from '$lib/rb/hot-cue-loop';
 import type { ControllerPadMode } from '$lib/rb/midi/midi-types';
 import { dispatchPerformanceCommand } from '$lib/rb/performance-ipc.svelte';
 import { stemDialAssignment, type EqDial } from '$lib/rb/stem-dial-map';
+import type { StemControl } from '$lib/rb/stem-types';
 import { hotCueEditsAllowed } from '$lib/rb/track-source';
 import { CONTROLLER_LOOP_BEATS } from '$lib/rb/midi/controller-loop-pads';
 import { CONTROLLER_NEURAL_STEMS, controllerStemPadsAvailable } from '$lib/rb/midi/controller-stem-pads';
@@ -37,6 +38,15 @@ export function toggleControllerStemEq(deck: DeckId, notify: Notify): void {
 	void dispatchPerformanceCommand({ type: 'stem_eq_mode', deck, enabled });
 }
 
+/** The stem a controller EQ knob drives on `deck`'s `band` while that
+ * channel's stem-EQ mode is on, read from the one HI/MID/LOW table in
+ * stem-dial-map. Null where the bundle has no such stem: that band stays plain
+ * EQ. Shared by the dispatch below and the takeover pickup target, so the
+ * value the hardware waits for is the value the knob is driving. */
+export function stemForEqBand(deck: DeckId, band: EqDial): StemControl | null {
+	return stemDialAssignment(deckStates[deck].stems.available_controls)[band];
+}
+
 /** MIDI and the visible mixer share the same fixed HI/MID/LOW stem slots.
  * A missing slot remains EQ, exactly as ChannelStrip renders it. */
 export function setControllerEq(
@@ -48,7 +58,7 @@ export function setControllerEq(
 			notify(`Deck ${deck}: stem EQ unavailable (${stems.status}); press N to return to EQ`, 'warn');
 			return;
 		}
-		const stem = stemDialAssignment(stems.available_controls)[band];
+		const stem = stemForEqBand(deck, band);
 		if (stem !== null) {
 			void dispatchPerformanceCommand({ type: 'stem_gain', deck, stem, value }, pressT0Ms);
 			return;

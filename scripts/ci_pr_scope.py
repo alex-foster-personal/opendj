@@ -120,10 +120,13 @@ E2E_PATHS_IGNORE: tuple[str, ...] = (
 #:   the entitlements resolver, perf helpers; tests/scripts/
 #:   test_ci_fixed_jobs_by_footprint.py keeps the list); a change there is caught on
 #:   main, by decision.
-#: - `frontend-build` (0.9 min) runs when `frontend` runs (it needs the artifact) and
-#:   whenever the e2e gate will run for the same change set (`E2E_PATHS_IGNORE`, the
-#:   e2e.yml scope decision; round 2's tiers narrow the steps inside the gate, never
-#:   whether it runs), because `scripts/ci_frontend_build_acquire_from_ci.sh` refuses a
+#: - `frontend-build` (0.9 min) runs when `frontend` runs (it needs the artifact), when the
+#:   generated API contract `apps/webui/openapi.json` changes (the maintainer, Mon 9 Nov 2026: a backend PR
+#:   or the lander's REGEN step changes it, and `src/lib/api-types.ts` is generated from it), and
+#:   when the pull request carries the `e2e` label (`E2E_OPT_IN_LABEL`; PR E2E is opt-in
+#:   since ADR-NEW-e2e-opt-in-by-label, Mon 9 Nov 2026) AND the e2e gate will run for the
+#:   same change set (`E2E_PATHS_IGNORE`, the e2e.yml scope decision; round 2's tiers
+#:   narrow the steps inside the gate, never whether it runs), because `scripts/ci_frontend_build_acquire_from_ci.sh` refuses a
 #:   sha whose `frontend-build` job failed or timed out (cancelled/skipped take the
 #:   documented UNMEASURED-upstream local-build path instead of masking a real break).
 #:
@@ -148,7 +151,7 @@ CI_JOB_PATHS: dict[str, tuple[str, ...]] = {
     "audio-rust": ("apps/audio-engine/**", "(private path)", "scripts/ci_cargo_selfheal.sh"),
     "contracts": (),
     "frontend": ("apps/webui/frontend/**", "apps/desktop/electron/**"),
-    "frontend-build": ("apps/webui/frontend/**", "apps/desktop/electron/**"),
+    "frontend-build": ("apps/webui/frontend/**", "apps/desktop/electron/**", "apps/webui/openapi.json"),
     "import-contracts": ("**.py", ".importlinter", "ops/quality/requirements.txt"),
     "quality": (),
 }
@@ -289,6 +292,10 @@ def e2e_tier(in_scope_files: Sequence[str], gate_scripts: Collection[str]) -> st
 # ----- per-job footprint (TEST-BUDGET round 4) ---------------------------------
 
 
+#: The label that opts a pull request into e2e.yml's gate (e2e.yml's E2E_OPT_IN_LABEL).
+E2E_OPT_IN_LABEL = "e2e"
+
+
 def e2e_gate_will_run(changed_files: Sequence[str]) -> bool:
     """Whether e2e.yml's gate job runs for a pull_request with this change set.
 
@@ -299,12 +306,13 @@ def e2e_gate_will_run(changed_files: Sequence[str]) -> bool:
     return not changed_files or workflow_would_run_for_files(changed_files, paths_ignore=E2E_PATHS_IGNORE)
 
 
-def ci_fixed_jobs_to_skip(changed_files: Sequence[str]) -> dict[str, str]:
+def ci_fixed_jobs_to_skip(changed_files: Sequence[str], *, e2e_opted_in: bool) -> dict[str, str]:
     """`CI_JOB_PATHS` over a pull request's change set: job -> why it is skipped.
 
     Only the files `CI_PULL_REQUEST_PATHS` keeps in ci.yml scope count; an out-of-scope
     file (documentation) decides nothing. A job with an empty list is skipped on every
-    pull request. `frontend-build` also runs whenever the e2e gate will. An empty
+    pull request. `frontend-build` also runs when the pull request opted into E2E
+    (`e2e_opted_in`, the `e2e` label) and the e2e gate's scope keeps it. An empty
     change set is unmeasured: the footprint jobs run, the never-on-a-pull-request
     jobs still do not.
     """
@@ -317,6 +325,6 @@ def ci_fixed_jobs_to_skip(changed_files: Sequence[str]) -> dict[str, str]:
             continue
         elif not any(_file_matches_paths_list(path, patterns) for path in in_scope):
             skipped[job] = f"none of the {len(in_scope)} in-scope changed file(s) is under its footprint"
-    if "frontend-build" in skipped and e2e_gate_will_run(changed_files):
+    if "frontend-build" in skipped and e2e_opted_in and e2e_gate_will_run(changed_files):
         del skipped["frontend-build"]
     return skipped

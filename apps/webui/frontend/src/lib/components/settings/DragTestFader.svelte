@@ -2,7 +2,9 @@
 	/**
 	 * R6 test fader: the channel fader's drag path (shared R5 gain and falloff,
 	 * group select, the dragged control leads, Opt flip) with none of its deck
-	 * wiring. Wired to nothing: no audio, no commands, just local state.
+	 * wiring. Wired to nothing: no audio, no commands, just local state. An
+	 * ungrouped press jumps the thumb to the pointer through the live fader's
+	 * own geometry (fader-press-geometry.ts), then travel is relative.
 	 */
 	import {
 		beginSelectionDrag,
@@ -15,6 +17,7 @@
 		type SelectionDragStart
 	} from '$lib/rb/knob-control.svelte';
 	import { createDragTracker, trackDragMove, type DragTracker } from '$lib/rb/drag-sensitivity.svelte';
+	import { FADER_THUMB_H, faderValueFromPress } from '$lib/rb/fader-press-geometry';
 
 	interface Props {
 		controlId: string;
@@ -46,8 +49,14 @@
 		}
 		tracker = createDragTracker(e.clientX, e.clientY);
 		group = beginSelectionDrag(controlId);
-		virtual = value;
-		(e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
+		const el = e.currentTarget as HTMLElement;
+		el.setPointerCapture(e.pointerId);
+		if (group !== null) {
+			virtual = value;
+			return;
+		}
+		virtual = faderValueFromPress(el.getBoundingClientRect(), e.clientY, FADER_THUMB_H);
+		onchange(virtual);
 	}
 
 	function handlePointerMove(e: PointerEvent): void {
@@ -80,7 +89,7 @@
 	aria-valuenow={value}
 	data-knob-id={controlId}
 	data-testid={`drag-test-${controlId}`}
-	style={`height: ${TRACK_PX + 12}px;`}
+	style={`height: ${TRACK_PX + FADER_THUMB_H}px;`}
 	onpointerdown={handlePointerDown}
 	onpointermove={handlePointerMove}
 	onpointerup={handlePointerUp}

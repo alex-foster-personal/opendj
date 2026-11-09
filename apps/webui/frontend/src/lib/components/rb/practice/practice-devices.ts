@@ -1,15 +1,35 @@
 /**
  * Device maps a practice replica may bind to, keyed by the panel layout's `device_map`
- * name. Only maps that ship in DEVICE_MAP_REGISTRY belong here: a replica must fire what
- * the real controller fires on this machine.
+ * name. Each replica registers itself with one fragment, ./devices/<device>.ts, exporting
+ * PRACTICE_MAPS; this file globs them, so a new replica edits nothing here (#10560). Only
+ * the fragments' maps reach the lazy practice chunk. Every one must also be a
+ * self-registered map ($lib/rb/midi/maps/entries.ts), live or hints-only.
  */
 
 import type { DeviceMap } from '$lib/rb/midi/midi-types';
 import { RB_API_BASE } from '$lib/rb/api-rb';
-import { FLX4_MAP } from '$lib/rb/midi/maps/ddj-flx4';
 import type { PanelLayout } from './practice-bindings';
 
-export const PRACTICE_DEVICE_MAPS: Readonly<Record<string, DeviceMap>> = { FLX4_MAP };
+export type PracticeFragment = { PRACTICE_MAPS: Readonly<Record<string, DeviceMap>> };
+
+const FRAGMENTS = import.meta.glob<PracticeFragment>('./devices/*.ts', { eager: true });
+
+/** Merge the fragments' maps; fail fast when two fragments claim one `device_map` name. */
+export function mergePracticeFragments(
+	fragments: Record<string, PracticeFragment>
+): Readonly<Record<string, DeviceMap>> {
+	const out: Record<string, DeviceMap> = {};
+	for (const [path, fragment] of Object.entries(fragments)) {
+		for (const [name, map] of Object.entries(fragment.PRACTICE_MAPS)) {
+			if (name in out) throw new Error(`${path} registers ${name} a second time`);
+			out[name] = map;
+		}
+	}
+	return out;
+}
+
+export const PRACTICE_DEVICE_MAPS: Readonly<Record<string, DeviceMap>> =
+	mergePracticeFragments(FRAGMENTS);
 
 export function practiceMapFor(layout: PanelLayout): DeviceMap {
 	const map = PRACTICE_DEVICE_MAPS[layout.device_map];

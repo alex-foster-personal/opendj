@@ -35,6 +35,7 @@ tests/test_copilot_route.py
 tests/test_playlist_add.py
 tests/test_playlist_forbid_duplicates.py
 tests/test_playlist_move.py
+tests/test_playlist_openapi_routes.py
 tests/test_playlist_write.py
 (private path)
 tests/test_progress_file_lock.py

@@ -1,0 +1,57 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Beat Sync Reach Compare</title>
+<style>
+:root{--bg:#fafaf8;--fg:#1d1d1b;--muted:#6b6b66;--wave:#9aa5b1;--played:#2471a3;--card:#fff;--line:#e3e2dc}
+@media (prefers-color-scheme:dark){:root{--bg:#161615;--fg:#ecebe6;--muted:#a09f99;--wave:#566270;--played:#5dade2;--card:#1f1f1d;--line:#33332f}}
+body{background:var(--bg);color:var(--fg);font:15px/1.5 system-ui,sans-serif;margin:0;padding:24px 16px;max-width:980px;margin:auto}
+h1{font-size:22px;margin:0 0 4px}p{color:var(--muted);margin:4px 0 16px}
+.pair{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:14px;margin:14px 0}
+.row{display:grid;grid-template-columns:70px 1fr;gap:10px;align-items:center;margin:8px 0}
+canvas{width:100%;height:56px;cursor:pointer;display:block}
+.stats{font-size:12px;color:var(--muted);grid-column:2}
+button{font:inherit;padding:4px 10px;border-radius:6px;border:1px solid var(--line);background:var(--bg);color:var(--fg);cursor:pointer}
+</style></head><body>
+<h1>Beat Sync on a drifting incoming grid, before and after PR #8872</h1>
+<p>Each clip is 32 bars of Monster from its bar 85 with the incoming at equal gain, no EQ or fader moves. The incoming plays the path the shipped phase lock gives it in a 30 Hz closed-loop simulation on the real rekordbox grids, with Master Tempo OFF (varispeed: pitch moves with tempo), on a 16% range. A re-join is heard as a jump. With Master Tempo ON the Monster blend is unchanged by this PR. Click a waveform to seek; space bar pauses.</p>
+<div id="list"></div>
+<script>
+const CLIPS = __CLIPS__;
+const audio = new Audio();
+let current = null;
+const css = (n) => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
+function draw(c) {
+  const cv = c.canvas, ctx = cv.getContext('2d'), w = cv.width = cv.clientWidth * devicePixelRatio, h = cv.height = cv.clientHeight * devicePixelRatio;
+  const frac = current === c && audio.duration ? audio.currentTime / audio.duration : 0;
+  ctx.clearRect(0, 0, w, h);
+  const n = c.peaks.length, bw = w / n;
+  c.peaks.forEach((p, i) => { ctx.fillStyle = i / n < frac ? css('--played') : css('--wave'); const bh = Math.max(1, p * h); ctx.fillRect(i * bw, (h - bh) / 2, Math.max(1, bw - 0.5), bh); });
+}
+const byPair = {};
+CLIPS.forEach((c) => (byPair[c.pair] ??= []).push(c));
+const list = document.getElementById('list');
+for (const [pair, clips] of Object.entries(byPair)) {
+  const box = document.createElement('div'); box.className = 'pair'; box.innerHTML = `<strong>${pair}</strong>`;
+  for (const c of clips) {
+    const row = document.createElement('div'); row.className = 'row';
+    const btn = document.createElement('button'); btn.textContent = c.label;
+    c.canvas = document.createElement('canvas');
+    const s = c.stats, st = document.createElement('div'); st.className = 'stats';
+    st.textContent = `re-joins ${s.reseeks} - jumped back ${s.backSec} s - phase error p50 ${s.p50Ms} / p95 ${s.p95Ms} ms - ${s.flamSec} s at 10 ms or more - incoming advanced ${s.progressSec} s`;
+    st.title = 'phase error: the incoming deck against its own grid, relative to the master beat, from the simulation';
+    const play = (frac) => {
+      const seek = () => { if (frac !== undefined && audio.duration) audio.currentTime = frac * audio.duration; };
+      // The one-shot metadata listener is attached only when the source changes; a seek on a loaded
+      // clip runs at once, so no stale listener can fire on the next clip and move it to the wrong place.
+      if (current !== c) { current = c; audio.src = c.file; audio.addEventListener('loadedmetadata', seek, { once: true }); } else seek();
+      audio.play();
+    };
+    btn.onclick = () => (current === c && !audio.paused ? audio.pause() : play());
+    c.canvas.onclick = (e) => { const r = c.canvas.getBoundingClientRect(); play((e.clientX - r.left) / r.width); };
+    row.append(btn, c.canvas, st); box.append(row);
+  }
+  list.append(box);
+}
+const tick = () => { CLIPS.forEach(draw); requestAnimationFrame(tick); }; tick();
+addEventListener('keydown', (e) => { if (e.code === 'Space') { e.preventDefault(); audio.paused ? audio.play() : audio.pause(); } });
+</script></body></html>

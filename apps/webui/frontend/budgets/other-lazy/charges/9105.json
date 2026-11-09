@@ -1,0 +1,9 @@
+{
+  "bytes": 1024,
+  "measured_main": 474951,
+  "measured_with_pr": 475516,
+  "sha": "195659c6b4",
+  "date": "Sun 8 Nov 2026",
+  "reason": "PR #9105 (fix: plan overlay pause/replay, unquantized launch, and bar-linear ramps (#7943)) grows the other-lazy surface. Measured: CI bundle check of 195659c6b4, +565 B gzip; ceiled to KiB.",
+  "payback": "none planned; the growth is the feature's own code on this surface"
+}

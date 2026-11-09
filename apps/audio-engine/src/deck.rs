@@ -2,7 +2,7 @@
 
 use std::sync::Arc;
 
-use crate::dsp::{Coeffs, LinearRamp, Smoothed, StereoBiquad};
+use crate::dsp::{Coeffs, CornerGlide, GlideDomain, LinearRamp, Smoothed, StereoBiquad};
 use crate::engine::{EngineError, ErrorCode};
 use crate::mixer::{self, Assign};
 use crate::stretch::{self, Stretcher, QUANTUM};
@@ -349,8 +349,8 @@ struct Strip {
     trim: Smoothed,
     eq_db: [LinearRamp; 3],
     eq: [StereoBiquad; 3],
-    lp_hz: Smoothed,
-    hp_hz: Smoothed,
+    lp_hz: CornerGlide,
+    hp_hz: CornerGlide,
     lp: StereoBiquad,
     hp: StereoBiquad,
     dry: Smoothed,
@@ -372,8 +372,9 @@ struct Strip {
 }
 
 impl Strip {
-    fn new(sr: f64) -> Strip {
+    fn new(sr: f64, glide: GlideDomain) -> Strip {
         let s = |v: f64| Smoothed::new(v, sr, mixer::PARAM_SMOOTH_S);
+        let corner = |hz: f64| CornerGlide::new(hz, sr, mixer::FILTER_GLIDE_S, glide);
         let e = |v: f64| LinearRamp::new(v, sr, mixer::EQ_RAMP_S);
         let fp = mixer::filter_params(0.5);
         let mut strip = Strip {
@@ -381,8 +382,8 @@ impl Strip {
             trim: s(mixer::trim_gain_from_knob(0.5)),
             eq_db: [e(0.0), e(0.0), e(0.0)],
             eq: [StereoBiquad::new(Coeffs::IDENTITY); 3],
-            lp_hz: s(fp.lp_hz),
-            hp_hz: s(fp.hp_hz),
+            lp_hz: corner(fp.lp_hz),
+            hp_hz: corner(fp.hp_hz),
             lp: StereoBiquad::new(Coeffs::IDENTITY),
             hp: StereoBiquad::new(Coeffs::IDENTITY),
             dry: s(fp.dry),
@@ -490,6 +491,17 @@ impl Deck {
     /// stretcher does its heavy block work, so decks started together do not
     /// all spend it in the same audio callback.
     pub fn in_slot(sr: f64, slot: usize) -> Deck {
+        Deck::in_slot_with_glide(sr, slot, mixer::FILTER_GLIDE_DOMAIN)
+    }
+
+    /// A deck whose FILTER corners glide in `glide`, for tests that render
+    /// both domains through the real strip.
+    #[cfg(test)]
+    pub(crate) fn with_filter_glide(sr: f64, glide: GlideDomain) -> Deck {
+        Deck::in_slot_with_glide(sr, 0, glide)
+    }
+
+    fn in_slot_with_glide(sr: f64, slot: usize, glide: GlideDomain) -> Deck {
         Deck {
             track: None,
             pos: 0.0,
@@ -509,7 +521,7 @@ impl Deck {
             assign: Assign::Thru,
             master_tempo: true,
             key_shift: 0,
-            strip: Strip::new(sr),
+            strip: Strip::new(sr, glide),
             stretch: Stretcher::new(sr, slot),
             stretch_warm: false,
             path_fade: 0,
@@ -1225,11 +1237,15 @@ mod tests {
     /// than from the strip: `setTargetAtTime` holds v0 on its start frame,
     /// an a-rate biquad takes new coefficients every frame, and Chromium runs
     /// it in direct form I. Knob 0.5 -> `to` at frame `at`, left channel.
-    fn filter_move_reference(pcm: &[f32], at: usize, n: usize, to: f64) -> Vec<f64> {
+    /// Corners glide in `domain` (on log2 of the corner for `Octave`).
+    fn filter_move_reference(pcm: &[f32], at: usize, n: usize, to: f64, domain: GlideDomain) -> Vec<f64> {
         let sr = 48000.0;
         let (p0, p1) = (mixer::filter_params(0.5), mixer::filter_params(to));
         let k = 1.0 - (-1.0 / (mixer::PARAM_SMOOTH_S * sr)).exp();
-        let (mut lp, mut hp, mut dry, mut lw, mut hw) = (p0.lp_hz, p0.hp_hz, p0.dry, p0.lp_wet, p0.hp_wet);
+        let kc = 1.0 - (-1.0 / (mixer::FILTER_GLIDE_S * sr)).exp();
+        let enc = |hz: f64| if domain == GlideDomain::Octave { hz.log2() } else { hz };
+        let dec = |v: f64| if domain == GlideDomain::Octave { v.exp2() } else { v };
+        let (mut lp, mut hp, mut dry, mut lw, mut hw) = (enc(p0.lp_hz), enc(p0.hp_hz), p0.dry, p0.lp_wet, p0.hp_wet);
         let (mut sl, mut sh) = ([0.0f64; 4], [0.0f64; 4]);
         let df1 = |c: Coeffs, s: &mut [f64; 4], x: f64| {
             let y = c.b0 * x + c.b1 * s[0] + c.b2 * s[1] - c.a1 * s[2] - c.a2 * s[3];
@@ -1239,12 +1255,12 @@ mod tests {
         let mut out = Vec::with_capacity(n);
         for i in 0..n {
             let x = pcm[i * 2] as f64;
-            let yl = df1(Coeffs::lowpass(sr, lp, mixer::FILTER_Q), &mut sl, x);
-            let yh = df1(Coeffs::highpass(sr, hp, mixer::FILTER_Q), &mut sh, x);
+            let yl = df1(Coeffs::lowpass(sr, dec(lp), mixer::FILTER_Q), &mut sl, x);
+            let yh = df1(Coeffs::highpass(sr, dec(hp), mixer::FILTER_Q), &mut sh, x);
             out.push(dry * x + lw * yl + hw * yh);
             if i >= at {
-                lp += (p1.lp_hz - lp) * k;
-                hp += (p1.hp_hz - hp) * k;
+                lp += (enc(p1.lp_hz) - lp) * kc;
+                hp += (enc(p1.hp_hz) - hp) * kc;
                 dry += (p1.dry - dry) * k;
                 lw += (p1.lp_wet - lw) * k;
                 hw += (p1.hp_wet - hw) * k;
@@ -1259,11 +1275,20 @@ mod tests {
         // update at -20 dB and a glide starting one frame early at -40 dB on
         // this move. Both are errors of 1e-3 or more on a 0.25 signal; the
         // tolerance here is float rounding.
+        assert_filter_move_follows_reference(GlideDomain::Hz);
+    }
+
+    #[test]
+    fn a_filter_move_follows_web_audio_frame_by_frame_in_octaves() {
+        assert_filter_move_follows_reference(GlideDomain::Octave);
+    }
+
+    fn assert_filter_move_follows_reference(domain: GlideDomain) {
         let (at, n) = (4800usize, 9600usize);
         for to in [0.8, 0.2] {
             let t = Arc::new(noise_track(n));
-            let want = filter_move_reference(&t.pcm, at, n, to);
-            let mut d = Deck::new(48000.0);
+            let want = filter_move_reference(&t.pcm, at, n, to, domain);
+            let mut d = Deck::with_filter_glide(48000.0, domain);
             d.set_master_tempo(false); // the varispeed path, sample for sample
             d.load(t.clone());
             d.play(true).unwrap();
@@ -1488,15 +1513,161 @@ mod tests {
         let mut d = Deck::new(48000.0);
         d.load(Arc::new(silent(48000, 1.0, vec![])));
         d.play(true).unwrap();
-        let from = d.strip.lp_hz.value;
+        let from = d.strip.lp_hz.hz();
         d.set_filter(0.25);
-        let to = d.strip.lp_hz.target;
+        let to = d.strip.lp_hz.target_hz();
         let mut buf = vec![0.0f32; 2];
         d.render_add(&mut buf, 48000.0);
         // One frame of the one-pole glide, as setTargetAtTime makes it.
-        let k = 1.0 - (-1.0 / (mixer::PARAM_SMOOTH_S * 48000.0)).exp();
+        let k = 1.0 - (-1.0 / (mixer::FILTER_GLIDE_S * 48000.0)).exp();
         let want = from + (to - from) * k;
-        assert!((d.strip.lp_hz.value - want).abs() < 1e-6 * from, "{} vs {want}", d.strip.lp_hz.value);
+        assert!((d.strip.lp_hz.hz() - want).abs() < 1e-6 * from, "{} vs {want}", d.strip.lp_hz.hz());
+    }
+
+    // ----- FILTER corner glide (FXFILT-10611, issue #9828) -----
+
+    const GLIDE_FIXTURE_PATH: &str = "tests/fixtures/filter-glide-flick.json";
+    const GLIDE_FIXTURE: &str = include_str!("../tests/fixtures/filter-glide-flick.json");
+    const GLIDE_SR: f64 = 48000.0;
+    const FLICK_FRAMES: usize = 9600;
+    const FLICK_STRIDE: usize = 8;
+    const FLICK_EVENTS: usize = 24;
+    const FLICK_EVERY: usize = 120;
+    /// (gesture, corner, knob end): the two 60 ms full-travel flicks from center.
+    const FLICKS: [(&str, &str, f64); 2] = [("lp_flick", "lp", 0.0), ("hp_flick", "hp", 1.0)];
+    const DOMAINS: [GlideDomain; 2] = [GlideDomain::Hz, GlideDomain::Octave];
+
+    /// Knob events `(frame, value)` of a linear move from center to `end`.
+    fn knob_move(start: usize, count: usize, every: usize, end: f64) -> Vec<(usize, f64)> {
+        (0..count).map(|i| (start + every * i, 0.5 + (end - 0.5) * (i + 1) as f64 / count as f64)).collect()
+    }
+
+    /// The active corner's Hz on every frame of a flick, through the real deck.
+    fn flick_trajectory(domain: GlideDomain, corner: &str, end: f64) -> Vec<f64> {
+        let mut d = Deck::with_filter_glide(GLIDE_SR, domain);
+        d.set_master_tempo(false);
+        d.load(Arc::new(silent(48000, 0.5, vec![])));
+        d.play(true).unwrap();
+        let events = knob_move(0, FLICK_EVENTS, FLICK_EVERY, end);
+        let mut buf = [0.0f32; 2];
+        (0..FLICK_FRAMES)
+            .map(|f| {
+                if let Some(&(_, v)) = events.iter().find(|e| e.0 == f) {
+                    d.set_filter(v);
+                }
+                let hz = if corner == "lp" { d.strip.lp_hz.hz() } else { d.strip.hp_hz.hz() };
+                d.render_add(&mut buf, GLIDE_SR);
+                hz
+            })
+            .collect()
+    }
+
+    #[test]
+    #[ignore = "writes the shared web/Rust glide fixture; run by hand after a glide change"]
+    fn write_filter_glide_fixture() {
+        let mut traj = serde_json::Map::new();
+        for domain in DOMAINS {
+            let mut per = serde_json::Map::new();
+            for (name, corner, end) in FLICKS {
+                let t = flick_trajectory(domain, corner, end);
+                let pts: Vec<serde_json::Value> =
+                    t.iter().step_by(FLICK_STRIDE).map(|v| format!("{v:.9e}").parse::<f64>().unwrap().into()).collect();
+                per.insert(name.to_string(), pts.into());
+            }
+            traj.insert(domain.as_str().to_string(), per.into());
+        }
+        let gestures: Vec<serde_json::Value> = FLICKS
+            .iter()
+            .map(|(name, corner, end)| serde_json::json!({ "name": name, "corner": corner, "end": end }))
+            .collect();
+        let doc = serde_json::json!({
+            "about": "FILTER corner glide trajectories of a 60 ms flick, written by deck.rs write_filter_glide_fixture (issue #9828)",
+            "sample_rate": GLIDE_SR,
+            "glide_s": mixer::FILTER_GLIDE_S,
+            "frames": FLICK_FRAMES,
+            "stride": FLICK_STRIDE,
+            "events": FLICK_EVENTS,
+            "event_every": FLICK_EVERY,
+            "gestures": gestures,
+            "trajectories": traj,
+        });
+        let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join(GLIDE_FIXTURE_PATH);
+        std::fs::write(path, serde_json::to_string(&doc).unwrap() + "\n").unwrap();
+    }
+
+    #[test]
+    fn filter_glide_flick_matches_the_shared_fixture() {
+        let doc: serde_json::Value = serde_json::from_str(GLIDE_FIXTURE).unwrap();
+        assert_eq!(doc["glide_s"].as_f64(), Some(mixer::FILTER_GLIDE_S));
+        for domain in DOMAINS {
+            for (name, corner, end) in FLICKS {
+                let want = doc["trajectories"][domain.as_str()][name].as_array().unwrap();
+                let got: Vec<f64> = flick_trajectory(domain, corner, end).into_iter().step_by(FLICK_STRIDE).collect();
+                assert_eq!(got.len(), want.len(), "{name} {}", domain.as_str());
+                for (i, (g, w)) in got.iter().zip(want).enumerate() {
+                    let w = w.as_f64().unwrap();
+                    assert!((g - w).abs() <= 1e-6 * w, "{name} {} frame {}: {g} vs {w}", domain.as_str(), i * FLICK_STRIDE);
+                }
+            }
+        }
+    }
+
+    /// Max |second difference| of `x` over `range`.
+    fn max_second_difference(x: &[f64], range: std::ops::Range<usize>) -> f64 {
+        range.map(|n| (x[n] - 2.0 * x[n - 1] + x[n - 2]).abs()).fold(0.0, f64::max)
+    }
+
+    /// In-PR stand-in for the #9774 render harness: the click ratio of a
+    /// knob gesture is max |second difference| of the output over that of the
+    /// input, over the gesture plus 100 ms, on a sum of sines. Steady state
+    /// through the shipped Q stays near 1; a coefficient step spikes it.
+    fn filter_click_ratio(domain: GlideDomain, events: &[(usize, f64)]) -> f64 {
+        let n = (GLIDE_SR * 2.5) as usize;
+        let pcm: Vec<f32> = (0..n)
+            .flat_map(|i| {
+                let t = i as f64 / GLIDE_SR;
+                let v = [110.0, 440.0, 1760.0].iter().map(|f| 0.25 * (2.0 * std::f64::consts::PI * f * t).sin()).sum::<f64>()
+                    as f32;
+                [v, v]
+            })
+            .collect();
+        let t = Arc::new(Track::new(48000, pcm, vec![], None));
+        let mut d = Deck::with_filter_glide(GLIDE_SR, domain);
+        d.set_master_tempo(false);
+        d.load(t.clone());
+        d.play(true).unwrap();
+        let mut buf = vec![0.0f32; n * 2];
+        let mut at = 0;
+        for &(frame, v) in events {
+            d.render_add(&mut buf[at * 2..frame * 2], GLIDE_SR);
+            d.set_filter(v);
+            at = frame;
+        }
+        d.render_add(&mut buf[at * 2..], GLIDE_SR);
+        let window = events[0].0.max(2)..(events.last().unwrap().0 + 4800).min(n);
+        let y: Vec<f64> = (0..n).map(|i| buf[i * 2] as f64).collect();
+        let x: Vec<f64> = (0..n).map(|i| t.pcm[i * 2] as f64).collect();
+        max_second_difference(&y, window.clone()) / max_second_difference(&x, window)
+    }
+
+    #[test]
+    fn filter_glide_has_no_click() {
+        let start = 4800;
+        let gestures: [(&str, Vec<(usize, f64)>); 6] = [
+            ("60 ms LP flick", knob_move(start, FLICK_EVENTS, FLICK_EVERY, 0.0)),
+            ("60 ms HP flick", knob_move(start, FLICK_EVENTS, FLICK_EVERY, 1.0)),
+            ("2 s LP sweep", knob_move(start, 750, 128, 0.0)),
+            ("2 s HP sweep", knob_move(start, 750, 128, 1.0)),
+            ("64 LP steps", knob_move(start, 64, 1500, 0.0)),
+            ("64 HP steps", knob_move(start, 64, 1500, 1.0)),
+        ];
+        for domain in DOMAINS {
+            for (name, events) in &gestures {
+                let ratio = filter_click_ratio(domain, events);
+                eprintln!("click ratio {} {name}: {ratio:.3}", domain.as_str());
+                assert!(ratio < 1.5, "{name} in {} clicks: ratio {ratio}", domain.as_str());
+            }
+        }
     }
 
     #[test]

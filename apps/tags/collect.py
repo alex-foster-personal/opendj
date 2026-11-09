@@ -152,17 +152,24 @@ def _rb_index() -> dict[str, TagRead] | None:
     return _RB_VENDOR_CACHE.get(_rb_build_index)
 
 
+def _lookup_in_vendor_index(
+    index_getter: Callable[[], dict[str, TagRead] | None],
+    path: Path,
+) -> TagRead | None:
+    """Look up ``path`` in a lazily built vendor index, or ``None`` if absent."""
+    index = index_getter()
+    if index is None:
+        return None
+    return index.get(vendor_path_key(str(path)))
+
+
 def default_fetch_rb(path: Path) -> TagRead | None:
     """Default RB fetcher: look up the Rekordbox working-copy by path.
 
     Returns ``None`` when the DB is unreachable or the path is not in
     the library.
     """
-    index = _rb_index()
-    if index is None:
-        return None
-    key = vendor_path_key(str(path))
-    return index.get(key)
+    return _lookup_in_vendor_index(_rb_index, path)
 
 
 # -------------------------------------------------------------- djay default
@@ -210,11 +217,7 @@ def _djay_index() -> dict[str, TagRead] | None:
 
 def default_fetch_djay(path: Path) -> TagRead | None:
     """Default djay fetcher: look up ``MediaLibrary.db`` by local path."""
-    index = _djay_index()
-    if index is None:
-        return None
-    key = vendor_path_key(str(path))
-    return index.get(key)
+    return _lookup_in_vendor_index(_djay_index, path)
 
 
 # --------------------------------------------------------------- MIK default

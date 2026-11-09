@@ -14,7 +14,7 @@
 	import type { DeckId } from '$lib/rb/deck-slots';
 	import { METER_FLOOR_DBFS, calibrationCaptureDb } from '$lib/rb/meter-math';
 	import type { EqBand } from '$lib/rb/mixer-types';
-	import { knobId, type KnobRole } from '$lib/rb/knob-control.svelte';
+	import { knobId, stemKnobRole, type KnobRole } from '$lib/rb/knob-control.svelte';
 	import {
 		setLevelCalibrationCapture,
 		setLevelCalibrationDisabled,
@@ -23,7 +23,8 @@
 	import type { StemControl } from '$lib/rb/stem-types';
 	import { stemCssColor } from '$lib/rb/stem-colors';
 	import { STEM_DIAL_LABELS, channelShowsStemDials, stemDialLayout } from '$lib/rb/stem-dial-map';
-	import { COLOR_FX_EFFECTS, COLOR_FX_LABELS, COLOR_FX_NEXT, isColorFxCycleGesture, type ColorFxChoice, type ColorFxEffect } from '$lib/rb/color-fx';
+	import { COLOR_FX_EFFECTS, COLOR_FX_LABELS, COLOR_FX_NEXT, isColorFxCycleGesture, type ColorFxChoice, type ColorFxEchoBeats, type ColorFxEffect } from '$lib/rb/color-fx';
+	import { COLOR_FX_DIVISIONS, COLOR_FX_DIVISION_LABELS, echoDivisionTitle, showsEchoDivisions } from '$lib/rb/color-fx-division';
 	import { colorFx } from '$lib/rb/color-fx.svelte';
 	import {
 		COLOR_FX_MENU_CLOSED,
@@ -78,6 +79,8 @@
 		onfilter: (value: number) => void;
 		/** COLORFX-02: pick what the color knob plays on this channel; COLORFX-8341: `next` cycles. */
 		oncolorfx: (effect: ColorFxChoice) => void;
+		/** COLORFX-10320: the ECHO division picked in the color FX menu (dispatches color_fx echo_beats). */
+		onechodivision: (beats: ColorFxEchoBeats) => void;
 		onfader: (value: number) => void;
 		oncue: (enabled: boolean) => void;
 		onStemGain: (stem: StemControl, value: number) => void;
@@ -102,6 +105,7 @@
 		oneq,
 		onfilter,
 		oncolorfx,
+		onechodivision,
 		onfader,
 		oncue,
 		onStemGain,
@@ -127,6 +131,9 @@
 	};
 	const colorSettings = $derived(colorFx[deckId]);
 	const colorTint = $derived(COLOR_FX_TINT[colorSettings.effect]);
+	/** MIXUX-02, the maintainer verbatim: "Filter dial should be white bg instead of black for clarity." */
+	const COLOR_FX_FILTER_FACE = 'var(--rb-color-fx-filter-face)';
+	const colorFace = $derived(colorSettings.effect === 'filter' ? COLOR_FX_FILTER_FACE : undefined);
 	/** COLORFX-8341: Cmd-click on a Mac, Ctrl-click elsewhere. */
 	const cycleModifier = quickPickModifier(typeof navigator === 'undefined' ? '' : navigator.platform);
 	const cycleHint = `${cycleModifier === 'Meta' ? 'Cmd' : 'Ctrl'}-click cycles FILTER, SPACE, ECHO; switching returns the knob to 12 o'clock`;
@@ -168,6 +175,12 @@
 	function chooseColorFx(effect: ColorFxEffect): void {
 		colorFxMenu = colorFxMenuClose();
 		if (effect !== colorSettings.effect) oncolorfx(effect);
+	}
+
+	/** COLORFX-10320: a division pick sets echo_beats only; the knob stays where it is. */
+	function chooseEchoDivision(beats: ColorFxEchoBeats): void {
+		colorFxMenu = colorFxMenuClose();
+		if (beats !== colorSettings.echo_beats) onechodivision(beats);
 	}
 
 	function handleDocumentKeyDown(event: KeyboardEvent): void {
@@ -314,14 +327,6 @@
 	const stemDials = $derived(channelShowsStemDials(mixerStems, deck.stems));
 	const stemLayout = $derived(stemDialLayout(deck.stems.available_controls));
 
-	function stemKnobRole(stem: StemControl): KnobRole {
-		if (stem === 'vocal') return 'stem-vocal';
-		if (stem === 'instrumental') return 'stem-instrumental';
-		if (stem === 'bass') return 'stem-bass';
-		if (stem === 'drums') return 'stem-drums';
-		throw new Error(`no mixer stem dial for ${stem}`);
-	}
-
 	function stemAccessibleLabel(stem: StemControl): string {
 		return `${STEM_DIAL_LABELS[stem].toLowerCase()} stem level deck ${deckId}`;
 	}
@@ -465,6 +470,7 @@
 				value={filter}
 				size={filterSize}
 				{...(colorTint ? { accentColor: colorTint } : {})}
+				{...(colorFace ? { faceColor: colorFace } : {})}
 				onchange={onfilter}
 				ontap={handleColorFxTap}
 				popupOpen={colorFxMenu.open}
@@ -494,6 +500,23 @@
 						onclick={() => chooseColorFx(effect)}>{COLOR_FX_LABELS[effect]}</button
 					>
 				{/each}
+				{#if showsEchoDivisions(colorSettings.effect)}
+					<div class="color-fx-divisions" role="group" aria-label={`echo division deck ${deckId}`} data-testid={`color-fx-divisions-${deckId}`}>
+						{#each COLOR_FX_DIVISIONS as beats (beats)}
+							<button
+								type="button"
+								role="menuitemradio"
+								class="color-fx-option"
+								class:checked={colorSettings.echo_beats === beats}
+								aria-checked={colorSettings.echo_beats === beats}
+								title={echoDivisionTitle(beats, colorSettings.tempo_bpm)}
+								data-testid={`color-fx-division-${deckId}-${beats}`}
+								data-rust-command="color_fx"
+								onclick={() => chooseEchoDivision(beats)}>{COLOR_FX_DIVISION_LABELS[beats]}</button
+							>
+						{/each}
+					</div>
+				{/if}
 			</div>
 		{/if}
 		{#if stemDials && stemLayout.filterPartner !== null}
@@ -774,6 +797,14 @@
 		border-radius: 3px;
 		box-shadow: 0 4px 10px rgba(0, 0, 0, 0.45);
 	}
+	.color-fx-divisions {
+		display: flex;
+		flex-direction: column;
+		border-top: 1px solid rgb(255 255 255 / 0.12);
+		margin-top: 2px;
+		padding-top: 2px;
+	}
+
 	.color-fx-option {
 		background: transparent;
 		border: 0;

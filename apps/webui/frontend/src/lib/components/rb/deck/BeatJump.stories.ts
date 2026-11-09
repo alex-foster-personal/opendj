@@ -72,6 +72,8 @@ const deckState = (over: Partial<DeckState>): DeckState => ({
 	stems: stems(),
 	loop: null,
 	safety_loop: null,
+	pending_loop_in_ms: null,
+	last_loop: null,
 	hot_cues: [],
 	hot_cue_revisions: { A: '', B: '', C: '', D: '', E: '', F: '', G: '', H: '' },
 	has_rb_mapping: true,
@@ -96,7 +98,12 @@ const meta = {
 	component: BeatJump,
 	tags: ['autodocs'],
 	argTypes: { pending: { control: 'boolean' } },
-	args: { deck: deckState({}), pending: false, onJump: fn(async () => {}) }
+	args: {
+		deck: deckState({}),
+		pending: false,
+		onJump: fn(async () => {}),
+		onSize: fn(async () => {})
+	}
 } satisfies Meta<typeof BeatJump>;
 export default meta;
 type Story = StoryObj<typeof meta>;
@@ -111,8 +118,8 @@ export const NearTrackStart: Story = {
 	args: { deck: deckState({ position_ms: 1_500 }) },
 	play: async ({ canvasElement }) => {
 		const canvas = within(canvasElement);
-		await expect(canvas.getByRole('button', { name: 'jump -8 beats deck 1' })).toBeEnabled();
-		await expect(canvas.getByRole('button', { name: 'jump +8 beats deck 1' })).toBeEnabled();
+		await expect(canvas.getByRole('button', { name: 'jump back 4 beats deck 1' })).toBeEnabled();
+		await expect(canvas.getByRole('button', { name: 'jump forward 4 beats deck 1' })).toBeEnabled();
 	}
 };
 
@@ -121,8 +128,8 @@ export const NearTrackEnd: Story = {
 	args: { deck: deckState({ position_ms: DURATION_MS - 1_500 }) },
 	play: async ({ canvasElement }) => {
 		const canvas = within(canvasElement);
-		await expect(canvas.getByRole('button', { name: 'jump +8 beats deck 1' })).toBeEnabled();
-		await expect(canvas.getByRole('button', { name: 'jump -8 beats deck 1' })).toBeEnabled();
+		await expect(canvas.getByRole('button', { name: 'jump forward 4 beats deck 1' })).toBeEnabled();
+		await expect(canvas.getByRole('button', { name: 'jump back 4 beats deck 1' })).toBeEnabled();
 	}
 };
 

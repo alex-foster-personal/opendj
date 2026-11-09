@@ -352,6 +352,87 @@ def test_killed_runner_resumes_in_a_fresh_process_exactly_once(tmp_path: Path) -
     conn.close()
 
 
+@pytest.mark.requirement("NATIVE-8905")
+def test_resume_refuses_while_a_live_runner_holds_the_batch(tmp_path: Path) -> None:
+    """Resume must not return in-flight items to pending while a pool drains.
+
+    [if] resume runs while a live runner holds the lease [then] it refuses
+    naming that pid, [else stop].
+    """
+    db = tmp_path / "state.db"
+    probe_dir = tmp_path / "markers"
+    probe_dir.mkdir()
+    conn = open_conn(db)
+    result = queue_api.enqueue(
+        conn, _candidates(4, tmp_path, minutes=50.0), host=AMPLE_HOST
+    )
+    assert result.workers == 1
+    batch_id = result.batch_id
+    conn.close()
+
+    proc = _spawn_runner(db, batch_id, probe_dir, sleep_s=1.5)
+    try:
+        live_pid: int | None = None
+        deadline = time.monotonic() + 60.0
+        while time.monotonic() < deadline:
+            if proc.poll() is not None:
+                pytest.fail(
+                    f"runner exited early: {proc.returncode}\n{proc.stderr.read()}"
+                )
+            poll_conn = open_conn(db)
+            batch = queue_store.get_batch(poll_conn, batch_id)
+            assert batch is not None
+            live_pid = queue_store.live_runner_pid(poll_conn, batch_id)
+            markers = list(probe_dir.glob("*.json"))
+            if batch.state == queue_store.BATCH_RUNNING and live_pid is not None and markers:
+                counts = queue_store.counts_by_state(poll_conn, batch_id)
+                if counts.get(queue_store.ITEM_RUNNING, 0) >= 1:
+                    running_stable_ids = {
+                        i.stable_id
+                        for i in queue_store.list_items(
+                            poll_conn,
+                            batch_id,
+                            states=(queue_store.ITEM_RUNNING,),
+                        )
+                    }
+                    poll_conn.close()
+                    break
+            poll_conn.close()
+            time.sleep(0.1)
+        else:
+            pytest.fail("live runner never took the batch lease with work in flight")
+
+        assert live_pid is not None
+        resume_conn = open_conn(db)
+        with pytest.raises(queue_api.QueueError) as exc_info:
+            queue_api.resume(resume_conn, batch_id)
+        msg = str(exc_info.value)
+        assert str(live_pid) in msg
+        assert "drained" in msg or "runner" in msg
+
+        batch_after = queue_store.get_batch(resume_conn, batch_id)
+        assert batch_after is not None
+        assert batch_after.state == queue_store.BATCH_RUNNING
+        counts = queue_store.counts_by_state(resume_conn, batch_id)
+        assert counts.get(queue_store.ITEM_RUNNING, 0) >= 1
+        for item in queue_store.list_items(resume_conn, batch_id):
+            if item.stable_id in running_stable_ids:
+                assert item.state == queue_store.ITEM_RUNNING
+        markers = _marker_counts(probe_dir)
+        assert all(n <= 1 for n in markers.values())
+
+        with pytest.raises(queue_api.QueueError, match="already being drained"):
+            run_batch(resume_conn, batch_id, backend_cls=BeatgridProbeV1)
+        resume_conn.close()
+    finally:
+        _kill_group(proc)
+
+    conn = open_conn(db)
+    revived = queue_api.resume(conn, batch_id)
+    assert revived >= 1
+    conn.close()
+
+
 # --- machine faults are not track verdicts --------------------------------
 
 

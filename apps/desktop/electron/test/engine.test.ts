@@ -191,14 +191,32 @@ test('freeLoopbackPort hands out a port that can be bound right away', async () 
 });
 
 test('a free preferred port is returned as is', async () => {
-	const port = await freeLoopbackPort();
-	assert.equal(await pickLoopbackPort(port), port);
-	// The control line proves this file is the shell log. Absence of a
-	// preferred-port line is then a real measurement, not an empty file.
-	appendShellLog('INFO', `port-picker control ${port}`);
-	const text = fs.readFileSync(portPickerLog, 'utf8');
-	assert.match(text, new RegExp(`\\[shell INFO\\] port-picker control ${port}\\n`));
-	assert.equal(text.includes(`preferred engine port ${port} is in use`), false);
+	// freeLoopbackPort closes its probe before returning, so a concurrent test
+	// file (node --test runs files in parallel) or another runner on the host
+	// can take the port before pickLoopbackPort looks. That is a stolen port,
+	// not a picker bug: the picker must then log the fallback, and we retry.
+	const ATTEMPTS = 5;
+	for (let attempt = 1; attempt <= ATTEMPTS; attempt++) {
+		const port = await freeLoopbackPort();
+		const picked = await pickLoopbackPort(port);
+		const text = () => fs.readFileSync(portPickerLog, 'utf8');
+		if (picked !== port) {
+			// Stolen between probe and pick: the documented fallback must be logged.
+			assert.ok(
+				text().includes(`preferred engine port ${port} is in use; using OS-assigned port ${picked}\n`),
+				`port ${port} was not returned and no fallback line was logged:\n${text()}`
+			);
+			continue;
+		}
+		// The control line proves this file is the shell log. Absence of a
+		// preferred-port line is then a real measurement, not an empty file.
+		appendShellLog('INFO', `port-picker control ${port}`);
+		const log = text();
+		assert.match(log, new RegExp(`\\[shell INFO\\] port-picker control ${port}\\n`));
+		assert.equal(log.includes(`preferred engine port ${port} is in use`), false);
+		return;
+	}
+	assert.fail(`every one of ${ATTEMPTS} free ports was taken before pickLoopbackPort could probe it`);
 });
 
 test('a preferred port held on 127.0.0.1 falls back to a bindable port', async () => {

@@ -23,9 +23,10 @@ Four controls, and the two automatic re-queues:
   in-flight item's record was never committed (the runner commits the record
   and the item state in ONE transaction), so cancelling it cannot leave a
   torn record.
-* **resume** -- cancelled items go back to pending, items a dead runner was
-  holding go back to pending, and terminal items are left alone. The batch
-  is re-planned, because the admitted set may now be shorter than it was.
+* **resume** -- cancelled and deferred items go back to pending, items a dead
+  runner was holding go back to pending, and terminal items are left alone. A
+  live runner still holding the batch lease is refused by name. The batch is
+  re-planned, because the admitted set may now be shorter than it was.
 * **producer version bump** -- :func:`requeue_for_version_bump` re-queues
   every track whose latest record for a lane is on an OLD producer version,
   and no track already on the new one.
@@ -309,8 +310,8 @@ def cancel(conn: sqlite3.Connection, batch_id: str) -> int:
 
 
 #: Every state from which an item can still run in this batch: claimable
-#: now, in flight, or returned to pending by a resume. A resume is not held
-#: off by a live runner, so a draining pool can meet any of them.
+#: now, in flight, or returned to pending by a resume. Resume refuses a live
+#: runner before this set is used to plan a resume; pool startup still uses it.
 RUNNABLE_ITEM_STATES: tuple[str, ...] = (
     queue_store.ITEM_PENDING,
     queue_store.ITEM_RUNNING,
@@ -355,6 +356,9 @@ def resume(
 ) -> int:
     """Put a cancelled or abandoned batch back in the queue.
 
+    A live ``active_runner_pid`` raises :class:`QueueError` and leaves the
+    batch untouched.
+
     Returns how many items became runnable again. Re-plans the batch's
     concurrency from what is LEFT: a batch whose one long track already
     finished should not stay at one worker for its remaining club edits.
@@ -372,6 +376,12 @@ def resume(
     batch = queue_store.get_batch(conn, batch_id)
     if batch is None:
         raise NoSuchBatchError(f"no such batch {batch_id!r}")
+    live_pid = queue_store.live_runner_pid(conn, batch_id)
+    if live_pid is not None:
+        raise QueueError(
+            f"batch {batch_id!r} is still being drained by live runner "
+            f"pid {live_pid}; wait for that runner to exit before resuming"
+        )
     inputs = runnable_sizing_inputs(conn, batch)
     if inputs is not None:
         cap, band, predicted = inputs

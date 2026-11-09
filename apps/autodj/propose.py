@@ -27,6 +27,7 @@ from apps.autodj.plan import (
     TransitionPlan,
     Validation,
     beat_sync_reach_pct,
+    bpm_gap_pct,
     first_dispatch_bar,
     live_mapping,
     pair_beat_sync_fold,
@@ -42,14 +43,17 @@ from apps.autodj.profile import (
     trim_db_of_knob,
 )
 from apps.autodj.scoring import PairScore, rank_key, score_windows
+from apps.shared.harmonic import LIFT, LONG_BLEND_KEY_CLASH_RELATIONS, key_compat
 from apps.autodj.sections import BREAKDOWN, BRIDGE, PEAK_LABELS
 from apps.autodj.styles import (
     HIT_GATED,
+    HIT_ON_EXIT,
     HIT_ON_HANDOVER,
     HIT_ON_START,
     STYLES,
     Style,
     default_hit_bar,
+    exit_bar,
     hit_bounds,
 )
 from apps.autodj.windows import MixWindow, mix_windows, window_at
@@ -134,6 +138,14 @@ _PREFERENCES: dict[str, tuple[tuple[str, int], ...]] = {
     ),
 }
 
+#: Spec 09-transitions-fx 4.3: echo out is the escape for a pair no blend suits. It is offered for every intent, after
+#: the intent's own styles and after the cut fallback, so it never takes a preference bonus and never suppresses the
+#: fallback.
+ESCAPE_STYLES: tuple[tuple[str, int], ...] = (("echo_out", 3),)
+#: House rule: an escape on a pair that could blend (tempo in reach, key within 2, no vocal clash) ranks this far down.
+ESCAPE_ON_A_GOOD_PAIR = 0.5
+_ESCAPE_NAMES = frozenset(name for name, _ in ESCAPE_STYLES)
+
 
 def _preference_bonus(intent: str, rank: int) -> float:
     """The older styles keep the bonus they had before the parameter styles were appended, counted against their own
@@ -214,15 +226,26 @@ def _penalty(validation: Validation, intent: str) -> float:
     return penalty
 
 
-def _style_fit(style: Style, pair: PairScore) -> float:
+def _style_fit(style: Style, pair: PairScore, intent: str) -> float:
     """Short or beat-free styles for clashing pairs, long blends for good ones."""
     fit = 0.0
     if style.needs_beatmatch and pair.beatmatchable is False and style.max_bars > 1:
         fit -= 0.4
-    if pair.key_distance is not None and pair.key_distance > 2 and style.default_bars >= 16:
-        fit -= 0.2
+    if style.default_bars >= 16 and pair.key_out and pair.key_in:
+        compat = key_compat(pair.key_out, pair.key_in)
+        if compat.relation in LONG_BLEND_KEY_CLASH_RELATIONS:
+            fit -= 0.2
+        elif intent == ENERGY_UP and compat.move == LIFT:
+            fit += 0.05
     if pair.vocal_clash_bars and style.default_bars >= 16:
         fit -= 0.1
+    if (
+        style.name in _ESCAPE_NAMES
+        and pair.beatmatchable is not False
+        and (pair.key_distance is None or pair.key_distance <= 2)
+        and not pair.vocal_clash_bars
+    ):
+        fit -= ESCAPE_ON_A_GOOD_PAIR
     return fit
 
 
@@ -365,6 +388,8 @@ def _start_and_hit(
     """(in-window start, hit bar, entry used) for a known entry, or why this style cannot land it."""
     if style.hit == HIT_ON_START:
         return entry, 0.0, entry  # a cut enters ON the incoming bass
+    if style.hit == HIT_ON_EXIT:
+        return entry, exit_bar(bars), entry
     if style.hit == HIT_ON_HANDOVER:
         return _drop_on_handover(in_profile, entry, in_start, bars, fold)
     if style.hit == HIT_GATED:
@@ -391,7 +416,12 @@ def _unknown_entry(style: Style, in_start: int, bars: int) -> HitPlacement:
         return HitPlacement(
             in_start, 0.0, None, "", "the incoming track has no bar_bass series, so its drop cannot be found"
         )
-    hit = 0.0 if style.hit == HIT_ON_START else default_hit_bar(style.volume_lane, bars, style.min_body_fade_bars)
+    if style.hit == HIT_ON_START:
+        hit = 0.0
+    elif style.hit == HIT_ON_EXIT:
+        hit = exit_bar(bars)
+    else:
+        hit = default_hit_bar(style.volume_lane, bars, style.min_body_fade_bars)
     unknown = "bass entry unknown: the incoming track has no bar_bass series; the style's own hit bar is used"
     entry = {"in_bar": None, "entry_plan_bar": None, "hit_plan_bar": hit, "note": unknown}
     return HitPlacement(in_start, hit, entry, f"; {unknown}")
@@ -439,13 +469,28 @@ def place_hit(
         note = f"; incoming lows held out until plan bar {hit:g} (its bass runs from its bar {entry})"
     else:
         note = f"; incoming bass lands on plan bar {hit:g} (its bar {entry})"
+    entry_bar = hit if style.hit == HIT_ON_EXIT else _plan_bar(entry, start, fold)
     entry_doc = {
         "in_bar": entry,
-        "entry_plan_bar": _plan_bar(entry, start, fold),
+        "entry_plan_bar": entry_bar,
         "hit_plan_bar": hit,
         "note": _ENTRY_RULE,
     }
     return HitPlacement(start, hit, entry_doc, note)
+
+
+def _tempo_note(style: Style, out_profile: TrackProfile, in_profile: TrackProfile) -> str:
+    """A tempo-none style across a gap Beat Sync cannot reach says so (the reason it is offered at all)."""
+    if style.tempo_mode != "none":
+        return ""
+    gap = bpm_gap_pct(out_profile.judged_bpm, in_profile.judged_bpm)
+    reach = beat_sync_reach_pct(in_profile)
+    if gap is None or gap <= reach:
+        return ""
+    return (
+        f"; tempo none: {out_profile.judged_bpm:g} to {in_profile.judged_bpm:g} BPM is a {gap:.1f}% tempo gap,"
+        f" beyond Beat Sync's {reach:g}% reach, so the incoming deck keeps its own tempo"
+    )
 
 
 def _rationale(style_name: str, style: Style, bars: int, out_window: MixWindow, in_window: MixWindow) -> str:
@@ -502,9 +547,7 @@ _AUTO_GAIN_OFFSET_MIN_DB = -12.0
 _AUTO_GAIN_OFFSET_MAX_DB = 12.0
 
 
-def _deck_auto_gain_db(
-    live: Mapping[str, Any] | None, deck: int, expected_stable_id: str
-) -> tuple[float, str | None]:
+def _deck_auto_gain_db(live: Mapping[str, Any] | None, deck: int, expected_stable_id: str) -> tuple[float, str | None]:
     """The deck's live auto-gain offset in dB for loudness match (AGENT-31, Codex #7594)."""
     if live is None:
         return 0.0, "offline proposal: no live auto gain, so the match assumes 0 dB"
@@ -525,22 +568,16 @@ def _deck_auto_gain_db(
         raise ValueError(f"deck {deck} auto gain ready value has no stable_id: a partial mirror is refused")
     offset = value.get("effective_offset_db")
     if not _finite_number(offset) or not (_AUTO_GAIN_OFFSET_MIN_DB <= float(offset) <= _AUTO_GAIN_OFFSET_MAX_DB):
-        raise ValueError(
-            f"deck {deck} auto gain offset {offset!r} is not a finite offset in -12..12 dB"
-        )
+        raise ValueError(f"deck {deck} auto gain offset {offset!r} is not a finite offset in -12..12 dB")
     if raw_stable != expected_stable_id:
-        return 0.0, (
-            f"deck {deck} auto gain is for {raw_stable}, not {expected_stable_id}, so the match assumes 0 dB"
-        )
+        return 0.0, (f"deck {deck} auto gain is for {raw_stable}, not {expected_stable_id}, so the match assumes 0 dB")
     decks = live.get("decks")
     if isinstance(decks, Mapping):
         deck_row = decks.get(str(deck))
         if isinstance(deck_row, Mapping):
             got = deck_row.get("stable_id")
             if isinstance(got, str) and got and got != expected_stable_id:
-                return 0.0, (
-                    f"deck {deck} auto gain is for {got}, not {expected_stable_id}, so the match assumes 0 dB"
-                )
+                return 0.0, (f"deck {deck} auto gain is for {got}, not {expected_stable_id}, so the match assumes 0 dB")
     return float(offset), None
 
 
@@ -637,7 +674,7 @@ def propose_transition(  # noqa: C901, PLR0913 - keyword-only options of one ent
     not_offered: list[dict[str, Any]] = []
     seen: set[tuple[str, int, int, int]] = set()
     trim_db, trim_reason = match_live_trim_db(out_profile, in_profile, live, out_deck, in_deck)
-    # Every proposal is tempo sync_to_out, so the incoming deck plays this many grid bars per plan bar (Sentry #7809).
+    # Synced proposals play ``fold`` incoming grid bars per plan bar; tempo-none styles start on their own bass and tempo.
     fold = pair_beat_sync_fold(out_profile.judged_bpm, in_profile.judged_bpm, beat_sync_reach_pct(in_profile))
 
     def consider(
@@ -677,7 +714,8 @@ def propose_transition(  # noqa: C901, PLR0913 - keyword-only options of one ent
                 )
                 return
             bars = fitted
-        hit = place_hit(style, out_window, in_profile, in_window.start_bar, bars, fold)
+        style_fold = fold if style.tempo_mode == "sync_to_out" else 1.0
+        hit = place_hit(style, out_window, in_profile, in_window.start_bar, bars, style_fold)
         pinned_moved = in_window.pinned and hit.refused is None and hit.in_start_bar != in_window.start_bar
         # Sentry #7818: two scored windows can move to one bass entry; dedupe on the window actually entered.
         entered_bar = in_window.start_bar if (hit.refused is not None or pinned_moved) else hit.in_start_bar
@@ -707,7 +745,12 @@ def propose_transition(  # noqa: C901, PLR0913 - keyword-only options of one ent
             in_window if hit.in_start_bar == in_window.start_bar else window_at(in_profile, "in", hit.in_start_bar)
         )
         pair = score_windows(out_profile, in_profile, out_window, entered, overlap_bars=bars)
-        rationale = _rationale(style_name, style, bars, out_window, entered) + hit.note + fallback_note
+        rationale = (
+            _rationale(style_name, style, bars, out_window, entered)
+            + _tempo_note(style, out_profile, in_profile)
+            + hit.note
+            + fallback_note
+        )
         plan = parse_plan(
             {
                 "out": {
@@ -723,7 +766,7 @@ def propose_transition(  # noqa: C901, PLR0913 - keyword-only options of one ent
                     "trim_reason": trim_reason,
                 },
                 "style": style_name,
-                "tempo": {"mode": "sync_to_out"},
+                "tempo": {"mode": style.tempo_mode},
                 "events": style.build(bars, out_deck, in_deck, hit.hit_bar),
                 "intent": intent or parsed,
                 "rationale": rationale,
@@ -737,7 +780,7 @@ def propose_transition(  # noqa: C901, PLR0913 - keyword-only options of one ent
             return
         validation = validate_plan(plan, out_profile, in_profile, live=live)
         preference = _preference_bonus(parsed, rank)
-        score = pair.score + preference + _style_fit(style, pair) - _penalty(validation, parsed)
+        score = pair.score + preference + _style_fit(style, pair, parsed) - _penalty(validation, parsed)
         proposals.append(Proposal(plan, validation, pair, score, rationale))
 
     for rank, (style_name, wanted_bars) in enumerate(_PREFERENCES[parsed]):
@@ -762,6 +805,14 @@ def propose_transition(  # noqa: C901, PLR0913 - keyword-only options of one ent
                         f"; cut fallback: every blend needs more bars than the in-window ({in_window.reason})"
                     ),
                 )
+    escape_rank = len(_PREFERENCES[parsed]) + 1
+    for style_name, wanted_bars in ESCAPE_STYLES:
+        style = STYLES[style_name]
+        if not style.available:
+            continue
+        for out_window in out_windows[:3]:
+            for in_window in _in_windows_for(parsed, in_profile, style)[:3]:
+                consider(style, wanted_bars, escape_rank, out_window, in_window)
     best = _best_valid(proposals, top)
     return {
         "intent": parsed,

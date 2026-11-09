@@ -3,8 +3,8 @@
 	// is a container (stores, engine, backend), so CrateDesk passes each one
 	// in as a snippet and this file owns only the layout.
 	//
-	// SKINLAYOUT-8869: `layout` is the skin manifest's library preset
-	// (lib/rb/skin-layout.ts). Each preset is a grid-area map below over the
+	// SKINLAYOUT-8869 / #10199: `layout` is the effective library preset (override
+	// when set, else the skin's SKIN_LAYOUT entry). Each preset is a grid-area map below over the
 	// same regions; 'three-panel' adds the nowplaying and playingon regions.
 	import type { Snippet } from 'svelte';
 	import type { LibraryLayout } from '$lib/rb/skin-layout';

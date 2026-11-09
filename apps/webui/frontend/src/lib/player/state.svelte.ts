@@ -68,6 +68,8 @@ export function _emptyDeckState(deck_id: DeckId): DeckState {
 		stems: unavailableStemDeckState(),
 		loop: null,
 		safety_loop: null,
+		pending_loop_in_ms: null,
+		last_loop: null,
 		hot_cues: [],
 		hot_cue_revisions: _emptyHotCueRevisions(),
 		has_rb_mapping: true,
@@ -120,7 +122,9 @@ export function _defaultHeadphones(): HeadphoneState {
 	return {
 		mix: 0,
 		level: 0.5,
+		booth_level: 0.5,
 		selected_output_device_id: null,
+		selected_booth_output_device_id: null,
 		selected_master_output_device_id: null,
 		selected_input_device_id: null,
 		output_mode: 'practice',
@@ -154,7 +158,8 @@ export function _defaultHeadphones(): HeadphoneState {
 		},
 		routes: {
 			master: { state: 'default', selected: false },
-			cue: { state: 'default', selected: false }
+			cue: { state: 'default', selected: false },
+			booth: { state: 'default', selected: false }
 		},
 		outputs: [],
 		inputs: [],

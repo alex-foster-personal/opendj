@@ -1,0 +1,9 @@
+{
+  "bytes": 1024,
+  "measured_main": 408375,
+  "measured_with_pr": 408616,
+  "sha": "7beb85be93",
+  "date": "Mon 9 Nov 2026",
+  "reason": "PR #10320 adds the echo division picker to the color FX menu (COLORFX-10320). Measured: CI bundle check of 7beb85be93, +241 B gzip on performance; ceiled to KiB",
+  "payback": "none planned; the growth is the feature's own code"
+}

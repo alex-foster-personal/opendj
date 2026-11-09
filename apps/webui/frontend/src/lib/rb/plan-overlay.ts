@@ -159,22 +159,113 @@ function _startValue(
 function _deckCurves(
 	input: PlanOverlayInput,
 	deck: number,
-	fromBar: number,
-	toBar: number,
-	barToMs: (bar: number) => number
+	spans: readonly [number, number][],
+	barToMs: (bar: number) => number,
+	destBar: (planBar: number) => number
 ): PlanCurve[] {
+	const fromBar = spans[0]?.[0] ?? 0;
+	const toBar = spans[spans.length - 1]?.[1] ?? input.order.bars;
 	return PLAN_KNOBS.flatMap(({ name }) => {
 		const moves = _moves(input.order.events, deck, name);
 		if (moves.length === 0 && !ALWAYS_DRAWN.has(name)) return [];
-		const bars = _breakpoints(moves, _startValue(input, deck, name), fromBar, toBar);
-		const [segment] = segmentsWithin(bars, [[fromBar, toBar]]);
-		return [
-			{ name, points: segment.map(([bar, value]) => [barToMs(bar), value] as [number, number]) }
-		];
+		let bars = _breakpoints(moves, _startValue(input, deck, name), fromBar, toBar);
+		bars = _densifyForDestGrid(bars, destBar);
+		const pieces = segmentsWithin(bars, spans);
+		const points = pieces.flatMap((segment) =>
+			segment.map(([bar, value]) => [barToMs(bar), value] as [number, number])
+		);
+		return [{ name, points }];
 	});
 }
 
+/** Insert samples at each destination-grid integer a ramp crosses, so canvas lines match bar-linear execution. */
+function _densifyForDestGrid(points: Point[], destBar: (planBar: number) => number): Point[] {
+	if (points.length < 2) return points;
+	const extra: Point[] = [];
+	for (let i = 0; i < points.length - 1; i++) {
+		const [planFrom, valueFrom] = points[i];
+		const [planTo, valueTo] = points[i + 1];
+		if (valueFrom === valueTo || planFrom === planTo) continue;
+		const destFrom = destBar(planFrom);
+		const destTo = destBar(planTo);
+		if (destFrom === destTo) continue;
+		const lo = Math.min(destFrom, destTo);
+		const hi = Math.max(destFrom, destTo);
+		const firstK = Math.floor(lo) + 1;
+		const lastK = Math.ceil(hi) - 1;
+		for (let k = firstK; k <= lastK; k++) {
+			if (!(k > lo && k < hi)) continue;
+			let left = Math.min(planFrom, planTo);
+			let right = Math.max(planFrom, planTo);
+			for (let iter = 0; iter < 48; iter++) {
+				const mid = (left + right) / 2;
+				if (destBar(mid) < k) left = mid;
+				else right = mid;
+			}
+			const planBar = (left + right) / 2;
+			const t = (planBar - planFrom) / (planTo - planFrom);
+			extra.push([planBar, valueFrom + (valueTo - valueFrom) * t]);
+		}
+	}
+	if (extra.length === 0) return points;
+	return [...points, ...extra].sort((a, b) => a[0] - b[0]);
+}
+
 // ------------------------------------------------------------- transport ---
+
+type PlayEvent = Extract<OverlayEvent, { command: OverlayCommand }>;
+
+function _effectivePlayBar(event: PlayEvent): number {
+	const { quantize } = event.command;
+	return quantize === true ? Math.floor(event.at_bar) + 1 : event.at_bar;
+}
+
+/** Each play or stop as `(bar it takes effect, playing after it)`, in effect order (mirrors autodj `_transport_steps`). */
+function _transportSteps(order: PlanOverlayInput['order'], deck: number): [number, boolean][] {
+	const events = order.events
+		.filter(
+			(event): event is PlayEvent =>
+				'command' in event && event.command.type === 'play' && event.command.deck === deck
+		)
+		.sort((a, b) => a.at_bar - b.at_bar);
+	const steps: [number, boolean][] = [];
+	let armed: number | null = null;
+	for (const event of events) {
+		if (armed !== null && steps[armed][0] > event.at_bar)
+			steps[armed] = [Number.POSITIVE_INFINITY, false];
+		const playing = event.command.playing === true;
+		if (playing) {
+			steps.push([_effectivePlayBar(event), true]);
+			armed = steps.length - 1;
+		} else {
+			steps.push([event.at_bar, false]);
+			armed = null;
+		}
+	}
+	return steps.filter((step) => step[0] !== Number.POSITIVE_INFINITY).sort((a, b) => a[0] - b[0]);
+}
+
+function _playingIntervals(order: PlanOverlayInput['order'], deck: number): [number, number][] {
+	const intervals: [number, number][] = [];
+	let since: number | null = null;
+	for (const [effective, isPlay] of _transportSteps(order, deck)) {
+		if (isPlay && since === null) since = effective;
+		else if (!isPlay && since !== null) {
+			intervals.push([since, effective]);
+			since = null;
+		}
+	}
+	if (since !== null) intervals.push([since, order.bars]);
+	return intervals
+		.map(([start, end]) => [start, Math.min(end, order.bars)] as [number, number])
+		.filter(([start, end]) => end > start);
+}
+
+function _playingBarsBefore(spans: readonly [number, number][], planBar: number): number {
+	let total = 0;
+	for (const [start, end] of spans) total += Math.max(0, Math.min(end, planBar) - start);
+	return total;
+}
 
 /** The plan bar a deck's stop fires at, else the plan's end. */
 function _stopBar(order: PlanOverlayInput['order'], deck: number): number {
@@ -188,17 +279,15 @@ function _stopBar(order: PlanOverlayInput['order'], deck: number): number {
 	return stop === undefined ? order.bars : Math.min(stop.at_bar, order.bars);
 }
 
-/** The plan bar the incoming deck starts on: the first downbeat strictly after its quantized play is dispatched
- *  (apps/autodj/plan.py `play_start_bar`), so a play dispatched exactly on a bar starts one bar later. */
+/** The plan bar the incoming deck first plays from, after transport cancellation. */
 function _launchBar(order: PlanOverlayInput['order'], deck: number): number {
-	const play = order.events.find(
-		(event) =>
-			'command' in event &&
-			event.command.type === 'play' &&
-			event.command.deck === deck &&
-			event.command.playing === true
-	);
-	return play === undefined ? 0 : Math.floor(play.at_bar) + 1;
+	const intervals = _playingIntervals(order, deck);
+	return intervals.length === 0 ? 0 : intervals[0][0];
+}
+
+function _incomingSpans(order: PlanOverlayInput['order'], deck: number): [number, number][] {
+	const intervals = _playingIntervals(order, deck);
+	return intervals.length === 0 ? [[0, order.bars]] : intervals;
 }
 
 /** The cue the plan was made for: the incoming grid bar it launches from, or null when the plan does not cue the deck. */
@@ -226,17 +315,24 @@ export function incomingAlignment(input: PlanOverlayInput): IncomingAlignment | 
 	)
 		return null;
 	if (incoming.downbeats.length < 2 || clock.downbeats.length < 2 || ratio === null) return null;
-	const anchorBar = incoming.playing
+	const deck = order.incoming.deck;
+	const spans = _incomingSpans(order, deck);
+	const firstLaunch = _launchBar(order, deck);
+	const anchorPlanBar = incoming.playing
 		? barAt(clock.downbeats, clock.position_ms) - order.start_bar
-		: _launchBar(order, order.incoming.deck);
-	const origin_bar = barAt(incoming.downbeats, incoming.position_ms) - anchorBar * ratio;
-	const barToMs = (bar: number) => msAtBar(incoming.downbeats, origin_bar + bar * ratio);
+		: firstLaunch;
+	const origin_bar =
+		barAt(incoming.downbeats, incoming.position_ms) -
+		_playingBarsBefore(spans, anchorPlanBar) * ratio;
+	const barToMs = (bar: number) =>
+		msAtBar(incoming.downbeats, origin_bar + _playingBarsBefore(spans, bar) * ratio);
+	const lastEnd = spans[spans.length - 1][1];
 	return {
 		stable_id: order.incoming.stable_id,
 		origin_bar,
 		ratio,
-		start_ms: barToMs(_launchBar(order, order.incoming.deck)),
-		end_ms: barToMs(_stopBar(order, order.incoming.deck))
+		start_ms: barToMs(firstLaunch),
+		end_ms: barToMs(lastEnd)
 	};
 }
 
@@ -278,11 +374,12 @@ function _clockDeck(input: PlanOverlayInput): PlanDeckOverlay {
 	if (clock.downbeats.length < 2) return { ...blank, unavailable: 'no_grid' };
 	const barToMs = (bar: number) => msAtBar(clock.downbeats, order.start_bar + bar);
 	const toBar = _stopBar(order, deck);
+	const destBar = (planBar: number) => order.start_bar + planBar;
 	return {
 		...blank,
 		start_ms: barToMs(0),
 		end_ms: barToMs(toBar),
-		curves: _deckCurves(input, deck, 0, toBar, barToMs).map(_rounded),
+		curves: _deckCurves(input, deck, [[0, toBar]], barToMs, destBar).map(_rounded),
 		unavailable: null
 	};
 }
@@ -310,15 +407,21 @@ function _incomingDeck(
 	};
 	if (alignment === null || incoming === null)
 		return { ...blank, unavailable: _incomingUnavailable(input) };
+	const spans = _incomingSpans(order, deck);
+	const fromBar = spans[0][0];
+	const toBar = spans[spans.length - 1][1];
 	const barToMs = (bar: number) =>
-		msAtBar(incoming.downbeats, alignment.origin_bar + bar * alignment.ratio);
-	const fromBar = _launchBar(order, deck);
-	const toBar = _stopBar(order, deck);
+		msAtBar(
+			incoming.downbeats,
+			alignment.origin_bar + _playingBarsBefore(spans, bar) * alignment.ratio
+		);
+	const destBar = (planBar: number) =>
+		alignment.origin_bar + _playingBarsBefore(spans, planBar) * alignment.ratio;
 	return {
 		...blank,
 		start_ms: barToMs(fromBar),
 		end_ms: barToMs(toBar),
-		curves: _deckCurves(input, deck, fromBar, toBar, barToMs).map(_rounded),
+		curves: _deckCurves(input, deck, spans, barToMs, destBar).map(_rounded),
 		unavailable: null
 	};
 }
@@ -333,7 +436,9 @@ function _anchorMoved(
 	if (incoming?.playing === true && _hasTempoMoves(order)) return null;
 	const planned = _plannedBar(input);
 	if (planned === null) return null;
-	const live = alignment.origin_bar + _launchBar(order, order.incoming.deck) * alignment.ratio;
+	const spans = _incomingSpans(order, order.incoming.deck);
+	const launch = _launchBar(order, order.incoming.deck);
+	const live = alignment.origin_bar + _playingBarsBefore(spans, launch) * alignment.ratio;
 	const moved = live - planned;
 	if (Math.abs(moved) < ANCHOR_MOVED_BARS) return null;
 	const rounded = (bars: number) => Math.round(bars * 100) / 100;

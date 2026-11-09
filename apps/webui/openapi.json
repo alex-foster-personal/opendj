@@ -479,6 +479,20 @@
         "title": "AcousticProofOut",
         "type": "object"
       },
+      "ActiveLoopIn": {
+        "additionalProperties": false,
+        "properties": {
+          "active": {
+            "title": "Active",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "active"
+        ],
+        "title": "ActiveLoopIn",
+        "type": "object"
+      },
       "AdoptOut": {
         "properties": {
           "created": {
@@ -1196,6 +1210,24 @@
           "lane"
         ],
         "title": "AnalysisSourcePut",
+        "type": "object"
+      },
+      "AnchorOut": {
+        "properties": {
+          "at_s": {
+            "title": "At S",
+            "type": "number"
+          },
+          "bpm": {
+            "title": "Bpm",
+            "type": "number"
+          }
+        },
+        "required": [
+          "at_s",
+          "bpm"
+        ],
+        "title": "AnchorOut",
         "type": "object"
       },
       "AnlzCueOut": {
@@ -4245,6 +4277,33 @@
         "title": "BatchOut",
         "type": "object"
       },
+      "BeatJumpSizesOut": {
+        "description": "Per-deck beat jump size in beats (DECKUX-10470): 0.5|1|2|4|8|16|32|64.",
+        "properties": {
+          "deck_1": {
+            "default": 4,
+            "title": "Deck 1",
+            "type": "number"
+          },
+          "deck_2": {
+            "default": 4,
+            "title": "Deck 2",
+            "type": "number"
+          },
+          "deck_3": {
+            "default": 4,
+            "title": "Deck 3",
+            "type": "number"
+          },
+          "deck_4": {
+            "default": 4,
+            "title": "Deck 4",
+            "type": "number"
+          }
+        },
+        "title": "BeatJumpSizesOut",
+        "type": "object"
+      },
       "BeatgridFallbackOut": {
         "properties": {
           "anlz_available": {
@@ -4701,14 +4760,26 @@
                 "browse_encoder": "#/components/schemas/BrowseEncoder",
                 "browse_load": "#/components/schemas/BrowseLoad",
                 "channel_cue": "#/components/schemas/ChannelCue",
+                "controller_pad": "#/components/schemas/ControllerPad",
+                "controller_pad_mode": "#/components/schemas/ControllerPadMode",
                 "deck_auto_loop_toggle": "#/components/schemas/DeckAutoLoopToggle",
                 "deck_beat_loop": "#/components/schemas/DeckBeatLoop",
                 "deck_cue": "#/components/schemas/DeckCue",
                 "deck_hot_cue": "#/components/schemas/DeckHotCue",
+                "deck_jog": "#/components/schemas/DeckJog",
+                "deck_key_nudge": "#/components/schemas/DeckKeyNudge",
+                "deck_key_sync_toggle": "#/components/schemas/DeckKeySyncToggle",
                 "deck_loop_exit": "#/components/schemas/DeckLoopExit",
+                "deck_loop_scale": "#/components/schemas/DeckLoopScale",
+                "deck_manual_loop_cycle": "#/components/schemas/DeckManualLoopCycle",
                 "deck_pitch": "#/components/schemas/DeckPitch",
                 "deck_play_toggle": "#/components/schemas/DeckPlayToggle",
                 "deck_stem_eq_toggle": "#/components/schemas/DeckStemEqToggle",
+                "deck_sync_toggle": "#/components/schemas/DeckSyncToggle",
+                "deck_tempo_nudge": "#/components/schemas/DeckTempoNudge",
+                "headphone_level": "#/components/schemas/HeadphoneLevel",
+                "headphone_mix": "#/components/schemas/HeadphoneMix",
+                "master_cue": "#/components/schemas/MasterCue",
                 "mixer_channel": "#/components/schemas/MixerChannel",
                 "mixer_global": "#/components/schemas/MixerGlobal",
                 "shift_modifier": "#/components/schemas/ShiftModifier"
@@ -4735,7 +4806,34 @@
                 "$ref": "#/components/schemas/DeckLoopExit"
               },
               {
+                "$ref": "#/components/schemas/DeckSyncToggle"
+              },
+              {
+                "$ref": "#/components/schemas/DeckKeySyncToggle"
+              },
+              {
+                "$ref": "#/components/schemas/DeckManualLoopCycle"
+              },
+              {
+                "$ref": "#/components/schemas/DeckLoopScale"
+              },
+              {
+                "$ref": "#/components/schemas/DeckKeyNudge"
+              },
+              {
+                "$ref": "#/components/schemas/DeckTempoNudge"
+              },
+              {
+                "$ref": "#/components/schemas/DeckJog"
+              },
+              {
                 "$ref": "#/components/schemas/DeckStemEqToggle"
+              },
+              {
+                "$ref": "#/components/schemas/ControllerPadMode"
+              },
+              {
+                "$ref": "#/components/schemas/ControllerPad"
               },
               {
                 "$ref": "#/components/schemas/MixerChannel"
@@ -4745,6 +4843,15 @@
               },
               {
                 "$ref": "#/components/schemas/ChannelCue"
+              },
+              {
+                "$ref": "#/components/schemas/HeadphoneMix"
+              },
+              {
+                "$ref": "#/components/schemas/HeadphoneLevel"
+              },
+              {
+                "$ref": "#/components/schemas/MasterCue"
               },
               {
                 "$ref": "#/components/schemas/DeckPitch"
@@ -4761,6 +4868,11 @@
             ],
             "title": "Action"
           },
+          "ccButton": {
+            "default": false,
+            "title": "Ccbutton",
+            "type": "boolean"
+          },
           "invert": {
             "default": false,
             "title": "Invert",
@@ -4772,6 +4884,16 @@
           "relative": {
             "default": false,
             "title": "Relative",
+            "type": "boolean"
+          },
+          "relativeCentered": {
+            "default": false,
+            "title": "Relativecentered",
+            "type": "boolean"
+          },
+          "relativeUnit": {
+            "default": false,
+            "title": "Relativeunit",
             "type": "boolean"
           },
           "shift": {
@@ -8663,6 +8785,93 @@
         "title": "ContextRef",
         "type": "object"
       },
+      "ControllerPad": {
+        "additionalProperties": false,
+        "properties": {
+          "deck": {
+            "enum": [
+              1,
+              2,
+              3,
+              4
+            ],
+            "title": "Deck",
+            "type": "integer"
+          },
+          "pad": {
+            "enum": [
+              1,
+              2,
+              3,
+              4,
+              5,
+              6,
+              7,
+              8
+            ],
+            "title": "Pad",
+            "type": "integer"
+          },
+          "shifted": {
+            "title": "Shifted",
+            "type": "boolean"
+          },
+          "type": {
+            "const": "controller_pad",
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "type",
+          "deck",
+          "pad",
+          "shifted"
+        ],
+        "title": "ControllerPad",
+        "type": "object"
+      },
+      "ControllerPadMode": {
+        "additionalProperties": false,
+        "properties": {
+          "deck": {
+            "enum": [
+              1,
+              2,
+              3,
+              4
+            ],
+            "title": "Deck",
+            "type": "integer"
+          },
+          "mode": {
+            "enum": [
+              "hot_cue",
+              "bounce_loop",
+              "pitch_cue",
+              "instant_fx",
+              "auto_loop",
+              "sampler",
+              "saved_loops",
+              "neural_mix"
+            ],
+            "title": "Mode",
+            "type": "string"
+          },
+          "type": {
+            "const": "controller_pad_mode",
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "type",
+          "deck",
+          "mode"
+        ],
+        "title": "ControllerPadMode",
+        "type": "object"
+      },
       "CopilotTrackOut": {
         "properties": {
           "artist": {
@@ -9511,6 +9720,93 @@
         "title": "DeckHotCue",
         "type": "object"
       },
+      "DeckJog": {
+        "additionalProperties": false,
+        "properties": {
+          "deck": {
+            "enum": [
+              1,
+              2,
+              3,
+              4
+            ],
+            "title": "Deck",
+            "type": "integer"
+          },
+          "type": {
+            "const": "deck_jog",
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "type",
+          "deck"
+        ],
+        "title": "DeckJog",
+        "type": "object"
+      },
+      "DeckKeyNudge": {
+        "additionalProperties": false,
+        "properties": {
+          "deck": {
+            "enum": [
+              1,
+              2,
+              3,
+              4
+            ],
+            "title": "Deck",
+            "type": "integer"
+          },
+          "semitones": {
+            "enum": [
+              -1,
+              1
+            ],
+            "title": "Semitones",
+            "type": "integer"
+          },
+          "type": {
+            "const": "deck_key_nudge",
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "type",
+          "deck",
+          "semitones"
+        ],
+        "title": "DeckKeyNudge",
+        "type": "object"
+      },
+      "DeckKeySyncToggle": {
+        "additionalProperties": false,
+        "properties": {
+          "deck": {
+            "enum": [
+              1,
+              2,
+              3,
+              4
+            ],
+            "title": "Deck",
+            "type": "integer"
+          },
+          "type": {
+            "const": "deck_key_sync_toggle",
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "type",
+          "deck"
+        ],
+        "title": "DeckKeySyncToggle",
+        "type": "object"
+      },
       "DeckLaneOut": {
         "properties": {
           "beats": {
@@ -9613,6 +9909,66 @@
           "deck"
         ],
         "title": "DeckLoopExit",
+        "type": "object"
+      },
+      "DeckLoopScale": {
+        "additionalProperties": false,
+        "properties": {
+          "deck": {
+            "enum": [
+              1,
+              2,
+              3,
+              4
+            ],
+            "title": "Deck",
+            "type": "integer"
+          },
+          "factor": {
+            "enum": [
+              0.5,
+              2
+            ],
+            "title": "Factor"
+          },
+          "type": {
+            "const": "deck_loop_scale",
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "type",
+          "deck",
+          "factor"
+        ],
+        "title": "DeckLoopScale",
+        "type": "object"
+      },
+      "DeckManualLoopCycle": {
+        "additionalProperties": false,
+        "properties": {
+          "deck": {
+            "enum": [
+              1,
+              2,
+              3,
+              4
+            ],
+            "title": "Deck",
+            "type": "integer"
+          },
+          "type": {
+            "const": "deck_manual_loop_cycle",
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "type",
+          "deck"
+        ],
+        "title": "DeckManualLoopCycle",
         "type": "object"
       },
       "DeckMarkOut": {
@@ -9887,6 +10243,67 @@
           "deck"
         ],
         "title": "DeckStemEqToggle",
+        "type": "object"
+      },
+      "DeckSyncToggle": {
+        "additionalProperties": false,
+        "properties": {
+          "deck": {
+            "enum": [
+              1,
+              2,
+              3,
+              4
+            ],
+            "title": "Deck",
+            "type": "integer"
+          },
+          "type": {
+            "const": "deck_sync_toggle",
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "type",
+          "deck"
+        ],
+        "title": "DeckSyncToggle",
+        "type": "object"
+      },
+      "DeckTempoNudge": {
+        "additionalProperties": false,
+        "properties": {
+          "deck": {
+            "enum": [
+              1,
+              2,
+              3,
+              4
+            ],
+            "title": "Deck",
+            "type": "integer"
+          },
+          "direction": {
+            "enum": [
+              -1,
+              1
+            ],
+            "title": "Direction",
+            "type": "integer"
+          },
+          "type": {
+            "const": "deck_tempo_nudge",
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "type",
+          "deck",
+          "direction"
+        ],
+        "title": "DeckTempoNudge",
         "type": "object"
       },
       "DeleteOut": {
@@ -12653,6 +13070,40 @@
         "title": "GrantOut",
         "type": "object"
       },
+      "GridEditAnchorIn": {
+        "additionalProperties": false,
+        "properties": {
+          "at_s": {
+            "title": "At S",
+            "type": "number"
+          },
+          "bpm": {
+            "title": "Bpm",
+            "type": "number"
+          },
+          "source": {
+            "anyOf": [
+              {
+                "enum": [
+                  "rekordbox",
+                  "own"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source"
+          }
+        },
+        "required": [
+          "at_s",
+          "bpm"
+        ],
+        "title": "GridEditAnchorIn",
+        "type": "object"
+      },
       "GridEditNudgeIn": {
         "additionalProperties": false,
         "properties": {
@@ -12691,6 +13142,13 @@
       },
       "GridEditOut": {
         "properties": {
+          "anchors": {
+            "items": {
+              "$ref": "#/components/schemas/AnchorOut"
+            },
+            "title": "Anchors",
+            "type": "array"
+          },
           "beat_shift": {
             "title": "Beat Shift",
             "type": "integer"
@@ -13182,6 +13640,36 @@
         "title": "HeadphoneCalibrationProbeOut",
         "type": "object"
       },
+      "HeadphoneLevel": {
+        "additionalProperties": false,
+        "properties": {
+          "type": {
+            "const": "headphone_level",
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "type"
+        ],
+        "title": "HeadphoneLevel",
+        "type": "object"
+      },
+      "HeadphoneMix": {
+        "additionalProperties": false,
+        "properties": {
+          "type": {
+            "const": "headphone_mix",
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "type"
+        ],
+        "title": "HeadphoneMix",
+        "type": "object"
+      },
       "HeadphoneOutputDeviceOut": {
         "properties": {
           "id": {
@@ -13242,6 +13730,11 @@
           "alignment_mode": {
             "title": "Alignment Mode",
             "type": "string"
+          },
+          "booth_level": {
+            "default": 0.5,
+            "title": "Booth Level",
+            "type": "number"
           },
           "calibration": {
             "$ref": "#/components/schemas/HeadphoneCalibrationOut"
@@ -13339,6 +13832,17 @@
               }
             ],
             "title": "Reporting Client Id"
+          },
+          "selected_booth_output_device_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Selected Booth Output Device Id"
           },
           "selected_input_device_id": {
             "anyOf": [
@@ -13783,6 +14287,45 @@
           "can_redo"
         ],
         "title": "HistoryApplyOut",
+        "type": "object"
+      },
+      "HistoryDayDeleteOut": {
+        "properties": {
+          "date": {
+            "description": "YYYY-MM-DD as requested",
+            "title": "Date",
+            "type": "string"
+          },
+          "end": {
+            "description": "Canonical UTC bound used (exclusive)",
+            "title": "End",
+            "type": "string"
+          },
+          "removed": {
+            "title": "Removed",
+            "type": "integer"
+          },
+          "stable_ids": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Stable Ids",
+            "type": "array"
+          },
+          "start": {
+            "description": "Canonical UTC bound used (inclusive)",
+            "title": "Start",
+            "type": "string"
+          }
+        },
+        "required": [
+          "date",
+          "start",
+          "end",
+          "removed",
+          "stable_ids"
+        ],
+        "title": "HistoryDayDeleteOut",
         "type": "object"
       },
       "HistoryEntryOut": {
@@ -15771,6 +16314,49 @@
         "title": "LibraryReadinessOut",
         "type": "object"
       },
+      "LibraryRelatedCriteriaOut": {
+        "additionalProperties": false,
+        "description": "Related Tracks criteria: BPM range percent plus six on/off rules.",
+        "properties": {
+          "artist": {
+            "default": false,
+            "title": "Artist",
+            "type": "boolean"
+          },
+          "bpm_percent": {
+            "default": 6,
+            "title": "Bpm Percent",
+            "type": "integer"
+          },
+          "color": {
+            "default": false,
+            "title": "Color",
+            "type": "boolean"
+          },
+          "genre": {
+            "default": true,
+            "title": "Genre",
+            "type": "boolean"
+          },
+          "key": {
+            "default": true,
+            "title": "Key",
+            "type": "boolean"
+          },
+          "mytag": {
+            "default": false,
+            "title": "Mytag",
+            "type": "boolean"
+          },
+          "rating": {
+            "default": false,
+            "title": "Rating",
+            "type": "boolean"
+          }
+        },
+        "title": "LibraryRelatedCriteriaOut",
+        "type": "object"
+      },
       "LibraryTabOut": {
         "additionalProperties": false,
         "description": "One tab: its list (null = blank list), per-tab search and sort.",
@@ -15933,6 +16519,91 @@
           }
         },
         "title": "LifecycleQuitOut",
+        "type": "object"
+      },
+      "LightingDeckStatus": {
+        "properties": {
+          "bpm": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Bpm"
+          },
+          "deck": {
+            "title": "Deck",
+            "type": "string"
+          },
+          "playing": {
+            "default": false,
+            "title": "Playing",
+            "type": "boolean"
+          },
+          "section": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Section"
+          }
+        },
+        "required": [
+          "deck"
+        ],
+        "title": "LightingDeckStatus",
+        "type": "object"
+      },
+      "LightingStatus": {
+        "properties": {
+          "contract": {
+            "default": "lighting/1",
+            "title": "Contract",
+            "type": "string"
+          },
+          "decks": {
+            "items": {
+              "$ref": "#/components/schemas/LightingDeckStatus"
+            },
+            "title": "Decks",
+            "type": "array"
+          },
+          "enabled": {
+            "default": true,
+            "title": "Enabled",
+            "type": "boolean"
+          },
+          "feed_connected": {
+            "default": false,
+            "title": "Feed Connected",
+            "type": "boolean"
+          },
+          "flag": {
+            "default": "lighting.output",
+            "title": "Flag",
+            "type": "string"
+          },
+          "subscribers": {
+            "default": 0,
+            "title": "Subscribers",
+            "type": "integer"
+          },
+          "weights": {
+            "additionalProperties": {
+              "type": "number"
+            },
+            "title": "Weights",
+            "type": "object"
+          }
+        },
+        "title": "LightingStatus",
         "type": "object"
       },
       "LineageOut": {
@@ -17100,6 +17771,30 @@
         "title": "MachineOverview",
         "type": "object"
       },
+      "MasterCue": {
+        "additionalProperties": false,
+        "properties": {
+          "mode": {
+            "enum": [
+              "hold",
+              "latch"
+            ],
+            "title": "Mode",
+            "type": "string"
+          },
+          "type": {
+            "const": "master_cue",
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "type",
+          "mode"
+        ],
+        "title": "MasterCue",
+        "type": "object"
+      },
       "MatchRequest": {
         "properties": {
           "out_dir": {
@@ -17724,6 +18419,123 @@
         "title": "MembershipTransferOut",
         "type": "object"
       },
+      "MemoryCueOut": {
+        "description": "One memory cue or memory loop in the COMPONENT-MAP 2.3 cue shape.",
+        "properties": {
+          "active_loop": {
+            "title": "Active Loop",
+            "type": "boolean"
+          },
+          "beat_loop_size": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Beat Loop Size"
+          },
+          "color_table_index": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Color Table Index"
+          },
+          "comment": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Comment"
+          },
+          "in_ms": {
+            "title": "In Ms",
+            "type": "integer"
+          },
+          "is_loop": {
+            "title": "Is Loop",
+            "type": "boolean"
+          },
+          "kind": {
+            "enum": [
+              "memory",
+              "loop"
+            ],
+            "title": "Kind",
+            "type": "string"
+          },
+          "out_ms": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Out Ms"
+          },
+          "slot": {
+            "title": "Slot",
+            "type": "null"
+          }
+        },
+        "required": [
+          "kind",
+          "slot",
+          "in_ms",
+          "out_ms",
+          "is_loop",
+          "active_loop",
+          "beat_loop_size",
+          "color_table_index",
+          "comment"
+        ],
+        "title": "MemoryCueOut",
+        "type": "object"
+      },
+      "MemoryCuesOut": {
+        "properties": {
+          "active": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/MemoryCueOut"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "cues": {
+            "items": {
+              "$ref": "#/components/schemas/MemoryCueOut"
+            },
+            "title": "Cues",
+            "type": "array"
+          },
+          "revision": {
+            "title": "Revision",
+            "type": "string"
+          }
+        },
+        "required": [
+          "cues",
+          "revision"
+        ],
+        "title": "MemoryCuesOut",
+        "type": "object"
+      },
       "MetadataPlanRequest": {
         "properties": {
           "include_cues": {
@@ -17978,7 +18790,8 @@
             "enum": [
               "trim",
               "eq",
-              "fader"
+              "fader",
+              "filter"
             ],
             "title": "Target",
             "type": "string"
@@ -18838,6 +19651,16 @@
             },
             "title": "Machines",
             "type": "array"
+          },
+          "sync": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/SyncHealthOut"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "total_tracks": {
             "title": "Total Tracks",
@@ -24570,6 +25393,24 @@
         "title": "RefusalOut",
         "type": "object"
       },
+      "RejectedFileOut": {
+        "properties": {
+          "file": {
+            "title": "File",
+            "type": "string"
+          },
+          "reason": {
+            "title": "Reason",
+            "type": "string"
+          }
+        },
+        "required": [
+          "file",
+          "reason"
+        ],
+        "title": "RejectedFileOut",
+        "type": "object"
+      },
       "RejectedRowModel": {
         "description": "One offered row the hub refused, and why (CLOUDSYNC-31).",
         "properties": {
@@ -24672,6 +25513,725 @@
           "rekordbox_running"
         ],
         "title": "RekordboxDetectionOut",
+        "type": "object"
+      },
+      "RelatedHit": {
+        "properties": {
+          "analysis_hints": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/TrackAnalysisHintsOut"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "artist": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Artist"
+          },
+          "artwork_available": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Artwork Available"
+          },
+          "artwork_status": {
+            "enum": [
+              "ok",
+              "no_image_path",
+              "unresolved",
+              "file_missing"
+            ],
+            "title": "Artwork Status",
+            "type": "string"
+          },
+          "bpm": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Bpm"
+          },
+          "bpm_alternatives": {
+            "items": {
+              "$ref": "#/components/schemas/BpmAlternative"
+            },
+            "title": "Bpm Alternatives",
+            "type": "array"
+          },
+          "bpm_confidence": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Bpm Confidence"
+          },
+          "bpm_confidence_error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Bpm Confidence Error"
+          },
+          "bpm_disputed": {
+            "default": false,
+            "title": "Bpm Disputed",
+            "type": "boolean"
+          },
+          "bpm_method": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Bpm Method"
+          },
+          "bpm_pick": {
+            "anyOf": [
+              {
+                "enum": [
+                  "own",
+                  "mik"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Bpm Pick"
+          },
+          "bpm_reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Bpm Reason"
+          },
+          "bpm_source": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Bpm Source"
+          },
+          "bpm_status": {
+            "enum": [
+              "ok",
+              "failed",
+              "missing",
+              "available-not-selected",
+              "too_short",
+              "no_pulse"
+            ],
+            "title": "Bpm Status",
+            "type": "string"
+          },
+          "cloud_transfer": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/CloudTransferOut"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "comments": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Comments"
+          },
+          "created_by": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Created By"
+          },
+          "duration_ms": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Duration Ms"
+          },
+          "edit_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Edit Id"
+          },
+          "edit_label": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Edit Label"
+          },
+          "energy": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Energy"
+          },
+          "energy_reason": {
+            "title": "Energy Reason",
+            "type": "string"
+          },
+          "energy_source": {
+            "anyOf": [
+              {
+                "const": "mik",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Energy Source"
+          },
+          "etag": {
+            "title": "Etag",
+            "type": "string"
+          },
+          "file_availability": {
+            "enum": [
+              "present",
+              "absent",
+              "AVAILABILITY_PENDING",
+              "streaming",
+              "awaiting_volume"
+            ],
+            "title": "File Availability",
+            "type": "string"
+          },
+          "file_exists": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "File Exists"
+          },
+          "file_path": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "File Path"
+          },
+          "fx": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Fx"
+          },
+          "genre": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Genre"
+          },
+          "genre_guess": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/GenreGuessOut"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "genre_reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Genre Reason"
+          },
+          "genre_source": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Genre Source"
+          },
+          "grid_quality": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/GridQualityRowOut"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "has_rb_mapping": {
+            "title": "Has Rb Mapping",
+            "type": "boolean"
+          },
+          "has_remote_copy": {
+            "title": "Has Remote Copy",
+            "type": "boolean"
+          },
+          "in_ms": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "In Ms"
+          },
+          "is_edit": {
+            "default": false,
+            "title": "Is Edit",
+            "type": "boolean"
+          },
+          "is_radio_edit": {
+            "default": false,
+            "title": "Is Radio Edit",
+            "type": "boolean"
+          },
+          "is_remix": {
+            "default": false,
+            "title": "Is Remix",
+            "type": "boolean"
+          },
+          "is_remote": {
+            "default": false,
+            "title": "Is Remote",
+            "type": "boolean"
+          },
+          "is_streaming": {
+            "title": "Is Streaming",
+            "type": "boolean"
+          },
+          "item_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Item Id"
+          },
+          "key": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Key"
+          },
+          "key_guess": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Key Guess"
+          },
+          "key_guess_confidence": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Key Guess Confidence"
+          },
+          "key_reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Key Reason"
+          },
+          "key_source": {
+            "anyOf": [
+              {
+                "enum": [
+                  "own",
+                  "rekordbox",
+                  "file_tag",
+                  "mik_tag",
+                  "guess"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Key Source"
+          },
+          "key_status": {
+            "enum": [
+              "ok",
+              "failed",
+              "missing",
+              "available-not-selected"
+            ],
+            "title": "Key Status",
+            "type": "string"
+          },
+          "loudness_reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Loudness Reason"
+          },
+          "loudness_status": {
+            "enum": [
+              "ok",
+              "failed",
+              "missing",
+              "available-not-selected"
+            ],
+            "title": "Loudness Status",
+            "type": "string"
+          },
+          "lyrics": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/LyricsRowSummaryOut"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "matched": {
+            "items": {
+              "enum": [
+                "bpm",
+                "key",
+                "genre",
+                "color",
+                "rating",
+                "mytag",
+                "artist"
+              ],
+              "type": "string"
+            },
+            "title": "Matched",
+            "type": "array"
+          },
+          "offload": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/OffloadOut"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "out_ms": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Out Ms"
+          },
+          "play_count": {
+            "default": 0,
+            "title": "Play Count",
+            "type": "integer"
+          },
+          "preview_b64": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Preview B64"
+          },
+          "preview_max": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Preview Max"
+          },
+          "quality": {
+            "$ref": "#/components/schemas/QualityOut"
+          },
+          "rating": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Rating"
+          },
+          "score": {
+            "title": "Score",
+            "type": "integer"
+          },
+          "source_flags": {
+            "items": {
+              "$ref": "#/components/schemas/SourceFlagOut"
+            },
+            "title": "Source Flags",
+            "type": "array"
+          },
+          "spotify_pending": {
+            "default": false,
+            "title": "Spotify Pending",
+            "type": "boolean"
+          },
+          "stable_id": {
+            "title": "Stable Id",
+            "type": "string"
+          },
+          "stems": {
+            "additionalProperties": true,
+            "title": "Stems",
+            "type": "object"
+          },
+          "streaming_provider": {
+            "anyOf": [
+              {
+                "enum": [
+                  "spotify",
+                  "tidal",
+                  "soundcloud",
+                  "unknown"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Streaming Provider"
+          },
+          "tempo_curve": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/TempoCurveRowOut"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "title": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Title"
+          },
+          "valid": {
+            "default": true,
+            "title": "Valid",
+            "type": "boolean"
+          },
+          "vocals": {
+            "additionalProperties": true,
+            "title": "Vocals",
+            "type": "object"
+          }
+        },
+        "required": [
+          "stable_id",
+          "title",
+          "artist",
+          "key",
+          "bpm",
+          "rating",
+          "duration_ms",
+          "genre",
+          "comments",
+          "etag",
+          "preview_b64",
+          "preview_max",
+          "file_availability",
+          "file_exists",
+          "is_streaming",
+          "has_remote_copy",
+          "quality",
+          "vocals",
+          "stems",
+          "has_rb_mapping",
+          "artwork_available",
+          "artwork_status",
+          "energy",
+          "energy_source",
+          "energy_reason",
+          "key_status",
+          "key_reason",
+          "bpm_status",
+          "loudness_status",
+          "loudness_reason",
+          "score",
+          "matched"
+        ],
+        "title": "RelatedHit",
+        "type": "object"
+      },
+      "RelatedResults": {
+        "properties": {
+          "criteria": {
+            "$ref": "#/components/schemas/LibraryRelatedCriteriaOut"
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/RelatedHit"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "seed_stable_id": {
+            "title": "Seed Stable Id",
+            "type": "string"
+          },
+          "total": {
+            "title": "Total",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "seed_stable_id",
+          "criteria",
+          "items",
+          "total"
+        ],
+        "title": "RelatedResults",
         "type": "object"
       },
       "RelocateApplyIn": {
@@ -29449,6 +31009,58 @@
         "title": "StemsSetupOut",
         "type": "object"
       },
+      "StripCoverageOut": {
+        "description": "Answer of ``GET /library/strip-coverage`` (#9422, epic #9377 strip_coverage_pct).",
+        "properties": {
+          "covered": {
+            "description": "Present tracks whose listing row has a Preview strip",
+            "title": "Covered",
+            "type": "integer"
+          },
+          "mapped_missing": {
+            "description": "Rekordbox-mapped present tracks with no ANLZ strip and no cached strip; the drain never fills these",
+            "title": "Mapped Missing",
+            "type": "integer"
+          },
+          "missing": {
+            "description": "present minus covered",
+            "title": "Missing",
+            "type": "integer"
+          },
+          "present": {
+            "description": "Present tracks (materialised local audio): THE denominator",
+            "title": "Present",
+            "type": "integer"
+          },
+          "strip_coverage": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "covered / present, rounded to 4 places; null when present == 0",
+            "title": "Strip Coverage"
+          },
+          "unmapped_missing": {
+            "description": "Missing strips the ahead drain fills",
+            "title": "Unmapped Missing",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "present",
+          "covered",
+          "missing",
+          "unmapped_missing",
+          "mapped_missing",
+          "strip_coverage"
+        ],
+        "title": "StripCoverageOut",
+        "type": "object"
+      },
       "SuggestNextIn": {
         "properties": {
           "explain": {
@@ -29767,6 +31379,125 @@
         "title": "SyncErrorResponse",
         "type": "object"
       },
+      "SyncHealthOut": {
+        "description": "Field-for-field the shape :meth:`FleetHealth.to_wire` prints.\n\n``GET /api/v1/cloudsync/overview``'s ``sync`` block is this readout,\npinned by a test: agent-native parity is one computation with two\nrenderers, not two renderers that happen to agree today.",
+        "properties": {
+          "digest_mismatch": {
+            "title": "Digest Mismatch",
+            "type": "boolean"
+          },
+          "full_offer_pending": {
+            "title": "Full Offer Pending",
+            "type": "boolean"
+          },
+          "last_run": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/apps__webui__server__routes__cloudsync_overview__SyncRunOut"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "local_seq": {
+            "title": "Local Seq",
+            "type": "integer"
+          },
+          "peers": {
+            "items": {
+              "$ref": "#/components/schemas/SyncPeerOut"
+            },
+            "title": "Peers",
+            "type": "array"
+          },
+          "pending_push_rows": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Pending Push Rows"
+          },
+          "quarantined_rows": {
+            "default": 0,
+            "title": "Quarantined Rows",
+            "type": "integer"
+          },
+          "verdict": {
+            "title": "Verdict",
+            "type": "string"
+          }
+        },
+        "required": [
+          "verdict",
+          "local_seq",
+          "full_offer_pending",
+          "digest_mismatch",
+          "peers"
+        ],
+        "title": "SyncHealthOut",
+        "type": "object"
+      },
+      "SyncPeerOut": {
+        "description": "This machine's watermark against one peer, and what it still owes.",
+        "properties": {
+          "full_offer_pending": {
+            "title": "Full Offer Pending",
+            "type": "boolean"
+          },
+          "last_pull_seq": {
+            "title": "Last Pull Seq",
+            "type": "integer"
+          },
+          "last_push_seq": {
+            "title": "Last Push Seq",
+            "type": "integer"
+          },
+          "last_sync_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Sync At"
+          },
+          "peer": {
+            "title": "Peer",
+            "type": "string"
+          },
+          "peer_generation": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Peer Generation"
+          },
+          "pending_push_rows": {
+            "title": "Pending Push Rows",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "peer",
+          "last_push_seq",
+          "last_pull_seq",
+          "pending_push_rows",
+          "full_offer_pending"
+        ],
+        "title": "SyncPeerOut",
+        "type": "object"
+      },
       "SyncPolicyOut": {
         "properties": {
           "asset_kind": {
@@ -29978,92 +31709,6 @@
           "hub_url"
         ],
         "title": "SyncRunIn",
-        "type": "object"
-      },
-      "SyncRunOut": {
-        "description": "What one ``run_sync`` observed. Every count is observed, none inferred.\n\n``digest_inconclusive`` True is the CLI's exit code 4: rows moved but the\npost-sync digest compare excluded rows, so agreement was NOT verified.\n``hub_quarantined`` None means the hub did not report it (unknown, not 0).",
-        "properties": {
-          "accepted": {
-            "title": "Accepted",
-            "type": "integer"
-          },
-          "applied": {
-            "title": "Applied",
-            "type": "integer"
-          },
-          "digest_inconclusive": {
-            "title": "Digest Inconclusive",
-            "type": "boolean"
-          },
-          "hub_machine_id": {
-            "title": "Hub Machine Id",
-            "type": "string"
-          },
-          "hub_quarantined": {
-            "anyOf": [
-              {
-                "type": "integer"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Hub Quarantined"
-          },
-          "hub_restore_detected": {
-            "title": "Hub Restore Detected",
-            "type": "boolean"
-          },
-          "hub_seq": {
-            "title": "Hub Seq",
-            "type": "integer"
-          },
-          "machine_id": {
-            "title": "Machine Id",
-            "type": "string"
-          },
-          "pulled": {
-            "title": "Pulled",
-            "type": "integer"
-          },
-          "pushed": {
-            "title": "Pushed",
-            "type": "integer"
-          },
-          "quarantined_incoming": {
-            "title": "Quarantined Incoming",
-            "type": "integer"
-          },
-          "quarantined_rows": {
-            "title": "Quarantined Rows",
-            "type": "integer"
-          },
-          "rejected": {
-            "title": "Rejected",
-            "type": "integer"
-          },
-          "rounds": {
-            "title": "Rounds",
-            "type": "integer"
-          }
-        },
-        "required": [
-          "machine_id",
-          "hub_machine_id",
-          "pushed",
-          "accepted",
-          "rejected",
-          "pulled",
-          "applied",
-          "hub_seq",
-          "rounds",
-          "hub_restore_detected",
-          "quarantined_rows",
-          "quarantined_incoming",
-          "hub_quarantined",
-          "digest_inconclusive"
-        ],
-        "title": "SyncRunOut",
         "type": "object"
       },
       "SyncSnapshotIn": {
@@ -33876,6 +35521,30 @@
       },
       "TrackPlaysOut": {
         "properties": {
+          "deleted": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "DELETE only: true when the play row was removed.",
+            "title": "Deleted"
+          },
+          "last_played_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Later of the imported Last Played and the latest logged play (library column).",
+            "title": "Last Played At"
+          },
           "opendj_last_played_at": {
             "anyOf": [
               {
@@ -33892,7 +35561,7 @@
             "type": "integer"
           },
           "play_count": {
-            "description": "rekordbox_play_count + opendj_play_count",
+            "description": "rekordbox_play_count + opendj_play_count + serato_play_count",
             "title": "Play Count",
             "type": "integer"
           },
@@ -33912,6 +35581,21 @@
             "title": "Rekordbox Play Count",
             "type": "integer"
           },
+          "serato_last_played_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Serato Last Played At"
+          },
+          "serato_play_count": {
+            "title": "Serato Play Count",
+            "type": "integer"
+          },
           "stable_id": {
             "title": "Stable Id",
             "type": "string"
@@ -33922,7 +35606,9 @@
           "play_count",
           "rekordbox_play_count",
           "opendj_play_count",
-          "opendj_last_played_at"
+          "opendj_last_played_at",
+          "serato_play_count",
+          "serato_last_played_at"
         ],
         "title": "TrackPlaysOut",
         "type": "object"
@@ -34714,6 +36400,114 @@
         "title": "TracksPage",
         "type": "object"
       },
+      "TraktorHistoryImportIn": {
+        "additionalProperties": false,
+        "properties": {
+          "dry_run": {
+            "description": "True rolls the import back after counting.",
+            "title": "Dry Run",
+            "type": "boolean"
+          },
+          "source": {
+            "description": "Absolute path of the Traktor folder holding History/.",
+            "minLength": 1,
+            "title": "Source",
+            "type": "string"
+          },
+          "zone": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "IANA zone of the history times; null = this machine's.",
+            "title": "Zone"
+          }
+        },
+        "required": [
+          "source",
+          "dry_run"
+        ],
+        "title": "TraktorHistoryImportIn",
+        "type": "object"
+      },
+      "TraktorHistoryImportOut": {
+        "properties": {
+          "dry_run": {
+            "title": "Dry Run",
+            "type": "boolean"
+          },
+          "entries_not_public": {
+            "title": "Entries Not Public",
+            "type": "integer"
+          },
+          "entries_seen": {
+            "title": "Entries Seen",
+            "type": "integer"
+          },
+          "entries_unreadable": {
+            "title": "Entries Unreadable",
+            "type": "integer"
+          },
+          "files_read": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Files Read",
+            "type": "array"
+          },
+          "files_rejected": {
+            "items": {
+              "$ref": "#/components/schemas/RejectedFileOut"
+            },
+            "title": "Files Rejected",
+            "type": "array"
+          },
+          "plays_added": {
+            "title": "Plays Added",
+            "type": "integer"
+          },
+          "plays_already_logged": {
+            "title": "Plays Already Logged",
+            "type": "integer"
+          },
+          "plays_matched": {
+            "title": "Plays Matched",
+            "type": "integer"
+          },
+          "plays_unmatched": {
+            "title": "Plays Unmatched",
+            "type": "integer"
+          },
+          "source": {
+            "title": "Source",
+            "type": "string"
+          },
+          "zone": {
+            "title": "Zone",
+            "type": "string"
+          }
+        },
+        "required": [
+          "source",
+          "zone",
+          "dry_run",
+          "files_read",
+          "files_rejected",
+          "entries_seen",
+          "entries_not_public",
+          "entries_unreadable",
+          "plays_matched",
+          "plays_unmatched",
+          "plays_added",
+          "plays_already_logged"
+        ],
+        "title": "TraktorHistoryImportOut",
+        "type": "object"
+      },
       "TransitionDecideIn": {
         "additionalProperties": false,
         "properties": {
@@ -35502,7 +37296,7 @@
             "$ref": "#/components/schemas/AutoGainPrefsOut"
           },
           "auto_play_enabled": {
-            "default": true,
+            "default": false,
             "title": "Auto Play Enabled",
             "type": "boolean"
           },
@@ -35528,6 +37322,9 @@
             "default": false,
             "title": "Available Offline Filter",
             "type": "boolean"
+          },
+          "beat_jump_sizes": {
+            "$ref": "#/components/schemas/BeatJumpSizesOut"
           },
           "beat_sync_max": {
             "default": true,
@@ -35562,6 +37359,11 @@
           "deck_hover_link": {
             "default": true,
             "title": "Deck Hover Link",
+            "type": "boolean"
+          },
+          "deck_needle_lock": {
+            "default": false,
+            "title": "Deck Needle Lock",
             "type": "boolean"
           },
           "deck_right_mirror": {
@@ -35666,6 +37468,9 @@
             },
             "title": "Library Optional Columns",
             "type": "array"
+          },
+          "library_related_criteria": {
+            "$ref": "#/components/schemas/LibraryRelatedCriteriaOut"
           },
           "library_sidebar_art": {
             "default": true,
@@ -35943,6 +37748,16 @@
             ],
             "title": "Available Offline Filter"
           },
+          "beat_jump_sizes": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/BeatJumpSizesOut"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "beat_sync_max": {
             "anyOf": [
               {
@@ -36015,6 +37830,17 @@
               }
             ],
             "title": "Deck Hover Link"
+          },
+          "deck_needle_lock": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Deck Needle Lock"
           },
           "deck_right_mirror": {
             "anyOf": [
@@ -36194,6 +38020,16 @@
               }
             ],
             "title": "Library Optional Columns"
+          },
+          "library_related_criteria": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/LibraryRelatedCriteriaOut"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "library_sidebar_art": {
             "anyOf": [
@@ -39350,6 +41186,226 @@
           "cloud_sync_off_confirmed"
         ],
         "title": "ApplyIn",
+        "type": "object"
+      },
+      "apps__webui__server__routes__cloudsync_ops__SyncRunOut": {
+        "description": "What one ``run_sync`` observed. Every count is observed, none inferred.\n\n``digest_inconclusive`` True is the CLI's exit code 4: rows moved but the\npost-sync digest compare excluded rows, so agreement was NOT verified.\n``hub_quarantined`` None means the hub did not report it (unknown, not 0).",
+        "properties": {
+          "accepted": {
+            "title": "Accepted",
+            "type": "integer"
+          },
+          "applied": {
+            "title": "Applied",
+            "type": "integer"
+          },
+          "digest_inconclusive": {
+            "title": "Digest Inconclusive",
+            "type": "boolean"
+          },
+          "hub_machine_id": {
+            "title": "Hub Machine Id",
+            "type": "string"
+          },
+          "hub_quarantined": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Hub Quarantined"
+          },
+          "hub_restore_detected": {
+            "title": "Hub Restore Detected",
+            "type": "boolean"
+          },
+          "hub_seq": {
+            "title": "Hub Seq",
+            "type": "integer"
+          },
+          "machine_id": {
+            "title": "Machine Id",
+            "type": "string"
+          },
+          "pulled": {
+            "title": "Pulled",
+            "type": "integer"
+          },
+          "pushed": {
+            "title": "Pushed",
+            "type": "integer"
+          },
+          "quarantined_incoming": {
+            "title": "Quarantined Incoming",
+            "type": "integer"
+          },
+          "quarantined_rows": {
+            "title": "Quarantined Rows",
+            "type": "integer"
+          },
+          "rejected": {
+            "title": "Rejected",
+            "type": "integer"
+          },
+          "rounds": {
+            "title": "Rounds",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "machine_id",
+          "hub_machine_id",
+          "pushed",
+          "accepted",
+          "rejected",
+          "pulled",
+          "applied",
+          "hub_seq",
+          "rounds",
+          "hub_restore_detected",
+          "quarantined_rows",
+          "quarantined_incoming",
+          "hub_quarantined",
+          "digest_inconclusive"
+        ],
+        "title": "SyncRunOut",
+        "type": "object"
+      },
+      "apps__webui__server__routes__cloudsync_overview__SyncRunOut": {
+        "description": "The last recorded sync attempt. A failure carries zeros AND an error.",
+        "properties": {
+          "accepted": {
+            "title": "Accepted",
+            "type": "integer"
+          },
+          "applied": {
+            "title": "Applied",
+            "type": "integer"
+          },
+          "consecutive_failures": {
+            "title": "Consecutive Failures",
+            "type": "integer"
+          },
+          "digest": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Digest"
+          },
+          "digest_inconclusive": {
+            "default": false,
+            "title": "Digest Inconclusive",
+            "type": "boolean"
+          },
+          "error_kind": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error Kind"
+          },
+          "error_message": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error Message"
+          },
+          "finished_at": {
+            "title": "Finished At",
+            "type": "string"
+          },
+          "hub_machine_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Hub Machine Id"
+          },
+          "hub_quarantined": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Hub Quarantined"
+          },
+          "hub_restore_detected": {
+            "title": "Hub Restore Detected",
+            "type": "boolean"
+          },
+          "hub_url": {
+            "title": "Hub Url",
+            "type": "string"
+          },
+          "outcome": {
+            "title": "Outcome",
+            "type": "string"
+          },
+          "pulled": {
+            "title": "Pulled",
+            "type": "integer"
+          },
+          "pushed": {
+            "title": "Pushed",
+            "type": "integer"
+          },
+          "quarantined_incoming": {
+            "default": 0,
+            "title": "Quarantined Incoming",
+            "type": "integer"
+          },
+          "rejected": {
+            "title": "Rejected",
+            "type": "integer"
+          },
+          "rounds": {
+            "title": "Rounds",
+            "type": "integer"
+          },
+          "started_at": {
+            "title": "Started At",
+            "type": "string"
+          }
+        },
+        "required": [
+          "started_at",
+          "finished_at",
+          "outcome",
+          "hub_url",
+          "consecutive_failures",
+          "pushed",
+          "accepted",
+          "rejected",
+          "pulled",
+          "applied",
+          "rounds",
+          "hub_restore_detected"
+        ],
+        "title": "SyncRunOut",
         "type": "object"
       },
       "apps__webui__server__routes__dedup_review__ApplyIn": {
@@ -44809,7 +46865,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/SyncRunOut"
+                  "$ref": "#/components/schemas/apps__webui__server__routes__cloudsync_ops__SyncRunOut"
                 }
               }
             },
@@ -44938,7 +46994,7 @@
     },
     "/api/v1/commands": {
       "post": {
-        "description": "Submit one declared order and wait for the real browser result.",
+        "description": "Submit one declared order and wait for the real browser result.\n\nAGENT-10047: a successful answer also carries ``timing`` with ``claim_ms``,\n``execute_ms`` and ``total_ms`` (milliseconds from monotonic stamps).",
         "operationId": "post_command_api_v1_commands_post",
         "requestBody": {
           "content": {
@@ -45052,6 +47108,26 @@
           }
         },
         "summary": "Next Command",
+        "tags": [
+          "agent-commands"
+        ]
+      }
+    },
+    "/api/v1/commands/timings": {
+      "get": {
+        "description": "AGENT-10047: count, p50 and p95 (ms) of the last ORDER_TIMINGS_MAX answered orders, overall and by_type.",
+        "operationId": "order_timings_api_v1_commands_timings_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Order Timings",
         "tags": [
           "agent-commands"
         ]
@@ -48615,6 +50691,67 @@
         ]
       }
     },
+    "/api/v1/history/{day}": {
+      "delete": {
+        "operationId": "delete_history_day_api_v1_history__day__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "day",
+            "required": true,
+            "schema": {
+              "format": "date",
+              "title": "Day",
+              "type": "string"
+            }
+          },
+          {
+            "description": "IANA timezone for the 06:00 day boundary; default is server local.",
+            "in": "query",
+            "name": "tz",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "IANA timezone for the 06:00 day boundary; default is server local.",
+              "title": "Tz"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HistoryDayDeleteOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Delete History Day",
+        "tags": [
+          "play-history"
+        ]
+      }
+    },
     "/api/v1/host-info": {
       "get": {
         "operationId": "host_info_api_v1_host_info_get",
@@ -49603,6 +51740,21 @@
         ]
       }
     },
+    "/api/v1/library/export.xml": {
+      "get": {
+        "description": "The whole live collection and playlist folder tree as one rekordbox XML file (LIBORG-10051).\n\nStreamed from one read snapshot, so a 10k-track library never sits in memory.\nBPM and key are the values the library shows (the selected analysis source).\n[if] the state DB is missing [then] 503 STATE_DB_MISSING\n[if] two sibling playlists share a name, or a parent is not a live folder [then] 409 LIBRARY_EXPORT_REFUSED",
+        "operationId": "get_library_export_xml",
+        "responses": {
+          "200": {
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Export Library Xml",
+        "tags": [
+          "library"
+        ]
+      }
+    },
     "/api/v1/library/preview-strips": {
       "post": {
         "description": "Re-read the Preview strip of up to 200 rows a listing already returned (NATIVE-21).\n\nSame reads as a listing row, never a decode. A long-lived page's rows\nkeep the strip they were listed with; this is how rows in view catch up\nwith strips written since, without a click or a full re-list.",
@@ -49779,6 +51931,28 @@
         ]
       }
     },
+    "/api/v1/library/strip-coverage": {
+      "get": {
+        "description": "Library-wide Preview strip coverage, read exactly as listing rows read strips.\n\nRequirements (mini-PRD):\n  [if] a present track's listing row has a strip [then] it counts in covered\n  [if] no track is present [then] strip_coverage is null, never 0 or 1",
+        "operationId": "get_library_strip_coverage",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StripCoverageOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Get Library Strip Coverage",
+        "tags": [
+          "library"
+        ]
+      }
+    },
     "/api/v1/library/wheel": {
       "get": {
         "operationId": "get_library_wheel_api_v1_library_wheel_get",
@@ -49910,6 +52084,90 @@
         "summary": "Request Shell Quit",
         "tags": [
           "lifecycle"
+        ]
+      }
+    },
+    "/api/v1/lighting/frames": {
+      "post": {
+        "operationId": "publish_lighting_frame_api_v1_lighting_frames_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": true,
+                "title": "Body",
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Publish Lighting Frame",
+        "tags": [
+          "lighting"
+        ]
+      }
+    },
+    "/api/v1/lighting/patch": {
+      "get": {
+        "operationId": "get_lighting_patch_api_v1_lighting_patch_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Get Lighting Patch",
+        "tags": [
+          "lighting"
+        ]
+      }
+    },
+    "/api/v1/lighting/status": {
+      "get": {
+        "operationId": "api_lighting_status_api_v1_lighting_status_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LightingStatus"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "409": {
+            "description": "lighting.output is off"
+          }
+        },
+        "summary": "Api Lighting Status",
+        "tags": [
+          "lighting"
         ]
       }
     },
@@ -50462,9 +52720,7 @@
           "content": {
             "application/json": {
               "schema": {
-                "additionalProperties": true,
-                "title": "Body",
-                "type": "object"
+                "$ref": "#/components/schemas/MidiMapDoc"
               }
             }
           },
@@ -51902,6 +54158,49 @@
         ]
       }
     },
+    "/api/v1/performance/headphones/booth-level": {
+      "post": {
+        "operationId": "post_headphone_booth_level_api_v1_performance_headphones_booth_level_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": true,
+                "title": "HeadphoneBoothLevelBody",
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HeadphoneStateOut"
+                }
+              }
+            },
+            "description": "Headphone state after setting independent BOOTH GAIN"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Post Headphone Booth Level",
+        "tags": [
+          "performance-headphones"
+        ]
+      }
+    },
     "/api/v1/performance/headphones/calibrate": {
       "post": {
         "description": "CUEOUT-14: run the mic calibration headlessly (no ear-cup pause). The\ncall holds until the run reaches applied (200) or failed (400 with the\npage's error); an abort resolves with the state at idle.",
@@ -52243,6 +54542,49 @@
           }
         },
         "summary": "Post Output Mode",
+        "tags": [
+          "performance-headphones"
+        ]
+      }
+    },
+    "/api/v1/performance/headphones/outputs/booth": {
+      "post": {
+        "operationId": "post_headphone_booth_select_api_v1_performance_headphones_outputs_booth_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": true,
+                "title": "HeadphoneBoothOutputBody",
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HeadphoneStateOut"
+                }
+              }
+            },
+            "description": "Headphone state after selecting or clearing the BOOTH sink"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Post Headphone Booth Select",
         "tags": [
           "performance-headphones"
         ]
@@ -53977,6 +56319,45 @@
         ]
       }
     },
+    "/api/v1/playlists/{playlist_id}/export.txt": {
+      "get": {
+        "description": "A playlist as a tab-separated UTF-8 track list (LIBORG-10314, rekordbox .txt export).\n\nHeader row ``#, Title, Artist, BPM, Key, Time``, then one row per track in playlist order.\nAgent parity: ``opendj playlist export <id> --format txt [--out FILE]``.",
+        "operationId": "export_playlist_text_api_v1_playlists__playlist_id__export_txt_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "playlist_id",
+            "required": true,
+            "schema": {
+              "title": "Playlist Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "text/plain": {}
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Export Playlist Text",
+        "tags": [
+          "playlists"
+        ]
+      }
+    },
     "/api/v1/playlists/{playlist_id}/items/{item_id}": {
       "delete": {
         "operationId": "delete_playlist_item",
@@ -55429,6 +57810,47 @@
         "summary": "Undelete Playlist",
         "tags": [
           "playlists-write"
+        ]
+      }
+    },
+    "/api/v1/plays/import/traktor-history": {
+      "post": {
+        "operationId": "import_traktor_history_api_v1_plays_import_traktor_history_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TraktorHistoryImportIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TraktorHistoryImportOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Import Traktor History",
+        "tags": [
+          "play-import"
         ]
       }
     },
@@ -63500,6 +65922,190 @@
         ]
       }
     },
+    "/api/v1/tracks/{stable_id}/grid-edit/anchors": {
+      "get": {
+        "operationId": "get_grid_anchors_api_v1_tracks__stable_id__grid_edit_anchors_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "stable_id",
+            "required": true,
+            "schema": {
+              "title": "Stable Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "source",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "enum": [
+                    "rekordbox",
+                    "own"
+                  ],
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Source"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GridEditOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Grid Anchors",
+        "tags": [
+          "grid-edit"
+        ]
+      },
+      "post": {
+        "description": "Change tempo at ``at_s``; an anchor within half a beat of an existing one replaces it.",
+        "operationId": "add_grid_anchor_api_v1_tracks__stable_id__grid_edit_anchors_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "stable_id",
+            "required": true,
+            "schema": {
+              "title": "Stable Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/GridEditAnchorIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GridEditOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Add Grid Anchor",
+        "tags": [
+          "grid-edit"
+        ]
+      }
+    },
+    "/api/v1/tracks/{stable_id}/grid-edit/anchors/{at_s}": {
+      "delete": {
+        "operationId": "remove_grid_anchor_api_v1_tracks__stable_id__grid_edit_anchors__at_s__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "stable_id",
+            "required": true,
+            "schema": {
+              "title": "Stable Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "at_s",
+            "required": true,
+            "schema": {
+              "title": "At S",
+              "type": "number"
+            }
+          },
+          {
+            "in": "query",
+            "name": "source",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "enum": [
+                    "rekordbox",
+                    "own"
+                  ],
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Source"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GridEditOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Remove Grid Anchor",
+        "tags": [
+          "grid-edit"
+        ]
+      }
+    },
     "/api/v1/tracks/{stable_id}/grid-edit/nudge": {
       "post": {
         "description": "Move the grid by a step: ``offset_ms`` is grid adjust, ``beats`` grid shift.",
@@ -63548,6 +66154,69 @@
           }
         },
         "summary": "Nudge Grid Edit",
+        "tags": [
+          "grid-edit"
+        ]
+      }
+    },
+    "/api/v1/tracks/{stable_id}/grid-edit/undo": {
+      "post": {
+        "description": "Step back one stored edit (GRIDEDIT-10215); 409 ``GRID_EDIT_NOTHING_TO_UNDO`` when none.\n\nThe undo writes the previous value back, so it is in history itself and the\nnext undo steps back again. It covers the track's last grid write whichever\ngrid source it touched; ``source`` only picks the grid the answer reports.",
+        "operationId": "undo_grid_edit_api_v1_tracks__stable_id__grid_edit_undo_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "stable_id",
+            "required": true,
+            "schema": {
+              "title": "Stable Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "source",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "enum": [
+                    "rekordbox",
+                    "own"
+                  ],
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Source"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GridEditOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Undo Grid Edit",
         "tags": [
           "grid-edit"
         ]
@@ -64201,6 +66870,121 @@
         ]
       }
     },
+    "/api/v1/tracks/{stable_id}/memory-cues": {
+      "get": {
+        "operationId": "list_memory_cues_api_v1_tracks__stable_id__memory_cues_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "stable_id",
+            "required": true,
+            "schema": {
+              "title": "Stable Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MemoryCuesOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Memory Cues",
+        "tags": [
+          "rb-hot-cues"
+        ]
+      }
+    },
+    "/api/v1/tracks/{stable_id}/memory-cues/{in_ms}/active": {
+      "put": {
+        "operationId": "set_active_memory_loop_api_v1_tracks__stable_id__memory_cues__in_ms__active_put",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "stable_id",
+            "required": true,
+            "schema": {
+              "title": "Stable Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "in_ms",
+            "required": true,
+            "schema": {
+              "minimum": 0,
+              "title": "In Ms",
+              "type": "integer"
+            }
+          },
+          {
+            "description": "Current slot revision returned by GET /tracks/{stable_id}/hot-cues",
+            "in": "header",
+            "name": "If-Match",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ActiveLoopIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MemoryCuesOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "404": {
+            "description": "No cue starts at in_ms"
+          },
+          "409": {
+            "description": "Slot revision, reversal scope, or reversal state is stale"
+          },
+          "422": {
+            "description": "Invalid cue position or restore token body"
+          },
+          "428": {
+            "description": "If-Match is required for every hot-cue mutation"
+          }
+        },
+        "summary": "Set Active Memory Loop",
+        "tags": [
+          "rb-hot-cues"
+        ]
+      }
+    },
     "/api/v1/tracks/{stable_id}/playlists": {
       "get": {
         "description": "Live playlists that currently hold this track (LIBM-29).\n\n404 if the stable_id has no tracks row. 200 [] if the track exists\nbut has no live memberships. Tombstoned memberships and deleted\nplaylists are excluded.",
@@ -64340,6 +67124,60 @@
         ]
       }
     },
+    "/api/v1/tracks/{stable_id}/plays/{play_id}": {
+      "delete": {
+        "operationId": "delete_track_play_api_v1_tracks__stable_id__plays__play_id__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "stable_id",
+            "required": true,
+            "schema": {
+              "title": "Stable Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "play_id",
+            "required": true,
+            "schema": {
+              "maxLength": 64,
+              "minLength": 8,
+              "pattern": "^[A-Za-z0-9._-]+$",
+              "title": "Play Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TrackPlaysOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Delete Track Play",
+        "tags": [
+          "track-plays"
+        ]
+      }
+    },
     "/api/v1/tracks/{stable_id}/rb-meta": {
       "get": {
         "description": "Rekordbox vendor fields + file-existence flags for browser rows.",
@@ -64380,6 +67218,174 @@
         "summary": "Get Track Rb Meta",
         "tags": [
           "rb-assets"
+        ]
+      }
+    },
+    "/api/v1/tracks/{stable_id}/related": {
+      "get": {
+        "operationId": "related_tracks_api_v1_tracks__stable_id__related_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "stable_id",
+            "required": true,
+            "schema": {
+              "title": "Stable Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 50,
+              "maximum": 200,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "bpm_percent",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maximum": 20,
+                  "minimum": 1,
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Bpm Percent"
+            }
+          },
+          {
+            "in": "query",
+            "name": "key",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "boolean"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Key"
+            }
+          },
+          {
+            "in": "query",
+            "name": "genre",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "boolean"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Genre"
+            }
+          },
+          {
+            "in": "query",
+            "name": "color",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "boolean"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Color"
+            }
+          },
+          {
+            "in": "query",
+            "name": "rating",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "boolean"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Rating"
+            }
+          },
+          {
+            "in": "query",
+            "name": "mytag",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "boolean"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Mytag"
+            }
+          },
+          {
+            "in": "query",
+            "name": "artist",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "boolean"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Artist"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RelatedResults"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Related Tracks",
+        "tags": [
+          "tracks"
         ]
       }
     },

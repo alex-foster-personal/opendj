@@ -2300,6 +2300,9 @@ export interface paths {
         /**
          * Post Command
          * @description Submit one declared order and wait for the real browser result.
+         *
+         *     AGENT-10047: a successful answer also carries ``timing`` with ``claim_ms``,
+         *     ``execute_ms`` and ``total_ms`` (milliseconds from monotonic stamps).
          */
         post: operations["post_command_api_v1_commands_post"];
         delete?: never;
@@ -2320,6 +2323,26 @@ export interface paths {
          * @description Let a consumer claim its next command.
          */
         get: operations["next_command_api_v1_commands_next_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/commands/timings": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Order Timings
+         * @description AGENT-10047: count, p50 and p95 (ms) of the last ORDER_TIMINGS_MAX answered orders, overall and by_type.
+         */
+        get: operations["order_timings_api_v1_commands_timings_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -3677,6 +3700,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/history/{day}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** Delete History Day */
+        delete: operations["delete_history_day_api_v1_history__day__delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/host-info": {
         parameters: {
             query?: never;
@@ -4060,6 +4100,31 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/library/export.xml": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Export Library Xml
+         * @description The whole live collection and playlist folder tree as one rekordbox XML file (LIBORG-10051).
+         *
+         *     Streamed from one read snapshot, so a 10k-track library never sits in memory.
+         *     BPM and key are the values the library shows (the selected analysis source).
+         *     [if] the state DB is missing [then] 503 STATE_DB_MISSING
+         *     [if] two sibling playlists share a name, or a parent is not a live folder [then] 409 LIBRARY_EXPORT_REFUSED
+         */
+        get: operations["get_library_export_xml"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/library/preview-strips": {
         parameters: {
             query?: never;
@@ -4182,6 +4247,30 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/library/strip-coverage": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Library Strip Coverage
+         * @description Library-wide Preview strip coverage, read exactly as listing rows read strips.
+         *
+         *     Requirements (mini-PRD):
+         *       [if] a present track's listing row has a strip [then] it counts in covered
+         *       [if] no track is present [then] strip_coverage is null, never 0 or 1
+         */
+        get: operations["get_library_strip_coverage"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/library/wheel": {
         parameters: {
             query?: never;
@@ -4231,6 +4320,57 @@ export interface paths {
         put?: never;
         /** Request Shell Quit */
         post: operations["request_shell_quit_api_v1_lifecycle_quit_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/lighting/frames": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Publish Lighting Frame */
+        post: operations["publish_lighting_frame_api_v1_lighting_frames_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/lighting/patch": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Lighting Patch */
+        get: operations["get_lighting_patch_api_v1_lighting_patch_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/lighting/status": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Api Lighting Status */
+        get: operations["api_lighting_status_api_v1_lighting_status_get"];
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -4893,6 +5033,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/performance/headphones/booth-level": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Post Headphone Booth Level */
+        post: operations["post_headphone_booth_level_api_v1_performance_headphones_booth_level_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/performance/headphones/calibrate": {
         parameters: {
             query?: never;
@@ -5051,6 +5208,23 @@ export interface paths {
         put?: never;
         /** Post Output Mode */
         post: operations["post_output_mode_api_v1_performance_headphones_output_mode_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/performance/headphones/outputs/booth": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Post Headphone Booth Select */
+        post: operations["post_headphone_booth_select_api_v1_performance_headphones_outputs_booth_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -5732,6 +5906,29 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/playlists/{playlist_id}/export.txt": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Export Playlist Text
+         * @description A playlist as a tab-separated UTF-8 track list (LIBORG-10314, rekordbox .txt export).
+         *
+         *     Header row ``#, Title, Artist, BPM, Key, Time``, then one row per track in playlist order.
+         *     Agent parity: ``opendj playlist export <id> --format txt [--out FILE]``.
+         */
+        get: operations["export_playlist_text_api_v1_playlists__playlist_id__export_txt_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/playlists/{playlist_id}/items/{item_id}": {
         parameters: {
             query?: never;
@@ -6155,6 +6352,23 @@ export interface paths {
         put?: never;
         /** Undelete Playlist */
         post: operations["undelete_playlist"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/plays/import/traktor-history": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Import Traktor History */
+        post: operations["import_traktor_history_api_v1_plays_import_traktor_history_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -9103,6 +9317,44 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/tracks/{stable_id}/grid-edit/anchors": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Grid Anchors */
+        get: operations["get_grid_anchors_api_v1_tracks__stable_id__grid_edit_anchors_get"];
+        put?: never;
+        /**
+         * Add Grid Anchor
+         * @description Change tempo at ``at_s``; an anchor within half a beat of an existing one replaces it.
+         */
+        post: operations["add_grid_anchor_api_v1_tracks__stable_id__grid_edit_anchors_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/tracks/{stable_id}/grid-edit/anchors/{at_s}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** Remove Grid Anchor */
+        delete: operations["remove_grid_anchor_api_v1_tracks__stable_id__grid_edit_anchors__at_s__delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/tracks/{stable_id}/grid-edit/nudge": {
         parameters: {
             query?: never;
@@ -9117,6 +9369,30 @@ export interface paths {
          * @description Move the grid by a step: ``offset_ms`` is grid adjust, ``beats`` grid shift.
          */
         post: operations["nudge_grid_edit_api_v1_tracks__stable_id__grid_edit_nudge_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/tracks/{stable_id}/grid-edit/undo": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Undo Grid Edit
+         * @description Step back one stored edit (GRIDEDIT-10215); 409 ``GRID_EDIT_NOTHING_TO_UNDO`` when none.
+         *
+         *     The undo writes the previous value back, so it is in history itself and the
+         *     next undo steps back again. It covers the track's last grid write whichever
+         *     grid source it touched; ``source`` only picks the grid the answer reports.
+         */
+        post: operations["undo_grid_edit_api_v1_tracks__stable_id__grid_edit_undo_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -9292,6 +9568,40 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/tracks/{stable_id}/memory-cues": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Memory Cues */
+        get: operations["list_memory_cues_api_v1_tracks__stable_id__memory_cues_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/tracks/{stable_id}/memory-cues/{in_ms}/active": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /** Set Active Memory Loop */
+        put: operations["set_active_memory_loop_api_v1_tracks__stable_id__memory_cues__in_ms__active_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/tracks/{stable_id}/playlists": {
         parameters: {
             query?: never;
@@ -9334,6 +9644,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/tracks/{stable_id}/plays/{play_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** Delete Track Play */
+        delete: operations["delete_track_play_api_v1_tracks__stable_id__plays__play_id__delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/tracks/{stable_id}/rb-meta": {
         parameters: {
             query?: never;
@@ -9346,6 +9673,23 @@ export interface paths {
          * @description Rekordbox vendor fields + file-existence flags for browser rows.
          */
         get: operations["get_track_rb_meta_api_v1_tracks__stable_id__rb_meta_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/tracks/{stable_id}/related": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Related Tracks */
+        get: operations["related_tracks_api_v1_tracks__stable_id__related_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -10519,6 +10863,11 @@ export interface components {
             /** Windows Required */
             windows_required: number;
         };
+        /** ActiveLoopIn */
+        ActiveLoopIn: {
+            /** Active */
+            active: boolean;
+        };
         /** AdoptOut */
         AdoptOut: {
             /** Created */
@@ -10785,6 +11134,13 @@ export interface components {
              * @description unset, rbx or own. In-memory; resets to unset on relaunch.
              */
             toggle?: string | null;
+        };
+        /** AnchorOut */
+        AnchorOut: {
+            /** At S */
+            at_s: number;
+            /** Bpm */
+            bpm: number;
         };
         /**
          * AnlzCueOut
@@ -11901,6 +12257,32 @@ export interface components {
             /** Undone At */
             undone_at: string | null;
         };
+        /**
+         * BeatJumpSizesOut
+         * @description Per-deck beat jump size in beats (DECKUX-10470): 0.5|1|2|4|8|16|32|64.
+         */
+        BeatJumpSizesOut: {
+            /**
+             * Deck 1
+             * @default 4
+             */
+            deck_1: number;
+            /**
+             * Deck 2
+             * @default 4
+             */
+            deck_2: number;
+            /**
+             * Deck 3
+             * @default 4
+             */
+            deck_3: number;
+            /**
+             * Deck 4
+             * @default 4
+             */
+            deck_4: number;
+        };
         /** BeatgridFallbackOut */
         BeatgridFallbackOut: {
             /** Anlz Available */
@@ -12055,7 +12437,12 @@ export interface components {
         /** Binding */
         Binding: {
             /** Action */
-            action: components["schemas"]["DeckPlayToggle"] | components["schemas"]["DeckCue"] | components["schemas"]["DeckHotCue"] | components["schemas"]["DeckBeatLoop"] | components["schemas"]["DeckAutoLoopToggle"] | components["schemas"]["DeckLoopExit"] | components["schemas"]["DeckStemEqToggle"] | components["schemas"]["MixerChannel"] | components["schemas"]["MixerGlobal"] | components["schemas"]["ChannelCue"] | components["schemas"]["DeckPitch"] | components["schemas"]["BrowseEncoder"] | components["schemas"]["BrowseLoad"] | components["schemas"]["ShiftModifier"];
+            action: components["schemas"]["DeckPlayToggle"] | components["schemas"]["DeckCue"] | components["schemas"]["DeckHotCue"] | components["schemas"]["DeckBeatLoop"] | components["schemas"]["DeckAutoLoopToggle"] | components["schemas"]["DeckLoopExit"] | components["schemas"]["DeckSyncToggle"] | components["schemas"]["DeckKeySyncToggle"] | components["schemas"]["DeckManualLoopCycle"] | components["schemas"]["DeckLoopScale"] | components["schemas"]["DeckKeyNudge"] | components["schemas"]["DeckTempoNudge"] | components["schemas"]["DeckJog"] | components["schemas"]["DeckStemEqToggle"] | components["schemas"]["ControllerPadMode"] | components["schemas"]["ControllerPad"] | components["schemas"]["MixerChannel"] | components["schemas"]["MixerGlobal"] | components["schemas"]["ChannelCue"] | components["schemas"]["HeadphoneMix"] | components["schemas"]["HeadphoneLevel"] | components["schemas"]["MasterCue"] | components["schemas"]["DeckPitch"] | components["schemas"]["BrowseEncoder"] | components["schemas"]["BrowseLoad"] | components["schemas"]["ShiftModifier"];
+            /**
+             * Ccbutton
+             * @default false
+             */
+            ccButton: boolean;
             /**
              * Invert
              * @default false
@@ -12067,6 +12454,16 @@ export interface components {
              * @default false
              */
             relative: boolean;
+            /**
+             * Relativecentered
+             * @default false
+             */
+            relativeCentered: boolean;
+            /**
+             * Relativeunit
+             * @default false
+             */
+            relativeUnit: boolean;
             /**
              * Shift
              * @default false
@@ -13374,6 +13771,44 @@ export interface components {
             /** Label */
             label: string;
         };
+        /** ControllerPad */
+        ControllerPad: {
+            /**
+             * Deck
+             * @enum {integer}
+             */
+            deck: 1 | 2 | 3 | 4;
+            /**
+             * Pad
+             * @enum {integer}
+             */
+            pad: 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8;
+            /** Shifted */
+            shifted: boolean;
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            type: "controller_pad";
+        };
+        /** ControllerPadMode */
+        ControllerPadMode: {
+            /**
+             * Deck
+             * @enum {integer}
+             */
+            deck: 1 | 2 | 3 | 4;
+            /**
+             * Mode
+             * @enum {string}
+             */
+            mode: "hot_cue" | "bounce_loop" | "pitch_cue" | "instant_fx" | "auto_loop" | "sampler" | "saved_loops" | "neural_mix";
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            type: "controller_pad_mode";
+        };
         /** CopilotTrackOut */
         CopilotTrackOut: {
             /** Artist */
@@ -13731,6 +14166,50 @@ export interface components {
              */
             type: "deck_hot_cue";
         };
+        /** DeckJog */
+        DeckJog: {
+            /**
+             * Deck
+             * @enum {integer}
+             */
+            deck: 1 | 2 | 3 | 4;
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            type: "deck_jog";
+        };
+        /** DeckKeyNudge */
+        DeckKeyNudge: {
+            /**
+             * Deck
+             * @enum {integer}
+             */
+            deck: 1 | 2 | 3 | 4;
+            /**
+             * Semitones
+             * @enum {integer}
+             */
+            semitones: -1 | 1;
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            type: "deck_key_nudge";
+        };
+        /** DeckKeySyncToggle */
+        DeckKeySyncToggle: {
+            /**
+             * Deck
+             * @enum {integer}
+             */
+            deck: 1 | 2 | 3 | 4;
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            type: "deck_key_sync_toggle";
+        };
         /** DeckLaneOut */
         DeckLaneOut: {
             /** Beats */
@@ -13767,6 +14246,37 @@ export interface components {
              * @enum {string}
              */
             type: "deck_loop_exit";
+        };
+        /** DeckLoopScale */
+        DeckLoopScale: {
+            /**
+             * Deck
+             * @enum {integer}
+             */
+            deck: 1 | 2 | 3 | 4;
+            /**
+             * Factor
+             * @enum {unknown}
+             */
+            factor: 0.5 | 2;
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            type: "deck_loop_scale";
+        };
+        /** DeckManualLoopCycle */
+        DeckManualLoopCycle: {
+            /**
+             * Deck
+             * @enum {integer}
+             */
+            deck: 1 | 2 | 3 | 4;
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            type: "deck_manual_loop_cycle";
         };
         /** DeckMarkOut */
         DeckMarkOut: {
@@ -13872,6 +14382,37 @@ export interface components {
              * @enum {string}
              */
             type: "deck_stem_eq_toggle";
+        };
+        /** DeckSyncToggle */
+        DeckSyncToggle: {
+            /**
+             * Deck
+             * @enum {integer}
+             */
+            deck: 1 | 2 | 3 | 4;
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            type: "deck_sync_toggle";
+        };
+        /** DeckTempoNudge */
+        DeckTempoNudge: {
+            /**
+             * Deck
+             * @enum {integer}
+             */
+            deck: 1 | 2 | 3 | 4;
+            /**
+             * Direction
+             * @enum {integer}
+             */
+            direction: -1 | 1;
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            type: "deck_tempo_nudge";
         };
         /** DeleteOut */
         DeleteOut: {
@@ -14952,6 +15493,15 @@ export interface components {
             /** Token */
             token: string;
         };
+        /** GridEditAnchorIn */
+        GridEditAnchorIn: {
+            /** At S */
+            at_s: number;
+            /** Bpm */
+            bpm: number;
+            /** Source */
+            source?: ("rekordbox" | "own") | null;
+        };
         /** GridEditNudgeIn */
         GridEditNudgeIn: {
             /**
@@ -14969,6 +15519,8 @@ export interface components {
         };
         /** GridEditOut */
         GridEditOut: {
+            /** Anchors */
+            anchors?: components["schemas"]["AnchorOut"][];
             /** Beat Shift */
             beat_shift: number;
             /** Modified At */
@@ -15122,6 +15674,22 @@ export interface components {
             /** Threshold */
             threshold: number;
         };
+        /** HeadphoneLevel */
+        HeadphoneLevel: {
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            type: "headphone_level";
+        };
+        /** HeadphoneMix */
+        HeadphoneMix: {
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            type: "headphone_mix";
+        };
         /** HeadphoneOutputDeviceOut */
         HeadphoneOutputDeviceOut: {
             /** Id */
@@ -15141,6 +15709,11 @@ export interface components {
             active: boolean;
             /** Alignment Mode */
             alignment_mode: string;
+            /**
+             * Booth Level
+             * @default 0.5
+             */
+            booth_level: number;
             calibration: components["schemas"]["HeadphoneCalibrationOut"];
             device_access: components["schemas"]["IoDeviceAccessOut"];
             /** Error */
@@ -15171,6 +15744,8 @@ export interface components {
             report_age_ms?: number | null;
             /** Reporting Client Id */
             reporting_client_id?: string | null;
+            /** Selected Booth Output Device Id */
+            selected_booth_output_device_id?: string | null;
             /** Selected Input Device Id */
             selected_input_device_id: string | null;
             /** Selected Master Output Device Id */
@@ -15314,6 +15889,28 @@ export interface components {
             op: string;
             /** Playlist Id */
             playlist_id: string;
+        };
+        /** HistoryDayDeleteOut */
+        HistoryDayDeleteOut: {
+            /**
+             * Date
+             * @description YYYY-MM-DD as requested
+             */
+            date: string;
+            /**
+             * End
+             * @description Canonical UTC bound used (exclusive)
+             */
+            end: string;
+            /** Removed */
+            removed: number;
+            /** Stable Ids */
+            stable_ids: string[];
+            /**
+             * Start
+             * @description Canonical UTC bound used (inclusive)
+             */
+            start: string;
         };
         /** HistoryEntryOut */
         HistoryEntryOut: {
@@ -16117,6 +16714,47 @@ export interface components {
             unreachable: number;
         };
         /**
+         * LibraryRelatedCriteriaOut
+         * @description Related Tracks criteria: BPM range percent plus six on/off rules.
+         */
+        LibraryRelatedCriteriaOut: {
+            /**
+             * Artist
+             * @default false
+             */
+            artist: boolean;
+            /**
+             * Bpm Percent
+             * @default 6
+             */
+            bpm_percent: number;
+            /**
+             * Color
+             * @default false
+             */
+            color: boolean;
+            /**
+             * Genre
+             * @default true
+             */
+            genre: boolean;
+            /**
+             * Key
+             * @default true
+             */
+            key: boolean;
+            /**
+             * Mytag
+             * @default false
+             */
+            mytag: boolean;
+            /**
+             * Rating
+             * @default false
+             */
+            rating: boolean;
+        };
+        /**
          * LibraryTabOut
          * @description One tab: its list (null = blank list), per-tab search and sort.
          */
@@ -16191,6 +16829,54 @@ export interface components {
              * @default true
              */
             ok: boolean;
+        };
+        /** LightingDeckStatus */
+        LightingDeckStatus: {
+            /** Bpm */
+            bpm?: number | null;
+            /** Deck */
+            deck: string;
+            /**
+             * Playing
+             * @default false
+             */
+            playing: boolean;
+            /** Section */
+            section?: string | null;
+        };
+        /** LightingStatus */
+        LightingStatus: {
+            /**
+             * Contract
+             * @default lighting/1
+             */
+            contract: string;
+            /** Decks */
+            decks?: components["schemas"]["LightingDeckStatus"][];
+            /**
+             * Enabled
+             * @default true
+             */
+            enabled: boolean;
+            /**
+             * Feed Connected
+             * @default false
+             */
+            feed_connected: boolean;
+            /**
+             * Flag
+             * @default lighting.output
+             */
+            flag: string;
+            /**
+             * Subscribers
+             * @default 0
+             */
+            subscribers: number;
+            /** Weights */
+            weights?: {
+                [key: string]: number;
+            };
         };
         /**
          * LineageOut
@@ -16698,6 +17384,19 @@ export interface components {
             /** Unhydrated Pinned Count */
             unhydrated_pinned_count: number;
         };
+        /** MasterCue */
+        MasterCue: {
+            /**
+             * Mode
+             * @enum {string}
+             */
+            mode: "hold" | "latch";
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            type: "master_cue";
+        };
         /** MatchRequest */
         MatchRequest: {
             /** Out Dir */
@@ -16898,6 +17597,41 @@ export interface components {
             dest: components["schemas"]["PlaylistWriteOut"];
             source?: components["schemas"]["PlaylistWriteOut"] | null;
         };
+        /**
+         * MemoryCueOut
+         * @description One memory cue or memory loop in the COMPONENT-MAP 2.3 cue shape.
+         */
+        MemoryCueOut: {
+            /** Active Loop */
+            active_loop: boolean;
+            /** Beat Loop Size */
+            beat_loop_size: number | null;
+            /** Color Table Index */
+            color_table_index: number | null;
+            /** Comment */
+            comment: string | null;
+            /** In Ms */
+            in_ms: number;
+            /** Is Loop */
+            is_loop: boolean;
+            /**
+             * Kind
+             * @enum {string}
+             */
+            kind: "memory" | "loop";
+            /** Out Ms */
+            out_ms: number | null;
+            /** Slot */
+            slot: null;
+        };
+        /** MemoryCuesOut */
+        MemoryCuesOut: {
+            active?: components["schemas"]["MemoryCueOut"] | null;
+            /** Cues */
+            cues: components["schemas"]["MemoryCueOut"][];
+            /** Revision */
+            revision: string;
+        };
         /** MetadataPlanRequest */
         MetadataPlanRequest: {
             /**
@@ -17019,7 +17753,7 @@ export interface components {
              * Target
              * @enum {string}
              */
-            target: "trim" | "eq" | "fader";
+            target: "trim" | "eq" | "fader" | "filter";
             /**
              * @description discriminator enum property added by openapi-typescript
              * @enum {string}
@@ -17319,6 +18053,7 @@ export interface components {
         OverviewOut: {
             /** Machines */
             machines: components["schemas"]["MachineOverview"][];
+            sync?: components["schemas"]["SyncHealthOut"] | null;
             /** Total Tracks */
             total_tracks: number;
         };
@@ -19453,6 +20188,13 @@ export interface components {
             /** Ui Title */
             ui_title: string;
         };
+        /** RejectedFileOut */
+        RejectedFileOut: {
+            /** File */
+            file: string;
+            /** Reason */
+            reason: string;
+        };
         /**
          * RejectedRowModel
          * @description One offered row the hub refused, and why (CLOUDSYNC-31).
@@ -19488,6 +20230,194 @@ export interface components {
             rekordbox_running: boolean;
             share_dir: components["schemas"]["FileProbeOut"];
             working_copy: components["schemas"]["FileProbeOut"];
+        };
+        /** RelatedHit */
+        RelatedHit: {
+            analysis_hints?: components["schemas"]["TrackAnalysisHintsOut"] | null;
+            /** Artist */
+            artist: string | null;
+            /** Artwork Available */
+            artwork_available: boolean | null;
+            /**
+             * Artwork Status
+             * @enum {string}
+             */
+            artwork_status: "ok" | "no_image_path" | "unresolved" | "file_missing";
+            /** Bpm */
+            bpm: number | null;
+            /** Bpm Alternatives */
+            bpm_alternatives?: components["schemas"]["BpmAlternative"][];
+            /** Bpm Confidence */
+            bpm_confidence?: number | null;
+            /** Bpm Confidence Error */
+            bpm_confidence_error?: string | null;
+            /**
+             * Bpm Disputed
+             * @default false
+             */
+            bpm_disputed: boolean;
+            /** Bpm Method */
+            bpm_method?: string | null;
+            /** Bpm Pick */
+            bpm_pick?: ("own" | "mik") | null;
+            /** Bpm Reason */
+            bpm_reason?: string | null;
+            /** Bpm Source */
+            bpm_source?: string | null;
+            /**
+             * Bpm Status
+             * @enum {string}
+             */
+            bpm_status: "ok" | "failed" | "missing" | "available-not-selected" | "too_short" | "no_pulse";
+            cloud_transfer?: components["schemas"]["CloudTransferOut"] | null;
+            /** Comments */
+            comments: string | null;
+            /** Created By */
+            created_by?: string | null;
+            /** Duration Ms */
+            duration_ms: number | null;
+            /** Edit Id */
+            edit_id?: string | null;
+            /** Edit Label */
+            edit_label?: string | null;
+            /** Energy */
+            energy: number | null;
+            /** Energy Reason */
+            energy_reason: string;
+            /** Energy Source */
+            energy_source: "mik" | null;
+            /** Etag */
+            etag: string;
+            /**
+             * File Availability
+             * @enum {string}
+             */
+            file_availability: "present" | "absent" | "AVAILABILITY_PENDING" | "streaming" | "awaiting_volume";
+            /** File Exists */
+            file_exists: boolean | null;
+            /** File Path */
+            file_path?: string | null;
+            /** Fx */
+            fx?: {
+                [key: string]: unknown;
+            } | null;
+            /** Genre */
+            genre: string | null;
+            genre_guess?: components["schemas"]["GenreGuessOut"] | null;
+            /** Genre Reason */
+            genre_reason?: string | null;
+            /** Genre Source */
+            genre_source?: string | null;
+            grid_quality?: components["schemas"]["GridQualityRowOut"] | null;
+            /** Has Rb Mapping */
+            has_rb_mapping: boolean;
+            /** Has Remote Copy */
+            has_remote_copy: boolean;
+            /** In Ms */
+            in_ms?: number | null;
+            /**
+             * Is Edit
+             * @default false
+             */
+            is_edit: boolean;
+            /**
+             * Is Radio Edit
+             * @default false
+             */
+            is_radio_edit: boolean;
+            /**
+             * Is Remix
+             * @default false
+             */
+            is_remix: boolean;
+            /**
+             * Is Remote
+             * @default false
+             */
+            is_remote: boolean;
+            /** Is Streaming */
+            is_streaming: boolean;
+            /** Item Id */
+            item_id?: string | null;
+            /** Key */
+            key: string | null;
+            /** Key Guess */
+            key_guess?: string | null;
+            /** Key Guess Confidence */
+            key_guess_confidence?: number | null;
+            /** Key Reason */
+            key_reason: string | null;
+            /** Key Source */
+            key_source?: ("own" | "rekordbox" | "file_tag" | "mik_tag" | "guess") | null;
+            /**
+             * Key Status
+             * @enum {string}
+             */
+            key_status: "ok" | "failed" | "missing" | "available-not-selected";
+            /** Loudness Reason */
+            loudness_reason: string | null;
+            /**
+             * Loudness Status
+             * @enum {string}
+             */
+            loudness_status: "ok" | "failed" | "missing" | "available-not-selected";
+            lyrics?: components["schemas"]["LyricsRowSummaryOut"] | null;
+            /** Matched */
+            matched: ("bpm" | "key" | "genre" | "color" | "rating" | "mytag" | "artist")[];
+            offload?: components["schemas"]["OffloadOut"] | null;
+            /** Out Ms */
+            out_ms?: number | null;
+            /**
+             * Play Count
+             * @default 0
+             */
+            play_count: number;
+            /** Preview B64 */
+            preview_b64: string | null;
+            /** Preview Max */
+            preview_max: number | null;
+            quality: components["schemas"]["QualityOut"];
+            /** Rating */
+            rating: number | null;
+            /** Score */
+            score: number;
+            /** Source Flags */
+            source_flags?: components["schemas"]["SourceFlagOut"][];
+            /**
+             * Spotify Pending
+             * @default false
+             */
+            spotify_pending: boolean;
+            /** Stable Id */
+            stable_id: string;
+            /** Stems */
+            stems: {
+                [key: string]: unknown;
+            };
+            /** Streaming Provider */
+            streaming_provider?: ("spotify" | "tidal" | "soundcloud" | "unknown") | null;
+            tempo_curve?: components["schemas"]["TempoCurveRowOut"] | null;
+            /** Title */
+            title: string | null;
+            /**
+             * Valid
+             * @default true
+             */
+            valid: boolean;
+            /** Vocals */
+            vocals: {
+                [key: string]: unknown;
+            };
+        };
+        /** RelatedResults */
+        RelatedResults: {
+            criteria: components["schemas"]["LibraryRelatedCriteriaOut"];
+            /** Items */
+            items: components["schemas"]["RelatedHit"][];
+            /** Seed Stable Id */
+            seed_stable_id: string;
+            /** Total */
+            total: number;
         };
         /** RelocateApplyIn */
         RelocateApplyIn: {
@@ -21291,6 +22221,42 @@ export interface components {
             /** Tiers */
             tiers: components["schemas"]["StemTierOut"][];
         };
+        /**
+         * StripCoverageOut
+         * @description Answer of ``GET /library/strip-coverage`` (#9422, epic #9377 strip_coverage_pct).
+         */
+        StripCoverageOut: {
+            /**
+             * Covered
+             * @description Present tracks whose listing row has a Preview strip
+             */
+            covered: number;
+            /**
+             * Mapped Missing
+             * @description Rekordbox-mapped present tracks with no ANLZ strip and no cached strip; the drain never fills these
+             */
+            mapped_missing: number;
+            /**
+             * Missing
+             * @description present minus covered
+             */
+            missing: number;
+            /**
+             * Present
+             * @description Present tracks (materialised local audio): THE denominator
+             */
+            present: number;
+            /**
+             * Strip Coverage
+             * @description covered / present, rounded to 4 places; null when present == 0
+             */
+            strip_coverage: number | null;
+            /**
+             * Unmapped Missing
+             * @description Missing strips the ahead drain fills
+             */
+            unmapped_missing: number;
+        };
         /** SuggestNextIn */
         SuggestNextIn: {
             /**
@@ -21408,6 +22374,54 @@ export interface components {
         SyncErrorResponse: {
             detail: components["schemas"]["SyncErrorBody"];
         };
+        /**
+         * SyncHealthOut
+         * @description Field-for-field the shape :meth:`FleetHealth.to_wire` prints.
+         *
+         *     ``GET /api/v1/cloudsync/overview``'s ``sync`` block is this readout,
+         *     pinned by a test: agent-native parity is one computation with two
+         *     renderers, not two renderers that happen to agree today.
+         */
+        SyncHealthOut: {
+            /** Digest Mismatch */
+            digest_mismatch: boolean;
+            /** Full Offer Pending */
+            full_offer_pending: boolean;
+            last_run?: components["schemas"]["apps__webui__server__routes__cloudsync_overview__SyncRunOut"] | null;
+            /** Local Seq */
+            local_seq: number;
+            /** Peers */
+            peers: components["schemas"]["SyncPeerOut"][];
+            /** Pending Push Rows */
+            pending_push_rows?: number | null;
+            /**
+             * Quarantined Rows
+             * @default 0
+             */
+            quarantined_rows: number;
+            /** Verdict */
+            verdict: string;
+        };
+        /**
+         * SyncPeerOut
+         * @description This machine's watermark against one peer, and what it still owes.
+         */
+        SyncPeerOut: {
+            /** Full Offer Pending */
+            full_offer_pending: boolean;
+            /** Last Pull Seq */
+            last_pull_seq: number;
+            /** Last Push Seq */
+            last_push_seq: number;
+            /** Last Sync At */
+            last_sync_at?: string | null;
+            /** Peer */
+            peer: string;
+            /** Peer Generation */
+            peer_generation?: string | null;
+            /** Pending Push Rows */
+            pending_push_rows: number;
+        };
         /** SyncPolicyOut */
         SyncPolicyOut: {
             /**
@@ -21480,44 +22494,6 @@ export interface components {
              * @description this machine's display name; the hostname when omitted (CLI --name)
              */
             name?: string | null;
-        };
-        /**
-         * SyncRunOut
-         * @description What one ``run_sync`` observed. Every count is observed, none inferred.
-         *
-         *     ``digest_inconclusive`` True is the CLI's exit code 4: rows moved but the
-         *     post-sync digest compare excluded rows, so agreement was NOT verified.
-         *     ``hub_quarantined`` None means the hub did not report it (unknown, not 0).
-         */
-        SyncRunOut: {
-            /** Accepted */
-            accepted: number;
-            /** Applied */
-            applied: number;
-            /** Digest Inconclusive */
-            digest_inconclusive: boolean;
-            /** Hub Machine Id */
-            hub_machine_id: string;
-            /** Hub Quarantined */
-            hub_quarantined: number | null;
-            /** Hub Restore Detected */
-            hub_restore_detected: boolean;
-            /** Hub Seq */
-            hub_seq: number;
-            /** Machine Id */
-            machine_id: string;
-            /** Pulled */
-            pulled: number;
-            /** Pushed */
-            pushed: number;
-            /** Quarantined Incoming */
-            quarantined_incoming: number;
-            /** Quarantined Rows */
-            quarantined_rows: number;
-            /** Rejected */
-            rejected: number;
-            /** Rounds */
-            rounds: number;
         };
         /** SyncSnapshotIn */
         SyncSnapshotIn: {
@@ -22691,13 +23667,23 @@ export interface components {
         };
         /** TrackPlaysOut */
         TrackPlaysOut: {
+            /**
+             * Deleted
+             * @description DELETE only: true when the play row was removed.
+             */
+            deleted?: boolean | null;
+            /**
+             * Last Played At
+             * @description Later of the imported Last Played and the latest logged play (library column).
+             */
+            last_played_at?: string | null;
             /** Opendj Last Played At */
             opendj_last_played_at: string | null;
             /** Opendj Play Count */
             opendj_play_count: number;
             /**
              * Play Count
-             * @description rekordbox_play_count + opendj_play_count
+             * @description rekordbox_play_count + opendj_play_count + serato_play_count
              */
             play_count: number;
             /**
@@ -22707,6 +23693,10 @@ export interface components {
             recorded?: boolean | null;
             /** Rekordbox Play Count */
             rekordbox_play_count: number;
+            /** Serato Last Played At */
+            serato_last_played_at: string | null;
+            /** Serato Play Count */
+            serato_play_count: number;
             /** Stable Id */
             stable_id: string;
         };
@@ -22925,6 +23915,51 @@ export interface components {
              * @default 0
              */
             non_music_hidden: number;
+        };
+        /** TraktorHistoryImportIn */
+        TraktorHistoryImportIn: {
+            /**
+             * Dry Run
+             * @description True rolls the import back after counting.
+             */
+            dry_run: boolean;
+            /**
+             * Source
+             * @description Absolute path of the Traktor folder holding History/.
+             */
+            source: string;
+            /**
+             * Zone
+             * @description IANA zone of the history times; null = this machine's.
+             */
+            zone?: string | null;
+        };
+        /** TraktorHistoryImportOut */
+        TraktorHistoryImportOut: {
+            /** Dry Run */
+            dry_run: boolean;
+            /** Entries Not Public */
+            entries_not_public: number;
+            /** Entries Seen */
+            entries_seen: number;
+            /** Entries Unreadable */
+            entries_unreadable: number;
+            /** Files Read */
+            files_read: string[];
+            /** Files Rejected */
+            files_rejected: components["schemas"]["RejectedFileOut"][];
+            /** Plays Added */
+            plays_added: number;
+            /** Plays Already Logged */
+            plays_already_logged: number;
+            /** Plays Matched */
+            plays_matched: number;
+            /** Plays Unmatched */
+            plays_unmatched: number;
+            /** Source */
+            source: string;
+            /** Zone */
+            zone: string;
         };
         /** TransitionDecideIn */
         TransitionDecideIn: {
@@ -23192,7 +24227,7 @@ export interface components {
             auto_gain?: components["schemas"]["AutoGainPrefsOut"];
             /**
              * Auto Play Enabled
-             * @default true
+             * @default false
              */
             auto_play_enabled: boolean;
             /**
@@ -23216,6 +24251,7 @@ export interface components {
              * @default false
              */
             available_offline_filter: boolean;
+            beat_jump_sizes?: components["schemas"]["BeatJumpSizesOut"];
             /**
              * Beat Sync Max
              * @default true
@@ -23243,6 +24279,11 @@ export interface components {
              * @default true
              */
             deck_hover_link: boolean;
+            /**
+             * Deck Needle Lock
+             * @default false
+             */
+            deck_needle_lock: boolean;
             /**
              * Deck Right Mirror
              * @default false
@@ -23293,6 +24334,7 @@ export interface components {
             library_key_filter?: string[];
             /** Library Optional Columns */
             library_optional_columns?: ("work" | "composer" | "ensemble" | "label" | "year")[];
+            library_related_criteria?: components["schemas"]["LibraryRelatedCriteriaOut"];
             /**
              * Library Sidebar Art
              * @default true
@@ -23452,6 +24494,7 @@ export interface components {
             auto_sync?: components["schemas"]["AutoSyncOut"] | null;
             /** Available Offline Filter */
             available_offline_filter?: boolean | null;
+            beat_jump_sizes?: components["schemas"]["BeatJumpSizesOut"] | null;
             /** Beat Sync Max */
             beat_sync_max?: boolean | null;
             /** Collapsed Sections */
@@ -23467,6 +24510,8 @@ export interface components {
             deck_default_quantize?: boolean | null;
             /** Deck Hover Link */
             deck_hover_link?: boolean | null;
+            /** Deck Needle Lock */
+            deck_needle_lock?: boolean | null;
             /** Deck Right Mirror */
             deck_right_mirror?: boolean | null;
             /** Gig Helper */
@@ -23490,6 +24535,7 @@ export interface components {
             library_key_filter?: string[] | null;
             /** Library Optional Columns */
             library_optional_columns?: ("work" | "composer" | "ensemble" | "label" | "year")[] | null;
+            library_related_criteria?: components["schemas"]["LibraryRelatedCriteriaOut"] | null;
             /** Library Sidebar Art */
             library_sidebar_art?: boolean | null;
             library_tabs?: components["schemas"]["LibraryTabsOut"] | null;
@@ -24559,6 +25605,94 @@ export interface components {
             cloud_sync_off_confirmed: boolean;
             /** Plan Sha */
             plan_sha: string;
+        };
+        /**
+         * SyncRunOut
+         * @description What one ``run_sync`` observed. Every count is observed, none inferred.
+         *
+         *     ``digest_inconclusive`` True is the CLI's exit code 4: rows moved but the
+         *     post-sync digest compare excluded rows, so agreement was NOT verified.
+         *     ``hub_quarantined`` None means the hub did not report it (unknown, not 0).
+         */
+        apps__webui__server__routes__cloudsync_ops__SyncRunOut: {
+            /** Accepted */
+            accepted: number;
+            /** Applied */
+            applied: number;
+            /** Digest Inconclusive */
+            digest_inconclusive: boolean;
+            /** Hub Machine Id */
+            hub_machine_id: string;
+            /** Hub Quarantined */
+            hub_quarantined: number | null;
+            /** Hub Restore Detected */
+            hub_restore_detected: boolean;
+            /** Hub Seq */
+            hub_seq: number;
+            /** Machine Id */
+            machine_id: string;
+            /** Pulled */
+            pulled: number;
+            /** Pushed */
+            pushed: number;
+            /** Quarantined Incoming */
+            quarantined_incoming: number;
+            /** Quarantined Rows */
+            quarantined_rows: number;
+            /** Rejected */
+            rejected: number;
+            /** Rounds */
+            rounds: number;
+        };
+        /**
+         * SyncRunOut
+         * @description The last recorded sync attempt. A failure carries zeros AND an error.
+         */
+        apps__webui__server__routes__cloudsync_overview__SyncRunOut: {
+            /** Accepted */
+            accepted: number;
+            /** Applied */
+            applied: number;
+            /** Consecutive Failures */
+            consecutive_failures: number;
+            /** Digest */
+            digest?: string | null;
+            /**
+             * Digest Inconclusive
+             * @default false
+             */
+            digest_inconclusive: boolean;
+            /** Error Kind */
+            error_kind?: string | null;
+            /** Error Message */
+            error_message?: string | null;
+            /** Finished At */
+            finished_at: string;
+            /** Hub Machine Id */
+            hub_machine_id?: string | null;
+            /** Hub Quarantined */
+            hub_quarantined?: number | null;
+            /** Hub Restore Detected */
+            hub_restore_detected: boolean;
+            /** Hub Url */
+            hub_url: string;
+            /** Outcome */
+            outcome: string;
+            /** Pulled */
+            pulled: number;
+            /** Pushed */
+            pushed: number;
+            /**
+             * Quarantined Incoming
+             * @default 0
+             */
+            quarantined_incoming: number;
+            /** Rejected */
+            rejected: number;
+            /** Rounds */
+            rounds: number;
+            /** Started At */
+            started_at: string;
         };
         /** ApplyIn */
         apps__webui__server__routes__dedup_review__ApplyIn: {
@@ -28654,7 +29788,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["SyncRunOut"];
+                    "application/json": components["schemas"]["apps__webui__server__routes__cloudsync_ops__SyncRunOut"];
                 };
             };
             /** @description The caller is not the local operator: a non-loopback peer, a proxy-relayed request, a non-loopback Host or Origin, or a cross-site fetch. code: CLOUDSYNC_OPS_LOCAL_ONLY. */
@@ -28851,6 +29985,26 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    order_timings_api_v1_commands_timings_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
                 };
             };
         };
@@ -31531,6 +32685,40 @@ export interface operations {
             };
         };
     };
+    delete_history_day_api_v1_history__day__delete: {
+        parameters: {
+            query?: {
+                /** @description IANA timezone for the 06:00 day boundary; default is server local. */
+                tz?: string | null;
+            };
+            header?: never;
+            path: {
+                day: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HistoryDayDeleteOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     host_info_api_v1_host_info_get: {
         parameters: {
             query?: never;
@@ -32279,6 +33467,24 @@ export interface operations {
             };
         };
     };
+    get_library_export_xml: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
     post_preview_strips_api_v1_library_preview_strips_post: {
         parameters: {
             query?: never;
@@ -32399,6 +33605,26 @@ export interface operations {
             };
         };
     };
+    get_library_strip_coverage: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["StripCoverageOut"];
+                };
+            };
+        };
+    };
     get_library_wheel_api_v1_library_wheel_get: {
         parameters: {
             query?: {
@@ -32494,6 +33720,88 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
                 };
+            };
+        };
+    };
+    publish_lighting_frame_api_v1_lighting_frames_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    [key: string]: unknown;
+                };
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_lighting_patch_api_v1_lighting_patch_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+        };
+    };
+    api_lighting_status_api_v1_lighting_status_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LightingStatus"];
+                };
+            };
+            /** @description lighting.output is off */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
         };
     };
@@ -32852,9 +34160,7 @@ export interface operations {
         };
         requestBody: {
             content: {
-                "application/json": {
-                    [key: string]: unknown;
-                };
+                "application/json": components["schemas"]["MidiMapDoc"];
             };
         };
         responses: {
@@ -33852,6 +35158,7 @@ export interface operations {
         };
     };
     post_headphone_alignment_mode_api_v1_performance_headphones_alignment_mode_post: _HeadphoneJsonPost;
+    post_headphone_booth_level_api_v1_performance_headphones_booth_level_post: _HeadphoneJsonPost;
     post_headphone_calibrate_api_v1_performance_headphones_calibrate_post: {
         parameters: {
             query?: never;
@@ -33899,6 +35206,7 @@ export interface operations {
     post_master_delay_ms_api_v1_performance_headphones_master_delay_post: _HeadphoneJsonPost;
     post_headphone_mix_api_v1_performance_headphones_mix_post: _HeadphoneJsonPost;
     post_output_mode_api_v1_performance_headphones_output_mode_post: _HeadphoneJsonPost;
+    post_headphone_booth_select_api_v1_performance_headphones_outputs_booth_post: _HeadphoneJsonPost;
     post_headphone_master_select_api_v1_performance_headphones_outputs_master_post: _HeadphoneJsonPost;
     post_headphone_outputs_refresh_api_v1_performance_headphones_outputs_refresh_post: {
         parameters: {
@@ -35113,6 +36421,37 @@ export interface operations {
             };
         };
     };
+    export_playlist_text_api_v1_playlists__playlist_id__export_txt_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                playlist_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "text/plain": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     delete_playlist_item: {
         parameters: {
             query?: never;
@@ -35992,6 +37331,39 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["PlaylistWriteOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    import_traktor_history_api_v1_plays_import_traktor_history_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["TraktorHistoryImportIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TraktorHistoryImportOut"];
                 };
             };
             /** @description Validation Error */
@@ -41812,6 +43184,108 @@ export interface operations {
             };
         };
     };
+    get_grid_anchors_api_v1_tracks__stable_id__grid_edit_anchors_get: {
+        parameters: {
+            query?: {
+                source?: ("rekordbox" | "own") | null;
+            };
+            header?: never;
+            path: {
+                stable_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GridEditOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    add_grid_anchor_api_v1_tracks__stable_id__grid_edit_anchors_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                stable_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["GridEditAnchorIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GridEditOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    remove_grid_anchor_api_v1_tracks__stable_id__grid_edit_anchors__at_s__delete: {
+        parameters: {
+            query?: {
+                source?: ("rekordbox" | "own") | null;
+            };
+            header?: never;
+            path: {
+                stable_id: string;
+                at_s: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GridEditOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     nudge_grid_edit_api_v1_tracks__stable_id__grid_edit_nudge_post: {
         parameters: {
             query?: never;
@@ -41826,6 +43300,39 @@ export interface operations {
                 "application/json": components["schemas"]["GridEditNudgeIn"];
             };
         };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GridEditOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    undo_grid_edit_api_v1_tracks__stable_id__grid_edit_undo_post: {
+        parameters: {
+            query?: {
+                source?: ("rekordbox" | "own") | null;
+            };
+            header?: never;
+            path: {
+                stable_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
         responses: {
             /** @description Successful Response */
             200: {
@@ -42267,6 +43774,95 @@ export interface operations {
             };
         };
     };
+    list_memory_cues_api_v1_tracks__stable_id__memory_cues_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                stable_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MemoryCuesOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    set_active_memory_loop_api_v1_tracks__stable_id__memory_cues__in_ms__active_put: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description Current slot revision returned by GET /tracks/{stable_id}/hot-cues */
+                "If-Match": string;
+            };
+            path: {
+                stable_id: string;
+                in_ms: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ActiveLoopIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MemoryCuesOut"];
+                };
+            };
+            /** @description No cue starts at in_ms */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Slot revision, reversal scope, or reversal state is stale */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Invalid cue position or restore token body */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description If-Match is required for every hot-cue mutation */
+            428: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
     list_track_playlists_api_v1_tracks__stable_id__playlists_get: {
         parameters: {
             query?: never;
@@ -42364,6 +43960,38 @@ export interface operations {
             };
         };
     };
+    delete_track_play_api_v1_tracks__stable_id__plays__play_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                stable_id: string;
+                play_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TrackPlaysOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     get_track_rb_meta_api_v1_tracks__stable_id__rb_meta_get: {
         parameters: {
             query?: never;
@@ -42382,6 +44010,46 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["RbMetaOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    related_tracks_api_v1_tracks__stable_id__related_get: {
+        parameters: {
+            query?: {
+                limit?: number;
+                bpm_percent?: number | null;
+                key?: boolean | null;
+                genre?: boolean | null;
+                color?: boolean | null;
+                rating?: boolean | null;
+                mytag?: boolean | null;
+                artist?: boolean | null;
+            };
+            header?: never;
+            path: {
+                stable_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RelatedResults"];
                 };
             };
             /** @description Validation Error */

@@ -1,0 +1,9 @@
+{
+  "bytes": 2048,
+  "measured_main": 17019,
+  "measured_with_pr": 18590,
+  "sha": "5df5c52fd2",
+  "date": "Sun 8 Nov 2026",
+  "reason": "SC LIVE 4 practice replica (PR #10494) grows the practice-replica surface: SC_LIVE_4_MAP, a 128-row hints-only map imported by practice-devices.ts. Measured on agentbox, pnpm build of main (practice-devices.ts from origin/main at 5df5c52fd2) against the branch: +1571 B gzip; ceiled to KiB.",
+  "payback": "none planned; the growth is the device's own hint table on this surface"
+}

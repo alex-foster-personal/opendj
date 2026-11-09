@@ -14,3 +14,8 @@ export {
 	uiPrefs
 } from '$lib/rb/performance-ipc.svelte';
 export { readKeyNudgeStep } from '$lib/player/key/camelot';
+export {
+	isLibraryPanelsCollapsed,
+	noteVisibleLibraryRowCount,
+	setLibraryPanelsCollapsed
+} from '$lib/rb/library-panels.svelte';

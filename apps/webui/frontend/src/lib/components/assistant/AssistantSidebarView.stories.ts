@@ -76,7 +76,7 @@ export const StaticFill: Story = {
 export const SendError: Story = {
 	args: {
 		messages: [{ role: 'user', content: 'Which playlists are biggest?' }],
-		sendError: 'The assistant could not answer right now. Try again.'
+		sendError: 'OJ could not answer right now. Try again.'
 	}
 };
 

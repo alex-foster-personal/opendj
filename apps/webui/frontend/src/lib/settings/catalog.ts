@@ -18,10 +18,17 @@ import {
 import { AUTO_GAIN_ENABLED_SETTING, AUTO_GAIN_TARGET_SETTING } from './auto-gain-setting';
 import { MIDI_ENABLED_SETTING } from './midi-enabled-setting';
 import { CONFIRMATION_SETTINGS } from './confirmation-settings';
-import { UI_SKIN_SETTING, WAVE_PALETTE_SETTING, WAVE_SPLIT_MASTER_SETTING } from './wave-palette-setting';
+import {
+	LIBRARY_LAYOUT_SETTING,
+	PERFORMANCE_LAYOUT_SETTING,
+	UI_SKIN_SETTING,
+	WAVE_PALETTE_SETTING,
+	WAVE_SPLIT_MASTER_SETTING
+} from './wave-palette-setting';
 import { WAVE_EQ_REFLECT_SETTING } from './wave-eq-reflect-setting';
 import { WAVE_ZOOM_SETTINGS } from './wave-zoom-setting';
 import { DEV_UI_SETTING, HIDE_TODO_SETTING } from './dev-ui-setting';
+import { VARIANT_REGISTRY } from './variant-setting';
 import { SHOW_SECTIONS_SETTING } from './show-sections-setting';
 import { DECK_NUMBER_ART_SETTING } from './deck-number-art-setting';
 import { SPEAKER_AUTO_RECOVER_SETTING } from './speaker-link-setting';
@@ -272,6 +279,17 @@ export const SETTINGS_CATALOG: readonly SettingDef[] = [
 		implemented: true,
 		control: { kind: 'boolean' }
 	},
+	{
+		id: 'deck_needle_lock',
+		label: 'Needle Lock',
+		group: 'performance',
+		keywords: ['needle', 'lock', 'overview', 'strip', 'seek', 'search', 'touch'],
+		title: 'A playing deck ignores clicks on its overview strip',
+		detail:
+			'On: a click on a playing deck\'s overview strip does not seek, and a short hint says why; a paused deck still seeks. The main scrolling waveform and keyboard jumps are not affected. Default off.',
+		implemented: true,
+		control: { kind: 'boolean' }
+	},
 	PREVIEW_BEAT_SYNC_SETTING,
 	AUDIO_ENGINE_SETTING,
 	{
@@ -402,6 +420,8 @@ export const SETTINGS_CATALOG: readonly SettingDef[] = [
 	WAVE_PALETTE_SETTING,
 	WAVE_EQ_REFLECT_SETTING,
 	UI_SKIN_SETTING,
+	PERFORMANCE_LAYOUT_SETTING,
+	LIBRARY_LAYOUT_SETTING,
 	WAVE_SPLIT_MASTER_SETTING,
 	...WAVE_ZOOM_SETTINGS,
 	{
@@ -710,6 +730,9 @@ export const SETTINGS_CATALOG: readonly SettingDef[] = [
 	},
 	HIDE_TODO_SETTING,
 	DEV_UI_SETTING,
+	// Taste variants (epic #10045): family modules register via defineVariantSetting
+	// and are imported above so ESM evaluates them before this array is built.
+	...VARIANT_REGISTRY,
 
 	// ----- cloudsync ((private path) D5) -------------------------
 	// Navigation entries to the policy matrix / pin list / overview on /cloudsync.

@@ -11,7 +11,7 @@ import os
 import unicodedata
 from collections.abc import Iterable, Sequence
 
-_STREAMING_PREFIXES = ("spotify:", "tidal:", "http://", "https://")
+STREAMING_URI_PREFIXES = ("spotify:", "tidal:", "http://", "https://")
 
 
 class PathCollisionError(ValueError):
@@ -29,7 +29,7 @@ def path_collision_key(raw_path: str) -> str:
 
 
 def is_streaming_path(path_str: str) -> bool:
-    return path_str.startswith(_STREAMING_PREFIXES)
+    return path_str.startswith(STREAMING_URI_PREFIXES)
 
 
 def assert_no_path_collisions(paths: Iterable[str]) -> None:

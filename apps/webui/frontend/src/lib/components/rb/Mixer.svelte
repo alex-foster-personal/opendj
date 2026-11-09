@@ -107,6 +107,11 @@
 		void runPerformanceCommandFromUi({ type: 'color_fx', deck, effect });
 	}
 
+	/** COLORFX-10320: the menu's ECHO division; the same command agents send. */
+	function handleEchoDivision(deck: DeckId, echo_beats: 0.25 | 0.5 | 0.75 | 1): void {
+		void runPerformanceCommandFromUi({ type: 'color_fx', deck, echo_beats });
+	}
+
 	function handleFader(deck: DeckId, value: number): void {
 		void runPerformanceCommandFromUi({ type: 'fader', deck, value });
 	}
@@ -152,6 +157,10 @@
 		void runPerformanceCommandFromUi({ type: 'headphone_level', value });
 	}
 
+	function handleBoothLevel(value: number): void {
+		void runPerformanceCommandFromUi({ type: 'headphone_booth_level', value });
+	}
+
 	function handleHeadphoneOutputMode(mode: HeadphoneOutputMode): void {
 		void runPerformanceCommandFromUi({ type: 'output_mode', mode });
 	}
@@ -179,6 +188,10 @@
 
 	function selectMasterOutput(device_id: string): Promise<unknown> {
 		return runPerformanceCommandFromUi({ type: 'headphone_master_select', device_id });
+	}
+
+	function selectBoothOutput(device_id: string): Promise<unknown> {
+		return runPerformanceCommandFromUi({ type: 'headphone_booth_select', device_id });
 	}
 
 	function selectAudioInput(device_id: string): Promise<unknown> {
@@ -322,6 +335,7 @@
 					oneq={(band, v) => handleEq(deck, band, v)}
 					onfilter={(v) => handleFilter(deck, v)}
 					oncolorfx={(effect) => handleColorFx(deck, effect)}
+					onechodivision={(beats) => handleEchoDivision(deck, beats)}
 					onfader={(v) => handleFader(deck, v)}
 					oncue={(enabled) => handleCue(deck, enabled)}
 					onStemGain={(stem, value) => handleStemGain(deck, stem, value)}
@@ -338,11 +352,13 @@
 				state={mixerState.headphones}
 				onmix={handleHeadphoneMix}
 				onlevel={handleHeadphoneLevel}
+				onboothlevel={handleBoothLevel}
 				ondelay={handleHeadDelay}
 				onrefresh={refreshHeadphoneOutputs}
 				onacquire={acquireHeadphoneOutput}
 				onselect={selectHeadphoneOutput}
 				onmaster={selectMasterOutput}
+				onbooth={selectBoothOutput}
 				oninput={selectAudioInput}
 				onmode={handleHeadphoneOutputMode}
 				oncalibrate={openCueAlignModal}

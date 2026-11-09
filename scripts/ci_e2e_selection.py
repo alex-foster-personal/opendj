@@ -111,6 +111,7 @@ STATIC_GATES = ("webkit", "deckload-smoke", "stretch", "master12", "onboarding",
 STATIC_GATE_SPECS: dict[str, tuple[str, ...]] = {
     "webkit": (
         "tests/e2e/webkit-deckload.spec.ts",
+        "tests/e2e/stem-dial-drag-webkit.spec.ts",
         "tests/e2e/playlist-detail.spec.ts",
         "tests/e2e/setup-entry-points.spec.ts",
     ),
@@ -120,6 +121,14 @@ STATIC_GATE_SPECS: dict[str, tuple[str, ...]] = {
     "onboarding": ("tests/e2e/onboarding-gauntlet-",),
     "cmdk-pick-race": ("tests/e2e/cmdk-pick-race.spec.ts",),
     "cmdk-preview-cue": ("tests/e2e/cmdk-preview-cue.spec.ts",),
+}
+#: Dev-server gates e2e.yml runs after it builds the map (S1 round 34, so a map that times
+#: out on main is still built), so no map holds their specs: a changed one of these promotes
+#: its gate to strong without the map (Codex on PR #10636). Prefixes, relative to the
+#: frontend; their configs' testMatch, pinned by (private path).
+GATES_AFTER_THE_MAP: dict[str, tuple[str, ...]] = {
+    "library-jobs": ("tests/e2e/library-jobs-ordering.spec.ts",),
+    "preflight": ("tests/e2e/preflight-gate.spec.ts", "tests/e2e/fresh-install-onboarding.spec.ts"),
 }
 ALL_GATES = tuple(sorted(GATES)) + STATIC_GATES
 HEX40 = re.compile(r"^[0-9a-f]{40}$")
@@ -408,12 +417,16 @@ def _select_changed_spec(spec: str, footprints: Footprints, selection: Selection
     """A changed spec runs itself in the root suite, and promotes the gate that owns it.
 
     A spec the root config ignores is not added to the root filter (it would match nothing);
-    its owner, a footprinted gate by the map's `specs` or a static gate by
-    `STATIC_GATE_SPECS`, is strong instead. A spec with neither is a dedicated-config suite
-    the gate never runs (the extended tier), noted.
+    its owner, a footprinted gate by the map's `specs`, or a static gate or a gate the map is
+    built before by `STATIC_GATE_SPECS` and `GATES_AFTER_THE_MAP`, is strong instead. A spec
+    with none is a dedicated-config suite the gate never runs (the extended tier), noted.
     """
     owners = [gate for gate, entry in footprints.gates.items() if spec in entry["specs"]]
-    owners += [gate for gate, prefixes in STATIC_GATE_SPECS.items() if spec.startswith(prefixes)]
+    owners += [
+        gate
+        for gate, prefixes in {**STATIC_GATE_SPECS, **GATES_AFTER_THE_MAP}.items()
+        if spec.startswith(prefixes) and gate not in owners
+    ]
     for gate in owners:
         selection.gate(gate, f"{REASON_CHANGED_SPEC} {spec} is one of its specs", footprints)
     if spec in footprints.ignored:

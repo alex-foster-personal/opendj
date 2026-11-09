@@ -13,7 +13,8 @@ Subcommands
                   band, and one row per refusal with its named reason.
 ``progress``      Aggregate + per-item state for a batch.
 ``cancel``        Cancel pending AND in-flight items.
-``resume``        Put a cancelled or abandoned batch back in the queue.
+``resume``        Put a cancelled or abandoned batch back (refuses while a
+                  live runner holds it).
 ``run``           Drain a batch across the worker pool the plan sized.
 ``version-bump``  Re-queue every track whose record for a producer predates
                   a version.
@@ -437,7 +438,10 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--batch-id", required=True)
     p.set_defaults(func=cmd_cancel)
 
-    p = sub.add_parser("resume", help="put a cancelled or abandoned batch back")
+    p = sub.add_parser(
+        "resume",
+        help="put a cancelled or abandoned batch back (refuses while a live runner holds it)",
+    )
     p.add_argument("--batch-id", required=True)
     p.set_defaults(func=cmd_resume)
 
@@ -469,7 +473,10 @@ def main(argv: list[str] | None = None) -> int:
     try:
         return int(args.func(args))
     except (queue_api.QueueError, KeyError) as exc:
-        console.print(f"[red][ERROR][/red] {exc}")
+        # Plain print, never Rich: the engine finds this marker by its literal
+        # text, and under FORCE_COLOR=1 (Playwright's webServer sets it) Rich
+        # highlighting splits "[ERROR]" into coloured fragments.
+        print(f"[ERROR] {exc}", flush=True)
         return EXIT_USAGE
     except Exception:
         log.exception("queue command failed")

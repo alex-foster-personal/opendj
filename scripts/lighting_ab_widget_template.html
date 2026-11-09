@@ -1,0 +1,219 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; media-src data: blob:; img-src data: blob:">
+<title>__AB_TITLE__</title>
+<style>
+  body { background: #111; color: #ddd; font: 14px system-ui, sans-serif; margin: 16px; }
+  .row { display: flex; gap: 16px; align-items: flex-start; }
+  .side { text-align: center; }
+  canvas.stage { background: #000; border: 1px solid #333; }
+  #waveform { background: #1a1a1a; cursor: pointer; display: block; margin-top: 8px; }
+  button { margin: 4px; padding: 6px 14px; }
+  #status { margin-left: 12px; }
+</style>
+</head>
+<body>
+<h1>__AB_TITLE__</h1>
+<div><span id="progress">Pair 1 / 1</span><span id="status"></span></div>
+<div class="row">
+  <div class="side"><div>A</div><canvas class="stage" id="stage-a" width="480" height="270"></canvas></div>
+  <div class="side"><div>B</div><canvas class="stage" id="stage-b" width="480" height="270"></canvas></div>
+</div>
+<div>
+  <audio id="audio" preload="auto"></audio>
+  <button id="play">Play / Pause</button>
+  <span id="time">0.0 s</span>
+  <canvas id="waveform" width="960" height="80"></canvas>
+</div>
+<div>
+  <button id="choose-a">A is better (A)</button>
+  <button id="choose-n">No preference (N)</button>
+  <button id="choose-b">B is better (B)</button>
+  <button id="back">Back (Backspace)</button>
+  <button id="export" disabled>Export ratings</button>
+</div>
+<script>
+"use strict";
+const PAYLOAD = JSON.parse(atob(/*__AB_PAYLOAD__*/null));
+const audio = document.getElementById("audio");
+const waveform = document.getElementById("waveform");
+const stages = [document.getElementById("stage-a"), document.getElementById("stage-b")];
+const progressEl = document.getElementById("progress");
+const statusEl = document.getElementById("status");
+const exportBtn = document.getElementById("export");
+const timeEl = document.getElementById("time");
+audio.src = PAYLOAD.audio;
+
+let peaks = null;
+let current = 0;
+let shownAt = performance.now();
+let tick = 0;
+const ratings = [];
+
+function audioBytes() {
+  const b64 = PAYLOAD.audio.slice(PAYLOAD.audio.indexOf(",") + 1);
+  const bin = atob(b64);
+  const out = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i);
+  return out.buffer;
+}
+
+function computePeaks(buffer) {
+  const data = buffer.getChannelData(0);
+  const width = waveform.width;
+  const step = Math.max(1, Math.floor(data.length / width));
+  const result = [];
+  for (let x = 0; x < width; x++) {
+    let lo = 0, hi = 0;
+    for (let i = x * step; i < Math.min(data.length, (x + 1) * step); i++) {
+      if (data[i] < lo) lo = data[i];
+      if (data[i] > hi) hi = data[i];
+    }
+    result.push([lo, hi]);
+  }
+  return result;
+}
+
+const AudioCtx = window.AudioContext || window.webkitAudioContext;
+new AudioCtx().decodeAudioData(audioBytes()).then((buf) => { peaks = computePeaks(buf); draw(); },
+  (err) => { statusEl.textContent = "waveform decode failed: " + err; });
+
+function frameAt(frames, t) {
+  let lo = 0, hi = frames.length - 1;
+  if (t <= frames[0].t_ns) return frames[0];
+  while (lo < hi) {
+    const mid = (lo + hi + 1) >> 1;
+    if (frames[mid].t_ns <= t) lo = mid; else hi = mid - 1;
+  }
+  return frames[lo];
+}
+
+function drawStage(canvas, frames) {
+  const ctx = canvas.getContext("2d");
+  const w = canvas.width, h = canvas.height;
+  ctx.fillStyle = "#050505";
+  ctx.fillRect(0, 0, w, h);
+  const frame = frameAt(frames, frames[0].t_ns + audio.currentTime * 1e9);
+  const n = frame.fixtures.length;
+  frame.fixtures.forEach((f, i) => {
+    const x = (f.x !== undefined ? f.x : (i + 0.5) / n) * w;
+    const y = (f.y !== undefined ? f.y : 0.5) * h;
+    const k = f.intensity;
+    let rgb = f.color.map((c) => Math.round(c * k));
+    if (f.strobe && tick % 2 === 0) rgb = [255, 255, 255];
+    const col = "rgb(" + rgb.join(",") + ")";
+    const glow = ctx.createRadialGradient(x, y, 2, x, y, 10 + 40 * k);
+    glow.addColorStop(0, col);
+    glow.addColorStop(1, "rgba(0,0,0,0)");
+    ctx.fillStyle = glow;
+    ctx.beginPath(); ctx.arc(x, y, 10 + 40 * k, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = col;
+    ctx.beginPath(); ctx.arc(x, y, 8, 0, Math.PI * 2); ctx.fill();
+    if (f.pan !== undefined || f.tilt !== undefined) {
+      const ang = ((f.pan || 0) - 90) * Math.PI / 180;
+      const len = 30 + 60 * k;
+      ctx.strokeStyle = col; ctx.lineWidth = 2;
+      ctx.beginPath(); ctx.moveTo(x, y); ctx.lineTo(x + Math.cos(ang) * len, y + Math.sin(ang) * len); ctx.stroke();
+    }
+  });
+}
+
+function drawWaveform() {
+  const ctx = waveform.getContext("2d");
+  const w = waveform.width, h = waveform.height;
+  ctx.fillStyle = "#1a1a1a"; ctx.fillRect(0, 0, w, h);
+  if (peaks) {
+    ctx.fillStyle = "#4a8";
+    peaks.forEach(([lo, hi], x) => ctx.fillRect(x, (1 - hi) * h / 2, 1, Math.max(1, (hi - lo) * h / 2)));
+  }
+  if (audio.duration) {
+    const px = (audio.currentTime / audio.duration) * w;
+    ctx.fillStyle = "#fff"; ctx.fillRect(px, 0, 2, h);
+  }
+}
+
+function draw() {
+  if (current < PAYLOAD.pairs.length) {
+    const pair = PAYLOAD.pairs[current];
+    drawStage(stages[0], PAYLOAD.frames[pair[1]]);
+    drawStage(stages[1], PAYLOAD.frames[pair[2]]);
+  }
+  drawWaveform();
+  timeEl.textContent = audio.currentTime.toFixed(1) + " s";
+}
+
+function loop() { tick++; draw(); requestAnimationFrame(loop); }
+
+function updateProgress() {
+  const total = PAYLOAD.pairs.length;
+  progressEl.textContent = current < total ? "Pair " + (current + 1) + " / " + total : "Done, export your ratings";
+  exportBtn.disabled = ratings.length === 0;
+}
+
+function choose(choice) {
+  if (current >= PAYLOAD.pairs.length) return;
+  const pair = PAYLOAD.pairs[current];
+  ratings.push({ pair_index: pair[0], left_variant_index: pair[1], right_variant_index: pair[2],
+    choice: choice, decided_ms: Math.round(performance.now() - shownAt) });
+  current++;
+  shownAt = performance.now();
+  audio.currentTime = 0;
+  updateProgress();
+}
+
+function back() {
+  if (ratings.length === 0) return;
+  ratings.pop();
+  current--;
+  shownAt = performance.now();
+  audio.currentTime = 0;
+  updateProgress();
+}
+
+function exportRatings() {
+  const ids = PAYLOAD.variant_ids;
+  const out = { schema: "lighting-ab-ratings/1", seed: PAYLOAD.seed, audio_name: PAYLOAD.audio_name,
+    variant_ids: ids, ratings: ratings.map((r) => ({ pair_index: r.pair_index,
+      left_variant: ids[r.left_variant_index], right_variant: ids[r.right_variant_index], choice: r.choice,
+      preferred_variant: r.choice === "A" ? ids[r.left_variant_index] : r.choice === "B" ? ids[r.right_variant_index] : null,
+      decided_ms: r.decided_ms })) };
+  const url = URL.createObjectURL(new Blob([JSON.stringify(out, null, 2)], { type: "application/json" }));
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = "lighting-ab-ratings-seed" + PAYLOAD.seed + ".json";
+  document.body.appendChild(a); a.click(); a.remove();
+  URL.revokeObjectURL(url);
+}
+
+function togglePlay() { if (audio.paused) audio.play(); else audio.pause(); }
+
+waveform.addEventListener("click", (e) => {
+  const r = waveform.getBoundingClientRect();
+  if (!audio.duration) return;
+  audio.currentTime = ((e.clientX - r.left) / r.width) * audio.duration;
+  draw();
+});
+audio.addEventListener("seeked", draw);
+document.getElementById("play").addEventListener("click", togglePlay);
+document.getElementById("choose-a").addEventListener("click", () => choose("A"));
+document.getElementById("choose-b").addEventListener("click", () => choose("B"));
+document.getElementById("choose-n").addEventListener("click", () => choose("none"));
+document.getElementById("back").addEventListener("click", back);
+exportBtn.addEventListener("click", exportRatings);
+document.addEventListener("keydown", (e) => {
+  if (e.ctrlKey || e.metaKey || e.altKey || e.target.tagName === "INPUT") return;
+  const k = e.key;
+  if (k === "a" || k === "A" || k === "ArrowLeft") choose("A");
+  else if (k === "b" || k === "B" || k === "ArrowRight") choose("B");
+  else if (k === "n" || k === "N") choose("none");
+  else if (k === "Backspace") { e.preventDefault(); back(); }
+  else if (k === " ") { e.preventDefault(); togglePlay(); }
+  else return;
+});
+updateProgress();
+loop();
+</script>
+</body>
+</html>

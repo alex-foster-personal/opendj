@@ -1,0 +1,9 @@
+{
+ "map_name": "DDJ-400",
+ "map_const": "DDJ400_MAP",
+ "map_ts": "apps/webui/frontend/src/lib/rb/midi/maps/ddj-400.ts",
+ "panel_w": 482.0,
+ "panel_d": 272.4,
+ "panel_size_source": "DDJ-400 Operating Instructions, Specifications (482 x 272.4 mm); confirm at checklist step 1",
+ "display_name": "2-deck entry controller"
+}

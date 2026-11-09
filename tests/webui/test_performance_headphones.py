@@ -38,6 +38,7 @@ pytestmark = pytest.mark.requirement("CUEOUT-04")
 _DEFAULT_HEADPHONES: dict[str, Any] = {
     "mix": 0.5,
     "level": 0.5,
+    "booth_level": 0.5,
     "head_delay_ms": 0,
     "alignment_mode": "hybrid",
     "master_delay_ms": 0,
@@ -52,6 +53,7 @@ _DEFAULT_HEADPHONES: dict[str, Any] = {
     },
     "selected_output_device_id": None,
     "selected_master_output_device_id": None,
+    "selected_booth_output_device_id": None,
     "selected_input_device_id": None,
     "output_mode": "practice",
     "outputs": [],
@@ -147,6 +149,9 @@ def _apply_command(mirror: dict[str, Any], command: dict[str, Any]) -> dict[str,
     elif command_type == "headphone_level":
         mirror["mixer"]["headphones"]["level"] = command["value"]
         changed = {"mixer": {"headphones": {"level": command["value"]}}}
+    elif command_type == "headphone_booth_level":
+        mirror["mixer"]["headphones"]["booth_level"] = command["value"]
+        changed = {"mixer": {"headphones": {"booth_level": command["value"]}}}
     elif command_type == "head_delay_ms":
         mirror["mixer"]["headphones"]["head_delay_ms"] = command["value"]
         changed = {"mixer": {"headphones": {"head_delay_ms": command["value"]}}}
@@ -219,6 +224,16 @@ def _apply_command(mirror: dict[str, Any], command: dict[str, Any]) -> dict[str,
                 },
             },
         }
+    elif command_type == "headphone_booth_select":
+        selected = command["device_id"] or None
+        mirror["mixer"]["headphones"]["selected_booth_output_device_id"] = selected
+        changed = {
+            "mixer": {
+                "headphones": {
+                    "selected_booth_output_device_id": selected,
+                },
+            },
+        }
     elif command_type == "headphone_input_select":
         mirror["mixer"]["headphones"]["selected_input_device_id"] = command["device_id"]
         changed = {
@@ -280,8 +295,10 @@ def test_performance_headphone_predicate_matches_headphone_command_union() -> No
 
 def test_ipc_error_strings_appear_in_performance_ipc_source() -> None:
     root = __import__("pathlib").Path(__file__).resolve().parents[2]
-    ipc_source = (root / "apps/webui/frontend/src/lib/rb/performance-ipc.svelte.ts").read_text(
-        encoding="utf-8"
+    # The command parser and its guards moved to the sibling guards module (#8629).
+    ipc_source = "".join(
+        (root / "apps/webui/frontend/src/lib/rb" / name).read_text(encoding="utf-8")
+        for name in ("performance-ipc.svelte.ts", "performance-ipc-guards.ts")
     )
     headphones_source = (root / "apps/webui/frontend/src/lib/player/headphones.ts").read_text(
         encoding="utf-8"
@@ -386,6 +403,11 @@ def test_no_page_returns_503() -> None:
             {"type": "headphone_level", "value": 0.75},
         ),
         (
+            "/api/v1/performance/headphones/booth-level",
+            {"value": 0.25},
+            {"type": "headphone_booth_level", "value": 0.25},
+        ),
+        (
             "/api/v1/performance/headphones/channel-cue",
             {"deck": 2, "enabled": True},
             {"type": "channel_cue", "deck": 2, "enabled": True},
@@ -404,6 +426,16 @@ def test_no_page_returns_503() -> None:
             "/api/v1/performance/headphones/outputs/master",
             {"device_id": "speakers"},
             {"type": "headphone_master_select", "device_id": "speakers"},
+        ),
+        (
+            "/api/v1/performance/headphones/outputs/booth",
+            {"device_id": "booth-usb"},
+            {"type": "headphone_booth_select", "device_id": "booth-usb"},
+        ),
+        (
+            "/api/v1/performance/headphones/outputs/booth",
+            {"device_id": ""},
+            {"type": "headphone_booth_select", "device_id": ""},
         ),
         (
             "/api/v1/performance/headphones/inputs/select",

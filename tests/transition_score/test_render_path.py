@@ -186,7 +186,9 @@ def test_compile_emits_key_nudge_after_load_for_heard_key_shift() -> None:
     doc = compile_render_plan(plan, out_profile, in_shifted, 4, out_audio=A_WAV, in_audio=B_WAV)
     loads = [i for i, e in enumerate(doc["events"]) if e.get("cmd", {}).get("type") == "load"]
     nudges = [
-        i for i, e in enumerate(doc["events"]) if e.get("cmd", {}).get("type") == "key_nudge" and e.get("at") == {"ms": 0}
+        i
+        for i, e in enumerate(doc["events"])
+        if e.get("cmd", {}).get("type") == "key_nudge" and e.get("at") == {"ms": 0}
     ]
     assert nudges and all(loads[0] < i for i in nudges)
     cmd = next(e["cmd"] for e in doc["events"] if e.get("cmd", {}).get("type") == "key_nudge")
@@ -333,26 +335,54 @@ def test_bench_table_lists_every_candidate_with_its_veto_and_measured_count() ->
     from apps.transition_score.bench import table
     from apps.transition_score.contract import Candidate, Measured, TryResult, Veto
 
-    def candidate(cid: str, score: float | None, vetoes: tuple[Veto, ...]) -> Candidate:
+    def candidate(
+        cid: str,
+        score: float | None,
+        vetoes: tuple[Veto, ...],
+        metrics: dict[str, object] | None = None,
+    ) -> Candidate:
+        merged = {"beat_offset_ms_p95": 4.2}
+        if metrics:
+            merged.update(metrics)
         return Candidate(
             cid,
-            {},
+            "{}",
             "0" * 64,
             "bass_swap_blend",
             16,
-            {"beat_offset_ms_p95": 4.2},
-            {},
+            json.dumps(merged),
+            "{}",
             vetoes,
             Measured(6, 7),
-            {},
+            "{}",
             score,
             SCORER_VERSION,
             300.0,
             900.0,
         )
 
-    text = table(TryResult("a", "b", (candidate("c1", 0.8, ()), candidate("c2", 0.0, (Veto("bar_lag", 1.0, 0.0),)))))
+    text = table(
+        TryResult(
+            "a",
+            "b",
+            (
+                candidate(
+                    "c1",
+                    0.8,
+                    (),
+                    {
+                        "band_deficit_lu_low": 0.0,
+                        "band_deficit_lu_mid": 2.9,
+                        "band_deficit_lu_high": 0.0,
+                    },
+                ),
+                candidate("c2", 0.0, (Veto("bar_lag", 1.0, 0.0),)),
+            ),
+        )
+    )
     print(text)
+    assert "band LU" in text
+    assert "0.0/2.9/0.0" in text and "?/?/?" in text
     assert "c1" in text and "c2" in text and "bar_lag" in text and "6/7" in text and "4.2" in text
 
 
@@ -492,9 +522,7 @@ def test_a_refused_candidate_records_the_full_plan(monkeypatch: pytest.MonkeyPat
     assert candidate.plan["shape"] == "lull_then_drop"
     assert candidate.plan["bass_entry"]["hit_plan_bar"] == 8.0
     assert candidate.plan["seed"] == 7
-    assert candidate.plan_sha256 == hashlib.sha256(
-        json.dumps(candidate.plan, sort_keys=True).encode()
-    ).hexdigest()
+    assert candidate.plan_sha256 == hashlib.sha256(json.dumps(candidate.plan, sort_keys=True).encode()).hexdigest()
 
 
 def test_render_context_reads_shape_and_bass_entry_from_the_typed_plan() -> None:
@@ -820,15 +848,15 @@ def _cand(cid: str, score: float | None, alignment_unknown: bool, vetoes: tuple 
     unknown = {"alignment": "too few beats timed"} if alignment_unknown else {}
     return Candidate(
         cid,
-        {},
+        "{}",
         "0" * 64,
         "long_blend",
         16,
-        {},
-        {},
+        "{}",
+        "{}",
         vetoes,
         Measured(4 if alignment_unknown else 5, 7),
-        unknown,
+        json.dumps(unknown),
         score,
         SCORER_VERSION,
         1.0,
@@ -881,9 +909,7 @@ def test_engine_profiles_httpx_client_disables_env_proxy_for_self_http(monkeypat
     seen_urls: list[str] = []
 
     class _Client:
-        def __init__(
-            self, *, timeout: float, transport: httpx.BaseTransport | None = None, trust_env: bool
-        ) -> None:
+        def __init__(self, *, timeout: float, transport: httpx.BaseTransport | None = None, trust_env: bool) -> None:
             assert trust_env is False
             self._timeout = timeout
             self._transport = transport
@@ -956,17 +982,48 @@ def test_one_unrenderable_proposal_does_not_sink_the_pair(tmp_path: Path, monkey
         tryer.renderable_plans(plans, out_profile, in_profile, 4, autodj=_AUTODJ)
 
 
-def test_an_unsynced_plan_across_different_bpms_is_refused() -> None:
-    """[if] a tempo_mode none plan joins tracks of different BPM [then] the layout is refused, because the
-    incoming end would be counted in outgoing bars and land before the overlap, else stop."""
+def test_an_unsynced_plan_across_bpms_plays_the_incoming_at_its_own_rate() -> None:
+    """[if] a tempo_mode none plan joins tracks of different BPM [then] the incoming plays at its own rate, [else stop]."""
     import dataclasses
 
     out_profile, in_profile = _profiles()
     assert OUT_BPM != IN_BPM
     plan = dataclasses.replace(_plans()[0], tempo_mode="none")
-    with pytest.raises(RenderPlanError, match="BPM"):
-        layout_of(plan, out_profile, in_profile, 4)
-    layout_of(plan, out_profile, out_profile, 4)
+    layout = layout_of(plan, out_profile, in_profile, 4)
+    assert layout.in_ratio == 1.0
+    assert layout.in_fold == pytest.approx(IN_BPM / OUT_BPM)
+    same = layout_of(dataclasses.replace(plan, tempo_mode="none"), out_profile, out_profile, 4)
+    assert same.in_fold == pytest.approx(1.0)
+
+
+@pytest.mark.requirement("FXTRANS-9850")
+def test_the_tryer_lists_echo_out_as_refused_with_the_fxtrans_reason() -> None:
+    """[if] echo_out is render-listed beside a cut [then] only echo_out is refused with FXTRANS-03, [else stop]."""
+    from apps.autodj.styles import STYLES, exit_bar
+
+    out_profile, in_profile = _profiles()
+    echo_doc = {
+        "out": {"deck": 1, "track": "fixture-out", "window": {"start_bar": 17, "bars": 3}},
+        "in": {"deck": 2, "track": "fixture-in", "window": {"start_bar": 1, "bars": 3}},
+        "style": "echo_out",
+        "tempo": {"mode": "none"},
+        "events": STYLES["echo_out"].build(3, 1, 2, exit_bar(3)),
+    }
+    echo_plan = parse_plan(echo_doc)
+    cut_plan = parse_plan(
+        {
+            "out": {"deck": 1, "track": "fixture-out", "window": {"start_bar": 17, "bars": 1}},
+            "in": {"deck": 2, "track": "fixture-in", "window": {"start_bar": 1, "bars": 1}},
+            "style": "cut",
+            "tempo": {"mode": "none"},
+            "events": STYLES["cut"].build(1, 1, 2),
+        }
+    )
+    kept, refused = tryer.renderable_plans([echo_plan, cut_plan], out_profile, in_profile, 4, autodj=_AUTODJ)
+    assert cut_plan in kept
+    assert len(refused) == 1
+    assert refused[0].startswith("echo_out:")
+    assert "FXTRANS-03" in refused[0]
 
 
 def test_a_relative_audio_path_never_reaches_the_renderer() -> None:
@@ -1417,7 +1474,9 @@ def _with_incoming_play_bar(plan: Any, at_bar: float) -> Any:
     )
 
 
-def _clock(plan: Any, out_profile: Any, in_profile: Any, monkeypatch: pytest.MonkeyPatch) -> tuple[Any, float, float, float | None, np.ndarray]:
+def _clock(
+    plan: Any, out_profile: Any, in_profile: Any, monkeypatch: pytest.MonkeyPatch
+) -> tuple[Any, float, float, float | None, np.ndarray]:
     """Call incoming_on_render_clock with outgoing_natural stubbed to record start_s and return ones."""
     layout = layout_of(plan, out_profile, in_profile, 4)
     play_bar = _incoming_play(plan).at_bar
@@ -1431,9 +1490,7 @@ def _clock(plan: Any, out_profile: Any, in_profile: Any, monkeypatch: pytest.Mon
 
     monkeypatch.setattr(tryer, "outgoing_natural", capture)
     dummy = Path(Path.cwd().anchor) / "in.wav"
-    entry_s, placed = incoming_on_render_clock(
-        plan, out_profile, in_profile, layout, dummy, frames, autodj=_AUTODJ
-    )
+    entry_s, placed = incoming_on_render_clock(plan, out_profile, in_profile, layout, dummy, frames, autodj=_AUTODJ)
     assert captured, "outgoing_natural must run"
     return layout, play_s, captured[0], entry_s, placed
 

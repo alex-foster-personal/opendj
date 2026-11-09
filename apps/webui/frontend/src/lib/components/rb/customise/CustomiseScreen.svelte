@@ -5,8 +5,10 @@
 	 * preview, reads through `readSettingValue` and writes through `applySettingChange`.
 	 *
 	 * Deck rows have no command-bus verb; labels use `def.title` as the hover title (never the
-	 * waveform quick-settings helper that requires a CLI verb per row).
+	 * waveform quick-settings helper that requires a CLI verb per row). Number rows render as a
+	 * stepper (CUSTSCR-10464, issue #10202).
 	 */
+	import SettingNumberStepper from '$lib/components/settings/SettingNumberStepper.svelte';
 	import SettingPreview from '$lib/components/settings/SettingPreview.svelte';
 	import { SETTINGS_CATALOG } from '$lib/settings/catalog';
 	import type { SettingDef } from '$lib/settings/catalog-types';
@@ -38,6 +40,16 @@
 		if (!isAllowedSettingKey(entry.id))
 			throw new Error(`customise screen ${def.id}: ${entry.id} is not an allowed setting key`);
 		return readSettingValue(entry.id);
+	}
+
+	function _number(entry: SettingDef): number {
+		const raw = _value(entry);
+		const parsed = typeof raw === 'string' ? Number(raw) : NaN;
+		if (!Number.isFinite(parsed))
+			throw new Error(
+				`customise screen ${def.id}: ${entry.id} is a number setting but read back ${JSON.stringify(raw)}`
+			);
+		return parsed;
 	}
 </script>
 
@@ -89,6 +101,15 @@
 										<option value={opt.value}>{opt.label}</option>
 									{/each}
 								</select>
+							{:else if s.control.kind === 'number'}
+								<SettingNumberStepper
+									id={`customise-${def.id}-${s.id}`}
+									label={s.label}
+									title={s.title}
+									control={s.control}
+									value={_number(s)}
+									onchange={(next) => applySettingChange(s.id, String(next))}
+								/>
 							{/if}
 							{#if s.preview !== undefined}
 								<div class="cs-preview">

@@ -106,6 +106,7 @@ from apps.sync_hub import (
     enrollment_credentials,
     fleet_admin,
     generation,
+    health,
     hosted_config,
     maintenance_billing,
     maintenance_enroll,
@@ -210,6 +211,9 @@ def sync(
                         pulled=0,
                     ),
                 )
+                health.record_from_result(
+                    Path(data_dir), started_at, hub_url, exc=exc
+                )
                 raise
             # Journaled while STILL holding the flock (Sol review, PR #3831,
             # P1/BLOCKING): writing this after the ``with`` block exited let a
@@ -221,6 +225,9 @@ def sync(
             # error path just above -- now stays atomic under one lock.
             sync_status.write_result(
                 Path(data_dir), _journal_entry(result, started_at, data_dir)
+            )
+            health.record_from_result(
+                Path(data_dir), started_at, hub_url, result=result
             )
     except single_flight.SyncInProgressError as exc:
         raise SyncDeferredError(DEFER_REASON_SYNC_IN_PROGRESS) from exc

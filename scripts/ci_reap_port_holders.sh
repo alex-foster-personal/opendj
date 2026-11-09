@@ -177,14 +177,23 @@ readonly RELEASE_WAIT_S="${MDT_CI_REAP_RELEASE_WAIT_S:-30}"
 # longer bound rather than sharing RELEASE_WAIT_S with the same-population
 # teardown case above.
 readonly FOREIGN_WAIT_S="${MDT_CI_REAP_FOREIGN_WAIT_S:-120}"
-_wait_for_release() { # $1 = port, $2 = bound seconds (default RELEASE_WAIT_S) -> 0 once free, 1 if still held after the wait
+_port_is_free() { # $1 = port -> 0 when no colliding listener remains
+    [ -z "$(_holder_pids "$1")" ] && [ "$(_listener_count "$1")" -eq 0 ]
+}
+_wait_for_release() { # $1 = port, $2 = bound seconds (default RELEASE_WAIT_S) -> 0 once free, 1 if still held at the deadline
     local port="$1" bound="${2:-$RELEASE_WAIT_S}" waited=0
-    while [ "$waited" -lt "$bound" ]; do
-        [ -z "$(_holder_pids "$port")" ] && [ "$(_listener_count "$port")" -eq 0 ] && { echo "[reap] port $port released after ${waited}s"; return 0; }
+    while :; do
+        # Probe BEFORE checking the bound, so the deadline itself is probed
+        # (issue #1756): a holder that lets go during the final sleep is a
+        # release, not a hold.
+        if _port_is_free "$port"; then
+            echo "[reap] port $port released after ${waited}s"
+            return 0
+        fi
+        [ "$waited" -lt "$bound" ] || return 1
         sleep 1
         waited=$((waited + 1))
     done
-    return 1
 }
 
 # Best-effort cross-uid attribution (issue #1613): apps/webui/port_config.py's
@@ -248,8 +257,9 @@ _terminate() {
 #-----------------------------------------------------------------------------
 
 status=0
-# Ports whose ONE foreign-holder wait has already been spent in the first pass.
-# The final pass must classify such a port again (it may have released during
+# Ports whose ONE foreign-holder wait has already been spent. The first pass
+# must not spend another full FOREIGN_WAIT_S for a later pid on the same port;
+# the final pass must classify such a port again (it may have released during
 # that wait) but must never wait a SECOND full FOREIGN_WAIT_S for the same
 # holder: the verdict is already a failure, so the extra wait only holds the
 # host lock longer to reach the same answer.
@@ -304,6 +314,14 @@ for port in "${ports[@]}"; do
             fi
             owner_note=$(_describe_registry_owner "$port")
             echo "[reap] port $port holder pid $pid has no CI provenance (neither cwd nor executable under a runner _work tree; $PROVENANCE_SEEN); not a job leftover, not signalled${owner_note:+ -- $owner_note}"
+            if _already_waited "$port"; then
+                # Issue #1756: this port's ONE foreign-holder wait was already
+                # spent on an earlier pid in this pass. Waiting again per pid
+                # only holds the host lock longer to reach the same verdict.
+                echo "[ERROR] port $port holder pid $pid has no CI provenance ($PROVENANCE_SEEN); not a job leftover, still held after the foreign-holder wait, not signalled${owner_note:+. $owner_note}. Free the port by hand." >&2
+                status=1
+                continue
+            fi
             echo "[reap] waiting up to ${FOREIGN_WAIT_S}s in case this is a foreign population finishing on its own (issue #1613)"
             if _wait_for_release "$port" "$FOREIGN_WAIT_S"; then
                 continue

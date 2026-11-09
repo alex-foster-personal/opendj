@@ -11,6 +11,7 @@
 // [if] ECHO is selected and the knob returns to center [then] the send closes but the echo input, feedback and return stay open, so the tail rings out
 // [if] the effect type changes [then] every gain moves on a smoothing ramp, never a step
 // [if] ECHO runs on 3/4 beat at 128 BPM [then] its delay line is 0.3515625 s, and it follows a tempo change
+// [if] tempo or division changes on ECHO [then] delay times step and line gains crossfade, never delayTime ramps
 // [if] the deck has no tempo [then] ECHO is inert and the view names why
 // [if] the selector (or an agent) dispatches color_fx [then] the effect changes, the knob reaches setFilter and query() reads it back
 // [if] an agent sends color_fx [then] the typed dispatcher validates it and the Rust engine mode refuses it by name
@@ -103,6 +104,12 @@ function fakeContext() {
 			n.frequency = new FakeParam(350);
 			n.Q = new FakeParam(1);
 			n.gain = new FakeParam(0);
+			return n;
+		},
+		createWaveShaper() {
+			const n = ctx._node('waveshaper');
+			n.curve = null;
+			n.oversample = 'none';
 			return n;
 		},
 		createConvolver() {
@@ -312,7 +319,8 @@ describe('live channel', () => {
 		live.applyColorKnob(1, nodes, 0.1);
 		const g = live._colorFxGraphForTests(1);
 		assert.ok(g.darkSend.gain.landing() > 0.75, 'left turn opens the dark send (control)');
-		assert.equal(g.echo.delayTime.landing(), 0.3515625);
+		assert.equal(g.echo.time(), 0.3515625);
+		assert.equal(g.echo.lines[0].delayTime.landing(), 0.3515625, 'cold start steps the live line');
 		live.applyColorKnob(1, nodes, 0.5);
 		assert.equal(g.darkSend.gain.landing(), 0, 'send closed at center');
 		assert.equal(g.brightSend.gain.landing(), 0);
@@ -403,12 +411,40 @@ describe('live channel', () => {
 		live.applyColorFxSettings({ type: 'color_fx', deck: 1, effect: 'echo', echo_beats: 0.5 });
 		live.applyColorKnob(1, nodes, 0.9);
 		const g = live._colorFxGraphForTests(1);
-		assert.equal(g.echo.delayTime.landing(), 0.24);
+		assert.equal(g.echo.time(), 0.24);
 		setDeckTempo(1, 120);
 		live._tickColorFxTempoForTests();
-		assert.equal(g.echo.delayTime.landing(), 0.25);
+		assert.equal(g.echo.time(), 0.25);
+		const idle = g.echo.lines[1].delayTime;
+		const last = idle.events[idle.events.length - 1];
+		assert.equal(last[0], 'set');
+		assert.equal(last[1], 0.25);
+		assert.equal(g.echo.lines[0].delayTime.landing(), 0.24, 'old line untouched');
 		assert.equal(live.colorFxView()[1].tempo_bpm, 120);
 		assert.equal(live.colorFxView()[1].echo_ms, 250);
+	});
+
+	test('a tempo change crossfades the echo lines and never ramps a delay time', () => {
+		setDeckTempo(1, 125);
+		live.applyColorFxSettings({ type: 'color_fx', deck: 1, effect: 'echo', echo_beats: 0.5 });
+		live.applyColorKnob(1, nodes, 0.9);
+		const g = live._colorFxGraphForTests(1);
+		setDeckTempo(1, 120);
+		live._tickColorFxTempoForTests();
+		live.applyColorFxSettings({ type: 'color_fx', deck: 1, effect: 'echo', echo_beats: 1 });
+		live._tickColorFxTempoForTests();
+		for (const line of g.echo.lines) {
+			for (const e of line.delayTime.events) {
+				assert.equal(e[0], 'set', `delayTime must not ramp: ${JSON.stringify(e)}`);
+				assert.notEqual(e[0], 'target');
+				assert.notEqual(e[0], 'linear');
+			}
+		}
+		let linearCount = 0;
+		for (const lg of g.echo.lineGains) {
+			if (lg.gain.events.some((e) => e[0] === 'linear')) linearCount++;
+		}
+		assert.ok(linearCount >= 2, 'line gains crossfade (control)');
 	});
 
 	test('with no tempo ECHO is inert and the view names why', () => {

@@ -384,10 +384,17 @@ describe('DECKCTL-6235d loop source', () => {
 
 	test('wiring: the menu engages through the loop command, and INT is no longer inert', () => {
 		const cluster = read('lib/components/rb/deck/LoopCluster.svelte');
-		assert.match(cluster, /<LoopSourceMenu \{deck\} \{deckId\} \{pending\} \{onStoredLoop\} \{onDisengage\} \/>/);
+		assert.match(cluster, /<LoopSourceMenu \{deck\} \{deckId\} \{pending\} \{onStoredLoop\} \{onDisengage\} \{onSetActive\} \/>/);
 		assert.doesNotMatch(cluster, /plannedTitle\('loop-source'\)/);
+		const menu = read('lib/components/rb/deck/LoopSourceMenu.svelte');
+		assert.match(menu, /loop-source-active-/);
+		assert.match(menu, /'Clear active' : 'Set active'/);
 		const deck = read('lib/components/rb/Deck.svelte');
 		assert.match(deck, /runPerformanceCommandFromUi\(\{ type: 'loop', deck: deckId, loop, quantize: false \}\)/);
+		assert.match(deck, /onSetActive=\{setActiveMemoryLoop\}/);
+		const engine = read('lib/rb/audio-engine.svelte.ts');
+		assert.match(engine, /displayLoopFrom\(publishedAnlz\.cues[^\n]*\n[^\n]*\n\s*_armActiveLoop\(st,/);
+		assert.match(engine, /const nextLoop = safetyLoopToEngage\(/);
 	});
 
 	// Codex P1 on PR #6235: with Quantize on (the default), a stored loop sent

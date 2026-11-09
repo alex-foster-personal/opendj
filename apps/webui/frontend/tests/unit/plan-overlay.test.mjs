@@ -74,9 +74,16 @@ test('clock curves land on the clock grid: plan bar b is start_bar + b', () => {
 	assert.equal(clock.start_ms, 40 * BAR_MS);
 	assert.equal(clock.end_ms, 56 * BAR_MS);
 	assert.deepEqual(curveOf(geometry, 1, 'fader').points, [
-		[40 * BAR_MS, 1],
-		[48 * BAR_MS, 1],
-		[56 * BAR_MS, 0]
+		[80000, 1],
+		[96000, 1],
+		[98000, 0.875],
+		[100000, 0.75],
+		[102000, 0.625],
+		[104000, 0.5],
+		[106000, 0.375],
+		[108000, 0.25],
+		[110000, 0.125],
+		[112000, 0]
 	]);
 });
 
@@ -97,9 +104,16 @@ test('incoming curves land on the incoming grid and start at the launch, from th
 	assert.equal(incoming.start_ms, at(8));
 	assert.equal(incoming.end_ms, at(24));
 	assert.deepEqual(curveOf(geometry, 2, 'fader').points, [
-		[at(8), 0],
-		[at(16), 1],
-		[at(24), 1]
+		[13100, 0],
+		[14700, 0.125],
+		[16300, 0.25],
+		[17900, 0.375],
+		[19500, 0.5],
+		[21100, 0.625],
+		[22700, 0.75],
+		[24300, 0.875],
+		[25900, 1],
+		[38700, 1]
 	]);
 	assert.deepEqual(curveOf(geometry, 2, 'eq_low').points, [
 		[at(8), 0],
@@ -179,10 +193,16 @@ test('a ramp cut short by a later move stops where the executor stops it', () =>
 	};
 	const curve = curveOf(overlay.buildPlanOverlay({ ...input(), order }), 1, 'fader').points;
 	assert.deepEqual(curve, [
-		[40 * BAR_MS, 1],
-		[44 * BAR_MS, 0.5],
-		[48 * BAR_MS, 1],
-		[56 * BAR_MS, 1]
+		[80000, 1],
+		[82000, 0.875],
+		[84000, 0.75],
+		[86000, 0.625],
+		[88000, 0.5],
+		[90000, 0.625],
+		[92000, 0.75],
+		[94000, 0.875],
+		[96000, 1],
+		[112000, 1]
 	]);
 });
 
@@ -199,7 +219,7 @@ test('a deck with no grid or no tempo reports why and draws nothing, and the oth
 	assert.deepEqual(deckOf(geometry, 2).curves, []);
 	assert.equal(deckOf(geometry, 2).unavailable, 'no_grid');
 	assert.equal(deckOf(geometry, 1).unavailable, null);
-	assert.equal(curveOf(geometry, 1, 'fader').points.length, 3);
+	assert.equal(curveOf(geometry, 1, 'fader').points.length, 10);
 	const noTempo = overlay.buildPlanOverlay(input({ ratio: null }));
 	assert.equal(deckOf(noTempo, 2).unavailable, 'no_tempo');
 });
@@ -294,4 +314,77 @@ test('a build that fails still shows a pending plan on both decks, with no curve
 			[2, 'incoming', 'build_failed', 0, null]
 		]
 	);
+});
+
+test('incoming overlay keeps automation after pause then replay', () => {
+	const order = {
+		...ORDER,
+		events: [
+			{ at_bar: -0.25, command: { type: 'play', deck: 2, playing: true, quantize: true } },
+			{ at_bar: 2, command: { type: 'play', deck: 2, playing: false } },
+			{ at_bar: 5, command: { type: 'play', deck: 2, playing: true } },
+			{ at_bar: 6, ramp: { command: { type: 'fader', deck: 2 }, to: 1, over_bars: 2 } },
+			{ at_bar: 16, command: { type: 'play', deck: 1, playing: false } }
+		]
+	};
+	const geometry = overlay.buildPlanOverlay(input({ order }));
+	const incoming = deckOf(geometry, 2);
+	const at = (incomingBars) => 300 + incomingBars * IN_BAR_MS;
+	assert.equal(incoming.end_ms, at(8 + 13));
+	const fader = curveOf(geometry, 2, 'fader').points;
+	assert.ok(fader.some(([ms, value]) => ms === at(8 + 3) && value === 0));
+	assert.ok(fader.some(([ms]) => ms === at(8 + 5)));
+});
+
+test('unquantized play at 2.5 starts automation at 2.5, not the next downbeat', () => {
+	const playAt = (quantize) => {
+		const events = ORDER.events.map((event, index) =>
+			index === 0
+				? {
+						...event,
+						at_bar: 2.5,
+						command: { ...event.command, quantize }
+					}
+				: event
+		);
+		return overlay.buildPlanOverlay({ ...input(), order: { ...ORDER, events } });
+	};
+	const unquantized = playAt(false);
+	const omitted = playAt(undefined);
+	const quantized = playAt(true);
+	const at = (incomingBars) => 300 + incomingBars * IN_BAR_MS;
+	for (const geometry of [unquantized, omitted]) {
+		assert.equal(deckOf(geometry, 2).start_ms, at(8));
+		assert.equal(deckOf(geometry, 2).end_ms, at(8 + (16 - 2.5)));
+		assert.equal(curveOf(geometry, 2, 'fader').points[0][1], 2.5 / 8);
+	}
+	assert.equal(deckOf(quantized, 2).end_ms, at(8 + (16 - 3)));
+	assert.equal(curveOf(quantized, 2, 'fader').points[0][1], 3 / 8);
+});
+
+test('bar-linear ramps sample unequal downbeats at integer grid bars', () => {
+	const grid = [0, 2000, 6000, ...Array.from({ length: 77 }, (_, i) => 6000 + (i + 1) * 2000)];
+	const order = {
+		...ORDER,
+		start_bar: 1,
+		bars: 2,
+		events: [
+			{ at_bar: 0, ramp: { command: { type: 'fader', deck: 1 }, to: 0, over_bars: 2 } },
+			{ at_bar: 2, command: { type: 'play', deck: 1, playing: false } }
+		]
+	};
+	const fader = curveOf(
+		overlay.buildPlanOverlay({
+			...input(),
+			order,
+			clock: { stable_id: 'out', position_ms: 2000, downbeats: grid }
+		}),
+		1,
+		'fader'
+	).points;
+	assert.deepEqual(fader, [
+		[0, 1],
+		[2000, 0.5],
+		[6000, 0]
+	]);
 });

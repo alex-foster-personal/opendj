@@ -4,10 +4,12 @@
 //! be null-tested against each other on the same plan (plan 20-05). Change one
 //! side only together with the other:
 //!
-//! - `apps/webui/frontend/src/lib/player/constants.ts` (EQ, TRIM, FILTER, smoothing)
+//! - `apps/webui/frontend/src/lib/player/constants.ts` (EQ, TRIM, FILTER incl.
+//!   `FILTER_GLIDE_DOMAIN` / `FILTER_GLIDE_S`, smoothing)
 //! - `apps/webui/frontend/src/lib/rb/audio-engine-guards.ts` (`filterParamsFromKnob`)
 //! - `apps/webui/frontend/src/lib/rb/audio-engine.svelte.ts` (`_xfGainFor`)
 
+use crate::dsp::GlideDomain;
 use crate::engine::{EngineError, ErrorCode};
 
 pub const EQ_FREQ_LOW_HZ: f64 = 250.0;
@@ -28,6 +30,11 @@ pub const FILTER_HP_CEILING_HZ: f64 = 6300.0;
 /// Passed to Web Audio's `BiquadFilterNode.Q`, which for lowpass and highpass
 /// is read in dB (see `dsp::Biquad::lowpass`).
 pub const FILTER_Q: f64 = 0.707;
+/// Mirrors `FILTER_GLIDE_DOMAIN` in constants.ts: the domain the corner glides
+/// in. The choice is calibration round filter-6 (MIXUX-05).
+pub const FILTER_GLIDE_DOMAIN: GlideDomain = GlideDomain::Hz;
+/// Mirrors `FILTER_GLIDE_S`: time constant of the corner glide, either domain.
+pub const FILTER_GLIDE_S: f64 = 0.01;
 /// Smoothing time-constant for every parameter change except EQ (anti-zipper).
 pub const PARAM_SMOOTH_S: f64 = 0.01;
 /// EQ gain moves in a straight line in dB over this long, not exponentially

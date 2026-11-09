@@ -909,3 +909,56 @@ def test_an_apic_picture_type_outside_the_defined_range_is_an_id3_error(tmp_path
     mp3.write_bytes(_raw_tag(4, frame) + b"\xff\xfb\x90\x00" * 4)
     with pytest.raises(id3v2.Id3Error):
         id3v2.read_tag(mp3)
+
+
+@pytest.mark.requirement("DJIMPORT-10062")
+def test_read_tag_at_offset_reads_a_tag_after_leading_bytes(tmp_path: Path) -> None:
+    """[if] an ID3 tag is not at file offset zero [then] read_tag(offset=) still reads it, [else stop]."""
+    from tests.fixtures import serato_containers as sc
+
+    inner = tmp_path / "inner.mp3"
+    sc.write_mp3_with_serato(inner, b"\x01\x01")
+    expected = id3v2.read_tag(inner)
+    assert expected is not None
+    junk = b"JUNK" * 4
+    wrapped = tmp_path / "offset_tag.mp3"
+    wrapped.write_bytes(junk + inner.read_bytes())
+    tag = id3v2.read_tag(wrapped, offset=len(junk))
+    assert tag is not None
+    assert len(tag.geob()) == len(expected.geob())
+
+
+@pytest.mark.requirement("DJIMPORT-10062")
+def test_read_aiff_tag_finds_id3_chunk_or_raises_when_truncated(tmp_path: Path) -> None:
+    """[if] an AIFF has no ID3 chunk [then] read_aiff_tag is None; truncated FORM raises, [else stop]."""
+    from tests.fixtures import serato_containers as sc
+
+    no_tag = tmp_path / "Invented No ID3.aiff"
+    sc.write_aiff_no_id3(no_tag)
+    assert id3v2.read_aiff_tag(no_tag) is None
+    tagged = tmp_path / "Invented Tagged.aiff"
+    sc.write_aiff_with_id3(tagged, sc.markers2_payload())
+    assert id3v2.read_aiff_tag(tagged) is not None
+    truncated = tmp_path / "Invented Truncated.aiff"
+    chunk = b"COMM" + struct.pack(">I", 100)
+    truncated.write_bytes(struct.pack(">4sI4s", b"FORM", 4 + len(chunk), b"AIFF") + chunk)
+    with pytest.raises(id3v2.Id3Error, match=r"runs past"):
+        id3v2.read_aiff_tag(truncated)
+
+
+@pytest.mark.requirement("DJIMPORT-10062")
+def test_read_aiff_tag_spec_chunk_order_byte_by_byte(tmp_path: Path) -> None:
+    """[if] AIFF chunks are ckID then ckSize [then] read_aiff_tag finds ID3 at spec offsets, [else stop]."""
+    empty_frames = b""
+    syncsafe = bytes(((len(empty_frames) >> shift) & 0x7F) for shift in (21, 14, 7, 0))
+    id3_body = b"ID3\x03\x00\x00" + syncsafe + empty_frames
+    id3_chunk = b"ID3 " + struct.pack(">I", len(id3_body)) + id3_body
+    comm_payload = b"\x00" * 18
+    comm_chunk = b"COMM" + struct.pack(">I", len(comm_payload)) + comm_payload
+    aiff_data = comm_chunk + id3_chunk
+    form_size = 4 + len(aiff_data)
+    path = tmp_path / "Invented Spec Order.aiff"
+    path.write_bytes(b"FORM" + struct.pack(">I", form_size) + b"AIFF" + aiff_data)
+    tag = id3v2.read_aiff_tag(path)
+    assert tag is not None
+    assert tag.frames == []

@@ -20,7 +20,7 @@ from pathlib import Path
 from typing import Any, Literal, get_args
 
 from fastapi import APIRouter, HTTPException, Request
-from pydantic import BaseModel, ConfigDict, Field, StrictBool, field_validator, model_validator
+from pydantic import BaseModel, ConfigDict, Field, StrictBool, StrictFloat, field_validator, model_validator
 from pydantic.json_schema import SkipJsonSchema
 
 from apps.shared.events import publish
@@ -28,6 +28,11 @@ from apps.shared.harmonic import CAMELOT_RULE_IDS, DEFAULT_CAMELOT_RULE_IDS, cam
 from apps.shared.paths import DATA_DIR
 
 from ..auto_gain_prefs import DEFAULT_AUTO_GAIN, AutoGainPrefsOut, merge_auto_gain, parse_auto_gain
+from ..library_related_prefs import (
+    LibraryRelatedCriteriaOut,
+    merge_library_related_criteria,
+    parse_library_related_criteria,
+)
 from ..library_tabs_prefs import (
     LibraryTabsActionIn,
     LibraryTabsActionOut,
@@ -66,7 +71,7 @@ _DEFAULT_SHOW_AGENT_PINS = True
 _DEFAULT_SHOW_STEMS = False
 _DEFAULT_DECK_HOVER_LINK = True
 _DEFAULT_BEAT_SYNC_MAX = True
-_DEFAULT_AUTO_PLAY_ENABLED = True
+_DEFAULT_AUTO_PLAY_ENABLED = False
 _DEFAULT_AUTO_PLAY_ENFORCE_ORDER = False
 _DEFAULT_AUTO_PLAY_MAXIMIZE_REACH = True
 _DEFAULT_MASTER_MUTED = False
@@ -93,8 +98,11 @@ _DEFAULT_PERF_VIEW: PerfView = "waveform"
 # deck is ejected ("Quantize on new decks"). Default on, the value every deck
 # was hardcoded to before this pref existed.
 _DEFAULT_DECK_DEFAULT_QUANTIZE = True
+# DECKCTL-10421: Needle Lock, a playing deck's overview strip ignores clicks (rekordbox). Default off.
+_DEFAULT_DECK_NEEDLE_LOCK = False
 _DECK_DEFAULT_BOOL_DEFAULTS: dict[str, bool] = {
     "deck_default_quantize": _DEFAULT_DECK_DEFAULT_QUANTIZE,
+    "deck_needle_lock": _DEFAULT_DECK_NEEDLE_LOCK,
 }
 # STRUCT-05: translucent labeled section bands over the deck strip, the main
 # scrolling waveform and the browser preview. Default off so nothing changes
@@ -167,6 +175,10 @@ _DEFAULT_MIDI_ENABLED = False
 _DEFAULT_SPOTIFY_SHRINK_MAIN = True
 # ARTTHUMB-8592: playlist art thumbnails in the sidebar (library view option).
 _DEFAULT_LIBRARY_SIDEBAR_ART = True
+# DECKUX-10470: per-deck beat jump size (rekordbox / CDJ-3000 sizes, default 4).
+_BEAT_JUMP_SIZE_CHOICES: tuple[float, ...] = (0.5, 1, 2, 4, 8, 16, 32, 64)
+_BEAT_JUMP_DECK_KEYS: tuple[str, ...] = ("deck_1", "deck_2", "deck_3", "deck_4")
+_DEFAULT_BEAT_JUMP_SIZES: dict[str, float] = dict.fromkeys(_BEAT_JUMP_DECK_KEYS, 4)
 _WHEEL_MIN = 0.05
 _WHEEL_MAX = 4.0
 _LIBRARY_BROWSER_BOOL_KEYS: tuple[str, ...] = (
@@ -637,6 +649,35 @@ def _parse_wheel_sensitivity(raw: Any) -> dict[str, float]:
     return out
 
 
+def _beat_jump_sizes_invalid(message: str) -> HTTPException:
+    return HTTPException(status_code=422, detail={"code": "UI_PREFS_INVALID", "message": message})
+
+
+def _parse_beat_jump_sizes(raw: Any) -> dict[str, float]:
+    if raw is None:
+        return dict(_DEFAULT_BEAT_JUMP_SIZES)
+    if not isinstance(raw, dict):
+        raise _beat_jump_sizes_invalid("beat_jump_sizes must be an object")
+    out = dict(_DEFAULT_BEAT_JUMP_SIZES)
+    for key, val in raw.items():
+        if key not in _BEAT_JUMP_DECK_KEYS:
+            raise _beat_jump_sizes_invalid(f"beat_jump_sizes has unknown key {key!r}")
+        if isinstance(val, bool) or not isinstance(val, (int, float)) or val not in _BEAT_JUMP_SIZE_CHOICES:
+            raise _beat_jump_sizes_invalid(
+                f"beat_jump_sizes.{key} must be one of 0.5|1|2|4|8|16|32|64, got {val!r}"
+            )
+        out[key] = val
+    return out
+
+
+def _merge_beat_jump_sizes(current: dict[str, Any], body: UiPrefsPatch) -> None:
+    """A PATCH naming some decks keeps the others' sizes (DECKUX-10470)."""
+    if body.beat_jump_sizes is not None:
+        current["beat_jump_sizes"] = _parse_beat_jump_sizes(
+            {**current["beat_jump_sizes"], **body.beat_jump_sizes.model_dump(exclude_unset=True)}
+        )
+
+
 def _parse_last_gig_at(value: Any) -> str | None:
     if value is None:
         return None
@@ -956,10 +997,12 @@ def _load(path: Path) -> dict[str, Any]:
             "library_optional_columns": [],
             "library_classical_layout": False,
             "wheel_sensitivity": dict(_DEFAULT_WHEEL_SENSITIVITY),
+            "beat_jump_sizes": dict(_DEFAULT_BEAT_JUMP_SIZES),
             "library_watcher_folders": [],
             "library_key_filter": [],
             "compatible_filter": dict(_DEFAULT_COMPATIBLE_FILTER),
             "library_tabs": parse_library_tabs(None),
+            "library_related_criteria": parse_library_related_criteria(None),
         }
     raw = json.loads(path.read_text(encoding="utf-8"))
     if not isinstance(raw, dict):
@@ -1066,10 +1109,12 @@ def _load(path: Path) -> dict[str, Any]:
         "library_optional_columns": _parse_library_optional_columns(raw),
         "library_classical_layout": _parse_library_classical_layout(raw),
         "wheel_sensitivity": _parse_wheel_sensitivity(raw.get("wheel_sensitivity")),
+        "beat_jump_sizes": _parse_beat_jump_sizes(raw.get("beat_jump_sizes")),
         "library_watcher_folders": _parse_library_watcher_folders(raw),
         "library_key_filter": _parse_library_key_filter(raw),
         "compatible_filter": _parse_compatible_filter(raw.get("compatible_filter")),
         "library_tabs": parse_library_tabs(raw.get("library_tabs")),
+        "library_related_criteria": parse_library_related_criteria(raw.get("library_related_criteria")),
     }
 
 
@@ -1093,6 +1138,18 @@ class WheelSensitivityOut(BaseModel):
 
     mouse: float = _DEFAULT_WHEEL_SENSITIVITY["mouse"]
     trackpad: float = _DEFAULT_WHEEL_SENSITIVITY["trackpad"]
+
+
+class BeatJumpSizesOut(BaseModel):
+    """Per-deck beat jump size in beats (DECKUX-10470): 0.5|1|2|4|8|16|32|64."""
+
+    model_config = ConfigDict(frozen=True)
+
+    # Strict: a JSON `true` must not coerce to the legal size 1.0.
+    deck_1: StrictFloat = 4
+    deck_2: StrictFloat = 4
+    deck_3: StrictFloat = 4
+    deck_4: StrictFloat = 4
 
 
 class CompatibleFilterOut(BaseModel):
@@ -1173,6 +1230,7 @@ class UiPrefsOut(BaseModel):
     auto_play_two_deck: bool = _DEFAULT_AUTO_PLAY_TWO_DECK
     perf_view: PerfView = _DEFAULT_PERF_VIEW
     deck_default_quantize: bool = _DEFAULT_DECK_DEFAULT_QUANTIZE
+    deck_needle_lock: bool = _DEFAULT_DECK_NEEDLE_LOCK
     show_sections: bool = _DEFAULT_SHOW_SECTIONS
     speaker_auto_recover: SpeakerAutoRecover = _DEFAULT_SPEAKER_AUTO_RECOVER
     show_tempo_lane: bool = _DEFAULT_SHOW_TEMPO_LANE
@@ -1191,6 +1249,7 @@ class UiPrefsOut(BaseModel):
     vocals_filter: bool = _DEFAULT_LIBRARY_FILTER_BOOLS["vocals_filter"]
     available_offline_filter: bool = _DEFAULT_LIBRARY_FILTER_BOOLS["available_offline_filter"]
     wheel_sensitivity: WheelSensitivityOut = Field(default_factory=WheelSensitivityOut)
+    beat_jump_sizes: BeatJumpSizesOut = Field(default_factory=BeatJumpSizesOut)
     midi_enabled: bool = _DEFAULT_MIDI_ENABLED
     spotify_shrink_main_for_player: bool = _DEFAULT_SPOTIFY_SHRINK_MAIN
     library_sidebar_art: bool = _DEFAULT_LIBRARY_SIDEBAR_ART
@@ -1200,6 +1259,7 @@ class UiPrefsOut(BaseModel):
     library_key_filter: list[str] = Field(default_factory=list)
     compatible_filter: CompatibleFilterOut = Field(default_factory=CompatibleFilterOut)
     library_tabs: LibraryTabsOut = Field(default_factory=LibraryTabsOut)
+    library_related_criteria: LibraryRelatedCriteriaOut = Field(default_factory=LibraryRelatedCriteriaOut)
 
 
 class UiPrefsPatch(BaseModel):
@@ -1241,6 +1301,7 @@ class UiPrefsPatch(BaseModel):
     perf_view: PerfView | SkipJsonSchema[None] = None
     # Strict: lax bool would coerce "yes" or 1 to True and seed every deck from it.
     deck_default_quantize: StrictBool | None = None
+    deck_needle_lock: StrictBool | None = None
     show_sections: bool | None = None
     speaker_auto_recover: SpeakerAutoRecover | None = None
     # Strict: lax bool would coerce "yes" or 1 into a write that hides the lane.
@@ -1263,6 +1324,7 @@ class UiPrefsPatch(BaseModel):
     vocals_filter: bool | None = None
     available_offline_filter: bool | None = None
     wheel_sensitivity: WheelSensitivityOut | None = None
+    beat_jump_sizes: BeatJumpSizesOut | None = None
     midi_enabled: bool | None = None
     spotify_shrink_main_for_player: bool | None = None
     library_sidebar_art: bool | None = None
@@ -1272,6 +1334,7 @@ class UiPrefsPatch(BaseModel):
     library_key_filter: list[str] | None = None
     compatible_filter: CompatibleFilterOut | None = None
     library_tabs: LibraryTabsOut | None = None
+    library_related_criteria: LibraryRelatedCriteriaOut | None = None
 
     @model_validator(mode="after")
     def _refuse_null_view_prefs(self) -> UiPrefsPatch:
@@ -1328,6 +1391,11 @@ def _merge_compatible_filter(current: dict[str, Any], body: UiPrefsPatch) -> Non
             **body.compatible_filter.model_dump(exclude_unset=True),
         }
     )
+
+
+def read_library_related_criteria(request: Request) -> dict[str, Any]:
+    """The stored Related Tracks criteria (LIBUX-10046), defaults when never saved."""
+    return dict(_load(_path(request))["library_related_criteria"])
 
 
 def persist_master_muted(request: Request, muted: bool) -> None:
@@ -1503,6 +1571,7 @@ def _merge_ui_prefs_patch(current: dict[str, Any], body: UiPrefsPatch) -> dict[s
                 **body.wheel_sensitivity.model_dump(exclude_unset=True),
             }
         )
+    _merge_beat_jump_sizes(current, body)
     if body.level_calibration is not None:
         # R and M are independent (see LevelCalibrationOut docstring): merge onto
         # what's stored so a PUT naming only one half cannot silently wipe the
@@ -1522,6 +1591,7 @@ def _merge_ui_prefs_patch(current: dict[str, Any], body: UiPrefsPatch) -> dict[s
     _merge_compatible_filter(current, body)
     merge_auto_gain(current, body.auto_gain)
     merge_library_tabs(current, body.library_tabs)
+    merge_library_related_criteria(current, body.library_related_criteria)
     return current
 
 

@@ -19,6 +19,11 @@ import {
 	type CompatibleFilterPrefs
 } from './compatible-filter-prefs';
 import { validateLibraryKeyFilterField } from './library-key-filter';
+import {
+	RELATED_CRITERIA_DEFAULTS,
+	validateRelatedCriteriaPrefs,
+	type RelatedCriteriaPrefs
+} from './related-criteria-prefs';
 
 /** Disk/wire confirm patch: null deletes a key; values are per-key typed.
  * Defined here, not in prefs-hydrate.ts, so this lazily loaded module never
@@ -33,12 +38,14 @@ export type DiskConfirmPatch = {
 type DiskPrefsPatch = {
 	confirm?: DiskConfirmPatch;
 	compatible_filter?: CompatibleFilterPrefs;
+	library_related_criteria?: RelatedCriteriaPrefs;
 	library_watcher_folders?: string[];
 	library_key_filter?: string[];
 };
 
 type VerifiedPrefsTarget = {
 	compatible_filter: CompatibleFilterPrefs;
+	library_related_criteria: RelatedCriteriaPrefs;
 	library_watcher_folders: string[];
 	library_key_filter: string[];
 	confirm: object;
@@ -102,6 +109,19 @@ export function makeVerifiedPrefWriters(deps: {
 					patch: { compatible_filter: next },
 					commit: () => {
 						uiPrefs.compatible_filter = next;
+					}
+				};
+			});
+		},
+
+		/** Related Tracks criteria (LIBUX-10046): commit only after the PUT lands. */
+		patchRelatedCriteria(patch: Partial<RelatedCriteriaPrefs>): Promise<void> {
+			return step(() => {
+				const next = { ...uiPrefs.library_related_criteria, ...patch };
+				return {
+					patch: { library_related_criteria: next },
+					commit: () => {
+						uiPrefs.library_related_criteria = next;
 					}
 				};
 			});
@@ -207,6 +227,23 @@ export function hydrateCompatibleFilter(
 		};
 	} catch (exc) {
 		console.error('[ui-prefs] compatible_filter from disk rejected', exc);
+	}
+}
+
+/** Related Tracks criteria from GET /api/v1/ui-prefs (LIBUX-10046): disk wins
+ * over localStorage; an invalid object is reported and skipped. */
+export function hydrateRelatedCriteria(
+	uiPrefs: { library_related_criteria: RelatedCriteriaPrefs },
+	body: { library_related_criteria?: unknown }
+): void {
+	if (body.library_related_criteria === undefined || body.library_related_criteria === null) return;
+	try {
+		uiPrefs.library_related_criteria = {
+			...RELATED_CRITERIA_DEFAULTS,
+			...validateRelatedCriteriaPrefs(body.library_related_criteria, 'GET /api/v1/ui-prefs')
+		};
+	} catch (exc) {
+		console.error('[ui-prefs] library_related_criteria from disk rejected', exc);
 	}
 }
 

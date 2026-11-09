@@ -77,6 +77,16 @@ export const FILTER_LP_FLOOR_HZ = 130;
 export const FILTER_HP_FLOOR_HZ = 30;
 export const FILTER_HP_CEILING_HZ = 6300;
 export const FILTER_Q = 0.707;
+/**
+ * Domain the FILTER corner glides in on a knob move: 'hz' (shipped, a one-pole
+ * on the frequency) or 'octave' (a one-pole on log2 of it, so LP and HP glide
+ * symmetrically). The choice is calibration round filter-6 (MIXUX-05); mirrored
+ * in `apps/audio-engine/src/mixer.rs`.
+ */
+export type FilterGlideDomain = 'hz' | 'octave';
+export const FILTER_GLIDE_DOMAIN: FilterGlideDomain = 'hz';
+/** Time constant of the FILTER corner glide, either domain. */
+export const FILTER_GLIDE_S = 0.01;
 /** Smoothing time-constant for AudioParam changes (anti-zipper). */
 export const PARAM_SMOOTH_S = 0.01;
 /**

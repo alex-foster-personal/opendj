@@ -1,0 +1,9 @@
+{
+  "bytes": 1024,
+  "measured_main": 16837,
+  "measured_with_pr": 17055,
+  "sha": "a7e1ef19d9",
+  "date": "Sun 8 Nov 2026",
+  "reason": "PR #10384 registers DDJ_REV1_MAP (apps/webui/frontend/src/lib/rb/midi/maps/ddj-rev1.ts) in PRACTICE_DEVICE_MAPS, so the lazy practice-replica chunk carries the REV1 map's bindings, LED rules and hints. Measured: local vite build of main d49c60f791 and of a7e1ef19d9 on the same host, +218 B gzip; ceiled to KiB",
+  "payback": "none planned; every replica map that joins PRACTICE_DEVICE_MAPS rides this chunk until the maps load per device (epic #9366)"
+}

@@ -199,6 +199,9 @@ MAIN_RESERVED_JOBS = {
     "import-contracts": MAIN_LIGHT_RUNS_ON,
     # Sun 8 Nov 2026 (ADR-NEW-audio-rust-tests-on-pull-requests): the contracts job's route.
     "audio-rust": MAIN_LIGHT_RUNS_ON,
+    # Mon 9 Nov 2026 (REQS-ONLY-CARRY, #10542): the scoped reqs checks a carried reqs-only
+    # lander resolve runs instead of the full CI; the ci gate's light route.
+    "reqs-carry": MAIN_LIGHT_RUNS_ON,
     # Thu 5 Nov 2026 (ADR-NEW-bundle-budget-pr-delta): the nightly rebaseline issue job.
     "bundle-rebaseline-issue": MAIN_LIGHT_RUNS_ON,
 }

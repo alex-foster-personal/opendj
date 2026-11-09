@@ -139,7 +139,7 @@ test('genuinely separate outputs keep two-output routing', () => {
 			selectedMasterId: CHROMIUM_OTHER,
 			currentRoomId: null
 		}),
-		{ masterId: CHROMIUM_OTHER, cueId: CHROMIUM_HP, autoPinnedMaster: false }
+		{ masterId: CHROMIUM_OTHER, cueId: CHROMIUM_HP, boothId: null, autoPinnedMaster: false }
 	);
 });
 

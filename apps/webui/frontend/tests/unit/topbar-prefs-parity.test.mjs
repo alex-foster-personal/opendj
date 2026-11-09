@@ -84,6 +84,16 @@ test('each TopBar pref setter persists locally and PUTs its disk patch', async (
 	}
 });
 
+test('AutoPlay defaults off when a profile has no persisted preference', async () => {
+	_fakeWindow();
+	const prefs = await _loadPrefs();
+	assert.equal(
+		prefs.uiPrefs.auto_play_enabled,
+		false,
+		'AutoPlay must require an explicit user opt-in on a new profile'
+	);
+});
+
 test('TopBar imports every setter and the four keys exist on the HTTP prefs route', () => {
 	for (const [key, [setter]] of Object.entries(TOPBAR_PREFS)) {
 		assert.match(TOPBAR, new RegExp(`\\b${setter}\\b`), `TopBar must call ${setter}`);

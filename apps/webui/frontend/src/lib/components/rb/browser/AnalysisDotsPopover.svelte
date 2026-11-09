@@ -94,7 +94,6 @@
 	import { triggerFloatingAction } from '$lib/ui/clamp-to-viewport';
 	import type { GridFlag } from '$lib/rb/analysis-issues';
 	import type { SourceFlag } from '$lib/rb/library-types';
-	import { plannedTitle } from '$lib/rb/planned-explainers';
 	import AnalysisDots from './AnalysisDots.svelte';
 
 	let {
@@ -281,7 +280,8 @@
 	/** GRIDFLAG-04: ask the owner to hide or restore the flag; a refusal is said out loud. */
 	async function _toggleGridFlag(dismissed: boolean): Promise<void> {
 		try {
-			await ongridflagdismiss?.(dismissed);
+			if (ongridflagdismiss === undefined) throw new Error('grid flag dismiss has no handler');
+			await ongridflagdismiss(dismissed);
 		} catch (error) {
 			pushToast(`Beatgrid flag not ${dismissed ? 'dismissed' : 'restored'}: ${String(error)}`, 'error');
 		}
@@ -437,20 +437,19 @@
 			{#if mode === 'issues' && gridFlag !== null}
 				<div class="pop-flag">
 					<div class="pop-flag-text" title={gridFlag.message}>{gridFlag.message}</div>
-					<button
-						type="button"
-						class="pop-flag-btn"
-						data-testid="grid-flag-dismiss"
-						disabled={ongridflagdismiss === undefined}
-						title={ongridflagdismiss === undefined
-							? plannedTitle('grid-flag-dismiss')
-							: gridFlag.dismissed
+					{#if ongridflagdismiss !== undefined}
+						<button
+							type="button"
+							class="pop-flag-btn"
+							data-testid="grid-flag-dismiss"
+							title={gridFlag.dismissed
 								? 'Show this beatgrid flag again for this track'
 								: 'Hide this beatgrid flag for this track. The grid is not changed, and you can restore the flag here.'}
-						onclick={() => void _toggleGridFlag(!gridFlag.dismissed)}
-					>
-						{gridFlag.dismissed ? 'Restore beatgrid flag' : 'Dismiss beatgrid flag'}
-					</button>
+							onclick={() => void _toggleGridFlag(!gridFlag.dismissed)}
+						>
+							{gridFlag.dismissed ? 'Restore beatgrid flag' : 'Dismiss beatgrid flag'}
+						</button>
+					{/if}
 				</div>
 			{/if}
 			{#if stableId === null}

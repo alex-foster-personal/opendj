@@ -10,6 +10,8 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
+_SNAPSHOT_SKIP_STATUSES = frozenset({"harvested", "archived"})
+
 
 def _now() -> str:
     return datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%S.%fZ")
@@ -42,11 +44,14 @@ def snapshot_comments_for_archive(
 ) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
     """Snapshot eligible pins for agent harvest without changing live ``status``.
 
-    Returns ``(updated_live_comments, archive_snapshots)``. Skips ``archived``
-    pins and pins already recorded in a prior bulk snapshot (``agent_snapshot_at``).
-    Live ``status`` stays ``open`` (or whatever the operator set) until UI archive.
+    Returns ``(updated_live_comments, archive_snapshots)``. Skips ``archived`` and
+    legacy ``harvested`` pins and pins already recorded in a prior bulk snapshot
+    (``agent_snapshot_at``). Live ``status`` stays ``open`` (or whatever the
+    operator set) until UI archive.
     """
-    to_snapshot = [c for c in comments if c.get("status") != "archived" and not c.get("agent_snapshot_at")]
+    to_snapshot = [
+        c for c in comments if c.get("status") not in _SNAPSHOT_SKIP_STATUSES and not c.get("agent_snapshot_at")
+    ]
     if not to_snapshot:
         return comments, []
 

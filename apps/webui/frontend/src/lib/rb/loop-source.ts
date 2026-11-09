@@ -21,6 +21,8 @@ export interface StoredLoop {
 	in_ms: number;
 	out_ms: number;
 	active: boolean;
+	/** A memory loop can be flagged the track's active loop (CUES-9967). */
+	canBeActive: boolean;
 }
 
 function _clock(ms: number): string {
@@ -59,7 +61,8 @@ export function storedLoops(cues: readonly AnlzCue[] | null | undefined): Stored
 				label: `Hot cue ${cue.slot} loop (${span})${comment}`,
 				in_ms: cue.in_ms,
 				out_ms: cue.out_ms,
-				active: cue.active_loop
+				active: cue.active_loop,
+				canBeActive: false
 			});
 		} else {
 			memory.push({
@@ -69,7 +72,8 @@ export function storedLoops(cues: readonly AnlzCue[] | null | undefined): Stored
 				label: `${cue.active_loop ? 'Active memory loop' : 'Memory loop'} (${span})${comment}`,
 				in_ms: cue.in_ms,
 				out_ms: cue.out_ms,
-				active: cue.active_loop
+				active: cue.active_loop,
+				canBeActive: true
 			});
 		}
 	}

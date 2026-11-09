@@ -208,3 +208,22 @@ def test_argparse_failure_surfaces_in_lane_unavailable(tmp_path: Path) -> None:
     assert warning.code == "LANE_UNAVAILABLE"
     assert invalid_flag in warning.message
     assert "chose " not in warning.message
+
+
+def test_queue_refusal_names_its_cause_under_force_color(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """[if] the engine runs with FORCE_COLOR=1 (Playwright's webServer sets it) [then] a queue
+    refusal still reaches the reason as its own message, not the child's last log line, [else stop].
+
+    Rich highlighting split ``[ERROR]`` into coloured fragments, so the daemon missed the
+    marker and reported stderr's last line (``chose 4 worker(s)`` on the Wed 4 Nov 2026 E2E
+    gate, ``native waveform extension unavailable`` on Mon 9 Nov 2026).
+    """
+    monkeypatch.setenv("FORCE_COLOR", "1")
+    code, out, err = aa._queue_cli(
+        ["run", "--batch-id", "missing-batch", "--backend", LoudnessInvocationProbe.name],
+        str(tmp_path / "state.db"),
+    )
+
+    assert code == 2
+    assert "[ERROR]" in out
+    assert aa._last_line(aa._failure_text(out, err)) == "batch 'missing-batch' has no items"

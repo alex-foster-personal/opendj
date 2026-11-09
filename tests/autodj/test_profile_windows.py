@@ -2,6 +2,10 @@
 
 from __future__ import annotations
 
+import dataclasses
+import hashlib
+import json
+
 import pytest
 
 from apps.autodj.profile import ProfileError, _camelot, _sections, profile_from_payloads
@@ -94,7 +98,139 @@ def test_profile_refuses_a_track_with_no_grid() -> None:
 def test_summary_never_carries_a_full_grid() -> None:
     summary = profile("trk-a").summary()
     assert "downbeats_s" not in summary and "bar_energy" not in summary
+    assert "bar_mid" not in summary and "bar_high" not in summary
     assert summary["bars"] == 128
+
+
+_GOLDEN_WITHOUT_MID_HIGH: dict[str, str] = {
+    "trk-a": "6832985b9ac258511784a97c62c537722ee34fce14f86695b56972ed8c30c001",
+    "trk-b": "d46d5e9f9ed93a2cfb87da31ab866040634ff17550cd4ab5624af770861d33e0",
+    "trk-a-no-vocals": "362e1625e88e9cebebc009115875b93629ed343289c8deb444bad71b1c34e4ae",
+    "mono": "451851e330bd511dd61ec4a1459c9339c202e28433025eec8d1c9a32914d253b",
+    "absent": "36eae0f865f7b795bc6234258154cd4909dcdc5b236226c6ca6f302d07961dd9",
+}
+_TRK_A_SUMMARY_DIGEST = "c454f0fa90d8f3b3bae5e76a15be55e05b8fb4beaa1b81321a5f06efea1eed62"
+_TRANSAI_REQ = "TRANSAI-10505"
+
+
+def _profile_digest_without_new_bands(p) -> str:
+    data = dataclasses.asdict(p)
+    data.pop("bar_mid", None)
+    data.pop("bar_high", None)
+    return hashlib.sha256(json.dumps(data, sort_keys=True).encode()).hexdigest()
+
+
+@pytest.mark.requirement(_TRANSAI_REQ)
+def test_profile_carries_mid_and_high_per_bar() -> None:
+    """[if] the waveform has three bands [then] bar_mid and bar_high are per-bar 0..1 series, [else stop]."""
+    track = profile("trk-a")
+    assert track.bar_mid is not None and track.bar_high is not None
+    assert len(track.bar_mid) == len(track.bar_high) == track.bars
+    assert all(0.0 <= value <= 1.0 for value in track.bar_mid)
+    assert all(0.0 <= value <= 1.0 for value in track.bar_high)
+    assert max(track.bar_mid) == pytest.approx(1.0)
+    assert max(track.bar_high) == pytest.approx(1.0)
+    assert track.bar_mid[120] == pytest.approx(0.4)
+    assert track.bar_high[120] == pytest.approx(0.4)
+    assert track.bar_energy is not None and track.bar_bass is not None
+    assert track.bar_energy[120] == pytest.approx(0.6)
+    assert track.bar_bass[120] == pytest.approx(0.8)
+
+
+def test_mid_and_high_use_their_own_peak() -> None:
+    anlz = anlz_payload("trk-a")
+    baseline = profile_from_payloads(anlz, track_row("trk-a"))
+    scaled = dict(anlz)
+    scaled["waveform"] = dict(anlz["waveform"])
+    detail = dict(anlz["waveform"]["detail"])
+    detail["high"] = [value * 0.25 for value in detail["high"]]
+    scaled["waveform"]["detail"] = detail
+    adjusted = profile_from_payloads(scaled, track_row("trk-a"))
+    assert adjusted.bar_high == baseline.bar_high
+    assert adjusted.bar_mid == baseline.bar_mid
+
+
+@pytest.mark.requirement(_TRANSAI_REQ)
+def test_mono_and_absent_waveforms_leave_mid_and_high_unknown() -> None:
+    """[if] the waveform is mono or absent [then] bar_mid and bar_high are None, [else stop]."""
+    anlz = anlz_payload("trk-a")
+    mono = dict(anlz)
+    mono["waveform"] = dict(anlz["waveform"])
+    mono["waveform"]["detail"] = dict(anlz["waveform"]["detail"])
+    mono["waveform"]["detail"]["mid"] = []
+    mono["waveform"]["detail"]["high"] = []
+    mono_track = profile_from_payloads(mono, track_row("trk-a"))
+    assert mono_track.bar_bass is None
+    assert mono_track.bar_mid is None
+    assert mono_track.bar_high is None
+    assert mono_track.bar_energy is not None
+    absent = dict(anlz)
+    absent["waveform"] = {}
+    absent_track = profile_from_payloads(absent, track_row("trk-a"))
+    assert absent_track.bar_energy is None
+    assert absent_track.bar_bass is None
+    assert absent_track.bar_mid is None
+    assert absent_track.bar_high is None
+
+
+@pytest.mark.requirement(_TRANSAI_REQ)
+@pytest.mark.parametrize(
+    ("case", "builder"),
+    [
+        ("trk-a", lambda: profile("trk-a")),
+        ("trk-b", lambda: profile("trk-b")),
+        ("trk-a-no-vocals", lambda: profile("trk-a", vocals_analyzed=False)),
+        (
+            "mono",
+            lambda: profile_from_payloads(
+                {
+                    **anlz_payload("trk-a"),
+                    "waveform": {
+                        **anlz_payload("trk-a")["waveform"],
+                        "detail": {
+                            **anlz_payload("trk-a")["waveform"]["detail"],
+                            "mid": [],
+                            "high": [],
+                        },
+                    },
+                },
+                track_row("trk-a"),
+            ),
+        ),
+        (
+            "absent",
+            lambda: profile_from_payloads({**anlz_payload("trk-a"), "waveform": {}}, track_row("trk-a")),
+        ),
+    ],
+)
+def test_existing_profile_fields_are_unchanged(case: str, builder) -> None:
+    """[if] mid and high are added [then] every other field matches the pre-change golden, [else stop]."""
+    built = builder()
+    assert _profile_digest_without_new_bands(built) == _GOLDEN_WITHOUT_MID_HIGH[case]
+    if case == "trk-a":
+        summary_digest = hashlib.sha256(json.dumps(built.summary(), sort_keys=True).encode()).hexdigest()
+        assert summary_digest == _TRK_A_SUMMARY_DIGEST
+        anlz = anlz_payload("trk-a")
+        first = profile_from_payloads(anlz, track_row("trk-a"))
+        second = profile_from_payloads(anlz, track_row("trk-a"))
+        assert first == second
+
+
+def test_to_json_carries_the_per_bar_series() -> None:
+    track = profile("trk-a")
+    document = track.to_json()
+    assert document["bar_mid"] == list(track.bar_mid or ())
+    assert document["bar_high"] == list(track.bar_high or ())
+    json.dumps(document)
+    anlz = anlz_payload("trk-a")
+    mono = dict(anlz)
+    mono["waveform"] = dict(anlz["waveform"])
+    mono["waveform"]["detail"] = dict(anlz["waveform"]["detail"])
+    mono["waveform"]["detail"]["mid"] = []
+    mono["waveform"]["detail"]["high"] = []
+    mono_track = profile_from_payloads(mono, track_row("trk-a"))
+    assert mono_track.to_json()["bar_mid"] is None
+    assert dataclasses.replace(track, bar_mid=None, bar_high=None).time_of_bar(17) == track.time_of_bar(17)
 
 
 def test_out_windows_prefer_the_outro_and_end_by_the_last_downbeat() -> None:

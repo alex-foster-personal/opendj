@@ -1,0 +1,9 @@
+{
+  "bytes": 1024,
+  "measured_main": 486565,
+  "measured_with_pr": 486742,
+  "sha": "1bd0a6f6c0",
+  "date": "Mon 9 Nov 2026",
+  "reason": "PR #10452 ships the Cmd K v2 palette on by default with its flags as kill switches (#9463). Measured: CI bundle check of 1bd0a6f6c0, +177 B gzip on other-lazy; ceiled to KiB",
+  "payback": "none planned; the growth is the feature's own code"
+}

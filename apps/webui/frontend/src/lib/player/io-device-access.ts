@@ -375,15 +375,17 @@ export function savedIoDeviceIsListed(saved: SavedIoDevice, outputs: readonly He
 }
 
 export function savedIoDeviceNotices(args: {
-	saved: { master: SavedIoDevice | null; cue: SavedIoDevice | null };
+	saved: { master: SavedIoDevice | null; cue: SavedIoDevice | null; booth?: SavedIoDevice | null };
 	outputs: readonly HeadphoneOutputDevice[];
 	selectedMasterId: string | null;
 	selectedCueId: string | null;
+	selectedBoothId?: string | null;
 }): string[] {
 	const notices: string[] = [];
-	const roles: ReadonlyArray<['MASTER' | 'HEADPHONE CUE', SavedIoDevice | null, string | null]> = [
+	const roles: ReadonlyArray<['MASTER' | 'HEADPHONE CUE' | 'BOOTH', SavedIoDevice | null, string | null]> = [
 		['MASTER', args.saved.master, args.selectedMasterId],
-		['HEADPHONE CUE', args.saved.cue, args.selectedCueId]
+		['HEADPHONE CUE', args.saved.cue, args.selectedCueId],
+		['BOOTH', args.saved.booth ?? null, args.selectedBoothId ?? null]
 	];
 	for (const [role, saved, selectedId] of roles) {
 		if (saved === null) continue;

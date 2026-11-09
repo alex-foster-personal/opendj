@@ -10,7 +10,7 @@ from pathlib import Path
 import pytest
 
 from apps.dedup import scan as scan_mod
-from apps.dedup.db_paths import resolve_dedup_db
+from apps.dedup.db_paths import resolve_dedup_db, resolve_music_roots
 from apps.shared import paths
 from apps.shared.fingerprints import ChromaprintMissing, FingerprintCache
 
@@ -24,6 +24,13 @@ def test_resolve_dedup_db_explicit_and_default(tmp_path: Path) -> None:
     explicit = tmp_path / "dedup.sqlite"
     assert resolve_dedup_db(explicit) == explicit
     assert resolve_dedup_db(None) == paths.DEDUP_FALLBACK_DB
+
+
+@pytest.mark.requirement("META-03")
+def test_resolve_music_roots_explicit_and_default(tmp_path: Path) -> None:
+    explicit = [tmp_path / "music"]
+    assert resolve_music_roots(explicit) == explicit
+    assert resolve_music_roots(None) == paths.MUSIC_ROOTS
 
 
 # ---------------------------------------------------------------- smoke

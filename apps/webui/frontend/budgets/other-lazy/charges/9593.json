@@ -1,0 +1,9 @@
+{
+  "bytes": 3072,
+  "measured_main": 474924,
+  "measured_with_pr": 476997,
+  "sha": "d80c5e8fa7",
+  "date": "Sun 8 Nov 2026",
+  "reason": "PR #9593 (fix: stem lane menu stem estimate fetch loop (#9450)) grows the other-lazy surface. Measured: CI bundle check of d80c5e8fa7, +2073 B gzip; ceiled to KiB.",
+  "payback": "none planned; the growth is the feature's own code on this surface"
+}

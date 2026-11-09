@@ -1,0 +1,9 @@
+{
+ "map_name": "XDJ-XZ",
+ "map_const": "XDJ_XZ_MAP",
+ "map_ts": "apps/webui/frontend/src/lib/rb/midi/maps/pioneer-xdj-xz.ts",
+ "panel_w": 878.0,
+ "panel_d": 466.1,
+ "panel_size_source": "Pioneer DJ XDJ-XZ specifications page, General (878 x 466.1 mm); docs/controller/research/XDJ-XZ-MIDI-Message-List.md",
+ "display_name": "4-channel all-in-one system"
+}

@@ -78,3 +78,20 @@ export const LongTitle: Story = {
 		]
 	}
 };
+
+/** LIBUX-10046: Related tab active with the criteria tools slot (cog lives in the parent snippet). */
+export const RelatedTabActive: Story = {
+	args: {
+		tabs: [tab({ title: 'Collection', count: 42 })],
+		relatedActive: true,
+		onrelated: fn()
+	}
+};
+
+/** LIBUX-10046: Related tab offered beside pane tabs when `onrelated` is wired. */
+export const RelatedTabInactive: Story = {
+	args: {
+		tabs: [tab({ title: 'Collection', count: 42 })],
+		onrelated: fn()
+	}
+};

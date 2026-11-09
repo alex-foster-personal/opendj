@@ -1,0 +1,9 @@
+{
+ "map_name": "DDJ-REV7",
+ "map_const": "REV7_MAP",
+ "map_ts": "apps/webui/frontend/src/lib/rb/midi/maps/ddj-rev7.ts",
+ "panel_w": 732.0,
+ "panel_d": 382.2,
+ "panel_size_source": "pioneerdj.com DDJ-REV7 product page, Specifications tab (732.0 x 382.2 mm); docs/controller/research/DDJ-REV7-MIDI-Message-List.md",
+ "display_name": "2-deck motorised battle controller"
+}

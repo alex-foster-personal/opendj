@@ -11,19 +11,28 @@ Regression lines:
   if a map id with a path separator escapes the maps dir then broken
   if PUT does not write <data>/state/controller-maps/<id>.json then broken
   if DELETE on an absent id returns 200 then broken
+  if a MidiAction kind in midi-types.ts has no server model then broken
+  if ccButton installs on a note source or a non-button action then broken
 """
 
 from __future__ import annotations
 
 import json
+import re
 from pathlib import Path
-from typing import Any
+from typing import Any, get_args
 
 import pytest
 from fastapi.testclient import TestClient
 
 from apps.webui.server.app import create_app
 from apps.webui.server.backend import InMemoryBackend
+from apps.webui.server.routes.midi_maps import (
+    _BUTTON_ACTIONS,
+    _CONTINUOUS_ACTIONS,
+    _RELATIVE_ACTIONS,
+    MidiActionModel,
+)
 
 
 @pytest.fixture
@@ -398,6 +407,25 @@ def test_deck_pitch_lsb_offset_within_range_still_installs(midi_client: TestClie
     assert r.status_code == 200, r.text
 
 
+def test_shifted_14bit_deck_pitch_is_refused(midi_client: TestClient) -> None:
+    doc = _doc()
+    doc["bindings"][1]["shift"] = True
+    r = midi_client.put("/api/v1/midi/maps/test-device", json=doc)
+    assert r.status_code == 422
+    assert r.json()["detail"]["code"] == "MIDI_MAP_INVALID"
+    msg = r.json()["detail"]["message"]
+    assert "bindings[1]" in msg
+    assert "shift" in msg
+
+
+def test_shifted_7bit_deck_pitch_still_installs(midi_client: TestClient) -> None:
+    doc = _doc()
+    doc["bindings"][1]["shift"] = True
+    doc["bindings"][1]["action"] = {"type": "deck_pitch", "deck": 1, "lsbOffset": None}
+    r = midi_client.put("/api/v1/midi/maps/test-device", json=doc)
+    assert r.status_code == 200, r.text
+
+
 def test_browse_encoder_requires_a_cc_source_bound_relative(midi_client: TestClient) -> None:
     doc = _doc()
     doc["bindings"][1]["action"] = {"type": "browse_encoder"}
@@ -445,12 +473,59 @@ def test_a_second_installed_map_cannot_reuse_a_name_match_already_in_use(
     assert "test-device" in r.json()["detail"]["message"]
 
 
+def test_a_second_installed_map_cannot_reuse_a_name_match_differing_only_by_case(
+    midi_client: TestClient, tmp_path: Path
+) -> None:
+    """[if] case-equivalent nameMatch [then] 422 names clashing map, [else stop]."""
+    midi_client.put("/api/v1/midi/maps/test-device", json=_doc())
+    other = _doc(id="other-device", nameMatch="testdevice")
+    r = midi_client.put("/api/v1/midi/maps/other-device", json=other)
+    assert r.status_code == 422
+    assert r.json()["detail"]["code"] == "MIDI_MAP_INVALID"
+    assert "test-device" in r.json()["detail"]["message"]
+    assert not (tmp_path / "data" / "state" / "controller-maps" / "other-device.json").is_file()
+
+
 def test_replacing_a_map_in_place_does_not_clash_with_its_own_name_match(
     midi_client: TestClient,
 ) -> None:
     midi_client.put("/api/v1/midi/maps/test-device", json=_doc())
     r = midi_client.put("/api/v1/midi/maps/test-device", json=_doc())
     assert r.status_code == 200, r.text
+
+
+def test_replacing_a_map_in_place_may_change_only_the_case_of_its_name_match(
+    midi_client: TestClient,
+) -> None:
+    midi_client.put("/api/v1/midi/maps/test-device", json=_doc())
+    doc = _doc(nameMatch="TESTDEVICE")
+    r = midi_client.put("/api/v1/midi/maps/test-device", json=doc)
+    assert r.status_code == 200, r.text
+
+
+def test_put_body_schema_is_published_as_midi_map_doc(midi_client: TestClient) -> None:
+    """[if] OpenAPI PUT schema [then] exact MidiMapDoc $ref, [else stop]."""
+    spec = midi_client.app.openapi()
+    request_body = spec["paths"]["/api/v1/midi/maps/{map_id}"]["put"]["requestBody"]
+    assert request_body["required"] is True
+    schema = request_body["content"]["application/json"]["schema"]
+    assert schema == {"$ref": "#/components/schemas/MidiMapDoc"}
+
+
+def test_malformed_json_body_is_refused_with_the_house_shape(midi_client: TestClient) -> None:
+    r = midi_client.put(
+        "/api/v1/midi/maps/test-device",
+        content=b"{not json",
+        headers={"Content-Type": "application/json"},
+    )
+    assert r.status_code == 422
+    assert r.json()["detail"]["code"] == "MIDI_MAP_INVALID"
+
+
+def test_non_object_body_is_refused_with_the_house_shape(midi_client: TestClient) -> None:
+    r = midi_client.put("/api/v1/midi/maps/test-device", json=[1, 2])
+    assert r.status_code == 422
+    assert r.json()["detail"]["code"] == "MIDI_MAP_INVALID"
 
 
 def test_an_unknown_field_on_the_document_is_refused(midi_client: TestClient) -> None:
@@ -576,3 +651,162 @@ def test_catalog_counts_are_reported_so_coverage_is_never_guessed(
     # .pdf, so the grader grades it down rather than up (#3744).
     assert body["counts"]["bootstrap-stub"] == 14
     assert body["counts"]["vendor-pdf"] + body["counts"]["mixxx"] == 94
+
+
+# ----- every page action type installs (#10276) ------------------------------
+
+# One binding per action type the page's MidiAction union can emit
+# (midi-types.ts), the shapes the XDJ-AZ map uses: a centred relative jog and
+# CC buttons for CH CUE and MASTER CUE. The installer refused twelve of these
+# until #10276, which stripped a corrected XDJ-AZ map to 119 of 154 controls.
+_EVERY_PAGE_ACTION: list[dict[str, Any]] = [
+    {"source": {"ch": 1, "kind": "note", "id": 1}, "action": {"type": "deck_play_toggle", "deck": 1}},
+    {"source": {"ch": 1, "kind": "note", "id": 2}, "action": {"type": "deck_cue", "deck": 1}},
+    {"source": {"ch": 1, "kind": "note", "id": 3}, "action": {"type": "deck_hot_cue", "deck": 1, "slot": "A"}},
+    {"source": {"ch": 1, "kind": "note", "id": 4}, "action": {"type": "deck_beat_loop", "deck": 1, "beats": 4}},
+    {"source": {"ch": 1, "kind": "note", "id": 5}, "action": {"type": "deck_auto_loop_toggle", "deck": 1}},
+    {"source": {"ch": 1, "kind": "note", "id": 6}, "action": {"type": "deck_loop_exit", "deck": 1}},
+    {"source": {"ch": 1, "kind": "note", "id": 7}, "action": {"type": "deck_sync_toggle", "deck": 1}},
+    {"source": {"ch": 1, "kind": "note", "id": 8}, "action": {"type": "deck_manual_loop_cycle", "deck": 1}},
+    {"source": {"ch": 1, "kind": "note", "id": 9}, "action": {"type": "deck_loop_scale", "deck": 1, "factor": 2}},
+    {"source": {"ch": 1, "kind": "note", "id": 10}, "action": {"type": "deck_key_sync_toggle", "deck": 1}},
+    {"source": {"ch": 1, "kind": "note", "id": 11}, "action": {"type": "deck_stem_eq_toggle", "deck": 1}},
+    {"source": {"ch": 1, "kind": "note", "id": 12}, "action": {"type": "deck_key_nudge", "deck": 1, "semitones": -1}},
+    {"source": {"ch": 1, "kind": "note", "id": 13}, "action": {"type": "deck_tempo_nudge", "deck": 1, "direction": 1}},
+    {"source": {"ch": 1, "kind": "cc", "id": 14}, "relative": True, "relativeCentered": True,
+     "action": {"type": "deck_jog", "deck": 1}},
+    {"source": {"ch": 1, "kind": "note", "id": 15}, "action": {"type": "controller_pad_mode", "deck": 1, "mode": "hot_cue"}},
+    {"source": {"ch": 1, "kind": "note", "id": 16}, "action": {"type": "controller_pad", "deck": 1, "pad": 8, "shifted": True}},
+    {"source": {"ch": 1, "kind": "cc", "id": 17}, "action": {"type": "mixer_channel", "deck": 1, "target": "filter"}},
+    {"source": {"ch": 1, "kind": "cc", "id": 18}, "action": {"type": "mixer_global", "target": "crossfader"}},
+    {"source": {"ch": 1, "kind": "cc", "id": 19}, "action": {"type": "deck_pitch", "deck": 1, "lsbOffset": None}},
+    {"source": {"ch": 1, "kind": "cc", "id": 20}, "relative": True, "relativeUnit": True,
+     "action": {"type": "browse_encoder"}},
+    {"source": {"ch": 1, "kind": "note", "id": 21}, "action": {"type": "browse_load", "deck": 1}},
+    {"source": {"ch": 1, "kind": "cc", "id": 22}, "ccButton": True, "action": {"type": "channel_cue", "deck": 1}},
+    {"source": {"ch": 1, "kind": "cc", "id": 23}, "action": {"type": "headphone_mix"}},
+    {"source": {"ch": 1, "kind": "cc", "id": 24}, "action": {"type": "headphone_level"}},
+    {"source": {"ch": 1, "kind": "cc", "id": 25}, "ccButton": True, "action": {"type": "master_cue", "mode": "hold"}},
+    {"source": {"ch": 1, "kind": "note", "id": 26}, "action": {"type": "shift_modifier"}},
+]
+
+
+def test_every_page_action_type_installs_and_reads_back(midi_client: TestClient) -> None:
+    bindings = [{**b, "provenance": _cite()} for b in _EVERY_PAGE_ACTION]
+    assert len({b["action"]["type"] for b in bindings}) == 26
+    r = midi_client.put("/api/v1/midi/maps/test-device", json=_doc(bindings=bindings))
+    assert r.status_code == 200, r.text
+    back = midi_client.get("/api/v1/midi/maps/test-device").json()["bindings"]
+    # Null fields (an absent eq band, a 7-bit pitch lsbOffset) may be spelled
+    # or omitted on either side; the action values are what must survive.
+    assert [_dense(b["action"]) for b in back] == [_dense(b["action"]) for b in bindings]
+    jog = next(b for b in back if b["action"]["type"] == "deck_jog")
+    assert jog["relativeCentered"] is True, "the page flag round-trips under its own name"
+    assert next(b for b in back if b["action"]["type"] == "master_cue")["ccButton"] is True
+
+
+def test_unknown_action_type_is_still_refused(midi_client: TestClient) -> None:
+    doc = _doc()
+    doc["bindings"][0]["action"] = {"type": "deck_scratch", "deck": 1}
+    r = midi_client.put("/api/v1/midi/maps/test-device", json=doc)
+    assert r.status_code == 422
+    assert "deck_scratch" in r.text
+
+
+@pytest.mark.parametrize(
+    ("binding", "want"),
+    [
+        ({"source": {"ch": 1, "kind": "note", "id": 9}, "action": {"type": "deck_jog", "deck": 1}}, "cc source"),
+        ({"source": {"ch": 1, "kind": "cc", "id": 9}, "action": {"type": "deck_jog", "deck": 1}}, "bound relative"),
+        ({"source": {"ch": 1, "kind": "cc", "id": 9}, "action": {"type": "master_cue", "mode": "hold"}}, "note source"),
+        ({"source": {"ch": 1, "kind": "note", "id": 9}, "action": {"type": "headphone_mix"}}, "cc or pitchbend"),
+    ],
+)
+def test_page_actions_keep_the_source_rules(
+    midi_client: TestClient, binding: dict[str, Any], want: str
+) -> None:
+    doc = _doc(bindings=[{**binding, "provenance": _cite()}])
+    r = midi_client.put("/api/v1/midi/maps/test-device", json=doc)
+    assert r.status_code == 422, r.text
+    assert want in r.json()["detail"]["message"]
+
+
+# ----- runtime union parity and ccButton rules (#10052) ---------------------
+
+_REPO_ROOT = Path(__file__).resolve().parents[2]
+_MIDI_TYPES_TS = _REPO_ROOT / "apps/webui/frontend/src/lib/rb/midi/midi-types.ts"
+
+
+def _runtime_action_kinds() -> set[str]:
+    # Same pattern as midi-action-parity.test.mjs: one tab, `type: '<kind>';`.
+    text = _MIDI_TYPES_TS.read_text(encoding="utf-8")
+    return set(re.findall(r"^\ttype: '([a-z_]+)';$", text, re.M))
+
+
+def _server_action_kinds() -> set[str]:
+    union = get_args(MidiActionModel)[0]
+    return {get_args(model.model_fields["type"].annotation)[0] for model in get_args(union)}
+
+
+def _dense(action: dict[str, Any]) -> dict[str, Any]:
+    return {k: v for k, v in action.items() if v is not None}
+
+
+def test_server_action_models_match_the_runtime_union_both_ways() -> None:
+    runtime, server = _runtime_action_kinds(), _server_action_kinds()
+    assert len(runtime) >= 26, f"parsed too few kinds from midi-types.ts: {sorted(runtime)}"
+    assert runtime - server == set(), "runtime kinds the installer refuses: add a pydantic model"
+    assert server - runtime == set(), "server kinds the runtime never emits"
+
+
+def test_every_server_action_kind_has_exactly_one_source_rule() -> None:
+    rules = [_BUTTON_ACTIONS, _RELATIVE_ACTIONS, _CONTINUOUS_ACTIONS, frozenset({"deck_pitch"})]
+    union = frozenset().union(*rules)
+    assert union == _server_action_kinds()
+    assert sum(len(r) for r in rules) == len(union), "a kind sits in two source-rule sets"
+
+
+@pytest.mark.parametrize("binding", _EVERY_PAGE_ACTION, ids=lambda b: b["action"]["type"])
+def test_each_page_action_installs_alone_and_reads_back(
+    midi_client: TestClient, binding: dict[str, Any]
+) -> None:
+    r = midi_client.put(
+        "/api/v1/midi/maps/test-device", json=_doc(bindings=[{**binding, "provenance": _cite()}])
+    )
+    assert r.status_code == 200, r.text
+    (back,) = midi_client.get("/api/v1/midi/maps/test-device").json()["bindings"]
+    assert _dense(back["action"]) == _dense(binding["action"])
+    for flag in ("relative", "relativeCentered", "relativeUnit", "ccButton"):
+        assert back.get(flag, False) is binding.get(flag, False), flag
+
+
+@pytest.mark.parametrize(
+    ("binding", "want"),
+    [
+        ({"source": {"ch": 1, "kind": "note", "id": 9}, "ccButton": True,
+          "action": {"type": "master_cue", "mode": "hold"}}, "ccButton requires a cc source"),
+        ({"source": {"ch": 1, "kind": "pitchbend", "id": 0}, "ccButton": True,
+          "action": {"type": "mixer_global", "target": "crossfader"}}, "ccButton requires a cc source"),
+        ({"source": {"ch": 1, "kind": "cc", "id": 9}, "ccButton": True,
+          "action": {"type": "mixer_channel", "deck": 1, "target": "fader"}},
+         "ccButton only applies to a button action"),
+        ({"source": {"ch": 1, "kind": "cc", "id": 9}, "ccButton": True, "relative": True,
+          "action": {"type": "deck_jog", "deck": 1}}, "ccButton only applies to a button action"),
+        ({"source": {"ch": 1, "kind": "cc", "id": 9}, "ccButton": True,
+          "action": {"type": "deck_pitch", "deck": 1, "lsbOffset": None}},
+         "ccButton only applies to a button action"),
+    ],
+)
+def test_cc_button_rules(midi_client: TestClient, binding: dict[str, Any], want: str) -> None:
+    r = midi_client.put(
+        "/api/v1/midi/maps/test-device", json=_doc(bindings=[{**binding, "provenance": _cite()}])
+    )
+    assert r.status_code == 422, r.text
+    assert want in r.json()["detail"]["message"]
+
+
+def test_flags_default_false_when_absent(midi_client: TestClient) -> None:
+    assert midi_client.put("/api/v1/midi/maps/test-device", json=_doc()).status_code == 200
+    for b in midi_client.get("/api/v1/midi/maps/test-device").json()["bindings"]:
+        for flag in ("relativeCentered", "relativeUnit", "ccButton"):
+            assert b.get(flag, False) is False, flag

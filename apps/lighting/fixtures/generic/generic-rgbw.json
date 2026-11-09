@@ -1,0 +1,24 @@
+{
+  "id": "generic-rgbw",
+  "name": "Generic RGBW",
+  "kind": "rgbw",
+  "modes": [
+    {
+      "name": "4ch",
+      "channels": [
+        {
+          "capability": "red"
+        },
+        {
+          "capability": "green"
+        },
+        {
+          "capability": "blue"
+        },
+        {
+          "capability": "white"
+        }
+      ]
+    }
+  ]
+}

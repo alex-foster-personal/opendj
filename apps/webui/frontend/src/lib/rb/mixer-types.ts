@@ -211,7 +211,11 @@ export interface IoDeviceAccess {
 export interface HeadphoneState {
 	mix: number;
 	level: number;
+	/** CUEOUT-13: gain for the independent BOOTH copy of the room mix. */
+	booth_level: number;
 	selected_output_device_id: string | null;
+	/** Optional third pinned sink. Carries MASTER, never the cue bus. */
+	selected_booth_output_device_id: string | null;
 	/** `practice` blends PFL into the main output when no monitor is selected.
 	 * `split_cable` sends mono master on L and mono cue on R of the main output.
 	 * Selecting a monitor writes `two_outputs` and restores master-only main. */
@@ -228,7 +232,7 @@ export interface HeadphoneState {
 	calibration: HeadphoneCalibrationState;
 	/** Actual analyser/capture observations. Null levels are unavailable or inactive, never animated estimates. */
 	signals: HeadphoneSignals;
-	routes: { master: HeadphoneRouteHealth; cue: HeadphoneRouteHealth };
+	routes: { master: HeadphoneRouteHealth; cue: HeadphoneRouteHealth; booth: HeadphoneRouteHealth };
 	outputs: HeadphoneOutputDevice[];
 	inputs: HeadphoneOutputDevice[];
 	/** Room / MASTER sink (`AudioContext.setSinkId`). Null follows the OS default. */

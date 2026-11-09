@@ -77,3 +77,29 @@ def test_reply_on_merged_reopens_and_lists_regressed(fb: TestClient) -> None:
 
     regressed = fb.get("/api/v1/feedback/comments", params={"state": "regressed"}).json()
     assert any(c["id"] == pin["id"] for c in regressed["comments"])
+
+
+@pytest.mark.requirement("FB-15")
+def test_fixed_pin_with_later_update_is_not_regressed(fb: TestClient) -> None:
+    """[if] fixed pin gets agent_note only [then] not regressed, [else stop]."""
+    pin = _pin(fb)
+    fb.patch(
+        f"/api/v1/feedback/comments/{pin['id']}",
+        json={"status": "fixed", "fixed_in_sha": "abc1234"},
+    )
+    fb.patch(f"/api/v1/feedback/comments/{pin['id']}", json={"agent_note": "still watching"})
+    regressed = fb.get("/api/v1/feedback/comments", params={"state": "regressed"}).json()
+    assert not any(c["id"] == pin["id"] for c in regressed["comments"])
+
+
+@pytest.mark.requirement("FB-15")
+def test_bulk_harvest_does_not_regress_fixed_pin(fb: TestClient) -> None:
+    """[if] fixed pin is bulk-harvested [then] not regressed, [else stop]."""
+    pin = _pin(fb)
+    fb.patch(
+        f"/api/v1/feedback/comments/{pin['id']}",
+        json={"status": "fixed", "fixed_in_sha": "abc1234"},
+    )
+    fb.post("/api/v1/feedback/archive")
+    regressed = fb.get("/api/v1/feedback/comments", params={"state": "regressed"}).json()
+    assert not any(c["id"] == pin["id"] for c in regressed["comments"])

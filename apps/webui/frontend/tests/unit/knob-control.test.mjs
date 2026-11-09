@@ -26,6 +26,9 @@ import { loadTypeScriptModule } from './load-typescript.mjs';
 //   ends somewhere a fast one does not
 // - if the global wheel is not bound, or ignores the selection, then "you still
 //   have scroll wheel control attached" is gone
+// - if the global wheel is bound while NO knob is selected then every wheel
+//   event on the page waits on the main thread and the library list stops
+//   scrolling on the compositor (LIBM-174, PERF-UI-13, issue #10227)
 // - if the global wheel stops scaling by input kind then the shift-selected
 //   dial is hypersensitive on a trackpad while every use:wheelAdjust control
 //   is calm, i.e. the "global" sensitivity fix has a hole in it
@@ -42,7 +45,17 @@ let wheel;
 let sens;
 /** Registered fake dials by id, each holding a real settable value. */
 let dials;
-let wheelHandler;
+
+/**
+ * The window wheel listener as bound RIGHT NOW. It exists only while a
+ * selection does (PERF-UI-13), so it is looked up per call, never cached at
+ * registration. With no selection the page scrolls natively: nothing runs and
+ * nothing is prevented.
+ */
+function wheelHandler(event) {
+	const fn = globalThis.__listeners.get('wheel');
+	if (fn) fn(event);
+}
 
 /** The wheel guard tests `target instanceof HTMLElement`, so node needs one. */
 class FakeHTMLElement {
@@ -53,12 +66,18 @@ class FakeHTMLElement {
 }
 
 before(async () => {
-	// The module binds a window wheel listener on the first registerKnob().
+	// The module binds its window listeners when a selection appears (PERF-UI-13).
 	const listeners = new Map();
 	const store = new Map();
 	globalThis.window = {
-		addEventListener: (type, fn) => listeners.set(type, fn),
-		removeEventListener: (type) => listeners.delete(type),
+		addEventListener: (type, fn, options) => {
+			listeners.set(type, fn);
+			globalThis.__listenerCalls?.push(['add', type, options]);
+		},
+		removeEventListener: (type, fn, options) => {
+			listeners.delete(type);
+			globalThis.__listenerCalls?.push(['remove', type, options]);
+		},
 		// knob-control now pulls in wheel-adjust for the trackpad scaling, and
 		// that module reads its persisted factors at import time.
 		localStorage: {
@@ -87,6 +106,7 @@ beforeEach(() => {
 	// test and silently changes its unregisterKnob() behavior.
 	knobs._resetKnobRegistryForTests();
 	dials = new Map();
+	globalThis.__listenerCalls = [];
 });
 
 function addDial(id, value) {
@@ -98,9 +118,10 @@ function addDial(id, value) {
 			dials.set(id, { value: next });
 		}
 	});
-	wheelHandler = globalThis.__listeners.get('wheel');
 	return id;
 }
+
+const wheelCalls = (kind) => globalThis.__listenerCalls.filter((c) => c[0] === kind && c[1] === 'wheel');
 
 const valueOf = (id) => dials.get(id).value;
 
@@ -270,6 +291,46 @@ test('unregistering a shadowing registration (EqOverlay closing over a mixer kno
 });
 
 // ============================================ selection + the global wheel
+
+test('PERF-UI-13: registering knobs binds no window wheel listener; selecting binds one non-passive; clearing removes it', () => {
+	for (const id of ['1:low', '2:low', '3:low', '1:mid']) addDial(id, 0.5);
+	assert.deepEqual(wheelCalls('add'), [], 'mounting four knobs bound a window wheel listener (the library then scrolls on the main thread)');
+	assert.deepEqual([...knobs._knobWindowListenersForTests()], [], 'the bound set is not empty at idle');
+	assert.equal(globalThis.__listeners.has('wheel'), false);
+
+	knobs.shiftClickKnob('1:low');
+	assert.equal(wheelCalls('add').length, 1, 'selecting one knob did not bind exactly one wheel listener');
+	assert.deepEqual(wheelCalls('add')[0][2], { passive: false }, 'the selection wheel must stay non-passive so it can preventDefault');
+	assert.deepEqual([...knobs._knobWindowListenersForTests()].sort(), ['keydown', 'pointerdown', 'wheel']);
+
+	knobs.shiftClickKnob('2:low');
+	assert.equal(wheelCalls('add').length, 1, 'growing the selection re-bound the wheel');
+
+	knobs.clearKnobSelection();
+	assert.equal(wheelCalls('remove').length, 1, 'clearing the selection left the wheel listener bound');
+	assert.deepEqual([...knobs._knobWindowListenersForTests()], []);
+	assert.equal(globalThis.__listeners.has('wheel'), false, 'the fake window still holds a wheel listener');
+	knobs.clearKnobSelection();
+	assert.equal(wheelCalls('remove').length, 1, 'a clear on an empty selection removed again');
+});
+
+test('PERF-UI-13: setKnobSelection binds, and unmounting the last selected knob unbinds', async () => {
+	addDial('1:low', 0.5);
+	addDial('2:low', 0.5);
+	knobs.setKnobSelection(['1:low']);
+	assert.equal(wheelCalls('add').length, 1);
+	knobs.setKnobSelection([]);
+	assert.equal(wheelCalls('remove').length, 1, 'an empty setKnobSelection kept the wheel bound');
+
+	knobs.setKnobSelection(['2:low']);
+	assert.equal(wheelCalls('add').length, 2);
+	knobs.unregisterKnob('2:low');
+	// The prune is deferred one microtask (MIXUX-13), so the unbind is too.
+	await new Promise((resolve) => queueMicrotask(resolve));
+	assert.deepEqual([...knobs.selectedKnobIds()], []);
+	assert.equal(wheelCalls('remove').length, 2, 'unmounting the last selected knob left the wheel bound');
+	assert.deepEqual([...knobs._knobWindowListenersForTests()], []);
+});
 
 test('a shift-selected dial moves on a wheel event anywhere on the page', () => {
 	const a = addDial('1:low', 0.5);

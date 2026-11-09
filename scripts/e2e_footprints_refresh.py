@@ -27,8 +27,9 @@ Subcommands (standard library only, so a bare runner `python3` can run them):
 - `fetch`: download the published map with `gh api` and write it to `--dest`; prints
   its SHA and build time. Nothing written on any failure, so the scope job's fallback
   to the seed is the absence of the file.
-- `ledger`: the scheduled half: find the newest successful main-push `e2e.yml` run whose
-  `e2e-spec-footprints` artifact is on R2 and write its map to `--out`; nothing written
+- `ledger`: the scheduled half: find the newest completed main `e2e.yml` run (an hourly or
+  nightly schedule, or a push), red or green, whose `e2e-spec-footprints` artifact is on R2 (a red root run uploads one too; its
+  failed specs are `unmeasured`) and write its map to `--out`; nothing written
   when none qualifies (the published map is kept, red only past `MAX_MAP_AGE_DAYS`).
 - `run`: run the root suite locally with footprints on and build the seed. The run is
   a full `pnpm test:e2e` (about 10 minutes on a Linux runner) and needs the engine's
@@ -69,6 +70,9 @@ MAP_FILE = ".spec_footprints.json"
 DATA_BRANCH = "ci-data-e2e"
 ARTIFACT_NAME = "e2e-spec-footprints"
 SOURCE_WORKFLOW = "e2e.yml"
+#: The main e2e.yml events that build a map: the hourly and nightly main-tip schedules, which
+#: concurrency never cancels mid-run, and a push to main (86 of the last 100 were cancelled).
+SOURCE_EVENTS = ("schedule", "push")
 FRONTEND = "apps/webui/frontend"
 SEED = f"{FRONTEND}/tests/e2e/{MAP_FILE}"
 REQUESTS_LOG = "requests.jsonl"
@@ -352,19 +356,28 @@ def fetch(repo: str, dest: Path, api: Api = _bounded_gh) -> str:
 
 
 # ---------------------------------------------------------------------------
-# ledger: the newest main-push run's artifact
+# ledger: the newest main run's artifact (schedule or push)
 # ---------------------------------------------------------------------------
 
 
 def ledger(repo: str, out: Path, now: datetime, api: Api = _gh, store: ArtifactStore | None = None) -> str:
-    """Write the newest qualifying main-push run's map to `out`, or keep the published one."""
+    """Write the newest qualifying main run's map (schedule or push) to `out`, or keep the published one."""
     store = R2Store() if store is None else store
-    runs = json.loads(
-        api(
-            f"repos/{repo}/actions/workflows/{SOURCE_WORKFLOW}/runs"
-            f"?branch=main&event=push&status=success&per_page={RUNS_TO_SCAN}"
-        )
-    ).get("workflow_runs", [])
+    runs = sorted(
+        (
+            run
+            for event in SOURCE_EVENTS
+            for run in json.loads(
+                api(
+                    f"repos/{repo}/actions/workflows/{SOURCE_WORKFLOW}/runs"
+                    f"?branch=main&event={event}&status=completed&per_page={RUNS_TO_SCAN}"
+                )
+            ).get("workflow_runs", [])
+        ),
+        # Run ids grow with creation time, so this is newest first across both events.
+        key=lambda run: int(run["id"]),
+        reverse=True,
+    )
     skipped: list[str] = []
     for run in runs:
         key = r2_artifact.object_key(repo, ARTIFACT_NAME, str(run["id"]))
@@ -395,7 +408,7 @@ def ledger(repo: str, out: Path, now: datetime, api: Api = _gh, store: ArtifactS
         out.write_text(render(footprints), encoding="utf-8", newline="\n")
         return f"[e2e-footprints] built from {SOURCE_WORKFLOW} run {run['id']} (main {run['head_sha'][:9]}): {len(footprints['specs'])} specs"
     reason = (
-        f"none of the newest {len(runs)} successful main-push {SOURCE_WORKFLOW} runs has a valid map: "
+        f"none of the newest {len(runs)} completed main {SOURCE_WORKFLOW} runs (schedule or push) has a valid map: "
         + "; ".join(skipped)
     )
     try:

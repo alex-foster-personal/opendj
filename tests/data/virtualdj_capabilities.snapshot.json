@@ -1,0 +1,101 @@
+{
+  "adapter": "virtualdj",
+  "fields": [
+    {
+      "field": "track_id",
+      "rationale": "sha256 of the Song FilePath",
+      "supports": "lossless"
+    },
+    {
+      "field": "file_path",
+      "rationale": "FilePath kept verbatim, Windows drive paths too",
+      "supports": "lossless"
+    },
+    {
+      "field": "title",
+      "rationale": "",
+      "supports": "lossless"
+    },
+    {
+      "field": "artists",
+      "rationale": "VirtualDJ stores one Tags Author string",
+      "supports": "lossy"
+    },
+    {
+      "field": "album",
+      "rationale": "",
+      "supports": "lossless"
+    },
+    {
+      "field": "bpm",
+      "rationale": "Scan Bpm is seconds per beat; 60 / value is rounded to 3 decimals",
+      "supports": "lossy"
+    },
+    {
+      "field": "key_camelot",
+      "rationale": "VirtualDJ key text mapped to Camelot; unrecognized text dropped and counted",
+      "supports": "lossy"
+    },
+    {
+      "field": "rating",
+      "rationale": "Tags Stars 0-5",
+      "supports": "lossless"
+    },
+    {
+      "field": "duration_ms",
+      "rationale": "Infos SongLength seconds",
+      "supports": "lossless"
+    },
+    {
+      "field": "play_count",
+      "rationale": "",
+      "supports": "lossless"
+    },
+    {
+      "field": "cue_points.hot",
+      "rationale": "Poi cue Num 1-8 are pads 0-7; a higher Num reads as a memory cue",
+      "supports": "lossy"
+    },
+    {
+      "field": "cue_points.memory",
+      "rationale": "VirtualDJ has no memory cue; a cue Poi off the 8 pads",
+      "supports": "lossy"
+    },
+    {
+      "field": "cue_points.loop",
+      "rationale": "Poi loop, Size read as seconds",
+      "supports": "lossless"
+    },
+    {
+      "field": "cue_points.color",
+      "rationale": "",
+      "supports": "unsupported"
+    },
+    {
+      "field": "beats",
+      "rationale": "first beatgrid Poi only, at the track BPM",
+      "supports": "lossy"
+    },
+    {
+      "field": "color_rgb",
+      "rationale": "",
+      "supports": "unsupported"
+    },
+    {
+      "field": "isrc",
+      "rationale": "",
+      "supports": "unsupported"
+    },
+    {
+      "field": "smart_playlists",
+      "rationale": "FilterFolder .vdjfolder skipped and counted",
+      "supports": "unsupported"
+    },
+    {
+      "field": "playlists",
+      "rationale": "MyLists .vdjfolder and .m3u, nested by folder",
+      "supports": "lossless"
+    }
+  ],
+  "version": "0.1.0"
+}

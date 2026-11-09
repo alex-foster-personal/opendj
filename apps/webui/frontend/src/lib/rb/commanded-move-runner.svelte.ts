@@ -8,7 +8,9 @@
  * frames. The hand wins: any drag, wheel, arrow nudge, pad or selection move cancels
  * the move. D2 (#9453) and D5 (#9456) build plans and call `startCommandedMove`.
  *
- * MIDI and other non-hand writers are not detected yet; that is out of scope here.
+ * MIDI continuous writes from `midi/action-glue.svelte.ts` report through
+ * `noteKnobHandInput(id, 'midi')` and cancel the same way (#10197). Other
+ * programmatic writers are still not detected. MIDI pickup is not handled here.
  */
 
 import { beginAnimation, endAnimation } from './dial-animations.svelte';
@@ -21,6 +23,8 @@ import {
 } from './knob-control.svelte';
 
 const REPLACE_REASON = 'replaced by a newer animation on this control';
+const HAND_REASON = 'moved by hand';
+const MIDI_REASON = 'moved by MIDI controller';
 
 /** Structural twin of D1's plan (#9452). All times are in the engine presentation clock
  * domain (performance.now() ms); a plan built in track-position ms must be
@@ -38,10 +42,20 @@ export interface CommandedMoveResult {
 	reason: string | null;
 }
 
+export type CommandedMoveEndReason =
+	| 'completed'
+	| 'replaced'
+	| 'hand'
+	| 'midi'
+	| 'unmounted'
+	| 'cancelled';
+
 export interface CommandedMoveRecord {
 	control_id: string;
 	planned_end_ms: number;
 	actual_end_ms: number;
+	outcome: CommandedMoveOutcome;
+	reason: CommandedMoveEndReason;
 }
 
 export interface CommandedMoveHandle {
@@ -109,9 +123,16 @@ class _Move {
 		this._reject = reject;
 	}
 
-	stop(outcome: CommandedMoveOutcome, reason: string | null): void {
+	stop(outcome: CommandedMoveOutcome, reason: string | null, end: CommandedMoveEndReason): void {
 		if (this.stopped) return;
 		this.stopped = true;
+		_pushLog({
+			control_id: this.controlId,
+			planned_end_ms: this.plan.endMs,
+			actual_end_ms: _clock.now(),
+			outcome,
+			reason: end
+		});
 		this._resolve({ outcome, reason });
 	}
 
@@ -122,12 +143,16 @@ class _Move {
 	}
 
 	cancel(reason: string = 'cancelled'): void {
-		this.stop('cancelled', reason);
+		this.stop('cancelled', reason, 'cancelled');
 	}
 }
 
-function _outcomeForCancelReason(reason: string): CommandedMoveOutcome {
-	return reason === REPLACE_REASON ? 'replaced' : 'cancelled';
+function _outcomeAndEndForAnimationCancel(
+	reason: string
+): { outcome: CommandedMoveOutcome; end: CommandedMoveEndReason } {
+	return reason === REPLACE_REASON
+		? { outcome: 'replaced', end: 'replaced' }
+		: { outcome: 'cancelled', end: 'cancelled' };
 }
 
 function _pushLog(record: CommandedMoveRecord): void {
@@ -137,8 +162,12 @@ function _pushLog(record: CommandedMoveRecord): void {
 
 function _ensureHandSubscription(): void {
 	if (_handSubscribed) return;
-	_handUnsub = onKnobHandInput((ids) => {
-		for (const id of ids) _active.get(id)?.stop('cancelled', 'moved by hand');
+	_handUnsub = onKnobHandInput((ids, source) => {
+		for (const id of ids) {
+			_active
+				.get(id)
+				?.stop('cancelled', source === 'midi' ? MIDI_REASON : HAND_REASON, source);
+		}
 	});
 	_handSubscribed = true;
 }
@@ -183,7 +212,8 @@ export function startCommandedMove(
 	}
 	const move = new _Move(controlId, plan, Symbol(controlId), from, currentPartner, startPartner);
 	const token = beginAnimation(controlId, label, (reason) => {
-		move.stop(_outcomeForCancelReason(reason), reason);
+		const { outcome, end } = _outcomeAndEndForAnimationCancel(reason);
+		move.stop(outcome, reason, end);
 	});
 	move.token = token;
 	_active.set(controlId, move);
@@ -245,7 +275,7 @@ async function _drive(move: _Move): Promise<void> {
 				throw new RangeError(`commanded move on ${id}: valueAt(${sampleAt}) is ${value}`);
 			}
 			if (readKnobValue(id) === null) {
-				move.stop('cancelled', 'control unmounted');
+				move.stop('cancelled', 'control unmounted', 'unmounted');
 				return;
 			}
 			_rebaselineIfLinkChanged(move);
@@ -257,19 +287,14 @@ async function _drive(move: _Move): Promise<void> {
 				move.startPartner
 			);
 			if (written === null) {
-				move.stop('cancelled', 'control unmounted');
+				move.stop('cancelled', 'control unmounted', 'unmounted');
 				return;
 			}
 			// With a link, the end primary includes stagger, exactly as a drag to that target.
 			move.lastWritten = written.primary;
 			move.lastWrittenPartner = written.secondary;
 			if (finished) {
-				_pushLog({
-					control_id: id,
-					planned_end_ms: move.plan.endMs,
-					actual_end_ms: t
-				});
-				move.stop('completed', null);
+				move.stop('completed', null, 'completed');
 				return;
 			}
 		}

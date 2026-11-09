@@ -1,0 +1,9 @@
+{
+  "bytes": 13312,
+  "measured_main": 485775,
+  "measured_with_pr": 497775,
+  "sha": "118f4d1c",
+  "date": "Mon 9 Nov 2026",
+  "reason": "PR #10573 (issue #9898): /lighting route node plus src/lib/lighting stage-render, frames-client, stage-session and stage-ipc on other-lazy. Allowance ceiled from estimated local vite build delta",
+  "payback": "none planned; the growth is the feature's own code"
+}

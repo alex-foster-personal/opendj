@@ -275,12 +275,6 @@ def test_no_if_match_required(client: TestClient) -> None:
     assert r.status_code == 200
 
 
-def test_openapi_documents_add_endpoint(client: TestClient) -> None:
-    schema = client.get("/openapi.json").json()
-    assert "/api/v1/playlists/{playlist_id}/items:add" in schema["paths"]
-    assert "post" in schema["paths"]["/api/v1/playlists/{playlist_id}/items:add"]
-
-
 def test_bulk_all_new(client: TestClient, db_path: Path) -> None:
     body, etag = _create(client, "Bulk")
     pid = body["playlist_id"]

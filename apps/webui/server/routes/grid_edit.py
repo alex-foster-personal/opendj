@@ -8,6 +8,10 @@ IPC or CLI parity; the CLI twin is ``opendj track grid-edit``).
   POST   /api/v1/tracks/{stable_id}/grid-edit/nudge    relative step (the clicks)
   PUT    /api/v1/tracks/{stable_id}/grid-edit          absolute value
   DELETE /api/v1/tracks/{stable_id}/grid-edit          reset to the measured grid
+  GET    /api/v1/tracks/{stable_id}/grid-edit/anchors  the tempo anchors in force (GRIDEDIT-10220)
+  POST   /api/v1/tracks/{stable_id}/grid-edit/anchors  {at_s, bpm}: add (or replace within half a beat)
+  DELETE /api/v1/tracks/{stable_id}/grid-edit/anchors/{at_s}  remove the anchor near at_s
+  POST   /api/v1/tracks/{stable_id}/grid-edit/undo     step back one edit (409 when none)
   PUT    /api/v1/tracks/{stable_id}/bpm-pick            {"source": "own"|"mik"}: settle a
                                                        disputed tempo (GRID-OCTAVE-02)
   DELETE /api/v1/tracks/{stable_id}/bpm-pick            forget the pick (the dispute shows again)
@@ -28,7 +32,7 @@ kind ``beatgrid_edit`` so an open deck re-reads its grid after an agent edit.
 from __future__ import annotations
 
 import sqlite3
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from pathlib import Path
 from typing import Any, Literal, NoReturn
 
@@ -59,6 +63,14 @@ MOUNT_UNDER_API_PREFIX = True
 EVENT_KIND = "beatgrid_edit"
 
 
+class AnchorOut(BaseModel):
+    model_config = ConfigDict(frozen=True)
+
+    #: Served time (after the grid adjust) the tempo change starts at.
+    at_s: float
+    bpm: float
+
+
 class GridEditOut(BaseModel):
     model_config = ConfigDict(frozen=True)
 
@@ -69,7 +81,9 @@ class GridEditOut(BaseModel):
     offset_ms: float
     #: Grid shift: bar 1 moved by this many whole beats, later when positive (-1..2).
     beat_shift: int
-    #: When the stored row was last written (any source); null when never edited.
+    #: Tempo anchors, sorted by time; empty when the grid keeps its measured tempo.
+    anchors: list[AnchorOut] = Field(default_factory=list)
+    #: When the edit in force was made (an undo restores the earlier edit's time); null when never edited.
     modified_at: str | None
 
 
@@ -89,6 +103,16 @@ class GridEditSetIn(BaseModel):
     source: grid_edit.GridSource | None = None
     offset_ms: float
     beat_shift: StrictInt = Field(ge=-64, le=64)
+
+
+class GridEditAnchorIn(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    source: grid_edit.GridSource | None = None
+    #: Served time in seconds; the anchor snaps to the grid line nearest it.
+    at_s: float
+    #: Tempo from the anchor on (40..300, checked by the kernel).
+    bpm: float
 
 
 class BpmPickIn(BaseModel):
@@ -163,32 +187,37 @@ def _out(stable_id: str, source: grid_edit.GridSource, stored: grid_edit.StoredG
         source=source,
         offset_ms=edit.offset_ms,
         beat_shift=edit.beat_shift,
+        anchors=[AnchorOut(at_s=a.at_s, bpm=a.bpm) for a in edit.anchors],
         modified_at=stored.modified_at,
     )
 
 
-def _write(
-    request: Request,
-    stable_id: str,
-    source: grid_edit.GridSource | None,
-    change: Callable[[grid_edit.GridEdit], grid_edit.GridEdit],
-) -> GridEditOut:
-    """One read-modify-write of the track's edit under a writer unit."""
+_Plan = Callable[
+    [sqlite3.Connection, grid_edit.GridSource, grid_edit.StoredGridEdits],
+    tuple[Mapping[grid_edit.GridSource, grid_edit.GridEdit], str],
+]
+
+
+def _write_stored(request: Request, stable_id: str, source: grid_edit.GridSource | None, plan: _Plan) -> GridEditOut:
+    """One read-modify-write of the track's edits under a writer unit.
+
+    ``plan`` returns the edits to store and their ``modified_at``; a
+    ``GridEditError`` it raises rolls back and publishes nothing.
+    """
     resolved = source if source is not None else _served_source(request, stable_id)
     conn = state_db.open_rw(state_db_path(request))
     try:
         with StateWriter(conn, actor="webui") as writer, writer.transaction():
-                _require_track(conn, stable_id)
-                stored = grid_edit.read(conn, stable_id)
-                edits = grid_edit.with_edit(stored, resolved, change(stored.for_source(resolved)))
-                writer.set_field(
-                    stable_id,
-                    grid_edit.FIELD,
-                    grid_edit.blob(edits),
-                    source=grid_edit.OWN_SOURCE,
-                    modified_at=canonical_now(),
-                )
-                after = grid_edit.read(conn, stable_id)
+            _require_track(conn, stable_id)
+            edits, modified_at = plan(conn, resolved, grid_edit.read(conn, stable_id))
+            writer.set_field(
+                stable_id,
+                grid_edit.FIELD,
+                grid_edit.blob(edits),
+                source=grid_edit.OWN_SOURCE,
+                modified_at=modified_at,
+            )
+            after = grid_edit.read(conn, stable_id)
     except grid_edit.GridEditError as exc:
         if conn.in_transaction:
             conn.rollback()
@@ -203,13 +232,25 @@ def _write(
     return _out(stable_id, resolved, after)
 
 
-@router.get("/{stable_id}/grid-edit", response_model=GridEditOut)
-def get_grid_edit(
+def _write(
     request: Request,
     stable_id: str,
-    source: grid_edit.GridSource | None = None,
-    _backend: StateBackend = Depends(get_read_state),  # noqa: B008  # FastAPI DI
+    source: grid_edit.GridSource | None,
+    change: Callable[[grid_edit.GridEdit], grid_edit.GridEdit],
 ) -> GridEditOut:
+    """A new edit of one grid source, stamped now."""
+    return _write_stored(
+        request,
+        stable_id,
+        source,
+        lambda _conn, resolved, stored: (
+            grid_edit.with_edit(stored, resolved, change(stored.for_source(resolved))),
+            canonical_now(),
+        ),
+    )
+
+
+def _read_out(request: Request, stable_id: str, source: grid_edit.GridSource | None) -> GridEditOut:
     resolved = source if source is not None else _served_source(request, stable_id)
     conn = state_conn_ro(state_db_path(request))
     if conn is None:
@@ -223,6 +264,48 @@ def get_grid_edit(
     finally:
         conn.close()
     return _out(stable_id, resolved, stored)
+
+
+@router.get("/{stable_id}/grid-edit", response_model=GridEditOut)
+def get_grid_edit(
+    request: Request,
+    stable_id: str,
+    source: grid_edit.GridSource | None = None,
+    _backend: StateBackend = Depends(get_read_state),  # noqa: B008  # FastAPI DI
+) -> GridEditOut:
+    return _read_out(request, stable_id, source)
+
+
+@router.get("/{stable_id}/grid-edit/anchors", response_model=GridEditOut)
+def get_grid_anchors(
+    request: Request,
+    stable_id: str,
+    source: grid_edit.GridSource | None = None,
+    _backend: StateBackend = Depends(get_read_state),  # noqa: B008  # FastAPI DI
+) -> GridEditOut:
+    return _read_out(request, stable_id, source)
+
+
+@router.post("/{stable_id}/grid-edit/anchors", response_model=GridEditOut)
+def add_grid_anchor(
+    request: Request,
+    stable_id: str,
+    body: GridEditAnchorIn,
+    _backend: StateBackend = Depends(get_write_state),  # noqa: B008  # FastAPI DI
+) -> GridEditOut:
+    """Change tempo at ``at_s``; an anchor within half a beat of an existing one replaces it."""
+    return _write(request, stable_id, body.source, lambda edit: grid_edit.with_anchor(edit, body.at_s, body.bpm))
+
+
+@router.delete("/{stable_id}/grid-edit/anchors/{at_s}", response_model=GridEditOut)
+def remove_grid_anchor(
+    request: Request,
+    stable_id: str,
+    at_s: float,
+    source: grid_edit.GridSource | None = None,
+    _backend: StateBackend = Depends(get_write_state),  # noqa: B008  # FastAPI DI
+) -> GridEditOut:
+    return _write(request, stable_id, source, lambda edit: grid_edit.without_anchor(edit, at_s))
 
 
 @router.post("/{stable_id}/grid-edit/nudge", response_model=GridEditOut)
@@ -257,7 +340,7 @@ def set_grid_edit(
         request,
         stable_id,
         body.source,
-        lambda _edit: grid_edit.make_edit(body.offset_ms, body.beat_shift),
+        lambda edit: grid_edit.make_edit(body.offset_ms, body.beat_shift, anchors=edit.anchors),
     )
 
 
@@ -275,10 +358,41 @@ def reset_grid_edit(
     transaction, so an agent's concurrent edit of the kept half is never lost.
     """
     if part == "adjust":
-        return _write(request, stable_id, source, lambda edit: grid_edit.make_edit(0.0, edit.beat_shift))
+        return _write(
+            request, stable_id, source, lambda edit: grid_edit.make_edit(0.0, edit.beat_shift, anchors=edit.anchors)
+        )
     if part == "shift":
-        return _write(request, stable_id, source, lambda edit: grid_edit.make_edit(edit.offset_ms, 0))
+        return _write(
+            request, stable_id, source, lambda edit: grid_edit.make_edit(edit.offset_ms, 0, anchors=edit.anchors)
+        )
     return _write(request, stable_id, source, lambda _edit: grid_edit.IDENTITY)
+
+
+@router.post("/{stable_id}/grid-edit/undo", response_model=GridEditOut)
+def undo_grid_edit(
+    request: Request,
+    stable_id: str,
+    source: grid_edit.GridSource | None = None,
+    _backend: StateBackend = Depends(get_write_state),  # noqa: B008  # FastAPI DI
+) -> GridEditOut:
+    """Step back one stored edit (GRIDEDIT-10215); 409 ``GRID_EDIT_NOTHING_TO_UNDO`` when none.
+
+    The undo writes the previous value back, so it is in history itself and the
+    next undo steps back again. It covers the track's last grid write whichever
+    grid source it touched; ``source`` only picks the grid the answer reports.
+    """
+
+    def plan(
+        conn: sqlite3.Connection, _resolved: grid_edit.GridSource, _stored: grid_edit.StoredGridEdits
+    ) -> tuple[Mapping[grid_edit.GridSource, grid_edit.GridEdit], str]:
+        step = grid_edit.previous(conn, stable_id)
+        if step is None:
+            raise grid_edit.GridEditError(
+                409, "GRID_EDIT_NOTHING_TO_UNDO", f"no earlier grid edit to undo for {stable_id}"
+            )
+        return step.edits, step.modified_at
+
+    return _write_stored(request, stable_id, source, plan)
 
 
 def _served_grid_source(stable_id: str, payload: dict[str, Any]) -> grid_edit.GridSource:
@@ -326,10 +440,14 @@ def _write_tempo_pick(request: Request, stable_id: str, pick: tempo_pick.TempoPi
     conn = state_db.open_rw(state_db_path(request))
     try:
         with StateWriter(conn, actor="webui") as writer, writer.transaction():
-                _require_track(conn, stable_id)
-                writer.set_field(
-                    stable_id, tempo_pick.FIELD, tempo_pick.blob(pick), source=tempo_pick.OWN_SOURCE, modified_at=canonical_now()
-                )
+            _require_track(conn, stable_id)
+            writer.set_field(
+                stable_id,
+                tempo_pick.FIELD,
+                tempo_pick.blob(pick),
+                source=tempo_pick.OWN_SOURCE,
+                modified_at=canonical_now(),
+            )
     except Exception:
         if conn.in_transaction:
             conn.rollback()
@@ -364,8 +482,10 @@ def clear_bpm_pick(
 
 __all__ = [
     "EVENT_KIND",
+    "AnchorOut",
     "BpmPickIn",
     "BpmPickOut",
+    "GridEditAnchorIn",
     "GridEditNudgeIn",
     "GridEditOut",
     "GridEditSetIn",

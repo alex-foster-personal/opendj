@@ -25,7 +25,7 @@ from apps.adapters.traktor.mappers import (
     traktor_key_to_camelot,
     traktor_rating_to_stars,
 )
-from apps.adapters.traktor.nml import NMLDocument, NMLEntry
+from apps.adapters.traktor.nml import NMLDocument, NMLEntry, decode_primary_key
 from apps.open_dj import (
     AdapterReport,
     Capabilities,
@@ -335,7 +335,7 @@ class TraktorAdapter:
                 # "/:" directory separators ("Macintosh HD/:Users/:a/:x.mp3"),
                 # while the entry's id hashes the decoded location. Decode the
                 # same way, or every real playlist resolves to no tracks.
-                key = primary.get("KEY", "").replace("/:", "/")
+                key = decode_primary_key(primary.get("KEY", ""))
                 track_ids.append(_stable_track_id(key))
             playlists.append(
                 Playlist(name=node.get("NAME", "unnamed"), track_ids=tuple(track_ids))

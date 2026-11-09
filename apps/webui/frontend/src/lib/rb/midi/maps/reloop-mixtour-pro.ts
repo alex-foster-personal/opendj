@@ -15,6 +15,7 @@ import type {
 	ControlHint,
 	ControllerPadMode,
 	DeviceMap,
+	DeviceMapEntry,
 	LedRule,
 	MidiBinding,
 	MidiMeterOutput
@@ -347,3 +348,8 @@ export const RELOOP_MIXTOUR_PRO_MAP: DeviceMap = {
 	meters: [...MIXTOUR_PRO_METERS],
 	hints: [..._deckHints(1), ..._deckHints(2), ..._deckHints(3), ..._deckHints(4), ...GLOBAL_HINTS]
 };
+
+/** Self-registration: maps/entries.ts discovers this export, so no shared list names this map. */
+export const DEVICE_MAP_ENTRIES: readonly DeviceMapEntry[] = [
+	{ key: 'RELOOP_MIXTOUR_PRO_MAP', map: RELOOP_MIXTOUR_PRO_MAP, live: true }
+];

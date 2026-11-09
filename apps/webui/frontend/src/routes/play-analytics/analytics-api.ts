@@ -1,5 +1,6 @@
 /** Fail-fast route-local client for the read-only play-analytics contract. */
 import { API_BASE, ApiError, api, unwrap } from '$lib/api/client';
+import { readApiErrorStatus } from '$lib/api/errors';
 import {
 	SHARE_STATES,
 	type AnalyticsSession,
@@ -117,8 +118,18 @@ export class NoEventStoreError extends Error {
  *  detail; `tests/play_analytics/test_surfaces.py` holds the server to it. */
 export const NO_EVENT_STORE_DETAIL = 'event store does not exist:';
 
-export function isNoEventStore(status: number, bodyText: string): boolean {
+function apiErrorBodyText(error: unknown): string {
+	if (error instanceof ApiError) return error.bodyText;
+	if (typeof error === 'object' && error !== null && 'bodyText' in error) {
+		const bodyText = (error as ApiError).bodyText;
+		if (typeof bodyText === 'string') return bodyText;
+	}
+	return '';
+}
+
+export function isNoEventStore(status: number, bodyText: string, message = ''): boolean {
 	if (status !== 503) return false;
+	if (message.startsWith(NO_EVENT_STORE_DETAIL)) return true;
 	try {
 		const detail = (JSON.parse(bodyText) as { detail?: unknown }).detail;
 		return typeof detail === 'string' && detail.startsWith(NO_EVENT_STORE_DETAIL);
@@ -143,12 +154,12 @@ export async function fetchPlayAnalytics(
 			})
 		);
 	} catch (error) {
-		if (error instanceof ApiError) {
-			const bodyText = error.bodyText;
-			if (isNoEventStore(error.status, bodyText)) throw new NoEventStoreError();
-			throw new Error(
-				`GET /api/play-analytics failed: ${error.status} ${bodyText.slice(0, 300)}`
-			);
+		const status = readApiErrorStatus(error);
+		if (status !== null) {
+			const bodyText = apiErrorBodyText(error);
+			const message = error instanceof Error ? error.message : '';
+			if (isNoEventStore(status, bodyText, message)) throw new NoEventStoreError();
+			throw new Error(`GET /api/play-analytics failed: ${status} ${bodyText.slice(0, 300)}`);
 		}
 		throw new Error(
 			`daemon unreachable at ${endpoint} (${error instanceof Error ? error.message : String(error)})`

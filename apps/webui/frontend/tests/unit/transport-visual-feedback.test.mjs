@@ -133,9 +133,9 @@ test('a pending command never greys out the play or cue button', () => {
 	);
 	assert.equal(
 		text.split('disabled={!hasTrack}').length - 1,
-		2,
-		'both transport buttons must stay disabled for the one honest reason - no track ' +
-			'loaded, where the engine genuinely throws'
+		3,
+		'play, cue and the CUES-10013 memory cue CALL pair must stay disabled for the one ' +
+			'honest reason - no track loaded, where the engine genuinely throws'
 	);
 });
 

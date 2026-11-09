@@ -102,7 +102,7 @@ test('a child that keeps reporting progress is waited for past the stall budget,
 		startMidiMapsTestServer({
 			cwd: REPO_ROOT,
 			..._node(
-				'let n = 0; const tick = () => console.log(`BOOT step${n++} ${n * 100}`); tick(); setInterval(tick, 100)'
+				"process.stdout.write('BOOT step0 100\\n'); let n = 0; setInterval(() => { n++; process.stdout.write(`BOOT step${n} ${(n + 1) * 100}\\n`); }, 100)"
 			),
 			stallMs: 2_000,
 			totalMs: 5_000

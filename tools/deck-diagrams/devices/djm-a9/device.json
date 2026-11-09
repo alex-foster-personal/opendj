@@ -1,0 +1,9 @@
+{
+ "map_name": "DJM-A9",
+ "map_const": "DJM_A9_MAP",
+ "map_ts": "apps/webui/frontend/src/lib/rb/midi/maps/djm-a9.ts",
+ "panel_w": 407.4,
+ "panel_d": 458.3,
+ "panel_size_source": "DJM-A9 product page, Specifications: Dimensions (W x D x H) 407.4 x 458.3 x 107.9 mm",
+ "display_name": "4-channel club mixer"
+}

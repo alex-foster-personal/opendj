@@ -101,6 +101,7 @@ export class FakeAudioContext {
 		});
 	}
 	createDelay(maxDelayTime) { return this._create('delay', ['delayTime'], { maxDelayTime }); }
+	createWaveShaper() { return this._create('waveshaper', [], { curve: null, oversample: 'none' }); }
 	createBiquadFilter() { return this._create('biquad', ['frequency', 'Q', 'gain', 'detune'], { type: 'lowpass' }); }
 	createChannelSplitter(outputs = 6) { return this._create('splitter', [], { numberOfOutputs: outputs }); }
 	createChannelMerger(inputs = 6) { return this._create('merger', [], { numberOfInputs: inputs }); }

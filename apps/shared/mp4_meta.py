@@ -122,6 +122,13 @@ class Item:
         }
         return parts.get(b"mean", ""), parts.get(b"name", "")
 
+    def data_bytes(self) -> bytes | None:
+        """The body of the first ``data`` child (after its 8-byte type/locale header), any type."""
+        for kind, payload in self._children():
+            if kind == b"data" and len(payload) >= 8:
+                return payload[8:]
+        return None
+
     def value(self) -> str | None:
         """The first ``data`` value as text: UTF-8 strings verbatim, integers in decimal."""
         for kind, payload in self._children():
@@ -175,6 +182,9 @@ class Mp4Meta:
 
     def freeform(self, name: str, mean: str = ITUNES_MEAN) -> str | None:
         return next((i.value() for i in self.items if _same_freeform(i, mean, name)), None)
+
+    def freeform_bytes(self, name: str, mean: str = ITUNES_MEAN) -> bytes | None:
+        return next((i.data_bytes() for i in self.items if _same_freeform(i, mean, name)), None)
 
     def set_text(self, key: str, value: str) -> None:
         self._put(lambda i: i.kind == _fourcc(key), _text_item(_fourcc(key), value))

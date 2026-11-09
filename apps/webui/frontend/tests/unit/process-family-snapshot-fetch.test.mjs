@@ -133,21 +133,23 @@ async function releaseHeld(pending) {
 
 before(async () => {
 	// Launched by resolved path; a missing uv fails here, by name.
-	// Do not pass --no-sync: the server needs the project venv (uvicorn, etc.); a cold
-	// checkout or CI env without a prior sync would exit before READY otherwise.
-	// --locked: the sync must never rewrite uv.lock (AGENTS.md); a stale lock fails here.
-	// --python <venv interpreter>: keep an existing venv (see VENV_PYTHON); with none, uv
-	// creates it from .python-version as before.
-	const pythonArgs = existsSync(VENV_PYTHON) ? ['--python', VENV_PYTHON] : [];
-	serverProcess = spawn(
-		resolveExecutable('uv'),
-		['run', '--locked', ...pythonArgs, 'python', SERVER_SCRIPT],
-		{
-			cwd: REPOSITORY_ROOT,
-			env: { ...process.env, MDT_LIBRARY_MODE: 'local', PYTHONPATH: REPOSITORY_ROOT },
-			stdio: ['ignore', 'pipe', 'inherit']
-		}
-	);
+	// When .venv exists: --no-sync reuses the CI-provisioned venv without exact-syncing back to
+	// uv.lock; a syncing `uv run` uninstalls packages while --test-concurrency=4 siblings import
+	// from the same `.venv` (quit-gate's engine once failed: No module named '_cffi_backend').
+	// --python <venv interpreter> stops uv from rebuilding that venv when the runner patch
+	// release differs from .python-version (the server dies importing pytest).
+	// Cold checkout: --locked --extra dev so uvicorn and pytest exist before READY; --locked never
+	// rewrites uv.lock (AGENTS.md). CI provisions the venv with scripts/ci_venv.sh --lock
+	// pylock.ci.toml; locally use uv sync --locked --extra dev.
+	const hasVenv = existsSync(VENV_PYTHON);
+	const uvArgs = hasVenv
+		? ['run', '--no-sync', '--python', VENV_PYTHON]
+		: ['run', '--locked', '--extra', 'dev'];
+	serverProcess = spawn(resolveExecutable('uv'), [...uvArgs, 'python', SERVER_SCRIPT], {
+		cwd: REPOSITORY_ROOT,
+		env: { ...process.env, MDT_LIBRARY_MODE: 'local', PYTHONPATH: REPOSITORY_ROOT },
+		stdio: ['ignore', 'pipe', 'inherit']
+	});
 	const port = await new Promise((resolve, reject) => {
 		const lines = createInterface({ input: serverProcess.stdout });
 		serverProcess.once('exit', (code) =>
@@ -461,6 +463,7 @@ test('a fresh probe sample is shown for its whole remaining lifetime', async () 
 		// One second shy of the walk expiry, from request start (not response):
 		// the sample is about 39 s old with about 6 s left; still shown in full.
 		const late = mod.readFreshProcessFamilySnapshot(maxAge, fetchedAt + maxAge - 1_000);
+		assert.notEqual(late, null, 'one second shy of the walk expiry is still inside its window');
 		assert.equal(late.members.filter((m) => m.fromProbe).length, 5);
 		assert.ok(late.members.some((m) => m.role === 'python-engine'));
 		assert.equal(late.probeStale, false);
@@ -471,7 +474,8 @@ test('a fresh probe sample is shown for its whole remaining lifetime', async () 
 
 test('a slow walk is not counted twice: the probe ages on from the response, the walk expires from the request', async () => {
 	// The route sleeps 4 s BEFORE it runs (a slow walk), so the age it
-	// returns for this 38 s old sample already holds those 4 s: about 42 s.
+	// returns for this 38 s old sample already holds those 4 s: about 42 s,
+	// plus whatever the real psutil walk costs on this host.
 	await control('POST', '/test/family/self');
 	await control('POST', '/test/probe/fresh?age_s=38');
 	try {
@@ -481,41 +485,55 @@ test('a slow walk is not counted twice: the probe ages on from the response, the
 		const after = performance.now();
 		assert.ok(after - before >= 4_000, `the request took ${after - before} ms`);
 		assert.equal(snapshot.probeStale, false);
+		const elapsedS = (after - before) / 1000;
 		assert.ok(
 			snapshot.probeAgeSeconds >= 42,
 			`the delay is missing from the age: ${snapshot.probeAgeSeconds}`
 		);
-		// A second 4 s delay would read ~46+. CI scheduling can add a couple of
-		// extra seconds between the stamp and the route; stay below the 45 s wall.
+		// Age is 38 plus the delay plus the real psutil walk, which already sits
+		// inside elapsedS. A second copy of the delay would cross the freshness wall.
 		assert.ok(
-			snapshot.probeAgeSeconds < 45,
-			`the sample is already past its lifetime: ${snapshot.probeAgeSeconds}`
+			snapshot.probeAgeSeconds < 38 + elapsedS + 2 &&
+				snapshot.probeAgeSeconds < mod.PROBE_SAMPLE_FRESH_SECONDS,
+			`sample age ${snapshot.probeAgeSeconds}s, elapsed=${elapsedS}s, ` +
+				`freshness=${mod.PROBE_SAMPLE_FRESH_SECONDS}s`
 		);
 
-		const remainingMs = (45 - snapshot.probeAgeSeconds) * 1000;
-		assert.ok(remainingMs > 0, `no lifetime left at fetch: ${snapshot.probeAgeSeconds}`);
+		const remainingMs = (mod.PROBE_SAMPLE_FRESH_SECONDS - snapshot.probeAgeSeconds) * 1000;
+		assert.ok(
+			remainingMs > 0,
+			`no lifetime left at fetch: ${snapshot.probeAgeSeconds}/${mod.PROBE_SAMPLE_FRESH_SECONDS}s`
+		);
 
 		// Just inside the remaining lifetime, counted from the response: still shown.
-		// Counted from the request start this same instant includes the 4 s walk
+		// Counted from the request start this same instant includes the slow walk
 		// again and would already be gone.
 		const within = mod.readFreshProcessFamilySnapshot(
 			30_000,
 			after + Math.max(0, remainingMs - 200)
 		);
+		assert.notEqual(within, null, 'probe still inside its 45 s lifetime from the response');
 		assert.equal(within.members.filter((m) => m.fromProbe).length, 5);
 		assert.equal(within.probeStale, false);
 		const past = mod.readFreshProcessFamilySnapshot(30_000, after + remainingMs + 200);
+		assert.notEqual(past, null, 'the live walk is still inside its 30 s window');
 		assert.equal(past.members.filter((m) => m.fromProbe).length, 0);
 		assert.equal(past.probeStale, true);
 
-		// The walk's own expiry stays on the request start (conservative): 1 s
-		// past 30 s from it, nothing is current, though only about 27 s have
-		// passed since the answer (the request took at least 4 s, asserted above,
-		// so an expiry counted from the response would still show it). The 1 s
-		// margin absorbs a GC pause or preemption between `before` and the
-		// module's own request-start stamp on a loaded host; a 1 ms margin did not.
-		assert.equal(mod.readFreshProcessFamilySnapshot(30_000, before + 31_000), null);
-		assert.notEqual(mod.readFreshProcessFamilySnapshot(30_000, before + 29_000), null);
+		// The walk's own expiry stays on the request start (conservative): just
+		// past 30 s from it, nothing is current, though only about 26 s have
+		// passed since the answer. The module stamps the request start itself,
+		// a moment after `before`; read that stamp rather than assume it is
+		// `before` (a 1 ms margin that a loaded CI host overruns; main uses 1 s
+		// on `before`, this uses the module stamp for the same conservative TTL).
+		const startedAt = after - mod.processFamilySnapshotAgeMs(after);
+		assert.ok(startedAt >= before, `the stamp predates the request: ${startedAt} < ${before}`);
+		assert.ok(
+			after - startedAt >= 4_000,
+			`the walk's expiry counts from the response, not the request: ${after - startedAt} ms`
+		);
+		assert.equal(mod.readFreshProcessFamilySnapshot(30_000, startedAt + 30_001), null);
+		assert.notEqual(mod.readFreshProcessFamilySnapshot(30_000, startedAt + 29_000), null);
 	} finally {
 		await control('POST', '/test/probe/captured');
 	}
@@ -640,14 +658,16 @@ test('a live member with no MB reading stays listed, with null MB (derived: MB f
 	});
 });
 
-test('kernel pressure is absent when the real body omits it, never 0 (derived: kernel 0 and 2)', async () => {
+test('kernel pressure is absent when the body omits it, never 0 (derived: omitted, kernel 0 and 2)', async () => {
 	await withFreshProbe((body) => {
 		assert.equal(
 			Object.hasOwn(body, 'kernel_memory_pressure_level'),
 			false,
 			'the real body has no kernel field'
 		);
-		const snap = mod.processFamilyFrom(body);
+		const withoutKernel = derived(body, (b) => delete b.kernel_memory_pressure_level);
+		assert.equal(Object.hasOwn(withoutKernel, 'kernel_memory_pressure_level'), false);
+		const snap = mod.processFamilyFrom(withoutKernel);
 		assert.equal(snap.kernelLevel, null);
 		assert.equal(
 			mod.processFamilyFrom(derived(body, (b) => (b.kernel_memory_pressure_level = 0))).kernelLevel,

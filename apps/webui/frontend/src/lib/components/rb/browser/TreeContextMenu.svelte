@@ -5,6 +5,7 @@
 	import { loadMenuRegistry, menuRegistry, preloadMenuRegistry } from '$lib/context-menu/lazy.svelte';
 	import { reportMenuLoadFailure } from './track-context-menu';
 	import { openUsbExportForPlaylist } from '$lib/rb/usb-export.svelte';
+	import { downloadPlaylistText } from '$lib/rb/playlist-text-export';
 	import { offloadOps } from '$lib/offload/offload-ops.svelte';
 	import { isInboxPlaylistId } from './inbox-id';
 
@@ -87,6 +88,7 @@
 			'forbid-duplicates': () => onforbidduplicates?.(node),
 			reveal: () => onselect(node),
 			'export-usb': () => void openUsbExportForPlaylist(node.name),
+			'export-text': () => downloadPlaylistText(node.playlist_id),
 			'offload-playlist': () => void offloadOps.offloadPlaylist(node.playlist_id),
 			'offload-playlist-restore-24h': () => void offloadOps.restorePlaylist(node.playlist_id, 'temporary'),
 			'offload-playlist-restore-permanent': () => void offloadOps.restorePlaylist(node.playlist_id, 'permanent')

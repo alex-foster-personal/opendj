@@ -31,6 +31,7 @@ DELIVERY = frozenset({"engine_core", "opendj_cli", "webui"})
 # core every package may import, so an upward import cannot land in one unseen.
 NOT_PACKAGES = {
     "launcher": "a Tauri app; its scripts/*.py run by path and import only apps.shared",
+    "track-catcher-mac": "a Swift app; its scripts/*.py run by path and import nothing from this repository",
     "learn--explainers": (
         "explainer content (Markdown terms and ASCII animations) plus two stdlib scripts run by"
         " path, build_index.py and inject_sidebar.py; the hyphenated name cannot be imported and"

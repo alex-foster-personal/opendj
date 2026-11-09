@@ -124,7 +124,21 @@ def index_test_files(root: Path) -> dict[Path, str]:
 
 
 def _preview_ids(pins: list[dict], builds: set[str]) -> set[str]:
-    return {p["id"] for p in pins if (p.get("build") or {}).get("git_sha", "")[:8] in builds}
+    """Ids of feedback pins on Preview builds (top-level pin records only)."""
+    out: set[str] = set()
+    for pin in pins:
+        if not isinstance(pin, dict):
+            continue
+        build = pin.get("build")
+        if not isinstance(build, dict):
+            continue
+        sha = (build.get("git_sha") or "")[:8]
+        if sha not in builds:
+            continue
+        pin_id = pin.get("id")
+        if isinstance(pin_id, str):
+            out.add(pin_id)
+    return out
 
 
 # ----------------------------------------------------------------- checks

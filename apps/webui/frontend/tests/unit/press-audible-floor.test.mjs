@@ -1,4 +1,6 @@
 // requirement: LATENCY-03
+// requirement: LATENCY-10437
+// [if] a press joins Beat Sync [then] each of its schedule rows carries schedule_reason sync-join, and an unsynced press carries immediate
 import assert from 'node:assert/strict';
 import { before, test } from 'node:test';
 
@@ -7,6 +9,7 @@ import {
 	readFrontendSource as readSource,
 	SCHEDULE_DECK_SERIAL_ANCHOR
 } from './engine-source.mjs';
+import { loadSvelteSsrModule } from './load-svelte-ssr.mjs';
 import { loadTypeScriptModule } from './load-typescript.mjs';
 
 /**
@@ -1153,3 +1156,59 @@ test('control: an engine that cannot list outputs answers unverified at once and
 	assert.equal(fresh.outputLatencyIfDevice(0.032), 0.032, 'a WebKit probe must not pass through pending');
 	assert.equal(await answering, 'unverified');
 });
+
+// ---------------------------------------------------------------------------
+// LATENCY-10437 (#9699): schedule_reason on press rows
+// ---------------------------------------------------------------------------
+
+test('LATENCY-10437: a sync-joined press row says sync-join, an unsynced one says immediate', async () => {
+	// One bundle, so press-stamp reads the same deck-slots marks this test writes.
+	const mod = await loadSvelteSsrModule(`
+		export { scheduleRowFacts } from '$lib/rb/press-stamp';
+		export { markSyncJoinPress } from '$lib/rb/deck-slots';
+	`);
+	const stages = { press_to_schedule_ms: 1.2, scheduled_offset_ms: 8, base_latency_ms: 2.9, output_latency_ms: 16 };
+	assert.equal(mod.scheduleRowFacts(stages, 'running', 1000.5).labels.schedule_reason, 'immediate');
+	mod.markSyncJoinPress(2000.5);
+	const master = mod.scheduleRowFacts(stages, 'running', 2000.5);
+	const follower = mod.scheduleRowFacts(stages, 'running', 2000.5);
+	assert.equal(master.labels.schedule_reason, 'sync-join');
+	assert.equal(follower.labels.schedule_reason, 'sync-join', 'every schedule of the sync press');
+	assert.equal(master.kind, 'transport-schedule-press', 'the kind is unchanged');
+	assert.ok(master.labels.latency_floor, 'floor labels are kept (control)');
+	const audio = await loadTypeScriptModule('src/lib/player/transport/press-audible.ts');
+	assert.deepEqual(audio.scheduleReasonLabel(1.2, true), { schedule_reason: 'sync-join' });
+	assert.deepEqual(audio.scheduleReasonLabel(1.2, false), { schedule_reason: 'immediate' });
+});
+
+test('LATENCY-10437: a row with no press carries no schedule_reason', async () => {
+	const audio = await loadTypeScriptModule('src/lib/player/transport/press-audible.ts');
+	assert.deepEqual(audio.scheduleReasonLabel(undefined, true), {});
+	const stamp = await loadTypeScriptModule('src/lib/rb/press-stamp.ts');
+	const row = stamp.scheduleRowFacts({ scheduled_offset_ms: 8 }, 'running');
+	assert.equal('schedule_reason' in row.labels, false);
+});
+
+test('LATENCY-10437: sync-join marks are read by every schedule of the press and stay bounded', async () => {
+	const slots = await loadTypeScriptModule('src/lib/rb/deck-slots.ts');
+	slots.markSyncJoinPress(42.25);
+	assert.equal(slots.isSyncJoinPress(42.25), true);
+	assert.equal(slots.isSyncJoinPress(42.25), true, 'the master and each follower read the same mark');
+	assert.equal(slots.isSyncJoinPress(43), false);
+	assert.equal(slots.isSyncJoinPress(undefined), false);
+	for (let i = 0; i < 64; i += 1) slots.markSyncJoinPress(10_000 + i);
+	assert.equal(slots.isSyncJoinPress(42.25), false, 'the oldest mark is dropped past 64');
+	assert.equal(slots.isSyncJoinPress(10_063), true);
+});
+
+test('LATENCY-10437: _synchronizeFollowers marks the press before it schedules, and press-stamp labels it', () => {
+	const engine = readSource('src/lib/rb/audio-engine.svelte.ts');
+	const start = engine.indexOf('async function _synchronizeFollowers(');
+	const body = engine.slice(start, engine.indexOf('const session = _engineSession;', start));
+	const early = body.indexOf('if (followers.length === 0 && options.masterSchedule === undefined) return;');
+	const mark = body.indexOf('markSyncJoinPress(options.pressT0Ms)');
+	assert.ok(early > 0 && mark > early, 'marked after the no-op return, before any schedule');
+	const stampSource = readSource('src/lib/rb/press-stamp.ts');
+	assert.match(stampSource, /scheduleReasonLabel\(stages\.press_to_schedule_ms, isSyncJoinPress\(pressT0Ms\)\)/);
+});
+

@@ -6,12 +6,21 @@ The table lives in the shared-state SQLite DB (Phase 5).
 Concurrency: the caller owns the :class:`sqlite3.Connection`. We rely on
 WAL + 5s busy_timeout from :func:`apps.shared.state.db.open_rw` so brief
 contention with the ingesters is absorbed silently.
+
+Writes go through :class:`StateWriter`: each add/remove is one write unit
+that changes the row and appends one ``events`` row (``pairing.add`` /
+``pairing.remove``). A caller already inside a writer unit passes
+``writer=`` so the write joins it as a SAVEPOINT.
 """
 from __future__ import annotations
 
 import sqlite3
 from collections.abc import Iterator
-from datetime import UTC, datetime
+from contextlib import contextmanager
+from datetime import datetime
+
+from apps.shared.state.writer import StateWriter
+from apps.shared.state.writer_pairings import PAIRING_COLS
 
 from .models import DIRECTIONS, SOURCES, PairingEdge
 from .schema_sql import ensure_phase08_tables, prepare_repo_connection
@@ -23,10 +32,6 @@ class PairingsError(ValueError):
     Raised when an argument would otherwise produce an opaque
     ``sqlite3.IntegrityError`` or similar low-level exception.
     """
-
-
-def _now_iso() -> str:
-    return datetime.now(UTC).isoformat()
 
 
 def _parse_iso(value: str) -> datetime:
@@ -54,10 +59,6 @@ def _row_to_edge(row: tuple) -> PairingEdge:
     )
 
 
-_SELECT_COLS: str = (
-    "from_stable_id, to_stable_id, direction, source, notes, "
-    "confidence, created_at, modified_at"
-)
 
 
 class PairingsRepo:
@@ -72,12 +73,27 @@ class PairingsRepo:
         conn: sqlite3.Connection,
         *,
         ensure_schema: bool = True,
+        writer: StateWriter | None = None,
     ) -> None:
+        if writer is not None and writer.raw_conn is not conn:
+            raise PairingsError("writer must be bound to the repo's connection")
         self.conn = prepare_repo_connection(
             conn,
             ensure_phase08_tables,
             ensure_schema=ensure_schema,
         )
+        self._writer = writer
+
+    # -- write unit -------------------------------------------------------
+
+    @contextmanager
+    def _writer_for_write(self) -> Iterator[StateWriter]:
+        """The injected writer, else a short-lived one bound to this connection."""
+        if self._writer is not None:
+            yield self._writer
+            return
+        with StateWriter(self.conn) as writer:
+            yield writer
 
     # -- writes -----------------------------------------------------------
 
@@ -114,36 +130,22 @@ class PairingsRepo:
                 f"confidence must be None or in [0,1]; got {confidence!r}"
             )
 
-        now = _now_iso()
-        # UPSERT: on conflict, keep created_at but update everything else.
-        self.conn.execute(
-            f"""
-            INSERT INTO pairings ({_SELECT_COLS})
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-            ON CONFLICT (from_stable_id, to_stable_id, direction) DO UPDATE SET
-              source      = excluded.source,
-              notes       = excluded.notes,
-              confidence  = excluded.confidence,
-              modified_at = excluded.modified_at
-            """,
-            (from_id, to_id, direction, source, notes, confidence, now, now),
-        )
-        row = self.conn.execute(
-            f"SELECT {_SELECT_COLS} FROM pairings "
-            "WHERE from_stable_id=? AND to_stable_id=? AND direction=?",
-            (from_id, to_id, direction),
-        ).fetchone()
+        with self._writer_for_write() as writer:
+            row = writer.upsert_pairing(
+                from_id,
+                to_id,
+                direction=direction,
+                source=source,
+                notes=notes,
+                confidence=confidence,
+            )
         return _row_to_edge(row)
 
     def remove(self, from_id: str, to_id: str, direction: str) -> bool:
         """Delete one edge; return True if a row was actually removed."""
         _validate_enum("direction", direction, DIRECTIONS)
-        cur = self.conn.execute(
-            "DELETE FROM pairings WHERE from_stable_id=? AND to_stable_id=? "
-            "AND direction=?",
-            (from_id, to_id, direction),
-        )
-        return cur.rowcount > 0
+        with self._writer_for_write() as writer:
+            return writer.delete_pairing(from_id, to_id, direction)
 
     # -- reads ------------------------------------------------------------
 
@@ -171,7 +173,7 @@ class PairingsRepo:
         """
         if direction is None:
             rows = self.conn.execute(
-                f"SELECT {_SELECT_COLS} FROM pairings "
+                f"SELECT {PAIRING_COLS} FROM pairings "
                 "WHERE from_stable_id=? OR to_stable_id=? "
                 "ORDER BY modified_at DESC",
                 (stable_id, stable_id),
@@ -179,7 +181,7 @@ class PairingsRepo:
         else:
             _validate_enum("direction", direction, DIRECTIONS)
             rows = self.conn.execute(
-                f"SELECT {_SELECT_COLS} FROM pairings "
+                f"SELECT {PAIRING_COLS} FROM pairings "
                 "WHERE from_stable_id=? AND direction=? "
                 "ORDER BY modified_at DESC",
                 (stable_id, direction),
@@ -205,7 +207,7 @@ class PairingsRepo:
         if from_id is not None:
             where.append("from_stable_id = ?")
             params.append(from_id)
-        sql = f"SELECT {_SELECT_COLS} FROM pairings"
+        sql = f"SELECT {PAIRING_COLS} FROM pairings"
         if where:
             sql += " WHERE " + " AND ".join(where)
         sql += " ORDER BY from_stable_id, to_stable_id, direction"

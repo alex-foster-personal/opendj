@@ -1,0 +1,30 @@
+{
+  "id": "generic-strobe-2",
+  "name": "Generic Strobe 2ch",
+  "kind": "strobe",
+  "modes": [
+    {
+      "name": "2ch",
+      "channels": [
+        {
+          "capability": "intensity"
+        },
+        {
+          "capability": "strobe",
+          "ranges": [
+            {
+              "from": 0,
+              "to": 9,
+              "meaning": "off"
+            },
+            {
+              "from": 10,
+              "to": 255,
+              "meaning": "rate slow..fast"
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

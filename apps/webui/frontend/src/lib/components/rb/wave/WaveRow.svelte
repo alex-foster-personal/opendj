@@ -114,6 +114,7 @@
 	import { requestTempoStability, tempoStabilityFor } from '$lib/rb/tempo-stability.svelte';
 	import { effectiveWaveScheme } from '$lib/rb/ui-skin';
 	import { TEMPO_LANE_COLORS } from './tempo-marks';
+	import { backingSize, RESIZE_SETTLE_MS } from './canvas-backing';
 
 	const { deckId }: { deckId: DeckId } = $props();
 
@@ -542,9 +543,15 @@
 		showStems && deck.stable_id !== null ? STEM_WAVE_ROW_MAX * STEM_WAVE_ROW_PX : 0
 	);
 
+	// PERF-PAINT-10546: true for RESIZE_SETTLE_MS after the last size change,
+	// so the backing store grows in buckets instead of every frame.
+	let backingResizing = $state(false);
+	let settleTimer: ReturnType<typeof setTimeout> | null = null;
+
 	$effect(() => {
 		const el = canvasEl;
-		if (!el) return;
+		// Svelte 5 sets bind:this to null on unmount (issue #1392), not undefined.
+		if (el == null) return;
 		// Re-resolve the CSS-var palette when the theme or the waveform band
 		// palette or the skin changes (issue #4219, skin cycle): all three swap
 		// the --rb-wave-* vars.
@@ -552,13 +559,32 @@
 		void uiPrefs.wave_palette;
 		void uiPrefs.ui_skin;
 		palette = readPalette(el); // throws if not under .perf-root
+		const wrap = canvasWrapEl;
+		if (wrap == null) return;
 		const observer = new ResizeObserver((entries) => {
 			const rect = entries[0].contentRect;
-			cssW = Math.round(rect.width);
-			cssH = Math.round(rect.height);
+			const nextW = Math.round(rect.width);
+			const nextH = Math.round(rect.height);
+			// The first report sizes the canvas exactly; only later changes are a resize.
+			if (cssW !== 0 && cssH !== 0 && (nextW !== cssW || nextH !== cssH)) {
+				backingResizing = true;
+				if (settleTimer !== null) clearTimeout(settleTimer);
+				settleTimer = setTimeout(() => {
+					settleTimer = null;
+					backingResizing = false;
+				}, RESIZE_SETTLE_MS);
+			}
+			cssW = nextW;
+			cssH = nextH;
 		});
-		observer.observe(el);
-		return () => observer.disconnect();
+		// Observe the wrap, not the canvas: the canvas is styled to the bucket
+		// size while resizing and would feed that back as cssW/cssH.
+		observer.observe(wrap);
+		return () => {
+			observer.disconnect();
+			if (settleTimer !== null) clearTimeout(settleTimer);
+			settleTimer = null;
+		};
 	});
 
 	function draw(force = false): void {
@@ -573,7 +599,11 @@
 		const bandGains = paintBandGains(deckId, uiPrefs.wave_eq_reflect);
 		const partnerPaintMs = splitPartner === null || partnerState === null ? null : _partnerPaintMs(splitPartner.id, partnerState);
 		const partnerGains = splitPartner === null ? null : paintBandGains(splitPartner.id, uiPrefs.wave_eq_reflect);
+		const dpr = window.devicePixelRatio;
+		const backing = backingSize({ cssW, cssH, dpr, resizing: backingResizing });
 		const visualInputs = [
+			backing.width,
+			backing.height,
 			ghost.blinkPhase,
 			deck.stable_id,
 			deck.duration_ms,
@@ -605,10 +635,14 @@
 		if (shouldSkipRepaint(_paintScheduleState, force, visualInputs, scrollPx)) return;
 		tracePlayhead('wave', deckId, paintPositionMs);
 		if (splitPartner !== null && partnerPaintMs !== null) tracePlayhead('wave-partner', splitPartner.id, partnerPaintMs);
-		const dpr = window.devicePixelRatio;
-		if (el.width !== cssW * dpr || el.height !== cssH * dpr) {
-			el.width = cssW * dpr;
-			el.height = cssH * dpr;
+		if (el.width !== backing.width || el.height !== backing.height) {
+			el.width = backing.width;
+			el.height = backing.height;
+			// While bucketed the element is the bucket size so the bitmap is never
+			// squashed; .canvas-wrap clips it and painting stays in the top-left
+			// cssW x cssH region. Settled, the stylesheet's 100% applies again.
+			el.style.width = backing.bucketed ? `${backing.cssW}px` : '';
+			el.style.height = backing.bucketed ? `${backing.cssH}px` : '';
 		}
 		const ctx = el.getContext('2d');
 		if (ctx === null) throw new Error(`wavestack deck ${deckId}: 2d context unavailable`);
@@ -784,6 +818,7 @@
 		void effectiveWaveformDesign(uiPrefs.waveform_design, uiPrefs.ui_skin);
 		void cssW;
 		void cssH;
+		void backingResizing;
 		void zoomStep;
 		void zoomRefDeck;
 		// A paused reference deck that is scrubbed repaints every stopped row, so

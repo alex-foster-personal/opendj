@@ -40,6 +40,7 @@ Requirements (mini-PRD):
     [if] the batch is already done [then] it cancels 0 items and says so
   ✔︎ ✅ POST /analysis/backfill/resume: cancelled and abandoned items return.
     [if] items already completed [then] they are NOT re-queued
+    [if] a live runner holds the batch [then] 422 queue_refused naming the pid
 
 -Claude
 """

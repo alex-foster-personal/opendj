@@ -61,6 +61,7 @@ const baseArgs = {
 	oneq: fn(),
 	onfilter: fn(),
 	oncolorfx: fn(),
+	onechodivision: fn(),
 	onfader: fn(),
 	oncue: fn(),
 	onStemGain: fn(writeGain),
@@ -118,6 +119,41 @@ export const StemsDrumsDragTurns: Story = {
 			await waitFor(() => expect(valueOf(dial(canvasElement, label))).toBeGreaterThan(0.5));
 			await expect(args.onStemGain).toHaveBeenCalledWith(stem, expect.any(Number));
 		}
+		await expect(args.onfilter).not.toHaveBeenCalled();
+	}
+};
+
+/** STEMDIAL-DRAG-9210: WebKit can stop retargeting captured moves after the pointer leaves
+ * the tight DRUMS/FILTER slot. Window owns the active drag, so leaving the dial still turns it. */
+export const StemsDrumsDragTurnsAfterPointerLeaves: Story = {
+	beforeEach: () => {
+		deckStates[1].stems = stems('demucs4');
+	},
+	play: async ({ canvasElement, args }) => {
+		sizeCanvas(canvasElement);
+		const drums = dial(canvasElement, 'drums stem level deck 1');
+		const box = drums.getBoundingClientRect();
+		const x = box.left + box.width / 2;
+		const y = box.top + box.height / 2;
+		await fireEvent.pointerDown(drums, { pointerId: 1, button: 0, clientX: x, clientY: y });
+		for (let i = 1; i <= 10; i++) {
+			await fireEvent.pointerMove(window, {
+				pointerId: 1,
+				buttons: 1,
+				clientX: x,
+				clientY: y - i * 8
+			});
+		}
+		await fireEvent.pointerUp(window, {
+			pointerId: 1,
+			button: 0,
+			clientX: x,
+			clientY: y - 80
+		});
+		await waitFor(() =>
+			expect(valueOf(dial(canvasElement, 'drums stem level deck 1'))).toBeGreaterThan(0.5)
+		);
+		await expect(args.onStemGain).toHaveBeenCalledWith('drums', expect.any(Number));
 		await expect(args.onfilter).not.toHaveBeenCalled();
 	}
 };

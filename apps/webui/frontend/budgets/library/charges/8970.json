@@ -1,0 +1,9 @@
+{
+  "bytes": 1024,
+  "measured_main": 329889,
+  "measured_with_pr": 330080,
+  "sha": "9443d59faa",
+  "date": "Sun 8 Nov 2026",
+  "reason": "PR #8970 (test(frontend): pin no-downbeat master guards and sync follower precondition (#2607)) grows the library surface. Measured: CI bundle check of 9443d59faa, +191 B gzip; ceiled to KiB.",
+  "payback": "none planned; the growth is the feature's own code on this surface"
+}

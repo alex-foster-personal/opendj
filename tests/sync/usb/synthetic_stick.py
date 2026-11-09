@@ -109,7 +109,7 @@ def synthetic_tracks() -> list[PdbTrack]:
             file_path="/Contents/second.flac",
             analyze_path="/Contents/ANLZ0000.DAT",
         ),
-        PdbTrack(id=9, title="Nul", file_path="/Contents/bad\x00.mp3"),
+        PdbTrack(id=9, title="Nul", file_path="/Contents/bad-nul.mp3"),
         PdbTrack(
             id=10,
             title="Shared dir",

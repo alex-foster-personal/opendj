@@ -16,7 +16,7 @@ import {
 	type PerformanceFeedbackSummary
 } from '$lib/api';
 
-export type { PerformanceFeedbackMark } from '$lib/api';
+export type { PerformanceFeedbackMark, PerformanceFeedbackSummary } from '$lib/api';
 
 let _feedbackSummary: PerformanceFeedbackSummary = { count: 0, last_mark: null };
 let _feedbackVersion = 0;

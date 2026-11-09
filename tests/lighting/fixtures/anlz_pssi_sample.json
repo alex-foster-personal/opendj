@@ -1,0 +1,8 @@
+{
+  "phrases": [
+    {"start_s": 0.0, "end_s": 15.0, "kind": 1, "mood": 1},
+    {"start_s": 15.0, "end_s": 30.0, "kind": 2, "mood": 1},
+    {"start_s": 30.0, "end_s": 60.0, "kind": 5, "mood": 1},
+    {"start_s": 60.0, "end_s": 75.0, "kind": 6, "mood": 1}
+  ]
+}

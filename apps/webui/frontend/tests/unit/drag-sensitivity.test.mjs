@@ -107,3 +107,41 @@ test('a huge agent drag takes bounded steps and still matches the fine integral'
 	const fine = atBound + travel(n, n * 4);
 	assert.ok(Math.abs(coarse - fine) / fine < 0.01, `coarse ${coarse} vs fine ${fine}`);
 });
+
+// MIXGRP-10277 (issue #9709): the Settings test fader jumps to the pressed point like the live
+// mixer fader, through one shared press-geometry helper.
+const press = await loadTypeScriptModule('src/lib/rb/fader-press-geometry.ts');
+const SETTINGS = fileURLToPath(new URL('../../src/lib/components/settings', import.meta.url));
+
+test('MIXGRP-10277 press geometry: thumb centre under the pointer, top 1, bottom 0, clamped', () => {
+	const rect = { top: 100, height: 108 }; // the test fader: 96 px travel + one 12 px thumb
+	assert.equal(press.FADER_THUMB_H, 12);
+	assert.equal(press.faderValueFromPress(rect, 106), 1);
+	assert.equal(press.faderValueFromPress(rect, 202), 0);
+	assert.equal(press.faderValueFromPress(rect, 154), 0.5);
+	assert.equal(press.faderValueFromPress(rect, 40), 1, 'above the track clamps to 1');
+	assert.equal(press.faderValueFromPress(rect, 400), 0, 'below the track clamps to 0');
+	assert.equal(press.faderValueFromPress({ top: 0, height: 12 }, 6), 1, 'a degenerate track never divides by zero');
+});
+
+test('MIXGRP-10277 both faders take their press value from the one helper, with the same thumb', () => {
+	const live = readFileSync(`${MIXER}/VFader.svelte`, 'utf8');
+	const tester = readFileSync(`${SETTINGS}/DragTestFader.svelte`, 'utf8');
+	for (const src of [live, tester]) {
+		assert.match(src, /import \{ FADER_THUMB_H, faderValueFromPress \} from '\$lib\/rb\/fader-press-geometry';/);
+		assert.match(src, /faderValueFromPress\([^)]*getBoundingClientRect\(\), e\.clientY, (THUMB_H|FADER_THUMB_H)\)/);
+	}
+	assert.match(live, /const THUMB_H = FADER_THUMB_H;/);
+	assert.doesNotMatch(live, /rect\.height - THUMB_H/, 'the live fader no longer carries its own copy of the geometry');
+});
+
+test('MIXGRP-10277 the test fader jumps on an ungrouped press and keeps the group and Shift paths', () => {
+	const tester = readFileSync(`${SETTINGS}/DragTestFader.svelte`, 'utf8');
+	const down = tester.slice(tester.indexOf('function handlePointerDown'), tester.indexOf('function handlePointerMove'));
+	assert.ok(down.indexOf('shiftClickKnob(controlId)') < down.indexOf('beginSelectionDrag'), 'Shift still toggles the selection before any drag');
+	assert.match(down, /if \(group !== null\) \{\s*virtual = value;\s*return;\s*\}/, 'a grouped drag still starts from the current value');
+	assert.match(down, /virtual = faderValueFromPress\([^;]*;\s*onchange\(virtual\);/, 'an ungrouped press sets the pressed value at once');
+	const live = readFileSync(`${MIXER}/VFader.svelte`, 'utf8');
+	const liveDown = live.slice(live.indexOf('function handlePointerDown'), live.indexOf('function handlePointerMove'));
+	assert.match(liveDown, /if \(selectionDrag !== null\) return;[\s\S]*const next = _valueFromEvent\(e\);[\s\S]*onchange\(next\);/, 'the live fader keeps its press-then-relative order');
+});

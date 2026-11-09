@@ -1,0 +1,21 @@
+{
+  "id": "generic-rgb",
+  "name": "Generic RGB",
+  "kind": "rgb",
+  "modes": [
+    {
+      "name": "3ch",
+      "channels": [
+        {
+          "capability": "red"
+        },
+        {
+          "capability": "green"
+        },
+        {
+          "capability": "blue"
+        }
+      ]
+    }
+  ]
+}

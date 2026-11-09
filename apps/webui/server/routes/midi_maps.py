@@ -150,7 +150,7 @@ class DeckStemEqToggle(_Strict):
 class MixerChannel(_Strict):
     type: Literal["mixer_channel"]
     deck: DeckId
-    target: Literal["trim", "eq", "fader"]
+    target: Literal["trim", "eq", "fader", "filter"]
     band: EqBand | None = None
 
     @model_validator(mode="after")
@@ -194,6 +194,82 @@ class ShiftModifier(_Strict):
     type: Literal["shift_modifier"]
 
 
+# Page-driven actions (#10276). The audio engine forwards these as
+# midi_action lines instead of acting on them; the installer used to refuse
+# them, which is how a corrected XDJ-AZ map lost 35 of 154 controls on
+# Fri 6 Nov 2026. Shapes mirror midi-types.ts field for field.
+
+
+class DeckSyncToggle(_Strict):
+    type: Literal["deck_sync_toggle"]
+    deck: DeckId
+
+
+class DeckKeySyncToggle(_Strict):
+    type: Literal["deck_key_sync_toggle"]
+    deck: DeckId
+
+
+class DeckManualLoopCycle(_Strict):
+    type: Literal["deck_manual_loop_cycle"]
+    deck: DeckId
+
+
+class DeckLoopScale(_Strict):
+    type: Literal["deck_loop_scale"]
+    deck: DeckId
+    factor: Literal[0.5, 2]
+
+
+class DeckKeyNudge(_Strict):
+    type: Literal["deck_key_nudge"]
+    deck: DeckId
+    semitones: Literal[-1, 1]
+
+
+class DeckTempoNudge(_Strict):
+    type: Literal["deck_tempo_nudge"]
+    deck: DeckId
+    direction: Literal[-1, 1]
+
+
+class DeckJog(_Strict):
+    type: Literal["deck_jog"]
+    deck: DeckId
+
+
+ControllerPadModeName = Literal[
+    "hot_cue", "bounce_loop", "pitch_cue", "instant_fx",
+    "auto_loop", "sampler", "saved_loops", "neural_mix",
+]
+
+
+class ControllerPadMode(_Strict):
+    type: Literal["controller_pad_mode"]
+    deck: DeckId
+    mode: ControllerPadModeName
+
+
+class ControllerPad(_Strict):
+    type: Literal["controller_pad"]
+    deck: DeckId
+    pad: Literal[1, 2, 3, 4, 5, 6, 7, 8]
+    shifted: bool
+
+
+class HeadphoneMix(_Strict):
+    type: Literal["headphone_mix"]
+
+
+class HeadphoneLevel(_Strict):
+    type: Literal["headphone_level"]
+
+
+class MasterCue(_Strict):
+    type: Literal["master_cue"]
+    mode: Literal["hold", "latch"]
+
+
 MidiActionModel = Annotated[
     DeckPlayToggle
     | DeckCue
@@ -201,10 +277,22 @@ MidiActionModel = Annotated[
     | DeckBeatLoop
     | DeckAutoLoopToggle
     | DeckLoopExit
+    | DeckSyncToggle
+    | DeckKeySyncToggle
+    | DeckManualLoopCycle
+    | DeckLoopScale
+    | DeckKeyNudge
+    | DeckTempoNudge
+    | DeckJog
     | DeckStemEqToggle
+    | ControllerPadMode
+    | ControllerPad
     | MixerChannel
     | MixerGlobal
     | ChannelCue
+    | HeadphoneMix
+    | HeadphoneLevel
+    | MasterCue
     | DeckPitch
     | BrowseEncoder
     | BrowseLoad
@@ -218,14 +306,55 @@ MidiActionModel = Annotated[
 _BUTTON_ACTIONS = frozenset(
     {"deck_play_toggle", "deck_cue", "deck_hot_cue", "deck_beat_loop", "deck_loop_exit",
      "channel_cue", "browse_load", "shift_modifier", "deck_stem_eq_toggle",
-     "deck_auto_loop_toggle"}
+     "deck_auto_loop_toggle", "deck_sync_toggle", "deck_key_sync_toggle",
+     "deck_manual_loop_cycle", "deck_loop_scale", "deck_key_nudge", "deck_tempo_nudge",
+     "controller_pad_mode", "controller_pad", "master_cue"}
 )
+
+# A cc source with relative=true produces kind:'relative' (_valueFor), the
+# only input the browse and jog handlers take.
+_RELATIVE_ACTIONS = frozenset({"browse_encoder", "deck_jog"})
 
 # _continuous01() throws on anything but kind:'continuous'/'continuous14'. A
 # cc source with relative=true instead produces kind:'relative' (_valueFor),
 # so that combination is rejected below; pitchbend ignores `relative`
 # entirely (dispatch always builds continuous14 for it), so it is not.
-_CONTINUOUS_ACTIONS = frozenset({"mixer_channel", "mixer_global"})
+_CONTINUOUS_ACTIONS = frozenset({"mixer_channel", "mixer_global", "headphone_mix", "headphone_level"})
+
+
+def _validate_deck_pitch_binding(
+    source: MidiSource, action: DeckPitch, *, shift: bool, relative: bool
+) -> None:
+    """Raises ValueError when a deck_pitch binding the runtime cannot register."""
+    kind = source.kind
+    if kind not in ("cc", "pitchbend"):
+        raise ValueError(f"deck_pitch must bind a cc or pitchbend source, got {kind!r}")
+    if action.lsb_offset is not None and kind != "cc":
+        raise ValueError("deck_pitch 14-bit lsbOffset requires a cc source")
+    if kind == "cc" and action.lsb_offset is None and relative:
+        raise ValueError("deck_pitch cannot be bound relative without lsbOffset")
+    if kind != "cc" or action.lsb_offset is None:
+        return
+    # webmidi.svelte.ts's _buildIndex() keys the LSB index at source.id + lsbOffset:
+    # offset 0 collides with the MSB key; shift breaks lsbIndex (shift-independent).
+    if shift:
+        raise ValueError(
+            "deck_pitch 14-bit lsbOffset cannot be bound shift:true - the runtime's LSB "
+            "index (webmidi.svelte.ts _buildIndex) is shift-independent and _dispatch() "
+            "reads it before the shift-aware lookup, so the LSB would emit with Shift released"
+        )
+    if action.lsb_offset == 0:
+        raise ValueError(
+            "deck_pitch lsbOffset must be > 0: 0 makes the LSB key collide with "
+            "the MSB's own source id, so every message is dropped as "
+            "'LSB arrived before any MSB'"
+        )
+    lsb_cc = source.id + action.lsb_offset
+    if lsb_cc > 127:
+        raise ValueError(
+            f"deck_pitch lsbOffset {action.lsb_offset} plus source id "
+            f"{source.id} indexes nonexistent CC {lsb_cc} (max 127)"
+        )
 
 
 class Binding(_Strict):
@@ -236,7 +365,30 @@ class Binding(_Strict):
     shift: bool = False
     invert: bool = False
     relative: bool = False
+    # Relative values centre on 64 (0x41 = +1) instead of two's complement.
+    relative_centered: bool = Field(alias="relativeCentered", default=False)
+    # Normalise any non-zero relative value to one detent.
+    relative_unit: bool = Field(alias="relativeUnit", default=False)
+    # This CC is a button (0 = release, non-zero = press): Pioneer all-in-ones
+    # send CC for CH CUE and MASTER CUE.
+    cc_button: bool = Field(alias="ccButton", default=False)
     provenance: Provenance
+
+    @model_validator(mode="after")
+    def _cc_button_only_on_a_cc_button_action(self) -> Binding:
+        """webmidi.svelte.ts's _valueFor() checks ccButton before relative and
+        hands a {kind:'button'} value to the action, so ccButton is refused
+        unless the source is cc and the action takes a press."""
+        if not self.cc_button:
+            return self
+        if self.source.kind != "cc":
+            raise ValueError(f"ccButton requires a cc source, got {self.source.kind!r}")
+        if self.action.type not in _BUTTON_ACTIONS:
+            raise ValueError(
+                f"ccButton only applies to a button action, not {self.action.type!r}: "
+                "the runtime reads a ccButton CC as a press, which this action cannot take"
+            )
+        return self
 
     @model_validator(mode="after")
     def _source_matches_action(self) -> Binding:
@@ -246,38 +398,19 @@ class Binding(_Strict):
         kind = self.source.kind
         action = self.action
         if isinstance(action, DeckPitch):
-            if kind not in ("cc", "pitchbend"):
-                raise ValueError(f"deck_pitch must bind a cc or pitchbend source, got {kind!r}")
-            if action.lsb_offset is not None and kind != "cc":
-                raise ValueError("deck_pitch 14-bit lsbOffset requires a cc source")
-            if kind == "cc" and action.lsb_offset is None and self.relative:
-                raise ValueError("deck_pitch cannot be bound relative without lsbOffset")
-            if kind == "cc" and action.lsb_offset is not None:
-                # webmidi.svelte.ts's _buildIndex() keys the LSB index at
-                # source.id + lsbOffset: offset 0 collides with the MSB's own
-                # key, so _dispatch() reads every MSB CC as an LSB and drops
-                # it as "arrived before any MSB"; an offset that pushes the
-                # sum past 127 indexes a CC number that cannot exist.
-                if action.lsb_offset == 0:
-                    raise ValueError(
-                        "deck_pitch lsbOffset must be > 0: 0 makes the LSB key collide with "
-                        "the MSB's own source id, so every message is dropped as "
-                        "'LSB arrived before any MSB'"
-                    )
-                lsb_cc = self.source.id + action.lsb_offset
-                if lsb_cc > 127:
-                    raise ValueError(
-                        f"deck_pitch lsbOffset {action.lsb_offset} plus source id "
-                        f"{self.source.id} indexes nonexistent CC {lsb_cc} (max 127)"
-                    )
+            _validate_deck_pitch_binding(
+                self.source, action, shift=self.shift, relative=self.relative
+            )
             return self
-        if isinstance(action, BrowseEncoder):
+        if action.type in _RELATIVE_ACTIONS:
             if kind != "cc":
-                raise ValueError(f"browse_encoder must bind a cc source, got {kind!r}")
+                raise ValueError(f"{action.type} must bind a cc source, got {kind!r}")
             if not self.relative:
-                raise ValueError("browse_encoder must be bound relative")
+                raise ValueError(f"{action.type} must be bound relative")
             return self
         if action.type in _BUTTON_ACTIONS:
+            if kind == "cc" and self.cc_button:
+                return self
             if kind != "note":
                 raise ValueError(f"{action.type} must bind a note source, got {kind!r}")
             return self
@@ -486,6 +619,16 @@ def _parse(raw: Any, *, whose: str) -> MidiMapDoc:
         raise _invalid(f"{whose}: {_describe(exc)}") from exc
 
 
+async def _raw_json_body(request: Request) -> Any:
+    """The PUT body as raw JSON, so _parse() owns validation and every refusal
+    keeps the MIDI_MAP_INVALID shape (a typed body param would answer with
+    FastAPI's own 422). The schema is published via openapi_extra instead."""
+    try:
+        return await request.json()
+    except ValueError as exc:  # json.JSONDecodeError, UnicodeDecodeError
+        raise _invalid(f"document: body is not valid JSON: {exc}") from exc
+
+
 def _read(path: Path) -> MidiMapDoc:
     try:
         raw = json.loads(path.read_text(encoding="utf-8"))
@@ -573,18 +716,20 @@ def _catalog_index() -> list[CatalogDevice]:
 
 
 def _installed_name_match_clash(request: Request, *, name_match: str, exclude_id: str) -> str | None:
-    """Id of another installed map already using this exact nameMatch, or
-    None. _resolveMap() picks the first regex match among registered maps in
-    order, so two installed maps sharing a pattern make port resolution
-    silently order-dependent. Exact string equality only - detecting genuine
-    overlap between two different regexes is a separate problem."""
+    """Id of another installed map already using this nameMatch, or None.
+    _resolveMap() compiles every pattern with the ``i`` flag, so
+    ``TestDevice`` and ``testdevice`` match the same ports; two installed maps
+    whose nameMatch differs only by case make port resolution silently
+    order-dependent. Detecting genuine overlap between two different regexes is
+    a separate problem."""
     maps_dir = _maps_dir(request)
     if not maps_dir.is_dir():
         return None
+    folded = name_match.casefold()
     for path in sorted(maps_dir.glob("*.json")):
         if path.stem == exclude_id:
             continue
-        if _read(path).name_match == name_match:
+        if _read(path).name_match.casefold() == folded:
             return path.stem
     return None
 
@@ -647,15 +792,25 @@ def get_midi_map(map_id: str, request: Request) -> MidiMapDoc:
     return _read(path)
 
 
-@router.put("/maps/{map_id}", response_model=MidiMapDoc, response_model_by_alias=True)
+@router.put(
+    "/maps/{map_id}",
+    response_model=MidiMapDoc,
+    response_model_by_alias=True,
+    openapi_extra={
+        "requestBody": {
+            "required": True,
+            "content": {"application/json": {"schema": {"$ref": "#/components/schemas/MidiMapDoc"}}},
+        }
+    },
+)
 def put_midi_map(
     map_id: str,
-    body: dict[str, Any],
+    raw: Annotated[Any, Depends(_raw_json_body)],
     request: Request,
     _backend: WriteGate,
 ) -> MidiMapDoc:
     _require_slug(map_id)
-    doc = _parse(body, whose="document")
+    doc = _parse(raw, whose="document")
     if doc.id != map_id:
         raise HTTPException(
             status_code=422,

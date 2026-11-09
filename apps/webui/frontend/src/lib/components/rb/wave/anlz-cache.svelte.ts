@@ -59,6 +59,7 @@ export {
 	createBeatgridResyncTracking,
 	reconcileLoopForAuthoritativeGrid,
 	requireBeatGrid,
+	requirePhaseCapableBeatGrid,
 	resolvePublishedAnlz
 } from '$lib/player/beatgrid-resync-guards';
 export type { BeatgridResyncPorts } from '$lib/player/beatgrid-resync-guards';
@@ -308,7 +309,12 @@ export function anlzMatchesConfirmedSource(data: AnlzData): boolean {
  * deck's working grid mid-retry.
  *
  * `previous` is the cache's OWN prior entry for this stable_id (read by the
- * caller before this write lands), used ONLY to widen the empty-rekordbox
+ * caller before this write lands), used for two things. First, a settled
+ * answer replacing an `'error'` entry is itself news that the source
+ * recovered, so every deck still carrying that `anlz_error` must hear it;
+ * without this a gridless rekordbox recovery left the error terminal and
+ * `deckAnlzNeedsFetch` stopped every retry (issue #1762, PR #1587
+ * discussion_r3979679828). Second, it widens the empty-rekordbox
  * case to a genuine SOURCE TRANSITION: a loaded deck holding a successful own
  * grid, revalidated after a `PUT /analysis/source` demotion, gets back a
  * terminal `{source: 'rekordbox', beats: []}` for a track with no PQTZ - that
@@ -320,16 +326,17 @@ export function anlzMatchesConfirmedSource(data: AnlzData): boolean {
  * unconditional "empty means authoritative" would fire the sink for every
  * ordinary never-analyzed fetch, reintroducing the retry-storm bug the
  * retryable check above exists to avoid. */
-function _isAuthoritativeGridAnswer(data: AnlzData, previous: AnlzData | null = null): boolean {
+function _isAuthoritativeGridAnswer(data: AnlzData, previous: AnlzEntry | undefined = undefined): boolean {
 	if (hasAnlzBeatgrid(data)) return true;
 	if (isRetryableAnlzData(data)) return false;
+	if (previous?.status === 'error') return true;
 	const grid = data.beatgrid;
 	if (grid.source === 'own' && (grid.status === 'missing' || grid.status === 'failed')) return true;
 	return (
 		grid.source === 'rekordbox' &&
-		previous !== null &&
-		previous.beatgrid.source !== grid.source &&
-		_isAuthoritativeGridAnswer(previous)
+		previous?.status === 'ready' &&
+		previous.data.beatgrid.source !== grid.source &&
+		_isAuthoritativeGridAnswer(previous.data)
 	);
 }
 
@@ -365,11 +372,11 @@ function _publishAnlzResult(stable_id: string, data: AnlzData, alreadyScoped = f
 	// Read BEFORE this write lands, so `_isAuthoritativeGridAnswer` can tell a
 	// genuine source transition from an ordinary same-source retry. Callers
 	// that blank the entry to `{status: 'loading'}` first (`_fetchAndPublish`)
-	// read `previous` as null here by construction - `revalidateAnlz` is the
-	// one caller that keeps the prior entry intact, which is exactly the path
-	// this distinction exists for.
-	const previousEntry = _cache.get(stable_id);
-	const previous = previousEntry !== undefined && previousEntry.status === 'ready' ? previousEntry.data : null;
+	// read a `loading` previous here, which is neither an error nor a ready
+	// transition. `revalidateAnlz`, `fetchAnlzForDeckLoad` and
+	// `refreshAnlzCacheEntry` keep the prior entry intact, including an
+	// `error` one, which is exactly what this distinction exists for.
+	const previous = _cache.get(stable_id);
 	// `resolveDisplayedAnlz` below already prefers a cache-entry grid over the
 	// deck's own, but that is only the DISPLAY projection: quantize, beat
 	// loops, _synchronizeFollowers and the master-grid read all take the

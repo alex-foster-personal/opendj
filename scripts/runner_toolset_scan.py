@@ -379,11 +379,17 @@ def _args_executables(_name: str, args: list[str], where: str, ctx: _Ctx) -> Non
         ctx.usage.executables[exe].add(where)
 
 
+#: Repo scripts whose every argument is an apt package name.
+_APT_LIST_SCRIPTS = ("ci_apt_present.sh", "ci_apt_install.sh")
+
+
 def _args_apt(name: str, args: list[str], where: str, ctx: _Ctx) -> None:
-    if name != "ci_apt_present.sh" and "install" not in args:
+    if name not in _APT_LIST_SCRIPTS and "install" not in args:
         return
     pkgs = args[args.index("install") + 1 :] if "install" in args else args
     for pkg in lex.apt_install_packages(pkgs):
+        if pkg == f"{lex.UNREADABLE}$@":
+            continue  # forwards its caller's packages, which the scan records at that call site
         ctx.usage.apt_packages[pkg].add(where)
 
 
@@ -406,6 +412,7 @@ ARGUMENT_HANDLERS: dict[str, Callable[[str, list[str], str, _Ctx], None]] = {
     "make": _args_recipes,
     "ci_runner_preflight.sh": _args_executables,
     "ci_apt_present.sh": _args_apt,
+    "ci_apt_install.sh": _args_apt,
     "apt-get": _args_apt,
     "apt": _args_apt,
     "pnpm": _args_playwright,

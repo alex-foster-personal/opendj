@@ -1,0 +1,9 @@
+{
+  "bytes": 1024,
+  "measured_main": 407645,
+  "measured_with_pr": 407780,
+  "sha": "852ac3f624",
+  "date": "Mon 9 Nov 2026",
+  "reason": "PR #10214 walks only the beats in view for the master grid ghost (PERF-PAINT-10214): the visible-range walker and its tests. Measured: CI bundle check of 852ac3f624, +135 B gzip on performance; ceiled to KiB",
+  "payback": "none planned; the growth is the feature's own code"
+}

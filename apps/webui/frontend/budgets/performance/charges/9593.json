@@ -1,0 +1,9 @@
+{
+  "bytes": 1024,
+  "measured_main": 406598,
+  "measured_with_pr": 407173,
+  "sha": "d80c5e8fa7",
+  "date": "Sun 8 Nov 2026",
+  "reason": "PR #9593 (fix: stem lane menu stem estimate fetch loop (#9450)) grows the performance surface. Measured: CI bundle check of d80c5e8fa7, +575 B gzip; ceiled to KiB.",
+  "payback": "none planned; the growth is the feature's own code on this surface"
+}

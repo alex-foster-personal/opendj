@@ -165,6 +165,12 @@ def _echo(completed: subprocess.CompletedProcess[str]) -> None:
     sys.stdout.write(completed.stderr)
 
 
+def _bootstrap_ci_test_env() -> None:
+    """Mirror ci.yml's job env: no live rekordbox stick unless one is named."""
+    if not os.environ.get("MDT_USB_STICK_ROOT"):
+        os.environ.setdefault("MDT_ALLOW_MISSING_USB_STICK", "1")
+
+
 def _bootstrap_mux_fixture_host() -> None:
     """Use the provisioned CI fixture host when IDD does not load runner ``.env``."""
     if os.environ.get("MUX_FIXTURE_HOST"):
@@ -393,6 +399,7 @@ class Tests:
     @staticmethod
     def pytest(selection: list[str]) -> Verdict:
         _bootstrap_mux_fixture_host()
+        _bootstrap_ci_test_env()
         ledger = json.loads((REPO / CFG.DURATIONS_LEDGER).read_text(encoding="utf-8"))
         estimate, unrecorded = Tests.ledger_estimate(selection, ledger)
         print(

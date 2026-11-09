@@ -1,0 +1,9 @@
+{
+  "bytes": 1024,
+  "measured_main": 330818,
+  "measured_with_pr": 331145,
+  "sha": "2b87e414c7",
+  "date": "Mon 9 Nov 2026",
+  "reason": "PR #10013 adds memory cue CALL previous and next on the deck (#9761). Measured: CI bundle check of 2b87e414c7, +327 B gzip on library; ceiled to KiB",
+  "payback": "none planned; the growth is the feature's own code"
+}

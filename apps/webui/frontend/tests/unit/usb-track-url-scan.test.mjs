@@ -200,7 +200,9 @@ test('positive control: the scan finds the known guarded builders, so a clean re
 		'lib/rb/auto-cues-api.ts#fetchAutoCues',
 		'lib/rb/beatgrid-fallback-api.ts#fetchBeatgridFallback',
 		'lib/rb/track-playlists.ts#listTrackPlaylists',
-		'lib/rb/track-library.ts#removeFromLibrary'
+		'lib/rb/track-library.ts#removeFromLibrary',
+		'lib/rb/api-rb.ts#fetchMemoryCues',
+		'lib/rb/api-rb.ts#setActiveMemoryLoop'
 	]) {
 		assert.ok(guarded.has(site), `the scan did not find guarded site ${site}`);
 	}

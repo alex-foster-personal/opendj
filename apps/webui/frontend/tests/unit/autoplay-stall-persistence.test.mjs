@@ -147,6 +147,7 @@ async function withController(run) {
 	let uninstall = null;
 	try {
 		const mod = await loadRuneModule(ENTRY);
+		mod.setAutoPlayEnabled(true);
 		uninstall = mod.installAutoPlay();
 		await run(mod, posts);
 	} finally {
@@ -402,7 +403,7 @@ test('a late handoff rejection raises nothing once AutoPlay is off', async () =>
  * A DECLARED BLIND SPOT, and the reason this one guard is source-shaped.
  *
  * Mutating `_armedAt` to ignore the generation left every behavioural test in
- * this file GREEN. That is a finding, not a relief (.claude/rules/verification
+ * this file GREEN. That is a finding, not a relief ((private path)
  * .md): the driven tests reach the stall module's `stillArmed` guard, which
  * they mutation-prove, but they cannot reach the CONTROLLER's generation
  * comparison, because doing so needs a handoff dispatch that is still pending

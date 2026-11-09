@@ -15,6 +15,7 @@
 		pending,
 		quantizedLaunchArmed,
 		onCue,
+		onMemoryCueCall,
 		onPlayPause
 	}: {
 		deck: DeckState;
@@ -28,6 +29,8 @@
 		 * input and dispatched to us, and that gap is time the operator felt.
 		 */
 		onCue: (pressT0Ms?: number) => Promise<void>;
+		/** CUES-10013: CALL < / > step through the track's memory cues. */
+		onMemoryCueCall: (direction: 'prev' | 'next', pressT0Ms?: number) => Promise<void>;
 		onPlayPause: (pressT0Ms?: number, quantize?: boolean) => Promise<void>;
 	} = $props();
 
@@ -94,6 +97,19 @@
 			CUE
 		</button>
 	</ControlExplainer>
+	<div class="call" role="group" aria-label={`memory cue call deck ${deck.deck_id}`}>
+		{#each [['prev', '<', 'CALL < - previous memory cue'], ['next', '>', 'CALL > - next memory cue']] as const as [direction, glyph, title] (direction)}
+			<button
+				class="call-btn"
+				disabled={!hasTrack}
+				{title}
+				aria-label={`${title} deck ${deck.deck_id}`}
+				data-testid={`memory-cue-call-${direction}-deck-${deck.deck_id}`}
+				data-performance-control="memory_cue_call"
+				onclick={async (event) => await onMemoryCueCall(direction, event.timeStamp)}
+			>{glyph}</button>
+		{/each}
+	</div>
 	<button
 		class="round play"
 		class:playing={deck.playing}
@@ -160,6 +176,30 @@
 		cursor: not-allowed;
 	}
 	.round.cue:hover:not(:disabled) {
+		border-color: var(--rb-accent);
+	}
+	.call {
+		display: flex;
+		gap: 2px;
+	}
+	.call-btn {
+		width: 18px;
+		height: 14px;
+		padding: 0;
+		border: 1px solid var(--rb-border);
+		border-radius: 3px;
+		background: transparent;
+		color: var(--rb-text);
+		font-family: var(--rb-font);
+		font-size: 9px;
+		line-height: 1;
+		cursor: pointer;
+	}
+	.call-btn:disabled {
+		opacity: 0.35;
+		cursor: not-allowed;
+	}
+	.call-btn:hover:not(:disabled) {
 		border-color: var(--rb-accent);
 	}
 	.round.playing {

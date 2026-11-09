@@ -190,6 +190,18 @@ def test_untouched_items_are_preserved_byte_for_byte(tmp_path: Path) -> None:
     ]
 
 
+@pytest.mark.requirement("DJIMPORT-10062")
+def test_freeform_bytes_reads_raw_data_for_non_utf8_types(tmp_path: Path) -> None:
+    """[if] a freeform atom stores binary data [then] freeform_bytes returns it, [else stop]."""
+    from tests.fixtures import serato_containers as sc
+
+    m4a = tmp_path / "Invented Binary.m4a"
+    payload = b"binary-serato-tag-bytes"
+    sc.write_mp4(m4a, [(sc.MP4_SERATO_MEAN, sc.MP4_MARKERS2_NAME, payload)], data_type=0)
+    meta = mp4_meta.read(m4a)
+    assert meta.freeform_bytes(sc.MP4_MARKERS2_NAME, sc.MP4_SERATO_MEAN) == payload
+
+
 def test_a_freeform_name_is_replaced_case_insensitively(tmp_path: Path) -> None:
     """[if] INITIALKEY is set over an existing initialkey [then] one atom remains, [else stop]."""
     m4a = ta.make_tagged_audio(tmp_path, "m4a")

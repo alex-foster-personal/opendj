@@ -146,7 +146,7 @@ describe('mixer config persistence (alignment_mode, master_delay_ms, last_calibr
 			alignment_mode: 'hybrid',
 			master_delay_ms: 0,
 			last_calibration: null,
-			saved_outputs: { master: null, cue: null }
+			saved_outputs: { master: null, cue: null, booth: null }
 		});
 	});
 
@@ -193,7 +193,7 @@ describe('mixer config persistence (alignment_mode, master_delay_ms, last_calibr
 			alignment_mode: 'delay_all',
 			master_delay_ms: 700,
 			last_calibration: record,
-			saved_outputs: { master: null, cue: null }
+			saved_outputs: { master: null, cue: null, booth: null }
 		});
 		const state = await loadTypeScriptModule('src/lib/player/state.svelte.ts');
 		const defaults = state._defaultHeadphones();

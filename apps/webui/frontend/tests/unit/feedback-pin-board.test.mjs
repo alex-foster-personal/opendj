@@ -75,3 +75,92 @@ test('regressed badge when updated_at is after fixed_at', () => {
 	);
 	assert.ok(state.badges.includes('regressed'));
 });
+
+test('fixed and harvested pins are not regressed after silent update', () => {
+	for (const status of ['fixed', 'harvested']) {
+		const state = board.pinBoardState(
+			pin({
+				status,
+				fixed_in_sha: 'abc1234',
+				fixed_at: '2026-09-01T10:00:00.000000Z',
+				updated_at: '2026-09-02T10:00:00.000000Z'
+			}),
+			'/performance',
+			false
+		);
+		assert.ok(!state.badges.includes('regressed'));
+	}
+});
+
+function el(tag, classes = '', { id, parent, ariaLabel } = {}) {
+	const classNames = classes ? classes.split(/\s+/).filter(Boolean) : [];
+	const node = {
+		tagName: tag.toUpperCase(),
+		id: id ?? '',
+		classList: {
+			[Symbol.iterator]() {
+				return classNames.values();
+			},
+			has(name) {
+				return classNames.includes(name);
+			},
+			get length() {
+				return classNames.length;
+			},
+			item(i) {
+				return classNames[i] ?? null;
+			}
+		},
+		parentElement: parent ?? null,
+		getAttribute(name) {
+			if (name === 'aria-label') return ariaLabel ?? null;
+			return null;
+		},
+		closest(selector) {
+			const wanted = selector.split(',').map((s) => s.trim().replace(/^\./, ''));
+			let cur = this;
+			while (cur) {
+				for (const cls of wanted) {
+					if (cur.classList?.has(cls)) return cur;
+				}
+				cur = cur.parentElement;
+			}
+			return null;
+		}
+	};
+	return node;
+}
+
+function markerButton() {
+	return el('button', 'fb-pin', { ariaLabel: 'Comment pin (default) - open' });
+}
+
+function target(id) {
+	return el('div', '', { id });
+}
+
+test('anchorMovedBeneathPin ignores the marker button in the stack', () => {
+	const deck = target('deck-a');
+	const marker = markerButton();
+	const moved = board.anchorMovedBeneathPin(pin({ anchor: '#deck-a' }), () => [marker, deck]);
+	assert.equal(moved, false);
+});
+
+test('anchorMovedBeneathPin ignores a child inside pin chrome', () => {
+	const deck = target('deck-a');
+	const marker = markerButton();
+	const child = el('span', 'fb-pin-badge', { parent: marker });
+	const moved = board.anchorMovedBeneathPin(pin({ anchor: '#deck-a' }), () => [
+		child,
+		marker,
+		deck
+	]);
+	assert.equal(moved, false);
+});
+
+test('anchorMovedBeneathPin reports drift when target element changed', () => {
+	const marker = markerButton();
+	const other = target('new-element');
+	const moved = board.anchorMovedBeneathPin(pin({ anchor: '#deck-a' }), () => [marker, other]);
+	assert.equal(moved, true);
+});

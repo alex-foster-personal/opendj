@@ -1,0 +1,9 @@
+{
+  "bytes": 1024,
+  "measured_main": 406594,
+  "measured_with_pr": 406800,
+  "sha": "ed5c7f25f6",
+  "date": "Sun 8 Nov 2026",
+  "reason": "PR #9210 (fix: keep WebKit knob drags active outside the dial) grows the performance surface. Measured: CI bundle check of ed5c7f25f6, +206 B gzip; ceiled to KiB.",
+  "payback": "none planned; the growth is the feature's own code on this surface"
+}

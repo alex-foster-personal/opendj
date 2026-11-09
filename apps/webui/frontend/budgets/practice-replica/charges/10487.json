@@ -1,0 +1,9 @@
+{
+  "bytes": 2048,
+  "measured_main": 17019,
+  "measured_with_pr": 18337,
+  "sha": "c3512ee754",
+  "date": "Sun 8 Nov 2026",
+  "reason": "PR #10487 (Denon DJ PRIME 4+ practice replica) adds DENON_PRIME4_PLUS_MAP, a hints-only map with 170 labelled placeholder wires, to the lazy practice-replica chunk. Measured on nucbox-wsl, main vs branch builds of the same tree: +1318 B gzip; ceiled to KiB.",
+  "payback": "none planned; the hint table is the replica's own data on this surface"
+}

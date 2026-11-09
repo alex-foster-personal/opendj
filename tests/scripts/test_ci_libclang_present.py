@@ -263,8 +263,8 @@ def test_contracts_job_installs_only_when_the_probe_fails_then_reprobes() -> Non
     run = _contracts_steps()[_step_index(_contracts_steps(), PROBE)]["run"]
     probe_first, _, fallback = run.partition("||")
     assert PROBE in probe_first and INSTALL not in probe_first, run
-    assert "scripts/ci_host_lock.sh packages sudo" in fallback and INSTALL in fallback, run
-    assert fallback.index(PROBE) > fallback.index(INSTALL), "no probe after the install"
+    assert "scripts/ci_host_lock.sh packages scripts/ci_apt_install.sh libclang1" in fallback, run
+    assert fallback.index(PROBE) > fallback.index("ci_apt_install.sh libclang1"), "no probe after the install"
 
 
 def _expanded(verify: str) -> str:

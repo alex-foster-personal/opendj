@@ -157,6 +157,7 @@ export interface AudioEngine {
 	/** Set CUE-to-MASTER monitor mix and headphone level. */
 	setHeadphoneMix(value: number): void;
 	setHeadphoneLevel(value: number): void;
+	setBoothLevel(value: number): void;
 	setHeadDelayMs(value: number): void;
 	/** CUEOUT-14: room delay line, 0..1500 ms, the last node before the destination. */
 	setMasterDelayMs(value: number): void;
@@ -170,6 +171,8 @@ export interface AudioEngine {
 	acquireHeadphoneOutput(): Promise<void>;
 	/** Route the real monitor element to an explicitly enumerated output device. */
 	selectHeadphoneOutput(deviceId: string): Promise<void>;
+	/** CUEOUT-13: pin or clear (empty id) the room-mix BOOTH sink. */
+	selectBoothOutput(deviceId: string): Promise<void>;
 	/** Pin the room mix to an enumerated output via AudioContext.setSinkId. */
 	selectMasterOutput(deviceId: string): Promise<void>;
 	/** Pin label-unlock / capture to an enumerated input. Never default a headphone mic. */

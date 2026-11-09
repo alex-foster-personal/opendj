@@ -16,7 +16,12 @@ import type { StemRetryPort } from '$lib/rb/stem-retry';
 
 // The deck engine sits at its import fan-out ceiling, so the rest of the stem
 // landing surface reaches it through this module, which it already imports.
-export type { StemLandingOutcome } from '$lib/rb/stem-live-handoff';
+export type {
+	StemHandoffSegment,
+	StemLandingOutcome,
+	StemLandingPort,
+	StemLandingProcessor
+} from '$lib/rb/stem-live-handoff';
 export type { StemRetryPort } from '$lib/rb/stem-retry';
 
 /** STEM-47. Land built stems on a deck (stem-live-handoff.ts). The handoff is
@@ -26,6 +31,12 @@ export type { StemRetryPort } from '$lib/rb/stem-retry';
 export async function landStemsOnDeck(port: StemLandingPort): Promise<StemLandingOutcome> {
 	const handoff = await import('$lib/rb/stem-live-handoff');
 	return handoff.landStemsOnDeck(port);
+}
+
+/** AUDFID-02: Class A first-touch engage of held neutral stems (margin 0). */
+export async function engageStemsOnDeck(port: StemLandingPort): Promise<StemLandingOutcome> {
+	const handoff = await import('$lib/rb/stem-live-handoff');
+	return handoff.engageStemsOnDeck(port);
 }
 
 /** STEM-47. `LOAD NOW` on a held bundle, settling the deck if it rejects. */

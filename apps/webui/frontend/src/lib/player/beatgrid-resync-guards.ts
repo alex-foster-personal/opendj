@@ -39,6 +39,7 @@ export { createBeatgridResyncTracking } from '$lib/player/beatgrid-resync-tracki
 export type { BeatgridResyncPorts } from '$lib/player/beatgrid-resync';
 import type { AnlzBeat, AnlzData } from '$lib/rb/anlz-types';
 import type { DeckState } from '$lib/rb/deck-state-types';
+import { hasPhaseCapableBeatGrid } from '$lib/player/grid-features';
 
 type DeckId = DeckState['deck_id'];
 
@@ -598,6 +599,16 @@ export function requireBeatGrid(st: DeckState, operation: string): readonly Anlz
 		);
 	}
 	return beats ?? [];
+}
+
+export function requirePhaseCapableBeatGrid(st: DeckState, operation: string): readonly AnlzBeat[] {
+	const beats = requireBeatGrid(st, operation);
+	if (!hasPhaseCapableBeatGrid(st.anlz)) {
+		throw new Error(
+			`${operation}: deck ${st.deck_id} requires a PQTZ downbeat (n===1): beat sync and beat loops stay inert until analysis finds a bar-1 anchor`
+		);
+	}
+	return beats;
 }
 
 /** Reconciles `st.loop` against a beatgrid `adoptAuthoritativeGrid`/

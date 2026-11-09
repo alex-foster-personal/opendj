@@ -32,7 +32,11 @@ from pathlib import Path
 from typing import Any
 
 import psutil
-import pytest
+
+try:
+    import pytest
+except ModuleNotFoundError:
+    pytest = None  # type: ignore[assignment]
 
 _SPEC_ENV = "OPENDJ_TEST_NODE_SPEC"
 # An ``env`` value meaning "the pid of the process that starts this node", so a
@@ -93,11 +97,28 @@ if _spec is not None:
     exec(Path(_dir, "node.py").read_text(), {"SPEC_JSON": _spec, "HOOK_DIR": _dir})
 """
 
-needs_visible_titles = pytest.mark.skipif(
+
+def _skipif_mark(condition: bool, *, reason: str):
+    """``pytest.mark.skipif`` when pytest is installed; no-op decorator otherwise.
+
+    ``apps/webui/frontend/tests/unit/fixtures/process_family_server.py`` imports
+    this module under ``uv run --no-sync``, which may omit dev deps such as
+    pytest; import-time ``import pytest`` must not fail for that path.
+    """
+    if pytest is not None:
+        return pytest.mark.skipif(condition, reason=reason)
+
+    def _decorator(obj):
+        return obj
+
+    return _decorator
+
+
+needs_visible_titles = _skipif_mark(
     sys.platform == "win32",
     reason="setproctitle titles are not visible in a Windows process command line",
 )
-needs_fork = pytest.mark.skipif(
+needs_fork = _skipif_mark(
     not hasattr(os, "fork"),
     reason="re-parenting a process out of the test's tree needs POSIX fork",
 )

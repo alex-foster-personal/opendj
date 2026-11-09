@@ -23,6 +23,12 @@ from pathlib import Path
 # ----------------------------------------------------------- data model
 
 
+def decode_primary_key(key: str) -> str:
+    """Traktor's PRIMARYKEY KEY (VOLUME + DIR + FILE with "/:" separators) as the
+    decoded location :meth:`NMLEntry.location_path` returns for the same file."""
+    return key.replace("/:", "/")
+
+
 def _set_optional_attr(element: ET.Element, name: str, value: str) -> None:
     """Set ``name`` when non-empty; drop the attribute when cleared."""
     if value:

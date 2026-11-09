@@ -219,9 +219,7 @@ def _pr_branch(pr: str, repo: str = REPO) -> str:
     repository while `_check_runs_at_sha` correctly looks at the named one
     (found in review, PR #1685 thread r3975870266).
     """
-    raw = _gh(
-        ["pr", "view", pr, "--repo", repo, "--json", "headRefName", "-q", ".headRefName"]
-    ).strip()
+    raw = _gh(["pr", "view", pr, "--repo", repo, "--json", "headRefName", "-q", ".headRefName"]).strip()
     if not raw:
         raise TriageError(f"gh returned no headRefName for PR {pr} in {repo}")
     return raw
@@ -276,8 +274,7 @@ def _head_sha(pr: str, repo: str = REPO) -> str:
     )
     if proc.returncode != 0 or not proc.stdout.strip():
         raise TriageError(
-            f"git ls-remote found no refs/heads/{branch} in {head_repo}: "
-            f"{proc.stderr.strip() or '<empty>'}"
+            f"git ls-remote found no refs/heads/{branch} in {head_repo}: {proc.stderr.strip() or '<empty>'}"
         )
     return proc.stdout.split()[0]
 
@@ -333,18 +330,13 @@ def _lifecycle_of(payload: dict, pr: str, repo: str) -> tuple[str, bool]:
     state = payload.get("state")
     merged = payload.get("merged")
     if state is None or merged is None:
-        raise TriageError(
-            f"gh returned incomplete PR lifecycle for PR {pr} in {repo}: {payload!r}"
-        )
+        raise TriageError(f"gh returned incomplete PR lifecycle for PR {pr} in {repo}: {payload!r}")
     return state, bool(merged)
 
 
 def _pr_lifecycle_message(pr: str, head_sha: str, status: WaitStatus) -> str:
     if status is WaitStatus.MERGED:
-        return (
-            f"PR #{pr} merged while waiting for CI; stopped without requiring "
-            f"terminal check-runs at head {head_sha}"
-        )
+        return f"PR #{pr} merged while waiting for CI; stopped without requiring terminal check-runs at head {head_sha}"
     if status is WaitStatus.CLOSED_UNMERGED:
         return f"PR #{pr} closed without merge (state=closed, merged=false)"
     raise TriageError(f"no lifecycle message for status {status!r}")
@@ -357,6 +349,15 @@ def _pr_changed_files(pr: str, repo: str = REPO) -> list[str]:
     if not paths:
         raise TriageError(f"gh returned no changed files for PR {pr} in {repo}")
     return paths
+
+
+def _pr_labels(pr: str, repo: str = REPO) -> frozenset[str]:
+    """The pull request's current labels. `derive_expected_for_changed_paths` owes a
+    label-gated published check (`WORKFLOW_RUN_OPT_IN_LABELS`, the `e2e` opt-in) only to
+    a head whose pull request carries the label. An unlabelled pull request is an empty
+    set, not a read failure: gh answers `labels: []` for it."""
+    raw = _gh(["pr", "view", pr, "--repo", repo, "--json", "labels"])
+    return frozenset(entry["name"] for entry in json.loads(raw).get("labels") or [] if entry.get("name"))
 
 
 def _baseline_at(pr: str, head_sha: str, repo: str = REPO) -> tuple[str, frozenset[str]] | None:
@@ -540,6 +541,7 @@ def plan_for_head(pr: str, head_sha: str, repo: str = REPO) -> ExpectationPlan |
             _pr_changed_files(pr, repo),
             catalog,
             baseline_catalog,
+            pr_labels=_pr_labels(pr, repo),
         ),
         alternatives,
     )
@@ -577,9 +579,7 @@ def _baseline_catalog(repo: str, baseline_sha: str) -> WorkflowCatalog:
 
 def _baseline_workflow_sha(repo: str, baseline_sha: str) -> str | None:
     """The commit the baseline's `pull_request` runs executed their workflows from."""
-    runs = _pull_request_triggered_runs(
-        _check_runs_at_sha(baseline_sha, repo), _memoized_run_event(repo)
-    )
+    runs = _pull_request_triggered_runs(_check_runs_at_sha(baseline_sha, repo), _memoized_run_event(repo))
     return None if not runs else _run_workflow_sha(_run_id(runs[0]), repo)
 
 
@@ -672,9 +672,7 @@ def _poll_plan(
     )
     if status is WaitStatus.HEAD_MOVED:
         return None
-    return WaitResult(
-        status, head_sha, plan.expected, present, time.monotonic() - start, message
-    )
+    return WaitResult(status, head_sha, plan.expected, present, time.monotonic() - start, message)
 
 
 # ----- CLI -------------------------------------------------------------------

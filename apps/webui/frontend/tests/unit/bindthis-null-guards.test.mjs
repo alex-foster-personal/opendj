@@ -337,7 +337,13 @@ test('WaveRow.svelte: palette effect does not throw once canvasEl has unmounted 
 	// the guard must return before either ever runs.
 	const readPalette = (el) => el.tagName;
 	assert.doesNotThrow(() =>
-		runEffect(arrow, { canvasEl: null, readPalette, ResizeObserver: FakeResizeObserver })
+		runEffect(arrow, {
+			canvasEl: null,
+			canvasWrapEl: null,
+			readPalette,
+			uiPrefs: { theme: 'dark', wave_palette: '3band', ui_skin: 'default' },
+			ResizeObserver: FakeResizeObserver
+		})
 	);
 });
 

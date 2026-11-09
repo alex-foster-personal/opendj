@@ -3,7 +3,7 @@
 The AGENT-05 verb table is a second copy of a contract that already exists in
 TypeScript, and a second copy is only safe if something compares them. These
 readers are that comparison: ``test_bus_parity.py`` re-reads
-``performance-ipc.svelte.ts`` and ``quick-draw-catalog.ts`` from the working
+``performance-ipc-types.ts`` and ``quick-draw-catalog.ts`` from the working
 tree rather than from a checked-in copy, so a command type added to the bus
 without a verb is a red test the next time anyone runs the lane.
 """
@@ -15,7 +15,7 @@ from collections.abc import Iterator
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
-IPC_SOURCE = REPO_ROOT / "apps/webui/frontend/src/lib/rb/performance-ipc.svelte.ts"
+IPC_SOURCE = REPO_ROOT / "apps/webui/frontend/src/lib/rb/performance-ipc-types.ts"
 QUICK_DRAW_SOURCE = REPO_ROOT / "apps/webui/frontend/src/lib/rb/quick-draw-catalog.ts"
 MIRROR_SOURCE = REPO_ROOT / "apps/webui/frontend/src/lib/rb/ui-mirror.ts"
 
@@ -148,7 +148,7 @@ def command_fields() -> dict[str, dict[str, bool]]:
     keys a command of that type may carry. ``type`` is not listed: every
     command has it.
     """
-    fields: dict[str, dict[str, bool]] = {}
+    branches: dict[str, list[dict[str, bool]]] = {}
     for line in _union_lines(IPC_SOURCE, _COMMAND_UNION):
         match = _FIELD.match(line.rstrip(";"))
         assert match is not None, line
@@ -160,7 +160,19 @@ def command_fields() -> dict[str, dict[str, bool]]:
             if name is None:
                 continue
             declared[name.rstrip("?")] = name.endswith("?")
-        fields[command_type] = declared
+        branches.setdefault(command_type, []).append(declared)
+    fields: dict[str, dict[str, bool]] = {}
+    for command_type, branch_list in branches.items():
+        merged: dict[str, bool] = {}
+        all_keys = {key for branch in branch_list for key in branch}
+        for key in all_keys:
+            required_in_every_branch = True
+            for branch in branch_list:
+                if key not in branch or branch[key]:
+                    required_in_every_branch = False
+                    break
+            merged[key] = not required_in_every_branch
+        fields[command_type] = merged
     return fields
 
 

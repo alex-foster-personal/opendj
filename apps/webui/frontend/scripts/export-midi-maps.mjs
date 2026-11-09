@@ -10,6 +10,9 @@
 // registry, DEVICE_MAP_REGISTRY in src/lib/rb/midi/maps/index.ts, through
 // vite (the same way tests/unit/flx4-map.test.mjs loads it) and writes each
 // DeviceMap verbatim. The engine embeds that file at compile time.
+// The registry is self-registering and sorted by map key (maps/entries.ts),
+// so two PRs that each add a map insert separate blocks, one line per
+// binding, rather than both appending to the same tail.
 //
 // USAGE
 //   node scripts/export-midi-maps.mjs           write the export

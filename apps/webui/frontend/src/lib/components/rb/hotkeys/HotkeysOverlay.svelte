@@ -7,7 +7,13 @@
 	 * so it can carry a story; this file binds it to the overlay store.
 	 */
 	import { assistantSidebarEnabled } from '$lib/assistant/sidebar-flag';
-	import { availableHotkeys, HOTKEY_REGISTRY } from './hotkeys-registry';
+	import { listPerformanceCommands } from '$lib/keyboard/command-registry';
+	import {
+		availableHotkeys,
+		HOTKEY_REGISTRY,
+		hotkeyEntriesFromCommandRegistry,
+		mergeHotkeyEntries
+	} from './hotkeys-registry';
 	import {
 		hideHotkeysOverlay,
 		hotkeysOverlay,
@@ -16,7 +22,12 @@
 	} from './hotkeys-overlay.svelte';
 	import HotkeysOverlayView from './HotkeysOverlayView.svelte';
 
-	const entries = $derived(availableHotkeys(HOTKEY_REGISTRY, assistantSidebarEnabled()));
+	// LIBUX-10456: registry commands with default keys join the hand-written rows.
+	const allEntries = mergeHotkeyEntries(
+		HOTKEY_REGISTRY,
+		hotkeyEntriesFromCommandRegistry(listPerformanceCommands())
+	);
+	const entries = $derived(availableHotkeys(allEntries, assistantSidebarEnabled()));
 </script>
 
 <HotkeysOverlayView

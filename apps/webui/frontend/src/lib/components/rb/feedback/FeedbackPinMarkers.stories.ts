@@ -85,7 +85,7 @@ export const Harvested: Story = {
 	args: { pins: [pin('v1', { status: 'harvested', harvested_at: '2026-10-12T23:00:00.000000Z' })] }
 };
 
-/** Option held: badges appear. This pin is on another page, regressed after its fix, and harvested. */
+/** Option held: badges appear (harvested on another page plus regressed after reopen). */
 export const WithBadges: Story = {
 	args: {
 		optionKeyHeld: true,
@@ -93,6 +93,10 @@ export const WithBadges: Story = {
 			pin('b1', {
 				page: '/library',
 				status: 'harvested',
+				harvested_at: '2026-10-12T23:00:00.000000Z'
+			}),
+			pin('b2', {
+				status: 'open',
 				fixed_at: '2026-10-11T10:00:00.000000Z',
 				fixed_in_sha: 'abc1234',
 				updated_at: '2026-10-12T10:00:00.000000Z'

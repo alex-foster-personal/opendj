@@ -1,7 +1,8 @@
-// requirement: SKINLAYOUT-8869
+// requirement: SKINLAYOUT-8869, SKINLAYOUT-10489
 // [if] a skin other than Green Room selects the three-panel library layout [then] Gothic, Light or Default change shape, [else stop].
 // [if] the Now Playing panel prefers the preview over the last Gig master deck [then] it shows the wrong track, [else stop].
 // [if] the Your Library search does work with an empty query [then] the library listing path gains cost, [else stop].
+// [if] a skin's performance preset is not deck-grid, or the deck-grid spec's areas drift from the /performance grid [then] the performance root changes shape with no declared preset, [else stop].
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { before, test } from 'node:test';
@@ -23,6 +24,33 @@ test('if any skin lacks a library layout, or a skin other than Green Room bends,
 		assert.equal(L.libraryLayoutFor(s), 'crate-desk');
 	assert.throws(() => L.parseLibraryLayout('sidebar-left'), /library layout must be/);
 	assert.equal(L.parseLibraryLayout('three-panel'), 'three-panel');
+});
+
+test('if a skin lacks the deck-grid performance preset, or its spec drifts from the /performance grid, then the manifest is wrong', () => {
+	assert.deepEqual([...L.PERFORMANCE_LAYOUTS], ['deck-grid']);
+	for (const s of skin.UI_SKIN_CHOICES) assert.equal(L.performanceLayoutFor(s), 'deck-grid', s);
+	assert.deepEqual(
+		Object.keys(L.PERFORMANCE_LAYOUT_SPEC).sort(),
+		[...L.PERFORMANCE_LAYOUTS].sort()
+	);
+	assert.throws(
+		() => L.parsePerformanceLayout('four-across'),
+		/performance layout must be deck-grid/
+	);
+	assert.equal(L.parsePerformanceLayout('deck-grid'), 'deck-grid');
+
+	const spec = L.PERFORMANCE_LAYOUT_SPEC['deck-grid'];
+	assert.deepEqual(spec.honours, { deckLayout: true, perfView: true, pads: true });
+	assert.deepEqual(spec.floors, { wavestackRows: 4, deckRowPx: 497, libraryPx: 272 });
+
+	const page = readFileSync('src/routes/performance/+page.svelte', 'utf8');
+	const root = page.indexOf('.perf-root {');
+	assert.ok(root > 0, '.perf-root block missing');
+	const at = page.indexOf('grid-template-areas:', root);
+	const decl = page.slice(at, page.indexOf(';', at));
+	const rows = [...decl.matchAll(/'([^']*)'/g)].map((m) => m[1]);
+	assert.deepEqual(rows, spec.areas);
+	assert.match(page, /class="perf-root"\s+data-layout=\{perfLayout\}/);
 });
 
 test('if the now-playing pick ignores the stored master deck, or falls through wrongly, then the panel lies', () => {

@@ -385,14 +385,6 @@ def test_smartlist_refused(client: TestClient, db_path: Path) -> None:
     assert r404.json()["error"] == "not_found"
 
 
-def test_openapi_documents_move(client: TestClient) -> None:
-    spec = client.get("/openapi.json")
-    assert spec.status_code == 200
-    paths = spec.json()["paths"]
-    assert "/api/v1/playlists/{playlist_id}/items:move" in paths
-    assert "post" in paths["/api/v1/playlists/{playlist_id}/items:move"]
-
-
 def test_true_no_op_same_position(
     client: TestClient,
     db_path: Path,

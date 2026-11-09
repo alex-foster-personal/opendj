@@ -318,6 +318,9 @@ export async function startRealEngine(bundleText, { tracks }) {
 			createDelay() {
 				return this.#node();
 			}
+			createWaveShaper() {
+				return this.#node();
+			}
 			createMediaStreamDestination() {
 				return { context: this, stream: { getTracks: () => [] }, connect() {}, disconnect() {} };
 			}

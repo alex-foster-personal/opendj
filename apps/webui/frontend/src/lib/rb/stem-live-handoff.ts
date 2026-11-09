@@ -109,7 +109,19 @@ export interface StemHandoffDeps {
 }
 
 export type LiveHandoffOutcome = 'handed_off' | 'busy' | 'moved';
-export type StemLandingOutcome = 'adopted' | 'handed_off' | 'stale' | 'deferred';
+export type StemLandingOutcome = 'adopted' | 'handed_off' | 'stale' | 'deferred' | 'busy';
+
+/** How `handOffStemsLive` decides the stem schedule is still valid after the worklet ack. */
+export type StemHandoffAckDeadline = 'keep-lead' | 'still-ahead';
+
+function _ackStillLive(
+	deps: StemHandoffDeps,
+	when: number,
+	deadline: StemHandoffAckDeadline
+): boolean {
+	if (deadline === 'still-ahead') return when > deps.now();
+	return safeTransportScheduleTime(deps.now(), deps.leadSec) <= when;
+}
 
 /** Extra room, beyond the processor lead, between scheduling the stems and the
  * handoff instant. It has to cover the worklet acknowledgement for every stem
@@ -139,7 +151,8 @@ function _idle(snap: StemHandoffSnapshot): boolean {
  */
 export async function handOffStemsLive(
 	deps: StemHandoffDeps,
-	marginSec: number
+	marginSec: number,
+	deadline: StemHandoffAckDeadline = 'keep-lead'
 ): Promise<LiveHandoffOutcome> {
 	const before = deps.snapshot();
 	if (!_idle(before)) return 'busy';
@@ -147,7 +160,7 @@ export async function handOffStemsLive(
 	const segment = deps.segmentAt(when);
 	await deps.scheduleIncoming(when, segment);
 	const after = deps.snapshot();
-	const stillSchedulable = safeTransportScheduleTime(deps.now(), deps.leadSec) <= when;
+	const stillSchedulable = _ackStillLive(deps, when, deadline);
 	// `stale` is re-read here, not only between attempts: the track can be
 	// unloaded, or stems switched off, while the acknowledgement is in flight.
 	if (deps.stale() || after.revision !== before.revision || !_idle(after) || !stillSchedulable) {
@@ -182,6 +195,26 @@ export async function landStemUpgrade(deps: StemHandoffDeps): Promise<StemLandin
 		if (attempt < STEM_HANDOFF_MARGINS_SEC.length - 1) await deps.sleep(STEM_HANDOFF_RETRY_MS);
 	}
 	return deps.stale() ? 'stale' : 'deferred';
+}
+
+/**
+ * AUDFID-02 / Class A: first stem-control touch on a held neutral bundle.
+ * One `handOffStemsLive` at margin 0 (no STEM_HANDOFF_MARGINS_SEC growth, no
+ * STEM_HANDOFF_RETRY_MS) with a `still-ahead` ack deadline: after the worklet
+ * acknowledges, the handoff stays live while the scheduled instant is strictly
+ * ahead of `currentTime`, so a one-render-quantum clock advance does not cancel.
+ * An ack that lands at or after `when` still cancels (`busy` for frame retry).
+ * Busy or `moved` returns `busy`.
+ */
+export async function landStemEngage(deps: StemHandoffDeps): Promise<StemLandingOutcome> {
+	if (deps.stale()) return 'stale';
+	if (deps.replaceable()) {
+		deps.adoptStopped();
+		return 'adopted';
+	}
+	const outcome = await handOffStemsLive(deps, 0, 'still-ahead');
+	if (outcome === 'handed_off') return 'handed_off';
+	return 'busy';
 }
 
 // ----------------------------------------------------------- engine binding
@@ -376,6 +409,16 @@ export async function landStemsOnDeck(port: StemLandingPort): Promise<StemLandin
 	);
 	if (outcome === 'stale') port.retire(port.incoming);
 	else if (outcome === 'deferred') port.defer();
+	return outcome;
+}
+
+/** AUDFID-02: first-touch engage of held neutral stems (Class A path). */
+export async function engageStemsOnDeck(port: StemLandingPort): Promise<StemLandingOutcome> {
+	const incomingLatencySec = await port.incoming.latencySec();
+	const outcome = await port.serialized(() =>
+		landStemEngage(stemLandingDeps(port, incomingLatencySec))
+	);
+	if (outcome === 'stale') port.retire(port.incoming);
 	return outcome;
 }
 

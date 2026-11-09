@@ -15,6 +15,8 @@
  *     [if] two definitions share an id [then ⛔️]
  *   ✔︎ the library density row is the library_density enum (compact|cosy); no row px value is a setting.
  *     [if] a px/number row-height control appears [then ⛔️]
+ *   ✔︎ every implemented catalog id is in exactly one screen or in SETTINGS_ONLY with a reason (#10206).
+ *     [if] an id is in none, two places, or the bucket names a non-catalog id or has an empty reason [then ⛔️]
  *
  * Do not import `apply.ts` here: node unit tests bundle registry modules without runes.
  */
@@ -141,6 +143,97 @@ export const LIBRARY_SCREEN: CustomiseScreenDef = {
 		}
 	]
 };
+
+/** A catalog id that no customisation screen shows, with the one-line reason (spike #9438 §3, §4 (a)). */
+export interface SettingsOnlyRow {
+	id: string;
+	reason: string;
+}
+
+/**
+ * Settings-only bucket (#10206). Every implemented SETTINGS_CATALOG id is in exactly one
+ * customise screen OR here, never both; the registry test in customise-screens.test.mjs enforces it.
+ * Rows under "Awaiting a screen" move out of this list when that screen's definition lands.
+ */
+export const SETTINGS_ONLY: ReadonlyArray<SettingsOnlyRow> = [
+	// Spike #9438 §3: Settings overlay only (19 rows).
+	{ id: 'confirm.dblclick_load_play', reason: 'Confirmation behaviour, not display.' },
+	{ id: 'confirm.delete_playlist', reason: 'Confirmation behaviour, not display.' },
+	{ id: 'confirm.playlist_drop_mode', reason: 'Remembered prompt policy, not display.' },
+	{ id: 'auto_sync', reason: 'Per-target writeback destinations (multi_bool).' },
+	{ id: 'sync.run_ratings_writeback', reason: 'Link action into the sync flow.' },
+	{ id: 'cloudsync.machines', reason: 'Link into the CloudSync policy surface.' },
+	{ id: 'cloudsync.playlist_pins', reason: 'Link into CloudSync.' },
+	{ id: 'cloudsync.overview', reason: 'Link into CloudSync.' },
+	{ id: 'perf_tier', reason: 'Machine capability scaling, read out in the Settings overlay.' },
+	{ id: 'app_posture', reason: 'App-wide runtime posture.' },
+	{ id: 'gig_helper', reason: 'Operator aid, not display.' },
+	{ id: 'audio_engine', reason: 'Audio device selection with restart semantics.' },
+	{ id: 'rb.midi_enabled', reason: 'Hardware enablement.' },
+	{ id: 'speaker_auto_recover', reason: 'Device recovery policy.' },
+	{ id: 'show_dev_ui', reason: 'Developer switch.' },
+	{ id: 'hide_todo_settings', reason: 'Developer switch (devOnly).' },
+	{ id: 'pin_visible_days', reason: 'Feedback-pin age, with no deck or library chrome.' },
+	{
+		id: 'lyrics_global',
+		reason: 'Master switch for every lyric overlay, so it belongs on no single screen.'
+	},
+	{ id: 'technically_working_animate', reason: 'Cross-surface banner animation.' },
+	// Not a boolean/enum row: customise rows refuse other control kinds.
+	{
+		id: 'library_watcher_folders',
+		reason: 'path_lines control; customise rows are boolean or enum only.'
+	},
+	{
+		id: 'library.title_fix',
+		reason: 'Link control; customise rows are boolean or enum only.'
+	},
+	// Added after spike #9438; no placement decided yet.
+	{
+		id: 'deck_number_art',
+		reason:
+			'Added by #9649 after the spike. It draws on the deck header, waveform gutter and mixer column, so it has no single screen yet.'
+	},
+	{
+		id: 'deck_needle_lock',
+		reason:
+			'Added by #9767 after the spike. It changes how the overview strip responds to clicks, not what a screen displays; no screen placement decided yet.'
+	},
+	{
+		id: 'layout_override.performance',
+		reason:
+			'Added by #10199 after the spike. A per-surface layout preset that belongs on the spike §2.7 Layout screen, which has no definition yet.'
+	},
+	{
+		id: 'layout_override.library',
+		reason:
+			'Added by #10199 after the spike. A per-surface layout preset that belongs on the spike §2.7 Layout screen, which has no definition yet.'
+	},
+	// Awaiting a screen: move the row onto that screen when its definition lands.
+	{
+		id: 'wave_eq_reflect',
+		reason: 'Awaiting the Waveform screen (#9439, spike §2.3); not in the WAVE_QS_GROUPS stand-in.'
+	},
+	{
+		id: 'show_tempo_lane',
+		reason: 'Awaiting the Waveform screen (#9439, spike §2.3); not in the WAVE_QS_GROUPS stand-in.'
+	},
+	{
+		id: 'tempo_lane_scale',
+		reason: 'Awaiting the Waveform screen (#9439, spike §2.3); not in the WAVE_QS_GROUPS stand-in.'
+	},
+	{ id: 'crossfade_curve', reason: 'Awaiting the Mixer screen (spike §2.5).' },
+	{ id: 'horizontal_wheel_knob', reason: 'Awaiting the Mixer screen (spike §2.5).' },
+	{ id: 'mixer_stems', reason: 'Awaiting the Mixer screen (spike §2.5).' },
+	{ id: 'auto_gain.enabled', reason: 'Awaiting the Mixer screen (spike §2.5).' },
+	{ id: 'auto_gain.target_lufs', reason: 'Awaiting the Mixer screen (spike §2.5).' },
+	{ id: 'wheel_sensitivity.mouse', reason: 'Awaiting the Mixer screen (spike §2.5).' },
+	{ id: 'wheel_sensitivity.trackpad', reason: 'Awaiting the Mixer screen (spike §2.5).' },
+	{ id: 'drag_sensitivity.base', reason: 'Awaiting the Mixer screen (spike §2.5).' },
+	{ id: 'drag_sensitivity.falloff_px', reason: 'Awaiting the Mixer screen (spike §2.5).' },
+	{ id: 'feature_icon_single_click', reason: 'Awaiting the Layout screen (spike §2.7).' },
+	{ id: 'theme', reason: 'Awaiting the Colours / skin screen (spike §2.8).' }
+];
 
 const CUSTOMISE_SCREEN_DEFS = [DECKS_SCREEN, LIBRARY_SCREEN] as const;
 

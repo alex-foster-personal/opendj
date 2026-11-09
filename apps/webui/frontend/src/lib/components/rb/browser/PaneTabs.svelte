@@ -18,6 +18,7 @@
 	// 4-pane browser tabs (SCREENSHOT-SPEC 5c). Active tab shows
 	// 'Name (N Tracks)' + inert stepper chevrons; the other panes each
 	// remember their own playlist selection (only the active pane renders).
+	import type { Snippet } from 'svelte';
 	import { plannedTitle } from '$lib/rb/planned-explainers';
 	import {
 		canAddPaneSlot,
@@ -38,7 +39,10 @@
 		onreorder,
 		ondropplaylist,
 		onsaveas,
-		onaddpane
+		onaddpane,
+		relatedActive = false,
+		onrelated,
+		relatedTools
 	}: {
 		tabs: PaneTabInfo[];
 		active: number;
@@ -55,6 +59,12 @@
 		onsaveas: (index: number) => void;
 		/** Open another blank pane slot (up to MAX_PANE_SLOTS). */
 		onaddpane?: () => void;
+		/** LIBUX-10046: the Related tab is showing instead of the active pane. */
+		relatedActive?: boolean;
+		/** Show the Related tab; omitted hides it. */
+		onrelated?: () => void;
+		/** Rendered inside the active Related tab (the criteria cog). */
+		relatedTools?: Snippet;
 	} = $props();
 
 	/** Index of the tab being dragged; null when no tab drag is in flight. */
@@ -114,7 +124,7 @@
 
 <div class="tabs" role="tablist" aria-label="browser panes">
 	{#each tabs as tab, i (i)}
-		{#if i === active}
+		{#if i === active && !relatedActive}
 			<div
 				class="tab active"
 				class:drop-target={dragOver === i}
@@ -250,6 +260,24 @@
 			</button>
 		{/if}
 	{/each}
+	{#if onrelated !== undefined}
+		{#if relatedActive}
+			<div class="tab active related-tab" role="tab" aria-selected="true" tabindex={0} data-testid="pane-tab-related">
+				<span class="title">Related</span>
+				{@render relatedTools?.()}
+			</div>
+		{:else}
+			<button
+				class="tab related-tab"
+				role="tab"
+				aria-selected="false"
+				data-testid="pane-tab-related"
+				onclick={() => onrelated?.()}
+			>
+				<span class="title">Related</span>
+			</button>
+		{/if}
+	{/if}
 	{#if onaddpane !== undefined && canAddPaneSlot(tabs.length)}
 		<button class="tab add-pane" type="button" onclick={() => onaddpane?.()} aria-label="Blank List (+)">
 			Blank List (+)

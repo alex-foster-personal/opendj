@@ -20,7 +20,9 @@
 
 import {
 	barSyncVerdict,
+	foldFromPerfRows,
 	newResultsDocument,
+	PENDING,
 	recordVerdict,
 	renderEvidenceMarkdown,
 	rollupGate,
@@ -120,6 +122,7 @@ export function installSpikeHarness(host, options = {}) {
 	let samplerId = null;
 	const samples = [];
 	const anomalies = [];
+	const pending = new Map();
 
 	function _capabilities() {
 		return {
@@ -403,6 +406,7 @@ export function installSpikeHarness(host, options = {}) {
 		await _settled(2, true);
 		await _dispatch({ type: 'master', deck: 1 });
 		await _dispatch({ type: 'sync_mode', deck: 2, mode: 'BAR' });
+		const since = new Date().toISOString();
 		await _dispatch({ type: 'beat_sync', deck: 2, enabled: true });
 		await _settled(2, true);
 		const state = ipc.query();
@@ -420,16 +424,34 @@ export function installSpikeHarness(host, options = {}) {
 		}
 		const masterPhase = ((masterBeat.n - 1) % 4) + 1;
 		const followerPhase = ((followerBeat.n - 1) % 4) + 1;
-		const ratio =
+		const effective_bpm_ratio =
 			follower.effective_bpm !== null && master.effective_bpm !== null
 				? follower.effective_bpm / master.effective_bpm
 				: null;
+		const fold = foldFromPerfRows(
+			typeof host.__mdtPerfLog === 'function' ? host.__mdtPerfLog() : null,
+			{ deck: 2, since }
+		);
+		if (fold === null) {
+			return {
+				verdict: 'UNAVAILABLE',
+				missing_capability: 'the window.__mdtPerfLog perf ring (the planner fold normalization)',
+				detail: 'BAR sync fold detection could not read perf events',
+				observations: null
+			};
+		}
 		return barSyncVerdict({
 			masterPhase,
 			followerPhase,
-			ratio,
+			normalization: fold.normalization,
+			foldSeverity: fold.severity,
 			syncError: follower.sync_error,
-			observations: { masterBeat, followerBeat }
+			observations: {
+				masterBeat,
+				followerBeat,
+				effective_bpm_ratio,
+				fold_row: fold.row
+			}
 		});
 	}
 
@@ -495,6 +517,7 @@ export function installSpikeHarness(host, options = {}) {
 		const capabilities = _capabilities();
 		results = newResultsDocument({ user_agent: capabilities.user_agent, ...hostMetadata });
 		results.capabilities = capabilities;
+		pending.clear();
 		return results;
 	}
 
@@ -512,7 +535,10 @@ export function installSpikeHarness(host, options = {}) {
 
 	function mark(id, verdict, detail, extra = {}) {
 		if (results === null) throw new Error('call begin(hostMetadata) before recording verdicts');
-		return recordVerdict(results, { id, verdict, detail, ...extra });
+		const observations = extra.observations ?? pending.get(id)?.observations ?? null;
+		const recorded = recordVerdict(results, { id, verdict, detail, ...extra, observations });
+		pending.delete(id);
+		return recorded;
 	}
 
 	/** Every criterion the harness can drive itself, in run order. */
@@ -542,13 +568,24 @@ export function installSpikeHarness(host, options = {}) {
 			} catch (error) {
 				outcome = { verdict: 'FAIL', detail: `harness step threw: ${String(error)}` };
 			}
+			if (outcome.verdict === PENDING) {
+				pending.set(id, {
+					detail: outcome.detail,
+					observations: outcome.observations ?? null
+				});
+				host.console.log(`${id} pending operator observation: ${outcome.detail}`);
+				continue;
+			}
 			mark(id, outcome.verdict, outcome.detail, {
 				missing_capability: outcome.missing_capability,
 				observations: outcome.observations ?? null,
 				recorded_at: new Date().toISOString()
 			});
 		}
-		return rollupGate(results);
+		return {
+			...rollupGate(results),
+			pending: [...pending].map(([pendingId, p]) => ({ id: pendingId, ...p }))
+		};
 	}
 
 	/** Criteria that still need the human, with the exact act required. */
@@ -568,7 +605,13 @@ export function installSpikeHarness(host, options = {}) {
 	 */
 	function dump() {
 		if (results === null) throw new Error('call begin(hostMetadata) before dumping evidence');
-		const document__ = { ...results, samples, anomalies, gate: rollupGate(results) };
+		const document__ = {
+			...results,
+			samples,
+			anomalies,
+			pending: [...pending].map(([pendingId, p]) => ({ id: pendingId, ...p })),
+			gate: rollupGate(results)
+		};
 		const json = JSON.stringify(document__, null, 2);
 		const markdown = renderEvidenceMarkdown(results);
 		host.console.log(json);
@@ -588,6 +631,7 @@ export function installSpikeHarness(host, options = {}) {
 		mark,
 		anomalies: () => [...anomalies],
 		samples: () => [...samples],
+		pending: () => [...pending.keys()],
 		dump
 	};
 	host.wkwebviewSpike = harness;

@@ -1,0 +1,9 @@
+{
+  "bytes": 1024,
+  "measured_main": 474984,
+  "measured_with_pr": 475455,
+  "sha": "16a77f5112",
+  "date": "Sun 8 Nov 2026",
+  "reason": "PR #9650 adds the Beat Sync re-enable policy and SYNC_DRIFT / SYNC_RESNAP logging to the Rust transport chunk. Measured: CI bundle check of 16a77f5112, +471 B gzip; ceiled to KiB.",
+  "payback": "none planned; the drift log is the observability the maintainer asked for and lives in the engine path"
+}

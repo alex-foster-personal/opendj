@@ -109,6 +109,30 @@ test('own ok with static_grid_untrusted true is not trusted but still paints bea
 	assert.match(grid.gridFeatureInertTip({ stable_id: 'x', anlz: payload }), /32\.500s/);
 });
 
+test('own ok anchored by hand stays trusted although static_grid_untrusted is true (GRIDEDIT-10220)', () => {
+	const marker = [{ at_s: 60, bpm_before: 120, bpm_after: 126, confidence: 1 }];
+	const anchored = anlz({
+		beatgrid: {
+			source: 'own',
+			status: 'ok',
+			static_grid_untrusted: true,
+			edit: { source: 'own', offset_ms: 0, beat_shift: 0, anchors: [{ at_s: 60, bpm: 126 }] }
+		},
+		tempo_changes: marker
+	});
+	assert.equal(grid.hasTrustedBeatGrid(anchored), true);
+	const control = anlz({
+		beatgrid: {
+			source: 'own',
+			status: 'ok',
+			static_grid_untrusted: true,
+			edit: { source: 'own', offset_ms: 0, beat_shift: 0 }
+		},
+		tempo_changes: marker
+	});
+	assert.equal(grid.hasTrustedBeatGrid(control), false, 'control: no anchors stays untrusted');
+});
+
 test('missing or unknown beatgrid.source fails closed', () => {
 	assert.equal(
 		grid.hasTrustedBeatGrid(anlz({ beatgrid: { source: undefined, beats: REAL_BEATS } })),

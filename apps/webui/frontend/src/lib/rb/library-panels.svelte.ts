@@ -19,6 +19,8 @@
  * Programmatic parity (house rule: every UI control has a non-UI path):
  * - isLibraryPanelsCollapsed() / setLibraryPanelsCollapsed(bool) /
  *   toggleLibraryPanels() for in-app callers.
+ * - performance IPC `library_panels_toggle` and
+ *   `queryPerformanceState().library_panels.collapsed` for agents.
  * - window.__mdtLibraryPanels for a headless test agent driving the page
  *   from the outside, where the ES module scope is unreachable (same shape
  *   as the existing __mdtMasterMute / __mdtWheelSensitivity bridges).
@@ -31,6 +33,12 @@
  *   auto-collapse acceptance criterion never fires
  * - if it keeps forcing a collapse on every call while still under the floor
  *   then a manual re-expand is fought back closed immediately
+ * - if a manual re-expand is cleared when the row count rises above the floor
+ *   then the panels' own reflow can collapse them again (issue #2166)
+ * - if an intentional blank pane (blank-list tab or post-boot empty library)
+ *   never auto-collapses then sparse libraries leave the panels mounted forever
+ * - if pane switches do not reset the auto-collapse pass then manual expansion
+ *   on one pane blocks collapse on every other pane
  * - if setLibraryPanelsCollapsed accepts a non-boolean then a stray value
  *   wedges the panels in an inconsistent state
  */
@@ -46,6 +54,33 @@ let _collapsed = $state(false);
  * from "still under the floor" and not fight a manual re-expand every call. */
 let _wasBelowFloor = false;
 
+/** Set by an explicit expand; blocks auto-collapse until the active pane changes
+ * or the user collapses again. Not reactive: BrowserPanel reads it inside an
+ * $effect and a $state read there would loop. */
+let _manualExpand = false;
+
+/** Last pane key seen by noteVisibleLibraryRowCount; undefined = none yet. */
+let _paneKey: string | null | undefined = undefined;
+
+export interface LibraryPaneSettleState {
+	playlist_id: string | null;
+	loading: boolean;
+	has_settled_result: boolean;
+}
+
+/** null = not yet a real result (pre-mount / loading); otherwise the row count
+ * to feed noteVisibleLibraryRowCount. */
+export function settledLibraryRowCount(
+	pane: LibraryPaneSettleState,
+	bootSettled: boolean,
+	renderedCapacity: number
+): number | null {
+	if (pane.loading) return null;
+	if (pane.playlist_id === null && bootSettled) return 0;
+	if (!pane.has_settled_result) return null;
+	return renderedCapacity;
+}
+
 export function isLibraryPanelsCollapsed(): boolean {
 	return _collapsed;
 }
@@ -55,6 +90,7 @@ export function setLibraryPanelsCollapsed(collapsed: boolean): void {
 		throw new TypeError('setLibraryPanelsCollapsed: collapsed must be boolean');
 	}
 	_collapsed = collapsed;
+	_manualExpand = !collapsed;
 }
 
 export function toggleLibraryPanels(): void {
@@ -63,13 +99,21 @@ export function toggleLibraryPanels(): void {
 
 /** Call reactively with the active pane's current visible row count. Forces
  * a collapse the moment the count crosses below the floor; does nothing on
- * every other call. */
-export function noteVisibleLibraryRowCount(count: number): void {
+ * every other call unless the pane key changes (fresh pass). */
+export function noteVisibleLibraryRowCount(count: number, paneKey: string | null = null): void {
 	if (typeof count !== 'number' || !Number.isFinite(count) || count < 0) {
 		throw new TypeError('noteVisibleLibraryRowCount: count must be a non-negative finite number');
 	}
+	if (typeof paneKey !== 'string' && paneKey !== null) {
+		throw new TypeError('noteVisibleLibraryRowCount: paneKey must be string or null');
+	}
+	if (paneKey !== _paneKey) {
+		_paneKey = paneKey;
+		_wasBelowFloor = false;
+		_manualExpand = false;
+	}
 	const belowFloor = count < MIN_VISIBLE_ROWS_FOR_AUTO_COLLAPSE;
-	if (belowFloor && !_wasBelowFloor) _collapsed = true;
+	if (belowFloor && !_wasBelowFloor && !_manualExpand) _collapsed = true;
 	_wasBelowFloor = belowFloor;
 }
 

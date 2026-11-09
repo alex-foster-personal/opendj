@@ -14,7 +14,7 @@
 //   if two toggleMidiPanel calls don't restore panelOpen then broken
 
 import assert from 'node:assert/strict';
-import { after, before, test } from 'node:test';
+import { after, before, mock, test } from 'node:test';
 import { fileURLToPath } from 'node:url';
 import { resolve } from 'node:path';
 
@@ -422,6 +422,119 @@ test('WebMIDI NotAllowedError fills lastError without console.error', async () =
 		if (previous) Object.defineProperty(globalThis, 'navigator', previous);
 		else delete globalThis.navigator;
 	}
+});
+
+// requirement: CHROME-08
+// ---- midi learn arm
+
+test('armMidiLearn cc window infers relative-twos and calls onBind', async () => {
+	mock.timers.enable({ apis: ['setTimeout'] });
+	try {
+		uiState.cancelMidiLearn();
+		webmidi._resetMidiForTests();
+		const binds = [];
+		await uiState.armMidiLearn({ action: { type: 'browse_encoder' } }, (deviceId, binding) => {
+			binds.push({ deviceId, binding });
+		});
+		assert.equal(uiState.midiUi.learn.phase, 'armed');
+		for (let i = 0; i < 8; i++) {
+			uiState.feedMidiLearnEntry({
+				ts: i,
+				deviceId: 'dev-a',
+				deviceName: 'T',
+				status: 0xb0,
+				data1: 16,
+				data2: i % 2 === 0 ? 0x01 : 0x7f,
+				decoded: { ch: 1, kind: 'cc', id: 16 },
+				mapped: false,
+				note: 'unmapped'
+			});
+		}
+		mock.timers.tick(600);
+		assert.equal(uiState.midiUi.learn.phase, 'bound');
+		assert.equal(binds.length, 1);
+		assert.equal(binds[0].binding.relative, true);
+		assert.equal(binds[0].binding.relativeCentered, false);
+		assert.equal(binds[0].binding.ccButton, false);
+	} finally {
+		mock.timers.reset();
+		uiState.cancelMidiLearn();
+	}
+});
+
+test('armMidiLearn note binds on first message', async () => {
+	uiState.cancelMidiLearn();
+	webmidi._resetMidiForTests();
+	const binds = [];
+	await uiState.armMidiLearn({ action: { type: 'browse_load', deck: 1 } }, (deviceId, binding) => {
+		binds.push({ deviceId, binding });
+	});
+	uiState.feedMidiLearnEntry({
+		ts: 0,
+		deviceId: 'dev-a',
+		deviceName: 'T',
+		status: 0x90,
+		data1: 60,
+		data2: 127,
+		decoded: { ch: 1, kind: 'note', id: 60 },
+		mapped: false,
+		note: 'unmapped'
+	});
+	assert.equal(uiState.midiUi.learn.phase, 'bound');
+	assert.equal(binds.length, 1);
+	uiState.cancelMidiLearn();
+});
+
+test('single cc after window is ambiguous without onBind; retry re-arms', async () => {
+	mock.timers.enable({ apis: ['setTimeout'] });
+	try {
+		uiState.cancelMidiLearn();
+		webmidi._resetMidiForTests();
+		const binds = [];
+		await uiState.armMidiLearn({ action: { type: 'browse_encoder' } }, (deviceId, binding) => {
+			binds.push({ deviceId, binding });
+		});
+		uiState.feedMidiLearnEntry({
+			ts: 0,
+			deviceId: 'dev-a',
+			deviceName: 'T',
+			status: 0xb0,
+			data1: 7,
+			data2: 64,
+			decoded: { ch: 1, kind: 'cc', id: 7 },
+			mapped: false,
+			note: 'unmapped'
+		});
+		mock.timers.tick(600);
+		assert.equal(uiState.midiUi.learn.phase, 'ambiguous');
+		assert.ok(uiState.midiUi.learn.reason.length > 0);
+		assert.equal(binds.length, 0);
+		await uiState.retryMidiLearn();
+		assert.equal(uiState.midiUi.learn.phase, 'armed');
+		assert.deepEqual(uiState.midiUi.learn.target, { action: { type: 'browse_encoder' } });
+	} finally {
+		mock.timers.reset();
+		uiState.cancelMidiLearn();
+	}
+});
+
+test('cancelMidiLearn returns idle; feed while idle is no-op', async () => {
+	uiState.cancelMidiLearn();
+	await uiState.armMidiLearn({ action: { type: 'browse_encoder' } }, () => {});
+	uiState.cancelMidiLearn();
+	assert.equal(uiState.midiUi.learn.phase, 'idle');
+	uiState.feedMidiLearnEntry({
+		ts: 0,
+		deviceId: 'dev-a',
+		deviceName: 'T',
+		status: 0xb0,
+		data1: 7,
+		data2: 1,
+		decoded: { ch: 1, kind: 'cc', id: 7 },
+		mapped: false,
+		note: 'unmapped'
+	});
+	assert.equal(uiState.midiUi.learn.phase, 'idle');
 });
 
 // requirement: CHROME-08

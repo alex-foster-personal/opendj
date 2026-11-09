@@ -56,7 +56,7 @@ test('dualSinkAssignment auto-pins master to speakers when cue is headphones and
 			selectedCueId: 'hp',
 			selectedMasterId: null
 		}),
-		{ masterId: 'speakers', cueId: 'hp', autoPinnedMaster: true }
+		{ masterId: 'speakers', cueId: 'hp', boothId: null, autoPinnedMaster: true }
 	);
 	assert.deepEqual(
 		headphones.dualSinkAssignment({
@@ -64,7 +64,7 @@ test('dualSinkAssignment auto-pins master to speakers when cue is headphones and
 			selectedCueId: 'hp',
 			selectedMasterId: 'speakers'
 		}),
-		{ masterId: 'speakers', cueId: 'hp', autoPinnedMaster: false }
+		{ masterId: 'speakers', cueId: 'hp', boothId: null, autoPinnedMaster: false }
 	);
 	// CUEOUT-25: a MASTER equal to the cue device is the silent-room defect
 	// (silver, Mon 5 Oct 2026). AUDFID-01: the CUE is refused, never an automatic split.

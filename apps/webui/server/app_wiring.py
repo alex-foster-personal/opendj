@@ -29,6 +29,7 @@ from starlette.types import Scope
 
 from apps.feature_flags import FlagStore, load_flags
 from apps.feature_flags.http import flags_router
+from apps.lighting.http import router as lighting_router
 from apps.play_analytics.http import router as play_analytics_router
 from apps.set_notes.http import create_router as create_set_notes_router
 from apps.sets.api import router as sets_router
@@ -92,6 +93,7 @@ from .routes import telemetry as telemetry_routes
 from .routes import usb_volumes_sim as usb_volumes_sim_routes
 from .routes import vocals as vocals_routes
 from .routes import voice_probe as voice_probe_routes
+from .server_timing import ServerTimingMiddleware
 from .sets_master_tap import OrderBusMasterTap
 from .share_gate import ShareConfig
 from .stem_cache_enforcer import StemCacheEnforcer
@@ -563,6 +565,7 @@ def _configure_cors(app: FastAPI) -> None:
             "X-Audio-Kind",
             "X-Audio-Venue",
             "X-Audio-Source",
+            "Server-Timing",
         ],
     )
 
@@ -573,6 +576,8 @@ def _configure_http_middleware(app: FastAPI, bind_host: str) -> None:
     # that outer-to-inner order) so response bodies are not re-streamed per
     # layer. See http_guards.py for the order contract.
     app.add_middleware(HttpGuardMiddleware, bind_host=bind_host)
+    # Outermost, so its dur covers the guards too: the engine's whole service time (PERF-DIAG, issue #9698).
+    app.add_middleware(ServerTimingMiddleware)
 
 
 def _routers_under(package: ModuleType) -> list[APIRouter]:
@@ -617,6 +622,7 @@ def _mount_api_routers(app: FastAPI) -> None:
         vocals_routes.router,
         voice_probe_routes.router,
         sync_hub_router,
+        lighting_router,
     ):
         app.include_router(router, prefix=api_prefix)
     if not getattr(app.state, sync_hub_hosted_config.HOSTED_FLAG_ATTR, False):

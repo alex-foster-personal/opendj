@@ -27,6 +27,11 @@ Requirements (mini-PRD):
     [then] broken -- without this, refusing every run satisfies the row above
   / A pathspec that matches nothing on main is a failed measurement.
     [if] a renamed gate directory makes this check pass vacuously [then] broken
+  / A gate commit landing on main between the pin and the verdict voids the verdict.
+    [if] a run pinned before a mid-run gate change on main prints PASS or FAIL [then] broken
+  / Main moving only in non-gate files between the two reads changes nothing.
+    [if] a non-gate commit landing mid-run voids the verdict [then] broken -- without
+    this, refusing every run satisfies the row above
 """
 
 from __future__ import annotations
@@ -76,15 +81,21 @@ def pin_remote_branch(root: Path, remote: str, branch: str) -> str:
     return sha
 
 
-def require_gate_current(root: Path, tip: str, pathspec: tuple[str, ...]) -> str:
-    """Raise unless the newest commit at or before `tip` touching `pathspec`
-    is an ancestor of `root`'s HEAD. Returns that gate commit's SHA."""
+def newest_gate_commit(root: Path, tip: str, pathspec: tuple[str, ...]) -> str:
+    """The newest commit at or before `tip` touching `pathspec`; raises if none does."""
     gate_commit = _git_out(root, ["log", "-1", "--format=%H", tip, "--", *pathspec])
     if not gate_commit:
         raise TriageError(
             f"no commit reachable from {tip} touches {' '.join(pathspec)}; "
             "the gate pathspec is wrong, so gate freshness cannot be measured"
         )
+    return gate_commit
+
+
+def require_gate_current(root: Path, tip: str, pathspec: tuple[str, ...]) -> str:
+    """Raise unless the newest commit at or before `tip` touching `pathspec`
+    is an ancestor of `root`'s HEAD. Returns that gate commit's SHA."""
+    gate_commit = newest_gate_commit(root, tip, pathspec)
     proc = _git(root, ["merge-base", "--is-ancestor", gate_commit, "HEAD"])
     if proc.returncode == 0:
         return gate_commit
@@ -106,3 +117,11 @@ def require_gate_current_with_main() -> str:
     """Production entry: check the executing checkout against live main."""
     tip = pin_remote_branch(CHECKOUT_ROOT, CANONICAL_REMOTE, CANONICAL_BRANCH)
     return require_gate_current(CHECKOUT_ROOT, tip, GATE_PATHSPEC)
+
+
+def gate_commit_on_main() -> str:
+    """Re-read live main's newest gate commit NOW (a real network read, never cached).
+
+    The caller compares it with the run's opening pin before rendering a verdict."""
+    tip = pin_remote_branch(CHECKOUT_ROOT, CANONICAL_REMOTE, CANONICAL_BRANCH)
+    return newest_gate_commit(CHECKOUT_ROOT, tip, GATE_PATHSPEC)

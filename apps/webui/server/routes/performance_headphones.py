@@ -23,12 +23,14 @@ MOUNT_UNDER_API_PREFIX = True
 HEADPHONE_IPC_ROUTES: dict[str, tuple[str, str]] = {
     "headphone_mix": ("POST", "/api/v1/performance/headphones/mix"),
     "headphone_level": ("POST", "/api/v1/performance/headphones/level"),
+    "headphone_booth_level": ("POST", "/api/v1/performance/headphones/booth-level"),
     "channel_cue": ("POST", "/api/v1/performance/headphones/channel-cue"),
     "output_mode": ("POST", "/api/v1/performance/headphones/output-mode"),
     "head_delay_ms": ("POST", "/api/v1/performance/headphones/head-delay"),
     "headphone_outputs_refresh": ("POST", "/api/v1/performance/headphones/outputs/refresh"),
     "headphone_output_select": ("POST", "/api/v1/performance/headphones/outputs/select"),
     "headphone_master_select": ("POST", "/api/v1/performance/headphones/outputs/master"),
+    "headphone_booth_select": ("POST", "/api/v1/performance/headphones/outputs/booth"),
     "headphone_input_select": ("POST", "/api/v1/performance/headphones/inputs/select"),
     # CUEOUT-14: cue/master alignment.
     "headphone_alignment_mode": ("POST", "/api/v1/performance/headphones/alignment-mode"),
@@ -106,12 +108,14 @@ class IoDeviceAccessOut(BaseModel):
 class HeadphoneStateOut(BaseModel):
     mix: float
     level: float
+    booth_level: float = 0.5
     head_delay_ms: float
     alignment_mode: str
     master_delay_ms: float
     calibration: HeadphoneCalibrationOut
     selected_output_device_id: str | None
     selected_master_output_device_id: str | None
+    selected_booth_output_device_id: str | None = None
     selected_input_device_id: str | None
     output_mode: str
     # CUEOUT-26: "same_device" while split cue runs because MAIN and CUE are one
@@ -355,6 +359,22 @@ async def post_headphone_level(
 
 
 @router.post(
+    "/booth-level",
+    response_model=HeadphoneStateOut,
+    response_description="Headphone state after setting independent BOOTH GAIN",
+)
+async def post_headphone_booth_level(
+    request: Request,
+    body: Annotated[dict[str, Any], Body(..., title="HeadphoneBoothLevelBody")],
+) -> HeadphoneStateOut:
+    _require_page(request)
+    value = _validate_unit(body.get("value"))
+    return await _submit_headphone_command(
+        request, {"type": "headphone_booth_level", "value": value}
+    )
+
+
+@router.post(
     "/channel-cue",
     response_model=HeadphoneStateOut,
     response_description="Headphone state after toggling a channel CUE",
@@ -498,6 +518,26 @@ async def post_headphone_master_select(
     device_id = _validate_device_id(body.get("device_id"))
     return await _submit_headphone_command(
         request, {"type": "headphone_master_select", "device_id": device_id}
+    )
+
+
+@router.post(
+    "/outputs/booth",
+    response_model=HeadphoneStateOut,
+    response_description="Headphone state after selecting or clearing the BOOTH sink",
+)
+async def post_headphone_booth_select(
+    request: Request,
+    body: Annotated[dict[str, Any], Body(..., title="HeadphoneBoothOutputBody")],
+) -> HeadphoneStateOut:
+    _require_page(request)
+    raw = body.get("device_id")
+    if not isinstance(raw, str) or (raw != "" and raw.strip() == ""):
+        raise HTTPException(
+            status_code=400, detail="device_id must be empty or a non-blank string"
+        )
+    return await _submit_headphone_command(
+        request, {"type": "headphone_booth_select", "device_id": raw}
     )
 
 

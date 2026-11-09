@@ -15,6 +15,7 @@ from dataclasses import replace
 from typing import Any
 
 from apps.shared.pairings.repo import PairingsRepo
+from apps.shared.state.writer import StateWriter
 
 from .backend import BackendError, ConflictError, NotFoundError, Pairing
 from .http_pairings_schema import ensure_http_pairings_table
@@ -247,7 +248,7 @@ def _find_existing(
     return _row_to_pairing(row) if row is not None else None
 
 
-def _upsert_row(conn: sqlite3.Connection, pairing: Pairing) -> Pairing:
+def _upsert_row(conn: sqlite3.Connection, pairing: Pairing, writer: StateWriter) -> Pairing:
     # A reverse-stored CLI edge (``b -> a`` stored as out_of, or swapped either)
     # is this capture's edge. Update that primary key; do not insert a second one.
     # An HTTP row already covering the wire endpoints keeps the #4014 merge path.
@@ -284,7 +285,7 @@ def _upsert_row(conn: sqlite3.Connection, pairing: Pairing) -> Pairing:
         ),
     )
     if owns_edge:
-        PairingsRepo(conn, ensure_schema=True).add(
+        PairingsRepo(conn, ensure_schema=True, writer=writer).add(
             pairing.from_stable_id,
             pairing.to_stable_id,
             direction=_graph_direction(pairing.direction),
@@ -308,7 +309,7 @@ def _upsert_row(conn: sqlite3.Connection, pairing: Pairing) -> Pairing:
     return _row_to_pairing(stored)
 
 
-def create_http_pairing(conn: sqlite3.Connection, pairing: Pairing) -> Pairing:
+def create_http_pairing(conn: sqlite3.Connection, pairing: Pairing, *, writer: StateWriter) -> Pairing:
     """Insert or merge like :class:`InMemoryBackend.create_pairing`."""
     ensure_http_pairings_table(conn)
     # The supplied id is checked first: if it already names another edge, the
@@ -330,7 +331,7 @@ def create_http_pairing(conn: sqlite3.Connection, pairing: Pairing) -> Pairing:
                 snapshot=snapshot,
                 updated_at=pairing.updated_at,
             )
-            return _upsert_row(conn, updated)
+            return _upsert_row(conn, updated, writer)
         if pairing.snapshot is not None:
             if existing.snapshot is not None:
                 return existing
@@ -339,9 +340,9 @@ def create_http_pairing(conn: sqlite3.Connection, pairing: Pairing) -> Pairing:
                 snapshot=pairing.snapshot,
                 updated_at=pairing.updated_at,
             )
-            return _upsert_row(conn, updated)
+            return _upsert_row(conn, updated, writer)
         return existing
-    return _upsert_row(conn, pairing)
+    return _upsert_row(conn, pairing, writer)
 
 
 def delete_http_pairing(
@@ -349,6 +350,7 @@ def delete_http_pairing(
     pairing_id: str,
     *,
     expected_etag: str,
+    writer: StateWriter,
 ) -> None:
     from .etag import compute_etag, strip_quotes
 
@@ -372,7 +374,7 @@ def delete_http_pairing(
     matched = _graph_edge_row(conn, existing) if owns_edge else None
     conn.execute("DELETE FROM http_pairings WHERE pairing_id=?", (pairing_id,))
     if matched is not None:
-        PairingsRepo(conn, ensure_schema=True).remove(
+        PairingsRepo(conn, ensure_schema=True, writer=writer).remove(
             matched[0],
             matched[1],
             matched[2],

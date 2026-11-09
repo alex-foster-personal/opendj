@@ -37,6 +37,8 @@
 	display: flex;
 	height: calc(var(--rb-waverow-h) + var(--rb-waverow-stem-extra, 0px));
 	background: var(--rb-bg);
+	/* PERF-PAINT-10546: a bucketed wave canvas never shows outside the row. */
+	overflow: hidden;
 	/* No row divider (DECKUX-40, the maintainer Tue 6 Oct 2026: "Don't need row
 	   dividers"). Decks 1/2 and 3/4 still separate by their row fill. */
 	transition:
@@ -60,6 +62,8 @@
 	flex: 1 1 var(--rb-waverow-h);
 	min-height: var(--rb-waverow-h);
 	min-width: 0;
+	/* PERF-PAINT-10546: the bucketed canvas must not spill over StemWaveStack below. */
+	overflow: hidden;
 }
 .rb-waverow .wave-seek-canvas {
 	position: absolute;

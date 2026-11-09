@@ -4,6 +4,9 @@ The Web Audio engine is browser-owned. This router therefore never invents an
 engine result: it holds the agent request until the open page claims and
 executes the order through its normal typed IPC dispatcher.
 
+AGENT-10047: answered orders are timed (submit, claim, result); the last
+``ORDER_TIMINGS_MAX`` timings are served at ``GET /commands/timings``.
+
 AGENT-19: ``GET /commands/next?wait_ms=N`` is a LONG POLL. The leader page's
 claim loop used to re-ask every 50 ms on a ``setTimeout``, and a hidden tab's
 timers are throttled by the browser (Chrome aligns them to 1 s, and a timer
@@ -23,8 +26,10 @@ rather than hang. A claimed order waits for the page's result up to
 from __future__ import annotations
 
 import asyncio
+import math
 import time
-from collections.abc import Awaitable, Callable
+from collections import deque
+from collections.abc import Awaitable, Callable, Iterable
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Any, Literal
@@ -66,10 +71,25 @@ NO_LEADER_REASON = "no_leader"
 #: Body reason of the 503 an order gets when the engine quits before a page
 #: answers it (W43, INSTALL-36).
 ENGINE_QUITTING_REASON = "engine_quitting"
+#: AGENT-10047: how many completed order timings GET /commands/timings keeps (oldest dropped).
+ORDER_TIMINGS_MAX = 200
 
 
 class OrderBrokerClosed(RuntimeError):
     """The engine is quitting: no page will claim or answer this order."""
+
+
+@dataclass(frozen=True)
+class OrderTiming:
+    """AGENT-10047: one answered order's round trip, in ms, from monotonic stamps."""
+
+    type: str
+    claim_ms: float
+    execute_ms: float
+    total_ms: float
+
+    def as_body(self) -> dict[str, float]:
+        return {"claim_ms": self.claim_ms, "execute_ms": self.execute_ms, "total_ms": self.total_ms}
 
 
 @dataclass
@@ -78,6 +98,74 @@ class _PendingOrder:
     result: asyncio.Future[dict[str, Any]]
     claimed: bool = False
     claimed_event: asyncio.Event | None = None
+    submitted_at: float = 0.0
+    claimed_at: float | None = None
+    timing: OrderTiming | None = None
+
+
+def _order_type(order: dict[str, Any]) -> str:
+    kind = order.get("kind")
+    payload = order.get("payload")
+    if kind == "single" and isinstance(payload, dict):
+        cmd_type = payload.get("type")
+        if isinstance(cmd_type, str) and cmd_type:
+            return cmd_type
+    if kind is not None:
+        return str(kind)
+    return "unknown"
+
+
+def _nearest_rank(values: list[float], q: float) -> float | None:
+    if not values:
+        return None
+    ordered = sorted(values)
+    n = len(ordered)
+    return ordered[max(1, math.ceil(q * n)) - 1]
+
+
+def _spread(values: list[float]) -> dict[str, float | None]:
+    return {"p50": _nearest_rank(values, 0.5), "p95": _nearest_rank(values, 0.95)}
+
+
+def _timings_summary(timings: Iterable[OrderTiming], max_orders: int) -> dict[str, Any]:
+    items = list(timings)
+    count = len(items)
+    if count == 0:
+        empty = {"p50": None, "p95": None}
+        return {
+            "count": 0,
+            "max_orders": max_orders,
+            "total_ms": empty,
+            "claim_ms": empty,
+            "execute_ms": empty,
+            "by_type": {},
+        }
+    total_vals = [t.total_ms for t in items]
+    claim_vals = [t.claim_ms for t in items]
+    execute_vals = [t.execute_ms for t in items]
+    by_type: dict[str, list[OrderTiming]] = {}
+    for t in items:
+        by_type.setdefault(t.type, []).append(t)
+    by_type_out: dict[str, Any] = {}
+    for type_key in sorted(by_type):
+        bucket = by_type[type_key]
+        b_total = [t.total_ms for t in bucket]
+        b_claim = [t.claim_ms for t in bucket]
+        b_execute = [t.execute_ms for t in bucket]
+        by_type_out[type_key] = {
+            "count": len(bucket),
+            "total_ms": _spread(b_total),
+            "claim_ms": _spread(b_claim),
+            "execute_ms": _spread(b_execute),
+        }
+    return {
+        "count": count,
+        "max_orders": max_orders,
+        "total_ms": _spread(total_vals),
+        "claim_ms": _spread(claim_vals),
+        "execute_ms": _spread(execute_vals),
+        "by_type": by_type_out,
+    }
 
 
 def _fail_closed(pending: _PendingOrder) -> None:
@@ -99,10 +187,11 @@ def _engine_quitting() -> JSONResponse:
 
 
 class _OrderBroker:
-    def __init__(self) -> None:
+    def __init__(self, timings_max: int = ORDER_TIMINGS_MAX) -> None:
         self.pending: dict[str, _PendingOrder] = {}
         self._waiters: set[asyncio.Future[None]] = set()
         self.closed = False
+        self.timings: deque[OrderTiming] = deque(maxlen=timings_max)
 
     def close(self) -> None:
         """W43: the engine is quitting, so every held long poll answers now.
@@ -124,7 +213,12 @@ class _OrderBroker:
     def submit(self, order: dict[str, Any]) -> tuple[str, asyncio.Future[dict[str, Any]]]:
         order_id = uuid4().hex
         result: asyncio.Future[dict[str, Any]] = asyncio.get_running_loop().create_future()
-        pending = _PendingOrder(order=order, result=result, claimed_event=asyncio.Event())
+        pending = _PendingOrder(
+            order=order,
+            result=result,
+            claimed_event=asyncio.Event(),
+            submitted_at=time.monotonic(),
+        )
         self.pending[order_id] = pending
         if self.closed:
             _fail_closed(pending)
@@ -140,6 +234,7 @@ class _OrderBroker:
         for order_id, pending in self.pending.items():
             if not pending.claimed:
                 pending.claimed = True
+                pending.claimed_at = time.monotonic()
                 if pending.claimed_event is not None:
                     pending.claimed_event.set()
                 return order_id, pending.order
@@ -201,7 +296,24 @@ class _OrderBroker:
             raise RuntimeError(f"order {order_id} was not claimed by a performance page")
         if pending.result.done():
             raise RuntimeError(f"order {order_id} already has a result")
+        now = time.monotonic()
+        claimed_at = pending.claimed_at if pending.claimed_at is not None else now
+        claim_s = claimed_at - pending.submitted_at
+        execute_s = now - claimed_at
+        total_s = now - pending.submitted_at
+        timing = OrderTiming(
+            type=_order_type(pending.order),
+            claim_ms=round(claim_s * 1000, 3),
+            execute_ms=round(execute_s * 1000, 3),
+            total_ms=round(total_s * 1000, 3),
+        )
+        pending.timing = timing
+        self.timings.append(timing)
         pending.result.set_result(result)
+
+    def timings_summary(self) -> dict[str, Any]:
+        max_orders = self.timings.maxlen if self.timings.maxlen is not None else ORDER_TIMINGS_MAX
+        return _timings_summary(self.timings, max_orders)
 
     def discard(self, order_id: str) -> None:
         self.pending.pop(order_id, None)
@@ -519,7 +631,11 @@ def _master_mute_from_order(body: dict[str, Any]) -> bool | None:
     },
 )
 async def post_command(request: Request, body: dict[str, Any]) -> dict[str, Any]:
-    """Submit one declared order and wait for the real browser result."""
+    """Submit one declared order and wait for the real browser result.
+
+    AGENT-10047: a successful answer also carries ``timing`` with ``claim_ms``,
+    ``execute_ms`` and ``total_ms`` (milliseconds from monotonic stamps).
+    """
     if not _page_is_open(request):
         return JSONResponse(status_code=409, content={"client_open": False})
     try:
@@ -549,7 +665,10 @@ async def post_command(request: Request, body: dict[str, Any]) -> dict[str, Any]
             )
         result_deadline_s = _result_deadline_s(request)
         try:
-            return await _await_order_result(result, result_deadline_s)
+            document = await _await_order_result(result, result_deadline_s)
+            pending = broker.pending.get(order_id)
+            timing = pending.timing if pending is not None else None
+            return {**document, "timing": timing.as_body()} if timing is not None else document
         except TimeoutError:
             return _page_gone_response(result_deadline_s)
     except OrderBrokerClosed:
@@ -580,6 +699,12 @@ def _result_deadline_s_on_app(app: Any) -> float:
     if not isinstance(configured, int | float) or isinstance(configured, bool) or configured <= 0:
         raise TypeError(f"app.state.agent_order_result_deadline_s must be a positive number, got {configured!r}")
     return float(configured)
+
+
+@router.get("/timings", response_model=None)
+async def order_timings(request: Request) -> dict[str, Any]:
+    """AGENT-10047: count, p50 and p95 (ms) of the last ORDER_TIMINGS_MAX answered orders, overall and by_type."""
+    return _broker(request).timings_summary()
 
 
 @router.get("/next", response_model=None)

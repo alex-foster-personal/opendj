@@ -40,6 +40,7 @@
 		gridEditUnavailableReason,
 		gridShiftTitle,
 		intentForKey,
+		primaryModifierHeld,
 		intentForPress,
 		pressOffsetX,
 		type GridEditIntent,
@@ -138,9 +139,12 @@
 	}
 
 	function onKey(part: GridEditPart, event: KeyboardEvent): void {
-		const intent = intentForKey(part, event.key, event.shiftKey);
+		const primary = primaryModifierHeld(event, globalThis.navigator?.platform ?? '');
+		const intent = intentForKey(part, event.key, event.shiftKey, primary);
 		if (intent === null) return;
 		event.preventDefault();
+		// The playlist undo listens for Cmd+Z on window; this press is the grid's.
+		event.stopPropagation();
 		submit(intent);
 	}
 </script>

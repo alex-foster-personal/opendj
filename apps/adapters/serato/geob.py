@@ -623,17 +623,17 @@ class SeratoGEOB:
 # calls from ``write()`` / ``read()`` so per-track cues + beatgrid actually
 # land in (and are recovered from) the audio file's GEOB ID3 frames.
 #
-# Scope: MP3 (ID3v2) only for v1. FLAC/AIFF/WAV use different Serato tagging
-# conventions (FLAC: a Vorbis ``SERATO_MARKERS_V2`` base64 comment; AIFF:
-# APPL chunks). Those are out of scope here; the adapter downgrades to a
-# structured warning for non-MP3 files so the write doesn't silently lose
-# cue data.
+# Reads cover MP3 (ID3 at the start), AIFF (an ``ID3 `` chunk), FLAC (Vorbis
+# ``SERATO_MARKERS_V2`` / ``SERATO_BEATGRID`` comments) and MP4 (freeform
+# ``com.serato.dj`` atoms). ``write_geob_frames`` still refuses for every
+# format (mutagen was removed).
 #
 # Frame layout comes from ``encode_markers2`` / ``encode_beatgrid`` (see
-# above). Writing those bytes into an ID3 GEOB frame used mutagen, which
-# this Apache-2.0 product does not depend on. ``write_geob_frames`` refuses
-# without touching the file. ``read_geob_frames`` reads GEOB frames with the
-# in-house ID3 parser, so a read does not need mutagen importable.
+# above). ``read_geob_frames`` uses the in-house ID3, FLAC and MP4 parsers.
+
+
+class SeratoTagError(ValueError):
+    """A FLAC or MP4 file whose Serato tag cannot be read; the message names the file."""
 
 
 GEOB_OWNER: str = "DJ Pool"
@@ -643,11 +643,25 @@ GEOB_MARKERS2_DESC: str = "Serato Markers2"
 GEOB_BEATGRID_DESC: str = "Serato BeatGrid"
 GEOB_MARKERS_LEGACY_DESC: str = "Serato Markers_"
 
+FLAC_MARKERS2_KEY = "SERATO_MARKERS_V2"
+FLAC_BEATGRID_KEY = "SERATO_BEATGRID"
+MP4_SERATO_MEAN = "com.serato.dj"
+MP4_MARKERS2_NAME = "markersv2"
+MP4_BEATGRID_NAME = "beatgrid"
+
+_MP3_SUFFIXES = frozenset({".mp3"})
+_AIFF_SUFFIXES = frozenset({".aif", ".aiff"})
+_FLAC_SUFFIXES = frozenset({".flac"})
+_MP4_SUFFIXES = frozenset({".m4a", ".mp4"})
+_SERATO_READ_SUFFIXES = _MP3_SUFFIXES | _AIFF_SUFFIXES | _FLAC_SUFFIXES | _MP4_SUFFIXES
+
+_GEOB_TEXT_PREFIX = b"application/octet-stream\x00"
+
 
 def _is_mp3(path) -> bool:
     from pathlib import Path as _Path
 
-    return _Path(path).suffix.lower() == ".mp3"
+    return _Path(path).suffix.lower() in _MP3_SUFFIXES
 
 
 def write_geob_frames(
@@ -673,33 +687,146 @@ def write_geob_frames(
 
 
 def read_geob_frames(audio_path, *, strict: bool = True) -> SeratoGEOB:
-    """Read Serato GEOB frames from an MP3 with the in-house ID3 parser.
+    """Read Serato Markers2 and BeatGrid from MP3, AIFF, FLAC or MP4.
 
-    A missing file, a non-MP3 path, or a file with no ID3 tag returns an
-    empty bundle. A tag that is present but cannot be read also returns an
-    raises :class:`Id3Error` (or the ``OSError``) by default, so a caller that
-    counts losses cannot mistake "unreadable" for "no tag". Only a caller that
-    accepts an empty bundle for a broken tag passes ``strict=False``. This does
-    not import mutagen.
+    A missing file or an unsupported suffix returns an empty bundle. A tag that
+    is present but cannot be read raises :class:`Id3Error`, :class:`SeratoTagError`
+    or ``OSError`` by default; only ``strict=False`` yields an empty bundle.
     """
     from pathlib import Path as _Path
 
-    from apps.shared.id3v2 import Id3Error, read_tag
+    from apps.shared.id3v2 import Id3Error
 
     path = _Path(audio_path)
-    if not path.is_file() or not _is_mp3(path):
+    if not path.is_file():
+        return SeratoGEOB()
+    suffix = path.suffix.lower()
+    if suffix not in _SERATO_READ_SUFFIXES:
         return SeratoGEOB()
     try:
-        tag = read_tag(path)
-        if tag is None:
-            return SeratoGEOB()
-        _require_tag_frames(tag, path)
-        # Frame bodies are decoded here, so a malformed GEOB is an Id3Error too.
-        return _bundle_from_tag(tag)
-    except (Id3Error, OSError):
+        if suffix in _MP3_SUFFIXES:
+            return _read_id3_geob(path)
+        if suffix in _AIFF_SUFFIXES:
+            return _read_aiff_geob(path)
+        if suffix in _FLAC_SUFFIXES:
+            return _read_flac(path)
+        return _read_mp4(path)
+    except (Id3Error, SeratoTagError, OSError):
         if strict:
             raise
         return SeratoGEOB()
+
+
+def _read_id3_geob(path) -> SeratoGEOB:
+    from apps.shared.id3v2 import read_tag
+
+    tag = read_tag(path)
+    if tag is None:
+        return SeratoGEOB()
+    _require_tag_frames(tag, path)
+    return _bundle_from_tag(tag)
+
+
+def _read_aiff_geob(path) -> SeratoGEOB:
+    from apps.shared.id3v2 import read_aiff_tag
+
+    tag = read_aiff_tag(path)
+    if tag is None:
+        return SeratoGEOB()
+    _require_tag_frames(tag, path)
+    return _bundle_from_tag(tag)
+
+
+def _decode_text_tag(raw: bytes | str, desc: str, path, *, key: str = "") -> bytes:
+    import base64
+    import binascii
+    import re
+
+    if isinstance(raw, str):
+        try:
+            raw = raw.encode("ascii")
+        except UnicodeEncodeError as exc:
+            raise SeratoTagError(f"{path.name}: Serato tag is not ASCII") from exc
+    text = re.sub(rb"[\r\n\t ]+", b"", raw).rstrip(b"\x00")
+    text = text.rstrip(b"=")
+    if len(text) % 4 == 1:
+        label = f"{key} " if key else ""
+        raise SeratoTagError(f"{path.name}: {label}is not valid base64")
+    padded = text + b"=" * ((4 - len(text) % 4) % 4)
+    try:
+        decoded = base64.b64decode(padded, validate=True)
+    except (binascii.Error, ValueError) as exc:
+        label = f"{key} " if key else ""
+        raise SeratoTagError(f"{path.name}: {label}is not valid base64") from exc
+    if not decoded.startswith(_GEOB_TEXT_PREFIX):
+        raise SeratoTagError(f"{path.name}: Serato tag missing GEOB header")
+    rest = decoded[len(_GEOB_TEXT_PREFIX) :]
+    null = rest.find(b"\x00")
+    if null < 0:
+        raise SeratoTagError(f"{path.name}: Serato tag missing filename terminator")
+    rest = rest[null + 1 :]
+    null = rest.find(b"\x00")
+    if null < 0:
+        raise SeratoTagError(f"{path.name}: Serato tag missing description terminator")
+    if rest[:null].decode("ascii", "replace") != desc:
+        raise SeratoTagError(f"{path.name}: Serato tag description mismatch (expected {desc!r})")
+    return rest[null + 1 :]
+
+
+def _bundle_from_payloads(markers2: bytes | None, beatgrid: bytes | None) -> SeratoGEOB:
+    return SeratoGEOB(
+        markers2=parse_markers2(markers2) if markers2 is not None else Markers2(),
+        beatgrid=parse_beatgrid(beatgrid) if beatgrid is not None else BeatGrid(markers=()),
+    )
+
+
+def _read_flac(path) -> SeratoGEOB:
+    from apps.shared import flac_meta
+    from apps.shared.vorbis_comment import VorbisCommentError
+
+    try:
+        meta = flac_meta.read(path)
+    except (flac_meta.FlacError, VorbisCommentError) as exc:
+        raise SeratoTagError(f"{path.name}: FLAC metadata could not be read") from exc
+    markers_raw = meta.first(FLAC_MARKERS2_KEY)
+    beatgrid_raw = meta.first(FLAC_BEATGRID_KEY)
+    if markers_raw is None and beatgrid_raw is None:
+        return SeratoGEOB()
+    markers2 = (
+        _decode_text_tag(markers_raw, GEOB_MARKERS2_DESC, path, key=FLAC_MARKERS2_KEY)
+        if markers_raw is not None
+        else None
+    )
+    beatgrid = (
+        _decode_text_tag(beatgrid_raw, GEOB_BEATGRID_DESC, path, key=FLAC_BEATGRID_KEY)
+        if beatgrid_raw is not None
+        else None
+    )
+    return _bundle_from_payloads(markers2, beatgrid)
+
+
+def _read_mp4(path) -> SeratoGEOB:
+    from apps.shared import mp4_meta
+
+    try:
+        meta = mp4_meta.read(path)
+    except mp4_meta.Mp4Error as exc:
+        raise SeratoTagError(f"{path.name}: MP4 metadata could not be read") from exc
+    markers_raw = meta.freeform_bytes(MP4_MARKERS2_NAME, MP4_SERATO_MEAN)
+    beatgrid_raw = meta.freeform_bytes(MP4_BEATGRID_NAME, MP4_SERATO_MEAN)
+    if markers_raw is None and beatgrid_raw is None:
+        return SeratoGEOB()
+    markers2 = (
+        _decode_text_tag(markers_raw, GEOB_MARKERS2_DESC, path, key=MP4_MARKERS2_NAME)
+        if markers_raw is not None
+        else None
+    )
+    beatgrid = (
+        _decode_text_tag(beatgrid_raw, GEOB_BEATGRID_DESC, path, key=MP4_BEATGRID_NAME)
+        if beatgrid_raw is not None
+        else None
+    )
+    return _bundle_from_payloads(markers2, beatgrid)
 
 
 def _require_tag_frames(tag, path) -> None:
@@ -741,3 +868,10 @@ def _bundle_from_tag(tag) -> SeratoGEOB:
 def is_mp3_like_path(audio_path) -> bool:
     """Return True if ``audio_path`` has an ``.mp3`` suffix (v1 write scope)."""
     return _is_mp3(audio_path)
+
+
+def is_serato_readable_path(audio_path) -> bool:
+    """Return True if ``read_geob_frames`` can read Serato tags from this path."""
+    from pathlib import Path as _Path
+
+    return _Path(audio_path).suffix.lower() in _SERATO_READ_SUFFIXES

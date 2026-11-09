@@ -22,7 +22,25 @@ from apps.autodj.contract import (
     TransitionPlan,
 )
 from apps.autodj.http import build_service
+from apps.autodj.styles import STYLES
 from tests.autodj.fixtures import profile
+
+
+@pytest.mark.requirement("FXTRANS-9850")
+def test_list_styles_reports_echo_out_and_tempo_modes() -> None:
+    """[if] list_styles runs [then] echo_out and tempo modes match the catalog, [else stop]."""
+    by_name = {row.name: row for row in build_service().list_styles()}
+    echo = by_name["echo_out"]
+    assert echo.available is True and echo.unavailable_reason is None
+    assert echo.controls == ("fx_echo", "fx_dry", "play", "master")
+    assert echo.spotify == "Echo 1/2 cut end"
+    assert echo.bars == StyleBars(min=2, max=5, default=3)
+    assert echo.tempo_mode == "none"
+    assert by_name["cut"].tempo_mode == "none"
+    assert by_name["drop_swap"].tempo_mode == "none"
+    for name, style in STYLES.items():
+        if style.available and name not in ("cut", "drop_swap", "echo_out"):
+            assert by_name[name].tempo_mode == "sync_to_out"
 
 
 def test_service_satisfies_protocol_and_round_trips_a_proposal() -> None:

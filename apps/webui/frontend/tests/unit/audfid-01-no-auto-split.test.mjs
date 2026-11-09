@@ -33,6 +33,7 @@ test('if a same-device MAIN/CUE pair is assigned a split then the master goes mo
 	assert.deepEqual(shared, {
 		masterId: 'native:sony',
 		cueId: null,
+		boothId: null,
 		autoPinnedMaster: false,
 		cueRefusal: hp.sameDeviceCueRefusalText('af-sony-fun')
 	});
@@ -54,7 +55,55 @@ test('if the Mac app auto-pins MAIN to the macOS default then the room follows w
 		selectedMasterId: null,
 		currentRoomId: 'native:hyperboom'
 	});
-	assert.deepEqual(elsewhere, { masterId: null, cueId: 'native:sony', autoPinnedMaster: false });
+	assert.deepEqual(elsewhere, {
+		masterId: null,
+		cueId: 'native:sony',
+		boothId: null,
+		autoPinnedMaster: false
+	});
+});
+
+test('if a remembered CUE would share MAIN or room then it is not passed for restore even when live CUE is null', () => {
+	const roomRefused = hp.rememberedCueIdForRestore({
+		outputs: OUTPUTS,
+		rememberedCueId: 'native:sony',
+		liveCueId: null,
+		liveCueAssignment: {
+			masterId: null,
+			cueId: null,
+			autoPinnedMaster: false
+		},
+		selectedMasterId: null,
+		currentRoomId: 'native:sony'
+	});
+	assert.equal(roomRefused, null);
+	const pinnedOk = hp.rememberedCueIdForRestore({
+		outputs: OUTPUTS,
+		rememberedCueId: 'native:sony',
+		liveCueId: null,
+		liveCueAssignment: {
+			masterId: 'native:hyperboom',
+			cueId: null,
+			autoPinnedMaster: true
+		},
+		selectedMasterId: 'native:hyperboom',
+		currentRoomId: 'native:spk'
+	});
+	assert.equal(pinnedOk, 'native:sony');
+	const liveRefused = hp.rememberedCueIdForRestore({
+		outputs: OUTPUTS,
+		rememberedCueId: 'native:sony',
+		liveCueId: null,
+		liveCueAssignment: hp.dualSinkAssignment({
+			outputs: OUTPUTS,
+			selectedCueId: 'native:sony',
+			selectedMasterId: 'native:sony',
+			currentRoomId: 'native:sony'
+		}),
+		selectedMasterId: 'native:sony',
+		currentRoomId: 'native:sony'
+	});
+	assert.equal(liveRefused, null);
 });
 
 test('if the operator cannot still choose split cue then the explicit route is gone too', () => {
@@ -97,9 +146,7 @@ test('if a device change that puts CUE on MAIN keeps the CUE live or restores it
 		refresh,
 		/if \(assignment\.cueRefusal !== undefined\) \{\n\t\tmixerState\.headphones\.selected_output_device_id = null;/
 	);
-	assert.match(
-		refresh,
-		/rememberedCueId: assignment\.cueRefusal === undefined \? _rememberedCueId : null,/
-	);
+	assert.match(refresh, /rememberedCueId: cueSafeForRestore,/);
+	assert.match(refresh, /cueSafeForRestore = rememberedCueIdForRestore\(/);
 	assert.match(refresh, /access\.notices\.push\(assignment\.cueRefusal\);/);
 });

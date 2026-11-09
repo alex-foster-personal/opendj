@@ -7,7 +7,8 @@
  * SECOND audio sink: a dedicated cue `AudioContext` pinned with
  * `AudioContext.setSinkId`, fed from the engine graph through an AudioWorklet
  * sender/receiver bridge (SharedArrayBuffer ring when cross-origin-isolated,
- * MessageChannel otherwise). Everything that follows from that -- the
+ * MessageChannel otherwise). CUEOUT-13 adds an optional third BOOTH context
+ * fed from the room-mix tap. Everything that follows from that -- the
  * `navigator.mediaDevices` capability checks, the equal-power cue/master
  * blend, the generation counter that stops a stale async selection publishing
  * over a disposed monitor -- lives here and nowhere else.
@@ -17,7 +18,7 @@
  *     the four channel cue gains are the engine's nodes, not this module's;
  *   - `applyHeadphoneMix()`, from the two mixer setters;
  *   - `disposeHeadphoneMonitor()`, from route teardown;
- *   - the three device operations, which take a `MonitorSource` thunk so the
+ *   - the device operations, which take a `MonitorSource` thunk so the
  *     engine's graph is still built at exactly the point inside the operation
  *     it always was, where a failure is wrapped as a headphone error.
  *
@@ -81,6 +82,11 @@ import {
 	sameOutputDevice
 } from '$lib/player/main-cue-collision';
 import { loadMixerConfig, persistMixerConfig } from '$lib/player/mixer-config';
+import {
+	attachExtraMasterMuteNode,
+	isMasterMuted,
+	masterMuteGainValue
+} from '$lib/player/master-mute.svelte';
 import { deckStates, mixerState } from '$lib/player/state.svelte';
 import type { LivenessVerdict } from '$lib/rb/audio-output-liveness';
 // Types only: the monitor is imported when the cue output starts (see
@@ -230,6 +236,16 @@ export interface HeadphoneNodes {
 	bridgeReceiver: AudioWorkletNode | null;
 	cueDeviceId: string | null;
 	bridgeControl: Int32Array | null;
+	/** CUEOUT-13: an independent bridge carrying the room mix to BOOTH. */
+	boothGain: GainNode;
+	/** Parallel mute+delay so BOOTH never sees the practice/split cue blend. */
+	boothMute: GainNode;
+	boothDelay: DelayNode;
+	boothSender: AudioWorkletNode | null;
+	boothContext: (AudioContext & { setSinkId?: (sinkId: string) => Promise<void> }) | null;
+	boothReceiver: AudioWorkletNode | null;
+	boothDeviceId: string | null;
+	boothControl: Int32Array | null;
 	/** CUEOUT-22: the Mac app's native cue output, in place of `cueContext`. */
 	nativeCue: NativeCueSinkClient | null;
 	practiceCueMix: GainNode;
@@ -265,7 +281,9 @@ export function liveCalibrationGraph(): { ctx: AudioContext | null; nodes: Headp
 	return { ctx: _outputContext, nodes: _headphoneNodes };
 }
 let _cueBridgeReady: Promise<void> | null = null;
+let _boothBridgeReady: Promise<void> | null = null;
 let _bridgeUnderrunCount = 0;
+let _boothBridgeUnderrunCount = 0;
 /** Bumped by every teardown. An operation that started under an older
  * generation refuses to publish rather than resurrect a disposed monitor. */
 let _headphoneGeneration = 0;
@@ -704,6 +722,14 @@ export function applyHeadphoneMix(): void {
 	);
 }
 
+/** CUEOUT-13: BOOTH gain is independent of MASTER and HEADPHONE CUE. */
+export function setBoothLevel(value: number): void {
+	_assertUnit('booth level', value);
+	mixerState.headphones.booth_level = value;
+	const nodes = _headphoneNodes;
+	if (nodes !== null) _setMonitorParam(nodes, nodes.boothGain.gain, value);
+}
+
 export function setHeadDelayMs(value: unknown): void {
 	assertHeadDelayMs(value);
 	mixerState.headphones.head_delay_ms = value;
@@ -736,12 +762,15 @@ const MASTER_DELAY_LINE_S = 2;
 let _masterDelayNode: DelayNode | null = null;
 
 function _applyMasterDelay(): void {
+	const seconds = masterDelaySeconds(mixerState.headphones.master_delay_ms);
 	const node = _masterDelayNode;
-	if (node === null) return;
-	node.delayTime.setValueAtTime(
-		masterDelaySeconds(mixerState.headphones.master_delay_ms),
-		node.context.currentTime
-	);
+	if (node !== null) {
+		node.delayTime.setValueAtTime(seconds, node.context.currentTime);
+	}
+	const boothDelay = _headphoneNodes?.boothDelay;
+	if (boothDelay !== undefined) {
+		boothDelay.delayTime.setValueAtTime(seconds, boothDelay.context.currentTime);
+	}
 }
 
 export function createMasterDelayNode(context: AudioContext): DelayNode {
@@ -908,6 +937,9 @@ export type PinnedSinkReapplyPlan = {
 	applyCue: boolean;
 	clearCue: boolean;
 	restoreCue: boolean;
+	applyBooth: boolean;
+	clearBooth: boolean;
+	restoreBooth: boolean;
 	keepTwoOutputs: boolean;
 };
 
@@ -918,6 +950,10 @@ export function pinnedSinkReapplyPlan(args: {
 	nextCueId: string | null;
 	rememberedCueId: string | null;
 	cueClearedByOperator: boolean;
+	previousBoothId?: string | null;
+	nextBoothId?: string | null;
+	rememberedBoothId?: string | null;
+	boothClearedByOperator?: boolean;
 	outputs: readonly HeadphoneOutput[];
 }): PinnedSinkReapplyPlan {
 	if (args.previousMasterId !== null && typeof args.previousMasterId !== 'string') {
@@ -938,63 +974,44 @@ export function pinnedSinkReapplyPlan(args: {
 	if (typeof args.cueClearedByOperator !== 'boolean') {
 		throw new TypeError('cueClearedByOperator must be boolean');
 	}
+	const previousBoothId = args.previousBoothId ?? null;
+	const nextBoothId = args.nextBoothId ?? null;
+	const rememberedBoothId = args.rememberedBoothId ?? null;
+	const boothClearedByOperator = args.boothClearedByOperator ?? false;
+	for (const [name, value] of [
+		['previous booth id', previousBoothId],
+		['next booth id', nextBoothId],
+		['remembered booth id', rememberedBoothId]
+	] as const) {
+		if (value !== null && typeof value !== 'string') throw new TypeError(`${name} must be a string or null`);
+	}
+	if (typeof boothClearedByOperator !== 'boolean') throw new TypeError('boothClearedByOperator must be boolean');
 	const applyMaster =
 		args.nextMasterId !== null && args.nextMasterId !== args.previousMasterId;
 	const rememberedPresent =
 		args.rememberedCueId !== null &&
 		args.outputs.some((output) => output.id === args.rememberedCueId);
-	if (args.cueClearedByOperator) {
-		return {
-			applyMaster,
-			applyCue: false,
-			clearCue: false,
-			restoreCue: false,
-			keepTwoOutputs: false
-		};
-	}
-	if (args.previousCueId !== null && args.nextCueId === null) {
-		return {
-			applyMaster,
-			applyCue: false,
-			clearCue: true,
-			restoreCue: false,
-			keepTwoOutputs: true
-		};
-	}
-	if (args.previousCueId === null && args.nextCueId === null && rememberedPresent) {
-		return {
-			applyMaster,
-			applyCue: true,
-			clearCue: false,
-			restoreCue: true,
-			keepTwoOutputs: true
-		};
-	}
-	if (args.nextCueId !== null && args.nextCueId === args.previousCueId) {
-		return {
-			applyMaster,
-			applyCue: false,
-			clearCue: false,
-			restoreCue: false,
-			keepTwoOutputs: true
-		};
-	}
-	if (args.nextCueId !== null && args.nextCueId !== args.previousCueId) {
-		return {
-			applyMaster,
-			applyCue: true,
-			clearCue: false,
-			restoreCue: false,
-			keepTwoOutputs: true
-		};
-	}
-	return {
-		applyMaster,
-		applyCue: false,
-		clearCue: false,
-		restoreCue: false,
-		keepTwoOutputs: false
-	};
+	const cue = args.cueClearedByOperator
+		? { applyCue: false, clearCue: false, restoreCue: false, keepTwoOutputs: false }
+		: args.previousCueId !== null && args.nextCueId === null
+			? { applyCue: false, clearCue: true, restoreCue: false, keepTwoOutputs: true }
+			: args.previousCueId === null && args.nextCueId === null && rememberedPresent
+				? { applyCue: true, clearCue: false, restoreCue: true, keepTwoOutputs: true }
+				: args.nextCueId !== null && args.nextCueId !== args.previousCueId
+					? { applyCue: true, clearCue: false, restoreCue: false, keepTwoOutputs: true }
+					: { applyCue: false, clearCue: false, restoreCue: false, keepTwoOutputs: args.nextCueId !== null };
+	const rememberedBoothPresent =
+		rememberedBoothId !== null && args.outputs.some((output) => output.id === rememberedBoothId);
+	const booth = boothClearedByOperator
+		? { applyBooth: false, clearBooth: false, restoreBooth: false }
+		: previousBoothId !== null && nextBoothId === null
+			? { applyBooth: false, clearBooth: true, restoreBooth: false }
+			: previousBoothId === null && nextBoothId === null && rememberedBoothPresent
+				? { applyBooth: true, clearBooth: false, restoreBooth: true }
+				: nextBoothId !== null && nextBoothId !== previousBoothId
+					? { applyBooth: true, clearBooth: false, restoreBooth: false }
+					: { applyBooth: false, clearBooth: false, restoreBooth: false };
+	return { applyMaster, ...cue, ...booth };
 }
 
 export type HeadphoneAcquisitionKind = 'chooser' | 'unlock_and_enumerate' | 'unsupported';
@@ -1248,11 +1265,14 @@ export function preferredMasterOutputDeviceId(
 export type DualSinkAssignment = {
 	masterId: string | null;
 	cueId: string | null;
+	boothId: string | null;
 	autoPinnedMaster: boolean;
 	/** AUDFID-01: MAIN and CUE would be one physical output. The CUE is refused
 	 * (`cueId` is null) and this says why; split cue is never entered for the
 	 * operator, it is only ever their own `output_mode` choice. */
 	cueRefusal?: string;
+	/** CUEOUT-13: a BOOTH pick may not share the physical MAIN or CUE sink. */
+	boothRefusal?: string;
 };
 
 /** AUDFID-01: why a CUE cannot share MAIN's output. Names the explicit fix. */
@@ -1263,10 +1283,15 @@ export function sameDeviceCueRefusalText(label: string): string {
 	);
 }
 
+export function sameDeviceBoothRefusalText(role: 'MAIN' | 'HEADPHONE CUE', label: string): string {
+	return `BOOTH and ${role} are the same output (${label}), so BOOTH was not routed there. Pick another BOOTH device.`;
+}
+
 export function dualSinkAssignment(args: {
 	outputs: readonly HeadphoneOutput[];
 	selectedCueId: string | null;
 	selectedMasterId: string | null;
+	selectedBoothId?: string | null;
 	/** CUEOUT-22: where the room already plays (the macOS default output in
 	 * the Mac app). AUDFID-01: only ever used to see that a CUE would land on
 	 * the room's own output; MAIN is never auto-pinned to it (no hidden
@@ -1279,16 +1304,39 @@ export function dualSinkAssignment(args: {
 	if (args.selectedMasterId !== null && typeof args.selectedMasterId !== 'string') {
 		throw new TypeError('selected master output id must be a string or null');
 	}
+	if (args.selectedBoothId !== undefined && args.selectedBoothId !== null && typeof args.selectedBoothId !== 'string') {
+		throw new TypeError('selected booth output id must be a string or null');
+	}
 	const present = (id: string | null | undefined): id is string =>
 		id !== undefined && id !== null && args.outputs.some((output) => output.id === id);
 	const cueId = present(args.selectedCueId) ? args.selectedCueId : null;
 	const labelOf = (id: string): string => args.outputs.find((output) => output.id === id)?.label ?? id;
-	const refuseCue = (masterId: string | null, sharedId: string): DualSinkAssignment => ({
-		masterId,
-		cueId: null,
-		autoPinnedMaster: false,
-		cueRefusal: sameDeviceCueRefusalText(labelOf(sharedId))
-	});
+	const selectedBoothId = present(args.selectedBoothId) ? args.selectedBoothId : null;
+	const withBooth = (base: Omit<DualSinkAssignment, 'boothId' | 'boothRefusal'>): DualSinkAssignment => {
+		if (selectedBoothId === null) return { ...base, boothId: null };
+		if (base.masterId !== null && sameOutputDevice(args.outputs, base.masterId, selectedBoothId)) {
+			return {
+				...base,
+				boothId: null,
+				boothRefusal: sameDeviceBoothRefusalText('MAIN', labelOf(selectedBoothId))
+			};
+		}
+		if (base.cueId !== null && sameOutputDevice(args.outputs, base.cueId, selectedBoothId)) {
+			return {
+				...base,
+				boothId: null,
+				boothRefusal: sameDeviceBoothRefusalText('HEADPHONE CUE', labelOf(selectedBoothId))
+			};
+		}
+		return { ...base, boothId: selectedBoothId };
+	};
+	const refuseCue = (masterId: string | null, sharedId: string): DualSinkAssignment =>
+		withBooth({
+			masterId,
+			cueId: null,
+			autoPinnedMaster: false,
+			cueRefusal: sameDeviceCueRefusalText(labelOf(sharedId))
+		});
 	// CUEOUT-26: a MAIN the headphone jack has muted is no MAIN.
 	const usableMaster =
 		present(args.selectedMasterId) && !outputCannotSound(args.outputs, args.selectedMasterId)
@@ -1308,22 +1356,48 @@ export function dualSinkAssignment(args: {
 		if (cueId !== null && usableMaster === null && room !== null && sameOutputDevice(args.outputs, room, cueId)) {
 			return refuseCue(null, cueId);
 		}
-		return { masterId: usableMaster, cueId, autoPinnedMaster: false };
+		return withBooth({ masterId: usableMaster, cueId, autoPinnedMaster: false });
 	}
 	// A browser cannot see where the room plays: CUEOUT-09's speaker guess.
 	if (cueId !== null && usableMaster === null) {
 		const preferred = preferredMasterOutputDeviceId(args.outputs, cueId);
-		if (preferred !== null) return { masterId: preferred, cueId, autoPinnedMaster: true };
+		if (preferred !== null) return withBooth({ masterId: preferred, cueId, autoPinnedMaster: true });
 		// No other output can sound (a MacBook with wired headphones in its jack).
 		return refuseCue(null, cueId);
 	}
 	if (usableMaster === null) {
 		const speakers = preferredMasterOutputDeviceId(args.outputs, cueId);
 		if (speakers !== null && outputLooksLikeSpeakers(labelOf(speakers))) {
-			return { masterId: speakers, cueId, autoPinnedMaster: true };
+			return withBooth({ masterId: speakers, cueId, autoPinnedMaster: true });
 		}
 	}
-	return { masterId: usableMaster, cueId, autoPinnedMaster: false };
+	return withBooth({ masterId: usableMaster, cueId, autoPinnedMaster: false });
+}
+
+/** AUDFID-01: whether a remembered CUE may be passed to `pinnedSinkReapplyPlan`
+ * for restore. Revalidates against MAIN/room whenever live CUE is null so a
+ * prior same-device refusal cannot be reapplied after `selected_output_device_id`
+ * is already null. */
+export function rememberedCueIdForRestore(args: {
+	outputs: readonly HeadphoneOutput[];
+	rememberedCueId: string | null;
+	liveCueId: string | null;
+	liveCueAssignment: DualSinkAssignment;
+	selectedMasterId: string | null;
+	currentRoomId?: string | null | undefined;
+}): string | null {
+	if (args.rememberedCueId === null) return null;
+	if (args.liveCueAssignment.cueRefusal !== undefined) return null;
+	if (args.liveCueId !== null) return args.rememberedCueId;
+
+	const rememberedCheck = dualSinkAssignment({
+		outputs: args.outputs,
+		selectedCueId: args.rememberedCueId,
+		selectedMasterId: args.selectedMasterId,
+		currentRoomId: args.currentRoomId
+	});
+	if (rememberedCheck.cueRefusal !== undefined) return null;
+	return args.rememberedCueId;
 }
 
 /** `unknown` rather than a `{ setSinkId?: unknown }` shape: the real
@@ -1902,6 +1976,78 @@ async function _ensureCueBridge(mainContext: AudioContext, nodes: HeadphoneNodes
 	await ready;
 }
 
+/** CUEOUT-13: a separate pinned context fed from the room-mix tap. */
+async function _ensureBoothBridge(mainContext: AudioContext, nodes: HeadphoneNodes): Promise<void> {
+	if (nodes.boothSender !== null && nodes.boothContext !== null) return;
+	if (_boothBridgeReady !== null) {
+		await _boothBridgeReady;
+		return;
+	}
+	if (nativeCueSinkAvailable()) {
+		throw new Error('BOOTH output is unavailable in the Mac app because its native output bridge currently supports HEADPHONE CUE only.');
+	}
+	_requireCueBridgeApi(mainContext);
+	let ready: Promise<void> | null = null;
+	ready = (async () => {
+		const boothContext = new AudioContext({ sampleRate: mainContext.sampleRate });
+		await boothContext.suspend();
+		let wired: CueBridgeWireResult;
+		try {
+			const { wireCueBridgeNodes } = await import('$lib/player/cue-bridge-wiring');
+			wired = await wireCueBridgeNodes(mainContext, boothContext, {
+				onUnderrun: () => {
+					_boothBridgeUnderrunCount += 1;
+				},
+				onProcessorError: (side) => {
+					const message = `BOOTH bridge ${side} processor failed; BOOTH was silenced.`;
+					mixerState.headphones.routes.booth = { state: 'failed', selected: true };
+					mixerState.headphones.error = message;
+					recordPerfEvent('booth-bridge-processor-failed', message, null, 'error');
+					void boothContext.suspend().catch((error: unknown) => {
+						recordPerfEvent('booth-bridge-silence-failed', _detail(error), null, 'error');
+					});
+				}
+			});
+		} catch (error) {
+			if (_boothBridgeReady === ready) _boothBridgeReady = null;
+			await _closeCueContext(boothContext);
+			throw error;
+		}
+		if (_headphoneNodes !== nodes) {
+			wired.bridgeSender.disconnect();
+			wired.bridgeReceiver.disconnect();
+			await _closeCueContext(boothContext);
+			throw new Error('booth bridge start finished after the headphone graph was disposed');
+		}
+		nodes.boothGain.connect(wired.bridgeSender);
+		wired.bridgeReceiver.connect(boothContext.destination);
+		nodes.boothSender = wired.bridgeSender;
+		nodes.boothContext = boothContext;
+		nodes.boothReceiver = wired.bridgeReceiver;
+		nodes.boothControl = wired.bridgeControl;
+	})();
+	_boothBridgeReady = ready;
+	await ready;
+}
+
+async function _applyBoothSink(deviceId: string, nodes: HeadphoneNodes): Promise<void> {
+	const ctx = nodes.boothContext;
+	if (ctx === null) throw new Error('booth bridge is not initialized');
+	const sink = _requireCueSinkApi(ctx);
+	_outputMoveStarted();
+	try {
+		await withHeadphoneOperationTimeout('booth setSinkId', sink.setSinkId(browserSinkId(deviceId)));
+		nodes.boothDeviceId = deviceId;
+		if (ctx.state === 'suspended') await withHeadphoneOperationTimeout('booth resume', ctx.resume());
+	} catch (error) {
+		nodes.boothDeviceId = null;
+		await withHeadphoneOperationTimeout('booth silence', ctx.suspend()).catch((silenceError: unknown) => {
+			recordPerfEvent('booth-silence-failed', _detail(silenceError), null, 'error');
+		});
+		throw error;
+	}
+}
+
 /** CUEOUT-22: the sender worklet feeds the shell's native output through the
  * relay worker; there is no receiver and no second AudioContext. */
 async function _ensureNativeCueBridge(
@@ -2067,6 +2213,10 @@ function _installCueBridgeLiveness(
 let _rememberedCueId: string | null = null;
 /** MAIN / practice click, not a device vanishing. Blocks auto-restore. */
 let _cueClearedByOperator = false;
+/** Last selected BOOTH, retained across a temporary unplug. */
+let _rememberedBoothId: string | null = null;
+/** An explicit None selection prevents a later automatic restore. */
+let _boothClearedByOperator = false;
 
 function _onHeadphoneDeviceChange(): void {
 	void refreshHeadphoneOutputs(_lastMonitorSource).catch((error: unknown) => {
@@ -2442,32 +2592,49 @@ async function _reapplyPinnedSinks(
 			if (underlying === null) _cueWorkSettled(serial !== _cueSelectSerial, generation);
 			else _settleCueWorkWhen(underlying, serial, generation);
 		}
-		return;
 	}
-	if (!plan.applyCue && !plan.restoreCue) return;
-	const cueId = mixerState.headphones.selected_output_device_id;
-	if (cueId === null) return;
-	const { context, masterGain } = monitorSource();
-	const nodes = ensureHeadphoneGraph(context, masterGain);
-	// Counted and serialed like a CUE pick: the Test sees it switching, and a
-	// pick made meanwhile supersedes it, so its late landing is corrected back
-	// to the CUE shown once the last CUE work settles. Its own serial lets it
-	// supersede an earlier device change's CUE silence still landing.
-	const serial = ++_cueSelectSerial;
-	const generation = _headphoneGeneration;
-	_cuePicksInFlight += 1;
-	try {
-		await _ensureCueBridge(context, nodes);
-		await _applyCueSink(cueId, nodes);
-	} catch (error) {
-		if (serial === _cueSelectSerial) throw error;
-		_logSupersededPick(_detail(error));
-	} finally {
-		_cueWorkSettled(serial !== _cueSelectSerial, generation);
+	if (plan.applyCue || plan.restoreCue) {
+		const cueId = mixerState.headphones.selected_output_device_id;
+		if (cueId !== null) {
+			const { context, masterGain } = monitorSource();
+			const nodes = ensureHeadphoneGraph(context, masterGain);
+			const serial = ++_cueSelectSerial;
+			const generation = _headphoneGeneration;
+			_cuePicksInFlight += 1;
+			try {
+				await _ensureCueBridge(context, nodes);
+				await _applyCueSink(cueId, nodes);
+			} catch (error) {
+				if (serial === _cueSelectSerial) throw error;
+				_logSupersededPick(_detail(error));
+			} finally {
+				_cueWorkSettled(serial !== _cueSelectSerial, generation);
+			}
+			if (serial === _cueSelectSerial && generation === _headphoneGeneration) {
+				mixerState.headphones.active = true;
+				_startHeadphoneLiveness(nodes);
+			}
+		}
 	}
-	if (serial !== _cueSelectSerial || generation !== _headphoneGeneration) return;
-	mixerState.headphones.active = true;
-	_startHeadphoneLiveness(nodes);
+	if (plan.clearBooth) {
+		_outputMoveStarted();
+		const nodes = _headphoneNodes;
+		if (nodes?.boothContext !== null && nodes?.boothContext !== undefined && nodes.boothContext.state === 'running') {
+			await withHeadphoneOperationTimeout('booth suspend after device vanished', nodes.boothContext.suspend());
+		}
+		if (nodes !== null) nodes.boothDeviceId = null;
+		mixerState.headphones.routes.booth = { state: 'default', selected: false };
+	}
+	if (plan.applyBooth || plan.restoreBooth) {
+		const boothId = mixerState.headphones.selected_booth_output_device_id;
+		if (boothId !== null) {
+			const { context, masterGain } = monitorSource();
+			const nodes = ensureHeadphoneGraph(context, masterGain);
+			await _ensureBoothBridge(context, nodes);
+			await _applyBoothSink(boothId, nodes);
+			mixerState.headphones.routes.booth = { state: 'selected', selected: true };
+		}
+	}
 }
 
 /** A device change's automatic MAIN re-pin, counted and serialed like a MAIN
@@ -2559,6 +2726,12 @@ export function ensureHeadphoneGraph(context: AudioContext, masterGain: GainNode
 	splitRightMasterGain.gain.value = 0;
 	const bridgeInput = context.createGain();
 	bridgeInput.gain.value = 1;
+	const boothGain = context.createGain();
+	boothGain.gain.value = mixerState.headphones.booth_level;
+	const boothMute = context.createGain();
+	boothMute.gain.value = masterMuteGainValue(isMasterMuted());
+	const boothDelay = context.createDelay(MASTER_DELAY_LINE_S);
+	boothDelay.delayTime.value = masterDelaySeconds(mixerState.headphones.master_delay_ms);
 	cueSum.connect(cueMix);
 	masterGain.connect(masterMonitor);
 	masterMonitor.connect(masterMix);
@@ -2566,6 +2739,13 @@ export function ensureHeadphoneGraph(context: AudioContext, masterGain: GainNode
 	masterMix.connect(level);
 	level.connect(delay);
 	delay.connect(bridgeInput);
+	// CUEOUT-13: BOOTH taps the clean master bus on a parallel mute+delay
+	// chain so practice/split cue blend (which feeds _masterMuteGain then
+	// _masterDelayNode) never reaches the booth speakers.
+	masterGain.connect(boothMute);
+	boothMute.connect(boothDelay);
+	boothDelay.connect(boothGain);
+	attachExtraMasterMuteNode(boothMute);
 	// Keep analyser taps in the pulled graph through a silent sink.  They
 	// observe the app buses and add no audible path or physical-output claim.
 	if (masterSignalAnalyser !== null && cueSignalAnalyser !== null && meterSilence !== null) {
@@ -2589,6 +2769,14 @@ export function ensureHeadphoneGraph(context: AudioContext, masterGain: GainNode
 		bridgeReceiver: null,
 		cueDeviceId: null,
 		bridgeControl: null,
+		boothGain,
+		boothMute,
+		boothDelay,
+		boothSender: null,
+		boothContext: null,
+		boothReceiver: null,
+		boothDeviceId: null,
+		boothControl: null,
 		nativeCue: null,
 		practiceCueMix,
 		practiceMasterMix,
@@ -2639,13 +2827,21 @@ function _disposeHeadphoneGraph(): void {
 	_headphoneNodes = null;
 	_outputContext = null;
 	_cueBridgeReady = null;
+	_boothBridgeReady = null;
 	_bridgeUnderrunCount = 0;
+	_boothBridgeUnderrunCount = 0;
+	attachExtraMasterMuteNode(null);
 	if (nodes === null) return;
 	nodes.bridgeSender?.disconnect();
 	nodes.bridgeReceiver?.disconnect();
+	nodes.boothSender?.disconnect();
+	nodes.boothReceiver?.disconnect();
 	nodes.bridgeInput.disconnect();
 	if (nodes.cueContext !== null) {
 		void nodes.cueContext.close();
+	}
+	if (nodes.boothContext !== null) {
+		void nodes.boothContext.close();
 	}
 	if (nodes.nativeCue !== null) {
 		// Dropping the socket is what closes the device on the shell side.
@@ -2658,6 +2854,9 @@ function _disposeHeadphoneGraph(): void {
 		nodes.masterMix,
 		nodes.level,
 		nodes.delay,
+		nodes.boothGain,
+		nodes.boothMute,
+		nodes.boothDelay,
 		nodes.practiceCueMix,
 		nodes.practiceMasterMix,
 		nodes.masterSplitter,
@@ -2686,6 +2885,8 @@ export function disposeHeadphoneMonitor(): void {
 	_lastMonitorSource = undefined;
 	_rememberedCueId = null;
 	_cueClearedByOperator = false;
+	_rememberedBoothId = null;
+	_boothClearedByOperator = false;
 	_deferredReassertContext = null;
 	_landedMasterSinkId = null;
 	_mainReopenError = null;
@@ -2753,13 +2954,13 @@ export function publishIoDeviceAccessFailure(
 	}
 }
 
-function _savedOutputs(): { master: SavedIoDevice | null; cue: SavedIoDevice | null } {
+function _savedOutputs(): { master: SavedIoDevice | null; cue: SavedIoDevice | null; booth: SavedIoDevice | null } {
 	return loadMixerConfig().saved_outputs;
 }
 
 /** Remember the operator's pick by id and name, so a later session can say
  * what became of it. `null` forgets the role. */
-function _rememberSavedOutput(role: 'master' | 'cue', deviceId: string | null): void {
+function _rememberSavedOutput(role: 'master' | 'cue' | 'booth', deviceId: string | null): void {
 	const listed = deviceId === null ? undefined : mixerState.headphones.outputs.find((output) => output.id === deviceId);
 	persistMixerConfig({
 		saved_outputs: {
@@ -2860,7 +3061,9 @@ export async function refreshHeadphoneOutputs(monitorSource?: MonitorSource): Pr
 	const shownMasterBefore = mixerState.headphones.selected_master_output_device_id;
 	const previousMasterId = mixerState.headphones.selected_master_output_device_id;
 	const previousCueId = mixerState.headphones.selected_output_device_id;
+	const previousBoothId = mixerState.headphones.selected_booth_output_device_id;
 	if (previousCueId !== null) _rememberedCueId = previousCueId;
+	if (previousBoothId !== null) _rememberedBoothId = previousBoothId;
 	const reconciled = reconcileHeadphoneOutputRefresh(
 		mixerState.headphones.active,
 		mixerState.headphones.selected_output_device_id,
@@ -2872,6 +3075,7 @@ export async function refreshHeadphoneOutputs(monitorSource?: MonitorSource): Pr
 		outputs: mixerState.headphones.outputs,
 		selectedCueId: mixerState.headphones.selected_output_device_id,
 		selectedMasterId: mixerState.headphones.selected_master_output_device_id,
+		selectedBoothId: mixerState.headphones.selected_booth_output_device_id,
 		currentRoomId: _nativeCueSink === null ? undefined : _nativeRoomOutputId
 	});
 	// AUDFID-01: a CUE that now shares MAIN's output is dropped from the live
@@ -2881,6 +3085,7 @@ export async function refreshHeadphoneOutputs(monitorSource?: MonitorSource): Pr
 		mixerState.headphones.routes.cue = { state: 'default', selected: false };
 	}
 	mixerState.headphones.selected_master_output_device_id = assignment.masterId;
+	mixerState.headphones.selected_booth_output_device_id = assignment.boothId;
 	// A MAIN pick still in flight is retired: it must not republish, or
 	// fail, a MAIN this device change replaced. A sounding Test is cut too,
 	// even when nothing re-pins (MAIN cleared to the system default).
@@ -2894,21 +3099,36 @@ export async function refreshHeadphoneOutputs(monitorSource?: MonitorSource): Pr
 		// system default (counted, reopened, failed closed) before a Test trusts it.
 		if (shownMasterBefore !== null && _outputContext !== null) _reassertShownMasterSink(_landedMasterSinkId, _outputContext);
 	}
+	const cueSafeForRestore = rememberedCueIdForRestore({
+		outputs: mixerState.headphones.outputs,
+		rememberedCueId: _rememberedCueId,
+		liveCueId: mixerState.headphones.selected_output_device_id,
+		liveCueAssignment: assignment,
+		selectedMasterId: mixerState.headphones.selected_master_output_device_id,
+		currentRoomId: _nativeCueSink === null ? undefined : _nativeRoomOutputId
+	});
 	const plan = pinnedSinkReapplyPlan({
 		previousMasterId,
 		nextMasterId: assignment.masterId,
 		previousCueId,
 		nextCueId: mixerState.headphones.selected_output_device_id,
-		rememberedCueId: assignment.cueRefusal === undefined ? _rememberedCueId : null,
+		rememberedCueId: cueSafeForRestore,
 		cueClearedByOperator: _cueClearedByOperator,
+		previousBoothId,
+		nextBoothId: assignment.boothId,
+		rememberedBoothId: assignment.boothRefusal === undefined ? _rememberedBoothId : null,
+		boothClearedByOperator: _boothClearedByOperator,
 		outputs: mixerState.headphones.outputs
 	});
 	if (plan.keepTwoOutputs) {
 		_setOutputMode('two_outputs', 'device_change');
 	}
-	if (plan.restoreCue && _rememberedCueId !== null) {
-		mixerState.headphones.selected_output_device_id = _rememberedCueId;
+	if (plan.restoreCue && cueSafeForRestore !== null) {
+		mixerState.headphones.selected_output_device_id = cueSafeForRestore;
 		mixerState.headphones.active = true;
+	}
+	if (plan.restoreBooth && _rememberedBoothId !== null) {
+		mixerState.headphones.selected_booth_output_device_id = _rememberedBoothId;
 	}
 	const inputStillPresent =
 		mixerState.headphones.selected_input_device_id !== null &&
@@ -2933,7 +3153,8 @@ export async function refreshHeadphoneOutputs(monitorSource?: MonitorSource): Pr
 				saved: _savedOutputs(),
 				outputs: listing.outputs,
 				selectedMasterId: mixerState.headphones.selected_master_output_device_id,
-				selectedCueId: mixerState.headphones.selected_output_device_id
+				selectedCueId: mixerState.headphones.selected_output_device_id,
+				selectedBoothId: mixerState.headphones.selected_booth_output_device_id
 			})
 		);
 	}
@@ -2952,6 +3173,10 @@ export async function refreshHeadphoneOutputs(monitorSource?: MonitorSource): Pr
 	if (assignment.cueRefusal !== undefined) {
 		access.notices.push(assignment.cueRefusal);
 		recordPerfEvent('cue-refused-same-device', assignment.cueRefusal, null, 'warn');
+	}
+	if (assignment.boothRefusal !== undefined) {
+		access.notices.push(assignment.boothRefusal);
+		recordPerfEvent('booth-refused-same-device', assignment.boothRefusal, null, 'warn');
 	}
 	mixerState.headphones.device_access = access;
 	applyHeadphoneMix();
@@ -3154,6 +3379,13 @@ async function _autoSelectSoleBluetoothCue(monitorSource: MonitorSource, generat
 /** AUDFID-01: throw the same-output refusal for a CUE pick that would land
  * on MAIN's output (the pinned MAIN, or in the Mac app the room's output). */
 function _assertCueNotOnMainOutput(cueId: string): void {
+	const boothId = mixerState.headphones.selected_booth_output_device_id;
+	if (boothId !== null && sameOutputDevice(mixerState.headphones.outputs, boothId, cueId)) {
+		const label = mixerState.headphones.outputs.find((output) => output.id === boothId)?.label ?? boothId;
+		const refusal = sameDeviceBoothRefusalText('HEADPHONE CUE', label);
+		recordPerfEvent('cue-refused-same-device-as-booth', refusal, null, 'warn');
+		throw new Error(refusal);
+	}
 	const assignment = dualSinkAssignment({
 		outputs: mixerState.headphones.outputs,
 		selectedCueId: cueId,
@@ -3163,6 +3395,58 @@ function _assertCueNotOnMainOutput(cueId: string): void {
 	if (assignment.cueRefusal === undefined) return;
 	recordPerfEvent('cue-refused-same-device', assignment.cueRefusal, null, 'warn');
 	throw new Error(assignment.cueRefusal);
+}
+
+/** CUEOUT-13: pin or clear the independent room-mix BOOTH sink. */
+export async function selectBoothOutput(deviceId: string, monitorSource: MonitorSource): Promise<void> {
+	if (typeof deviceId !== 'string') throw new TypeError('booth output device id must be a string');
+	if (deviceId === '') {
+		const ctx = _headphoneNodes?.boothContext ?? null;
+		_outputMoveStarted();
+		if (ctx !== null && ctx.state === 'running') {
+			await withHeadphoneOperationTimeout('booth silence', ctx.suspend());
+		}
+		if (_headphoneNodes !== null) _headphoneNodes.boothDeviceId = null;
+		mixerState.headphones.selected_booth_output_device_id = null;
+		mixerState.headphones.routes.booth = { state: 'default', selected: false };
+		_rememberedBoothId = null;
+		_boothClearedByOperator = true;
+		_rememberSavedOutput('booth', null);
+		return;
+	}
+	if (deviceId.trim() === '') throw new TypeError('booth output device id must be empty or non-blank');
+	if (nativeCueSinkAvailable()) {
+		throw new Error('BOOTH output is unavailable in the Mac app because its native output bridge currently supports HEADPHONE CUE only.');
+	}
+	_requireOutputSelectionApi();
+	assertHeadphoneOutputSelection(deviceId, mixerState.headphones.outputs);
+	const assignment = dualSinkAssignment({
+		outputs: mixerState.headphones.outputs,
+		selectedCueId: mixerState.headphones.selected_output_device_id,
+		selectedMasterId: mixerState.headphones.selected_master_output_device_id,
+		selectedBoothId: deviceId
+	});
+	if (assignment.boothRefusal !== undefined) {
+		recordPerfEvent('booth-refused-same-device', assignment.boothRefusal, null, 'warn');
+		throw new Error(assignment.boothRefusal);
+	}
+	const previous = mixerState.headphones.selected_booth_output_device_id;
+	const { context, masterGain } = monitorSource();
+	const nodes = ensureHeadphoneGraph(context, masterGain);
+	try {
+		await _ensureBoothBridge(context, nodes);
+		await _applyBoothSink(deviceId, nodes);
+		mixerState.headphones.selected_booth_output_device_id = deviceId;
+		mixerState.headphones.routes.booth = { state: 'selected', selected: true };
+		_rememberedBoothId = deviceId;
+		_boothClearedByOperator = false;
+		_rememberSavedOutput('booth', deviceId);
+		_lastMonitorSource = monitorSource;
+	} catch (error) {
+		mixerState.headphones.selected_booth_output_device_id = previous;
+		mixerState.headphones.routes.booth = { state: 'failed', selected: previous !== null };
+		throw _headphoneError('booth output selection failed', error);
+	}
 }
 
 export async function selectHeadphoneOutput(
@@ -3368,6 +3652,13 @@ export async function selectMasterOutput(
 	// pick, so it takes no serial and supersedes nothing.
 	assertMasterCanSound(deviceId, mixerState.headphones.outputs);
 	const cueId = mixerState.headphones.selected_output_device_id;
+	const boothId = mixerState.headphones.selected_booth_output_device_id;
+	if (boothId !== null && sameOutputDevice(mixerState.headphones.outputs, deviceId, boothId)) {
+		const label = mixerState.headphones.outputs.find((output) => output.id === boothId)?.label ?? boothId;
+		const refusal = sameDeviceBoothRefusalText('MAIN', label);
+		recordPerfEvent('master-refused-same-device-as-booth', refusal, null, 'warn');
+		throw new Error(refusal);
+	}
 	if (
 		mixerState.headphones.output_mode === 'two_outputs' &&
 		cueId !== null &&
@@ -3600,6 +3891,7 @@ export async function restoreSavedOutputsAtLaunch(monitorSource: MonitorSource):
 		listed: mixerState.headphones.device_access.status === 'listed',
 		mainIsSystemOutput: mainFollowsSystemOutput()
 	});
+	const savedBooth = _savedOutputs().booth;
 	switch (plan.kind) {
 		case 'skip':
 			_publishLaunchRestore({ status: 'skipped', message: plan.reason, main_label: null, cue_label: null, missing: [] });
@@ -3620,6 +3912,13 @@ export async function restoreSavedOutputsAtLaunch(monitorSource: MonitorSource):
 				// on every relaunch while the maintainer listened on his Sony headphones).
 				if (plan.moveMain) await selectMasterOutput(plan.master.id, monitorSource);
 				await selectHeadphoneOutput(plan.cue.id, monitorSource);
+				if (
+					!nativeCueSinkAvailable() &&
+					savedBooth !== null &&
+					mixerState.headphones.outputs.some((output) => output.id === savedBooth.id)
+				) {
+					await selectBoothOutput(savedBooth.id, monitorSource);
+				}
 			} catch (error) {
 				const message = `Could not restore MAIN ${plan.master.label} and CUE ${plan.cue.label}: ${_detail(error)}`;
 				_publishLaunchRestore({ status: 'failed', message, main_label: plan.master.label, cue_label: plan.cue.label, missing: [] });

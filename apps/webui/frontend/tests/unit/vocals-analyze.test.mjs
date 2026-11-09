@@ -12,6 +12,8 @@
  *    row could analyze another
  *  - if VocalAnalyzeButton stops calling analyzeVocalsFromStems then the
  *    button and the production HTTP contract drift apart
+ *  - if VocalAnalyzeButton drops data-agent-refusal or the refresh calls then
+ *    agents lose the raw category and "already analyzed" leaves the row stale
  */
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
@@ -34,27 +36,36 @@ test('analyzeVocalsFromStems is pinned to the mounted API request contract', () 
 	const source = readFileSync(`${SRC}/lib/rb/api-rb.ts`, 'utf8');
 	assert.match(source, /fetch\(`\$\{RB_API_BASE\}\/api\/v1\/vocals\/analyze`, \{/);
 	assert.match(source, /method: 'POST'/);
-	assert.match(source, /body: JSON\.stringify\(\{ stable_ids: \[stable_id\], mode: 'from-stems' \}\)/);
+	assert.match(
+		source,
+		/body: JSON\.stringify\(\{ stable_ids: \[stable_id\], mode: 'from-stems' \}\)/
+	);
 });
 
 test('VocalAnalyzeButton calls analyzeVocalsFromStems, not a fetch of its own', () => {
-	const source = readFileSync(
-		`${SRC}/lib/components/rb/browser/VocalAnalyzeButton.svelte`,
-		'utf8'
-	);
+	const source = readFileSync(`${SRC}/lib/components/rb/browser/VocalAnalyzeButton.svelte`, 'utf8');
 	assert.match(source, /import \{ analyzeVocalsFromStems,/);
 	assert.match(source, /analyzeVocalsFromStems\(stableId\)/);
 	assert.doesNotMatch(source, /fetch\(/);
 });
 
 test('VocalAnalyzeButton gates disabled/tooltip on vocalsAnalyzeRefusal, not its own logic', () => {
-	const source = readFileSync(
-		`${SRC}/lib/components/rb/browser/VocalAnalyzeButton.svelte`,
-		'utf8'
+	const source = readFileSync(`${SRC}/lib/components/rb/browser/VocalAnalyzeButton.svelte`, 'utf8');
+	assert.match(
+		source,
+		/import \{[^}]*\bvocalsAnalyzeRefusal\b[^}]*\} from '\$lib\/rb\/vocals-analyze-refusal'/
 	);
-	assert.match(source, /import \{ vocalsAnalyzeRefusal \} from '\$lib\/rb\/vocals-analyze-refusal'/);
 	assert.match(source, /vocalsAnalyzeRefusal\(stems\)/);
 	assert.match(source, /disabled = \$derived\(refusal !== null \|\| busy\)/);
+});
+
+test('VocalAnalyzeButton uses vocalsAnalyzeOutcome, both refresh paths and data-agent-refusal (#9653)', () => {
+	const source = readFileSync(`${SRC}/lib/components/rb/browser/VocalAnalyzeButton.svelte`, 'utf8');
+	assert.doesNotMatch(source, /Vocal analysis refused/);
+	assert.match(source, /data-agent-refusal=\{serverRefusal \?\? undefined\}/);
+	assert.match(source, /vocalsAnalyzeOutcome\(stableId, result\)/);
+	assert.match(source, /requestTracksRefresh\(\[stableId\]\)/);
+	assert.match(source, /refreshLoadedDeckVocalsFromServer\(\[stableId\]\)/);
 });
 
 // ------------------------------------------------- vocalsAnalyzeRefusal
@@ -90,8 +101,5 @@ test('a ready stem bundle is not refused', () => {
 test('TrackTable wires the button into the stems column with the row stable_id', () => {
 	const source = readFileSync(`${SRC}/lib/components/rb/browser/TrackTable.svelte`, 'utf8');
 	assert.match(source, /import VocalAnalyzeButton from '\.\/VocalAnalyzeButton\.svelte'/);
-	assert.match(
-		source,
-		/<VocalAnalyzeButton stableId=\{row\.stable_id\} stems=\{row\.stems\} \/>/
-	);
+	assert.match(source, /<VocalAnalyzeButton stableId=\{row\.stable_id\} stems=\{row\.stems\} \/>/);
 });

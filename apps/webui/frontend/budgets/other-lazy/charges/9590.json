@@ -1,0 +1,9 @@
+{
+  "bytes": 2048,
+  "measured_main": 474951,
+  "measured_with_pr": 475834,
+  "sha": "72b47b0437",
+  "date": "Sun 8 Nov 2026",
+  "reason": "PR #9590 (feat(webui): deck context menu rekordbox and Serato parity (#9448)) grows the other-lazy surface. Measured: CI bundle check of 72b47b0437, +883 B gzip; ceiled to KiB.",
+  "payback": "none planned; the growth is the feature's own code on this surface"
+}

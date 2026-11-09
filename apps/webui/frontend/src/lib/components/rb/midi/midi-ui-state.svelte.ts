@@ -34,13 +34,26 @@
  *       stay null
  *   ✔︎ Installed-maps live refresh handles BOTH the targeted 'midi_maps' kind
  *     AND resync (events-bus.ts: "a consumer that handles a kind MUST also
- *     handle resync"), coalesced, so a PUT/DELETE the socket missed during a
- *     gap/reconnect/slow-consumer close still reaches the registry instead of
+ *     handle resync"), coalesced via _reloadInstalledMaps, including the
+ *     panel's first load after grant, so a PUT/DELETE the socket missed during
+ *     a gap/reconnect/slow-consumer close still reaches the registry instead of
  *     staying stale until another edit or a page reload.
  *     [if] the socket reconnects after a missed midi_maps PUT and the
  *       registry is not reloaded [then ⛔️] broken
+ *     [if] a midi_maps event lands while the first installed-map load is in
+ *       flight [then ⛔️] the newest maps must land last, not a stale snapshot
+ *   ✔︎ MIDI learn: a cc source collects 600 ms and binding flags come from
+ *     inference; a note binds on the first message.
+ *     [if] ambiguous learn calls onBind [then ⛔️] broken
  */
 
+import {
+	LearnWindow,
+	buildLearnedBinding,
+	type InferredControl,
+	type InferredControlKind
+} from '$lib/rb/midi/learn-infer';
+import type { LearnLogEntry, MidiAction, MidiBinding, MidiSource } from '$lib/rb/midi/midi-types';
 import { subscribeKind, subscribeResync } from '$lib/api/events-bus';
 import { coalesce } from '$lib/rb/coalesce';
 import { api } from '$lib/api/client';
@@ -119,6 +132,20 @@ let _detachMidiGlue: (() => void) | null = null;
 
 export type MidiPanelWidthMode = 'compact' | 'expanded' | 'floating';
 
+export type MidiLearnTarget = { action: MidiAction; shift?: boolean };
+export type MidiLearnState =
+	| { phase: 'idle' }
+	| { phase: 'armed'; target: MidiLearnTarget }
+	| { phase: 'capturing'; target: MidiLearnTarget; source: MidiSource }
+	| { phase: 'ambiguous'; target: MidiLearnTarget; reason: string }
+	| {
+			phase: 'bound';
+			target: MidiLearnTarget;
+			deviceId: string;
+			binding: MidiBinding;
+			kind: InferredControlKind;
+	  };
+
 export const midiUi: {
 	panelOpen: boolean;
 	widthMode: MidiPanelWidthMode;
@@ -133,6 +160,7 @@ export const midiUi: {
 	 * lastError: the BUILTIN maps are still live when this is set, so it is a
 	 * degraded state to show, not a failed permission request. */
 	installedMapsError: string | null;
+	learn: MidiLearnState;
 } = $state({
 	panelOpen: false,
 	widthMode: 'compact' as MidiPanelWidthMode,
@@ -140,7 +168,8 @@ export const midiUi: {
 	lastError: null,
 	logPopoutOpen: false,
 	logPopoutMinimized: false,
-	installedMapsError: null
+	installedMapsError: null,
+	learn: { phase: 'idle' } as MidiLearnState
 });
 
 export function toggleMidiPanel(): void {
@@ -241,18 +270,14 @@ let _inFlight: { generation: number; done: Promise<void> } | null = null;
  * handling: the error lands in midiUi.lastError (rendered red in the panel);
  * the panel IS the failure surface. Expected denials skip console.error. */
 export async function requestMidiAccess(): Promise<void> {
-	if (midiUi.requestPending) {
-		throw new Error('requestMidiAccess: a request is already pending');
-	}
+	if (midiUi.requestPending) throw new Error('requestMidiAccess: a request is already pending');
 	const generation = ++_requestGeneration;
 	const done = _requestMidiAccess(generation);
 	const entry = { generation, done };
 	_inFlight = entry;
-	try {
-		await done;
-	} finally {
+	await done.finally(() => {
 		if (_inFlight === entry) _inFlight = null;
-	}
+	});
 }
 
 async function _requestMidiAccess(generation: number): Promise<void> {
@@ -260,13 +285,8 @@ async function _requestMidiAccess(generation: number): Promise<void> {
 	midiUi.requestPending = true;
 	let attachedForThisRequest = false;
 	try {
-		const {
-			initMidi,
-			releaseMidiInputs,
-			registerAllDeviceMaps,
-			attachMidiGlue,
-			loadInstalledDeviceMaps
-		} = await _loadMidiEngine();
+		const { initMidi, releaseMidiInputs, registerAllDeviceMaps, attachMidiGlue } =
+			await _loadMidiEngine();
 		if (!_mapsRegistered) {
 			registerAllDeviceMaps();
 			_mapsRegistered = true;
@@ -314,13 +334,7 @@ async function _requestMidiAccess(generation: number): Promise<void> {
 			// maps after event-bus gaps".
 			subscribeResync(_reloadInstalledMapsAfterLibraryChange);
 		}
-		try {
-			await loadInstalledDeviceMaps();
-			midiUi.installedMapsError = null;
-		} catch (exc) {
-			midiUi.installedMapsError = exc instanceof Error ? exc.message : String(exc);
-			console.error('[midi-panel] installed device maps failed to load', exc);
-		}
+		await _reloadInstalledMaps();
 	} catch (exc) {
 		// A denied or unsupported request never owns an active MIDI route. Tear
 		// down the glue this attempt attached, including the 20 Hz meter timer,
@@ -363,6 +377,90 @@ export function disableMidi(): void {
 	_requestGeneration += 1;
 	detachMidiGlueForRouteUnmount();
 	_loadedMidiEngine?.releaseMidiInputs();
+	cancelMidiLearn();
+}
+
+// ----- midi learn
+
+let _learnWindow: LearnWindow | null = null;
+let _learnTarget: MidiLearnTarget | null = null;
+let _learnOnBind: ((deviceId: string, binding: MidiBinding) => void | Promise<void>) | null = null;
+
+function _finishLearn(result: InferredControl, entries: LearnLogEntry[]): void {
+	void _loadedMidiEngine?.registerLearnTap(null);
+	_learnWindow = null;
+	const target = _learnTarget;
+	if (target === null) return;
+
+	if (result.kind === 'ambiguous') {
+		midiUi.learn = { phase: 'ambiguous', target, reason: result.reason };
+		return;
+	}
+
+	const binding = buildLearnedBinding(target, result);
+	if (binding === null) {
+		midiUi.learn = {
+			phase: 'ambiguous',
+			target,
+			reason: 'could not build a binding from the captured window'
+		};
+		return;
+	}
+
+	const deviceId = entries[0]?.deviceId ?? '';
+	midiUi.learn = { phase: 'bound', target, deviceId, binding, kind: result.kind };
+
+	const onBind = _learnOnBind;
+	if (onBind === null) return;
+	void Promise.resolve(onBind(deviceId, binding)).catch((exc) => {
+		midiUi.lastError = exc instanceof Error ? exc.message : String(exc);
+		console.error('[midi-panel] learn save failed', exc);
+	});
+}
+
+/** Arm learn mode for one action. Finished bindings go to onBind (#9781 save seam). */
+export async function armMidiLearn(
+	target: MidiLearnTarget,
+	onBind: (deviceId: string, binding: MidiBinding) => void | Promise<void>
+): Promise<void> {
+	cancelMidiLearn();
+	_learnTarget = target;
+	_learnOnBind = onBind;
+	midiUi.learn = { phase: 'armed', target };
+	_learnWindow = new LearnWindow(_finishLearn);
+	const engine = await _loadMidiEngine();
+	engine.registerLearnTap(feedMidiLearnEntry);
+}
+
+/** Feed one learn-log row while armed or capturing (tests and the learn tap). */
+export function feedMidiLearnEntry(entry: LearnLogEntry): void {
+	const phase = midiUi.learn.phase;
+	if (phase !== 'armed' && phase !== 'capturing') return;
+	const window = _learnWindow;
+	if (window === null) return;
+	window.push(entry);
+	if (window.capturing && phase === 'armed' && entry.decoded !== null) {
+		midiUi.learn = { phase: 'capturing', target: _learnTarget!, source: entry.decoded };
+	}
+}
+
+export async function retryMidiLearn(): Promise<void> {
+	if (midiUi.learn.phase !== 'ambiguous') {
+		throw new Error('retryMidiLearn: nothing to retry');
+	}
+	const target = midiUi.learn.target;
+	const onBind = _learnOnBind;
+	if (onBind === null) throw new Error('retryMidiLearn: nothing to retry');
+	await armMidiLearn(target, onBind);
+}
+
+export function cancelMidiLearn(): void {
+	_learnWindow?.cancel();
+	_learnWindow = null;
+	_learnTarget = null;
+	_learnOnBind = null;
+	void _loadedMidiEngine?.registerLearnTap(null);
+	midiUi.learn = { phase: 'idle' };
 }
 
 /** The rb.midi_enabled setting, runtime-aware (settings/apply.ts). Enabling

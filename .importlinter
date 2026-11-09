@@ -164,6 +164,7 @@ enforced =
     set_notes
     streaming_transfer
     tags
+    transition_score
 delivery =
     webui
     engine_core

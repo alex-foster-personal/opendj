@@ -384,7 +384,8 @@ describe('a configured factor reaches both wheel seams', () => {
 				dial = next;
 			}
 		});
-		knobs.knobUi.selectedIds = ['1:low'];
+		// Selecting through the API binds the page-level wheel (PERF-UI-13: never on mount).
+		knobs.setKnobSelection(['1:low']);
 
 		const handler = globalThis.__listeners.get('wheel');
 		assert.equal(typeof handler, 'function', 'knob-control never bound its page-level wheel');

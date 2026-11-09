@@ -775,9 +775,13 @@ mod tests {
     fn the_builtin_export_holds_every_page_map() {
         let m = MapSet::builtin().unwrap();
         let names: Vec<&str> = m.builtin.iter().map(|m| m.name_match.as_str()).collect();
-        assert_eq!(names, ["DDJ-FLX10", "DDJ-400", PRO, CLASSIC, "DDJ-FLX4", "XDJ-RX3", "XDJ-AZ"]);
+        // The page registry discovers its maps (#10560): a new map never edits this list.
+        for want in ["DDJ-FLX10", "DDJ-400", PRO, CLASSIC, "DDJ-FLX4", "XDJ-RX3", "XDJ-AZ", "DDJ-SX3"] {
+            assert!(names.contains(&want), "{want} missing from the export");
+        }
         // Every binding in the export loaded (none silently skipped).
         let v: Value = serde_json::from_str(BUILTIN_MAPS_JSON).unwrap();
+        assert_eq!(m.builtin.len(), v["maps"].as_array().unwrap().len());
         for (map, raw) in m.builtin.iter().zip(v["maps"].as_array().unwrap()) {
             assert_eq!(map.bindings.len(), raw["bindings"].as_array().unwrap().len(), "{}", map.vendor);
             assert!(!map.bindings.is_empty());

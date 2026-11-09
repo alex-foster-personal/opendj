@@ -78,6 +78,13 @@ import { effectiveBeatSync } from '$lib/player/grid-features';
 import { JogWheel } from '$lib/rb/midi/jog';
 import { getBrowseAdapter, type BrowseAdapter } from '$lib/rb/midi/browse-adapter';
 import { startTakeoverEngineSync, takeoverContinuous } from '$lib/rb/midi/takeover-engine-sync.svelte';
+import {
+	faderControlId,
+	knobId,
+	noteKnobHandInput,
+	stemKnobRole
+} from '$lib/rb/knob-control.svelte';
+import { stemDialAssignment, type EqDial } from '$lib/rb/stem-dial-map';
 
 export {
 	controllerPadMode,
@@ -441,6 +448,19 @@ function _handleControllerPad(
 	);
 }
 
+function _noteMidiEq(deck: DeckId, band: EqDial): void {
+	noteKnobHandInput(knobId(deck, band), 'midi');
+	if (mixerState.channels[deck].stem_eq_mode) {
+		const stems = deckStates[deck].stems;
+		if (stems.status === 'ready') {
+			const stem = stemDialAssignment(stems.available_controls)[band];
+			if (stem !== null) {
+				noteKnobHandInput(knobId(deck, stemKnobRole(stem)), 'midi');
+			}
+		}
+	}
+}
+
 function _handleMixerChannel(
 	action: Extract<MidiAction, { type: 'mixer_channel' }>,
 	value: MidiInputValue,
@@ -449,16 +469,20 @@ function _handleMixerChannel(
 	const v = takeoverContinuous(action, value, ctx.deviceId, ctx.physicalControlId);
 	if (v === null) return;
 	if (action.target === 'trim') {
+		noteKnobHandInput(knobId(action.deck, 'trim'), 'midi');
 		void dispatchPerformanceCommand({ type: 'trim', deck: action.deck, value: v });
 	} else if (action.target === 'eq') {
 		if (action.band === undefined) {
 			throw new Error('mixer_channel eq action requires band (device map bug)');
 		}
+		_noteMidiEq(action.deck, action.band);
 		setControllerEq(action.deck, action.band, v, pushToast, ctx.pressT0Ms);
 	} else if (action.target === 'fader') {
+		noteKnobHandInput(faderControlId(action.deck), 'midi');
 		onMidiFaderMove(action.deck, v, mixerState.channels[action.deck].fader);
 		void dispatchPerformanceCommand({ type: 'fader', deck: action.deck, value: v }, ctx.pressT0Ms);
 	} else if (action.target === 'filter') {
+		noteKnobHandInput(knobId(action.deck, 'filter'), 'midi');
 		void dispatchPerformanceCommand({ type: 'filter', deck: action.deck, value: v }, ctx.pressT0Ms);
 	} else {
 		const _exhaustive: never = action.target;
@@ -466,6 +490,7 @@ function _handleMixerChannel(
 	}
 }
 
+// Commanded-move runner never animates crossfader or master; nothing to cancel.
 function _handleMixerGlobal(
 	action: Extract<MidiAction, { type: 'mixer_global' }>,
 	value: MidiInputValue,
@@ -499,6 +524,7 @@ function _handleHeadphoneMix(
 ): void {
 	const v = takeoverContinuous(action, value, ctx.deviceId, ctx.physicalControlId);
 	if (v === null) return;
+	noteKnobHandInput(knobId('hp', 'hp-mix'), 'midi');
 	_dispatchHeadphoneMix(v);
 }
 
@@ -509,6 +535,7 @@ function _handleHeadphoneLevel(
 ): void {
 	const v = takeoverContinuous(action, value, ctx.deviceId, ctx.physicalControlId);
 	if (v === null) return;
+	noteKnobHandInput(knobId('hp', 'hp-level'), 'midi');
 	void dispatchPerformanceCommand({
 		type: 'headphone_level',
 		value: v
@@ -529,6 +556,7 @@ function _handleMasterCue(action: Extract<MidiAction, { type: 'master_cue' }>, v
 	}
 }
 
+// Commanded-move runner never animates pitch; nothing to cancel.
 function _handleDeckPitch(
 	action: Extract<MidiAction, { type: 'deck_pitch' }>,
 	value: MidiInputValue,

@@ -31,8 +31,8 @@
  *     LSB completing the pair (standard MSB-then-LSB order, spike 2a).
  *     [if] MSB 0x40 then LSB 0x00 arrive [then] one continuous14 emit with
  *       raw 8192
- *   ✔︎ Shift layer: shift_modifier bindings flip midiState.shiftHeld on
- *     press/release; shifted bindings win while held.
+ *   ✔︎ Shift layer: shift_modifier bindings flip midiState.shiftHeldByDevice[device]
+ *     on press/release (one controller never shifts another); shifted bindings win while held.
  *   ✔︎ Learn log: rolling $state ring buffer, newest first, capped at
  *     LEARN_LOG_CAP (50).
  *   ✔︎ LED sender: per-device coalescing queue flushed on a throttle
@@ -52,7 +52,13 @@ import type {
 	MidiInputValue,
 	MidiSource
 } from '$lib/rb/midi/midi-types';
-import { midiState, type MidiDeviceInfo, type MidiPermission } from '$lib/rb/midi/midi-state.svelte';
+import {
+	clearAllShiftHeld,
+	midiState,
+	setDeviceShiftHeld,
+	type MidiDeviceInfo,
+	type MidiPermission
+} from '$lib/rb/midi/midi-state.svelte';
 import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
 import {
@@ -161,6 +167,7 @@ let _actionHandler:
  * rearm: the policy is only fed through the action glue, and loading the glue
  * loads the policy (and this registration) before initMidi resolves a port. */
 let _takeoverRearm: ((deviceId: string) => void) | null = null;
+let _learnTap: ((entry: LearnLogEntry) => void) | null = null;
 /** Synchronous dispatch context. The public handler signature remains the
  * receipt-stamp contract; action glue reads this only during that call. */
 let _activeControlId: string | undefined;
@@ -176,6 +183,11 @@ let _ledTimer: ReturnType<typeof setInterval> | null = null;
 function _pushLearnLog(entry: LearnLogEntry): void {
 	learnLog.unshift(entry);
 	if (learnLog.length > LEARN_LOG_CAP) learnLog.length = LEARN_LOG_CAP;
+	try {
+		_learnTap?.(entry);
+	} catch (exc) {
+		console.error('[midi] learn tap failed', exc);
+	}
 }
 
 function _buildIndex(map: DeviceMap): {
@@ -279,6 +291,7 @@ function _rescanWebMidiPorts(): void {
 			if (dev !== undefined) dev.detachInput();
 			_resolved.delete(id);
 			_ledQueues.delete(id);
+			setDeviceShiftHeld(id, false);
 			_rearmTakeover(id);
 		}
 	}
@@ -338,6 +351,7 @@ function _applyNativeSnapshot(snapshot: _NativeMidiDevice[]): string | null {
 		_resolved.get(id)?.detachInput();
 		_resolved.delete(id);
 		_ledQueues.delete(id);
+		setDeviceShiftHeld(id, false);
 		_rearmTakeover(id);
 	}
 	_publishResolvedDevices();
@@ -427,7 +441,7 @@ function _emit(
 		if (value.kind !== 'button') {
 			throw new Error('shift_modifier must be bound to a note (button) source');
 		}
-		midiState.shiftHeld = value.pressed;
+		setDeviceShiftHeld(device.id, value.pressed);
 		// Layer changes can rebind an identical physical CC to a different
 		// scalar. Require a fresh pickup rather than carrying its old position
 		// into that layer.
@@ -526,8 +540,9 @@ function _dispatch(device: _ResolvedDevice, ev: { data: Uint8Array | null }): vo
 	}
 	// Binding lookup: shifted layer first while held, unshifted fallback.
 	const binding =
-		(midiState.shiftHeld ? device.index.get(_bindingKey(true, src)) : undefined) ??
-		device.index.get(_bindingKey(false, src));
+		(midiState.shiftHeldByDevice[device.id] === true
+			? device.index.get(_bindingKey(true, src))
+			: undefined) ?? device.index.get(_bindingKey(false, src));
 	if (binding === undefined) {
 		_pushLearnLog({ ...log, mapped: false, note: 'unmapped source' });
 		return;
@@ -666,6 +681,11 @@ export function registerTakeoverRearm(listener: (deviceId: string) => void): voi
 	_takeoverRearm = listener;
 }
 
+/** Register THE learn tap (midi-ui-state's learn arm); null detaches it. */
+export function registerLearnTap(tap: ((entry: LearnLogEntry) => void) | null): void {
+	_learnTap = tap;
+}
+
 function _rearmTakeover(deviceId: string): void {
 	_takeoverRearm?.(deviceId);
 }
@@ -795,7 +815,7 @@ export function releaseMidiInputs(): void {
 	_access = null;
 	_transport = 'none';
 	midiState.devices = [];
-	midiState.shiftHeld = false;
+	clearAllShiftHeld();
 }
 
 /** Queue an LED write (Note On, velocity = colour/state - spike 2a: FLX10
@@ -922,6 +942,7 @@ export function _resetMidiForTests(): void {
 	_djioRedirectIssued = false;
 	midiState.permission = 'prompt';
 	midiState.devices = [];
-	midiState.shiftHeld = false;
+	clearAllShiftHeld();
 	learnLog.length = 0;
+	_learnTap = null;
 }

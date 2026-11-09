@@ -208,7 +208,7 @@ test('play decides sync from the effective flag, not the raw one', () => {
 // (c) genuinely grid-dependent operations keep their requirement
 //-----------------------------------------------------------------------------
 
-test('beat loops and sync engagement still require a real grid', () => {
+test('beat loops and sync engagement still require a phase-capable grid', () => {
 	for (const anchor of [
 		'	async engageBeatLoop(deck: DeckId, beats: number, startMs?: number): Promise<void> {',
 		'async function _synchronizeFollowers(\n' +
@@ -219,9 +219,9 @@ test('beat loops and sync engagement still require a real grid', () => {
 	]) {
 		const body = engineBlockAfter(anchor);
 		assert.ok(
-			body.includes('requireBeatGrid('),
-			`if ${anchor.split('(')[0].trim()} drops requireBeatGrid then a grid-dependent ` +
-				'operation runs against no grid and produces nonsense instead of an error'
+			body.includes('requirePhaseCapableBeatGrid('),
+			`if ${anchor.split('(')[0].trim()} drops requirePhaseCapableBeatGrid then a downbeat-dependent ` +
+				'operation runs against a grid with no bar-1 anchor and throws RangeError'
 		);
 	}
 });
@@ -250,26 +250,24 @@ test('a sync failure lands on the deck as sync_error, which the deck renders', (
 // (d) engaging an inert toggle announces itself instead of erroring quietly
 //-----------------------------------------------------------------------------
 
-test('turning quantize or beat sync ON without a grid says so out loud', () => {
-	for (const anchor of [
-		'	setQuantize(deck: DeckId, enabled: boolean): void {',
-		'	setBeatSync(deck: DeckId, enabled: boolean): Promise<void> {'
-	]) {
-		const body = engineBlockAfter(anchor);
-		assert.ok(
-			body.includes('gridFeaturesInert('),
-			`if ${anchor.trim()} stops checking the grid then it either refuses or engages a no-op`
-		);
-		assert.ok(
-			body.includes('pushToast('),
-			`if ${anchor.trim()} stops announcing the inert state then the IPC and CLI paths ` +
-				'flip a flag that does nothing, with no feedback at all'
-		);
-		assert.ok(
-			body.includes('gridFeatureInertTip('),
-			`if ${anchor.trim()} words the reason itself then the toast and the tooltip can drift`
-		);
-	}
+test('turning quantize ON without a grid says so out loud', () => {
+	const body = engineBlockAfter('	setQuantize(deck: DeckId, enabled: boolean): void {');
+	assert.ok(
+		body.includes('gridFeaturesInert('),
+		'if setQuantize stops checking the grid then it either refuses or engages a no-op'
+	);
+	assert.ok(body.includes('pushToast('));
+	assert.ok(body.includes('gridFeatureInertTip('));
+});
+
+test('turning beat sync ON without phase capability says so out loud', () => {
+	const body = engineBlockAfter('	setBeatSync(deck: DeckId, enabled: boolean): Promise<void> {');
+	assert.ok(
+		body.includes('beatSyncFeaturesInert('),
+		'if setBeatSync stops checking phase capability then it either refuses or engages a no-op'
+	);
+	assert.ok(body.includes('pushToast('));
+	assert.ok(body.includes('beatSyncInertTip('));
 });
 
 test('setBeatSync still reverts the lit flag when a real phase lock is impossible', () => {
@@ -339,27 +337,26 @@ test('the Q button goes inert with the shared tip when the loaded track has no g
 	);
 });
 
-test('the BEAT SYNC button goes inert with the same shared tip', () => {
+test('the BEAT SYNC button goes inert with the phase-aware tip', () => {
 	assert.match(
 		DECK_HEADER_SRC,
-		/import \{[^}]*gridFeatureInertTip[^}]*\} from '\$lib\/player\/grid-features'/s,
-		'if DeckHeader spells the tip itself then the wording can drift from JogDial'
+		/import \{[^}]*beatSyncInertTip[^}]*\} from '\$lib\/player\/grid-features'/s,
+		'if DeckHeader spells the tip itself then the wording can drift from the engine toast'
 	);
 	assert.match(
 		DECK_HEADER_SRC,
-		/gridFeaturesInert\(deck\)/,
-		'if BEAT SYNC stops asking gridFeaturesInert then it decides inertness its own way'
+		/beatSyncFeaturesInert\(deck\)/,
+		'if BEAT SYNC stops asking beatSyncFeaturesInert then it decides inertness its own way'
 	);
 	const syncButton = _openTag(DECK_HEADER_SRC, 'data-performance-control="beat-sync"');
 	assert.match(
 		syncButton,
-		/disabled=\{[^}]*gridless[^}]*\}/,
-		'if BEAT SYNC is not disabled on a gridless deck then it lights up and locks nothing'
+		/disabled=\{pending \|\| beatSyncInert\}/
 	);
 	assert.match(
 		DECK_HEADER_SRC,
-		/beatSyncTitle[\s\S]{0,300}gridInertTip/,
-		'if beatSyncTitle stops resolving to the shared tip when gridless then the hover lies'
+		/beatSyncTitle[\s\S]{0,300}beatSyncInertTip\(deck\)/,
+		'if beatSyncTitle stops resolving to the phase-aware tip when inert then the hover lies'
 	);
 });
 

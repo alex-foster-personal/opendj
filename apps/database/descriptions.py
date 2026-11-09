@@ -146,8 +146,10 @@ TABLES: dict[str, str] = {
         "operator on the hub and carried, once, to the machine that is "
         "joining. Only the sha256 of the token is stored, never the token, "
         "for the same reason as auth_sessions: a stolen database must not "
-        "hand anybody a redeemable credential. Redeemed rows keep their row "
-        "so a replay is refused rather than silently re-enrolled."
+        "hand anybody a redeemable credential. A redeemed row is kept, not "
+        "deleted: the machine that spent it may present it again until it "
+        "expires and gets the same owner back (so enroll is safely re-runnable), "
+        "while a replay by another machine, or after expiry, is refused."
     ),
     "machine_credentials": (
         "One machine's sync credential, as the hub that minted it at enroll "

@@ -1,5 +1,7 @@
 /** CMDK-04: the redesigned Cmd K bar ships behind the `cmdk.v2` build flag,
- *  default OFF. It shows only when the daemon DECLARES the flag on; while the
+ *  default ON since issue #9463 (`cmdk.v2.preview` and `cmdk.v2.actions` too;
+ *  the flags stay as kill switches). It shows only when the daemon DECLARES the
+ *  flag on; while the
  *  flags are unread, or the daemon is older and does not declare it, the
  *  shipped CMDK-01..03 bar stays. CMDK-07..10 add two more flags on top, read
  *  the same way: `cmdk.v2.preview` (strip, cue preview, deck picker) and

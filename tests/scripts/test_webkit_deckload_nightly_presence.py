@@ -31,6 +31,7 @@ FILE_TEST_COUNTS: dict[str, int] = {
     "autoplay-explainer-placement.spec.ts": 1,
     "playlist-detail.spec.ts": 1,
     "zz-autoplay-playlist-switch.spec.ts": 2,
+    "stem-dial-drag-webkit.spec.ts": 2,
 }
 
 

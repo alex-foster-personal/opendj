@@ -68,6 +68,9 @@ class FakeAudioContext {
 	createChannelMerger(_numberOfInputs) {
 		return makeNode(this);
 	}
+	createWaveShaper() {
+		return makeNode(this, { curve: null, oversample: 'none' });
+	}
 	createBiquadFilter() {
 		return makeNode(this, { type: 'lowpass', frequency: makeAudioParam(1000), Q: makeAudioParam(1) });
 	}

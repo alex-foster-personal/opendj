@@ -833,6 +833,10 @@ export function installAutoPlay(): () => void {
 				_startPoll();
 			} else {
 				_stopPoll();
+				// PLAY-10049 (issue #3902): the poll that would have seen this off edge just stopped, so the
+				// enable-edge latch and idle clock reset here; else the next enable over silent decks
+				// skips armed-empty and a stale idle start raises the silent stall at once.
+				resetAutoPlayIdleClock();
 				_chartKeyRef.current = null;
 				clearAutoPlayOrder();
 				clearAutoPlayQueue();

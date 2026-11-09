@@ -1,0 +1,9 @@
+{
+  "bytes": 2048,
+  "measured_main": 17025,
+  "measured_with_pr": 18203,
+  "sha": "69b78e6b1e",
+  "date": "Sun 8 Nov 2026",
+  "reason": "PR #10491 registers NUMARK_MIXTRACK_PRO_FX_MAP (apps/webui/frontend/src/lib/rb/midi/maps/numark-mixtrack-pro-fx.ts) in PRACTICE_DEVICE_MAPS, so the lazy practice-replica chunk carries the Mixtrack Pro FX hints, LED and meter rules. Measured: local vite build of main 9c1fd4fd3f and of 69b78e6b1e on the same host (nucbox-wsl), +1178 B gzip; ceiled to KiB",
+  "payback": "none planned; every replica map that joins PRACTICE_DEVICE_MAPS rides this chunk until the maps load per device (epic #9366)"
+}

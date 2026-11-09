@@ -553,6 +553,7 @@ def test_a_scope_outside_helper_carried_gets_no_entry(tmp_path: Path) -> None:
     assert helper_carried_paths(config, tmp_path) == frozenset({"apps/a/used.py"})
 
 
+@pytest.mark.timeout(600)  # scans every tests/**/*.py: ~135 s CPU, over 120 s on a loaded runner
 def test_the_committed_path_list_is_exactly_the_derived_one() -> None:
     """The anti-rot guard, an equality in both directions like `helper_carried`'s."""
     config = read_config()

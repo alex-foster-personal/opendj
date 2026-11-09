@@ -1,0 +1,15 @@
+{
+  "id": "generic-dimmer",
+  "name": "Generic Dimmer",
+  "kind": "dimmer",
+  "modes": [
+    {
+      "name": "1ch",
+      "channels": [
+        {
+          "capability": "intensity"
+        }
+      ]
+    }
+  ]
+}

@@ -1245,17 +1245,22 @@ def _stem_manifest_response(stable_id: str, request: Request) -> StemManifestOut
         if future is not None:
             shared = _shared_hydration_dir(stable_id, request)
             sfx = _fetching_progress_suffixes(stable_id, request)
+            stems_dir = _stems_dir(request)
+            try:
+                progress = _state_progress(
+                    stable_id,
+                    stems_dir,
+                    shared,
+                    attempt_suffixes=sfx,
+                )
+            except stem_index.StemIndexError as exc:
+                _raise_stem_index_corrupt(exc, Path(shared))
             return StemUnavailableOut(
                 stable_id=stable_id,
                 code="STEM_BUNDLE_HYDRATING",
                 message="bundle not local yet; fetching from R2",
                 hydrating=True,
-                progress=_hydration_progress(
-                    stable_id,
-                    _stems_dir(request),
-                    data_dir=shared,
-                    attempt_suffixes=sfx,
-                ),
+                progress=progress,
             )
         return _unavailable_out(stable_id, exc)
     except StemArtifactError as exc:

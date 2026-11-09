@@ -37,6 +37,10 @@ import { planGridJump } from '$lib/player/transport/grid-jump';
 export const GRID_FEATURE_TIP =
 	'needs a beat grid - analyse this track for quantize and beat sync; play, pause and cue still work';
 
+/** Shared hover/toast when a trusted grid lacks any real PQTZ downbeat (n===1). */
+export const PHASE_FEATURE_TIP =
+	'needs a PQTZ downbeat - beat sync and beat loops stay inert until analysis finds a bar-1 anchor; play, pause and cue still work';
+
 const _NAMED_SOURCES = new Set<string>(['own', 'rekordbox']);
 
 /**
@@ -71,7 +75,9 @@ function _beatgridSource(anlz: Pick<AnlzData, 'beatgrid'> | null | undefined): u
  * named literals is its own explicit untrusted branch. An own `status: ok` grid
  * with several tempo anchors is trusted when `static_grid_untrusted` is not
  * `true` (omitted on the multi-anchor `/anlz` wire, `false` on the record).
- * Do not treat `tempo_changes.length > 0` as no grid.
+ * Do not treat `tempo_changes.length > 0` as no grid. A grid carrying
+ * `edit.anchors` stays trusted although `/anlz` marks it untrusted: the DJ
+ * placed that tempo map by hand (GRIDEDIT-10220).
  */
 export function hasTrustedBeatGrid(anlz: Pick<AnlzData, 'beatgrid'> | null | undefined): boolean {
 	if (anlz === null || anlz === undefined) return false;
@@ -83,7 +89,7 @@ export function hasTrustedBeatGrid(anlz: Pick<AnlzData, 'beatgrid'> | null | und
 	if (source === 'rekordbox') return true;
 	const bg = anlz.beatgrid;
 	if (bg.status !== 'ok') return false;
-	if (bg.static_grid_untrusted === true) return false;
+	if (bg.static_grid_untrusted === true && bg.edit?.anchors === undefined) return false;
 	return true;
 }
 
@@ -93,6 +99,16 @@ export function deckHasRealBeatGrid(st: Pick<DeckState, 'anlz'>): boolean {
 
 export function deckHasTrustedBeatGrid(st: Pick<DeckState, 'anlz'>): boolean {
 	return hasTrustedBeatGrid(st.anlz);
+}
+
+/** Whether a trusted grid carries at least one bar-1 downbeat Beat Sync can lock to. */
+export function hasPhaseCapableBeatGrid(anlz: Pick<AnlzData, 'beatgrid'> | null | undefined): boolean {
+	if (!hasTrustedBeatGrid(anlz)) return false;
+	return anlz!.beatgrid.beats.some((beat) => beat.n === 1);
+}
+
+export function deckHasPhaseCapableBeatGrid(st: Pick<DeckState, 'anlz'>): boolean {
+	return hasPhaseCapableBeatGrid(st.anlz);
 }
 
 /** Whether beat ticks and tempo-change markers should paint on the deck.
@@ -120,7 +136,11 @@ export function gridFeatureInertTip(
 		if (typeof reason === 'string' && reason.length > 0) return reason;
 		return 'own beatgrid analysis failed';
 	}
-	if (source === 'own' && anlz.beatgrid.static_grid_untrusted === true) {
+	if (
+		source === 'own' &&
+		anlz.beatgrid.static_grid_untrusted === true &&
+		anlz.beatgrid.edit?.anchors === undefined
+	) {
 		const first = anlz.tempo_changes?.[0];
 		if (first !== undefined) {
 			return `static grid untrusted - tempo change at ${first.at_s.toFixed(3)}s`;
@@ -137,17 +157,30 @@ export function effectiveQuantize(st: Pick<DeckState, 'anlz' | 'quantize_enabled
 }
 
 /** Beat Sync as the transport actually applies it: what the DJ asked for, AND
- * a trusted grid to phase-lock with. BAR planning, not this gate, filters
+ * a phase-capable grid to lock with. BAR planning, not this gate, filters
  * `beatIsExtrapolated` anchors at plan time. */
 export function effectiveBeatSync(st: Pick<DeckState, 'anlz' | 'beat_sync_enabled'>): boolean {
-	return st.beat_sync_enabled && deckHasTrustedBeatGrid(st);
+	return st.beat_sync_enabled && deckHasPhaseCapableBeatGrid(st);
+}
+
+/** Hover title for inert Beat Sync / beat-loop controls on a loaded deck. */
+export function beatSyncInertTip(st: Pick<DeckState, 'anlz' | 'stable_id'>): string {
+	if (st.stable_id === null) return GRID_FEATURE_TIP;
+	if (gridFeaturesInert(st)) return gridFeatureInertTip(st);
+	if (!deckHasPhaseCapableBeatGrid(st)) return PHASE_FEATURE_TIP;
+	return GRID_FEATURE_TIP;
+}
+
+/** Whether Beat Sync and beat-loop controls are inert on a loaded track. */
+export function beatSyncFeaturesInert(st: Pick<DeckState, 'anlz' | 'stable_id'>): boolean {
+	return st.stable_id !== null && !deckHasPhaseCapableBeatGrid(st);
 }
 
 /**
  * PLAY-25: may this follower phase-lock to that master right now?
  *
- * Both decks need a trusted grid: the follower's own (`effectiveBeatSync`) AND
- * the master's. Tue 6 Oct 2026, silver preview 17:35Z: with Beat Sync Max on,
+ * Both decks need a trusted grid with a PQTZ downbeat: the follower's own
+ * (`effectiveBeatSync`) AND the master's. Tue 6 Oct 2026, silver preview 17:35Z: with Beat Sync Max on,
  * AutoPlay loaded the next track on deck 1 while the playing master (deck 2)
  * had a 0-beat grid. `play` joined deck 1 to deck 2's phase, `requireBeatGrid`
  * threw on the master, the handoff aborted after the load, and the set went
@@ -158,7 +191,7 @@ export function canPhaseLockTo(
 	follower: Pick<DeckState, 'anlz' | 'beat_sync_enabled'>,
 	master: Pick<DeckState, 'anlz'>
 ): boolean {
-	return effectiveBeatSync(follower) && deckHasTrustedBeatGrid(master);
+	return effectiveBeatSync(follower) && deckHasPhaseCapableBeatGrid(master);
 }
 
 /**
@@ -342,13 +375,14 @@ export function gridlessMasterNotice(deck: number): string {
  * PLAY-28: must this master handover mix without Beat Sync?
  *
  * True only when there is someone to sync (`followerCount > 0`) AND the new
- * master has no trusted grid to sync them to. A gridded master always syncs.
+ * master has no trusted grid with a PQTZ downbeat to sync them to. A
+ * phase-capable master always syncs.
  */
 export function handoverMixesWithoutBeatSync(
 	master: Pick<DeckState, 'anlz'>,
 	followerCount: number
 ): boolean {
-	return followerCount > 0 && !deckHasTrustedBeatGrid(master);
+	return followerCount > 0 && !deckHasPhaseCapableBeatGrid(master);
 }
 
 /**
@@ -364,7 +398,7 @@ export function beatSyncClockMaster<Id extends number>(
 	master: Id | null,
 	masterDeck: Pick<DeckState, 'anlz'> | null
 ): Id | null {
-	if (master === null || masterDeck === null || !deckHasTrustedBeatGrid(masterDeck)) return null;
+	if (master === null || masterDeck === null || !deckHasPhaseCapableBeatGrid(masterDeck)) return null;
 	return master;
 }
 

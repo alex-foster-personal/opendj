@@ -28,6 +28,15 @@
  * Pure: no Svelte, no DOM, no engine import.
  */
 import { describeCommand, type MenuCommandId } from './commands';
+import {
+	autoGainResetReason,
+	STEM_NAMES,
+	stemLaneActionReason,
+	type AutoGainFact,
+	type ControlValue,
+	type MixerControlClass
+} from './mixer-actions';
+import type { StemControl } from '../rb/stem-types';
 
 export type DeckNumber = 1 | 2 | 3 | 4;
 export type CueSlot = 'A' | 'B' | 'C' | 'D' | 'E' | 'F' | 'G' | 'H';
@@ -65,7 +74,21 @@ export interface MenuContextByKind {
 	'tree-readonly': { stick: boolean };
 	/** Library source tabs and the icon rail. */
 	'library-source': Record<string, never>;
-	deck: { loaded: boolean; playing: boolean; looping: boolean; synced: boolean; master: boolean };
+	deck: {
+		loaded: boolean;
+		playing: boolean;
+		looping: boolean;
+		synced: boolean;
+		master: boolean;
+		/** The browser has a selected track row to load (Load selected track). */
+		selection: boolean;
+		/** Deck settings, kept with no track loaded: key lock (Master Tempo), quantize, slip. */
+		keyLock: boolean;
+		quantize: boolean;
+		slip: boolean;
+		/** Other decks holding a track: the sources an instant double can copy from. */
+		otherLoaded: readonly DeckNumber[];
+	};
 	/** moveLoses: what a move to the playhead would drop from the filled cue
 	 * (the save command keeps the comment, not a loop or a color). */
 	'hot-cue': { loaded: boolean; filled: boolean; moveLoses: 'nothing' | 'color' | 'loop' };
@@ -85,9 +108,29 @@ export interface MenuContextByKind {
 		filterFlat: boolean;
 		cue: boolean;
 		assign: 'A' | 'B' | 'THRU';
+		trimUnity: boolean;
+		autoGain: AutoGainFact;
 	};
 	/** ANIM-01: one dial or fader (EQ, TRIM, FILTER, stem dial, channel fader, crossfader). */
-	'mixer-control': { animating: boolean };
+	'mixer-control': {
+		animating: boolean;
+		control: MixerControlClass;
+		value: ControlValue;
+		autoGain: AutoGainFact;
+	};
+	/** A waveform stem lane (`data-stem` on `StemWaveRowView`). */
+	stem: {
+		loaded: boolean;
+		stems: 'none' | 'ready';
+		available: boolean;
+		muted: boolean;
+		solo: boolean;
+		levelsUnity: boolean;
+	};
+	/** One logged play row in the History day list (#9745 hosts the tree). */
+	'history-row': Record<string, never>;
+	/** One day entry in the History list. */
+	'history-day': { empty: boolean };
 	/** Right-click on nothing in particular inside the performance page. */
 	'perf-empty': {
 		/** True when the track browser is mounted so BrowseAdapter can load a selection. */
@@ -116,6 +159,9 @@ export type MenuTarget =
 	| { kind: 'mixer-channel'; deck: DeckNumber }
 	/** `label` is the control's caption (EQ LOW, FADER, CROSSFADER). */
 	| { kind: 'mixer-control'; label: string }
+	| { kind: 'stem'; deck: DeckNumber; stem: StemControl }
+	| { kind: 'history-row' }
+	| { kind: 'history-day'; date: string }
 	| { kind: 'perf-empty' };
 
 type TargetOf<K extends MenuTargetKind> = Extract<MenuTarget, { kind: K }>;
@@ -425,6 +471,9 @@ const DECK_EXIT_LOOP: MenuContribution<'deck' | 'waveform'> = {
 	when: (ctx) => ctx.loaded && ctx.looping
 };
 
+const emptyDeck = (ctx: MenuContextByKind['deck'], target: TargetOf<'deck'>): string | null =>
+	ctx.loaded ? null : `CH${target.deck} is empty`;
+
 export const MENU_CONTRIBUTIONS: { [K in MenuTargetKind]: MenuContribution<K>[] } = {
 	track: TRACK_MENU,
 	'track-chip': [
@@ -462,6 +511,12 @@ export const MENU_CONTRIBUTIONS: { [K in MenuTargetKind]: MenuContribution<K>[] 
 			checked: (ctx) => ctx.forbidDuplicates
 		},
 		{ id: 'reveal', label: 'Reveal in tree', command: 'playlist.select' },
+		{
+			id: 'export-text',
+			label: 'Export as text',
+			command: 'playlist.export_txt',
+			title: () => 'opendj playlist export {playlist_id} --format txt'
+		},
 		{
 			id: 'offload-playlist',
 			label: 'Offload to cloud',
@@ -560,10 +615,16 @@ export const MENU_CONTRIBUTIONS: { [K in MenuTargetKind]: MenuContribution<K>[] 
 	],
 	deck: [
 		{
+			id: 'load-selection',
+			label: 'Load selected track',
+			command: 'deck.load',
+			disabledWhen: (ctx) => (ctx.selection ? null : 'no track is selected in the browser')
+		},
+		{
 			id: 'play',
 			label: (target, ctx) => `${ctx.playing ? 'Pause' : 'Play'} CH${target.deck}`,
 			command: 'deck.play',
-			disabledWhen: (ctx, target) => (ctx.loaded ? null : `CH${target.deck} is empty`)
+			disabledWhen: emptyDeck
 		},
 		DECK_UNLOAD as MenuContribution<'deck'>,
 		DECK_EXIT_LOOP as MenuContribution<'deck'>,
@@ -572,14 +633,81 @@ export const MENU_CONTRIBUTIONS: { [K in MenuTargetKind]: MenuContribution<K>[] 
 			label: 'Beat sync',
 			command: 'deck.beat_sync',
 			checked: (ctx) => ctx.synced,
-			disabledWhen: (ctx, target) => (ctx.loaded ? null : `CH${target.deck} is empty`)
+			disabledWhen: emptyDeck
 		},
 		{
 			id: 'make-master',
 			label: 'Make master',
 			command: 'deck.master',
 			when: (ctx) => !ctx.master,
-			disabledWhen: (ctx, target) => (ctx.loaded ? null : `CH${target.deck} is empty`)
+			disabledWhen: emptyDeck
+		},
+		{
+			id: 'key-lock',
+			label: 'Key lock',
+			command: 'deck.key_lock',
+			checked: (ctx) => ctx.keyLock
+		},
+		{
+			id: 'quantize',
+			label: 'Quantize',
+			command: 'deck.quantize',
+			checked: (ctx) => ctx.quantize
+		},
+		{
+			id: 'slip',
+			label: 'Slip',
+			command: 'deck.slip',
+			checked: (ctx) => ctx.slip
+		},
+		...DECKS.map(
+			(n): MenuContribution<'deck'> => ({
+				id: `move-to-${n}`,
+				label: `Move track to deck ${n}`,
+				command: 'deck.move',
+				when: (_ctx, target) => target.deck !== n,
+				disabledWhen: emptyDeck
+			})
+		),
+		...DECKS.map(
+			(n): MenuContribution<'deck'> => ({
+				id: `double-from-${n}`,
+				label: `Instant double from deck ${n}`,
+				command: 'deck.instant_double',
+				when: (_ctx, target) => target.deck !== n,
+				disabledWhen: (ctx, target) => {
+					if (!ctx.otherLoaded.includes(n)) return `CH${n} is empty`;
+					if (ctx.playing) return `CH${target.deck} is playing - pause it before doubling onto it`;
+					return null;
+				}
+			})
+		),
+		{
+			id: 'find-in-library',
+			label: 'Find in library',
+			command: 'playlist.select',
+			disabledWhen: emptyDeck
+		},
+		{
+			id: 'track-info',
+			label: 'Track info',
+			command: 'deck.track_info',
+			disabledWhen: emptyDeck
+		},
+		{
+			id: 'reanalyze',
+			label: 'Re-analyze',
+			command: 'track.reanalyze',
+			disabledWhen: emptyDeck
+		},
+		{
+			id: 'grid-lock',
+			label: 'Lock beatgrid',
+			command: 'track.grid_edit',
+			disabledWhen: (ctx, target) =>
+				!ctx.loaded
+					? `CH${target.deck} is empty`
+					: 'beatgrid lock is not built yet - there is no lock flag for a grid; edit the grid in Grid Edit instead'
 		}
 	],
 	'hot-cue': [
@@ -665,6 +793,12 @@ export const MENU_CONTRIBUTIONS: { [K in MenuTargetKind]: MenuContribution<K>[] 
 			command: 'mixer.channel_cue',
 			checked: (ctx) => ctx.cue
 		},
+		{
+			id: 'trim-auto-gain',
+			label: 'Reset trim to auto gain',
+			command: 'mixer.auto_gain',
+			disabledWhen: (ctx) => autoGainResetReason(ctx.autoGain, ctx.trimUnity)
+		},
 		...(['A', 'B', 'THRU'] as const).map(
 			(assign): MenuContribution<'mixer-channel'> => ({
 				id: `assign-${assign.toLowerCase()}`,
@@ -688,6 +822,93 @@ export const MENU_CONTRIBUTIONS: { [K in MenuTargetKind]: MenuContribution<K>[] 
 			command: 'mixer.animate',
 			when: (ctx) => ctx.animating,
 			testId: () => 'quick-draw-animate-stop'
+		},
+		...(
+			[
+				{ control: 'eq', id: 'reset-eq', command: 'mixer.eq' },
+				{ control: 'trim', id: 'reset-trim', command: 'mixer.trim' },
+				{ control: 'filter', id: 'reset-filter', command: 'mixer.filter' },
+				{ control: 'fader', id: 'reset-fader', command: 'mixer.fader' },
+				{ control: 'crossfader', id: 'reset-crossfader', command: 'mixer.crossfader' },
+				{ control: 'stem', id: 'reset-stem', command: 'stem.gain' }
+			] as const
+		).map(
+			({ control, id, command }): MenuContribution<'mixer-control'> => ({
+				id,
+				label: (target) => `Reset ${target.label} to default`,
+				command,
+				when: (ctx) => ctx.control === control,
+				disabledWhen: (ctx, target) =>
+					ctx.value === 'default' ? `${target.label} is already at its default` : null,
+				testId: () => 'quick-draw-control-reset'
+			})
+		),
+		{
+			id: 'eq-kill',
+			label: (target) => `Kill ${target.label}`,
+			command: 'mixer.eq',
+			when: (ctx) => ctx.control === 'eq',
+			disabledWhen: (ctx, target) => (ctx.value === 'cut' ? `${target.label} is already cut` : null),
+			testId: () => 'quick-draw-eq-kill'
+		},
+		{
+			id: 'trim-auto-gain',
+			label: 'Reset trim to auto gain',
+			command: 'mixer.auto_gain',
+			when: (ctx) => ctx.control === 'trim',
+			disabledWhen: (ctx) => autoGainResetReason(ctx.autoGain, ctx.value === 'default'),
+			testId: () => 'quick-draw-trim-auto-gain'
+		}
+	],
+	stem: [
+		{
+			id: 'stem-mute',
+			label: (target) => `Mute ${STEM_NAMES[target.stem]}`,
+			command: 'stem.mute',
+			checked: (ctx) => ctx.muted,
+			disabledWhen: (ctx, target) => stemLaneActionReason(ctx.loaded, ctx.stems, ctx.available, target.deck, target.stem),
+			testId: () => 'quick-draw-stem-mute'
+		},
+		{
+			id: 'stem-solo',
+			label: (target) => `Solo ${STEM_NAMES[target.stem]}`,
+			command: 'stem.solo',
+			checked: (ctx) => ctx.solo,
+			disabledWhen: (ctx, target) => stemLaneActionReason(ctx.loaded, ctx.stems, ctx.available, target.deck, target.stem),
+			testId: () => 'quick-draw-stem-solo'
+		},
+		{
+			id: 'stem-levels-reset',
+			label: 'Reset stem levels',
+			command: 'stem.gain',
+			disabledWhen: (ctx, target) =>
+				stemLaneActionReason(ctx.loaded, ctx.stems, ctx.available, target.deck, target.stem) ??
+				(ctx.levelsUnity ? 'stem levels are already at unity' : null),
+			testId: () => 'quick-draw-stem-levels-reset'
+		},
+		{
+			id: 'stems-tiers',
+			label: 'Generate stems',
+			command: 'track.stems.generate',
+			disabledWhen: (ctx, target) => (!ctx.loaded ? `CH${target.deck} is empty` : null),
+			testId: () => 'quick-draw-stem-generate'
+		}
+	],
+	'history-row': [
+		{
+			id: 'delete-play',
+			label: 'Delete from history',
+			command: 'history.delete_play',
+			testId: () => 'history-row-delete-play'
+		}
+	],
+	'history-day': [
+		{
+			id: 'delete-day',
+			label: 'Delete history day',
+			command: 'history.delete_day',
+			disabledWhen: (ctx) => (ctx.empty ? 'this day has no plays' : null),
+			testId: () => 'history-day-delete'
 		}
 	],
 	'perf-empty': [

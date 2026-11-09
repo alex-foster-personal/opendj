@@ -15,7 +15,7 @@ The rules, each one tested:
   second app never duplicates a track the library already has. Paths are
   compared in Unicode NFC, because macOS hands out NFD names and the apps
   store whichever they saw.
-* **Fill, never fight.** BPM, key, rating and comments are written only where
+* **Fill, never fight.** BPM, key, rating, comments and genre are written only where
   the track has no value yet, or where the value already came from this same
   app (a re-import refreshes its own copy). A value from rekordbox, Mixed In
   Key, analysis or an edit in Open DJ is never replaced by an import.
@@ -36,10 +36,17 @@ What it does not carry yet, by design and reported rather than hidden:
 beatgrids (the state ``beatgrid`` field has no importer contract yet), track
 colors and play counts (no state field holds them), and cue colors (rekordbox's
 cue color table is unpublished, so an RGB cannot be mapped onto an index
-honestly).
+honestly). A rekordbox XML export's label, remixer, composer, grouping, year,
+date added, mix, bit rate, sample rate and size are read but not stored (no state
+field holds them yet); they are counted in the summary as "carried, not stored".
 
-Run it as ``python -m apps.adapters.library_import serato|traktor|rekordbox-xml|djay
-[--source P] [--write]``. It lives in ``apps.adapters`` rather than ``apps.shared.state``
+Run it as ``python -m apps.adapters.library_import serato|traktor|rekordbox-xml|djay|virtualdj
+[--source P] [--write]``. VirtualDJ's BPM, key, rating, comments, genre and cues are counted
+as read, not stored, until DJIMPORT-10056b widens ``track_fields.source``.
+``serato-history [--source <_Serato_>] [--write]`` appends Serato's played history to the play
+log (DJIMPORT-10066, :func:`import_serato_history`); ``traktor-history [--source <Traktor dir>]
+[--zone IANA] [--write]`` appends Traktor's session history the same way (DJIMPORT-10069,
+:func:`import_traktor_history`). It lives in ``apps.adapters`` rather than ``apps.shared.state``
 because it calls the readers, and ``apps.shared`` imports nothing else from
 ``apps`` (the ``shared-is-the-stable-core`` contract in ``.importlinter``).
 """
@@ -56,19 +63,26 @@ import unicodedata
 from collections.abc import Callable, Iterable, Iterator
 from pathlib import Path, PurePosixPath
 from typing import Any, Literal
+from zoneinfo import ZoneInfo
 
+from apps.adapters.serato import history as serato_history
 from apps.open_dj import AdapterReport, CuePoint, OpenDjLibrary, Playlist, Track
 from apps.shared import hashing
-from apps.shared.state import cue_store, deleted_tracks
+from apps.shared.state import cue_store, deleted_tracks, play_log
 from apps.shared.state import db as state_db
 from apps.shared.state import ids as state_ids
 from apps.shared.state import paths as state_paths
 from apps.shared.state import provenance as state_provenance
+from apps.shared.state.sync_stamp import canonical_from
 from apps.shared.state.writer import StateWriter
 from apps.shared.state.writer_common import compute_playlist_id
 
-Vendor = Literal["serato", "traktor", "rekordbox-xml", "djay"]
-VENDORS: tuple[Vendor, ...] = ("serato", "traktor", "rekordbox-xml", "djay")
+Vendor = Literal["serato", "traktor", "rekordbox-xml", "djay", "virtualdj"]
+VENDORS: tuple[Vendor, ...] = ("serato", "traktor", "rekordbox-xml", "djay", "virtualdj")
+#: Imports that append to the play log rather than the library.
+HISTORY_COMMANDS: tuple[str, ...] = ("serato-history", "traktor-history")
+#: Kept for callers of the Traktor-only name; the same commands.
+PLAY_SOURCES: tuple[str, ...] = HISTORY_COMMANDS
 
 #: The ``track_fields.source`` each import writes. A rekordbox XML export is
 #: labeled with the format it is in, ``rekordbox``, whichever app wrote it.
@@ -79,12 +93,29 @@ _SOURCE: dict[str, str] = {
     "djay": "djay",
 }
 
+#: Vendors whose field/cue provenance label is not in ``track_fields`` yet (DJIMPORT-10056b).
+#: Fields and cues are counted, not written, and never under another app's label.
+_SOURCE_PENDING: frozenset[str] = frozenset({"virtualdj"})
+
 #: Maps a path as the app stored it to a local absolute path.
 PathResolver = Callable[[str], str]
 _ClockFn = Callable[[], _dt.datetime]
 
 #: Fields an import fills. Each maps to a ``track_fields`` name.
-_FILLED_FIELDS = ("bpm", "key", "rating", "comments")
+_FILLED_FIELDS = ("bpm", "key", "rating", "comments", "genre")
+#: Reader extensions with no state field yet: counted in the summary, not written.
+_CARRIED_EXTENSIONS = (
+    ("label", "x_label"),
+    ("remixer", "x_remixer"),
+    ("composer", "x_composer"),
+    ("grouping", "x_grouping"),
+    ("year", "x_year"),
+    ("date_added", "x_date_added"),
+    ("mix", "x_mix"),
+    ("bitrate", "x_bitrate"),
+    ("sample_rate", "x_sample_rate"),
+    ("size", "x_size"),
+)
 
 
 @dataclasses.dataclass
@@ -124,6 +155,10 @@ class VendorIngestReport:
     #: What the app's reader dropped or changed before the import saw it,
     #: counted per kind (see :class:`VendorRead`).
     reader_notes: dict[str, int] = dataclasses.field(default_factory=dict)
+    #: Values the reader carried that no state field stores yet, per name (label, year, ...).
+    extensions_carried: dict[str, int] = dataclasses.field(default_factory=dict)
+    #: Values read but not written because the vendor has no provenance label in track_fields yet.
+    fields_not_stored: dict[str, int] = dataclasses.field(default_factory=dict)
 
     def to_dict(self) -> dict[str, Any]:
         return dataclasses.asdict(self)
@@ -290,15 +325,16 @@ def ingest_library(  # noqa: PLR0913 - one keyword per import option, all option
     """
     if vendor not in VENDORS:
         raise ValueError(f"unknown vendor {vendor!r}; expected one of {VENDORS}")
-    field_source = _SOURCE[vendor]
-    fill_only = field_source != vendor
+    field_source = _SOURCE.get(vendor)
+    fill_only = field_source is not None and field_source != vendor
+    pending_fields = vendor in _SOURCE_PENDING
     start = time.perf_counter()
     now_fn = clock or (lambda: _dt.datetime.now(_dt.UTC))
     report = VendorIngestReport(vendor=vendor, source=source, dry_run=dry_run)
     conn = writer.raw_conn
     try:
         with writer._join_or_begin(commit=not dry_run):
-            by_path = _live_tracks_by_path(conn)
+            by_path = live_tracks_by_path(conn)
             stamp = modified_at or now_fn().astimezone(_dt.UTC).isoformat()
             entry_to_sid: dict[str, str] = {}
             deleted_entries: set[str] = set()
@@ -315,7 +351,12 @@ def ingest_library(  # noqa: PLR0913 - one keyword per import option, all option
                     continue
                 seen.add(sid)
                 entry_to_sid[track.track_id] = sid
-                _write_fields(writer, sid, track, field_source, fill_only, stamp, report, write_cues)
+                if pending_fields:
+                    _count_not_stored(track, report)
+                else:
+                    assert field_source is not None
+                    _write_fields(writer, sid, track, field_source, fill_only, stamp, report, write_cues)
+                _count_carried(track, report)
             _write_playlists(writer, library.playlists, vendor, entry_to_sid, deleted_entries, report)
             writer.register_adapter(
                 vendor,
@@ -332,7 +373,8 @@ def ingest_library(  # noqa: PLR0913 - one keyword per import option, all option
     return report
 
 
-def _live_tracks_by_path(conn: Any) -> dict[str, str]:
+def live_tracks_by_path(conn: Any) -> dict[str, str]:
+    """Live library tracks keyed by NFC file path."""
     rows = conn.execute(
         "SELECT stable_id, file_path FROM tracks "
         "WHERE deleted_at IS NULL AND file_path IS NOT NULL AND file_path != '' "
@@ -434,6 +476,26 @@ def _field_values(track: Track) -> Iterator[tuple[str, Any]]:
     comment = track.extensions.get("x_comment")
     if isinstance(comment, str) and comment.strip():
         yield "comments", comment.strip()
+    genre = track.extensions.get("x_genre")
+    if isinstance(genre, str) and genre.strip():
+        yield "genre", genre.strip()
+
+
+def _count_not_stored(track: Track, report: VendorIngestReport) -> None:
+    for name, _ in _field_values(track):
+        report.fields_not_stored[name] = report.fields_not_stored.get(name, 0) + 1
+    if track.cues:
+        report.fields_not_stored["cues"] = report.fields_not_stored.get("cues", 0) + 1
+    if track.beats:
+        report.fields_not_stored["beats"] = report.fields_not_stored.get("beats", 0) + 1
+
+
+def _count_carried(track: Track, report: VendorIngestReport) -> None:
+    for name, key in _CARRIED_EXTENSIONS:
+        value = track.extensions.get(key)
+        if value is None or value == "":
+            continue
+        report.extensions_carried[name] = report.extensions_carried.get(name, 0) + 1
 
 
 def _write_fields(
@@ -587,6 +649,25 @@ def read_vendor(vendor: Vendor, source: Path) -> VendorRead:
             }),
             djay.tracks_streaming,
         )
+    if vendor == "virtualdj":
+        from apps.adapters.virtualdj import read_virtualdj_library, virtualdj_path_resolver
+
+        vdj = read_virtualdj_library(source)
+        return VendorRead(
+            vdj.library,
+            virtualdj_path_resolver(),
+            _nonzero({
+                "location dropped: streaming, no local file": vdj.songs_streaming,
+                "bpm changed: read as seconds per beat (60 / value)": vdj.bpm_as_period,
+                "bpm dropped: outside a beat period and a BPM range": vdj.bpm_dropped,
+                "key dropped: VirtualDJ key text not recognized": vdj.keys_unrecognized,
+                "location unresolved: Windows drive path kept verbatim": vdj.windows_paths_unresolved,
+                "playlist entry unresolved: path not in database.xml": vdj.playlist_entries_unresolved,
+                "playlist dropped: VirtualDJ filter folder (smart list)": vdj.filter_folders_skipped,
+                **{f"poi dropped: {kind}": n for kind, n in vdj.pois_skipped.items()},
+            }),
+            vdj.songs_streaming,
+        )
     raise ValueError(f"unknown vendor {vendor!r}")
 
 
@@ -638,12 +719,12 @@ def _nonzero(counts: dict[str, int]) -> dict[str, int]:
     return {key: n for key, n in counts.items() if n}
 
 
-def source_modified_at(source: Path) -> str:
+def source_modified_at(source: Path, *, library_file: str = "database V2") -> str:
     """When the app last saved its library, as an RFC 3339 UTC stamp.
 
     For a ``_Serato_`` folder that is its ``database V2`` file.
     """
-    target = source / "database V2" if source.is_dir() else source
+    target = source / library_file if source.is_dir() else source
     mtime = target.stat().st_mtime
     return _dt.datetime.fromtimestamp(mtime, _dt.UTC).isoformat()
 
@@ -662,6 +743,9 @@ def default_source(vendor: Vendor) -> Path | None:
         from apps.shared.platform_paths import DJAY_LIVE_DB
 
         return DJAY_LIVE_DB if DJAY_LIVE_DB.is_file() else None
+    if vendor == "virtualdj":
+        candidate = home / "Documents" / "VirtualDJ"
+        return candidate if (candidate / "database.xml").is_file() else None
     return None
 
 
@@ -681,6 +765,11 @@ def _print_summary(report: VendorIngestReport) -> None:
             f"  {name:<9} written {report.fields_written.get(name, 0)}, "
             f"kept another source's {report.fields_kept.get(name, 0)}"
         )
+    carried = [f"{name} {report.extensions_carried[name]}" for name, _ in _CARRIED_EXTENSIONS if report.extensions_carried.get(name)]
+    print(f"  carried, not stored:  {', '.join(carried) if carried else 'none'}")
+    if report.fields_not_stored:
+        parts = [f"{name} {report.fields_not_stored[name]}" for name in sorted(report.fields_not_stored)]
+        print(f"  read, not stored yet: {', '.join(parts)}")
     print(f"  cue sets written:     {report.cue_sets_written}")
     print(f"  cues with no kind:    {report.cues_skipped}")
     print(f"  playlists written:    {report.playlists_written}")
@@ -713,7 +802,9 @@ def run_cli(args: argparse.Namespace, vendor: Vendor) -> int:
             source=str(source),
             resolve_path=read.resolve_path,
             dry_run=not args.write,
-            modified_at=source_modified_at(source),
+            modified_at=source_modified_at(
+                source, library_file="database.xml" if vendor == "virtualdj" else "database V2"
+            ),
         )
         report.reader_notes = dict(read.reader_notes)
         report.entries_dropped_by_reader = read.entries_dropped
@@ -724,11 +815,250 @@ def run_cli(args: argparse.Namespace, vendor: Vendor) -> int:
     return 0
 
 
+# ---------- Serato history -> play log ---------------------------------------
+
+
+@dataclasses.dataclass
+class HistoryImportReport:
+    source: str
+    dry_run: bool
+    sessions_read: int = 0
+    entries_seen: int = 0
+    plays_written: int = 0
+    plays_already_logged: int = 0
+    skipped: dict[str, int] = dataclasses.field(default_factory=dict)
+    unmatched: list[str] = dataclasses.field(default_factory=list)
+    errors: list[str] = dataclasses.field(default_factory=list)
+    duration_s: float = 0.0
+
+    def to_dict(self) -> dict[str, Any]:
+        return dataclasses.asdict(self)
+
+
+def _skip_reason(entry: serato_history.HistoryEntry) -> str | None:
+    if not entry.played:
+        return "not played"
+    if entry.start_s is None:
+        return "no start time"
+    if not entry.path:
+        return "no path"
+    return None
+
+
+def _imported_play(entry: serato_history.HistoryEntry, stable_id: str) -> play_log.ImportedPlay:
+    assert entry.start_s is not None
+    if entry.end_s is not None and entry.end_s >= entry.start_s:
+        audible: float | None = float(entry.end_s - entry.start_s)
+    elif entry.playtime_s is not None:
+        audible = float(entry.playtime_s)
+    else:
+        audible = None
+    return play_log.ImportedPlay(
+        stable_id=stable_id,
+        play_id=entry.play_id,
+        ts=canonical_from(_dt.datetime.fromtimestamp(entry.start_s, _dt.UTC)),
+        audible_s=audible,
+        deck=entry.deck,
+        detail={"session": entry.session_file, "entry": entry.index},
+    )
+
+
+def import_serato_history(
+    conn: Any, serato_dir: Path, *, dry_run: bool, actor: str = "ingest-serato-history"
+) -> HistoryImportReport:
+    """Append one ``track_played`` event per played, library-matched Serato entry."""
+    start = time.perf_counter()
+    report = HistoryImportReport(source=str(serato_dir), dry_run=dry_run)
+    resolve = serato_path_resolver(serato_dir)
+    by_path = live_tracks_by_path(conn)
+    plays: list[play_log.ImportedPlay] = []
+    for file in serato_history.session_files(serato_dir):
+        read = serato_history.read_session(file)
+        report.sessions_read += 1
+        if read.error is not None:
+            report.errors.append(read.error)
+        for entry in read.entries:
+            report.entries_seen += 1
+            reason = _skip_reason(entry)
+            if reason is not None:
+                report.skipped[reason] = report.skipped.get(reason, 0) + 1
+                continue
+            assert entry.path is not None
+            key = nfc(resolve(entry.path))
+            stable_id = by_path.get(key)
+            if stable_id is None:
+                report.unmatched.append(key)
+                continue
+            plays.append(_imported_play(entry, stable_id))
+    conn.execute("BEGIN IMMEDIATE")
+    try:
+        written = play_log.import_plays(conn, plays, source="serato", actor=actor)
+        if dry_run:
+            conn.rollback()
+        else:
+            conn.commit()
+    except Exception:
+        conn.rollback()
+        raise
+    report.plays_written = written
+    report.plays_already_logged = len(plays) - written
+    report.duration_s = round(time.perf_counter() - start, 3)
+    return report
+
+
+def _print_history_summary(report: HistoryImportReport) -> None:
+    mode = "dry-run (rolled back)" if report.dry_run else "written"
+    print(f"Serato history import: {mode}")
+    print(f"  source:               {report.source}")
+    print(f"  sessions read:        {report.sessions_read}")
+    print(f"  entries seen:         {report.entries_seen}")
+    print(f"  plays written:        {report.plays_written}")
+    print(f"  plays already logged: {report.plays_already_logged}")
+    for reason, count in sorted(report.skipped.items()):
+        print(f"  skipped ({reason}): {count}")
+    print(f"  unmatched:            {len(report.unmatched)}")
+    for path in report.unmatched:
+        print(f"    {path}")
+    for error in report.errors:
+        print(f"  error: {error}")
+    print(f"  duration:             {report.duration_s:.3f}s")
+
+
+def run_history_cli(args: argparse.Namespace) -> int:
+    """Import Serato history as ``args`` (``source``, ``write``, ``db``) say."""
+    source = Path(args.source).expanduser() if args.source else Path.home() / "Music" / "_Serato_"
+    if not (source / "History" / "Sessions").is_dir():
+        print(f"error: no Serato history found at {source}", file=sys.stderr)
+        return 1
+    conn = state_db.open_rw(Path(args.db) if args.db else state_paths.STATE_DB)
+    try:
+        report = import_serato_history(conn, source, dry_run=not args.write)
+    finally:
+        conn.close()
+    _print_history_summary(report)
+    for error in report.errors:
+        print(f"error: {error}", file=sys.stderr)
+    return 1 if report.errors else 0
+
+
+# ---------- traktor history -> play log ------------------------------------
+
+
+@dataclasses.dataclass
+class TraktorHistoryImportReport:
+    """What a Traktor history import read and appended. ``entries_seen`` is the denominator."""
+
+    source: str
+    zone: str
+    dry_run: bool
+    files_read: list[str]
+    files_rejected: list[tuple[str, str]]
+    entries_seen: int
+    entries_not_public: int
+    entries_unreadable: int
+    plays_matched: int
+    plays_unmatched: int
+    plays_added: int
+    plays_already_logged: int
+    added_stable_ids: list[str]
+
+    def to_dict(self) -> dict[str, Any]:
+        return dataclasses.asdict(self)
+
+
+def import_traktor_history(
+    conn: Any,
+    traktor_dir: Path,
+    *,
+    zone: _dt.tzinfo | None,
+    dry_run: bool,
+    actor: str,
+    resolve_path: PathResolver | None = None,
+) -> TraktorHistoryImportReport:
+    """Append the PLAYEDPUBLIC entries of ``<traktor_dir>/History`` to the play log.
+
+    Raises FileNotFoundError when the folder has no History/. Rolled back when ``dry_run``.
+    """
+    from apps.adapters.traktor import history
+
+    read = history.read_history_dir(history.history_dir_for(traktor_dir), zone)
+    resolver = resolve_path if resolve_path is not None else traktor_path_resolver()
+    conn.execute("BEGIN IMMEDIATE")
+    try:
+        matched, unmatched = history.match_plays(read.plays, live_tracks_by_path(conn), resolver)
+        logged = play_log.imported_play_ids(conn, history.PLAY_SOURCE)
+        fresh = [play for play in matched if play.play_id not in logged]
+        added = play_log.import_plays(conn, fresh, actor=actor)
+        if dry_run:
+            conn.rollback()
+        elif not dry_run:
+            conn.commit()
+    except Exception:
+        conn.rollback()
+        raise
+    return TraktorHistoryImportReport(
+        source=str(traktor_dir),
+        zone="local" if zone is None else str(zone),
+        dry_run=dry_run,
+        files_read=read.files_read,
+        files_rejected=read.files_rejected,
+        entries_seen=read.entries_seen,
+        entries_not_public=read.entries_not_public,
+        entries_unreadable=read.entries_unreadable,
+        plays_matched=len(matched),
+        plays_unmatched=unmatched,
+        plays_added=added,
+        plays_already_logged=len(matched) - len(fresh),
+        added_stable_ids=sorted({play.stable_id for play in fresh}),
+    )
+
+
+def _print_traktor_history_summary(report: TraktorHistoryImportReport) -> None:
+    print(f"traktor-history import ({'dry-run' if report.dry_run else 'write'})")
+    print(f"  source:               {report.source}")
+    print(f"  zone:                 {report.zone}")
+    print(f"  files read:           {len(report.files_read)}")
+    for name, reason in report.files_rejected:
+        print(f"  rejected: {name} ({reason})")
+        print(f"warning: skipped {name}: {reason}", file=sys.stderr)
+    print(f"  entries seen:         {report.entries_seen}")
+    print(f"  not played public:    {report.entries_not_public}")
+    print(f"  unreadable:           {report.entries_unreadable}")
+    print(f"  matched to tracks:    {report.plays_matched}")
+    print(f"  unmatched:            {report.plays_unmatched}")
+    print(f"  plays added:          {report.plays_added}")
+    print(f"  already logged:       {report.plays_already_logged}")
+
+
+def run_traktor_history_cli(args: argparse.Namespace) -> int:
+    """``traktor-history`` as ``args`` (``source``, ``zone``, ``write``, ``db``) say."""
+    from apps.adapters.traktor import history
+
+    source = Path(args.source).expanduser() if args.source else history.default_traktor_dir()
+    if source is None or not (source / history.HISTORY_DIRNAME).is_dir():
+        where = args.source or "the default location"
+        print(f"error: no Traktor history found at {where}", file=sys.stderr)
+        return 1
+    zone = ZoneInfo(args.zone) if args.zone else None
+    conn = state_db.open_rw(Path(args.db) if args.db else state_paths.STATE_DB)
+    try:
+        report = import_traktor_history(
+            conn, source, zone=zone, dry_run=not args.write, actor="ingest-traktor-history"
+        )
+    finally:
+        conn.close()
+    _print_traktor_history_summary(report)
+    return 0
+
+
 _WHERE: dict[str, str] = {
     "serato": "the _Serato_ folder (default ~/Music/_Serato_)",
     "traktor": "collection.nml (default: the newest Traktor folder in ~/Documents/Native Instruments)",
     "rekordbox-xml": "a rekordbox XML export (from rekordbox, Lexicon, Engine DJ or VirtualDJ); required",
     "djay": "djay's MediaLibrary.db (default ~/Music/djay/djay Media Library.djayMediaLibrary/MediaLibrary.db)",
+    "virtualdj": "the VirtualDJ folder holding database.xml and MyLists (default ~/Documents/VirtualDJ)",
+    "traktor-history": "the Traktor folder holding History/ (default: the newest Traktor folder in ~/Documents/Native Instruments)",
+    "serato-history": "the _Serato_ folder holding History/Sessions (default ~/Music/_Serato_)",
 }
 
 
@@ -737,12 +1067,16 @@ def _build_parser() -> argparse.ArgumentParser:
         prog="python -m apps.adapters.library_import",
         description=(
             "Import another DJ app's library into state.db. A file already in "
-            "the library is merged onto its track; BPM, key, rating and "
-            "comments only fill values no other source set; cues follow the "
+            "the library is merged onto its track; BPM, key, rating, comments "
+            "and genre only fill values no other source set; cues follow the "
             "cue store's ownership rule; removed tracks stay removed."
         ),
     )
-    parser.add_argument("vendor", choices=VENDORS, help="which app's library to read")
+    parser.add_argument(
+        "vendor",
+        choices=(*VENDORS, *HISTORY_COMMANDS),
+        help="which app's library to read, or serato-history / traktor-history to import plays",
+    )
     parser.add_argument(
         "--source", default=None, help="; ".join(f"{v}: {w}" for v, w in _WHERE.items())
     )
@@ -750,28 +1084,46 @@ def _build_parser() -> argparse.ArgumentParser:
         "--write", action="store_true", help="persist changes (default: dry-run, rolled back)"
     )
     parser.add_argument("--db", default=None, help="state.db path (default: the app's state DB)")
+    parser.add_argument(
+        "--zone", default=None, help="traktor-history only: IANA zone of the history times (default: this machine's)"
+    )
     return parser
 
 
 def main(argv: list[str] | None = None) -> int:
     """``python -m apps.adapters.library_import <vendor> [--source P] [--write]``."""
     args = _build_parser().parse_args(argv)
-    return run_cli(args, args.vendor)
+    if args.vendor == "serato-history":
+        return run_history_cli(args)
+    if args.vendor == "traktor-history":
+        return run_traktor_history_cli(args)
+    if args.vendor in VENDORS:
+        return run_cli(args, args.vendor)
+    raise ValueError(f"unhandled import {args.vendor!r}")
 
 
 __all__ = [
+    "HISTORY_COMMANDS",
+    "PLAY_SOURCES",
     "VENDORS",
+    "HistoryImportReport",
     "PathResolver",
+    "TraktorHistoryImportReport",
     "Vendor",
     "VendorIngestReport",
     "VendorRead",
     "default_source",
+    "import_serato_history",
+    "import_traktor_history",
     "ingest_library",
+    "live_tracks_by_path",
     "main",
     "nfc",
     "read_vendor",
     "read_vendor_library",
     "run_cli",
+    "run_history_cli",
+    "run_traktor_history_cli",
     "serato_path_resolver",
     "serato_volume_root",
     "source_modified_at",

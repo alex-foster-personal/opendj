@@ -40,7 +40,9 @@ const CLAIMABLE = {
 		'headphone_alignment_mode',
 		'output_mode',
 		'headphone_output_select',
-		'headphone_master_select'
+		'headphone_master_select',
+		'headphone_booth_level',
+		'headphone_booth_select'
 	]
 };
 
@@ -55,7 +57,13 @@ const UNNAMED = new Set([
 	// DECKUX-6794: behind a default-off flag, so the preview's help text has no feature to name yet.
 	'grid_jump',
 	// DECKMOVE-01: an artwork right-click action, refused by name with its own error; the native port is a follow-up.
-	'deck_move'
+	'deck_move',
+	// DECKUX-10478: manual loop buttons, refused by name; the help text names features, not each loop button.
+	'loop_in',
+	'loop_out',
+	'reloop',
+	// CUES-10013: the page engine owns the memory cue pick; CALL refuses by name in the preview, the native port is a follow-up.
+	'memory_cue_call'
 ]);
 
 function detail() {

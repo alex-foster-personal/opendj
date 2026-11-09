@@ -5,6 +5,7 @@
 	 * Optional thin green→red meter pulse from the live deck analyser.
 	 * It now renders through ChannelLevelMeter as ten discrete segments.
 	 */
+	import { FADER_THUMB_H, faderValueFromPress } from '$lib/rb/fader-press-geometry';
 	import AnimRunningDot from './AnimRunningDot.svelte';
 	import { createShiftSelectPress } from '$lib/rb/shift-select-press';
 	import ChannelLevelMeter from './ChannelLevelMeter.svelte';
@@ -58,7 +59,7 @@
 	// The hover names the fader and says which chevron is which (pin 561f92dd6c12).
 	const faderTitle = $derived(`${label}. Up chevron is louder, down chevron is quieter. Drag to set the level.`);
 
-	const THUMB_H = 12;
+	const THUMB_H = FADER_THUMB_H;
 
 	let trackEl: HTMLDivElement | undefined = $state();
 	let trackH = $state(96);
@@ -91,9 +92,7 @@
 	function _valueFromEvent(e: PointerEvent): number {
 		const el = trackEl;
 		if (!el) return value;
-		const rect = el.getBoundingClientRect();
-		const y = e.clientY - rect.top - THUMB_H / 2;
-		return _clamp01(1 - y / Math.max(1, rect.height - THUMB_H));
+		return faderValueFromPress(el.getBoundingClientRect(), e.clientY, THUMB_H);
 	}
 
 	const shiftSelect = createShiftSelectPress();

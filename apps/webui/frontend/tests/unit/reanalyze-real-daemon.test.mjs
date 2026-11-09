@@ -42,8 +42,19 @@ after(async () => {
 	if (daemon) await daemon.stop();
 });
 
-function toastBody(t) {
-	return t.detail ?? t.message;
+function toastText(t) {
+	const parts = [];
+	if (typeof t.detail === 'string' && t.detail.length > 0) parts.push(t.detail);
+	if (typeof t.message === 'string' && t.message.length > 0) parts.push(t.message);
+	if (typeof t.headline === 'string' && t.headline.length > 0) parts.push(t.headline);
+	return parts.join('\n');
+}
+
+/** UX-TOAST-02: batch id stays on detail; headline holds the stripped progress line. */
+function toastBodyForBatch(t) {
+	const detail = typeof t.detail === 'string' ? t.detail : '';
+	const message = typeof t.message === 'string' ? t.message : '';
+	return detail.length > 0 ? detail : message;
 }
 
 async function waitForToast(predicate) {
@@ -54,7 +65,7 @@ async function waitForToast(predicate) {
 		await new Promise((resolve) => setTimeout(resolve, 250));
 	}
 	throw new Error(
-		`no matching toast within ${SETTLE_TIMEOUT_MS} ms; toasts: ${JSON.stringify(mod.toasts.map((t) => toastBody(t)))}`
+		`no matching toast within ${SETTLE_TIMEOUT_MS} ms; toasts: ${JSON.stringify(mod.toasts.map((t) => toastText(t)))}`
 	);
 }
 
@@ -62,8 +73,10 @@ test('Re-analyze runs the batch it enqueues, through the daemon, to a terminal t
 	const sid = daemon.reanalyzeSid;
 	await mod.runReanalyze([sid]);
 
-	const queued = await waitForToast((toast) => /\(batch qb_[0-9a-f]+\)/.test(toastBody(toast)));
-	const queuedText = toastBody(queued);
+	const queued = await waitForToast((toast) =>
+		/\(batch qb_[0-9a-f]+\)/.test(toastBodyForBatch(toast))
+	);
+	const queuedText = toastBodyForBatch(queued);
 	const batchId = /\(batch (qb_[0-9a-f]+)\)/.exec(queuedText)[1];
 	assert.doesNotMatch(
 		queuedText,
@@ -72,10 +85,14 @@ test('Re-analyze runs the batch it enqueues, through the daemon, to a terminal t
 	);
 
 	const terminal = await waitForToast((toast) => {
-		const body = toastBody(toast);
-		return body.includes(': complete ') && body.includes(batchId);
+		const headline = typeof toast.headline === 'string' ? toast.headline : '';
+		const detail = toastBodyForBatch(toast);
+		return /: complete\b/i.test(headline) && detail.includes(batchId);
 	});
-	const terminalText = toastBody(terminal);
+	const terminalText =
+		typeof terminal.headline === 'string' && terminal.headline.length > 0
+			? terminal.headline
+			: toastText(terminal);
 	const counts = /done (\d+), failed (\d+), skipped (\d+)/.exec(terminalText);
 	assert.ok(counts, `the terminal toast names its counts: ${terminalText}`);
 	const [done, failed, skipped] = counts.slice(1).map(Number);

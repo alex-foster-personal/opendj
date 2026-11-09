@@ -28,6 +28,8 @@
 	import { playheadMs } from '$lib/rb/playhead-display.svelte';
 	import { tracePlayhead } from '$lib/rb/playhead-trace';
 	import { uiPrefs } from '$lib/rb/prefs.svelte';
+	import { needleLockRefusal } from '$lib/rb/needle-lock';
+	import { pushToast } from '$lib/stores.svelte';
 	import { effectiveWaveformDesign, effectiveWavePalette, effectiveWaveScheme } from '$lib/rb/ui-skin';
 	import { resolveStripBandColors } from '$lib/rb/wave-palette';
 	import { paintBandGains } from '$lib/rb/wave-eq-gains.svelte';
@@ -300,6 +302,12 @@
 
 	async function handleClick(e: MouseEvent): Promise<void> {
 		if (deck.duration_ms === null) return;
+		// DECKCTL-10421: Needle Lock keeps a stray touch from seeking a playing deck.
+		const lockHint = needleLockRefusal(uiPrefs.deck_needle_lock, deck.playing);
+		if (lockHint !== null) {
+			pushToast(lockHint, 'info');
+			return;
+		}
 		const el = e.currentTarget as HTMLElement;
 		const rect = el.getBoundingClientRect();
 		const ratio = Math.min(1, Math.max(0, (e.clientX - rect.left) / rect.width));

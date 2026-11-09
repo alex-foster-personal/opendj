@@ -24,10 +24,15 @@ let engine;
 
 before(async () => {
 	graph = await loadTypeScriptModule('src/lib/rb/deck-channel-graph.ts');
-	engine = readFileSync(
+	const barrel = readFileSync(
 		new URL('../../src/lib/rb/audio-engine.svelte.ts', import.meta.url),
 		'utf8'
 	);
+	const stemRouting = readFileSync(
+		new URL('../../src/lib/rb/audio-engine-stem-routing.ts', import.meta.url),
+		'utf8'
+	);
+	engine = `${barrel}\n${stemRouting}`;
 });
 
 function snap(status) {
@@ -61,7 +66,10 @@ test('the rebuild restarts loading and ready decks, and only those', () => {
 	assert.ok(start > 0, 'maybeUpgradeStems binding not found in the engine');
 	const body = engine.slice(start, engine.indexOf('}', engine.indexOf('{', start + 40)));
 	assert.match(body, /snap\.stemsReady \|\| snap\.stemsLoading/);
-	assert.match(body, /_upgradeDeckStems\(snap\.deck, snap\.stableId, _rt\[snap\.deck\]\.loadToken, ctx, buffer\)/);
+	assert.match(
+		body,
+		/_upgradeDeckStems\(snap\.deck, snap\.stableId, _rt\[snap\.deck\]\.loadToken, ctx, buffer\)/
+	);
 });
 
 test('an upgrade started on a replaced context is stale', () => {

@@ -120,6 +120,7 @@ tests/scripts/test_desktop_icons.py
 tests/scripts/test_icon_composer_asset.py
 tests/scripts/test_orphan_cleanup.py
 tests/webui/test_reserved_fixed_ports_drift.py
+tests/webui/test_gen_reserved_ports.py
 
 # Scan every `apps/**/*.py` for a forbidden `set_default("beatgrid", "own")` call through a
 # function-local `apps_root`. `apps/webui/server/app.py` and `apps/stems/relay/app.py` edits
@@ -223,10 +224,6 @@ tests/scripts/test_desktop_html5_drag_drop.py
 # lists (#8304): it rglobs apps/, so a new publish site in any module selects only its own tests
 # and never reaches this guard.
 tests/engine_core/test_library_changed_kinds.py
-
-# The Tauri drag-drop guard (DECKUX-8350) rglobs every frontend src file for native drop listeners, so a new
-# listener in any frontend file would otherwise never select it.
-tests/scripts/test_html5_drag_drop.py
 # Issue #8584 guard: `git ls-files` at the repo root and slides a 2-line window over every
 # tracked path for stale "append flags to performance-register.md" agent copy. A new doc
 # outside the perf docs can miss every import-linked selector and still reach this scan.
@@ -234,3 +231,7 @@ tests/scripts/test_html5_drag_drop.py
 # Every module under apps/ and scripts/ keeps POSIX-only imports guarded (CROSS-6892): an AST
 # scan of the whole tree, so a new module anywhere can break it without an import link.
 tests/test_no_unguarded_posix_imports.py
+
+# LATENCY-03 ratchet: hands REPO to scripts.quality_latency.evaluate and _read_sources, which read
+# fixed paths under the checkout. An apps/webui frontend edit can miss it through import links alone.
+tests/scripts/test_quality_latency.py

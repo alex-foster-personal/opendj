@@ -215,7 +215,7 @@ test('waiting render exposes screen-reader text and streaming counter stays', ()
 	const waiting = ssr.render(ssr.AssistantSidebarView, {
 		props: { ...baseViewProps, streaming: '', fillPhase: 'waiting' }
 	}).body;
-	assert.match(waiting, /role="log"[\s\S]*oj-sr-only[\s\S]*Assistant is answering/);
+	assert.match(waiting, /role="log"[\s\S]*oj-sr-only[\s\S]*OJ is answering/);
 
 	const streaming = ssr.render(ssr.AssistantSidebarView, {
 		props: { ...baseViewProps, streaming: 'hello', fillPhase: 'streaming' }

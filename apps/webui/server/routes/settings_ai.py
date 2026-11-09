@@ -27,6 +27,7 @@ ALLOWED_KEYS: frozenset[str] = frozenset(
         "library_density",
         "beat_sync_max",
         "deck_default_quantize",
+        "deck_needle_lock",
         "next_only_filter",
         "remixes_filter",
         "vocals_filter",

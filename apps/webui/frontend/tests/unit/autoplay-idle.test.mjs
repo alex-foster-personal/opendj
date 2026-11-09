@@ -34,7 +34,7 @@ const ENTRY = [
 	"export { deckStates } from '$lib/rb/audio-engine.svelte';",
 	"export { readAutoPlayStall, noteAutoPlayExhaustion } from '$lib/rb/autoplay-stall.svelte';",
 	"export { clearEngineRecoveryStop, engineRecoveryStopReason, markEngineRecoveryStop } from '$lib/rb/engine-recovery-stop';",
-	"export { AUTO_PLAY_IDLE_MS, AUTO_PLAY_SILENT_STALL_MS, resetAutoPlayIdleClock } from '$lib/rb/autoplay-idle';",
+	"export { AUTO_PLAY_IDLE_MS, AUTO_PLAY_SILENT_STALL_MS, isAutoPlayArmedEmptyActive, readAutoPlayIdleSinceMs, resetAutoPlayIdleClock } from '$lib/rb/autoplay-idle';",
 	"export { setAutoPlayTrackFeed } from '$lib/rb/auto-play';"
 ].join('\n');
 
@@ -287,5 +287,31 @@ test('RUNNING it: exhaustion (no-compatible-track) then the decks running out le
 		assert.equal(status.autoplay_armed, false);
 		assert.notEqual(status.autoplay_disarm_reason, 'disabled', 'an exhaustion stop must never read like a user stop');
 		assert.equal(mod.readAutoPlayStall()?.reason, 'no-compatible-track', 'the exhaustion explanation survives the idle period');
+	});
+});
+
+// REQ: PLAY-10049
+test('RUNNING it: stopping the poll resets the enable-edge latch, so a re-enable over silent decks is armed-empty again (issue #3902)', async () => {
+	await withAutoPlay(async (mod, probe) => {
+		playMaster(mod);
+		await settle();
+		assert.equal(mod.isAutoPlayArmedEmptyActive(), false, 'a deck played, so armed-empty is over');
+		stopEveryDeck(mod);
+		await settle();
+		assert.notEqual(mod.readAutoPlayIdleSinceMs(), null, 'the idle clock runs with every deck stopped');
+		mod.setAutoPlayEnabled(false);
+		await probe.flush();
+		await settle();
+		assert.equal(mod.readAutoPlayIdleSinceMs(), null, 'turning AutoPlay off clears the idle clock');
+		mock.timers.tick(LONG_IDLE_MS);
+		mod.setAutoPlayEnabled(true);
+		await probe.flush();
+		await settle();
+		assert.equal(
+			mod.isAutoPlayArmedEmptyActive(),
+			true,
+			'if the enable edge is missed after a stop and restart of the poll then broken'
+		);
+		assert.equal(mod.readAutoPlayStall(), null, 'armed-empty raises no silent stall');
 	});
 });

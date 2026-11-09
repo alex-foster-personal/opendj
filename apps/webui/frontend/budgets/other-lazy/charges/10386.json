@@ -1,0 +1,9 @@
+{
+  "bytes": 1024,
+  "measured_main": 479012,
+  "measured_with_pr": 479198,
+  "sha": "46d296d5fe",
+  "date": "Mon 9 Nov 2026",
+  "reason": "PR #10386 resolves #9807 (sound colour pairs). Measured: CI bundle check of 46d296d5fe, +186 B gzip on other-lazy; ceiled to KiB",
+  "payback": "none planned; the growth is the feature's own code"
+}

@@ -18,6 +18,7 @@ playhead the clock counts on and which a plan cannot express.
 
 from __future__ import annotations
 
+import logging
 import math
 from collections.abc import Mapping
 from dataclasses import dataclass, field, replace
@@ -25,7 +26,9 @@ from typing import Any
 
 from apps.autodj.plan import _side_gain, bpm_gap_pct, live_child, live_mapping
 from apps.autodj.profile import TrackProfile
-from apps.autodj.simplify import CapturedMix, Lane, Sample
+from apps.autodj.simplify import CapturedMix, Lane, Sample, SimplifyError
+
+_LOG = logging.getLogger(__name__)
 
 DECK_LANE_CONTROLS: tuple[str, ...] = ("fader", "trim", "filter", "eq_low", "eq_mid", "eq_high")
 #: Below this channel gain the outgoing deck counts as silent.
@@ -48,12 +51,14 @@ _DOWNBEAT_EPSILON_BARS = 1e-6
 @dataclass(frozen=True)
 class CaptureOutcome:
     """How the last session ended: ``closed`` or ``abandoned`` with why, then the save's verdict on a closed one
-    (``saved``, ``not_saved``, ``refused``, ``failed``). ``failed`` with no tracks is a mirror capture could not read."""
+    (``saved``, ``not_saved``, ``refused``, ``failed``). ``failed`` with no tracks is a mirror capture could not read.
+    ``capture_id`` names the session (or fault) it reports, so a slow save's verdict can only land on its own mix."""
 
     status: str
     reason: str
     out_track: str
     in_track: str
+    capture_id: int
 
 
 @dataclass(frozen=True)
@@ -95,13 +100,31 @@ class ClosedMix:
     end_s: float
     lanes: Mapping[Lane, tuple[Sample, ...]]
     tempo_mode: str
+    #: The id of the :class:`CaptureOutcome` this close recorded; the saver hands it back to ``note_result``.
+    capture_id: int
+
+
+class PreGridIncomingError(SimplifyError):
+    """The incoming track was started before its grid's bar 1, which a pair plan cannot represent (PAIR-9954)."""
+
+    def __init__(self, in_track: str, projected_bar: int) -> None:
+        self.in_track = in_track
+        self.projected_bar = projected_bar
+        super().__init__(
+            f"the incoming track {in_track} started at projected bar {projected_bar}, before its grid's bar 1; "
+            "the grid cannot represent it, so this mix is not saved"
+        )
 
 
 def in_bars(mix: ClosedMix, out_profile: TrackProfile, in_profile: TrackProfile) -> CapturedMix:
     """The session on the plan clock: bar 0 is the last outgoing downbeat before the overlap, and the incoming bar lined
-    up with it is the one its playhead projects to."""
+    up with it is the one its playhead projects to. :class:`PreGridIncomingError` when that bar is below 1: moving it to
+    bar 1 would replay the incoming from a different musical point than the DJ played."""
     first_out_bar = out_profile.bar_at(mix.out_start_s)
     out_start = math.floor(first_out_bar + _DOWNBEAT_EPSILON_BARS)
+    in_start_bar = round(in_profile.bar_at(mix.in_start_s) - (first_out_bar - out_start))
+    if in_start_bar < 1:
+        raise PreGridIncomingError(mix.in_track, in_start_bar)
 
     def plan_bar(seconds: float) -> float:
         return out_profile.bar_at(seconds) - out_start
@@ -112,7 +135,7 @@ def in_bars(mix: ClosedMix, out_profile: TrackProfile, in_profile: TrackProfile)
         out_start_bar=out_start,
         in_deck=mix.in_deck,
         in_track=mix.in_track,
-        in_start_bar=max(1, round(in_profile.bar_at(mix.in_start_s) - (first_out_bar - out_start))),
+        in_start_bar=in_start_bar,
         end_bar=plan_bar(mix.end_s),
         lanes={
             lane: tuple(Sample(plan_bar(sample.at_bar), sample.value) for sample in samples)
@@ -217,19 +240,35 @@ class TransitionCapture:
         #: A pair this overlap already closed or cannot capture: not reopened until one of them stops.
         self._spent: tuple[str, str] | None = None
         self.last_outcome: CaptureOutcome | None = None
+        #: Monotonic: every close, abandon and fault takes the next id.
+        self._last_capture_id = 0
 
-    def note_result(self, status: str, reason: str) -> None:
-        """The saver's verdict on the mix this capture last closed."""
-        if self.last_outcome is None:
+    def _next_capture_id(self) -> int:
+        self._last_capture_id += 1
+        return self._last_capture_id
+
+    def note_result(self, capture_id: int, status: str, reason: str) -> None:
+        """The saver's verdict on the mix closed as ``capture_id``; dropped when a newer outcome has replaced it."""
+        last = self.last_outcome
+        if last is None:
             raise RuntimeError("no capture has closed")
-        self.last_outcome = replace(self.last_outcome, status=status, reason=reason)
+        if last.capture_id != capture_id:
+            _LOG.info(
+                "dropped the %s verdict for capture %d: capture %d (%s) is newer",
+                status,
+                capture_id,
+                last.capture_id,
+                last.status,
+            )
+            return
+        self.last_outcome = replace(last, status=status, reason=reason)
 
     def note_fault(self, reason: str) -> None:
         """A mirror this capture could not read: the attempt under way is dropped, not guessed at."""
         session = self._session
         self._session = None
         out, in_ = ("", "") if session is None else (session.out.track, session.in_.track)
-        self.last_outcome = CaptureOutcome("failed", reason, out, in_)
+        self.last_outcome = CaptureOutcome("failed", reason, out, in_, self._next_capture_id())
 
     def status(self) -> dict[str, Any]:
         session = self._session
@@ -261,11 +300,13 @@ class TransitionCapture:
             self._maybe_open(playing, mixer, mirror.get("master_deck"))
         return None
 
-    def _end(self, session: _Session, status: str, reason: str, *, spent: bool) -> None:
-        self.last_outcome = CaptureOutcome(status, reason, session.out.track, session.in_.track)
+    def _end(self, session: _Session, status: str, reason: str, *, spent: bool) -> int:
+        capture_id = self._next_capture_id()
+        self.last_outcome = CaptureOutcome(status, reason, session.out.track, session.in_.track, capture_id)
         self._session = None
         if spent:
             self._spent = (session.out.track, session.in_.track)
+        return capture_id
 
     def _maybe_open(self, playing: dict[int, _DeckRead], mixer: Mapping[str, Any], master: Any) -> None:
         tracks = {read.track for read in playing.values()}
@@ -324,7 +365,7 @@ class TransitionCapture:
         return None
 
     def _close(self, session: _Session, reason: str) -> ClosedMix:
-        self._end(session, "closed", reason, spent=True)
+        capture_id = self._end(session, "closed", reason, spent=True)
         return ClosedMix(
             out_deck=session.out.deck,
             out_track=session.out.track,
@@ -335,4 +376,5 @@ class TransitionCapture:
             end_s=session.last_out_s if session.silent_since is None else session.silent_since,
             lanes={lane: tuple(samples) for lane, samples in session.lanes.items()},
             tempo_mode=session.tempo_mode,
+            capture_id=capture_id,
         )

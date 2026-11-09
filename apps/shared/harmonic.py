@@ -186,6 +186,16 @@ def camelot_distance(k1: CamelotKey, k2: CamelotKey) -> int:
 #   as DJ.Studio's +7 (each wheel step is a fifth, so it is one semitone up).
 # - pay attention: Mixed In Key's -3 move (8A -> 5A, the same position as +9).
 #   Usable but mood-changing, so it is off by default.
+#
+# Every rule also carries a SCORE and each move a DIRECTION (lift, drop or
+# neutral), the scoring table of
+# (private path)
+# section 3. Scores are Mixed In Key-mimicked priors kept as data (a later
+# calibration refits them against the maintainer's blind picks); the row order is the
+# claim. The rules are DIRECTIONAL: 5B -> 6A is the good diagonal (0.75) while
+# 8B -> 7A, the same wheel distance the other way round, is the wrong-way
+# diagonal MIK says fails (0.30). The rows after pay_attention are scoring
+# relations, not MIK-named moves; they are off by default in the filter.
 
 
 @dataclass(frozen=True, slots=True)
@@ -195,6 +205,8 @@ class CamelotMove:
     from_letter: str  # "A", "B" or "*" (either)
     to_letter: str  # "same" or "other"
     step: int  # signed Camelot-number step, applied mod 12
+    direction: str  # "lift", "drop" or "neutral": what the move does to the energy
+    interval: str  # the tonic interval heard, for reasons ("fifth up")
 
 
 @dataclass(frozen=True, slots=True)
@@ -203,30 +215,131 @@ class CamelotRule:
     label: str
     example: str
     default_on: bool
+    score: float  # smoothness prior, 0..1 (spec 07 section 3)
     moves: tuple[CamelotMove, ...]
 
 
+LIFT = "lift"
+DROP = "drop"
+NEUTRAL = "neutral"
+KEY_MOVES: tuple[str, ...] = (LIFT, DROP, NEUTRAL)
+
+#: The relation and score of a pair no rule covers.
+CLASH_RELATION = "clash"
+CLASH_SCORE = 0.10
+
+#: Relations that read as a key clash on long blends (16+ bars in ``propose._style_fit``).
+LONG_BLEND_KEY_CLASH_RELATIONS: frozenset[str] = frozenset(
+    {CLASH_RELATION, "tritone", "semitone_down", "wrong_way_diagonal"}
+)
+
 CAMELOT_RULES: tuple[CamelotRule, ...] = (
-    CamelotRule("same_key", "Same key", "8A \u2192 8A", True, (CamelotMove("*", "same", 0),)),
+    CamelotRule(
+        "same_key", "Same key", "8A \u2192 8A", True, 1.00, (CamelotMove("*", "same", 0, NEUTRAL, "same key"),)
+    ),
     CamelotRule(
         "adjacent",
         "\u00b11 same letter",
         "8A \u2192 7A / 9A",
         True,
-        (CamelotMove("*", "same", 1), CamelotMove("*", "same", -1)),
+        0.90,
+        (CamelotMove("*", "same", 1, LIFT, "fifth up"), CamelotMove("*", "same", -1, NEUTRAL, "fourth up")),
     ),
-    CamelotRule("relative", "Relative (A/B)", "8A \u2192 8B, 8B \u2192 8A", True, (CamelotMove("*", "other", 0),)),
+    CamelotRule(
+        "relative",
+        "Relative (A/B)",
+        "8A \u2192 8B, 8B \u2192 8A",
+        True,
+        0.95,
+        (CamelotMove("*", "other", 0, NEUTRAL, "relative major/minor"),),
+    ),
     CamelotRule(
         "diagonal",
         "Diagonal",
         "8B \u2192 9A, 8A \u2192 7B",
         False,
-        (CamelotMove("B", "other", 1), CamelotMove("A", "other", -1)),
+        0.75,
+        (
+            CamelotMove("B", "other", 1, NEUTRAL, "mediant, I to iii"),
+            CamelotMove("A", "other", -1, NEUTRAL, "submediant, i to VI"),
+        ),
     ),
-    CamelotRule("energy_boost", "Energy boost +2", "8A \u2192 10A", False, (CamelotMove("*", "same", 2),)),
-    CamelotRule("energy_drop", "Energy drop \u22122", "8A \u2192 6A", False, (CamelotMove("*", "same", -2),)),
-    CamelotRule("jaws", "Jaws \u22125 (= +7)", "8A \u2192 3A", False, (CamelotMove("*", "same", -5),)),
-    CamelotRule("pay_attention", "Pay attention \u22123", "8A \u2192 5A", False, (CamelotMove("*", "same", -3),)),
+    CamelotRule(
+        "energy_boost",
+        "Energy boost +2",
+        "8A \u2192 10A",
+        False,
+        0.55,
+        (CamelotMove("*", "same", 2, LIFT, "whole tone up"),),
+    ),
+    CamelotRule(
+        "energy_drop",
+        "Energy drop \u22122",
+        "8A \u2192 6A",
+        False,
+        0.50,
+        (CamelotMove("*", "same", -2, DROP, "whole tone down"),),
+    ),
+    CamelotRule(
+        "jaws", "Jaws \u22125 (= +7)", "8A \u2192 3A", False, 0.30, (CamelotMove("*", "same", -5, LIFT, "semitone up"),)
+    ),
+    CamelotRule(
+        "pay_attention",
+        "Pay attention \u22123",
+        "8A \u2192 5A",
+        False,
+        0.45,
+        (CamelotMove("*", "same", -3, NEUTRAL, "minor third up"),),
+    ),
+    CamelotRule(
+        "wrong_way_diagonal",
+        "Wrong-way diagonal",
+        "8B \u2192 7A, 8A \u2192 9B",
+        False,
+        0.30,
+        (
+            CamelotMove("B", "other", -1, NEUTRAL, "whole tone up, no shared triad tone"),
+            CamelotMove("A", "other", 1, NEUTRAL, "whole tone down, no shared triad tone"),
+        ),
+    ),
+    CamelotRule(
+        "parallel",
+        "Parallel (same tonic)",
+        "8B \u2192 5A, 5A \u2192 8B",
+        False,
+        0.40,
+        (
+            CamelotMove("B", "other", -3, NEUTRAL, "same tonic, major to minor"),
+            CamelotMove("A", "other", 3, NEUTRAL, "same tonic, minor to major"),
+        ),
+    ),
+    CamelotRule(
+        "minor_third_down",
+        "Minor third down +3",
+        "8A \u2192 11A",
+        False,
+        0.35,
+        (CamelotMove("*", "same", 3, NEUTRAL, "minor third down"),),
+    ),
+    CamelotRule(
+        "major_third",
+        "Major third +4",
+        "10B \u2192 2B",
+        False,
+        0.35,
+        (CamelotMove("*", "same", 4, LIFT, "major third up"),),
+    ),
+    CamelotRule(
+        "semitone_down",
+        "Semitone down +5",
+        "8A \u2192 1A",
+        False,
+        0.15,
+        (CamelotMove("*", "same", 5, NEUTRAL, "semitone down"),),
+    ),
+    CamelotRule(
+        "tritone", "Tritone +6", "8A \u2192 2A", False, 0.05, (CamelotMove("*", "same", 6, NEUTRAL, "tritone"),)
+    ),
 )
 
 CAMELOT_RULE_IDS: tuple[str, ...] = tuple(rule.id for rule in CAMELOT_RULES)
@@ -272,31 +385,39 @@ def camelot_rules_allow(reference: str, candidate: str, rule_ids: tuple[str, ...
 # Compatibility Scorers
 # ---------------------------------------------------------------------------
 
-_CAMELOT_COMPAT: dict[tuple[int, bool | None], float] = {
-    (0, True): 1.0,
-    (0, False): 0.8,
-    (1, True): 0.9,
-    (1, False): 0.7,
-    (2, True): 0.5,
-    (2, False): 0.4,
-    (3, None): 0.25,
-    (4, None): 0.15,
-    (5, None): 0.1,
-}
+
+@dataclass(frozen=True, slots=True)
+class KeyCompat:
+    """How the incoming key sits against the outgoing one: the Camelot RULE, its score and the move it makes."""
+
+    relation: str  # a CAMELOT_RULES id, or CLASH_RELATION
+    score: float  # the rule's prior, 0..1
+    move: str  # "lift", "drop" or "neutral"
+    interval: str  # the tonic interval heard, for reasons
+
+
+def key_compat(key_out: str, key_in: str) -> KeyCompat:
+    """Score the move FROM ``key_out`` TO ``key_in`` by Camelot rule, directionally.
+
+    Accepts Camelot ("8A") and standard ("Am") notation. The first rule whose
+    move takes the outgoing key to the incoming one wins (the cells are
+    disjoint, see tests/shared/test_camelot_rules.py); a pair no rule covers
+    is a ``clash`` at the clash floor. 5B -> 6A is ``diagonal`` 0.75 while
+    8B -> 7A is ``wrong_way_diagonal`` 0.30: the distance table this replaced
+    could not tell them apart.
+    """
+    out_key = key_to_camelot(key_out)
+    in_key = key_to_camelot(key_in)
+    for rule in CAMELOT_RULES:
+        for move in rule.moves:
+            if _move_matches(move, out_key, in_key):
+                return KeyCompat(rule.id, rule.score, move.direction, move.interval)
+    return KeyCompat(CLASH_RELATION, CLASH_SCORE, NEUTRAL, "no Camelot relation")
 
 
 def camelot_compatibility(key1: str, key2: str) -> float:
-    """Score harmonic compatibility between two keys (0.0-1.0).
-
-    Accepts both Camelot notation ("8A") and standard notation ("Am").
-    """
-    ck1 = key_to_camelot(key1)
-    ck2 = key_to_camelot(key2)
-
-    dist = _camelot_distance(ck1, ck2)
-    same_mode = ck1.letter == ck2.letter
-    mode_key = same_mode if dist <= 2 else None
-    return _CAMELOT_COMPAT.get((dist, mode_key), 0.05)
+    """The ``key_compat`` score of mixing FROM ``key1`` TO ``key2`` (0.0-1.0)."""
+    return key_compat(key1, key2).score
 
 
 def bpm_compatibility(bpm1: float | None, bpm2: float | None, max_diff_pct: float = 10.0) -> float:

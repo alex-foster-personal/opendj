@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 
 from apps.shared.pairings.models import PairingEdge
 
@@ -25,8 +25,8 @@ class RowFormatOptions:
 
 
 CSV_ROW_OPTS = RowFormatOptions(False, 3, None)
-TABLE_FALLBACK_ROW_OPTS = RowFormatOptions(True, 2, "seconds")
 TABLE_RICH_ROW_OPTS = RowFormatOptions(False, 2, "seconds")
+TABLE_FALLBACK_ROW_OPTS = replace(TABLE_RICH_ROW_OPTS, truncate_ids=True)
 
 
 def format_confidence(confidence: float | None, *, precision: int) -> str:

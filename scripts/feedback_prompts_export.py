@@ -21,10 +21,11 @@ from pathlib import Path
 from typing import Any
 
 try:
+    from apps.shared.state import sync_stamp
     from scripts.home_paths import published_source as _published_source
     from scripts.provenance_state import _write_atomic, make_store, sweep_lock, tracked_tree_defect
 except ModuleNotFoundError as exc:
-    if exc.name == "scripts":
+    if exc.name in ("scripts", "apps"):
         raise SystemExit("uv run --no-sync python -m scripts.feedback_prompts_export") from None
     raise
 
@@ -112,19 +113,50 @@ def _validate_pin(source: Path, pin: dict[str, Any]) -> None:
             raise TypeError(f"feedback source {source} has a pin with invalid build.{field}")
 
 
+def _edit_stamp(doc: dict[str, Any]) -> str | None:
+    raw = doc.get("updated_at") or doc.get("created_at")
+    if not isinstance(raw, str) or not sync_stamp.is_orderable(raw):
+        return None
+    return sync_stamp.to_canonical(raw)
+
+
+def _is_newer_pin(
+    candidate: tuple[Path, dict[str, Any]],
+    incumbent: tuple[Path, dict[str, Any]],
+) -> bool:
+    c_stamp = _edit_stamp(candidate[1])
+    i_stamp = _edit_stamp(incumbent[1])
+    if c_stamp is None:
+        return False
+    if i_stamp is None:
+        return True
+    return c_stamp > i_stamp
+
+
 def read_pins(feedback_dir: Path) -> list[tuple[Path, dict[str, Any]]]:
-    """Read every pin exactly once from the active store and immutable archives."""
+    """Read every pin once from the active store and immutable archives.
+
+    A pin present in several sources is reconciled to its newest copy; live
+    wins ties because it is read first in ``_source_snapshot`` order.
+    """
     before = _source_snapshot(feedback_dir)
     pins: list[tuple[Path, dict[str, Any]]] = []
-    seen: set[str] = set()
+    seen_in_file: dict[Path, set[str]] = {}
+    by_id: dict[str, int] = {}
     for source, _digest in before:
+        file_seen = seen_in_file.setdefault(source, set())
         for pin in _read_comments(source):
             _validate_pin(source, pin)
             pin_id = pin["id"]
-            if pin_id in seen:
+            if pin_id in file_seen:
                 raise ValueError(f"feedback source contains duplicate pin id {pin_id!r}; refusing to lose one")
-            seen.add(pin_id)
-            pins.append((source, pin))
+            file_seen.add(pin_id)
+            incoming = (source, pin)
+            if pin_id not in by_id:
+                by_id[pin_id] = len(pins)
+                pins.append(incoming)
+            elif _is_newer_pin(incoming, pins[by_id[pin_id]]):
+                pins[by_id[pin_id]] = incoming
     _require_stable_sources(feedback_dir, before)
     return pins
 
@@ -208,4 +240,6 @@ def main(argv: list[str] | None = None) -> int:
 
 
 if __name__ == "__main__":
+    if not __package__:
+        raise SystemExit("uv run --no-sync python -m scripts.feedback_prompts_export")
     raise SystemExit(main())

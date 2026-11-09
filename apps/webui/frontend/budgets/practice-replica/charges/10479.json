@@ -1,0 +1,9 @@
+{
+  "bytes": 2048,
+  "measured_main": 17018,
+  "measured_with_pr": 18318,
+  "sha": "521c9e5451",
+  "date": "Sun 8 Nov 2026",
+  "reason": "PR #10479 registers REV7_MAP (apps/webui/frontend/src/lib/rb/midi/maps/ddj-rev7.ts) in PRACTICE_DEVICE_MAPS, so the lazy practice-replica chunk carries the REV7 map's 55 bindings, 22 LED rules and 188 hints. Measured: local vite build of main 2e3ff91a54 (the merge base) and of 521c9e5451 on the same host (agentbox), +1300 B gzip; ceiled to KiB",
+  "payback": "none planned; every replica map that joins PRACTICE_DEVICE_MAPS rides this chunk until the maps load per device (epic #9366)"
+}

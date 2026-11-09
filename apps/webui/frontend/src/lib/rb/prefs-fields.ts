@@ -13,6 +13,7 @@ import type {
 	SpotifyLibraryPref
 } from './prefs-types';
 import { PICKS_CAP, type CommandPick } from '../palette/rank';
+import { checkVariantValue, isVariantSettingId } from '../settings/variant-setting';
 import { SPOTIFY_PINNED_CAP, SPOTIFY_RECENT_CAP } from './spotify-playlist-rank';
 
 /** Bounds mirror `_CAL_MIN_DBFS`/`_CAL_MAX_DBFS`/`_CAL_CEILING_MAX_DBFS` in
@@ -238,4 +239,28 @@ export function parseCmdkCommandPicks(raw: unknown, storageKey: string): Command
 		out.push({ key: obj.key, weight: obj.weight, at: obj.at });
 	}
 	return out.slice(0, PICKS_CAP);
+}
+
+export function parseVariants(raw: unknown, storageKey: string): Record<string, string> {
+	if (raw === undefined) return {};
+	if (raw === null || typeof raw !== 'object' || Array.isArray(raw)) {
+		throw new Error(
+			`${storageKey}: malformed prefs blob (variants must be an object of strings) - clear the localStorage key to recover`
+		);
+	}
+	const out: Record<string, string> = {};
+	for (const [id, value] of Object.entries(raw as Record<string, unknown>)) {
+		if (typeof value !== 'string') {
+			throw new Error(
+				`${storageKey}: malformed prefs blob (variants.${id} must be a string) - clear the localStorage key to recover`
+			);
+		}
+		// Unknown ids are kept: a retired row must not brick prefs; a family that
+		// registers after load is validated at read time by readVariant().
+		if (isVariantSettingId(id)) {
+			checkVariantValue(id, value, storageKey);
+		}
+		out[id] = value;
+	}
+	return out;
 }

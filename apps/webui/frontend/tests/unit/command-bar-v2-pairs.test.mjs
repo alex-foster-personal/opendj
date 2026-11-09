@@ -667,8 +667,11 @@ test('CMDK-19: an aligned pick closes the bar only when the last overlapping ali
 	const bar = readFileSync(`${SRC}lib/components/rb/CommandBarV2.svelte`, 'utf8');
 	const body = bar.slice(bar.indexOf('async function loadAligned'), bar.indexOf('function onWindowKeyup'));
 	assert.match(body, /if \(open && barSession === session && pairLoads\.length === 0 && actionError === null\) closeBar\(\);/);
-	const ipc = readFileSync(`${SRC}lib/rb/performance-ipc.svelte.ts`, 'utf8');
-	assert.match(ipc, /export interface CmdkSnapshot \{[\s\S]*?operation\?: \{ status: 'loading'; title: string; deck: DeckId \} \| \{ status: 'error'; message: string \};[\s\S]*?\n\}/);
+	const ipcTypes = readFileSync(`${SRC}lib/rb/performance-ipc-types.ts`, 'utf8');
+	assert.match(
+		ipcTypes,
+		/export interface CmdkSnapshot \{[\s\S]*?operation\?:\s*(?:\n\s*)?\{[\s\S]*?status:\s*'loading'[\s\S]*?\}\s*\|\s*(?:\n\s*)?\{[\s\S]*?status:\s*'error'[\s\S]*?\};[\s\S]*?\n\}/
+	);
 });
 
 test('CMDK-19: cmdk_pick rejects a plain pick that did not load, so an agent never reads a refused pick as done (Codex r4277653901)', () => {
@@ -894,7 +897,7 @@ test('CMDK-15/17: query().cmdk reports the master pairs lookup, so a failed read
 	assert.match(pairsPart, /pairsState\.status === 'error'\s*\?\s*\{ status: 'error' as const, message: pairsState\.message \}/);
 	// Ready only for the track the master holds now, the same test pairRows applies; anything else is still loading.
 	assert.match(pairsPart, /pairsState\.status === 'ready' && pairsState\.master === decks\[masterDeck\]\.stable_id \? \('ready' as const\) : \('loading' as const\)/);
-	for (const f of ['lib/rb/cmdk-actions.ts', 'lib/rb/performance-ipc.svelte.ts']) {
+	for (const f of ['lib/rb/cmdk-actions.ts', 'lib/rb/performance-ipc-types.ts']) {
 		assert.match(readFileSync(`${SRC}${f}`, 'utf8'), /pairs\?: \{ status: 'loading' \| 'ready' \} \| \{ status: 'error'; message: string \};/, f);
 	}
 });
@@ -908,7 +911,7 @@ test('CMDK-15/19: query().cmdk reports the collection load, so a cold or failed 
 	// Loading until the index is current and the search over it is warm: the same condition the bar's own "Loading the collection" uses.
 	assert.match(part, /collectionPending \|\| !searchWarm \? \('loading' as const\) : \('ready' as const\)/);
 	assert.match(bar, /\(collectionPending \|\| collectionError !== null \|\| !searchWarm\) && tokens\.length > 0 && trackSearch/);
-	for (const f of ['lib/rb/cmdk-actions.ts', 'lib/rb/performance-ipc.svelte.ts']) {
+	for (const f of ['lib/rb/cmdk-actions.ts', 'lib/rb/performance-ipc-types.ts']) {
 		assert.match(readFileSync(`${SRC}${f}`, 'utf8'), /collection\?: \{ status: 'loading' \| 'ready' \} \| \{ status: 'error'; message: string \};/, f);
 	}
 });
@@ -1003,7 +1006,7 @@ test('CMDK-15: a setting row in the agent snapshot carries the value it shows an
 	// The same helpers the row draws with, so the snapshot cannot say something the bar does not show.
 	assert.match(bar, /\{settingVerb\(action\.def, action\.value, settingTokens\)\}/);
 	assert.match(bar, /\{settingValueLabel\(action\.def, action\.value\)\}/);
-	for (const f of ['lib/rb/cmdk-actions.ts', 'lib/rb/performance-ipc.svelte.ts']) {
+	for (const f of ['lib/rb/cmdk-actions.ts', 'lib/rb/performance-ipc-types.ts']) {
 		const src = readFileSync(`${SRC}${f}`, 'utf8');
 		assert.match(src, /value\?: string;/, f);
 		assert.match(src, /action\?: string;/, f);
@@ -1024,9 +1027,11 @@ test('CMDK-15: query().cmdk reports the open deck picker or eject confirmation, 
 	const bar = readFileSync(`${SRC}lib/components/rb/CommandBarV2.svelte`, 'utf8');
 	const snap = bar.slice(bar.indexOf('snapshot: () => ({'));
 	assert.match(snap, /\.\.\.\(open && picker !== null\s*\? \{ dialog: \{ kind: 'deck-picker' as const, deck: picker\.sel, title: picker\.row\.title \?\? '\(untitled\)', confirming: picker\.guard !== null \} \}\s*: open && ejectGuard !== null\s*\? \{ dialog: \{ kind: 'eject' as const, deck: ejectGuard\.id \} \}\s*: \{\}\),/);
-	const decl = "dialog\\?: \\{ kind: 'deck-picker'; deck: DeckId; title: string; confirming\\?: boolean \\} \\| \\{ kind: 'eject'; deck: DeckId \\};";
+	const decl =
+		"dialog\\?:\\s*(?:\\|\\s*)?(?:\\n\\s*)?\\{ kind: 'deck-picker'; deck: DeckId; title: string; confirming\\?: boolean \\}\\s*" +
+		"\\|\\s*(?:\\n\\s*)?\\{ kind: 'eject'; deck: DeckId \\}";
 	assert.match(readFileSync(`${SRC}lib/rb/cmdk-actions.ts`, 'utf8'), new RegExp(decl));
-	assert.match(readFileSync(`${SRC}lib/rb/performance-ipc.svelte.ts`, 'utf8'), new RegExp(decl));
+	assert.match(readFileSync(`${SRC}lib/rb/performance-ipc-types.ts`, 'utf8'), new RegExp(decl));
 });
 
 test('CMDK-19: an agent open that awaits the first tick does not let an older open write its query over a newer one (Codex P2 BLOCKING, #6691)', () => {

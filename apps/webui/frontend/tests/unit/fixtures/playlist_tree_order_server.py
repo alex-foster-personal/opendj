@@ -14,7 +14,7 @@ The only test hooks sit in front of the app and never answer a PUT themselves:
 ``/test/release-put``, so the JS test can overlap drags deterministically;
 ``/test/puts`` counts PUTs that reached the app; ``/test/shutdown`` stops it.
 
-Usage: ``uv run --no-sync python playlist_tree_order_server.py``, then read
+Usage: ``uv run --locked --extra dev python playlist_tree_order_server.py``, then read
 the ``READY <port>`` stdout line.
 """
 from __future__ import annotations
@@ -91,7 +91,15 @@ def _build_app():  # noqa: ANN202 - FastAPI app from create_app
 
     @app.post("/test/shutdown")
     def _shutdown() -> dict[str, bool]:
-        app.state.server.should_exit = True
+        # Stop-blockers: held PUT (wait_for up to 30s) and Node fetch keep-alive
+        # with no graceful bound (see apps.shared.uvicorn_shutdown).
+        release = app.state.put_release
+        app.state.put_release = None
+        if release is not None:
+            release.set()
+        server = app.state.server
+        server.should_exit = True
+        server.force_exit = True
         return {"ok": True}
 
     return app
@@ -108,7 +116,9 @@ def _serve() -> None:
     print(f"READY {sock.getsockname()[1]}", flush=True)
     # sockets=, not Config(fd=...): fd reconstruction is Unix only, and the
     # Windows suite runs this fixture too (Codex P2 on #6186).
-    server = uvicorn.Server(uvicorn.Config(app, log_level="warning"))
+    server = uvicorn.Server(
+        uvicorn.Config(app, log_level="warning", timeout_graceful_shutdown=1)
+    )
     app.state.server = server
     server.run(sockets=[sock])
 

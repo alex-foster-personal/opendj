@@ -77,6 +77,9 @@
 	--rb-rail-record: #d0342c;
 	--rb-knob-warn: var(--rb-orange);  /* EQ dial past ~30% throw */
 	--rb-knob-alarm: var(--rb-red);    /* EQ dial past ~50% throw */
+	/* MIXUX-02, the maintainer: "Filter dial should be white bg instead of black for clarity." The accent indicator keeps 3:1+ on it. */
+	--rb-color-fx-filter-face: #f0f2f5;
+	--rb-color-fx-filter-face-edge: #8a8f96;
 	--rb-focus-outline: none;          /* knob keyboard focus: Default shows the accent glow; Gothic and Light (no glow) set an outline */
 	--rb-artwork-filter: none;         /* mono-dev grays artwork; html-level too, for pages outside .perf-root */
 	--rb-key-compat-border: initial;   /* unset: the compatible-key ring uses the master key's hue */
@@ -173,6 +176,8 @@ html[data-theme='light'] .perf-root {
 	--rb-knob-ring: #ffffff;
 	--rb-knob-cap: #e2e2e2;
 	--rb-knob-cap-edge: #8a8a8a;
+	--rb-color-fx-filter-face: #ffffff;
+	--rb-color-fx-filter-face-edge: #6b6660;
 	--rb-knob-indicator-white: #121212;
 	--rb-knob-takeover: #8a5a00;
 	--rb-knob-stem-tint: 15%; /* a stem knob's cap takes 15% of its accent (42% elsewhere), so the dark accent indicator keeps 3:1 on it */
@@ -268,6 +273,9 @@ html[data-skin='mono-dev'] .perf-root {
 	--rb-rail-record: currentColor;
 	--rb-knob-warn: #bdbdbd;
 	--rb-knob-alarm: #f4f4f4;
+	/* FILTER dial: pale Gothic accent needs a darker face than the default skin's light plate (COLORFX-15 / PAIR-08). */
+	--rb-color-fx-filter-face: #3a3a3a;
+	--rb-color-fx-filter-face-edge: #6a6a6a;
 	--rb-key-compat-border: #f4f4f4;
 	--rb-artwork-filter: grayscale(1) contrast(1.05);
 	/* Library warnings in gray: the minor-issue '!' is a light square with a
@@ -450,6 +458,8 @@ html[data-skin='light'] .perf-root {
 	--rb-rail-record: currentColor;
 	--rb-knob-warn: #4a4a4a;
 	--rb-knob-alarm: #0d0d0d;
+	--rb-color-fx-filter-face: #ffffff;
+	--rb-color-fx-filter-face-edge: #6b6660;
 	--rb-key-compat-border: #121212;
 	--rb-artwork-filter: grayscale(1) contrast(1.05);
 	--rb-issue-square: #292929;
@@ -599,6 +609,9 @@ html[data-skin='green-room'] .perf-root {
 	--rb-rail-record: currentColor;
 	--rb-knob-warn: #ffa42b;
 	--rb-knob-alarm: #f15e6c;
+	/* Green accent on the default light plate was under the 3:1 indicator floor (PAIR-08). */
+	--rb-color-fx-filter-face: #282828;
+	--rb-color-fx-filter-face-edge: #6a6a6a;
 	--rb-key-compat-border: #ffffff;
 	--rb-artwork-filter: none;
 	--rb-issue-square: #ffffff;
@@ -749,6 +762,8 @@ html[data-skin='practice-ddj-flx4'] .perf-root {
 	--rb-rail-record: currentColor;
 	--rb-knob-warn: #ffa42b;
 	--rb-knob-alarm: #f15e6c;
+	--rb-color-fx-filter-face: #f0f2f5;
+	--rb-color-fx-filter-face-edge: #8a8f96;
 	--rb-key-compat-border: #ffffff;
 	--rb-artwork-filter: none;
 	--rb-issue-square: #ffffff;

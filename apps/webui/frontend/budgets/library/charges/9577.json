@@ -1,0 +1,9 @@
+{
+  "bytes": 1024,
+  "measured_main": 329889,
+  "measured_with_pr": 330313,
+  "sha": "0241421ed4",
+  "date": "Sun 8 Nov 2026",
+  "reason": "PR #9577 (fix: sort imports in opendj CLI catalog (#9429)) grows the library surface. Measured: CI bundle check of 0241421ed4, +424 B gzip; ceiled to KiB.",
+  "payback": "none planned; the growth is the feature's own code on this surface"
+}

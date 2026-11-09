@@ -7,6 +7,7 @@ Every library here is invented: made-up titles, made-up paths under
 """
 from __future__ import annotations
 
+import argparse
 import errno
 import json
 import struct
@@ -717,7 +718,7 @@ def test_cue_mapping_keeps_pads_and_never_invents_kinds() -> None:
         cue_store.normalize_cue(cue)  # every mapped cue is valid for the store
 
 
-def _rb_xml(audio: Path, *, bpm: str = "128.00") -> str:
+def _rb_xml(audio: Path, *, bpm: str = "128.00", extra: str = "") -> str:
     from urllib.parse import quote
 
     loc = "file://localhost" + quote(str(audio))
@@ -725,7 +726,7 @@ def _rb_xml(audio: Path, *, bpm: str = "128.00") -> str:
 <DJ_PLAYLISTS Version="1.0.0"><PRODUCT Name="Lexicon"/>
 <COLLECTION Entries="1">
 <TRACK TrackID="7" Name="Invented XML Tune" Artist="Invented Artist" AverageBpm="{bpm}" Tonality="8A"
- Rating="153" Location="{loc}">
+ Rating="153" {extra} Location="{loc}">
 <POSITION_MARK Name="Drop" Type="0" Start="30.0" Num="0"/>
 </TRACK></COLLECTION>
 <PLAYLISTS><NODE Type="0" Name="ROOT" Count="1"><NODE Type="0" Name="Invented Folder" Count="1">
@@ -801,6 +802,89 @@ def test_rekordbox_xml_never_replaces_master_db_values_or_cues(state_conn, tmp_p
     blob, _ = cue_store.read_row(state_conn, "from-master-db")  # type: ignore[misc]
     assert [(c["slot"], c["in_ms"]) for c in blob["cues"]] == [("B", 5000)]
     assert report.cue_sets_written == 0
+
+
+def _rb_xml_tracks(audios: list[Path], extra: str) -> str:
+    from urllib.parse import quote
+
+    parts = [
+        f'<TRACK TrackID="{idx + 1}" Name="Invented XML Tune {idx + 1}" Artist="Invented Artist" '
+        f'AverageBpm="128.00" Tonality="8A" Rating="153" {extra} '
+        f'Location="file://localhost{quote(str(audio))}">'
+        f'<POSITION_MARK Name="Drop" Type="0" Start="30.0" Num="0"/></TRACK>'
+        for idx, audio in enumerate(audios)
+    ]
+    body = "\n".join(parts)
+    return f"""<?xml version="1.0" encoding="UTF-8"?>
+<DJ_PLAYLISTS Version="1.0.0"><PRODUCT Name="Lexicon"/>
+<COLLECTION Entries="{len(audios)}">
+{body}
+</COLLECTION></DJ_PLAYLISTS>"""
+
+
+@pytest.mark.requirement("DJIMPORT-10053")
+def test_rekordbox_xml_fills_genre_and_counts_what_it_carries_but_does_not_store(state_conn, tmp_path: Path) -> None:
+    """[if] rekordbox XML carries genre and other extensions [then] genre fills and the rest are counted, [else stop]."""
+    attrs = 'Genre="Invented House" Label="Invented Records" Year="2019" DateAdded="2026-11-08"'
+    audios = [_wav(tmp_path / "music" / f"Invented XML Tune {i + 1}.wav") for i in range(3)]
+    xml = tmp_path / "export.xml"
+    xml.write_text(_rb_xml_tracks(audios, attrs))
+    writer = StateWriter(state_conn, bus=FakeEventBus(), actor="seed")
+    try:
+        writer.upsert_track(
+            stable_id="preseed-xml-genre",
+            stable_id_tier="inferred",
+            title="Invented XML Tune 1",
+            artists=[],
+            album=None,
+            isrc=None,
+            duration_ms=None,
+            file_path=str(audios[0]),
+        )
+        writer.set_field("preseed-xml-genre", "genre", "Invented Techno", source="webui", modified_at=_STAMP)
+    finally:
+        writer.close()
+
+    report = _ingest_xml(state_conn, xml)
+
+    assert report.fields_written["genre"] == 2
+    assert report.fields_kept["genre"] == 1
+    assert _fields(state_conn, _sid_for(state_conn, audios[1]))["genre"] == ("Invented House", "rekordbox")
+    assert _fields(state_conn, _sid_for(state_conn, audios[2]))["genre"] == ("Invented House", "rekordbox")
+    assert _fields(state_conn, _sid_for(state_conn, audios[0]))["genre"] == ("Invented Techno", "webui")
+    assert report.extensions_carried == {"label": 3, "year": 3, "date_added": 3}
+
+
+@pytest.mark.requirement("DJIMPORT-10053")
+def test_the_command_line_summary_prints_genre_and_carried_not_stored_counts(
+    state_db_path: Path, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """[if] rekordbox-xml is imported from the CLI [then] the summary names genre and carried counts, [else stop]."""
+    attrs = 'Genre="Invented House" Label="Invented Records" Year="2019"'
+    a1 = _wav(tmp_path / "music" / "one.wav")
+    a2 = _wav(tmp_path / "music" / "two.wav")
+    xml = tmp_path / "export.xml"
+    xml.write_text(_rb_xml_tracks([a1, a2], attrs))
+    assert vendor.main(["rekordbox-xml", "--source", str(xml), "--db", str(state_db_path), "--write"]) == 0
+    out = capsys.readouterr().out
+    genre_line = next(line for line in out.splitlines() if line.strip().startswith("genre"))
+    assert "written 2" in genre_line
+    assert "carried, not stored:  label 2, year 2" in out
+
+
+@pytest.mark.requirement("DJIMPORT-10053")
+def test_serato_and_traktor_imports_carry_nothing_extra(
+    state_conn, state_db_path: Path, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """[if] Traktor is ingested [then] nothing is carried as an unstored extension, [else stop]."""
+    audio = _wav(tmp_path / "music" / "Invented Traktor.wav")
+    nml = tmp_path / "collection.nml"
+    nml.write_text(_nml([_entry(audio, title="Invented Traktor", bpm="120.000000")]))
+    report = _ingest_nml(state_conn, nml)
+    assert report.extensions_carried == {}
+    assert report.fields_written.get("genre", 0) == 0
+    assert vendor.main(["traktor", "--source", str(nml), "--db", str(state_db_path)]) == 0
+    assert "carried, not stored:  none" in capsys.readouterr().out
 
 
 @pytest.mark.requirement("DJIMPORT-6039")
@@ -1081,6 +1165,101 @@ def test_a_lossy_markers2_frame_shadowed_by_a_later_one_is_counted(tmp_path: Pat
     assert read.reader_notes == {"cues dropped: Serato Markers2 frame could not be decoded": 1}
 
 
+@pytest.mark.requirement("DJIMPORT-10062")
+def test_serato_flac_mp4_and_aiff_tracks_keep_their_cues_and_count_no_loss(
+    state_conn, state_db_path: Path, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """[if] Serato lossless files carry Markers2 [then] import keeps cues with zero reader losses, [else stop]."""
+    from apps.adapters.serato.geob import GEOB_BEATGRID_DESC, GEOB_MARKERS2_DESC
+    from tests.fixtures import serato_containers as sc
+
+    music = tmp_path / "music"
+    music.mkdir()
+    m2 = sc.markers2_payload()
+    bg = sc.beatgrid_payload()
+    text_m2 = sc.serato_text(GEOB_MARKERS2_DESC, m2)
+    text_bg = sc.serato_text(GEOB_BEATGRID_DESC, bg)
+    flac = music / "Invented Lossless.flac"
+    sc.write_flac(flac, [(sc.FLAC_MARKERS2_KEY, text_m2), (sc.FLAC_BEATGRID_KEY, text_bg)])
+    m4a = music / "Invented Lossless.m4a"
+    sc.write_mp4(
+        m4a,
+        [
+            (sc.MP4_SERATO_MEAN, sc.MP4_MARKERS2_NAME, text_m2.encode("ascii")),
+            (sc.MP4_SERATO_MEAN, sc.MP4_BEATGRID_NAME, text_bg.encode("ascii")),
+        ],
+    )
+    aiff = music / "Invented Lossless.aiff"
+    sc.write_aiff_with_id3(aiff, m2, bg)
+    serato_dir = tmp_path / "_Serato_"
+    drive = vendor.serato_volume_root(serato_dir)
+    rel = lambda p: str(p.relative_to(drive))  # noqa: E731
+    SeratoAdapter().write(
+        OpenDjLibrary(
+            version="0.1",
+            tracks=(
+                Track(track_id="s1", file_path=rel(flac), title="Invented Lossless FLAC"),
+                Track(track_id="s2", file_path=rel(m4a), title="Invented Lossless M4A"),
+                Track(track_id="s3", file_path=rel(aiff), title="Invented Lossless AIFF"),
+            ),
+        ),
+        serato_dir,
+    )
+    read = vendor.read_vendor("serato", serato_dir)
+    assert read.reader_notes == {}
+    for track in read.library.tracks:
+        hot = [c for c in track.cues if c.type == "hot"]
+        loops = [c for c in track.cues if c.type == "loop"]
+        assert len(hot) == 2
+        assert len(loops) == 1
+        assert track.beats
+    assert vendor.main(["serato", "--source", str(serato_dir), "--db", str(state_db_path), "--write"]) == 0
+    assert "not carried over by the reader: 0" in capsys.readouterr().out
+    for title in ("Invented Lossless FLAC", "Invented Lossless M4A", "Invented Lossless AIFF"):
+        row = state_conn.execute("SELECT stable_id FROM tracks WHERE title = ?", (title,)).fetchone()
+        assert row is not None
+        blob, _ = cue_store.read_row(state_conn, str(row[0]))
+        assert blob
+
+
+@pytest.mark.requirement("DJIMPORT-10062")
+def test_a_serato_flac_comment_that_is_not_base64_is_counted_with_its_file_name(tmp_path: Path) -> None:
+    """[if] one FLAC comment is invalid base64 [then] reader_notes name the file once, [else stop]."""
+    from tests.fixtures import serato_containers as sc
+
+    music = tmp_path / "music"
+    music.mkdir()
+    bad = music / "Invented Bad Comment.flac"
+    sc.write_flac(bad, [(sc.FLAC_MARKERS2_KEY, "not base64!!")])
+    good = music / "Invented Good Comment.flac"
+    m2 = sc.markers2_payload()
+    from apps.adapters.serato.geob import GEOB_MARKERS2_DESC
+
+    sc.write_flac(good, [(sc.FLAC_MARKERS2_KEY, sc.serato_text(GEOB_MARKERS2_DESC, m2))])
+    serato_dir = tmp_path / "_Serato_"
+    drive = vendor.serato_volume_root(serato_dir)
+    rel = lambda p: str(p.relative_to(drive))  # noqa: E731
+    SeratoAdapter().write(
+        OpenDjLibrary(
+            version="0.1",
+            tracks=(
+                Track(track_id="s1", file_path=rel(bad), title="Invented Bad Comment"),
+                Track(track_id="s2", file_path=rel(good), title="Invented Good Comment"),
+            ),
+        ),
+        serato_dir,
+    )
+    read = vendor.read_vendor("serato", serato_dir)
+    notes = read.reader_notes
+    assert len(notes) == 1
+    key = next(iter(notes))
+    assert key.startswith("cues dropped: Serato tags could not be read:")
+    assert "Invented Bad Comment.flac" in key
+    assert notes[key] == 1
+    good_track = next(t for t in read.library.tracks if t.title == "Invented Good Comment")
+    assert len([c for c in good_track.cues if c.type == "hot"]) == 2
+
+
 @pytest.mark.requirement("DJIMPORT-6039")
 def test_a_djay_cue_list_that_stops_parsing_is_counted() -> None:
     """[if] a djay cue or loop array names more elements than parse, or holds one with no usable
@@ -1317,3 +1496,109 @@ def test_serato_cues_survive_read_and_markers_legacy_overrides_markers2_position
     by_title = {t.title: t for t in read.library.tracks}
     assert [(c.name, c.position_ms) for c in by_title["Invented Legacy Wins"].cues] == [("Intro", 1_500)]
     assert [(c.name, c.position_ms) for c in by_title["Invented Markers2 Only"].cues] == [("Intro", 1_000)]
+
+
+@pytest.mark.requirement("DJIMPORT-10056")
+def test_virtualdj_cli_dry_run_and_write(tmp_path: Path, capsys) -> None:
+    """[if] virtualdj import runs on a tmp library [then] dry-run leaves tracks empty and write stores tracks without track_fields, [else stop]."""
+    from apps.shared.state import db as state_db
+
+    vdj_dir = tmp_path / "vdj"
+    vdj_dir.mkdir()
+    a = _wav(vdj_dir / "a.wav")
+    b = _wav(vdj_dir / "b.wav")
+    missing = "/Volumes/Invented DJ/Music/ghost.wav"
+    (vdj_dir / "database.xml").write_text(
+        '<?xml version="1.0"?><VirtualDJ_Database>'
+        f'<Song FilePath="{a}"><Tags Author="A" Title="A" Album="A" Key="Am" Stars="3" Bpm="0.5"/>'
+        f'<Infos SongLength="1.0" PlayCount="1"/>'
+        f'<Poi Pos="0.1" Type="cue" Num="1"/></Song>'
+        f'<Song FilePath="{b}"><Tags Title="B"/><Infos SongLength="2.0"/></Song>'
+        "</VirtualDJ_Database>",
+        encoding="utf-8",
+    )
+    (vdj_dir / "MyLists").mkdir()
+    (vdj_dir / "MyLists" / "Mix.vdjfolder").write_text(
+        f'<?xml version="1.0"?><VirtualFolder>'
+        f'<song path="{b}"/><song path="{missing}"/></VirtualFolder>',
+        encoding="utf-8",
+    )
+    state_path = tmp_path / "state.db"
+    assert vendor.run_cli(argparse.Namespace(source=str(vdj_dir), write=False, db=str(state_path)), "virtualdj") == 0
+    out = capsys.readouterr().out
+    assert "virtualdj import (dry-run)" in out
+    conn_dry = state_db.open_rw(state_path)
+    try:
+        assert conn_dry.execute("SELECT COUNT(*) FROM tracks").fetchone()[0] == 0
+    finally:
+        conn_dry.close()
+
+    assert vendor.run_cli(argparse.Namespace(source=str(vdj_dir), write=True, db=str(state_path)), "virtualdj") == 0
+    out = capsys.readouterr().out
+    assert "read, not stored yet:" in out
+    assert "bpm" in out and "cues" in out
+    assert "playlist entries unresolved: 1" in out
+    conn = state_db.open_rw(state_path)
+    try:
+        assert conn.execute("SELECT COUNT(*) FROM tracks").fetchone()[0] == 2
+        assert conn.execute("SELECT COUNT(*) FROM track_fields").fetchone()[0] == 0
+        vendors = {r[0] for r in conn.execute("SELECT DISTINCT vendor FROM track_vendor_ids")}
+        assert vendors == {"virtualdj"}
+        (pl_id,) = conn.execute("SELECT playlist_id FROM playlists WHERE vendor='virtualdj'").fetchone()
+        members = [r[0] for r in conn.execute(
+            "SELECT stable_id FROM playlist_memberships WHERE playlist_id=? ORDER BY order_key",
+            (pl_id,),
+        )]
+        assert len(members) == 1
+    finally:
+        conn.close()
+
+
+@pytest.mark.requirement("DJIMPORT-10056")
+def test_virtualdj_missing_source_returns_one(capsys) -> None:
+    """[if] virtualdj has no default source [then] CLI returns 1, [else stop]."""
+    assert vendor.run_cli(argparse.Namespace(source=None, write=False, db=None), "virtualdj") == 1
+
+
+@pytest.mark.requirement("DJIMPORT-10056")
+def test_virtualdj_default_source(monkeypatch, tmp_path: Path) -> None:
+    """[if] database.xml lives under Documents/VirtualDJ [then] default_source finds it, [else stop]."""
+    home = tmp_path / "home"
+    vdj = home / "Documents" / "VirtualDJ"
+    vdj.mkdir(parents=True)
+    (vdj / "database.xml").write_text(
+        '<?xml version="1.0"?><VirtualDJ_Database></VirtualDJ_Database>', encoding="utf-8"
+    )
+    monkeypatch.setattr(Path, "home", lambda: home)
+    assert vendor.default_source("virtualdj") == vdj
+    assert vendor.default_source("virtualdj") is not None
+    (vdj / "database.xml").unlink()
+    assert vendor.default_source("virtualdj") is None
+
+
+@pytest.mark.requirement("DJIMPORT-10056")
+def test_virtualdj_windows_path_ingest_missing_file(state_conn, tmp_path: Path) -> None:
+    """[if] a Windows-path track is ingested on Linux [then] files_missing is 1 and path is verbatim, [else stop]."""
+    win_path = r"D:\Music\Invented Tune Three.mp3"
+    library = OpenDjLibrary(
+        version="0.1",
+        tracks=(Track(track_id="vdj_x", file_path=win_path, title="Three", artists=("A",), album=""),),
+    )
+    from apps.adapters.virtualdj import virtualdj_path_resolver
+
+    writer = StateWriter(state_conn, bus=FakeEventBus(), actor="vdj-test")
+    try:
+        report = vendor.ingest_library(
+            writer,
+            library,
+            vendor="virtualdj",
+            source=str(tmp_path),
+            resolve_path=virtualdj_path_resolver(windows=False),
+            dry_run=False,
+            modified_at=_STAMP,
+        )
+    finally:
+        writer.close()
+    assert report.files_missing == 1
+    row = state_conn.execute("SELECT file_path FROM tracks WHERE title='Three'").fetchone()
+    assert row is not None and row[0] == win_path

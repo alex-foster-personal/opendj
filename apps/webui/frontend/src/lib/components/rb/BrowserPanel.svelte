@@ -22,6 +22,7 @@
 	import StemCacheHealthDot from './StemCacheHealthDot.svelte';
 	import { isPageGoingAway } from '$lib/api/lifecycle-abort';
 	import { getConnectionState, subscribeKind, subscribeResync } from '$lib/api/events-bus';
+	import { subscribeTracksRefreshRequest } from '$lib/rb/tracks-refresh-request';
 	import { shouldRunLibraryFallbackPoll } from '$lib/rb/app-posture';
 	import { isTransientNetworkError } from '$lib/telemetry-network-noise';
 	import {
@@ -29,6 +30,7 @@
 		RbApiError,
 		decodePreviewStrip,
 		fetchRbMeta,
+		fetchRelatedTracks,
 		getHealth,
 		getTrack,
 		listPlaylistsHydrated,
@@ -83,7 +85,7 @@
 		isLibraryPanelsCollapsed,
 		noteVisibleLibraryRowCount,
 		setLibraryPanelsCollapsed,
-		toggleLibraryPanels,
+		settledLibraryRowCount,
 		createAutoPlayFeedSnapshot,
 		getAutoPlayRankOf,
 		setAutoPlayTrackFeed,
@@ -185,6 +187,7 @@
 		renamePlaylist,
 		replacePlaylistTracks
 	} from '$lib/rb/playlist-write';
+	import { wireHistoryBrowserMenu } from '$lib/history/history-browser-menu';
 	import {
 		removeRowsInPlace,
 		restorableRemoval,
@@ -297,6 +300,9 @@
 	import { setTargetState } from '$lib/rb/set-target-state.svelte';
 	import PerformanceRecorderRail from './browser/PerformanceRecorderRail.svelte';
 	import PaneTabs from './browser/PaneTabs.svelte';
+	import RelatedCriteriaPopover from './browser/RelatedCriteriaPopover.svelte';
+	import RelatedTracksList from './browser/RelatedTracksList.svelte';
+	import { createRelatedTracks } from './browser/related-tracks.svelte';
 	import type { PaneTabInfo } from './browser/PaneTabs.svelte';
 	import { createLibraryTabsController } from './browser/library-tabs-controller';
 	import { serializeLibraryTabs } from '$lib/rb/library-tabs';
@@ -846,6 +852,24 @@
 		return null;
 	});
 
+	// LIBUX-10046: the Related tab scores the collection against the selected
+	// row, else the master/playing/loaded deck; a criteria change refetches.
+	let relatedActive = $state(false);
+	/** LIBUX-10046: the only writer of relatedActive; the tab click and the
+	 * `browser_related` IPC command both land here. */
+	function setRelatedActive(active: boolean): void {
+		relatedActive = active;
+	}
+	const related = createRelatedTracks({ fetch: fetchRelatedTracks });
+	$effect(() => {
+		if (!relatedActive) return;
+		const seed = pane.selected_id ?? referenceMasterStableId;
+		const seedRow = seed === null ? undefined : pane.rows.find((r) => r.stable_id === seed);
+		const criteria = { ...uiPrefs.library_related_criteria };
+		void related.refresh(seed, seedRow?.title ?? 'this track', criteria).then((message) => {
+			if (message !== null) pushToast(message, 'error');
+		});
+	});
 	/** The ELECTED master only, with no fallback: the PAIR arrow and the master's
 	 * partner ring are master-relative (PAIR-09), so a playing or loaded deck that
 	 * is not MASTER must not point the arrow at its partners. */
@@ -999,13 +1023,18 @@
 		_lastVisibleComputeMs = performance.now() - startedAt;
 		return result;
 	});
+	let renderedLibraryRowCapacity = $state(0);
+	let libraryBootSettled = $state(false);
+
 	function noteRenderedLibraryRowCapacity(count: number): void {
-		// PaneStore starts with an intentional empty array before onMount begins
-		// its first fetch. That is not a settled library result and must not
-		// collapse the panels for a normal relaunch.
-		if (!pane.has_settled_result || pane.loading) return;
-		noteVisibleLibraryRowCount(count);
+		renderedLibraryRowCapacity = count;
 	}
+
+	$effect(() => {
+		const count = settledLibraryRowCount(pane, libraryBootSettled, renderedLibraryRowCapacity);
+		if (count === null) return;
+		noteVisibleLibraryRowCount(count, pane.playlist_id);
+	});
 
 	$effect(() => {
 		if (isLibraryPanelsCollapsed()) suggestHoverId = null;
@@ -1153,6 +1182,7 @@
 		});
 		const unregisterPerformanceBrowser = registerPerformanceBrowserAdapter({
 			selectPlaylist: _selectPlaylistForOrder,
+			setRelatedActive,
 			readSnapshot: () => {
 				const p = panes[activePane];
 				const trimmedSearch = p.search.trim();
@@ -1163,7 +1193,8 @@
 							? null
 							: { key: p.sort_key, direction: p.sort_dir === 1 ? 'asc' : 'desc' },
 					selected_row: p.selected_id,
-					load: paneLoadState(p)
+					load: paneLoadState(p),
+					related_active: relatedActive
 				};
 			}
 		});
@@ -1247,7 +1278,14 @@
 		// `playlists` / resync (see the handlers below); that is cheap and is
 		// user-visible undo/redo state.
 		const unsubscribeLoadedDeckVocals = subscribeLoadedDeckVocalsRefresh();
+		wireHistoryBrowserMenu({
+			ask: askBrowserConfirm,
+			refresh: _requestLibraryRefresh,
+			toast: pushToast
+		});
 		const unsubscribeTracks = subscribeKind('tracks', () => _requestLibraryRefresh());
+		const unsubscribePlays = subscribeKind('plays', () => _requestLibraryRefresh());
+		const unsubscribeTracksRequest = subscribeTracksRefreshRequest(() => _requestLibraryRefresh());
 		// Tree names are user-visible undo/redo state (v1). The playing-gated
 		// full library refetch can be in flight, deferred, or throw after its
 		// GET /playlists snapshot, which left the history panel enabled while
@@ -1300,6 +1338,8 @@
 			_coverageRefresh.dispose();
 			_reconcileRefresh.dispose();
 			unsubscribeTracks();
+			unsubscribePlays();
+			unsubscribeTracksRequest();
 			unsubscribePlaylists();
 			unsubscribeSmartlists();
 			unsubscribeResync();
@@ -1468,6 +1508,7 @@
 			throw exc;
 		} finally {
 			playlistsLoading = false;
+			libraryBootSettled = true;
 			// Reconcile runs in finally so it never races the boot tree/pane but still
 			// resolves when playlist boot throws (#3750).
 			void _loadReconcileSummary();
@@ -1996,8 +2037,9 @@
 	 * The only entry point for a background library refresh: WHEN it may run,
 	 * and how many times.
 	 *
-	 * Five triggers feed it (`subscribeKind('tracks')`, `subscribeKind('playlists')`,
-	 * `subscribeKind('smartlists')`, `subscribeResync` and the 60s degraded-path poll)
+	 * Six triggers feed it (`subscribeKind('tracks')`, `subscribeKind('plays')`,
+	 * `subscribeKind('playlists')`, `subscribeKind('smartlists')`, `subscribeResync`
+	 * and the 60s degraded-path poll)
 	 * and a single gap-revealing
 	 * `library.changed` frame fires two of them for ONE event. Unguarded that is
 	 * concurrent full library reads racing to write the same panes; the gate's
@@ -3954,14 +3996,28 @@
 			<PaneTabs
 				{tabs}
 				active={activePane}
-				onactivate={(i) => (activePane = i)}
+				onactivate={(i) => {
+					setRelatedActive(false);
+					activePane = i;
+				}}
+				{relatedActive}
+				onrelated={() => void runPerformanceCommandFromUi({ type: 'browser_related', active: true })}
 				onclose={libraryTabs.close}
 				ontogglesticky={togglePaneSticky}
 				onreorder={reorderPaneTabs}
 				ondropplaylist={dropPlaylistOnTabBar}
 				onsaveas={(i) => void saveAsPlaylistUi(i)}
 				onaddpane={addBlankPaneSlot}
-			/>
+			>
+				{#snippet relatedTools()}
+					<RelatedCriteriaPopover
+						criteria={uiPrefs.library_related_criteria}
+						onchange={(patch) =>
+							void runPerformanceCommandFromUi({ type: 'browser_related_criteria', ...patch })}
+						onreset={() => void runPerformanceCommandFromUi({ type: 'browser_related_criteria_reset' })}
+					/>
+				{/snippet}
+			</PaneTabs>
 			<div class="header-right">
 				<div class="header-controls-cluster">
 				<button
@@ -4174,6 +4230,12 @@
 			{#await loadComponentRouteList() then routeList}
 				<routeList.default playlistId={pane.playlist_id} rows={pane.rows} />
 			{/await}
+		{:else if relatedActive}
+			<RelatedTracksList
+				state={related.state}
+				onload={(sid) => loadSuggest(sid)}
+				onplay={(sid) => loadSuggest(sid, { play: true })}
+			/>
 		{:else}
 		<SessionPlayedBanner />
 		<SelectionPlayedLength rows={pane.rows} selectedOrders={pane.selected_orders} />
@@ -4290,7 +4352,11 @@
 					? 'Show Next / Recommended panels'
 					: 'Hide Next / Recommended panels'}
 				aria-pressed={isLibraryPanelsCollapsed()}
-				onclick={() => toggleLibraryPanels()}
+				onclick={() =>
+					void runPerformanceCommandFromUi({
+						type: 'library_panels_toggle',
+						collapsed: !isLibraryPanelsCollapsed()
+					})}
 			>
 				{isLibraryPanelsCollapsed() ? '‹' : '›'}
 			</button>

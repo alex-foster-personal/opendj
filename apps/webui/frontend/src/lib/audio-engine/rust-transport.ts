@@ -6,7 +6,7 @@
  * ratio, a seek, a play. Loaded only with the mode (see `rust-mode.svelte.ts`).
  */
 import { _hotCueRevisionsFrom, deckStates, mixerState, pitchRanges } from '$lib/player/state.svelte';
-import { BeatSyncPhaseLockError, effectiveBeatSync, gridFeatureInertTip, gridFeaturesInert, unlockedFollowerNotice, unsyncedStartSyncError } from '$lib/player/grid-features';
+import { BeatSyncPhaseLockError, deckHasTrustedBeatGrid, effectiveBeatSync, gridFeatureInertTip, gridFeaturesInert, hasRealBeatGrid, unlockedFollowerNotice, unsyncedStartSyncError } from '$lib/player/grid-features';
 import { fetchHotCueSlots } from '$lib/rb/api-rb';
 import {
 	assertPausedMasterSelectionAllowed,
@@ -18,6 +18,15 @@ import { resolveArmAtPosition, TempoOutOfSyncRangeError } from '$lib/rb/beat-syn
 import type { DeckState } from '$lib/rb/deck-state-types';
 import { hotCuesFromAnlz } from '$lib/rb/hot-cue-from-anlz';
 import { runAutomaticMasterElection, runAutomaticRejoin } from '$lib/rb/automatic-handoff-runners';
+import {
+	_assertKeyShift,
+	deriveKeySyncStatus,
+	deriveKeySyncTargetManualShift,
+	isKeySyncMode,
+	keySyncKey,
+	keySyncKeyIsGuess,
+	keySyncLeaderDeck
+} from '$lib/player/key/camelot';
 import {
 	autoPlayYieldsNow,
 	electMaster,
@@ -32,6 +41,8 @@ import type { MasterReason } from '$lib/rb/audio-engine-types';
 import { recordPerfEvent } from '$lib/rb/perf-event-log';
 import type { PerformanceCommand, PerformanceHotCueDriver } from '$lib/rb/performance-ipc.svelte';
 import { phaseLockDecision, phaseLockFeedForwardBase, phaseLockShouldSend } from '$lib/rb/phase-lock';
+import { beatSyncReenableAction, createSyncDriftMonitor, gridBarPhaseTrusted, isSyncDrifting, measureSyncDrift, SYNC_DRIFT_CHECK_INTERVAL_MS, SYNC_DRIFT_TAG, SYNC_RESNAP_TAG, syncDriftFields, type SyncDriftMeasure, type SyncLogValue } from '$lib/rb/sync-drift';
+import { emitSyncLog } from '$lib/rb/sync-log-sink';
 import { uiPrefs } from '$lib/rb/prefs.svelte';
 import type { EngineCommand } from './client';
 import { phaseLocks, type PhaseLock } from './rust-phase-lock';
@@ -48,6 +59,13 @@ import {
 	SYNC_LEAD_SEC,
 	type SyncDeckView
 } from './rust-sync';
+import {
+	createPresentedTransportTimeline,
+	keySyncEffectiveAudibleSemitones,
+	keySyncManualShiftBaseline,
+	keySyncPreviewAvailable
+} from '$lib/player/transport/presentation';
+import type { KeySyncEffectiveOffsetSource } from '$lib/player/transport/presentation';
 
 /** The page's master, as the Web Audio engine keeps `_masterDeck` and
  * `_masterMode`. `is_master` on each deck mirrors `deck`. */
@@ -60,6 +78,25 @@ let _levelHandoff = LEVEL_HANDOFF_IDLE;
 let _lastHandoffCheckMs = -Infinity;
 let _levelHandoffQueued = false;
 let _levelHandoffGeneration = 0;
+const keySyncBaseline: Partial<Record<DeckId, number | null>> = {};
+let _keySyncFollowQueued = false;
+const _keySyncPendingDecks = new Set<DeckId>();
+type KeySyncFollowRunner = <T>(work: () => Promise<T>) => Promise<T>;
+let _keySyncFollowRunner: KeySyncFollowRunner = (work) => work();
+let _keySyncFollowInFlight: Promise<void> | null = null;
+
+/** Bind coordinated native KEY SYNC follow work to the page command scheduler. */
+export function installKeySyncFollowRunner(runner: KeySyncFollowRunner): () => void {
+	const previous = _keySyncFollowRunner;
+	_keySyncFollowRunner = runner;
+	return () => {
+		if (_keySyncFollowRunner === runner) _keySyncFollowRunner = previous;
+	};
+}
+
+export function runKeySyncFollow<T>(work: () => Promise<T>): Promise<T> {
+	return _keySyncFollowRunner(work);
+}
 
 /** Restores level-handoff module state for unit tests. */
 export function resetRustLevelHandoffForTest(): void {
@@ -87,6 +124,7 @@ function _assignMaster(
 	}
 	rustMaster.deck = deck;
 	for (const d of DECKS) deckStates[d].is_master = d === deck;
+	_queueKeySyncFollow();
 }
 
 /** The master that can drive Beat Sync phase: set and playing. */
@@ -200,6 +238,125 @@ function _setPlaying(deck: DeckId, playing: boolean): void {
 	st.playing = playing;
 	st.audible = playing;
 	st.transport_pending = false;
+}
+
+/** Restore module state between native KEY SYNC tests. */
+export function resetRustKeySyncForTest(): void {
+	for (const deck of DECKS) delete keySyncBaseline[deck];
+	_keySyncPendingDecks.clear();
+	_keySyncFollowQueued = false;
+	_keySyncFollowInFlight = null;
+}
+
+/** Wait until the queued native KEY SYNC follow pass has fully settled. */
+export async function flushRustKeySyncFollowForTest(): Promise<void> {
+	await _keySyncFollowInFlight;
+}
+
+/** Native engine state has no page-side presentation timeline. Its controls
+ * are therefore the acknowledged audible values for this command algebra. */
+export function rustKeySyncOffsetSource(deck: DeckId): KeySyncEffectiveOffsetSource {
+	const st = deckStates[deck];
+	return {
+		audible: false,
+		transportPending: false,
+		pendingMutation: _keySyncPendingDecks.has(deck),
+		control: {
+			tempoRatio: st.pitch,
+			masterTempoEnabled: st.master_tempo_enabled,
+			keyShiftSemitones: st.key_shift_semitones
+		},
+		presentation: createPresentedTransportTimeline(0)
+	};
+}
+
+function _requireRustLoaded(deck: DeckId, action: string): void {
+	if (deckStates[deck].stable_id === null) throw new Error(`${action}: no loaded deck`);
+}
+
+async function _forceMasterTempoOn(deck: DeckId, action: 'key sync' | 'key shift'): Promise<void> {
+	const st = deckStates[deck];
+	if (st.master_tempo_enabled) return;
+	await send({ type: 'master_tempo', deck, enabled: true });
+	st.master_tempo_enabled = true;
+	notify(
+		action === 'key sync'
+			? `KEY SYNC deck ${deck}: Master Tempo (key lock) turned on`
+			: `Key shift deck ${deck}: Master Tempo (key lock) turned on`,
+		'info'
+	);
+}
+
+async function _nudgeDeckTo(deck: DeckId, targetSemitones: number): Promise<void> {
+	_assertKeyShift(targetSemitones);
+	const st = deckStates[deck];
+	const delta = targetSemitones - (st.key_shift_semitones ?? 0);
+	if (delta === 0) return;
+	_keySyncPendingDecks.add(deck);
+	try {
+		await send({ type: 'key_nudge', deck, semitones: delta });
+		st.key_shift_semitones = targetSemitones;
+		_queueKeySyncFollow();
+	} finally {
+		_keySyncPendingDecks.delete(deck);
+	}
+}
+
+function _disarmKeySync(deck: DeckId): void {
+	deckStates[deck].key_sync_enabled = false;
+	keySyncBaseline[deck] = null;
+}
+
+async function _applyKeySyncFollow(deck: DeckId): Promise<void> {
+	if (deriveKeySyncStatus(deck, deckStates) !== 'following') return;
+	const leader = keySyncLeaderDeck(deck, deckStates);
+	if (leader === null) return;
+	const source = rustKeySyncOffsetSource(deck);
+	const masterInput = rustKeySyncOffsetSource(leader);
+	if (!keySyncPreviewAvailable(source) || !keySyncPreviewAvailable(masterInput)) return;
+	const st = deckStates[deck];
+	const leaderState = deckStates[leader];
+	const target = deriveKeySyncTargetManualShift(
+		keySyncKey(st),
+		keySyncKey(leaderState),
+		keySyncEffectiveAudibleSemitones(source),
+		keySyncEffectiveAudibleSemitones(masterInput),
+		keySyncManualShiftBaseline(source),
+		st.key_sync_mode
+	);
+	if (target !== (st.key_shift_semitones ?? 0)) await _nudgeDeckTo(deck, target);
+}
+
+function _queueKeySyncFollow(): void {
+	if (_keySyncFollowQueued) return;
+	_keySyncFollowQueued = true;
+	const pass = Promise.resolve().then(() => runKeySyncFollow(async () => {
+		for (const deck of DECKS.filter((d) => deriveKeySyncStatus(d, deckStates) === 'following')) {
+			try {
+				await _applyKeySyncFollow(deck);
+			} catch (error) {
+				_disarmKeySync(deck);
+				notify(
+					`KEY SYNC deck ${deck} turned off - could not follow the master: ${error instanceof Error ? error.message : String(error)}`,
+					'error'
+				);
+			}
+		}
+	})).finally(() => {
+		_keySyncFollowQueued = false;
+		if (_keySyncFollowInFlight === pass) _keySyncFollowInFlight = null;
+	});
+	_keySyncFollowInFlight = pass;
+	void pass.catch((error: unknown) => {
+		notify(
+			`KEY SYNC follow pass could not run: ${error instanceof Error ? error.message : String(error)}`,
+			'error'
+		);
+	});
+}
+
+export function clearRustKeySyncBaseline(deck: DeckId): void {
+	keySyncBaseline[deck] = null;
 }
 
 /** The page clock, in seconds. */
@@ -422,6 +579,56 @@ export function phaseLockTick(): void {
 			}
 		})();
 	}
+	_checkSyncDrift(performance.now()); // SYNCLOG-9650: SYNC_DRIFT lines, 4 Hz
+}
+
+// ----- SYNCLOG-9650: greppable SYNC_DRIFT lines on the Rust engine (sync-drift.ts) -----
+const _syncDriftMonitor = createSyncDriftMonitor();
+let _lastSyncDriftCheckMs = -Infinity;
+
+/** `follower` against `master` at the current playheads, or null with no real grid on either. */
+function _syncDriftMeasure(master: DeckId, follower: DeckId): SyncDriftMeasure | null {
+	const m = deckStates[master], f = deckStates[follower];
+	const masterBeats = m.anlz?.beatgrid.beats, followerBeats = f.anlz?.beatgrid.beats;
+	if (!hasRealBeatGrid(masterBeats) || !hasRealBeatGrid(followerBeats)) return null;
+	return measureSyncDrift(
+		{ beats: masterBeats, positionSec: playheadMs(master) / 1000, tempo: m.pitch },
+		{ beats: followerBeats, positionSec: playheadMs(follower) / 1000, tempo: f.pitch },
+		{ normalization: phaseLocks[follower]?.normalization ?? 1, barPhaseTrusted: gridBarPhaseTrusted(m.anlz?.beatgrid) && gridBarPhaseTrusted(f.anlz?.beatgrid) }
+	);
+}
+
+/** Why a synced deck may be off: the grid trust and lock facts a reader needs first. */
+function _syncDriftReason(master: DeckId, follower: DeckId): string {
+	if (!deckHasTrustedBeatGrid(deckStates[master])) return 'master_grid_untrusted';
+	if (!deckHasTrustedBeatGrid(deckStates[follower])) return 'follower_grid_untrusted';
+	if (deckStates[follower].sync_error !== null) return 'sync_error';
+	if (deckStates[follower].loop?.engaged === true) return 'follower_loop';
+	return phaseLocks[follower] === undefined ? 'unlocked' : 'locked';
+}
+
+/** SYNC_DRIFT: every playing Beat Sync deck against the master, 4 Hz, locked
+ * or not (an unlocked deck under a lit SYNC is the case to find). */
+function _checkSyncDrift(nowMs: number): void {
+	if (nowMs - _lastSyncDriftCheckMs < SYNC_DRIFT_CHECK_INTERVAL_MS) return;
+	_lastSyncDriftCheckMs = nowMs;
+	const master = _syncMaster();
+	for (const deck of DECKS) {
+		const st = deckStates[deck];
+		const measure =
+			master !== null && deck !== master && st.playing && effectiveBeatSync(st) && st.stable_id !== null
+				? _syncDriftMeasure(master, deck)
+				: null;
+		if (master === null || measure === null) {
+			_syncDriftMonitor.forget(deck);
+			continue;
+		}
+		const mode = syncModeForBeatSyncMax(uiPrefs.beat_sync_max, st.sync_mode);
+		const state = _syncDriftMonitor.observe(deck, isSyncDrifting(measure, mode), nowMs);
+		if (state === null) continue;
+		const fields: Record<string, SyncLogValue> = { state, engine: 'rust', follower: deck, master, mode, locked: phaseLocks[deck] !== undefined, ...syncDriftFields(measure) };
+		emitSyncLog(SYNC_DRIFT_TAG, deck, { ...fields, master_track: deckStates[master].stable_id, follower_track: st.stable_id, reason: _syncDriftReason(master, deck) });
+	}
 }
 
 /** Re-phase playing followers after their master moved. A follower that
@@ -617,10 +824,39 @@ async function _setBeatSync(deck: DeckId, enabled: boolean): Promise<void> {
 		electIfAuto();
 		master = _syncMaster();
 	}
-	if (master === null || master === deck) return;
+	if (master === null) {
+		emitSyncLog(SYNC_RESNAP_TAG, deck, { outcome: 'skipped', reason: 'no_playing_master', trigger: 'follower_reenable', engine: 'rust', follower: deck, master: null });
+		return;
+	}
+	// SYNCLOG-9650: the same OFF -> ON policy as Web Audio. A press on the master
+	// re-snaps its followers (tempo and BAR) instead of doing nothing. Rust mode
+	// has no master grid-trust gate (its join plans on any real grid), so the
+	// untrusted-master skip never applies here.
+	const action = beatSyncReenableAction({ deck, playingMaster: master, masterGridTrusted: true });
+	switch (action.kind) {
+		case 'resnap-followers': {
+			const followers = _lockedFollowers(deck);
+			await _reanchor(deck, followers);
+			for (const f of followers) {
+				emitSyncLog(SYNC_RESNAP_TAG, f, { outcome: deckStates[f].sync_error === null ? 'snapped' : 'failed', trigger: 'master_reenable', engine: 'rust', follower: f, master: deck });
+			}
+			return;
+		}
+		case 'skip':
+			emitSyncLog(SYNC_RESNAP_TAG, deck, { outcome: 'skipped', reason: action.reason, trigger: 'follower_reenable', engine: 'rust', follower: deck, master });
+			return;
+		case 'join-master':
+			break;
+		default: {
+			const _exhaustive: never = action;
+			throw new Error(`Unhandled Beat Sync re-enable action: ${JSON.stringify(_exhaustive)}`);
+		}
+	}
 	try {
-		await _join(master, deck);
+		await _join(action.master, deck);
+		emitSyncLog(SYNC_RESNAP_TAG, deck, { outcome: 'snapped', trigger: 'follower_reenable', engine: 'rust', follower: deck, master: action.master });
 	} catch (e) {
+		emitSyncLog(SYNC_RESNAP_TAG, deck, { outcome: 'failed', trigger: 'follower_reenable', engine: 'rust', follower: deck, master: action.master });
 		st.beat_sync_enabled = false;
 		const { min, max } = _pitchBounds(deck);
 		const detail = e instanceof Error ? e.message : String(e);
@@ -722,6 +958,56 @@ export async function decideOnPage(command: PerformanceCommand): Promise<void> {
 			await send(command);
 			deckStates[command.deck].quantize_grid_beats = command.beats;
 			return;
+		case 'key_shift': {
+			_assertKeyShift(command.semitones);
+			_requireRustLoaded(command.deck, 'setKeyShift');
+			await _forceMasterTempoOn(command.deck, 'key shift');
+			_disarmKeySync(command.deck);
+			await _nudgeDeckTo(command.deck, command.semitones);
+			return;
+		}
+		case 'key_sync': {
+			if (typeof command.enabled !== 'boolean') throw new TypeError('setKeySync: enabled must be boolean');
+			if (command.mode !== undefined && !isKeySyncMode(command.mode)) {
+				throw new RangeError(`setKeySync: mode must be exact, relative or compatible; got ${String(command.mode)}`);
+			}
+			if (command.target !== undefined && command.target !== 'master' && !DECKS.includes(command.target)) {
+				throw new RangeError(`setKeySync: target must be a deck 1..4 or master, got ${String(command.target)}`);
+			}
+			if (command.target === command.deck) throw new RangeError(`KEY SYNC deck ${command.deck} cannot follow itself`);
+			const st = deckStates[command.deck];
+			if (command.mode !== undefined) st.key_sync_mode = command.mode;
+			if (command.target !== undefined) st.key_sync_target = command.target === 'master' ? null : command.target;
+			if (!command.enabled) {
+				const baseline = keySyncBaseline[command.deck] ?? null;
+				_disarmKeySync(command.deck);
+				if (baseline !== null && st.stable_id !== null) await _nudgeDeckTo(command.deck, baseline);
+				return;
+			}
+			_requireRustLoaded(command.deck, 'setKeySync');
+			if (st.key_sync_target === null && rustMaster.deck === command.deck) {
+				throw new Error('KEY SYNC cannot be applied to the selected master deck');
+			}
+			await _forceMasterTempoOn(command.deck, 'key sync');
+			if (!st.key_sync_enabled) {
+				keySyncBaseline[command.deck] = st.key_shift_semitones ?? 0;
+				st.key_sync_enabled = true;
+			}
+			const leader = keySyncLeaderDeck(command.deck, deckStates);
+			const guessed = [command.deck, leader]
+				.filter((id): id is DeckId => id !== null && keySyncKeyIsGuess(deckStates[id]))
+				.map((id) => `deck ${id} ${deckStates[id].key_guess}?`);
+			if (guessed.length > 0) notify(`KEY SYNC deck ${command.deck} uses a guessed key (${guessed.join(', ')})`, 'warn');
+			if (deriveKeySyncStatus(command.deck, deckStates) === 'following') {
+				try {
+					await _applyKeySyncFollow(command.deck);
+				} catch (error) {
+					_disarmKeySync(command.deck);
+					throw error;
+				}
+			}
+			return;
+		}
 		default:
 			throw new Error(`${command.type} is not decided by the page in Rust engine mode`);
 	}

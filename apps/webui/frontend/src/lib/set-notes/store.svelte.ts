@@ -24,6 +24,7 @@ export const MIN_PAD_W = 220;
 export const MIN_PAD_H = 160;
 const SAVE_DEBOUNCE_MS = 600;
 const UI_STORAGE_KEY = 'opendj.set-notes.ui';
+const DRAFT_STORAGE_KEY = 'opendj.set-notes.draft';
 
 export interface PadUi {
 	open: boolean;
@@ -190,6 +191,57 @@ function _applyNote(data: SetNoteWire | null): void {
 	for (const k of ['x', 'y', 'w', 'h'] as const) if (data[k] !== null) padUi[k] = data[k];
 }
 
+// ----- unsaved draft (localStorage, written on pagehide) ----------------------
+
+interface StoredDraft {
+	scope: string;
+	body: string;
+	savedAtMs: number;
+}
+
+function _readDraft(): StoredDraft | null {
+	try {
+		const parsed = JSON.parse(
+			_storage()?.getItem(DRAFT_STORAGE_KEY) ?? 'null'
+		) as Partial<StoredDraft> | null;
+		if (
+			parsed === null ||
+			typeof parsed.scope !== 'string' ||
+			typeof parsed.body !== 'string' ||
+			typeof parsed.savedAtMs !== 'number'
+		) {
+			return null;
+		}
+		return { scope: parsed.scope, body: parsed.body, savedAtMs: parsed.savedAtMs };
+	} catch (error) {
+		console.error('Set notes: saved draft is unreadable, ignoring it', error);
+		return null;
+	}
+}
+
+function _clearDraft(scope: string): void {
+	if (_readDraft()?.scope === scope) _storage()?.removeItem(DRAFT_STORAGE_KEY);
+}
+
+/** SETNOTE-9951: keep a dirty draft in localStorage (the pad's pagehide handler), so a reload does not drop it. */
+export function persistSetNoteDraft(): void {
+	if (!setNote.dirty || setNote.loadedScope !== padUi.scope) return;
+	const draft: StoredDraft = { scope: padUi.scope, body: setNote.body, savedAtMs: Date.now() };
+	_storage()?.setItem(DRAFT_STORAGE_KEY, JSON.stringify(draft));
+}
+
+/** The kept draft for this scope when the server copy is older than it, else null. */
+function _draftNewerThan(scope: string, data: SetNoteWire | null): string | null {
+	const draft = _readDraft();
+	if (draft === null || draft.scope !== scope) return null;
+	const serverMs = data?.updated_at ? Date.parse(data.updated_at) : Number.NEGATIVE_INFINITY;
+	if (!(serverMs < draft.savedAtMs) || draft.body === (data?.body_md ?? '')) {
+		_clearDraft(scope);
+		return null;
+	}
+	return draft.body;
+}
+
 async function _fetchNote(scope: string): Promise<void> {
 	padUi.scope = scope;
 	_persistUi();
@@ -198,7 +250,14 @@ async function _fetchNote(scope: string): Promise<void> {
 	let loaded = false;
 	try {
 		const data = await _getNote(scope);
-		if (padUi.scope === scope) _applyNote(data);
+		if (padUi.scope === scope) {
+			_applyNote(data);
+			const draft = _draftNewerThan(scope, data);
+			if (draft !== null) {
+				setNote.body = draft;
+				_markDirty();
+			}
+		}
 		loaded = true;
 	} catch (error) {
 		if (padUi.scope !== scope) return;
@@ -234,6 +293,7 @@ async function _save(): Promise<void> {
 			setNote.rev = data.rev;
 			setNote.updatedAt = data.updated_at;
 			setNote.error = null;
+			if (!setNote.dirty) _clearDraft(scope);
 		}
 	} catch (error) {
 		const current = _staleRevOf(error);
@@ -290,6 +350,18 @@ export async function flushSetNote(): Promise<void> {
 		_saveTimer = null;
 	}
 	if (setNote.dirty || _inFlight !== null) await _runSave();
+}
+
+/**
+ * SETNOTE-9951: send a pending debounced save now and resolve when its PUT
+ * settles (a no-op when nothing is pending). Rejects when the draft is still
+ * unsaved afterwards, so the quit gate reports it instead of quitting silently.
+ */
+export async function flushPendingNote(): Promise<void> {
+	await flushSetNote();
+	if (setNote.dirty && setNote.loadedScope === padUi.scope) {
+		throw new Error(setNote.error ?? 'Could not save the set note.');
+	}
 }
 
 /** Switch to a scope; refuses (false) while the current draft could not be saved, so it is never replaced. */

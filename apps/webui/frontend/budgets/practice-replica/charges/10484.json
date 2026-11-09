@@ -1,0 +1,9 @@
+{
+  "bytes": 2048,
+  "measured_main": 17033,
+  "measured_with_pr": 18298,
+  "sha": "4f55e7ae9c",
+  "date": "Sun 8 Nov 2026",
+  "reason": "PR #10484 registers DJM_A9_MAP (apps/webui/frontend/src/lib/rb/midi/maps/djm-a9.ts) in PRACTICE_DEVICE_MAPS, so the lazy practice-replica chunk carries the DJM-A9 map's 33 bindings and 117 hints. Measured: local vite build of main 3b0fbea83f and of this branch on the same host (agentbox), +1265 B gzip; ceiled to KiB",
+  "payback": "none planned; every replica map that joins PRACTICE_DEVICE_MAPS rides this chunk until the maps load per device (epic #9366)"
+}

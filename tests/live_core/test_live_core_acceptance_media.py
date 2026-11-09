@@ -43,6 +43,13 @@ MP3_PACKET_SAMPLES = 1152
 #: 0.52 s at 44.1 kHz, so a decode that drops them instead of silencing them
 #: misses the one-packet tolerance by a factor of twenty.
 CORRUPT_FRAMES = 20
+# MPEG audio frame header: 11 sync bits, then MPEG-1 and layer III in the next byte.
+MPEG_SYNC_BYTE = 0xFF
+MPEG1_LAYER3_BYTE = 0xFA
+RESERVED_RATE_INDEX = 3
+# A clip has more frames than this, and a trailing gap smaller than this is tolerated.
+MIN_FRAMES = 1000
+TRAILING_SLACK = 128
 
 
 def _sha256(path: Path) -> str:
@@ -158,11 +165,11 @@ def _mp3_frames(data: bytes) -> list[tuple[int, int]]:
     frames: list[tuple[int, int]] = []
     while pos + 4 <= len(data):
         b1, b2 = data[pos + 1], data[pos + 2]
-        if data[pos] != 0xFF or (b1 & 0xFE) != 0xFA:  # sync, MPEG-1, layer III
+        if data[pos] != MPEG_SYNC_BYTE or (b1 & 0xFE) != MPEG1_LAYER3_BYTE:  # sync, MPEG-1, layer III
             break
         bitrate = _MP3_BITRATES_KBPS[b2 >> 4] if (b2 >> 4) < len(_MP3_BITRATES_KBPS) else 0
         rate_index = (b2 >> 2) & 3
-        if bitrate == 0 or rate_index == 3:
+        if bitrate == 0 or rate_index == RESERVED_RATE_INDEX:
             break
         length = 144_000 * bitrate // _MP3_RATES[rate_index] + ((b2 >> 1) & 1)
         frames.append((pos, length))
@@ -175,7 +182,10 @@ def test_a_corrupt_packet_plays_as_silence_of_its_own_length(odj_live: Path, tmp
     data = path.read_bytes()
     frames = _mp3_frames(data)
     # The walk must reach the end of the file, or the offsets are not frames.
-    assert len(frames) > 1000 and frames[-1][0] + frames[-1][1] >= len(data) - 128, (len(frames), len(data))
+    assert len(frames) > MIN_FRAMES and frames[-1][0] + frames[-1][1] >= len(data) - TRAILING_SLACK, (
+        len(frames),
+        len(data),
+    )
 
     clean = _summary(odj_live, path)
     assert clean["corrupt_packets"] == 0, clean

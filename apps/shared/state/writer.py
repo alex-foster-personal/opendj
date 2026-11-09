@@ -11,7 +11,8 @@ The track-level writes (tracks, locations, vendor ids, wrapped fields) and
 the playlist writes (insert, membership replace, tombstone) moved to
 :mod:`apps.shared.state.writer_tracks` and
 :mod:`apps.shared.state.writer_playlists` (quality-gate file_size ratchet,
-round 4), as mixins :class:`StateWriter` composes below. Both assume the
+round 4), as mixins :class:`StateWriter` composes below; pairing edge
+upsert/delete lives in :mod:`apps.shared.state.writer_pairings`. Both assume the
 infrastructure this class defines -- ``_tx``, ``_stamp``, ``_now_iso``,
 ``machine_id``, ``bus`` -- so neither is usable on its own. The constants
 and free helpers both mixins ALSO need (table names,
@@ -47,6 +48,7 @@ from .writer_common import (
     immediate_transaction,
     next_playlist_revision,
 )
+from .writer_pairings import _PairingWriterMixin
 from .writer_playlists import _PlaylistWriterMixin
 from .writer_tracks import _TrackWriterMixin
 
@@ -72,7 +74,12 @@ class _QueuedBus:
         self._real.close(timeout)
 
 
-class StateWriter(_TrackWriterMixin, _PlaylistWriterMixin, _AvailabilityWriterMixin):
+class StateWriter(
+    _TrackWriterMixin,
+    _PlaylistWriterMixin,
+    _AvailabilityWriterMixin,
+    _PairingWriterMixin,
+):
     """Write-serialised facade over the state DB.
 
     Owns its own event bus unless one is injected. Tests can pass in a

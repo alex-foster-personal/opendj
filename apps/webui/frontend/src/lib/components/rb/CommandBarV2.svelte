@@ -75,6 +75,7 @@
 		actionTokens,
 		commandCandidates,
 		commandKey,
+		paletteCommandRows,
 		ejectAction,
 		layoutGroups,
 		noteRecentLoad,
@@ -98,6 +99,7 @@
 	import { effectiveHideTodo, filterSettings, hasSettingsQuery } from '$lib/settings/search';
 	import { previewAssets, requestPreviewAssets, watchPreview } from '$lib/rb/cmdk-preview-data.svelte';
 	import { createCuePreview, type CuePreviewCommand, type CuePreviewTrack } from '$lib/rb/cmdk-cue-preview.svelte';
+	import type { PaletteIpcCommand } from '$lib/palette/commands';
 	import { barPhase, downbeatTimes, snapStops } from '$lib/rb/cmdk-preview-grid';
 	import { analysisSourceState } from '$lib/rb/analysis-source-state.svelte';
 	import { shouldUseBeatgridFallback } from '$lib/rb/beatgrid-fallback';
@@ -182,7 +184,7 @@
 		/** The typed dispatcher's UI entry, passed in by the page so this bar does
 		 * not import performance-ipc.svelte itself (the most-imported module). */
 		runCommand: (
-			command: CuePreviewCommand | PairCommand | { type: 'unload'; deck: DeckId },
+			command: CuePreviewCommand | PairCommand | { type: 'unload'; deck: DeckId } | PaletteIpcCommand,
 			source?: 'user-ui' | 'agent-command'
 		) => Promise<{ ok: true } | { ok: false; reason: string }>;
 		/** Runs `work` holding these decks plus the sync scope for its whole run; `work`
@@ -332,8 +334,8 @@
 		for (const def of found) {
 			if (!actionableSetting(def)) continue;
 			const link = def.control.kind === 'link';
-			if (!link && !api.isAllowedSettingKey(def.id)) continue;
-			const value = link || !api.isAllowedSettingKey(def.id) ? '' : api.readSettingValue(def.id);
+			if (!link && !api.isKnownSettingKey(def.id)) continue;
+			const value = link || !api.isKnownSettingKey(def.id) ? '' : api.readSettingValue(def.id);
 			out.push({
 				kind: 'setting',
 				id: def.id,
@@ -348,16 +350,21 @@
 	});
 	const commandActions = $derived(
 		actionsOn
-			? commandCandidates(
-					DECK_IDS.map((id) => ({
+			? (() => {
+					const rows = DECK_IDS.map((id) => ({
 						id,
 						loaded: decks[id].stable_id !== null,
 						playing: decks[id].playing,
+						is_master: decks[id].is_master,
+						beat_sync_enabled: decks[id].beat_sync_enabled,
 						title: decks[id].title,
 						load_generation: decks[id].load_generation
-					})),
-					query
-				)
+					}));
+					return [
+						...commandCandidates(rows, query),
+						...paletteCommandRows({ target, decks: rows }, query)
+					];
+				})()
 			: []
 	);
 	// CMDK-9465: commands ranked VS Code style (fuzzy, word starts, runs), recent picks first (3-day half-life).
@@ -630,6 +637,21 @@
 			openSettings(command.query);
 			return null;
 		}
+		if (command.type === 'palette') {
+			const run = command.run;
+			if (run.via === 'ui') {
+				closeBar();
+				const { showHotkeysOverlay } = await import('$lib/components/rb/hotkeys/hotkeys-overlay.svelte');
+				showHotkeysOverlay();
+				return null;
+			}
+			const result = await runCommand(run.command, source);
+			if (result.ok) {
+				closeBar();
+				return null;
+			}
+			return fail(`${action.label} did not run (${result.reason})`);
+		}
 		// A newer eject, or a confirm, that starts while this one waits takes the bar: this one must not
 		// overwrite its guard or unload after the wait (Codex P2, #6689).
 		const op = ++ejectOp;
@@ -843,6 +865,8 @@
 				),
 				mode,
 				ai: aiShown,
+				// CMDK snapshot: these two spreads must stay outside the `rows: flat.map` callback so
+				// unit tests that slice to `})\\n\\t\\t})` catch the real snapshot end, not an inner `})`.
 				// The aligned pair's pending load and the last pick's failure, as the footer shows them (Codex r4280465903).
 				...(open && cmdkOperation !== null ? { operation: cmdkOperation } : {}),
 				// The deck picker or eject confirmation holding the bar, so an agent reads the choice the DJ is making (Codex, #6691).

@@ -13,7 +13,7 @@
  *   - the SPA is served by the ENGINE from `apps/webui/frontend/build`, not
  *     by vite. Dev serves packages untransformed; the artifact does not.
  *
- * SIX SUITES, ONE SERVER. setup-entry-points.spec.ts was written config-less
+ * SEVEN SUITES, ONE SERVER. setup-entry-points.spec.ts was written config-less
  * so the root chromium/vite config would pick it up, and that run still
  * happens. It is ALSO run here, because everything it asserts is exactly what
  * a tester meets in the installed app and nowhere else: the Cmd+, accelerator
@@ -21,12 +21,13 @@
  * whose whole reason to exist is stating the EPHEMERAL port the packaged
  * engine bound. Under vite the chip reads the dev origin, which is the one
  * address that was never in question. deckload-smoke.spec.ts (#770) is the
- * third: unlike the other two it also runs under a SECOND project, chromium,
+ * third: unlike the first two it also runs under a SECOND project, chromium,
  * so the same acceptance is asserted on both browsers against the identical
- * artifact and engine (see that file's own header for why). None of the
- * AutoPlay explainer placement is the fourth suite. playlist-detail.spec.ts
- * is the fifth, using opt-in populated and empty fixture playlists. None of
- * the five suites
+ * artifact and engine (see that file's own header for why). The AutoPlay
+ * explainer placement is the fourth suite. playlist-detail.spec.ts is the
+ * fifth, using opt-in populated and empty fixture playlists. Production
+ * AutoPlay playlist switching is sixth; the WebKit DRUMS/FILTER drag is
+ * seventh. None of the seven suites
  * needs a fixture another does not, so they share this engine and its
  * throwaway library rather than paying a second 180s boot.
  *
@@ -42,9 +43,10 @@
  * - ✔︎ The production build must already exist; a stale/absent build fails at
  *   config load with the command to run, never mid-test as a mystery.
  * - ✔︎ No retries and one worker: a flaky worklet is the defect under test.
- * - ✔︎ Six tier-1 artifact suites run here: the deck-load contract, setup
+ * - ✔︎ Seven tier-1 artifact suites run here: the deck-load contract, setup
  *   entry points, cross-browser deck-load smoke, AutoPlay explainer, playlist
- *   detail, and production AutoPlay playlist-switch acceptance.
+ *   detail, production AutoPlay playlist-switch acceptance, and the WebKit
+ *   DRUMS/FILTER dial drag.
  * - ✔︎ The chromium project is scoped to the smoke only, so it never doubles
  *   the deck-load contract or setup-entry-points suites under a second
  *   browser.
@@ -150,7 +152,8 @@ export default defineConfig({
 		'deckload-smoke.spec.ts',
 		'autoplay-explainer-placement.spec.ts',
 		'playlist-detail.spec.ts',
-		'zz-autoplay-playlist-switch.spec.ts'
+		'zz-autoplay-playlist-switch.spec.ts',
+		'stem-dial-drag-webkit.spec.ts'
 	],
 	fullyParallel: false,
 	workers: 1,

@@ -107,7 +107,7 @@ test('the partial-failure branch clears sync_error for every non-failed schedule
 test('pending membership is cleared only once the master beatgrid precondition is confirmed, not before it can still throw', () => {
 	// discussion_r3914557002 (P1 BLOCKING): the original ordering cleared
 	// clearPendingMembership(master) and every follower's BEFORE
-	// requireBeatGrid(masterState, ...) had a chance to throw. A follower
+	// requirePhaseCapableBeatGrid(masterState, ...) had a chance to throw. A follower
 	// marked pending against a gridless master, retried before that master
 	// settles, would lose its pending record on THIS attempt even though the
 	// attempt itself fails right here for the exact same reason (master still
@@ -115,25 +115,25 @@ test('pending membership is cleared only once the master beatgrid precondition i
 	// every later PLAY on that follower repeats the same throw forever, with
 	// beat_sync_enabled never reset by this call site (audio-engine.svelte.ts's
 	// `play()`, unlike `setBeatSync`, has no .catch() that flips it back off).
-	// Moving both clears to AFTER requireBeatGrid succeeds means a throw there
+	// Moving both clears to AFTER requirePhaseCapableBeatGrid succeeds means a throw there
 	// leaves the pending record intact for the master's own later landing to
 	// retry, while a genuine grid confirmation still clears any now-stale
 	// pending record exactly as before.
 	const body = synchronizeFollowersBody();
-	const requireBeatGridCall = body.indexOf("requireBeatGrid(masterState, 'Beat Sync')");
-	assert.ok(requireBeatGridCall > 0, "requireBeatGrid(masterState, 'Beat Sync') call not found");
+	const requirePhaseCall = body.indexOf("requirePhaseCapableBeatGrid(masterState, 'Beat Sync')");
+	assert.ok(requirePhaseCall > 0, "requirePhaseCapableBeatGrid(masterState, 'Beat Sync') call not found");
 	const clearMasterCall = body.indexOf('_resyncTracking.clearPendingMembership(master)');
 	assert.ok(clearMasterCall > 0, 'clearPendingMembership(master) call not found');
 	assert.ok(
-		clearMasterCall > requireBeatGridCall,
-		'clearPendingMembership(master) must run AFTER requireBeatGrid(masterState, ...) succeeds, not before it'
+		clearMasterCall > requirePhaseCall,
+		'clearPendingMembership(master) must run AFTER requirePhaseCapableBeatGrid(masterState, ...) succeeds, not before it'
 	);
 	const clearFollowersLoop = body.indexOf(
 		'for (const deck of followers) _resyncTracking.clearPendingMembership(deck)'
 	);
 	assert.ok(clearFollowersLoop > 0, 'clearPendingMembership follower loop not found');
 	assert.ok(
-		clearFollowersLoop > requireBeatGridCall,
-		'the followers clearPendingMembership loop must also run AFTER requireBeatGrid(masterState, ...) succeeds'
+		clearFollowersLoop > requirePhaseCall,
+		'the followers clearPendingMembership loop must also run AFTER requirePhaseCapableBeatGrid(masterState, ...) succeeds'
 	);
 });

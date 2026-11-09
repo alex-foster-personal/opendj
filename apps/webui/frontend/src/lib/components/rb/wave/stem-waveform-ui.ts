@@ -40,3 +40,12 @@ export function stemWaveRowUnavailableTip(deck: DeckState, stem: StemControl): s
 export function stemWaveRowColor(stem: StemControl, computedToken = ''): string {
 	return stemColorFromToken(stem, computedToken);
 }
+
+/**
+ * Resolve a stem row colour from the element's --rb-stem-<id> token. Forces a
+ * style read, so callers run it once per theme/palette/skin/stem change, never
+ * per paint (issue #10221, PERF-PAINT-02).
+ */
+export function stemWaveRowColorFromElement(el: Element, stem: StemControl): string {
+	return stemWaveRowColor(stem, getComputedStyle(el).getPropertyValue(`--rb-stem-${stem}`));
+}

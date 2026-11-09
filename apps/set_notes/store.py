@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import re
 import sqlite3
+from dataclasses import replace
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -104,7 +105,7 @@ def save_set_note(
     return SetNote(
         scope=scope,
         body_md=body_md,
-        geometry=Geometry(x=geometry.x, y=geometry.y, w=geometry.w, h=geometry.h),
+        geometry=replace(geometry),
         visible=visible,
         rev=new_rev,
         updated_at=updated_at,

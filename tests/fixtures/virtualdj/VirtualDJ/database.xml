@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<VirtualDJ_Database Version="8.2">
+ <Song FilePath="/Volumes/Invented DJ/Music/Invented Tune One.mp3" FileSize="9812345">
+  <Tags Author="Invented Artist" Title="Invented Tune One" Album="Invented Album" Genre="House" Year="2019" Key="Am" Stars="4"/>
+  <Infos SongLength="242.500" PlayCount="7" Bitrate="320" FirstSeen="1700000000" LastPlay="1730000000"/>
+  <Comment>Invented comment</Comment>
+  <Scan Version="801" Bpm="0.468750" Key="Am" Volume="1.05"/>
+  <Poi Pos="0.025" Type="beatgrid"/>
+  <Poi Pos="32.000" Type="cue" Num="1" Name="Drop"/>
+  <Poi Pos="64.000" Type="loop" Size="7.500" Name="Loop A"/>
+  <Poi Pos="96.000" Type="cue" Num="8" Name="Outro"/>
+  <Poi Pos="120.000" Type="cue" Num="12" Name="Memory"/>
+  <Poi Pos="1.000" Type="automix" Point="realStart"/>
+ </Song>
+ <Song FilePath="/Volumes/Invented DJ/Music/Invented Tune Two.mp3">
+  <Tags Author="Invented Artist Two" Title="Invented Tune Two" Album="Invented Album" Key="F#m" Stars="0"/>
+  <Infos SongLength="200.000" PlayCount="0"/>
+  <Scan Bpm="124.00" Key="F#m"/>
+  <Poi Pos="0.000" Type="beatgrid"/>
+ </Song>
+ <Song FilePath="D:\Music\Invented Tune Three.mp3">
+  <Tags Bpm="0.500000" Key="Ebm" Stars="5"/>
+  <Infos SongLength="180.250" PlayCount="3"/>
+  <Scan Bpm="0.468750" Key="Ebm"/>
+  <Poi Pos="16.000" Type="cue" Num="2" Name="Warm"/>
+ </Song>
+</VirtualDJ_Database>

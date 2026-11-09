@@ -13,11 +13,18 @@ from __future__ import annotations
 
 import pytest
 
+from apps.shared import harmonic
 from apps.shared.harmonic import (
     CAMELOT_RULE_IDS,
+    CAMELOT_RULES,
+    CLASH_SCORE,
     DEFAULT_CAMELOT_RULE_IDS,
+    KEY_MOVES,
+    KeyCompat,
+    camelot_compatibility,
     camelot_rule_matches,
     camelot_rules_allow,
+    key_compat,
 )
 from scripts.gen_camelot_rules_ts import TS_PATH, render_camelot_rules_ts
 
@@ -42,7 +49,33 @@ CASES: tuple[tuple[str, str, tuple[str, ...], tuple[str, ...]], ...] = (
     ("jaws", "1B", ("8B",), ("6B", "8A")),
     ("pay_attention", "8A", ("5A",), ("11A", "5B")),
     ("pay_attention", "2B", ("11B",), ("5B", "11A")),
+    ("wrong_way_diagonal", "8B", ("7A",), ("9A", "7B", "8A")),
+    ("wrong_way_diagonal", "8A", ("9B",), ("7B", "9A", "8B")),
+    ("parallel", "8B", ("5A",), ("11A", "5B", "8A")),
+    ("parallel", "5A", ("8B",), ("2B", "8A", "5B")),
+    ("minor_third_down", "8A", ("11A",), ("5A", "11B")),
+    ("major_third", "10B", ("2B",), ("6B", "2A")),
+    ("semitone_down", "8A", ("1A",), ("3A", "1B")),
+    ("tritone", "8A", ("2A",), ("2B", "8A")),
 )
+
+# (rule id, score) from spec 07 section 3; the scores are data, so the test pins them.
+RULE_SCORES: dict[str, float] = {
+    "same_key": 1.00,
+    "relative": 0.95,
+    "adjacent": 0.90,
+    "diagonal": 0.75,
+    "energy_boost": 0.55,
+    "energy_drop": 0.50,
+    "pay_attention": 0.45,
+    "parallel": 0.40,
+    "minor_third_down": 0.35,
+    "major_third": 0.35,
+    "jaws": 0.30,
+    "wrong_way_diagonal": 0.30,
+    "semitone_down": 0.15,
+    "tritone": 0.05,
+}
 
 
 @pytest.mark.parametrize(("rule", "reference", "yes", "no"), CASES)
@@ -77,12 +110,64 @@ def test_rules_allow_is_an_or_over_enabled_rules() -> None:
 def test_unknown_rule_and_bad_key_raise() -> None:
     """[if] a rule id or key is unknown [then] it raises instead of reading as "no match"."""
     with pytest.raises(ValueError, match="unknown Camelot rule"):
-        camelot_rule_matches("tritone", "8A", "2A")
+        camelot_rule_matches("bogus_rule", "8A", "2A")
     with pytest.raises(ValueError):
         camelot_rule_matches("same_key", "8A", "13A")
     # if an earlier rule matches first then a later unknown id must still raise
     with pytest.raises(ValueError, match="unknown Camelot rule"):
         camelot_rules_allow("8A", "8A", ["same_key", "bogus"])
+
+
+def test_every_rule_carries_its_spec_score_and_any_other_cell_is_the_clash_floor() -> None:
+    """[if] a rule's score drifts from spec 07 section 3 [then] this names it; [if] no rule covers a pair [then] clash 0.10."""
+    assert {rule.id: rule.score for rule in CAMELOT_RULES} == RULE_SCORES
+    assert CLASH_SCORE == 0.10
+    assert key_compat("8A", "2B") == KeyCompat("clash", 0.10, "neutral", "no Camelot relation")
+    assert key_compat("8A", "4A") == KeyCompat("clash", 0.10, "neutral", "no Camelot relation"), (
+        "major third down is not a rule"
+    )
+
+
+def test_rule_cells_are_disjoint_so_the_first_match_is_the_only_match() -> None:
+    """[if] two rules claimed the same (letter, letter change, step) cell [then] key_compat would depend on row order."""
+    seen: dict[tuple[str, str, int], str] = {}
+    for rule in CAMELOT_RULES:
+        for move in rule.moves:
+            assert move.direction in KEY_MOVES, f"{rule.id}: direction {move.direction!r}"
+            for letter in ("A", "B") if move.from_letter == "*" else (move.from_letter,):
+                cell = (letter, move.to_letter, move.step % 12)
+                assert cell not in seen, f"{rule.id} and {seen[cell]} both claim {cell}"
+                seen[cell] = rule.id
+
+
+def test_key_compat_is_directional_and_names_the_move() -> None:
+    """[if] the diagonal is read the wrong way round [then] it scores 0.30 not 0.75: the distance table could not tell."""
+    good = key_compat("5B", "6A")
+    wrong = key_compat("8B", "7A")
+    assert (good.relation, good.score, good.move) == ("diagonal", 0.75, "neutral")
+    assert (wrong.relation, wrong.score, wrong.move) == ("wrong_way_diagonal", 0.30, "neutral")
+    assert good.score - wrong.score >= 0.30
+    for key in ("8A", "12B", "Am", "C"):
+        assert key_compat(key, key) == KeyCompat("same_key", 1.0, "neutral", "same key")
+    assert key_compat("8A", "9A") == KeyCompat("adjacent", 0.90, "lift", "fifth up")
+    assert key_compat("8A", "7A") == KeyCompat("adjacent", 0.90, "neutral", "fourth up")
+    assert key_compat("8A", "10A").move == "lift"
+    assert key_compat("8A", "6A").move == "drop"
+    assert key_compat("8A", "3A").move == "lift"
+    assert key_compat("10B", "2B").move == "lift"
+    assert key_compat("8A", "8B").move == "neutral"
+    # standard notation works on both sides
+    assert key_compat("Am", "Em").relation == "adjacent"
+
+
+def test_camelot_compatibility_is_the_key_compat_score_and_the_distance_table_is_gone() -> None:
+    """[if] camelot_compatibility and key_compat disagreed [then] the solver and the pair scorer would rank differently."""
+    assert not hasattr(harmonic, "_CAMELOT_COMPAT")
+    for out_key in ("8A", "8B", "1A", "12B"):
+        for number in range(1, 13):
+            for letter in "AB":
+                in_key = f"{number}{letter}"
+                assert camelot_compatibility(out_key, in_key) == key_compat(out_key, in_key).score
 
 
 def test_browser_rule_table_is_generated_from_harmonic() -> None:

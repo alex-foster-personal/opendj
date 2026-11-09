@@ -36,7 +36,7 @@ from urllib.parse import quote
 
 from apps.autodj.http import ProfileError, TrackProfile, build_service
 from apps.shared.engine_origin import resolve_origin
-from apps.transition_score.tryer import PROFILE_POINTS, EngineProfiles, PairNotTryable
+from apps.transition_score.http import PROFILE_POINTS, EngineProfiles, PairNotTryable
 from scripts.bench.tryer_calibration.pairs import FIXTURE_PATH, load_pairs_verified
 
 PROFILES_DIR: Path = Path(__file__).parent / "profiles"
@@ -77,9 +77,7 @@ class CachedProfiles:
             )
         found_id = document.get("stable_id")
         if found_id != stable_id:
-            raise CachedProfileMissing(
-                f"{path}: snapshot stable_id {found_id!r}, expected {stable_id!r}"
-            )
+            raise CachedProfileMissing(f"{path}: snapshot stable_id {found_id!r}, expected {stable_id!r}")
         try:
             built = _AUTODJ.profile_from_payloads(document["anlz"], document["track"])
         except ProfileError as error:

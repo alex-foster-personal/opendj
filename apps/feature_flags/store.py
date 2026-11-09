@@ -174,13 +174,14 @@ FLAGS: tuple[FlagDef, ...] = (
     ),
     FlagDef(
         flag_id="cmdk.v2",
-        default=False,
+        default=True,
         owner="maintainer",
         note=(
             "The redesigned Cmd K bar (CMDK-04..07, design artifact Thu 8 Oct "
             "2026): one in-memory search over the open playlist and the whole "
             "collection, the library's filters as an icon row, deck rings above "
-            "the bar. OFF keeps the shipped CMDK-01..03 bar unchanged."
+            "the bar. ON by default since issue #9463; OFF restores the shipped "
+            "CMDK-01..03 bar unchanged."
         ),
         retire_by="2027-03-01",
         sandbox_gated=False,
@@ -213,7 +214,7 @@ FLAGS: tuple[FlagDef, ...] = (
     ),
     FlagDef(
         flag_id="cmdk.v2.preview",
-        default=False,
+        default=True,
         owner="maintainer",
         note=(
             "Cmd K v2 slice 2 (CMDK-07..10, issue #6090): the preview strip above "
@@ -251,7 +252,7 @@ FLAGS: tuple[FlagDef, ...] = (
     ),
     FlagDef(
         flag_id="cmdk.v2.actions",
-        default=False,
+        default=True,
         owner="maintainer",
         note=(
             "Cmd K v2 settings and commands as results (CMDK-11..14, issue #6091): "

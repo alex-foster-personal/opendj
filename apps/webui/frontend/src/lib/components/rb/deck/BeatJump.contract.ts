@@ -1,5 +1,6 @@
 import { expect, fn, userEvent, within } from 'storybook/test';
 
+import type { BeatJumpSize } from '$lib/rb/beat-jump-size.svelte';
 import type { DeckState } from '$lib/rb/deck-state-types';
 
 /**
@@ -22,7 +23,12 @@ type DeckFixture = {
 	position_ms: number;
 	loop: { in_ms: number; out_ms: number; engaged: boolean; beat_length: number | null } | null;
 };
-type Args = { deck: DeckState; pending: boolean; onJump: (beats: number) => Promise<void> };
+type Args = {
+	deck: DeckState;
+	pending: boolean;
+	onJump: (beats: number) => Promise<void>;
+	onSize: (beats: BeatJumpSize) => Promise<void>;
+};
 type Ctx = { canvasElement: HTMLElement; args: Args };
 
 const BEATS: Beat[] = Array.from({ length: 64 }, (_, i) => ({ n: (i % 4) + 1, bpm: 120, t: 0.5 + i * 0.5 }));
@@ -44,53 +50,57 @@ const jumpButton = (root: HTMLElement, delta: number): HTMLButtonElement => {
 	if (el === null) throw new Error(`no beat-jump button for ${delta}`);
 	return el;
 };
-const DELTAS = [-8, -4, 4, 8];
+// The deck's jump size is the default 4 (DECKUX-10470): one back, one forward.
+const DELTAS = [-4, 4];
 
 export const contracts = {
-	/** Mid-track on a real grid: all four jumps live, labeled, titled, and each click forwards its beats. */
+	/** Mid-track on a real grid: < 4 > plus two live jumps, labeled, titled, and each click forwards its beats. */
 	Ready: {
-		args: { deck: deck({}), pending: false, onJump: fn(async () => {}) } satisfies Args,
+		args: { deck: deck({}), pending: false, onJump: fn(async () => {}), onSize: fn(async () => {}) } satisfies Args,
 		play: async ({ canvasElement, args }: Ctx) => {
 			const canvas = within(canvasElement);
 			const group = canvas.getByRole('group', { name: 'beat jump deck 2' });
 			await expect(group).toHaveClass('beat-jump');
-			await expect(group).toHaveAttribute('title', 'Beat jump: move the transport by whole beatgrid beats');
+			await expect(group).toHaveAttribute('title', 'Beat jump: move the transport by the chosen number of beatgrid beats');
 			await expect(canvasElement.querySelector('.column-label')).toHaveTextContent('JUMP');
-			const labels = Array.from(group.querySelectorAll('button')).map((b) => b.textContent?.trim());
-			await expect(labels).toEqual(['-8', '-4', '+4', '+8']);
+			await expect(canvas.getByTestId('beat-jump-size-deck-2')).toHaveTextContent('4');
+			for (const button of group.querySelectorAll('button')) {
+				await expect(button.querySelector('svg')).not.toBeNull();
+			}
 			for (const delta of DELTAS) {
 				const b = jumpButton(canvasElement, delta);
-				const lbl = delta > 0 ? `+${delta}` : String(delta);
+				const way = delta < 0 ? 'back' : 'forward';
 				await expect(b).toBeEnabled();
-				await expect(b).toHaveAttribute('data-testid', `beat-jump-${delta}-deck-2`);
+				await expect(b).toHaveAttribute('data-testid', `beat-jump-${way}-deck-2`);
 				await expect(b).toHaveAttribute('data-performance-control', 'beat-jump');
-				await expect(b).toHaveAttribute('aria-label', `jump ${lbl} beats deck 2`);
-				await expect(b).toHaveAttribute('title', `jump ${lbl} beats along the real PQTZ beatgrid`);
+				await expect(b).toHaveAttribute('aria-label', `jump ${way} 4 beats deck 2`);
+				await expect(b).toHaveAttribute('title', `jump ${delta > 0 ? '+4' : '-4'} beats along the real PQTZ beatgrid`);
 			}
-			await userEvent.click(canvas.getByRole('button', { name: 'jump +4 beats deck 2' }));
+			await userEvent.click(canvas.getByRole('button', { name: 'jump forward 4 beats deck 2' }));
 			await expect(args.onJump).toHaveBeenLastCalledWith(4);
-			await userEvent.click(canvas.getByRole('button', { name: 'jump -8 beats deck 2' }));
-			await expect(args.onJump).toHaveBeenLastCalledWith(-8);
+			await userEvent.click(canvas.getByRole('button', { name: 'jump back 4 beats deck 2' }));
+			await expect(args.onJump).toHaveBeenLastCalledWith(-4);
 			await expect(args.onJump).toHaveBeenCalledTimes(2);
+			await userEvent.click(canvas.getByRole('button', { name: 'larger beat jump size deck 2' }));
+			await expect(args.onSize).toHaveBeenLastCalledWith(8);
+			await userEvent.click(canvas.getByRole('button', { name: 'smaller beat jump size deck 2' }));
+			await expect(args.onSize).toHaveBeenLastCalledWith(2);
 		}
 	},
-	/** On the first beat: backward jumps are inert with a reason, forward ones stay live. */
+	/** On the first beat: the back jump is inert with a reason, forward stays live. */
 	AtFirstBeat: {
-		args: { deck: deck({ position_ms: 500 }), pending: false, onJump: fn(async () => {}) } satisfies Args,
+		args: { deck: deck({ position_ms: 500 }), pending: false, onJump: fn(async () => {}), onSize: fn(async () => {}) } satisfies Args,
 		play: async ({ canvasElement, args }: Ctx) => {
-			await expect(jumpButton(canvasElement, -8)).toBeDisabled();
-			await expect(jumpButton(canvasElement, -8)).toHaveAttribute('title', 'already within 8 beats of the first beatgrid beat');
 			await expect(jumpButton(canvasElement, -4)).toBeDisabled();
 			await expect(jumpButton(canvasElement, -4)).toHaveAttribute('title', 'already within 4 beats of the first beatgrid beat');
 			await expect(jumpButton(canvasElement, 4)).toBeEnabled();
-			await expect(jumpButton(canvasElement, 8)).toBeEnabled();
-			await userEvent.click(jumpButton(canvasElement, 8));
-			await expect(args.onJump).toHaveBeenCalledWith(8);
+			await userEvent.click(jumpButton(canvasElement, 4));
+			await expect(args.onJump).toHaveBeenCalledWith(4);
 		}
 	},
-	/** A pending deck command blocks every jump, titled with that reason. */
+	/** A pending deck command blocks both jumps and the size stepper, titled with that reason. */
 	Pending: {
-		args: { deck: deck({}), pending: true, onJump: fn(async () => {}) } satisfies Args,
+		args: { deck: deck({}), pending: true, onJump: fn(async () => {}), onSize: fn(async () => {}) } satisfies Args,
 		play: async ({ canvasElement, args }: Ctx) => {
 			for (const delta of DELTAS) {
 				await expect(jumpButton(canvasElement, delta)).toBeDisabled();
@@ -101,7 +111,7 @@ export const contracts = {
 	},
 	/** A loaded track with no beatgrid: every jump inert with the no-grid reason. */
 	NoBeatgrid: {
-		args: { deck: deck({ anlz: null }), pending: false, onJump: fn(async () => {}) } satisfies Args,
+		args: { deck: deck({ anlz: null }), pending: false, onJump: fn(async () => {}), onSize: fn(async () => {}) } satisfies Args,
 		play: async ({ canvasElement }: Ctx) => {
 			for (const delta of DELTAS) {
 				await expect(jumpButton(canvasElement, delta)).toBeDisabled();

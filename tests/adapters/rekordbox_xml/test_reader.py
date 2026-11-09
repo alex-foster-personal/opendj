@@ -183,6 +183,58 @@ def test_blank_numbers_are_missing_not_errors(tmp_path: Path) -> None:
     assert (track.bpm, track.rating, track.color_rgb, track.play_count) == (None, None, None, 0)
 
 
+@pytest.mark.requirement("DJIMPORT-10053")
+def test_every_descriptive_attribute_reads_into_a_typed_extension() -> None:
+    """[if] a TRACK carries every descriptive attribute [then] each lands typed on extensions, [else stop]."""
+    minimal = Path(__file__).resolve().parents[2] / "fixtures" / "rekordbox_xml" / "minimal.xml"
+    (track,) = read_rekordbox_xml(minimal).library.tracks
+    assert track.extensions == {
+        "x_genre": "Invented House",
+        "x_label": "Invented Records",
+        "x_remixer": "Invented Remixer",
+        "x_composer": "Invented Composer",
+        "x_grouping": "Invented Group",
+        "x_year": 2019,
+        "x_date_added": "2026-11-08",
+        "x_mix": "Invented Extended Mix",
+        "x_bitrate": 320,
+        "x_sample_rate": 44100,
+        "x_size": 9812345,
+    }
+    for key in ("x_year", "x_bitrate", "x_sample_rate", "x_size"):
+        assert type(track.extensions[key]) is int
+
+
+@pytest.mark.requirement("DJIMPORT-10053")
+def test_text_attributes_are_stripped_and_blank_or_absent_ones_add_no_key(tmp_path: Path) -> None:
+    """[if] a text attribute is blank or absent [then] no extension key is added, [else stop]."""
+    (track,) = read_rekordbox_xml(
+        _one_track(tmp_path, 'Genre="  Techno  " Label="" Year="0" BitRate=""')
+    ).library.tracks
+    assert track.extensions == {"x_genre": "Techno"}
+
+
+@pytest.mark.parametrize(
+    ("attrs", "named"),
+    [
+        ('Year="nineteen"', "Year='nineteen' is not a number"),
+        ('BitRate="320.5"', "BitRate='320.5' is not a whole number"),
+        ('SampleRate="-44100"', "SampleRate='-44100' is negative"),
+        ('Size="1e30"', "Size='1e30' is too large to store"),
+        ('DateAdded="08/11/2026"', "DateAdded='08/11/2026' is not a YYYY-MM-DD date"),
+        ('DateAdded="2026-02-30"', "DateAdded='2026-02-30' is not a YYYY-MM-DD date"),
+        ('DateAdded="20261108"', "DateAdded='20261108' is not a YYYY-MM-DD date"),
+    ],
+)
+@pytest.mark.requirement("DJIMPORT-10053")
+def test_a_malformed_extension_attribute_stops_the_read_naming_track_and_attribute(
+    tmp_path: Path, attrs: str, named: str
+) -> None:
+    """[if] Year, BitRate, SampleRate, Size or DateAdded is malformed [then] reading fails naming it, [else stop]."""
+    with pytest.raises(ValueError, match=rf"TrackID='7': {named}"):
+        read_rekordbox_xml(_one_track(tmp_path, attrs))
+
+
 @pytest.mark.parametrize(
     ("seconds", "ms"),
     [

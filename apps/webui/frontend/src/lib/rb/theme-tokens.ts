@@ -27,6 +27,9 @@
  *     theme's tokens and LOGS (does not throw - a bad scheme should not
  *     crash the app) any violation, with an injectable logger for tests.
  *     [if] a genuinely broken scheme logs nothing [then ⛔️] broken
+ *   ✔︎ ✅ 🎯 TOPBAR_H_PX / WAVEROW_H_PX_*: literal px mirrors of theme.css and
+ *     the /performance page, drift-checked in perf-layout-feasibility.test.mjs.
+ *     [if] theme.css changes --rb-topbar-h and this stays 28 [then ⛔️]
  */
 
 import {
@@ -41,6 +44,7 @@ export type SchemeName = 'dark' | 'light';
 /** Mirrors `.perf-root` in theme.css. Keep in sync by hand; the drift test
  * (theme-tokens.test.mjs) fails loudly if this and theme.css disagree. */
 export const DARK_SCHEME_TOKENS: Record<string, string> = {
+  'rb-pair': '#a46ef0',
   'rb-bg': '#0d0f12',
   'rb-panel': '#14171d',
   'rb-panel-raised': '#1a1e25',
@@ -56,7 +60,6 @@ export const DARK_SCHEME_TOKENS: Record<string, string> = {
   'rb-wave-mid': '#f0a020',
   'rb-wave-high': '#f4f6f8',
   'rb-wave-mono': '#3d7dd9',
-  'rb-wave-vocal': '#4fb2ff',
   'rb-plan-fader': '#ffffff',
   'rb-plan-eq-low': '#ffc04d',
   'rb-plan-eq-mid': '#7ee787',
@@ -64,10 +67,7 @@ export const DARK_SCHEME_TOKENS: Record<string, string> = {
   'rb-plan-filter': '#4dd8ff',
   'rb-plan-out': '#ff3b30',
   'rb-plan-in': '#35c04f',
-  'rb-rail-spotify': '#35c04f',
-  'rb-rail-files': '#3d7dd9',
-  'rb-rail-beatport': '#8e5bd6',
-  'rb-rail-record': '#d0342c',
+  'rb-wave-vocal': '#4fb2ff',
   'rb-red': '#d0342c',
   'rb-yellow': '#e5c33a',
   'rb-select': '#1d3f73',
@@ -78,13 +78,19 @@ export const DARK_SCHEME_TOKENS: Record<string, string> = {
   'rb-section-body': '#6e8fa8',
   'rb-section-neutral': '#80868d',
   'rb-master': '#c9b35a',
-  'rb-pair': '#a46ef0',
   'rb-master-ink': '#1a1608',
   'rb-master-text': '#e8d78a',
+  'rb-rail-spotify': '#35c04f',
+  'rb-rail-files': '#3d7dd9',
+  'rb-rail-beatport': '#8e5bd6',
+  'rb-rail-record': '#d0342c',
+  'rb-color-fx-filter-face': '#f0f2f5',
+  'rb-color-fx-filter-face-edge': '#8a8f96',
 };
 
 /** Mirrors `html[data-theme='light'] .perf-root` in theme.css. */
 export const LIGHT_SCHEME_TOKENS: Record<string, string> = {
+  'rb-pair': '#7a3fd6',
   'rb-bg': '#f7f3eb',
   'rb-panel': '#fffdf8',
   'rb-panel-raised': '#eee8dd',
@@ -100,7 +106,6 @@ export const LIGHT_SCHEME_TOKENS: Record<string, string> = {
   'rb-wave-mid': '#9a5a00',
   'rb-wave-high': '#4a4f57',
   'rb-wave-mono': '#2166b1',
-  'rb-wave-vocal': '#2a76c0',
   'rb-plan-fader': '#1b1a17',
   'rb-plan-eq-low': '#8a4b00',
   'rb-plan-eq-mid': '#1a6b33',
@@ -108,6 +113,7 @@ export const LIGHT_SCHEME_TOKENS: Record<string, string> = {
   'rb-plan-filter': '#0b6a8a',
   'rb-plan-out': '#b3261e',
   'rb-plan-in': '#1d7035',
+  'rb-wave-vocal': '#2a76c0',
   'rb-red': '#ad2420',
   'rb-yellow': '#927000',
   'rb-select': '#d6e5f5',
@@ -118,7 +124,6 @@ export const LIGHT_SCHEME_TOKENS: Record<string, string> = {
   'rb-section-body': '#486a85',
   'rb-section-neutral': '#6b6660',
   'rb-master': '#856500',
-  'rb-pair': '#7a3fd6',
   'rb-master-ink': '#fffdf8',
   'rb-master-text': '#4a3700',
   // Light-only skin hooks (CHROME-19); Default and Gothic leave them unset.
@@ -130,6 +135,8 @@ export const LIGHT_SCHEME_TOKENS: Record<string, string> = {
   'rb-knob-ring': '#ffffff',
   'rb-knob-cap': '#e2e2e2',
   'rb-knob-cap-edge': '#8a8a8a',
+  'rb-color-fx-filter-face': '#ffffff',
+  'rb-color-fx-filter-face-edge': '#6b6660',
   'rb-knob-indicator-white': '#121212',
   'rb-knob-takeover': '#8a5a00',
   'rb-stem-vocal': '#4f6a80',
@@ -173,3 +180,15 @@ export function validateActiveScheme(
   }
   return violations;
 }
+
+//----- Layout metrics (literal mirror of theme.css and the /performance page; drift-checked in perf-layout-feasibility.test.mjs)
+
+/** `--rb-topbar-h` in theme.css. */
+export const TOPBAR_H_PX = 28;
+/** Default skin's `--rb-waverow-h`. */
+export const WAVEROW_H_PX_DEFAULT = 43;
+/** Tallest skin `--rb-waverow-h` (Gothic, Light, Green Room, Practice). */
+export const WAVEROW_H_PX_TALLEST = 56;
+/** The /performance page's compact wavestack row (PERF-UI-01), applied below COMPACT_WAVESTACK_BELOW_H_PX. */
+export const WAVEROW_H_PX_COMPACT = 22;
+export const COMPACT_WAVESTACK_BELOW_H_PX = 800;

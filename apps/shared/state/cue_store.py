@@ -511,6 +511,69 @@ def clear_transition_in(state: StoredCues, *, write: WriteBlob) -> bool:
     return True
 
 
+# ---------- active memory loop (rekordbox / CDJ ACTIVE LOOP) -----------------
+
+#: ``generations`` key for the track-scoped memory-loop revision. Hot-cue code
+#: only reads the A-H keys, so slot revisions never move when it is bumped.
+ACTIVE_LOOP_SCOPE: Final = "active_loop"
+
+
+def _memory_loops(cues: Iterable[Mapping[str, Any]]) -> list[dict[str, Any]]:
+    return [dict(c) for c in cues if c["kind"] == "loop"]
+
+
+def memory_loops_revision(state: StoredCues) -> str:
+    """CAS token over the track's memory loops (the active-loop scope)."""
+    return revision(
+        state.stable_id,
+        ACTIVE_LOOP_SCOPE,
+        state.generations.get(ACTIVE_LOOP_SCOPE, 0),
+        {"loops": _memory_loops(state.cues)},
+    )
+
+
+def active_memory_loop(state: StoredCues) -> dict[str, Any] | None:
+    """The first memory loop flagged active, in wire shape, or ``None``."""
+    found = next((c for c in state.cues if c["kind"] == "loop" and c["active_loop"]), None)
+    return cue_view(found) if found else None
+
+
+def memory_cues_view(state: StoredCues) -> dict[str, Any]:
+    """Memory cues and loops in wire shape, plus the memory-loop revision."""
+    return {
+        "cues": [cue_view(c) for c in state.cues if c["kind"] in ("memory", "loop")],
+        "revision": memory_loops_revision(state),
+    }
+
+
+def set_active_loop(
+    state: StoredCues,
+    in_ms: int,
+    active: bool,
+    *,
+    expected_revision: str,
+    write: WriteBlob,
+) -> dict[str, Any]:
+    """CAS-flag the memory loop at ``in_ms`` active (clearing any other) or not."""
+    _require_revision(expected_revision, memory_loops_revision(state))
+    at_position = [c for c in state.cues if c["in_ms"] == in_ms]
+    if not at_position:
+        raise CueStoreError(404, "MEMORY_CUE_NOT_FOUND", f"no cue at in_ms {in_ms}")
+    loops = [c for c in at_position if c["kind"] == "loop"]
+    if not loops:
+        raise CueStoreError(409, "CUE_NOT_A_MEMORY_LOOP", f"the cue at in_ms {in_ms} is not a memory loop")
+    if len(loops) > 1:
+        raise CueStoreError(409, "MEMORY_LOOP_AMBIGUOUS", f"{len(loops)} memory loops start at in_ms {in_ms}")
+    target = loops[0]
+    cues = [
+        {**c, "active_loop": c is target and active} if c["kind"] == "loop" else c for c in state.cues
+    ]
+    generations = {**state.generations, ACTIVE_LOOP_SCOPE: state.generations.get(ACTIVE_LOOP_SCOPE, 0) + 1}
+    new_state = replace(state, cues=_sorted(cues), generations=generations, source=OWN_SOURCE)
+    write(_blob(new_state))
+    return {**memory_cues_view(new_state), "active": active_memory_loop(new_state)}
+
+
 # ---------- ingest ----------------------------------------------------------
 
 
@@ -544,6 +607,7 @@ def import_vendor_cues(
 
 
 __all__ = [
+    "ACTIVE_LOOP_SCOPE",
     "BLOB_VERSION",
     "CUE_FIELD",
     "HOT_CUE_SLOTS",
@@ -554,18 +618,22 @@ __all__ = [
     "StoredCues",
     "VendorCues",
     "WriteBlob",
+    "active_memory_loop",
     "clear_hot_cue",
     "clear_transition_in",
     "cue_view",
     "hot_cue_slots",
     "import_vendor_cues",
     "load",
+    "memory_cues_view",
+    "memory_loops_revision",
     "normalize_cue",
     "read_row",
     "restore_hot_cue",
     "revision",
     "save_hot_cue",
     "save_transition_in",
+    "set_active_loop",
     "stored_cues_view",
     "transition_in_cue",
 ]

@@ -22,7 +22,6 @@ export const RUST_INERT_TITLE = 'not implemented - see PARITY-TODO';
 export const CONTROL_COMMANDS: Readonly<Record<string, string>> = {
 	slip: 'slip',
 	'master-tempo': 'master_tempo',
-	'key-sync': 'key_sync',
 	'key-nudge-up': 'key_nudge',
 	'key-nudge-down': 'key_nudge',
 	'safety-loop-save': 'safety_loop_save',
@@ -32,6 +31,9 @@ export const CONTROL_COMMANDS: Readonly<Record<string, string>> = {
 	'loop-interval-up': 'loop_interval_base',
 	'loop-interval-down': 'loop_interval_base',
 	'loop-interval': 'loop_interval_base',
+	'loop-in': 'loop_in',
+	'loop-out': 'loop_out',
+	reloop: 'reloop',
 	headphones: 'headphone_mix',
 	'cue-calibrate': 'headphone_calibrate',
 	'head-delay': 'head_delay_ms'

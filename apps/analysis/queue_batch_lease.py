@@ -102,6 +102,24 @@ def take_batch_runner(
     return released
 
 
+def live_runner_pid(conn: sqlite3.Connection, batch_id: str) -> int | None:
+    """The pid of a still-alive runner holding this batch, else None.
+
+    Missing batch, NULL pid, and a set-but-dead pid are all None: resume is
+    also the recovery path for an abandoned batch.
+    """
+    row = conn.execute(
+        "SELECT active_runner_pid FROM analysis_queue_batch WHERE batch_id = ?",
+        (batch_id,),
+    ).fetchone()
+    if row is None or row[0] is None:
+        return None
+    pid = int(row[0])
+    if pid_is_alive(pid):
+        return pid
+    return None
+
+
 def clear_batch_runner(conn: sqlite3.Connection, batch_id: str) -> None:
     conn.execute(
         "UPDATE analysis_queue_batch SET active_runner_id = NULL, "
@@ -113,6 +131,7 @@ def clear_batch_runner(conn: sqlite3.Connection, batch_id: str) -> None:
 __all__ = [
     "clear_batch_runner",
     "ensure_batch_lease_columns",
+    "live_runner_pid",
     "pid_is_alive",
     "take_batch_runner",
 ]

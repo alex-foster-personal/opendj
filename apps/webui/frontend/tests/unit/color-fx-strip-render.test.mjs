@@ -1,4 +1,7 @@
 // requirement: COLORFX-02
+// requirement: COLORFX-15
+// [if] the channel is on FILTER [then] the color knob carries the white face token (knob-face, --knob-face-color: var(--rb-color-fx-filter-face)) and no tint
+// [if] the channel is on SPACE or ECHO [then] the color knob has no face override and keeps its tint
 // requirement: COLORFX-8341
 // [if] the color slot is Cmd-clicked (Ctrl-clicked off a Mac) [then] it dispatches color_fx effect next, and the press neither drags the knob, opens the select nor selects the deck
 // [if] the selector is hovered [then] its title names the knob as a clock time and the cycle gesture
@@ -158,4 +161,34 @@ test('COLORFX-8341 / DIALCLOCK-8341: the selector title names the knob as a cloc
 	assert.match(select, /knob at 3 o&#39;clock|knob at 3 o'clock/);
 	assert.match(select, /-click cycles FILTER, SPACE, ECHO/);
 	assert.match(html, /data-testid="color-fx-slot-1"/);
+});
+
+// COLORFX-15 (MIXUX-02, the maintainer: "Filter dial should be white bg instead of black for clarity.")
+test('COLORFX-15: a FILTER channel renders its color dial face white through the theme token', async () => {
+	mod._resetColorFxForTests();
+	const trigger = triggerFor(renderStrip(props(1)), 1);
+	assert.match(trigger, /class="knob[^"]*\bknob-face\b/);
+	assert.match(trigger, /--knob-face-color: var\(--rb-color-fx-filter-face\)/);
+	assert.doesNotMatch(trigger, /--knob-accent-color/, 'FILTER carries no tint');
+});
+
+test('COLORFX-15: SPACE and ECHO keep the dark face plus their tint', async () => {
+	for (const [effect, tint] of [['space', '#a99cff'], ['echo', '#6fd6c6']]) {
+		mod._resetColorFxForTests();
+		mod.applyColorFxSettings({ type: 'color_fx', deck: 2, effect });
+		const trigger = triggerFor(renderStrip(props(2)), 2);
+		assert.doesNotMatch(trigger, /knob-face/, `${effect} has no face override`);
+		assert.match(trigger, new RegExp(`--knob-accent-color: ${tint}`), `${effect} keeps its tint`);
+	}
+	mod._resetColorFxForTests();
+});
+
+test('COLORFX-15: the filter face token is light in the dark and the light theme', async () => {
+	const css = await readFrontendSource('src/lib/rb/theme.css');
+	for (const head of ['.perf-root {', "html[data-theme='light'] .perf-root {"]) {
+		const start = css.indexOf(`\n${head}`);
+		assert.ok(start >= 0, `theme.css has ${head}`);
+		const block = css.slice(start, css.indexOf('\n}', start));
+		assert.match(block, /--rb-color-fx-filter-face: #f[0-9a-f]{5};/, `${head} defines a white filter face`);
+	}
 });

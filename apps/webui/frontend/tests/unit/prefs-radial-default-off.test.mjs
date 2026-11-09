@@ -37,12 +37,12 @@ let dataDir;
 let prefsFile;
 let writesRefused = false;
 let inFlight = 0;
+let migrationPutMustWaitForGet = false;
+let migrationGetReadFromDisk = false;
+let migrationPutAcknowledged = false;
+let migrationPutProcessed = null;
 /** Resolvers waiting for `inFlight` to reach 0 (drain in `settle()`). */
 const idleWaiters = [];
-let ackedPuts = 0;
-/** When set, a real GET response is handed back only after a PUT is acknowledged,
- * which is the GET/PUT race a boot can lose (Codex P1, PR #6829). */
-let holdGetsUntilPutAcked = false;
 /** Runs while a held GET waits, before its response is handed back. */
 let duringHeldGet = null;
 /** PUT bodies the frontend sent since the last `watchWrites()`. */
@@ -54,7 +54,17 @@ function startBackend() {
 	return new Promise((resolvePort, reject) => {
 		const proc = spawn(
 			resolveUv(),
-			['run', '--no-sync', 'python', '-m', 'scripts.testing.midi_maps_test_server', '--port', '0', '--data-dir', dataDir],
+			[
+				'run',
+				'--no-sync',
+				'python',
+				'-m',
+				'scripts.testing.midi_maps_test_server',
+				'--port',
+				'0',
+				'--data-dir',
+				dataDir
+			],
 			{ cwd: REPO_ROOT, stdio: ['ignore', 'pipe', 'pipe'] }
 		);
 		const timer = setTimeout(() => {
@@ -96,6 +106,22 @@ function closedPort() {
 	});
 }
 
+async function waitForOrdering(predicate, message) {
+	for (let i = 0; i < 400; i += 1) {
+		if (predicate()) return;
+		await new Promise((resolve) => setTimeout(resolve, 5));
+	}
+	assert.ok(predicate(), message);
+}
+
+function armMigrationRace({ putProcessed, whileGetHeld }) {
+	migrationPutMustWaitForGet = true;
+	migrationGetReadFromDisk = false;
+	migrationPutAcknowledged = false;
+	migrationPutProcessed = putProcessed;
+	duringHeldGet = whileGetHeld;
+}
+
 async function recordingFetch(input, init) {
 	const request = new Request(input, init);
 	inFlight += 1;
@@ -103,20 +129,32 @@ async function recordingFetch(input, init) {
 		if (request.method === 'PUT') {
 			const body = await request.clone().text();
 			puts.push(JSON.parse(body));
+			if (migrationPutMustWaitForGet) {
+				await waitForOrdering(
+					() => migrationGetReadFromDisk,
+					'the migration PUT reached disk before the held GET read the legacy value'
+				);
+			}
 			const target = writesRefused ? request.url.replace(apiOrigin, refusedOrigin) : request.url;
 			const response = await realFetch(target, { method: 'PUT', headers: request.headers, body });
-			if (response.ok) ackedPuts += 1;
+			if (migrationPutMustWaitForGet && response.ok) migrationPutAcknowledged = true;
 			return response;
 		}
 		const response = await realFetch(request);
 		getStatuses.push(response.status);
-		if (holdGetsUntilPutAcked) {
-			const ackedBefore = ackedPuts;
+		if (migrationPutMustWaitForGet) {
+			migrationGetReadFromDisk = true;
 			const deadline = Date.now() + HELD_GET_ACK_TIMEOUT_MS;
-			while (ackedPuts === ackedBefore && Date.now() < deadline) {
+			while (!migrationPutAcknowledged && Date.now() < deadline) {
 				await new Promise((resolve) => setTimeout(resolve, 5));
 			}
-			assert.ok(ackedPuts > ackedBefore, 'the held GET never saw a PUT acknowledged');
+			assert.ok(migrationPutAcknowledged, 'the held GET never saw the migration PUT acknowledged');
+			if (migrationPutProcessed) {
+				await waitForOrdering(
+					migrationPutProcessed,
+					'the product did not process the migration PUT acknowledgement while the GET was held'
+				);
+			}
 			for (let i = 0; i < 20; i += 1) await new Promise((resolve) => setTimeout(resolve, 0));
 			duringHeldGet?.();
 		}
@@ -156,7 +194,10 @@ afterEach(() => {
 	delete globalThis.window;
 	delete globalThis.document;
 	writesRefused = false;
-	holdGetsUntilPutAcked = false;
+	migrationPutMustWaitForGet = false;
+	migrationGetReadFromDisk = false;
+	migrationPutAcknowledged = false;
+	migrationPutProcessed = null;
 	duringHeldGet = null;
 	idleWaiters.length = 0;
 });
@@ -264,7 +305,8 @@ function installBrowser(store = new Map()) {
 	return store;
 }
 
-const loadPrefs = () => loadTypeScriptModule('src/lib/rb/prefs.svelte.ts', { viteApiBase: apiOrigin });
+const loadPrefs = () =>
+	loadTypeScriptModule('src/lib/rb/prefs.svelte.ts', { viteApiBase: apiOrigin });
 
 /** A full blob a real build wrote, rewritten to `fields` (undefined deletes a key). */
 async function storedBlob(fields) {
@@ -286,22 +328,38 @@ async function storedBlob(fields) {
 }
 
 test('R9: a v1 blob with the radial waveform on boots off and is stamped v2', async () => {
-	const store = await storedBlob({ defaults_migration: 1, jog_radial_waveform: true, ui_skin: 'default' });
+	const store = await storedBlob({
+		defaults_migration: 1,
+		jog_radial_waveform: true,
+		ui_skin: 'default'
+	});
 	const prefs = await loadPrefs();
 	await settle();
 	assert.equal(prefs.PREFS_DEFAULTS_MIGRATION, 2);
-	assert.equal(prefs.uiPrefs.jog_radial_waveform, false, 'the old persisted true survived the migration');
+	assert.equal(
+		prefs.uiPrefs.jog_radial_waveform,
+		false,
+		'the old persisted true survived the migration'
+	);
 	const saved = JSON.parse(store.get(STORAGE_KEY));
 	assert.equal(saved.defaults_migration, 2);
 	assert.equal(saved.jog_radial_waveform, false);
-	assert.equal(prefs.uiPrefs.ui_skin, 'default', 'migration 1 re-ran on a v1 blob and reset an explicit skin');
+	assert.equal(
+		prefs.uiPrefs.ui_skin,
+		'default',
+		'migration 1 re-ran on a v1 blob and reset an explicit skin'
+	);
 });
 
 test('R9: a v2 blob with the radial waveform on keeps it on', async () => {
 	await storedBlob({ defaults_migration: 2, jog_radial_waveform: true });
 	const prefs = await loadPrefs();
 	await settle();
-	assert.equal(prefs.uiPrefs.jog_radial_waveform, true, 'an explicit pick after the migration was reset');
+	assert.equal(
+		prefs.uiPrefs.jog_radial_waveform,
+		true,
+		'an explicit pick after the migration was reset'
+	);
 });
 
 test('R9: a blob with no version gets both migrations', async () => {
@@ -324,16 +382,29 @@ test('R9: an unacknowledged daemon write keeps the radial value superseded and i
 	seedDisk({ jog_radial_waveform: true });
 	const failed = watchWrites({ refused: true });
 	const reported = [];
-	const radialReports = () => reported.filter((line) => line.includes('radial waveform default')).length;
+	const radialReports = () =>
+		reported.filter((line) => line.includes('radial waveform default')).length;
 	const originalError = console.error;
 	console.error = (...args) => void reported.push(String(args[0]));
 	try {
 		const first = await loadPrefs();
 		await settle();
-		assert.deepEqual(failed.at(-1), { jog_radial_waveform: false }, 'the migration never told the daemon');
-		assert.equal(JSON.parse(store.get(STORAGE_KEY)).radial_off_pending, true, 'a failed write dropped the marker');
+		assert.deepEqual(
+			failed.at(-1),
+			{ jog_radial_waveform: false },
+			'the migration never told the daemon'
+		);
+		assert.equal(
+			JSON.parse(store.get(STORAGE_KEY)).radial_off_pending,
+			true,
+			'a failed write dropped the marker'
+		);
 		await first.hydrateConfirmPrefsFromDisk();
-		assert.equal(first.uiPrefs.jog_radial_waveform, false, 'the stale disk true hydrated over the migration');
+		assert.equal(
+			first.uiPrefs.jog_radial_waveform,
+			false,
+			'the stale disk true hydrated over the migration'
+		);
 		// Both failed settles (boot, then the hydrate's resend) reject a few hops
 		// later; wait for their reports, bounded, so none leaks into the next boot.
 		for (let i = 0; i < 200 && radialReports() < 2; i += 1) {
@@ -343,7 +414,11 @@ test('R9: an unacknowledged daemon write keeps the radial value superseded and i
 		console.error = originalError;
 	}
 	// Sol P1, PR #6829: a failed settle is reported, never swallowed.
-	assert.equal(radialReports(), 2, `each failed migration write is reported once: ${JSON.stringify(reported)}`);
+	assert.equal(
+		radialReports(),
+		2,
+		`each failed migration write is reported once: ${JSON.stringify(reported)}`
+	);
 
 	installBrowser(store);
 	const acked = watchWrites();
@@ -360,8 +435,16 @@ test('R9: an unacknowledged daemon write keeps the radial value superseded and i
 		!ackReports.some((line) => line.includes('radial waveform default')),
 		'an acknowledged write was reported as a failure'
 	);
-	assert.deepEqual(acked, [{ jog_radial_waveform: false }], 'the next boot did not resend the false');
-	assert.equal(JSON.parse(store.get(STORAGE_KEY)).radial_off_pending, false, 'an acknowledged write kept the marker');
+	assert.deepEqual(
+		acked,
+		[{ jog_radial_waveform: false }],
+		'the next boot did not resend the false'
+	);
+	assert.equal(
+		JSON.parse(store.get(STORAGE_KEY)).radial_off_pending,
+		false,
+		'an acknowledged write kept the marker'
+	);
 	assert.equal(diskRadial(), false, 'the acknowledged false never reached the daemon disk');
 });
 
@@ -374,7 +457,11 @@ test('R9: a first boot with no local blob supersedes a pre-migration disk true',
 	assert.deepEqual(puts, [], 'a fresh profile wrote to disk before reading it');
 	await prefs.hydrateConfirmPrefsFromDisk();
 	await settle();
-	assert.equal(prefs.uiPrefs.jog_radial_waveform, false, 'the legacy daemon true came back on a fresh profile');
+	assert.equal(
+		prefs.uiPrefs.jog_radial_waveform,
+		false,
+		'the legacy daemon true came back on a fresh profile'
+	);
 	assert.deepEqual(puts, [{ jog_radial_waveform: false }], 'the stale disk true was not rewritten');
 	assert.equal(prefs.uiPrefs.radial_off_pending, true, 'a failed rewrite dropped the marker');
 });
@@ -387,11 +474,19 @@ test('R9: a fresh profile whose disk already holds false settles with no write',
 	await prefs.hydrateConfirmPrefsFromDisk();
 	await settle();
 	assert.deepEqual(puts, []);
-	assert.equal(prefs.uiPrefs.radial_off_pending, false, 'an agreeing disk left the marker set forever');
+	assert.equal(
+		prefs.uiPrefs.radial_off_pending,
+		false,
+		'an agreeing disk left the marker set forever'
+	);
 });
 
 test('R9: once the migration is acknowledged, or the DJ picks, the disk value hydrates again', async () => {
-	await storedBlob({ defaults_migration: 2, jog_radial_waveform: false, radial_off_pending: false });
+	await storedBlob({
+		defaults_migration: 2,
+		jog_radial_waveform: false,
+		radial_off_pending: false
+	});
 	seedDisk({ jog_radial_waveform: true });
 	const puts = watchWrites();
 	const settled = await loadPrefs();
@@ -400,16 +495,28 @@ test('R9: once the migration is acknowledged, or the DJ picks, the disk value hy
 	await settled.hydrateConfirmPrefsFromDisk();
 	assert.equal(settled.uiPrefs.jog_radial_waveform, true, 'a later disk pick was ignored forever');
 
-	const store = await storedBlob({ defaults_migration: 2, jog_radial_waveform: false, radial_off_pending: true });
+	const store = await storedBlob({
+		defaults_migration: 2,
+		jog_radial_waveform: false,
+		radial_off_pending: true
+	});
 	seedDisk({ jog_radial_waveform: true });
 	watchWrites({ refused: true });
 	const picked = await loadPrefs();
 	await settle();
 	picked.setJogRadialWaveform(false);
-	assert.equal(JSON.parse(store.get(STORAGE_KEY)).radial_off_pending, false, "the DJ's pick left the marker set");
+	assert.equal(
+		JSON.parse(store.get(STORAGE_KEY)).radial_off_pending,
+		false,
+		"the DJ's pick left the marker set"
+	);
 	// The disk value is the DJ's own business again (the seeded true, to see it land).
 	await picked.hydrateConfirmPrefsFromDisk();
-	assert.equal(picked.uiPrefs.jog_radial_waveform, true, 'the marker still blocked disk after the pick');
+	assert.equal(
+		picked.uiPrefs.jog_radial_waveform,
+		true,
+		'the marker still blocked disk after the pick'
+	);
 });
 
 // Sol P1, PR #6829: only false or absence agrees with the migration. The real
@@ -429,9 +536,21 @@ test('R9: a malformed disk radial value is refused by the daemon and keeps the m
 			`a malformed ${JSON.stringify(bad)} hydrated without saying so`
 		);
 		await settle();
-		assert.deepEqual(getStatuses, [422], `the daemon served a malformed ${JSON.stringify(bad)} instead of refusing it`);
-		assert.equal(prefs.uiPrefs.radial_off_pending, true, `a malformed ${JSON.stringify(bad)} cleared the marker`);
-		assert.equal(prefs.uiPrefs.jog_radial_waveform, false, `a malformed ${JSON.stringify(bad)} turned the radial waveform on`);
+		assert.deepEqual(
+			getStatuses,
+			[422],
+			`the daemon served a malformed ${JSON.stringify(bad)} instead of refusing it`
+		);
+		assert.equal(
+			prefs.uiPrefs.radial_off_pending,
+			true,
+			`a malformed ${JSON.stringify(bad)} cleared the marker`
+		);
+		assert.equal(
+			prefs.uiPrefs.jog_radial_waveform,
+			false,
+			`a malformed ${JSON.stringify(bad)} turned the radial waveform on`
+		);
 		assert.deepEqual(puts, [], `a malformed ${JSON.stringify(bad)} was answered with a write`);
 	}
 	// Control: no file on disk, so the daemon serves its default false, which
@@ -443,7 +562,11 @@ test('R9: a malformed disk radial value is refused by the daemon and keeps the m
 	await agreeing.hydrateConfirmPrefsFromDisk();
 	await settle();
 	assert.deepEqual(getStatuses, [200]);
-	assert.equal(agreeing.uiPrefs.radial_off_pending, false, 'an absent disk value left the marker set');
+	assert.equal(
+		agreeing.uiPrefs.radial_off_pending,
+		false,
+		'an absent disk value left the marker set'
+	);
 	assert.deepEqual(puts, []);
 });
 
@@ -454,35 +577,54 @@ test('R9: a GET that read disk before the migration write landed cannot hydrate 
 	const store = await storedBlob({ defaults_migration: 1, jog_radial_waveform: true });
 	seedDisk({ jog_radial_waveform: true });
 	const puts = watchWrites();
-	holdGetsUntilPutAcked = true;
 	let markerWhenHeld;
-	duringHeldGet = () => {
-		markerWhenHeld = JSON.parse(store.get(STORAGE_KEY)).radial_off_pending;
-	};
+	armMigrationRace({
+		putProcessed: () => JSON.parse(store.get(STORAGE_KEY)).radial_off_pending === false,
+		whileGetHeld: () => {
+			markerWhenHeld = JSON.parse(store.get(STORAGE_KEY)).radial_off_pending;
+		}
+	});
 	const prefs = await loadPrefs();
 	// No settle: the layout starts the GET while the boot PUT is still queued.
 	await prefs.hydrateConfirmPrefsFromDisk();
 	await settle();
-	assert.equal(markerWhenHeld, false, 'the race was not reproduced: the PUT had not cleared the claim mid-GET');
-	assert.equal(prefs.uiPrefs.jog_radial_waveform, false, 'the pre-migration disk true hydrated over the migration');
-	assert.ok(puts.length >= 1 && puts.every((p) => p.jog_radial_waveform === false), JSON.stringify(puts));
+	assert.equal(
+		markerWhenHeld,
+		false,
+		'the race was not reproduced: the PUT had not cleared the claim mid-GET'
+	);
+	assert.equal(
+		prefs.uiPrefs.jog_radial_waveform,
+		false,
+		'the pre-migration disk true hydrated over the migration'
+	);
+	assert.ok(
+		puts.length >= 1 && puts.every((p) => p.jog_radial_waveform === false),
+		JSON.stringify(puts)
+	);
 	assert.equal(diskRadial(), false);
 });
 
 // Overshoot control: a claim held at request time must not override the DJ's
 // own pick made while that GET was in flight.
 test('R9: a DJ pick made while a claimed GET is in flight stands', async () => {
-	await storedBlob({ defaults_migration: 1, jog_radial_waveform: true });
+	const store = await storedBlob({ defaults_migration: 1, jog_radial_waveform: true });
 	// Disk true, so a claim that ignored the pick would queue a false behind it.
 	seedDisk({ jog_radial_waveform: true });
 	const puts = watchWrites();
-	holdGetsUntilPutAcked = true;
 	let prefs;
-	duringHeldGet = () => prefs.setJogRadialWaveform(true);
+	armMigrationRace({
+		putProcessed: () => JSON.parse(store.get(STORAGE_KEY)).radial_off_pending === false,
+		whileGetHeld: () => prefs.setJogRadialWaveform(true)
+	});
 	prefs = await loadPrefs();
 	await prefs.hydrateConfirmPrefsFromDisk();
 	await settle();
-	assert.equal(prefs.uiPrefs.jog_radial_waveform, true, "a disk read sent before the DJ's pick overrode it");
+	assert.equal(
+		prefs.uiPrefs.jog_radial_waveform,
+		true,
+		"a disk read sent before the DJ's pick overrode it"
+	);
 	assert.deepEqual(puts.at(-1), { jog_radial_waveform: true }, "the DJ's pick did not land last");
 	assert.equal(diskRadial(), true);
 });

@@ -7,7 +7,14 @@
  * on, see isPinOnPage.
  */
 
-import { describeAnchor, pinStatus, type AnchorishElement, type LifecyclePin } from './feedback';
+import {
+	describeAnchor,
+	pinStatus,
+	type AnchorishElement,
+	type LifecyclePin,
+	type PinStatus
+} from './feedback';
+import { resolvePinAnchorAt } from './feedback-pin-placement';
 
 export type PinBoardBadge = 'anchor-moved' | 'route-moved' | 'harvested' | 'regressed';
 
@@ -22,7 +29,10 @@ export function isPinDrawn(pin: LifecyclePin): boolean {
 	return pinStatus(pin) !== 'archived';
 }
 
+const REOPENED: ReadonlySet<PinStatus> = new Set(['open', 'issued', 'blocked']);
+
 export function isPinRegressed(pin: LifecyclePin): boolean {
+	if (!REOPENED.has(pinStatus(pin))) return false;
 	const fixedAt = pin.fixed_at;
 	const fixedSha = pin.fixed_in_sha;
 	const updated = pin.updated_at;
@@ -48,6 +58,17 @@ function _routeKey(pathname: string): string {
 export function isPinOnPage(pin: LifecyclePin, pathname: string): boolean {
 	if (pin.page === undefined || pin.page === '') return true;
 	return _routeKey(pin.page) === _routeKey(pathname);
+}
+
+/** Browser-only: anchor drift probe that looks beneath pin-system chrome. */
+export function anchorMovedBeneathPin(
+	pin: LifecyclePin,
+	elementsFromPoint: (x: number, y: number) => Element[]
+): boolean {
+	return anchorMovedAtPin(
+		pin,
+		(x, y) => resolvePinAnchorAt(x, y, elementsFromPoint) as AnchorishElement | null
+	);
 }
 
 /** Browser-only: re-resolve anchor at stored pixel position. */

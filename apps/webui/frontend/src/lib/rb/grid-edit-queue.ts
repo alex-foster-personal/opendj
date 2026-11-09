@@ -48,6 +48,8 @@ export interface GridEditPorts {
 	): Promise<GridEditValue>;
 	/** Reset one half; the server keeps the other in one transaction. */
 	reset(stableId: string, source: AnlzBeatgridSource, part: 'adjust' | 'shift'): Promise<GridEditValue>;
+	/** Step back one stored edit of the whole track (GRIDEDIT-10215). */
+	undo(stableId: string, source: AnlzBeatgridSource): Promise<GridEditValue>;
 	/** Re-read the track's grid into every deck holding it. */
 	refresh(stableId: string): Promise<void>;
 }
@@ -95,17 +97,26 @@ export function createGridEditQueue(ports: GridEditPorts): GridEditQueue {
 	/** Returns whether anything was written. */
 	async function execute(stableId: string, op: _Op): Promise<boolean> {
 		const { intent, source } = op;
-		if (intent.kind === 'nudge') {
-			// Presses that cancelled out while merged (2 ms later, 2 ms earlier)
-			// write nothing; the engine refuses an empty nudge.
-			if (intent.offset_ms === 0 && intent.beats === 0) return false;
-			await ports.nudge(stableId, source, { offset_ms: intent.offset_ms, beats: intent.beats });
-			return true;
+		switch (intent.kind) {
+			case 'nudge':
+				// Presses that cancelled out while merged (2 ms later, 2 ms earlier)
+				// write nothing; the engine refuses an empty nudge.
+				if (intent.offset_ms === 0 && intent.beats === 0) return false;
+				await ports.nudge(stableId, source, { offset_ms: intent.offset_ms, beats: intent.beats });
+				return true;
+			case 'reset':
+				// The server keeps the other half in the same transaction, so neither an
+				// earlier op in this queue nor an agent's concurrent edit of it is lost.
+				await ports.reset(stableId, source, intent.part);
+				return true;
+			case 'undo':
+				await ports.undo(stableId, source);
+				return true;
+			default: {
+				const _exhaustive: never = intent;
+				throw new Error(`Unhandled grid edit intent: ${JSON.stringify(_exhaustive)}`);
+			}
 		}
-		// The server keeps the other half in the same transaction, so neither an
-		// earlier op in this queue nor an agent's concurrent edit of it is lost.
-		await ports.reset(stableId, source, intent.part);
-		return true;
 	}
 
 	async function drain(stableId: string, queue: _TrackQueue): Promise<void> {

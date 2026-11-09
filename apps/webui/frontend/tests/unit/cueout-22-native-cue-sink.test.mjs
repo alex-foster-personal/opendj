@@ -183,7 +183,7 @@ test('an unpinned MASTER stays unpinned on the current macOS output, never auto-
 		selectedMasterId: null,
 		currentRoomId: 'native:scarlett'
 	});
-	assert.deepEqual(assignment, { masterId: null, cueId: 'native:airpods', autoPinnedMaster: false });
+	assert.deepEqual(assignment, { masterId: null, cueId: 'native:airpods', boothId: null, autoPinnedMaster: false });
 });
 
 test('when the macOS output is the cue device, the CUE is refused and MASTER is not moved', () => {
@@ -206,7 +206,7 @@ test('control: a pinned MASTER and the Chrome call shape are unchanged', () => {
 			selectedMasterId: 'native:spk',
 			currentRoomId: 'native:scarlett'
 		}),
-		{ masterId: 'native:spk', cueId: 'native:airpods', autoPinnedMaster: false },
+		{ masterId: 'native:spk', cueId: 'native:airpods', boothId: null, autoPinnedMaster: false },
 		'an operator pin is never overridden by the room'
 	);
 	assert.equal(

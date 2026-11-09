@@ -1,0 +1,9 @@
+{
+  "bytes": 1024,
+  "measured_main": 479012,
+  "measured_with_pr": 479198,
+  "sha": "46e1be89b4",
+  "date": "Mon 9 Nov 2026",
+  "reason": "PR #10476 adds configurable Related Tracks criteria: route, pref, CLI verb and cog popover (#10046). Measured: CI bundle check of 46e1be89b4, +186 B gzip on other-lazy; ceiled to KiB",
+  "payback": "none planned; the growth is the feature's own code"
+}

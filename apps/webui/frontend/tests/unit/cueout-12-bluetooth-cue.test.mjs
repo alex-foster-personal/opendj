@@ -150,6 +150,9 @@ test('cue power-back-on restores CUE and never re-sets MASTER', () => {
 		applyCue: true,
 		clearCue: false,
 		restoreCue: true,
+		applyBooth: false,
+		clearBooth: false,
+		restoreBooth: false,
 		keepTwoOutputs: true
 	});
 });

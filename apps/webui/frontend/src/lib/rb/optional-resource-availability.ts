@@ -47,6 +47,19 @@ export function rememberOptionalResources(
 	_store().set(stableId, next);
 }
 
+/** STEM-9934: forget a remembered "no stem bundle" (`stems: false`) so the
+ * next probeStemArtifact asks the server again. A stems job can write the
+ * bundle after the TrackOut that cached the absence; the server's manifest
+ * route answers a still-missing bundle with HTTP 200 unavailable, so this
+ * costs one GET and no 404. Leaves `true`/unknown and every other cap alone. */
+export function forgetStemsAbsence(stableId: string): void {
+	const caps = _store().get(stableId);
+	if (caps === undefined || caps.stems !== false) return;
+	const next: Partial<OptionalResourceCaps> = { ...caps };
+	delete next.stems;
+	_store().set(stableId, next);
+}
+
 export function optionalResources(stableId: string): OptionalResourceCaps {
 	const caps = _store().get(stableId);
 	const artwork: boolean | null | 'unknown' =

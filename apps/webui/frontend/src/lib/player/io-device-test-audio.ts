@@ -115,7 +115,7 @@ function stopPlaying(): void {
 	}
 }
 
-type LiveBeepNodes = { bridgeSender: unknown; bridgeInput: AudioNode; cueSum: AudioNode; splitLeftGain: AudioNode };
+type LiveBeepNodes = { bridgeSender: unknown; bridgeInput: AudioNode; boothGain: AudioNode; cueSum: AudioNode; splitLeftGain: AudioNode };
 
 /**
  * Where a test beep enters the live graph. Split L/R carries MAIN on the left
@@ -126,6 +126,7 @@ type LiveBeepNodes = { bridgeSender: unknown; bridgeInput: AudioNode; cueSum: Au
  */
 export function liveBeepNode(bus: IoTestBus, ctx: BaseAudioContext, nodes: LiveBeepNodes, outputMode: string): AudioNode {
 	const split = outputMode === 'split_cable';
+	if (bus === 'booth') return nodes.boothGain;
 	if (bus === 'cue') return nodes.bridgeSender !== null && !split ? nodes.bridgeInput : nodes.cueSum;
 	return split ? nodes.splitLeftGain : ctx.destination;
 }
@@ -155,7 +156,8 @@ export function liveCueSinkOpen(nodes: LiveCueSink, outputMode: string, active: 
 type LiveRouteState = {
 	output_mode: string;
 	outputs: readonly { id: string; label: string }[];
-	routes: { master: { state: string }; cue: { state: string } };
+	selected_booth_output_device_id?: string | null;
+	routes: { master: { state: string }; cue: { state: string }; booth: { state: string } };
 	/** The two-output CUE's liveness verdict (headphone-output-liveness). */
 	liveness_verdict?: string;
 	/** Headphone MIX and LEVEL: a split CUE beep enters ahead of both. */
@@ -209,6 +211,17 @@ export function liveRouteRefusal(
 	/** The live room's last reopen after a MAIN change failed (mainReopenFailed). */
 	reopenFailed = false
 ): string | null {
+	if (bus === 'booth') {
+		if (hp.routes.booth.state === 'failed') return 'BOOTH did not open on the picked device. Pick BOOTH again, then test.';
+		const live = liveCalibrationGraph().nodes;
+		if (live?.boothDeviceId === null && deviceId !== null && deviceId !== '') {
+			return 'BOOTH has not opened on the picked device. Pick BOOTH again, then test.';
+		}
+		if (live?.boothDeviceId !== null && live?.boothDeviceId !== undefined && deviceId !== null && !sameOutputDevice(hp.outputs, live.boothDeviceId, deviceId)) {
+			return 'BOOTH is still playing on another device than the one picked. Pick BOOTH again, then test.';
+		}
+		return null;
+	}
 	const onMain = bus !== 'cue' || hp.output_mode === 'split_cable';
 	if (onMain) {
 		if (hp.routes.master.state === 'failed') return 'MAIN did not open on the picked device. Pick MAIN again, then test.';
@@ -249,6 +262,9 @@ async function beepTarget(bus: IoTestBus, deviceId: string | null, signal: Abort
 	if (bus === 'cue' && (deviceId === null || deviceId === '')) {
 		throw new Error('No headphone output is picked. Pick the CUE device, then test again.');
 	}
+	if (bus === 'booth' && (deviceId === null || deviceId === '')) {
+		throw new Error('No BOOTH output is picked. Pick the BOOTH device, then test again.');
+	}
 	const hp = mixerState.headphones;
 	// A switch still pending refuses with or without a live graph: before any
 	// deck builds one, a device change's MAIN move may still be landing, and a
@@ -260,11 +276,14 @@ async function beepTarget(bus: IoTestBus, deviceId: string | null, signal: Abort
 		if (bus === 'cue' && !liveCueSinkOpen(live.nodes, hp.output_mode, hp.active)) {
 			throw new Error('Headphone output is not open yet. Pick the device and start audio, then test again.');
 		}
+		if (bus === 'booth' && (live.nodes.boothContext === null || live.nodes.boothContext.state !== 'running')) {
+			throw new Error('BOOTH output is not open yet. Pick the device and start audio, then test again.');
+		}
 		const refusal = liveRouteRefusal(bus, deviceId, hp, landedMasterSinkId(), live.nodes.cueDeviceId, mainReopenFailed());
 		if (refusal !== null) throw new Error(refusal);
 		return { ctx: live.ctx, node: liveBeepNode(bus, live.ctx, live.nodes, mixerState.headphones.output_mode), closeAfter: false };
 	}
-	if (bus === 'cue' && (deviceId === null || deviceId.startsWith('native:') || typeof AudioContext === 'undefined' || !audioContextSinkIdIsSupported(AudioContext.prototype))) {
+	if ((bus === 'cue' || bus === 'booth') && (deviceId === null || deviceId.startsWith('native:') || typeof AudioContext === 'undefined' || !audioContextSinkIdIsSupported(AudioContext.prototype))) {
 		throw new Error('Headphone output is not open yet. Pick the device and start audio, then test again.');
 	}
 	// The Mac shell pins MAIN by making it the OS default, which a short-lived

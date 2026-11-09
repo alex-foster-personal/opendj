@@ -43,6 +43,7 @@ import {
 	stemsText,
 	warningLines
 } from '../../src/lib/enrich/enrich-card';
+import { UI_SKIN_CHOICES } from '../../src/lib/rb/ui-skin';
 
 const SUMMARY_PATH = '/api/v1/enrich/summary';
 const CARD = '[data-testid="enrich-card"]';
@@ -233,7 +234,11 @@ async function controlsUnderPill(page: Page): Promise<Overlap> {
 
 async function setSkin(page: Page, skin: string): Promise<void> {
 	const toggle = page.locator('[data-skin-current]');
-	for (let i = 0; i < 3 && (await toggle.getAttribute('data-skin-current')) !== skin; i++) await toggle.click();
+	// One full lap of the top-bar cycle reaches any skin from any other.
+	for (let i = 0; i < UI_SKIN_CHOICES.length; i++) {
+		if ((await toggle.getAttribute('data-skin-current')) === skin) break;
+		await toggle.click();
+	}
 	await expect(toggle).toHaveAttribute('data-skin-current', skin);
 }
 

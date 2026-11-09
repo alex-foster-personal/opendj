@@ -2,14 +2,16 @@
  * Start and stop fixtures/real_daemon_server.py: the production daemon app
  * (`create_app`) on a loopback port over a scratch data dir.
  *
- * Same launch as analysis-source.test.mjs: `uv run --no-sync python` from the
- * repository root with `apps` on PYTHONPATH, and a cooperative stop through
+ * Same launch idea as process-family-snapshot-fetch.test.mjs: resolve `uv`,
+ * `uv run --locked --extra dev python` from the repository root with `apps` on
+ * PYTHONPATH so uvicorn and deps resolve, and a cooperative stop through
  * POST /test/shutdown (stop-fixture-server.mjs).
  */
 import { spawn } from 'node:child_process';
 import { createInterface } from 'node:readline';
 import { fileURLToPath } from 'node:url';
 
+import { resolveExecutable } from './resolve-executable.mjs';
 import { stopFixtureServer } from './stop-fixture-server.mjs';
 
 const REPOSITORY_ROOT = fileURLToPath(new URL('../../../../../..', import.meta.url));
@@ -25,11 +27,16 @@ const SERVER_SCRIPT = fileURLToPath(new URL('./real_daemon_server.py', import.me
  * }>}
  */
 export async function startRealDaemon() {
-	const serverProcess = spawn('uv', ['run', '--no-sync', 'python', SERVER_SCRIPT], {
-		cwd: REPOSITORY_ROOT,
-		env: { ...process.env, MDT_LIBRARY_MODE: 'local', PYTHONPATH: REPOSITORY_ROOT },
-		stdio: ['ignore', 'pipe', 'inherit']
-	});
+	// The isolated frontend gate needs the locked project plus its test extra.
+	const serverProcess = spawn(
+		resolveExecutable('uv'),
+		['run', '--locked', '--extra', 'dev', 'python', SERVER_SCRIPT],
+		{
+			cwd: REPOSITORY_ROOT,
+			env: { ...process.env, MDT_LIBRARY_MODE: 'local', PYTHONPATH: REPOSITORY_ROOT },
+			stdio: ['ignore', 'pipe', 'inherit']
+		}
+	);
 	const { port, scratchDir, reanalyzeSid, beatgrid } = await new Promise((resolve, reject) => {
 		let announced = null;
 		let track = null;

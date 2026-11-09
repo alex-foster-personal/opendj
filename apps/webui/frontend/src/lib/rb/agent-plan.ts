@@ -27,6 +27,7 @@
  */
 
 import { barAt, downbeatsMs, msAtBar } from './plan-bars';
+import { PLAN_KNOBS } from './plan-knobs';
 import { alignmentChanged, buildPlanOverlay, failedPlanOverlay, incomingAlignment, type IncomingAlignment, type PlanOverlay, type PlanOverlayInput } from './plan-overlay';
 
 export { barAt, downbeatsMs, msAtBar };
@@ -165,7 +166,6 @@ function _gridBarsPerClockBar(
 	return (incomingBpm / incoming.pitch) * fastestIncoming / ((clockBpm / clock.pitch) * slowestClock);
 }
 
-const OVERLAY_KNOBS = ['fader', 'eq_low', 'eq_mid', 'eq_high', 'filter'] as const;
 const _downbeatCache = new WeakMap<object, number[]>();
 
 /** A deck's downbeats, once per grid: the overlay reads them every tick. */
@@ -515,7 +515,7 @@ export function createPlanRunner(deps: PlanDeps): PlanRunner {
 		for (const deck of plan.incoming === null ? [plan.clock.deck] : [plan.clock.deck, plan.incoming.deck]) {
 			const live = state.mixer.channels[deck] as Record<string, unknown>;
 			const drawn = overlayChannels[deck] as Record<string, unknown>;
-			for (const knob of OVERLAY_KNOBS) if (live[knob] !== drawn[knob]) return true;
+			for (const { name } of PLAN_KNOBS) if (live[name] !== drawn[name]) return true;
 		}
 		return false;
 	}

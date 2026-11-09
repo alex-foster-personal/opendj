@@ -30,7 +30,7 @@ from apps.autodj.http import (
 )
 from apps.shared.engine_origin import EngineOrigin
 from apps.shared.state import db as state_db
-from apps.transition_score.tryer import EngineProfiles
+from apps.transition_score.http import EngineProfiles
 
 from .deps import get_library_state_db
 
@@ -64,16 +64,17 @@ def _engine_profiles(request: Request, path: Path) -> ProfileSource:
 
 
 def finish_capture(mix: ClosedMix, capture: TransitionCapture, path: Path, profile_of: ProfileSource) -> None:
-    """Put one closed mix on the plan clock, simplify, validate and save it; its verdict lands on ``capture``'s status."""
+    """Put one closed mix on the plan clock, simplify, validate and save it; its verdict lands on ``capture``'s status
+    only while that status still reports this mix (``mix.capture_id``)."""
     out_profile, in_profile = profile_of(mix.out_track), profile_of(mix.in_track)
     try:
         plan = simplify(in_bars(mix, out_profile, in_profile))
     except SimplifyError as error:
-        capture.note_result("not_saved", str(error))
+        capture.note_result(mix.capture_id, "not_saved", str(error))
         return
     validation = validate_plan(plan, out_profile, in_profile)
     if not validation.ok:
-        capture.note_result("refused", "; ".join(validation.errors))
+        capture.note_result(mix.capture_id, "refused", "; ".join(validation.errors))
         _LOG.warning("captured mix %s into %s refused: %s", plan.out.track, plan.in_.track, validation.errors)
         return
     conn = state_db.open_rw(path)
@@ -84,7 +85,7 @@ def finish_capture(mix: ClosedMix, capture: TransitionCapture, path: Path, profi
             )
     finally:
         conn.close()
-    capture.note_result("saved", plan.style)
+    capture.note_result(mix.capture_id, "saved", plan.style)
 
 
 def _finish_guarded(mix: ClosedMix, capture: TransitionCapture, path: Path, profile_of: ProfileSource) -> None:
@@ -92,7 +93,7 @@ def _finish_guarded(mix: ClosedMix, capture: TransitionCapture, path: Path, prof
         finish_capture(mix, capture, path, profile_of)
     except Exception as error:  # noqa: BLE001  # a worker thread's last stop: logged and shown, never lost
         _LOG.exception("saving the captured mix %s into %s failed", mix.out_track, mix.in_track)
-        capture.note_result("failed", str(error))
+        capture.note_result(mix.capture_id, "failed", str(error))
 
 
 def observe_mirror(request: Request, mirror: Mapping[str, Any]) -> None:

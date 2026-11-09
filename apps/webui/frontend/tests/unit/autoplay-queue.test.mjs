@@ -140,7 +140,7 @@ describe('PLAY-05 queue agrees with the handoff pitch range', () => {
 		"export { autoPlayOrder, autoPlayQueue } from '$lib/rb/autoplay-queue.svelte';",
 		"export { deckStates, pitchRanges } from '$lib/rb/audio-engine.svelte';",
 		"export { setAutoPlayTrackFeed } from '$lib/rb/auto-play';",
-		"export { setAutoPlayEnforceOrder, setAutoPlayMaximizeReach } from '$lib/rb/prefs.svelte';"
+		"export { setAutoPlayEnabled, setAutoPlayEnforceOrder, setAutoPlayMaximizeReach } from '$lib/rb/prefs.svelte';"
 	].join('\n');
 
 	// Source is 124 BPM / 8A on deck 1 at +-16%; deck 2 is free at +-8%.
@@ -166,6 +166,7 @@ describe('PLAY-05 queue agrees with the handoff pitch range', () => {
 		let uninstall = null;
 		try {
 			const controller = await loadRuneModule(RUNE_ENTRY);
+			controller.setAutoPlayEnabled(true);
 			controller.setAutoPlayEnforceOrder(false);
 			controller.setAutoPlayMaximizeReach(false);
 			controller.pitchRanges[1] = 16;

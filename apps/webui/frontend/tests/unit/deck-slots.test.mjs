@@ -782,12 +782,16 @@ describe('the master deck is rechecked inside the queued command execution, opt-
 	});
 
 	it('the PerformanceCommand wire type accepts refuseIfMaster as optional on load and unload', () => {
+		const types = readFileSync(
+			fileURLToPath(new URL('../../src/lib/rb/performance-ipc-types.ts', import.meta.url)),
+			'utf8'
+		);
 		assert.match(
-			ipc,
+			types,
 			// #3975 appended `stems?`, #4038 `suppressCommandErrorToast?` (now multi-line); refuseIfMaster must stay optional.
 			/\{\s*type: 'load';\s*deck: DeckId;\s*stable_id: string;\s*refuseIfMaster\?: boolean;/
 		);
-		assert.match(ipc, /\{ type: 'unload'; deck: DeckId; refuseIfMaster\?: boolean \}/);
+		assert.match(types, /\{ type: 'unload'; deck: DeckId; refuseIfMaster\?: boolean \}/);
 	});
 
 	it('_loadOntoDeck opts in to refuseIfMaster on both the replace-unload and the load', () => {

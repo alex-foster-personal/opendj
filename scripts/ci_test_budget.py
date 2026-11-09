@@ -263,6 +263,15 @@ def fit(
     )
 
 
+#: Past the first module that does not fit, the hard cap still packs what fits among modules
+#: this near the change (0 the change, its declarations and the guards pinned to it, 1 its direct
+#: importers and neighbours); every farther module drops in rank order. S1 round 33 (Mon 9 Nov
+#: 2026): over 1,953 replayed PR selections the strict stop left a median 2.10 of 10 minutes
+#: unspent, 286 of them cut at distance 0, and on PR #9644 that dropped a 0.18 s distance-1 test
+#: that then failed on main. Packing distance <= 1 adds a mean 0.07 planned minutes per run.
+NEAR_FILL_DISTANCE = 1
+
+
 def rank_key(module: str, distance: dict[str, int], weights: dict[str, float]) -> tuple[int, float, str]:
     """Nearest to the change first, then the cheapest, then the name: the hard cap's order."""
     return (distance[module], weights[module], module)
@@ -275,7 +284,8 @@ def fit_hard(
     budget_min: float,
     config: BudgetConfig,
 ) -> Fit:
-    """Keep the nearest modules until the budget is spent; no module is exempt.
+    """Keep the nearest modules until the budget is spent, then pack what still fits at
+    `NEAR_FILL_DISTANCE` or nearer; no module is exempt.
 
     The shard overhead is paid whatever is kept, so a budget below it keeps nothing and
     `over_budget` says so; `load_config` rejects such a budget, so a loaded config never gets there.
@@ -292,11 +302,18 @@ def fit_hard(
     ranked = sorted(modules, key=lambda m: rank_key(m, distance, weights))
     for index, module in enumerate(ranked):
         if planned_minutes(total + weights[module], config) > budget_min:
-            # Strictly in rank order: the first module that does not fit ends the run, so a
-            # farther module is never kept in place of a nearer one it was cheaper than.
-            for far in ranked[index:]:
-                dropped.append(far)
-                dropped_under[far] = f"hard cap, distance {distance[far]}"
+            # The first module that does not fit ends the run for every farther tier, so a far
+            # module is never kept in place of a nearer one; near ones still pack (NEAR_FILL_DISTANCE).
+            for later in ranked[index:]:
+                if (
+                    distance[later] <= NEAR_FILL_DISTANCE
+                    and planned_minutes(total + weights[later], config) <= budget_min
+                ):
+                    kept.append(later)
+                    total += weights[later]
+                    continue
+                dropped.append(later)
+                dropped_under[later] = f"hard cap, distance {distance[later]}"
             break
         kept.append(module)
         total += weights[module]

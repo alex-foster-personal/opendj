@@ -5,11 +5,22 @@
 	// contextual actions derived from the target (deck-scoped for now).
 	import { onMount, tick } from 'svelte';
 	import { clampToViewport } from '$lib/ui/clamp-to-viewport';
-	import { DECK_IDS, engine, getDeckState, mixerState } from '$lib/rb/audio-engine.svelte';
+	import { deckAutoGain, DECK_IDS, engine, getDeckState, mixerState } from '$lib/rb/audio-engine.svelte';
 	import {
 		dispatchPerformanceCommand,
-		runPerformanceCommandFromUi
+		queryPerformanceState,
+		runPerformanceCommandFromUi,
+		type PerformanceCommand
 	} from '$lib/rb/performance-ipc.svelte';
+	import { deckMoveMenuEntries } from '$lib/rb/deck-move';
+	import {
+		applyDeckMenuLabels,
+		deckLoadSelectionCommand,
+		deckMoveLabels,
+		deckTrackInfoCommand
+	} from '$lib/context-menu/deck-menu-commands';
+	import { runReanalyze } from '$lib/components/rb/browser/track-context-menu';
+	import { rustCommandUnsupported } from '$lib/audio-engine/rust-mode.svelte';
 	import { createLoadBlendController } from '$lib/rb/load-blend-dispatch';
 	import LoadBlendHud from './LoadBlendHud.svelte';
 	import {
@@ -37,9 +48,25 @@
 	import { transitionTargetOk } from '$lib/rb/auto-play-next.svelte';
 	import { isUsbTrackId } from '$lib/rb/track-source';
 	import { menuStemTiers } from '$lib/rb/stem-tier-menu';
-	import { menuFor, type CueSlot, type MenuTarget, type ResolvedMenuItem } from '$lib/context-menu/registry';
+	import { menuFor, type ResolvedMenuItem } from '$lib/context-menu/registry';
+	import {
+		autoGainFactOf,
+		controlClassOf,
+		controlKillCommand,
+		controlResetCommand,
+		controlValueOf,
+		stemLevelsResetCommands,
+		trimAutoGainCommands
+	} from '$lib/context-menu/mixer-actions';
+	import {
+		stableIdFromTarget,
+		targetOf,
+		type ElementLike,
+		type QuickDrawTarget
+	} from '$lib/context-menu/target-of';
 	import { createDeckHotCueActions } from '$lib/rb/deck-hot-cue-actions';
-	import { ANIMATE_CONTROLS, animateTargetOfKnobId, animationKeyOf, type AnimateControl } from '$lib/rb/animate-expr';
+	import { ANIMATE_CONTROLS, animationKeyOf, type AnimateControl } from '$lib/rb/animate-expr';
+	import { STEM_CONTROL_IDS, type StemControl } from '$lib/rb/stem-types';
 	import { cancelAnimation, dialAnimations, openAnimatePrompt } from '$lib/rb/dial-animations.svelte';
 	import AnimatePrompt from './AnimatePrompt.svelte';
 
@@ -89,7 +116,9 @@
 				// The menu can already be open (the loader replays the click that
 				// fetched this module), and its ctx was built before the ladder
 				// landed, so rebuild it or that first open never shows the stems.
-				if (open && stemTargetId !== null) ctx = _contextItems(null, stemTargetId);
+				if (open && stemTargetId !== null && lastMenuTarget !== null) {
+					ctx = _itemsForTarget(lastMenuTarget, null, null);
+				}
 			})
 			.catch((e) => {
 				// Fail visibly: a silently empty ladder looks like "no stems here".
@@ -99,6 +128,8 @@
 
 	/** The row the open menu belongs to, so a late estimate can refresh labels. */
 	let stemTargetId = $state<string | null>(null);
+	/** Last resolved target so a stem estimate refresh rebuilds the same menu. */
+	let lastMenuTarget = $state<QuickDrawTarget | null>(null);
 
 	async function _loadStemEstimates(stableId: string): Promise<void> {
 		stemEstimateById = {};
@@ -120,8 +151,8 @@
 		// labels stay on their "..." placeholder forever. Only if the menu is
 		// still open on the same row -- a stale refresh would relabel a menu
 		// the user has since opened somewhere else.
-		if (open && stemTargetId === stableId) {
-			ctx = _contextItems(null, stableId);
+		if (open && stemTargetId === stableId && lastMenuTarget !== null) {
+			ctx = _itemsForTarget(lastMenuTarget, null, null);
 		}
 	}
 
@@ -173,75 +204,44 @@
 		return DECK_IDS.find((d) => getDeckState(d).is_master) ?? null;
 	}
 
-	function _deckFromTarget(t: EventTarget | null): DeckId | null {
-		const el = t instanceof Element ? t.closest('[data-deck]') : null;
-		if (el === null) return null;
-		const n = Number(el.getAttribute('data-deck'));
-		return DECK_IDS.includes(n as DeckId) ? (n as DeckId) : null;
-	}
-
-	function _stableIdFromTarget(t: EventTarget | null): string | null {
-		const el = t instanceof Element ? t.closest('[data-stable-id]') : null;
-		if (el === null) return null;
-		const id = el.getAttribute('data-stable-id');
-		return id !== null && id !== '' ? id : null;
-	}
-
-	const CUE_SLOTS: readonly CueSlot[] = ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H'];
-
-	/**
-	 * W28: name what was right-clicked, so the registry (not this component)
-	 * decides the items. Most specific first: a hot-cue pad and a mixer strip
-	 * sit inside deck-ish markup, and a track row can sit inside the browser.
-	 */
-	type QuickDrawTarget =
-		| Extract<MenuTarget, { kind: 'hot-cue' | 'mixer-channel' | 'waveform' | 'deck' }>
-		| { kind: 'track-chip'; stableId: string }
-		/** ANIM-01: `channel` is the strip the dial sits in, whose items follow the Animate ones. */
-		| { kind: 'mixer-control'; label: string; deck: DeckId | null; control: AnimateControl; channel: DeckId | null }
-		| { kind: 'tree-readonly' | 'library-source' | 'perf-empty' };
-
-	function _deckAttr(el: Element | null, attr: string): DeckId | null {
-		const n = Number(el?.getAttribute(attr));
-		return DECK_IDS.includes(n as DeckId) ? (n as DeckId) : null;
+	function _asElementLike(t: EventTarget | null): ElementLike | null {
+		return t instanceof Element ? (t as unknown as ElementLike) : null;
 	}
 
 	function _targetOf(t: EventTarget | null, knownStableId: string | null): QuickDrawTarget {
-		if (knownStableId !== null) return { kind: 'track-chip', stableId: knownStableId };
-		if (!(t instanceof Element)) return { kind: 'perf-empty' };
-		const cue = t.closest('[data-hot-cue-slot]');
-		const cueDeck = _deckAttr(cue?.closest('[data-deck]') ?? null, 'data-deck');
-		const slot = cue?.getAttribute('data-hot-cue-slot') as CueSlot | null | undefined;
-		if (cueDeck !== null && slot != null && CUE_SLOTS.includes(slot)) {
-			return { kind: 'hot-cue', deck: cueDeck, slot };
+		return targetOf(_asElementLike(t), knownStableId);
+	}
+
+	function _stableIdFromTarget(t: EventTarget | null): string | null {
+		return stableIdFromTarget(_asElementLike(t));
+	}
+
+	async function _sendAll(commands: Record<string, unknown>[]): Promise<void> {
+		for (const command of commands) {
+			await runPerformanceCommandFromUi(command as PerformanceCommand);
 		}
-		const mixerDeck = _deckAttr(t.closest('[data-mixer-channel]'), 'data-mixer-channel');
-		const dialEl = t.closest('[data-knob-id], [data-animate-control]');
-		const dial = dialEl?.getAttribute('data-animate-control') ?? dialEl?.getAttribute('data-knob-id');
-		const animated = dial == null ? null : animateTargetOfKnobId(dial);
-		if (animated !== null) {
-			return { kind: 'mixer-control', label: ANIMATE_CONTROLS[animated.control].label, ...animated, channel: mixerDeck };
-		}
-		if (mixerDeck !== null) return { kind: 'mixer-channel', deck: mixerDeck };
-		// A read-only tree or source strip owns everything inside it: a child
-		// carrying a stable id there (a stick track, say) must not borrow the
-		// track-chip actions. A marker only wins over a stable id it encloses.
-		const markedEl = t.closest('[data-menu-target]');
-		const marked = markedEl?.getAttribute('data-menu-target');
-		const stableEl = t.closest('[data-stable-id]');
-		if (
-			(marked === 'tree-readonly' || marked === 'library-source') &&
-			(stableEl === null || markedEl!.contains(stableEl))
-		) {
-			return { kind: marked };
-		}
-		const stableId = _stableIdFromTarget(t);
-		if (stableId !== null) return { kind: 'track-chip', stableId };
-		const deck = _deckFromTarget(t);
-		if (deck !== null) {
-			return t.closest('[data-wave-surface]') !== null ? { kind: 'waveform', deck } : { kind: 'deck', deck };
-		}
-		return { kind: 'perf-empty' };
+	}
+
+	function _stemPart(control: AnimateControl): StemControl | null {
+		if (!control.startsWith('stem_')) return null;
+		const part = control.slice('stem_'.length);
+		return (STEM_CONTROL_IDS as readonly string[]).includes(part) ? (part as StemControl) : null;
+	}
+
+	function _controlRaw(target: Extract<QuickDrawTarget, { kind: 'mixer-control' }>): number {
+		const { deck, control } = target;
+		if (control === 'crossfader') return mixerState.crossfader;
+		if (deck === null) throw new Error(`control ${control} needs a deck`);
+		const ch = mixerState.channels[deck];
+		if (control === 'eq_low') return ch.eq_low;
+		if (control === 'eq_mid') return ch.eq_mid;
+		if (control === 'eq_high') return ch.eq_high;
+		if (control === 'trim') return ch.trim;
+		if (control === 'filter') return ch.filter;
+		if (control === 'fader') return ch.fader;
+		const part = _stemPart(control);
+		if (part === null) throw new Error(`no raw value for ${control}`);
+		return getDeckState(deck).stems.controls[part].gain;
 	}
 
 	function _toCtxItem(item: ResolvedMenuItem, run: CtxItem['run'] | undefined): CtxItem {
@@ -278,6 +278,10 @@
 		return items;
 	}
 
+	function _runnerIfSupported(type: string, run: CtxItem['run']): CtxItem['run'] | undefined {
+		return rustCommandUnsupported(type) ? undefined : run;
+	}
+
 	function _deckItems(
 		target: Extract<QuickDrawTarget, { kind: 'deck' | 'waveform' }>,
 		event: MouseEvent | null,
@@ -286,6 +290,7 @@
 		const deck = target.deck;
 		const state = getDeckState(deck);
 		const loaded = state.stable_id !== null;
+		const stableId = state.stable_id;
 		const runners: Record<string, CtxItem['run']> = {
 			play: (pressT0Ms) => _togglePlay(deck, pressT0Ms),
 			unload: (pressT0Ms) => _runAction('unload', deck, pressT0Ms),
@@ -298,13 +303,74 @@
 			'make-master': (pressT0Ms) => _runAction('master', deck, pressT0Ms)
 		};
 		if (target.kind === 'deck') {
-			return menuFor(target, {
-				loaded,
-				playing: state.playing,
-				looping: state.loop !== null,
-				synced: state.beat_sync_enabled,
-				master: state.is_master
-			}).map((item) => _toCtxItem(item, runners[item.id]));
+			const perf = queryPerformanceState();
+			const selection = perf.browser.selected_row !== null;
+			const otherLoaded = DECK_IDS.filter((d) => d !== deck && getDeckState(d).stable_id !== null);
+			const moveEntries = deckMoveMenuEntries(deck, DECK_IDS, (d) => getDeckState(d));
+			const moveLabels = deckMoveLabels(moveEntries);
+			for (const { to, force } of moveEntries) {
+				const id = `move-to-${to}`;
+				const moveRun = _runnerIfSupported('deck_move', (pressT0Ms) =>
+					runPerformanceCommandFromUi(
+						{ type: 'deck_move', from: deck, to, mode: 'move', ...(force ? { force: true } : {}) },
+						pressT0Ms
+					).then(() => {})
+				);
+				if (moveRun !== undefined) runners[id] = moveRun;
+			}
+			for (const other of DECK_IDS) {
+				if (other === deck) continue;
+				const id = `double-from-${other}`;
+				const doubleRun = _runnerIfSupported('deck_move', (pressT0Ms) =>
+					runPerformanceCommandFromUi({ type: 'deck_move', from: other, to: deck, mode: 'copy' }, pressT0Ms).then(
+						() => {}
+					)
+				);
+				if (doubleRun !== undefined) runners[id] = doubleRun;
+			}
+			// PRRT_kwDOSEvNd860wjZw: plain load only; playing-deck guard in performance-ipc.
+			runners['load-selection'] = (pressT0Ms) => {
+				const command = deckLoadSelectionCommand(deck, queryPerformanceState().browser.selected_row);
+				if (command === null) return Promise.resolve();
+				return runPerformanceCommandFromUi(command, pressT0Ms).then(() => {});
+			};
+			const keyLockRun = _runnerIfSupported('master_tempo', (pressT0Ms) =>
+				_runAction('master_tempo.toggle', deck, pressT0Ms)
+			);
+			if (keyLockRun !== undefined) runners['key-lock'] = keyLockRun;
+			const quantizeRun = _runnerIfSupported('quantize', (pressT0Ms) =>
+				_runAction('quantize.toggle', deck, pressT0Ms)
+			);
+			if (quantizeRun !== undefined) runners['quantize'] = quantizeRun;
+			const slipRun = _runnerIfSupported('slip', (pressT0Ms) => _runAction('slip.toggle', deck, pressT0Ms));
+			if (slipRun !== undefined) runners['slip'] = slipRun;
+			if (stableId !== null) {
+				runners['find-in-library'] = (pressT0Ms) =>
+					runPerformanceCommandFromUi(
+						{ type: 'browser_select_playlist', playlist_id: 'all', stable_id: stableId },
+						pressT0Ms
+					).then(() => {});
+				runners['track-info'] = (pressT0Ms) =>
+					runPerformanceCommandFromUi(deckTrackInfoCommand(deck), pressT0Ms).then(() => {});
+				runners['reanalyze'] = async () => {
+					await runReanalyze([stableId]);
+				};
+			}
+			return applyDeckMenuLabels(
+				menuFor(target, {
+					loaded,
+					playing: state.playing,
+					looping: state.loop !== null,
+					synced: state.beat_sync_enabled,
+					master: state.is_master,
+					selection,
+					keyLock: state.master_tempo_enabled,
+					quantize: state.quantize_enabled,
+					slip: state.slip_enabled,
+					otherLoaded
+				}),
+				moveLabels
+			).map((item) => _toCtxItem(item, runners[item.id]));
 		}
 		const vocal = event !== null ? vocalFixMenuItem(event, eventTarget) : null;
 		const click = event !== null ? waveClickAt(event, eventTarget) : null;
@@ -364,6 +430,7 @@
 	function _mixerItems(target: Extract<QuickDrawTarget, { kind: 'mixer-channel' }>): CtxItem[] {
 		const deck = target.deck;
 		const ch = mixerState.channels[deck];
+		const fact = autoGainFactOf(deckAutoGain[deck]);
 		const send = (command: Parameters<typeof runPerformanceCommandFromUi>[0]) =>
 			runPerformanceCommandFromUi(command).then(() => {});
 		const runners: Record<string, CtxItem['run']> = {
@@ -375,58 +442,143 @@
 			'channel-cue': () => send({ type: 'channel_cue', deck, enabled: !ch.cue_enabled }),
 			'assign-a': () => send({ type: 'assign', deck, assign: 'A' }),
 			'assign-b': () => send({ type: 'assign', deck, assign: 'B' }),
-			'assign-thru': () => send({ type: 'assign', deck, assign: 'THRU' })
+			'assign-thru': () => send({ type: 'assign', deck, assign: 'THRU' }),
+			'trim-auto-gain': () =>
+				_sendAll(
+					trimAutoGainCommands(deck, fact, ch.trim === 0.5, getDeckState(deck).stable_id)
+				)
 		};
 		return menuFor(target, {
 			eqFlat: ch.eq_low === 0.5 && ch.eq_mid === 0.5 && ch.eq_high === 0.5,
 			filterFlat: ch.filter === 0.5,
 			cue: ch.cue_enabled,
-			assign: ch.assign
+			assign: ch.assign,
+			trimUnity: ch.trim === 0.5,
+			autoGain: fact
 		}).map((item) => _toCtxItem(item, runners[item.id]));
 	}
 
 	function _controlItems(target: Extract<QuickDrawTarget, { kind: 'mixer-control' }>): CtxItem[] {
 		const key = animationKeyOf(ANIMATE_CONTROLS[target.control].command(target.deck ?? 1, 0));
 		if (key === null) throw new Error(`no animation key for ${target.control}`);
-		// The menu's own corner, read when the item runs: the box opens where the menu stood.
+		const raw = _controlRaw(target);
+		const autoGain =
+			target.deck === null ? ('none' as const) : autoGainFactOf(deckAutoGain[target.deck]);
+		const resolved = menuFor(
+			{ kind: 'mixer-control', label: target.label },
+			{
+				animating: dialAnimations.running[key] !== undefined,
+				control: controlClassOf(target.control),
+				value: controlValueOf(target.control, raw),
+				autoGain
+			}
+		);
 		const runners: Record<string, CtxItem['run']> = {
 			animate: async () => openAnimatePrompt(target.deck, target.control, x, y),
 			'animate-stop': async () => {
 				cancelAnimation(key, 'stopped from the menu');
 			}
 		};
-		const items = menuFor(
-			{ kind: 'mixer-control', label: target.label },
-			{ animating: dialAnimations.running[key] !== undefined }
-		).map((item) => _toCtxItem(item, runners[item.id]));
-		return target.channel === null ? items : [...items, ..._mixerItems({ kind: 'mixer-channel', deck: target.channel })];
+		for (const item of resolved) {
+			if (item.id.startsWith('reset-')) {
+				runners[item.id] = () =>
+					runPerformanceCommandFromUi(controlResetCommand(target.control, target.deck) as PerformanceCommand).then(
+						() => {}
+					);
+			} else if (item.id === 'eq-kill') {
+				runners[item.id] = () =>
+					runPerformanceCommandFromUi(
+						controlKillCommand(target.control, target.deck ?? 1) as PerformanceCommand
+					).then(() => {});
+			} else if (item.id === 'trim-auto-gain' && target.deck !== null) {
+				const deck = target.deck;
+				runners[item.id] = () =>
+					_sendAll(
+						trimAutoGainCommands(deck, autoGain, raw === 0.5, getDeckState(deck).stable_id)
+					);
+			}
+		}
+		const items = resolved.map((item) => _toCtxItem(item, runners[item.id]));
+		if (target.channel === null) return items;
+		const dialIds = new Set(items.map((item) => item.id));
+		const channelItems = _mixerItems({ kind: 'mixer-channel', deck: target.channel }).filter(
+			(item) => !dialIds.has(item.id)
+		);
+		return [...items, ...channelItems];
 	}
 
-	function _contextItems(
-		target: EventTarget | null,
-		knownStableId: string | null = null,
-		event: MouseEvent | null = null
+	function _stemLaneItems(target: Extract<QuickDrawTarget, { kind: 'stem' }>): CtxItem[] {
+		const deck = target.deck;
+		const state = getDeckState(deck);
+		const s = state.stems;
+		const ctrl = s.controls[target.stem];
+		const items: CtxItem[] = [];
+		const menuCtx = {
+			loaded: state.stable_id !== null,
+			stems: s.status === 'ready' ? ('ready' as const) : ('none' as const),
+			available: s.available_controls.includes(target.stem),
+			muted: ctrl.muted,
+			solo: ctrl.solo,
+			levelsUnity: STEM_CONTROL_IDS.every((id) => s.controls[id].gain === 0.5)
+		};
+		const runners: Record<string, CtxItem['run']> = {
+			'stem-mute': () =>
+				runPerformanceCommandFromUi({
+					type: 'stem_mute',
+					deck,
+					stem: target.stem,
+					muted: !ctrl.muted
+				}).then(() => {}),
+			'stem-solo': () =>
+				runPerformanceCommandFromUi({
+					type: 'stem_solo',
+					deck,
+					stem: target.stem,
+					solo: !ctrl.solo
+				}).then(() => {}),
+			'stem-levels-reset': () =>
+				_sendAll(stemLevelsResetCommands(deck, s.available_controls))
+		};
+		for (const item of menuFor(target, menuCtx)) {
+			if (item.id === 'stems-tiers') {
+				if (item.enabled && state.stable_id !== null) {
+					items.push(..._stemItems(state.stable_id));
+				} else {
+					items.push(_toCtxItem(item, undefined));
+				}
+				continue;
+			}
+			items.push(_toCtxItem(item, runners[item.id]));
+		}
+		return items;
+	}
+
+	function _itemsForTarget(
+		menuTarget: QuickDrawTarget,
+		event: MouseEvent | null,
+		eventTarget: EventTarget | null
 	): CtxItem[] {
-		const menuTarget = _targetOf(target, knownStableId);
 		switch (menuTarget.kind) {
 			case 'track-chip': {
-				const stableId = menuTarget.stableId;
-				stemTargetId = stableId;
-				if (knownStableId === null) void _loadStemEstimates(stableId).catch((e) => {
-					console.error('[quick-draw] stem estimates unavailable', e);
-					stemEstimateById = { _error: String(e) };
-				});
-				return _trackChipItems(stableId);
+				stemTargetId = menuTarget.stableId;
+				return _trackChipItems(menuTarget.stableId);
 			}
 			case 'deck':
 			case 'waveform':
-				return _deckItems(menuTarget, event, target);
+				return _deckItems(menuTarget, event, eventTarget);
 			case 'hot-cue':
 				return _hotCueItems(menuTarget);
 			case 'mixer-channel':
 				return _mixerItems(menuTarget);
 			case 'mixer-control':
 				return _controlItems(menuTarget);
+			case 'stem': {
+				const stemState = getDeckState(menuTarget.deck);
+				if (stemState.stable_id !== null) {
+					stemTargetId = stemState.stable_id;
+				}
+				return _stemLaneItems(menuTarget);
+			}
 			case 'tree-readonly':
 				// A USB stick's tree opens its own menu (UsbStickTree, USBEXP-04)
 				// and stops the event, so only stick-less trees reach here.
@@ -458,6 +610,41 @@
 				return menuFor({ kind: 'perf-empty' }, ctx).map((item) => _toCtxItem(item, runners[item.id]));
 			}
 		}
+	}
+
+	function _contextItems(
+		target: EventTarget | null,
+		knownStableId: string | null = null,
+		event: MouseEvent | null = null
+	): CtxItem[] {
+		const menuTarget = _targetOf(target, knownStableId);
+		lastMenuTarget = menuTarget;
+		if (menuTarget.kind === 'track-chip' && knownStableId === null) {
+			void _loadStemEstimates(menuTarget.stableId).catch((e) => {
+				console.error('[quick-draw] stem estimates unavailable', e);
+				stemEstimateById = { _error: String(e) };
+			});
+		}
+		if (menuTarget.kind === 'stem') {
+			const state = getDeckState(menuTarget.deck);
+			const s = state.stems;
+			const stemMenuCtx = {
+				loaded: state.stable_id !== null,
+				stems: s.status === 'ready' ? ('ready' as const) : ('none' as const),
+				available: s.available_controls.includes(menuTarget.stem),
+				muted: s.controls[menuTarget.stem].muted,
+				solo: s.controls[menuTarget.stem].solo,
+				levelsUnity: STEM_CONTROL_IDS.every((id) => s.controls[id].gain === 0.5)
+			};
+			const stemsTiers = menuFor(menuTarget, stemMenuCtx).find((i) => i.id === 'stems-tiers');
+			if (stemsTiers?.enabled && state.stable_id !== null) {
+				void _loadStemEstimates(state.stable_id).catch((e) => {
+					console.error('[quick-draw] stem estimates unavailable', e);
+					stemEstimateById = { _error: String(e) };
+				});
+			}
+		}
+		return _itemsForTarget(menuTarget, event, target);
 	}
 
 	function onContextMenu(e: MouseEvent): void {

@@ -1,0 +1,10 @@
+{
+  "version": 1,
+  "note": "Placeholder ambient looks until the taste calibration (needs-maintainer). Behaviour mimics rekordbox Ambient: slow, dim, no strobe.",
+  "looks_file": "looks_default.json",
+  "idle_delay_s": 4.0,
+  "bpm": 100.0,
+  "bars_per_step": 4,
+  "intensity": 0.6,
+  "looks": ["wash_dim", "wash_cool", "wash_warm", "sweep_slow"]
+}

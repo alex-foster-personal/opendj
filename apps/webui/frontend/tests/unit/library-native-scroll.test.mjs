@@ -9,9 +9,13 @@
  * Regression lines:
  * - if TrackTable's scroll container gets a wheel action or listener again then
  *   wheel scrolling leaves the compositor and stalls whenever the app is busy -> broken
+ * - if any module under src/lib binds a non-passive wheel listener on window or
+ *   document outside a selection's lifetime then EVERY wheel event on the page,
+ *   the library list included, waits on the main thread (PERF-UI-13, #10227)
  */
 import assert from 'node:assert/strict';
-import { existsSync, readFileSync } from 'node:fs';
+import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs';
+import { join, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { test } from 'node:test';
 
@@ -31,6 +35,81 @@ test('the track list scroll container has no wheel handler', () => {
 		table,
 		/addEventListener\(\s*['"]wheel['"]/,
 		'no wheel listener anywhere in TrackTable'
+	);
+});
+
+/** Every .ts, .svelte.ts and .svelte file under a directory, recursively. */
+function sourceFiles(dir) {
+	const out = [];
+	for (const name of readdirSync(dir)) {
+		const full = join(dir, name);
+		if (statSync(full).isDirectory()) out.push(...sourceFiles(full));
+		else if (/\.(ts|svelte)$/.test(name)) out.push(full);
+	}
+	return out;
+}
+
+/** Name of the innermost `function <name>(` declared before `index`, or null. */
+function enclosingFunctionName(source, index) {
+	const head = source.slice(0, index);
+	let name = null;
+	for (const m of head.matchAll(/function\s+([A-Za-z_$][\w$]*)\s*\(/g)) name = m[1];
+	return name;
+}
+
+/**
+ * Page-lifetime non-passive wheel bindings that predate PERF-UI-13 and are
+ * out of #10227's scope, each with the issue that moves it to a selection
+ * lifetime. Adding a line here is a product decision, not a fix.
+ */
+const KNOWN_PAGE_LIFETIME_WHEEL = new Map([
+	[
+		'src/lib/rb/mixer-performance-listeners.ts',
+		'MIXUX-08 horizontal wheel on /performance, follow-up #10369'
+	]
+]);
+
+test('PERF-UI-13: no non-passive window or document wheel listener outside a selection lifetime', () => {
+	const files = sourceFiles(path('src/lib'));
+	assert.ok(files.length > 50, `control: the walk found only ${files.length} files`);
+	const nonPassive =
+		/\b(window|document)\.addEventListener\(\s*['"]wheel['"][\s\S]{0,200}?passive:\s*false/g;
+	const offenders = [];
+	let matches = 0;
+	const seenKnown = new Set();
+	for (const file of files) {
+		const source = readFileSync(file, 'utf8');
+		if (!source.includes('wheel')) continue;
+		// POSIX separators, so the allowlist matches on Windows too.
+		const rel = file.slice(path('').length).split(sep).join('/');
+		for (const m of source.matchAll(nonPassive)) {
+			matches += 1;
+			if (KNOWN_PAGE_LIFETIME_WHEEL.has(rel)) {
+				seenKnown.add(rel);
+				continue;
+			}
+			const fn = enclosingFunctionName(source, m.index);
+			if (fn === null || !/Selection|select/.test(fn))
+				offenders.push(`${rel} in ${fn ?? '<module scope>'}`);
+		}
+	}
+	// A known entry that no longer binds has been fixed: drop it from the map
+	// so the guard tightens instead of carrying a dead exemption.
+	assert.deepEqual(
+		[...KNOWN_PAGE_LIFETIME_WHEEL.keys()].filter((k) => !seenKnown.has(k)),
+		[],
+		'a KNOWN_PAGE_LIFETIME_WHEEL entry no longer matches; remove it'
+	);
+	// Control: the knob selection's own wheel is the one legitimate binding, so
+	// the regex must find at least that or it is not seeing anything.
+	assert.ok(
+		matches >= 2,
+		`control: the probe found ${matches} non-passive window wheel bindings, expected the selection one plus the known entries`
+	);
+	assert.deepEqual(
+		offenders,
+		[],
+		'a non-passive wheel listener is bound for the page lifetime, not a selection'
 	);
 });
 

@@ -1,0 +1,9 @@
+{
+  "bytes": 1024,
+  "measured_main": 495114,
+  "measured_with_pr": 495755,
+  "sha": "b8089cbe1e",
+  "date": "Mon 9 Nov 2026",
+  "reason": "PR #10586: the self-registering map glob (#10560) imports every map module, so the lazy live-registry chunk now also carries the two hints-only maps (Numark Mixtrack Pro FX, SC LIVE 4). Measured: local vite build of main e6f6e78031 and of this branch on the same host (nucbox-wsl), +641 B gzip; ceiled to KiB",
+  "payback": "none planned; replica PRs no longer conflict on shared registry files"
+}

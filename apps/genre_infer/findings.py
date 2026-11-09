@@ -34,6 +34,7 @@ from pathlib import Path
 from typing import Any
 
 from . import taxonomy
+from .probability import unit_probability
 
 # ----------------------------------------------------------------- providers
 PROVIDER_FUSED = "odj-fused"
@@ -191,7 +192,7 @@ def put_finding(conn: sqlite3.Connection, f: Finding) -> Finding:
     if f.status == STATUS_OK:
         if not f.genre or not f.genre.strip() or len(f.genre) > MAX_GENRE_CHARS:
             raise GenreInputError(f"an ok finding needs a genre of 1 to {MAX_GENRE_CHARS} characters")
-        if f.confidence is None or not 0.0 <= float(f.confidence) <= 1.0 or math.isnan(float(f.confidence)):
+        if unit_probability(f.confidence) is None:
             raise GenreInputError("an ok finding needs a confidence in [0, 1]")
     evidence_json = json.dumps(dict(f.evidence), ensure_ascii=False, sort_keys=True)
     if len(evidence_json) > MAX_EVIDENCE_CHARS:

@@ -12,6 +12,8 @@ import pytest
 
 from scripts.ci_e2e_admission import (
     MERGEABILITY_ATTEMPTS,
+    OPT_IN_LABEL,
+    OPT_IN_LABEL_ENV,
     PUBLISHED_CHECK_NAME,
     Admission,
     AdmissionError,
@@ -23,7 +25,7 @@ from scripts.ci_e2e_admission import (
     resolve_admission,
     write_outputs,
 )
-from scripts.ci_wait_workflows import WORKFLOW_RUN_PUBLISHED_CHECKS
+from scripts.ci_wait_workflows import WORKFLOW_RUN_OPT_IN_LABELS, WORKFLOW_RUN_PUBLISHED_CHECKS
 
 REPO = "private_owner/music-dj-tools"
 HEAD = "74a2372b29e1c0c6d8f2b4a5c6d7e8f9a0b1c2d3"
@@ -184,6 +186,60 @@ def test_a_green_current_head_is_admitted_at_its_pinned_merge_commit() -> None:
     }
 
 
+# ----- opt-in label (ADR-NEW-e2e-opt-in-by-label) -------------------------------------
+
+
+GREEN_GATE = {GATE_PATH: {"check_runs": [_gate("completed", "success")]}}
+OPTED_IN = replace(PR_RUN, opt_in_label=OPT_IN_LABEL)
+
+
+@pytest.mark.requirement("DEVOPS-10534")
+def test_the_opt_in_label_is_the_one_ci_wait_reads() -> None:
+    """[if] admission's label drifts from the ci-wait catalog [then] ci-wait owes a verdict admission skips, [else stop]."""
+    assert WORKFLOW_RUN_OPT_IN_LABELS["e2e.yml"] == OPT_IN_LABEL == "e2e"
+    assert OPT_IN_LABEL_ENV == "E2E_OPT_IN_LABEL"
+
+
+@pytest.mark.requirement("DEVOPS-10534")
+def test_without_the_env_every_green_head_is_admitted_as_before() -> None:
+    """[if] an empty E2E_OPT_IN_LABEL gates admission [then] landing this script before the workflow skips every PR, [else stop]."""
+    env = {"GITHUB_REPOSITORY": REPO, "EVENT_NAME": "workflow_run", "RUN_EVENT": "pull_request"}
+    env |= {"HEAD_SHA": HEAD, "PR_NUMBER": "6474", "PR_BASE": "main"}
+    event = RunEvent.from_env(env)
+    assert event.opt_in_label == ""
+    api = RecordedApi(GREEN_GATE, pulls=[_pull()])
+    assert resolve_admission(event, api, _no_sleep).checkout_ref == MERGE
+    assert RunEvent.from_env(env | {OPT_IN_LABEL_ENV: "e2e"}).opt_in_label == "e2e"
+
+
+@pytest.mark.requirement("DEVOPS-10534")
+def test_an_unlabelled_pull_request_is_skipped_before_mergeability_is_polled() -> None:
+    """[if] an unlabelled green head is admitted [then] every pull request still spends an e2e seat, [else stop]."""
+    api = RecordedApi(GREEN_GATE, pulls=[_pull(mergeable=None, merge_commit_sha=None)])
+    admission = resolve_admission(OPTED_IN, api, _no_sleep)
+    assert admission.scope_event == "workflow_run" and admission.checkout_ref == "" and admission.pr == "6474"
+    assert "carries no `e2e` label" in admission.skip and "opt-in" in admission.skip
+    assert api.calls == [GATE_PATH, PULL_PATH], "no mergeability poll for a head that cannot be admitted"
+
+
+@pytest.mark.requirement("DEVOPS-10534")
+def test_a_labelled_pull_request_is_admitted_at_its_merge_commit() -> None:
+    """[if] the `e2e` label does not admit a green head [then] nothing can opt a pull request in, [else stop]."""
+    api = RecordedApi(GREEN_GATE, pulls=[_pull(labels=[{"name": "ci:nightly"}, {"name": OPT_IN_LABEL}])])
+    admission = resolve_admission(OPTED_IN, api, _no_sleep)
+    assert admission == Admission(scope_event="pull_request", checkout_ref=MERGE, repair=False, pr="6474", skip="")
+
+
+@pytest.mark.requirement("DEVOPS-10534")
+def test_the_unlabelled_skip_publishes_a_skipped_verdict_with_the_reason() -> None:
+    """[if] the opt-in skip publishes failure [then] every unlabelled head shows a red e2e verdict, [else stop]."""
+    api = RecordedApi(GREEN_GATE, pulls=[_pull()])
+    skip = resolve_admission(OPTED_IN, api, _no_sleep).skip
+    payload = publish_payload(replace(PUBLISH, scope_event="workflow_run", skip=skip))
+    assert payload is not None and payload["conclusion"] == "skipped"
+    assert payload["output"]["summary"] == skip and "carries no `e2e` label" in skip
+
+
 def test_mergeability_still_computing_is_polled_then_admitted() -> None:
     """if `mergeable: null` is read as unmergeable then every fresh push is skipped"""
     waits: list[float] = []
@@ -222,6 +278,7 @@ PUBLISH = PublishInputs(
     head_sha=HEAD,
     pr_number="6474",
     scope_result="success",
+    run_conclusion="success",
     scope_event="pull_request",
     skip="",
     in_scope="true",
@@ -265,6 +322,24 @@ def test_a_run_the_scope_job_did_not_admit_publishes_skipped_with_the_reason() -
     payload = publish_payload(replace(PUBLISH, scope_event="workflow_run", skip=reason, in_scope="false"))
     assert payload is not None and payload["conclusion"] == "skipped"
     assert payload["output"]["summary"] == reason
+
+
+@pytest.mark.parametrize("ci_conclusion", ["cancelled", "failure"])
+def test_a_scope_job_skipped_for_a_non_green_ci_run_publishes_skipped(ci_conclusion: str) -> None:
+    """if a scope job skipped by the CI-conclusion guard publishes failure then every red CI head carries a red e2e verdict"""
+    payload = publish_payload(
+        replace(PUBLISH, scope_result="skipped", run_conclusion=ci_conclusion, scope_event="", skip="", in_scope="")
+    )
+    assert payload is not None and payload["conclusion"] == "skipped"
+    assert f"CI concluded {ci_conclusion}" in payload["output"]["summary"]
+
+
+def test_a_scope_job_skipped_on_a_green_ci_run_still_publishes_failure() -> None:
+    """if a scope job skipped for an unknown reason reads as a designed skip then an admission bug hides on every head"""
+    payload = publish_payload(
+        replace(PUBLISH, scope_result="skipped", run_conclusion="success", scope_event="", in_scope="")
+    )
+    assert payload is not None and payload["conclusion"] == "failure"
 
 
 def test_a_failed_scope_job_publishes_failure_not_skipped() -> None:

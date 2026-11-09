@@ -28,6 +28,11 @@ class PerfPressRow(TypedDict, total=False):
 
 
 S2_KPI = "input_to_audible_ms_p99"
+#: LATENCY-10437: a press row's ``schedule_reason`` label. ``sync-join`` rows waited
+#: for Beat Sync's shared launch time, a product choice rather than latency, so the
+#: p99 excludes them; rows with no label (older clients) still count.
+SCHEDULE_REASON_LABEL = "schedule_reason"
+SYNC_JOIN = "sync-join"
 FLOOR_KPI = "audio_output_device_floor_ms"
 S2_UNIT = "ms"
 S2_METHOD_TEMPLATE = (
@@ -62,7 +67,26 @@ def counts_as_sample(press: dict[str, Any]) -> bool:
     if not _is_finite_positive(stages.get("output_latency_ms")):
         return False
     labels = press.get("labels")
-    return isinstance(labels, dict) and labels.get("latency_floor") == "complete"
+    if not isinstance(labels, dict) or labels.get("latency_floor") != "complete":
+        return False
+    return labels.get(SCHEDULE_REASON_LABEL) != SYNC_JOIN
+
+
+def _is_complete_sync_join(press: dict[str, Any]) -> bool:
+    """A row that would have counted but for its ``sync-join`` label."""
+    labels = press.get("labels")
+    if not isinstance(labels, dict) or labels.get(SCHEDULE_REASON_LABEL) != SYNC_JOIN:
+        return False
+    return counts_as_sample({**press, "labels": {**labels, SCHEDULE_REASON_LABEL: "immediate"}})
+
+
+def schedule_reason_note(presses: list[dict[str, Any]]) -> str:
+    """How many complete rows the sync-join rule excluded, and how many sampled rows lacked the label."""
+    excluded = sum(1 for press in presses if _is_complete_sync_join(press))
+    unlabelled = sum(
+        1 for press in presses if counts_as_sample(press) and SCHEDULE_REASON_LABEL not in (press.get("labels") or {})
+    )
+    return f"{excluded} sync-join rows excluded; {unlabelled} rows lacked schedule_reason"
 
 
 def filter_complete_presses(presses: list[dict[str, Any]]) -> list[dict[str, Any]]:
@@ -130,7 +154,7 @@ def presses_to_ledger_rows(
     values = [float(item["stages"]["input_to_output_ms"]) for item in scored]
     p99 = nearest_rank_p99(values)
     floor = device_floor_ms(scored[-1])
-    method = _method(engine)
+    method = f"{_method(engine)}; {schedule_reason_note(raw_presses)}"
     note = f"n={requested_presses} presses, nearest-rank p99; engine={engine}; audio_output_device_floor_ms={floor}"
     return [
         build_row(

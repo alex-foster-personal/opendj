@@ -8,13 +8,16 @@
 
 from __future__ import annotations
 
+from dataclasses import replace
+from pathlib import Path
 from typing import Any
 
 import pytest
 
-from apps.autodj.capture import SILENT_HOLD_BARS, ClosedMix, TransitionCapture, in_bars
+from apps.autodj.capture import SILENT_HOLD_BARS, ClosedMix, PreGridIncomingError, TransitionCapture, in_bars
 from apps.autodj.profile import TrackProfile
-from apps.autodj.simplify import CapturedMix, simplify
+from apps.autodj.simplify import CapturedMix, Sample, SimplifyError, simplify
+from apps.webui.server.pair_capture import finish_capture
 
 pytestmark = pytest.mark.requirement("MEMORY-04")
 
@@ -266,3 +269,121 @@ def test_both_decks_stopping_together_is_no_transition() -> None:
     closing = capture.observe(_mirror(_deck("out", 69.5, playing=False), _deck("in", 5.5, playing=False)))
     assert closing is None
     assert capture.status()["last"]["reason"] == "incoming_stopped"
+
+
+# ----- PAIR-9950: a slow save's verdict lands only on its own mix ---------------------------------------------------
+
+
+def _second_mix(capture: TransitionCapture) -> ClosedMix | None:
+    """After :func:`_stop`, a fresh track starts on deck 1 against the still-playing deck 2, which then stops."""
+    capture.observe(_mirror(_deck("c", 1.0), _deck("in", 18.0), out_fader=0.0, in_fader=1.0))
+    for half in range(1, 5):
+        capture.observe(_mirror(_deck("c", 1.0 + half / 2), _deck("in", 18.0 + half / 2), out_fader=half / 4))
+    return capture.observe(_mirror(_deck("c", 3.5), _deck("in", 20.5, playing=False), out_fader=1.0))
+
+
+@pytest.mark.requirement("PAIR-9950")
+def test_each_close_carries_a_monotonic_capture_id_on_its_mix_and_outcome() -> None:
+    capture = TransitionCapture()
+    _crossfade(capture)
+    first = _stop(capture)
+    assert first is not None and capture.last_outcome is not None
+    assert first.capture_id == capture.last_outcome.capture_id
+    second = _second_mix(capture)
+    assert second is not None and (second.out_track, second.in_track) == ("in", "c")
+    assert second.capture_id > first.capture_id
+    assert capture.last_outcome.capture_id == second.capture_id
+
+
+@pytest.mark.requirement("PAIR-9950")
+def test_an_older_mix_verdict_never_lands_on_a_newer_capture() -> None:
+    capture = TransitionCapture()
+    _crossfade(capture)
+    mix_a = _stop(capture)
+    mix_b = _second_mix(capture)
+    assert mix_a is not None and mix_b is not None
+    capture.note_result(mix_a.capture_id, "saved", "blend")
+    assert capture.status()["last"] == {"status": "closed", "reason": "outgoing_stopped", "out": "in", "in": "c"}
+    capture.note_result(mix_b.capture_id, "refused", "too short")
+    assert capture.status()["last"] == {"status": "refused", "reason": "too short", "out": "in", "in": "c"}
+
+
+@pytest.mark.requirement("PAIR-9950")
+def test_a_mirror_fault_after_a_close_is_never_overwritten_by_the_older_save(caplog: pytest.LogCaptureFixture) -> None:
+    capture = TransitionCapture()
+    _crossfade(capture)
+    mix = _stop(capture)
+    assert mix is not None
+    capture.note_fault("deck 2 fader in the live mirror is None, not a number")
+    with caplog.at_level("INFO", logger="apps.autodj.capture"):
+        capture.note_result(mix.capture_id, "saved", "blend")
+    last = capture.status()["last"]
+    assert (last["status"], last["reason"]) == ("failed", "deck 2 fader in the live mirror is None, not a number")
+    assert any("dropped the saved verdict" in record.getMessage() for record in caplog.records)
+
+
+@pytest.mark.requirement("PAIR-9950")
+def test_a_verdict_for_the_current_mix_still_lands() -> None:
+    capture = TransitionCapture()
+    _crossfade(capture)
+    mix = _stop(capture)
+    assert mix is not None
+    capture.note_result(mix.capture_id, "saved", "blend")
+    assert capture.status()["last"]["status"] == "saved"
+
+
+# ----- PAIR-9954: an incoming started before its grid's bar 1 ---------------------------------
+
+
+def _pre_grid_mix(in_start_s: float) -> ClosedMix:
+    """Deck 2 entered at ``in_start_s`` track seconds, lined up with outgoing bar 65's downbeat."""
+    out_start_s = FIRST_DOWNBEAT_S + 64 * BAR_S
+    return ClosedMix(
+        capture_id=1,
+        out_deck=1,
+        out_track="out",
+        out_start_s=out_start_s,
+        in_deck=2,
+        in_track="in",
+        in_start_s=in_start_s,
+        end_s=out_start_s + 16 * BAR_S,
+        lanes={(2, "fader"): (Sample(out_start_s, 0.0), Sample(out_start_s + 8 * BAR_S, 1.0))},
+        tempo_mode="sync_to_out",
+    )
+
+
+def _late_grid_profile(stable_id: str) -> TrackProfile:
+    """An incoming whose grid starts 4 bars in: a pickup or intro the grid does not cover."""
+    return replace(profile(stable_id), downbeats_s=tuple(4 * BAR_S + index * BAR_S for index in range(200)))
+
+
+@pytest.mark.requirement("PAIR-9954")
+def test_an_incoming_started_before_its_grid_is_refused_naming_the_projected_bar() -> None:
+    """[if] the projected incoming bar is below 1 [then] a typed refusal names it, never a silent bar 1."""
+    with pytest.raises(PreGridIncomingError, match=r"projected bar -1, before its grid's bar 1") as refused:
+        in_bars(_pre_grid_mix(in_start_s=2 * BAR_S), profile("out"), _late_grid_profile("in"))
+    assert isinstance(refused.value, SimplifyError)
+    assert refused.value.projected_bar == -1
+
+
+@pytest.mark.requirement("PAIR-9954")
+def test_an_incoming_on_or_after_bar_1_is_unchanged() -> None:
+    """[if] the projected incoming bar is 1 or more [then] it is kept as projected."""
+    mix = in_bars(_pre_grid_mix(in_start_s=4 * BAR_S), profile("out"), _late_grid_profile("in"))
+    assert (mix.out_start_bar, mix.in_start_bar) == (65, 1)
+
+
+@pytest.mark.requirement("PAIR-9954")
+def test_a_pre_grid_capture_reads_not_saved_and_writes_nothing(tmp_path: Path) -> None:
+    """[if] a closed mix's incoming started before its grid [then] the status is not_saved with that reason and no
+    played record is written."""
+    capture = TransitionCapture()
+    _crossfade(capture)
+    assert _stop(capture) is not None
+    db_path = tmp_path / "state.db"
+    profiles = {"out": profile("out"), "in": _late_grid_profile("in")}
+    finish_capture(_pre_grid_mix(in_start_s=2 * BAR_S), capture, db_path, profiles.__getitem__)
+    last = capture.status()["last"]
+    assert last["status"] == "not_saved"
+    assert "projected bar -1" in last["reason"]
+    assert not db_path.exists(), "a refused capture must not open the state database"

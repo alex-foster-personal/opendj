@@ -22,7 +22,8 @@
 		deckId,
 		pending,
 		onStoredLoop,
-		onDisengage
+		onDisengage,
+		onSetActive
 	}: {
 		deck: DeckState;
 		deckId: DeckId;
@@ -32,6 +33,9 @@
 		/** Drop the engaged loop (INT picked while a stored loop is in force);
 		 * true when the engine took it. */
 		onDisengage: () => Promise<boolean>;
+		/** CUES-9967: flag (or clear) this memory loop as the track's active
+		 * loop; true when the store took it. */
+		onSetActive: (loop: { in_ms: number; out_ms: number }, active: boolean) => Promise<boolean>;
 	} = $props();
 
 	let open = $state(false);
@@ -134,6 +138,7 @@
 				INT - beat loops from the grid
 			</button>
 			{#each loops as loop (loop.id)}
+				<div class="source-row" class:active-loop={loop.active}>
 				<button
 					type="button"
 					class="source-item"
@@ -147,6 +152,21 @@
 				>
 					{loop.label}
 				</button>
+				{#if loop.canBeActive}
+					<button
+						type="button"
+						class="active-toggle"
+						disabled={pending}
+						data-testid={`loop-source-active-${loop.id}-deck-${deckId}`}
+						title={loop.active
+							? 'Clear active: this loop stops engaging itself when the track loads'
+							: 'Set active: this loop arms on every load and engages when playback reaches it'}
+						onclick={() => void onSetActive({ in_ms: loop.in_ms, out_ms: loop.out_ms }, !loop.active)}
+					>
+						{loop.active ? 'Clear active' : 'Set active'}
+					</button>
+				{/if}
+				</div>
 			{:else}
 				<div class="source-empty" role="presentation">No stored loops on this track</div>
 			{/each}
@@ -199,6 +219,24 @@
 	}
 	.source-item:hover:not(:disabled) {
 		background: rgba(255, 255, 255, 0.06);
+	}
+	.source-row {
+		display: flex;
+		align-items: center;
+	}
+	.source-row.active-loop {
+		border-left: 2px solid var(--rb-accent);
+	}
+	.active-toggle {
+		flex: none;
+		background: transparent;
+		border: 1px solid var(--rb-border);
+		border-radius: 3px;
+		color: var(--rb-text-dim);
+		font-size: 10px;
+		padding: 2px 6px;
+		margin-right: 6px;
+		cursor: pointer;
 	}
 	.source-item.selected {
 		color: var(--rb-accent);

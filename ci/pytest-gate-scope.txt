@@ -1,0 +1,122 @@
+tests/ableton_link
+tests/agentic_testing
+tests/ai_gateway_admin
+tests/analysis
+tests/analysis_beatgrid
+tests/analysis_bench
+tests/analysis_contract
+tests/analysis_key
+tests/analysis_loudness
+tests/analysis_structure
+tests/analysis_waveform
+tests/autodj
+tests/b2b_booth
+tests/b2b_pairing
+tests/b2b_session
+tests/b2b_sync
+tests/b2b_transport
+tests/cloudsync
+tests/controller_probe
+tests/database
+tests/dedup
+tests/engine_core
+tests/entitlements
+tests/feature_flags
+tests/genre_infer
+tests/health_lights
+tests/lighting
+tests/loudness
+tests/lyrics
+tests/lyrics_alignment
+tests/lyrics_search
+tests/mik
+tests/open_dj
+tests/opendj_cli
+tests/ops
+tests/parity
+tests/perf
+tests/playlist_sets
+tests/plugins
+tests/quality
+tests/reconcile
+tests/rekordbox_analyse
+tests/rekordbox_ingestion
+tests/scripts
+tests/shared
+tests/skins
+tests/smartlists
+tests/standalone
+tests/streaming_transfer
+tests/sync
+(private path)
+tests/test_analysis_backlog.py
+tests/test_analysis_backlog_token.py
+tests/test_analysis_run_classification.py
+tests/test_analysis_source.py
+tests/test_apply_analysis.py
+tests/test_apply_cues.py
+tests/test_apply_ratings.py
+tests/test_ci_cmdk_pick_race_gate.py
+tests/test_ci_cmdk_preview_cue_gate.py
+tests/test_ci_cost_billing_ledger.py
+tests/test_ci_cost_guard.py
+tests/test_ci_cost_ledger.py
+tests/test_ci_cost_ledger_cache.py
+tests/test_ci_host_serialization.py
+tests/test_ci_path_resolve.py
+tests/test_conformance.py
+(private path)
+tests/test_equivalence_audio_probe.py
+tests/test_equivalence_cli.py
+(private path)
+tests/test_equivalence_detection.py
+tests/test_equivalence_known.py
+tests/test_equivalence_normalisers.py
+tests/test_equivalence_single_source.py
+tests/test_equivalence_sources.py
+(private path)
+(private path)
+tests/test_host_mutation_opt_in.py
+tests/test_live_detect_cache.py
+tests/test_move_copy_between_playlists.py
+tests/test_no_unguarded_posix_imports.py
+tests/test_pairing_capture_route.py
+tests/test_paths_data_dir_override.py
+(private path)
+tests/test_playlist_add.py
+tests/test_playlist_add_member_reads.py
+tests/test_playlist_forbid_duplicates.py
+tests/test_playlist_memberships_scale.py
+tests/test_playlist_move.py
+tests/test_playlist_openapi_routes.py
+tests/test_playlist_remove.py
+tests/test_playlist_write_persistence.py
+(private path)
+tests/test_progress_file_lock.py
+tests/test_rb_writer.py
+(private path)
+(private path)
+(private path)
+(private path)
+(private path)
+(private path)
+tests/test_root_playwright_gate.py
+tests/test_schema_time_travel.py
+(private path)
+(private path)
+tests/test_smartlists_delete.py
+tests/test_smartlists_duplicate.py
+tests/test_smartlists_include_counts.py
+tests/test_smartlists_rename.py
+tests/test_smartlists_soft_delete.py
+tests/test_sync_safety.py
+(private path)
+tests/test_title_fix_key_and_cli.py
+tests/test_title_fix_long_recording_boundary.py
+tests/test_title_fix_safe_tier.py
+tests/test_title_fix_store_recovery.py
+tests/test_title_fix_third_party_marks.py
+tests/test_uv_run_no_sync.py
+tests/test_waits_uvicorn_shutdown.py
+tests/transition_score
+tests/webui

@@ -37,6 +37,13 @@ class MaterializeOut(BaseModel):
     tracks: list[MaterializedTrack]
 
 
+def _queue_strips_fn(app: object):
+    drain = getattr(app.state, "ahead_analysis", None)
+    if drain is None:
+        return None
+    return drain.queue_strips
+
+
 def _staged_audio_files(dest_dir: Path) -> list[Path]:
     files: list[Path] = []
     for path in dest_dir.rglob("*"):
@@ -138,7 +145,11 @@ def materialize_batch(batch: str, request: Request) -> MaterializeOut:
                 # The user picked these files to add, so one they removed earlier
                 # comes back rather than failing the drop (LIBM-141).
                 folder_ingest.ingest_folder(
-                    writer, [dest_dir], dry_run=False, restore_removed=True
+                    writer,
+                    [dest_dir],
+                    dry_run=False,
+                    restore_removed=True,
+                    on_new_tracks=_queue_strips_fn(request.app),
                 )
                 # Commit only after EVERY staged path resolved (see _resolve_staged).
                 tracks = _resolve_staged(conn, dest_dir, staged, before_ids)

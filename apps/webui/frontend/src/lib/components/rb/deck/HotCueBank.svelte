@@ -316,7 +316,7 @@
 								{/if}
 							{/if}
 							{#if entry.cue !== null}
-								<span class="cue-label">{entry.cue.comment ?? `CUE ${entry.slot}`}</span>
+								<span class="cue-label" data-priority="3">{entry.cue.comment ?? `CUE ${entry.slot}`}</span>
 								<span
 									class="edit"
 									role="button"

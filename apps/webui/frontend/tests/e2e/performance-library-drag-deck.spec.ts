@@ -1,6 +1,9 @@
 /**
- * DECKUX-21 / LIBUX-21: Chromium drag-to-deck load and Space must not scroll
- * the library. Uses the performance fixture library (playwright.performance.config.ts).
+ * DECKUX-21 / LIBUX-21 / DECKUX-03: Chromium drag-to-deck load, abandoned-drag
+ * dragend cleanup, and Space must not scroll the library. The unit file
+ * track-drag-drop.test.mjs pins the window-level dragend listener; this file
+ * proves a trusted browser dragend after an abandoned gesture. Uses the
+ * performance fixture library (playwright.performance.config.ts).
  */
 import { expect, test, type APIRequestContext, type Page } from '@playwright/test';
 
@@ -144,6 +147,63 @@ async function expectSpaceDoesNotScroll(page: Page): Promise<void> {
 	]);
 }
 
+type PageErrorCollectors = {
+	pageErrors: string[];
+	lyricsAbsenceUrls: Set<string>;
+	recording: { value: boolean };
+};
+
+/** Shared console/page/response filters for drag specs on this page. */
+function attachPageErrorCollectors(page: Page, stableId: string): PageErrorCollectors {
+	const pageErrors: string[] = [];
+	const lyricsAbsenceUrls = new Set<string>();
+	const recording = { value: false };
+	page.on('pageerror', (err) => {
+		if (recording.value) pageErrors.push(err.message);
+	});
+	page.on('console', (msg) => {
+		if (!recording.value || msg.type() !== 'error') return;
+		const text = msg.text();
+		if (
+			text.startsWith('Failed to load resource:') &&
+			(isIgnorableOptionalRowProbe(msg.location().url, stableId) ||
+				lyricsAbsenceUrls.has(msg.location().url) ||
+				isDocumentedLyricsAbsence(msg.location().url, 404, stableId))
+		) {
+			return;
+		}
+		pageErrors.push(text);
+	});
+	page.on('response', (response) => {
+		if (!recording.value || response.status() < 400) return;
+		if (isIgnorableOptionalRowProbe(response.url(), stableId)) return;
+		if (isDocumentedLyricsAbsence(response.url(), response.status(), stableId)) {
+			lyricsAbsenceUrls.add(response.url());
+			return;
+		}
+		pageErrors.push(`http ${response.status()}: ${response.url()}`);
+	});
+	return { pageErrors, lyricsAbsenceUrls, recording };
+}
+
+/**
+ * Synthetic dragover on a deck section: returns whether acceptTrackDragOver ran
+ * (defaultPrevented). BY DESIGN this is a state probe, not the gesture under test.
+ */
+async function deckAcceptsDragOver(page: Page, deckId: number): Promise<boolean> {
+	return page.evaluate((deck) => {
+		const section = document.querySelector(`section.rb-deck[data-deck="${deck}"]`);
+		if (!(section instanceof HTMLElement)) throw new Error(`deck ${deck} missing`);
+		const event = new DragEvent('dragover', {
+			bubbles: true,
+			cancelable: true,
+			dataTransfer: new DataTransfer()
+		});
+		section.dispatchEvent(event);
+		return event.defaultPrevented;
+	}, deckId);
+}
+
 async function firstOnDiskStableId(request: APIRequestContext): Promise<string> {
 	const response = await request.get(`${API_BASE}/api/v1/tracks?limit=50&available=true`);
 	expect(response.ok(), 'track listing must succeed').toBeTruthy();
@@ -164,8 +224,9 @@ async function firstOnDiskStableId(request: APIRequestContext): Promise<string> 
  * pointer at drop. Capture-phase listeners record that the dragstart on the
  * row and the drop on the deck were browser-generated (`isTrusted`), which a
  * synthetic `dispatchEvent` can never be. The WebKit path (custom MIME hidden
- * during dragover, in-app drag state carries acceptance) is pinned by
- * tests/unit/track-drag-drop.test.mjs.
+ * during dragover, in-app drag state carries acceptance) and the window dragend
+ * listener are pinned by tests/unit/track-drag-drop.test.mjs; the abandoned-drag
+ * spec in this file exercises a trusted dragend when nothing accepts a drop.
  */
 async function dragRowToDeck(
 	page: Page,
@@ -225,34 +286,7 @@ test('performance: drag library row onto deck loads track and Space toggles play
 }) => {
 	test.setTimeout(120_000);
 	const stableId = await firstOnDiskStableId(request);
-	const pageErrors: string[] = [];
-	const lyricsAbsenceUrls = new Set<string>();
-	let recording = false;
-	page.on('pageerror', (err) => {
-		if (recording) pageErrors.push(err.message);
-	});
-	page.on('console', (msg) => {
-		if (!recording || msg.type() !== 'error') return;
-		const text = msg.text();
-		if (
-			text.startsWith('Failed to load resource:') &&
-			(isIgnorableOptionalRowProbe(msg.location().url, stableId) ||
-				lyricsAbsenceUrls.has(msg.location().url) ||
-				isDocumentedLyricsAbsence(msg.location().url, 404, stableId))
-		) {
-			return;
-		}
-		pageErrors.push(text);
-	});
-	page.on('response', (response) => {
-		if (!recording || response.status() < 400) return;
-		if (isIgnorableOptionalRowProbe(response.url(), stableId)) return;
-		if (isDocumentedLyricsAbsence(response.url(), response.status(), stableId)) {
-			lyricsAbsenceUrls.add(response.url());
-			return;
-		}
-		pageErrors.push(`http ${response.status()}: ${response.url()}`);
-	});
+	const collectors = attachPageErrorCollectors(page, stableId);
 	await page.goto('/performance');
 	await page.waitForFunction(() => window.musicDjToolsPerformance?.version === 1, undefined, {
 		timeout: 60_000
@@ -264,7 +298,7 @@ test('performance: drag library row onto deck loads track and Space toggles play
 	// Record from the gesture on: boot-time probes of routes this backend
 	// does not serve (entitlements, update check, rescue snapshots, USB) are
 	// page-load behavior, not something the drag or Space surfaced.
-	recording = true;
+	collectors.recording.value = true;
 	await row.click();
 
 	const gesture = await dragRowToDeck(page, stableId, 1);
@@ -285,7 +319,147 @@ test('performance: drag library row onto deck loads track and Space toggles play
 		undefined,
 		{ timeout: 30_000 }
 	);
-	expect(pageErrors, 'drag and Space must not surface page or console errors').toEqual([]);
+	expect(collectors.pageErrors, 'drag and Space must not surface page or console errors').toEqual(
+		[]
+	);
+});
+
+test('performance: an abandoned library drag clears the drag state on a real dragend (DECKUX-03)', async ({
+	page,
+	request
+}) => {
+	test.setTimeout(120_000);
+	const stableId = await firstOnDiskStableId(request);
+	const collectors = attachPageErrorCollectors(page, stableId);
+	await page.goto('/performance');
+	await page.waitForFunction(() => window.musicDjToolsPerformance?.version === 1, undefined, {
+		timeout: 60_000
+	});
+
+	const row = page.locator(`${TRACK_ROW}[data-stable-id="${stableId}"]`);
+	await row.scrollIntoViewIfNeeded();
+	await expect(row).toBeVisible({ timeout: 60_000 });
+
+	const before = await page.evaluate(
+		() => window.musicDjToolsPerformance!.query().decks[1].stable_id
+	);
+	const deck1 = page.locator('section.rb-deck[data-deck="1"]');
+	await expect(deck1).toBeVisible();
+
+	await page.evaluate((sid) => {
+		const probe = {
+			trustedDragStart: false,
+			trustedDropCount: 0,
+			trustedDragEnd: false,
+			dropEffect: ''
+		};
+		(window as unknown as { __abandonProbe: typeof probe }).__abandonProbe = probe;
+		document.addEventListener(
+			'dragstart',
+			(event) => {
+				const hit = (event.target as Element | null)?.closest?.('[data-testid="track-row"]');
+				if (hit?.getAttribute('data-stable-id') === sid && event.isTrusted)
+					probe.trustedDragStart = true;
+			},
+			{ capture: true }
+		);
+		document.addEventListener(
+			'drop',
+			(event) => {
+				if (event.isTrusted) probe.trustedDropCount += 1;
+			},
+			{ capture: true }
+		);
+		document.addEventListener(
+			'dragend',
+			(event) => {
+				if (event.isTrusted) {
+					probe.trustedDragEnd = true;
+					probe.dropEffect = event.dataTransfer?.dropEffect ?? '';
+				}
+			},
+			{ capture: true }
+		);
+	}, stableId);
+
+	collectors.recording.value = true;
+
+	const source = row.locator('.c-artist');
+	await expect(source).toBeVisible();
+	const sourceBox = await source.boundingBox();
+	expect(sourceBox).toBeTruthy();
+	const startX = sourceBox!.x + sourceBox!.width / 2;
+	const startY = sourceBox!.y + sourceBox!.height / 2;
+
+	const deckBox = await deck1.boundingBox();
+	expect(deckBox).toBeTruthy();
+	const deckX = deckBox!.x + deckBox!.width / 2;
+	const deckY = deckBox!.y + deckBox!.height / 2;
+
+	await page.mouse.move(startX, startY);
+	await page.mouse.down();
+	await page.mouse.move(startX + 8, startY + 4, { steps: 5 });
+	await page.mouse.move(deckX, deckY, { steps: 10 });
+	await expect(deck1).toHaveClass(/drop-hover/);
+	expect(await deckAcceptsDragOver(page, 1)).toBe(true);
+
+	// Release over the library table (collection view is not reorderable).
+	const releasePoint = await page.evaluate(() => {
+		const wrap = document.querySelector('.table-wrap');
+		if (!(wrap instanceof HTMLElement)) throw new Error('.table-wrap missing');
+		const box = wrap.getBoundingClientRect();
+		const x = box.left + Math.min(box.width, wrap.clientWidth) * 0.35;
+		const y = box.top + Math.min(box.height, wrap.clientHeight) * 0.55;
+		const hit = document.elementFromPoint(x, y);
+		const onDeck = hit?.closest?.('section.rb-deck') !== null;
+		const inWrap = hit !== null && wrap.contains(hit);
+		return { x, y, inWrap, onDeck };
+	});
+	expect(releasePoint.inWrap, 'release point must be inside .table-wrap').toBe(true);
+	expect(releasePoint.onDeck, 'release point must not be on a deck').toBe(false);
+
+	await page.mouse.move(releasePoint.x, releasePoint.y, { steps: 8 });
+	await page.mouse.up();
+
+	await expect
+		.poll(async () =>
+			page.evaluate(
+				() =>
+					(window as unknown as { __abandonProbe?: { trustedDragEnd: boolean } }).__abandonProbe
+						?.trustedDragEnd
+			)
+		)
+		.toBe(true);
+
+	const probe = await page.evaluate(
+		() =>
+			(
+				window as unknown as {
+					__abandonProbe: {
+						trustedDragStart: boolean;
+						trustedDropCount: number;
+						trustedDragEnd: boolean;
+						dropEffect: string;
+					};
+				}
+			).__abandonProbe
+	);
+	expect(probe.trustedDragStart, 'a real pointer drag must start on the library row').toBe(true);
+	expect(probe.trustedDropCount, 'abandoned: nothing may receive a drop').toBe(0);
+	expect(probe.trustedDragEnd, 'the browser must fire a trusted dragend').toBe(true);
+
+	expect(await deckAcceptsDragOver(page, 1)).toBe(false);
+	expect(await deckAcceptsDragOver(page, 2)).toBe(false);
+	await expect(deck1).not.toHaveClass(/drop-hover/);
+
+	const after = await page.evaluate(
+		() => window.musicDjToolsPerformance!.query().decks[1].stable_id
+	);
+	expect(after).toBe(before);
+
+	expect(collectors.pageErrors, 'abandoned drag must not surface page or console errors').toEqual(
+		[]
+	);
 });
 
 function assertAllDecksUnloadedAndStopped(

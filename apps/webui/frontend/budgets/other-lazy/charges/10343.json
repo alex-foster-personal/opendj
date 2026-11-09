@@ -1,0 +1,9 @@
+{
+  "bytes": 1024,
+  "measured_main": 479012,
+  "measured_with_pr": 479189,
+  "sha": "37d7d4191f",
+  "date": "Mon 9 Nov 2026",
+  "reason": "PR #10343 scores a pair by Camelot rule, directionally (TRANSAI-10343): the rule table also reaches a lazy chunk. Measured: CI bundle check of 37d7d4191f, +177 B gzip on other-lazy; ceiled to KiB",
+  "payback": "none planned; the growth is the feature's own code"
+}

@@ -12,6 +12,13 @@
  */
 
 import {
+	beatJumpSizesFromPrefs,
+	beatJumpSizesToPrefs,
+	onBeatJumpSizeChange,
+	restoreBeatJumpSizes,
+	type BeatJumpSizesByDeck
+} from './beat-jump-size.svelte';
+import {
 	DRAG_DEFAULTS,
 	applyDragSensitivity,
 	validateDragSensitivity,
@@ -108,6 +115,11 @@ import {
 	type CompatibleFilterPrefs
 } from './compatible-filter-prefs';
 import {
+	RELATED_CRITERIA_DEFAULTS,
+	validateRelatedCriteriaPrefs,
+	type RelatedCriteriaPrefs
+} from './related-criteria-prefs';
+import {
 	canonicalizeLibraryKeyFilter,
 	validateLibraryKeyFilterField
 } from './library-key-filter';
@@ -139,6 +151,11 @@ import {
 	mergeDevUiPrefsFromParsed,
 	type DevUiPrefs
 } from './dev-ui-prefs';
+import {
+	makeVariantPrefAccessors,
+	onVariantChange,
+	type VariantPrefs
+} from './variant-prefs';
 import {
 	DECK_DEFAULT_PREF_DEFAULTS,
 	announceDeckDefaults,
@@ -174,7 +191,8 @@ import {
 	parseCmdkCommandPicks,
 	parseLastPlaylist,
 	parseLevelCalibration,
-	parseSpotifyLibrary
+	parseSpotifyLibrary,
+	parseVariants
 } from './prefs-fields';
 import type { AutoSyncPrefs, LastPlaylistPref, LevelCalibrationPrefs, SpotifyLibraryPref } from './prefs-types';
 import { makeSpotifyLibrarySetters } from './spotify-library-prefs';
@@ -193,6 +211,14 @@ import {
 	type UiSkin,
 	type WaveSplitMaster
 } from './ui-skin';
+import {
+	LAYOUT_OVERRIDE_DEFAULT,
+	parseLayoutOverride,
+	parseLayoutPreset,
+	parseLayoutSurface,
+	type LayoutOverride,
+	type LayoutSurface
+} from './skin-layout';
 import { tryOfferGigHelperPromptOnPostureChange } from './gig-helper-prompt.svelte';
 import { announceBeatSyncMaxChange } from './beat-sync-max-enable';
 // Re-exported so performance-ipc (at the frontend.max_fan_out ceiling) reaches
@@ -243,6 +269,7 @@ export interface RbUiPrefs
 		AppModePrefs,
 		LyricsPrefs,
 		DevUiPrefs,
+		VariantPrefs,
 		TopbarViewPrefsState,
 		DeckDefaultPrefs,
 		SectionOverlayPrefsState,
@@ -252,6 +279,8 @@ export interface RbUiPrefs
 		WaveZoomPrefsState {
 	/** Width, in CSS pixels, of the resizable playlist tree (220 through 520). */
 	playlist_tree_width: number;
+	/** Per-deck beat jump size in beats (DECKUX-10470), restored on boot. */
+	beat_jump_sizes: BeatJumpSizesByDeck;
 	/** FR-1: hide missing-file tracks and playlists with available_count == 0. Default OFF. */
 	hide_broken_links: boolean;
 	/** Track-table row height: compact = current tight rows; cosy = taller. */
@@ -361,6 +390,8 @@ export interface RbUiPrefs
 	deck_hover_link: boolean;
 	/** Compatible-filter range knobs (LIBUX-32). */
 	compatible_filter: CompatibleFilterPrefs;
+	/** Related Tracks criteria (LIBUX-10046). */
+	library_related_criteria: RelatedCriteriaPrefs;
 	/** LIBM-129 v2: configured watcher folders (no daemon yet). */
 	library_watcher_folders: string[];
 	/** DECKUX-20: tri-band, mono envelope, line outline or blocks, or 'auto'
@@ -376,6 +407,8 @@ export interface RbUiPrefs
 	wave_palette: WavePalettePref;
 	/** Chrome skin layered over the theme, applied as html[data-skin]. */
 	ui_skin: UiSkin;
+	/** Issue #10199: each surface's layout preset, or 'auto' to follow SKIN_LAYOUT. */
+	layout_override: LayoutOverride;
 	/** Split main waveform (master on top); 'auto' follows the skin. */
 	wave_split_master: WaveSplitMaster;
 	/** One-time defaults migrations already applied to this blob (PREFS_DEFAULTS_MIGRATION). */
@@ -446,6 +479,7 @@ const _PRE_GOTHIC_WAVE_PALETTE: WavePalettePref = 'rekordbox';
 
 const DEFAULTS: RbUiPrefs = {
 	playlist_tree_width: PLAYLIST_TREE_WIDTH_DEFAULT,
+	beat_jump_sizes: beatJumpSizesToPrefs(),
 	hide_broken_links: false,
 	library_density: 'compact',
 	sort_within_sections: false,
@@ -459,7 +493,7 @@ const DEFAULTS: RbUiPrefs = {
 	preview_beat_sync: 'phase',
 	next_panel_collapsed: false,
 	recommended_panel_collapsed: false,
-	auto_play_enabled: true,
+	auto_play_enabled: false,
 	auto_play_enforce_order: false,
 	auto_play_maximize_reach: true,
 	auto_play_early_planning: true,
@@ -479,12 +513,14 @@ const DEFAULTS: RbUiPrefs = {
 	mixer_stems: false,
 	deck_hover_link: true,
 	compatible_filter: { ...COMPATIBLE_FILTER_DEFAULTS },
+	library_related_criteria: { ...RELATED_CRITERIA_DEFAULTS },
 	library_key_filter: [],
 	library_watcher_folders: [],
 	waveform_design: WAVEFORM_DESIGN_PREF_DEFAULT,
 	wave_eq_reflect: true,
 	wave_palette: WAVE_PALETTE_PREF_DEFAULT,
 	ui_skin: UI_SKIN_DEFAULT,
+	layout_override: { performance: 'auto', library: 'auto' },
 	wave_split_master: WAVE_SPLIT_MASTER_DEFAULT,
 	defaults_migration: PREFS_DEFAULTS_MIGRATION,
 	radial_off_pending: false,
@@ -514,6 +550,7 @@ const DEFAULTS: RbUiPrefs = {
 	...GIG_HELPER_PREF_DEFAULTS,
 	...APP_MODE_PREF_DEFAULTS,
 	...DEV_UI_PREF_DEFAULTS,
+	variants: {},
 	...DECK_DEFAULT_PREF_DEFAULTS
 };
 
@@ -626,6 +663,7 @@ type SkinMixerDeckPrefsParsed = {
 	playlistTreeView: ReturnType<typeof validatePlaylistTreeViewField>;
 	lastPlaylist: ReturnType<typeof parseLastPlaylist>;
 	autoSync: ReturnType<typeof parseAutoSync>;
+	layoutOverride: LayoutOverride;
 };
 
 function _validateLibraryPrefs(parsed: Partial<RbUiPrefs>): LibraryPrefsValidated {
@@ -881,6 +919,21 @@ function _parseSkinMixerAndDeckPrefs(parsed: Partial<RbUiPrefs>): SkinMixerDeckP
 	_radialBootWrite = radialOff.radial_off_pending;
 	skinLook.defaults_migration = radialOff.defaults_migration;
 	const waveSplitMaster = parseWaveSplitMaster(parsed.wave_split_master);
+	let layoutOverride: LayoutOverride = {
+		performance: LAYOUT_OVERRIDE_DEFAULT.performance,
+		library: LAYOUT_OVERRIDE_DEFAULT.library
+	};
+	if (parsed.layout_override !== undefined) {
+		try {
+			layoutOverride = parseLayoutOverride(parsed.layout_override);
+		} catch (err) {
+			const msg = err instanceof Error ? err.message : String(err);
+			throw new Error(
+				`${STORAGE_KEY}: malformed prefs blob (layout_override: ${msg}) - ` +
+					'clear the localStorage key to recover'
+			);
+		}
+	}
 	const crossfadeCurve = parsed.crossfade_curve;
 	if (
 		crossfadeCurve !== undefined &&
@@ -933,7 +986,8 @@ function _parseSkinMixerAndDeckPrefs(parsed: Partial<RbUiPrefs>): SkinMixerDeckP
 		deckLeftMirror,
 		playlistTreeView,
 		lastPlaylist,
-		autoSync
+		autoSync,
+		layoutOverride
 	};
 }
 
@@ -976,7 +1030,8 @@ function _assembleLoadedPrefs(
 		playlistTreeView,
 		lastPlaylist,
 		autoSync,
-		radialOff
+		radialOff,
+		layoutOverride
 	} = skinMixerDeck;
 	return {
 		playlist_tree_width: library.playlist_tree_width ?? DEFAULTS.playlist_tree_width,
@@ -1019,6 +1074,7 @@ function _assembleLoadedPrefs(
 		mixer_stems: parsed.mixer_stems ?? DEFAULTS.mixer_stems,
 		deck_hover_link: parsed.deck_hover_link ?? DEFAULTS.deck_hover_link,
 		...skinLook,
+		layout_override: { ...layoutOverride },
 		wave_eq_reflect: parsed.wave_eq_reflect ?? DEFAULTS.wave_eq_reflect,
 		wave_split_master: waveSplitMaster ?? DEFAULTS.wave_split_master,
 		confirm: { ...confirm },
@@ -1064,12 +1120,22 @@ function _assembleLoadedPrefs(
 			...COMPATIBLE_FILTER_DEFAULTS,
 			...validateCompatibleFilterPrefs(parsed.compatible_filter, STORAGE_KEY)
 		},
+		library_related_criteria: {
+			...RELATED_CRITERIA_DEFAULTS,
+			...validateRelatedCriteriaPrefs(parsed.library_related_criteria, STORAGE_KEY)
+		},
 		library_key_filter: validateLibraryKeyFilterField(parsed.library_key_filter, STORAGE_KEY),
 		library_watcher_folders: Array.isArray(parsed.library_watcher_folders)
 			? parsed.library_watcher_folders.filter((p): p is string => typeof p === 'string')
 			: DEFAULTS.library_watcher_folders,
 		...mergeDevUiPrefsFromParsed(parsed, STORAGE_KEY),
-		...mergeDeckDefaultPrefsFromParsed(parsed, STORAGE_KEY)
+		variants: parseVariants(parsed.variants, STORAGE_KEY),
+		...mergeDeckDefaultPrefsFromParsed(parsed, STORAGE_KEY),
+		// A malformed stored value throws (fail fast), like the merges above.
+		beat_jump_sizes:
+			parsed.beat_jump_sizes === undefined
+				? DEFAULTS.beat_jump_sizes
+				: beatJumpSizesFromPrefs(parsed.beat_jump_sizes)
 	};
 }
 
@@ -1543,10 +1609,22 @@ export const { setGigHelper } = bindGigHelperPrefSetters(uiPrefs, _persist, (p) 
 export const { setAppMode } = bindAppModePrefSetters(uiPrefs, _persist, (p) => void _syncDiskPrefs(p));
 /** "Show developer pages" - local-only, see dev-ui-prefs.ts. */
 export const { setShowDevUi } = makeDevUiPrefSetters(uiPrefs, _persist);
+/** Taste variant picks - local-only, see variant-prefs.ts. setVariant reassigns variants so each
+ * instance gets a fresh object. */
+export const { readVariant, setVariant } = makeVariantPrefAccessors(uiPrefs, _persist);
+export { onVariantChange };
 /** "Quantize on new decks" (SETSTUB-02) - see deck-default-prefs.ts. */
-export const { setDeckDefaultQuantize } = makeDeckDefaultPrefSetters(uiPrefs, _persist, (p) => void _syncDiskPrefs(p));
+export const { setDeckDefaultQuantize, setDeckNeedleLock } = makeDeckDefaultPrefSetters(uiPrefs, _persist, (p) => void _syncDiskPrefs(p));
 // Seed the deck store from the stored value without it importing this module.
 announceDeckDefaults(uiPrefs);
+// DECKUX-10470: restore the per-deck beat jump size, then persist every change
+// the `beat_jump_size` command makes, without the leaf module importing this one.
+restoreBeatJumpSizes(uiPrefs.beat_jump_sizes);
+onBeatJumpSizeChange(() => {
+	uiPrefs.beat_jump_sizes = beatJumpSizesToPrefs();
+	_persist();
+	void _syncDiskPrefs({ beat_jump_sizes: { ...uiPrefs.beat_jump_sizes } });
+});
 
 export function setAutoSyncDestination(dest: AutoSyncDestination, next: boolean): void {
 	uiPrefs.auto_sync[dest] = next;
@@ -1588,6 +1666,12 @@ const _libraryKeyFilterUnsaved = { rev: 0 };
 let _libraryKeyFilterWriteRev = 0;
 export const patchCompatibleFilter = (patch: Partial<CompatibleFilterPrefs>): Promise<void> =>
 	_verified().then((v) => v.patchCompatibleFilter(patch));
+/** LIBUX-10046: Related Tracks criteria, committed after the PUT lands. */
+export const patchRelatedCriteria = (patch: Partial<RelatedCriteriaPrefs>): Promise<void> =>
+	_verified().then((v) => v.patchRelatedCriteria(patch));
+/** LIBUX-10046: Reset restores the #9753 defaults. */
+export const resetRelatedCriteria = (): Promise<void> =>
+	patchRelatedCriteria({ ...RELATED_CRITERIA_DEFAULTS });
 /** LIBM-129 v1 placeholder: paths must already pass syntax + existence checks. */
 export const setLibraryWatcherFolders = (paths: readonly string[]): Promise<void> =>
 	_verified().then((v) => v.setLibraryWatcherFolders(paths));
@@ -1706,6 +1790,15 @@ export function setUiSkin(next: UiSkin): void {
 	applyUiSkinDom(next);
 	// An 'auto' palette follows the skin, so the CSS-var painters repaint too.
 	_applyWavePaletteDom(effectiveWavePalette(uiPrefs.wave_palette, next));
+	_persist();
+}
+
+/** Issue #10199: one surface's preset; 'auto' follows the skin. Same write path as
+ * Settings > Performance/Library layout and the set_layout_preset command. */
+export function setLayoutOverride(surface: LayoutSurface, preset: unknown): void {
+	const s = parseLayoutSurface(surface);
+	const p = parseLayoutPreset(s, preset);
+	uiPrefs.layout_override = { ...uiPrefs.layout_override, [s]: p };
 	_persist();
 }
 

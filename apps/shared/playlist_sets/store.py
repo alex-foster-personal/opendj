@@ -14,11 +14,11 @@ from __future__ import annotations
 import sqlite3
 from collections.abc import Sequence
 from dataclasses import dataclass, field
-from datetime import UTC, datetime
 from typing import Literal
 
 from apps.shared.play_orders import DEFAULT_ORDER_NAME, load_play_order
 
+from ._time import _now_iso
 from .components import (
     find_set_for_route,
     load_component,
@@ -68,10 +68,6 @@ class PlaylistSet:
     """Component ids of this set's route (SET-6586); empty for a v1 snapshot set."""
     created_at: str = ""
     updated_at: str = ""
-
-
-def _now_iso() -> str:
-    return datetime.now(UTC).isoformat()
 
 
 def _normalize_name(name: str) -> str:

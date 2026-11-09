@@ -28,6 +28,25 @@ export function clickTarget(
 	return parseHref(linkAt(state, pos)?.href ?? '');
 }
 
+/** What the right-click menu acts on at `pos` (SETNOTE-10457): a `track_ref` chip right
+ * after `pos`, else the text link there (with its range, so Remove link can unlink it),
+ * else a chip right before `pos`. A chip and a text link to the same track give the same
+ * `NoteTarget`, so the menu offers the same Open / load action for both. */
+export function menuTargetAt(
+	state: Pick<EditorState, 'doc'>,
+	pos: number
+): { target: NoteTarget; link: ReturnType<typeof linkAt> } | null {
+	const $pos = state.doc.resolve(pos);
+	const isChip = (node: PMNode | null | undefined): node is PMNode =>
+		node?.type === noteSchema.nodes.track_ref;
+	if (isChip($pos.nodeAfter)) return { target: refTarget($pos.nodeAfter), link: null };
+	const link = linkAt(state, pos);
+	const linked = link === null ? null : parseHref(link.href);
+	if (link !== null && linked !== null) return { target: linked, link };
+	if (isChip($pos.nodeBefore)) return { target: refTarget($pos.nodeBefore), link: null };
+	return null;
+}
+
 /** The link a rendered element belongs to, read from the attributes the schema writes. */
 export function targetOfElement(el: Element | null): NoteTarget | null {
 	const hit = el?.closest('[data-href], [data-stable-id]');

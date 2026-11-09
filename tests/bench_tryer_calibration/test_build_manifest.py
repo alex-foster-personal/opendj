@@ -19,7 +19,7 @@ import pytest
 import soundfile
 
 import scripts.bench.tryer_calibration.build_manifest as builder
-from apps.transition_score import Candidate, Measured, TryResult, Veto
+from apps.transition_score.contract import Candidate, Measured, TryResult, Veto
 from scripts.bench.tryer_calibration.build_manifest import (
     SESSIONS_ROOT,
     AnchorError,
@@ -42,15 +42,17 @@ def _candidate(
 ) -> Candidate:
     return Candidate(
         id=cid,
-        plan={"out": {"deck": 1, "window": {"start_bar": out_bar}}, "in": {"deck": 2, "window": {"start_bar": in_bar}}},
+        plan_json=json.dumps(
+            {"out": {"deck": 1, "window": {"start_bar": out_bar}}, "in": {"deck": 2, "window": {"start_bar": in_bar}}}
+        ),
         plan_sha256=cid.encode().hex().ljust(64, "0")[:64],  # a distinct sha that sorts as the id does
         style=style,
         bars=16,
-        metrics={},
-        factors={"alignment": 0.9, "energy_step": 0.3},
+        metrics_json=json.dumps({}),
+        factors_json=json.dumps({"alignment": 0.9, "energy_step": 0.3}),
         vetoes=(Veto("clipping", 0.5, -1.0),) if veto else (),
         measured=Measured(5, 7),
-        unknown={},
+        unknown_json=json.dumps({}),
         score=score,
         scorer_version="0.1.0",
         render_path=f"/renders/{cid}.wav",

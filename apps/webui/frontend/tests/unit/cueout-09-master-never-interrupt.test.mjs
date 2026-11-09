@@ -50,6 +50,9 @@ test('cue unplug does not re-set a still-present MASTER and keeps the room maste
 		applyCue: false,
 		clearCue: true,
 		restoreCue: false,
+		applyBooth: false,
+		clearBooth: false,
+		restoreBooth: false,
 		keepTwoOutputs: true
 	});
 	assert.deepEqual(headphones.practiceMainGains('two_outputs', null, 0), {
@@ -89,6 +92,9 @@ test('cue power-back-on restores CUE and never re-sets MASTER', () => {
 		applyCue: true,
 		clearCue: false,
 		restoreCue: true,
+		applyBooth: false,
+		clearBooth: false,
+		restoreBooth: false,
 		keepTwoOutputs: true
 	});
 });
@@ -100,7 +106,7 @@ test('OS default becoming headphones does not move a pinned MASTER', () => {
 			selectedCueId: 'hp',
 			selectedMasterId: 'speakers'
 		}),
-		{ masterId: 'speakers', cueId: 'hp', autoPinnedMaster: false }
+		{ masterId: 'speakers', cueId: 'hp', boothId: null, autoPinnedMaster: false }
 	);
 	const plan = headphones.pinnedSinkReapplyPlan({
 		previousMasterId: 'speakers',

@@ -25,7 +25,8 @@
 		canLink: boolean;
 		onLink: (hit: TrackHit) => void;
 		onBold: () => void;
-		linkActions: { open: () => void; remove: () => void } | null;
+		/** SETNOTE-10457: `remove` is null on a chip (it is not a text link); `problem` makes Open inert with its reason. */
+		linkActions: { open: () => void; remove: (() => void) | null; problem: string | null } | null;
 		onClose: () => void;
 	} = $props();
 
@@ -99,14 +100,18 @@
 			type="button"
 			role="menuitem"
 			data-testid="set-notes-link-open"
+			disabled={linkActions.problem !== null}
+			title={linkActions.problem ?? undefined}
 			onclick={linkActions.open}>Open / load link</button
 		>
-		<button
-			type="button"
-			role="menuitem"
-			data-testid="set-notes-link-remove"
-			onclick={linkActions.remove}>Remove link</button
-		>
+		{#if linkActions.remove}
+			<button
+				type="button"
+				role="menuitem"
+				data-testid="set-notes-link-remove"
+				onclick={linkActions.remove}>Remove link</button
+			>
+		{/if}
 	{/if}
 </div>
 

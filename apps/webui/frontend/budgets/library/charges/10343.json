@@ -1,0 +1,9 @@
+{
+  "bytes": 1024,
+  "measured_main": 330818,
+  "measured_with_pr": 331024,
+  "sha": "05fccc03bd",
+  "date": "Mon 9 Nov 2026",
+  "reason": "PR #10343 scores a pair by Camelot rule, directionally (TRANSAI-10343): the generated rule table reaches the library chunk. Measured: CI bundle check of 05fccc03bd, +206 B gzip on library; ceiled to KiB",
+  "payback": "none planned; the growth is the feature's own code"
+}

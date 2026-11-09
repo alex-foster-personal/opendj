@@ -16,6 +16,8 @@
 //   if a map the daemon dropped still resolves after a reload then broken
 //   if provenance reaches the runtime DeviceMap then broken (dispatch data only)
 //   if a non-ok response resolves instead of throwing then broken
+//   if deviceMapFromDoc drops relativeCentered/relativeUnit/ccButton then broken
+//   if [0xB6,cc,0x7F] on an installed ccButton binding is not a button press then broken
 
 import assert from 'node:assert/strict';
 import { after, before, beforeEach, test } from 'node:test';
@@ -287,4 +289,93 @@ test('a backend error propagates instead of resolving to an empty registry', asy
 		return response;
 	};
 	await assert.rejects(() => installed.loadInstalledDeviceMaps(), /no installed map with id 'test-device'/);
+});
+
+const PROV = { tier: 'learned', cite: 'learn wizard, port TestDevice', verified: true };
+
+test('deviceMapFromDoc passes relativeCentered, relativeUnit and ccButton through to the runtime binding', () => {
+	const map = installed.deviceMapFromDoc({
+		...DOC,
+		bindings: [
+			{
+				source: { ch: 1, kind: 'cc', id: 33 },
+				relative: true,
+				relativeCentered: true,
+				relativeUnit: true,
+				action: { type: 'deck_jog', deck: 1 },
+				provenance: PROV
+			},
+			{
+				source: { ch: 1, kind: 'cc', id: 34 },
+				ccButton: true,
+				action: { type: 'channel_cue', deck: 1 },
+				provenance: PROV
+			}
+		]
+	});
+	const [jog, cue] = map.bindings;
+	assert.equal(jog.relativeCentered, true);
+	assert.equal(jog.relativeUnit, true);
+	assert.equal(cue.ccButton, true);
+	assert.equal('provenance' in jog || 'provenance' in cue, false);
+});
+
+test('an installed ccButton binding dispatches [0xB6, cc, 0x7F] as a button press', async () => {
+	const input = {
+		id: 'cc-btn-in',
+		name: 'TestDevice 1',
+		manufacturer: 'InstalledCo',
+		state: 'connected',
+		onmidimessage: null
+	};
+	const fakeAccess = { inputs: new Map([[input.id, input]]), outputs: new Map(), onstatechange: null };
+	const hadNavigator = Object.getOwnPropertyDescriptor(globalThis, 'navigator');
+	const saved = globalThis.navigator?.requestMIDIAccess;
+	const request = async () => fakeAccess;
+	try {
+		globalThis.navigator.requestMIDIAccess = request;
+	} catch {
+		Object.defineProperty(globalThis, 'navigator', {
+			value: { requestMIDIAccess: request },
+			configurable: true
+		});
+	}
+	try {
+		await _install({
+			...DOC,
+			bindings: [
+				{
+					source: { ch: 7, kind: 'cc', id: 22 },
+					ccButton: true,
+					action: { type: 'channel_cue', deck: 1 },
+					provenance: PROV
+				}
+			]
+		});
+		await installed.loadInstalledDeviceMaps();
+		const seen = [];
+		webmidi.registerActionHandler((action, value) => seen.push({ action, value }));
+		await webmidi.initMidi();
+		assert.notEqual(input.onmidimessage, null, 'dispatcher did not attach to the fake input');
+		input.onmidimessage({ data: Uint8Array.of(0xb6, 22, 0x7f) });
+		input.onmidimessage({ data: Uint8Array.of(0xb6, 22, 0x00) });
+		assert.equal(seen.length, 2);
+		assert.deepEqual(
+			seen.map((s) => [s.action.type, s.action.deck, s.value.kind, s.value.pressed]),
+			[
+				['channel_cue', 1, 'button', true],
+				['channel_cue', 1, 'button', false]
+			]
+		);
+	} finally {
+		webmidi._resetMidiForTests();
+		if (hadNavigator) Object.defineProperty(globalThis, 'navigator', hadNavigator);
+		if (globalThis.navigator) {
+			try {
+				globalThis.navigator.requestMIDIAccess = saved;
+			} catch {
+				/* navigator was redefined above and restored from its descriptor */
+			}
+		}
+	}
 });

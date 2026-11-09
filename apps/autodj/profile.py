@@ -11,11 +11,12 @@ the same rule the page uses to resolve a ``bars`` Duration
 (``agent-duration.ts`` ``_downbeats``), so a bar number here and a bar number
 on the page name the same moment.
 
-Per-bar energy and bass come from the waveform DETAIL bands, normalized to the
-track's own loudest bar. They are relative (0..1 within the track), not LUFS:
-the canon doc's "LUFS is not persisted" gap still stands, and nothing here
-pretends otherwise. A mono waveform yields energy but no bass; an absent one
-yields neither, and the fields say ``None`` rather than guessing.
+Per-bar energy, bass, mid and high come from the waveform DETAIL bands, each
+normalized to the track's own loudest bar of that series. They are relative
+(0..1 within the track), not LUFS: the canon doc's "LUFS is not persisted" gap
+still stands, and nothing here pretends otherwise. A mono waveform yields energy
+but no bass, mid or high; an absent one yields none of them, and the fields
+say ``None`` rather than guessing.
 """
 
 from __future__ import annotations
@@ -109,18 +110,27 @@ def _normalized(values: list[float]) -> tuple[float, ...]:
 
 def _band_series(
     detail: Mapping[str, Any], duration_s: float, downbeats: tuple[float, ...], bar_s: float
-) -> tuple[tuple[float, ...] | None, tuple[float, ...] | None]:
-    """Per-bar (energy, bass), each normalized to the track's loudest bar."""
+) -> tuple[tuple[float, ...] | None, tuple[float, ...] | None, tuple[float, ...] | None, tuple[float, ...] | None]:
+    """Per-bar (energy, bass, mid, high), each normalized to the track's loudest bar of that series.
+
+    Bass, mid and high are None on a mono waveform.
+    """
     low, mid, high = (list(detail.get(band) or []) for band in ("low", "mid", "high"))
     length = max(len(low), len(mid), len(high))
     if length == 0 or duration_s <= 0 or not downbeats:
-        return None, None
+        return None, None, None, None
     energy: list[float] = []
     bass: list[float] = []
+    mid_bars: list[float] = []
+    high_bars: list[float] = []
     for span in _bar_spans(downbeats, bar_s, duration_s, length):
         energy.append(sum(_at(low, i) + _at(mid, i) + _at(high, i) for i in span) / len(span))
         bass.append(sum(_at(low, i) for i in span) / len(span))
-    return _normalized(energy), _normalized(bass) if _has_bands(low, mid, high, length) else None
+        mid_bars.append(sum(_at(mid, i) for i in span) / len(span))
+        high_bars.append(sum(_at(high, i) for i in span) / len(span))
+    if not _has_bands(low, mid, high, length):
+        return _normalized(energy), None, None, None
+    return _normalized(energy), _normalized(bass), _normalized(mid_bars), _normalized(high_bars)
 
 
 def _vocal_series(
@@ -351,7 +361,7 @@ def profile_from_payloads(anlz: Mapping[str, Any], track: Mapping[str, Any] | No
     notes: list[str] = []
     bpm, duration_s, bar_s = _timing(track, beats, downbeats, notes)
     waveform = anlz.get("waveform") or {}
-    energy, bass = _band_series(waveform.get("detail") or {}, duration_s, downbeats, bar_s)
+    energy, bass, mid, high = _band_series(waveform.get("detail") or {}, duration_s, downbeats, bar_s)
     vocals_status, vocal_series = _vocal_series(anlz.get("vocals") or {}, downbeats, bar_s)
     phrases = _records(anlz.get("phrases"))
     sections = _sections(phrases, downbeats, energy, bass, vocal_series)
@@ -372,6 +382,8 @@ def profile_from_payloads(anlz: Mapping[str, Any], track: Mapping[str, Any] | No
         sections_source=sections_source,
         bar_energy=energy,
         bar_bass=bass,
+        bar_mid=mid,
+        bar_high=high,
         bar_vocals=vocal_series,
         vocals_status=vocals_status,
         key_segments=tuple(KeySegment(**segment) for segment in _key_segments(anlz)),

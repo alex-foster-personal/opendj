@@ -127,63 +127,67 @@ WEBUI_ENV_FILE = PROJECT_ROOT / ".env"
 # runner, so neither side's /proc can attribute the other's holder. Excluding
 # them here removes the collision by construction. Each per-suite
 # ``RESERVED_PORTS``/``RESERVED`` list documents that value's own provenance;
-# this set is the single place they are all excluded from allocation.
+# this set is the single place they are all excluded from allocation. It is
+# GENERATED from those files by scripts/gen_reserved_ports.py (#8583): add a
+# suite, then rerun `uv run python -m scripts.gen_reserved_ports`.
 RESERVED_FIXED_PORTS: frozenset[int] = frozenset(
     {
-        4455,  # apps/desktop/wdio.conf.ts EMBEDDED_WEBDRIVER_PORT
-        4456,  # apps/desktop/mcp/smoke.ts WEBDRIVER_PORT
-        7700,  # apps/desktop/{src-tauri/src/engine.rs,electron/src/engine.ts} PREFERRED_ENGINE_PORT (UIURL-01)
-        5214,  # tests/e2e/vite.play-analytics.config.ts frontend port
-        5216,  # tests/e2e/playwright.desktop-setup.config.ts SETUP_PAGE_PORT
-        5228,  # tests/e2e/vite.library-wheel.config.ts frontend port
-        5273,  # tests/e2e/vite.performance.config.ts DEFAULT_FRONTEND_BASE
-        5277,  # tests/e2e/vite.library-jobs.config.ts LIBRARY_JOBS_E2E_FRONTEND_PORT
-        5278,  # tests/e2e/vocals-demucs-overlay-endpoints.ts default frontend port
-        5311,  # tests/e2e/playwright.stretch-artifact.config.ts STRETCH_ARTIFACT_PORT
-        5320,  # tests/e2e/vite.hotcue-mapping-gate.config.ts frontend port
-        5321,  # tests/e2e/vite.comment-hotkey-gate.config.ts / playwright.preflight-gate.config.ts
-        5322,  # tests/e2e/playwright.meter-artifact.config.ts METER_ARTIFACT_PORT
-        5323,  # tests/e2e/playwright.preflight-gate.config.ts / vite.full-reload-gate.config.ts
-        5324,  # tests/e2e/vite.autoplay-stall-gate.config.ts / playwright.audio-soak.config.ts
-        5326,  # tests/e2e/vite.autoplay-error-hunt.config.ts AUTOPLAY_HUNT_FRONTEND_PORT
-        5327,  # tests/e2e/vite.silence-expected-audible.config.ts SILENCE_EXPECTED_AUDIBLE_FRONTEND_PORT
-        5328,  # tests/e2e/vite.lyrics-words.config.ts frontend port
-        5337,  # tests/e2e/vite.cmdk-preview-cue.config.ts CMDK_PREVIEW_CUE_FRONTEND_PORT
-        5331,  # tests/e2e/playwright.cloudsync-ui.config.ts CLOUDSYNC_UI_FRONTEND_PORT
-        5334,  # tests/e2e/vite.transition-in-cue.config.ts TRANSITION_IN_CUE_FRONTEND_PORT
-        5336,  # tests/e2e/vite.cmdk-pick-race.config.ts CMDK_PICK_RACE_FRONTEND_PORT
-        5332,  # tests/e2e/vite.pairing-arrow.config.ts PAIRING_ARROW_FRONTEND_PORT
-        5399,  # tests/e2e/vite.rekordbox-gate.config.ts REKORDBOX_GATE_E2E_PORT
-        8686,  # tests/e2e/vite.performance.config.ts DEFAULT_API_BASE
-        8688,  # tests/e2e/stems-e2e-endpoints.ts DEFAULT_BACKEND_PORT
-        8690,  # tests/e2e/playwright.webkit-deckload.config.ts WEBKIT_DECKLOAD_PORT
-        8691,  # apps/desktop/wdio.conf.ts ENGINE_PORT
-        8692,  # tests/e2e/playwright.boot-burst.config.ts BOOT_BURST_PORT
-        8694,  # tests/e2e/playwright.electron-shell.config.ts ELECTRON_SHELL_PORT
-        8700,  # tests/e2e/playwright.stem-decode-bench.config.ts STEM_DECODE_BENCH_PORT
-        8713,  # tests/e2e/playwright.playlist-switch-latency.config.ts PLAYLIST_SWITCH_BENCH_PORT
-        8716,  # tests/e2e/vite.cmdk-pick-race.config.ts CMDK_PICK_RACE_API_PORT
-        8715,  # tests/e2e/vite.pairing-arrow.config.ts PAIRING_ARROW_API_PORT
-        8695,  # tests/e2e/vite.hotcue-mapping-gate.config.ts API port
-        8696,  # tests/e2e/vite.comment-hotkey-gate.config.ts / playwright.preflight-gate.config.ts
-        8697,  # tests/e2e/playwright.preflight-gate.config.ts PREFLIGHT_GATE_BROKEN_API_PORT
-        8698,  # apps/desktop/mcp/smoke.ts ENGINE_PORT
-        8699,  # tests/e2e/vite.autoplay-stall-gate.config.ts API port
-        8703,  # tests/e2e/vite.autoplay-error-hunt.config.ts AUTOPLAY_HUNT_API_PORT
-        8704,  # tests/e2e/library-jobs-e2e-endpoints.ts LIBRARY_JOBS_E2E_BACKEND_PORT
-        8705,  # tests/e2e/vocals-demucs-overlay-endpoints.ts default backend port
-        8706,  # tests/e2e/vite.lyrics-words.config.ts API port
-        8707,  # tests/e2e/vite.silence-expected-audible.config.ts SILENCE_EXPECTED_AUDIBLE_API_PORT
-        8711,  # tests/e2e/playwright.cloudsync-ui.config.ts CLOUDSYNC_UI_HUB_PORT
-        8712,  # tests/e2e/playwright.cloudsync-ui.config.ts CLOUDSYNC_UI_SPOKE_PORT
-        8714,  # tests/e2e/vite.transition-in-cue.config.ts TRANSITION_IN_CUE_API_PORT
-        8717,  # tests/e2e/vite.cmdk-preview-cue.config.ts CMDK_PREVIEW_CUE_API_PORT
-        9336,  # apps/desktop/mcp/smoke.ts CDP_PORT (--shell electron)
-        9408,  # tests/e2e/stems-e2e-endpoints.ts DEFAULT_FRONTEND_PORT
-        9410,  # tests/e2e/midi-maps-e2e-endpoints.ts DEFAULT_FRONTEND_PORT
-        9414,  # tests/e2e/playwright.play-analytics.config.ts backend port
-        9428,  # tests/e2e/playwright.library-wheel.config.ts engine port
-        9473,  # tests/e2e/playwright.desktop-setup.config.ts DEAD_ENGINE_PORT
+        # BEGIN generated by `uv run python -m scripts.gen_reserved_ports`; rerun it, never hand-edit
+        4455,  # apps/desktop/wdio.conf.ts (+1 more)
+        4456,  # apps/desktop/mcp/demo.ts (+1 more)
+        5214,  # tests/e2e/playwright.play-analytics.config.ts
+        5216,  # tests/e2e/playwright.desktop-setup.config.ts
+        5228,  # tests/e2e/playwright.library-wheel.config.ts
+        5273,  # tests/e2e/playwright.kpi-boot-library-capture.config.ts (+8 more)
+        5277,  # tests/e2e/library-jobs-e2e-endpoints.ts
+        5278,  # tests/e2e/vocals-demucs-overlay-endpoints.ts
+        5311,  # tests/e2e/playwright.stretch-artifact.config.ts
+        5320,  # tests/e2e/vite.hotcue-mapping-gate.config.ts
+        5321,  # tests/e2e/playwright.preflight-gate.config.ts (+1 more)
+        5322,  # tests/e2e/playwright.meter-artifact.config.ts
+        5323,  # tests/e2e/playwright.preflight-gate.config.ts (+1 more)
+        5324,  # tests/e2e/playwright.audio-soak.config.ts (+1 more)
+        5326,  # tests/e2e/vite.autoplay-error-hunt.config.ts
+        5327,  # tests/e2e/vite.silence-expected-audible.config.ts
+        5328,  # tests/e2e/vite.lyrics-words.config.ts
+        5331,  # tests/e2e/playwright.cloudsync-ui.config.ts
+        5332,  # tests/e2e/vite.pairing-arrow.config.ts
+        5334,  # tests/e2e/vite.transition-in-cue.config.ts
+        5336,  # tests/e2e/vite.cmdk-pick-race.config.ts
+        5337,  # tests/e2e/vite.cmdk-preview-cue.config.ts
+        5399,  # tests/e2e/vite.rekordbox-gate.config.ts
+        7700,  # apps/desktop/electron/src/engine.ts
+        8686,  # tests/e2e/playwright.kpi-boot-library-capture.config.ts (+25 more)
+        8688,  # tests/e2e/stems-e2e-endpoints.ts
+        8690,  # tests/e2e/playwright.webkit-deckload.config.ts (+1 more)
+        8691,  # apps/desktop/wdio.conf.ts (+1 more)
+        8692,  # tests/e2e/playwright.boot-burst.config.ts
+        8694,  # tests/e2e/playwright.electron-shell.config.ts
+        8695,  # tests/e2e/vite.hotcue-mapping-gate.config.ts
+        8696,  # tests/e2e/playwright.preflight-gate.config.ts (+1 more)
+        8697,  # tests/e2e/playwright.preflight-gate.config.ts
+        8698,  # apps/desktop/mcp/demo.ts (+1 more)
+        8699,  # tests/e2e/vite.autoplay-stall-gate.config.ts
+        8700,  # tests/e2e/playwright.stem-decode-bench.config.ts
+        8703,  # tests/e2e/vite.autoplay-error-hunt.config.ts
+        8704,  # tests/e2e/library-jobs-e2e-endpoints.ts
+        8705,  # tests/e2e/vocals-demucs-overlay-endpoints.ts
+        8706,  # tests/e2e/vite.lyrics-words.config.ts
+        8707,  # tests/e2e/vite.silence-expected-audible.config.ts
+        8711,  # tests/e2e/playwright.cloudsync-ui.config.ts
+        8712,  # tests/e2e/playwright.cloudsync-ui.config.ts
+        8713,  # tests/e2e/playwright.playlist-switch-latency.config.ts
+        8714,  # tests/e2e/vite.transition-in-cue.config.ts
+        8715,  # tests/e2e/vite.pairing-arrow.config.ts
+        8716,  # tests/e2e/vite.cmdk-pick-race.config.ts
+        8717,  # tests/e2e/vite.cmdk-preview-cue.config.ts
+        9336,  # apps/desktop/mcp/smoke.ts
+        9408,  # tests/e2e/stems-e2e-endpoints.ts
+        9410,  # tests/e2e/midi-maps-e2e-endpoints.ts
+        9414,  # tests/e2e/playwright.play-analytics.config.ts (+1 more)
+        9428,  # tests/e2e/playwright.library-wheel.config.ts (+1 more)
+        9473,  # tests/e2e/playwright.desktop-setup.config.ts
+        # END generated
     }
 )
 
@@ -430,10 +434,40 @@ def _write_port_owner_marker(port: int, worktree: str) -> None:
     os.chmod(marker_path, 0o644)
 
 
-def _remove_port_owner_marker(port: int) -> None:
+def _remove_superseded_port_owner_markers(
+    previous_pair: WebuiPorts | None,
+    selected: WebuiPorts,
+    *,
+    worktree: str,
+) -> None:
+    """Drop owner markers for ports this worktree no longer holds (issue #1756)."""
+    if previous_pair is None or previous_pair == selected:
+        return
+    for stale_port in {previous_pair.backend, previous_pair.frontend} - {
+        selected.backend,
+        selected.frontend,
+    }:
+        _remove_port_owner_marker(stale_port, worktree=worktree)
+
+
+def _remove_port_owner_marker(port: int, *, worktree: str | None = None) -> None:
+    """Delete this uid's marker for ``port``.
+
+    With ``worktree``, delete it only while it still names that worktree, so a
+    superseded claim never erases a marker some other claimant wrote since.
+    """
     marker_path = _port_owner_marker_path(port)
-    if marker_path is not None:
-        marker_path.unlink(missing_ok=True)
+    if marker_path is None:
+        return
+    if worktree is not None:
+        try:
+            lines = marker_path.read_text(encoding="utf-8").splitlines()
+        except OSError:
+            return  # absent or unreadable: nothing of ours to remove
+        fields = dict(line.split("=", 1) for line in lines if "=" in line)
+        if fields.get("worktree") != worktree:
+            return
+    marker_path.unlink(missing_ok=True)
 
 
 def describe_port_owner(port: int) -> str | None:
@@ -915,6 +949,7 @@ def claim_ports(
     with _locked_registry(resolved_common_dir) as registry_path:
         reservations = _prune_missing_worktrees(_load_registry(registry_path))
         previous = dict(reservations)
+        previous_pair = previous.get(root_key)
         current = reservations.get(root_key)
         if current is not None and not _pair_in_lane_window(current, lane):
             # Remembered under another lane (or before this runner had one):
@@ -953,6 +988,7 @@ def claim_ports(
         except BaseException:
             _write_registry(registry_path, previous)
             raise
+        _remove_superseded_port_owner_markers(previous_pair, selected, worktree=root_key)
     _write_port_owner_marker(selected.backend, root_key)
     _write_port_owner_marker(selected.frontend, root_key)
     return selected

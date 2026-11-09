@@ -19,7 +19,7 @@
 //   if browse encoder isn't relative cc 0x40 + loads notes 0x46-0x49 then broken
 //   if play LED rule isn't ch n note 0x0B 0x7F/0x00 then broken
 //   if pad LED rules aren't 8 per deck on pad channels then broken
-//   if registerAllDeviceMaps isn't idempotent then broken
+//   if FLX10 drops out of the registry or registerAllDeviceMaps isn't idempotent then broken
 
 import assert from 'node:assert/strict';
 import { after, before, test } from 'node:test';
@@ -89,9 +89,7 @@ test('nameMatch covers FLX10 port names and not the Mixtour', () => {
 
 test('play/cue/shift per deck on channels 1-4 ([PDF] D1/D2/D25)', () => {
 	for (const deck of [1, 2, 3, 4]) {
-		const play = theBinding(
-			(b) => b.action.type === 'deck_play_toggle' && b.action.deck === deck
-		);
+		const play = theBinding((b) => b.action.type === 'deck_play_toggle' && b.action.deck === deck);
 		assert.deepEqual(play.source, { ch: deck, kind: 'note', id: 0x0b });
 		const cue = theBinding((b) => b.action.type === 'deck_cue' && b.action.deck === deck);
 		assert.deepEqual(cue.source, { ch: deck, kind: 'note', id: 0x0c });
@@ -141,8 +139,7 @@ test('beat-loop pads: notes 0x60-0x67 with the doubling ladder ([PDF] P1-P8)', (
 		}
 		// 4 BEAT/EXIT button pair on the deck channel ([PDF] D16).
 		const fourBeat = theBinding(
-			(x) =>
-				x.action.type === 'deck_beat_loop' && x.action.deck === deck && x.source.ch === deck
+			(x) => x.action.type === 'deck_beat_loop' && x.action.deck === deck && x.source.ch === deck
 		);
 		assert.deepEqual(fourBeat.source, { ch: deck, kind: 'note', id: 0x14 });
 		assert.equal(fourBeat.action.beats, 4);
@@ -172,10 +169,14 @@ test('per-channel mixer MSB CCs: trim 4, EQ 7/11/15, fader 19 ([PDF] M2-M6)', ()
 });
 
 test('crossfader ch7 CC 31, master ch7 CC 8 ([PDF] M1/M8)', () => {
-	const xf = theBinding((b) => b.action.type === 'mixer_global' && b.action.target === 'crossfader');
+	const xf = theBinding(
+		(b) => b.action.type === 'mixer_global' && b.action.target === 'crossfader'
+	);
 	assert.deepEqual(xf.source, { ch: 7, kind: 'cc', id: 0x1f });
 	assert.notEqual(xf.invert, true); // Min at left = engine full A at 0
-	const master = theBinding((b) => b.action.type === 'mixer_global' && b.action.target === 'master');
+	const master = theBinding(
+		(b) => b.action.type === 'mixer_global' && b.action.target === 'master'
+	);
 	assert.deepEqual(master.source, { ch: 7, kind: 'cc', id: 0x08 });
 });
 
@@ -233,19 +234,12 @@ test('flx10PadColorVelocity stays inside the 1-127 colour range', () => {
 
 // ---------------------------------------------------------------- registry
 
-test('registry holds every map and registerAllDeviceMaps is idempotent', () => {
+test('registry includes the FLX10 map and registerAllDeviceMaps is idempotent', () => {
 	webmidi._resetMidiForTests();
 	registry._resetMapsRegistryForTests();
+	// Membership only: device-map-registry.test.mjs checks every discovered map (#10560).
 	const names = registry.DEVICE_MAP_REGISTRY.map((m) => m.nameMatch);
-	assert.deepEqual(names, [
-		'DDJ-FLX10',
-		'DDJ-400',
-		'\\bMixtour\\s+Pro\\b',
-		'\\bMixtour\\b(?:$|\\S|\\s+(?:$|[^\\sP]|P(?:$|[^r])|Pr(?:$|[^o])|Pro\\w))',
-		'DDJ-FLX4',
-		'XDJ-RX3',
-		'XDJ-AZ'
-	]);
+	assert.ok(names.includes('DDJ-FLX10'));
 	registry.registerAllDeviceMaps();
 	registry.registerAllDeviceMaps(); // second call must no-op, not throw
 	webmidi._resetMidiForTests();
@@ -253,8 +247,13 @@ test('registry holds every map and registerAllDeviceMaps is idempotent', () => {
 });
 
 test('FLX10 jog binds platter vinyl on and off plus the wheel side', () => {
-	const jogs = mapModule.FLX10_MAP.bindings.filter((b) => b.action.type === 'deck_jog' && b.action.deck === 2);
-	assert.deepEqual(jogs.map((b) => b.source.id), [34, 35, 33]);
+	const jogs = mapModule.FLX10_MAP.bindings.filter(
+		(b) => b.action.type === 'deck_jog' && b.action.deck === 2
+	);
+	assert.deepEqual(
+		jogs.map((b) => b.source.id),
+		[34, 35, 33]
+	);
 	for (const jog of jogs) {
 		assert.deepEqual([jog.source.ch, jog.source.kind, jog.relativeCentered], [2, 'cc', true]);
 	}

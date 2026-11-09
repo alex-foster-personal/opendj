@@ -188,8 +188,10 @@ test('agent-native parity: the browser IPC can carry the same press stamp', () =
 	// stages a human press produces, so the P0 number would be unmeasurable by
 	// exactly the automation that is supposed to measure it.
 	const ipc = readSource('src/lib/rb/performance-ipc.svelte.ts');
+	const types = readSource('src/lib/rb/performance-ipc-types.ts');
+	const guards = readSource('src/lib/rb/performance-ipc-guards.ts');
 	assert.ok(
-		ipc.includes('dispatch(message: unknown, pressT0Ms?: number): Promise<PerformanceState>;'),
+		types.includes('dispatch(message: unknown, pressT0Ms?: number): Promise<PerformanceState>;'),
 		'the PerformanceBrowserIpc contract must expose the stamp'
 	);
 	assert.ok(
@@ -197,7 +199,7 @@ test('agent-native parity: the browser IPC can carry the same press stamp', () =
 		'and the installed dispatch must actually forward it'
 	);
 	assert.ok(
-		ipc.includes('function _validatedPressStamp('),
+		guards.includes('function _validatedPressStamp('),
 		'a stamp crossing the IPC boundary is untrusted input and must be validated like ' +
 			'every command field; a NaN would silently drop the stages from a row that still ' +
 			'looks complete'

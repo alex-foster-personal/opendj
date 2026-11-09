@@ -3,13 +3,17 @@
 from __future__ import annotations
 
 import copy
+import hashlib
+import json
 import math
 from dataclasses import replace
+from pathlib import Path
 from typing import Any
 
 import pytest
 
 from apps.autodj.compile import compile_plan
+from apps.autodj.contract.models import INTENTS
 from apps.autodj.plan import (
     LOAD_TRIM,
     PLAY_LEAD_BARS,
@@ -19,6 +23,7 @@ from apps.autodj.plan import (
     _base_rate,
     _beat_sync_fold,
     _clock_pitch,
+    _heard,
     _in_bar,
     _incoming_grid_bars,
     _incoming_rate,
@@ -36,9 +41,10 @@ from apps.autodj.plan import (
     validate_plan,
 )
 from apps.autodj.profile import TrackProfile, _key_segments, profile_from_payloads
-from apps.autodj.propose import _overlap_bars, parse_intent, propose_transition
-from apps.autodj.scoring import score_pair, score_windows
-from apps.autodj.styles import STYLES, list_styles, style
+from apps.autodj.propose import ENERGY_UP, _overlap_bars, _style_fit, parse_intent, propose_transition
+from apps.autodj.render_plan import TRANSITION_FX_REFUSAL, RenderPlanError, compile_render_plan
+from apps.autodj.scoring import _key_term, score_pair, score_windows
+from apps.autodj.styles import STYLES, exit_bar, list_styles, style
 from apps.autodj.windows import MixWindow, mix_windows
 from tests.autodj.fixtures import CHORUS, DEFAULT_ARRANGEMENT, INTRO, OUTRO, anlz_payload, profile, track_row
 
@@ -207,11 +213,167 @@ def _live(**out: Any) -> dict[str, Any]:
 
 def test_catalog_marks_what_the_executor_cannot_do() -> None:
     names = {row["name"]: row for row in list_styles()}
-    assert {"cut", "drop_swap", "filter_sweep", "bass_swap_blend", "long_blend"} <= {
+    assert {"cut", "drop_swap", "filter_sweep", "bass_swap_blend", "long_blend", "echo_out"} <= {
         name for name, row in names.items() if row["available"]
     }
-    for name in ("echo_out", "stem_swap", "loop_extend"):
+    for name in ("stem_swap", "loop_extend"):
         assert names[name]["available"] is False and names[name]["unavailable_reason"]
+
+
+_GOLDEN_STYLE_EVENTS_SHA256: dict[tuple[str, int], str] = {
+    ("cut", 1): "82db87a932c2eb7c2ca71c48e787ef12f5d2f61b6da3658143a1014a5f0f442c",
+    ("drop_swap", 1): "82db87a932c2eb7c2ca71c48e787ef12f5d2f61b6da3658143a1014a5f0f442c",
+    ("filter_sweep", 12): "ce593efa8ba8aa59ad645cdb82260b2115286a1f61951ccfcce4b19580cc47bf",
+    ("filter_sweep", 15): "135eb51499f16da2e426af115fb7300d44a5a52d1fc0cc73629e34f7a371f356",
+    ("filter_sweep", 16): "b5eb691fa9cf3198b41fce169df7be83c2c7f0e85130278bb5dd362a7ab7a80f",
+    ("filter_sweep", 32): "bdfab8b9fc057f7dcaa0c30344d9022d98103e94735c3c1b0d9ae01e1f27f506",
+    ("bass_swap_blend", 12): "a6e4dacc39d951595bcc51a3adc3d80fc88137f4bc1be921369d53f3eebddb17",
+    ("bass_swap_blend", 15): "f21997b96de1727c57952278cc8514ace06d747046bb86639057f84a1b379b89",
+    ("bass_swap_blend", 16): "fce519ef3f313b5f2d7f6a77f210ffd572d4f6cbd4dfe5026249e1ca0a713929",
+    ("bass_swap_blend", 32): "6d0f8a149228f8558b82452c3ae7e81df74c93f30faffdf44ae62885b9ceb6cc",
+    ("long_blend", 32): "4a71f8ae72f999e8fd56335bbf9872bddbad56394b18799123b7cbe7a18353cc",
+    ("long_blend", 64): "d25f2091dd271c6255f21f083f6ed71616cfd7cf88d851dddf2c41e6e92930aa",
+    ("crossfade", 12): "1c11bae4fc986123be02490abc5e9183434d124d1f1dd97be7b1d2be72cddc6a",
+    ("crossfade", 15): "75207c4da179afa136db877485e09ece1c7daf8f1cd11dea65e0a54d521bb239",
+    ("crossfade", 16): "fe69e24c116af507c7222f3b03f5848da8718e6be0dcfeb30296bb2d51891207",
+    ("crossfade", 32): "153ece1cd8782db07b542993512e65c1d37a8ff7c74357c5b864b6896ad20d71",
+    ("rise", 12): "8c38a5fdb8e8928449d7ad629e3904bdb9f665dc2f1c95f8d843afd30d20dae6",
+    ("rise", 15): "9f1a1097c4560c5ca94d952a7629e029c5da75a1dfcbf5817bda351a3b21eeb3",
+    ("rise", 16): "c74a1f4c14d6c762feeb3a7f0f2383211c2221fe1ac358e4273d4e7dc897c832",
+    ("rise", 32): "7187424b5b68f57079b092a9423e172283fc94709b77657279c89a7364486580",
+    ("wave", 12): "d48916f267b7bb6f980e4cb4c0bef81cf04a950ec7892ec271a2f772c0ad0ecd",
+    ("wave", 15): "1d7bdcc1dbffd5b033d74c96f49f71053aaf154a38ea802a303c2f4842364f74",
+    ("wave", 16): "8a97a36269c15f4f3a4a0f8ae44b1292b867b9c2b870638c1b8d1af3657c0db7",
+    ("wave", 32): "c947fa956fa9814856250309c489f3d85c73a925e4625e41fb38fec86815162f",
+    ("melt", 12): "840593867b3fc1718f1f21e3316c225400fdb16134414cb0bba57c8459a56634",
+    ("melt", 15): "e8d1d540da651c793b7d05b7b7b5b029467c06654de3a496fe5ada74e1270ca3",
+    ("melt", 16): "67b108d47ee50918f6e321cd8778216d3163790468fc6418cf38c344a98e4358",
+    ("melt", 32): "4807e1717faa8e59eba506f1d3ad6aba2e29d984bfcb4b7687c2cbe98d4a7f2c",
+    ("lull_then_drop", 8): "a918a7dbfb9ca915f87166ae2b49425b836b98e1d23fb1c332388df5203707fd",
+    ("lull_then_drop", 15): "7ba475cca8d1faa946832372fbdae734b6d1f65eb092be54e6eca76a26597e32",
+    ("lull_then_drop", 16): "7e4e414a542adcd100e22d4c8a8935f434957e07ef63d4aefd8898a9b439a2e6",
+    ("lull_then_drop", 32): "15cb848e50f8676e038b230ec54fd86e17a83210231a408326d24ba8d3d8646e",
+}
+
+
+@pytest.mark.requirement("FXTRANS-9850")
+def test_no_other_style_changes_its_events() -> None:
+    """[if] echo_out is added [then] every other available style's events stay byte-identical, [else stop]."""
+    keys = set(_GOLDEN_STYLE_EVENTS_SHA256)
+    for name, s in STYLES.items():
+        if not s.available or name == "echo_out":
+            continue
+        for bars in sorted({s.clamp_bars(b) for b in (1, 2, 3, 8, 15, 16, 32, 64)}):
+            assert (name, bars) in keys
+    for (name, bars), expected in _GOLDEN_STYLE_EVENTS_SHA256.items():
+        doc = json.dumps(STYLES[name].build(bars, 1, 2), sort_keys=True, separators=(",", ":"))
+        got = hashlib.sha256(doc.encode()).hexdigest()
+        assert got == expected, f"regenerate golden from origin/main for ({name!r}, {bars})"
+
+
+@pytest.mark.requirement("FXTRANS-9850")
+def test_echo_out_is_available_with_its_spotify_controls_and_bars() -> None:
+    """[if] echo_out is catalogued [then] it is available with fx controls and tempo none, [else stop]."""
+    chosen = style("echo_out")
+    assert chosen.available
+    assert chosen.controls == ("fx_echo", "fx_dry", "play", "master")
+    assert chosen.spotify == "Echo 1/2 cut end"
+    assert chosen.min_bars == 2 and chosen.max_bars == 5 and chosen.default_bars == 3
+    assert chosen.needs_beatmatch is False
+    assert chosen.tempo_mode == "none"
+
+
+@pytest.mark.requirement("FXTRANS-9850")
+@pytest.mark.parametrize("bars", [2, 3, 5])
+def test_echo_out_sends_closes_the_dry_starts_the_incoming_and_resets(bars: int) -> None:
+    """[if] echo_out builds a plan [then] fx ramps, dry closes on E, incoming starts and fx_reset runs, [else stop]."""
+    exit_e = exit_bar(bars)
+    events = style("echo_out").build(bars, 1, 2)
+    assert {"at_bar": exit_e - 0.5, "deck": 1, "set": {"fx_echo": 0.0}} in events
+    ramp = next(e for e in events if e.get("ramp", {}).get("fx_echo") == 0.7)
+    assert ramp["at_bar"] == exit_e - 0.5 and ramp["over_bars"] == 0.5
+    assert {"at_bar": exit_e, "deck": 1, "set": {"fx_dry": 0.0}} in events
+    assert {"at_bar": exit_e, "deck": 2, "do": "play"} in events
+    assert {"at_bar": float(bars), "deck": 1, "do": "fx_reset"} in events
+    plan = parse_plan({**_plan("echo_out", bars=bars), "events": events})
+    assert validate_plan(plan, OUT, IN).errors == []
+    states = simulate(plan)
+    heard_before = any(_heard(s)[0] for s in states if s.bar < exit_e)
+    heard_after = any(_heard(s)[0] for s in states if s.bar >= exit_e)
+    assert heard_before and not heard_after
+
+
+@pytest.mark.requirement("FXTRANS-9850")
+def test_tempo_none_for_cut_styles_and_sync_for_the_rest() -> None:
+    """[if] propose_transition runs every intent [then] cut styles carry tempo none and blends sync_to_out, [else stop]."""
+    none_styles = frozenset({"cut", "drop_swap", "echo_out"})
+    saw_none, saw_sync = False, False
+    for intent in INTENTS:
+        result = propose_transition(OUT, IN, out_deck=1, in_deck=2, intent=intent, top=None)
+        for row in result["proposals"]:
+            mode = row["plan"]["tempo"]["mode"]
+            if row["style"] in none_styles:
+                assert mode == "none"
+                saw_none = True
+            else:
+                assert mode == "sync_to_out"
+                saw_sync = True
+    assert saw_none and saw_sync
+
+
+@pytest.mark.requirement("FXTRANS-9850")
+def test_a_tempo_gap_pair_is_offered_echo_out_with_the_gap_named() -> None:
+    """[if] a 124 BPM track meets a 96 BPM one [then] echo_out is offered with tempo none and the gap named, [else stop]."""
+    out_p = profile("trk-out", bpm=124.0)
+    in_p = profile("trk-in", bpm=96.0, key="9A")
+    result = propose_transition(out_p, in_p, out_deck=1, in_deck=2, top=None)
+    echo = [row for row in result["proposals"] if row["style"] == "echo_out"]
+    assert echo
+    assert echo[0]["plan"]["tempo"] == {"mode": "none"}
+    assert echo[0]["validation"]["ok"]
+    text = echo[0]["rationale"]
+    assert "124" in text and "96" in text and "tempo gap" in text
+
+
+@pytest.mark.requirement("FXTRANS-9850")
+def test_fx_steps_must_reset_and_keep_a_tail() -> None:
+    """[if] an echo_out plan omits fx_reset, closes dry late, or puts fx on deck 2 [then] validation refuses it, [else stop]."""
+    bars = 3
+    doc = {**_plan("echo_out", bars=bars), "events": style("echo_out").build(bars, 1, 2)}
+    plan = parse_plan(doc)
+    no_reset = replace(plan, events=tuple(e for e in plan.events if e.name != "fx_reset"))
+    assert any("fx_reset" in err for err in validate_plan(no_reset, OUT, IN).errors)
+    late_dry = replace(
+        plan,
+        events=tuple(
+            replace(e, at_bar=float(bars)) if e.name == "fx_dry" else e for e in plan.events
+        ),
+    )
+    assert any("echo tail" in err for err in validate_plan(late_dry, OUT, IN).errors)
+    wrong_deck = replace(
+        plan,
+        events=tuple(replace(e, deck=2) if e.name == "fx_echo" else e for e in plan.events),
+    )
+    assert any("only the outgoing deck" in err for err in validate_plan(wrong_deck, OUT, IN).errors)
+
+
+@pytest.mark.requirement("FXTRANS-9850")
+def test_live_validation_refuses_fx_steps_until_the_page_has_them() -> None:
+    """[if] echo_out is validated live [then] fx steps are refused naming #9848, [else stop]."""
+    plan = parse_plan({**_plan("echo_out", bars=3), "events": style("echo_out").build(3, 1, 2)})
+    live_errors = validate_plan(plan, OUT, IN, live=_live()).errors
+    assert any("fx_echo" in err and "#9848" in err for err in live_errors)
+    assert validate_plan(plan, OUT, IN, live=None).errors == []
+
+
+@pytest.mark.requirement("FXTRANS-9850")
+def test_compile_render_plan_refuses_echo_out_by_name() -> None:
+    """[if] echo_out is compiled for render [then] it is refused naming fx_echo and FXTRANS-03, [else stop]."""
+    plan = parse_plan({**_plan("echo_out", bars=3), "events": style("echo_out").build(3, 1, 2)})
+    stub = Path(Path.cwd().anchor) / "a.wav"
+    with pytest.raises(RenderPlanError, match="fx_echo") as caught:
+        compile_render_plan(plan, OUT, IN, 4, out_audio=stub, in_audio=stub)
+    assert TRANSITION_FX_REFUSAL in str(caught.value)
 
 
 @pytest.mark.parametrize("name", [name for name, s in STYLES.items() if s.available])
@@ -517,6 +679,96 @@ def test_score_pair_prefers_compatible_keys() -> None:
     assert near.score > far.score
     assert near.key_distance is not None and far.key_distance is not None
     assert near.key_distance < far.key_distance
+
+
+def test_key_term_reads_the_directional_camelot_rule() -> None:
+    """[if] the harmony term read the symmetric distance table [then] 8B -> 7A would score like 5B -> 6A, [else stop].
+
+    The reason names the rule and the interval instead of "N steps apart"."""
+    reasons: list[str] = []
+    assert _key_term("8A", "9A", reasons) == (1, "adjacent", 0.90)
+    assert reasons == ["keys 8A -> 9A adjacent (fifth up)"]
+    _, good_relation, good_score = _key_term("5B", "6A", [])
+    _, wrong_relation, wrong_score = _key_term("8B", "7A", [])
+    assert (good_relation, wrong_relation) == ("diagonal", "wrong_way_diagonal")
+    assert good_score is not None and wrong_score is not None and good_score - wrong_score >= 0.30
+    unknown: list[str] = []
+    assert _key_term("8A", None, unknown) == (None, None, None)
+    assert unknown == ["a key is unknown: harmony not scored"]
+
+
+def test_score_pair_summary_carries_the_key_relation() -> None:
+    """[if] the summary dropped the relation [then] the planner could not see a wrong-way diagonal, [else stop]."""
+    pair = score_pair(OUT, profile("trk-in", key="9A"))
+    assert pair.key_relation == "adjacent"
+    assert pair.summary()["key_relation"] == "adjacent"
+    assert any(reason == "keys 8A -> 9A adjacent (fifth up)" for reason in pair.reasons), pair.reasons
+
+
+@pytest.mark.requirement("TRANSAI-10674")
+def test_style_fit_penalizes_clash_relations_not_lift_moves() -> None:
+    """[if] jaws is long-blended [then] style fit has no clash penalty, [else stop]."""
+    long_blend = STYLES["long_blend"]
+    jaws = score_pair(profile("trk-out", key="8A"), profile("trk-in", key="3A"))
+    boost = score_pair(profile("trk-out", key="8A"), profile("trk-in", key="10A"))
+    tritone = score_pair(profile("trk-out", key="8A"), profile("trk-in", key="2A"))
+    pay_attention = score_pair(profile("trk-out", key="8A"), profile("trk-in", key="5A"))
+    assert _style_fit(long_blend, jaws, "smooth") == 0.0
+    assert _style_fit(long_blend, boost, "smooth") == 0.0
+    assert _style_fit(long_blend, pay_attention, "smooth") == 0.0
+    assert _style_fit(long_blend, tritone, "smooth") == -0.2
+    assert _style_fit(long_blend, boost, ENERGY_UP) == pytest.approx(0.05)
+
+
+@pytest.mark.requirement("TRANSAI-10674")
+def test_check_key_fit_records_relation_and_warns_on_jaws() -> None:
+    """[if] jaws overlaps long [then] key metrics and lift warning name jaws, [else stop]."""
+    out = profile("trk-out", key="8A")
+    inn = profile("trk-in", key="3A")
+    validation = validate_plan(parse_plan(_plan(bars=16)), out, inn)
+    assert validation.metrics["key_distance"] == 5
+    assert validation.metrics["key_relation"] == "jaws"
+    assert validation.metrics["key_move"] == "lift"
+    assert any(w == "keys 8A and 3A: jaws (semitone up); mix it fast" for w in validation.warnings)
+
+
+@pytest.mark.requirement("TRANSAI-10674")
+def test_check_key_fit_warns_wrong_way_diagonal_without_steps_apart() -> None:
+    """[if] 8B to 7A is a long blend [then] warning names wrong-way diagonal, [else stop]."""
+    out = profile("trk-out", key="8B")
+    inn = profile("trk-in", key="7A")
+    validation = validate_plan(parse_plan(_plan(bars=16)), out, inn)
+    assert validation.metrics["key_relation"] == "wrong_way_diagonal"
+    message = "keys 8B and 7A: wrong-way diagonal, no shared chord tones"
+    assert any(w == message for w in validation.warnings)
+    assert "steps apart" not in " ".join(validation.warnings)
+
+
+@pytest.mark.requirement("TRANSAI-10674")
+def test_propose_energy_boost_under_energy_up_offers_sixteen_bars_without_clash_penalty() -> None:
+    """[if] energy_up meets energy_boost [then] a 16-bar style is offered without steps-apart text, [else stop]."""
+    out = profile("trk-out", key="8A")
+    inn = profile("trk-in", key="10A")
+    result = propose_transition(out, inn, out_deck=1, in_deck=2, intent="keep the energy up", min_out_bar=60, top=20)
+    sixteen = next(
+        row
+        for row in result["proposals"]
+        if row["style"] == "bass_swap_blend" and row["plan"]["out"]["window"]["bars"] == 16
+    )
+    assert "steps apart" not in sixteen["rationale"]
+    assert "steps apart" not in " ".join(sixteen["validation"]["warnings"])
+
+
+@pytest.mark.requirement("TRANSAI-10674")
+def test_key_validation_warning_names_relation_not_steps_apart() -> None:
+    """[if] tritone overlaps long [then] validation names tritone never steps apart, [else stop]."""
+    out = profile("trk-out", key="8A")
+    inn = profile("trk-in", key="2A")
+    validation = validate_plan(parse_plan(_plan(bars=16)), out, inn)
+    assert validation.metrics["key_relation"] == "tritone"
+    joined = " ".join(validation.warnings)
+    assert "tritone" in joined
+    assert "steps apart" not in joined
 
 
 @pytest.mark.parametrize(
@@ -1064,7 +1316,7 @@ def test_silence_sees_two_ramps_cross_the_floor_inside_one_grid_cell() -> None:
     document["events"] = [event for event in document["events"] if "ramp" not in event or event["deck"] != 2]
     document["events"] += [
         {"at_bar": 0.6, "deck": 1, "ramp": {"fader": 0.0}, "over_bars": 0.2},
-                {"at_bar": 0.6, "deck": 2, "ramp": {"fader": 1.0}, "over_bars": 2.0},
+        {"at_bar": 0.6, "deck": 2, "ramp": {"fader": 1.0}, "over_bars": 2.0},
     ]
     assert validate_plan(parse_plan(document), OUT, IN).metrics["silent_bars"] >= 1
     # Control: an incoming rise that opens before the outgoing fade reaches the floor leaves no gap.

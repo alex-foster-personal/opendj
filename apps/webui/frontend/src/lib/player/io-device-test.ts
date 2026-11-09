@@ -3,12 +3,13 @@
  * fill for the thin vertical meters beside the device dropdowns.
  *
  * Master and input beeps go to the engine's main destination (the pinned
- * room output). Cue beeps go to the headphone bus when that graph is up.
+ * room output). Cue beeps go to the headphone bus and BOOTH beeps go to its
+ * independent room-mix bridge when those graphs are up.
  * An input cannot play, so its button uses the master path; the input
  * meter is the microphone.
  */
 
-export type IoTestBus = 'master' | 'cue' | 'input';
+export type IoTestBus = 'master' | 'cue' | 'booth' | 'input';
 
 /** Three short beeps. Same pitch so it reads as a test, not a jingle. */
 export const IO_TEST_BEEPS: readonly { hz: number; holdSec: number; gapSec: number }[] = [
@@ -91,8 +92,14 @@ export function scheduleIoTestBeeps(osc: OscillatorNode, gain: AudioParam, start
  */
 export function ioTestDeviceId(
 	bus: IoTestBus,
-	hp: { output_mode: string; selected_output_device_id: string | null; selected_master_output_device_id: string | null }
+	hp: {
+		output_mode: string;
+		selected_output_device_id: string | null;
+		selected_master_output_device_id: string | null;
+		selected_booth_output_device_id: string | null;
+	}
 ): string | null {
+	if (bus === 'booth') return hp.selected_booth_output_device_id;
 	if (bus !== 'cue') return hp.selected_master_output_device_id;
 	if (hp.output_mode === 'split_cable') return hp.selected_master_output_device_id ?? 'default';
 	return hp.selected_output_device_id;

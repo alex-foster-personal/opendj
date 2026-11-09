@@ -43,7 +43,8 @@ test('a lone dial shows the pointer while the drag is down, then the committed v
 		/const target = clamp01\(dragStartValue \+ singleDragDelta\(dragSumDx, dragSumDy\)\);/
 	);
 	assert.match(src, /if \(dragPartnerId === null\) dragShown = target;/);
-	assert.match(src, /onpointercancel=\{handlePointerUp\}/);
+	assert.match(src, /window\.addEventListener\('pointerup', handlePointerUp\)/);
+	assert.match(src, /window\.addEventListener\('pointercancel', handlePointerCancel\)/);
 	assert.match(src, /aria-valuenow=\{displayValue\}/);
 });
 
@@ -66,11 +67,13 @@ test('the stem dial writes its gain in the pointer turn and the engine echoes st
 // put the needle and aria-valuenow on a value the gain never takes.
 test('a linked drag never previews the pointer; it shows the committed value', () => {
 	const src = readFrontendSource('src/lib/components/rb/mixer/Knob.svelte');
-	const move = src.slice(
-		src.indexOf('function handlePointerMove'),
-		src.indexOf('function handlePointerUp')
-	);
-	assert.ok(move.length > 0, 'handlePointerMove found');
+	// Count preview writes only inside handlePointerMove (stop before window-listener teardown).
+	const moveStart = src.indexOf('function handlePointerMove');
+	assert.notEqual(moveStart, -1, 'handlePointerMove found');
+	// Slice the move handler only: code after it (teardown, finishPointerDrag) also assigns dragShown.
+	const moveEnd = src.indexOf('function removeWindowDragListeners', moveStart);
+	assert.notEqual(moveEnd, -1, 'finishPointerDrag follows move');
+	const move = src.slice(moveStart, moveEnd);
 	const writes = move.match(/dragShown = [^;]+;/g) ?? [];
 	assert.equal(writes.length, 1, 'one preview write in the move handler');
 	const guarded = /if \(dragPartnerId === null\) dragShown = target;/;

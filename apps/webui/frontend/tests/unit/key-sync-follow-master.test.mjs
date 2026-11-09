@@ -470,7 +470,21 @@ test('a live deck re-follows when a newly presented schedule revision crosses ou
 
 // ------------------------------------------------------------ KEYSYNC-01
 
-test('KEYSYNC-01: exact KEY SYNC onto a target deck shifts the follower only, keeping tempo and position', async () => {
+	test('KEYSYNC-01: re-applying setKeySync after engine defaults restores relative mode and deck target', async () => {
+		await loadPair();
+		await audio.engine.load(3, SID_11B);
+		await audio.engine.setDeckMaster(3);
+		await audio.engine.setKeySync(2, true, { mode: 'relative', target: 3 });
+		await settle();
+		deck(2).key_sync_mode = 'exact';
+		deck(2).key_sync_target = null;
+		await audio.engine.setKeySync(2, true, { mode: 'relative', target: 3 });
+		await settle();
+		assert.equal(deck(2).key_sync_mode, 'relative');
+		assert.equal(deck(2).key_sync_target, 3);
+	});
+
+	test('KEYSYNC-01: exact KEY SYNC onto a target deck shifts the follower only, keeping tempo and position', async () => {
 	await loadPair();
 	await audio.engine.load(3, SID_11B);
 	await audio.engine.setDeckMaster(3);

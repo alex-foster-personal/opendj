@@ -1,0 +1,4 @@
++;eth0;IPv4;Light\032Rig;_os2l._tcp;local
++;eth0;IPv4;Booth\032Desk\0322;_os2l._tcp;local
+=;eth0;IPv4;Light\032Rig;_os2l._tcp;local;lightpc.local;192.168.1.40;4444;
+=;eth0;IPv4;Booth\032Desk\0322;_os2l._tcp;local;booth-desk.local;192.168.1.41;50123;

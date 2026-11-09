@@ -5,7 +5,7 @@ CONTRACT this router owns (mounted under ``/api/v1``):
   POST   /dj/try                                   {out, in, n, context_bars}
          200 TryJobOut {job_id, etag, out, in, n, context_bars, scorer_version,
                         candidates: [CandidateOut], best, best_reason, pick: null}
-         ``best`` is ``apps.transition_score.best_candidate``'s id (measured alignment,
+         ``best`` is ``apps.transition_score.contract.best_candidate``'s id (measured alignment,
          scored, no veto) or null, with ``best_reason`` saying why; stored with the job.
   GET    /dj/try/{job}                             200 TryJobOut (pick filled when one is stored)
   GET    /dj/try/{job}/candidates/{cid}/audio      200 audio/wav, the candidate's render
@@ -22,7 +22,7 @@ failed, the audio extra missing), 404 ``job_not_found`` / ``candidate_not_found`
 ``routes/play_it.py``: the etag is derived from the job's revision, which every
 write bumps, so a client acting on a stale view is refused.
 
-The candidates come from ``apps.transition_score.try_pair`` (the execution
+The candidates come from ``apps.transition_score.http.try_pair`` (the execution
 layer); this router stores them, serves their renders, and records the choice.
 It computes no score of its own: a candidate's ``score`` is whatever the scorer
 returned, including ``null`` when too few factors were measured.
@@ -51,14 +51,18 @@ from pydantic import BaseModel, ConfigDict, Field
 from apps.autodj.http import RenderPlanError, TrackProfile, build_service, try_picks
 from apps.shared import file_lock
 from apps.shared.engine_origin import EngineOrigin
-from apps.transition_score import SCORER_VERSION, Candidate, TryResult, best_candidate, try_pair
-from apps.transition_score.lanes import MAX_COLUMNS, LaneError, Lanes, build_lanes
-from apps.transition_score.tryer import (
+from apps.transition_score.contract import SCORER_VERSION, Candidate, TryResult, best_candidate
+from apps.transition_score.http import (
+    MAX_COLUMNS,
     AudioUnavailable,
     EngineProfiles,
     EngineTrackSource,
+    LaneError,
+    Lanes,
     TryError,
+    build_lanes,
     shared_start_out_bar,
+    try_pair,
 )
 
 from ..deps import get_library_data_dir, get_library_state_db
@@ -579,9 +583,7 @@ def _candidate_lanes(
             job.context_bars,
             autodj=source.autodj,
         )
-        layout = source.autodj.layout_of(
-            plan, out_profile, in_profile, job.context_bars, start_out_bar=start
-        )
+        layout = source.autodj.layout_of(plan, out_profile, in_profile, job.context_bars, start_out_bar=start)
         # The audio paths only have to be absolute here: the document is read for its timing, never rendered.
         anchor = Path(Path.cwd().anchor)
         document = source.autodj.compile_render_plan(
@@ -620,9 +622,7 @@ def candidate_lanes(
     if isinstance(found, JSONResponse):
         return found
     candidate, kept = found
-    source = ServingTrackSource(
-        data_dir, build_service(), origin=_serving_origin(request, state_db), state_db=state_db
-    )
+    source = ServingTrackSource(data_dir, build_service(), origin=_serving_origin(request, state_db), state_db=state_db)
     lanes = _candidate_lanes(job, candidate, kept, source, columns)
     if isinstance(lanes, JSONResponse):
         return lanes

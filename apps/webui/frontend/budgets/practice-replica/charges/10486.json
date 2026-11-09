@@ -1,0 +1,9 @@
+{
+  "bytes": 3072,
+  "measured_main": 15986,
+  "measured_with_pr": 17761,
+  "sha": "353f06a797",
+  "date": "Sun 8 Nov 2026",
+  "reason": "PR #10486 adds CDJ3000_MAP (the CDJ-3000 practice replica map, four channels of bindings plus hints for every other wired control) to PRACTICE_DEVICE_MAPS, which the lazy practice-replica chunk imports. measured_main is the surface's committed baseline (5865cedc6a); a main build did not fit the shared-host lock cap.",
+  "payback": "none planned: the hint labels are what the inert controls show; a later pass can table the per-channel hint lists into one generated list if the surface needs the bytes back"
+}

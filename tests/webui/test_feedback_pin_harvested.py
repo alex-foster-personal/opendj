@@ -87,3 +87,27 @@ def test_state_harvested_filter(fb: TestClient) -> None:
     harvested = fb.get("/api/v1/feedback/comments", params={"state": "harvested"}).json()
     assert len(harvested["comments"]) == 1
     assert harvested["comments"][0]["status"] == "harvested"
+
+
+@pytest.mark.requirement("FB-15")
+def test_bulk_archive_skips_legacy_harvested_pin(fb: TestClient) -> None:
+    """[if] legacy harvested pin [then] bulk archive writes nothing, [else stop]."""
+    pin = _pin(fb)
+    comments_path = fb.data_dir / "feedback" / "comments.json"  # type: ignore[attr-defined]
+    payload = json.loads(comments_path.read_text(encoding="utf-8"))
+    row = payload["comments"][0]
+    row["status"] = "harvested"
+    row["harvested_at"] = "2026-09-01T12:00:00.000000Z"
+    row.pop("agent_snapshot_at", None)
+    comments_path.write_text(json.dumps(payload), encoding="utf-8")
+
+    r = fb.post("/api/v1/feedback/archive")
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert body["comments_archived"] == 0
+    assert body["archived_to"] is None
+    assert not list((fb.data_dir / "feedback").glob("archive-*.json"))  # type: ignore[attr-defined]
+
+    live = json.loads(comments_path.read_text(encoding="utf-8"))["comments"][0]
+    assert live["id"] == pin["id"]
+    assert live["status"] == "harvested"

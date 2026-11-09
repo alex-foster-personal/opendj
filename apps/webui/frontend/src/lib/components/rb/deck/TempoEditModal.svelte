@@ -11,7 +11,7 @@
 	import { camelotKeyColor } from '$lib/rb/camelot-color';
 	import { coalesceLatest } from '$lib/rb/coalesce';
 	import type { DeckId } from '$lib/rb/deck-slots';
-	import { gridFeatureInertTip, gridFeaturesInert } from '$lib/player/grid-features';
+	import { beatSyncFeaturesInert, beatSyncInertTip } from '$lib/player/grid-features';
 	import { deckKeyAtPlayheadNow } from '$lib/player/key-playhead-lazy.svelte';
 	import { runPerformanceCommandFromUi } from '$lib/rb/performance-ipc.svelte';
 	import {
@@ -292,7 +292,7 @@
 		{@const loaded = deck.stable_id !== null}
 		{@const effective = _effectiveBpm(id)}
 		{@const buttons = halveDoubleVisibility(effective ?? NaN)}
-		{@const gridless = gridFeaturesInert(deck)}
+		{@const beatSyncInert = beatSyncFeaturesInert(deck)}
 		{@const keyPlayhead = deckKeyAtPlayheadNow(deck)}
 		{@const keyText = keyPlayhead.display ?? '--'}
 		{@const keyColor = camelotKeyColor(keyText === '--' ? null : keyText)}
@@ -386,12 +386,12 @@
 				<button
 					type="button"
 					class="rb-lit-button"
-					class:lit={deck.beat_sync_enabled && !gridless}
-					disabled={!loaded || gridless}
+					class:lit={deck.beat_sync_enabled && !beatSyncInert}
+					disabled={!loaded || beatSyncInert}
 					aria-pressed={deck.beat_sync_enabled}
 					data-testid={`tempo-edit-sync-deck-${id}`}
 					aria-label={`beat sync deck ${id}`}
-					title={gridless ? gridFeatureInertTip(deck) : 'Beat Sync'}
+					title={beatSyncInert ? beatSyncInertTip(deck) : 'Beat Sync'}
 					onclick={() => void toggleBeatSync(id)}
 				>
 					BEAT SYNC

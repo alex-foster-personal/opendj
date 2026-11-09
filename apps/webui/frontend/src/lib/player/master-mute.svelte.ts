@@ -137,6 +137,10 @@ let _muted = $state(startupMasterMuted());
  * Null before init and after dispose; the mute state survives both. */
 let _gainNode: GainNode | null = null;
 
+/** One extra mute gain (the BOOTH tap) that follows the same 0/1 as the
+ * room-destination node without joining that node's connections. */
+let _extraGainNode: GainNode | null = null;
+
 /** Gain the master mute node must carry for a given mute state. */
 export function masterMuteGainValue(muted: boolean): number {
 	return muted ? MASTER_MUTE_GAIN : MASTER_UNMUTE_GAIN;
@@ -206,8 +210,9 @@ export function persistMasterMutedToDisk(muted: boolean): Promise<void> {
 }
 
 function _applyMasterMute(): void {
-	if (_gainNode === null) return;
-	_gainNode.gain.value = masterMuteGainValue(_muted);
+	const value = masterMuteGainValue(_muted);
+	if (_gainNode !== null) _gainNode.gain.value = value;
+	if (_extraGainNode !== null) _extraGainNode.gain.value = value;
 }
 
 //-----------------------------------------------------------------------------
@@ -218,6 +223,15 @@ function _applyMasterMute(): void {
  * stamp the current mute onto it. Called with null on dispose. */
 export function attachMasterMuteNode(node: GainNode | null): void {
 	_gainNode = node;
+	if (node === null) _extraGainNode = null;
+	_applyMasterMute();
+}
+
+/** Adopt a parallel mute gain (BOOTH) that follows setMasterMuted. Called
+ * with null when the headphone graph is disposed. Clearing the primary node
+ * also drops this extra so a disposed booth mute is never written later. */
+export function attachExtraMasterMuteNode(node: GainNode | null): void {
+	_extraGainNode = node;
 	_applyMasterMute();
 }
 

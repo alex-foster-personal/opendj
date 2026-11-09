@@ -40,6 +40,13 @@ export interface LoopState {
 	beat_length: number | null;
 }
 
+/** Last engaged loop on this track load, for RELOOP after exit (DECKUX-10478). */
+export interface LoopMemory {
+	in_ms: number;
+	out_ms: number;
+	beat_length: number | null;
+}
+
 /** One secondary in-deck safety loop (auto-engages when its out is reached). */
 export interface SafetyLoopSlot {
 	in_ms: number;
@@ -130,6 +137,10 @@ export interface DeckState {
 	loop: LoopState | null;
 	/** Secondary safety loop (one slot); auto-engages at its out when armed. */
 	safety_loop: SafetyLoopSlot | null;
+	/** DECKUX-10478: LOOP IN point waiting for LOOP OUT; null when none. Cleared on load/unload and when OUT engages. */
+	pending_loop_in_ms: number | null;
+	/** DECKUX-10478: the last loop engaged on this track in this load, for RELOOP after exit. */
+	last_loop: LoopMemory | null;
 	/** Hot-cue bank content (empty slots = letters absent from this array). */
 	hot_cues: HotCue[];
 	/** Server-issued CAS revisions for every A-H slot, including empty slots. */

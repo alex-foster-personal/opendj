@@ -14,14 +14,11 @@
 
 from __future__ import annotations
 
-import asyncio
-from typing import Any
-
 import pytest
 
 from apps.opendj_cli.mcp_deck_tools import deck_move_command, register_deck_tools
-from apps.opendj_cli.mcp_sdk import MCPServer
 from apps.opendj_cli.verbs import InvocationError, parse_invocation
+from tests.opendj_cli.parity_support import mcp_tool_command
 
 
 def test_cli_verb_builds_the_bus_command() -> None:
@@ -40,18 +37,13 @@ def test_cli_verb_refuses_bad_values(tokens: list[str]) -> None:
 
 
 def test_mcp_tool_runs_one_single_order_with_an_8_beat_default() -> None:
-    server = MCPServer("deck-move-test")
-    orders: list[dict[str, Any]] = []
-
-    def run_order(order: dict[str, Any]) -> dict[str, Any]:
-        orders.append(order)
-        return {"ok": True}
-
-    register_deck_tools(server, run_order=run_order)
-    names = [tool.name for tool in asyncio.run(server.list_tools())]
-    assert "deck_move" in names
-    asyncio.run(server.call_tool("deck_move", {"from_deck": 1, "to_deck": 4}))
-    assert orders == [{"single": {"type": "deck_move", "from": 1, "to": 4, "crossfade_beats": 8.0, "mode": "move"}}]
+    assert mcp_tool_command(register_deck_tools, "deck_move", from_deck=1, to_deck=4) == {
+        "type": "deck_move",
+        "from": 1,
+        "to": 4,
+        "crossfade_beats": 8.0,
+        "mode": "move",
+    }
 
 
 def test_force_only_sent_when_set() -> None:

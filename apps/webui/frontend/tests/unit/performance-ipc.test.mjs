@@ -91,6 +91,10 @@ test('queue scopes isolate deck loads and coordinate only sync-sensitive command
 		['headphone']
 	);
 	assert.deepEqual(
+		ipc.performanceCommandQueueScopes({ type: 'headphone_booth_select', device_id: 'booth-usb' }),
+		['headphone']
+	);
+	assert.deepEqual(
 		ipc.performanceCommandQueueScopes({ type: 'headphone_input_select', device_id: 'mic' }),
 		['headphone']
 	);
@@ -137,6 +141,7 @@ test('queue scopes isolate deck loads and coordinate only sync-sensitive command
 	assert.equal(ipc.performanceCommandQueueScopes({ type: 'crossfader', value: 0.3 }), null);
 	assert.equal(ipc.performanceCommandQueueScopes({ type: 'pairing_snapshot_open' }), null);
 	assert.equal(ipc.performanceCommandQueueScopes({ type: 'track_info_toggle' }), null);
+	assert.equal(ipc.performanceCommandQueueScopes({ type: 'track_info_open', deck: 2 }), null);
 	assert.equal(ipc.performanceCommandQueueScopes({ type: 'track_info_close' }), null);
 	assert.equal(
 		ipc.performanceCommandQueueScopes({ type: 'track_info_open', stable_id: 'x' }),
@@ -180,7 +185,10 @@ test('load suppressCommandErrorToast parses through parsePerformanceCommandForTe
 
 test('web audio browser load without stems passes undefined stems through to engine.load', async () => {
 	const src = await readFrontendSource('src/lib/rb/performance-ipc.svelte.ts');
-	assert.match(src, /await engine\.load\(command\.deck, command\.stable_id, \{[\s\S]*stems: command\.stems,/);
+	assert.match(
+		src,
+		/await engine\.load\(command\.deck, command\.stable_id, \{[\s\S]*stems: command\.stems,/
+	);
 	assert.doesNotMatch(src, /stems: command\.stems \?\? false/);
 });
 
@@ -204,11 +212,24 @@ test('virtual edit load parses a complete bounded window and rejects partial win
 		}
 	);
 	assert.throws(
-		() => ipc.parsePerformanceCommandForTest({ type: 'load', deck: 2, stable_id: 'source-a', in_ms: 1_000 }),
+		() =>
+			ipc.parsePerformanceCommandForTest({
+				type: 'load',
+				deck: 2,
+				stable_id: 'source-a',
+				in_ms: 1_000
+			}),
 		/edit window/
 	);
 	assert.throws(
-		() => ipc.parsePerformanceCommandForTest({ type: 'load', deck: 2, stable_id: 'source-a', in_ms: 9_000, out_ms: 9_000 }),
+		() =>
+			ipc.parsePerformanceCommandForTest({
+				type: 'load',
+				deck: 2,
+				stable_id: 'source-a',
+				in_ms: 9_000,
+				out_ms: 9_000
+			}),
 		/edit window/
 	);
 });
@@ -283,6 +304,50 @@ test('pairing snapshot freezes deck state, removes only real adjustments, and sa
 	}
 });
 
+test('LIBUX-02 (#2166): the library panel chevron is driven through the performance dispatcher and reported by the query', async () => {
+	globalThis.window = {};
+	const uninstall = pairing.installPerformanceBrowserIpc();
+	try {
+		assert.equal(pairing.queryPerformanceState().library_panels.collapsed, false);
+		await pairing.dispatchPerformanceCommand({ type: 'library_panels_toggle' });
+		assert.equal(pairing.queryPerformanceState().library_panels.collapsed, true);
+		assert.equal(pairing.isLibraryPanelsCollapsed(), true);
+		await pairing.dispatchPerformanceCommand({ type: 'library_panels_toggle' });
+		assert.equal(pairing.queryPerformanceState().library_panels.collapsed, false);
+		await pairing.dispatchPerformanceCommand({ type: 'library_panels_toggle', collapsed: true });
+		await pairing.dispatchPerformanceCommand({ type: 'library_panels_toggle', collapsed: true });
+		assert.equal(pairing.queryPerformanceState().library_panels.collapsed, true);
+
+		pairing.noteVisibleLibraryRowCount(5, 'x');
+		assert.equal(pairing.isLibraryPanelsCollapsed(), true);
+		await pairing.dispatchPerformanceCommand({ type: 'library_panels_toggle', collapsed: false });
+		pairing.noteVisibleLibraryRowCount(14, 'x');
+		pairing.noteVisibleLibraryRowCount(5, 'x');
+		assert.equal(pairing.isLibraryPanelsCollapsed(), false);
+
+		assert.throws(
+			() => ipc.parsePerformanceCommandForTest({ type: 'library_panels_toggle', collapsed: 'yes' }),
+			/boolean/
+		);
+		assert.throws(
+			() => ipc.parsePerformanceCommandForTest({ type: 'library_panels_toggle', panel: 'next' }),
+			/unexpected fields/
+		);
+		assert.equal(ipc.performanceCommandQueueScopes({ type: 'library_panels_toggle' }), null);
+
+		const browser = readFrontendSource('src/lib/components/rb/BrowserPanel.svelte');
+		assert.match(
+			browser,
+			/runPerformanceCommandFromUi\(\{[\s\S]*?type: 'library_panels_toggle'/
+		);
+		assert.doesNotMatch(browser, /onclick=\{\(\) => toggleLibraryPanels\(\)\}/);
+	} finally {
+		pairing.setLibraryPanelsCollapsed(false);
+		uninstall();
+		delete globalThis.window;
+	}
+});
+
 test('TOPVIEW-05: the (i) overlay opens and closes through the dispatcher and the query reports it (Codex P1 4300879440)', async () => {
 	globalThis.window = {};
 	const uninstall = pairing.installPerformanceBrowserIpc();
@@ -335,6 +400,58 @@ test('TOPVIEW-05: the (i) overlay opens and closes through the dispatcher and th
 		delete globalThis.window;
 	}
 });
+
+test(
+	'#9448 track_info_open: deck-targeted record open (Codex P1 PRRT_kwDOSEvNd860v-hu)',
+	async () => {
+		globalThis.window = {};
+		const uninstall = pairing.installPerformanceBrowserIpc();
+		try {
+			for (const deckId of [1, 2, 3, 4]) pairing.deckStates[deckId].stable_id = null;
+			await assert.rejects(
+				pairing.dispatchPerformanceCommand({ type: 'track_info_open', deck: 2 }),
+				/CH2 holds no track/
+			);
+			pairing.deckStates[1].stable_id = 'track-a';
+			pairing.deckStates[2].stable_id = 'track-b';
+			await pairing.dispatchPerformanceCommand({ type: 'track_info_open', deck: 1 });
+			assert.deepEqual(pairing.queryPerformanceState().track_info, {
+				open: true,
+				deck: 1,
+				stable_id: 'track-a'
+			});
+			await pairing.dispatchPerformanceCommand({ type: 'track_info_open', deck: 2 });
+			assert.deepEqual(pairing.queryPerformanceState().track_info, {
+				open: true,
+				deck: 2,
+				stable_id: 'track-b'
+			});
+			await pairing.dispatchPerformanceCommand({ type: 'track_info_open', deck: 2 });
+			assert.deepEqual(pairing.queryPerformanceState().track_info, {
+				open: true,
+				deck: 2,
+				stable_id: 'track-b'
+			});
+			await pairing.dispatchPerformanceCommand({ type: 'track_info_close' });
+			await pairing.dispatchPerformanceCommand({ type: 'track_info_toggle' });
+			assert.deepEqual(pairing.queryPerformanceState().track_info, {
+				open: true,
+				deck: 2,
+				stable_id: 'track-b'
+			});
+			assert.throws(() => ipc.parsePerformanceCommandForTest({ type: 'track_info_open' }), /deck must be one of/);
+			assert.throws(
+				() => ipc.parsePerformanceCommandForTest({ type: 'track_info_open', deck: 2, extra: 1 }),
+				/unexpected fields/
+			);
+		} finally {
+			for (const deckId of [1, 2, 3, 4]) pairing.deckStates[deckId].stable_id = null;
+			await pairing.dispatchPerformanceCommand({ type: 'track_info_close' }).catch(() => {});
+			uninstall();
+			delete globalThis.window;
+		}
+	}
+);
 
 test('track_info_open opens a browser-row record with deck null (issue #9451, PRRT_kwDOSEvNd860wEnM)', async () => {
 	globalThis.window = {};
@@ -1516,6 +1633,7 @@ test('continuous mixer controls execute through IPC immediately and round-trip i
 		await ipc.dispatchPerformanceCommand({ type: 'master_volume', value: 0.6 });
 		await ipc.dispatchPerformanceCommand({ type: 'headphone_mix', value: 0.25 });
 		await ipc.dispatchPerformanceCommand({ type: 'headphone_level', value: 0.75 });
+		await ipc.dispatchPerformanceCommand({ type: 'headphone_booth_level', value: 0.25 });
 
 		const state = ipc.queryPerformanceState();
 		assert.equal(state.command_pending, false);
@@ -1526,8 +1644,10 @@ test('continuous mixer controls execute through IPC immediately and round-trip i
 			headphones: {
 				mix: 0.25,
 				level: 0.75,
+				booth_level: 0.25,
 				selected_output_device_id: null,
 				selected_master_output_device_id: null,
+				selected_booth_output_device_id: null,
 				selected_input_device_id: null,
 				output_mode: 'practice',
 				split_reason: null,
@@ -1555,7 +1675,8 @@ test('continuous mixer controls execute through IPC immediately and round-trip i
 				},
 				routes: {
 					master: { state: 'default', selected: false },
-					cue: { state: 'default', selected: false }
+					cue: { state: 'default', selected: false },
+					booth: { state: 'default', selected: false }
 				},
 				signals: Object.fromEntries(
 					['master', 'cue', 'input'].map((bus) => [
@@ -1647,6 +1768,7 @@ test('continuous mixer controls execute through IPC immediately and round-trip i
 		await ipc.dispatchPerformanceCommand({ type: 'master_volume', value: 1 });
 		await ipc.dispatchPerformanceCommand({ type: 'headphone_mix', value: 0.5 });
 		await ipc.dispatchPerformanceCommand({ type: 'headphone_level', value: 0.5 });
+		await ipc.dispatchPerformanceCommand({ type: 'headphone_booth_level', value: 0.5 });
 	} finally {
 		uninstall();
 		delete globalThis.window;
@@ -1662,11 +1784,13 @@ test('mixer headphone controls use the typed dispatcher from every visible contr
 	assert.match(mixer, /type: 'channel_cue'/);
 	assert.match(mixer, /type: 'headphone_mix'/);
 	assert.match(mixer, /type: 'headphone_level'/);
+	assert.match(mixer, /type: 'headphone_booth_level'/);
 	assert.match(mixer, /type: 'head_delay_ms'/);
 	assert.match(mixer, /type: 'headphone_outputs_refresh'/);
 	assert.match(mixer, /type: 'headphone_output_acquire'/);
 	assert.match(mixer, /type: 'headphone_output_select'/);
 	assert.match(mixer, /type: 'headphone_master_select'/);
+	assert.match(mixer, /type: 'headphone_booth_select'/);
 	assert.match(mixer, /type: 'headphone_input_select'/);
 	assert.match(headphones, /onclick=\{onacquire\}/);
 	// Opening settings is read-only; permission/chooser is a separate explicit
@@ -1682,6 +1806,31 @@ test('mixer headphone controls use the typed dispatcher from every visible contr
 	assert.match(strip, /aria-pressed=\{cueEnabled\}/);
 	assert.match(headphones, /aria-label="headphone output device"/);
 	assert.match(headphones, /ondelay/);
+});
+
+// requirement: CUEOUT-13
+// [if] BOOTH commands enter IPC [then] strict select and independent gain payloads are accepted
+test('BOOTH select and gain are strict typed IPC commands', () => {
+	assert.deepEqual(
+		ipc.parsePerformanceCommandForTest({ type: 'headphone_booth_select', device_id: 'booth-usb' }),
+		{ type: 'headphone_booth_select', device_id: 'booth-usb' }
+	);
+	assert.deepEqual(
+		ipc.parsePerformanceCommandForTest({ type: 'headphone_booth_select', device_id: '' }),
+		{ type: 'headphone_booth_select', device_id: '' }
+	);
+	assert.deepEqual(
+		ipc.parsePerformanceCommandForTest({ type: 'headphone_booth_level', value: 0.25 }),
+		{ type: 'headphone_booth_level', value: 0.25 }
+	);
+	assert.throws(
+		() => ipc.parsePerformanceCommandForTest({ type: 'headphone_booth_select', device_id: ' ' }),
+		/empty or a non-blank string/
+	);
+	assert.throws(
+		() => ipc.parsePerformanceCommandForTest({ type: 'headphone_booth_level', value: 2 }),
+		/within 0\.\.1/
+	);
 });
 
 // requirement: CUEOUT-01
@@ -1834,25 +1983,36 @@ test('dismissing a toast is NOT gated on the performance command session', async
 });
 
 test('load play intent is strictly validated, immediate, and visible to agents', async () => {
-	const source = await readFile(
+	const typesSource = await readFile(
+		new URL('../../src/lib/rb/performance-ipc-types.ts', import.meta.url),
+		'utf8'
+	);
+	const guardsSource = await readFile(
+		new URL('../../src/lib/rb/performance-ipc-guards.ts', import.meta.url),
+		'utf8'
+	);
+	const svelteSource = await readFile(
 		new URL('../../src/lib/rb/performance-ipc.svelte.ts', import.meta.url),
 		'utf8'
 	);
 	assert.match(
-		source,
+		typesSource,
 		/type: 'load_play_intent'; deck: DeckId; generation: number; desired_play: boolean/
 	);
-	assert.match(source, /_exactKeys\(record, \['type', 'deck', 'generation', 'desired_play'\]\)/);
-	assert.match(source, /generation must be a positive safe integer/);
+	assert.match(
+		guardsSource,
+		/_exactKeys\(record, \['type', 'deck', 'generation', 'desired_play'\]\)/
+	);
+	assert.match(guardsSource, /generation must be a positive safe integer/);
 	// Any number of sibling types (line comments between them allowed) may share the
 	// load_play_intent early-return group; a fixed
 	// character window broke when PREF-02 appended feedback_mark to it (main red, Fri 11 Sep 2026).
 	assert.match(
-		source,
+		svelteSource,
 		/command\.type === 'load_play_intent'(?:\s*(?:\/\/[^\n]*\n\s*)*\|\| command\.type === '[a-z_]+')*\s*\)\s*\{\s*return null;/
 	);
 	assert.match(
-		source,
+		typesSource,
 		/load_play_intent: Record<DeckId, \{ generation: number; desired_play: boolean \} \| null>/
 	);
 });
@@ -2069,6 +2229,11 @@ test('AGENT-48 AutoPlay intent selector dispatches auto_play_next_intent through
 test('TOPVIEW-01..04 view icons and PAD are typed, query-visible dispatcher commands', async () => {
 	// [if] set_perf_view or show_pads has no queue scope [then] every IPC/CLI call throws, [else stop].
 	assert.equal(ipc.performanceCommandQueueScopes({ type: 'set_perf_view', view: 'list' }), null);
+	assert.equal(
+		ipc.performanceCommandQueueScopes({ type: 'set_layout_size', region: 'browser.tree', px: 300 }),
+		null
+	);
+	assert.equal(ipc.performanceCommandQueueScopes({ type: 'reset_layout' }), null);
 	assert.equal(ipc.performanceCommandQueueScopes({ type: 'show_pads', enabled: false }), null);
 	// [if] the parser accepts a view outside PERF_VIEWS or an extra key [then] an agent can write a bad pref, [else stop].
 	for (const view of ['waveform', 'list', 'phase-scope', 'phase-meter']) {
@@ -2095,6 +2260,45 @@ test('TOPVIEW-01..04 view icons and PAD are typed, query-visible dispatcher comm
 	assert.throws(() => ipc.parsePerformanceCommandForTest({ type: 'show_pads', enabled: 'no' }));
 	assert.throws(() =>
 		ipc.parsePerformanceCommandForTest({ type: 'show_pads', enabled: true, deck: 1 })
+	);
+
+	assert.deepEqual(
+		ipc.parsePerformanceCommandForTest({
+			type: 'set_layout_size',
+			region: 'browser.tree',
+			px: 300
+		}),
+		{ type: 'set_layout_size', region: 'browser.tree', px: 300 }
+	);
+	assert.deepEqual(ipc.parsePerformanceCommandForTest({ type: 'reset_layout' }), {
+		type: 'reset_layout'
+	});
+	assert.deepEqual(
+		ipc.parsePerformanceCommandForTest({ type: 'reset_layout', region: 'browser.tree' }),
+		{
+			type: 'reset_layout',
+			region: 'browser.tree'
+		}
+	);
+	assert.throws(
+		() =>
+			ipc.parsePerformanceCommandForTest({
+				type: 'set_layout_size',
+				region: 'browser.tree',
+				px: 9999
+			}),
+		/220\.\.520/
+	);
+	assert.throws(() =>
+		ipc.parsePerformanceCommandForTest({
+			type: 'set_layout_size',
+			region: 'browser.tree',
+			px: 300,
+			deck: 1
+		})
+	);
+	assert.throws(() =>
+		ipc.parsePerformanceCommandForTest({ type: 'set_layout_size', region: 'nope', px: 300 })
 	);
 	// [if] the query snapshot omits either pref [then] an agent cannot observe the controls, [else stop].
 	const ipcSource = await readFile('src/lib/rb/performance-ipc.svelte.ts', 'utf8');

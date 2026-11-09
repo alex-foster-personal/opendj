@@ -5,6 +5,8 @@
  * on its keyup. Any other keydown in between is a chord (right-Cmd+C) and
  * disarms, so copy/paste with the right hand never toggles the pad. The left
  * modifiers never arm: they are the ones every chord in the app is typed with.
+ * A left+right pair of the same modifier (MetaLeft+MetaRight) is a chord too
+ * (SETNOTE-9940): holding left Cmd and tapping right Cmd never toggles the pad.
  */
 
 export const RIGHT_CMD_CODE = 'MetaRight';
@@ -12,13 +14,6 @@ export const RIGHT_CTRL_CODE = 'ControlRight';
 
 function _isTapCode(code: string): boolean {
 	return code === RIGHT_CMD_CODE || code === RIGHT_CTRL_CODE;
-}
-
-// X11 key injection (xdotool, VNC and other remote-desktop clients) presses
-// the left-hand twin alongside a right modifier, so ControlLeft+ControlRight
-// with nothing else is still one tap.
-function _twin(code: string): string {
-	return code.replace(/Right$/, 'Left');
 }
 
 export interface TapKeyEvent {
@@ -39,8 +34,8 @@ export function createRightCmdTapDetector(): RightCmdTapDetector {
 	return {
 		keyDown(e) {
 			if (e.repeat) return;
-			if (armed !== null && e.code !== armed && e.code !== _twin(armed)) armed = null;
-			else if (_isTapCode(e.code) && [...down].every((c) => c === _twin(e.code))) armed = e.code;
+			if (armed !== null && e.code !== armed) armed = null;
+			else if (_isTapCode(e.code) && down.size === 0) armed = e.code;
 			down.add(e.code);
 		},
 		keyUp(e) {

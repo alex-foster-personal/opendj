@@ -124,6 +124,8 @@ export function buildUiMirror(): Record<string, unknown> {
 		auto_gain: state.auto_gain,
 		// COLORFX-04: per deck, the color knob's effect, echo division and timing.
 		color_fx: state.color_fx,
+		// DL-2 (#9429): app_state.layout - the resizable regions set_layout_size / reset_layout move.
+		layout: state.layout,
 		decks: Object.fromEntries(
 			Object.entries(state.decks).map(([id, deck]) => [id, {
 				// stable_id rides with title because title alone cannot answer WHICH
@@ -140,7 +142,10 @@ export function buildUiMirror(): Record<string, unknown> {
 					silence.verdict !== 'output-stalled-while-rendering' &&
 					deviceLiveness.verdict !== 'device-unreachable',
 				presentation_clock: { trust: deck.transport_clock.source === 'audio_output' && deck.transport_clock.desired_revision === deck.transport_clock.presented_revision ? 'trusted' : 'untrusted', ...deck.transport_clock },
-				loop: deck.loop, hot_cues: deck.hot_cue_slots, pitch: deck.pitch,
+				loop: deck.loop,
+				pending_loop_in_ms: deck.pending_loop_in_ms,
+				last_loop: deck.last_loop,
+				hot_cues: deck.hot_cue_slots, pitch: deck.pitch,
 				// AGENT-24: the tempo fader's +-percent range, so a plan can refuse a
 				// beatmatch the incoming deck cannot reach.
 				pitch_range: deck.pitch_range,

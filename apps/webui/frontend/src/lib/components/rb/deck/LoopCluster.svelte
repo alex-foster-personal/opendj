@@ -36,11 +36,13 @@
 		intervalChoiceTip,
 		loopDisabledTip,
 		loopRestartTip,
+		manualLoopButtons,
 		reapplyEngageArgs,
 		resizeAnchorOf,
 		restartEngageArgs,
 		safetyLoopTip
 	} from './loop-cluster-actions';
+	import { deckHasPhaseCapableBeatGrid } from '$lib/player/grid-features';
 	import LoopSafetyControls from './LoopSafetyControls.svelte';
 	import LoopSourceMenu from './LoopSourceMenu.svelte';
 
@@ -55,7 +57,11 @@
 		onSafetyClear,
 		onIntervalMode,
 		onIntervalBase,
-		onStoredLoop
+		onStoredLoop,
+		onLoopIn,
+		onLoopOut,
+		onReloop,
+		onSetActive
 	}: {
 		deck: DeckState;
 		deckId: DeckId;
@@ -75,6 +81,11 @@
 		onIntervalBase: (base: number) => Promise<void>;
 		/** DECKCTL-6235d: engage one of the track's stored loops exactly. */
 		onStoredLoop: (loop: { in_ms: number; out_ms: number }) => Promise<boolean>;
+		onLoopIn: () => Promise<void>;
+		onLoopOut: () => Promise<void>;
+		onReloop: () => Promise<void>;
+		/** CUES-9967: set or clear the track's active memory loop. */
+		onSetActive: (loop: { in_ms: number; out_ms: number }, active: boolean) => Promise<boolean>;
 	} = $props();
 
 	const MIN_BEATS = LOOP_MIN_BEATS;
@@ -103,19 +114,24 @@
 	);
 	const gridBeats: readonly AnlzBeat[] = $derived(deck.anlz?.beatgrid.beats ?? []);
 	const gridBeatCount: number = $derived(gridBeats.length);
+	const phaseCapable: boolean = $derived(deckHasPhaseCapableBeatGrid(deck));
 	const canToggle: boolean = $derived(
-		!pending && deck.stable_id !== null && (engaged || gridBeatCount > beatLength)
+		phaseCapable &&
+			!pending &&
+			deck.stable_id !== null &&
+			(engaged || gridBeatCount > beatLength)
 	);
 	const nextHalved: number = $derived(Math.max(MIN_BEATS, Math.floor(beatLength / 2)));
 	const nextDoubled: number = $derived(Math.min(MAX_BEATS, beatLength * 2));
 	const canHalve: boolean = $derived(
-		!pending && deck.stable_id !== null && gridBeatCount > nextHalved
+		phaseCapable && !pending && deck.stable_id !== null && gridBeatCount > nextHalved
 	);
 	const canDouble: boolean = $derived(
-		!pending &&
-		deck.stable_id !== null &&
-		nextDoubled > beatLength &&
-		gridBeatCount > nextDoubled
+		phaseCapable &&
+			!pending &&
+			deck.stable_id !== null &&
+			nextDoubled > beatLength &&
+			gridBeatCount > nextDoubled
 	);
 
 	// --------------------------------------------------- interval grid mode
@@ -132,6 +148,7 @@
 	const canGridDown: boolean = $derived(prevGridBase < gridBase);
 	const canGridUp: boolean = $derived(nextGridBase > gridBase);
 	const disabledTip: string = $derived(loopDisabledTip({ pending, deck, beatLength }));
+	const manual = $derived(manualLoopButtons({ deck, pending }));
 
 	// ----------------------------------------------------------- _helpers
 
@@ -246,9 +263,13 @@
 	}
 
 	const canRestart: boolean = $derived(
-		!pending && engaged && deck.loop !== null && deck.loop.beat_length !== null
+		phaseCapable &&
+			!pending &&
+			engaged &&
+			deck.loop !== null &&
+			deck.loop.beat_length !== null
 	);
-	const restartTip: string = $derived(loopRestartTip({ pending, engaged, canRestart }));
+	const restartTip: string = $derived(loopRestartTip({ pending, engaged, canRestart, deck }));
 
 	// ------------------------------------------------------ safety loop
 
@@ -283,7 +304,7 @@
 	>
 		<span class="mode-glyph" aria-hidden="true">&#9647;&#9647;</span>
 	</button>
-	<LoopSourceMenu {deck} {deckId} {pending} {onStoredLoop} {onDisengage} />
+	<LoopSourceMenu {deck} {deckId} {pending} {onStoredLoop} {onDisengage} {onSetActive} />
 	{#if intervalGrid}
 		<div class="halve-double">
 			<button
@@ -402,6 +423,55 @@
 			</button>
 		</div>
 	{/if}
+	<div class="manual-loop-btns">
+		<button
+			class="manual-loop-btn"
+			class:lit={manual.inLit}
+			disabled={!manual.canIn}
+			data-performance-control="loop-in"
+			data-testid={`loop-in-deck-${deckId}`}
+			aria-label={`loop in deck ${deckId}`}
+			aria-pressed={manual.inLit}
+			title={manual.inTip}
+			onclick={() => {
+				noteLoopInteraction(deckId);
+				void onLoopIn();
+			}}
+		>
+			IN
+		</button>
+		<button
+			class="manual-loop-btn"
+			class:lit={manual.outLit}
+			disabled={!manual.canOut}
+			data-performance-control="loop-out"
+			data-testid={`loop-out-deck-${deckId}`}
+			aria-label={`loop out deck ${deckId}`}
+			aria-pressed={manual.outLit}
+			title={manual.outTip}
+			onclick={() => {
+				noteLoopInteraction(deckId);
+				void onLoopOut();
+			}}
+		>
+			OUT
+		</button>
+		<button
+			class="manual-loop-btn"
+			class:available={manual.reloopAvailable}
+			disabled={!manual.canReloop}
+			data-performance-control="reloop"
+			data-testid={`reloop-deck-${deckId}`}
+			aria-label={`${manual.reloopLabel.toLowerCase()} loop deck ${deckId}`}
+			title={manual.reloopTip}
+			onclick={() => {
+				noteLoopInteraction(deckId);
+				void onReloop();
+			}}
+		>
+			{manual.reloopLabel}
+		</button>
+	</div>
 	<LoopSafetyControls
 		{deckId}
 		{pending}
@@ -574,5 +644,40 @@
 		color: var(--rb-text-dim);
 		cursor: default;
 		opacity: 0.6;
+	}
+	.manual-loop-btns {
+		display: flex;
+		gap: 2px;
+		width: 100%;
+		margin-top: 2px;
+	}
+	.manual-loop-btn {
+		flex: 1;
+		background: var(--rb-panel-raised);
+		border: 1px solid var(--rb-border);
+		border-radius: 2px;
+		color: var(--rb-text-dim);
+		font-family: var(--rb-font);
+		font-size: 9px;
+		font-weight: 600;
+		letter-spacing: 0.02em;
+		padding: 2px 0;
+		cursor: pointer;
+	}
+	.manual-loop-btn.lit {
+		color: var(--rb-orange);
+		border-color: var(--rb-orange);
+		box-shadow: 0 0 4px rgba(232, 161, 58, 0.45);
+	}
+	.manual-loop-btn.available:not(.lit) {
+		color: var(--rb-text);
+	}
+	.manual-loop-btn:hover:not(:disabled) {
+		color: var(--rb-accent);
+		border-color: var(--rb-accent);
+	}
+	.manual-loop-btn:disabled {
+		opacity: 0.35;
+		cursor: default;
 	}
 </style>

@@ -14,8 +14,12 @@ from pathlib import Path
 
 import pytest
 
+from scripts import review_gate_freshness
+from scripts.review_coverage import _require_gate_unchanged
 from scripts.review_gate_freshness import (
     GATE_PATHSPEC,
+    gate_commit_on_main,
+    newest_gate_commit,
     pin_remote_branch,
     require_gate_current,
 )
@@ -122,5 +126,52 @@ def test_pinning_main_does_not_write_fetch_head(repos: tuple[Path, Path]) -> Non
     fetch_head = fetch_head if fetch_head.is_absolute() else pr / fetch_head
     before = fetch_head.read_bytes() if fetch_head.exists() else None
     _main_tip(pr)
+    after = fetch_head.read_bytes() if fetch_head.exists() else None
+    assert before == after
+
+
+def test_a_gate_commit_landing_between_the_two_reads_names_both_shas(
+    repos: tuple[Path, Path], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    maintainer, pr = repos
+    monkeypatch.setattr(review_gate_freshness, "CHECKOUT_ROOT", pr)
+    pinned = require_gate_current(pr, _main_tip(pr), GATE_PATHSPEC)
+    new = _commit(maintainer, "scripts/review_coverage.py", "v2\n")
+    _git(maintainer, "push", "-q", "origin", "main")
+    with pytest.raises(TriageError) as exc_info:
+        _require_gate_unchanged(pinned, gate_commit_on_main())
+    assert pinned in str(exc_info.value)
+    assert new in str(exc_info.value)
+
+
+def test_main_moving_only_in_non_gate_files_between_the_two_reads_keeps_the_pin(
+    repos: tuple[Path, Path], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    maintainer, pr = repos
+    monkeypatch.setattr(review_gate_freshness, "CHECKOUT_ROOT", pr)
+    pinned = require_gate_current(pr, _main_tip(pr), GATE_PATHSPEC)
+    _commit(maintainer, "apps/unrelated.py", "y\n")
+    _git(maintainer, "push", "-q", "origin", "main")
+    assert gate_commit_on_main() == pinned
+    _require_gate_unchanged(pinned, gate_commit_on_main())
+
+
+def test_newest_gate_commit_empty_pathspec_matches_require_gate_current(
+    repos: tuple[Path, Path],
+) -> None:
+    _, pr = repos
+    with pytest.raises(TriageError, match="cannot be measured"):
+        newest_gate_commit(pr, _main_tip(pr), ("nope/*.py",))
+
+
+def test_gate_commit_on_main_does_not_write_fetch_head(
+    repos: tuple[Path, Path], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _, pr = repos
+    monkeypatch.setattr(review_gate_freshness, "CHECKOUT_ROOT", pr)
+    fetch_head = Path(_git(pr, "rev-parse", "--git-path", "FETCH_HEAD"))
+    fetch_head = fetch_head if fetch_head.is_absolute() else pr / fetch_head
+    before = fetch_head.read_bytes() if fetch_head.exists() else None
+    gate_commit_on_main()
     after = fetch_head.read_bytes() if fetch_head.exists() else None
     assert before == after

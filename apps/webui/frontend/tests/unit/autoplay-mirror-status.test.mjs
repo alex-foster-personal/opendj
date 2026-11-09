@@ -110,6 +110,7 @@ test('RUNNING it: the autoplay command switches AutoPlay and the next mirror rea
 	const hadWindow = 'window' in globalThis;
 	try {
 		const live = await loadRuneModule(ENTRY);
+		live.setAutoPlayEnabled(true);
 		assert.deepEqual(
 			live.readAutoPlayMirrorStatus(),
 			{ autoplay_enabled: true, autoplay_armed: false, autoplay_disarm_reason: 'not-installed' },

@@ -1,14 +1,11 @@
 /**
  * Device-map registry (build unit: FLX10 map owns this file).
  *
- * ONE place that knows every supported controller. The /performance page
- * calls registerAllDeviceMaps() once on mount (before or after initMidi(),
- * both fine - the core re-resolves connected ports on late registration).
- *
- * Ownership (conflict-free by design):
- *   - this file + ddj-flx10.ts: FLX10 unit
- *   - ddj-400.ts: DDJ-400 unit (owns its DDJ400_MAP export)
- *   - reloop-mixtour.ts: Mixtour unit (owns its RELOOP_MIXTOUR_MAP export)
+ * The live registry: every map whose own module registers it with
+ * `live: true` (DEVICE_MAP_ENTRIES, discovered by ./entries.ts). The
+ * /performance page calls registerAllDeviceMaps() once on mount (before or
+ * after initMidi(), both fine - the core re-resolves connected ports on late
+ * registration). A new controller adds its own map file and edits nothing here.
  *
  * Requirements (mini-PRD):
  *   ✔︎ DEVICE_MAP_REGISTRY lists every DeviceMap the app supports.
@@ -24,22 +21,12 @@
 
 import type { DeviceMap } from '$lib/rb/midi/midi-types';
 import { registerDeviceMap } from '$lib/rb/midi/webmidi.svelte';
-import { DDJ400_MAP } from './ddj-400';
-import { FLX4_MAP } from './ddj-flx4';
-import { FLX10_MAP } from './ddj-flx10';
-import { XDJ_AZ_MAP, XDJ_RX3_MAP } from './pioneer-xdj';
-import { RELOOP_MIXTOUR_MAP } from './reloop-mixtour';
-import { RELOOP_MIXTOUR_PRO_MAP } from './reloop-mixtour-pro';
+import { DEVICE_MAP_ENTRIES } from './entries';
 
-export const DEVICE_MAP_REGISTRY: readonly DeviceMap[] = [
-	FLX10_MAP,
-	DDJ400_MAP,
-	RELOOP_MIXTOUR_PRO_MAP,
-	RELOOP_MIXTOUR_MAP,
-	FLX4_MAP,
-	XDJ_RX3_MAP,
-	XDJ_AZ_MAP
-];
+/** Every live map, in entry-key order (the engine export follows this order). */
+export const DEVICE_MAP_REGISTRY: readonly DeviceMap[] = DEVICE_MAP_ENTRIES.filter(
+	(e) => e.live
+).map((e) => e.map);
 
 let _registered = false;
 

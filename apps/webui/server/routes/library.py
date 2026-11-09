@@ -2,18 +2,22 @@
 
 from __future__ import annotations
 
+from functools import partial
 from pathlib import Path
 from typing import Annotated, Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 
+from apps.adapters.rekordbox_xml.library_export import ExportRefused, plan_library_export
 from apps.library_wheel.http import AXES, LibraryWheelError, build_service
 from apps.shared import fd_anchored_walk, platform_paths
 from apps.shared import paths as shared_paths
 from apps.shared.state.db import open_ro
 from apps.stems.artifacts import DEFAULT_STEMS_DIR, stem_roots
 from apps.webui.server import rb_vendor
+from apps.webui.server.analysis_overlay import lane_owned_fields
 from apps.webui.server.backend import StateBackend
 from apps.webui.server.deps import get_library_data_dir, get_library_state_db, get_read_state
 from apps.webui.server.library_readiness import (
@@ -121,6 +125,106 @@ def post_preview_strips(body: PreviewStripsIn, request: Request) -> PreviewStrip
             for sid, strip in found.strips.items()
         },
         pending=pending,
+    )
+
+
+def _present_ids(request: Request) -> list[str]:
+    from apps.webui.server.routes import ingest as ingest_routes
+
+    snapshot = ingest_routes.build_snapshot(request.app)
+    return list(dict.fromkeys(sid for sid, _path in snapshot.on_disk))
+
+
+class StripCoverageOut(BaseModel):
+    """Answer of ``GET /library/strip-coverage`` (#9422, epic #9377 strip_coverage_pct)."""
+
+    present: int = Field(description="Present tracks (materialised local audio): THE denominator")
+    covered: int = Field(description="Present tracks whose listing row has a Preview strip")
+    missing: int = Field(description="present minus covered")
+    unmapped_missing: int = Field(description="Missing strips the ahead drain fills")
+    mapped_missing: int = Field(
+        description=(
+            "Rekordbox-mapped present tracks with no ANLZ strip and no cached strip; "
+            "the drain never fills these"
+        )
+    )
+    strip_coverage: float | None = Field(
+        description="covered / present, rounded to 4 places; null when present == 0"
+    )
+
+
+@router.get("/strip-coverage", response_model=StripCoverageOut, operation_id="get_library_strip_coverage")
+def get_library_strip_coverage(request: Request) -> StripCoverageOut:
+    """Library-wide Preview strip coverage, read exactly as listing rows read strips.
+
+    Requirements (mini-PRD):
+      [if] a present track's listing row has a strip [then] it counts in covered
+      [if] no track is present [then] strip_coverage is null, never 0 or 1
+    """
+    present_ids = _present_ids(request)
+    present = len(present_ids)
+    if present == 0:
+        return StripCoverageOut(
+            present=0,
+            covered=0,
+            missing=0,
+            unmapped_missing=0,
+            mapped_missing=0,
+            strip_coverage=None,
+        )
+    covered = 0
+    unmapped_missing = 0
+    mapped_missing = 0
+    for offset in range(0, present, MAX_PREVIEW_STRIP_IDS):
+        chunk = present_ids[offset : offset + MAX_PREVIEW_STRIP_IDS]
+        found = bulk_preview_strips(chunk)
+        for sid in chunk:
+            if found.strips.get(sid) is not None:
+                covered += 1
+            elif sid in found.unmapped:
+                unmapped_missing += 1
+            else:
+                mapped_missing += 1
+    missing = present - covered
+    ratio = round(covered / present, 4)
+    return StripCoverageOut(
+        present=present,
+        covered=covered,
+        missing=missing,
+        unmapped_missing=unmapped_missing,
+        mapped_missing=mapped_missing,
+        strip_coverage=ratio,
+    )
+
+
+@router.get("/export.xml", response_class=StreamingResponse, operation_id="get_library_export_xml")
+def export_library_xml(
+    state_db: Path = Depends(get_library_state_db),  # noqa: B008  # FastAPI DI
+) -> StreamingResponse:
+    """The whole live collection and playlist folder tree as one rekordbox XML file (LIBORG-10051).
+
+    Streamed from one read snapshot, so a 10k-track library never sits in memory.
+    BPM and key are the values the library shows (the selected analysis source).
+    [if] the state DB is missing [then] 503 STATE_DB_MISSING
+    [if] two sibling playlists share a name, or a parent is not a live folder [then] 409 LIBRARY_EXPORT_REFUSED
+    """
+    try:
+        conn = open_ro(state_db, check_same_thread=False)
+    except FileNotFoundError as exc:
+        raise HTTPException(503, detail={"code": "STATE_DB_MISSING", "message": str(exc)}) from exc
+    try:
+        export = plan_library_export(conn, lane_fields=partial(lane_owned_fields, state_db_path=state_db))
+    except ExportRefused as exc:
+        raise HTTPException(409, detail={"code": "LIBRARY_EXPORT_REFUSED", "message": str(exc)}) from exc
+    return StreamingResponse(
+        export.iter_bytes(),
+        media_type="application/xml",
+        headers={
+            "Content-Disposition": 'attachment; filename="rekordbox.xml"',
+            "X-Export-Tracks": str(export.track_count),
+            "X-Export-Skipped-No-Location": str(export.skipped_no_location),
+            "X-Export-Skipped-Streaming": str(export.skipped_streaming),
+        },
     )
 
 

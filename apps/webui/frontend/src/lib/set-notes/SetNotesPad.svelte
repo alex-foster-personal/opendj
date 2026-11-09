@@ -18,6 +18,7 @@
 		moveSetNotesPad,
 		padUi,
 		SCRATCH_SCOPE,
+		persistSetNoteDraft,
 		setNote,
 		setSetNotesOpen,
 		toggleSetNotesDark,
@@ -89,8 +90,10 @@
 			viewport = { w: window.innerWidth, h: window.innerHeight };
 		};
 		window.addEventListener('resize', onResize);
+		window.addEventListener('pagehide', persistSetNoteDraft);
 		return () => {
 			window.removeEventListener('resize', onResize);
+			window.removeEventListener('pagehide', persistSetNoteDraft);
 			void flushSetNote();
 		};
 	});

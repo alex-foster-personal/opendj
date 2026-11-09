@@ -1,0 +1,106 @@
+{
+  "id": "generic-moving-head-14",
+  "name": "Generic Moving Head 14ch",
+  "kind": "moving_head",
+  "modes": [
+    {
+      "name": "14ch",
+      "channels": [
+        {
+          "capability": "pan"
+        },
+        {
+          "capability": "pan_fine",
+          "fine_of": 0
+        },
+        {
+          "capability": "tilt"
+        },
+        {
+          "capability": "tilt_fine",
+          "fine_of": 2
+        },
+        {
+          "capability": "pt_speed",
+          "ranges": [
+            {
+              "from": 0,
+              "to": 255,
+              "meaning": "fast..slow"
+            }
+          ]
+        },
+        {
+          "capability": "intensity"
+        },
+        {
+          "capability": "shutter",
+          "ranges": [
+            {
+              "from": 0,
+              "to": 7,
+              "meaning": "closed"
+            },
+            {
+              "from": 8,
+              "to": 15,
+              "meaning": "open"
+            },
+            {
+              "from": 16,
+              "to": 255,
+              "meaning": "strobe slow..fast"
+            }
+          ]
+        },
+        {
+          "capability": "red"
+        },
+        {
+          "capability": "green"
+        },
+        {
+          "capability": "blue"
+        },
+        {
+          "capability": "white"
+        },
+        {
+          "capability": "color_wheel",
+          "ranges": [
+            {
+              "from": 0,
+              "to": 255,
+              "meaning": "wheel position"
+            }
+          ]
+        },
+        {
+          "capability": "gobo",
+          "ranges": [
+            {
+              "from": 0,
+              "to": 255,
+              "meaning": "gobo position"
+            }
+          ]
+        },
+        {
+          "capability": "macro",
+          "ranges": [
+            {
+              "from": 0,
+              "to": 9,
+              "meaning": "off"
+            },
+            {
+              "from": 10,
+              "to": 255,
+              "meaning": "macros"
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

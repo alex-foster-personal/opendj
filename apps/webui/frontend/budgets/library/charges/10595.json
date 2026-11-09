@@ -1,0 +1,9 @@
+{
+  "bytes": 1024,
+  "measured_main": 343940,
+  "measured_with_pr": 344358,
+  "sha": "f8c5c7277f",
+  "date": "Mon 9 Nov 2026",
+  "reason": "PR #10595 grows the library surface; measured +418 B gzip over main; ceiled to KiB.",
+  "payback": "none planned; the growth is the feature's own code on this surface"
+}

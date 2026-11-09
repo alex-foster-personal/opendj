@@ -163,9 +163,10 @@ class Id3Tag:
 
 
 # ============================================================== read ========
-def read_tag(path: Path) -> Id3Tag | None:
-    """The ID3v2 tag at the start of ``path``, or ``None`` when it has none."""
+def read_tag(path: Path, *, offset: int = 0) -> Id3Tag | None:
+    """The ID3v2 tag at ``offset`` in ``path``, or ``None`` when it has none."""
     with path.open("rb") as handle:
+        handle.seek(offset)
         header = handle.read(HEADER_SIZE)
         _strict._reject_cut_short_header(path, header)
         if len(header) < HEADER_SIZE or header[:3] != b"ID3":
@@ -191,6 +192,49 @@ def read_tag(path: Path) -> Id3Tag | None:
     _strict._check_text_encodings_at_read(tag.frames, major, path)
     _strict._check_footer_padding(path, body, frames_end, has_footer)
     return tag
+
+
+def read_aiff_tag(path: Path) -> Id3Tag | None:
+    """The ID3v2 tag in an AIFF ``ID3 `` / ``id3 `` chunk, or ``None`` when absent.
+
+    Chunk layout follows the public AIFF 1.3 specification (layout only).
+    """
+    size_on_disk = path.stat().st_size
+    with path.open("rb") as handle:
+        header = handle.read(12)
+        if len(header) != 12:
+            raise Id3Error(f"{path}: too short for an AIFF header")
+        if header[:4] != b"FORM":
+            raise Id3Error(f"{path}: not an AIFF file (missing FORM)")
+        form_size = struct.unpack(">I", header[4:8])[0]
+        if header[8:12] not in (b"AIFF", b"AIFC"):
+            raise Id3Error(f"{path}: not an AIFF file (expected AIFF or AIFC, got {header[8:12]!r})")
+        end = min(size_on_disk, 8 + form_size)
+        offset = 12
+        while offset + 8 <= end:
+            handle.seek(offset)
+            chunk_id = handle.read(4)
+            if len(chunk_id) != 4:
+                raise Id3Error(f"{path}: truncated AIFF chunk header at offset {offset}")
+            chunk_size = struct.unpack(">I", handle.read(4))[0]
+            body_offset = offset + 8
+            body_end = body_offset + chunk_size
+            if body_end > end:
+                raise Id3Error(f"{path}: AIFF chunk {chunk_id!r} at offset {offset} runs past the file")
+            if chunk_id in (b"ID3 ", b"id3 "):
+                tag = read_tag(path, offset=body_offset)
+                if tag is None:
+                    raise Id3Error(f"{path}: AIFF {chunk_id!r} chunk at offset {offset} is not an ID3 tag")
+                if tag.original_size > chunk_size:
+                    raise Id3Error(
+                        f"{path}: ID3 tag in {chunk_id!r} chunk ({tag.original_size} bytes) "
+                        f"exceeds chunk size ({chunk_size})"
+                    )
+                return tag
+            pad = chunk_size & 1
+            handle.seek(body_end + pad)
+            offset = body_end + pad
+    return None
 
 
 def _sealed_mask(major: int) -> int:
@@ -572,6 +616,7 @@ __all__ = [
     "encode_text_frame",
     "encode_txxx",
     "load_or_new",
+    "read_aiff_tag",
     "read_tag",
     "render",
     "save",

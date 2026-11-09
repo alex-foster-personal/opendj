@@ -1023,3 +1023,12 @@ test('CMDK-14: an eject that waited out a queued command installs its confirmati
 	assert.match(body, /if \(barSession === session\) \{\s*ejectGuard = replaceGuard\(command\.deck, decks\[command\.deck\], deckLoadDispatches\(command\.deck\), deckCommands\(command\.deck\)\);/);
 	assert.match(body, /if \(barSession === session\) ejectGuard = null;/);
 });
+
+test('CMDK-9600: CommandBarV2 wires palette rows without static performance-ipc import', () => {
+	const src = readFileSync(`${SRC}lib/components/rb/CommandBarV2.svelte`, 'utf8');
+	assert.ok(src.includes('paletteCommandRows('));
+	assert.ok(src.includes("command.type === 'palette'"));
+	assert.ok(src.includes("import('$lib/components/rb/hotkeys/hotkeys-overlay.svelte')"));
+	assert.ok(!src.includes("from '$lib/rb/performance-ipc.svelte'"));
+});
+

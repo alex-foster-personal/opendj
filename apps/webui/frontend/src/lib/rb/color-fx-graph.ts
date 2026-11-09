@@ -9,9 +9,20 @@
  *
  *   colorBus -+-> (dry, always: colorBus -> cue / fader) ------------------------+
  *             +-> toneDark (lowpass)    -> darkSend   -+                         |
- *             +-> toneBright (highpass) -> brightSend -+-> fxIn -+-> echoIn -> echo <-> loopHp -> loopLp -> feedback
- *                                                               |            echo -> echoReturn ----------> cue / fader
+ *             +-> toneBright (highpass) -> brightSend -+-> fxIn -+-> echoIn -> echo kernel (loop sum -> two
+ *                                                               |            crossfaded lines <-> loopHp -> loopLp -> feedback)
+ *                                                               |            -> echoReturn ----------> cue / fader
  *                                                               +-> spaceIn -> space (convolver) -> spaceReturn -> cue / fader
+ *
+ * Placement (COLORFX-10754): the deck's stems sum upstream of trim, so the send
+ * hears the stem balance and a muted stem sends nothing new while the loop
+ * rings out. The send taps `colorBus`, after EQ and FILTER. Both returns feed
+ * the channel's cue and fader only, so the phones hear the effect and the
+ * channel fader cuts the wet tail (a pre-fader insert, DJM-A9 behaviour,
+ * (private path) section 3). Pre-EQ placement (the A9
+ * diagram) is an open question. tests/unit/color-fx-placement.test.mjs and
+ * tests/e2e/color-fx-placement-render.spec.ts pin this, so a move must change
+ * them on purpose.
  *
  * The convolver is attached only when a SPACE send first opens: it is the
  * expensive node (measured about 2.7% of a core per channel even with its send
@@ -25,7 +36,8 @@
  * the browser's audio thread with buffers sized at splice, so nothing allocates
  * per render quantum. The returns are fixed gains: the knob only ever moves the
  * sends and the effect inputs, so an effect switch or a return to center
- * crossfades what goes IN and lets what is already in the loop ring out.
+ * crossfades what goes IN and lets what is already in the loop ring out. A retune
+ * crossfades the two echo lines over 30 ms and never ramps a delay time.
  */
 import {
 	COLOR_FX_ECHO_BEATS,
@@ -35,6 +47,9 @@ import {
 	type ColorFxSettings,
 	type ColorFxTargets
 } from './color-fx';
+import { buildEchoKernel, type EchoKernel } from './fx/echo-kernel';
+import { glideCorner } from './filter-glide';
+import { FILTER_GLIDE_DOMAIN, FILTER_GLIDE_S } from '$lib/player/constants';
 
 /**
  * Stereo impulse response: decorrelated noise under an exponential decay that
@@ -87,8 +102,6 @@ export const SPACE_DETACH_FLOOR_DB = -90;
 
 /** Time constant for knob and effect-switch moves (matches PARAM_SMOOTH_S). */
 export const COLOR_FX_RAMP_SEC = 0.01;
-/** Echo-time glide, so a tempo change bends rather than clicks. */
-export const ECHO_TIME_GLIDE_SEC = 0.05;
 
 /** Voicing overrides, for the blind A/B page's variants. The shipped voicing is the defaults. */
 export interface ColorFxGraphOptions {
@@ -107,7 +120,8 @@ export interface ColorFxGraph {
 	brightSend: GainNode;
 	fxIn: GainNode;
 	echoIn: GainNode;
-	echo: DelayNode;
+	/** The shared echo loop; retunes crossfade its two lines. */
+	echo: EchoKernel;
 	echoLoopHp: BiquadFilterNode;
 	echoLoopLp: BiquadFilterNode;
 	echoFeedback: GainNode;
@@ -122,7 +136,7 @@ export interface ColorFxGraph {
 
 type GraphContext = Pick<
 	BaseAudioContext,
-	'createGain' | 'createDelay' | 'createBiquadFilter' | 'createConvolver' | 'createBuffer' | 'sampleRate'
+	'createGain' | 'createDelay' | 'createBiquadFilter' | 'createWaveShaper' | 'createConvolver' | 'createBuffer' | 'sampleRate'
 >;
 
 function _gain(ctx: GraphContext, value: number): GainNode {
@@ -164,10 +178,15 @@ export function buildColorFxGraph(
 	const brightSend = _gain(ctx, 0);
 	const fxIn = _gain(ctx, 1);
 	const echoIn = _gain(ctx, 0);
-	const echo = ctx.createDelay(COLOR_FX_ECHO_MAX_DELAY_SEC);
-	const echoLoopHp = _biquad(ctx, 'highpass', ECHO_LOOP_HP_HZ);
-	const echoLoopLp = _biquad(ctx, 'lowpass', ECHO_LOOP_LP_HZ);
-	const echoFeedback = _gain(ctx, options.echoFeedback ?? ECHO_FEEDBACK);
+	const echo = buildEchoKernel(ctx, {
+		maxDelaySec: COLOR_FX_ECHO_MAX_DELAY_SEC,
+		feedback: options.echoFeedback ?? ECHO_FEEDBACK,
+		loopHpHz: ECHO_LOOP_HP_HZ,
+		loopLpHz: ECHO_LOOP_LP_HZ
+	});
+	const echoLoopHp = echo.loopHp;
+	const echoLoopLp = echo.loopLp;
+	const echoFeedback = echo.feedback;
 	const echoReturn = _gain(ctx, options.echoWet ?? ECHO_WET_GAIN);
 	const spaceIn = _gain(ctx, 0);
 	const spaceReturn = _gain(ctx, options.spaceWet ?? SPACE_WET_GAIN);
@@ -179,12 +198,8 @@ export function buildColorFxGraph(
 	darkSend.connect(fxIn);
 	brightSend.connect(fxIn);
 	fxIn.connect(echoIn);
-	echoIn.connect(echo);
-	echo.connect(echoLoopHp);
-	echoLoopHp.connect(echoLoopLp);
-	echoLoopLp.connect(echoFeedback);
-	echoFeedback.connect(echo);
-	echo.connect(echoReturn);
+	echoIn.connect(echo.input);
+	echo.output.connect(echoReturn);
 	fxIn.connect(spaceIn);
 	for (const destination of destinations) {
 		echoReturn.connect(destination);
@@ -193,8 +208,10 @@ export function buildColorFxGraph(
 	return {
 		toneDark, toneBright, darkSend, brightSend, fxIn, echoIn, echo, echoLoopHp, echoLoopLp, echoFeedback,
 		echoReturn, spaceIn, space: null, spaceReturn,
-		nodes: [toneDark, toneBright, darkSend, brightSend, fxIn, echoIn, echo, echoLoopHp, echoLoopLp, echoFeedback,
-			echoReturn, spaceIn, spaceReturn]
+		nodes: [
+			toneDark, toneBright, darkSend, brightSend, fxIn, echoIn, echoReturn, spaceIn, spaceReturn,
+			...echo.nodes
+		]
 	};
 }
 
@@ -225,11 +242,16 @@ export interface ColorFilterNodes {
 	filterHpWet: GainNode;
 }
 
-/** Drive the FILTER nodes to their part of the targets, on the smoothing ramp. */
-export function applyColorFilterTargets(nodes: ColorFilterNodes, targets: ColorFxTargets, now: number): void {
+/** Drive the FILTER nodes to their part of the targets: corners on the FILTER glide, gains on the smoothing ramp. */
+export function applyColorFilterTargets(
+	nodes: ColorFilterNodes,
+	targets: ColorFxTargets,
+	now: number,
+	sampleRate: number
+): void {
 	const f = targets.filter;
-	_ramp(nodes.filterLp.frequency, f.lpHz, now, COLOR_FX_RAMP_SEC);
-	_ramp(nodes.filterHp.frequency, f.hpHz, now, COLOR_FX_RAMP_SEC);
+	glideCorner(nodes.filterLp.frequency, f.lpHz, now, sampleRate, FILTER_GLIDE_DOMAIN, FILTER_GLIDE_S);
+	glideCorner(nodes.filterHp.frequency, f.hpHz, now, sampleRate, FILTER_GLIDE_DOMAIN, FILTER_GLIDE_S);
 	_ramp(nodes.filterDry.gain, f.dryGain, now, COLOR_FX_RAMP_SEC);
 	_ramp(nodes.filterLpWet.gain, f.lpWetGain, now, COLOR_FX_RAMP_SEC);
 	_ramp(nodes.filterHpWet.gain, f.hpWetGain, now, COLOR_FX_RAMP_SEC);
@@ -248,7 +270,7 @@ export function applyColorFxTargets(
 	_ramp(graph.brightSend.gain, targets.brightSend, now, COLOR_FX_RAMP_SEC);
 	_ramp(graph.echoIn.gain, targets.echoIn, now, COLOR_FX_RAMP_SEC);
 	_ramp(graph.spaceIn.gain, targets.spaceIn, now, COLOR_FX_RAMP_SEC);
-	if (echoSeconds !== null) _ramp(graph.echo.delayTime, echoSeconds, now, ECHO_TIME_GLIDE_SEC);
+	if (echoSeconds !== null) graph.echo.setTime(echoSeconds, now);
 }
 
 /** The channel nodes the color knob drives: the FILTER nodes plus the color
@@ -312,11 +334,9 @@ export function driveColorChannel(
 	const targets = colorFxTargets(settings.effect, value, echoSeconds !== null);
 	const ctx = rt.nodes.colorBus.context;
 	const now = ctx.currentTime;
-	applyColorFilterTargets(rt.nodes, targets, now);
+	applyColorFilterTargets(rt.nodes, targets, now, ctx.sampleRate);
 	if (settings.effect !== 'filter' && rt.graph === null) {
 		const graph = buildColorFxGraph(ctx, rt.nodes.colorBus, [rt.nodes.cue, rt.nodes.fader], options);
-		// A cold line starts at its time: gliding up from 0 would pitch-sweep the first repeats.
-		if (echoSeconds !== null) graph.echo.delayTime.value = echoSeconds;
 		rt.graph = graph;
 	}
 	const spaceOpen = targets.spaceIn > 0 && (targets.darkSend > 0 || targets.brightSend > 0);

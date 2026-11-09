@@ -90,8 +90,15 @@ test('if the color knob tap is deferred or a drag stops turning it then broken',
 	assert.match(STRIP, /ontap=\{handleColorFxTap\}/);
 	assert.match(STRIP, /onchange=\{onfilter\}/, 'the knob still turns on drag');
 	assert.match(KNOB, /onsingleclick !== undefined \|\| ontap !== undefined \|\| altPressInGroup\) && insideSlop\) return;/, 'jitter inside the slop stays a tap');
-	const up = KNOB.slice(KNOB.indexOf('function handlePointerUp'), KNOB.indexOf('function handleDblClick'));
-	assert.match(up, /if \(!live \|\| wasDrag\) return;\n\t\tontap\?\.\(\);/, 'the tap fires on release, not after the double-click delay');
+	const finish = KNOB.slice(
+		KNOB.indexOf('function finishPointerDrag'),
+		KNOB.indexOf('function handleDblClick')
+	);
+	assert.match(
+		finish,
+		/if \(!live \|\| wasDrag\) return;\n\t\tontap\?\.\(\);/,
+		'the tap fires on release, not after the double-click delay'
+	);
 });
 
 test('if the chevron hangs outside the caption box again then broken', () => {

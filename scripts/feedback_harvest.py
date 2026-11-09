@@ -27,7 +27,7 @@ Target discovery (documented per the FB-06 brief):
   actually answer /api/v1/feedback/todos. Agents open these on arbitrary
   ports to put a build in front of the maintainer, so his feedback lands there.
 - Installed apps (local Mac AND silver over ssh): the ship-dmg probe, reused
-  verbatim from .agents/skills/ship-dmg/scripts/ship_dmg.sh - pgrep the
+  verbatim from (private path) - pgrep the
   bundled engine python, then lsof its listening TCP port. The engine binds
   an OS-assigned ephemeral port (apps/desktop/src-tauri/src/engine.rs), so
   the live socket is the only truth; nothing hardcoded.
@@ -64,7 +64,7 @@ SILVER_HOST: str = "silver"
 DEFAULT_DEV_PORT: int = 8585
 TIMEOUT_S: int = 6
 
-# Reused verbatim from .agents/skills/ship-dmg/scripts/ship_dmg.sh: the
+# Reused verbatim from (private path): the
 # bundled engine's listening socket via lsof on its pid. The [3] bracket
 # defeats pgrep -f matching its own command line.
 PORT_PROBE: str = (
@@ -260,6 +260,63 @@ def _sha(item: dict) -> str:
     return build.get("git_sha") or f"build?({build.get('error', 'unstamped')})"
 
 
+def _reply_stamp(reply: dict) -> str | None:
+    from apps.shared.state import sync_stamp
+
+    raw = reply.get("created_at")
+    if not isinstance(raw, str) or not sync_stamp.is_orderable(raw):
+        return None
+    return sync_stamp.to_canonical(raw)
+
+
+def _pin_lines(machine: str, pin: dict) -> list[str]:
+    """zTasks lines for one comment pin, skipping already-harvested snapshots."""
+    status = pin.get("status")
+    if status in ("harvested", "archived"):
+        return []
+
+    snapshot_at = pin.get("agent_snapshot_at")
+    if snapshot_at:
+        from apps.shared.state import sync_stamp
+
+        snap = (
+            sync_stamp.to_canonical(snapshot_at)
+            if isinstance(snapshot_at, str) and sync_stamp.is_orderable(snapshot_at)
+            else None
+        )
+        newer_replies: list[dict] = []
+        for reply in pin.get("replies") or []:
+            if not isinstance(reply, dict):
+                continue
+            stamp = _reply_stamp(reply)
+            if stamp is None or snap is None or stamp > snap:
+                newer_replies.append(reply)
+        if not newer_replies:
+            return []
+        anchor = f" near {pin['anchor']}" if pin.get("anchor") else ""
+        lines = [
+            f"- [ ] feedback(pin-reply) [{machine} {_sha(pin)} {snapshot_at}]: "
+            f"{pin['text']} (at {pin['x_pct']}%,{pin['y_pct']}% on {pin['page']}{anchor})"
+        ]
+        for reply in newer_replies:
+            author = reply.get("author", "?")
+            text = reply.get("text", "")
+            lines.append(f"    - {author}: {text}")
+        return lines
+
+    anchor = f" near {pin['anchor']}" if pin.get("anchor") else ""
+    lines = [
+        f"- [ ] feedback(pin) [{machine} {_sha(pin)} {pin['created_at']}]: "
+        f"{pin['text']} (at {pin['x_pct']}%,{pin['y_pct']}% on {pin['page']}{anchor})"
+    ]
+    for reply in pin.get("replies") or []:
+        if isinstance(reply, dict):
+            author = reply.get("author", "?")
+            text = reply.get("text", "")
+            lines.append(f"    - {author}: {text}")
+    return lines
+
+
 def _harvest_lines(target: Target) -> tuple[list[str], dict]:
     """(zTasks lines for everything harvestable, full snapshot for printing)."""
     todos = target.request("GET", "/api/v1/feedback/todos")["todos"]
@@ -280,16 +337,7 @@ def _harvest_lines(target: Target) -> tuple[list[str], dict]:
                 f"- [ ] feedback(open-todo) {tag}: \"{todo['title']}\" - {todo['feedback']}"
             )
     for pin in comments:
-        anchor = f" near {pin['anchor']}" if pin["anchor"] else ""
-        lines.append(
-            f"- [ ] feedback(pin) [{target.machine} {_sha(pin)} {pin['created_at']}]: "
-            f"{pin['text']} (at {pin['x_pct']}%,{pin['y_pct']}% on {pin['page']}{anchor})"
-        )
-        for reply in pin.get("replies") or []:
-            if isinstance(reply, dict):
-                author = reply.get("author", "?")
-                text = reply.get("text", "")
-                lines.append(f"    - {author}: {text}")
+        lines.extend(_pin_lines(target.machine, pin))
     if general["text"]:
         stamp = general.get("updated_at") or "?"
         lines.append(

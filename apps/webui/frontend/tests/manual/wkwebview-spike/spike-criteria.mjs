@@ -26,6 +26,9 @@
 /** The only verdicts an evidence row may carry (ADR-0006 evidence taxonomy). */
 export const VERDICTS = ['PASS', 'FAIL', 'UNAVAILABLE'];
 
+/** Outcome only for runAutomatable; never pass to recordVerdict. */
+export const PENDING = 'PENDING';
+
 /**
  * How a criterion is exercised.
  * - `auto`: the harness drives it end to end inside the WKWebView.
@@ -186,10 +189,10 @@ export const SPIKE_CRITERIA = [
 		measurement:
 			'Sync two decks in default BAR mode, compare real PQTZ beat numbers and phase at the settled position, then repeat with an explicit BEAT selection.',
 		pass_criterion:
-			'When BAR locks exactly, beat 1 aligns with 1, 2 with 2, 3 with 3 and 4 with 4. When only a 0.5x/2x fold fits the pitch range, BAR takes it rather than refusing (pin 9bf12adccb45) and raises an ORANGE warning, not a red skip - so a folded lock is a PASS and phase equality is not required of it, because the fold gives up the bar count. A fold that reports a sync_error is a FAIL. Explicit BEAT still permits 0.5x/1x/2x; fresh decks default Quantize, Beat Sync and Master Tempo on.',
+			'When BAR locks exactly, beat 1 aligns with 1, 2 with 2, 3 with 3 and 4 with 4. When only a 0.5x/2x fold fits the pitch range, BAR takes it rather than refusing (pin 9bf12adccb45) and raises an ORANGE warning, not a red skip. The harness detects a fold from the planner tempoNormalization in the beat-sync-fold perf row. A folded lock is a PASS only after the operator has seen the ORANGE warning, so the harness holds it PENDING (unrecorded) until then. A fold that reports a sync_error, or whose fold row is not at warn severity, is a FAIL. Explicit BEAT still permits 0.5x/1x/2x; fresh decks default Quantize, Beat Sync and Master Tempo on.',
 		expectation: null,
 		human_step:
-			'Confirm by eye that a folded BAR lock warns in ORANGE rather than red, and that the fold appears in the performance row; the harness reads the engine read model, which carries no toast.',
+			"When runAutomatable leaves WKV-10 pending (a folded lock), confirm by eye that the fold toast is ORANGE rather than red, then record wkwebviewSpike.mark('WKV-10', 'PASS' or 'FAIL', detail). The harness reads the fold perf row but cannot see toast colour.",
 		fallback: null
 	},
 	{
@@ -251,39 +254,95 @@ function _criterionIds() {
  *
  * Two acceptance criteria, not one. An EXACT lock still owes 1->1 through 4->4.
  * A FOLDED lock has surrendered the bar count - that is what its orange warning
- * says - so it owes only that it locked at all.
+ * says - so the harness holds PENDING until the operator confirms the toast colour.
+ * Folds are detected from the planner normalization in the beat-sync-fold perf row,
+ * because the post-pitch effective-BPM ratio is about 1.0 after a fold.
  *
- * @param {{ masterPhase: number, followerPhase: number, ratio: number | null,
- *           syncError: unknown, observations: Record<string, unknown> }} input
+ * @param {{ masterPhase: number, followerPhase: number, normalization: number | null,
+ *           foldSeverity: string | null, syncError: unknown,
+ *           observations: Record<string, unknown> }} input
  * @returns {{ verdict: string, detail: string, observations: Record<string, unknown> }}
  */
-export function barSyncVerdict({ masterPhase, followerPhase, ratio, syncError, observations }) {
-	const folded = ratio !== null && (Math.abs(ratio - 0.5) < 0.02 || Math.abs(ratio - 2) < 0.02);
-	if (folded) {
-		if (syncError !== null && syncError !== undefined) {
+export function foldFromPerfRows(rows, { deck, since }) {
+	if (rows === null || rows === undefined) {
+		return null;
+	}
+	const matching = rows.filter(
+		(row) => row.kind === 'beat-sync-fold' && row.deck === deck && row.t >= since
+	);
+	const row = matching.length > 0 ? matching[matching.length - 1] : null;
+	if (row === null) {
+		return { normalization: 1, severity: null, row: null };
+	}
+	const parsed = /^tempoNormalization=(0\.5|2)$/.exec(String(row.message ?? ''));
+	if (parsed === null) {
+		return { normalization: null, severity: row.severity ?? null, row };
+	}
+	const normalization = parsed[1] === '0.5' ? 0.5 : 2;
+	return { normalization, severity: row.severity ?? null, row };
+}
+
+export function barSyncVerdict({
+	masterPhase,
+	followerPhase,
+	normalization,
+	foldSeverity,
+	syncError,
+	observations
+}) {
+	if (syncError !== null && syncError !== undefined) {
+		return {
+			verdict: 'FAIL',
+			detail: `BAR must lock, exact or folded (pin 9bf12adccb45), not skip. sync_error ${String(syncError)}`,
+			observations: {
+				...observations,
+				normalization,
+				fold_severity: foldSeverity,
+				sync_error: syncError
+			}
+		};
+	}
+	if (normalization === 0.5 || normalization === 2) {
+		if (foldSeverity !== 'warn') {
 			return {
 				verdict: 'FAIL',
-				detail: `BAR refused a half/double fold (ratio ${String(ratio)}), which pin 9bf12adccb45 reversed: it must lock and warn in orange, not skip. sync_error ${String(syncError)}`,
-				observations: { ...observations, ratio, sync_error: syncError }
+				detail: `The fold was announced at severity ${String(foldSeverity)}, not the orange warn that pin 9bf12adccb45 requires.`,
+				observations: {
+					...observations,
+					normalization,
+					fold_severity: foldSeverity,
+					sync_error: syncError
+				}
 			};
 		}
+		const label = normalization === 0.5 ? 'half' : 'double';
 		return {
-			verdict: 'PASS',
-			detail: `BAR folded to a half/double lock (ratio ${String(ratio)}) and did not refuse; phase ${masterPhase} to ${followerPhase} is not expected to match, because the fold gives up the bar count. Confirm the ORANGE (not red) fold warning and its perf row by eye, and exercise the explicit BEAT opt-out by hand, before accepting this row`,
-			observations: { ...observations, ratio, sync_error: syncError }
+			verdict: PENDING,
+			detail: `BAR folded to ${label} tempo (planner tempoNormalization=${String(normalization)}) and the perf row is at warn severity; the phase is not expected to match. The row stays unrecorded until the operator has seen the ORANGE toast and records wkwebviewSpike.mark('WKV-10', 'PASS' or 'FAIL', detail).`,
+			observations: {
+				...observations,
+				normalization,
+				fold_severity: foldSeverity,
+				sync_error: syncError
+			}
 		};
 	}
 	if (masterPhase !== followerPhase) {
 		return {
 			verdict: 'FAIL',
-			detail: `exact BAR sync misaligned: master phase ${masterPhase}, follower phase ${followerPhase}, effective bpm ratio ${String(ratio)}`,
-			observations: { ...observations, ratio, sync_error: syncError }
+			detail: `exact BAR sync misaligned: master phase ${masterPhase}, follower phase ${followerPhase}, normalization ${String(normalization)}`,
+			observations: {
+				...observations,
+				normalization,
+				fold_severity: foldSeverity,
+				sync_error: syncError
+			}
 		};
 	}
 	return {
 		verdict: 'PASS',
-		detail: `exact BAR sync aligned phase ${masterPhase} to ${followerPhase} with no half or double normalization (ratio ${String(ratio)}); exercise the explicit BEAT opt-out by hand before accepting this row`,
-		observations: { ...observations, ratio }
+		detail: `exact BAR sync aligned phase ${masterPhase} to ${followerPhase} with no half or double normalization (normalization ${String(normalization)}); exercise the explicit BEAT opt-out by hand before accepting this row`,
+		observations: { ...observations, normalization, fold_severity: foldSeverity }
 	};
 }
 

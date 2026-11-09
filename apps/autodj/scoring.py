@@ -28,7 +28,7 @@ from typing import Any
 from apps.autodj.plan import STRONG_BASS, _overlaps, beat_sync_reach_pct, bpm_gap_pct, pair_beat_sync_fold
 from apps.autodj.profile import VOCAL_BAR_THRESHOLD, TrackProfile
 from apps.autodj.windows import MixWindow, mix_windows
-from apps.shared.harmonic import CamelotKey, camelot_compatibility, camelot_distance
+from apps.shared.harmonic import CamelotKey, camelot_distance, key_compat
 
 #: Overlap assumed when scoring windows without a style chosen yet.
 DEFAULT_OVERLAP_BARS = 16
@@ -40,6 +40,8 @@ TERM_WEIGHTS: dict[str, float] = {"harmony": 0.3, "tempo": 0.25, "vocals": 0.2, 
 class PairScore:
     score: float
     key_distance: int | None
+    #: The Camelot rule the pair's keys make, out -> in (``clash`` when none does); None when a key is unknown.
+    key_relation: str | None
     key_out: str | None
     key_in: str | None
     bpm_gap_pct: float | None
@@ -66,6 +68,7 @@ class PairScore:
             "key_out": self.key_out,
             "key_in": self.key_in,
             "key_distance": self.key_distance,
+            "key_relation": self.key_relation,
             "bpm_gap_pct": None if self.bpm_gap_pct is None else round(self.bpm_gap_pct, 2),
             "beatmatchable": self.beatmatchable,
             "vocal_clash_bars": self.vocal_clash_bars,
@@ -141,14 +144,20 @@ def _vocal_term(vocal_clash: int | None, bass_clash: int | None, bars: int, reas
     return None if vocal_clash is None else 1.0 - vocal_clash / bars
 
 
-def _key_term(key_out: str | None, key_in: str | None, reasons: list[str]) -> tuple[int | None, float | None]:
-    """Camelot distance and harmony term (None, unscored, when a key is unknown), noting why in ``reasons``."""
+def _key_term(
+    key_out: str | None, key_in: str | None, reasons: list[str]
+) -> tuple[int | None, str | None, float | None]:
+    """Camelot distance, the directional rule (``key_compat``) and the harmony term, noting the rule in ``reasons``.
+
+    All three are None (unscored) when a key is unknown.
+    """
     if not (key_out and key_in):
         reasons.append("a key is unknown: harmony not scored")
-        return None, None
+        return None, None, None
     key_distance = camelot_distance(CamelotKey.from_string(key_out), CamelotKey.from_string(key_in))
-    reasons.append(f"keys {key_out} -> {key_in}, {key_distance} steps apart")
-    return key_distance, camelot_compatibility(key_out, key_in)
+    compat = key_compat(key_out, key_in)
+    reasons.append(f"keys {key_out} -> {key_in} {compat.relation} ({compat.interval})")
+    return key_distance, compat.relation, compat.score
 
 
 def score_windows(
@@ -165,7 +174,7 @@ def score_windows(
     reasons: list[str] = []
     key_out = key_at(out_profile, out_window.start_bar + bars - 1)
     key_in = key_at(in_profile, in_window.start_bar)
-    key_distance, key_term = _key_term(key_out, key_in, reasons)
+    key_distance, key_relation, key_term = _key_term(key_out, key_in, reasons)
     gap = bpm_gap_pct(out_profile.judged_bpm, in_profile.judged_bpm)
     reach = beat_sync_reach_pct(in_profile)
     beatmatchable, tempo_term = _tempo_term(gap, reasons, reach)
@@ -191,6 +200,7 @@ def score_windows(
         score=_weighted_mean(measured),
         unscored=unscored,
         key_distance=key_distance,
+        key_relation=key_relation,
         key_out=key_out,
         key_in=key_in,
         bpm_gap_pct=gap,

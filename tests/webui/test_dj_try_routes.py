@@ -22,7 +22,7 @@ from fastapi.testclient import TestClient
 from apps.autodj import try_picks
 from apps.autodj.http import build_service
 from apps.shared.engine_origin import EngineOrigin
-from apps.transition_score import SCORER_VERSION, Candidate, Measured, TryResult, Veto
+from apps.transition_score.contract import SCORER_VERSION, Candidate, Measured, TryResult, Veto
 from apps.transition_score.tryer import TryError, odj_audio_binary
 from apps.webui.server.routes import dj_try
 
@@ -42,15 +42,15 @@ def _candidate(
     tmp.mkdir(parents=True, exist_ok=True)
     return Candidate(
         id=cid,
-        plan={"style": "blend", "bars": 16},
+        plan_json=json.dumps({"style": "blend", "bars": 16}),
         plan_sha256=f"sha-{cid}",
         style="blend",
         bars=16,
-        metrics={"vocal_overlap_s": 0.0},
-        factors={"alignment": 0.9},
+        metrics_json=json.dumps({"vocal_overlap_s": 0.0}),
+        factors_json=json.dumps({"alignment": 0.9}),
         vetoes=vetoes,
         measured=Measured(k=5, n=7),
-        unknown={"seam_clicks": "no render"} if unknown is None else unknown,
+        unknown_json=json.dumps({"seam_clicks": "no render"} if unknown is None else unknown),
         score=score,
         scorer_version=SCORER_VERSION,
         render_path=str(_wav(tmp / f"{cid}.wav")),

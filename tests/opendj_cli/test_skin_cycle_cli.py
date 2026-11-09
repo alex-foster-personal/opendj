@@ -7,10 +7,16 @@
 """
 from __future__ import annotations
 
+import re
+from pathlib import Path
+
 import pytest
 
-from apps.opendj_cli.catalog import UI_SKIN_VALUES
+from apps.opendj_cli.catalog import LAYOUT_PRESET_VALUES, UI_SKIN_VALUES
 from apps.opendj_cli.verbs import InvocationError, parse_invocation
+
+_REPO = Path(__file__).resolve().parents[2]
+_SKIN_LAYOUT_TS = _REPO / "apps/webui/frontend/src/lib/rb/skin-layout.ts"
 
 
 @pytest.mark.requirement("CHROME-12")
@@ -49,3 +55,48 @@ def test_set_skin_accepts_an_auto_palette() -> None:
     assert parse_invocation(["set_skin", "mono-dev", "auto", "auto"]).command == {
         "type": "set_skin", "ui_skin": "mono-dev", "wave_palette": "auto", "wave_split_master": "auto",
     }
+
+
+@pytest.mark.requirement("SKINLAYOUT-10199")
+@pytest.mark.parametrize(
+    ("surface", "preset"),
+    [
+        ("performance", "deck-grid"),
+        ("library", "three-panel"),
+        ("library", "auto"),
+    ],
+)
+def test_set_layout_preset_builds_command(surface: str, preset: str) -> None:
+    """[if] set_layout_preset does not round-trip [then] agents cannot set layout overrides, [else stop]."""
+    assert parse_invocation(["set_layout_preset", surface, preset]).command == {
+        "type": "set_layout_preset",
+        "surface": surface,
+        "preset": preset,
+    }
+
+
+@pytest.mark.requirement("SKINLAYOUT-10199")
+def test_set_layout_preset_rejects_unknown_tokens() -> None:
+    """[if] unknown surface or preset tokens parse [then] the enum is not enforced, [else stop]."""
+    with pytest.raises(InvocationError):
+        parse_invocation(["set_layout_preset", "performance", "neon"])
+    with pytest.raises(InvocationError):
+        parse_invocation(["set_layout_preset", "mixer", "auto"])
+
+
+@pytest.mark.requirement("SKINLAYOUT-10199")
+def test_layout_preset_values_match_typescript_catalog() -> None:
+    """[if] LAYOUT_PRESET_VALUES disagrees with skin-layout.ts [then] CLI and bus catalogs diverge, [else stop]."""
+    text = _SKIN_LAYOUT_TS.read_text(encoding="utf-8")
+    perf_m = re.search(
+        r"export const PERFORMANCE_LAYOUTS: readonly PerformanceLayout\[\] = (\[[^\]]+\])",
+        text,
+    )
+    lib_m = re.search(
+        r"export const LIBRARY_LAYOUTS: readonly LibraryLayout\[\] = (\[[^\]]+\])",
+        text,
+    )
+    assert perf_m and lib_m
+    perf = tuple(re.findall(r"'([^']+)'", perf_m.group(1)))
+    lib = tuple(re.findall(r"'([^']+)'", lib_m.group(1)))
+    assert ("auto", *perf, *lib) == LAYOUT_PRESET_VALUES

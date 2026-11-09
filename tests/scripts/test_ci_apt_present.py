@@ -121,7 +121,7 @@ def test_real_dpkg_reports_an_installed_package_present_and_a_bogus_one_missing(
 # ----------------------------------------------------------------------------
 # every locked install site in the workflows is fronted by the check
 
-LOCKED_INSTALL = re.compile(r"apt-get install -y ([a-z0-9][a-z0-9 .+-]*?)'?$")
+LOCKED_INSTALL = re.compile(r"ci_apt_install\.sh ([a-z0-9][a-z0-9 .+-]*?)$")
 PRESENCE_PREFIX = re.compile(
     r"^scripts/ci_apt_present\.sh ([a-z0-9 .+-]+?) \|\| scripts/ci_host_lock\.sh packages "
 )
@@ -144,7 +144,7 @@ def _locked_install_sites() -> list[tuple[str, str, str]]:
         for path in sorted(WORKFLOW_DIR.glob("*.yml"))
         for lines in [path.read_text().splitlines()]
         for lineno, line in enumerate(lines, 1)
-        if "ci_host_lock.sh packages sudo" in line and "apt-get install -y" in line
+        if "ci_host_lock.sh packages scripts/ci_apt_install.sh " in line
     ]
 
 

@@ -26,6 +26,7 @@ from apps.autodj.styles import (
     PRE_HIT_LOW,
     STYLES,
     crossover_bars,
+    exit_bar,
     hit_bounds,
 )
 from apps.autodj.windows import MixWindow
@@ -230,6 +231,18 @@ def test_a_cut_enters_on_the_incoming_bass() -> None:
     """[if] a cut's in-window starts before the incoming bass [then] it moves onto the entry, [else stop]."""
     placed = place_hit(STYLES["cut"], _out_window(), profile("trk-in", arrangement=LATE_DROP), 1, 1)
     assert placed.in_start_bar == 33 and placed.hit_bar == 0.0
+
+
+@pytest.mark.requirement("FXTRANS-9850")
+def test_echo_out_enters_on_the_incoming_bass_at_its_exit_bar() -> None:
+    """[if] echo_out places its hit [then] the incoming starts on its bass at exit bar E, [else stop]."""
+    placed = place_hit(STYLES["echo_out"], _out_window(), profile("trk-in", arrangement=LATE_DROP), 1, 3)
+    assert placed.in_start_bar == 33
+    assert placed.hit_bar == exit_bar(3)
+    assert placed.entry is not None
+    assert placed.entry["entry_plan_bar"] == placed.entry["hit_plan_bar"] == 2.0
+    with pytest.raises(ValueError, match="exit bar"):
+        STYLES["echo_out"].build(3, OUT_DECK, IN_DECK, 0.0)
 
 
 @pytest.mark.requirement("AGENT-37")

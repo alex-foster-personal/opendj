@@ -128,10 +128,15 @@ test('if a touch on stems already engaged re-engages them then every press re-ru
 });
 
 test('if the engine lands a neutral bundle instead of holding it, or the engage skips the crossfade, then stems play by default again', () => {
-	const engine = readFileSync(
+	const barrel = readFileSync(
 		new URL('../../src/lib/rb/audio-engine.svelte.ts', import.meta.url),
 		'utf8'
 	);
+	const stemRouting = readFileSync(
+		new URL('../../src/lib/rb/audio-engine-stem-routing.ts', import.meta.url),
+		'utf8'
+	);
+	const engine = `${barrel}\n${stemRouting}`;
 	assert.match(
 		engine,
 		/crossfadeSec: STEM_ENGAGE_CROSSFADE_SEC,\n\t\tcreateGain: \(\) => ctx\.createGain\(\)/
@@ -139,9 +144,10 @@ test('if the engine lands a neutral bundle instead of holding it, or the engage 
 	const hold = engine.slice(engine.indexOf('function _holdNeutralStems('));
 	assert.match(hold.slice(0, 600), /playback: 'original'/);
 	const engage = engine.slice(engine.indexOf('function _engageHeldNeutralStems('));
+	assert.match(engage.slice(0, 1400), /engageStemsOnDeck\(/);
 	assert.match(
-		engage.slice(0, 1200),
-		/_landStems\(deck, \{ token: held\.token, processor: held\.processor, state \}, ctx, stale\)/
+		engage.slice(0, 1400),
+		/_stemUpgradeLandingPort\(deck, \{ token: held\.token, processor: held\.processor, state \}, ctx, stale, \{\n\t\t\tdeferBundle: false/
 	);
 	assert.match(engage.slice(0, 1200), /playback: 'stems'/);
 	assert.match(

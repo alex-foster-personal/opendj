@@ -72,7 +72,6 @@ export const FORWARDED: ReadonlySet<string> = new Set([
 	'master_volume',
 	'master_mute',
 	// Engine commands for later plans (protocol.rs LATER).
-	'key_sync',
 	'stem_mute',
 	'stem_solo',
 	'stem_gain',
@@ -98,7 +97,9 @@ export const PAGE_DECIDED: ReadonlySet<string> = new Set([
 	'sync_mode',
 	'master',
 	'quantize',
-	'quantize_grid'
+	'quantize_grid',
+	'key_sync',
+	'key_shift'
 ]);
 
 /** Every command this mode takes from the page. Hot-cue save, clear, restore
@@ -123,6 +124,8 @@ export const WEB_AUDIO_ONLY: ReadonlySet<string> = new Set([
 	'headphone_outputs_refresh',
 	'headphone_output_acquire',
 	'headphone_input_select',
+	'headphone_booth_level',
+	'headphone_booth_select',
 	'headphone_calibrate',
 	'headphone_calibrate_abort',
 	'headphone_alignment_mode',
@@ -134,6 +137,12 @@ export const WEB_AUDIO_ONLY: ReadonlySet<string> = new Set([
 	'rescue_stop_all',
 	// DECKUX-6794 J1: the snapped jump plans on the page engine's clock first.
 	'grid_jump',
+	// DECKUX-10478: the pending LOOP IN point and RELOOP memory are page-engine deck state; native port is a follow-up.
+	'loop_in',
+	'loop_out',
+	'reloop',
+	// CUES-10013: the page engine owns the cue point and the memory cue pick.
+	'memory_cue_call',
 	// GRIDEDIT-6235: the native engine keeps the grid it was given at load, so a
 	// live edit would move the waveform but not beat jump or beat loops.
 	'grid_edit',
@@ -322,7 +331,7 @@ export function initRustMode(): void {
 }
 
 /** How the dispatcher toasts; the mode's code keeps it for timers too. */
-type RustToast = (message: string, kind: 'info' | 'error') => void;
+type RustToast = (message: string, kind: 'info' | 'warn' | 'error') => void;
 
 let loading: Promise<typeof import('./rust-engine')> | null = null;
 

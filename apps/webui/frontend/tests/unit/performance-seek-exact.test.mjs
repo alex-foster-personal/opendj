@@ -8,20 +8,28 @@ import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import { test } from 'node:test';
 
-const source = await readFile(
+const guardsSource = await readFile(
+	new URL('../../src/lib/rb/performance-ipc-guards.ts', import.meta.url),
+	'utf8'
+);
+const typesSource = await readFile(
+	new URL('../../src/lib/rb/performance-ipc-types.ts', import.meta.url),
+	'utf8'
+);
+const svelteSource = await readFile(
 	new URL('../../src/lib/rb/performance-ipc.svelte.ts', import.meta.url),
 	'utf8'
 );
 
 test('a seek may carry exact, which the executor forwards as skipGridQuantize', () => {
-	assert.match(source, /_exactKeys\(record, \['type', 'deck', 'position_ms', 'exact'\]\);/);
+	assert.match(guardsSource, /_exactKeys\(record, \['type', 'deck', 'position_ms', 'exact'\]\);/);
 	assert.match(
-		source,
+		svelteSource,
 		/await engine\.quantizedSeek\(command\.deck, command\.position_ms, command\.exact === true\);/
 	);
 });
 
 test('the deck mirror publishes whether its loop is engaged', () => {
-	assert.match(source, /loop_engaged: boolean;/);
-	assert.match(source, /loop_engaged: deck\.loop !== null && deck\.loop\.engaged,/);
+	assert.match(typesSource, /loop_engaged: boolean;/);
+	assert.match(svelteSource, /loop_engaged: deck\.loop !== null && deck\.loop\.engaged,/);
 });

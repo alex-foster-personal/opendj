@@ -68,7 +68,7 @@
 </script>
 
 {#if mode === 'chat'}
-	<aside class="assistant-sidebar" aria-label="Setup assistant">
+	<aside class="assistant-sidebar" aria-label="OJ, your DJ assistant">
 		{#if showFill}
 			<div
 				class="oj-fill"
@@ -86,10 +86,10 @@
 			</div>
 		{/if}
 		<header>
-			<h2>Assistant</h2>
+			<h2>OJ</h2>
 			{#if status}
 				<span class="model" title="The model answering these questions">
-					Assistant ready
+					OJ is ready
 				</span>
 			{/if}
 		</header>
@@ -108,7 +108,7 @@
 				<p class="bubble assistant pending">
 					{streaming}
 					{#if streaming === ''}
-						<span class="oj-sr-only">Assistant is answering…</span>
+						<span class="oj-sr-only">OJ is answering…</span>
 					{/if}
 				</p>
 			{/if}
@@ -130,7 +130,7 @@
 				onkeydown={onKeydown}
 				rows="2"
 				placeholder="Ask about your library..."
-				aria-label="Message the assistant"
+				aria-label="Message OJ, your DJ assistant"
 			></textarea>
 			<div class="composer-row">
 				<span
@@ -150,7 +150,7 @@
 		</form>
 	</aside>
 {:else if mode === 'unavailable'}
-	<aside class="assistant-unavailable" aria-label="Assistant unavailable">
+	<aside class="assistant-unavailable" aria-label="OJ, your DJ assistant, is unavailable">
 		<p class="muted status-note" role="status">{humanAssistantStatusError()}</p>
 		<details class="agent-details-only">
 			<summary>{AGENT_DETAILS_LABEL}</summary>

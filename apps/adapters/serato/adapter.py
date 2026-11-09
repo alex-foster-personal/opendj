@@ -38,7 +38,9 @@ from apps.adapters.serato.geob import (
     Markers2,
     Markers2Cue,
     Markers2Loop,
+    SeratoTagError,
     is_mp3_like_path,
+    is_serato_readable_path,
     overlay_markers_legacy,
     read_geob_frames,
     write_geob_frames,
@@ -110,7 +112,7 @@ def _stable_track_id(file_path: str, title: str) -> str:
     Traktor adapter output. Phase 7 dedup re-keys to the archival
     stable_id when better signals (ISRC, fingerprint) become available.
     """
-    blob = f"{file_path}|{title}".encode("utf-8")
+    blob = f"{file_path}|{title}".encode()
     return "serato_" + hashlib.sha1(blob).hexdigest()[:16]
 
 
@@ -573,16 +575,24 @@ class SeratoAdapter:
     ) -> tuple[tuple[CuePoint, ...], tuple[BeatGridPoint, ...]]:
         """Return (cues, beats) read from the track's GEOB frames.
 
-        Missing files or non-MP3 formats yield empty tuples without warning
-        (the write path already warns). A tag that is there but cannot be
-        read yields empty tuples WITH a ``cues dropped`` warning, so the
-        import counts the loss instead of reporting a track with no cues.
+        Missing files or unsupported formats yield empty tuples without warning.
+        A tag that is there but cannot be read yields empty tuples WITH a
+        ``cues dropped`` warning, so the import counts the loss instead of
+        reporting a track with no cues.
         """
         audio_path = self._resolve_audio_path(file_path)
-        if not audio_path.exists() or not is_mp3_like_path(audio_path):
+        if not audio_path.exists() or not is_serato_readable_path(audio_path):
             return (), ()
         try:
             bundle = read_geob_frames(audio_path, strict=True)
+        except SeratoTagError as exc:
+            report.warn(
+                field="cues",
+                track_id=_track_id,
+                action="dropped",
+                reason=f"Serato tags could not be read: {exc}",
+            )
+            return (), ()
         except Id3Error as exc:
             # The import goes on without this track's cues and grid, but
             # says so: a file whose tags do not parse is not one with none.

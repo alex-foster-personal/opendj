@@ -198,9 +198,16 @@ test('[PLAY-28] SHAPE GUARD: later tempo and seek ask the gridless-aware clock, 
 	assert.match(mode, /const master = _beatSyncMaster\(\)/);
 
 	const beatSync = engineBlockAfter('	setBeatSync(deck: DeckId, enabled: boolean): Promise<void> {');
+	// SYNCLOG-9650: the untrusted-master return is now the re-enable policy's
+	// loud skip (toast plus SYNC_RESNAP line), still before any grid path; the
+	// policy itself is pinned in beat-sync-reenable-resnap.test.mjs.
 	assert.match(
 		beatSync,
-		/if \(master !== null && beatSyncClockMaster\(master, deckStates\[master\]\) === null\) return Promise\.resolve\(\)/
+		/masterGridTrusted: beatSyncClockMaster\(master, deckStates\[master\]\) !== null/
+	);
+	assert.ok(
+		beatSync.indexOf("case 'skip':") < beatSync.indexOf('_resnapFollowerToMaster(action.master'),
+		'the untrusted-master skip must return before the follower join'
 	);
 });
 

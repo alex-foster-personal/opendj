@@ -92,6 +92,8 @@ function _snapshotInputFromState(
 			beat_sync_enabled: deck.beat_sync_enabled,
 			master_tempo_enabled: deck.master_tempo_enabled,
 			key_sync_enabled: deck.key_sync_enabled,
+			key_sync_mode: deck.key_sync_mode ?? 'exact',
+			key_sync_target: deck.key_sync_target === null || deck.key_sync_target === 'master' ? 'master' : deck.key_sync_target,
 			playing: deck.playing
 		};
 		const channel = state.mixer.channels[deckId];
@@ -280,7 +282,13 @@ export async function restoreDeckConfigFromSnapshot(
 		{ type: 'quantize', deck: deckId, enabled: deck.quantize_enabled },
 		{ type: 'beat_sync', deck: deckId, enabled: deck.beat_sync_enabled },
 		{ type: 'master_tempo', deck: deckId, enabled: deck.master_tempo_enabled },
-		{ type: 'key_sync', deck: deckId, enabled: deck.key_sync_enabled },
+		{
+			type: 'key_sync',
+			deck: deckId,
+			enabled: deck.key_sync_enabled,
+			...(deck.key_sync_mode === undefined ? {} : { mode: deck.key_sync_mode }),
+			...(deck.key_sync_target === undefined ? {} : { target: deck.key_sync_target })
+		},
 		{ type: 'trim', deck: deckId, value: channel.trim },
 		{ type: 'eq', deck: deckId, band: 'high', value: channel.eq_high },
 		{ type: 'eq', deck: deckId, band: 'mid', value: channel.eq_mid },

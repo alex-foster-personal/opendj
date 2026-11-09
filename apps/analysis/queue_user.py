@@ -106,15 +106,40 @@ def require_lane(lane: str) -> str:
     return require_allowed_value(lane, USER_JOB_LANES, "user lane", "lanes", QueueError)
 
 
-def ensure_user_schema(conn: sqlite3.Connection) -> None:
-    """Queue tables, ``position`` column, and the two standing batches.
+def _table_columns(conn: sqlite3.Connection, table: str) -> set[str]:
+    return {str(row[1]) for row in conn.execute(f"PRAGMA table_info({table})")}
 
-    Writes only what is missing (STATE-18). Every ``GET /api/v1/library-jobs``
-    and the 1 Hz library-jobs tick call this, and an ``INSERT OR IGNORE`` of a
-    batch that already exists still takes the state.db writer lock, so a busy
-    writer turned a read into 503 ``STATE_STORE_BUSY``. The ``IF NOT EXISTS``
-    DDL above it takes no lock when the schema is already there.
-    """
+
+def user_schema_ready(conn: sqlite3.Connection) -> bool:
+    """Read-only: queue tables, columns, and standing batches exist (STATE-18)."""
+    tables = {
+        str(row[0])
+        for row in conn.execute(
+            "SELECT name FROM sqlite_master WHERE type='table' AND name IN (?,?)",
+            ("analysis_queue_batch", "analysis_queue_item"),
+        )
+    }
+    if tables != {"analysis_queue_batch", "analysis_queue_item"}:
+        return False
+    if not {"position", "claimed_audio_hash"} <= _table_columns(conn, "analysis_queue_item"):
+        return False
+    if not {"active_runner_id", "active_runner_pid"} <= _table_columns(
+        conn, "analysis_queue_batch"
+    ):
+        return False
+    placeholders = ",".join("?" for _ in USER_BATCH_IDS)
+    present = {
+        str(row[0])
+        for row in conn.execute(
+            f"SELECT batch_id FROM analysis_queue_batch WHERE batch_id IN ({placeholders})",
+            tuple(USER_BATCH_IDS.values()),
+        )
+    }
+    return set(USER_BATCH_IDS.values()) <= present
+
+
+def ensure_user_schema(conn: sqlite3.Connection) -> None:
+    """Provision user-lane queue tables, columns, and standing batches when missing."""
     queue_store.ensure_queue_tables(conn)
     cols = {row[1] for row in conn.execute("PRAGMA table_info(analysis_queue_item)")}
     if "position" not in cols:
@@ -405,7 +430,8 @@ def list_lane(
     include_settled: bool = False,
 ) -> tuple[UserJobItem, ...]:
     require_lane(lane)
-    ensure_user_schema(conn)
+    if not user_schema_ready(conn):
+        ensure_user_schema(conn)
     batch_id = USER_BATCH_IDS[lane]
     states = ACTIVE_STATES + (SETTLED_STATES if include_settled else ())
     placeholders = ",".join("?" * len(states))
@@ -421,7 +447,8 @@ def list_lane(
 
 def counts_for_lane(conn: sqlite3.Connection, lane: str) -> dict[str, int]:
     require_lane(lane)
-    ensure_user_schema(conn)
+    if not user_schema_ready(conn):
+        ensure_user_schema(conn)
     out = {
         s: 0
         for s in (

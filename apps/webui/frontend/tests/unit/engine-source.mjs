@@ -1,6 +1,6 @@
-import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
-import { fileURLToPath } from "node:url";
+import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
 
 /**
  * The engine's SOURCE-TEXT surface, as a list of files rather than one path.
@@ -30,23 +30,17 @@ import { fileURLToPath } from "node:url";
  *   guard could pin the wrong body
  */
 
-const SRC = fileURLToPath(new URL("../../src", import.meta.url));
-const FRONTEND_ROOT = fileURLToPath(new URL("../..", import.meta.url));
+const SRC = fileURLToPath(new URL('../../src', import.meta.url));
+const FRONTEND_ROOT = fileURLToPath(new URL('../..', import.meta.url));
 
 /**
  * One frontend source file as text, LF-normalized, refusing to return an empty
  * one: a source-text guard pointed at '' asserts nothing while reporting green.
  */
 export function readFrontendSource(relativePath) {
-  const text = readFileSync(`${FRONTEND_ROOT}/${relativePath}`, "utf8").replaceAll(
-    "\r\n",
-    "\n",
-  );
-  assert.ok(
-    text.trim().length > 0,
-    `if ${relativePath} reads empty this guard asserts nothing`,
-  );
-  return text;
+	const text = readFileSync(`${FRONTEND_ROOT}/${relativePath}`, 'utf8').replaceAll('\r\n', '\n');
+	assert.ok(text.trim().length > 0, `if ${relativePath} reads empty this guard asserts nothing`);
+	return text;
 }
 
 /**
@@ -67,22 +61,23 @@ export function readFrontendSource(relativePath) {
  * born, because the guards read text and do not care.
  */
 export const ENGINE_SOURCE_PATHS = [
-  "lib/rb/audio-engine.svelte.ts",
-  "lib/rb/audio-context-instrumentation.ts",
-  "lib/rb/beat-sync-math.ts",
-  "lib/rb/press-stamp.ts",
-  "lib/rb/deck-audio-snapshot.ts",
-  "lib/player/beatgrid-resync-guards.ts",
-  "lib/player/constants.ts",
-  "lib/player/eq-apply.ts",
-  "lib/player/mixer-apply.ts",
-  "lib/player/headphones.ts",
-  "lib/player/key/camelot.ts",
-  "lib/player/master-mute.svelte.ts",
-  "lib/player/state.svelte.ts",
-  "lib/player/transport/loops.ts",
-  "lib/player/transport/presentation.ts",
-  "lib/player/transport/schedule-math.ts",
+	'lib/rb/audio-engine.svelte.ts',
+	'lib/rb/audio-engine-stem-routing.ts',
+	'lib/rb/audio-context-instrumentation.ts',
+	'lib/rb/beat-sync-math.ts',
+	'lib/rb/press-stamp.ts',
+	'lib/rb/deck-audio-snapshot.ts',
+	'lib/player/beatgrid-resync-guards.ts',
+	'lib/player/constants.ts',
+	'lib/player/eq-apply.ts',
+	'lib/player/mixer-apply.ts',
+	'lib/player/headphones.ts',
+	'lib/player/key/camelot.ts',
+	'lib/player/master-mute.svelte.ts',
+	'lib/player/state.svelte.ts',
+	'lib/player/transport/loops.ts',
+	'lib/player/transport/presentation.ts',
+	'lib/player/transport/schedule-math.ts'
 ];
 
 //-----------------------------------------------------------------------------
@@ -90,29 +85,21 @@ export const ENGINE_SOURCE_PATHS = [
 //-----------------------------------------------------------------------------
 
 function _readEngineSources() {
-  return ENGINE_SOURCE_PATHS.map((path) => {
-    // LF-normalize so multi-line shape guards survive a CRLF checkout.
-    const text = readFileSync(`${SRC}/${path}`, "utf8").replaceAll(
-      "\r\n",
-      "\n",
-    );
-    assert.ok(
-      text.trim().length > 0,
-      `if ${path} reads empty then every source-text guard below silently asserts nothing`,
-    );
-    return { path, text };
-  });
+	return ENGINE_SOURCE_PATHS.map((path) => {
+		// LF-normalize so multi-line shape guards survive a CRLF checkout.
+		const text = readFileSync(`${SRC}/${path}`, 'utf8').replaceAll('\r\n', '\n');
+		assert.ok(
+			text.trim().length > 0,
+			`if ${path} reads empty then every source-text guard below silently asserts nothing`
+		);
+		return { path, text };
+	});
 }
 
 function _countOccurrences(text, needle) {
-  let count = 0;
-  for (
-    let at = text.indexOf(needle);
-    at !== -1;
-    at = text.indexOf(needle, at + 1)
-  )
-    count += 1;
-  return count;
+	let count = 0;
+	for (let at = text.indexOf(needle); at !== -1; at = text.indexOf(needle, at + 1)) count += 1;
+	return count;
 }
 
 //-----------------------------------------------------------------------------
@@ -122,57 +109,57 @@ function _countOccurrences(text, needle) {
 // Update here when `_scheduleDeck` signature changes; LATENCY-01 visual-feedback
 // guards import this.
 export const SCHEDULE_DECK_ANCHOR =
-  "async function _scheduleDeck(\n" +
-  "\tdeck: DeckId,\n" +
-  "\twhen: ScheduleWhen,\n" +
-  "\tinputSec: number | ((effectiveWhen: number) => number),\n" +
-  "\tactive: boolean,\n" +
-  "\ttempoRatio?: number,\n" +
-  "\tmasterTempoEnabled?: boolean,\n" +
-  "\tloop?: LoopState | null,\n" +
-  "\tkeyShiftSemitones?: number,\n" +
-  "\tpressT0Ms?: number,\n" +
-  "\treanchorGeneration?: number,\n" +
-  "\tkeyRampGeneration?: number\n" +
-  "): Promise<number> {";
+	'async function _scheduleDeck(\n' +
+	'\tdeck: DeckId,\n' +
+	'\twhen: ScheduleWhen,\n' +
+	'\tinputSec: number | ((effectiveWhen: number) => number),\n' +
+	'\tactive: boolean,\n' +
+	'\ttempoRatio?: number,\n' +
+	'\tmasterTempoEnabled?: boolean,\n' +
+	'\tloop?: LoopState | null,\n' +
+	'\tkeyShiftSemitones?: number,\n' +
+	'\tpressT0Ms?: number,\n' +
+	'\treanchorGeneration?: number,\n' +
+	'\tkeyRampGeneration?: number\n' +
+	'): Promise<number> {';
 
 // Update here when `_scheduleDeckSerial` signature changes; stale-reanchor-ramp
 // and LATENCY-03 guards import this.
 export const SCHEDULE_DECK_SERIAL_ANCHOR =
-  "async function _scheduleDeckSerial(\n" +
-  "\tdeck: DeckId,\n" +
-  "\twhen: ScheduleWhen,\n" +
-  "\tinputSec: number | ((effectiveWhen: number) => number),\n" +
-  "\tactive: boolean,\n" +
-  "\ttempoRatio: number | undefined,\n" +
-  "\tmasterTempoEnabled: boolean | undefined,\n" +
-  "\tloop: LoopState | null | undefined,\n" +
-  "\tkeyShiftSemitones: number | undefined,\n" +
-  "\tpressT0Ms: number | undefined,\n" +
-  "\treanchorGeneration?: number,\n" +
-  "\tkeyRampGeneration?: number\n" +
-  "): Promise<number> {";
+	'async function _scheduleDeckSerial(\n' +
+	'\tdeck: DeckId,\n' +
+	'\twhen: ScheduleWhen,\n' +
+	'\tinputSec: number | ((effectiveWhen: number) => number),\n' +
+	'\tactive: boolean,\n' +
+	'\ttempoRatio: number | undefined,\n' +
+	'\tmasterTempoEnabled: boolean | undefined,\n' +
+	'\tloop: LoopState | null | undefined,\n' +
+	'\tkeyShiftSemitones: number | undefined,\n' +
+	'\tpressT0Ms: number | undefined,\n' +
+	'\treanchorGeneration?: number,\n' +
+	'\tkeyRampGeneration?: number\n' +
+	'): Promise<number> {';
 
 // Sliced from instrumentation at load time so LATENCY-03 guards never drift on
 // signature edits (issue #157's `onStateChange` parameter, and later args).
 export const ARM_AUDIO_CONTEXT_WATCHDOG_ANCHOR = (() => {
-  const text = readFileSync(
-    `${SRC}/lib/rb/audio-context-instrumentation.ts`,
-    "utf8",
-  ).replaceAll("\r\n", "\n");
-  const start = text.indexOf("export function armAudioContextWatchdog(");
-  assert.notEqual(
-    start,
-    -1,
-    "if armAudioContextWatchdog is missing from audio-context-instrumentation.ts then LATENCY-03 drift guards have nothing to pin",
-  );
-  const end = text.indexOf("): void {", start);
-  assert.notEqual(
-    end,
-    -1,
-    "if armAudioContextWatchdog has no opening brace then LATENCY-03 drift guards cannot slice its body",
-  );
-  return text.slice(start, end + "): void {".length);
+	const text = readFileSync(`${SRC}/lib/rb/audio-context-instrumentation.ts`, 'utf8').replaceAll(
+		'\r\n',
+		'\n'
+	);
+	const start = text.indexOf('export function armAudioContextWatchdog(');
+	assert.notEqual(
+		start,
+		-1,
+		'if armAudioContextWatchdog is missing from audio-context-instrumentation.ts then LATENCY-03 drift guards have nothing to pin'
+	);
+	const end = text.indexOf('): void {', start);
+	assert.notEqual(
+		end,
+		-1,
+		'if armAudioContextWatchdog has no opening brace then LATENCY-03 drift guards cannot slice its body'
+	);
+	return text.slice(start, end + '): void {'.length);
 })();
 
 /**
@@ -184,44 +171,39 @@ export const ARM_AUDIO_CONTEXT_WATCHDOG_ANCHOR = (() => {
  * across the whole engine surface.
  */
 export function engineBlockAfter(anchor) {
-  assert.ok(
-    anchor.endsWith("{"),
-    `engine anchors must end at the block's opening brace, got: ${anchor}`,
-  );
+	assert.ok(
+		anchor.endsWith('{'),
+		`engine anchors must end at the block's opening brace, got: ${anchor}`
+	);
 
-  const sources = _readEngineSources();
-  const total = sources.reduce(
-    (sum, file) => sum + _countOccurrences(file.text, anchor),
-    0,
-  );
-  assert.equal(
-    total,
-    1,
-    `if "${anchor}" does not occur exactly once across ` +
-      `[${ENGINE_SOURCE_PATHS.join(", ")}] (found ${total}) then this drift guard is ` +
-      "pointed at nothing and must be re-pointed, not deleted",
-  );
+	const sources = _readEngineSources();
+	const total = sources.reduce((sum, file) => sum + _countOccurrences(file.text, anchor), 0);
+	assert.equal(
+		total,
+		1,
+		`if "${anchor}" does not occur exactly once across ` +
+			`[${ENGINE_SOURCE_PATHS.join(', ')}] (found ${total}) then this drift guard is ` +
+			'pointed at nothing and must be re-pointed, not deleted'
+	);
 
-  const file = sources.find((entry) => entry.text.includes(anchor));
-  const { text } = file;
-  const open = text.indexOf(anchor) + anchor.length - 1;
+	const file = sources.find((entry) => entry.text.includes(anchor));
+	const { text } = file;
+	const open = text.indexOf(anchor) + anchor.length - 1;
 
-  let depth = 0;
-  for (let i = open; i < text.length; i += 1) {
-    if (text[i] === "{") depth += 1;
-    else if (text[i] === "}") {
-      depth -= 1;
-      if (depth === 0) {
-        const body = text.slice(open + 1, i);
-        assert.ok(
-          body.trim().length > 0,
-          `if the block after "${anchor}" is empty then the guard asserts nothing`,
-        );
-        return body;
-      }
-    }
-  }
-  throw new Error(
-    `unbalanced braces after engine anchor in ${file.path}: ${anchor}`,
-  );
+	let depth = 0;
+	for (let i = open; i < text.length; i += 1) {
+		if (text[i] === '{') depth += 1;
+		else if (text[i] === '}') {
+			depth -= 1;
+			if (depth === 0) {
+				const body = text.slice(open + 1, i);
+				assert.ok(
+					body.trim().length > 0,
+					`if the block after "${anchor}" is empty then the guard asserts nothing`
+				);
+				return body;
+			}
+		}
+	}
+	throw new Error(`unbalanced braces after engine anchor in ${file.path}: ${anchor}`);
 }

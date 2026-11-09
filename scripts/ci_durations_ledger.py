@@ -17,8 +17,8 @@ coverage fell under the fast tier's floor, and main locked itself red
 
 Subcommands (standard library only, so a bare runner `python3` can run them):
 
-- `build`: union the five `test-durations-shard-N` artifacts of the newest successful
-  main `ci.yml` run, nightly `schedule` or `push`, that still has all five, and write the
+- `build`: union the five `test-durations-shard-N` artifacts of the newest main `ci.yml`
+  run, a completed nightly `schedule` (red or green) or a successful `push`, that still has all five, and write the
   merged ledger. Since Tue 3 Nov 2026 a main push runs the capped selection and writes no
   durations, so the 02:00Z nightly full lane is the usual source
   (ADR-NEW-main-push-runs-the-capped-selection). The runs
@@ -54,7 +54,7 @@ import argparse
 import base64
 import json
 import math
-import shutil
+import statistics
 import subprocess
 import sys
 import tarfile
@@ -80,9 +80,21 @@ MAX_LEDGER_AGE_DAYS = 14
 # was measured on a broken run, and would starve the shard it lands in.
 MAX_TEST_SECONDS = 1800.0
 MIN_ROW_RATIO = 0.9
+#: A red nightly is read (SOURCE_RUN_STATUS), and a shard whose tests errored at setup records
+#: a near-zero time for each, which a row count cannot see. The split balances shards by
+#: recorded time, so a sound shard lands near the median one: in the red nightlies of Sat 7 and
+#: Sun 8 Nov 2026 the smallest shard held 0.52 and 0.83 of the median, and each run summed 2.1x
+#: the committed seed's seconds. A run under either line below did not run its tests.
+MIN_SHARD_SHARE = 0.25
+MIN_SECONDS_RATIO = 0.5
 RUNS_TO_SCAN = 20
 #: The main `ci.yml` events whose runs can carry all five shards' durations, nightly first.
 SOURCE_EVENTS = ("schedule", "push")
+#: The run status each event is listed by. A nightly is read whatever its verdict: every shard
+#: uploads its durations `always()`, a red test is still a measured one, and a short or partial
+#: shard fails `check_rows`. Only the nightly runs full since main pushes select, and it was red
+#: Fri 6 to Sun 8 Nov 2026, so `status=success` froze the ledger at Wed 4 Nov (CI-8459).
+SOURCE_RUN_STATUS = {"schedule": "completed", "push": "success"}
 # fetch: two attempts of three calls each (commit, tree, blob) must fit its 2-minute
 # CI step with 15 s to spare.
 FETCH_GH_TIMEOUT_S = 15
@@ -156,6 +168,24 @@ def check_rows(ledger: dict[str, float], seed: dict[str, float]) -> None:
         )
 
 
+def check_seconds(shards: Sequence[dict[str, float]], seed: dict[str, float]) -> None:
+    """Refuse a run with a shard far under the median shard's seconds, or a total far under the seed's."""
+    sums = [sum(shard.values()) for shard in shards]
+    median = statistics.median(sums)
+    for index, seconds in enumerate(sums, start=1):
+        if seconds < MIN_SHARD_SHARE * median:
+            raise LedgerError(
+                f"shard {index} recorded {seconds:.0f} s, under {MIN_SHARD_SHARE:.0%} of the median "
+                f"shard's {median:.0f} s; its tests did not run"
+            )
+    total, floor = sum(sums), MIN_SECONDS_RATIO * sum(seed.values())
+    if total < floor:
+        raise LedgerError(
+            f"the run recorded {total:.0f} s, under {MIN_SECONDS_RATIO:.0%} of the committed seed's "
+            f"{floor / MIN_SECONDS_RATIO:.0f} s; its tests did not run"
+        )
+
+
 def render(ledger: dict[str, float]) -> str:
     """The committed file's format: sorted keys, 4-space indent, trailing newline."""
     return json.dumps(dict(sorted(ledger.items())), indent=4) + "\n"
@@ -206,7 +236,7 @@ def build(repo: str, out: Path, seed_path: Path, api: Api = _gh, store: Artifact
             for run in _gh_json(
                 api,
                 f"repos/{repo}/actions/workflows/{SOURCE_WORKFLOW}/runs"
-                f"?branch=main&event={event}&status=success&per_page={RUNS_TO_SCAN}",
+                f"?branch=main&event={event}&status={SOURCE_RUN_STATUS[event]}&per_page={RUNS_TO_SCAN}",
             ).get("workflow_runs", [])
         ),
         # Run ids grow with creation time, so this is newest first across both events.
@@ -223,8 +253,10 @@ def build(repo: str, out: Path, seed_path: Path, api: Api = _gh, store: Artifact
         blobs = [_artifact_file(store, key) for key in keys]
         # One bad run (a short run, a repeated test) must not hide an older good one.
         try:
-            ledger = merge([json.loads(blob) for blob in blobs])
+            shards = [json.loads(blob) for blob in blobs]
+            ledger = merge(shards)
             check_rows(ledger, seed)
+            check_seconds(shards, seed)
         except LedgerError as exc:
             skipped.append(f"run {run['id']}: {exc}")
             continue
@@ -237,7 +269,7 @@ def build(repo: str, out: Path, seed_path: Path, api: Api = _gh, store: Artifact
             f"slowest {max(ledger.values()):.1f} s"
         )
     raise LedgerError(
-        f"none of the newest {len(runs)} successful main {SOURCE_WORKFLOW} runs gave a valid "
+        f"none of the newest {len(runs)} main {SOURCE_WORKFLOW} runs gave a valid "
         f"ledger from all {SHARDS} shard durations artifacts: " + "; ".join(skipped)
     )
 

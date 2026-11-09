@@ -64,6 +64,9 @@ _ClockFn = Callable[[], _dt.datetime]
 #: ``(done, total, message)``. Total is known before the first write because
 #: the walk completes first -- a bar that cannot say "of what" is a spinner.
 ProgressFn = Callable[[int, int, str], None]
+#: Ids this ingest made live, in walk order. Called once, after the write,
+#: only on a non-dry run (#9422).
+NewTracksFn = Callable[[list[str]], None]
 
 
 #: Retagging leaves the audio payload hash alone, so more real byte rewrites
@@ -153,7 +156,32 @@ def collect_audio(
     return found, denied, dataless
 
 
-def ingest_folder(
+def _live_ids(conn: Any) -> frozenset[str]:
+    rows = conn.execute("SELECT stable_id FROM tracks WHERE deleted_at IS NULL").fetchall()
+    return frozenset(row[0] for row in rows)
+
+
+def _new_live_ids_in_walk_order(
+    conn: Any, files: list[audio_files.AudioFile], before: frozenset[str]
+) -> list[str]:
+    path_to_sids: dict[str, list[str]] = {}
+    for sid, file_path in conn.execute(
+        "SELECT stable_id, file_path FROM tracks WHERE deleted_at IS NULL AND file_path IS NOT NULL"
+    ):
+        path_to_sids.setdefault(file_path, []).append(sid)
+    seen: set[str] = set()
+    out: list[str] = []
+    for entry in files:
+        path = str(entry.path)
+        for sid in path_to_sids.get(path, ()):
+            if sid in before or sid in seen:
+                continue
+            seen.add(sid)
+            out.append(sid)
+    return out
+
+
+def ingest_folder(  # noqa: PLR0913 - keyword-only ingest controls stay explicit for callers
     writer: StateWriter,
     roots: Iterable[Path],
     *,
@@ -163,8 +191,14 @@ def ingest_folder(
     on_progress: ProgressFn | None = None,
     allow_mass_missing: bool = False,
     restore_removed: bool = False,
+    on_new_tracks: NewTracksFn | None = None,
 ) -> FolderIngestReport:
     """Ingest every audio file under ``roots`` into the state DB.
+
+    ``on_new_tracks``, when set, is called once after a non-dry write with every
+    stable id this ingest made live, in walk order. The webui passes the
+    ahead-analysis drain's strip queue so a new crate has strips before scroll
+    (#9422).
 
     ``restore_removed`` is for a caller adding files the user picked by hand
     (a folder drop, the import modal), never for a rescan of a library root.
@@ -189,11 +223,15 @@ def ingest_folder(
     assert_no_path_collisions(str(entry.path) for entry in files)
     if limit is not None:
         files = files[:limit]
+    new_ids: list[str] = []
     try:
         with writer._join_or_begin(commit=not dry_run):
+            before = _live_ids(conn) if on_new_tracks is not None else frozenset()
             drop_budget = AnalysisDropBudget(limit=MAX_ANALYSIS_DROPS_PER_CYCLE)
             _write_tracks(writer, files, report, on_progress, drop_budget, restore_removed=restore_removed)
             report.analysis_drops_withheld = drop_budget.withheld
+            if on_new_tracks is not None:
+                new_ids = _new_live_ids_in_walk_order(conn, files, before)
             writer.register_adapter(
                 ADAPTER_ID,
                 last_run_at=now_fn().isoformat(),
@@ -205,6 +243,8 @@ def ingest_folder(
                     f"dry_run={dry_run}"
                 ),
             )
+        if on_new_tracks is not None and new_ids and not dry_run:
+            on_new_tracks(new_ids)
     finally:
         report.duration_s = round(time.perf_counter() - start, 3)
 
@@ -982,6 +1022,7 @@ __all__ = [
     "ADAPTER_ID",
     "MAX_ANALYSIS_DROPS_PER_CYCLE",
     "FolderIngestReport",
+    "NewTracksFn",
     "ProgressFn",
     "collect_audio",
     "ingest_folder",

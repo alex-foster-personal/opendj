@@ -6,6 +6,7 @@ import { build } from './esbuild-tsconfig.mjs';
 
 import { importBundledSource } from './import-bundled-source.mjs';
 import { viteUrlSuffixPlugin } from './vite-url-suffix-plugin.mjs';
+import { viteEagerGlobPlugin } from './vite-eager-glob-plugin.mjs';
 
 const FRONTEND_ROOT = fileURLToPath(new URL('../..', import.meta.url));
 const LIB_ROOT = fileURLToPath(new URL('../../src/lib', import.meta.url));
@@ -93,7 +94,7 @@ export async function bundleTypeScriptModule(
 		format: 'esm',
 		logLevel: 'silent',
 		platform: 'node',
-		plugins: [failingImports(failImports), viteUrlSuffixPlugin, svelteComponentStubs],
+		plugins: [failingImports(failImports), viteUrlSuffixPlugin, viteEagerGlobPlugin, svelteComponentStubs],
 		target: 'node20',
 		write: false
 	});
@@ -116,8 +117,9 @@ export async function loadTypeScriptModule(relativePath, options = {}) {
 	globalThis.__musicDjToolsTestState.raw = (value) => value;
 	globalThis.__musicDjToolsTestState.snapshot = (value) =>
 		value === undefined ? undefined : JSON.parse(JSON.stringify(value));
-	// $derived mirrors Svelte runes at compile time; the bundled module must see
-	// both plain `$derived(expr)` and `$derived.by(() => ...)`.
+	// Runes are compile-time in Svelte; tag-sidecar modules use $derived alongside $state.
+	// $derived mirrors those runes in the bundled module, which must see both plain
+	// `$derived(expr)` and `$derived.by(() => ...)`.
 	globalThis.__musicDjToolsTestDerived = (value) => value;
 	globalThis.__musicDjToolsTestDerived.by = (fn) =>
 		typeof fn === 'function' ? fn() : fn;

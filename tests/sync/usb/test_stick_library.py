@@ -388,12 +388,20 @@ def test_audio_is_served_from_under_the_mount(mount: Path, scan: CountingScan) -
 
 @pytest.mark.parametrize(
     "pdb_id,reason",
-    [(4, "escapes_mount"), (5, "escapes_mount"), (3, "extension_not_allowed"), (9, "invalid_path")],
+    [(4, "escapes_mount"), (5, "escapes_mount"), (3, "extension_not_allowed")],
 )
 def test_audio_outside_policy_is_refused(scan: CountingScan, pdb_id: int, reason: str) -> None:
     error = _refusal(lambda: sl.stick_audio_file(_resolve(pdb_id, scan)))
     assert error.code == "USB_PATH_OUTSIDE_VOLUME"
     assert error.to_detail()["reason"] == reason
+
+
+def test_nul_byte_in_file_path_is_refused(scan: CountingScan) -> None:
+    """[if] a pdb path contains NUL [then] stick audio is refused invalid_path, [else stop]."""
+    resolved = _resolve(9, scan)
+    nul_path = replace(resolved.track, file_path="/Contents/bad\x00.mp3")
+    target = replace(resolved, track=nul_path)
+    assert _refusal(lambda: sl.stick_audio_file(target)).to_detail()["reason"] == "invalid_path"
 
 
 def test_host_absolute_pdb_path_is_joined_under_the_mount(

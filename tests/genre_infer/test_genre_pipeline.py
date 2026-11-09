@@ -213,6 +213,18 @@ def test_attach_refuses_reserved_and_malformed_providers(tmp_path: Path, provide
         )
 
 
+@pytest.mark.parametrize("confidence", [None, float("nan"), 1.1, -0.1])
+def test_put_finding_rejects_invalid_ok_confidence(tmp_path: Path, confidence: float | None) -> None:
+    """[if] an ok finding has confidence outside [0, 1] [then] put_finding raises, [else stop]."""
+    _data, state = library(tmp_path)
+    conn = _conn(state)
+    with pytest.raises(findings.GenreInputError, match="confidence in \\[0, 1\\]"):
+        findings.put_finding(
+            conn,
+            findings.Finding("t-fred", "beatport", findings.STATUS_OK, "House", confidence),
+        )
+
+
 def test_attach_refuses_unknown_tracks_and_missing_source(tmp_path: Path) -> None:
     _data, state = library(tmp_path)
     conn = _conn(state)

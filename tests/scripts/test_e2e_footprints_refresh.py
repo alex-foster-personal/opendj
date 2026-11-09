@@ -328,13 +328,16 @@ class Store:
         return value
 
 
-def _runs_api(footprints: dict, run_ids: list[int], committed: str = "2026-10-30T06:00:00Z"):
+def _runs_api(
+    footprints: dict, run_ids: list[int], committed: str = "2026-10-30T06:00:00Z", scheduled: list[int] | None = None
+):
     base = _api_for(footprints, committed)
+    by_event = {"push": run_ids, "schedule": scheduled or []}
 
     def api(path: str) -> bytes:
         if "/actions/workflows/e2e.yml/runs" in path:
-            assert "branch=main&event=push&status=success" in path
-            return json.dumps({"workflow_runs": [{"id": i, "head_sha": SHA} for i in run_ids]}).encode()
+            event = next(e for e in by_event if f"branch=main&event={e}&status=completed" in path)
+            return json.dumps({"workflow_runs": [{"id": i, "head_sha": SHA} for i in by_event[event]]}).encode()
         return base(path)
 
     return api
@@ -347,6 +350,19 @@ def test_ledger_writes_the_newest_run_with_an_artifact(tmp_path: Path) -> None:
     out = tmp_path / "out" / "map.json"
     line = ledger("o/r", out, NOW, _runs_api(footprints, [11, 10]), store)
     assert "run 10" in line and json.loads(out.read_text(encoding="utf-8"))["sha"] == SHA
+
+
+def test_ledger_takes_a_newer_scheduled_run_over_an_older_push_run(tmp_path: Path) -> None:
+    """[if] the refresh reads only main-push runs [then] the hourly main-tip run never feeds the map, [else stop]."""
+    footprints = build(_run_dir(tmp_path), SHA, _repo(tmp_path), NOW)
+    store = Store(
+        {
+            refresh.r2_artifact.object_key("o/r", "e2e-spec-footprints", str(i)): refresh.render(footprints).encode()
+            for i in (10, 12)
+        }
+    )
+    line = ledger("o/r", tmp_path / "out" / "map.json", NOW, _runs_api(footprints, [10], scheduled=[12]), store)
+    assert "run 12" in line
 
 
 def test_ledger_fails_on_an_r2_error_and_never_reads_it_as_missing(tmp_path: Path) -> None:

@@ -170,7 +170,7 @@ async function _recordMasterTap(command: Record<string, unknown>): Promise<void>
 	await (await import('$lib/sets/master-mix-capture')).ensureMasterMixCapture(command.session_id);
 }
 
-const IO_TEST_BUSES = ['master', 'cue', 'input'] as const;
+const IO_TEST_BUSES = ['master', 'cue', 'booth', 'input'] as const;
 
 /** IOPIN-19: the Audio I/O panel's Test, for an agent. Plays the same beeps on
  * the same device the panel's button would, and answers once they sounded.
@@ -180,7 +180,9 @@ const IO_TEST_BUSES = ['master', 'cue', 'input'] as const;
 async function _ioDeviceTest(command: Record<string, unknown>): Promise<Record<string, unknown>> {
 	const bus = command.bus;
 	if (!IO_TEST_BUSES.includes(bus as (typeof IO_TEST_BUSES)[number])) {
-		throw new TypeError(`io_device_test bus must be master, cue or input, got ${JSON.stringify(bus)}`);
+		throw new TypeError(
+			`io_device_test bus must be master, cue, booth or input, got ${JSON.stringify(bus)}`
+		);
 	}
 	const testBus = bus as (typeof IO_TEST_BUSES)[number];
 	// Bound to the route session that sent it: a remount while the Test's code

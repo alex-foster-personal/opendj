@@ -69,7 +69,13 @@
  *   ✔︎ Zero fabricated numbers: each block comments its [PDF] Fig. row.
  */
 
-import type { ControlHint, DeviceMap, LedRule, MidiBinding } from '$lib/rb/midi/midi-types';
+import type {
+	ControlHint,
+	DeviceMap,
+	DeviceMapEntry,
+	LedRule,
+	MidiBinding
+} from '$lib/rb/midi/midi-types';
 import type { DeckId } from '$lib/rb/deck-slots';
 import type { HotCueSlot } from '$lib/rb/hot-cue-types';
 import {
@@ -262,3 +268,8 @@ export const DDJ400_MAP: DeviceMap = {
 	leds: DECKS.flatMap((deck) => _ledRules(deck)),
 	hints: [...DECKS.flatMap((deck) => _deckHints(deck)), ..._globalHints()]
 };
+
+/** Self-registration: maps/entries.ts discovers this export, so no shared list names this map. */
+export const DEVICE_MAP_ENTRIES: readonly DeviceMapEntry[] = [
+	{ key: 'DDJ400_MAP', map: DDJ400_MAP, live: true }
+];

@@ -36,7 +36,9 @@ function neverPlayed(stableId: string): components['schemas']['TrackPlaysOut'] {
 		opendj_play_count: 0,
 		rekordbox_play_count: 0,
 		play_count: 0,
-		opendj_last_played_at: null
+		opendj_last_played_at: null,
+		serato_play_count: 0,
+		serato_last_played_at: null
 	};
 }
 

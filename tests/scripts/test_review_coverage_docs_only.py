@@ -29,6 +29,7 @@ def _wire(
     monkeypatch: pytest.MonkeyPatch, files: list[dict], *, checks_and_reviews_forbidden: bool
 ) -> None:
     monkeypatch.setattr(review_coverage, "require_gate_current_with_main", lambda: _GATE)
+    monkeypatch.setattr(review_coverage, "gate_commit_on_main", lambda: _GATE)
     monkeypatch.setattr(review_coverage, "_head_sha", lambda pr: _HEAD)
     # The carry path reads the PR diff through review_lane.diff_of, a live gh
     # call; the same seam test_review_coverage_carry_stdout.py pins. Without it
@@ -130,6 +131,7 @@ def test_empty_changed_file_list_does_not_exempt() -> None:
 def test_gh_failure_listing_files_is_a_measurement_failure_not_a_pass() -> None:
     with pytest.MonkeyPatch.context() as monkeypatch:
         monkeypatch.setattr(review_coverage, "require_gate_current_with_main", lambda: _GATE)
+        monkeypatch.setattr(review_coverage, "gate_commit_on_main", lambda: _GATE)
         monkeypatch.setattr(review_coverage, "_head_sha", lambda pr: _HEAD)
 
         def raising_paginated(path: str) -> list[dict]:

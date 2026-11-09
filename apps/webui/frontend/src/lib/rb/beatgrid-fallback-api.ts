@@ -81,6 +81,16 @@ export async function nudgeGridEdit(
 
 /** Reset one half of the edit; the server keeps the other in the same
  * transaction, so a concurrent agent edit of that half survives. */
+/** Step back one stored grid edit (GRIDEDIT-10215); 409 GRID_EDIT_NOTHING_TO_UNDO when none. */
+export async function undoGridEdit(stableId: string, source: GridEditSource) {
+	refuseStickWrite(stableId, 'grid edit');
+	return unwrap(
+		api.POST('/api/v1/tracks/{stable_id}/grid-edit/undo', {
+			params: { path: { stable_id: stableId }, query: { source } }
+		})
+	);
+}
+
 export async function resetGridEditPart(
 	stableId: string,
 	source: GridEditSource,

@@ -27,6 +27,21 @@ Subcommands
     invoke the writer. See :mod:`apps.sync.usb.pioneer.writer_onelibrary`
     for the capability matrix + safety guards.
 
+``write-pdb --target DIR --spec PATH``
+    Write ``PIONEER/rekordbox/export.pdb`` from a JSON spec (issue #10031).
+    Prints ``pdb_path``, ``bytes``, and ``tracks`` on success; errors go to
+    stderr as JSON and exit 1.
+
+``artwork --target DIR --track STABLE_ID[=COVER_PATH] ... [--apply] [--online] [--no-library]``
+    The classic export's artwork step without the UI (USBEXP-10048): plan
+    the ``PIONEER/Artwork/<nnnnn>/a<id>.jpg`` + ``a<id>_m.jpg`` files and the
+    pdb artwork table. ``=COVER_PATH`` supplies a cover file; any other track
+    reads the library's artwork store, or has none with ``--no-library``.
+    Dry-run (default) prints the plan as JSON and writes nothing; ``--apply``
+    writes the files then re-hashes them (read-back). Refusals print
+    ``{"error", "message"}`` to stderr and exit 1; a bad ``--track`` exits 2.
+    The HTTP route and ``opendj`` CLI for the whole export come with #10042.
+
 Requirement: CAT-06.
 """
 from __future__ import annotations
@@ -41,6 +56,16 @@ from typing import Any
 
 from apps.shared.rekordbox_writeback import require_writeback_enabled
 
+from .artwork_export import (
+    ArtworkExportError,
+    ArtworkSource,
+    file_source,
+    library_artwork_source,
+    plan_artwork,
+    verify_artwork,
+    write_artwork,
+)
+from .pdb_writer import PdbWriterError, pdb_export_from_dict, write_export_pdb
 from .reader import read_usb_export, validate_invariants
 
 
@@ -336,6 +361,95 @@ def _cmd_agent_export(args: argparse.Namespace) -> int:
     return 0 if result.success else 1
 
 
+# -----------------------------------------------------------------------
+# ``write-pdb`` subcommand (USBEXP / issue #10031).
+# -----------------------------------------------------------------------
+
+
+def _cmd_write_pdb(args: argparse.Namespace) -> int:
+    spec_path = Path(args.spec)
+    try:
+        payload = json.loads(spec_path.read_text(encoding="utf-8"))
+        export = pdb_export_from_dict(payload)
+        pdb_path = write_export_pdb(Path(args.target), export)
+    except (OSError, json.JSONDecodeError, PdbWriterError, KeyError, TypeError, ValueError) as exc:
+        json.dump({"error": type(exc).__name__, "message": str(exc)}, sys.stderr)
+        sys.stderr.write("\n")
+        return 1
+    json.dump(
+        {
+            "pdb_path": str(pdb_path),
+            "bytes": pdb_path.stat().st_size,
+            "tracks": len(export.tracks),
+        },
+        sys.stdout,
+    )
+    sys.stdout.write("\n")
+    return 0
+
+
+# -----------------------------------------------------------------------
+# ``artwork`` subcommand (USBEXP-10048).
+# -----------------------------------------------------------------------
+
+
+def _parse_artwork_tracks(specs: list[str]) -> tuple[list[str], dict[str, Path]]:
+    stable_ids: list[str] = []
+    covers: dict[str, Path] = {}
+    for spec in specs:
+        sid, sep, cover = spec.partition("=")
+        if not sid or (sep and not cover):
+            raise ValueError(f"bad --track {spec!r}: expected STABLE_ID or STABLE_ID=COVER_PATH")
+        stable_ids.append(sid)
+        if sep:
+            covers[sid] = Path(cover)
+    return stable_ids, covers
+
+
+def _artwork_source(covers: dict[str, Path], library: ArtworkSource | None) -> ArtworkSource:
+    explicit = file_source(covers)
+
+    def source(stable_id: str) -> bytes | None:
+        if stable_id in covers:
+            return explicit(stable_id)
+        if library is not None:
+            return library(stable_id)
+        return None
+
+    return source
+
+
+def _cmd_artwork(args: argparse.Namespace) -> int:
+    try:
+        stable_ids, covers = _parse_artwork_tracks(args.track)
+    except ValueError as exc:
+        sys.stderr.write(f"{exc}\n")
+        return 2
+    library = None if args.no_library else library_artwork_source(online=args.online)
+    target = Path(args.target)
+    try:
+        plan = plan_artwork(stable_ids, _artwork_source(covers, library))
+        if not args.apply:
+            json.dump({"dry_run": True, **plan.to_payload()}, sys.stdout, indent=2)
+            sys.stdout.write("\n")
+            return 0
+        files = write_artwork(plan, target)
+        verify_artwork(plan, target)
+    except ArtworkExportError as exc:
+        json.dump({"error": exc.code, "message": exc.message}, sys.stderr)
+        sys.stderr.write("\n")
+        return 1
+    result = {
+        "verified": True,
+        "files": files,
+        "pdb_table": {str(k): v for k, v in plan.pdb_table().items()},
+        "track_artwork_ids": dict(plan.track_artwork_ids),
+    }
+    json.dump(result, sys.stdout, indent=2)
+    sys.stdout.write("\n")
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(
         prog="python -m apps.sync.usb.pioneer",
@@ -494,6 +608,31 @@ def main(argv: list[str] | None = None) -> int:
         help="Skip the overlay round-trip; run identity only.",
     )
     diff.set_defaults(func=_cmd_diff_matrix)
+
+    pdb = sub.add_parser(
+        "write-pdb",
+        help="Write PIONEER/rekordbox/export.pdb from a JSON spec (classic export pdb).",
+    )
+    pdb.add_argument("--target", required=True, help="USB volume root.")
+    pdb.add_argument("--spec", required=True, help="JSON file describing tracks and lookup tables.")
+    pdb.set_defaults(func=_cmd_write_pdb)
+
+    art = sub.add_parser("artwork", help="Plan or write the stick track artwork (USBEXP-10048).")
+    art.add_argument("--target", required=True, help="USB volume root.")
+    art.add_argument(
+        "--track",
+        action="append",
+        required=True,
+        help="STABLE_ID or STABLE_ID=COVER_PATH (repeatable).",
+    )
+    art.add_argument("--apply", action="store_true", help="Write files and read them back.")
+    art.add_argument("--online", action="store_true", help="Allow online cover lookups.")
+    art.add_argument(
+        "--no-library",
+        action="store_true",
+        help="Do not read the library; tracks without =COVER_PATH have no artwork.",
+    )
+    art.set_defaults(func=_cmd_artwork)
 
     args = parser.parse_args(argv)
     return args.func(args)

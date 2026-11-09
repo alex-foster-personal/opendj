@@ -1,5 +1,5 @@
 /**
- * The `grid_edit` performance command's own half (GRIDEDIT-6235/-6235d): the press
+ * The `grid_edit` performance command's own half (GRIDEDIT-6235/-6235d, undo GRIDEDIT-10215): the press
  * shape, its validation, and the call into the grid-edit queue.
  *
  * Kept apart from grid-edit.ts (titles, press geometry) and grid-edit-api.ts
@@ -17,7 +17,9 @@ export type GridEditPart = 'adjust' | 'shift';
 
 /** What one press asks the engine to do. */
 export type GridEditIntent =
-	{ kind: 'nudge'; offset_ms: number; beats: number } | { kind: 'reset'; part: GridEditPart };
+	| { kind: 'nudge'; offset_ms: number; beats: number }
+	| { kind: 'reset'; part: GridEditPart }
+	| { kind: 'undo' };
 
 /** Same micro-ms rounding as the server, so a held run of 2 ms steps stays exact. */
 export function roundMs(ms: number): number {
@@ -94,7 +96,11 @@ export function parseGridEditIntent(value: unknown): GridEditIntent {
 		}
 		return { kind: 'reset', part: record.part };
 	}
-	throw new TypeError(`grid_edit edit kind must be "nudge" or "reset"; got ${String(record.kind)}`);
+	if (record.kind === 'undo') {
+		if (keys !== 'kind') throw new TypeError(`grid_edit undo takes only kind; got ${keys}`);
+		return { kind: 'undo' };
+	}
+	throw new TypeError(`grid_edit edit kind must be "nudge", "reset" or "undo"; got ${String(record.kind)}`);
 }
 
 /** The command body: applies one press to the grid of the track a deck holds. */

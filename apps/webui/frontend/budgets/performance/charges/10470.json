@@ -1,0 +1,9 @@
+{
+  "bytes": 1024,
+  "measured_main": 408395,
+  "measured_with_pr": 408934,
+  "sha": "e2b198316e",
+  "date": "Mon 9 Nov 2026",
+  "reason": "PR #10470 resolves #9968. Measured: CI bundle check of e2b198316e, +539 B gzip on performance; ceiled to KiB",
+  "payback": "none planned; the growth is the feature's own code"
+}

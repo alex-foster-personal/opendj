@@ -42,6 +42,7 @@ _SAMPLE_TOKENS = (
     "A", "bad", "beat", "low", "next", "top", "vocal",
     "beatgrid", "own", "practice", "hybrid", "pickup", "tri-band", "mono-dev", "mono", "auto", "ai",
     "phase-meter", "smooth", "in", "elastic", "tone", "sections", "space", "stems", "exact", "move", "halo",
+    "performance", "browser.tree", "300",
 )
 
 
@@ -57,6 +58,8 @@ def _sample(verb_name: str, arg_key: str) -> str:
 
 
 def _sample_tokens(verb_name: str) -> list[str]:
+    if verb_name == "track_info_open":
+        return ["sample"]
     tokens: list[str] = []
     for arg in VERBS[verb_name].args:
         tokens.extend(_sample(verb_name, arg.key).split(" "))
@@ -76,6 +79,11 @@ def test_fractional_beat_loop_cli_preserves_the_requested_length(beats: str) -> 
     assert parse_invocation(["beat_loop", "2", beats, "1000"]).command == {
         "type": "beat_loop", "deck": 2, "beats": float(beats), "start_ms": 1000,
     }
+
+
+@pytest.mark.parametrize("verb", ["loop_in", "loop_out", "reloop"])
+def test_manual_loop_verbs_build_the_bus_command(verb: str) -> None:
+    assert parse_invocation([verb, "2"]).command == {"type": verb, "deck": 2}
 
 
 def test_no_verb_names_a_command_the_bus_does_not_declare() -> None:
@@ -149,6 +157,16 @@ def test_head_delay_ms_uses_the_0_to_500_ms_domain_not_unit() -> None:
     }
     with pytest.raises(InvocationError, match=r"0\.\.500"):
         parse_invocation(["head_delay_ms", "501"])
+
+
+def test_set_layout_size_refuses_out_of_range_with_the_range() -> None:
+    assert parse_invocation(["set_layout_size", "browser.tree", "300"]).command == {
+        "type": "set_layout_size",
+        "region": "browser.tree",
+        "px": 300,
+    }
+    with pytest.raises(InvocationError, match=r"220\.\.520"):
+        parse_invocation(["set_layout_size", "region=browser.tree", "px=9999"])
 
 
 def test_waveform_seek_builds_the_bus_command_with_snap() -> None:
@@ -445,6 +463,8 @@ def test_grid_edit_builds_the_nested_edit_the_dispatcher_validates() -> None:
     assert parse_invocation(["grid_edit", "2", "shift"]).command["edit"] == {
         "kind": "reset", "part": "shift",
     }
+    # GRIDEDIT-10215: the deck's Cmd+Z sends the same command.
+    assert parse_invocation(["grid_edit", "1", "undo"]).command["edit"] == {"kind": "undo"}
     # The same bounds parseGridEditIntent enforces, refused before dispatch.
     for token in ("501", "2:4", "2:1.5", "nan"):
         with pytest.raises(InvocationError):
@@ -462,3 +482,23 @@ def test_quantize_grid_accepts_phase_as_the_page_does() -> None:
     for token in ("2", "bar", "Phase"):
         with pytest.raises(InvocationError):
             parse_invocation(["quantize_grid", "1", token])
+
+
+def test_beat_jump_size_builds_the_bus_command_for_every_rekordbox_size() -> None:
+    """DECKUX-10470: if beat_jump_size is not reachable from the CLI then agent parity is broken."""
+    assert parse_invocation(["beat_jump_size", "1", "0.5"]).command == {
+        "type": "beat_jump_size",
+        "deck": 1,
+        "beats": 0.5,
+    }
+    assert parse_invocation(["beat_jump_size", "2", "64"]).command["beats"] == 64
+    with pytest.raises(InvocationError, match=r"0\.5\|1\|2\|4"):
+        parse_invocation(["beat_jump_size", "1", "3"])
+
+
+def test_beat_jump_accepts_a_half_beat_and_refuses_other_fractions() -> None:
+    """DECKUX-10470: if beat_jump refuses -0.5 or accepts 1.5 then the half-beat jump is broken."""
+    assert parse_invocation(["beat_jump", "1", "-0.5"]).command["beats"] == -0.5
+    assert parse_invocation(["beat_jump", "1", "8"]).command["beats"] == 8
+    with pytest.raises(InvocationError, match="non-zero whole number or"):
+        parse_invocation(["beat_jump", "1", "1.5"])

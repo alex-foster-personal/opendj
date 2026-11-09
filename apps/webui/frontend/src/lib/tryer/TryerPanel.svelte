@@ -72,10 +72,10 @@
 		typeof Audio === 'undefined'
 			? null
 			: createAuditioner((url) => new Audio(url), {
-					onEnded: () => (playing = false),
+					onEnded: () => stopped(),
 					// A render that is gone (404 render_missing) or undecodable must not look like it is playing.
 					onFailure: (candidateId, reason) => {
-						playing = false;
+						stopped();
 						error = `could not play candidate ${candidateId}: ${reason}`;
 					}
 				});
@@ -97,9 +97,15 @@
 		}
 	}
 
+	/** TRYER-9999: every stop, end and render-missing path clears the playhead with the playing flag. */
+	function stopped(): void {
+		playing = false;
+		playhead = null;
+	}
+
 	function render(): void {
 		auditioner?.reset();
-		playing = false;
+		stopped();
 		job = null; // the previous job is never actionable while (or after) a new render runs
 		blindOrder = null;
 		currentId = lastId = null;
@@ -128,7 +134,7 @@
 
 	function stop(): void {
 		auditioner?.stop();
-		playing = false;
+		stopped();
 	}
 
 	function toggle(): void {
@@ -388,7 +394,7 @@
 						<TryerLanes
 							jobId={job.job_id}
 							candidateId={chip.id}
-							playhead={chip.id === currentId ? playhead : null}
+							playhead={chip.id === currentId && playing ? playhead : null}
 							onSeek={(seconds) => playFrom(chip, seconds)}
 						/>
 					{/if}

@@ -12,12 +12,15 @@ minimal tracks-and-playlists payload into an ``exportLibrary.db``
 OneLibrary (Device Library Plus) file, seeded from a Rekordbox-made
 template, through our own SQLCipher handle (``onelibrary.py``).
 
+Classic export.pdb encoder: :mod:`apps.sync.usb.pioneer.pdb_writer`
+(``build_export_pdb`` / ``write_export_pdb``).
+
 Requirement: CAT-06.
 """
 
 from __future__ import annotations
 
-__all__ = ["read_usb_export"]
+__all__ = ["read_usb_export", "build_export_pdb", "write_export_pdb", "PdbExport", "PdbTrack"]
 
 
 def __getattr__(name: str):
@@ -25,4 +28,8 @@ def __getattr__(name: str):
         from .reader import read_usb_export as _read_usb_export
 
         return _read_usb_export
+    if name in ("build_export_pdb", "write_export_pdb", "PdbExport", "PdbTrack"):
+        import apps.sync.usb.pioneer.pdb_writer as _pw
+
+        return getattr(_pw, name)
     raise AttributeError(f"module {__name__!r} has no attribute {name!r}")

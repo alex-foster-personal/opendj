@@ -1,0 +1,9 @@
+{
+  "bytes": 2048,
+  "measured_main": 17018,
+  "measured_with_pr": 18310,
+  "sha": "82973962d6",
+  "date": "Sun 8 Nov 2026",
+  "reason": "SX3_MAP (DDJ-SX3 device map: 124 bindings, 399 hints, 60 LED rules) imported by practice-devices.ts for the /practice/ddj-sx3 replica; it rides the lazy practice-replica chunk with the other replica maps",
+  "payback": "none planned: a replica map is data the route needs; a later map-compression pass across all replica maps would return it"
+}

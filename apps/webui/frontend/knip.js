@@ -154,6 +154,9 @@ export default {
 		// D3 commanded-move runner (#9454): driven by unit tests until digit commands (D2, #9453)
 		// call it from the UI.
 		'src/lib/rb/commanded-move-runner.svelte.ts',
+		// D1 commanded-move planner (#9452): pure planner, consumed by unit tests until digit
+		// commands (D2, #9453) and the D3 runner wire it into the UI.
+		'src/lib/rb/commanded-move.ts',
 		// #9456 transition presets: pure planner/runner until Cmd-K wires the registry.
 		'src/lib/rb/transition-presets.ts',
 		// #9456 preset.run.* commands until palette epic imports the registry.

@@ -8,6 +8,7 @@
 	 */
 	import { getLanes, type TryLanes } from '$lib/api/dj-try';
 	import { LANE_KNOBS, laneY, peakColumns, segmentsWithin } from './tryer-lanes';
+	import { missingLaneCurve } from './tryer-lanes-check';
 
 	let {
 		jobId,
@@ -36,6 +37,13 @@
 		getLanes(jobId, candidateId, columns).then(
 			(body) => {
 				if (cancelled) return;
+				// TRYER-9999: a curve the route left out is missing data, never an empty line.
+				const missing = missingLaneCurve(body);
+				if (missing !== null) {
+					console.error(`try-er lanes for candidate ${candidateId}: ${missing}`);
+					failure = missing;
+					return;
+				}
 				lanes = body;
 			},
 			(error: unknown) => {
@@ -75,7 +83,7 @@
 				ctx.strokeStyle = knob.color;
 				ctx.setLineDash(knob.dash);
 				ctx.lineWidth = 1.5;
-				for (const segment of segmentsWithin(deck.curves[knob.name] ?? [], deck.playing)) {
+				for (const segment of segmentsWithin(deck.curves[knob.name], deck.playing)) {
 					ctx.beginPath();
 					segment.forEach(([t, v], i) => {
 						const y = laneY(v, top, ROW_PX);

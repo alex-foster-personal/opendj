@@ -10,7 +10,7 @@ import pytest
 
 ROOT = Path(__file__).resolve().parents[1]
 VOCAB = ROOT / "apps" / "tags" / "title_fix_vocab.json"
-MODULE = ROOT / "apps" / "tags" / "title_fix.py"
+MODULE = ROOT / "apps" / "tags" / "title_fix_vocab.py"
 
 
 @pytest.mark.requirement("TFIX-07")

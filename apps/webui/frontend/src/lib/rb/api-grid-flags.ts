@@ -3,7 +3,7 @@
  *
  * The verdicts themselves arrive on the listing rows (`grid_quality`); this
  * module only asks the engine to bring them up to date and writes the
- * per-track dismissal. CLI twin: `opendj track grid-scan` / `grid-flag`.
+ * per-track dismissal. CLI twin: `opendj track grid-flags` / `grid-scan` / `grid-flag`.
  */
 import { API_BASE } from '$lib/api';
 import { bootScheduler } from '$lib/rb/boot-scheduler';
@@ -15,8 +15,18 @@ export interface GridFlagDismissResult {
 	etag: string;
 }
 
+/** Reject with the route's own reason (FastAPI `detail`), not its raw JSON body. */
 async function _fail(response: Response, what: string): Promise<never> {
-	throw new Error(`${what} failed: HTTP ${response.status} ${await response.text()}`);
+	const body = await response.text();
+	let reason = body;
+	try {
+		const detail = (JSON.parse(body) as { detail?: unknown }).detail;
+		if (typeof detail === 'string') reason = detail;
+		else if (detail !== undefined) reason = JSON.stringify(detail);
+	} catch {
+		// non-JSON body (proxy error page): keep the text as is
+	}
+	throw new Error(`${what} failed: HTTP ${response.status} ${reason}`);
 }
 
 /** Hide (`true`) or restore (`false`) one track's beatgrid flag. */

@@ -93,6 +93,45 @@ function _masterBeatX(
 	return x;
 }
 
+/** First index in `beats` (sorted by t) whose t is at or after `t`; `beats.length` when none is. */
+function _firstBeatAtOrAfter(beats: readonly AnlzBeat[], t: number): number {
+	let lo = 0;
+	let hi = beats.length;
+	while (lo < hi) {
+		const mid = (lo + hi) >>> 1;
+		if (beats[mid].t < t) lo = mid + 1;
+		else hi = mid;
+	}
+	return lo;
+}
+
+/**
+ * PERF-PAINT-10214: the slice [start, end) of `masterBeats` whose projection can land
+ * inside the row (the [-2, w + 2] px band `_masterBeatX` keeps), plus one beat either
+ * side, so per-frame work follows the visible beats instead of the track length.
+ * `_masterBeatX` still decides each beat, so the strokes are unchanged. A mapping
+ * that cannot be inverted (no positive pitch or scale) keeps the whole list.
+ */
+function _beatRangeInView(
+	overlay: MasterDownbeatOverlay,
+	tLeft: number,
+	pxPerS: number,
+	w: number
+): [number, number] {
+	const beats = overlay.masterBeats;
+	const { masterPositionSec, followerPositionSec, masterPitch, followerPitch } = overlay;
+	if (!(pxPerS > 0) || !(masterPitch > 0) || !(followerPitch > 0)) return [0, beats.length];
+	const ratio = followerPitch / masterPitch;
+	const masterTAt = (followerT: number): number =>
+		masterPositionSec + (followerT - followerPositionSec) / ratio;
+	const lo = masterTAt(tLeft - 2 / pxPerS);
+	const hi = masterTAt(tLeft + (w + 2) / pxPerS);
+	if (!Number.isFinite(lo) || !Number.isFinite(hi)) return [0, beats.length];
+	const start = Math.max(0, _firstBeatAtOrAfter(beats, lo) - 1);
+	const end = Math.min(beats.length, _firstBeatAtOrAfter(beats, hi) + 1);
+	return [start, Math.max(start, end)];
+}
+
 export function drawMasterDownbeatOverlay(
 	ctx: CanvasRenderingContext2D,
 	overlay: MasterDownbeatOverlay,
@@ -104,7 +143,9 @@ export function drawMasterDownbeatOverlay(
 	ctx.save();
 	ctx.strokeStyle = 'rgba(255, 255, 255, 0.1)';
 	ctx.lineWidth = 1;
-	for (const beat of overlay.masterBeats) {
+	const [start, end] = _beatRangeInView(overlay, tLeft, pxPerS, w);
+	for (let index = start; index < end; index++) {
+		const beat = overlay.masterBeats[index];
 		if (beat.n !== 1) continue;
 		const x = _masterBeatX(beat.t, overlay, tLeft, pxPerS, w);
 		if (x === null) continue;
@@ -131,7 +172,9 @@ export function drawMasterGridGhost(
 ): void {
 	ctx.save();
 	ctx.lineWidth = 1;
-	for (const beat of overlay.masterBeats) {
+	const [start, end] = _beatRangeInView(overlay, tLeft, pxPerS, w);
+	for (let index = start; index < end; index++) {
+		const beat = overlay.masterBeats[index];
 		const downbeat = beat.n === 1;
 		if (downbeat && !includeDownbeats) continue;
 		const x = _masterBeatX(beat.t, overlay, tLeft, pxPerS, w);

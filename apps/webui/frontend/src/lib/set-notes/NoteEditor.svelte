@@ -27,7 +27,7 @@
 		linkRange,
 		mentionPlugin,
 		noteSchema,
-		parseHref,
+		menuTargetAt,
 		parseNoteMarkdown,
 		selectWordAt,
 		serializeNoteMarkdown,
@@ -38,6 +38,7 @@
 		type NoteTarget
 	} from './editor';
 	import { inGig, openNoteTarget } from './link-action';
+	import { isPlainDeckKey } from './hotkey/deck-key';
 	import { createTrackSearch, hitLabel } from './track-search.svelte';
 	import LinkMenu from './LinkMenu.svelte';
 
@@ -47,7 +48,16 @@
 		picked = $bindable([])
 	}: { onError: (message: string | null) => void; hovered?: HoveredLink | null; picked?: string[] } = $props();
 
-	type Menu = { x: number; y: number; from: number; to: number; text: string; link: ReturnType<typeof linkAt> };
+	type Menu = {
+		x: number;
+		y: number;
+		from: number;
+		to: number;
+		text: string;
+		link: ReturnType<typeof linkAt>;
+		/** SETNOTE-10457: a text link's or a chip's target, null on plain text. */
+		target: NoteTarget | null;
+	};
 
 	const MENTION_HITS = 8;
 	const DECK_KEYS: Record<string, DeckId> = { '1': 1, '2': 2, '3': 3, '4': 4 };
@@ -126,7 +136,7 @@
 
 	function onDeckKey(event: KeyboardEvent): void {
 		const deck = DECK_KEYS[event.key];
-		const plain = !event.repeat && !event.metaKey && !event.ctrlKey && !event.altKey;
+		const plain = isPlainDeckKey(event);
 		const target = armed && plain && inGig() ? (hovered?.target ?? null) : null;
 		armed = false;
 		if (deck === undefined || target === null || target.kind === 'http') return;
@@ -161,11 +171,15 @@
 	function openMenu(event: MouseEvent): void {
 		if (!view) return;
 		event.preventDefault();
-		const select = selectWordAt(view.state, view.posAtCoords({ left: event.clientX, top: event.clientY })?.pos ?? null);
+		const clickPos = view.posAtCoords({ left: event.clientX, top: event.clientY })?.pos ?? null;
+		// SETNOTE-10457: read a chip under the click before the word select moves the selection.
+		const chipHit = clickPos === null ? null : menuTargetAt(view.state, clickPos);
+		const select = selectWordAt(view.state, clickPos);
 		if (select) view.dispatch(select);
 		const { from, to } = view.state.selection;
 		const text = view.state.doc.textBetween(from, to, ' ', '').trim();
-		menu = { x: event.clientX, y: event.clientY, from, to, text, link: linkAt(view.state, from) };
+		const hit = menuTargetAt(view.state, from) ?? chipHit;
+		menu = { x: event.clientX, y: event.clientY, from, to, text, link: hit?.link ?? null, target: hit?.target ?? null };
 	}
 
 	function closeMenu(then?: (v: EditorView, m: Menu) => void): void {
@@ -181,8 +195,7 @@
 	const bold = (): void => closeMenu((v) => toggleMark(noteSchema.marks.strong)(v.state, v.dispatch));
 	const openLink = (): void =>
 		closeMenu((_v, m) => {
-			const target = parseHref(m.link?.href ?? '');
-			if (target) void act(target);
+			if (m.target) void act(m.target);
 		});
 	const removeLink = (): void =>
 		closeMenu((v, m) => m.link && v.dispatch(unlinkRange(v.state, m.link)));
@@ -224,7 +237,9 @@
 		canLink={menu.from < menu.to}
 		onLink={linkTo}
 		onBold={bold}
-		linkActions={menu.link ? { open: openLink, remove: removeLink } : null}
+		linkActions={menu.target
+			? { open: openLink, remove: menu.link ? removeLink : null, problem: tracks.problem(menu.target) }
+			: null}
 		onClose={() => closeMenu()}
 	/>
 {/if}

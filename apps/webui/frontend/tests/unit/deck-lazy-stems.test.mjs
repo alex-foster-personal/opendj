@@ -35,18 +35,23 @@ import { loadTypeScriptModule } from './load-typescript.mjs';
 globalThis.location ??= { search: '' };
 
 const ENGINE = 'src/lib/rb/audio-engine.svelte.ts';
+const STEM_ROUTING = 'src/lib/rb/audio-engine-stem-routing.ts';
 let source;
 let stems;
 
 before(async () => {
-	source = readFileSync(new URL(`../../${ENGINE}`, import.meta.url), 'utf8');
+	const barrel = readFileSync(new URL(`../../${ENGINE}`, import.meta.url), 'utf8');
+	const stemRouting = readFileSync(new URL(`../../${STEM_ROUTING}`, import.meta.url), 'utf8');
+	source = `${barrel}\n${stemRouting}`;
 	stems = await loadTypeScriptModule('src/lib/rb/stem-graph.ts');
 });
 
 /** The body of `async load(...)` up to the point the deck is published, which
  * is everything a DJ waits through before the deck can play. */
 function criticalPath() {
-	const start = source.indexOf('async load(deck: DeckId, stable_id: string, options: DeckLoadOptions = {})');
+	const start = source.indexOf(
+		'async load(deck: DeckId, stable_id: string, options: DeckLoadOptions = {})'
+	);
 	assert.ok(start > 0, 'load() not found - this test is reading the wrong file');
 	const end = source.indexOf('stages.totalBeforeSwap', start);
 	assert.ok(end > start, 'totalBeforeSwap marker not found inside load()');
@@ -161,7 +166,7 @@ test('every processor retirement path releases PCM, not just the audio graph', (
 	assert.ok(
 		helperBody.includes('.disconnect()') && helperBody.includes('.dispose()'),
 		'_retireProcessor must both disconnect (synchronous silence) and dispose ' +
-			'(async PCM release), per StretchDeckProcessor.dispose\'s docstring'
+			"(async PCM release), per StretchDeckProcessor.dispose's docstring"
 	);
 
 	for (const site of [
@@ -213,14 +218,23 @@ function engineFunction(signature) {
 
 test('a finished stem bundle is landed, never parked by the upgrade itself', () => {
 	const upgrade = engineFunction('async function _upgradeDeckStems(');
-	assert.match(upgrade, /await time\('landStems', _landStems\(deck, \{ token, processor: created\.processor, state: \{ \.\.\.readyState, playback: 'stems' \} \}, ctx, stale\)\)/);
+	assert.match(
+		upgrade,
+		/await time\('landStems', _landStems\(deck, \{ token, processor: created\.processor, state: \{ \.\.\.readyState, playback: 'stems' \} \}, ctx, stale\)\)/
+	);
 	// AUDFID-02: the only other exit for a ready bundle is the neutral hold, not a park.
-	assert.match(upgrade, /if \(deckPlaysOriginalFile\(readyState\.controls\)\) \{\n\t\t\t_holdNeutralStems\(/);
+	assert.match(
+		upgrade,
+		/if \(deckPlaysOriginalFile\(readyState\.controls\)\) \{\n\t\t\t_holdNeutralStems\(/
+	);
 	assert.ok(
 		!/rt\.pendingStemUpgrade\s*=/.test(upgrade),
 		'_upgradeDeckStems parks the bundle itself: that is the held-until-stop behavior the report is about'
 	);
-	assert.ok(!upgrade.includes('_deckIsReplaceable('), 'the upgrade decides stopped-vs-playing itself instead of landing');
+	assert.ok(
+		!upgrade.includes('_deckIsReplaceable('),
+		'the upgrade decides stopped-vs-playing itself instead of landing'
+	);
 });
 
 test('the landing goes through the tested handoff module with live deck reads', () => {
@@ -230,14 +244,24 @@ test('the landing goes through the tested handoff module with live deck reads', 
 	const landing = engineFunction('function _landStems(');
 	assert.match(landing, /return landStemsOnDeck\(\{/, 'the landing bypasses the tested handoff');
 	assert.match(landing, /runtime: rt, incoming: upgrade\.processor, clock: ctx, stale,/);
-	assert.match(landing, /serialized: \(run\) => _withDeckSwap\(rt, run\)/, 'the landing is not serialized with deck swaps');
+	assert.match(
+		landing,
+		/serialized: \(run\) => _withDeckSwap\(rt, run\)/,
+		'the landing is not serialized with deck swaps'
+	);
 	assert.match(landing, /commitDue: \(\) => _commitPendingIfDue\(deck\)/);
 	// Found live: a backgrounded window never runs the presentation loop, so
 	// st.transport_pending stays true for the whole play and the handoff never ran.
 	assert.match(landing, /rampPending: \(\) => _reanchorRampPending\(rt\)/);
-	assert.ok(!landing.includes('st.transport_pending'), 'the handoff waits on a flag only the rAF loop clears');
+	assert.ok(
+		!landing.includes('st.transport_pending'),
+		'the handoff waits on a flag only the rAF loop clears'
+	);
 	assert.match(landing, /startChange: \(seg\) => stretchScheduleChange\(seg\.positionSec, true,/);
-	assert.match(landing, /commit: \(when\) => \{\s*rt\.processor = upgrade\.processor;\s*st\.stems = upgrade\.state;/);
+	assert.match(
+		landing,
+		/commit: \(when\) => \{\s*rt\.processor = upgrade\.processor;\s*st\.stems = upgrade\.state;/
+	);
 	assert.match(
 		landing,
 		/defer: \(\) => \{\s*rt\.pendingStemUpgrade = upgrade;[\s\S]*?phase: 'waiting'[\s\S]*?_drainPendingStemUpgrade\(deck\);/,
@@ -256,16 +280,28 @@ test('every stage of the stem load publishes a named phase', () => {
 	]) {
 		assert.ok(upgrade.includes(phase), `the stem load never publishes: ${phase}`);
 	}
-	const order = ["phase('fetching'", "phase('downloading')", "phase('decoding')"].map((needle) => upgrade.indexOf(needle));
-	assert.deepEqual([...order].sort((a, b) => a - b), order, 'phases are published out of load order');
+	const order = ["phase('fetching'", "phase('downloading')", "phase('decoding')"].map((needle) =>
+		upgrade.indexOf(needle)
+	);
+	assert.deepEqual(
+		[...order].sort((a, b) => a - b),
+		order,
+		'phases are published out of load order'
+	);
 	assert.match(engineFunction('function _landStems('), /phase: 'switching'/);
 });
 
 test('unload and load-swap still drop every retained PCM field', () => {
 	const unloadBody = engineFunction('async unload(deck: DeckId): Promise<void> {');
-	assert.ok(unloadBody.includes('_releasePendingStemUpgrade'), 'unload must release pending stem upgrades');
+	assert.ok(
+		unloadBody.includes('_releasePendingStemUpgrade'),
+		'unload must release pending stem upgrades'
+	);
 	assert.ok(unloadBody.includes('dispose()'), 'unload must dispose the processor');
-	assert.ok(unloadBody.includes('_emptyRuntime()'), 'unload must reset runtime through _emptyRuntime');
+	assert.ok(
+		unloadBody.includes('_emptyRuntime()'),
+		'unload must reset runtime through _emptyRuntime'
+	);
 
 	const assignNeedle = 'rt.audioBuffer = candidateBuffer';
 	const assignAt = source.indexOf(assignNeedle);
@@ -292,7 +328,11 @@ test('unload and load-swap still drop every retained PCM field', () => {
 });
 
 test('the default loading state names its phase, and a phase carries through', () => {
-	assert.deepEqual(stems.loadingStemDeckState().load, { phase: 'probing', progress: null, reason: null });
+	assert.deepEqual(stems.loadingStemDeckState().load, {
+		phase: 'probing',
+		progress: null,
+		reason: null
+	});
 	const fetching = stems.loadingStemDeckState({
 		phase: 'fetching',
 		progress: { files_total: 5, files_done: 1, bytes_done: 9 },
@@ -300,5 +340,9 @@ test('the default loading state names its phase, and a phase carries through', (
 	});
 	assert.equal(fetching.status, 'loading');
 	assert.deepEqual(fetching.load.progress, { files_total: 5, files_done: 1, bytes_done: 9 });
-	assert.equal(stems.unavailableStemDeckState().load, null, 'a settled state must carry no load phase');
+	assert.equal(
+		stems.unavailableStemDeckState().load,
+		null,
+		'a settled state must carry no load phase'
+	);
 });

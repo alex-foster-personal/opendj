@@ -44,6 +44,16 @@ _PHASE5_TEST_DDL: tuple[str, ...] = (
         PRIMARY KEY (stable_id, field_name)
     )
     """,
+    """
+    CREATE TABLE IF NOT EXISTS events (
+        id           INTEGER PRIMARY KEY AUTOINCREMENT,
+        ts           TEXT NOT NULL,
+        kind         TEXT NOT NULL,
+        stable_id    TEXT,
+        payload_json TEXT,
+        actor        TEXT
+    )
+    """,
 )
 
 

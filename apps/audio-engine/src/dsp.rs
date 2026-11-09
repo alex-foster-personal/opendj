@@ -247,6 +247,76 @@ impl Smoothed {
     }
 }
 
+/// Domain a FILTER corner glides in (`mixer::FILTER_GLIDE_DOMAIN`).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum GlideDomain {
+    /// One-pole on the frequency itself (shipped).
+    Hz,
+    /// One-pole on log2 of the frequency, so LP and HP glide symmetrically.
+    Octave,
+}
+
+impl GlideDomain {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            GlideDomain::Hz => "hz",
+            GlideDomain::Octave => "octave",
+        }
+    }
+}
+
+/// A filter corner's glide: `Smoothed` on the frequency (Hz) or on its log2
+/// (Octave, mirrored by the page's `rb/filter-glide.ts`). Hz is bit-identical
+/// to a bare `Smoothed`.
+#[derive(Clone, Copy, Debug)]
+pub struct CornerGlide {
+    domain: GlideDomain,
+    s: Smoothed,
+}
+
+impl CornerGlide {
+    pub fn new(hz: f64, sr: f64, tau_s: f64, domain: GlideDomain) -> CornerGlide {
+        CornerGlide { domain, s: Smoothed::new(Self::encode(domain, hz), sr, tau_s) }
+    }
+
+    fn encode(domain: GlideDomain, hz: f64) -> f64 {
+        match domain {
+            GlideDomain::Hz => hz,
+            GlideDomain::Octave => hz.log2(),
+        }
+    }
+
+    fn decode(&self, v: f64) -> f64 {
+        match self.domain {
+            GlideDomain::Hz => v,
+            GlideDomain::Octave => v.exp2(),
+        }
+    }
+
+    pub fn set(&mut self, hz: f64) {
+        self.s.set(Self::encode(self.domain, hz));
+    }
+
+    /// The corner in Hz for this frame, then advance (`Smoothed::tick`'s shape).
+    #[inline]
+    pub fn tick(&mut self) -> f64 {
+        let v = self.s.tick();
+        self.decode(v)
+    }
+
+    pub fn settled(&self) -> bool {
+        self.s.settled()
+    }
+
+    pub fn hz(&self) -> f64 {
+        self.decode(self.s.value)
+    }
+
+    pub fn target_hz(&self) -> f64 {
+        self.decode(self.s.target)
+    }
+}
+
 /// A linear glide over a fixed number of frames, restarted from wherever the
 /// value is whenever the target changes. This is the page's EQ law
 /// (`player/eq-apply.ts`: `setValueAtTime(current)` then
@@ -300,6 +370,62 @@ pub(crate) fn f32_to_pcm16(s: f32) -> i16 {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn corner_glide_hz_is_bit_identical_to_smoothed() {
+        let mut g = CornerGlide::new(20000.0, 48000.0, 0.01, GlideDomain::Hz);
+        let mut s = Smoothed::new(20000.0, 48000.0, 0.01);
+        for i in 0..2000 {
+            if i == 0 {
+                g.set(130.0);
+                s.set(130.0);
+            } else if i == 700 {
+                g.set(5000.0);
+                s.set(5000.0);
+            }
+            assert_eq!(g.tick().to_bits(), s.tick().to_bits(), "tick {i}");
+        }
+    }
+
+    #[test]
+    fn corner_glide_octave_follows_the_log2_one_pole() {
+        let (sr, tau): (f64, f64) = (48000.0, 0.01);
+        let k = 1.0 - (-1.0 / (tau * sr)).exp();
+        let (l0, t) = (20000f64.log2(), 130f64.log2());
+        let mut g = CornerGlide::new(20000.0, sr, tau, GlideDomain::Octave);
+        g.set(130.0);
+        for m in 0..2000 {
+            let want = (t + (l0 - t) * (1.0 - k).powi(m)).exp2();
+            let got = g.tick();
+            assert!((got - want).abs() <= 1e-12 * want, "frame {m}: {got} vs {want}");
+        }
+        for _ in 0..48000 {
+            g.tick();
+        }
+        assert!(g.settled());
+        assert_eq!(g.hz(), g.target_hz());
+        assert!((g.hz() - 130.0).abs() < 1e-9);
+    }
+
+    /// First frame at which a step glide has covered half its octave span.
+    fn half_octave_span_frame(domain: GlideDomain, from: f64, to: f64) -> usize {
+        let mid = (from.log2() + to.log2()) / 2.0;
+        let mut g = CornerGlide::new(from, 48000.0, 0.01, domain);
+        g.set(to);
+        (0..48000).find(|_| (g.tick().log2() - mid) * (to.log2() - mid).signum() >= 0.0).unwrap()
+    }
+
+    #[test]
+    fn octave_glide_is_symmetric_between_lp_and_hp() {
+        // Full-travel steps: LP ceiling -> floor, HP floor -> ceiling.
+        let lp = half_octave_span_frame(GlideDomain::Octave, 20000.0, 130.0);
+        let hp = half_octave_span_frame(GlideDomain::Octave, 30.0, 6300.0);
+        assert!(lp.abs_diff(hp) <= 48, "octave: LP half span at frame {lp}, HP at {hp}");
+        // The Hz glide is the asymmetry this option exists for (06-filter.md finding 2).
+        let lp = half_octave_span_frame(GlideDomain::Hz, 20000.0, 130.0);
+        let hp = half_octave_span_frame(GlideDomain::Hz, 30.0, 6300.0);
+        assert!(lp.abs_diff(hp) > 480, "hz: LP half span at frame {lp}, HP at {hp}");
+    }
 
     fn gain_at(c: Coeffs, sr: f64, f: f64) -> f64 {
         c.magnitude_at(sr, f)

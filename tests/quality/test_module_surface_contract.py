@@ -64,8 +64,8 @@ PREDATES_ADR = frozenset(
 
 # Packages that landed after the ADR WITHOUT a contract, each named with the tech-debt issue that
 # owes it. This is not PREDATES_ADR (never add there). A name here must leave in the PR that adds it
-# to `enforced`; test_owed_contracts_are_not_enforced_yet refuses the overlap. apps/autodj is now
-# enforced; apps/transition_score still owes its own contract in #7708.
+# to `enforced`; test_owed_contracts_are_not_enforced_yet refuses the overlap. apps/autodj and
+# apps/transition_score (#7708) are now enforced.
 # apps/plugins came in with #6522 (plugin store) and owes its contract, a Protocol over frozen
 # models for the engine and webui importers, before it can be enforced.
 OWED_CONTRACT = {
@@ -76,7 +76,6 @@ OWED_CONTRACT = {
     "b2b_sync": "#7949",
     "b2b_transport": "#7949",
     "plugins": "#6522",
-    "transition_score": "#7708",
 }
 
 

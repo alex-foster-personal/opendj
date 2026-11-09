@@ -4,8 +4,16 @@
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
-import { test } from 'node:test';
+import { before, test } from 'node:test';
 import { transformSync } from 'esbuild';
+
+import { loadTypeScriptModule } from './load-typescript.mjs';
+
+// The effect calls the real TRYER-9999 curve check, so the harness hands it in.
+let lanesCheck;
+before(async () => {
+	lanesCheck = await loadTypeScriptModule('src/lib/tryer/tryer-lanes-check.ts');
+});
 
 // ---------------------------------------------------------------- TryerLanes.svelte fetch effect (stale response guard)
 
@@ -52,6 +60,7 @@ function makeLanesFetchHarness(getLanes) {
 	const compiled = compileTs(arrowSrc);
 	const factory = new Function(
 		'getLanes',
+		'missingLaneCurve',
 		`
 		let lanes = null;
 		let failure = null;
@@ -75,7 +84,7 @@ function makeLanesFetchHarness(getLanes) {
 		};
 		`
 	);
-	return factory(getLanes);
+	return factory(getLanes, lanesCheck.missingLaneCurve);
 }
 
 test('TryerLanes fetch effect: stale success from candidate A does not overwrite B after cleanup', async () => {

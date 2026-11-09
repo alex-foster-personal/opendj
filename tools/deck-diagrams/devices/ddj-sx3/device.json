@@ -1,0 +1,9 @@
+{
+ "map_name": "DDJ-SX3",
+ "map_const": "SX3_MAP",
+ "map_ts": "apps/webui/frontend/src/lib/rb/midi/maps/ddj-sx3.ts",
+ "panel_w": 664.0,
+ "panel_d": 354.4,
+ "panel_size_source": "DDJ-SX3 Quick Start Guide (DRH1502A), Specifications, page 15: Max. external dimensions (W x D x H) 664.0 mm x 354.4 mm x 70.4 mm",
+ "display_name": "4-channel performance controller"
+}

@@ -103,7 +103,7 @@
 	import type { PlaylistTreeViewMode } from '$lib/rb/playlist-tree-view-prefs';
 	import { playlistReveal } from '$lib/rb/playlist-reveal.svelte';
 	import { libraryWorkspace } from '$lib/library/library-workspace.svelte';
-	import { filterTreeByName, libraryLayoutFor } from '$lib/rb/skin-layout';
+	import { effectiveLibraryLayout, filterTreeByName } from '$lib/rb/skin-layout';
 
 	let {
 		onautolistchange,
@@ -131,7 +131,10 @@
 	// the "Your Library" panel: a heading, the source tabs as pill chips
 	// (CSS in CrateDeskView) and a name search over the playlist tree.
 	// Gig's browser never shows it.
-	const yourLibrary = $derived(libraryWorkspace.active && libraryLayoutFor(uiPrefs.ui_skin) === 'three-panel');
+	const yourLibrary = $derived(
+		libraryWorkspace.active &&
+			effectiveLibraryLayout(uiPrefs.layout_override.library, uiPrefs.ui_skin) === 'three-panel'
+	);
 	let treeQuery = $state('');
 	// The search filters the tree view only; column view keeps its own drill-down (Codex P2, PR #8869).
 	const treeSearch = $derived(yourLibrary && playlistTreeView === 'tree');

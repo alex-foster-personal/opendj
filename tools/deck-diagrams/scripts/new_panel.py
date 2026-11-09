@@ -4,8 +4,8 @@ Reads wire identities from the committed `DEVICE_MAP_REGISTRY` export
 (`apps/audio-engine/maps/device-maps.json`). One control per binding; placeholder
 positions on a deterministic grid; `"measured": false` until traced.
 
-Add or correct the manufacturer panel size in `DEVICES` before scaffolding a
-new controller.
+Add or correct the manufacturer panel size in
+`tools/deck-diagrams/devices/<device>/device.json` before scaffolding a new controller.
 
 Run:
   uv run python tools/deck-diagrams/scripts/new_panel.py ddj-400 --dry-run
@@ -98,29 +98,22 @@ class Device:
     display_name: str
 
 
-# A new controller: add a row here first (checklist step 1). Sizes must match the vendor manual.
-DEVICES: dict[str, Device] = {
-    "ddj-400": Device(
-        map_name="DDJ-400",
-        map_const="DDJ400_MAP",
-        map_ts="apps/webui/frontend/src/lib/rb/midi/maps/ddj-400.ts",
-        panel_w=482.0,
-        panel_d=272.4,
-        panel_size_source=(
-            "DDJ-400 Operating Instructions, Specifications (482 x 272.4 mm); confirm at checklist step 1"
-        ),
-        display_name="2-deck entry controller",
-    ),
-    "ddj-flx4": Device(
-        map_name="DDJ-FLX4",
-        map_const="FLX4_MAP",
-        map_ts="apps/webui/frontend/src/lib/rb/midi/maps/ddj-flx4.ts",
-        panel_w=482.6,
-        panel_d=272.4,
-        panel_size_source=("DDJ-FLX4 operating instructions, Specifications (482.6 x 272.4 mm)"),
-        display_name="2-deck entry controller",
-    ),
-}
+DEVICE_FILE = "device.json"
+
+
+def load_devices(root: Path = DEVICES_DIR) -> dict[str, Device]:
+    """Every `<device>/device.json` under `root`, keyed by directory name.
+
+    Each controller registers its own row beside its panel (checklist step 1, #10560), so a new
+    replica adds a file and edits no shared table. A missing or unknown field raises TypeError.
+    """
+    return {
+        path.parent.name: Device(**json.loads(path.read_text(encoding="utf-8")))
+        for path in sorted(root.glob(f"*/{DEVICE_FILE}"))
+    }
+
+
+DEVICES: dict[str, Device] = load_devices()
 
 
 def _slug_segment(raw: str) -> str:
@@ -492,7 +485,7 @@ def main(argv: list[str] | None = None) -> int:
     if args.device not in DEVICES:
         known = ", ".join(sorted(DEVICES))
         print(
-            f"[ERROR] unknown device {args.device!r}; add a row to DEVICES in new_panel.py (known: {known})",
+            f"[ERROR] unknown device {args.device!r}; add {DEVICES_DIR / args.device / DEVICE_FILE} (known: {known})",
             file=sys.stderr,
         )
         return 2

@@ -32,9 +32,32 @@ export interface MidiDeviceInfo {
 export const midiState: {
 	permission: MidiPermission;
 	devices: MidiDeviceInfo[];
+	/** Shift layer per connected device id (CTRL: one controller never shifts another). */
+	shiftHeldByDevice: Record<string, boolean>;
+	/** Derived: any device holds shift. Read-only display state for the TopBar and panel. */
 	shiftHeld: boolean;
 } = $state({
 	permission: 'prompt',
 	devices: [],
+	shiftHeldByDevice: {},
 	shiftHeld: false
 });
+
+function _recomputeShiftHeld(): void {
+	midiState.shiftHeld = Object.values(midiState.shiftHeldByDevice).some(Boolean);
+}
+
+/** Set one device's shift layer; released entries are dropped. */
+export function setDeviceShiftHeld(deviceId: string, held: boolean): void {
+	const next = { ...midiState.shiftHeldByDevice };
+	if (held) next[deviceId] = true;
+	else delete next[deviceId];
+	midiState.shiftHeldByDevice = next;
+	_recomputeShiftHeld();
+}
+
+/** Clear every device's shift layer (release / reset). */
+export function clearAllShiftHeld(): void {
+	midiState.shiftHeldByDevice = {};
+	midiState.shiftHeld = false;
+}

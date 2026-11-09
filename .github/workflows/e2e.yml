@@ -98,6 +98,16 @@ on:
     # 04:17 UTC daily, for the extended tier. Off-peak and deliberately not on
     # the hour, where GitHub's scheduler queues are busiest.
     - cron: "17 4 * * *"
+    # Hourly at :47, the gate alone on main's tip (ADR-NEW-e2e-opt-in-by-label, Mon 9 Nov
+    # 2026, issue #10534). A pull request's E2E is opt-in by the `e2e` label (the resolve
+    # step's E2E_OPT_IN_LABEL below), and main's push runs almost never complete (0 of 59
+    # in the Mon 9 Nov sample: ship-mode trunk-tip-only cancels queued main runs), so this
+    # is the E2E that runs to a verdict. Schedule runs have their own concurrency group
+    # with cancel-in-progress off, so a running hourly always finishes. Off the hour and
+    # clear of main-hourly-selected (:23), the starvation watchdog (:03, :13, ...) and the
+    # nightly above; `extended` reads github.event.schedule and runs for 04:17 only.
+    # Pinned by tests/scripts/test_e2e_hourly_main_schedule.py.
+    - cron: "47 * * * *"
   workflow_dispatch:
     inputs:
       extended:
@@ -136,11 +146,17 @@ on:
 # verdict, so trunk-red-alarm and scripts/ci_main_red.py (which reads a cancelled
 # run as no verdict and looks at the next) keep a measurement. PR and dispatch runs
 # keep one group per ref with cancel-in-progress on, as before.
+#
+# SCHEDULE RUNS ARE THEIR OWN GROUP AND NEVER CANCELLED (ADR-NEW-e2e-opt-in-by-label,
+# Mon 9 Nov 2026): the hourly main-tip gate and the nightly share `schedule`, with
+# cancel-in-progress off, so a running one always finishes and a newer pending one
+# replaces only the pending one (the nightly at 04:17 holds the 04:47 hourly pending,
+# which then runs). A dispatch on main stays in `shared` and still supersedes itself.
 concurrency:
   # A workflow_run run's github.ref is main's, so the pull request's own head branch
   # keys the group: a new CI completion for the same branch supersedes the running one.
-  group: e2e-${{ github.event.workflow_run.head_branch || github.ref }}-${{ github.event_name == 'push' && 'push-tip' || 'shared' }}
-  cancel-in-progress: ${{ github.event_name != 'push' }}
+  group: e2e-${{ github.event.workflow_run.head_branch || github.ref }}-${{ github.event_name == 'push' && 'push-tip' || github.event_name == 'schedule' && 'schedule' || 'shared' }}
+  cancel-in-progress: ${{ github.event_name != 'push' && github.event_name != 'schedule' }}
 
 permissions:
   contents: read
@@ -188,6 +204,14 @@ jobs:
   # ---------------------------------------------------------------------------
   scope:
     name: e2e scope (docs-only skip decision)
+    # A `workflow_run` fires on EVERY CI completion, cancelled and failed ones too, and
+    # scripts/ci_e2e_admission.py then skips the run (ci gate not green): measured Mon 9 Nov
+    # 2026, 01:44Z to 03:55Z, 161 E2E workflow_run runs for 168 CI runs of which 32 were
+    # green; the other two thirds each paid a scope job (1.2 min on the e2e seats), a
+    # quarantine job and a verdict job to publish `skipped`. The condition below skips those
+    # runs before any job is scheduled; the verdict job still publishes `skipped` on the
+    # head (RUN_CONCLUSION below) so ci-wait's catalog stays whole.
+    if: ${{ github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success' }}
     # Seconds of work: the job resolves the pull request behind the run, runs
     # `git diff` on the merge commit and one stdlib script. Every event runs it.
     # ON THE E2E SEATS, not the light pool (ADR-NEW-e2e-after-ci-gate, Wed 4 Nov
@@ -239,14 +263,29 @@ jobs:
             echo "::error::mount point(s) beneath the workspace, refusing to chown across them: $nested"
             exit 1
           }
-          foreign() { sudo env TZ=UTC find "$ws" -xdev \( ! -user "$uid" -o ! -group "$gid" \) "$@"; }
-          entries() { tr -cd '\0' | wc -c; }
-          scanned=$(sudo find "$ws" -xdev -print0 | entries)
-          reclaimed=$(foreign -print0 | entries)
+          # fleet-af #742: on the fleet's CI hosts sudo allows only this helper for workspace ownership.
+          # A runner without it (GitHub-hosted) has unrestricted sudo, so the same verbs run through find.
+          if [ -x /usr/local/sbin/ci-workspace-own ]; then
+            own() { sudo -n /usr/local/sbin/ci-workspace-own "$1" "$ws"; }
+          else
+            foreign() { sudo env TZ=UTC find "$ws" -xdev \( ! -user "$uid" -o ! -group "$gid" \) "$@"; }
+            entries() { tr -cd '\0' | wc -c; }
+            own() {
+              case "$1" in
+                count) sudo find "$ws" -xdev -print0 | entries ;;
+                foreign) foreign -print0 | entries ;;
+                list) foreign -printf '  %u:%g %TY-%Tm-%TdT%TH:%TM:%.2TSZ %p\n' ;;
+                reclaim) foreign -exec chown -h "$uid:$gid" {} + ;;
+                *) echo "::error::own: unknown verb $1"; return 1 ;;
+              esac
+            }
+          fi
+          scanned=$(own count)
+          reclaimed=$(own foreign)
           offenders="$(mktemp)"
           trap 'rm -f "$offenders"' EXIT
           name_offenders() {
-            foreign -printf '  %u:%g %TY-%Tm-%TdT%TH:%TM:%.2TSZ %p\n' >"$offenders"
+            own list >"$offenders"
             head -n "$LIST_CAP" "$offenders"
             [ "$1" -le "$LIST_CAP" ] || echo "  ... and $(( $1 - LIST_CAP )) more"
           }
@@ -254,8 +293,8 @@ jobs:
             echo "[hygiene] entries not owned by uid $uid, listed before the repair:"
             name_offenders "$reclaimed"
           }
-          [ "$reclaimed" -eq 0 ] || foreign -exec chown -h "$uid:$gid" {} +
-          remaining=$(foreign -print0 | entries)
+          [ "$reclaimed" -eq 0 ] || own reclaim >/dev/null
+          remaining=$(own foreign)
           echo "[hygiene] scanned=$scanned reclaimed=$reclaimed remaining=$remaining"
           [ "$remaining" -eq 0 ] || {
             echo "::error::$remaining of $scanned workspace entries are not owned by uid $uid; checkout would fail with EACCES"
@@ -308,6 +347,15 @@ jobs:
       # admitted head is pinned to its merge commit sha, which every later checkout
       # uses. Anything else writes a `skip` reason the decide step turns into
       # in_scope=false and the verdict job publishes on the head.
+      #
+      # OPT-IN (ADR-NEW-e2e-opt-in-by-label, Mon 9 Nov 2026, issue #10534): a pull
+      # request is admitted only while it carries the `e2e` label; every other green head
+      # is skipped here, before any mergeability poll, and its head gets a `skipped`
+      # `e2e verdict` with that reason. Measured Mon 9 Nov: of 39 sampled PR E2E runs, 30
+      # were skip-only, 8 were cancelled mid-gate by the branch's next push and 1
+      # completed, at about 115 runner-hours a day; `e2e verdict` is not a required
+      # status, so nothing merges differently. The hourly schedule run above is the E2E
+      # that completes. An empty value admits every green head (the pre-ruling behaviour).
       - name: Resolve the pull request behind this run, its ci gate and its merge commit
         id: pr
         env:
@@ -318,6 +366,7 @@ jobs:
           HEAD_SHA: ${{ github.event.workflow_run.head_sha }}
           PR_NUMBER: ${{ github.event.workflow_run.pull_requests[0].number }}
           PR_BASE: ${{ github.event.workflow_run.pull_requests[0].base.ref }}
+          E2E_OPT_IN_LABEL: e2e
         run: python3 -m scripts.ci_e2e_admission resolve
 
       # Second checkout, admitted pull requests only: the pinned merge commit. A bare
@@ -611,7 +660,9 @@ jobs:
   trunk-quarantine:
     name: Trunk quarantined tests (live or cached)
     needs: trunk-quarantine-list
-    if: ${{ !cancelled() && vars.TRUNK_QUARANTINE_CI == 'true' }}
+    # Same guard as `scope`: the gate is the only reader of the list, and it never runs for
+    # a CI completion that was not a success.
+    if: ${{ !cancelled() && vars.TRUNK_QUARANTINE_CI == 'true' && (github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success') }}
     runs-on: ${{ fromJSON((github.event_name == 'pull_request' && startsWith(github.head_ref, 'trunk-merge/') && github.event.pull_request.user.login == 'trunk-io[bot]' && github.event.pull_request.head.repo.full_name == github.repository) && vars.CI_RUNS_ON_MERGE_QUEUE || vars.CI_RUNS_ON_LINUX || '"ubuntu-latest"') }}
     timeout-minutes: 5
     permissions:
@@ -632,14 +683,29 @@ jobs:
             echo "::error::mount point(s) beneath the workspace, refusing to chown across them: $nested"
             exit 1
           }
-          foreign() { sudo env TZ=UTC find "$ws" -xdev \( ! -user "$uid" -o ! -group "$gid" \) "$@"; }
-          entries() { tr -cd '\0' | wc -c; }
-          scanned=$(sudo find "$ws" -xdev -print0 | entries)
-          reclaimed=$(foreign -print0 | entries)
+          # fleet-af #742: on the fleet's CI hosts sudo allows only this helper for workspace ownership.
+          # A runner without it (GitHub-hosted) has unrestricted sudo, so the same verbs run through find.
+          if [ -x /usr/local/sbin/ci-workspace-own ]; then
+            own() { sudo -n /usr/local/sbin/ci-workspace-own "$1" "$ws"; }
+          else
+            foreign() { sudo env TZ=UTC find "$ws" -xdev \( ! -user "$uid" -o ! -group "$gid" \) "$@"; }
+            entries() { tr -cd '\0' | wc -c; }
+            own() {
+              case "$1" in
+                count) sudo find "$ws" -xdev -print0 | entries ;;
+                foreign) foreign -print0 | entries ;;
+                list) foreign -printf '  %u:%g %TY-%Tm-%TdT%TH:%TM:%.2TSZ %p\n' ;;
+                reclaim) foreign -exec chown -h "$uid:$gid" {} + ;;
+                *) echo "::error::own: unknown verb $1"; return 1 ;;
+              esac
+            }
+          fi
+          scanned=$(own count)
+          reclaimed=$(own foreign)
           offenders="$(mktemp)"
           trap 'rm -f "$offenders"' EXIT
           name_offenders() {
-            foreign -printf '  %u:%g %TY-%Tm-%TdT%TH:%TM:%.2TSZ %p\n' >"$offenders"
+            own list >"$offenders"
             head -n "$LIST_CAP" "$offenders"
             [ "$1" -le "$LIST_CAP" ] || echo "  ... and $(( $1 - LIST_CAP )) more"
           }
@@ -647,8 +713,8 @@ jobs:
             echo "[hygiene] entries not owned by uid $uid, listed before the repair:"
             name_offenders "$reclaimed"
           }
-          [ "$reclaimed" -eq 0 ] || foreign -exec chown -h "$uid:$gid" {} +
-          remaining=$(foreign -print0 | entries)
+          [ "$reclaimed" -eq 0 ] || own reclaim >/dev/null
+          remaining=$(own foreign)
           echo "[hygiene] scanned=$scanned reclaimed=$reclaimed remaining=$remaining"
           [ "$remaining" -eq 0 ] || {
             echo "::error::$remaining of $scanned workspace entries are not owned by uid $uid; checkout would fail with EACCES"
@@ -741,9 +807,9 @@ jobs:
     # off root on Thu 3 Sep 2026 because the pytest lane's permission tests
     # cannot be arranged as a user who bypasses permissions (see "Self-hosted
     # runner provisioning" in (private path)).
-    # --with-deps below stays unconditional because it is safe either way:
-    # Playwright runs its apt step directly when uid 0 and through `sudo`
-    # otherwise, and the runner user has NOPASSWD sudo.
+    # --with-deps below runs only where the fleet's apt helper is absent
+    # (GitHub-hosted): the fleet hosts' sudo is scoped to root-owned helpers
+    # (fleet-af #742) and their Playwright libraries come from provisioning.
     #
     # Trunk-repair reserve (ICE row INC-5, ADR-NEW-e2e-trunk-repair-runner-reserve):
     # a pull request labeled `ci:trunk-repair` prefers vars.CI_RUNS_ON_E2E_MAIN_FIX,
@@ -856,14 +922,29 @@ jobs:
             echo "::error::mount point(s) beneath the workspace, refusing to chown across them: $nested"
             exit 1
           }
-          foreign() { sudo env TZ=UTC find "$ws" -xdev \( ! -user "$uid" -o ! -group "$gid" \) "$@"; }
-          entries() { tr -cd '\0' | wc -c; }
-          scanned=$(sudo find "$ws" -xdev -print0 | entries)
-          reclaimed=$(foreign -print0 | entries)
+          # fleet-af #742: on the fleet's CI hosts sudo allows only this helper for workspace ownership.
+          # A runner without it (GitHub-hosted) has unrestricted sudo, so the same verbs run through find.
+          if [ -x /usr/local/sbin/ci-workspace-own ]; then
+            own() { sudo -n /usr/local/sbin/ci-workspace-own "$1" "$ws"; }
+          else
+            foreign() { sudo env TZ=UTC find "$ws" -xdev \( ! -user "$uid" -o ! -group "$gid" \) "$@"; }
+            entries() { tr -cd '\0' | wc -c; }
+            own() {
+              case "$1" in
+                count) sudo find "$ws" -xdev -print0 | entries ;;
+                foreign) foreign -print0 | entries ;;
+                list) foreign -printf '  %u:%g %TY-%Tm-%TdT%TH:%TM:%.2TSZ %p\n' ;;
+                reclaim) foreign -exec chown -h "$uid:$gid" {} + ;;
+                *) echo "::error::own: unknown verb $1"; return 1 ;;
+              esac
+            }
+          fi
+          scanned=$(own count)
+          reclaimed=$(own foreign)
           offenders="$(mktemp)"
           trap 'rm -f "$offenders"' EXIT
           name_offenders() {
-            foreign -printf '  %u:%g %TY-%Tm-%TdT%TH:%TM:%.2TSZ %p\n' >"$offenders"
+            own list >"$offenders"
             head -n "$LIST_CAP" "$offenders"
             [ "$1" -le "$LIST_CAP" ] || echo "  ... and $(( $1 - LIST_CAP )) more"
           }
@@ -871,8 +952,8 @@ jobs:
             echo "[hygiene] entries not owned by uid $uid, listed before the repair:"
             name_offenders "$reclaimed"
           }
-          [ "$reclaimed" -eq 0 ] || foreign -exec chown -h "$uid:$gid" {} +
-          remaining=$(foreign -print0 | entries)
+          [ "$reclaimed" -eq 0 ] || own reclaim >/dev/null
+          remaining=$(own foreign)
           echo "[hygiene] scanned=$scanned reclaimed=$reclaimed remaining=$remaining"
           [ "$remaining" -eq 0 ] || {
             echo "::error::$remaining of $scanned workspace entries are not owned by uid $uid; checkout would fail with EACCES"
@@ -1004,7 +1085,7 @@ jobs:
         # The engine imports pyrekordbox, which links libsqlcipher at runtime.
         # Ubuntu noble ships the runtime .so inside libsqlcipher-dev.
         run: |
-          scripts/ci_apt_present.sh libsqlcipher-dev || scripts/ci_host_lock.sh packages sudo env -C / sh -c 'apt-get update && apt-get install -y libsqlcipher-dev'
+          scripts/ci_apt_present.sh libsqlcipher-dev || scripts/ci_host_lock.sh packages scripts/ci_apt_install.sh libsqlcipher-dev
 
       - name: Install Python deps into the project venv
         # `uv sync`, NOT `uv run --no-sync`. The webkit config boots the engine
@@ -1144,9 +1225,15 @@ jobs:
         #
         # --with-deps even on a cache hit: the apt libraries live outside
         # ~/.cache/ms-playwright and are not restored by it.
+        # The fleet's CI hosts carry Playwright's system libraries from provisioning
+        # (fleet-af ci--hosts/ansible) and their sudo refuses the apt-get --with-deps runs
+        # (fleet-af #742), so only a runner without the apt helper installs them here.
         run: |
-          "$GITHUB_WORKSPACE/scripts/ci_host_lock.sh" packages \
-            pnpm exec playwright install --with-deps webkit chromium
+          if [ -x /usr/local/sbin/ci-apt-install ]; then
+            "$GITHUB_WORKSPACE/scripts/ci_host_lock.sh" packages pnpm exec playwright install webkit chromium
+          else
+            "$GITHUB_WORKSPACE/scripts/ci_host_lock.sh" packages pnpm exec playwright install --with-deps webkit chromium
+          fi
 
       - name: Virtual audio sink (PulseAudio null sink)
         # WITHOUT THIS THE WEBKIT GATE IS FLAKY, and flaky is worse than absent:
@@ -1165,7 +1252,7 @@ jobs:
         # samples. It does NOT fake the audio graph: decode, the worklet and
         # the analyser all still run for real, which is what the suite measures.
         run: |
-          scripts/ci_apt_present.sh pulseaudio || scripts/ci_host_lock.sh packages sudo env -C / apt-get install -y pulseaudio
+          scripts/ci_apt_present.sh pulseaudio || scripts/ci_host_lock.sh packages scripts/ci_apt_install.sh pulseaudio
           # Setup and restore both run under the pulse-sink host lock: the server
           # is shared by every job of this user on the host, and the ownership
           # check plus the mutation must be one critical section. See the script.
@@ -1236,6 +1323,19 @@ jobs:
             --project webkit --grep "setup entry points" \
             --output test-results/setup-entry-points
 
+      - name: WebKit DRUMS dial drag on FILTER (production build)
+        if: ${{ steps.frontend-artifact.outcome == 'success' && !cancelled() && needs.scope.outputs.e2e_tier != 'smoke' && (needs.scope.outputs.e2e_gates == '' || contains(needs.scope.outputs.e2e_gates, ' webkit ')) }}
+        working-directory: apps/webui/frontend
+        # Load-only real-stems path: no play command, so this does not enter
+        # the quarantined #637/#680 AudioContext playback path above.
+        run: |
+          "$GITHUB_WORKSPACE/scripts/ci_host_lock.sh" webkit-deckload \
+            "$GITHUB_WORKSPACE/scripts/ci_reap_port_holders.sh" 8690 -- \
+            pnpm exec playwright test \
+            --config tests/e2e/playwright.webkit-deckload.config.ts \
+            --project=webkit stem-dial-drag-webkit.spec.ts \
+            --output test-results/stem-dial-drag-webkit
+
       # -- TIER 1a-bis: cross-browser deck-load smoke (#770) -------------------
       - name: Debugger for the deck-load hang capture (#4281)
         if: ${{ steps.frontend-artifact.outcome == 'success' && !cancelled() }}
@@ -1244,7 +1344,7 @@ jobs:
         # capture still records per-thread BUSY/BLOCKED and says gdb is UNKNOWN.
         continue-on-error: true
         run: |
-          scripts/ci_apt_present.sh gdb || scripts/ci_host_lock.sh packages sudo env -C / apt-get install -y gdb
+          scripts/ci_apt_present.sh gdb || scripts/ci_host_lock.sh packages scripts/ci_apt_install.sh gdb
 
       - name: Deck-load smoke (chromium + webkit, production build)
         working-directory: apps/webui/frontend
@@ -1585,6 +1685,46 @@ jobs:
               ;;
           esac
 
+      # The footprint map (TEST-BUDGET round 3): only a FULL root run on main (a push,
+      # or the hourly or nightly main-tip schedule) measures every spec, so only that
+      # builds and uploads one. A red run counts (S1 round 34, Mon 9 Nov 2026): `build`
+      # records a failed or timed-out spec `unmeasured`, which the selector always runs,
+      # and a green-only gate froze the map from Tue 3 Nov while root e2e was red on main.
+      # A cancelled or skipped suite builds nothing. Both map steps carry `!cancelled()`:
+      # the verdict step above fails the job on a red run, and an `if:` with no status
+      # function is `success() && ...` (Sentry and Codex, PR #10552).
+      #
+      # Right after the root suite, not after the LAST named gate (PR #7948's order): on
+      # main the job hit its 40 min timeout on 16 of 16 runs (Sun 8 to Mon 9 Nov), and run
+      # 42598380583 finished the root suite green, then timed out a minute short of the
+      # map. The gates before the root suite have written gates/<name>/ by now; the two
+      # dev-server gates after it (library-jobs, preflight) are absent from the map, which
+      # the selector reads as `unmeasured` and runs whenever the frontend changed.
+      # durations-ledger.yml publishes the newest map to ci-data-e2e.
+      # Non-fatal like the other byproduct uploads: a storage block never paints
+      # main red; a map that fails to build is a warning here and a stale map in
+      # the scope job, which runs the full suite, never a smaller one.
+      - name: Build the root Playwright footprint map
+        id: e2e-footprints
+        if: ${{ !cancelled() && (github.event_name == 'push' || github.event_name == 'schedule') && github.ref == 'refs/heads/main' && (steps.root-playwright.outcome == 'success' || steps.root-playwright.outcome == 'failure') }}
+        timeout-minutes: 2
+        continue-on-error: true
+        run: |
+          .venv/bin/python -m scripts.e2e_footprints_refresh build \
+            --dir "${RUNNER_TEMP:?RUNNER_TEMP must be set}/e2e-footprints" \
+            --sha "$GITHUB_SHA" \
+            --out "${RUNNER_TEMP:?RUNNER_TEMP must be set}/e2e-footprints-map/.spec_footprints.json"
+
+      - name: Upload the root Playwright footprint map
+        if: ${{ !cancelled() && (github.event_name == 'push' || github.event_name == 'schedule') && github.ref == 'refs/heads/main' && steps.e2e-footprints.outcome == 'success' }}
+        continue-on-error: true
+        uses: ./.github/actions/r2-artifact
+        with:
+          mode: upload
+          name: e2e-spec-footprints
+          path: ${{ runner.temp }}/e2e-footprints-map/.spec_footprints.json
+          include-hidden-files: true
+          if-no-files-found: error
 
       - name: Library jobs ordering (chromium, dry runner)
         working-directory: apps/webui/frontend
@@ -1630,36 +1770,6 @@ jobs:
         # gate runs; ` onboarding ` is the selection's exact token for this gate.
         if: ${{ steps.frontend-artifact.outcome == 'success' && !cancelled() && needs.scope.outputs.e2e_tier != 'smoke' && (needs.scope.outputs.e2e_gates == '' || contains(needs.scope.outputs.e2e_gates, ' onboarding ')) }}
         run: pnpm exec playwright test --config tests/e2e/playwright.onboarding.config.ts --output test-results/onboarding-gauntlet
-
-      # The footprint map (TEST-BUDGET round 3): only a FULL, green root run on a
-      # push to main is a measurement of every spec, so only that builds and
-      # uploads one. After the LAST named gate (Codex, PR #7948): the six
-      # dev-server gates write gates/<name>/ into the same directory, and two
-      # of them run after the root suite. durations-ledger.yml publishes the newest to ci-data-e2e.
-      # Non-fatal like the other byproduct uploads: a storage block never paints
-      # main red; a map that fails to build is a warning here and a stale map in
-      # the scope job, which runs the full suite, never a smaller one.
-      - name: Build the root Playwright footprint map
-        id: e2e-footprints
-        if: github.event_name == 'push' && github.ref == 'refs/heads/main' && steps.root-playwright.outcome == 'success'
-        timeout-minutes: 2
-        continue-on-error: true
-        run: |
-          .venv/bin/python -m scripts.e2e_footprints_refresh build \
-            --dir "${RUNNER_TEMP:?RUNNER_TEMP must be set}/e2e-footprints" \
-            --sha "$GITHUB_SHA" \
-            --out "${RUNNER_TEMP:?RUNNER_TEMP must be set}/e2e-footprints-map/.spec_footprints.json"
-
-      - name: Upload the root Playwright footprint map
-        if: github.event_name == 'push' && github.ref == 'refs/heads/main' && steps.e2e-footprints.outcome == 'success'
-        continue-on-error: true
-        uses: ./.github/actions/r2-artifact
-        with:
-          mode: upload
-          name: e2e-spec-footprints
-          path: ${{ runner.temp }}/e2e-footprints-map/.spec_footprints.json
-          include-hidden-files: true
-          if-no-files-found: error
 
       - name: Restore the PulseAudio server (unload our null sink, previous default back)
         # Always, even after a red suite: the server may be the host's shared,
@@ -1787,14 +1897,29 @@ jobs:
             echo "::error::mount point(s) beneath the workspace, refusing to chown across them: $nested"
             exit 1
           }
-          foreign() { sudo env TZ=UTC find "$ws" -xdev \( ! -user "$uid" -o ! -group "$gid" \) "$@"; }
-          entries() { tr -cd '\0' | wc -c; }
-          scanned=$(sudo find "$ws" -xdev -print0 | entries)
-          reclaimed=$(foreign -print0 | entries)
+          # fleet-af #742: on the fleet's CI hosts sudo allows only this helper for workspace ownership.
+          # A runner without it (GitHub-hosted) has unrestricted sudo, so the same verbs run through find.
+          if [ -x /usr/local/sbin/ci-workspace-own ]; then
+            own() { sudo -n /usr/local/sbin/ci-workspace-own "$1" "$ws"; }
+          else
+            foreign() { sudo env TZ=UTC find "$ws" -xdev \( ! -user "$uid" -o ! -group "$gid" \) "$@"; }
+            entries() { tr -cd '\0' | wc -c; }
+            own() {
+              case "$1" in
+                count) sudo find "$ws" -xdev -print0 | entries ;;
+                foreign) foreign -print0 | entries ;;
+                list) foreign -printf '  %u:%g %TY-%Tm-%TdT%TH:%TM:%.2TSZ %p\n' ;;
+                reclaim) foreign -exec chown -h "$uid:$gid" {} + ;;
+                *) echo "::error::own: unknown verb $1"; return 1 ;;
+              esac
+            }
+          fi
+          scanned=$(own count)
+          reclaimed=$(own foreign)
           offenders="$(mktemp)"
           trap 'rm -f "$offenders"' EXIT
           name_offenders() {
-            foreign -printf '  %u:%g %TY-%Tm-%TdT%TH:%TM:%.2TSZ %p\n' >"$offenders"
+            own list >"$offenders"
             head -n "$LIST_CAP" "$offenders"
             [ "$1" -le "$LIST_CAP" ] || echo "  ... and $(( $1 - LIST_CAP )) more"
           }
@@ -1802,8 +1927,8 @@ jobs:
             echo "[hygiene] entries not owned by uid $uid, listed before the repair:"
             name_offenders "$reclaimed"
           }
-          [ "$reclaimed" -eq 0 ] || foreign -exec chown -h "$uid:$gid" {} +
-          remaining=$(foreign -print0 | entries)
+          [ "$reclaimed" -eq 0 ] || own reclaim >/dev/null
+          remaining=$(own foreign)
           echo "[hygiene] scanned=$scanned reclaimed=$reclaimed remaining=$remaining"
           [ "$remaining" -eq 0 ] || {
             echo "::error::$remaining of $scanned workspace entries are not owned by uid $uid; checkout would fail with EACCES"
@@ -1891,7 +2016,7 @@ jobs:
         # The engine imports pyrekordbox, which links libsqlcipher at runtime.
         # Ubuntu noble ships the runtime .so inside libsqlcipher-dev.
         run: |
-          scripts/ci_apt_present.sh libsqlcipher-dev || scripts/ci_host_lock.sh packages sudo env -C / sh -c 'apt-get update && apt-get install -y libsqlcipher-dev'
+          scripts/ci_apt_present.sh libsqlcipher-dev || scripts/ci_host_lock.sh packages scripts/ci_apt_install.sh libsqlcipher-dev
 
       - name: Install Python deps into the project venv
         # `uv sync`, NOT `uv run --no-sync`. The webkit config boots the engine
@@ -1996,9 +2121,11 @@ jobs:
     # nightly full suite is most worth having, and quarantined is not the same
     # as unwatched.
     needs: gate
+    # The 04:17 cron only, never the hourly main-tip gate at :47 (ADR-NEW-e2e-opt-in-by-label):
+    # github.event.schedule is the cron string that fired the run.
     if: >-
       !cancelled()
-      && (github.event_name == 'schedule' || (github.event_name == 'workflow_dispatch' && inputs.extended))
+      && ((github.event_name == 'schedule' && github.event.schedule == '17 4 * * *') || (github.event_name == 'workflow_dispatch' && inputs.extended))
     # See the `gate` job above for the runner-selection and --with-deps note.
     runs-on: ${{ fromJSON(vars.CI_RUNS_ON_E2E || '"ubuntu-latest"') }}
     timeout-minutes: 45
@@ -2061,14 +2188,29 @@ jobs:
             echo "::error::mount point(s) beneath the workspace, refusing to chown across them: $nested"
             exit 1
           }
-          foreign() { sudo env TZ=UTC find "$ws" -xdev \( ! -user "$uid" -o ! -group "$gid" \) "$@"; }
-          entries() { tr -cd '\0' | wc -c; }
-          scanned=$(sudo find "$ws" -xdev -print0 | entries)
-          reclaimed=$(foreign -print0 | entries)
+          # fleet-af #742: on the fleet's CI hosts sudo allows only this helper for workspace ownership.
+          # A runner without it (GitHub-hosted) has unrestricted sudo, so the same verbs run through find.
+          if [ -x /usr/local/sbin/ci-workspace-own ]; then
+            own() { sudo -n /usr/local/sbin/ci-workspace-own "$1" "$ws"; }
+          else
+            foreign() { sudo env TZ=UTC find "$ws" -xdev \( ! -user "$uid" -o ! -group "$gid" \) "$@"; }
+            entries() { tr -cd '\0' | wc -c; }
+            own() {
+              case "$1" in
+                count) sudo find "$ws" -xdev -print0 | entries ;;
+                foreign) foreign -print0 | entries ;;
+                list) foreign -printf '  %u:%g %TY-%Tm-%TdT%TH:%TM:%.2TSZ %p\n' ;;
+                reclaim) foreign -exec chown -h "$uid:$gid" {} + ;;
+                *) echo "::error::own: unknown verb $1"; return 1 ;;
+              esac
+            }
+          fi
+          scanned=$(own count)
+          reclaimed=$(own foreign)
           offenders="$(mktemp)"
           trap 'rm -f "$offenders"' EXIT
           name_offenders() {
-            foreign -printf '  %u:%g %TY-%Tm-%TdT%TH:%TM:%.2TSZ %p\n' >"$offenders"
+            own list >"$offenders"
             head -n "$LIST_CAP" "$offenders"
             [ "$1" -le "$LIST_CAP" ] || echo "  ... and $(( $1 - LIST_CAP )) more"
           }
@@ -2076,8 +2218,8 @@ jobs:
             echo "[hygiene] entries not owned by uid $uid, listed before the repair:"
             name_offenders "$reclaimed"
           }
-          [ "$reclaimed" -eq 0 ] || foreign -exec chown -h "$uid:$gid" {} +
-          remaining=$(foreign -print0 | entries)
+          [ "$reclaimed" -eq 0 ] || own reclaim >/dev/null
+          remaining=$(own foreign)
           echo "[hygiene] scanned=$scanned reclaimed=$reclaimed remaining=$remaining"
           [ "$remaining" -eq 0 ] || {
             echo "::error::$remaining of $scanned workspace entries are not owned by uid $uid; checkout would fail with EACCES"
@@ -2188,7 +2330,7 @@ jobs:
         # throwaway library. Without it that suite fails on a missing binary,
         # which reads as a product failure and is not one.
         run: |
-          scripts/ci_apt_present.sh libsqlcipher-dev ffmpeg || scripts/ci_host_lock.sh packages sudo env -C / sh -c 'apt-get update && apt-get install -y libsqlcipher-dev ffmpeg'
+          scripts/ci_apt_present.sh libsqlcipher-dev ffmpeg || scripts/ci_host_lock.sh packages scripts/ci_apt_install.sh libsqlcipher-dev ffmpeg
 
       - name: Install Python deps into the project venv
         # analysis: the performance config seeds its rescue-playback fixture
@@ -2220,9 +2362,15 @@ jobs:
 
       - name: Install Playwright browsers
         working-directory: apps/webui/frontend
+        # The fleet's CI hosts carry Playwright's system libraries from provisioning
+        # (fleet-af ci--hosts/ansible) and their sudo refuses the apt-get --with-deps runs
+        # (fleet-af #742), so only a runner without the apt helper installs them here.
         run: |
-          "$GITHUB_WORKSPACE/scripts/ci_host_lock.sh" packages \
-            pnpm exec playwright install --with-deps webkit chromium
+          if [ -x /usr/local/sbin/ci-apt-install ]; then
+            "$GITHUB_WORKSPACE/scripts/ci_host_lock.sh" packages pnpm exec playwright install webkit chromium
+          else
+            "$GITHUB_WORKSPACE/scripts/ci_host_lock.sh" packages pnpm exec playwright install --with-deps webkit chromium
+          fi
 
       - name: Virtual audio sink (PulseAudio null sink)
         # WITHOUT THIS THE WEBKIT GATE IS FLAKY, and flaky is worse than absent:
@@ -2241,7 +2389,7 @@ jobs:
         # samples. It does NOT fake the audio graph: decode, the worklet and
         # the analyser all still run for real, which is what the suite measures.
         run: |
-          scripts/ci_apt_present.sh pulseaudio || scripts/ci_host_lock.sh packages sudo env -C / apt-get install -y pulseaudio
+          scripts/ci_apt_present.sh pulseaudio || scripts/ci_host_lock.sh packages scripts/ci_apt_install.sh pulseaudio
           # Setup and restore both run under the pulse-sink host lock: the server
           # is shared by every job of this user on the host, and the ownership
           # check plus the mutation must be one critical section. See the script.
@@ -2279,7 +2427,7 @@ jobs:
         run: |
           "${GITHUB_WORKSPACE}/.venv/bin/python" \
             "${GITHUB_WORKSPACE}/scripts/playwright_presence_check.py" \
-            --floor 41 \
+            --floor 43 \
             test-results/webkit-full/results.json
 
       # -- EVERY step below is guarded `if: ${{ !cancelled() }}` ---------------
@@ -2495,7 +2643,10 @@ jobs:
     needs:
       - scope
       - gate
-    if: ${{ always() }}
+    # Cut 3b (Mon 9 Nov 2026, CORE): a workflow_run whose CI did not succeed admits nothing, so the
+    # verdict job itself is skipped and no runner is taken to publish `skipped`; e2e verdict is not
+    # a required status and nothing waits on it for a red CI head. Any other event runs as before.
+    if: ${{ always() && (github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success') }}
     runs-on: ${{ fromJSON((github.event_name == 'pull_request' && startsWith(github.head_ref, 'trunk-merge/') && github.event.pull_request.user.login == 'trunk-io[bot]' && github.event.pull_request.head.repo.full_name == github.repository) && vars.CI_RUNS_ON_MERGE_QUEUE || vars.CI_RUNS_ON_LINUX || '"ubuntu-latest"') }}
     timeout-minutes: 5
     # The one job that writes: it publishes `e2e verdict` on the pull request head
@@ -2517,14 +2668,29 @@ jobs:
             echo "::error::mount point(s) beneath the workspace, refusing to chown across them: $nested"
             exit 1
           }
-          foreign() { sudo env TZ=UTC find "$ws" -xdev \( ! -user "$uid" -o ! -group "$gid" \) "$@"; }
-          entries() { tr -cd '\0' | wc -c; }
-          scanned=$(sudo find "$ws" -xdev -print0 | entries)
-          reclaimed=$(foreign -print0 | entries)
+          # fleet-af #742: on the fleet's CI hosts sudo allows only this helper for workspace ownership.
+          # A runner without it (GitHub-hosted) has unrestricted sudo, so the same verbs run through find.
+          if [ -x /usr/local/sbin/ci-workspace-own ]; then
+            own() { sudo -n /usr/local/sbin/ci-workspace-own "$1" "$ws"; }
+          else
+            foreign() { sudo env TZ=UTC find "$ws" -xdev \( ! -user "$uid" -o ! -group "$gid" \) "$@"; }
+            entries() { tr -cd '\0' | wc -c; }
+            own() {
+              case "$1" in
+                count) sudo find "$ws" -xdev -print0 | entries ;;
+                foreign) foreign -print0 | entries ;;
+                list) foreign -printf '  %u:%g %TY-%Tm-%TdT%TH:%TM:%.2TSZ %p\n' ;;
+                reclaim) foreign -exec chown -h "$uid:$gid" {} + ;;
+                *) echo "::error::own: unknown verb $1"; return 1 ;;
+              esac
+            }
+          fi
+          scanned=$(own count)
+          reclaimed=$(own foreign)
           offenders="$(mktemp)"
           trap 'rm -f "$offenders"' EXIT
           name_offenders() {
-            foreign -printf '  %u:%g %TY-%Tm-%TdT%TH:%TM:%.2TSZ %p\n' >"$offenders"
+            own list >"$offenders"
             head -n "$LIST_CAP" "$offenders"
             [ "$1" -le "$LIST_CAP" ] || echo "  ... and $(( $1 - LIST_CAP )) more"
           }
@@ -2532,8 +2698,8 @@ jobs:
             echo "[hygiene] entries not owned by uid $uid, listed before the repair:"
             name_offenders "$reclaimed"
           }
-          [ "$reclaimed" -eq 0 ] || foreign -exec chown -h "$uid:$gid" {} +
-          remaining=$(foreign -print0 | entries)
+          [ "$reclaimed" -eq 0 ] || own reclaim >/dev/null
+          remaining=$(own foreign)
           echo "[hygiene] scanned=$scanned reclaimed=$reclaimed remaining=$remaining"
           [ "$remaining" -eq 0 ] || {
             echo "::error::$remaining of $scanned workspace entries are not owned by uid $uid; checkout would fail with EACCES"
@@ -2577,6 +2743,9 @@ jobs:
 
       - name: Aggregate the gated jobs into one verdict
         id: verdict
+        # A scope job skipped by its own `if` (CI did not succeed) admitted nothing; there is
+        # no verdict to aggregate and the publish step below reports `skipped` on the head.
+        if: ${{ needs.scope.result != 'skipped' }}
         env:
           NEEDS_JSON: ${{ toJSON(needs) }}
         run: python3 -m scripts.ci_required_gate verdict
@@ -2593,6 +2762,7 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           RUN_EVENT: ${{ github.event.workflow_run.event }}
+          RUN_CONCLUSION: ${{ github.event.workflow_run.conclusion }}
           HEAD_SHA: ${{ github.event.workflow_run.head_sha }}
           PR_NUMBER: ${{ github.event.workflow_run.pull_requests[0].number }}
           SCOPE_RESULT: ${{ needs.scope.result }}

@@ -50,9 +50,11 @@ test('RUNNING it: the poll exists exactly while AutoPlay is armed', async () => 
 		const autoPlay = await loadRuneModule(ENTRY);
 		assert.equal(
 			autoPlay.uiPrefs.auto_play_enabled,
-			true,
-			'the shipped default is ARMED, so the disarmed path has to be reachable by toggle'
+			false,
+			'the shipped default is disarmed, so arming must be explicit'
 		);
+		autoPlay.setAutoPlayEnabled(true);
+		await probe.flush();
 
 		uninstall = autoPlay.installAutoPlay();
 		await probe.flush();
@@ -179,6 +181,8 @@ test('RUNNING it: a published plan survives, and the pref still arms/disarms', a
 	let uninstall = null;
 	try {
 		const autoPlay = await loadRuneModule(PLAN_ENTRY);
+		autoPlay.setAutoPlayEnabled(true);
+		await probe.flush();
 		uninstall = autoPlay.installAutoPlay();
 		await probe.flush();
 		assert.equal(autoPlay.autoPlayQueue.active, true, 'arming creates the inspectable queue');

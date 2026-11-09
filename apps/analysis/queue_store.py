@@ -568,6 +568,7 @@ def revive_cancelled_items(conn: sqlite3.Connection, batch_id: str) -> int:
 
 from .queue_batch_lease import (  # noqa: E402
     clear_batch_runner,
+    live_runner_pid,
     pid_is_alive,
     take_batch_runner,
 )
@@ -608,6 +609,7 @@ __all__ = [
     "get_item",
     "list_batches",
     "list_items",
+    "live_runner_pid",
     "mark_stale",
     "new_batch_id",
     "new_runner_id",

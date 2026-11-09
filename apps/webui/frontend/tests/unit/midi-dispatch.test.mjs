@@ -397,3 +397,85 @@ test('Mixtour Pro VU value uses the production coalesced CC output path', async 
 	await sleep(50);
 	assert.deepEqual(mixProOut.sent.slice(n), [[0xb0, 0x1f, 6]]);
 });
+
+// ------------------------------------------- per-device shift layer (CTRL)
+
+// Test-only map: SHIFT on note 0x3f, a pad on note 0x10 whose shifted twin
+// fires a different cue slot. Two same-named boxes resolve to it.
+const SHIFT_TEST_MAP = {
+	vendor: 'shift-test',
+	nameMatch: '^ShiftTest Box$',
+	bindings: [
+		{ source: { ch: 1, kind: 'note', id: 0x3f }, action: { type: 'shift_modifier' } },
+		{ source: { ch: 1, kind: 'note', id: 0x10 }, action: { type: 'deck_play_toggle', deck: 1 } },
+		{
+			source: { ch: 1, kind: 'note', id: 0x10 },
+			shift: true,
+			action: { type: 'deck_cue', deck: 1 }
+		}
+	]
+};
+const shiftAIn = _fakeInput('shift-a', 'ShiftTest Box', 'Test');
+const shiftBIn = _fakeInput('shift-b', 'ShiftTest Box', 'Test');
+
+let shiftMapRegistered = false;
+
+function _connectShiftBoxes() {
+	for (const input of [shiftAIn, shiftBIn]) {
+		input.state = 'connected';
+		fakeAccess.inputs.set(input.id, input);
+	}
+	// registerDeviceMap re-resolves and rescans; later calls rescan directly.
+	if (!shiftMapRegistered) webmidi.registerDeviceMap(SHIFT_TEST_MAP);
+	shiftMapRegistered = true;
+	fakeAccess.onstatechange();
+}
+
+test('shift on device A never shifts device B; A itself fires its shifted twin', () => {
+	_connectShiftBoxes();
+	const rearmed = [];
+	webmidi.registerTakeoverRearm((id) => rearmed.push(id));
+	wire(shiftAIn, 0x90, 0x3f, 0x7f); // A: SHIFT down
+	assert.deepEqual(rearmed, ['shift-a'], 'takeover re-arm hits the pressing device only');
+	assert.equal(webmidi.learnLog[0].note, 'shift held');
+	assert.equal(webmidi.learnLog[0].deviceId, 'shift-a');
+	assert.deepEqual(webmidi.midiState.shiftHeldByDevice, { 'shift-a': true });
+	assert.equal(webmidi.midiState.shiftHeld, true, 'aggregate flag stays for the UI');
+
+	const n = actions.length;
+	wire(shiftBIn, 0x90, 0x10, 0x7f);
+	assert.deepEqual(actions[n].action, { type: 'deck_play_toggle', deck: 1 });
+	assert.equal(actions[n].deviceId, 'shift-b');
+	wire(shiftAIn, 0x90, 0x10, 0x7f);
+	assert.deepEqual(actions[n + 1].action, { type: 'deck_cue', deck: 1 });
+	assert.equal(actions[n + 1].deviceId, 'shift-a');
+
+	wire(shiftAIn, 0x80, 0x3f, 0x00); // A: SHIFT up
+	assert.deepEqual(webmidi.midiState.shiftHeldByDevice, {});
+	assert.equal(webmidi.midiState.shiftHeld, false);
+});
+
+test('unplugging a device with shift held clears its entry (no stuck layer)', () => {
+	_connectShiftBoxes();
+	wire(shiftAIn, 0x90, 0x3f, 0x7f);
+	shiftAIn.state = 'disconnected';
+	fakeAccess.inputs.delete(shiftAIn.id);
+	fakeAccess.onstatechange();
+	assert.equal(webmidi.midiState.shiftHeldByDevice['shift-a'], undefined);
+	assert.equal(webmidi.midiState.shiftHeld, false);
+	_connectShiftBoxes();
+	const n = actions.length;
+	wire(shiftAIn, 0x90, 0x10, 0x7f);
+	assert.deepEqual(actions[n].action, { type: 'deck_play_toggle', deck: 1 });
+});
+
+// Keep last: it tears the runtime down.
+test('releaseMidiInputs clears every device shift entry', () => {
+	_connectShiftBoxes();
+	wire(shiftAIn, 0x90, 0x3f, 0x7f);
+	wire(shiftBIn, 0x90, 0x3f, 0x7f);
+	assert.equal(Object.keys(webmidi.midiState.shiftHeldByDevice).length, 2);
+	webmidi.releaseMidiInputs();
+	assert.deepEqual(webmidi.midiState.shiftHeldByDevice, {});
+	assert.equal(webmidi.midiState.shiftHeld, false);
+});

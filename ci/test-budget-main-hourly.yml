@@ -4,7 +4,8 @@
 # The PR head's hard cap (ci/test-budget.yml: 10 runner-minutes, `cap: hard`, the same model and drop
 # order), priced for the ONE shard this run launches: the selector refuses a plan priced for five
 # shards when one runs. One shard pays one shard's overhead, so the same 10 runner-minutes leave about
-# 11.9 ledger-minutes for tests here against 9.25 on a five-shard PR head. Measured on main's last hour
+# 9.6 ledger-minutes for tests here against 6.97 on a five-shard PR head (11.9 and 9.25 before the
+# Mon 9 Nov 2026 refit to real minutes; ci/test-budget.yml carries the measurement). Measured on main's last hour
 # (a1260d4f42..1a4c1d19bf, 5 merges, one of them a workflow change, so the selector ranked the whole
 # lane), Thu 5 Nov 2026: 527 of 2233 lane modules kept (24%), never the whole suite. The nightly full
 # runs still catch what this cap drops.
@@ -18,8 +19,9 @@ runner_minutes:
 cap: hard
 
 model:
-  overhead_min_per_shard: 0.52
-  min_per_ledger_minute: 0.80
+  # The PR head's refit (Mon 9 Nov 2026, real/planned p90 1.22 on 70 runs); kept equal to it.
+  overhead_min_per_shard: 0.634
+  min_per_ledger_minute: 0.976
   shards: 1
 
 drop_order:

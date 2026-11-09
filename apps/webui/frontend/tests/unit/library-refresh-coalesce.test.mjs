@@ -19,6 +19,8 @@
  *   then a playlist switch mid-fetch paints pane B with pane A's rows
  * - if a bus subscription calls _refreshLibraryRowsOnce directly again then the
  *   PERFMODE-04 playing gate is bypassed and mid-set refetches are back
+ * - if a local tracks refresh request (e.g. vocal "already analyzed") skips
+ *   _requestLibraryRefresh then row data stays stale while a deck may update
  *
  * The gate's own behavior (defer, drain, never drop, one ring row, and that its
  * coalescer still holds under the gate) lives in playing-gate.test.mjs.
@@ -212,6 +214,12 @@ test('BrowserPanel routes its bus-driven refresh through that gate', () => {
 	// Every background trigger goes through request(), never straight to the
 	// refresh: a direct call is the mid-set stall this gate exists to stop.
 	assert.match(source, /subscribeKind\('tracks', \(\) => _requestLibraryRefresh\(\)\)/);
+	assert.match(source, /subscribeKind\('plays', \(\) => _requestLibraryRefresh\(\)\)/);
+	assert.match(
+		source,
+		/subscribeTracksRefreshRequest\(\(\) => _requestLibraryRefresh\(\)\)/,
+		'a VocalAnalyzeButton "already analyzed" or done result refreshes library rows through the gate (#9653)'
+	);
 	assert.match(
 		source,
 		/subscribeKind\('playlists', \(\) => \{\s*(?:invalidateAllPlaylistFirstPages\(\);\s*)?void _refreshPlaylists\(\);\s*_requestLibraryRefresh\(\);\s*\}\)/,
@@ -233,20 +241,25 @@ test('BrowserPanel routes its bus-driven refresh through that gate', () => {
 		/function _requestLibraryRefresh\(\): void \{\s*invalidateLibraryIndex\(\);\s*clearPlaylistRowCache\(\);\s*_libraryRefreshGate\.request\(\);\s*\}/
 	);
 	const codeLines = source.split('\n').filter((line) => !/^\s*(\/\/|\*)/.test(line));
-	assert.equal(codeLines.filter((line) => line.includes('_libraryRefreshGate.request()')).length, 1);
+	assert.equal(
+		codeLines.filter((line) => line.includes('_libraryRefreshGate.request()')).length,
+		1
+	);
 	const requestCallSites = codeLines
 		.filter((line) => line.includes('_requestLibraryRefresh()'))
 		.filter((line) => !line.includes('function _requestLibraryRefresh'));
 	assert.equal(
 		requestCallSites.length,
-		5,
-		'the four bus subscriptions (tracks, playlists, smartlists, resync) plus the 60s degraded-path poll, and nothing else'
+		7,
+		'the five bus subscriptions (tracks, plays, playlists, smartlists, resync), the local tracks refresh request (#9653) and the 60s degraded-path poll, and nothing else'
 	);
 });
 
 test('_refreshLibraryRowsOnce logs library-refresh failures unless the error is a transient abort', () => {
 	const source = readFileSync(BROWSER_PANEL, 'utf8');
-	const refreshFn = source.match(/async function _refreshCountAndPanes\(\): Promise<boolean> \{[\s\S]*?\n\t\}/)?.[0];
+	const refreshFn = source.match(
+		/async function _refreshCountAndPanes\(\): Promise<boolean> \{[\s\S]*?\n\t\}/
+	)?.[0];
 	assert.ok(refreshFn, '_refreshCountAndPanes body');
 	assert.match(
 		refreshFn,

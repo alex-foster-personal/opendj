@@ -1,0 +1,9 @@
+{
+ "map_name": "DDJ-1000(?:$|[^S])",
+ "map_const": "DDJ1000_MAP",
+ "map_ts": "apps/webui/frontend/src/lib/rb/midi/maps/ddj-1000.ts",
+ "panel_w": 708.0,
+ "panel_d": 361.4,
+ "panel_size_source": "DDJ-1000 Quick Start Guide DRH1656B, page 15 Specifications (708 mm width x 361.4 mm depth)",
+ "display_name": "4-channel performance controller"
+}

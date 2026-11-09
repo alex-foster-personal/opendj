@@ -16,7 +16,7 @@ in-run scope jobs import without PyYAML. Nothing here calls `gh` or the network;
 from __future__ import annotations
 
 import re
-from collections.abc import Mapping, Sequence
+from collections.abc import Collection, Mapping, Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -91,6 +91,14 @@ PULL_REQUEST_PROXY_WORKFLOW = "CI"
 #: publisher's constant by tests/scripts/test_ci_e2e_admission.py.
 WORKFLOW_RUN_PUBLISHED_CHECKS: dict[str, frozenset[str]] = {"e2e.yml": frozenset({"e2e verdict"})}
 
+#: The pull request label that opts a head IN to a workflow_run-proxied workflow
+#: (ADR-NEW-e2e-opt-in-by-label, Mon 9 Nov 2026). Without it the workflow's scope job
+#: admits nothing and its published check is `skipped` on the head by design, so a waiter
+#: that knows the pull request's labels (`pr_labels`) does not owe that check; one that
+#: does not know them (`pr_labels=None`) keeps waiting for it, fail-closed, as before.
+#: Pinned equal to scripts/ci_e2e_admission.py `OPT_IN_LABEL` by its tests.
+WORKFLOW_RUN_OPT_IN_LABELS: dict[str, str] = {"e2e.yml": "e2e"}
+
 
 def _pull_request_trigger(on: dict) -> dict | None:
     trigger = on.get("pull_request")
@@ -139,6 +147,15 @@ def _published_names(workflow: str, on: dict) -> frozenset[str] | None:
             "but WORKFLOW_RUN_PUBLISHED_CHECKS does not say which check it publishes on the head"
         )
     return published
+
+
+def _label_gated_names(workflow: str, published: frozenset[str] | None) -> dict[str, str]:
+    """`{published name: opt-in label}` for a proxied workflow in WORKFLOW_RUN_OPT_IN_LABELS,
+    else empty: a workflow with its own pull_request trigger is never label-gated here."""
+    label = WORKFLOW_RUN_OPT_IN_LABELS.get(workflow)
+    if published is None or label is None:
+        return {}
+    return dict.fromkeys(published, label)
 
 
 #: A matrix axis computed at run time (`fromJSON(...)`) has no literal leg list to
@@ -236,6 +253,9 @@ class WorkflowCatalog:
     always_created_job_names: frozenset[str] = frozenset()
     #: Names of on-demand workflows (`HEAD_PUSH_PULL_REQUEST_TYPES`): never owed by a head.
     on_demand_job_names: frozenset[str] = frozenset()
+    #: Published names a head owes only while its pull request carries the mapped label
+    #: (`WORKFLOW_RUN_OPT_IN_LABELS`); a subset of `always_created_job_names`.
+    label_gated_job_names: dict[str, str] = field(default_factory=dict)
     #: Every name a job can report under, keyed by the job's identity.
     job_names: dict[JobKey, frozenset[str]] = field(default_factory=dict)
     #: A matrix job GitHub skips reports ONE check under its unexpanded template
@@ -259,6 +279,7 @@ class WorkflowCatalog:
         job_names: dict[JobKey, frozenset[str]] = {}
         alternatives: dict[str, frozenset[str]] = {}
         on_demand: set[str] = set()
+        label_gated: dict[str, str] = {}
 
         for name in sorted(texts):
             document = yaml.safe_load(texts[name])
@@ -272,6 +293,7 @@ class WorkflowCatalog:
             if trigger is None:
                 continue
             published = _published_names(name, on)
+            label_gated.update(_label_gated_names(name, published))
             paths = tuple(trigger.get("paths") or ()) or None
             paths_ignore = tuple(trigger.get("paths-ignore") or ()) or None
             in_run_scope = IN_RUN_PULL_REQUEST_SCOPES.get(name)
@@ -317,6 +339,7 @@ class WorkflowCatalog:
             on_demand_job_names=frozenset(on_demand | ON_DEMAND_POSTED_CHECK_NAMES),
             job_names=job_names,
             matrix_alternatives=alternatives,
+            label_gated_job_names=label_gated,
         )
 
     def applicable_pull_request_job_names(self, changed_files: Sequence[str]) -> frozenset[str]:
@@ -383,6 +406,7 @@ def derive_expected_for_changed_paths(
     changed_files: Sequence[str],
     catalog: WorkflowCatalog,
     baseline_catalog: WorkflowCatalog | None = None,
+    pr_labels: Collection[str] | None = None,
 ) -> frozenset[str]:
     """Drop baseline names whose workflow would not run at the current head.
 
@@ -392,7 +416,11 @@ def derive_expected_for_changed_paths(
     two), so the job stays owed under the names it can actually report. Unknown baseline
     names (in neither catalog) are kept fail-closed, EXCEPT names in
     RETIRED_CHECK_NAMES, which no head can emit again. Names of on-demand workflows
-    (label-triggered, `on_demand_job_names`) are dropped too: no head owes them. An empty
+    (label-triggered, `on_demand_job_names`) are dropped too: no head owes them. A
+    label-gated published name (`label_gated_job_names`) is dropped when `pr_labels`, the
+    pull request's current labels, lacks its label: the proxied workflow then skips by
+    design (ADR-NEW-e2e-opt-in-by-label). `pr_labels=None` means the labels are unknown,
+    and the name stays owed, fail-closed. An empty
     result is deliberate:
     expansion (workflows newly activated by a path change) stays with
     `poll_until_terminal`'s two-poll stabilization rule rather than inflating
@@ -401,8 +429,11 @@ def derive_expected_for_changed_paths(
     applicable = catalog.applicable_pull_request_job_names(changed_files)
     known = catalog.known_check_names()
     always = catalog.always_created_job_names
+    gated = catalog.label_gated_job_names
     expected: set[str] = set()
     for name in baseline - RETIRED_CHECK_NAMES - catalog.on_demand_job_names:
+        if pr_labels is not None and name in gated and gated[name] not in pr_labels:
+            continue
         if name in always:
             expected.add(name)
             continue

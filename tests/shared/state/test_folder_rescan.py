@@ -24,9 +24,11 @@ import wave
 from pathlib import Path
 from unittest import mock
 
+import pytest
+
 from apps.shared import fs_access
 from apps.shared.state.events import FakeEventBus
-from apps.shared.state.ingest import folder_rescan
+from apps.shared.state.ingest import folder, folder_rescan
 from apps.shared.state.writer import StateWriter
 
 
@@ -442,3 +444,68 @@ def test_a_tombstone_older_than_the_reason_column_is_read_as_the_users(
 # Moved to test_folder_rescan_other_source.py (issue #2540 quality-gate
 # file_size ratchet: this file crossed 1500 lines). It imports
 # _write_wav, _live_tracks, _write_wav_sample, and _writer back from this module.
+
+
+def _write_decodable_wav(path: Path) -> None:
+    """~0.5 s non-silent tone so the playable probe accepts the file."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    frames = 22_050
+    tone = [int(10_000 * ((i % 100) / 50.0 - 1.0)) for i in range(frames)]
+    with wave.open(str(path), "w") as handle:
+        handle.setnchannels(1)
+        handle.setsampwidth(2)
+        handle.setframerate(44100)
+        handle.writeframes(struct.pack(f"<{frames}h", *tone))
+
+
+def _path_to_stable_id(state_conn, walk_paths: list[str]) -> list[str]:
+    rows = {
+        row[1]: row[0]
+        for row in state_conn.execute(
+            "SELECT stable_id, file_path FROM tracks WHERE deleted_at IS NULL"
+        )
+    }
+    return [rows[path] for path in walk_paths if path in rows]
+
+
+@pytest.mark.requirement("LIBM-9689")
+def test_ingest_hands_new_tracks_to_the_strip_queue_in_walk_order(
+    state_conn, tmp_path: Path
+) -> None:
+    """[if] five new wavs ingest [then] on_new_tracks gets them in walk order, [else stop]."""
+    crate = tmp_path / "crate"
+    for name in ("01.wav", "02.wav", "03.wav", "04.wav", "05.wav"):
+        _write_decodable_wav(crate / name)
+    seen: list[list[str]] = []
+    writer = _writer(state_conn)
+    report = folder.ingest_folder(
+        writer, [crate], dry_run=False, on_new_tracks=seen.append
+    )
+    assert report.files_rejected_unplayable == 0
+    assert len(seen) == 1
+    assert len(seen[0]) == 5
+    walk_paths = [str(entry.path) for entry in folder.collect_audio([crate])[0]]
+    expected = _path_to_stable_id(state_conn, walk_paths)
+    assert seen[0] == expected
+
+
+@pytest.mark.requirement("LIBM-9689")
+def test_reingesting_the_same_folder_hands_over_nothing(state_conn, tmp_path: Path) -> None:
+    """[if] the same folder ingests again [then] on_new_tracks is not called, [else stop]."""
+    crate = tmp_path / "crate"
+    _write_decodable_wav(crate / "01.wav")
+    writer = _writer(state_conn)
+    folder.ingest_folder(writer, [crate], dry_run=False, on_new_tracks=lambda _: None)
+    calls: list[list[str]] = []
+    folder.ingest_folder(writer, [crate], dry_run=False, on_new_tracks=calls.append)
+    assert calls == []
+
+
+@pytest.mark.requirement("LIBM-9689")
+def test_a_dry_run_hands_over_nothing(state_conn, tmp_path: Path) -> None:
+    """[if] ingest is dry_run [then] on_new_tracks is not called, [else stop]."""
+    crate = tmp_path / "crate"
+    _write_decodable_wav(crate / "01.wav")
+    calls: list[list[str]] = []
+    folder.ingest_folder(_writer(state_conn), [crate], dry_run=True, on_new_tracks=calls.append)
+    assert calls == []

@@ -405,7 +405,7 @@ export function humanStemsEnqueueError(): string {
 }
 
 export function humanAssistantStatusError(): string {
-	return 'The assistant is not available right now. Setup can continue without it.';
+	return 'OJ is not available right now. Setup can continue without it.';
 }
 
 export function humanStemsFailed(): string {

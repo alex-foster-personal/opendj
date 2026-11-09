@@ -29,7 +29,7 @@ from pathlib import Path
 import pytest
 import yaml
 
-from scripts.ci_e2e_selection import ALL_GATES, ALWAYS_RUN_NAME, STATIC_GATES, always_run_specs
+from scripts.ci_e2e_selection import ALL_GATES, ALWAYS_RUN_NAME, GATES_AFTER_THE_MAP, STATIC_GATES, always_run_specs
 from scripts.e2e_footprints_refresh import GATES
 
 pytestmark = pytest.mark.requirement("DEVOPS-28")
@@ -42,6 +42,9 @@ FRONTEND = REPO / "apps" / "webui" / "frontend"
 # `scope_event` is `pull_request` only for a workflow_run of a green pull-request head.
 PR_IN_SCOPE = "steps.pr.outputs.scope_event == 'pull_request' && steps.decide.outputs.in_scope == 'true'"
 MAIN_PUSH = "github.event_name == 'push' && github.ref == 'refs/heads/main'"
+# The map's source runs: a push to main, or the hourly and nightly main-tip schedules,
+# which concurrency never cancels mid-run.
+MAIN_MAP_RUN = "(github.event_name == 'push' || github.event_name == 'schedule') && github.ref == 'refs/heads/main'"
 
 
 def _jobs(path: Path = E2E) -> dict:
@@ -110,22 +113,34 @@ def test_the_root_step_appends_the_selection_only_in_affected_mode() -> None:
     assert "e2eFootprintsPlugin" in (FRONTEND / "vite.config.ts").read_text(encoding="utf-8")
 
 
-def test_the_verdict_still_follows_the_root_step_and_the_map_steps_come_after_it() -> None:
+def test_the_verdict_still_follows_the_root_step_and_the_map_steps_come_right_after_it() -> None:
     steps = _jobs()["gate"]["steps"]
     index = next(i for i, s in enumerate(steps) if s.get("id") == "root-playwright")
     assert steps[index + 1]["name"] == "Root Playwright verdict (Trunk quarantine applied)"
     assert steps[index + 1]["if"] == "always()"
     build = _step("gate", step_id="e2e-footprints")
-    assert steps.index(build) > index + 1
-    last_gate = max(steps.index(_step("gate", name=name)) for name, _ in GATE_STEPS.values())
-    assert steps.index(build) > last_gate, "the map is built only once every named gate has written its footprint"
-    assert build["if"] == f"{MAIN_PUSH} && steps.root-playwright.outcome == 'success'"
+    upload = _step("gate", name="Upload the root Playwright footprint map")
+    # Right after the root suite, before the gates that follow it: on main the gate job hit its
+    # 40 min timeout on 16 of 16 runs (Sun 8 to Mon 9 Nov), once a minute short of a map built
+    # after the last gate (run 42598380583).
+    assert steps.index(build) == index + 2, "the map is built straight after the root suite's verdict"
+    assert steps.index(upload) == index + 3
+    after = {gate for gate in GATES if steps.index(_step("gate", name=GATE_STEPS[gate][0])) > steps.index(build)}
+    assert after == set(GATES_AFTER_THE_MAP), "a dev-server gate after the map is never in it; list it on purpose"
+    # A red root run still measures every spec that passed; `build` records the rest
+    # `unmeasured`, which the selector always runs. A cancelled or skipped suite builds nothing.
+    assert build["if"] == (
+        "${{ !cancelled() && "
+        + MAIN_MAP_RUN
+        + " && (steps.root-playwright.outcome == 'success' || steps.root-playwright.outcome == 'failure') }}"
+    )
     assert build["continue-on-error"] is True
     assert ".venv/bin/python -m scripts.e2e_footprints_refresh build" in build["run"]
     assert '--sha "$GITHUB_SHA"' in build["run"]
     assert '--dir "${RUNNER_TEMP:?RUNNER_TEMP must be set}/e2e-footprints"' in build["run"]
-    upload = _step("gate", name="Upload the root Playwright footprint map")
-    assert upload["if"] == f"{MAIN_PUSH} && steps.e2e-footprints.outcome == 'success'"
+    # `!cancelled()`: the root verdict step before them fails the job on a red run, and a step
+    # `if:` with no status function is `success() && ...` (Sentry and Codex, PR #10552).
+    assert upload["if"] == "${{ !cancelled() && " + MAIN_MAP_RUN + " && steps.e2e-footprints.outcome == 'success' }}"
     assert upload["uses"] == "./.github/actions/r2-artifact"
     assert upload["with"]["name"] == "e2e-spec-footprints"
     assert upload["with"]["include-hidden-files"] is True

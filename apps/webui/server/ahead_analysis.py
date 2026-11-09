@@ -48,6 +48,8 @@ Requirements (mini-PRD):
   ✔︎ strip first, lanes after (NATIVE-21)
     [if] any present unmapped track lacks a strip [then] no lane batch runs
     [if] a track was bumped [then] it is selected before older work
+    [if] an ingest wrote new unmapped tracks without a strip [then] their strips
+         run next, in ingest order
   ✔︎ never competes with playback, except for the set's next tracks (NATIVE-5886)
     [if] a deck is playing [then] no library-wide work runs
     [if] a deck is playing and AutoPlay's next-up or a deck track lacks beatgrid/key [then] it runs, one track at a time
@@ -534,6 +536,9 @@ class AheadDrain:
         self._lane_set_aside: dict[str, list[str]] = {lane: [] for lane, _b in LANE_ORDER}
         self._duds = DudLedger(sources.duds_path)
         self._bumped: list[str] = []
+        #: Ingest-written ids waiting for a strip, in ingest order (#9422).
+        #: Strip phase only; deck bumps still go first.
+        self._strip_queue: list[str] = []
         #: Ingest batches' ids, oldest batch first (ENRICH-06).
         self._ingest_priority: list[str] = []
         self._next_up: list[str] = []
@@ -583,10 +588,41 @@ class AheadDrain:
             self._src.invalidate_present_fn()
         self._wake.set()
 
+    def queue_strips(self, stable_ids: Sequence[str]) -> list[str]:
+        """Queue freshly ingested tracks for the strip phase, in ingest order (#9422).
+
+        Ids that already have a strip, or that rekordbox maps (its ANLZ strip is
+        read, never written), are left out, so a re-ingest queues nothing. Returns
+        the ids queued.
+        """
+        ids = list(dict.fromkeys(stable_ids))
+        mapped = set(self._src.mapped_fn(ids))
+        pending = [
+            sid for sid in ids if sid not in mapped and not self._src.has_strip_fn(sid)
+        ]
+        with self._bump_lock:
+            queued = set(self._strip_queue)
+            fresh = [sid for sid in pending if sid not in queued]
+            self._strip_queue.extend(fresh)
+            del self._strip_queue[:-INGEST_PRIORITY_MAX]
+        if pending:
+            if self._src.invalidate_present_fn is not None:
+                self._src.invalidate_present_fn()
+            self._wake.set()
+        return pending
+
     def _ranking(self) -> list[str]:
         """Deck bumps first (latest first), then ingest batches in order, as ``front_first`` reads it."""
         with self._bump_lock:
             return [*reversed(self._ingest_priority), *self._bumped]
+
+    def _strip_ranking(self) -> list[str]:
+        with self._bump_lock:
+            return [
+                *reversed(self._ingest_priority),
+                *reversed(self._strip_queue),
+                *self._bumped,
+            ]
 
     def set_next_up(self, stable_ids: Sequence[str]) -> list[str]:
         """Replace AutoPlay's next-up tracks, the ones analyzed while a deck plays (NATIVE-5886)."""
@@ -665,10 +701,12 @@ class AheadDrain:
                 return "paused_playing"
             return PAUSED_XRUN_STATE if xrun_hold else self._playing_tick()
         bumped = self._ranking()
+        strip_ranking = self._strip_ranking()
         present = self._phases.run("present", self._src.present_fn)
+        phase_rankings = {TAGS_LANE: bumped, STRIP_LANE: strip_ranking}
         for name, phase in ((TAGS_LANE, self._tags_phase), (STRIP_LANE, self._strip_phase)):
             try:
-                if self._phases.run(name, phase, present, bumped):
+                if self._phases.run(name, phase, present, phase_rankings[name]):
                     return f"ran:{name}"
             except PhaseStillRunning:
                 continue  # that phase is stuck on its own; later phases still run
@@ -803,6 +841,12 @@ class AheadDrain:
         if targets:
             self._phases.mark(STRIP_LANE, targets)
             self._write_strips(targets)
+        with self._bump_lock:
+            self._strip_queue = [
+                sid
+                for sid in self._strip_queue
+                if not self._src.has_strip_fn(sid) and sid not in self._strip_failed
+            ]
         return bool(targets)
 
     def _lane_done(self, lane: str, backend: str) -> set[str]:

@@ -36,6 +36,10 @@ permissions:
   actions: read
   pull-requests: read
 
+# Python never writes bytecode into a persistent runner workspace ((private path)).
+env:
+  PYTHONDONTWRITEBYTECODE: "1"
+
 jobs:
   hourly:
     name: main hourly selected
@@ -62,13 +66,63 @@ jobs:
           set -euo pipefail
           ws="${GITHUB_WORKSPACE:-}"
           [ -d "$ws" ] || { echo "[hygiene] no workspace yet, nothing to reclaim"; exit 0; }
-          uid="$(id -u)"; gid="$(id -g)"
-          foreign() { sudo find "$ws" -xdev \( ! -user "$uid" -o ! -group "$gid" \) "$@"; }
-          reclaimed=$(foreign -print0 | tr -cd '\0' | wc -c)
-          [ "$reclaimed" -eq 0 ] || foreign -exec chown -h "$uid:$gid" {} +
-          remaining=$(foreign -print0 | tr -cd '\0' | wc -c)
-          echo "[hygiene] reclaimed=$reclaimed remaining=$remaining"
-          [ "$remaining" -eq 0 ] || { echo "::error::$remaining workspace entries are not owned by uid $uid"; exit 1; }
+          uid="$(id -u)"; gid="$(id -g)"; LIST_CAP=20
+          esc=${ws//\\/\\134}; esc=${esc// /\\040}; esc=${esc//$'\t'/\\011}; esc=${esc//$'\n'/\\012}
+          nested=$(MDT_WS_ESC="$esc/" awk '$5 != "" && index($5, ENVIRON["MDT_WS_ESC"]) == 1 {print $5}' /proc/self/mountinfo)
+          [ -z "$nested" ] || {
+            echo "::error::mount point(s) beneath the workspace, refusing to chown across them: $nested"
+            exit 1
+          }
+          # fleet-af #742: on the fleet's CI hosts sudo allows only this helper for workspace ownership.
+          # A runner without it (GitHub-hosted) has unrestricted sudo, so the same verbs run through find.
+          if [ -x /usr/local/sbin/ci-workspace-own ]; then
+            own() { sudo -n /usr/local/sbin/ci-workspace-own "$1" "$ws"; }
+          else
+            foreign() { sudo env TZ=UTC find "$ws" -xdev \( ! -user "$uid" -o ! -group "$gid" \) "$@"; }
+            entries() { tr -cd '\0' | wc -c; }
+            own() {
+              case "$1" in
+                count) sudo find "$ws" -xdev -print0 | entries ;;
+                foreign) foreign -print0 | entries ;;
+                list) foreign -printf '  %u:%g %TY-%Tm-%TdT%TH:%TM:%.2TSZ %p\n' ;;
+                reclaim) foreign -exec chown -h "$uid:$gid" {} + ;;
+                *) echo "::error::own: unknown verb $1"; return 1 ;;
+              esac
+            }
+          fi
+          scanned=$(own count)
+          reclaimed=$(own foreign)
+          offenders="$(mktemp)"
+          trap 'rm -f "$offenders"' EXIT
+          name_offenders() {
+            own list >"$offenders"
+            head -n "$LIST_CAP" "$offenders"
+            [ "$1" -le "$LIST_CAP" ] || echo "  ... and $(( $1 - LIST_CAP )) more"
+          }
+          [ "$reclaimed" -eq 0 ] || {
+            echo "[hygiene] entries not owned by uid $uid, listed before the repair:"
+            name_offenders "$reclaimed"
+          }
+          [ "$reclaimed" -eq 0 ] || own reclaim >/dev/null
+          remaining=$(own foreign)
+          echo "[hygiene] scanned=$scanned reclaimed=$reclaimed remaining=$remaining"
+          [ "$remaining" -eq 0 ] || {
+            echo "::error::$remaining of $scanned workspace entries are not owned by uid $uid; checkout would fail with EACCES"
+            name_offenders "$remaining"
+            exit 1
+          }
+          # A cancelled run can kill checkout's fetch mid ref-update and leave a .git/**/*.lock behind; every
+          # later checkout on this runner then dies in seconds ("reference already exists"), draining the queue
+          # as instant reds (nucbox-wsl-14, Fri 11 Sep 2026: 4 jobs in 5 min). This job has started no git
+          # process yet, so a lock with no live git inside the workspace is stale by construction.
+          if [ -d "$ws/.git" ]; then
+            live=$(for p in $(pgrep -x git || true); do if [[ $(readlink -f "/proc/$p/cwd" 2>/dev/null) == "$ws"* ]]; then echo "$p"; fi; done)
+            if [ -z "$live" ]; then
+              echo "[hygiene] stale git locks removed=$(find "$ws/.git" -xdev -name '*.lock' -type f -print -delete | wc -l)"
+            else
+              echo "[hygiene] git still running in the workspace (pids: $(echo $live)); leaving its locks"
+            fi
+          fi
 
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         timeout-minutes: 2
@@ -115,7 +169,7 @@ jobs:
         env:
           MDT_CI_HOST_LOCK_TIMEOUT_S: "150"
         run: |
-          scripts/ci_apt_present.sh libsqlcipher-dev file bubblewrap just ffmpeg || scripts/ci_host_lock.sh packages sudo env -C / sh -c 'apt-get update && apt-get install -y libsqlcipher-dev file bubblewrap just ffmpeg'
+          scripts/ci_apt_present.sh libsqlcipher-dev file bubblewrap just ffmpeg || scripts/ci_host_lock.sh packages scripts/ci_apt_install.sh libsqlcipher-dev file bubblewrap just ffmpeg
 
       - name: Runner preflight - host binaries the suite shells out to
         timeout-minutes: 1

@@ -126,7 +126,7 @@ def test_static_grid_untrusted_true_gates_every_named_grid_reader() -> None:
         (
             "apps/webui/frontend/src/lib/player/grid-features.ts",
             [
-                "if (bg.static_grid_untrusted === true) return false;",
+                "if (bg.static_grid_untrusted === true && bg.edit?.anchors === undefined) return false;",
                 "deckHasTrustedBeatGrid",
                 "first.at_s.toFixed(3)",
             ],

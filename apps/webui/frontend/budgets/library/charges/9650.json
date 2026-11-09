@@ -1,0 +1,9 @@
+{
+  "bytes": 2048,
+  "measured_main": 329868,
+  "measured_with_pr": 331676,
+  "sha": "16a77f5112",
+  "date": "Sun 8 Nov 2026",
+  "reason": "PR #9650 adds Beat Sync drift measurement, the re-enable policy and the SYNC_DRIFT / SYNC_RESNAP log sink (sync-drift.ts, sync-log-sink.ts) to both engines, which load with the shell. Measured: CI bundle check of 16a77f5112, +1808 B gzip; ceiled to KiB.",
+  "payback": "none planned; the drift log is the observability the maintainer asked for and lives in the engine path"
+}

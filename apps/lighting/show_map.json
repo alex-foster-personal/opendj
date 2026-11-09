@@ -1,0 +1,286 @@
+{
+  "version": 1,
+  "note": "Placeholder contents until the palette calibration (#9906) and the intensity calibration (#9907). Looks are ranked best first; picking among them is the show planner (#9901).",
+  "looks_file": "looks_default.json",
+  "autoloop_bars": 8,
+  "autoloop": [
+    "wash_warm",
+    "sweep_slow",
+    "wash_cool",
+    "chase_colour"
+  ],
+  "sections": {
+    "intro": {
+      "high": {
+        "looks": [
+          "wash_dim",
+          "wash_warm"
+        ],
+        "effect_level": "low"
+      },
+      "mid": {
+        "looks": [
+          "wash_dim",
+          "sweep_slow"
+        ],
+        "effect_level": "low"
+      },
+      "low": {
+        "looks": [
+          "wash_dim",
+          "wash_cool"
+        ],
+        "effect_level": "low"
+      },
+      "unknown": {
+        "looks": [
+          "wash_warm",
+          "wash_dim"
+        ],
+        "effect_level": "low"
+      }
+    },
+    "verse": {
+      "high": {
+        "looks": [
+          "wash_warm",
+          "sweep_slow"
+        ],
+        "effect_level": "mid"
+      },
+      "mid": {
+        "looks": [
+          "wash_cool",
+          "wash_warm"
+        ],
+        "effect_level": "mid"
+      },
+      "low": {
+        "looks": [
+          "wash_dim",
+          "wash_cool"
+        ],
+        "effect_level": "mid"
+      },
+      "unknown": {
+        "looks": [
+          "wash_warm",
+          "wash_cool"
+        ],
+        "effect_level": "mid"
+      }
+    },
+    "build": {
+      "high": {
+        "looks": [
+          "sweep_slow",
+          "pulse_white"
+        ],
+        "effect_level": "mid"
+      },
+      "mid": {
+        "looks": [
+          "chase_colour",
+          "sweep_slow"
+        ],
+        "effect_level": "mid"
+      },
+      "low": {
+        "looks": [
+          "wash_cool",
+          "sweep_slow"
+        ],
+        "effect_level": "mid"
+      },
+      "unknown": {
+        "looks": [
+          "pulse_white",
+          "chase_colour"
+        ],
+        "effect_level": "mid"
+      }
+    },
+    "chorus": {
+      "high": {
+        "looks": [
+          "wash_full",
+          "chase_colour",
+          "pulse_white"
+        ],
+        "effect_level": "high"
+      },
+      "mid": {
+        "looks": [
+          "wash_warm",
+          "chase_colour"
+        ],
+        "effect_level": "high"
+      },
+      "low": {
+        "looks": [
+          "wash_cool",
+          "split_two_tone"
+        ],
+        "effect_level": "mid"
+      },
+      "unknown": {
+        "looks": [
+          "wash_full",
+          "pulse_white"
+        ],
+        "effect_level": "high"
+      }
+    },
+    "drop": {
+      "high": {
+        "looks": [
+          "pulse_white",
+          "chase_colour",
+          "sweep_fast"
+        ],
+        "effect_level": "high"
+      },
+      "mid": {
+        "looks": [
+          "split_two_tone",
+          "chase_colour"
+        ],
+        "effect_level": "high"
+      },
+      "low": {
+        "looks": [
+          "spot_centre",
+          "pulse_white"
+        ],
+        "effect_level": "mid"
+      },
+      "unknown": {
+        "looks": [
+          "chase_colour",
+          "sweep_fast"
+        ],
+        "effect_level": "high"
+      }
+    },
+    "breakdown": {
+      "high": {
+        "looks": [
+          "wash_dim",
+          "wash_cool"
+        ],
+        "effect_level": "low"
+      },
+      "mid": {
+        "looks": [
+          "wash_dim",
+          "split_two_tone"
+        ],
+        "effect_level": "low"
+      },
+      "low": {
+        "looks": [
+          "wash_dim",
+          "wash_warm"
+        ],
+        "effect_level": "low"
+      },
+      "unknown": {
+        "looks": [
+          "wash_cool",
+          "wash_dim"
+        ],
+        "effect_level": "low"
+      }
+    },
+    "bridge": {
+      "high": {
+        "looks": [
+          "split_two_tone",
+          "wash_warm"
+        ],
+        "effect_level": "mid"
+      },
+      "mid": {
+        "looks": [
+          "sweep_slow",
+          "wash_cool"
+        ],
+        "effect_level": "mid"
+      },
+      "low": {
+        "looks": [
+          "wash_dim",
+          "spot_centre"
+        ],
+        "effect_level": "mid"
+      },
+      "unknown": {
+        "looks": [
+          "wash_warm",
+          "split_two_tone"
+        ],
+        "effect_level": "mid"
+      }
+    },
+    "outro": {
+      "high": {
+        "looks": [
+          "wash_dim",
+          "wash_warm"
+        ],
+        "effect_level": "low"
+      },
+      "mid": {
+        "looks": [
+          "wash_cool",
+          "wash_dim"
+        ],
+        "effect_level": "low"
+      },
+      "low": {
+        "looks": [
+          "wash_dim",
+          "sweep_slow"
+        ],
+        "effect_level": "low"
+      },
+      "unknown": {
+        "looks": [
+          "wash_warm",
+          "wash_dim"
+        ],
+        "effect_level": "low"
+      }
+    },
+    "unknown": {
+      "high": {
+        "looks": [
+          "wash_warm",
+          "wash_cool"
+        ],
+        "effect_level": "mid"
+      },
+      "mid": {
+        "looks": [
+          "sweep_slow",
+          "wash_warm"
+        ],
+        "effect_level": "mid"
+      },
+      "low": {
+        "looks": [
+          "wash_dim",
+          "wash_cool"
+        ],
+        "effect_level": "mid"
+      },
+      "unknown": {
+        "looks": [
+          "wash_warm",
+          "sweep_slow"
+        ],
+        "effect_level": "mid"
+      }
+    }
+  }
+}

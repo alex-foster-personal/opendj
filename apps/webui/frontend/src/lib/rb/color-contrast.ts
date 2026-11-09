@@ -190,6 +190,8 @@ export const DECORATIVE_TOKENS: readonly string[] = [
   "rb-rail-files",
   "rb-rail-beatport",
   "rb-rail-record",
+  // FILTER dial face outline (MIXUX-02 / COLORFX-15): structural chrome, not state.
+  "rb-color-fx-filter-face-edge",
 ];
 
 export const PAIRINGS: ContrastPairing[] = [
@@ -238,6 +240,12 @@ export const PAIRINGS: ContrastPairing[] = [
     bg: "rb-accent",
     level: "body",
     label: "text on an accent fill (Capture, lit buttons, active segments)",
+  },
+  {
+    fg: "rb-accent",
+    bg: "rb-color-fx-filter-face",
+    level: "non-text",
+    label: "color FX FILTER dial indicator on its white face (COLORFX-15)",
   },
   {
     fg: "rb-green",

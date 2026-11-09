@@ -1,0 +1,9 @@
+{
+  "bytes": 1024,
+  "measured_main": 6652,
+  "measured_with_pr": 7675,
+  "sha": "43138e9a50",
+  "date": "Mon 9 Nov 2026",
+  "reason": "PR #10464 adds the number-row stepper to the settings and wave quick settings (#10202). Measured: CI bundle check of 43138e9a50, +1023 B gzip on wave-quick-settings; ceiled to KiB",
+  "payback": "none planned; the growth is the feature's own code"
+}

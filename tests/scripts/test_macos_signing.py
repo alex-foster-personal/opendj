@@ -46,36 +46,46 @@ SIGN_SCRIPT: Path = REPO_ROOT / "scripts/sign_macos_developer_id.sh"
 # anything tries to resolve it.
 UNRESOLVABLE_IDENTITY = "Developer ID Application: Nobody (XXXXXXXXXX)"
 
+# Ambient vars `set dotenv-load` may re-inject from .env when absent from the
+# subprocess env; strip them entirely so each case controls signing intent.
+_SIGNING_AMBIENT = frozenset(
+    {
+        "MDT_LANE_LABEL",
+        "MDT_LOCAL_FAST_UNNOTARIZED",
+        "MDT_MACOS_SIGNING_IDENTITY",
+        "MDT_MACOS_NOTARY_KEYCHAIN_PROFILE",
+        "MDT_SHIP_UNSIGNED",
+        "OPENDJ_RELEASE_CHANNEL",
+    }
+)
+
+
+def _signing_env(**overrides: str) -> dict[str, str]:
+    env = {k: v for k, v in os.environ.items() if k not in _SIGNING_AMBIENT}
+    # Literal 0, not empty: the dmg recipe rejects non-0/non-1 values.
+    env["MDT_LOCAL_FAST_UNNOTARIZED"] = "0"
+    # Empty strings block dotenv-load from re-injecting vars the case cleared.
+    env.setdefault("MDT_LANE_LABEL", "")
+    env.setdefault("MDT_MACOS_SIGNING_IDENTITY", "")
+    env.setdefault("MDT_MACOS_NOTARY_KEYCHAIN_PROFILE", "")
+    env.setdefault("MDT_SHIP_UNSIGNED", "")
+    env.setdefault("OPENDJ_RELEASE_CHANNEL", "")
+    env.update(overrides)
+    return env
+
 
 def _just_dmg(**overrides: str) -> subprocess.CompletedProcess[str]:
-    """Run `just dmg` with a scrubbed signing environment plus overrides.
-
-    MDT_LANE_LABEL is scrubbed because these target the signing guards, not
-    OPS-09's lane double-intent gate, and must not depend on the invoking
-    shell being free of a stray lane label.
-    """
+    """Run `just dmg` with a scrubbed signing environment plus overrides."""
     just = shutil.which("just")
     if just is None:
         pytest.skip("just is not installed")
-    env = {
-        k: v
-        for k, v in os.environ.items()
-        if k
-        not in {
-            "MDT_LANE_LABEL",
-            "MDT_MACOS_SIGNING_IDENTITY",
-            "MDT_MACOS_NOTARY_KEYCHAIN_PROFILE",
-            "MDT_SHIP_UNSIGNED",
-        }
-    }
-    env.update(overrides)
     return subprocess.run(
         [just, "dmg"],
         cwd=REPO_ROOT,
         capture_output=True,
         text=True,
         check=False,
-        env=env,
+        env=_signing_env(**overrides),
     )
 
 
@@ -122,7 +132,12 @@ def test_no_signing_identity_refuses_the_build() -> None:
 @pytest.mark.requirement("INSTALL-04")
 def test_unsigned_escape_hatch_with_an_identity_is_refused() -> None:
     """Contradictory intent is refused rather than resolved by guesswork."""
-    result = _just_dmg(MDT_SHIP_UNSIGNED="1", MDT_MACOS_SIGNING_IDENTITY=UNRESOLVABLE_IDENTITY)
+    result = _just_dmg(
+        MDT_SHIP_UNSIGNED="1",
+        MDT_MACOS_SIGNING_IDENTITY=UNRESOLVABLE_IDENTITY,
+        MDT_MACOS_NOTARY_KEYCHAIN_PROFILE="",
+        MDT_LOCAL_FAST_UNNOTARIZED="0",
+    )
     assert result.returncode != 0
     combined = result.stdout + result.stderr
     assert "both set" in combined
@@ -132,7 +147,12 @@ def test_unsigned_escape_hatch_with_an_identity_is_refused() -> None:
 @pytest.mark.requirement("INSTALL-04")
 def test_signing_identity_without_a_notary_profile_is_refused() -> None:
     """A Developer ID signature nobody notarized still fails Gatekeeper."""
-    result = _just_dmg(MDT_MACOS_SIGNING_IDENTITY=UNRESOLVABLE_IDENTITY)
+    result = _just_dmg(
+        MDT_MACOS_SIGNING_IDENTITY=UNRESOLVABLE_IDENTITY,
+        MDT_MACOS_NOTARY_KEYCHAIN_PROFILE="",
+        MDT_SHIP_UNSIGNED="",
+        MDT_LOCAL_FAST_UNNOTARIZED="0",
+    )
     assert result.returncode != 0
     combined = result.stdout + result.stderr
     assert "MDT_MACOS_NOTARY_KEYCHAIN_PROFILE is not" in combined

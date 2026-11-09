@@ -105,7 +105,9 @@ def test_triage_passes_a_merge_of_main_on_the_earlier_review(
         "_paginated_json_list",
         lambda path: reviews if path.endswith("/reviews") else [{"sha": reviewed}] if path.endswith("/commits") else [],
     )
-    monkeypatch.setattr(review_coverage, "require_gate_current_with_main", lambda: "0" * 40)
+    zgate = "0" * 40
+    monkeypatch.setattr(review_coverage, "require_gate_current_with_main", lambda: zgate)
+    monkeypatch.setattr(review_coverage, "gate_commit_on_main", lambda: zgate)
 
     assert review_coverage.triage(PR) == 0
 

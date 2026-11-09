@@ -7,7 +7,7 @@ import { after, before, beforeEach, test } from 'node:test';
 import { loadTypeScriptModule } from './load-typescript.mjs';
 
 /**
- * Play from USB, lane D (specs/usb-play-from-stick.md 4b "Frontend guards"):
+ * Play from USB, lane D ((private path) 4b "Frontend guards"):
  * every per-track builder outside api-rb.ts/api.ts routes a stick id or makes
  * no request for it, the analysis-source confirmation loop exempts stick ids,
  * suggest-next leaves them out, and a failed stick load says what happened in
@@ -133,6 +133,20 @@ const LIBRARY_ONLY_BUILDERS = [
 		call: (m, id) => m.putLyricOverride(id, null),
 		code: 'USB_READ_ONLY',
 		libraryPath: `/api/v1/tracks/${LIBRARY_ID}/lyrics/override`
+	},
+	{
+		module: 'src/lib/rb/api-rb.ts',
+		name: 'fetchMemoryCues',
+		call: (m, id) => m.fetchMemoryCues(id),
+		code: 'USB_NOT_SUPPORTED',
+		libraryPath: `/api/v1/tracks/${LIBRARY_ID}/memory-cues`
+	},
+	{
+		module: 'src/lib/rb/api-rb.ts',
+		name: 'setActiveMemoryLoop',
+		call: (m, id) => m.setActiveMemoryLoop(id, 1000, true, 'rev'),
+		code: 'USB_READ_ONLY',
+		libraryPath: `/api/v1/tracks/${LIBRARY_ID}/memory-cues/1000/active`
 	}
 ];
 

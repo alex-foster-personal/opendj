@@ -69,7 +69,8 @@ function _assertCycleBeats(cycleBeats: number): asserts cycleBeats is ModFxCycle
 	}
 }
 
-function _wrapUnit(x: number): number {
+/** Fractional part in [0, 1); a value within float noise of 1 wraps to 0. */
+export function wrapUnitPhase(x: number): number {
 	const frac = x - Math.floor(x);
 	return frac > 1 - WRAP_EPSILON ? 0 : frac;
 }
@@ -148,10 +149,10 @@ export function lfoPhase(anchor: LfoAnchor, contextTime: number): number {
 	switch (anchor.kind) {
 		case 'beat': {
 			const beatNow = anchor.beatIndex + (contextTime - anchor.contextTime) * anchor.beatsPerSec;
-			return _wrapUnit((beatNow - anchor.cycleOriginBeat) / anchor.cycleBeats);
+			return wrapUnitPhase((beatNow - anchor.cycleOriginBeat) / anchor.cycleBeats);
 		}
 		case 'time':
-			return _wrapUnit((contextTime - anchor.contextTime) / anchor.periodSec);
+			return wrapUnitPhase((contextTime - anchor.contextTime) / anchor.periodSec);
 		default: {
 			const _exhaustive: never = anchor;
 			throw new Error(`mod-fx-lfo: unknown anchor kind ${String((_exhaustive as LfoAnchor).kind)}`);

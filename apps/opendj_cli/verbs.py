@@ -14,7 +14,7 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from apps.opendj_cli.catalog import RAMPABLE_TYPES, VERBS, Verb
-from apps.opendj_cli.kinds import DECK_VALUES, Arg, deck_value
+from apps.opendj_cli.kinds import DECK_VALUES, Arg, deck_value, text_value
 
 DURATION_UNITS: dict[str, str] = {
     "ms": "ms",
@@ -162,6 +162,48 @@ def _reject_leftover(
     )
 
 
+def _parse_track_info_open(scoped: int | None, positionals: list[str]) -> Invocation:
+    """``track_info_open`` targets exactly one deck or one library stable_id (#9448)."""
+    verb = VERBS["track_info_open"]
+    named, rest = _named_tokens(verb.args, positionals)
+    if scoped is not None:
+        if "deck" in named and deck_value("deck", named["deck"]) != scoped:
+            raise InvocationError(
+                f"deck was given twice (deck {scoped} as the scope and deck={named['deck']}); "
+                "give it once, either as `deck <n> <verb>` or after the verb"
+            )
+        named = {**named, "deck": str(scoped)}
+    if "deck" in named and "stable_id" in named:
+        raise InvocationError("track_info_open takes deck or stable_id, not both")
+    if "deck" in named:
+        deck = deck_value("deck", named["deck"])
+        if rest:
+            _reject_leftover(verb, {"deck": deck}, rest, takes_deck=False)
+        command = verb.build({"deck": deck})
+        return Invocation(verb=verb, command=command, values={"deck": deck})
+    if "stable_id" in named:
+        stable_id = text_value("stable_id", named["stable_id"])
+        if rest:
+            _reject_leftover(verb, {"stable_id": stable_id}, rest, takes_deck=False)
+        command = verb.build({"stable_id": stable_id})
+        return Invocation(verb=verb, command=command, values={"stable_id": stable_id})
+    if len(rest) == 1:
+        token = rest[0]
+        try:
+            deck = deck_value("deck", token)
+        except ValueError:
+            stable_id = text_value("stable_id", token)
+            command = verb.build({"stable_id": stable_id})
+            return Invocation(verb=verb, command=command, values={"stable_id": stable_id})
+        command = verb.build({"deck": deck})
+        return Invocation(verb=verb, command=command, values={"deck": deck})
+    if not rest and not named:
+        raise InvocationError("track_info_open needs deck or stable_id")
+    raise InvocationError(
+        "track_info_open takes one deck or one stable_id; use deck= or stable_id= when naming both"
+    )
+
+
 def parse_invocation(tokens: Sequence[str], deck_scope: int | None = None) -> Invocation:
     """Parse ``[deck <n>] <verb> [positionals...]`` into one bus command.
 
@@ -180,6 +222,8 @@ def parse_invocation(tokens: Sequence[str], deck_scope: int | None = None) -> In
         raise InvocationError("no verb given; run opendj --list-verbs")
     name, *positionals = rest
     positionals = _drop_named_deck_matching_scope(scoped, positionals)
+    if name == "track_info_open":
+        return _parse_track_info_open(scoped, positionals)
     verb, positionals = _verb_for(name, scoped, positionals)
     named, positionals = _named_tokens(verb.args, positionals)
     values, leftover = _consume(verb.args, positionals, named)

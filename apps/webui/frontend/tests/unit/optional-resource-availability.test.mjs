@@ -161,3 +161,15 @@ test('ensureAutoCues still fetches when auto-cues unknown', async () => {
 	assert.equal(entry?.status, 'error');
 	assert.equal(entry?.code, 'ANALYSIS_NOT_FOUND');
 });
+
+test('forgetStemsAbsence drops stems false and leaves other caps', () => {
+	availability.resetOptionalResourcesForTests();
+	availability.rememberOptionalResources('t', { stems: false, lyrics: false });
+	availability.forgetStemsAbsence('t');
+	const caps = availability.optionalResources('t');
+	assert.equal(caps.stems, 'unknown');
+	assert.equal(caps.lyrics, false);
+	availability.rememberOptionalResources('u', { stems: true });
+	availability.forgetStemsAbsence('u');
+	assert.equal(availability.optionalResources('u').stems, true);
+});

@@ -1,7 +1,13 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <DJ_PLAYLISTS Version="1.0.0">
   <PRODUCT Name="rekordbox" Version="6.7.7" Company="AlphaTheta"/>
-  <COLLECTION Entries="0">
+  <COLLECTION Entries="1">
+    <TRACK TrackID="1" Name="Invented Tune" Artist="Invented Artist" Album="Invented LP"
+           Genre="Invented House" Label="Invented Records" Remixer="Invented Remixer"
+           Composer="Invented Composer" Grouping="Invented Group" Year="2019"
+           DateAdded="2026-11-08" Mix="Invented Extended Mix" BitRate="320" SampleRate="44100"
+           Size="9812345" TotalTime="242" AverageBpm="128.00"
+           Location="file://localhost/Volumes/Invented%20DJ/Invented%20Tune.mp3"/>
   </COLLECTION>
   <PLAYLISTS>
     <NODE Type="0" Name="ROOT" Count="0"/>

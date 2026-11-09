@@ -305,7 +305,8 @@ describe(
 // ------------------------------------------------------------------ the class
 
 /** Body of the first function whose declaration starts with `signature`,
- * found by brace matching from its opening brace. */
+ * found by brace matching from its opening brace. The param list must not
+ * contain `(` `)` groups (use `functionBodyBalanced` when it does). */
 function functionBody(source, signature) {
 	const start = source.indexOf(signature);
 	assert.ok(start >= 0, `${signature} not found - this test is reading the wrong file`);
@@ -316,6 +317,39 @@ function functionBody(source, signature) {
 		else if (source[i] === '}') {
 			depth -= 1;
 			if (depth === 0) return { start: open, end: i, text: source.slice(open, i + 1) };
+		}
+	}
+	throw new Error(`unbalanced braces after ${signature}`);
+}
+
+/** Like functionBody, but finds the opening `{` after a balanced param list
+ * (arrow types like `() => boolean` inside params). */
+function functionBodyBalanced(source, signature) {
+	const start = source.indexOf(signature);
+	assert.ok(start >= 0, `${signature} not found`);
+	const paramOpen = source.indexOf('(', start);
+	assert.ok(paramOpen >= 0);
+	let depth = 0;
+	let i = paramOpen;
+	for (; i < source.length; i += 1) {
+		const c = source[i];
+		if (c === '(') depth += 1;
+		else if (c === ')') {
+			depth -= 1;
+			if (depth === 0) {
+				i += 1;
+				break;
+			}
+		}
+	}
+	const open = source.indexOf('{', i);
+	assert.ok(open >= 0, `no opening brace after ${signature}`);
+	let braceDepth = 0;
+	for (let j = open; j < source.length; j += 1) {
+		if (source[j] === '{') braceDepth += 1;
+		else if (source[j] === '}') {
+			braceDepth -= 1;
+			if (braceDepth === 0) return { start: open, end: j, text: source.slice(open, j + 1) };
 		}
 	}
 	throw new Error(`unbalanced braces after ${signature}`);
@@ -362,10 +396,13 @@ function valueReferences(text, name) {
 
 describe('every stem decode entry point goes through the gated engine functions (PERFMODE-15 class)', () => {
 	const ENGINE = join(SRC_ROOT, 'lib/rb/audio-engine.svelte.ts');
+	const STEM_ROUTING = join(SRC_ROOT, 'lib/rb/audio-engine-stem-routing.ts');
 	const engineSource = readFileSync(ENGINE, 'utf8');
-	const upgrade = functionBody(engineSource, 'async function _upgradeDeckStems(');
-	const drain = functionBody(engineSource, 'function _drainPendingStemUpgrade(');
-	const landing = functionBody(engineSource, 'function _landStems(');
+	const stemSource = readFileSync(STEM_ROUTING, 'utf8');
+	const upgrade = functionBody(stemSource, 'async function _upgradeDeckStems(');
+	const drain = functionBody(stemSource, 'function _drainPendingStemUpgrade(');
+	const landing = functionBody(stemSource, 'function _landStems(');
+	const stemPort = functionBodyBalanced(stemSource, 'function _stemUpgradeLandingPort(');
 
 	it('outside the engine, only the stem API helpers themselves reach a stem probe, fetch or decode', () => {
 		const callers = new Map();
@@ -386,7 +423,7 @@ describe('every stem decode entry point goes through the gated engine functions 
 		// A new caller anywhere is a new stem decode entry point: it must be
 		// gated on the stem decode policy and added here on purpose.
 		assert.deepEqual(Object.fromEntries([...callers].sort()), {
-			'lib/rb/audio-engine.svelte.ts': [
+			'lib/rb/audio-engine-stem-routing.ts': [
 				'awaitStemArtifact',
 				'fetchStemAudioArrayBuffers',
 				'decodeStemBuffers',
@@ -403,7 +440,7 @@ describe('every stem decode entry point goes through the gated engine functions 
 			'decodeStemBuffers',
 			'AlignedStemDeckProcessor.create'
 		]) {
-			const sites = callSites(engineSource, callee);
+			const sites = callSites(stemSource, callee);
 			assert.ok(
 				sites.length > 0,
 				`${callee} not called at all - the funnel check would pass vacuously`
@@ -452,33 +489,33 @@ describe('every stem decode entry point goes through the gated engine functions 
 	});
 
 	it('a held stem upgrade is only ever adopted by the gated upgrade or the gated drain', () => {
-		const sites = callSites(engineSource, '_adoptStemProcessor');
+		const sites = callSites(stemSource, '_adoptStemProcessor');
 		assert.ok(sites.length > 0, '_adoptStemProcessor not called at all');
 		for (const at of sites) {
 			const inUpgrade = at > upgrade.start && at < upgrade.end;
 			const inDrain = at > drain.start && at < drain.end;
-			const inLanding = at > landing.start && at < landing.end;
+			const inStemPort = at > stemPort.start && at < stemPort.end;
 			assert.ok(
-				inUpgrade || inDrain || inLanding,
+				inUpgrade || inDrain || inStemPort,
 				'_adoptStemProcessor called outside the gated functions'
 			);
 		}
-		// STEM-47: _landStems adopts (stopped swap) or commits (live handoff) only
-		// through landStemsOnDeck, which reads `stale` before either; so the gate
-		// is the `stale` its callers hand it, and every caller's must read the policy.
+		// STEM-47: the landing port adopts (stopped swap) or hands off for commit only
+		// through landStemsOnDeck / engageStemsOnDeck, which read `stale` before either;
+		// so the gate is the `stale` its callers hand it, and every caller's must read the policy.
 		assert.match(
-			landing.text,
-			/clock: ctx, stale,\n/,
-			'_landStems never hands its stale check to the landing'
+			stemPort.text,
+			/clock: ctx,\n\t\tstale,/,
+			'_stemUpgradeLandingPort never hands its stale check to the landing'
 		);
-		const landingCalls = [...engineSource.matchAll(/_landStems\(deck, [^\n]*/g)].map(
+		const landingCalls = [...stemSource.matchAll(/_landStems\(deck, [^\n]*/g)].map(
 			(match) => match[0]
 		);
-		// AUDFID-02: the first-touch engage of held neutral stems is the third.
+		// AUDFID-02: first-touch engage uses engageStemsOnDeck, not _landStems.
 		assert.equal(
 			landingCalls.length,
-			3,
-			`expected the upgrade, the retry and the neutral engage to call _landStems, found ${landingCalls.length}`
+			2,
+			`expected only the upgrade path and LOAD NOW retry to call _landStems, found ${landingCalls.length}`
 		);
 		for (const call of landingCalls) {
 			assert.ok(

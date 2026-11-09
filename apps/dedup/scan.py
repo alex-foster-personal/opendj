@@ -20,7 +20,7 @@ import sys
 from dataclasses import dataclass
 from pathlib import Path
 
-from apps.dedup.db_paths import resolve_dedup_db
+from apps.dedup.db_paths import resolve_dedup_db, resolve_music_roots
 from apps.shared import audio_files, paths
 from apps.shared.fingerprints import (
     ChromaprintMissing,
@@ -82,43 +82,38 @@ def run_scan(
         Optional callable ``(af: AudioFile, result: str) -> None`` that
         tests (or a rich progress bar) can plug in.
     """
-    use_roots = roots if roots is not None else paths.MUSIC_ROOTS
+    use_roots = resolve_music_roots(roots)
     use_db = resolve_dedup_db(db_path)
     cache = FingerprintCache(use_db)
 
     out = ScanResult()
-    try:
-        for af in audio_files.scan_music_files(use_roots):
-            out.scanned += 1
-            status = "hit"
-            try:
-                if force_recompute:
+    for af in audio_files.scan_music_files(use_roots):
+        out.scanned += 1
+        status = "hit"
+        try:
+            if force_recompute:
+                fp = compute(af.path)
+                _put_fingerprint(cache, fp)
+                out.computed += 1
+                status = "recomputed"
+            else:
+                existing = cache.get(af.path)
+                if existing is not None:
+                    out.cache_hits += 1
+                else:
                     fp = compute(af.path)
                     _put_fingerprint(cache, fp)
                     out.computed += 1
-                    status = "recomputed"
-                else:
-                    existing = cache.get(af.path)
-                    if existing is not None:
-                        out.cache_hits += 1
-                        status = "hit"
-                    else:
-                        fp = compute(af.path)
-                        _put_fingerprint(cache, fp)
-                        out.computed += 1
-                        status = "computed"
-            except ChromaprintMissing:
-                # Bubble up: the whole scan cannot proceed without fpcalc.
-                out.chromaprint_missing = True
-                raise
-            except Exception as exc:  # noqa: BLE001 -- degrade gracefully
-                out.errors += 1
-                status = f"error: {type(exc).__name__}"
-            if on_progress is not None:
-                on_progress(af, status)
-    except ChromaprintMissing:
-        # Fall through; main handles the user message.
-        raise
+                    status = "computed"
+        except ChromaprintMissing:
+            # Bubble up: the whole scan cannot proceed without fpcalc.
+            out.chromaprint_missing = True
+            raise
+        except Exception as exc:  # noqa: BLE001 -- degrade gracefully
+            out.errors += 1
+            status = f"error: {type(exc).__name__}"
+        if on_progress is not None:
+            on_progress(af, status)
 
     return out
 

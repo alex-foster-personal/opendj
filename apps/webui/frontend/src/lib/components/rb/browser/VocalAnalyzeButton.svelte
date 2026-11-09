@@ -11,7 +11,8 @@
 		refreshLoadedDeckVocalsFromServer
 	} from '$lib/rb/loaded-deck-vocals-refresh';
 	import { pushToast } from '$lib/stores.svelte';
-	import { vocalsAnalyzeRefusal } from '$lib/rb/vocals-analyze-refusal';
+	import { vocalsAnalyzeOutcome, vocalsAnalyzeRefusal } from '$lib/rb/vocals-analyze-refusal';
+	import { requestTracksRefresh } from '$lib/rb/tracks-refresh-request';
 
 	interface Props {
 		stableId: string;
@@ -21,6 +22,7 @@
 	const { stableId, stems }: Props = $props();
 
 	let busy = $state(false);
+	let serverRefusal = $state<string | null>(null);
 
 	const refusal = $derived(vocalsAnalyzeRefusal(stems));
 	const disabled = $derived(refusal !== null || busy);
@@ -32,11 +34,12 @@
 		busy = true;
 		try {
 			const result = await analyzeVocalsFromStems(stableId);
-			if (result.claimed.includes(stableId)) {
-				pushToast('Vocal analysis done', 'info');
+			const outcome = vocalsAnalyzeOutcome(stableId, result);
+			serverRefusal = outcome.category;
+			pushToast(outcome.message, outcome.toastKind);
+			if (outcome.refresh) {
 				if (isStableIdOnLoadedDeck(stableId)) void refreshLoadedDeckVocalsFromServer([stableId]);
-			} else {
-				pushToast(`Vocal analysis refused: ${result.refused[stableId] ?? 'unknown'}`, 'error');
+				requestTracksRefresh([stableId]);
 			}
 		} catch (err) {
 			const msg = err instanceof RbApiError ? err.message : String(err);
@@ -54,6 +57,7 @@
 	title={tip}
 	aria-label={tip}
 	data-testid="vocal-analyze-btn"
+	data-agent-refusal={serverRefusal ?? undefined}
 	{onclick}
 >
 	<svg viewBox="0 0 16 16" width="10" height="10" aria-hidden="true">

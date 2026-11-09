@@ -1,0 +1,9 @@
+{
+ "map_name": "CDJ-3000",
+ "map_const": "CDJ3000_MAP",
+ "map_ts": "apps/webui/frontend/src/lib/rb/midi/maps/pioneer-cdj-3000.ts",
+ "panel_w": 329.0,
+ "panel_d": 453.0,
+ "panel_size_source": "CDJ-3000 Instruction Manual DRI1586A, Specifications, General (329 x 453 mm); docs/controller/research/CDJ-3000-MIDI-Message-List.md",
+ "display_name": "Professional DJ multi player"
+}

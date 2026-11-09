@@ -3,7 +3,7 @@
 Usage::
 
     uv run python -m scripts.feedback_pin_reimport \\
-        --audit specs/77607ca8_pin-loss-audit.json \\
+        --audit (private path) \\
         --data-dir /path/to/data \\
         --archive /path/to/data/feedback/archive-20250912*.json
 """
@@ -13,12 +13,22 @@ from __future__ import annotations
 import argparse
 import json
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
+from apps.shared.state import sync_stamp
 from apps.webui.server.routes.feedback import _COMMENTS_FILE, _COMMENTS_LOCK, _load, _save
 
+UpsertResult = Literal["added", "updated", "kept"]
 
-def _upsert_pin(comments_path: Path, doc: dict[str, Any]) -> bool:
+
+def _edit_stamp(doc: dict[str, Any]) -> str | None:
+    raw = doc.get("updated_at") or doc.get("created_at")
+    if not isinstance(raw, str) or not sync_stamp.is_orderable(raw):
+        return None
+    return sync_stamp.to_canonical(raw)
+
+
+def _upsert_pin(comments_path: Path, doc: dict[str, Any]) -> UpsertResult:
     with _COMMENTS_LOCK:
         items = _load(comments_path, "comments")
         by_id = {c.get("id"): i for i, c in enumerate(items)}
@@ -32,30 +42,40 @@ def _upsert_pin(comments_path: Path, doc: dict[str, Any]) -> bool:
             restored_status = raw_status
         restored = {**doc, "status": restored_status}
         restored.pop("harvested_at", None)
-        if pin_id in by_id:
-            items[by_id[pin_id]] = restored
-            added = False
-        else:
+        if pin_id not in by_id:
             items.append(restored)
-            added = True
+            _save(comments_path, "comments", items)
+            return "added"
+
+        live = items[by_id[pin_id]]
+        live_stamp = _edit_stamp(live)
+        arch_stamp = _edit_stamp(doc)
+        should_replace = live_stamp is None or (arch_stamp is not None and arch_stamp > live_stamp)
+        if not should_replace:
+            return "kept"
+        items[by_id[pin_id]] = restored
         _save(comments_path, "comments", items)
-    return added
+        return "updated"
 
 
-def reimport_from_archive(comments_path: Path, archive_path: Path) -> tuple[int, int]:
+def reimport_from_archive(comments_path: Path, archive_path: Path) -> tuple[int, int, int]:
+    """Merge archive pins into the live store; live copies newer than the archive win."""
     payload = json.loads(archive_path.read_text(encoding="utf-8"))
     comments = payload.get("comments") if isinstance(payload, dict) else None
     if not isinstance(comments, list):
         raise ValueError(f"{archive_path} has no comments list")
-    added = updated = 0
+    added = updated = kept = 0
     for doc in comments:
         if not isinstance(doc, dict):
             continue
-        if _upsert_pin(comments_path, doc):
+        result = _upsert_pin(comments_path, doc)
+        if result == "added":
             added += 1
-        else:
+        elif result == "updated":
             updated += 1
-    return added, updated
+        else:
+            kept += 1
+    return added, updated, kept
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -69,13 +89,14 @@ def main(argv: list[str] | None = None) -> int:
     if not comments_path.is_file():
         comments_path.write_text('{"comments": []}\n', encoding="utf-8")
 
-    total_added = total_updated = 0
+    total_added = total_updated = total_kept = 0
     for archive in args.archive:
-        added, updated = reimport_from_archive(comments_path, archive)
-        print(f"[OK] {archive.name}: {added} added, {updated} updated")
+        added, updated, kept = reimport_from_archive(comments_path, archive)
+        print(f"[OK] {archive.name}: {added} added, {updated} updated, {kept} kept (live newer)")
         total_added += added
         total_updated += updated
-    print(f"[OK] reimport complete: {total_added} added, {total_updated} updated")
+        total_kept += kept
+    print(f"[OK] reimport complete: {total_added} added, {total_updated} updated, {total_kept} kept (live newer)")
     return 0
 
 

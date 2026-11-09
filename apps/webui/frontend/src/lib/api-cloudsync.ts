@@ -87,9 +87,73 @@ export interface MachineOverview {
 	last_sync_at: string | null;
 }
 
+/**
+ * Verdicts `FleetHealth.verdict` can take, worst first. `unknown` is a
+ * first-class answer, not a fallback: watermarks with no recorded outcome
+ * mean somebody synced before anything kept the result, and rendering that
+ * as "converged" would be a verdict from an unmeasured subject.
+ */
+export const SYNC_VERDICTS = [
+	'diverged',
+	'failing',
+	'never_synced',
+	'unknown',
+	'quarantined',
+	'behind',
+	'converged'
+] as const;
+export type SyncVerdict = (typeof SYNC_VERDICTS)[number];
+
+export interface SyncPeer {
+	peer: string;
+	last_push_seq: number;
+	last_pull_seq: number;
+	last_sync_at: string | null;
+	peer_generation: string | null;
+	pending_push_rows: number;
+	full_offer_pending: boolean;
+}
+
+export interface SyncRun {
+	started_at: string;
+	finished_at: string;
+	outcome: string;
+	hub_url: string;
+	consecutive_failures: number;
+	hub_machine_id: string | null;
+	error_kind: string | null;
+	error_message: string | null;
+	pushed: number;
+	accepted: number;
+	rejected: number;
+	pulled: number;
+	applied: number;
+	rounds: number;
+	digest: string | null;
+	hub_restore_detected: boolean;
+	digest_inconclusive: boolean;
+	hub_quarantined: number | null;
+	quarantined_incoming: number;
+}
+
+export interface SyncHealth {
+	verdict: SyncVerdict;
+	local_seq: number;
+	/** null, not 0, with no peer yet: this machine owes a hub it never met the whole library. */
+	pending_push_rows: number | null;
+	full_offer_pending: boolean;
+	digest_mismatch: boolean;
+	/** Rows on this machine that are NOT in the sync set: a stored stamp on them cannot be ordered. */
+	quarantined_rows: number;
+	peers: SyncPeer[];
+	last_run: SyncRun | null;
+}
+
 export interface CloudSyncOverview {
 	total_tracks: number;
 	machines: MachineOverview[];
+	/** null ONLY on a pre-v7 DB, which has no sync tables at all. */
+	sync: SyncHealth | null;
 }
 
 /**
@@ -278,7 +342,10 @@ export async function getIdentityBacklog(): Promise<CloudSyncIdentityBacklog> {
  * kind local-only (CLOUDSYNC-33). 404 MACHINE_NOT_FOUND / POLICY_NOT_FOUND,
  * 409 POLICY_VIOLATION when the gate blocks. Uses the generated `paths`.
  */
-export async function deletePolicy(machineId: string, assetKind: AssetKind): Promise<PolicyOutcome> {
+export async function deletePolicy(
+	machineId: string,
+	assetKind: AssetKind
+): Promise<PolicyOutcome> {
 	return unwrap(
 		api.DELETE('/api/v1/cloudsync/policies/{machine_id}/{asset_kind}', {
 			params: { path: { machine_id: machineId, asset_kind: assetKind } }
@@ -311,10 +378,15 @@ export function pinRemovalBody(machineId: string, playlistId: string): PolicyApp
  * dry_run false). Throws unless the backend reports the change WRITTEN: a
  * 2xx that wrote nothing is not an unpin.
  */
-export async function removePlaylistPin(machineId: string, playlistId: string): Promise<PolicyOutcome> {
+export async function removePlaylistPin(
+	machineId: string,
+	playlistId: string
+): Promise<PolicyOutcome> {
 	const outcome = await applyPolicyChanges(pinRemovalBody(machineId, playlistId));
 	if (!outcome.written) {
-		throw new Error(`The pin for playlist ${playlistId} was not removed (the policy gate wrote nothing).`);
+		throw new Error(
+			`The pin for playlist ${playlistId} was not removed (the policy gate wrote nothing).`
+		);
 	}
 	return outcome;
 }

@@ -51,6 +51,10 @@ The `.app` lands at `out/mac-arm64/Open DJ.app`. `payload/` is an empty
 `extraResources` placeholder (see `payload/README.md`); it is not a built engine
 payload.
 
+To preview the shell, the edit loop (`just electron-dev --fixture`) or the
+installed `Open DJ (Preview).app` (`just electron-preview`), see
+[(private path)](../../../docs/desktop/electron-preview.md).
+
 A runnable packed app with the real engine and output probe is
 `scripts/ship_dmg.sh --shell electron`, which builds the payload and swaps it into
 `Contents/Resources/payload` after `pack:dir`.

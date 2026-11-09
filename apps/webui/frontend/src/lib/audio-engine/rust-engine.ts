@@ -19,6 +19,7 @@ import { hotCuesFromSlots } from '$lib/rb/hot-cue-from-anlz';
 import { clearWaveGains, parseWaveGains, setDeckWaveGains } from '$lib/rb/wave-eq-gains.svelte';
 import {
 	installPerformanceHotCueDriver,
+	runSyncScopedWork,
 	type PerformanceCommand
 } from '$lib/rb/performance-ipc.svelte';
 import {
@@ -42,6 +43,8 @@ import {
 	maybeLevelHandoff,
 	maybeLevelHandoffTick,
 	phaseLockTick,
+	clearRustKeySyncBaseline,
+	installKeySyncFollowRunner,
 	rustHotCueDriver,
 	rustMaster
 } from './rust-transport';
@@ -218,6 +221,7 @@ export function activateRustEngineMode(toast: RustToast | null): void {
 	if (toast !== null) link.toast = toast;
 	if (active) return;
 	active = true;
+	installKeySyncFollowRunner((work) => runSyncScopedWork(work));
 	// HOTCUE-LOOP-01: a loop hot cue engages its stored range on this engine.
 	installPerformanceHotCueDriver({
 		...rustHotCueDriver,
@@ -273,6 +277,7 @@ export async function loadRustDeck(
 	autoGain = await freshTrackAutoGain(autoGain);
 	const track = trackRes.track;
 	const st = deckStates[deck];
+	clearRustKeySyncBaseline(deck);
 	clearRustDeck(st);
 	st.stable_id = stable_id;
 	publishDeckAutoGain(deck, autoGain);
@@ -355,6 +360,7 @@ export function releaseLoadFailures(deck: DeckId, path: string | null): void {
 /** Reset what a load publishes. Rust-mode twin of the Web Audio engine's
  * private `_clearLoadedTrackState`, minus its Web Audio runtime. */
 export function clearRustDeck(st: DeckState): void {
+	clearRustKeySyncBaseline(st.deck_id);
 	clearWaveGains(st.deck_id);
 	st.playing = false;
 	st.audible = false;
@@ -415,6 +421,14 @@ export function applyAcknowledged(command: PerformanceCommand): void {
 		case 'pitch_range':
 			pitchRanges[command.deck] = command.range;
 			break;
+		case 'master_tempo':
+			deckStates[command.deck].master_tempo_enabled = command.enabled;
+			break;
+		case 'key_nudge': {
+			const st = deckStates[command.deck];
+			st.key_shift_semitones = (st.key_shift_semitones ?? 0) + command.semitones;
+			break;
+		}
 		case 'unload':
 			clearRustDeck(deckStates[command.deck]);
 			break;

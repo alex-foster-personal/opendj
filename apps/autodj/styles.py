@@ -101,6 +101,18 @@ _LANE_HIT = {"crossfade": 0.25, "overlap": 0.75, "fade_in_fade_out": 0.5}
 HIT_ON_START = "start"  # a cut: the incoming enters on its bass, the outgoing goes on bar 0
 HIT_GATED = "gated"  # a blend: nothing on the outgoing before the hit, the body fades from it to the handover
 HIT_ON_HANDOVER = "handover"  # lull_then_drop: the outgoing holds to the handover, where the incoming drop lands
+HIT_ON_EXIT = "exit"  # echo out: the incoming enters on its bass at the exit bar E, where the outgoing dry closes
+#: Spec 09-transitions-fx 4.3, mimicked from Spotify's "Echo 1/2 cut end": the send opens over the 2 beats before
+#: the exit bar to ECHO_SEND, the dry closes on it, and the tail rings ECHO_TAIL_BARS before the handover.
+ECHO_SEND = 0.7
+ECHO_SEND_BARS = 0.5  # 2 beats
+ECHO_TAIL_BARS = 1
+STYLE_TEMPO_MODES = ("sync_to_out", "none")
+
+
+def exit_bar(bars: int) -> float:
+    """Echo out's exit bar E: the dry closes and the incoming starts here, one tail bar before the handover."""
+    return float(bars - ECHO_TAIL_BARS)
 
 
 def hit_bounds(bars: int, min_body: int) -> tuple[float, float]:
@@ -138,6 +150,12 @@ class Style:
     hit: str = HIT_GATED
     #: A hand-built blend's lane, for its default hit bar (a parametric style reads its params).
     lane: str = "overlap"
+    #: The plan's tempo mode: "none" for the styles that do not beatmatch (cut, drop_swap, echo_out).
+    tempo_mode: str = "sync_to_out"
+
+    def __post_init__(self) -> None:
+        if self.tempo_mode not in STYLE_TEMPO_MODES:
+            raise ValueError(f"style {self.name!r} tempo_mode must be one of {STYLE_TEMPO_MODES}, got {self.tempo_mode!r}")
 
     def clamp_bars(self, bars: int) -> int:
         return max(self.min_bars, min(self.max_bars, bars))
@@ -161,6 +179,10 @@ class Style:
                 raise ValueError(f"style {self.name!r} gives way on bar 0, so its incoming bass must land there")
             if self.hit == HIT_ON_HANDOVER and hit_bar != float(clamped):
                 raise ValueError(f"style {self.name!r} lands the incoming drop on the handover, bar {clamped}")
+            if self.hit == HIT_ON_EXIT and hit_bar != exit_bar(clamped):
+                raise ValueError(
+                    f"style {self.name!r} lands the incoming bass on its exit bar, bar {exit_bar(clamped):g}"
+                )
             if self.hit == HIT_GATED:
                 low, high = hit_bounds(clamped, self.min_body_fade_bars)
                 if not low <= hit_bar <= high:
@@ -182,6 +204,7 @@ class Style:
             "unavailable_reason": self.unavailable_reason,
             "params": None if self.params is None else self.params.doc(),
             "spotify": self.spotify,
+            "tempo_mode": self.tempo_mode,
         }
 
 
@@ -226,6 +249,23 @@ def _cut(bars: int, out_deck: int, in_deck: int, _hit_bar: float | None = None, 
         _do(0, in_deck, "play"),
         _set(0, out_deck, "fader", KILL),
         *_handover(bars, out_deck, in_deck),
+    ]
+
+
+def _echo_out(bars: int, out_deck: int, in_deck: int, _hit_bar: float | None = None, /) -> list[Event]:
+    """Echo out (spec 09-transitions-fx 4.3): the send opens over the 2 beats before E, the dry closes on E as the
+    incoming starts at full on its bass, and the tail rings one bar before the handover resets the effect.
+    The outgoing fader is never moved: the echo return is pre-fader, so a fader pull would kill the tail."""
+    exit_at = exit_bar(bars)
+    return [
+        _set(exit_at - ECHO_SEND_BARS, out_deck, "fx_echo", 0.0),
+        _ramp(exit_at - ECHO_SEND_BARS, out_deck, "fx_echo", ECHO_SEND, ECHO_SEND_BARS),
+        _set(exit_at, out_deck, "fx_dry", 0.0),
+        _set(exit_at, in_deck, "fader", 1.0),
+        _set(exit_at, in_deck, "eq_low", FLAT),
+        _do(exit_at, in_deck, "play"),
+        *_handover(bars, out_deck, in_deck),
+        _do(bars, out_deck, "fx_reset"),
     ]
 
 
@@ -622,6 +662,7 @@ _STYLES: tuple[Style, ...] = (
         builder=_cut,
         spotify="Slam",
         hit=HIT_ON_START,
+        tempo_mode="none",
     ),
     Style(
         name="drop_swap",
@@ -634,6 +675,7 @@ _STYLES: tuple[Style, ...] = (
         when="Keep the energy up: land the next drop where the current phrase ends.",
         builder=_drop_swap,
         hit=HIT_ON_START,
+        tempo_mode="none",
     ),
     Style(
         name="filter_sweep",
@@ -720,15 +762,20 @@ _STYLES: tuple[Style, ...] = (
     ),
     Style(
         name="echo_out",
-        summary="Echo the outgoing track out over 1 to 4 bars.",
-        min_bars=1,
-        max_bars=4,
-        default_bars=2,
+        summary=(
+            "Echo the outgoing track out: its echo send opens over the 2 beats before the exit bar, its dry closes"
+            " on it as the incoming track starts on its bass, and the tail rings for a bar (Spotify Echo 1/2 cut end)."
+        ),
+        min_bars=2,
+        max_bars=5,
+        default_bars=3,
         needs_beatmatch=False,
-        controls=("fx_echo",),
-        when="The universal escape for bad pairs.",
-        available=False,
-        unavailable_reason="no FX DSP yet (pad-mode FX are built:false; (private path))",
+        controls=("fx_echo", "fx_dry", "play", "master"),
+        when="The universal escape for bad pairs: a tempo gap Beat Sync cannot reach, a key clash, two vocals.",
+        builder=_echo_out,
+        spotify="Echo 1/2 cut end",
+        hit=HIT_ON_EXIT,
+        tempo_mode="none",
     ),
     _parametric(
         "stem_swap",

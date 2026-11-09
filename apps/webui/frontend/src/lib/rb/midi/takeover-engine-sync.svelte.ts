@@ -1,12 +1,17 @@
 /** IOPIN-06 bridge between engine-published scalar state and absolute MIDI pickup. */
 
 import { deckStates, mixerState, pitchRanges } from '$lib/rb/audio-engine.svelte';
+import type { DeckId } from '$lib/rb/deck-id';
+import { stemForEqBand } from '$lib/rb/midi/controller-pad-runtime.svelte';
+import type { EqDial } from '$lib/rb/stem-dial-map';
 import type { MidiAction, MidiInputValue } from './midi-types';
 import {
 	noteAbsoluteMidiApplied,
 	noteTakeoverSoftwareValue,
 	observeAbsoluteMidi
 } from './takeover-state.svelte';
+
+const EQ_BANDS: readonly EqDial[] = ['high', 'mid', 'low'];
 
 function continuous01(value: MidiInputValue): number {
 	if (value.kind !== 'continuous' && value.kind !== 'continuous14') {
@@ -15,10 +20,25 @@ function continuous01(value: MidiInputValue): number {
 	return value.value01;
 }
 
+/** The 0..1 value a controller EQ knob is driving on `deck`'s `band`: the
+ * assigned stem's gain while the channel's stem-EQ mode is on and its stems
+ * are ready (the gate `setControllerEq` dispatches through), else the plain
+ * EQ. A band with no stem in the bundle stays plain EQ, as the knob does. */
+export function eqBandSoftwareValue(deck: DeckId, band: EqDial): number {
+	const channel = mixerState.channels[deck];
+	const stems = deckStates[deck].stems;
+	if (channel.stem_eq_mode && stems.status === 'ready') {
+		const stem = stemForEqBand(deck, band);
+		if (stem !== null) return stems.controls[stem].gain;
+	}
+	return channel[`eq_${band}`];
+}
+
 /** Current engine scalar in the hardware's 0..1 domain. The policy remains
  * engine-independent while its action boundary stays honest about UI, IPC,
- * preset, and other-controller edits. */
-function softwareScalar(action: MidiAction): number | null {
+ * preset, and other-controller edits. Shared by hardware pickup and the
+ * on-screen replica's live values, so both follow what the knob drives. */
+export function softwareScalar(action: MidiAction): number | null {
 	switch (action.type) {
 		case 'mixer_channel':
 			if (action.target === 'trim') return mixerState.channels[action.deck].trim;
@@ -27,7 +47,7 @@ function softwareScalar(action: MidiAction): number | null {
 			if (action.target === 'eq') {
 				if (action.band === undefined)
 					throw new Error('mixer_channel eq action requires band (device map bug)');
-				return mixerState.channels[action.deck][`eq_${action.band}`];
+				return eqBandSoftwareValue(action.deck, action.band);
 			}
 			return null;
 		case 'mixer_global':
@@ -69,16 +89,18 @@ export function takeoverContinuous(
 	return hardwareValue;
 }
 
-/** Keep pickup targets synchronized with every engine-visible scalar change. */
+/** Keep pickup targets synchronized with every engine-visible scalar change.
+ * While stem-EQ mode is on, an EQ band's software value is the stem gain the
+ * knob drives, so its pickup ghost follows the stem rather than the plain EQ. */
 export function startTakeoverEngineSync(): () => void {
 	return $effect.root(() => {
 		$effect(() => {
 			for (const deck of [1, 2, 3, 4] as const) {
 				const channel = mixerState.channels[deck];
 				noteTakeoverSoftwareValue(`mixer:${deck}:trim`, channel.trim);
-				noteTakeoverSoftwareValue(`mixer:${deck}:eq:high`, channel.eq_high);
-				noteTakeoverSoftwareValue(`mixer:${deck}:eq:mid`, channel.eq_mid);
-				noteTakeoverSoftwareValue(`mixer:${deck}:eq:low`, channel.eq_low);
+				for (const band of EQ_BANDS) {
+					noteTakeoverSoftwareValue(`mixer:${deck}:eq:${band}`, eqBandSoftwareValue(deck, band));
+				}
 				noteTakeoverSoftwareValue(`mixer:${deck}:filter`, channel.filter);
 				noteTakeoverSoftwareValue(`mixer:${deck}:fader`, channel.fader);
 				const range = pitchRanges[deck] / 100;

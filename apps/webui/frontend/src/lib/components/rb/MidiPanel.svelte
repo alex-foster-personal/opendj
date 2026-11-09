@@ -13,11 +13,13 @@
 	 *   ✔︎ 🎯 Devices section: MidiDeviceList (name, map matched, binding
 	 *     count, LED test per device).
 	 *   ✔︎ 🎯 Learn-log section: MidiLearnLog console (last 50, unmapped red).
+ *   ✔︎ 🎯 MidiLearnStatus shows ambiguous learn with reason + Retry.
 	 *   ✔︎ 🎯 Esc / backdrop / close button all dismiss the drawer.
 	 *     [if] Esc while open doesn't close [then] broken
 	 */
 	import type { Component } from 'svelte';
 	import MidiLearnLog from '$lib/components/rb/midi/MidiLearnLog.svelte';
+	import MidiLearnStatus from '$lib/components/rb/midi/MidiLearnStatus.svelte';
 	import {
 		closeLogPopout,
 		floatMidiPanel,
@@ -190,6 +192,7 @@
 
 		<section class="drawer-section grow">
 			<h3 class="section-title">Learn log</h3>
+			<MidiLearnStatus />
 			<MidiLearnLog />
 		</section>
 	</div>

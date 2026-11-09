@@ -12,6 +12,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from typing import Any
+from urllib.parse import quote
 
 import httpx
 
@@ -87,6 +88,13 @@ class EngineClient:
         self._require_ok(response)
         return list(self._document(response)["devices"])
 
+    def practice_layout(self, device: str) -> dict[str, Any]:
+        """Full panel layout document for one practice device (ADR-0137)."""
+        path = f"/api/v1/practice/devices/{quote(device, safe='')}"
+        response = self._request("GET", path, timeout=MIRROR_TIMEOUT_S)
+        self._require_ok(response)
+        return self._document(response)
+
     def post_order(self, order: dict[str, Any]) -> dict[str, Any]:
         """Submit one AGENT-03 order and wait for the page's own result."""
         from apps.opendj_cli.shell_navigate import (
@@ -94,22 +102,16 @@ class EngineClient:
             no_performance_page_message,
         )
 
-        response = self._request(
-            "POST", COMMANDS_PATH, json=order, timeout=self.timeout_s
-        )
+        response = self._request("POST", COMMANDS_PATH, json=order, timeout=self.timeout_s)
         if response.status_code == 409:
             if ensure_performance_page(self.origin, timeout_s=self.timeout_s):
-                response = self._request(
-                    "POST", COMMANDS_PATH, json=order, timeout=self.timeout_s
-                )
+                response = self._request("POST", COMMANDS_PATH, json=order, timeout=self.timeout_s)
                 if response.status_code != 409:
                     if response.status_code == 422:
                         raise OrderRejected(self._detail(response))
                     self._require_ok(response)
                     return self._document(response)
-            raise NoPerformancePage(
-                no_performance_page_message(self.origin, timeout_s=self.timeout_s)
-            )
+            raise NoPerformancePage(no_performance_page_message(self.origin, timeout_s=self.timeout_s))
         if response.status_code == 422:
             raise OrderRejected(self._detail(response))
         self._require_ok(response)
@@ -122,32 +124,25 @@ class EngineClient:
             with httpx.Client(timeout=self.timeout_s) as client:
                 return client.request(method, url, **kwargs)
         except httpx.TimeoutException as error:
-            raise OrderTimedOut(
-                f"{url} did not answer within {kwargs.get('timeout', self.timeout_s)}s"
-            ) from error
+            raise OrderTimedOut(f"{url} did not answer within {kwargs.get('timeout', self.timeout_s)}s") from error
         except httpx.TransportError as error:
             raise unreachable(self.origin, error) from error
 
     def _require_ok(self, response: httpx.Response) -> None:
         if response.status_code == 200:
             return
-        raise OrderRejected(
-            f"{response.status_code} from {response.request.url}: "
-            f"{self._detail(response)}"
-        )
+        raise OrderRejected(f"{response.status_code} from {response.request.url}: {self._detail(response)}")
 
     def _document(self, response: httpx.Response) -> dict[str, Any]:
         try:
             payload = response.json()
         except ValueError as error:
             raise OrderRejected(
-                f"{response.request.url} answered 200 with a body that is not JSON: "
-                f"{response.text[:200]!r}"
+                f"{response.request.url} answered 200 with a body that is not JSON: {response.text[:200]!r}"
             ) from error
         if not isinstance(payload, dict):
             raise OrderRejected(
-                f"{response.request.url} answered 200 with a {type(payload).__name__}, "
-                "not the documented object"
+                f"{response.request.url} answered 200 with a {type(payload).__name__}, not the documented object"
             )
         return payload
 

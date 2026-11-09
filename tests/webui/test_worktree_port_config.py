@@ -1339,30 +1339,116 @@ def test_claim_ports_refuses_a_reserved_port_inherited_from_the_environment(
         )
 
 
+@pytest.mark.requirement("INFRA-08")
 def test_claim_ports_reallocates_a_registry_pair_that_becomes_reserved(
+    tmp_path: Path,
+) -> None:
+    """[if] registry pair names a now-reserved port [then] claim_ports reallocates, [else stop]."""
+    repo_root = tmp_path / "repo"
+    common_dir = tmp_path / "common"
+    repo_root.mkdir()
+    common_dir.mkdir()
+
+    reserved_backend = min(
+        p for p in RESERVED_FIXED_PORTS if BACKEND_POOL_START <= p < BACKEND_POOL_START + POOL_SIZE
+    )
+    excluded = port_config._excluded_ports()
+    seeded_frontend = next(
+        p
+        for p in range(FRONTEND_POOL_START, FRONTEND_POOL_START + POOL_SIZE)
+        if p not in excluded and p != reserved_backend
+    )
+    seeded = WebuiPorts(backend=reserved_backend, frontend=seeded_frontend)
+    assert port_config._pair_in_lane_window(seeded, 0), seeded
+
+    registry_dir = common_dir / "music-dj-tools"
+    registry_dir.mkdir()
+    (registry_dir / "worktree-ports.json").write_text(
+        json.dumps(
+            {
+                "schema": 1,
+                "reservations": {
+                    str(repo_root.resolve()): {
+                        "backend": reserved_backend,
+                        "frontend": seeded_frontend,
+                    }
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    relaid = claim_ports(repo_root=repo_root, common_dir=common_dir, environ={})
+
+    assert relaid != seeded
+    assert relaid.backend not in port_config._excluded_ports()
+    assert relaid.frontend not in port_config._excluded_ports()
+    registry = json.loads((registry_dir / "worktree-ports.json").read_text(encoding="utf-8"))
+    stored = registry["reservations"][str(repo_root.resolve())]
+    assert stored["backend"] == relaid.backend
+    assert stored["frontend"] == relaid.frontend
+
+
+@_needs_owner_markers
+@pytest.mark.requirement("INFRA-08")
+def test_a_repeat_claim_that_moves_pairs_removes_the_old_pairs_markers(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """if the registry's own remembered pair for this worktree is later added
-    to RESERVED_FIXED_PORTS (a suite renumbering onto what used to be free
-    dynamic space) and claim_ports keeps restoring it anyway then broken --
-    the same staleness as a checkout's own .env, recorded in the shared
-    registry instead (issue #1613)"""
+    """[if] repeat claim moves to a new port pair [then] old pair markers are removed, [else stop]."""
+    monkeypatch.setattr(port_config, "PORT_OWNER_REGISTRY_DIR", tmp_path / "owners")
     repo_root = tmp_path / "repo"
     common_dir = tmp_path / "common"
     repo_root.mkdir()
     common_dir.mkdir()
 
     first = claim_ports(repo_root=repo_root, common_dir=common_dir, environ={})
-    (repo_root / ".env").unlink()  # only the registry remembers it now
-    monkeypatch.setattr(
-        port_config, "RESERVED_FIXED_PORTS", frozenset({first.backend, first.frontend})
+    assert describe_port_owner(first.backend) is not None
+    assert describe_port_owner(first.frontend) is not None
+
+    (repo_root / ".env").unlink()
+    moved = claim_ports(
+        repo_root=repo_root, common_dir=common_dir, environ={PORT_LANE_ENV: "4"}
     )
+    assert moved != first
+    assert describe_port_owner(first.backend) is None
+    assert describe_port_owner(first.frontend) is None
+    assert describe_port_owner(moved.backend) is not None
+    assert describe_port_owner(moved.frontend) is not None
 
-    relaid = claim_ports(repo_root=repo_root, common_dir=common_dir, environ={})
+    again = claim_ports(
+        repo_root=repo_root, common_dir=common_dir, environ={PORT_LANE_ENV: "4"}
+    )
+    assert again == moved
+    assert describe_port_owner(moved.backend) is not None
+    assert describe_port_owner(moved.frontend) is not None
 
-    assert relaid != first
-    assert relaid.backend not in port_config.RESERVED_FIXED_PORTS
-    assert relaid.frontend not in port_config.RESERVED_FIXED_PORTS
+
+@_needs_owner_markers
+@pytest.mark.requirement("INFRA-08")
+def test_a_superseded_marker_another_worktree_rewrote_is_left_alone(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """[if] another worktree owns a superseded marker [then] claim_ports leaves it, [else stop]."""
+    monkeypatch.setattr(port_config, "PORT_OWNER_REGISTRY_DIR", tmp_path / "owners")
+    repo_root = tmp_path / "repo"
+    common_dir = tmp_path / "common"
+    other = tmp_path / "other"
+    repo_root.mkdir()
+    common_dir.mkdir()
+    other.mkdir()
+
+    first = claim_ports(repo_root=repo_root, common_dir=common_dir, environ={})
+    port_config._write_port_owner_marker(first.backend, str(other.resolve()))
+
+    (repo_root / ".env").unlink()
+    moved = claim_ports(
+        repo_root=repo_root, common_dir=common_dir, environ={PORT_LANE_ENV: "4"}
+    )
+    assert moved != first
+    note = describe_port_owner(first.backend)
+    assert note is not None
+    assert str(other.resolve()) in note
+    assert describe_port_owner(first.frontend) is None
 
 
 def test_write_owner_marker_tolerates_a_directory_it_cannot_chmod(

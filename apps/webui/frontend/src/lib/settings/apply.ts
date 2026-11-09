@@ -23,6 +23,7 @@ import {
 	setAutoSyncDestination,
 	setBeatSyncMax,
 	setDeckDefaultQuantize,
+	setDeckNeedleLock,
 	setPreviewBeatSync,
 	clearConfirmPref,
 	setConfirmPref,
@@ -52,6 +53,7 @@ import {
 	setTempoLaneScale,
 	setWaveformDesign,
 	setWavePalette,
+	setLayoutOverride,
 	setUiSkin,
 	setWaveSplitMaster,
 	setWaveZoom,
@@ -114,6 +116,8 @@ import { syncDiskPrefs } from '$lib/rb/prefs-hydrate';
 import { autoGainPrefs, autoGainPrefsUnavailable, saveAutoGainPrefs } from '$lib/rb/auto-gain.svelte';
 import { AUTO_GAIN_TARGET_MAX_LUFS, AUTO_GAIN_TARGET_MIN_LUFS } from '$lib/rb/auto-gain';
 import { dropModePrefFromSetting, dropModeSettingValue } from './confirm-drop-mode';
+import { isVariantSettingId, type VariantSettingId } from '$lib/settings/variant-setting';
+import { readVariant, setVariant } from '$lib/rb/prefs.svelte';
 
 // How a MIDI runtime load failure reaches the user. app-init wires the error
 // toast in at boot (toastMidiLoadFailure), so this first-paint module does not
@@ -156,6 +160,7 @@ export const ALLOWED_SETTING_KEYS = [
 	'key_notation',
 	'beat_sync_max',
 	'deck_default_quantize',
+	'deck_needle_lock',
 	'preview_beat_sync',
 	'auto_play_enabled',
 	'auto_play_enforce_order',
@@ -211,6 +216,8 @@ export const ALLOWED_SETTING_KEYS = [
 	'wheel_sensitivity.trackpad',
 	'drag_sensitivity.base',
 	'drag_sensitivity.falloff_px',
+	'layout_override.performance',
+	'layout_override.library',
 	'crossfade_curve',
 	'horizontal_wheel_knob',
 	'perf_tier',
@@ -226,6 +233,10 @@ export type AllowedSettingKey = (typeof ALLOWED_SETTING_KEYS)[number];
 
 export function isAllowedSettingKey(key: string): key is AllowedSettingKey {
 	return (ALLOWED_SETTING_KEYS as readonly string[]).includes(key);
+}
+
+export function isKnownSettingKey(key: string): key is AllowedSettingKey | VariantSettingId {
+	return isAllowedSettingKey(key) || isVariantSettingId(key);
 }
 
 export type SettingValue = boolean | string;
@@ -252,6 +263,7 @@ const _LIBRARY_UI_PREF_KEYS = [
 	'key_notation',
 	'beat_sync_max',
 	'deck_default_quantize',
+	'deck_needle_lock',
 	'preview_beat_sync',
 	'auto_play_enabled',
 	'auto_play_enforce_order',
@@ -291,6 +303,8 @@ function _readLibraryUiPref(key: _LibraryUiPrefKey): SettingValue {
 			return uiPrefs.beat_sync_max;
 		case 'deck_default_quantize':
 			return uiPrefs.deck_default_quantize;
+		case 'deck_needle_lock':
+			return uiPrefs.deck_needle_lock;
 		case 'auto_play_enabled':
 			return uiPrefs.auto_play_enabled;
 		case 'auto_play_enforce_order':
@@ -494,6 +508,10 @@ function _readNumericAndExternalSetting(key: _NumericAndExternalSettingKey): Set
 			return String(uiPrefs.drag_sensitivity.base);
 		case 'drag_sensitivity.falloff_px':
 			return String(uiPrefs.drag_sensitivity.falloff_px);
+		case 'layout_override.performance':
+			return uiPrefs.layout_override.performance;
+		case 'layout_override.library':
+			return uiPrefs.layout_override.library;
 		case 'rb.midi_enabled':
 			return midiEnabledPersisted();
 		case 'auto_gain.enabled':
@@ -509,11 +527,13 @@ function _readNumericAndExternalSetting(key: _NumericAndExternalSettingKey): Set
 	}
 }
 
-export function readSettingValue(key: AllowedSettingKey): SettingValue {
-	if (_isLibraryUiPrefKey(key)) return _readLibraryUiPref(key);
-	if (_isAppearanceAndDeckUiPrefKey(key)) return _readAppearanceAndDeckUiPref(key);
-	if (_isConfirmSettingKey(key)) return _readConfirmSetting(key);
-	return _readNumericAndExternalSetting(key);
+export function readSettingValue(key: AllowedSettingKey | VariantSettingId): SettingValue {
+	if (isVariantSettingId(key)) return readVariant(key);
+	const allowed = key as AllowedSettingKey;
+	if (_isLibraryUiPrefKey(allowed)) return _readLibraryUiPref(allowed);
+	if (_isAppearanceAndDeckUiPrefKey(allowed)) return _readAppearanceAndDeckUiPref(allowed);
+	if (_isConfirmSettingKey(allowed)) return _readConfirmSetting(allowed);
+	return _readNumericAndExternalSetting(allowed);
 }
 
 /** KEYSHIFT-01..05: validates synchronously (a bad value throws at the call),
@@ -526,6 +546,13 @@ function _applyCompatibleFilterSetting(key: CompatibleFilterSettingKey, value: b
 }
 
 export function applySettingChange(key: string, value: SettingValue): void {
+	if (isVariantSettingId(key)) {
+		if (typeof value !== 'string') {
+			throw new Error(`${key} must be a string variant value, got ${String(value)}`);
+		}
+		setVariant(key, value);
+		return;
+	}
 	if (!isAllowedSettingKey(key)) {
 		throw new Error(`unknown or disallowed setting key: ${key}`);
 	}
@@ -562,6 +589,9 @@ export function applySettingChange(key: string, value: SettingValue): void {
 			return;
 		case 'deck_default_quantize':
 			setDeckDefaultQuantize(_asBool(value, key));
+			return;
+		case 'deck_needle_lock':
+			setDeckNeedleLock(_asBool(value, key));
 			return;
 		case 'auto_play_enabled':
 			setAutoPlayEnabled(_asBool(value, key));
@@ -797,6 +827,15 @@ export function applySettingChange(key: string, value: SettingValue): void {
 		case 'drag_sensitivity.falloff_px':
 			setDragSensitivity({ falloff_px: _asFactor(value, key) });
 			return;
+		case 'layout_override.performance':
+		case 'layout_override.library': {
+			if (typeof value !== 'string') {
+				throw new Error(`${key} must be a string preset, got ${String(value)}`);
+			}
+			const surface = key === 'layout_override.performance' ? 'performance' : 'library';
+			setLayoutOverride(surface, value);
+			return;
+		}
 		case 'crossfade_curve': {
 			if (value !== 'magic') {
 				throw new Error(`crossfade_curve must be magic until curves are built, got ${String(value)}`);

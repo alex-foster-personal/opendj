@@ -16,13 +16,17 @@ from typing import Any
 import numpy as np
 import pytest
 
-from apps.transition_score.contract import SCORER_VERSION, ScoreResult
+from apps.transition_score import signals
+from apps.transition_score.contract import CORE_FACTORS, SCORER_VERSION, ScoreResult
 from apps.transition_score.scorer import (
     ALIGNMENT_KNEE_MS,
+    BAND_FACTORS,
     BEAT_OFFSET_P95_VETO_MS,
     CUT_KNEE_MS,
+    LOUDNESS_KNEE_LU,
     LOUDNESS_LOSS_VETO_BARS,
     LOUDNESS_LOSS_VETO_ON,
+    PRIOR_WEIGHTS,
     RenderContext,
     score_render,
 )
@@ -65,7 +69,10 @@ def test_clean_render_scores_high_with_every_core_factor_measured() -> None:
     assert result.score is not None and result.score >= CLEAN_FLOOR, (
         "if the clean render scores low then M penalizes good transitions"
     )
-    assert result.scorer_version == SCORER_VERSION == "0.9.0"
+    assert result.scorer_version == SCORER_VERSION == "0.10.0"
+    for name in BAND_FACTORS:
+        assert name in result.factors and result.factors[name] >= 0.95
+    assert result.metrics["band_handover"] == "plan_step"
 
 
 def test_noise_band_is_small_against_the_drops() -> None:
@@ -95,6 +102,7 @@ MUTATIONS: dict[str, Mutation] = {
     "swap 26 ms late": Mutation(step_late_s=0.026),
     "1 s dropout": Mutation(gap_s=1.0),
     "6 LU under the outgoing natural level for 4 bars": Mutation(dip_lu=6.0, dip_bars=4.0),
+    "outgoing mids thin 3 LU": Mutation(out_mids_thin_lu=3.0),
 }
 
 
@@ -651,7 +659,7 @@ def test_a_bass_free_solo_reports_bass_overlap_unknown() -> None:
         assert "bass_overlap" not in result.factors
         assert "bass_both_full_beats" not in result.metrics
         assert result.measured.k == 6 and result.measured.n == 7
-        assert result.scorer_version == SCORER_VERSION == "0.9.0"
+        assert result.scorer_version == SCORER_VERSION == "0.10.0"
         assert result.score is not None
     pile = _score(Mutation(in_low_unheld=True))
     assert "bass_overlap" in pile.factors and pile.metrics["bass_both_full_beats"] >= 8
@@ -694,3 +702,78 @@ def test_low_hole_switch_waits_for_a_present_incoming_and_falls_back_to_the_hit(
     raw_out, raw_in = np.full(8, -40.0), np.full(8, -30.0)
     assert _content_switch(np.full(8, -8.7), raw_out, raw_in, beats, ctx) == 5
     assert _content_switch(np.full(8, -4.0), raw_out, raw_in, beats, ctx) == 0
+
+
+# ----- #10187: three-band continuity against the outgoing at unity -----------------------------------------
+
+
+def test_three_band_split_puts_each_tone_in_its_engine_band() -> None:
+    sr = 48000
+    length = sr
+    t = np.arange(length) / sr
+
+    def band_power(hz: float) -> dict[str, float]:
+        tone = np.sin(2 * np.pi * hz * t).astype(np.float64)
+        bands = signals.three_band(tone, sr)
+        return {name: float(np.mean(bands[name] ** 2)) for name in signals.ENGINE_BANDS}
+
+    for hz, own in ((100.0, "low"), (1000.0, "mid"), (10000.0, "high")):
+        power = band_power(hz)
+        for name, value in power.items():
+            if name == own:
+                assert value > 0.0
+            else:
+                assert value < power[own] / 100.0, (hz, name, value, power[own])
+
+
+@cache
+def _loudness_continuity_noise_band() -> float:
+    values = [_score(Mutation(), seed).factors["loudness_continuity"] for seed in NOISE_SEEDS]
+    return max(values) - min(values)
+
+
+@pytest.mark.requirement("TRANSAI-10187")
+def test_mids_thinning_3lu_drops_band_mid_below_the_knee_while_loudness_continuity_holds() -> None:
+    """[if] the outgoing mids thin 3 LU in the mix only [then] band_continuity_mid < 0.5, [else stop]."""
+    clean_lc = _score().factors["loudness_continuity"]
+    mutated = _score(Mutation(out_mids_thin_lu=3.0))
+    lc_band = _loudness_continuity_noise_band()
+    assert mutated.factors["band_continuity_mid"] < 0.5
+    assert mutated.metrics["band_deficit_lu_mid"] > LOUDNESS_KNEE_LU
+    assert mutated.factors["band_continuity_low"] > 0.9 and mutated.factors["band_continuity_high"] > 0.9
+    assert abs(clean_lc - mutated.factors["loudness_continuity"]) < max(2 * lc_band, MIN_DROP)
+
+
+def test_an_outgoing_breakdown_is_the_track_not_band_loss() -> None:
+    result = _score(Mutation(out_breakdown_lu=6.0))
+    for name in BAND_FACTORS:
+        assert result.factors[name] >= 0.95
+
+
+def test_without_the_outgoing_at_unity_the_band_factors_are_unknown_naming_the_file_never_zero() -> None:
+    mix, out_deck, in_deck, ctx = render()
+    result = score_render(mix, out_deck, in_deck, dataclasses.replace(ctx, out_natural=None))
+    for name in BAND_FACTORS:
+        assert name not in result.factors
+        reason = result.unknown[name]
+        assert "source" in reason and "decks/deck" in reason
+    assert result.score is not None
+
+
+def test_band_window_closes_at_the_handover_and_is_unknown_without_one() -> None:
+    from tests.transition_score.synth import BAR_S, SWAP_S
+
+    mix, out_deck, in_deck, ctx = render()
+    hit = SWAP_S - 4 * BAR_S
+    with_hit = score_render(mix, out_deck, in_deck, dataclasses.replace(ctx, bass_hit_s=hit))
+    assert with_hit.metrics["band_handover"] == "bass_hit"
+    assert with_hit.metrics["band_window_s"][1] == round(hit, 3)
+    no_step = score_render(mix, out_deck, in_deck, dataclasses.replace(ctx, steps=()))
+    for name in BAND_FACTORS:
+        assert name in no_step.unknown and "handover" in no_step.unknown[name]
+
+
+def test_band_continuity_weighs_a_tenth_each_and_is_not_core() -> None:
+    for name in BAND_FACTORS:
+        assert PRIOR_WEIGHTS[name] == 0.1
+        assert name not in CORE_FACTORS

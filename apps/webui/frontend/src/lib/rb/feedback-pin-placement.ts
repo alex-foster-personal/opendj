@@ -40,7 +40,7 @@ export function isPinSystemElement(el: Element): boolean {
 }
 
 function isSkipped(el: Element): boolean {
-	return hasPinSystemClass(el) || isSkippableRoot(el);
+	return isPinSystemElement(el) || isSkippableRoot(el);
 }
 
 /**

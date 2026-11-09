@@ -46,6 +46,9 @@ BENCHMARK_MIN_HASHES_PER_SECOND: Final[int] = 20_000
 TWO_DECK_LOOKAHEAD_BARS: Final[int] = 4
 FOUR_DECK_LOOKAHEAD_BARS: Final[int] = 8
 SUPPORTED_DECK_COUNTS: Final[frozenset[int]] = frozenset({2, 4})
+# Realistic DJ tempo range; outside it the lookahead division overflows (tiny BPM) or rounds to 0 ms (huge BPM).
+MIN_PLAN_BPM: Final[float] = 20.0
+MAX_PLAN_BPM: Final[float] = 400.0
 
 
 class LiveStemsCapabilityError(RuntimeError):
@@ -319,8 +322,10 @@ def plan_live_stems(
         )
     if not math.isfinite(bpm):
         raise LiveStemsCapabilityError(f"BPM must be finite, got {bpm}")
-    if bpm <= 0:
-        raise LiveStemsCapabilityError(f"BPM must be positive, got {bpm}")
+    if not MIN_PLAN_BPM <= bpm <= MAX_PLAN_BPM:
+        raise LiveStemsCapabilityError(
+            f"BPM must be between {MIN_PLAN_BPM:g} and {MAX_PLAN_BPM:g}, got {bpm}"
+        )
     lookahead_bars = (
         TWO_DECK_LOOKAHEAD_BARS if deck_count == 2 else FOUR_DECK_LOOKAHEAD_BARS
     )

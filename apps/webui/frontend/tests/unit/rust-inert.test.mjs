@@ -51,7 +51,7 @@ test('every mapped command is one Rust mode can refuse, never one it plays', () 
 	for (const cmd of [...Object.values(m.CONTROL_COMMANDS), ...opted, 'stem_mute']) {
 		assert.ok(refusable.has(cmd), `${cmd} is forwarded or Web Audio only`);
 	}
-	for (const played of ['play', 'cue', 'beat_sync', 'quantize', 'master', 'hot_cue_trigger', 'fader']) {
+	for (const played of ['play', 'cue', 'beat_sync', 'quantize', 'master', 'hot_cue_trigger', 'fader', 'key_sync']) {
 		assert.equal(Object.values(m.CONTROL_COMMANDS).includes(played), false, played);
 	}
 });

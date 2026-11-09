@@ -6,7 +6,7 @@
 //
 // Regression lines (single-line format per CLAUDE.md):
 //   if a TS device map changes without rerunning the export then broken
-//   if the export drops a registry map or reorders them then broken
+//   if the export drops a registry map or departs from registry order then broken
 //   if an exported nameMatch uses look-around, a backreference or \\p{..} then broken
 //   if a Mixtour Pro port resolves to the classic map, or the reverse, then broken
 
@@ -48,12 +48,18 @@ test('the committed engine export matches the page device maps byte for byte', a
 
 test('the export holds every registry map, in registry order', async () => {
 	const doc = JSON.parse(await renderExport());
-	// Positive control on content: the five maps the page registers, each with
-	// bindings, so an empty or partial registry cannot pass as "in sync".
+	const { DEVICE_MAP_REGISTRY } = await loadRegistry();
+	// The registry discovers its maps (#10560), so the order is the registry's own,
+	// not a list here. Positive control on content: maps that shipped first, each
+	// with bindings, so an empty or partial registry cannot pass as "in sync".
+	const names = doc.maps.map((m) => m.nameMatch);
 	assert.deepEqual(
-		doc.maps.map((m) => m.nameMatch),
-		['DDJ-FLX10', 'DDJ-400', PRO, CLASSIC, 'DDJ-FLX4', 'XDJ-RX3', 'XDJ-AZ']
+		names,
+		DEVICE_MAP_REGISTRY.map((m) => m.nameMatch)
 	);
+	for (const want of ['DDJ-FLX10', 'DDJ-400', PRO, CLASSIC, 'DDJ-FLX4']) {
+		assert.ok(names.includes(want), `${want} missing from the export`);
+	}
 	for (const m of doc.maps) assert.ok(m.bindings.length > 0, `${m.nameMatch} has no bindings`);
 });
 

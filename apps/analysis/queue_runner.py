@@ -590,6 +590,10 @@ def run_batch(
     batch = queue_store.get_batch(conn, batch_id)
     if batch is None:
         raise QueueError(f"no such batch {batch_id!r}")
+    if batch.state == queue_store.BATCH_CANCELLED:
+        raise QueueError(
+            f"batch {batch_id!r} is cancelled; resume it before running it"
+        )
     rid = runner_id or queue_store.new_runner_id()
     summary = RunSummary(batch_id=batch_id, runner_id=rid, workers=batch.workers)
 
@@ -599,10 +603,6 @@ def run_batch(
         )
     except RuntimeError as exc:
         raise QueueError(str(exc)) from exc
-    if batch.state == queue_store.BATCH_CANCELLED:
-        raise QueueError(
-            f"batch {batch_id!r} is cancelled; resume it before running it"
-        )
     if batch.workers < 1:
         queue_store.set_batch_state(conn, batch_id, queue_store.BATCH_DONE)
         queue_store.clear_batch_runner(conn, batch_id)

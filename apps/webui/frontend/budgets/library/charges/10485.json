@@ -1,0 +1,9 @@
+{
+  "bytes": 1024,
+  "measured_main": 333502,
+  "measured_with_pr": 334470,
+  "sha": "93571eaf0b",
+  "date": "Mon 9 Nov 2026",
+  "reason": "PR #10485 resolves #10199 (performance verb on the bus). Measured: CI bundle check of 93571eaf0b, +968 B gzip on library; ceiled to KiB",
+  "payback": "none planned; the growth is the feature's own code"
+}

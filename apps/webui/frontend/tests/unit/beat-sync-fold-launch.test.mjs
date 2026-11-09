@@ -41,11 +41,12 @@ test('control: an unfolded launch raises no fold notice', () => {
 
 test('SOURCE: the executor takes the fold off beat_sync and raises the notice on the shared path', () => {
 	const ipc = readFrontendSource('src/lib/rb/performance-ipc.svelte.ts');
+	const guards = readFrontendSource('src/lib/rb/performance-ipc-guards.ts');
 	assert.match(
-		ipc,
+		guards,
 		/_exactKeys\(record, \['type', 'deck', 'enabled', 'normalization', 'master'\]\);/
 	);
-	assert.match(ipc, /normalization: _beatSyncNormalization\(record\.normalization\)/);
+	assert.match(guards, /normalization: _beatSyncNormalization\(record\.normalization\)/);
 	assert.match(
 		ipc,
 		/\/\/ Before either engine[^\n]*\n\tif \(command\.type === 'beat_sync' && command\.enabled && command\.normalization !== undefined && command\.master !== undefined\) \{\n\t\treportFoldedLaunch\(command\.deck, command\.master, command\.normalization\);\n\t\}\n\tif \(await executeInRustEngine\(command, pushToast\)\)/
@@ -62,7 +63,7 @@ test('SOURCE: the executor takes the fold off beat_sync and raises the notice on
 });
 
 test('SOURCE: the command type names the optional fold and its master', () => {
-	const ipc = readFrontendSource('src/lib/rb/performance-ipc.svelte.ts');
+	const ipc = readFrontendSource('src/lib/rb/performance-ipc-types.ts');
 	assert.match(
 		ipc,
 		/\| \{ type: 'beat_sync'; deck: DeckId; enabled: boolean; normalization\?: 0\.5 \| 2; master\?: DeckId \}/

@@ -179,6 +179,24 @@ entries:
     install: "download just-1.58.0-x86_64-unknown-linux-musl.tar.gz from github.com/casey/just releases (sha256-pinned by the installer) into /usr/local/bin"
     verify: "just --version"
     notes: "must resolve BEFORE apt's /usr/bin/just 1.21 on the runner PATH; the justfile uses syntax 1.21 lacks"
+  - name: ci-workspace-own
+    kind: binary
+    version: "/usr/local/sbin/ci-workspace-own"
+    source: agentbox
+    provides: [ci-workspace-own]
+    needed_by: [pytest, e2e, periodic, trunk]
+    install: "fleet-af ci--hosts/ansible security role: root-owned 0755 /usr/local/sbin/ci-workspace-own, named in /etc/sudoers.d/ghrunner"
+    verify: "test -x /usr/local/sbin/ci-workspace-own && sudo -n -l /usr/local/sbin/ci-workspace-own"
+    notes: "the only root file action a job may take on the fleet hosts: count, list, reclaim and give-root on a path inside a runner work tree. Every pre-checkout hygiene step calls it when installed and falls back to raw sudo find only where it is absent (GitHub-hosted)"
+  - name: ci-apt-install
+    kind: binary
+    version: "/usr/local/sbin/ci-apt-install"
+    source: agentbox
+    provides: [ci-apt-install]
+    needed_by: [pytest, e2e, periodic, release-check]
+    install: "fleet-af ci--hosts/ansible security role: root-owned 0755 /usr/local/sbin/ci-apt-install and its allowlist /etc/ci-apt-allowlist, named in /etc/sudoers.d/ghrunner"
+    verify: "test -x /usr/local/sbin/ci-apt-install && sudo -n -l /usr/local/sbin/ci-apt-install"
+    notes: "the only apt install a job may run as root on the fleet hosts; scripts/ci_apt_install.sh calls it when installed. A package missing from fleet-af roles/security/files/ci-apt-allowlist fails the job naming it"
   - name: gh
     kind: binary
     version: "2.100.0"

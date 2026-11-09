@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 from typing import Any
 
@@ -9,7 +10,7 @@ import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
-from apps.transition_score import SCORER_VERSION, Candidate, Measured
+from apps.transition_score.contract import SCORER_VERSION, Candidate, Measured
 from apps.transition_score.live import DeckNotPlannable, LiveAnswer, LiveRequest, PlanCache
 from apps.webui.server.deps import get_library_data_dir, get_library_state_db
 from apps.webui.server.routes import dj_transition
@@ -21,26 +22,28 @@ BODY = {"out_deck": 1, "in_deck": 2, "intent": "energy_up", "recent_styles": ["w
 def _candidate() -> Candidate:
     return Candidate(
         id="c2",
-        plan={
-            "style": "long_blend",
-            "out": {"deck": 1, "track": "out", "window": {"start_bar": 97, "bars": 32}},
-            "in": {
-                "deck": 2,
-                "track": "in",
-                "window": {"start_bar": 40, "bars": 32},
-                "trim_db": -1.0,
-                "trim_reason": "save-on-run match",
-            },
-            "rationale": "leave at bar 97",
-        },
+        plan_json=json.dumps(
+            {
+                "style": "long_blend",
+                "out": {"deck": 1, "track": "out", "window": {"start_bar": 97, "bars": 32}},
+                "in": {
+                    "deck": 2,
+                    "track": "in",
+                    "window": {"start_bar": 40, "bars": 32},
+                    "trim_db": -1.0,
+                    "trim_reason": "save-on-run match",
+                },
+                "rationale": "leave at bar 97",
+            }
+        ),
         plan_sha256="sha",
         style="long_blend",
         bars=32,
-        metrics={},
-        factors={},
+        metrics_json=json.dumps({}),
+        factors_json=json.dumps({}),
         vetoes=(),
         measured=Measured(k=5, n=7),
-        unknown={},
+        unknown_json=json.dumps({}),
         score=0.41,
         scorer_version=SCORER_VERSION,
         render_ms=1.0,
@@ -61,9 +64,7 @@ def app(tmp_path: Path) -> FastAPI:
 def _planner(monkeypatch: pytest.MonkeyPatch, answer: LiveAnswer) -> list[LiveRequest]:
     calls: list[LiveRequest] = []
 
-    def fake(
-        request: LiveRequest, *, autodj: Any, mirror: Any, source: Any, cache: Any, saved_for: Any
-    ) -> LiveAnswer:
+    def fake(request: LiveRequest, *, autodj: Any, mirror: Any, source: Any, cache: Any, saved_for: Any) -> LiveAnswer:
         mirror()  # the route's own reader runs: a closed page must surface as its 409
         calls.append(request)
         return answer
@@ -148,9 +149,7 @@ def test_prepare_runs_once_per_pair_and_reports_progress(app: FastAPI, monkeypat
     app.state.ui_mirror = {"decks": {"1": {"stable_id": "a"}, "2": {"stable_id": "b"}}}
     jobs: list[LiveRequest] = []
 
-    def fake(
-        request: LiveRequest, key: Any, *, autodj: Any, mirror: Any, source: Any, cache: PlanCache
-    ) -> None:
+    def fake(request: LiveRequest, key: Any, *, autodj: Any, mirror: Any, source: Any, cache: PlanCache) -> None:
         jobs.append(request)
         cache.finish(key, "ready")
 

@@ -177,3 +177,78 @@ test('stem row paints nothing without a positive track duration or pitch', () =>
 	});
 	assert.equal(rec.fills.length, 100, 'track seconds 0..10 sit right of center at 10 px/s');
 });
+
+// PERF-PAINT-02 (issue #10221): StemWaveRow reads its --rb-stem-<id> token once
+// per theme/palette/skin/stem change, not on every scrollPx paint. The harness
+// mirrors StemWaveRow's two effects on the REAL Svelte scheduler and uiPrefs.
+const ROW_HARNESS = [
+	"export { uiPrefs } from '$lib/rb/prefs.svelte';",
+	"import { flushSync } from 'svelte';",
+	"import { uiPrefs } from '$lib/rb/prefs.svelte';",
+	"import { stemWaveRowColorFromElement } from '$lib/components/rb/wave/stem-waveform-ui';",
+	'export function mountRow(el: Element, stem: string) {',
+	'	const st = $state({ scrollPx: 0 });',
+	'	let stemColor: string | null = $state(null);',
+	'	const painted: string[] = [];',
+	'	const stop = $effect.root(() => {',
+	'		$effect(() => { void uiPrefs.theme; void uiPrefs.wave_palette; void uiPrefs.ui_skin; stemColor = stemWaveRowColorFromElement(el, stem as never); });',
+	'		$effect(() => { void st.scrollPx; if (stemColor === null) return; painted.push(stemColor); });',
+	'	});',
+	'	flushSync();',
+	'	return { painted, stop, scroll(px: number) { st.scrollPx = px; flushSync(); }, flush() { flushSync(); } };',
+	'}'
+].join('\n');
+
+function countingComputedStyle(tokenRef) {
+	const calls = { n: 0 };
+	globalThis.getComputedStyle = () => {
+		calls.n += 1;
+		return { getPropertyValue: () => tokenRef.value };
+	};
+	return calls;
+}
+
+test('if 60 stem row paints with a moving scrollPx call getComputedStyle more than once then broken', async () => {
+	const { loadRuneModule } = await import('./load-rune-module.mjs');
+	const live = await loadRuneModule(ROW_HARNESS);
+	const token = { value: '#11aa22' };
+	const calls = countingComputedStyle(token);
+	const row = live.mountRow({}, 'drums');
+	for (let i = 1; i < 60; i += 1) row.scroll(i * 3);
+	row.stop();
+	assert.equal(row.painted.length, 60, 'every scroll step must paint');
+	assert.equal(calls.n, 1, `token read ${calls.n} times over 60 paints, expected 1`);
+});
+
+test('if a ui_skin change does not re-read the stem token exactly once and repaint with it then broken', async () => {
+	const { loadRuneModule } = await import('./load-rune-module.mjs');
+	const live = await loadRuneModule(ROW_HARNESS);
+	const token = { value: '#11aa22' };
+	const calls = countingComputedStyle(token);
+	const row = live.mountRow({}, 'bass');
+	token.value = '#ff0000';
+	live.uiPrefs.ui_skin = live.uiPrefs.ui_skin === 'light' ? 'mono-dev' : 'light';
+	row.flush();
+	row.scroll(42);
+	row.stop();
+	assert.equal(calls.n, 2, `expected one read at mount and one per skin change, got ${calls.n}`);
+	assert.equal(
+		row.painted.at(-1).toLowerCase(),
+		'#ff0000',
+		'next paint must use the new skin colour'
+	);
+});
+
+test('if stemWaveRowColorFromElement colours differ from stemWaveRowColor for any stem then broken', async () => {
+	const ui = await loadTypeScriptModule('src/lib/components/rb/wave/stem-waveform-ui.ts');
+	for (const token of ['', ' #123456 ']) {
+		globalThis.getComputedStyle = () => ({ getPropertyValue: () => token });
+		for (const stem of ['vocal', 'instrumental', 'drums', 'bass', 'other']) {
+			assert.equal(
+				ui.stemWaveRowColorFromElement({}, stem),
+				ui.stemWaveRowColor(stem, token),
+				stem
+			);
+		}
+	}
+});

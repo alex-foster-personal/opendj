@@ -15,8 +15,7 @@ import math
 import sqlite3
 from collections.abc import Iterable, Sequence
 from dataclasses import dataclass, field
-from datetime import UTC, datetime
-
+from ._time import _now_iso
 from .events import emit_playlist_component_changed
 from .schema import apply_playlist_set_migrations, write_unit
 
@@ -62,10 +61,6 @@ class RouteListing:
     routes: list[Route]
     total: int
     truncated: bool
-
-
-def _now_iso() -> str:
-    return datetime.now(UTC).isoformat()
 
 
 def _clean(value: str, what: str) -> str:

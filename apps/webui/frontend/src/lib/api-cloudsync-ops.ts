@@ -20,7 +20,8 @@ type Schemas = components['schemas'];
 export type CloudSyncConfigOut = Schemas['CloudSyncConfigOut'];
 export type CloudSyncConfigBody = Schemas['CloudSyncConfig'];
 export type SyncRunBody = Schemas['SyncRunIn'];
-export type SyncRunOut = Schemas['SyncRunOut'];
+/** OpenAPI emits two `SyncRunOut` models (ops vs overview); the generator namespaces both. */
+export type SyncRunOut = Schemas['apps__webui__server__routes__cloudsync_ops__SyncRunOut'];
 export type FleetOut = Schemas['FleetOut'];
 export type GrantIn = Schemas['GrantIn'];
 export type GrantOut = Schemas['GrantOut'];

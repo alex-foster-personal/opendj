@@ -44,8 +44,16 @@ import numpy as np
 
 from apps.autodj.http import RenderLayout, TrackProfile, TransitionPlan, build_service
 from apps.transition_score.contract import SCORER_VERSION, ScoreResult
-from apps.transition_score.scorer import PRIOR_WEIGHTS, RenderContext, composite, loudness_checks, score_render
-from apps.transition_score.tryer import incoming_on_render_clock, outgoing_natural, rendered_steps
+from apps.transition_score.http import (
+    PRIOR_WEIGHTS,
+    RenderContext,
+    composite,
+    incoming_on_render_clock,
+    loudness_checks,
+    outgoing_natural,
+    rendered_steps,
+    score_render,
+)
 
 PLAYED_CONTEXT_BARS = 2
 RATE = 48000

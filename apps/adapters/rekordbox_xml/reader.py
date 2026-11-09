@@ -9,6 +9,8 @@ write it::
         <TRACK TrackID="1" Name=".." Artist=".." Album=".." TotalTime="242"
                AverageBpm="128.00" Tonality="Am" Rating="204" PlayCount="7"
                Comments=".." Colour="0xFF007F"
+               Genre="House" Label=".." Year="2019" DateAdded="2026-11-08"
+               BitRate="320" SampleRate="44100" Size="9812345"
                Location="file://localhost/Volumes/Invented%20DJ/a.mp3">
           <TEMPO Inizio="0.025" Bpm="128.00" Metro="4/4" Battito="1"/>
           <POSITION_MARK Name="Drop" Type="0" Start="32.0" Num="2"/>
@@ -28,7 +30,9 @@ write it::
 are seconds. ``Rating`` is 0, 51, 102, 153, 204 or 255 for 0-5 stars. A
 playlist's ``KeyType`` is 0 when ``Key`` is a ``TrackID`` and 1 when it is a
 ``Location``; a NODE's ``Type`` is 0 for a folder and 1 for a playlist.
-Anything else in either attribute stops the read.
+Anything else in either attribute stops the read. Descriptive TRACK attributes
+become ``x_*`` extensions: stripped strings; Year, BitRate, SampleRate and Size
+as ints; DateAdded as an ISO ``YYYY-MM-DD`` string.
 
 Parsing uses the standard library's expat, whose entity-expansion limits
 (expat 2.4 and later) refuse a "billion laughs" document.
@@ -36,7 +40,9 @@ Parsing uses the standard library's expat, whose entity-expansion limits
 
 from __future__ import annotations
 
+import datetime as _dt
 import math
+import re
 import xml.etree.ElementTree as ET
 from collections.abc import Iterator
 from dataclasses import dataclass
@@ -59,6 +65,23 @@ _MARK_TYPES: dict[str, CueType] = {
 _PADS = 8
 #: ``Rating`` encodes 0-5 stars in steps of 51.
 _RATINGS = {stars * 51: stars for stars in range(6)}
+#: TRACK attributes kept verbatim (stripped) as extensions.
+_TEXT_EXTENSIONS = (
+    ("Genre", "x_genre"),
+    ("Label", "x_label"),
+    ("Remixer", "x_remixer"),
+    ("Composer", "x_composer"),
+    ("Grouping", "x_grouping"),
+    ("Mix", "x_mix"),
+)
+#: Whole-number TRACK attributes kept as int extensions. rekordbox writes 0 for unknown.
+_INT_EXTENSIONS = (
+    ("Year", "x_year"),
+    ("BitRate", "x_bitrate"),
+    ("SampleRate", "x_sample_rate"),
+    ("Size", "x_size"),
+)
+_DATEADDED_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
 
 
 @dataclass(frozen=True)
@@ -223,9 +246,8 @@ def _read_track(el: ET.Element) -> Track | None:
     path = location_to_path(el.get("Location") or "")
     if path is None:
         return None
-    comment = (el.get("Comments") or "").strip()
     artist = (el.get("Artist") or "").strip()
-    extensions: dict[str, object] = {"x_comment": comment} if comment else {}
+    extensions = _track_extensions(el)
     return Track(
         track_id=track_id,
         file_path=path,
@@ -244,6 +266,41 @@ def _read_track(el: ET.Element) -> Track | None:
         beats=tuple(_read_tempo(el)),
         extensions=extensions,
     )
+
+
+def _track_extensions(el: ET.Element) -> dict[str, object]:
+    extensions: dict[str, object] = {}
+    comment = (el.get("Comments") or "").strip()
+    if comment:
+        extensions["x_comment"] = comment
+    for attr, key in _TEXT_EXTENSIONS:
+        text = (el.get(attr) or "").strip()
+        if text:
+            extensions[key] = text
+    for attr, key in _INT_EXTENSIONS:
+        raw = el.get(attr)
+        if raw is None or not raw.strip():
+            continue
+        value = _count(raw, attr)
+        if value > 0:
+            extensions[key] = value
+    date_added = _date(el.get("DateAdded"), "DateAdded")
+    if date_added is not None:
+        extensions["x_date_added"] = date_added
+    return extensions
+
+
+def _date(raw: str | None, name: str) -> str | None:
+    if raw is None or not raw.strip():
+        return None
+    text = raw.strip()
+    if not _DATEADDED_RE.fullmatch(text):
+        raise ValueError(f"{name}={raw!r} is not a YYYY-MM-DD date")
+    try:
+        parsed = _dt.date.fromisoformat(text)
+    except ValueError:
+        raise ValueError(f"{name}={raw!r} is not a YYYY-MM-DD date") from None
+    return parsed.isoformat()
 
 
 def _track_bpm(raw: str | None) -> float | None:

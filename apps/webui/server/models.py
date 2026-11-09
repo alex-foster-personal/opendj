@@ -30,6 +30,24 @@ class BpmAlternative(BaseModel):
     bpm: float
 
 
+class AnlzMikEnergySegmentOut(BaseModel):
+    """One MIK energy segment on ``GET /tracks/{stable_id}/anlz``."""
+
+    start_s: float
+    end_s: float
+    level: int = Field(ge=1, le=10)
+    source: Literal["mik"]
+    start_clamped: bool
+
+
+class AnlzMikEnergyOut(BaseModel):
+    """MIK energy series and scalar merged at serve time on ``/anlz``."""
+
+    energy_segments: list[AnlzMikEnergySegmentOut]
+    energy_level: int | None = Field(default=None, ge=1, le=10)
+    energy_source: Literal["mik", "none"]
+
+
 class ProvenanceOut(BaseModel):
     """One field's value plus where it came from and whether it is real.
 

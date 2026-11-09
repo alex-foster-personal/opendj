@@ -174,31 +174,44 @@ async def _refuse(send: _Send, status: int, detail: str) -> None:
 class ListenerGuard:
     """ASGI guard in front of the listener's one route, run before any parsing.
 
-    - an ``Origin`` header (any browser page, including a no-cors drive-by) -> 403
+    - an ``Origin`` header (any browser page, including a no-cors drive-by) -> 403,
+      unless ``allowed_origin`` is set and matches (remote-control listener page)
     - a ``Host`` that is not an IP literal (DNS rebinding) -> 403
     - a POST that is not ``application/json`` (a no-cors text/plain form) -> 415
-    - a body over MAX_BODY_BYTES, declared or streamed -> 413
+    - a body over ``max_body_bytes``, declared or streamed -> 413
     - a body that does not arrive within BODY_READ_TIMEOUT_S -> 408
 
     The body is read here, bounded, and replayed to the app, so FastAPI never
-    parses more than MAX_BODY_BYTES.
+    parses more than ``max_body_bytes``.
     """
 
-    def __init__(self, app: _Asgi) -> None:
+    def __init__(
+        self,
+        app: _Asgi,
+        *,
+        allowed_origin: str | None = None,
+        max_body_bytes: int = MAX_BODY_BYTES,
+    ) -> None:
         self.app = app
+        self.allowed_origin = allowed_origin
+        self.max_body_bytes = max_body_bytes
 
     async def __call__(self, scope: _Scope, receive: _Receive, send: _Send) -> None:
         if scope["type"] != "http":
             await self.app(scope, receive, send)
             return
-        refusal = _header_refusal(scope)
+        client_refusal = _client_refusal(scope)
+        if client_refusal is not None:
+            await _refuse(send, *client_refusal)
+            return
+        refusal = _header_refusal(scope, allowed_origin=self.allowed_origin, max_body_bytes=self.max_body_bytes)
         if refusal is not None:
             await _refuse(send, *refusal)
             return
         if scope["method"] != "POST":
             await self.app(scope, receive, send)
             return
-        read = await _bounded_body(receive)
+        read = await _bounded_body(receive, max_body_bytes=self.max_body_bytes)
         if read is None:
             return  # the client disconnected mid-body
         if isinstance(read, tuple):
@@ -216,10 +229,33 @@ class ListenerGuard:
         await self.app(scope, replay, send)
 
 
-def _header_refusal(scope: _Scope) -> tuple[int, str] | None:
+def _client_refusal(scope: _Scope) -> tuple[int, str] | None:
+    client = scope.get("client")
+    if client is None:
+        return 403, "client address missing"
+    try:
+        address = ipaddress.ip_address(client[0])
+    except ValueError:
+        return 403, "client address is not an IP"
+    reason = lan_refusal(address)
+    if reason is not None:
+        return 403, f"client is {reason}; listener is LAN only"
+    return None
+
+
+def _header_refusal(
+    scope: _Scope,
+    *,
+    allowed_origin: str | None = None,
+    max_body_bytes: int = MAX_BODY_BYTES,
+) -> tuple[int, str] | None:
     headers = {k.decode("latin-1").lower(): v.decode("latin-1") for k, v in scope["headers"]}
     if "origin" in headers:
-        return 403, "browser requests are refused (Origin header present)"
+        origin = headers["origin"]
+        if allowed_origin is None:
+            return 403, "browser requests are refused (Origin header present)"
+        if origin != allowed_origin:
+            return 403, "Origin does not match this listener"
     if not host_is_ip_literal(headers.get("host")):
         return 403, "Host must be an IP address, not a name"
     if scope["method"] != "POST":
@@ -228,12 +264,12 @@ def _header_refusal(scope: _Scope) -> tuple[int, str] | None:
     if content_type != "application/json":
         return 415, "the offer must be application/json"
     declared = headers.get("content-length")
-    if declared is not None and (not declared.isdigit() or int(declared) > MAX_BODY_BYTES):
-        return 413, f"the offer exceeds {MAX_BODY_BYTES} bytes"
+    if declared is not None and (not declared.isdigit() or int(declared) > max_body_bytes):
+        return 413, f"the offer exceeds {max_body_bytes} bytes"
     return None
 
 
-async def _bounded_body(receive: _Receive) -> bytes | tuple[int, str] | None:
+async def _bounded_body(receive: _Receive, *, max_body_bytes: int = MAX_BODY_BYTES) -> bytes | tuple[int, str] | None:
     """The whole body, a refusal (413 too big, 408 too slow), or None on disconnect."""
     chunks: list[bytes] = []
     size = 0
@@ -245,8 +281,8 @@ async def _bounded_body(receive: _Receive) -> bytes | tuple[int, str] | None:
                     return None
                 chunk = message.get("body", b"")
                 size += len(chunk)
-                if size > MAX_BODY_BYTES:
-                    return 413, f"the offer exceeds {MAX_BODY_BYTES} bytes"
+                if size > max_body_bytes:
+                    return 413, f"the offer exceeds {max_body_bytes} bytes"
                 chunks.append(chunk)
                 if not message.get("more_body", False):
                     return b"".join(chunks)

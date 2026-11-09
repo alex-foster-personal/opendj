@@ -10,6 +10,7 @@ Single-line intent, one assertion block each:
 """
 from __future__ import annotations
 
+import os
 from concurrent.futures import Future
 from pathlib import Path
 
@@ -81,6 +82,116 @@ def test_a_live_runner_refuses_a_second_concurrent_drain(
     )
     with pytest.raises(queue_api.QueueError, match="already being drained"):
         run_batch(conn, result.batch_id, backend_cls=BeatgridProbeV1)
+    conn.close()
+
+
+@pytest.mark.requirement("NATIVE-8905")
+def test_resume_refuses_while_a_live_runner_pid_is_alive(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """[if] resume hits a live runner pid [then] it raises naming that pid, [else stop]."""
+    db = tmp_path / "state.db"
+    conn = open_conn(db)
+    result = queue_api.enqueue(conn, [_candidate("a", tmp_path)])
+    batch = queue_store.get_batch(conn, result.batch_id)
+    assert batch is not None
+    workers_before = batch.workers
+    band_before = batch.band
+    conn.execute(
+        "UPDATE analysis_queue_batch SET state = ?, active_runner_pid = ? "
+        "WHERE batch_id = ?",
+        (queue_store.BATCH_RUNNING, 999_999, result.batch_id),
+    )
+    conn.commit()
+    monkeypatch.setattr(
+        queue_batch_lease, "pid_is_alive", lambda pid: int(pid) == 999_999
+    )
+    with pytest.raises(queue_api.QueueError) as exc_info:
+        queue_api.resume(conn, result.batch_id)
+    msg = str(exc_info.value)
+    assert "999999" in msg
+    assert "drained" in msg or "runner" in msg
+    items = queue_store.list_items(conn, result.batch_id)
+    assert all(i.state == queue_store.ITEM_PENDING for i in items)
+    batch = queue_store.get_batch(conn, result.batch_id)
+    assert batch is not None
+    assert batch.state == queue_store.BATCH_RUNNING
+    assert batch.workers == workers_before
+    assert batch.band == band_before
+    conn.close()
+
+
+@pytest.mark.requirement("NATIVE-8905")
+def test_resume_refuses_after_cancel_while_the_runner_pid_is_still_alive(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """[if] cancel left a live pid [then] resume refuses until that pid exits, [else stop]."""
+    db = tmp_path / "state.db"
+    conn = open_conn(db)
+    result = queue_api.enqueue(conn, [_candidate("a", tmp_path)])
+    item = queue_store.claim_next(conn, result.batch_id, runner_id="runner-a")
+    assert item is not None
+    assert item.state == queue_store.ITEM_RUNNING
+    queue_api.cancel(conn, result.batch_id)
+    conn.execute(
+        "UPDATE analysis_queue_batch SET active_runner_pid = ? WHERE batch_id = ?",
+        (999_999, result.batch_id),
+    )
+    conn.commit()
+    monkeypatch.setattr(
+        queue_batch_lease, "pid_is_alive", lambda pid: int(pid) == 999_999
+    )
+    with pytest.raises(queue_api.QueueError) as exc_info:
+        queue_api.resume(conn, result.batch_id)
+    assert "999999" in str(exc_info.value)
+    items = queue_store.list_items(conn, result.batch_id)
+    assert all(i.state == queue_store.ITEM_CANCELLED for i in items)
+    batch = queue_store.get_batch(conn, result.batch_id)
+    assert batch is not None
+    assert batch.state == queue_store.BATCH_CANCELLED
+    conn.close()
+
+
+@pytest.mark.requirement("NATIVE-8905")
+def test_resume_of_a_dead_runner_pid_still_revives(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """[if] the runner pid is dead [then] resume revives the abandoned items, [else stop]."""
+    db = tmp_path / "state.db"
+    conn = open_conn(db)
+    result = queue_api.enqueue(conn, [_candidate("a", tmp_path)])
+    queue_api.cancel(conn, result.batch_id)
+    conn.execute(
+        "UPDATE analysis_queue_batch SET active_runner_pid = ? WHERE batch_id = ?",
+        (999_999, result.batch_id),
+    )
+    conn.commit()
+    monkeypatch.setattr(queue_batch_lease, "pid_is_alive", lambda _pid: False)
+    revived = queue_api.resume(conn, result.batch_id)
+    assert revived >= 1
+    batch = queue_store.get_batch(conn, result.batch_id)
+    assert batch is not None
+    assert batch.state == queue_store.BATCH_QUEUED
+    conn.close()
+
+
+@pytest.mark.requirement("NATIVE-8905")
+def test_resume_refuses_even_when_the_live_pid_is_this_process(
+    tmp_path: Path,
+) -> None:
+    """[if] resume runs in the draining process [then] it still refuses, [else stop]."""
+    db = tmp_path / "state.db"
+    conn = open_conn(db)
+    result = queue_api.enqueue(conn, [_candidate("a", tmp_path)])
+    conn.execute(
+        "UPDATE analysis_queue_batch SET state = ?, active_runner_pid = ? "
+        "WHERE batch_id = ?",
+        (queue_store.BATCH_RUNNING, os.getpid(), result.batch_id),
+    )
+    conn.commit()
+    with pytest.raises(queue_api.QueueError) as exc_info:
+        queue_api.resume(conn, result.batch_id)
+    assert str(os.getpid()) in str(exc_info.value)
     conn.close()
 
 

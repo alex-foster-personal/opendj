@@ -25,6 +25,7 @@ from ..models import (
     PlaylistTracksPage,
     TrackRowOut,
 )
+from ..playlist_text_export import TEXT_EXPORT_MEDIA_TYPE, TextExportTrack, export_filename, playlist_text_export
 from .tracks import AvailableFilter, keep_by_availability
 
 router = APIRouter(prefix="/playlists", tags=["playlists"])
@@ -299,6 +300,39 @@ def get_playlist_thumbnail(
     if data is None:
         return Response(content=thumbs.PLACEHOLDER_SVG, media_type="image/svg+xml", headers=headers)
     return Response(content=data, media_type="image/jpeg", headers=headers)
+
+
+@router.get(
+    "/{playlist_id}/export.txt",
+    response_class=Response,
+    responses={200: {"content": {"text/plain": {}}}},
+)
+def export_playlist_text(
+    playlist_id: str,
+    backend: StateBackend = Depends(get_read_state),  # noqa: B008  # FastAPI DI
+) -> Response:
+    """A playlist as a tab-separated UTF-8 track list (LIBORG-10314, rekordbox .txt export).
+
+    Header row ``#, Title, Artist, BPM, Key, Time``, then one row per track in playlist order.
+    Agent parity: ``opendj playlist export <id> --format txt [--out FILE]``.
+    """
+    pl = backend.get_playlist(playlist_id)
+    tracks_map = backend.get_tracks_bulk(list(pl.items))
+    missing = [sid for sid in pl.items if sid not in tracks_map]
+    if missing:
+        raise HTTPException(status_code=500, detail={
+            "code": "PLAYLIST_MEMBER_MISSING",
+            "message": f"playlist {playlist_id} references {len(missing)} stable_ids with no track row (first: {missing[:5]})",
+        })
+    body = playlist_text_export(
+        TextExportTrack(title=t.title, artist=t.artist, bpm=t.bpm, key=t.key, duration_ms=t.duration_ms)
+        for t in (tracks_map[sid] for sid in pl.items)
+    )
+    return Response(
+        content=body.encode("utf-8"),
+        media_type=TEXT_EXPORT_MEDIA_TYPE,
+        headers={"Content-Disposition": f'attachment; filename="{export_filename(pl.name)}"'},
+    )
 
 
 @router.get("/{playlist_id}", response_model=PlaylistDetail)

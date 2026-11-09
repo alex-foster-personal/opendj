@@ -12,6 +12,7 @@ Both are called from ``_row_to_track`` / ``_fetch_fields``. Neither writes.
 from __future__ import annotations
 
 import sqlite3
+from pathlib import Path
 
 from apps.analysis import lanes as analysis_lanes
 from apps.analysis import selection as analysis_selection
@@ -25,10 +26,15 @@ from apps.analysis.selection import OWN_ANALYSIS_SOURCE as _OWN_ANALYSIS_SOURCE
 from apps.analysis.selection import EffectiveField
 
 
-def _rb_mapped_for_batch(stable_ids: list[str]) -> dict[str, bool]:
+def _rb_mapped_for_batch(
+    stable_ids: list[str], state_db_path: Path | None = None
+) -> dict[str, bool]:
     from apps.webui.server.rb_vendor_pkg.track_rows import bulk_rb_meta
 
-    metas = bulk_rb_meta(stable_ids)
+    if state_db_path is not None:
+        metas = bulk_rb_meta(stable_ids, state_db_path=state_db_path)
+    else:
+        metas = bulk_rb_meta(stable_ids)
     return {sid: sid in metas for sid in stable_ids}
 
 
@@ -53,7 +59,10 @@ def _batch_needs_lane_owned_fields(
 
 
 def lane_owned_fields(
-    conn: sqlite3.Connection, stable_ids: list[str],
+    conn: sqlite3.Connection,
+    stable_ids: list[str],
+    *,
+    state_db_path: Path | None = None,
 ) -> dict[str, dict[str, EffectiveField]]:
     """Lane-owned scalars from :func:`effective_fields`, with a safe skip.
 
@@ -63,10 +72,13 @@ def lane_owned_fields(
     a missing rekordbox one (PGCL-7693). Unmapped standalone libraries always
     read ``analysis_projection`` even when the global default is still rbx
     (STANDALONE-02/06).
+
+    ``state_db_path`` names the DB whose vendor mappings apply when it is not
+    the process default (library export).
     """
     if not stable_ids:
         return {}
-    rb_mapped = _rb_mapped_for_batch(stable_ids)
+    rb_mapped = _rb_mapped_for_batch(stable_ids, state_db_path)
     if not _batch_needs_lane_owned_fields(
         conn, stable_ids, rb_mapped
     ) and not analysis_selection.batch_has_missing_rbx_with_own(conn, stable_ids):

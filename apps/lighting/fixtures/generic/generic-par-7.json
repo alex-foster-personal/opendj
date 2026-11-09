@@ -1,0 +1,64 @@
+{
+  "id": "generic-par-7",
+  "name": "Generic RGB Par 7ch",
+  "kind": "par",
+  "modes": [
+    {
+      "name": "7ch",
+      "channels": [
+        {
+          "capability": "intensity"
+        },
+        {
+          "capability": "red"
+        },
+        {
+          "capability": "green"
+        },
+        {
+          "capability": "blue"
+        },
+        {
+          "capability": "strobe",
+          "ranges": [
+            {
+              "from": 0,
+              "to": 9,
+              "meaning": "off"
+            },
+            {
+              "from": 10,
+              "to": 255,
+              "meaning": "slow..fast"
+            }
+          ]
+        },
+        {
+          "capability": "macro",
+          "ranges": [
+            {
+              "from": 0,
+              "to": 9,
+              "meaning": "off"
+            },
+            {
+              "from": 10,
+              "to": 255,
+              "meaning": "colour macros"
+            }
+          ]
+        },
+        {
+          "capability": "generic",
+          "ranges": [
+            {
+              "from": 0,
+              "to": 255,
+              "meaning": "macro speed slow..fast"
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

@@ -34,18 +34,19 @@ from apps.autodj.http import (
     save_decision,
 )
 from apps.shared.state import db as state_db_module
-from apps.transition_score.live import (
+from apps.transition_score.http import (
     DeckNotPlannable,
     LiveAnswer,
     LiveRequest,
+    PairNotTryable,
     PlanCache,
-    _bar_now,
-    _key,
-    _track,
+    TryError,
     plan_live,
     prepare_live,
 )
-from apps.transition_score.tryer import PairNotTryable, TryError
+from apps.transition_score.http import deck_bar_now as _bar_now
+from apps.transition_score.http import deck_track as _track
+from apps.transition_score.http import prepare_key as _key
 
 from ..deps import get_library_data_dir, get_library_state_db
 from ..errors import ErrorBody
@@ -370,9 +371,7 @@ def decide_transition(
     live = LiveRequest(body.out_deck, body.in_deck, body.intent, tuple(body.recent_styles))
     try:
         out_id = _track(autodj, mirror, body.out_deck)
-        out_profile = autodj.heard_on_deck(
-            source.profile(out_id), _deck_state(mirror, body.out_deck), with_tempo=True
-        )
+        out_profile = autodj.heard_on_deck(source.profile(out_id), _deck_state(mirror, body.out_deck), with_tempo=True)
         bar_now = _bar_now(autodj, out_profile, mirror, body.out_deck)
     except DeckNotPlannable as error:
         return _refusal(status.HTTP_422_UNPROCESSABLE_CONTENT, "deck_empty", str(error))
@@ -382,9 +381,7 @@ def decide_transition(
     follower_range = _deck_state(mirror, body.in_deck).get("pitch_range")
     reach = float(follower_range) if isinstance(follower_range, (int, float)) and follower_range > 0 else None
     profiles = [
-        heard_profile(
-            profile, key_shift=body.in_key_shifts.get(profile.stable_id, 0), pitch_range_pct=reach
-        )
+        heard_profile(profile, key_shift=body.in_key_shifts.get(profile.stable_id, 0), pitch_range_pct=reach)
         for profile in profiles
     ]
     decision = decide(

@@ -1,4 +1,35 @@
+import {
+	LAYOUT_SURFACES,
+	layoutPresetChoices,
+	type LibraryLayout,
+	type PerformanceLayout
+} from '$lib/rb/skin-layout';
 import type { SettingDef } from './catalog-types';
+
+const PERFORMANCE_LAYOUT_LABELS: Record<PerformanceLayout, string> = {
+	'deck-grid': 'Deck grid'
+};
+
+const LIBRARY_LAYOUT_LABELS: Record<LibraryLayout, string> = {
+	'crate-desk': 'Crate desk',
+	'three-panel': 'Three panel'
+};
+
+function _layoutEnumOptions(surface: (typeof LAYOUT_SURFACES)[number]): Extract<SettingDef['control'], { kind: 'enum' }> {
+	const choices = layoutPresetChoices(surface);
+	return {
+		kind: 'enum',
+		options: choices.map((value) => ({
+			value,
+			label:
+				value === 'auto'
+					? 'Auto (follows skin)'
+					: surface === 'performance'
+						? PERFORMANCE_LAYOUT_LABELS[value as PerformanceLayout]
+						: LIBRARY_LAYOUT_LABELS[value as LibraryLayout]
+		}))
+	};
+}
 
 /** Issue #4219: waveform band palette; Auto (follow the skin) is the default. */
 export const WAVE_PALETTE_SETTING: SettingDef = {
@@ -42,6 +73,32 @@ export const UI_SKIN_SETTING: SettingDef = {
 			{ value: 'practice-ddj-flx4', label: 'Practice deck' }
 		]
 	}
+};
+
+/** Issue #10199: override the performance surface layout preset, or Auto follows the skin. */
+export const PERFORMANCE_LAYOUT_SETTING: SettingDef = {
+	id: 'layout_override.performance',
+	label: 'Performance layout',
+	group: 'performance',
+	keywords: ['layout', 'preset', 'skin', 'arrangement', 'panel', 'performance', 'deck', 'grid'],
+	title: 'Performance surface layout preset',
+	detail:
+		"Auto (default) follows the skin's SKIN_LAYOUT entry. An explicit preset wins on every skin. Same path as the set_layout_preset command (HTTP POST /api/v1/commands, opendj set_layout_preset).",
+	implemented: true,
+	control: _layoutEnumOptions('performance')
+};
+
+/** Issue #10199: override the library surface layout preset, or Auto follows the skin. */
+export const LIBRARY_LAYOUT_SETTING: SettingDef = {
+	id: 'layout_override.library',
+	label: 'Library layout',
+	group: 'performance',
+	keywords: ['layout', 'preset', 'skin', 'arrangement', 'panel', 'library', 'crate', 'three'],
+	title: 'Library surface layout preset',
+	detail:
+		"Auto (default) follows the skin's SKIN_LAYOUT entry. An explicit preset wins on every skin. Same path as the set_layout_preset command (HTTP POST /api/v1/commands, opendj set_layout_preset).",
+	implemented: true,
+	control: _layoutEnumOptions('library')
 };
 
 /** Split main waveform: master deck on top, this deck below. Opt-in. */

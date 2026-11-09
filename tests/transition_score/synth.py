@@ -78,6 +78,10 @@ class Mutation:
     #: (t < OVERLAP[0] / t >= OVERLAP[1]). Default False keeps the locked clean fixture.
     out_solo_low_killed: bool = False
     in_solo_low_killed: bool = False
+    #: #10187: the outgoing's mid content (its vocal tone) eased ``out_mids_thin_lu`` down in its deck output over the
+    #: first 2 bars of the overlap, linear in dB, then held: the mix thins under the outgoing at unity, whose own audio
+    #: (out_natural) keeps it. Default 0 keeps the locked clean fixture.
+    out_mids_thin_lu: float = 0.0
 
 
 def _t(length_s: float = LENGTH_S) -> np.ndarray:
@@ -219,6 +223,10 @@ def render(mutation: Mutation | None = None, seed: int = 0) -> tuple[np.ndarray,
         inside = np.clip(np.minimum(t - lo, hi - t) / RAMP_S, 0.0, 1.0)
         breakdown = 1 + (10 ** (-mutation.out_breakdown_lu / 20) - 1) * inside
         out_low, out_high, out_vocal = out_low * breakdown, out_high * breakdown, out_vocal * breakdown
+    out_vocal_heard = out_vocal
+    if mutation.out_mids_thin_lu:
+        fade = np.clip((t - OVERLAP[0]) / (2 * BAR_S), 0.0, 1.0)
+        out_vocal_heard = out_vocal * 10 ** (-mutation.out_mids_thin_lu * fade / 20)
     swap = SWAP_S + mutation.step_late_s
     out_low_gain = _ramp_step(t, swap, 1.0, HELD_LOW)
     held = 0.0 if mutation.in_lows_killed else HELD_LOW
@@ -231,7 +239,7 @@ def render(mutation: Mutation | None = None, seed: int = 0) -> tuple[np.ndarray,
     out_fader, in_fader = _faders(t, mutation.maintainer_low_handoff)
     floor_out, floor_in = 0.001 * rng.standard_normal(len(t)), 0.001 * rng.standard_normal(len(t))
     out_source = MASTER * (out_low + out_high + out_vocal + floor_out)  # the outgoing alone: no fader, no EQ
-    out_deck = MASTER * out_fader * (out_low * out_low_gain + out_high + out_vocal + floor_out)
+    out_deck = MASTER * out_fader * (out_low * out_low_gain + out_high + out_vocal_heard + floor_out)
     in_deck = MASTER * in_fader * (in_low * in_low_gain + in_high + in_vocal + floor_in)
     gain = _level_mutation_gain(t, mutation)
     out_deck, in_deck = out_deck * gain, in_deck * gain
@@ -258,7 +266,7 @@ def render(mutation: Mutation | None = None, seed: int = 0) -> tuple[np.ndarray,
         intent="smooth",
         shape=None,
         out_natural=np.stack([out_source, out_source], axis=1).astype(np.float32),
-        vocal_out=(MASTER * out_fader * out_vocal).astype(np.float32),
+        vocal_out=(MASTER * out_fader * out_vocal_heard).astype(np.float32),
         vocal_in=(MASTER * in_fader * in_vocal).astype(np.float32),
     )
     return stereo[0], stereo[1], stereo[2], ctx

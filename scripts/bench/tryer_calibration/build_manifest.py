@@ -74,9 +74,8 @@ import numpy as np
 
 from apps.autodj.http import RENDER_SAMPLE_RATE, RenderPlanError, TrackProfile, build_service
 from apps.opendj_cli.dj_service import DjError
-from apps.transition_score import SCORER_VERSION, Candidate, TryResult, try_pair
-from apps.transition_score.contract import CORE_FACTORS
-from apps.transition_score.tryer import AudioUnavailable, EngineTrackSource, PairNotTryable, ProfileReader
+from apps.transition_score.contract import CORE_FACTORS, SCORER_VERSION, Candidate, TryResult
+from apps.transition_score.http import AudioUnavailable, EngineTrackSource, PairNotTryable, ProfileReader, try_pair
 from scripts.bench.tryer_calibration.cached_source import CachedProfiles
 from scripts.bench.tryer_calibration.pairs import FIXTURE_PATH, CalibrationPair, load_pairs_verified
 

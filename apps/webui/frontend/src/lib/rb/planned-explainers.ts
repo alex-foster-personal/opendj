@@ -63,7 +63,6 @@ export const PLANNED_CONTROLS: Record<string, string> = {
 	'context-menu-unavailable': 'Library action - this menu command will act on the selected tracks or playlist. Its handler is not connected yet, so choosing it changes nothing.',
 	'track-table-filter': 'Column filter - narrows the track table to rows matching a value you pick per column (genre, key, BPM range, rating), like the rekordbox column filter funnel.',
 	'pad-mode-unbuilt': 'Pad mode - this performance-pad mode (for example slicer, sampler or keyboard) will turn the eight pads into its own controls. It is listed so the menu matches the hardware, but it is not built yet, so picking it changes nothing.',
-	'grid-flag-dismiss': 'Dismiss beatgrid flag - hides the uneven-beatgrid warning for this track without changing its grid, and can restore it here. This view has no dismiss handler connected yet, so the button does nothing.',
 };
 
 /**

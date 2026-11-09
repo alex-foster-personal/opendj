@@ -1,8 +1,8 @@
 /**
  * TOPVIEW-05: whether the top bar's Track information (i) overlay is open, and
  * for which deck and track, with the rules that open, close and report it.
- * The button and the performance dispatcher's `track_info_toggle` /
- * `track_info_close` share this one state (Codex P1 4300879440 on #6824).
+ * The button and the performance dispatcher's `track_info_toggle`,
+ * `track_info_open` and `track_info_close` share this one state (Codex P1 4300879440 on #6824).
  * Deck data is passed in, never imported, so this module stays below
  * audio-engine.svelte.ts and outside its import cycle; focus follows the
  * click selection in mixer-selection.svelte.ts (focused-deck.ts has the rule).
@@ -14,7 +14,7 @@ import {
 	type FocusCandidate,
 	type OpenedTrackInfo
 } from './focused-deck';
-import { mixerSelection } from './mixer-selection.svelte';
+import { clickSelect, mixerSelection } from './mixer-selection.svelte';
 
 export const trackInfo = $state<{ opened: OpenedTrackInfo | null }>({ opened: null });
 
@@ -57,6 +57,18 @@ export function openTrackInfoForRow(stableId: string): void {
 
 export function closeTrackInfo(): void {
 	trackInfo.opened = null;
+}
+
+/** Open the record for one named deck (the deck Quick Draw menu and agents),
+ * making that deck the click selection track info follows. Already open on
+ * that deck's track: unchanged. Open on another deck: it moves. */
+export function openTrackInfoForDeck(deck: DeckId, decks: readonly TrackInfoDeck[]): void {
+	const stableId = decks.find((d) => d.id === deck)?.stableId ?? null;
+	if (stableId === null) {
+		throw new Error(`track_info_open: CH${deck} holds no track, so there is no record to open`);
+	}
+	clickSelect(deck, false);
+	trackInfo.opened = { deckId: deck, stableId };
 }
 
 export function trackInfoSnapshot(decks: readonly TrackInfoDeck[]): {

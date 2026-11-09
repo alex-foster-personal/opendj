@@ -5,6 +5,8 @@ from __future__ import annotations
 import pytest
 
 from apps.adapters.serato.geob import (
+    GEOB_BEATGRID_DESC,
+    GEOB_MARKERS2_DESC,
     BeatGrid,
     BeatGridMarker,
     Markers2,
@@ -477,3 +479,108 @@ def test_a_black_cue_at_zero_in_markers_legacy_reads_as_unset() -> None:
         loops=(),
     )
     assert [c.index for c in overlay_markers_legacy(markers2, legacy).cues] == [1, 2]
+
+
+@pytest.mark.requirement("DJIMPORT-10062")
+def test_flac_serato_comments_decode_like_mp3_geob(tmp_path) -> None:
+    """[if] FLAC holds wrapped SERATO_MARKERS_V2 and SERATO_BEATGRID [then] cues match MP3 GEOB, [else stop]."""
+    from apps.adapters.serato.geob import read_geob_frames
+    from tests.fixtures import serato_containers as sc
+
+    m2 = sc.markers2_payload()
+    bg = sc.beatgrid_payload()
+    mp3 = tmp_path / "Invented Reference.mp3"
+    sc.write_mp3_with_serato(mp3, m2, bg)
+    mp3_bundle = read_geob_frames(mp3, strict=True)
+    wrapped = sc.serato_text(GEOB_MARKERS2_DESC, m2)
+    unwrapped = sc.serato_text(GEOB_MARKERS2_DESC, m2, wrap=0)
+    cases = (
+        ([(sc.FLAC_MARKERS2_KEY, wrapped), (sc.FLAC_BEATGRID_KEY, sc.serato_text(GEOB_BEATGRID_DESC, bg))], "wrapped"),
+        ([(sc.FLAC_MARKERS2_KEY, unwrapped), (sc.FLAC_BEATGRID_KEY, sc.serato_text(GEOB_BEATGRID_DESC, bg, wrap=0))], "unwrapped"),
+    )
+    for comments, label in cases:
+        flac = tmp_path / f"Invented Wrapped {label}.flac"
+        sc.write_flac(flac, comments)
+        got = read_geob_frames(flac, strict=True)
+        assert got.markers2 == mp3_bundle.markers2
+        assert got.beatgrid == mp3_bundle.beatgrid
+
+
+@pytest.mark.requirement("DJIMPORT-10062")
+def test_mp4_freeform_markersv2_decodes_and_absent_atom_is_empty(tmp_path) -> None:
+    """[if] MP4 has markersv2 [then] cues match MP3; missing atoms yield empty SeratoGEOB, [else stop]."""
+    from apps.adapters.serato.geob import SeratoGEOB, read_geob_frames
+    from tests.fixtures import serato_containers as sc
+
+    m2 = sc.markers2_payload()
+    mp3 = tmp_path / "Invented Reference.mp3"
+    sc.write_mp3_with_serato(mp3, m2)
+    ref = read_geob_frames(mp3, strict=True).markers2
+    m4a = tmp_path / "Invented Tagged.m4a"
+    text = sc.serato_text(GEOB_MARKERS2_DESC, m2).encode("ascii")
+    sc.write_mp4(m4a, [(sc.MP4_SERATO_MEAN, sc.MP4_MARKERS2_NAME, text)])
+    assert read_geob_frames(m4a, strict=True).markers2 == ref
+    binary = tmp_path / "Invented Binary Type.m4a"
+    sc.write_mp4(binary, [(sc.MP4_SERATO_MEAN, sc.MP4_MARKERS2_NAME, text)], data_type=0)
+    assert read_geob_frames(binary, strict=True).markers2 == ref
+    plain = tmp_path / "Invented Plain.m4a"
+    sc.write_mp4_text_only(plain)
+    assert read_geob_frames(plain, strict=True) == SeratoGEOB()
+    bare = tmp_path / "Invented Bare.m4a"
+    sc.write_mp4_no_udta(bare)
+    assert read_geob_frames(bare, strict=True) == SeratoGEOB()
+
+
+@pytest.mark.requirement("DJIMPORT-10062")
+def test_aiff_id3_chunk_decodes_like_mp3(tmp_path) -> None:
+    """[if] AIFF holds an ID3 chunk with Markers2 GEOB [then] cues match MP3, [else stop]."""
+    from apps.adapters.serato.geob import SeratoGEOB, read_geob_frames
+    from apps.shared.id3v2 import Id3Error
+    from tests.fixtures import serato_containers as sc
+
+    m2 = sc.markers2_payload()
+    mp3 = tmp_path / "Invented Reference.mp3"
+    sc.write_mp3_with_serato(mp3, m2)
+    ref = read_geob_frames(mp3, strict=True).markers2
+    aiff = tmp_path / "Invented Tagged.aiff"
+    sc.write_aiff_with_id3(aiff, m2)
+    assert read_geob_frames(aiff, strict=True).markers2 == ref
+    empty = tmp_path / "Invented No Tag.aiff"
+    sc.write_aiff_no_id3(empty)
+    assert read_geob_frames(empty, strict=True) == SeratoGEOB()
+    bad = tmp_path / "Invented Bad ID3.aiff"
+    sc.write_aiff_bad_id3_chunk(bad)
+    with pytest.raises(Id3Error):
+        read_geob_frames(bad, strict=True)
+
+
+@pytest.mark.requirement("DJIMPORT-10062")
+def test_flac_invalid_base64_raises_or_is_empty_when_not_strict(tmp_path) -> None:
+    """[if] FLAC SERATO_MARKERS_V2 is not valid base64 [then] SeratoTagError under strict, [else stop]."""
+    from apps.adapters.serato.geob import SeratoGEOB, SeratoTagError, read_geob_frames
+    from tests.fixtures import serato_containers as sc
+
+    flac = tmp_path / "Invented Bad Comment.flac"
+    sc.write_flac(flac, [(sc.FLAC_MARKERS2_KEY, "not base64!!")])
+    with pytest.raises(SeratoTagError, match=r"Invented Bad Comment\.flac"):
+        read_geob_frames(flac, strict=True)
+    assert read_geob_frames(flac, strict=False) == SeratoGEOB()
+    wrong_desc = tmp_path / "Invented Wrong Desc.flac"
+    text = sc.serato_text(GEOB_BEATGRID_DESC, sc.markers2_payload())
+    sc.write_flac(wrong_desc, [(sc.FLAC_MARKERS2_KEY, text)])
+    with pytest.raises(SeratoTagError, match="description mismatch"):
+        read_geob_frames(wrong_desc, strict=True)
+
+
+@pytest.mark.requirement("DJIMPORT-10062")
+def test_unsupported_suffix_and_flac_without_serato_comments_are_empty(tmp_path) -> None:
+    """[if] the path is wav or FLAC has no Serato comments [then] read_geob_frames is empty, [else stop]."""
+    from apps.adapters.serato.geob import SeratoGEOB, read_geob_frames
+    from tests.fixtures import serato_containers as sc
+
+    wav = tmp_path / "Invented Plain.wav"
+    wav.write_bytes(b"RIFF")
+    assert read_geob_frames(wav, strict=True) == SeratoGEOB()
+    flac = tmp_path / "Invented Plain.flac"
+    sc.write_flac(flac, [("TITLE", "Invented")])
+    assert read_geob_frames(flac, strict=True) == SeratoGEOB()

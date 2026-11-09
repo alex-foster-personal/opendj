@@ -29,7 +29,7 @@ from collections.abc import Iterable
 from dataclasses import dataclass
 from pathlib import Path
 
-from apps.dedup.db_paths import resolve_dedup_db
+from apps.dedup.db_paths import resolve_dedup_db, resolve_music_roots
 from apps.shared import paths
 from apps.shared.fingerprints import Fingerprint, FingerprintCache, match, words
 
@@ -261,7 +261,7 @@ def run_find_clusters(
 ) -> list[ClusterOutcome]:
     """Programmatic clustering; used by the CLI and tests."""
     use_db = resolve_dedup_db(db_path)
-    use_roots = roots if roots is not None else paths.MUSIC_ROOTS
+    use_roots = resolve_music_roots(roots)
     use_csv = clusters_csv if clusters_csv is not None else paths.DEDUP_CLUSTERS_CSV
     use_manual = (
         manual_review_csv

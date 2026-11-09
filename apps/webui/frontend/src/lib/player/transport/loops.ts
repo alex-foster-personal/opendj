@@ -17,8 +17,9 @@ import {
 	quantizeToNearestGridBeat,
 	validateBeatGrid
 } from '$lib/rb/beat-sync-math';
-import type { AnlzBeat, AnlzPhrase } from '$lib/rb/anlz-types';
-import type { QuantizeGrid } from '$lib/rb/deck-state-types';
+import type { AnlzBeat, AnlzCue, AnlzPhrase } from '$lib/rb/anlz-types';
+import type { DeckId } from '$lib/rb/deck-slots';
+import type { LoopMemory, LoopState, QuantizeGrid } from '$lib/rb/deck-state-types';
 
 type LoopSnapshot = {
 	in_ms: number;
@@ -94,6 +95,37 @@ export function phaseLockedSafetyLoop(
 	} catch {
 		return null;
 	}
+}
+
+/** The loop an armed safety slot engages when playback reaches its out.
+ * A grid slot (beat_length set) is rebuilt phase-locked; a stored slot
+ * (beat_length null, e.g. the track's active memory loop) engages exactly as
+ * saved, the same as picking it from the stored-loop menu. */
+export function safetyLoopToEngage(
+	beats: readonly AnlzBeat[],
+	safety: SafetyLoopSnapshot,
+	durationMs: number
+): LoopSnapshot | null {
+	if (safety.beat_length !== null) return phaseLockedSafetyLoop(beats, safety, durationMs);
+	const { in_ms, out_ms } = safety;
+	if (!Number.isFinite(in_ms) || !Number.isFinite(out_ms)) return null;
+	if (in_ms < 0 || out_ms <= in_ms || out_ms > durationMs) return null;
+	return { in_ms, out_ms, engaged: true, beat_length: null };
+}
+
+/** rekordbox / CDJ ACTIVE LOOP (CUES-9967): the track's active memory loop
+ * as an armed safety slot, or null when it has none (the caller then leaves
+ * the deck's slot untouched). Hot-cue loops never count. */
+export function activeLoopSafetySlot(
+	cues: readonly AnlzCue[] | null | undefined,
+	durationMs: number
+): SafetyLoopSnapshot | null {
+	for (const cue of cues ?? []) {
+		if (cue.kind !== 'loop' || cue.slot !== null || !cue.active_loop || cue.out_ms === null) continue;
+		if (cue.in_ms < 0 || cue.out_ms <= cue.in_ms || cue.out_ms > durationMs) continue;
+		return { in_ms: cue.in_ms, out_ms: cue.out_ms, beat_length: null, armed: true };
+	}
+	return null;
 }
 
 /** True when linear playback on the current control segment has reached the
@@ -380,7 +412,10 @@ export function quantizedSeekDecisionMs(
  * beat is the safer assumption. Only ever used for a fresh four-beat loop
  * with no explicit start_ms - every other loop length or an explicit anchor
  * keeps the existing nearest-beat behaviour. */
-export function precedingDownbeatMs(beats: readonly AnlzBeat[], positionMs: number): number {
+export function findPrecedingDownbeatMs(
+	beats: readonly AnlzBeat[],
+	positionMs: number
+): number | null {
 	validateBeatGrid(beats);
 	if (!Number.isFinite(positionMs) || positionMs < 0) {
 		throw new RangeError(`positionMs must be finite and non-negative, got ${positionMs}`);
@@ -392,10 +427,15 @@ export function precedingDownbeatMs(beats: readonly AnlzBeat[], positionMs: numb
 		if (beat.bar_phase_untrusted === true) continue;
 		if (beat.n === 1) candidate = beat;
 	}
-	if (candidate === null) {
+	return candidate === null ? null : candidate.t * 1000;
+}
+
+export function precedingDownbeatMs(beats: readonly AnlzBeat[], positionMs: number): number {
+	const anchor = findPrecedingDownbeatMs(beats, positionMs);
+	if (anchor === null) {
 		throw new RangeError(`no PQTZ downbeat (n===1) at or before ${positionMs}ms`);
 	}
-	return candidate.t * 1000;
+	return anchor;
 }
 
 /** Anchor for a fresh four-beat loop.
@@ -408,7 +448,7 @@ export function freshFourBeatAnchorMs(
 	positionMs: number
 ): number | undefined {
 	if (beats.some((beat) => beat.bar_phase_untrusted === true)) return undefined;
-	return precedingDownbeatMs(beats, positionMs);
+	return findPrecedingDownbeatMs(beats, positionMs) ?? undefined;
 }
 
 /** Resize an engaged, beat-aligned loop to `beatCount` beats, anchored so
@@ -508,6 +548,45 @@ export function exactBeatLoopRangeMs(
 	const endSec = fraction === 0 ? beats[whole].t
 		: beats[whole].t + fraction * (beats[whole + 1].t - beats[whole].t);
 	return { in_ms: startSec * 1000, out_ms: endSec * 1000 };
+}
+
+/** Roll loop range (FXROLL, #9841). One beat or more: exactBeatLoopRangeMs's
+ * nearest-beat start. Shorter: the nearer slot of `beatCount` beats measured
+ * from the previous PQTZ beat (ties go to the earlier slot), with the slot width
+ * taken from the measured interval that contains the start. */
+export function rollLoopRangeMs(
+	beats: readonly AnlzBeat[],
+	anchorMs: number,
+	beatCount: number
+): { in_ms: number; out_ms: number } {
+	if (beatCount >= 1) return exactBeatLoopRangeMs(beats, anchorMs, beatCount);
+	validateBeatGrid(beats);
+	const slotsPerBeat = 1 / beatCount;
+	if (!Number.isInteger(slotsPerBeat) || (slotsPerBeat & (slotsPerBeat - 1)) !== 0) {
+		throw new RangeError(`sub-beat roll length must be 1/2^n beats, got ${beatCount}`);
+	}
+	if (!Number.isFinite(anchorMs) || anchorMs < 0) {
+		throw new RangeError(`loop anchor must be a finite non-negative number, got ${anchorMs}`);
+	}
+	const anchorSec = anchorMs / 1000;
+	let k = -1;
+	for (let i = 0; i < beats.length - 1; i++) if (beats[i].t <= anchorSec + 1e-9) k = i;
+	if (k < 0 || anchorSec >= beats[beats.length - 1].t) {
+		throw new RangeError(`no PQTZ beat interval contains loop anchor ${anchorMs}ms`);
+	}
+	const slotSec = beatCount * (beats[k + 1].t - beats[k].t);
+	const exact = (anchorSec - beats[k].t) / slotSec;
+	let j = Math.floor(exact);
+	if (exact - j > 0.5 + 1e-9) j += 1;
+	if (j >= slotsPerBeat) {
+		if (k + 2 >= beats.length) {
+			throw new RangeError(`${beatCount}-beat roll from ${anchorMs}ms does not fit on the grid`);
+		}
+		const nextSlot = beatCount * (beats[k + 2].t - beats[k + 1].t);
+		return { in_ms: beats[k + 1].t * 1000, out_ms: (beats[k + 1].t + nextSlot) * 1000 };
+	}
+	const startSec = beats[k].t + j * slotSec;
+	return { in_ms: startSec * 1000, out_ms: (startSec + slotSec) * 1000 };
 }
 
 /*
@@ -631,4 +710,63 @@ export function gridSeekDecisionMs(
 	return grid === 'phase'
 		? phraseSeekDecisionMs(beats, phrases, ms, skipGridQuantize, loop)
 		: quantizedSeekDecisionMs(beats, ms, grid, skipGridQuantize, loop);
+}
+
+/** Loop-in point for a LOOP IN press: the playhead, snapped to the deck's Q grid when `beats` is non-null (Q on). */
+export function manualLoopInMs(
+	beats: readonly AnlzBeat[] | null,
+	positionMs: number,
+	gridBeats: 1 | 4 | 8
+): number {
+	return quantizedPositionMs(beats ?? [], positionMs, beats !== null, gridBeats);
+}
+
+export type ManualLoopOutDecision =
+	| { kind: 'engage'; loop: { in_ms: number; out_ms: number } }
+	| { kind: 'refused'; reason: string };
+
+export function manualLoopOutDecision(
+	deck: DeckId,
+	pendingInMs: number | null,
+	playheadMs: number
+): ManualLoopOutDecision {
+	if (pendingInMs === null) {
+		return {
+			kind: 'refused',
+			reason: `loop_out: no loop in point on deck ${deck} - press LOOP IN first`
+		};
+	}
+	if (playheadMs <= pendingInMs) {
+		return {
+			kind: 'refused',
+			reason:
+				`loop_out: loop out must be after loop in (in ${Math.round(pendingInMs)} ms, ` +
+				`playhead ${Math.round(playheadMs)} ms)`
+		};
+	}
+	return { kind: 'engage', loop: { in_ms: pendingInMs, out_ms: playheadMs } };
+}
+
+export type ReloopDecision =
+	| { kind: 'exit' }
+	| { kind: 'reengage'; loop: LoopMemory }
+	| { kind: 'refused'; reason: string };
+
+export function reloopDecision(
+	deck: DeckId,
+	loop: LoopState | null,
+	lastLoop: LoopMemory | null
+): ReloopDecision {
+	if (loop !== null && loop.engaged) return { kind: 'exit' };
+	if (lastLoop !== null) return { kind: 'reengage', loop: lastLoop };
+	return { kind: 'refused', reason: `reloop: no previous loop on deck ${deck} for this track` };
+}
+
+/** The loop RELOOP would bring back after `loop` is set: an engaged loop replaces it, anything else keeps `prev`. */
+export function rememberedLoop(
+	loop: LoopState | LoopSnapshot | null,
+	prev: LoopMemory | null
+): LoopMemory | null {
+	if (loop === null || !loop.engaged) return prev;
+	return { in_ms: loop.in_ms, out_ms: loop.out_ms, beat_length: loop.beat_length };
 }

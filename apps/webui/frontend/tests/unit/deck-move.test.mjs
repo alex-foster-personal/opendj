@@ -737,7 +737,8 @@ test('captureDeckClone snapshots values, not live references', () => {
 
 test('parity: bus validator, opendj verb, MCP tool and artwork menu all reach the one moveDeck', () => {
 	const ipc = readFileSync(`${ROOT}src/lib/rb/performance-ipc.svelte.ts`, 'utf8');
-	assert.match(ipc, /type: 'deck_move'; from: DeckId; to: DeckId/);
+	const types = readFileSync(`${ROOT}src/lib/rb/performance-ipc-types.ts`, 'utf8');
+	assert.match(types, /type:\s*'deck_move';\s*from:\s*DeckId;\s*to:\s*DeckId/);
 	assert.match(ipc, /type === 'deck_move'/);
 	assert.match(ipc, /moveDeck\(webAudioDeckMovePort\(\)/);
 	assert.match(readFileSync(`${REPO}apps/opendj_cli/catalog.py`, 'utf8'), /Verb\(\s*"deck_move",\s*"deck_move"/);

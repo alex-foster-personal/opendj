@@ -42,7 +42,12 @@ SERATO_CAPABILITIES = Capabilities(
         CapabilityField(
             field="cue_points.hot",
             supports="lossless",
-            rationale="Written to the MP3 Serato Markers2 GEOB ID3 frame; FLAC/AIFF/WAV cue writing is v2 scope (different Serato tagging) -- non-MP3 drop-with-warning.",
+            rationale=(
+                "Read from the Serato Markers2 tag of MP3 and AIFF (ID3 GEOB), FLAC "
+                "(SERATO_MARKERS_V2 Vorbis comment) and MP4 (com.serato.dj markersv2 atom); "
+                "written only through the database, since GEOB writing was removed with mutagen "
+                "-- a write to the audio file drops with a warning."
+            ),
         ),
         CapabilityField(
             field="cue_points.memory",
@@ -52,7 +57,9 @@ SERATO_CAPABILITIES = Capabilities(
         CapabilityField(
             field="cue_points.loop",
             supports="lossless",
-            rationale="Written to the MP3 Serato Markers2 GEOB frame; FLAC/AIFF/WAV loop writing is v2 scope.",
+            rationale=(
+                "Read from Markers2 like hot cues; MP3 GEOB write only (database for lossless)."
+            ),
         ),
         CapabilityField(field="cue_points.color", supports="lossless", rationale="24-bit RGB round-trips."),
         CapabilityField(field="beats", supports="lossless"),

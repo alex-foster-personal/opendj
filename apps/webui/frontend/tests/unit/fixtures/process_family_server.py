@@ -67,6 +67,7 @@ from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
 
+import psutil
 import uvicorn
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
@@ -81,6 +82,13 @@ PROCESSES_PATH = "/api/v1/performance/telemetry/processes"
 CAPTURE_NAME = "probe-samples.jsonl"
 # The day file name the probe's sampling loop writes and the route globs for.
 CAPTURE_DAY_FILE = "opendj-performance-2026-09-01.jsonl"
+
+# The probe helpers must outlive the whole JS test file, not the real_process_tree
+# default (180 s): a loaded CI host can take longer than that from server start to the
+# last test, and once the in-family engine helper exits the route no longer ties the
+# fresh probe record to this family (no probe members at all). main() reaps them on
+# exit; the ttl only bounds a helper whose server was killed outright.
+_PROBE_HELPER_TTL_S = 1800
 
 # captured probe pid -> live helper pid (engine in-family, others detached)
 _CAPTURED_TO_REAL: dict[int, int] = {}
@@ -106,11 +114,9 @@ def _start_probe_helpers() -> None:
         captured_pid = int(row["pid"])
         command = str(row["command"])
         key = f"probe_{captured_pid}"
-        pids = (
-            spawn(node(key, command))
-            if row["role"] == "python-engine"
-            else spawn(node(key, command, detach=True))
-        )
+        spec = node(key, command) if row["role"] == "python-engine" else node(key, command, detach=True)
+        spec["ttl"] = _PROBE_HELPER_TTL_S
+        pids = spawn(spec)
         _CAPTURED_TO_REAL[captured_pid] = pids[key]
         _SPAWNED_FOR_KILL.append(pids)
 
@@ -126,18 +132,17 @@ def _write_fresh_capture(directory: Path, age_s: float) -> None:
     """The verified capture's second sample, fresh, with real pids on each row."""
     if not _CAPTURED_TO_REAL:
         raise RuntimeError("probe helpers were not started")
+    gone = sorted(pid for pid in _CAPTURED_TO_REAL.values() if not psutil.pid_exists(pid))
+    if gone:
+        raise RuntimeError(f"probe helpers exited before the test ended: {gone}")
     record = copy.deepcopy(REAL_PROBE_SAMPLE)
     for row in record["processes"]:
         row["pid"] = _CAPTURED_TO_REAL[int(row["pid"])]
     for moved, captured in zip(record["processes"], REAL_PROBE_SAMPLE["processes"], strict=True):
-        if {k: v for k, v in moved.items() if k != "pid"} != {
-            k: v for k, v in captured.items() if k != "pid"
-        }:
+        if {k: v for k, v in moved.items() if k != "pid"} != {k: v for k, v in captured.items() if k != "pid"}:
             raise RuntimeError("a relocated row differs from the capture")
     stamped = datetime.fromisoformat(utc_now().replace("Z", "+00:00")) - timedelta(seconds=age_s)
-    record["timestamp"] = (
-        stamped.astimezone(UTC).isoformat(timespec="milliseconds").replace("+00:00", "Z")
-    )
+    record["timestamp"] = stamped.astimezone(UTC).isoformat(timespec="milliseconds").replace("+00:00", "Z")
     _path, stored = append_bounded_jsonl(directory, record, cap_bytes=1_048_576)
     if not stored:
         raise RuntimeError("the probe writer refused the record")

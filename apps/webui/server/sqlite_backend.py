@@ -52,6 +52,7 @@ from typing import Any
 
 from apps.analysis.selection import EffectiveField
 from apps.analysis_key.canon import canonical_key_text
+from apps.shared.pairings.repo import PairingsRepo
 from apps.shared.pairings.schema_sql import ensure_phase08_tables
 from apps.shared.state import db as _state_db
 from apps.shared.state import queries as _state_queries
@@ -366,7 +367,11 @@ def _graph_pairings(conn: sqlite3.Connection) -> list[Pairing]:
 
 
 def _delete_graph_pairing(
-    conn: sqlite3.Connection, pairing_id: str, *, expected_etag: str,
+    conn: sqlite3.Connection,
+    pairing_id: str,
+    *,
+    expected_etag: str,
+    writer: StateWriter,
 ) -> None:
     """CAS-delete one graph edge addressed by its derived pairing id.
 
@@ -392,10 +397,8 @@ def _delete_graph_pairing(
                      "updated_at": existing.updated_at},
             etag=current,
         )
-    conn.execute(
-        "DELETE FROM pairings WHERE from_stable_id=? "
-        "AND to_stable_id=? AND direction=?",
-        (match[0], match[1], match[2]),
+    PairingsRepo(conn, ensure_schema=False, writer=writer).remove(
+        match[0], match[1], match[2],
     )
 
 
@@ -1308,24 +1311,21 @@ class SqliteBackend:
             return len(updates)
 
     @contextmanager
-    def _pairings_rw(self) -> Iterator[sqlite3.Connection]:
-        """One serialized write transaction over the durable pairings table.
+    def _pairings_rw(self) -> Iterator[StateWriter]:
+        """One serialized ``StateWriter`` unit over the durable pairings table.
 
         The table belongs to :mod:`apps.shared.pairings` (the same rows the
         ``apps.pairings`` CLI and the suggester's stage-2 rerank read), so its
-        own idempotent DDL creates or upgrades it before the write.
+        own idempotent DDL creates or upgrades it before the write. Graph
+        edge writes join the yielded writer's unit, so each appends its
+        ``pairing.*`` events row in the same transaction.
         """
         with self._write_lock:
             conn = _state_db.open_rw(self._path)
             try:
                 ensure_phase08_tables(conn)
-                conn.execute("BEGIN IMMEDIATE")
-                yield conn
-                conn.execute("COMMIT")
-            except Exception:
-                if conn.in_transaction:
-                    conn.execute("ROLLBACK")
-                raise
+                with StateWriter(conn, actor="webui") as writer, writer.transaction():
+                    yield writer
             finally:
                 conn.close()
 
@@ -1340,22 +1340,24 @@ class SqliteBackend:
         is left unchanged. A reverse-stored edge that reads as this capture
         is updated in place and the returned id is that stored key's id.
         """
-        with self._pairings_rw() as conn:
+        with self._pairings_rw() as writer:
+            conn = writer.raw_conn
             conn.row_factory = sqlite3.Row
-            created = create_http_pairing(conn, pairing)
+            created = create_http_pairing(conn, pairing, writer=writer)
         self._sqlite_last_writer = (pairing.source, pairing.created_at)
         return created
 
     def delete_pairing(self, pairing_id: str, *, expected_etag: str) -> None:
-        with self._pairings_rw() as conn:
+        with self._pairings_rw() as writer:
+            conn = writer.raw_conn
             conn.row_factory = sqlite3.Row
             try:
                 delete_http_pairing(
-                    conn, pairing_id, expected_etag=expected_etag,
+                    conn, pairing_id, expected_etag=expected_etag, writer=writer,
                 )
             except NotFoundError:
                 _delete_graph_pairing(
-                    conn, pairing_id, expected_etag=expected_etag,
+                    conn, pairing_id, expected_etag=expected_etag, writer=writer,
                 )
         self._sqlite_last_writer = ("webui", _utcnow_iso())
 

@@ -164,7 +164,7 @@ def test_the_route_answers_502_for_a_bad_reply(monkeypatch: pytest.MonkeyPatch, 
     assert r.json()["detail"]["code"] == cmdk_ai.UPSTREAM_ERROR_CODE
 
 
-@pytest.mark.parametrize("flags", [{}, {"cmdk.v2": True}, {"cmdk.v2.ai": True}])
+@pytest.mark.parametrize("flags", [{}, {"cmdk.v2": True}, {"cmdk.v2": False, "cmdk.v2.ai": True}])
 def test_the_route_refuses_with_a_flag_off_and_sends_nothing(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path, flags: dict[str, bool]
 ) -> None:

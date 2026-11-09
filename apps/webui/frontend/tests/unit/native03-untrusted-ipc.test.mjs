@@ -14,14 +14,19 @@ function sliceAfter(haystack, needle, maxLen = 800) {
 }
 
 test('hot_cue_save gates BeatSyncMax snap on hasTrustedBeatGrid', () => {
-	assert.match(IPC_SRC, /import\s*\{[^}]*hasTrustedBeatGrid[^}]*\}\s*from\s*'\$lib\/player\/grid-features'/);
+	assert.match(
+		IPC_SRC,
+		/import\s*\{[^}]*hasTrustedBeatGrid[^}]*\}\s*from\s*'\$lib\/player\/grid-features'/
+	);
 	const saveArm = sliceAfter(IPC_SRC, "} else if (command.type === 'hot_cue_save')");
 	assert.match(saveArm, /hasTrustedBeatGrid\(/);
+	assert.match(saveArm, /hasPhaseCapableBeatGrid\(/);
 	assert.match(saveArm, /quantizeToNearestDownbeat\(/);
 });
 
 test('hot_cue_trigger gates planHotCueTrigger on hasTrustedBeatGrid', () => {
-	const triggerArm = sliceAfter(IPC_SRC, "} else if (command.type === 'hot_cue_trigger')");
+	const triggerArm = sliceAfter(IPC_SRC, "} else if (command.type === 'hot_cue_trigger')", 600);
 	assert.match(triggerArm, /planHotCueTrigger\(/);
 	assert.match(triggerArm, /hasTrustedBeatGrid\(/);
+	assert.match(triggerArm, /hasPhaseCapableBeatGrid\(/);
 });

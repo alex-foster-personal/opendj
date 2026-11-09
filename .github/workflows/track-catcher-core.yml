@@ -1,0 +1,63 @@
+name: Track Catcher core
+
+# Open DJ Track Catcher's Foundation-only Swift core
+# (apps/track-catcher-mac/Sources/TrackCatcherCore) tested on Linux against
+# the real odj-live engine (TCAPP-6577b..6577i). The macOS app build and its
+# screenshots run in track-catcher-mac-snapshots.yml, which is spend-gated.
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - apps/track-catcher-mac/**
+      - apps/live-core/**
+      - .github/workflows/track-catcher-core.yml
+  pull_request:
+    paths:
+      - apps/track-catcher-mac/**
+      - apps/live-core/**
+      - .github/workflows/track-catcher-core.yml
+  workflow_dispatch:
+
+concurrency:
+  group: track-catcher-core-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  core:
+    name: Track Catcher core (Linux, real engine)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          persist-credentials: false
+      - name: Rust toolchain
+        uses: dtolnay/rust-toolchain@6190aa5fb88a88ee71c12769924bbe63a9ab152e # 1.96.0
+        with:
+          toolchain: "1.96.0"
+      - name: Resolve toolchain paths
+        # Resolved once, then every step runs the same absolute binaries.
+        run: |
+          cargo_bin="$(command -v cargo)" && swift_bin="$(command -v swift)" && python_bin="$(command -v python3)"
+          echo "cargo: $cargo_bin"; echo "swift: $swift_bin"; echo "python: $python_bin"
+          { echo "CARGO=$cargo_bin"; echo "SWIFT=$swift_bin"; echo "PYTHON=$python_bin"; } >> "$GITHUB_ENV"
+      - name: Build odj-live
+        working-directory: apps/live-core
+        run: '"$CARGO" build --release --locked'
+      - name: Swift version
+        run: '"$SWIFT" --version'
+      - name: Known-key test file
+        # 24 s of C major (8B), so the drop-analysis path runs end to end.
+        run: '"$PYTHON" apps/track-catcher-mac/scripts/make_test_wav.py "$RUNNER_TEMP/c-major.wav"'
+      - name: Core tests against the real engine
+        working-directory: apps/track-catcher-mac
+        env:
+          ODJ_LIVE: ${{ github.workspace }}/apps/live-core/target/release/odj-live
+          TC_TEST_WAV: ${{ runner.temp }}/c-major.wav
+          TC_REQUIRE_FILE_TEST: "1"
+        run: '"$SWIFT" test'

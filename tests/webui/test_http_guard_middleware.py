@@ -202,7 +202,9 @@ def _run_matrix(app: FastAPI) -> list[tuple[int, bytes, list[tuple[str, str]]]]:
     with TestClient(app, raise_server_exceptions=False, base_url="http://127.0.0.1") as client:
         for method, path, headers, body in MATRIX:
             response = client.request(method, path, headers=headers, json=body)
-            out.append((response.status_code, response.content, sorted(response.headers.multi_items())))
+            # Server-Timing (PERF-DIAG-10322) is in both stacks; only its measured duration may differ.
+            seen = [(k, "app;dur=<ms>" if k == "server-timing" else v) for k, v in response.headers.multi_items()]
+            out.append((response.status_code, response.content, sorted(seen)))
     return out
 
 

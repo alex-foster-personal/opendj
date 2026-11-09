@@ -14,12 +14,17 @@ Regression lines:
   consumer and ETag changes for nothing: broken (the identity is not stamped)
 - overshoot control: if a real edit on an EMPTY grid is not stamped then the
   stored edit is invisible to the deck that would show it: broken
+- if an anchor does not change the beat spacing from the snapped line on, keep
+  `n` continuous and rewrite `tempo_changes` to one marker per anchor then
+  broken (GRIDEDIT-10220)
+- if an edit without anchors gains an `anchors` key then broken
 
 -Claude
 """
 
 from __future__ import annotations
 
+import itertools
 import json
 import math
 from typing import Any
@@ -265,3 +270,221 @@ def test_control_a_well_formed_blob_still_parses_including_an_integer_offset() -
     parsed = grid_edit._parse_blob("a" * 40, json.dumps({"v": 1, "edits": {"own": {"offset_ms": 6, "beat_shift": 1}}}))
     assert parsed == {"own": grid_edit.make_edit(6.0, 1)}
     assert grid_edit._parse_blob("a" * 40, json.dumps(grid_edit.blob({}))) == {}
+
+
+# ---------------------------------------------------------------- GRIDEDIT-10220: tempo anchors
+
+Anchor = grid_edit.Anchor
+LONG = _grid([0.5 * i for i in range(241)])  # 120 BPM, 0..120 s
+
+
+def _anchored(
+    anchors: tuple[grid_edit.Anchor, ...], offset_ms: float = 0.0, shift: int = 0, markers: list | None = None
+) -> dict[str, Any]:
+    payload = {"beatgrid": {"source": "rekordbox", "beats": LONG}, "tempo_changes": markers or []}
+    return grid_edit.apply_to_payload(payload, grid_edit.make_edit(offset_ms, shift, anchors=anchors), "rekordbox")
+
+
+def _continuous(beats: list[dict[str, Any]]) -> bool:
+    return all(b["n"] == a["n"] % 4 + 1 for a, b in itertools.pairwise(beats))
+
+
+@pytest.mark.requirement("GRIDEDIT-10220")
+def test_acceptance_one_anchor_at_60s_changes_tempo_to_126() -> None:
+    payload = _anchored((Anchor(60.0, 126.0),))
+    beats = payload["beatgrid"]["beats"]
+    i = next(k for k, b in enumerate(beats) if b["t"] == 60.0)
+    assert all(beats[k + 1]["t"] - beats[k]["t"] == pytest.approx(0.5) for k in range(i))
+    assert all(beats[k + 1]["t"] - beats[k]["t"] == pytest.approx(60 / 126, abs=1e-5) for k in range(i, len(beats) - 1))
+    assert (beats[i]["bpm"], beats[i - 1]["bpm"]) == (126.0, 120.0)
+    assert _continuous(beats)
+    assert beats[-1]["t"] <= 120.0
+    assert payload["tempo_changes"] == [{"at_s": 60.0, "bpm_before": 120.0, "bpm_after": 126.0, "confidence": 1.0}]
+    assert payload["beatgrid"]["static_grid_untrusted"] is True
+    assert payload["beatgrid"]["edit"]["anchors"] == [{"at_s": 60.0, "bpm": 126.0}]
+    assert payload["beatgrid"]["beat_count"] == len(beats)
+    assert payload["performance_hints"] == {"dynamic_tempo": True}
+    assert LONG[121]["bpm"] == 120.0, "input not mutated"
+
+
+@pytest.mark.requirement("GRIDEDIT-10220")
+def test_an_anchor_snaps_to_the_nearest_grid_line() -> None:
+    payload = _anchored((Anchor(60.2, 126.0),))
+    assert payload["tempo_changes"][0]["at_s"] == 60.0
+
+
+@pytest.mark.requirement("GRIDEDIT-10220")
+def test_two_anchors_chain_and_measured_markers_after_the_first_are_dropped() -> None:
+    measured = [
+        {"at_s": 10.0, "bpm_before": 120.0, "bpm_after": 120.0, "confidence": 0.5},
+        {"at_s": 80.0, "bpm_before": 120.0, "bpm_after": 121.0, "confidence": 0.5},
+    ]
+    payload = _anchored((Anchor(40.0, 125.0), Anchor(70.0, 130.0)), markers=measured)
+    markers = payload["tempo_changes"]
+    assert [m["at_s"] for m in markers[:2]] == [10.0, 40.0]
+    assert len(markers) == 3 and markers[2]["bpm_before"] == 125.0 and markers[2]["bpm_after"] == 130.0
+    on_125 = [40.0 + k * 60 / 125 for k in range(80)]
+    assert min(abs(markers[2]["at_s"] - t) for t in on_125) < 1e-5, "the second snaps onto the regenerated grid"
+    assert _continuous(payload["beatgrid"]["beats"])
+
+
+@pytest.mark.requirement("GRIDEDIT-10220")
+def test_offset_applies_before_anchors_and_shift_keeps_bars_continuous() -> None:
+    payload = _anchored((Anchor(60.0, 126.0),), offset_ms=10.0, shift=1)
+    assert payload["tempo_changes"][0]["at_s"] == pytest.approx(60.01)
+    assert _continuous(payload["beatgrid"]["beats"])
+
+
+@pytest.mark.requirement("GRIDEDIT-10220")
+def test_an_anchor_on_the_first_beat_retempos_everything_without_a_marker() -> None:
+    payload = _anchored((Anchor(0.0, 100.0),))
+    assert {b["bpm"] for b in payload["beatgrid"]["beats"]} == {100.0}
+    assert payload["tempo_changes"] == []
+    assert "performance_hints" not in payload
+
+
+@pytest.mark.requirement("GRIDEDIT-10220")
+def test_with_anchor_replaces_near_adds_far_and_refuses_bad_input() -> None:
+    edit = grid_edit.with_anchor(grid_edit.IDENTITY, 60.0, 126.0)
+    assert grid_edit.with_anchor(edit, 60.1, 128.0).anchors == (Anchor(60.1, 128.0),)
+    assert grid_edit.with_anchor(edit, 59.0, 128.0).anchors == (Anchor(59.0, 128.0), Anchor(60.0, 126.0))
+    full = grid_edit.make_edit(0, 0, anchors=[Anchor(float(k), 120.0) for k in range(64)])
+    for at_s, bpm, status, code in [
+        (100.0, 120.0, 422, "GRID_ANCHOR_LIMIT"),
+        (1.0, 39.99, 422, "GRID_EDIT_OUT_OF_RANGE"),
+        (1.0, 300.01, 422, "GRID_EDIT_OUT_OF_RANGE"),
+        (math.nan, 120.0, 422, "GRID_EDIT_INVALID"),
+        (-1.0, 120.0, 422, "GRID_EDIT_INVALID"),
+    ]:
+        with pytest.raises(grid_edit.GridEditError) as err:
+            grid_edit.with_anchor(full if code == "GRID_ANCHOR_LIMIT" else edit, at_s, bpm)
+        assert (err.value.status, err.value.code) == (status, code)
+    with pytest.raises(grid_edit.GridEditError) as missing:
+        grid_edit.without_anchor(edit, 90.0)
+    assert (missing.value.status, missing.value.code) == (404, "GRID_ANCHOR_NOT_FOUND")
+    assert grid_edit.without_anchor(edit, 60.2).anchors == ()
+
+
+@pytest.mark.requirement("GRIDEDIT-10220")
+def test_an_edit_without_anchors_serializes_as_before_and_nudges_keep_anchors() -> None:
+    assert json.dumps(grid_edit.blob({"own": grid_edit.make_edit(6.0, 1)})) == (
+        '{"v": 1, "edits": {"own": {"offset_ms": 6.0, "beat_shift": 1}}}'
+    )
+    anchored = grid_edit.make_edit(0, 0, anchors=(Anchor(60.0, 126.0),))
+    assert not anchored.is_identity()
+    assert grid_edit.nudged(anchored, offset_ms=2).anchors == anchored.anchors
+    raw = json.dumps(grid_edit.blob({"own": anchored}))
+    assert grid_edit._parse_blob("a" * 40, raw) == {"own": anchored}, "round trip"
+
+
+@pytest.mark.requirement("GRIDEDIT-10220")
+@pytest.mark.parametrize(
+    "anchors",
+    [
+        {"at_s": 1, "bpm": 120},
+        [],
+        [{"at_s": float(k), "bpm": 120} for k in range(65)],
+        [{"at_s": 1}],
+        [{"at_s": 1, "bpm": 120, "x": 0}],
+        [{"at_s": True, "bpm": 120}],
+        [{"at_s": 1, "bpm": 301}],
+        [{"at_s": 2, "bpm": 120}, {"at_s": 1, "bpm": 120}],
+    ],
+)
+def test_a_malformed_stored_anchor_raises(anchors: object) -> None:
+    raw = json.dumps({"v": 1, "edits": {"own": {"offset_ms": 0.0, "beat_shift": 0, "anchors": anchors}}})
+    with pytest.raises(ValueError, match=grid_edit.FIELD):
+        grid_edit._parse_blob("a" * 40, raw)
+
+
+# ---------- undo from history (GRIDEDIT-10215) --------------------------------
+
+_ID = "b" * 40
+
+
+def _undo_db(tmp_path: Any) -> Any:
+    conn = state_db.open_rw(tmp_path / "state.db")
+    conn.execute(
+        "INSERT INTO tracks (stable_id, stable_id_tier, title, artists_json, created_at, updated_at) "
+        "VALUES (?, 'inferred', 't', '[]', '2026-01-01', '2026-01-01')",
+        (_ID,),
+    )
+    conn.commit()
+    return conn
+
+
+def _put(conn: Any, edits: dict[grid_edit.GridSource, grid_edit.GridEdit], stamp: str) -> None:
+    with StateWriter(conn, actor="webui") as writer:
+        writer.set_field(_ID, grid_edit.FIELD, grid_edit.blob(edits), source=grid_edit.OWN_SOURCE, modified_at=stamp)
+    conn.commit()
+
+
+def _undo(conn: Any) -> bool:
+    step = grid_edit.previous(conn, _ID)
+    if step is None:
+        return False
+    _put(conn, step.edits, step.modified_at)
+    return True
+
+
+def _rb(conn: Any) -> grid_edit.GridEdit:
+    return grid_edit.read(conn, _ID).for_source("rekordbox")
+
+
+@pytest.mark.requirement("GRIDEDIT-10215")
+def test_undo_steps_back_through_history_to_the_measured_grid(tmp_path: Any) -> None:
+    conn = _undo_db(tmp_path)
+    try:
+        _put(conn, {"rekordbox": grid_edit.make_edit(10.0, 0)}, "2026-11-09T00:00:01.000001Z")
+        _put(conn, {"rekordbox": grid_edit.make_edit(10.0, 1)}, "2026-11-09T00:00:02.000001Z")
+        assert _undo(conn) and _rb(conn) == grid_edit.make_edit(10.0, 0)
+        assert grid_edit.read(conn, _ID).modified_at == "2026-11-09T00:00:01.000001Z"
+        assert _undo(conn) and _rb(conn) == grid_edit.IDENTITY
+        assert grid_edit.previous(conn, _ID) is None
+    finally:
+        conn.close()
+
+
+@pytest.mark.requirement("GRIDEDIT-10215")
+def test_undo_with_no_row_or_after_resetting_an_unedited_track_is_none(tmp_path: Any) -> None:
+    conn = _undo_db(tmp_path)
+    try:
+        assert grid_edit.previous(conn, _ID) is None
+        _put(conn, {"rekordbox": grid_edit.IDENTITY}, "2026-11-09T00:00:01.000001Z")
+        assert grid_edit.previous(conn, _ID) is None
+    finally:
+        conn.close()
+
+
+@pytest.mark.requirement("GRIDEDIT-10215")
+def test_a_new_edit_after_an_undo_drops_the_undone_edit(tmp_path: Any) -> None:
+    conn = _undo_db(tmp_path)
+    try:
+        a, b, c = grid_edit.make_edit(1.0, 0), grid_edit.make_edit(2.0, 0), grid_edit.make_edit(3.0, 0)
+        _put(conn, {"rekordbox": a}, "2026-11-09T00:00:01.000001Z")
+        _put(conn, {"rekordbox": b}, "2026-11-09T00:00:02.000001Z")
+        assert _undo(conn) and _rb(conn) == a
+        _put(conn, {"rekordbox": c}, "2026-11-09T00:00:04.000001Z")
+        assert _undo(conn) and _rb(conn) == a
+        assert _undo(conn) and _rb(conn) == grid_edit.IDENTITY
+        assert not _undo(conn)
+    finally:
+        conn.close()
+
+
+@pytest.mark.requirement("GRIDEDIT-10215")
+def test_undo_restores_both_sources(tmp_path: Any) -> None:
+    conn = _undo_db(tmp_path)
+    try:
+        _put(conn, {"rekordbox": grid_edit.make_edit(5.0, 0)}, "2026-11-09T00:00:01.000001Z")
+        _put(
+            conn,
+            {"rekordbox": grid_edit.make_edit(5.0, 0), "own": grid_edit.make_edit(-2.0, 1)},
+            "2026-11-09T00:00:02.000001Z",
+        )
+        assert _undo(conn)
+        stored = grid_edit.read(conn, _ID)
+        assert stored.for_source("rekordbox") == grid_edit.make_edit(5.0, 0)
+        assert stored.for_source("own") == grid_edit.IDENTITY
+    finally:
+        conn.close()

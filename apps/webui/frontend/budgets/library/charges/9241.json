@@ -1,0 +1,9 @@
+{
+  "bytes": 1024,
+  "measured_main": 329889,
+  "measured_with_pr": 330196,
+  "sha": "324e53d3f8",
+  "date": "Sun 8 Nov 2026",
+  "reason": "PR #9241 (Import DeckId from player constants in stem-routing module) grows the library surface. Measured: CI bundle check of 324e53d3f8, +307 B gzip; ceiled to KiB.",
+  "payback": "none planned; the growth is the feature's own code on this surface"
+}

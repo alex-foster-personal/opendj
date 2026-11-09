@@ -1,5 +1,5 @@
 /**
- * Deck grid adjust / grid shift (GRIDEDIT-6235, GRIDEDIT-6235d): what a press asks
+ * Deck grid adjust / grid shift (GRIDEDIT-6235, GRIDEDIT-6235d, GRIDEDIT-10215): what a press asks
  * for, how the edit in force reads, and the per-track request queue.
  *
  * Regression lines:
@@ -23,6 +23,8 @@
  * - overshoot control: if the queue claims the event echo forever then an
  *   agent's later edit never reaches the deck: broken
  * - if the deck still renders the grid buttons inert with a plannedTitle then broken
+ * - if Cmd+Z on a focused grid button does not send undo then broken
+ * - if plain z sends undo then broken
  */
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
@@ -202,6 +204,11 @@ function fakePorts() {
 		async reset(id, source, part) {
 			calls.push(['reset', id, source, part]);
 			stored = part === 'adjust' ? { ...stored, offset_ms: 0 } : { ...stored, beat_shift: 0 };
+			return stored;
+		},
+		async undo(id, source) {
+			calls.push(['undo', id, source]);
+			stored = { offset_ms: 0, beat_shift: 0 };
 			return stored;
 		},
 		async refresh(id) {
@@ -435,7 +442,8 @@ test('the grid buttons press through the grid_edit performance command, never th
 	const deck = readFileSync(new URL('../../src/lib/components/rb/Deck.svelte', import.meta.url), 'utf8');
 	assert.match(deck, /press=\{\(edit\) => void runPerformanceCommandFromUi\(\{ type: 'grid_edit', deck: deckId, edit \}\)\}/);
 	const ipc = readFileSync(new URL('../../src/lib/rb/performance-ipc.svelte.ts', import.meta.url), 'utf8');
-	assert.match(ipc, /\| \{ type: 'grid_edit'; deck: DeckId; edit: GridEditIntent \}/);
+	const types = readFileSync(new URL('../../src/lib/rb/performance-ipc-types.ts', import.meta.url), 'utf8');
+	assert.match(types, /\| \{ type: 'grid_edit'; deck: DeckId; edit: GridEditIntent \}/);
 	assert.match(ipc, /command\.type === 'grid_edit'\) \{\n\t\tconst st = getDeckState\(command\.deck\);\n\t\t_assertGridEditTarget\(command, st\);/);
 	assert.match(ipc, /\t\tawait runGridEditCommand\(st\.stable_id, st\.anlz, command\.edit, \(\) =>/);
 });
@@ -854,4 +862,44 @@ test('Rust engine mode refuses grid edits by name and greys both buttons (Codex 
 	const webAudioOnly = rustMode.match(/export const WEB_AUDIO_ONLY: ReadonlySet<string> = new Set\(\[([^\]]+)\]/);
 	assert.ok(webAudioOnly, 'rust-mode.svelte.ts declares WEB_AUDIO_ONLY');
 	assert.match(webAudioOnly[1], /'grid_edit'/, 'the grid_edit command is refused by name, not sent to the page engine');
+});
+
+
+// ---------- undo (GRIDEDIT-10215) ---------------------------------------------
+
+test('Cmd/Ctrl+Z on a focused grid button is undo; plain z, Cmd+Shift+Z and Cmd+Arrow are not', () => {
+	assert.deepEqual(edit.intentForKey('adjust', 'z', false, true), { kind: 'undo' });
+	assert.deepEqual(edit.intentForKey('shift', 'Z', false, true), { kind: 'undo' });
+	assert.equal(edit.intentForKey('adjust', 'z', false, false), null);
+	assert.equal(edit.intentForKey('adjust', 'z', false), null);
+	assert.equal(edit.intentForKey('adjust', 'z', true, true), null, 'shift is kept for a redo');
+	assert.equal(edit.intentForKey('adjust', 'ArrowLeft', false, true), null, 'Cmd+Arrow is the bar jump');
+	assert.deepEqual(edit.intentForKey('adjust', 'ArrowLeft', false, false), { kind: 'nudge', offset_ms: -2, beats: 0 });
+});
+
+test('the primary modifier is Cmd on a Mac and Ctrl elsewhere', () => {
+	assert.equal(edit.primaryModifierHeld({ metaKey: true, ctrlKey: false }, 'MacIntel'), true);
+	assert.equal(edit.primaryModifierHeld({ metaKey: false, ctrlKey: true }, 'MacIntel'), false);
+	assert.equal(edit.primaryModifierHeld({ metaKey: false, ctrlKey: true }, 'Win32'), true);
+	assert.equal(edit.primaryModifierHeld({ metaKey: true, ctrlKey: false }, 'Linux x86_64'), false);
+});
+
+test('grid_edit accepts an undo with only its kind', () => {
+	assert.deepEqual(command.parseGridEditIntent({ kind: 'undo' }), { kind: 'undo' });
+	assert.throws(() => command.parseGridEditIntent({ kind: 'undo', part: 'adjust' }), TypeError);
+});
+
+test('an undo after a nudge runs after it, is never merged, and the drain re-reads once', async () => {
+	const fake = fakePorts();
+	const q = queueMod.createGridEditQueue(fake.ports);
+	q.submit(SID, 'rekordbox', { kind: 'nudge', offset_ms: 2, beats: 0 });
+	q.submit(SID, 'rekordbox', { kind: 'undo' });
+	await settle(fake, q);
+	assert.deepEqual(fake.calls.map((call) => call[0]), ['nudge', 'undo', 'refresh']);
+});
+
+test('both available grid titles mention the undo chord', () => {
+	const anlz = anlzWith([{ t: 0.5, n: 1, bpm: 120 }]);
+	assert.match(edit.gridAdjustTitle(anlz, null), /Cmd\+Z/);
+	assert.match(edit.gridShiftTitle(anlz, null), /Cmd\+Z/);
 });

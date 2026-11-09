@@ -1,0 +1,9 @@
+{
+  "bytes": 2048,
+  "measured_main": 17024,
+  "measured_with_pr": 18171,
+  "sha": "dfd37667e7",
+  "date": "Sun 8 Nov 2026",
+  "reason": "PR #10481 (DDJ-1000 practice replica) imports DDJ1000_MAP into practice-devices.ts, which grows the lazy practice-replica chunk. Measured on nucbox-wsl: main (merge base 5df5c52fd2) 17024 B, with the PR 18171 B, +1147 B gzip; ceiled to KiB.",
+  "payback": "none planned; the growth is the device map this surface exists to carry"
+}

@@ -10,6 +10,7 @@
     opendj --list-verbs [--json]
     opendj install-cli [--target ~/.local/bin/opendj]
     opendj update check | opendj update apply [--timeout-s SECONDS]
+    opendj [--state-db PATH] library export --format rekordbox-xml --out FILE
 
 Exit codes are documented in :mod:`apps.opendj_cli`; the load-bearing ones are
 2 (no engine, and the message names the lock file that was checked) and 4 (the
@@ -97,6 +98,7 @@ _OPEN_BROWSER_TARGET = "browser"
 _OPEN_USAGE = "usage: opendj open performance | opendj open browser"
 _SCRIPT_COMMAND = "do"
 _TRACK_COMMAND = "track"
+_HISTORY_COMMAND = "history"
 _AUDIO_OUTPUT_HEALTH_COMMAND = "audio_output_health"
 _AUDIO_SWITCH_OUTPUT_COMMAND = "audio_switch_output"
 _AUDIO_RECONNECT_SPEAKER_COMMAND = "audio_reconnect_speaker"
@@ -104,6 +106,7 @@ _FEEDBACK_COMMAND = "feedback"
 _CLIENT_ERRORS_COMMAND = "client_errors"
 _ENRICHMENT_COMMAND = "enrichment"
 _ARTWORK_COMMAND = "artwork"
+_LIGHTING_COMMAND = "lighting"
 _SESSION_COMMAND = "session"
 _WINDOW_COMMAND = "window"
 _PRACTICE_COMMAND = "practice"
@@ -114,6 +117,7 @@ _API_COMMAND = "api"
 _INSTALL_COMMAND = "install-cli"
 _MCP_COMMAND = "mcp"
 _UPDATE_COMMAND = "update"
+_LIBRARY_COMMAND = "library"
 _DJ_COMMAND = "dj"
 _WORK_COMMAND = "work"
 _EDIT_COMMAND = "edit"
@@ -729,6 +733,7 @@ def _split_subcommand(tokens: Sequence[str], name: str) -> tuple[list[str], list
 _STANDALONE_COMMANDS = frozenset(
     {
         _TRACK_COMMAND,
+        _HISTORY_COMMAND,
         _WORK_COMMAND,
         _EDIT_COMMAND,
         _FEEDBACK_COMMAND,
@@ -748,10 +753,14 @@ _STANDALONE_COMMANDS = frozenset(
 
 def _run_standalone(head: str, rest: list[str], args: argparse.Namespace) -> int:
     """Run a subcommand whose own module parses ``rest``; keeps ``main`` under its branch cap."""
-    if head == _TRACK_COMMAND:
+    if head in {_TRACK_COMMAND, _HISTORY_COMMAND}:
         from apps.opendj_cli import track_cli
 
-        return track_cli.run(rest, as_json=args.json, state_db=args.state_db)
+        runner = {
+            _TRACK_COMMAND: track_cli.run,
+            _HISTORY_COMMAND: track_cli.run_history,
+        }[head]
+        return runner(rest, as_json=args.json, state_db=args.state_db)
     if head in {_WORK_COMMAND, _EDIT_COMMAND}:
         from apps.opendj_cli import edit_cli, work_cli
 
@@ -830,7 +839,7 @@ def _run_practice(tokens: Sequence[str]) -> int | None:
 
 def _run_early(tokens: Sequence[str]) -> int | None:
     """Subcommands that parse their own flags, tried before the global parser; None = not one of them."""
-    for runner in (_run_client_errors, _run_practice):
+    for runner in (_run_client_errors, _run_practice, _run_lighting, _run_library):
         code = runner(tokens)
         if code is not None:
             return code
@@ -847,6 +856,32 @@ def _run_client_errors(tokens: Sequence[str]) -> int | None:
     from apps.opendj_cli import client_errors_cli
 
     return client_errors_cli.run(rest, as_json=args.json, lock=args.lock)
+
+
+def _run_lighting(tokens: Sequence[str]) -> int | None:
+    """``lighting`` runs without the engine and parses its own flags (LIGHT-70)."""
+    split = _split_subcommand(tokens, _LIGHTING_COMMAND)
+    if split is None:
+        return None
+    global_tokens, rest = split
+    args = _parser(as_json="--json" in global_tokens).parse_args([*global_tokens, _LIGHTING_COMMAND])
+    from apps.opendj_cli import lighting_cli
+
+    return lighting_cli.run(rest, as_json=args.json)
+
+
+def _run_library(tokens: Sequence[str]) -> int | None:
+    """``opendj library ...`` when ``library`` is the verb itself, not a later argument."""
+    split = _split_subcommand(tokens, _LIBRARY_COMMAND)
+    if split is None:
+        return None
+    global_tokens, library_tokens = split
+    args = _parser(as_json="--json" in global_tokens).parse_args([*global_tokens, _LIBRARY_COMMAND])
+    if args.invocation != [_LIBRARY_COMMAND]:
+        return None
+    from apps.opendj_cli import library_cli
+
+    return library_cli.run(library_tokens, as_json=args.json, state_db=args.state_db)
 
 
 def main(argv: Sequence[str] | None = None) -> int:

@@ -344,6 +344,34 @@ export function claimArmedHotCuePress(pressT0Ms: number | undefined): boolean {
 	return armedHotCuePressStamps.delete(pressT0Ms);
 }
 
+// ---------------------------------------------------------------------------
+// Sync-join press classification (LATENCY-10437, issue #9699)
+//
+// A press that joins Beat Sync is scheduled onto the group's shared launch time
+// (`safeSyncScheduleTime`, 100 ms `SYNC_SCHEDULE_SAFETY_S` plus processor
+// latency): a product choice, not press latency. Marked by
+// `_synchronizeFollowers` and read by press-stamp.ts so every schedule row of
+// that press carries `schedule_reason: sync-join`. NOT consume-once: one sync
+// press schedules the master and each follower under the same stamp. Bounded
+// to the most recent stamps so the set never grows with a session.
+// ---------------------------------------------------------------------------
+const SYNC_JOIN_STAMPS_KEPT = 64;
+const syncJoinPressStamps = new Set<number>();
+
+/** Call once per sync-joining press, before its schedules run. */
+export function markSyncJoinPress(pressT0Ms: number): void {
+	syncJoinPressStamps.add(pressT0Ms);
+	if (syncJoinPressStamps.size > SYNC_JOIN_STAMPS_KEPT) {
+		const oldest = syncJoinPressStamps.values().next().value;
+		if (oldest !== undefined) syncJoinPressStamps.delete(oldest);
+	}
+}
+
+/** True for every schedule of a press marked by `markSyncJoinPress`. */
+export function isSyncJoinPress(pressT0Ms: number | undefined): boolean {
+	return pressT0Ms !== undefined && syncJoinPressStamps.has(pressT0Ms);
+}
+
 /** `BrowserPanel._loadOntoDeck`'s options; `stillNewest` is a Cmd K pick's guard (CMDK-16). */
 export interface DeckLoadOptions {
 	play?: boolean;

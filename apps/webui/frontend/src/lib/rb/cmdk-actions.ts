@@ -11,9 +11,11 @@
  * unbuilt todo rows stay in the Settings overlay.
  *
  * Commands are built from live deck state: one "Eject deck N" per loaded
- * deck. A playing deck asks first (the play-interrupt rule), like the deck
- * picker's replace guard.
+ * deck, plus runnable rows from the palette registry (CMDK-9600). A playing
+ * deck asks first (the play-interrupt rule), like the deck picker's replace
+ * guard.
  */
+import { PALETTE_REGISTRY, type PaletteBarRun, type PaletteContext, type PaletteDeck } from '$lib/palette/commands';
 import type { SettingDef } from '$lib/settings/catalog-types';
 import { settingsQueryTokens } from '$lib/settings/search';
 import type { DeckId } from './deck-id';
@@ -47,7 +49,12 @@ export interface CommandAction {
 	id: string;
 	label: string;
 	hint: string;
-	command: { type: 'eject'; deck: DeckId } | { type: 'open_settings'; query: string };
+	command:
+		| { type: 'eject'; deck: DeckId }
+		| { type: 'open_settings'; query: string }
+		| { type: 'palette'; run: PaletteBarRun };
+	/** Registry keywords for ranking and `actionRows` token matching. */
+	keywords?: readonly string[];
 }
 
 export type CmdkAction = SettingAction | CommandAction;
@@ -226,6 +233,41 @@ export function commandCandidates(decks: readonly ActionDeck[], query: string): 
 	return out;
 }
 
+function paletteTargetDeck(ctx: PaletteContext): PaletteDeck | undefined {
+	return ctx.decks.find((d) => d.id === ctx.target);
+}
+
+/** Runnable palette registry rows for the bar's target deck (CMDK-9600). */
+export function paletteCommandRows(ctx: PaletteContext, query: string): CommandAction[] {
+	if (actionTokens(query).length === 0) return [];
+	const out: CommandAction[] = [];
+	for (const entry of PALETTE_REGISTRY.commands) {
+		if (entry.run?.kind !== 'bar' || !entry.available(ctx)) continue;
+		const needsDeck = entry.args.some((a) => a.kind === 'deck');
+		const deck: PaletteDeck | null = needsDeck ? (paletteTargetDeck(ctx) ?? null) : null;
+		if (needsDeck && (deck === null || !deck.loaded)) continue;
+		const built = entry.run.build(ctx, deck);
+		let id = `palette:${entry.id}`;
+		if (deck !== null) id += `@${deck.id}:${deck.load_generation}`;
+		if (built.via === 'ipc') {
+			const cmd = built.command;
+			if ('playing' in cmd) id += `=${String(cmd.playing)}`;
+			if ('enabled' in cmd) id += `=${String(cmd.enabled)}`;
+		}
+		const label = deck !== null ? `${entry.title} deck ${deck.id}` : entry.title;
+		const hint = entry.shortcut ?? entry.route ?? '';
+		out.push({
+			kind: 'command',
+			id,
+			label,
+			hint,
+			keywords: entry.keywords,
+			command: { type: 'palette', run: built }
+		});
+	}
+	return out;
+}
+
 /** Frecency key, stable across reloads of a deck (`eject-2:7` → `eject-2`). */
 export function commandKey(action: CommandAction): string {
 	return action.id.split(':')[0]!;
@@ -246,7 +288,11 @@ export function actionRows(
 ): CmdkAction[] {
 	const tokens = actionTokens(query);
 	if (tokens.length === 0) return [];
-	const cmds = ranked ? commands : commands.filter((cmd) => matchesAll(`${cmd.label} ${cmd.id.replace(/-/g, ' ')}`, tokens));
+	const cmds = ranked
+		? commands
+		: commands.filter((cmd) =>
+				matchesAll(`${cmd.label} ${cmd.id.replace(/-/g, ' ')} ${(cmd.keywords ?? []).join(' ')}`, tokens)
+			);
 	return [...cmds, ...settings].slice(0, limit);
 }
 

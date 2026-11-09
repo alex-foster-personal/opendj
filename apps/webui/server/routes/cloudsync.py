@@ -31,7 +31,9 @@ these; nothing here is UI-only):
     playlist_id) pin, through the same gate and write path.
   * ``GET  /cloudsync/overview``       -- per-machine track counts derived
     from ``playlist_pins`` x ``playlist_memberships``, an unhydrated-pinned
-    count, and ``last_sync_at`` from the machine-local ``sync_state`` table.
+    count, ``last_sync_at`` from the machine-local ``sync_state`` table, and
+    a ``sync`` block that is :meth:`apps.sync_hub.health.FleetHealth.to_wire`
+    (hydration counts plus this machine's fleet-health verdict).
 
 Both PUTs write through :mod:`apps.sync_hub.policy_store` (the policy gate:
 409 on an error the change introduces or leaves on the cell it names).
@@ -74,7 +76,6 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from pydantic import BaseModel, ConfigDict, Field
 
 from apps.shared.state import db as state_db
-from apps.shared.state import sync_stamp
 from apps.shared.state.machine_identity import (
     MachineIdentityError,
     MachineNameConflictError,
@@ -88,6 +89,16 @@ from apps.webui.server.cloudsync_policy_http import (
     apply_policy_or_raise,
     author_or_raise,
     policy_write_responses,
+)
+from apps.webui.server.routes.cloudsync_overview import (
+    MachineOverview,
+    OverviewOut,
+    SyncHealthOut,
+    SyncPeerOut,
+    SyncRunOut,
+    build_overview,
+    data_dir_for,
+    table_exists,
 )
 
 router = APIRouter(prefix="/cloudsync", tags=["cloudsync"])
@@ -117,16 +128,7 @@ def _data_dir(conn: sqlite3.Connection) -> Path:
     See the identity note in the module docstring: one source, the DB's own
     location, shared with every other writer in the repo.
     """
-    try:
-        return sync_stamp.data_dir_for_connection(conn)
-    except sync_stamp.SyncStampError as exc:
-        raise HTTPException(
-            status_code=500,
-            detail={
-                "code": "CLOUDSYNC_IDENTITY_ERROR",
-                "message": str(exc),
-            },
-        ) from exc
+    return data_dir_for(conn)
 
 
 def _unavailable(db_path: Path) -> HTTPException:
@@ -183,11 +185,7 @@ def get_cloudsync_write_conn(request: Request) -> Iterator[sqlite3.Connection]:
 
 
 def _table_exists(conn: sqlite3.Connection, name: str) -> bool:
-    row = conn.execute(
-        "SELECT 1 FROM sqlite_master WHERE type='table' AND name=?",
-        (name,),
-    ).fetchone()
-    return row is not None
+    return table_exists(conn, name)
 
 
 # ----------------------------------------------------------- schemas
@@ -244,23 +242,8 @@ class PlaylistPinPut(BaseModel):
     mode: SyncMode
 
 
-class MachineOverview(BaseModel):
-    model_config = ConfigDict(frozen=True)
-
-    machine_id: str
-    name: str
-    pinned_tracks: int
-    cached_tracks: int
-    stream_tracks: int
-    unhydrated_pinned_count: int
-    last_sync_at: str | None = None
-
-
-class OverviewOut(BaseModel):
-    model_config = ConfigDict(frozen=True)
-
-    total_tracks: int
-    machines: list[MachineOverview]
+# MachineOverview / OverviewOut / the overview builders live in
+# cloudsync_overview.py (quality-gate file_size ratchet). Re-exported below.
 
 
 # ----------------------------------------------------------- helpers
@@ -475,68 +458,11 @@ def put_playlist_pin(
 # ----------------------------------------------------------- overview
 
 
-def _machine_overview_row(conn: sqlite3.Connection, machine_id: str, name: str) -> MachineOverview:
-    def _pin_count(mode: str) -> int:
-        row = conn.execute(
-            """
-            SELECT COUNT(DISTINCT pm.stable_id)
-            FROM playlist_pins pp
-            JOIN playlist_memberships pm ON pm.playlist_id = pp.playlist_id
-            WHERE pp.machine_id = ? AND pp.mode = ? AND pp.deleted_at IS NULL
-              AND pm.deleted_at IS NULL
-            """,
-            (machine_id, mode),
-        ).fetchone()
-        return int(row[0]) if row else 0
-
-    unhydrated_row = conn.execute(
-        """
-        SELECT COUNT(DISTINCT pm.stable_id)
-        FROM playlist_pins pp
-        JOIN playlist_memberships pm ON pm.playlist_id = pp.playlist_id
-        WHERE pp.machine_id = ? AND pp.mode = 'pinned' AND pp.deleted_at IS NULL
-          AND pm.deleted_at IS NULL
-          AND NOT EXISTS (
-            SELECT 1 FROM track_locations tl
-            WHERE tl.stable_id = pm.stable_id AND tl.kind = 'local'
-              AND tl.machine_id = pp.machine_id
-              AND tl.available = 1 AND tl.deleted_at IS NULL
-          )
-        """,
-        (machine_id,),
-    ).fetchone()
-
-    last_sync_row = None
-    if _table_exists(conn, "sync_state"):
-        last_sync_row = conn.execute(
-            "SELECT last_sync_at FROM sync_state WHERE peer = ?",
-            (machine_id,),
-        ).fetchone()
-
-    return MachineOverview(
-        machine_id=machine_id,
-        name=name,
-        pinned_tracks=_pin_count("pinned"),
-        cached_tracks=_pin_count("cached"),
-        stream_tracks=_pin_count("stream"),
-        unhydrated_pinned_count=int(unhydrated_row[0]) if unhydrated_row else 0,
-        last_sync_at=last_sync_row[0] if last_sync_row else None,
-    )
-
-
 @router.get("/overview", response_model=OverviewOut)
 def get_overview(
     conn: sqlite3.Connection = Depends(get_cloudsync_conn),  # noqa: B008
 ) -> OverviewOut:
-    total_row = conn.execute("SELECT COUNT(*) FROM tracks WHERE deleted_at IS NULL").fetchone()
-    total_tracks = int(total_row[0]) if total_row else 0
-
-    if not _table_exists(conn, "machines") or not _table_exists(conn, "playlist_pins"):
-        return OverviewOut(total_tracks=total_tracks, machines=[])
-
-    machine_rows = conn.execute("SELECT machine_id, name FROM machines ORDER BY name").fetchall()
-    machines = [_machine_overview_row(conn, machine_id, name) for machine_id, name in machine_rows]
-    return OverviewOut(total_tracks=total_tracks, machines=machines)
+    return build_overview(conn)
 
 
 __all__ = [
@@ -546,8 +472,11 @@ __all__ = [
     "OverviewOut",
     "PlaylistPinOut",
     "PlaylistPinPut",
+    "SyncHealthOut",
     "SyncMode",
+    "SyncPeerOut",
     "SyncPolicyOut",
     "SyncPolicyPut",
+    "SyncRunOut",
     "router",
 ]

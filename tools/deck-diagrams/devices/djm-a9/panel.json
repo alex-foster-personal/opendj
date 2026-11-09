@@ -1,0 +1,1844 @@
+{
+ "format": "opendj-panel-layout/1",
+ "device": "djm-a9",
+ "display_name": "4-channel club mixer",
+ "units": "mm",
+ "panel": {
+  "w": 407.4,
+  "d": 458.3
+ },
+ "device_map": "DJM_A9_MAP",
+ "sources": {
+  "panel_size": "DJM-A9 product page, Specifications: Dimensions (W x D x H) 407.4 x 458.3 x 107.9 mm",
+  "wire": "apps/webui/frontend/src/lib/rb/midi/maps/djm-a9.ts (DJM-A9 MIDI Message List E 1.0)",
+  "positions": "measured trace of the official top-panel figure, normalised for the renderer; reference: devices/djm-a9/panel.reference.json (ADR-0137)"
+ },
+ "out_of_scope": [
+  "the mixer has no SHIFT layer: every shift_midi is null",
+  "rotary selectors (INPUT, SEND CH, EFFECT SELECT) carry one position's wire; the other positions are map hints",
+  "X-PAD is a horizontal touch strip drawn as a fader from its rectangle; its touch CC is a map hint",
+  "TIME carries its MSB CC; the LSB CC is a map hint",
+  "controls the MIDI list does not document: MIC LEVEL 1 and 2, +48V, MIDI ON/OFF and START/STOP, CENTER LOCK, level meters, display",
+  "the mixer accepts no MIDI input, so there are no LED rules"
+ ],
+ "controls": [
+  {
+   "id": "mic-eq-hi",
+   "fig": "L1",
+   "type": "knob",
+   "label": "MIC EQ HI",
+   "does": "Microphone EQ high band",
+   "x": 21.0,
+   "y": 110.0,
+   "w": 12.0,
+   "h": 12.0,
+   "section": "mixer",
+   "midi": {
+    "ch": 1,
+    "kind": "cc",
+    "id": 30
+   },
+   "shift_midi": null
+  },
+  {
+   "id": "mic-eq-low",
+   "fig": "L2",
+   "type": "knob",
+   "label": "MIC EQ LOW",
+   "does": "Microphone EQ low band",
+   "x": 21.0,
+   "y": 132.5,
+   "w": 12.0,
+   "h": 13.0,
+   "section": "mixer",
+   "midi": {
+    "ch": 1,
+    "kind": "cc",
+    "id": 31
+   },
+   "shift_midi": null
+  },
+  {
+   "id": "talkover",
+   "fig": "L3",
+   "type": "button",
+   "label": "TALKOVER",
+   "does": "Duck the music while the microphone is used",
+   "x": 22.5,
+   "y": 160.5,
+   "w": 9.0,
+   "h": 9.0,
+   "section": "mixer",
+   "midi": {
+    "ch": 1,
+    "kind": "note",
+    "id": 97
+   },
+   "shift_midi": null
+  },
+  {
+   "id": "mic-fx-echo",
+   "fig": "L4",
+   "type": "button",
+   "label": "ECHO",
+   "does": "Microphone effect: echo",
+   "x": 20.5,
+   "y": 182.0,
+   "w": 13.0,
+   "h": 8.0,
+   "section": "mixer",
+   "midi": {
+    "ch": 1,
+    "kind": "cc",
+    "id": 97
+   },
+   "shift_midi": null
+  },
+  {
+   "id": "mic-fx-pitch",
+   "fig": "L5",
+   "type": "button",
+   "label": "PITCH",
+   "does": "Microphone effect: pitch",
+   "x": 20.5,
+   "y": 202.0,
+   "w": 13.0,
+   "h": 8.0,
+   "section": "mixer",
+   "midi": {
+    "ch": 1,
+    "kind": "cc",
+    "id": 98
+   },
+   "shift_midi": null
+  },
+  {
+   "id": "mic-fx-megaphone",
+   "fig": "L6",
+   "type": "button",
+   "label": "MEGAPHONE",
+   "does": "Microphone effect: megaphone",
+   "x": 20.5,
+   "y": 220.5,
+   "w": 13.0,
+   "h": 8.0,
+   "section": "mixer",
+   "midi": {
+    "ch": 1,
+    "kind": "cc",
+    "id": 99
+   },
+   "shift_midi": null
+  },
+  {
+   "id": "mic-fx-parameter",
+   "fig": "L7",
+   "type": "knob",
+   "label": "PARAMETER",
+   "does": "Microphone effect amount",
+   "x": 21.0,
+   "y": 244.5,
+   "w": 12.0,
+   "h": 14.0,
+   "section": "mixer",
+   "midi": {
+    "ch": 1,
+    "kind": "cc",
+    "id": 100
+   },
+   "shift_midi": null
+  },
+  {
+   "id": "mic-reverb",
+   "fig": "L8",
+   "type": "button",
+   "label": "MIC REVERB",
+   "does": "Microphone reverb on or off",
+   "x": 20.5,
+   "y": 279.5,
+   "w": 13.0,
+   "h": 8.0,
+   "section": "mixer",
+   "midi": {
+    "ch": 1,
+    "kind": "note",
+    "id": 96
+   },
+   "shift_midi": null
+  },
+  {
+   "id": "mic-reverb-parameter",
+   "fig": "L9",
+   "type": "knob",
+   "label": "PARAMETER",
+   "does": "Microphone reverb amount",
+   "x": 21.0,
+   "y": 300.0,
+   "w": 12.0,
+   "h": 14.0,
+   "section": "mixer",
+   "midi": {
+    "ch": 1,
+    "kind": "cc",
+    "id": 101
+   },
+   "shift_midi": null
+  },
+  {
+   "id": "mic-on",
+   "fig": "L10",
+   "type": "button",
+   "label": "MIC ON",
+   "does": "Microphone on, or push to talk",
+   "x": 21.0,
+   "y": 356.0,
+   "w": 12.0,
+   "h": 11.0,
+   "section": "mixer",
+   "midi": {
+    "ch": 1,
+    "kind": "note",
+    "id": 98
+   },
+   "shift_midi": null
+  },
+  {
+   "id": "bluetooth",
+   "fig": "L11",
+   "type": "button",
+   "label": "BLUETOOTH",
+   "does": "Bluetooth pairing",
+   "x": 67.5,
+   "y": 86.0,
+   "w": 15.0,
+   "h": 9.0,
+   "section": "mixer",
+   "midi": {
+    "ch": 1,
+    "kind": "note",
+    "id": 112
+   },
+   "shift_midi": null
+  },
+  {
+   "id": "cfx-space",
+   "fig": "L12",
+   "type": "button",
+   "label": "SPACE",
+   "does": "Sound Color FX: space",
+   "x": 58.0,
+   "y": 182.0,
+   "w": 12.0,
+   "h": 8.0,
+   "section": "effect",
+   "midi": {
+    "ch": 1,
+    "kind": "note",
+    "id": 85
+   },
+   "shift_midi": null
+  },
+  {
+   "id": "cfx-dub-echo",
+   "fig": "L13",
+   "type": "button",
+   "label": "DUB ECHO",
+   "does": "Sound Color FX: dub echo",
+   "x": 78.5,
+   "y": 182.5,
+   "w": 13.0,
+   "h": 7.0,
+   "section": "effect",
+   "midi": {
+    "ch": 1,
+    "kind": "note",
+    "id": 105
+   },
+   "shift_midi": null
+  },
+  {
+   "id": "cfx-crush",
+   "fig": "L14",
+   "type": "button",
+   "label": "CRUSH",
+   "does": "Sound Color FX: crush",
+   "x": 58.0,
+   "y": 202.0,
+   "w": 12.0,
+   "h": 8.0,
+   "section": "effect",
+   "midi": {
+    "ch": 1,
+    "kind": "note",
+    "id": 106
+   },
+   "shift_midi": null
+  },
+  {
+   "id": "cfx-sweep",
+   "fig": "L15",
+   "type": "button",
+   "label": "SWEEP",
+   "does": "Sound Color FX: sweep",
+   "x": 79.0,
+   "y": 202.5,
+   "w": 12.0,
+   "h": 7.0,
+   "section": "effect",
+   "midi": {
+    "ch": 1,
+    "kind": "note",
+    "id": 107
+   },
+   "shift_midi": null
+  },
+  {
+   "id": "cfx-noise",
+   "fig": "L16",
+   "type": "button",
+   "label": "NOISE",
+   "does": "Sound Color FX: noise",
+   "x": 57.5,
+   "y": 220.5,
+   "w": 13.0,
+   "h": 8.0,
+   "section": "effect",
+   "midi": {
+    "ch": 1,
+    "kind": "note",
+    "id": 86
+   },
+   "shift_midi": null
+  },
+  {
+   "id": "cfx-filter",
+   "fig": "L17",
+   "type": "button",
+   "label": "FILTER",
+   "does": "Sound Color FX: filter",
+   "x": 79.0,
+   "y": 221.0,
+   "w": 12.0,
+   "h": 7.0,
+   "section": "effect",
+   "midi": {
+    "ch": 1,
+    "kind": "note",
+    "id": 87
+   },
+   "shift_midi": null
+  },
+  {
+   "id": "cfx-parameter",
+   "fig": "L18",
+   "type": "knob",
+   "label": "PARAMETER",
+   "does": "Sound Color FX parameter",
+   "x": 68.5,
+   "y": 244.5,
+   "w": 13.0,
+   "h": 14.0,
+   "section": "effect",
+   "midi": {
+    "ch": 1,
+    "kind": "cc",
+    "id": 108
+   },
+   "shift_midi": null
+  },
+  {
+   "id": "phones-a-link-cue",
+   "fig": "L19",
+   "type": "button",
+   "label": "LINK CUE",
+   "does": "Headphones A: link cue",
+   "x": 56.5,
+   "y": 278.0,
+   "w": 15.0,
+   "h": 11.0,
+   "section": "mixer",
+   "midi": {
+    "ch": 1,
+    "kind": "note",
+    "id": 15
+   },
+   "shift_midi": null
+  },
+  {
+   "id": "phones-a-mono-split",
+   "fig": "L20",
+   "type": "button",
+   "label": "MONO SPLIT",
+   "does": "Headphones A: mono split or stereo",
+   "x": 77.5,
+   "y": 278.0,
+   "w": 15.0,
+   "h": 11.0,
+   "section": "mixer",
+   "midi": {
+    "ch": 1,
+    "kind": "note",
+    "id": 33
+   },
+   "shift_midi": null
+  },
+  {
+   "id": "phones-a-mix",
+   "fig": "L21",
+   "type": "knob",
+   "label": "MIX",
+   "does": "Headphones A: cue and master blend",
+   "x": 68.0,
+   "y": 300.0,
+   "w": 14.0,
+   "h": 14.0,
+   "section": "mixer",
+   "midi": {
+    "ch": 1,
+    "kind": "cc",
+    "id": 27
+   },
+   "shift_midi": null
+  },
+  {
+   "id": "phones-a-level",
+   "fig": "L22",
+   "type": "knob",
+   "label": "LEVEL",
+   "does": "Headphones A level",
+   "x": 68.0,
+   "y": 327.0,
+   "w": 14.0,
+   "h": 14.0,
+   "section": "mixer",
+   "midi": {
+    "ch": 1,
+    "kind": "cc",
+    "id": 26
+   },
+   "shift_midi": null
+  },
+  {
+   "id": "ch1-input",
+   "fig": "C1-1",
+   "type": "knob",
+   "label": "INPUT",
+   "does": "Input selector; the USB position's note is carried (channel 1)",
+   "x": 117.5,
+   "y": 28.5,
+   "w": 12.0,
+   "h": 12.0,
+   "section": "mixer",
+   "midi": {
+    "ch": 1,
+    "kind": "note",
+    "id": 74
+   },
+   "shift_midi": null
+  },
+  {
+   "id": "ch1-trim",
+   "fig": "C2-1",
+   "type": "knob",
+   "label": "TRIM",
+   "does": "Channel gain (channel 1)",
+   "x": 116.5,
+   "y": 57.0,
+   "w": 14.0,
+   "h": 14.0,
+   "section": "mixer",
+   "midi": {
+    "ch": 1,
+    "kind": "cc",
+    "id": 1
+   },
+   "shift_midi": null
+  },
+  {
+   "id": "ch1-hi",
+   "fig": "C3-1",
+   "type": "knob",
+   "label": "HI",
+   "does": "EQ or isolator high band (channel 1)",
+   "x": 116.5,
+   "y": 86.0,
+   "w": 14.0,
+   "h": 14.0,
+   "section": "mixer",
+   "midi": {
+    "ch": 1,
+    "kind": "cc",
+    "id": 2
+   },
+   "shift_midi": null
+  },
+  {
+   "id": "ch1-mid",
+   "fig": "C4-1",
+   "type": "knob",
+   "label": "MID",
+   "does": "EQ or isolator mid band (channel 1)",
+   "x": 116.5,
+   "y": 116.5,
+   "w": 14.0,
+   "h": 14.0,
+   "section": "mixer",
+   "midi": {
+    "ch": 1,
+    "kind": "cc",
+    "id": 3
+   },
+   "shift_midi": null
+  },
+  {
+   "id": "ch1-low",
+   "fig": "C5-1",
+   "type": "knob",
+   "label": "LOW",
+   "does": "EQ or isolator low band (channel 1)",
+   "x": 116.5,
+   "y": 147.0,
+   "w": 14.0,
+   "h": 14.0,
+   "section": "mixer",
+   "midi": {
+    "ch": 1,
+    "kind": "cc",
+    "id": 4
+   },
+   "shift_midi": null
+  },
+  {
+   "id": "ch1-color",
+   "fig": "C6-1",
+   "type": "knob",
+   "label": "COLOR",
+   "does": "Sound Color FX amount for this channel (channel 1)",
+   "x": 115.0,
+   "y": 187.0,
+   "w": 17.0,
+   "h": 17.0,
+   "section": "mixer",
+   "midi": {
+    "ch": 1,
+    "kind": "cc",
+    "id": 5
+   },
+   "shift_midi": null
+  },
+  {
+   "id": "ch1-cue-a",
+   "fig": "C7-1",
+   "type": "button",
+   "label": "CUE A",
+   "does": "Headphones A cue for this channel (channel 1)",
+   "x": 106.5,
+   "y": 226.5,
+   "w": 17.0,
+   "h": 7.0,
+   "section": "mixer",
+   "midi": {
+    "ch": 1,
+    "kind": "note",
+    "id": 10
+   },
+   "shift_midi": null
+  },
+  {
+   "id": "ch1-cue-b",
+   "fig": "C7-1",
+   "type": "button",
+   "label": "CUE B",
+   "does": "Headphones B cue for this channel (channel 1)",
+   "x": 129.0,
+   "y": 226.5,
+   "w": 11.0,
+   "h": 7.0,
+   "section": "mixer",
+   "midi": {
+    "ch": 1,
+    "kind": "note",
+    "id": 16
+   },
+   "shift_midi": null
+  },
+  {
+   "id": "ch1-fader",
+   "fig": "C8-1",
+   "type": "fader",
+   "label": "CH FADER",
+   "does": "Channel volume (channel 1)",
+   "x": 113.0,
+   "y": 270.0,
+   "w": 21.0,
+   "h": 47.0,
+   "section": "mixer",
+   "midi": {
+    "ch": 1,
+    "kind": "cc",
+    "id": 17
+   },
+   "shift_midi": null
+  },
+  {
+   "id": "ch1-xf-assign",
+   "fig": "C9-1",
+   "type": "button",
+   "label": "A THRU B",
+   "does": "Crossfader assign switch (channel 1)",
+   "x": 116.5,
+   "y": 338.5,
+   "w": 14.0,
+   "h": 8.0,
+   "section": "mixer",
+   "midi": {
+    "ch": 1,
+    "kind": "cc",
+    "id": 65
+   },
+   "shift_midi": null
+  },
+  {
+   "id": "ch2-input",
+   "fig": "C1-2",
+   "type": "knob",
+   "label": "INPUT",
+   "does": "Input selector; the USB position's note is carried (channel 2)",
+   "x": 160.5,
+   "y": 28.5,
+   "w": 12.0,
+   "h": 12.0,
+   "section": "mixer",
+   "midi": {
+    "ch": 1,
+    "kind": "note",
+    "id": 75
+   },
+   "shift_midi": null
+  },
+  {
+   "id": "ch2-trim",
+   "fig": "C2-2",
+   "type": "knob",
+   "label": "TRIM",
+   "does": "Channel gain (channel 2)",
+   "x": 159.5,
+   "y": 57.0,
+   "w": 14.0,
+   "h": 14.0,
+   "section": "mixer",
+   "midi": {
+    "ch": 1,
+    "kind": "cc",
+    "id": 6
+   },
+   "shift_midi": null
+  },
+  {
+   "id": "ch2-hi",
+   "fig": "C3-2",
+   "type": "knob",
+   "label": "HI",
+   "does": "EQ or isolator high band (channel 2)",
+   "x": 159.5,
+   "y": 86.0,
+   "w": 14.0,
+   "h": 14.0,
+   "section": "mixer",
+   "midi": {
+    "ch": 1,
+    "kind": "cc",
+    "id": 7
+   },
+   "shift_midi": null
+  },
+  {
+   "id": "ch2-mid",
+   "fig": "C4-2",
+   "type": "knob",
+   "label": "MID",
+   "does": "EQ or isolator mid band (channel 2)",
+   "x": 159.5,
+   "y": 116.5,
+   "w": 14.0,
+   "h": 14.0,
+   "section": "mixer",
+   "midi": {
+    "ch": 1,
+    "kind": "cc",
+    "id": 8
+   },
+   "shift_midi": null
+  },
+  {
+   "id": "ch2-low",
+   "fig": "C5-2",
+   "type": "knob",
+   "label": "LOW",
+   "does": "EQ or isolator low band (channel 2)",
+   "x": 159.5,
+   "y": 147.0,
+   "w": 14.0,
+   "h": 14.0,
+   "section": "mixer",
+   "midi": {
+    "ch": 1,
+    "kind": "cc",
+    "id": 9
+   },
+   "shift_midi": null
+  },
+  {
+   "id": "ch2-color",
+   "fig": "C6-2",
+   "type": "knob",
+   "label": "COLOR",
+   "does": "Sound Color FX amount for this channel (channel 2)",
+   "x": 158.0,
+   "y": 187.0,
+   "w": 17.0,
+   "h": 17.0,
+   "section": "mixer",
+   "midi": {
+    "ch": 1,
+    "kind": "cc",
+    "id": 10
+   },
+   "shift_midi": null
+  },
+  {
+   "id": "ch2-cue-a",
+   "fig": "C7-2",
+   "type": "button",
+   "label": "CUE A",
+   "does": "Headphones A cue for this channel (channel 2)",
+   "x": 149.5,
+   "y": 226.5,
+   "w": 17.0,
+   "h": 7.0,
+   "section": "mixer",
+   "midi": {
+    "ch": 1,
+    "kind": "note",
+    "id": 11
+   },
+   "shift_midi": null
+  },
+  {
+   "id": "ch2-cue-b",
+   "fig": "C7-2",
+   "type": "button",
+   "label": "CUE B",
+   "does": "Headphones B cue for this channel (channel 2)",
+   "x": 172.0,
+   "y": 226.5,
+   "w": 11.0,
+   "h": 7.0,
+   "section": "mixer",
+   "midi": {
+    "ch": 1,
+    "kind": "note",
+    "id": 17
+   },
+   "shift_midi": null
+  },
+  {
+   "id": "ch2-fader",
+   "fig": "C8-2",
+   "type": "fader",
+   "label": "CH FADER",
+   "does": "Channel volume (channel 2)",
+   "x": 156.0,
+   "y": 270.0,
+   "w": 21.0,
+   "h": 47.0,
+   "section": "mixer",
+   "midi": {
+    "ch": 1,
+    "kind": "cc",
+    "id": 18
+   },
+   "shift_midi": null
+  },
+  {
+   "id": "ch2-xf-assign",
+   "fig": "C9-2",
+   "type": "button",
+   "label": "A THRU B",
+   "does": "Crossfader assign switch (channel 2)",
+   "x": 159.5,
+   "y": 338.5,
+   "w": 14.0,
+   "h": 8.0,
+   "section": "mixer",
+   "midi": {
+    "ch": 1,
+    "kind": "cc",
+    "id": 66
+   },
+   "shift_midi": null
+  },
+  {
+   "id": "ch3-input",
+   "fig": "C1-3",
+   "type": "knob",
+   "label": "INPUT",
+   "does": "Input selector; the USB position's note is carried (channel 3)",
+   "x": 203.5,
+   "y": 28.5,
+   "w": 12.0,
+   "h": 12.0,
+   "section": "mixer",
+   "midi": {
+    "ch": 1,
+    "kind": "note",
+    "id": 76
+   },
+   "shift_midi": null
+  },
+  {
+   "id": "ch3-trim",
+   "fig": "C2-3",
+   "type": "knob",
+   "label": "TRIM",
+   "does": "Channel gain (channel 3)",
+   "x": 202.5,
+   "y": 57.0,
+   "w": 14.0,
+   "h": 14.0,
+   "section": "mixer",
+   "midi": {
+    "ch": 1,
+    "kind": "cc",
+    "id": 12
+   },
+   "shift_midi": null
+  },
+  {
+   "id": "ch3-hi",
+   "fig": "C3-3",
+   "type": "knob",
+   "label": "HI",
+   "does": "EQ or isolator high band (channel 3)",
+   "x": 202.5,
+   "y": 86.0,
+   "w": 14.0,
+   "h": 14.0,
+   "section": "mixer",
+   "midi": {
+    "ch": 1,
+    "kind": "cc",
+    "id": 14
+   },
+   "shift_midi": null
+  },
+  {
+   "id": "ch3-mid",
+   "fig": "C4-3",
+   "type": "knob",
+   "label": "MID",
+   "does": "EQ or isolator mid band (channel 3)",
+   "x": 202.5,
+   "y": 116.5,
+   "w": 14.0,
+   "h": 14.0,
+   "section": "mixer",
+   "midi": {
+    "ch": 1,
+    "kind": "cc",
+    "id": 15
+   },
+   "shift_midi": null
+  },
+  {
+   "id": "ch3-low",
+   "fig": "C5-3",
+   "type": "knob",
+   "label": "LOW",
+   "does": "EQ or isolator low band (channel 3)",
+   "x": 202.5,
+   "y": 147.0,
+   "w": 14.0,
+   "h": 14.0,
+   "section": "mixer",
+   "midi": {
+    "ch": 1,
+    "kind": "cc",
+    "id": 21
+   },
+   "shift_midi": null
+  },
+  {
+   "id": "ch3-color",
+   "fig": "C6-3",
+   "type": "knob",
+   "label": "COLOR",
+   "does": "Sound Color FX amount for this channel (channel 3)",
+   "x": 201.0,
+   "y": 187.0,
+   "w": 17.0,
+   "h": 17.0,
+   "section": "mixer",
+   "midi": {
+    "ch": 1,
+    "kind": "cc",
+    "id": 22
+   },
+   "shift_midi": null
+  },
+  {
+   "id": "ch3-cue-a",
+   "fig": "C7-3",
+   "type": "button",
+   "label": "CUE A",
+   "does": "Headphones A cue for this channel (channel 3)",
+   "x": 192.5,
+   "y": 226.5,
+   "w": 17.0,
+   "h": 7.0,
+   "section": "mixer",
+   "midi": {
+    "ch": 1,
+    "kind": "note",
+    "id": 12
+   },
+   "shift_midi": null
+  },
+  {
+   "id": "ch3-cue-b",
+   "fig": "C7-3",
+   "type": "button",
+   "label": "CUE B",
+   "does": "Headphones B cue for this channel (channel 3)",
+   "x": 215.0,
+   "y": 226.5,
+   "w": 11.0,
+   "h": 7.0,
+   "section": "mixer",
+   "midi": {
+    "ch": 1,
+    "kind": "note",
+    "id": 18
+   },
+   "shift_midi": null
+  },
+  {
+   "id": "ch3-fader",
+   "fig": "C8-3",
+   "type": "fader",
+   "label": "CH FADER",
+   "does": "Channel volume (channel 3)",
+   "x": 199.0,
+   "y": 270.0,
+   "w": 21.0,
+   "h": 47.0,
+   "section": "mixer",
+   "midi": {
+    "ch": 1,
+    "kind": "cc",
+    "id": 19
+   },
+   "shift_midi": null
+  },
+  {
+   "id": "ch3-xf-assign",
+   "fig": "C9-3",
+   "type": "button",
+   "label": "A THRU B",
+   "does": "Crossfader assign switch (channel 3)",
+   "x": 202.5,
+   "y": 338.5,
+   "w": 14.0,
+   "h": 8.0,
+   "section": "mixer",
+   "midi": {
+    "ch": 1,
+    "kind": "cc",
+    "id": 67
+   },
+   "shift_midi": null
+  },
+  {
+   "id": "ch4-input",
+   "fig": "C1-4",
+   "type": "knob",
+   "label": "INPUT",
+   "does": "Input selector; the USB position's note is carried (channel 4)",
+   "x": 247.0,
+   "y": 28.5,
+   "w": 12.0,
+   "h": 12.0,
+   "section": "mixer",
+   "midi": {
+    "ch": 1,
+    "kind": "note",
+    "id": 77
+   },
+   "shift_midi": null
+  },
+  {
+   "id": "ch4-trim",
+   "fig": "C2-4",
+   "type": "knob",
+   "label": "TRIM",
+   "does": "Channel gain (channel 4)",
+   "x": 246.0,
+   "y": 57.0,
+   "w": 14.0,
+   "h": 14.0,
+   "section": "mixer",
+   "midi": {
+    "ch": 1,
+    "kind": "cc",
+    "id": 80
+   },
+   "shift_midi": null
+  },
+  {
+   "id": "ch4-hi",
+   "fig": "C3-4",
+   "type": "knob",
+   "label": "HI",
+   "does": "EQ or isolator high band (channel 4)",
+   "x": 246.0,
+   "y": 86.0,
+   "w": 14.0,
+   "h": 14.0,
+   "section": "mixer",
+   "midi": {
+    "ch": 1,
+    "kind": "cc",
+    "id": 81
+   },
+   "shift_midi": null
+  },
+  {
+   "id": "ch4-mid",
+   "fig": "C4-4",
+   "type": "knob",
+   "label": "MID",
+   "does": "EQ or isolator mid band (channel 4)",
+   "x": 246.0,
+   "y": 116.5,
+   "w": 14.0,
+   "h": 14.0,
+   "section": "mixer",
+   "midi": {
+    "ch": 1,
+    "kind": "cc",
+    "id": 92
+   },
+   "shift_midi": null
+  },
+  {
+   "id": "ch4-low",
+   "fig": "C5-4",
+   "type": "knob",
+   "label": "LOW",
+   "does": "EQ or isolator low band (channel 4)",
+   "x": 246.0,
+   "y": 147.0,
+   "w": 14.0,
+   "h": 14.0,
+   "section": "mixer",
+   "midi": {
+    "ch": 1,
+    "kind": "cc",
+    "id": 82
+   },
+   "shift_midi": null
+  },
+  {
+   "id": "ch4-color",
+   "fig": "C6-4",
+   "type": "knob",
+   "label": "COLOR",
+   "does": "Sound Color FX amount for this channel (channel 4)",
+   "x": 244.5,
+   "y": 187.0,
+   "w": 17.0,
+   "h": 17.0,
+   "section": "mixer",
+   "midi": {
+    "ch": 1,
+    "kind": "cc",
+    "id": 83
+   },
+   "shift_midi": null
+  },
+  {
+   "id": "ch4-cue-a",
+   "fig": "C7-4",
+   "type": "button",
+   "label": "CUE A",
+   "does": "Headphones A cue for this channel (channel 4)",
+   "x": 236.0,
+   "y": 226.5,
+   "w": 16.0,
+   "h": 7.0,
+   "section": "mixer",
+   "midi": {
+    "ch": 1,
+    "kind": "note",
+    "id": 13
+   },
+   "shift_midi": null
+  },
+  {
+   "id": "ch4-cue-b",
+   "fig": "C7-4",
+   "type": "button",
+   "label": "CUE B",
+   "does": "Headphones B cue for this channel (channel 4)",
+   "x": 258.5,
+   "y": 226.5,
+   "w": 11.0,
+   "h": 7.0,
+   "section": "mixer",
+   "midi": {
+    "ch": 1,
+    "kind": "note",
+    "id": 19
+   },
+   "shift_midi": null
+  },
+  {
+   "id": "ch4-fader",
+   "fig": "C8-4",
+   "type": "fader",
+   "label": "CH FADER",
+   "does": "Channel volume (channel 4)",
+   "x": 242.5,
+   "y": 270.0,
+   "w": 21.0,
+   "h": 47.0,
+   "section": "mixer",
+   "midi": {
+    "ch": 1,
+    "kind": "cc",
+    "id": 20
+   },
+   "shift_midi": null
+  },
+  {
+   "id": "ch4-xf-assign",
+   "fig": "C9-4",
+   "type": "button",
+   "label": "A THRU B",
+   "does": "Crossfader assign switch (channel 4)",
+   "x": 246.0,
+   "y": 338.5,
+   "w": 14.0,
+   "h": 8.0,
+   "section": "mixer",
+   "midi": {
+    "ch": 1,
+    "kind": "cc",
+    "id": 68
+   },
+   "shift_midi": null
+  },
+  {
+   "id": "crossfader",
+   "fig": "C10",
+   "type": "crossfader",
+   "label": "CROSSFADER",
+   "does": "Blend the A and B assigned channels",
+   "x": 165.5,
+   "y": 367.0,
+   "w": 47.0,
+   "h": 21.0,
+   "section": "mixer",
+   "midi": {
+    "ch": 1,
+    "kind": "cc",
+    "id": 11
+   },
+   "shift_midi": null
+  },
+  {
+   "id": "master-level",
+   "fig": "R1",
+   "type": "knob",
+   "label": "MASTER LEVEL",
+   "does": "Master output level",
+   "x": 291.5,
+   "y": 22.5,
+   "w": 15.0,
+   "h": 15.0,
+   "section": "mixer",
+   "midi": {
+    "ch": 1,
+    "kind": "cc",
+    "id": 24
+   },
+   "shift_midi": null
+  },
+  {
+   "id": "booth-eq-hi",
+   "fig": "R2",
+   "type": "knob",
+   "label": "BOOTH EQ HI",
+   "does": "Booth EQ high band",
+   "x": 293.5,
+   "y": 159.0,
+   "w": 11.0,
+   "h": 12.0,
+   "section": "mixer",
+   "midi": {
+    "ch": 1,
+    "kind": "cc",
+    "id": 109
+   },
+   "shift_midi": null
+  },
+  {
+   "id": "booth-eq-low",
+   "fig": "R3",
+   "type": "knob",
+   "label": "BOOTH EQ LOW",
+   "does": "Booth EQ low band",
+   "x": 293.5,
+   "y": 180.0,
+   "w": 11.0,
+   "h": 12.0,
+   "section": "mixer",
+   "midi": {
+    "ch": 1,
+    "kind": "cc",
+    "id": 110
+   },
+   "shift_midi": null
+  },
+  {
+   "id": "booth-level",
+   "fig": "R4",
+   "type": "knob",
+   "label": "BOOTH LEVEL",
+   "does": "Booth output level",
+   "x": 291.5,
+   "y": 198.5,
+   "w": 15.0,
+   "h": 15.0,
+   "section": "mixer",
+   "midi": {
+    "ch": 1,
+    "kind": "cc",
+    "id": 25
+   },
+   "shift_midi": null
+  },
+  {
+   "id": "master-cue-a",
+   "fig": "R5",
+   "type": "button",
+   "label": "CUE A",
+   "does": "Hear the master in headphones A",
+   "x": 283.0,
+   "y": 226.5,
+   "w": 17.0,
+   "h": 7.0,
+   "section": "mixer",
+   "midi": {
+    "ch": 1,
+    "kind": "note",
+    "id": 14
+   },
+   "shift_midi": null
+  },
+  {
+   "id": "master-cue-b",
+   "fig": "R6",
+   "type": "button",
+   "label": "CUE B",
+   "does": "Hear the master in headphones B",
+   "x": 305.0,
+   "y": 226.5,
+   "w": 11.0,
+   "h": 7.0,
+   "section": "mixer",
+   "midi": {
+    "ch": 1,
+    "kind": "note",
+    "id": 20
+   },
+   "shift_midi": null
+  },
+  {
+   "id": "phones-b-link-cue",
+   "fig": "R7",
+   "type": "button",
+   "label": "LINK CUE",
+   "does": "Headphones B: link cue",
+   "x": 282.5,
+   "y": 260.0,
+   "w": 12.0,
+   "h": 10.0,
+   "section": "mixer",
+   "midi": {
+    "ch": 1,
+    "kind": "note",
+    "id": 21
+   },
+   "shift_midi": null
+  },
+  {
+   "id": "phones-b-mono-split",
+   "fig": "R8",
+   "type": "button",
+   "label": "MONO SPLIT",
+   "does": "Headphones B: mono split or stereo",
+   "x": 305.0,
+   "y": 260.0,
+   "w": 11.0,
+   "h": 10.0,
+   "section": "mixer",
+   "midi": {
+    "ch": 1,
+    "kind": "cc",
+    "id": 34
+   },
+   "shift_midi": null
+  },
+  {
+   "id": "phones-b-mix",
+   "fig": "R9",
+   "type": "knob",
+   "label": "MIX",
+   "does": "Headphones B: cue and master blend",
+   "x": 293.0,
+   "y": 277.5,
+   "w": 12.0,
+   "h": 12.0,
+   "section": "mixer",
+   "midi": {
+    "ch": 1,
+    "kind": "cc",
+    "id": 85
+   },
+   "shift_midi": null
+  },
+  {
+   "id": "phones-b-level",
+   "fig": "R10",
+   "type": "knob",
+   "label": "LEVEL",
+   "does": "Headphones B level",
+   "x": 293.0,
+   "y": 301.0,
+   "w": 12.0,
+   "h": 12.0,
+   "section": "mixer",
+   "midi": {
+    "ch": 1,
+    "kind": "cc",
+    "id": 86
+   },
+   "shift_midi": null
+  },
+  {
+   "id": "eq-curve",
+   "fig": "R11",
+   "type": "button",
+   "label": "EQ CURVE",
+   "does": "Isolator or EQ curve switch",
+   "x": 297.0,
+   "y": 325.5,
+   "w": 10.0,
+   "h": 8.0,
+   "section": "mixer",
+   "midi": {
+    "ch": 1,
+    "kind": "cc",
+    "id": 33
+   },
+   "shift_midi": null
+  },
+  {
+   "id": "ch-fader-curve",
+   "fig": "R12",
+   "type": "button",
+   "label": "CH FADER CURVE",
+   "does": "Channel fader curve switch",
+   "x": 297.0,
+   "y": 344.0,
+   "w": 10.0,
+   "h": 9.0,
+   "section": "mixer",
+   "midi": {
+    "ch": 1,
+    "kind": "cc",
+    "id": 94
+   },
+   "shift_midi": null
+  },
+  {
+   "id": "crossfader-curve",
+   "fig": "R13",
+   "type": "button",
+   "label": "CROSSFADER CURVE",
+   "does": "Crossfader curve switch",
+   "x": 297.0,
+   "y": 363.0,
+   "w": 10.0,
+   "h": 9.0,
+   "section": "mixer",
+   "midi": {
+    "ch": 1,
+    "kind": "cc",
+    "id": 95
+   },
+   "shift_midi": null
+  },
+  {
+   "id": "send-ch",
+   "fig": "R14",
+   "type": "knob",
+   "label": "SEND CH",
+   "does": "Multi I/O send source selector; position 1's note is carried",
+   "x": 330.5,
+   "y": 24.0,
+   "w": 11.0,
+   "h": 12.0,
+   "section": "effect",
+   "midi": {
+    "ch": 1,
+    "kind": "note",
+    "id": 34
+   },
+   "shift_midi": null
+  },
+  {
+   "id": "insert-source",
+   "fig": "R15",
+   "type": "button",
+   "label": "INSERT SOURCE",
+   "does": "Multi I/O insert source: RETURN or USB",
+   "x": 359.5,
+   "y": 25.0,
+   "w": 6.0,
+   "h": 10.0,
+   "section": "effect",
+   "midi": {
+    "ch": 1,
+    "kind": "note",
+    "id": 111
+   },
+   "shift_midi": null
+  },
+  {
+   "id": "send-level",
+   "fig": "R16",
+   "type": "knob",
+   "label": "SEND LEVEL",
+   "does": "Multi I/O send level",
+   "x": 329.0,
+   "y": 53.5,
+   "w": 14.0,
+   "h": 15.0,
+   "section": "effect",
+   "midi": {
+    "ch": 1,
+    "kind": "cc",
+    "id": 113
+   },
+   "shift_midi": null
+  },
+  {
+   "id": "insert",
+   "fig": "R17",
+   "type": "button",
+   "label": "INSERT",
+   "does": "Multi I/O insert on or off",
+   "x": 357.0,
+   "y": 55.5,
+   "w": 11.0,
+   "h": 11.0,
+   "section": "effect",
+   "midi": {
+    "ch": 1,
+    "kind": "cc",
+    "id": 64
+   },
+   "shift_midi": null
+  },
+  {
+   "id": "x-pad",
+   "fig": "R18",
+   "type": "fader",
+   "label": "X-PAD",
+   "does": "Beat FX touch strip: slide to set the beat; the slide CC is carried",
+   "x": 329.0,
+   "y": 143.0,
+   "w": 67.0,
+   "h": 11.0,
+   "section": "effect",
+   "midi": {
+    "ch": 1,
+    "kind": "cc",
+    "id": 116
+   },
+   "shift_midi": null
+  },
+  {
+   "id": "beat-left",
+   "fig": "R19",
+   "type": "button",
+   "label": "BEAT <",
+   "does": "Shorter beat division",
+   "x": 335.5,
+   "y": 165.0,
+   "w": 17.0,
+   "h": 8.0,
+   "section": "effect",
+   "midi": {
+    "ch": 1,
+    "kind": "cc",
+    "id": 76
+   },
+   "shift_midi": null
+  },
+  {
+   "id": "beat-right",
+   "fig": "R20",
+   "type": "button",
+   "label": "BEAT >",
+   "does": "Longer beat division",
+   "x": 371.5,
+   "y": 165.0,
+   "w": 17.0,
+   "h": 8.0,
+   "section": "effect",
+   "midi": {
+    "ch": 1,
+    "kind": "cc",
+    "id": 77
+   },
+   "shift_midi": null
+  },
+  {
+   "id": "auto-tap",
+   "fig": "R21",
+   "type": "button",
+   "label": "AUTO/TAP",
+   "does": "BPM source: auto or tap",
+   "x": 339.5,
+   "y": 181.5,
+   "w": 9.0,
+   "h": 9.0,
+   "section": "effect",
+   "midi": {
+    "ch": 1,
+    "kind": "cc",
+    "id": 69
+   },
+   "shift_midi": null
+  },
+  {
+   "id": "tap",
+   "fig": "R22",
+   "type": "button",
+   "label": "TAP",
+   "does": "Tap the tempo",
+   "x": 355.5,
+   "y": 179.0,
+   "w": 14.0,
+   "h": 14.0,
+   "section": "effect",
+   "midi": {
+    "ch": 1,
+    "kind": "cc",
+    "id": 78
+   },
+   "shift_midi": null
+  },
+  {
+   "id": "quantize",
+   "fig": "R23",
+   "type": "button",
+   "label": "QUANTIZE",
+   "does": "Quantize the beat effect",
+   "x": 377.5,
+   "y": 181.5,
+   "w": 9.0,
+   "h": 9.0,
+   "section": "effect",
+   "midi": {
+    "ch": 1,
+    "kind": "note",
+    "id": 118
+   },
+   "shift_midi": null
+  },
+  {
+   "id": "fx-freq-low",
+   "fig": "R24",
+   "type": "button",
+   "label": "LOW",
+   "does": "Beat FX frequency band: low",
+   "x": 337.5,
+   "y": 204.5,
+   "w": 13.0,
+   "h": 8.0,
+   "section": "effect",
+   "midi": {
+    "ch": 1,
+    "kind": "cc",
+    "id": 104
+   },
+   "shift_midi": null
+  },
+  {
+   "id": "fx-freq-mid",
+   "fig": "R24",
+   "type": "button",
+   "label": "MID",
+   "does": "Beat FX frequency band: mid",
+   "x": 356.0,
+   "y": 204.5,
+   "w": 13.0,
+   "h": 8.0,
+   "section": "effect",
+   "midi": {
+    "ch": 1,
+    "kind": "cc",
+    "id": 103
+   },
+   "shift_midi": null
+  },
+  {
+   "id": "fx-freq-hi",
+   "fig": "R24",
+   "type": "button",
+   "label": "HI",
+   "does": "Beat FX frequency band: high",
+   "x": 375.5,
+   "y": 204.5,
+   "w": 13.0,
+   "h": 8.0,
+   "section": "effect",
+   "midi": {
+    "ch": 1,
+    "kind": "cc",
+    "id": 102
+   },
+   "shift_midi": null
+  },
+  {
+   "id": "fx-select",
+   "fig": "R25",
+   "type": "knob",
+   "label": "EFFECT SELECT",
+   "does": "Beat FX selector; the DELAY position's CC is carried",
+   "x": 355.5,
+   "y": 223.0,
+   "w": 14.0,
+   "h": 14.0,
+   "section": "effect",
+   "midi": {
+    "ch": 1,
+    "kind": "cc",
+    "id": 42
+   },
+   "shift_midi": null
+  },
+  {
+   "id": "ch-select-1",
+   "fig": "R26",
+   "type": "button",
+   "label": "1",
+   "does": "Beat FX on channel 1",
+   "x": 333.0,
+   "y": 257.0,
+   "w": 11.0,
+   "h": 6.0,
+   "section": "effect",
+   "midi": {
+    "ch": 1,
+    "kind": "note",
+    "id": 1
+   },
+   "shift_midi": null
+  },
+  {
+   "id": "ch-select-2",
+   "fig": "R26",
+   "type": "button",
+   "label": "2",
+   "does": "Beat FX on channel 2",
+   "x": 349.5,
+   "y": 257.0,
+   "w": 10.0,
+   "h": 6.0,
+   "section": "effect",
+   "midi": {
+    "ch": 1,
+    "kind": "note",
+    "id": 2
+   },
+   "shift_midi": null
+  },
+  {
+   "id": "ch-select-3",
+   "fig": "R26",
+   "type": "button",
+   "label": "3",
+   "does": "Beat FX on channel 3",
+   "x": 365.5,
+   "y": 257.0,
+   "w": 10.0,
+   "h": 6.0,
+   "section": "effect",
+   "midi": {
+    "ch": 1,
+    "kind": "note",
+    "id": 3
+   },
+   "shift_midi": null
+  },
+  {
+   "id": "ch-select-4",
+   "fig": "R26",
+   "type": "button",
+   "label": "4",
+   "does": "Beat FX on channel 4",
+   "x": 381.5,
+   "y": 257.0,
+   "w": 10.0,
+   "h": 6.0,
+   "section": "effect",
+   "midi": {
+    "ch": 1,
+    "kind": "note",
+    "id": 4
+   },
+   "shift_midi": null
+  },
+  {
+   "id": "ch-select-mic",
+   "fig": "R26",
+   "type": "button",
+   "label": "MIC",
+   "does": "Beat FX on the microphone",
+   "x": 333.5,
+   "y": 274.5,
+   "w": 10.0,
+   "h": 6.0,
+   "section": "effect",
+   "midi": {
+    "ch": 1,
+    "kind": "note",
+    "id": 5
+   },
+   "shift_midi": null
+  },
+  {
+   "id": "ch-select-cf-a",
+   "fig": "R26",
+   "type": "button",
+   "label": "CF.A",
+   "does": "Beat FX on crossfader side A",
+   "x": 349.5,
+   "y": 274.5,
+   "w": 10.0,
+   "h": 6.0,
+   "section": "effect",
+   "midi": {
+    "ch": 1,
+    "kind": "note",
+    "id": 6
+   },
+   "shift_midi": null
+  },
+  {
+   "id": "ch-select-cf-b",
+   "fig": "R26",
+   "type": "button",
+   "label": "CF.B",
+   "does": "Beat FX on crossfader side B",
+   "x": 365.5,
+   "y": 274.5,
+   "w": 10.0,
+   "h": 6.0,
+   "section": "effect",
+   "midi": {
+    "ch": 1,
+    "kind": "note",
+    "id": 7
+   },
+   "shift_midi": null
+  },
+  {
+   "id": "ch-select-mst",
+   "fig": "R26",
+   "type": "button",
+   "label": "MST",
+   "does": "Beat FX on the master",
+   "x": 381.5,
+   "y": 274.5,
+   "w": 10.0,
+   "h": 6.0,
+   "section": "effect",
+   "midi": {
+    "ch": 1,
+    "kind": "note",
+    "id": 8
+   },
+   "shift_midi": null
+  },
+  {
+   "id": "fx-time",
+   "fig": "R27",
+   "type": "knob",
+   "label": "TIME",
+   "does": "Beat FX time; the MSB CC is carried",
+   "x": 354.5,
+   "y": 296.5,
+   "w": 16.0,
+   "h": 16.0,
+   "section": "effect",
+   "midi": {
+    "ch": 1,
+    "kind": "cc",
+    "id": 13
+   },
+   "shift_midi": null
+  },
+  {
+   "id": "fx-level-depth",
+   "fig": "R28",
+   "type": "knob",
+   "label": "LEVEL/DEPTH",
+   "does": "Beat FX amount",
+   "x": 355.0,
+   "y": 329.0,
+   "w": 15.0,
+   "h": 15.0,
+   "section": "effect",
+   "midi": {
+    "ch": 1,
+    "kind": "cc",
+    "id": 91
+   },
+   "shift_midi": null
+  },
+  {
+   "id": "fx-on-off",
+   "fig": "R29",
+   "type": "button",
+   "label": "ON/OFF",
+   "does": "Beat FX on or off",
+   "x": 353.5,
+   "y": 361.5,
+   "w": 18.0,
+   "h": 18.0,
+   "section": "effect",
+   "midi": {
+    "ch": 1,
+    "kind": "cc",
+    "id": 114
+   },
+   "shift_midi": null
+  }
+ ]
+}

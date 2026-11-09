@@ -26,10 +26,25 @@ function el(tag, classes = '') {
 		},
 		parentElement: null,
 		closest(selector) {
+			const pinClasses = new Set([
+				'fb-place-overlay',
+				'fb-pin',
+				'fb-bubble',
+				'fb-pin-body',
+				'fb-pin-badge',
+				'fb-cluster',
+				'fb-place-skip',
+				'fb-shell-pin'
+			]);
 			let cur = this;
 			while (cur) {
 				if (selector === '.pop' && cur.classList?.has('pop')) return cur;
 				if (selector === '[role="dialog"]' && cur.role === 'dialog') return cur;
+				if (selector.includes('fb-')) {
+					for (const cls of pinClasses) {
+						if (cur.classList?.has(cls)) return cur;
+					}
+				}
 				cur = cur.parentElement;
 			}
 			return null;

@@ -64,6 +64,8 @@
 		size?: number;
 		/** When set, indicator and label use this color and EQ warn overlays are suppressed. */
 		accentColor?: string;
+		/** MIXUX-02: fill for the dial face (the cap), e.g. a theme token. The ring and indicator keep their own colours. */
+		faceColor?: string;
 		/** Double-click reset. EQ/filter stay at the 0.5 detent; MIX is 0 (full cue). */
 		resetValue?: number;
 		/** Optional delayed single-click action (suppressed by drag and double-click). */
@@ -96,6 +98,7 @@
 		tone = 'accent',
 		size = 30,
 		accentColor,
+		faceColor,
 		resetValue = 0.5,
 		onsingleclick,
 		captionLead,
@@ -118,6 +121,7 @@
 			`--knob-caption-max: ${caption.maxWidthPx}px; ` +
 			`--knob-caption-gap: 1px; ` +
 			(accentColor ? `--knob-accent-color: ${accentColor}; ` : '') +
+			(faceColor ? `--knob-face-color: ${faceColor}; ` : '') +
 			`--knob-rainbow-0: ${RAINBOW_STOPS[0]}; ` +
 			`--knob-rainbow-1: ${RAINBOW_STOPS[1]}; ` +
 			`--knob-rainbow-2: ${RAINBOW_STOPS[2]}; ` +
@@ -137,6 +141,9 @@
 	let dragPartnerId: string | null = null;
 	let dragStartPartnerValue: number | null = null;
 	let dragging = false;
+	/** The pressed knob stays the capture owner even though move/up run on window. */
+	let dragElement: HTMLElement | null = null;
+	let dragPointerId: number | null = null;
 	/**
 	 * Needle position while a drag is down. The committed `value` can lag a
 	 * frame (stem EQ commits through stem_gain), and without this the dial
@@ -151,6 +158,7 @@
 	const singleClickGuard = createDeferredClickGuard();
 
 	onDestroy(() => {
+		cancelPointerDrag();
 		singleClickGuard.dispose();
 	});
 
@@ -233,7 +241,18 @@
 		// other dials). Only a lone dial previews the pointer, or the preview
 		// would hide that commit and stick.
 		dragShown = selectionDrag === null && dragPartnerId === null ? value : null;
-		(e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
+		dragElement = e.currentTarget as HTMLElement;
+		dragPointerId = e.pointerId;
+		window.addEventListener('pointermove', handlePointerMove);
+		window.addEventListener('pointerup', handlePointerUp);
+		window.addEventListener('pointercancel', handlePointerCancel);
+		// WebKit can stop retargeting captured moves after the pointer leaves a
+		// tight dial. Keep capture where it works, while window owns the drag.
+		try {
+			dragElement.setPointerCapture(e.pointerId);
+		} catch {
+			// The window listeners are the fallback when capture is unavailable.
+		}
 	}
 
 	function handlePointerMove(e: PointerEvent): void {
@@ -267,18 +286,36 @@
 		setKnobFromDrag(knobId, dragStartValue, target, dragPartnerId, dragStartPartnerValue);
 	}
 
-	function handlePointerUp(e: PointerEvent): void {
-		if (!dragging) return;
+	function removeWindowDragListeners(): void {
+		if (typeof window === 'undefined') return;
+		window.removeEventListener('pointermove', handlePointerMove);
+		window.removeEventListener('pointerup', handlePointerUp);
+		window.removeEventListener('pointercancel', handlePointerCancel);
+	}
+
+	function finishPointerDrag(pointerId: number, allowClick: boolean): void {
+		if (!dragging || dragPointerId !== pointerId) return;
 		const wasDrag = pointerMoved;
+		const captureElement = dragElement;
 		dragging = false;
 		dragShown = null;
 		selectionDrag = null;
 		dragTracker = null;
 		dragPartnerId = null;
 		dragStartPartnerValue = null;
-		(e.currentTarget as HTMLElement).releasePointerCapture(e.pointerId);
+		dragElement = null;
+		dragPointerId = null;
+		removeWindowDragListeners();
+		try {
+			if (captureElement?.hasPointerCapture(pointerId)) {
+				captureElement.releasePointerCapture(pointerId);
+			}
+		} catch {
+			// Capture may already be gone after a WebKit retarget/lost-capture path.
+		}
 		const altClick = altPressInGroup && !wasDrag;
 		altPressInGroup = false;
+		if (!allowClick) return;
 		if (altClick) {
 			altClickKnob(knobId);
 			return;
@@ -287,6 +324,26 @@
 		ontap?.();
 		if (onsingleclick === undefined) return;
 		singleClickGuard.schedule(() => onsingleclick?.());
+	}
+
+	function handlePointerUp(e: PointerEvent): void {
+		finishPointerDrag(e.pointerId, true);
+	}
+
+	function handlePointerCancel(e: PointerEvent): void {
+		finishPointerDrag(e.pointerId, false);
+	}
+
+	function handleLostPointerCapture(e: PointerEvent): void {
+		finishPointerDrag(e.pointerId, false);
+	}
+
+	function cancelPointerDrag(): void {
+		if (dragPointerId === null) {
+			removeWindowDragListeners();
+			return;
+		}
+		finishPointerDrag(dragPointerId, false);
 	}
 
 	function handleDblClick(): void {
@@ -319,6 +376,7 @@
 	class:warn-orange={warn === 'orange'}
 	class:warn-red={warn === 'red'}
 	class:knob-stem-accent={accentColor !== undefined}
+	class:knob-face={faceColor !== undefined}
 	class:takeover-armed={takeoverGhost !== null}
 	data-knob-id={knobId}
 	data-testid={`knob-${knobId}`}
@@ -337,9 +395,7 @@
 	onpointerleave={() => setKnobHovered(null)}
 	onclick={handleClick}
 	onpointerdown={handlePointerDown}
-	onpointermove={handlePointerMove}
-	onpointerup={handlePointerUp}
-	onpointercancel={handlePointerUp}
+	onlostpointercapture={handleLostPointerCapture}
 	ondblclick={handleDblClick}
 	onkeydown={handleKeyDown}
 	use:wheelAdjust={{
@@ -517,6 +573,11 @@
 	.knob.knob-stem-accent .cap {
 		stroke: color-mix(in srgb, var(--knob-accent-color) 80%, var(--rb-knob-cap-edge, #101318));
 		fill: color-mix(in srgb, var(--knob-accent-color) var(--rb-knob-stem-tint, 42%), var(--rb-knob-cap, #23272f));
+	}
+	/* MIXUX-02: a face colour (the FILTER color dial) paints the cap only. */
+	.knob.knob-face .cap {
+		fill: var(--knob-face-color);
+		stroke: var(--rb-color-fx-filter-face-edge, var(--rb-knob-cap-edge, #101318));
 	}
 	.knob.knob-stem-accent .label {
 		color: var(--knob-accent-color);

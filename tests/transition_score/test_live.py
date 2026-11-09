@@ -16,8 +16,8 @@ from apps.autodj.pair_memory import PairTransition
 from apps.autodj.plan import parse_plan
 from apps.autodj.profile import trim_db_of_knob
 from apps.autodj.propose import propose_transition
-from apps.transition_score import SCORER_VERSION, Candidate, Measured
 from apps.transition_score import live as live_module
+from apps.transition_score.contract import SCORER_VERSION, Candidate, Measured
 from apps.transition_score.live import PREPARE_N, LiveRequest, PlanCache, PrepareKey, plan_live, prepare_live
 from apps.transition_score.tryer import TryError
 from tests.autodj.fixtures import profile
@@ -70,15 +70,15 @@ def _scored(plan: Any, cid: str, score: float | None, *, vetoed: bool = False) -
 
     return Candidate(
         id=cid,
-        plan=plan.to_document(),
+        plan_json=json.dumps(plan.to_document()),
         plan_sha256=f"sha-{cid}",
         style=plan.style,
         bars=plan.bars,
-        metrics={},
-        factors={},
+        metrics_json=json.dumps({}),
+        factors_json=json.dumps({}),
         vetoes=(Veto("clip", 1.0, 0.5),) if vetoed else (),
         measured=Measured(k=5, n=7),
-        unknown={},
+        unknown_json=json.dumps({}),
         score=score,
         render_ms=1.0,
         score_ms=1.0,
@@ -352,7 +352,14 @@ def _saved_document(start: int = 97) -> dict[str, Any]:
     rows = propose_transition(OUT, IN, out_deck=1, in_deck=2, min_out_bar=40, top=None, around_bar=float(start))[
         "proposals"
     ]
-    at_start = [row["plan"] for row in rows if row["plan"]["out"]["window"]["start_bar"] == start]
+    live = _mirror()
+    at_start = [
+        row["plan"]
+        for row in rows
+        if row["plan"]["out"]["window"]["start_bar"] == start
+        and _AUTODJ.validate_plan(parse_plan(row["plan"]), OUT, IN, live=live).ok
+    ]
+    assert at_start, f"no live-valid saved plan at bar {start}"
     return min(at_start, key=lambda plan: plan["out"]["window"]["bars"])
 
 
@@ -394,9 +401,9 @@ def test_a_saved_plan_that_cannot_run_gives_way_to_the_chooser(monkeypatch: pyte
     monkeypatch.setattr(
         _AUTODJ,
         "validate_plan",
-        lambda plan, *a, **k: ValidationResult(ok=False, errors=("control",))
-        if plan.bars == 7
-        else real(plan, *a, **k),
+        lambda plan, *a, **k: (
+            ValidationResult(ok=False, errors=("control",)) if plan.bars == 7 else real(plan, *a, **k)
+        ),
     )
     document = _saved_document()
     document["out"]["window"]["bars"] = document["in"]["window"]["bars"] = 7

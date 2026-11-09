@@ -216,12 +216,15 @@ def open_ro(
     path: Path | None = None,
     *,
     busy_timeout_s: float = DEFAULT_BUSY_TIMEOUT_S,
+    check_same_thread: bool = True,
 ) -> sqlite3.Connection:
     """Open ``path`` read-only with a query_only guard.
 
     Uses the SQLite URI form ``mode=ro`` so write attempts raise
     :class:`sqlite3.OperationalError` at execute time. ``busy_timeout_s``
     bounds the wait for a peer's lock, as in :func:`open_rw`.
+    ``check_same_thread=False`` lets a caller that uses the handle from one
+    thread at a time hop threads (a streamed response body does).
     """
     target = Path(path) if path is not None else state_paths.STATE_DB
     busy_timeout_s = _checked_busy_timeout_s(busy_timeout_s)
@@ -233,6 +236,7 @@ def open_ro(
     uri = f"file:{target}?mode=ro"
     conn = sqlite3.connect(
         uri, uri=True, isolation_level=None, timeout=busy_timeout_s,
+        check_same_thread=check_same_thread,
     )
     conn.execute("PRAGMA query_only = ON")
     conn.execute("PRAGMA foreign_keys = ON")

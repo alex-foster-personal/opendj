@@ -1,0 +1,9 @@
+{
+  "bytes": 1024,
+  "measured_main": 479024,
+  "measured_with_pr": 479222,
+  "sha": "1406c442d3",
+  "date": "Mon 9 Nov 2026",
+  "reason": "PR #10479 adds the DDJ-REV7 practice replica measured from the official panel figure (#9366). Measured: CI bundle check of 1406c442d3, +198 B gzip on other-lazy; ceiled to KiB",
+  "payback": "none planned; the growth is the feature's own code"
+}

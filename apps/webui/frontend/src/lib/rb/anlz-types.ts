@@ -115,6 +115,15 @@ export interface AnlzBeatgridEdit {
 	offset_ms: number;
 	/** Bar 1 moved by this many whole beats, later when positive (-1..2). */
 	beat_shift: number;
+	/** Tempo anchors placed by hand, sorted by time (GRIDEDIT-10220); absent when none. */
+	anchors?: AnlzGridAnchor[];
+}
+
+/** One hand-placed tempo change: from the grid line nearest `at_s` on, `bpm`. */
+export interface AnlzGridAnchor {
+	/** Served time in SECONDS (after the grid adjust). */
+	at_s: number;
+	bpm: number;
 }
 
 /** One tempo change detected by the own beatgrid analyzer (NATIVE-03). */

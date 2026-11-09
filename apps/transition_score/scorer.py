@@ -39,6 +39,7 @@ the v0 scorer's blind spot).
 from __future__ import annotations
 
 import itertools
+import json
 import math
 from dataclasses import dataclass, field
 from typing import Any
@@ -98,6 +99,15 @@ RECOVERY_TOLERANCE_LU = 1.0
 ALIGNMENT_KNEE_MS = 10.0
 #: PR #3873's v0 loudness free band (straight line from A-solo to B-solo).
 LOUDNESS_KNEE_LU = 1.5
+#: #10187: each band's free allowance under the outgoing at unity, mimicked from the single-band 1.5 LU free band.
+BAND_CONTINUITY_KNEE_LU = LOUDNESS_KNEE_LU
+#: A band the outgoing solo does not carry above this is unknown, never matched on noise (BS.1770-4 absolute gate).
+BAND_REF_PRESENT_LUFS = -70.0
+BAND_FACTORS: tuple[str, ...] = tuple(f"band_continuity_{band}" for band in signals.ENGINE_BANDS)
+BAND_OUT_NATURAL_SUFFIX = (
+    ": the outgoing-at-unity counterfactual is read from the outgoing track's source "
+    "file; decks/deck<N>.wav is after its fader"
+)
 #: Round 15: one beat with BOTH decks' lows near full (two basslines at once) is the free allowance.
 BASS_BOTH_FULL_KNEE_BEATS = 1.0
 #: Round 15, derived from the maintainer's hand rule (Thu 29 Oct 2026: incoming LO parked a third of a half turn down, about
@@ -134,6 +144,9 @@ PRIOR_WEIGHTS: dict[str, float] = {
     "low_continuity": 0.1,  # round 15: the summed low band against a steady low end (the bass_overlap share)
     "early_handover": 0.2,  # round 15: the maintainer's rule one, never take the bass before the new one is there
     "seam_clicks": 0.1,  # PR #3873 v0 headroom analog
+    "band_continuity_low": 0.1,  # #10187: the mix's low band against the outgoing at unity, to the handover
+    "band_continuity_mid": 0.1,  # #10187: the mix's mid band against the outgoing at unity, to the handover
+    "band_continuity_high": 0.1,  # #10187: the mix's high band against the outgoing at unity, to the handover
 }
 
 # ----- measurement parameters ------------------------------------------------
@@ -580,9 +593,12 @@ def _loudness(t: _Tally, mix: np.ndarray, ctx: RenderContext) -> None:
     start, end = ctx.overlap_s
     during = (centers >= start) & (centers <= end)
     if not pre.any() or not post.any() or not during.any():
-        t.unknown["loudness_continuity"] = (
+        reason = (
             f"needs a solo span of at least {signals.SHORT_TERM_S + SOLO_GUARD_S:.1f} s on each side of the overlap"
         )
+        t.unknown["loudness_continuity"] = reason
+        for name in BAND_FACTORS:
+            t.unknown[name] = reason
         return
     level_a, level_b = float(np.median(lufs[pre])), float(np.median(lufs[post]))
     line = level_a + (level_b - level_a) * (centers[during] - start) / (end - start)
@@ -596,6 +612,7 @@ def _loudness(t: _Tally, mix: np.ndarray, ctx: RenderContext) -> None:
         in_solo_lufs=round(level_b, 2),
     )
     t.factors["loudness_continuity"] = squash(gap, LOUDNESS_KNEE_LU)
+    _band_continuity(t, centers, pre, mix, ctx)
     _loudness_loss(t, centers, lufs, pre, level_a, ctx)
 
 
@@ -606,6 +623,71 @@ def longest_run_s(below: np.ndarray, hop_s: float) -> float:
         run = run + 1 if flag else 0
         longest = max(longest, run)
     return longest * hop_s
+
+
+def _handover_s(ctx: RenderContext) -> tuple[float | None, str]:
+    """When the incoming takes the mix: plan bass hit, else incoming bass entry, else the plan's incoming step."""
+    if ctx.bass_hit_s is not None:
+        return ctx.bass_hit_s, "bass_hit"
+    if ctx.in_bass_entry_s is not None:
+        return ctx.in_bass_entry_s, "in_bass_entry"
+    start, end = ctx.overlap_s
+    for step in ctx.steps:
+        if step.deck == "in" and start <= step.at_s <= end:
+            return step.at_s, "plan_step"
+    return None, "no handover: the plan names no bass hit or incoming step and the incoming profile no bass entry"
+
+
+def _band_unknown(t: _Tally, reason: str) -> None:
+    for name in BAND_FACTORS:
+        t.unknown[name] = reason
+
+
+def _band_continuity(t: _Tally, centers: np.ndarray, pre: np.ndarray, mix: np.ndarray, ctx: RenderContext) -> None:
+    """How far each engine band's short-term loudness falls under the outgoing at unity until the handover.
+
+    The counterfactual is ``ctx.out_natural`` (the outgoing source on the render clock), not ``decks/deckN.wav``:
+    deck outputs sit after the fader, so they would move with the crossfade. An outgoing track's own thinning is in
+    that counterfactual and is not read as mix loss. The window runs from the overlap start to the handover.
+    """
+    if ctx.out_natural is None:
+        _band_unknown(t, f"{ctx.out_natural_unknown_reason}{BAND_OUT_NATURAL_SUFFIX}")
+        return
+    if len(ctx.out_natural) != len(mix):
+        raise ValueError(f"outgoing source is {len(ctx.out_natural)} frames, the mix {len(mix)}")
+    handover_s, handover_label = _handover_s(ctx)
+    if handover_s is None:
+        _band_unknown(t, handover_label)
+        return
+    start = ctx.overlap_s[0]
+    end = min(handover_s, ctx.overlap_s[1])
+    window = (centers >= start) & (centers <= end)
+    if not window.any():
+        _band_unknown(
+            t,
+            f"no short-term reading between {start:.2f} s and the handover at {end:.2f} s",
+        )
+        return
+    mix_bands = signals.three_band(mix, ctx.sample_rate)
+    natural_bands = signals.three_band(ctx.out_natural, ctx.sample_rate)
+    for band in signals.ENGINE_BANDS:
+        _, lufs = signals.loudness_series(mix_bands[band], ctx.sample_rate, signals.SHORT_TERM_S)
+        _, natural_lufs = signals.loudness_series(natural_bands[band], ctx.sample_rate, signals.SHORT_TERM_S)
+        if len(lufs) != len(centers) or len(natural_lufs) != len(centers):
+            raise ValueError(
+                f"{band} band loudness gives {len(lufs)} readings, the mix clock {len(centers)}",
+            )
+        natural_level = float(np.median(natural_lufs[pre]))
+        if natural_level < BAND_REF_PRESENT_LUFS:
+            t.unknown[f"band_continuity_{band}"] = (
+                f"the outgoing solo has no measurable {band} band (under {BAND_REF_PRESENT_LUFS:.0f} LUFS)"
+            )
+            continue
+        reference = natural_lufs + (float(np.median(lufs[pre])) - natural_level)
+        deficit = max(0.0, float((reference[window] - lufs[window]).max()))
+        t.metrics[f"band_deficit_lu_{band}"] = round(deficit, 2)
+        t.factors[f"band_continuity_{band}"] = squash(deficit, BAND_CONTINUITY_KNEE_LU)
+    t.metrics.update(band_window_s=(round(start, 3), round(end, 3)), band_handover=handover_label)
 
 
 def _natural_reference(
@@ -678,13 +760,21 @@ def _loudness_loss(
 
 
 def loudness_checks(mix: np.ndarray, ctx: RenderContext) -> ScoreResult:
-    """The mix-only loudness terms of :func:`score_render` (loudness_continuity and the loudness-loss veto), for a
-    re-score that has the mix but not the deck outputs (round 14: oltf-r2 kept clips without deck slices). The
-    result carries those terms only; its ``score`` is None, never a composite."""
+    """The mix-only loudness terms of :func:`score_render` (loudness_continuity, the three band-continuity factors and
+    the loudness-loss veto), for a re-score that has the mix but not the deck outputs (round 14: oltf-r2 kept clips
+    without deck slices). The result carries those terms only; its ``score`` is None, never a composite."""
     t = _Tally()
     _loudness(t, mix, ctx)
     measured = core_measured(t.factors)
-    return ScoreResult(t.metrics, t.factors, tuple(t.vetoes), measured, t.unknown, None, SCORER_VERSION)
+    return ScoreResult(
+        metrics_json=json.dumps(t.metrics),
+        factors_json=json.dumps(t.factors),
+        vetoes=tuple(t.vetoes),
+        measured=measured,
+        unknown_json=json.dumps(t.unknown),
+        score=None,
+        scorer_version=SCORER_VERSION,
+    )
 
 
 def _bar_low_db(deck: np.ndarray, sr: int, edges: list[tuple[float, float]]) -> np.ndarray:
@@ -1052,11 +1142,11 @@ def score_render(mix: np.ndarray, out_deck: np.ndarray, in_deck: np.ndarray, ctx
     else:
         score = round(composite(t.factors), 4)
     return ScoreResult(
-        metrics=t.metrics,
-        factors={k: round(v, 4) for k, v in t.factors.items()},
+        metrics_json=json.dumps(t.metrics),
+        factors_json=json.dumps({k: round(v, 4) for k, v in t.factors.items()}),
         vetoes=tuple(t.vetoes),
         measured=measured,
-        unknown=t.unknown,
+        unknown_json=json.dumps(t.unknown),
         score=score,
         scorer_version=SCORER_VERSION,
     )

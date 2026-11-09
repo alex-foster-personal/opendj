@@ -48,12 +48,20 @@ from apps.autodj.contract.models import (
 from apps.autodj.profile import DECK_LOAD_TRIM_DB, TRIM_MAX_DB, VOCAL_BAR_THRESHOLD, TrackProfile, trim_knob
 from apps.autodj.styles import STYLES
 
+#: Spec 09-transitions-fx 4.2: the outgoing deck's color ECHO send and its dry level (0..1), and the action that
+#: puts the effect, its knob and the dry back to their pre-plan values.
+FX_CONTROLS: frozenset[str] = frozenset({"fx_echo", "fx_dry"})
+FX_ACTIONS: frozenset[str] = frozenset({"fx_reset"})
+#: #9848 empties this when compile.py and agent-plan.ts carry the fx controls.
+PAGE_PENDING_FX: frozenset[str] = FX_CONTROLS | FX_ACTIONS
 #: Per-deck controls a plan may set or ramp, and the bus command each becomes.
-DECK_CONTROLS: frozenset[str] = frozenset({"fader", "trim", "filter", "eq_low", "eq_mid", "eq_high", "tempo"})
+DECK_CONTROLS: frozenset[str] = frozenset({"fader", "trim", "filter", "eq_low", "eq_mid", "eq_high", "tempo"}) | (
+    FX_CONTROLS
+)
 #: Mixer-wide controls (no deck).
 MIXER_CONTROLS: frozenset[str] = frozenset({"crossfader"})
 CONTROLS: frozenset[str] = DECK_CONTROLS | MIXER_CONTROLS
-ACTIONS: frozenset[str] = frozenset({"play", "stop", "master"})
+ACTIONS: frozenset[str] = frozenset({"play", "stop", "master"}) | FX_ACTIONS
 TEMPO_MODES: frozenset[str] = frozenset({"sync_to_out", "none"})
 ANCHORS: frozenset[str] = frozenset({"window", "next_phrase", "next_bar"})
 #: D13: plan shapes whose loudness dip before the incoming bass hit is intended (a scorer may skip its loudness-loss
@@ -313,10 +321,7 @@ def parse_plan(document: Any) -> TransitionPlan:
     shape = document.get("shape")
     if shape is not None and shape not in SHAPES:
         raise PlanError(f"shape must be one of {sorted(SHAPES)} or null, got {shape!r}")
-    parsed_events = [
-        _in_field(f"events[{index}]", partial(_event, event, index))
-        for index, event in enumerate(events)
-    ]
+    parsed_events = [_in_field(f"events[{index}]", partial(_event, event, index)) for index, event in enumerate(events)]
     return TransitionPlan(
         out=_in_field("out", lambda: _side(document.get("out"), "out")),
         in_=_in_field("in", lambda: _side(document.get("in"), "in")),
@@ -368,6 +373,7 @@ class BarState:
     crossfader: float = CROSSFADER_CENTER
     out_trim: float = UNITY_TRIM
     in_trim: float = UNITY_TRIM
+    out_dry: float = 1.0
 
 
 def _value_at(events: list[PlanEvent], deck: int | None, control: str, at: float, start: float) -> float:
@@ -843,6 +849,7 @@ def _state_of(
         crossfader=events.value(None, "crossfader", at, crossfader),
         out_trim=events.value(plan.out.deck, "trim", at, out_start.trim),
         in_trim=events.value(plan.in_.deck, "trim", at, in_start.trim),
+        out_dry=events.value(plan.out.deck, "fx_dry", at, 1.0),
     )
 
 
@@ -1097,6 +1104,7 @@ def _check_structure(
     if _incoming_start(plan) is None:
         errors.append(f"no play event starts the incoming deck {plan.in_.deck}")
     errors.extend(_shape_errors(plan))
+    errors.extend(_fx_errors(plan))
     errors.extend(_gives_way_before_hit(plan))
     # A quantized play starts on a downbeat strictly after its dispatch, so no launch plays a pre-roll.
     in_bars_heard = _incoming_grid_bars(_synced_grid_view(plan), base, scale, clock_pitch)
@@ -1115,6 +1123,36 @@ def _shape_errors(plan: TransitionPlan) -> list[str]:
     return []
 
 
+def _fx_errors(plan: TransitionPlan) -> list[str]:
+    """Spec 09-transitions-fx 4.2: transition FX reset and tail before handover."""
+    errors: list[str] = []
+    out = plan.out.deck
+    uses_fx = any(e.name in FX_CONTROLS for e in plan.events)
+    if not uses_fx:
+        return errors
+    if not any(e.kind == "do" and e.name == "fx_reset" and e.deck == out and e.at_bar == plan.bars for e in plan.events):
+        errors.append(
+            f"the plan sets fx_echo/fx_dry but never runs fx_reset at the handover (bar {plan.bars}): "
+            "the deck would keep its echo"
+        )
+    dry_close_end = 0.0
+    for event in plan.events:
+        if event.deck == out and event.name == "fx_dry" and event.kind in ("set", "ramp"):
+            try:
+                target = 0.0 if event.kind == "set" else event.target()
+            except ValueError:
+                continue
+            if target < 1e-9:
+                end = event.at_bar + (event.over_bars if event.kind == "ramp" else 0.0)
+                dry_close_end = max(dry_close_end, end)
+    if dry_close_end > plan.bars - 1 + 1e-9:
+        errors.append(
+            f"the dry closes at bar {dry_close_end:g}, under 1 bar before the handover at bar {plan.bars}: "
+            "fx_reset would cut the echo tail"
+        )
+    return errors
+
+
 def _gives_way(event: PlanEvent, out_deck: int) -> bool:
     """Whether an event takes something away from the outgoing deck: a fader or EQ below full, a filter off flat, a
     stop."""
@@ -1130,6 +1168,8 @@ def _gives_way(event: PlanEvent, out_deck: int) -> bool:
         return event.value < FLAT
     if event.name == "filter":
         return event.value != FLAT
+    if event.name == "fx_dry" and event.value is not None:
+        return event.value < 1.0
     return False
 
 
@@ -1157,6 +1197,11 @@ def _event_errors(plan: TransitionPlan, event: PlanEvent) -> list[str]:
         )
     if event.deck is not None and event.deck not in (plan.out.deck, plan.in_.deck):
         errors.append(f"event at bar {event.at_bar} touches deck {event.deck}, which the plan does not name")
+    if event.name in FX_CONTROLS | FX_ACTIONS and event.deck != plan.out.deck:
+        errors.append(
+            f"{event.name} at bar {event.at_bar:g} is on deck {event.deck}: "
+            f"transition FX move only the outgoing deck {plan.out.deck}"
+        )
     if event.kind == "do":
         errors.extend(_handover_errors(plan, event))
     return errors
@@ -1205,20 +1250,42 @@ def _check_tempo_fit(
         result.warnings.append("tempo mode none on a beatmatched style: the decks will drift")
 
 
+def _relation_label(relation: str) -> str:
+    return relation.replace("_", "-")
+
+
+def _key_fit_warning(out_key: str, in_key: str, relation: str, move: str, interval: str, *, bars: float) -> str | None:
+    if bars <= 2:
+        return None
+    if relation == "wrong_way_diagonal":
+        return f"keys {out_key} and {in_key}: wrong-way diagonal, no shared chord tones"
+    from apps.shared.harmonic import CLASH_RELATION, LIFT, LONG_BLEND_KEY_CLASH_RELATIONS
+
+    if relation in LONG_BLEND_KEY_CLASH_RELATIONS:
+        tail = interval if relation != CLASH_RELATION else "no Camelot relation"
+        return f"keys {out_key} and {in_key}: {_relation_label(relation)}, {tail}"
+    if move == LIFT:
+        return f"keys {out_key} and {in_key}: {_relation_label(relation)} ({interval}); mix it fast"
+    return None
+
+
 def _check_key_fit(
     plan: TransitionPlan, out_profile: TrackProfile, in_profile: TrackProfile, result: Validation
 ) -> None:
     if not (out_profile.key and in_profile.key):
         return
-    from apps.shared.harmonic import CamelotKey, camelot_distance
+    from apps.shared.harmonic import CamelotKey, camelot_distance, key_compat
 
     distance = camelot_distance(CamelotKey.from_string(out_profile.key), CamelotKey.from_string(in_profile.key))
+    compat = key_compat(out_profile.key, in_profile.key)
     result.metrics["key_distance"] = distance
-    if distance > 2 and plan.bars > 2:
-        result.warnings.append(
-            f"keys {out_profile.key} and {in_profile.key} are {distance} steps apart; a long "
-            "overlap will clash. Prefer a short style or one that keeps only drums together"
-        )
+    result.metrics["key_relation"] = compat.relation
+    result.metrics["key_move"] = compat.move
+    warning = _key_fit_warning(
+        out_profile.key, in_profile.key, compat.relation, compat.move, compat.interval, bars=plan.bars
+    )
+    if warning:
+        result.warnings.append(warning)
 
 
 def _bar_value(series: tuple[float, ...] | None, bar: int) -> float | None:
@@ -1299,7 +1366,7 @@ def _heard(row: BarState, out_assign: Any = None, in_assign: Any = None) -> tupl
     """
     # ADR-0135: audibility is judged against the level decks load at.
     floor = AUDIBLE_FADER * LOAD_GAIN
-    out_level = row.out_fader * row.out_trim / UNITY_TRIM
+    out_level = row.out_fader * row.out_trim / UNITY_TRIM * row.out_dry
     in_level = row.in_fader * row.in_trim / UNITY_TRIM
     return (
         row.out_playing and out_level >= floor and _side_open(out_assign, row.crossfader),
@@ -1515,6 +1582,12 @@ def _validate_live(
     _check_pitch_reach(plan, in_profile, (out_state, in_state), result)
     _check_authored_tempo(plan, plan.in_.deck, in_state, result)
     _check_authored_tempo(plan, plan.out.deck, out_state, result)
+    for event in plan.events:
+        if event.name in PAGE_PENDING_FX:
+            result.errors.append(
+                f"{event.name} at bar {event.at_bar:g}: the page executor has no FX plan controls yet (#9848), "
+                "so this plan cannot run live"
+            )
 
 
 def _beatmatched(plan: TransitionPlan) -> bool:

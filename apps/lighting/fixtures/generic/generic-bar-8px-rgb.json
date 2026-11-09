@@ -1,0 +1,84 @@
+{
+  "id": "generic-bar-8px-rgb",
+  "name": "Generic LED Bar 8px RGB",
+  "kind": "bar",
+  "modes": [
+    {
+      "name": "24ch",
+      "channels": [
+        {
+          "capability": "red"
+        },
+        {
+          "capability": "green"
+        },
+        {
+          "capability": "blue"
+        },
+        {
+          "capability": "red"
+        },
+        {
+          "capability": "green"
+        },
+        {
+          "capability": "blue"
+        },
+        {
+          "capability": "red"
+        },
+        {
+          "capability": "green"
+        },
+        {
+          "capability": "blue"
+        },
+        {
+          "capability": "red"
+        },
+        {
+          "capability": "green"
+        },
+        {
+          "capability": "blue"
+        },
+        {
+          "capability": "red"
+        },
+        {
+          "capability": "green"
+        },
+        {
+          "capability": "blue"
+        },
+        {
+          "capability": "red"
+        },
+        {
+          "capability": "green"
+        },
+        {
+          "capability": "blue"
+        },
+        {
+          "capability": "red"
+        },
+        {
+          "capability": "green"
+        },
+        {
+          "capability": "blue"
+        },
+        {
+          "capability": "red"
+        },
+        {
+          "capability": "green"
+        },
+        {
+          "capability": "blue"
+        }
+      ]
+    }
+  ]
+}

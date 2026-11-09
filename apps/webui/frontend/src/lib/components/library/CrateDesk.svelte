@@ -27,12 +27,12 @@
 	import { setAppMode } from '$lib/rb/prefs.svelte';
 	import { gigRuntimeReleaseSettled, markLibraryModeExit } from '$lib/rb/library-mode-runtime';
 	import { uiPrefs } from '$lib/rb/prefs.svelte';
-	import { libraryLayoutFor } from '$lib/rb/skin-layout';
+	import { effectiveLibraryLayout } from '$lib/rb/skin-layout';
 
 	// SKINLAYOUT-8869: the skin's library preset. The three-panel extras are
 	// their own lazy chunk (bundle surface three-panel-layout), fetched only
 	// when a skin selects that preset.
-	const layout = $derived(libraryLayoutFor(uiPrefs.ui_skin));
+	const layout = $derived(effectiveLibraryLayout(uiPrefs.layout_override.library, uiPrefs.ui_skin));
 	let threePanel = $state<typeof import('./three-panel') | null>(null);
 	let threePanelError = $state<string | null>(null);
 	$effect(() => {

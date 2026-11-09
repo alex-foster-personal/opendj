@@ -6,10 +6,12 @@ import { test } from 'node:test';
 import {
 	AUTOMATION_CLASSES,
 	FAILURE_CLASSES,
+	PENDING,
 	SPIKE_CRITERIA,
 	VERDICTS,
 	barSyncVerdict,
 	criterionById,
+	foldFromPerfRows,
 	newResultsDocument,
 	recordVerdict,
 	renderEvidenceMarkdown,
@@ -256,51 +258,74 @@ test('the harness and the criteria module hold no disallowed dash characters and
 	}
 });
 
-// WKV-10 is an ACCEPTANCE gate, and an acceptance gate that scores the shipped
-// behaviour as a regression is worse than no gate: it tells an operator to hold
-// the door shut on a working build. Pin 9bf12adccb45 made BAR fold to 0.5x/2x
-// and warn in orange rather than refuse, and the harness went on marking any
-// folded ratio FAIL because nothing in CI reads a manual harness. These four
-// tests are what CI now reads.
+// WKV-10 is an ACCEPTANCE gate: a folded BAR lock stays PENDING until the
+// operator confirms the ORANGE toast, and folds are read from the planner
+// tempoNormalization perf row, not from effective_bpm ratio.
 
-test('WKV-10 passes a folded BAR lock instead of scoring it as a regression', () => {
+test('WKV-10 folded via normalization holds PENDING until the operator marks it', () => {
 	const outcome = barSyncVerdict({
 		masterPhase: 1,
 		followerPhase: 3,
-		ratio: 0.5,
+		normalization: 0.5,
+		foldSeverity: 'warn',
 		syncError: null,
 		observations: { masterBeat: { n: 1 }, followerBeat: { n: 3 } }
 	});
-	assert.equal(
-		outcome.verdict,
-		'PASS',
-		'a fold that locked is the behaviour pin 9bf12adccb45 asked for, not a failure'
+	assert.equal(outcome.verdict, PENDING);
+	assert.match(outcome.detail, /ORANGE/);
+	assert.match(outcome.detail, /mark\('WKV-10'/);
+	const doc = _fresh();
+	assert.throws(
+		() => recordVerdict(doc, { id: 'WKV-10', verdict: PENDING, detail: 'x' }),
+		/must be one of/
 	);
-	assert.match(
-		outcome.detail,
-		/ORANGE/,
-		'the operator must still confirm the warning colour, which the read model cannot carry'
-	);
-	assert.equal(outcome.observations.sync_error, null);
 });
 
-test('WKV-10 fails a fold that BAR refused, which is the pre-pin behaviour', () => {
+test('WKV-10 unrecorded after a pending fold keeps the gate closed', () => {
+	const doc = _fresh();
+	for (const criterion of SPIKE_CRITERIA) {
+		if (criterion.id === 'WKV-10') continue;
+		recordVerdict(doc, { id: criterion.id, verdict: 'PASS', detail: 'observed' });
+	}
+	const gate = rollupGate(doc);
+	assert.equal(gate.verdict, 'INCOMPLETE');
+	assert.deepEqual(gate.unrecorded, ['WKV-10']);
+	assert.equal(gate.phase_4_entry_gate, 'closed');
+	recordVerdict(doc, { id: 'WKV-10', verdict: 'FAIL', detail: 'toast was red' });
+	assert.equal(rollupGate(doc).verdict, 'FAIL');
+});
+
+test('WKV-10 fails a fold announced at the wrong severity', () => {
+	const outcome = barSyncVerdict({
+		masterPhase: 1,
+		followerPhase: 3,
+		normalization: 2,
+		foldSeverity: 'error',
+		syncError: null,
+		observations: {}
+	});
+	assert.equal(outcome.verdict, 'FAIL');
+});
+
+test('WKV-10 fails when BAR refused to lock', () => {
 	const outcome = barSyncVerdict({
 		masterPhase: 1,
 		followerPhase: 1,
-		ratio: 2,
-		syncError: 'no phase-capable bar anchor',
+		normalization: 1,
+		foldSeverity: null,
+		syncError: 'follower grid has no phase-capable bar anchor with tempo ratio within range',
 		observations: {}
 	});
-	assert.equal(outcome.verdict, 'FAIL', 'a fold owes exactly one thing: that it locked');
+	assert.equal(outcome.verdict, 'FAIL');
 	assert.match(outcome.detail, /9bf12adccb45/);
 });
 
-test('WKV-10 still demands 1-2-3-4 alignment of an EXACT lock', () => {
+test('WKV-10 still demands 1-2-3-4 alignment of an exact lock', () => {
 	const aligned = barSyncVerdict({
 		masterPhase: 2,
 		followerPhase: 2,
-		ratio: 1,
+		normalization: 1,
+		foldSeverity: null,
 		syncError: null,
 		observations: {}
 	});
@@ -308,41 +333,68 @@ test('WKV-10 still demands 1-2-3-4 alignment of an EXACT lock', () => {
 	const misaligned = barSyncVerdict({
 		masterPhase: 2,
 		followerPhase: 3,
-		ratio: 1,
+		normalization: 1,
+		foldSeverity: null,
 		syncError: null,
 		observations: {}
 	});
-	assert.equal(
-		misaligned.verdict,
-		'FAIL',
-		'relaxing the fold must not relax the exact case, or WKV-10 stops gating anything'
-	);
+	assert.equal(misaligned.verdict, 'FAIL');
 });
 
-test('WKV-10 treats a ratio it could not read as an exact lock, never as a fold', () => {
-	// `effective_bpm` is nullable on the read model. A null ratio must not fall
-	// through the `Math.abs(null - 0.5)` coercion into looking like a fold and
-	// collecting a free PASS; it stays on the strict path.
+test('WKV-10 treats unreadable normalization as an exact lock, never as a fold', () => {
 	const outcome = barSyncVerdict({
 		masterPhase: 1,
 		followerPhase: 4,
-		ratio: null,
+		normalization: null,
+		foldSeverity: null,
 		syncError: null,
 		observations: {}
 	});
 	assert.equal(outcome.verdict, 'FAIL');
 });
 
+test('foldFromPerfRows reads planner normalization from beat-sync-fold perf rows', () => {
+	const row = {
+		t: '2026-11-08T00:00:01.000Z',
+		kind: 'beat-sync-fold',
+		deck: 2,
+		message: 'tempoNormalization=0.5',
+		severity: 'warn'
+	};
+	const found = foldFromPerfRows([row], { deck: 2, since: '2026-11-08T00:00:00.000Z' });
+	assert.equal(found.normalization, 0.5);
+	assert.equal(found.severity, 'warn');
+	assert.equal(
+		foldFromPerfRows([{ ...row, deck: 1 }], { deck: 2, since: '2026-11-08T00:00:00.000Z' })
+			.normalization,
+		1
+	);
+	assert.equal(
+		foldFromPerfRows([{ ...row, t: '2026-11-07T23:59:59.000Z' }], {
+			deck: 2,
+			since: '2026-11-08T00:00:00.000Z'
+		}).normalization,
+		1
+	);
+	assert.equal(
+		foldFromPerfRows([], { deck: 2, since: '2026-11-08T00:00:00.000Z' }).normalization,
+		1
+	);
+	assert.equal(foldFromPerfRows(null, { deck: 2, since: 'x' }), null);
+	assert.equal(
+		foldFromPerfRows([{ ...row, message: 'unexpected' }], {
+			deck: 2,
+			since: '2026-11-08T00:00:00.000Z'
+		}).normalization,
+		null
+	);
+});
+
 test("WKV-10's criterion text says what the harness now measures", () => {
 	const criterion = criterionById('WKV-10');
-	assert.doesNotMatch(
-		criterion.pass_criterion,
-		/rejected in BAR/,
-		'the criterion must not still assert the rule the pin reversed'
-	);
+	assert.doesNotMatch(criterion.pass_criterion, /rejected in BAR/);
 	assert.match(criterion.pass_criterion, /9bf12adccb45/);
-	assert.ok(
-		criterion.human_step !== null,
-		'the harness cannot see toast colour, so WKV-10 owes the operator a step'
-	);
+	assert.match(criterion.pass_criterion, /tempoNormalization/);
+	assert.doesNotMatch(criterion.pass_criterion, /so a folded lock is a PASS/);
+	assert.ok(criterion.human_step !== null);
 });

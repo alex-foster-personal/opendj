@@ -161,9 +161,10 @@ export async function cancelBackfill(batchId: string): Promise<BackfillCancelRes
 	return (await r.json()) as BackfillCancelResult;
 }
 
-/** Put cancelled and abandoned items back; concurrency is re-planned from
- * what is LEFT, so a batch whose one long track finished does not stay at one
- * worker for its remaining club edits. */
+/** Put cancelled and abandoned items back; refuses while a live runner still
+ * holds the batch lease. Concurrency is re-planned from what is LEFT, so a
+ * batch whose one long track finished does not stay at one worker for its
+ * remaining club edits. */
 export async function resumeBackfill(batchId: string): Promise<BackfillResumeResult> {
 	const r = await fetch(`${API_BASE}/api/v1/analysis/backfill/resume`, {
 		method: 'POST',

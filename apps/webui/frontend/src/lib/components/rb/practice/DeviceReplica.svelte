@@ -7,7 +7,7 @@
 	import type { DeviceMap } from '$lib/rb/midi/midi-types';
 	import { onDestroy } from 'svelte';
 	import { handleMidiAction } from '$lib/rb/midi/action-glue.svelte';
-	import { midiState } from '$lib/rb/midi/midi-state.svelte';
+	import { midiState, setDeviceShiftHeld } from '$lib/rb/midi/midi-state.svelte';
 	import {
 		controlTitle,
 		dispatchPractice,
@@ -24,9 +24,11 @@
 		/** Practice drill target control id; null = free play. */
 		target?: string | null;
 		onHit?: (controlId: string) => void;
+		/** When true, the replica does not accept pointer input (compare / blind modes). */
+		disablePointerEvents?: boolean;
 	}
 
-	let { layout, map, target = null, onHit }: Props = $props();
+	let { layout, map, target = null, onHit, disablePointerEvents = false }: Props = $props();
 
 	const resolved = $derived(resolveLayout(map, layout));
 
@@ -44,7 +46,7 @@
 			handleMidiAction(action, value, 'practice-replica', performance.now(), controlId),
 		// The same write the hardware SHIFT makes in webmidi.svelte.ts.
 		shift: (held) => {
-			midiState.shiftHeld = held;
+			setDeviceShiftHeld('practice-replica', held);
 		},
 		// One line per dispatch so an agent or a reviewer can see exactly what fired.
 		log: (line) => console.info(line)
@@ -99,6 +101,7 @@
 
 <div
 	class="replica"
+	class:replica-no-input={disablePointerEvents}
 	style="aspect-ratio:{layout.panel.w} / {layout.panel.d}"
 	data-testid="device-replica"
 	data-device={layout.device}
@@ -163,6 +166,10 @@
 </div>
 
 <style>
+	.replica-no-input,
+	.replica-no-input * {
+		pointer-events: none;
+	}
 	.replica {
 		--p-panel: #1a1c20;
 		--p-control: #2b2f36;

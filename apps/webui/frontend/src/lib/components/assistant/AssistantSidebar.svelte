@@ -90,7 +90,7 @@
 				scrollToLatest();
 			}
 			if (streaming.length === 0) {
-				sendError = 'The assistant did not return a reply. Try again.';
+				sendError = 'OJ did not return a reply. Try again.';
 				fillPhase = 'idle';
 			} else {
 				messages = [...messages, { role: 'assistant', content: streaming }];
@@ -99,7 +99,7 @@
 		} catch (error: unknown) {
 			fillPhase = 'idle';
 			if (controller.signal.aborted) return;
-			sendError = 'The assistant could not answer right now. Try again.';
+			sendError = 'OJ could not answer right now. Try again.';
 		} finally {
 			streaming = null;
 			controller = null;

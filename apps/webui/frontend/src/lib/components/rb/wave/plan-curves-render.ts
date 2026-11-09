@@ -5,7 +5,7 @@
  * inside the waveform's paint, so it allocates nothing: the geometry is built once per move (`plan-overlay.ts`).
  */
 import type { WavePalette } from './cues';
-import { PLAN_KNOBS, type PlanKnob } from '$lib/rb/plan-knobs';
+import { PLAN_KNOBS, type PlanKnob, type PlanKnobColor } from '$lib/rb/plan-knobs';
 import type { PlanCurve, PlanDeckOverlay } from '$lib/rb/plan-overlay';
 
 const INSET_PX = 4;
@@ -20,16 +20,10 @@ const KNOB_DASH = Object.fromEntries(PLAN_KNOBS.map((knob) => [knob.name, knob.d
 	PlanKnob,
 	number[]
 >;
-const KNOB_COLOR: Record<
+const KNOB_COLOR = Object.fromEntries(PLAN_KNOBS.map((knob) => [knob.name, knob.color])) as Record<
 	PlanKnob,
-	'planFader' | 'planEqLow' | 'planEqMid' | 'planEqHigh' | 'planFilter'
-> = {
-	fader: 'planFader',
-	eq_low: 'planEqLow',
-	eq_mid: 'planEqMid',
-	eq_high: 'planEqHigh',
-	filter: 'planFilter'
-};
+	PlanKnobColor
+>;
 
 function _traceCurve(
 	ctx: CanvasRenderingContext2D,

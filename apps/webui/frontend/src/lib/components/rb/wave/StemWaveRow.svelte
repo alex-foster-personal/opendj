@@ -7,11 +7,12 @@
 	} from './stem-waveform-cache.svelte';
 	import {
 		stemWaveformApiPart,
-		stemWaveRowColor,
+		stemWaveRowColorFromElement,
 		stemWaveRowUnavailableTip,
 		STEM_WAVE_ROW_PX
 	} from './stem-waveform-ui';
 	import { drawStemWaveRow } from './render';
+	import { uiPrefs } from '$lib/rb/prefs.svelte';
 	import StemWaveRowView from './StemWaveRowView.svelte';
 
 	let {
@@ -59,9 +60,20 @@
 	});
 
 	let canvasEl: HTMLCanvasElement | null = $state(null);
+	let stemColor: string | null = $state(null);
+
+	// Resolve the --rb-stem-<id> token once per theme, palette, skin or stem
+	// change, not on every scrollPx repaint (issue #10221, PERF-PAINT-02).
+	$effect(() => {
+		void uiPrefs.theme;
+		void uiPrefs.wave_palette;
+		void uiPrefs.ui_skin;
+		if (canvasEl === null) return;
+		stemColor = stemWaveRowColorFromElement(canvasEl, stem);
+	});
 
 	$effect(() => {
-		if (!shouldFetch || canvasEl === null || canvasWidth <= 0) return;
+		if (!shouldFetch || canvasEl === null || stemColor === null || canvasWidth <= 0) return;
 		const envelope = entry?.status === 'ready' ? entry.envelope : null;
 		if (envelope === null) return;
 		const dpr = window.devicePixelRatio || 1;
@@ -84,7 +96,7 @@
 			pitch: deck.pitch,
 			width: canvasWidth,
 			height: cssH,
-			color: stemWaveRowColor(stem, getComputedStyle(canvasEl).getPropertyValue(`--rb-stem-${stem}`))
+			color: stemColor
 		});
 	});
 </script>

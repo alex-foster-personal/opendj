@@ -1,0 +1,9 @@
+{
+  "bytes": 3072,
+  "measured_main": 474951,
+  "measured_with_pr": 477364,
+  "sha": "5c56b56d95",
+  "date": "Sun 8 Nov 2026",
+  "reason": "PR #9149 (Add CloudSync fleet-health panel on GET /cloudsync/overview) grows the other-lazy surface. Measured: CI bundle check of 5c56b56d95, +2413 B gzip; ceiled to KiB.",
+  "payback": "none planned; the growth is the feature's own code on this surface"
+}

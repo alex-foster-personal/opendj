@@ -300,6 +300,20 @@ _FRONTEND_FIXTURE_MANIFEST = _FRONTEND_FIXTURE.with_suffix(".manifest.json")
 FIXTURE_REWRITE_ENV = "MDT_BEATGRID_CHAIN_FIXTURE_REWRITE"
 
 
+def test_frontend_fixture_manifest_matches_the_fixture_bytes() -> None:
+    """[if] the beat grid fallback fixture is edited or re-captured without
+    regenerating its .manifest.json (byte count and sha256 no longer match the
+    fixture on disk, or the schema/version metadata is missing) [then] broken."""
+    manifest = json.loads(_FRONTEND_FIXTURE_MANIFEST.read_text(encoding="utf-8"))
+    assert manifest["schema_version"] == 1
+    datetime.fromisoformat(manifest["capture_version"])
+    assert list(manifest["files"]) == [_FRONTEND_FIXTURE.name]
+    entry = manifest["files"][_FRONTEND_FIXTURE.name]
+    fixture_bytes = _FRONTEND_FIXTURE.read_bytes()
+    assert entry["bytes"] == len(fixture_bytes)
+    assert entry["sha256"] == hashlib.sha256(fixture_bytes).hexdigest()
+
+
 def test_frontend_fixture_capture_matches_the_live_route(client: TestClient) -> None:
     """deck-beatgrid-fallback-upgrade.test.mjs stubs globalThis.fetch (there is
     no browser or network stack in a node:test run), but it serves the EXACT
@@ -368,7 +382,7 @@ def test_frontend_fixture_capture_matches_the_live_route(client: TestClient) -> 
         _FRONTEND_FIXTURE.write_bytes(json_bytes)
         manifest = {
             "schema_version": 1,
-            "capture_version": "2026-09-12",
+            "capture_version": datetime.now(UTC).date().isoformat(),
             "files": {
                 "beatgrid-fallback-unmapped-captured.json": {
                     "bytes": len(json_bytes),

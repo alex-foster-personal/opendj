@@ -46,6 +46,14 @@ def int_value(key: str, raw: str) -> int:
         raise ValueError(f"{key} must be an integer, got {raw!r}") from None
 
 
+def related_bpm_percent_value(key: str, raw: str) -> int:
+    """LIBUX-10046: Related Tracks BPM window percent; keep in sync with related-criteria-prefs.ts."""
+    parsed = number_value(key, raw)
+    if not parsed.is_integer() or parsed < 1 or parsed > 20:
+        raise ValueError(f"{key} must be an integer within 1..20 (percent), got {raw!r}")
+    return int(parsed)
+
+
 def positive_int_value(key: str, raw: str) -> int:
     parsed = int_value(key, raw)
     if parsed <= 0:
@@ -61,6 +69,27 @@ def number_value(key: str, raw: str) -> float:
     if not math.isfinite(parsed):
         raise ValueError(f"{key} must be a finite number, got {raw!r}")
     return parsed
+
+
+def beat_jump_beats_value(key: str, raw: str) -> int | float:
+    """A non-zero whole beat count, or exactly +-0.5 (DECKUX-10470 half-beat jump)."""
+    parsed = number_value(key, raw)
+    if abs(parsed) == 0.5:
+        return parsed
+    if parsed == 0 or not parsed.is_integer():
+        raise ValueError(f"{key} must be a non-zero whole number or +-0.5, got {raw!r}")
+    return int(parsed)
+
+
+def beat_jump_size_value(choices: Sequence[float]) -> Callable[[str, str], Any]:
+    """One of ``choices``, sent as an int when whole so the wire reads 4, not 4.0."""
+    sized = number_enum_value(choices)
+
+    def parse(key: str, raw: str) -> Any:
+        parsed = sized(key, raw)
+        return int(parsed) if parsed.is_integer() else parsed
+
+    return parse
 
 
 def positive_number_value(key: str, raw: str) -> float:
@@ -146,6 +175,26 @@ def head_delay_ms_value(key: str, raw: str) -> float:
             f"got {raw!r}"
         )
     return parsed
+
+
+LAYOUT_REGION_BOUNDS: dict[str, tuple[int, int]] = {
+    "browser.tree": (220, 520),  # keep in sync with PLAYLIST_TREE_WIDTH_MIN/MAX in apps/webui/frontend/src/lib/rb/prefs.svelte.ts
+}
+
+
+def layout_px_value(key: str, raw: str) -> int:
+    """DL-2: a region width in CSS px; out of range is refused with the range, never clamped.
+
+    Single-region unpack: when a second region lands, unpacking ``values()`` fails loudly
+    and forces a cross-field check against the chosen region.
+    """
+    (low, high), = LAYOUT_REGION_BOUNDS.values()
+    parsed = number_value(key, raw)
+    if not parsed.is_integer() or parsed < low or parsed > high:
+        raise ValueError(
+            f"{key} must be a whole number within {low}..{high} (browser.tree width in CSS px), got {raw!r}"
+        )
+    return int(parsed)
 
 
 AUTO_GAIN_OFFSET_MAX_DB = 12.0  # apps/analysis_loudness/auto_gain.py OFFSET_MAX_DB
@@ -255,8 +304,11 @@ GRID_EDIT_MAX_STEP_BEATS = 3
 
 
 def grid_edit_value(key: str, raw: str) -> dict[str, Any]:
-    """``adjust|shift`` resets that part; ``<offset_ms>[:<beats>]`` nudges the grid."""
+    """``adjust|shift`` resets that part, ``undo`` steps back one stored edit
+    (GRIDEDIT-10215); ``<offset_ms>[:<beats>]`` nudges the grid."""
     token = raw.strip()
+    if token == "undo":
+        return {"kind": "undo"}
     if token in ("adjust", "shift"):
         return {"kind": "reset", "part": token}
     offset_raw, _, beats_raw = token.partition(":")

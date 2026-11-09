@@ -28,11 +28,16 @@ let serverProcess;
 let apiBase;
 
 before(async () => {
-	serverProcess = spawn(resolveUv(), ['run', '--no-sync', 'python', SERVER_SCRIPT], {
-		cwd: REPOSITORY_ROOT,
-		env: { ...process.env, MDT_LIBRARY_MODE: 'local', PYTHONPATH: REPOSITORY_ROOT },
-		stdio: ['ignore', 'pipe', 'inherit']
-	});
+	// The isolated frontend gate needs the locked project plus its test extra.
+	serverProcess = spawn(
+		resolveUv(),
+		['run', '--locked', '--extra', 'dev', 'python', SERVER_SCRIPT],
+		{
+			cwd: REPOSITORY_ROOT,
+			env: { ...process.env, MDT_LIBRARY_MODE: 'local', PYTHONPATH: REPOSITORY_ROOT },
+			stdio: ['ignore', 'pipe', 'inherit']
+		}
+	);
 	const port = await new Promise((resolve, reject) => {
 		serverProcess.once('exit', (code) =>
 			reject(new Error(`fixture server exited early (${code})`))

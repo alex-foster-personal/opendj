@@ -205,3 +205,68 @@ fn midi_ports_need_the_midi_feature() {
     assert!(!o.status.success());
     assert!(String::from_utf8_lossy(&o.stderr).contains("--features midi"));
 }
+
+/// Action types the page drives itself: the engine installs them and forwards
+/// each input as a `midi_action` line instead of refusing the map (#10276).
+const PAGE_ONLY_TYPES: &[&str] = &[
+    "deck_hot_cue",
+    "deck_auto_loop_toggle",
+    "deck_sync_toggle",
+    "deck_manual_loop_cycle",
+    "deck_loop_scale",
+    "deck_key_sync_toggle",
+    "deck_stem_eq_toggle",
+    "deck_key_nudge",
+    "deck_tempo_nudge",
+    "deck_jog",
+    "controller_pad_mode",
+    "controller_pad",
+    "browse_encoder",
+    "browse_load",
+    "channel_cue",
+    "headphone_mix",
+    "headphone_level",
+    "master_cue",
+];
+
+#[test]
+fn a_map_with_every_page_action_type_installs_and_page_only_ones_are_forwarded() {
+    let fixture_text = include_str!("fixtures/midi/all-page-actions.json");
+    let fixture: Value = serde_json::from_str(fixture_text).unwrap();
+    let bindings = fixture["bindings"].as_array().unwrap();
+    let types: std::collections::BTreeSet<&str> =
+        bindings.iter().map(|b| b["action"]["type"].as_str().unwrap()).collect();
+    assert_eq!(types.len(), 26, "the fixture carries every page action type once: {types:?}");
+    for t in PAGE_ONLY_TYPES {
+        assert!(types.contains(t), "fixture is missing page-only type {t}");
+    }
+
+    let d = two_decks("midi-parity");
+    std::fs::write(d.join("all.json"), fixture_text).unwrap();
+    // Installing the whole map is the point: before #10276 this refused.
+    let mut s = Session::start(&d, &["--midi-map", "all.json"]);
+    let port = "PARITY-ALL";
+    for (i, b) in bindings.iter().enumerate() {
+        let (src, action) = (&b["source"], &b["action"]);
+        let ty = action["type"].as_str().unwrap();
+        let ch = src["ch"].as_u64().unwrap() as u8 - 1;
+        let id = src["id"].as_u64().unwrap() as u8;
+        let bytes = match src["kind"].as_str().unwrap() {
+            "note" => json!([0x90 | ch, id, 0x7f]),
+            _ => json!([0xb0 | ch, id, 0x01]),
+        };
+        let (lines, r) = s.say(&format!("m{i}"), json!({"type": "midi_inject", "port": port, "bytes": bytes}));
+        assert_eq!(r["ok"], true, "{ty}: {r}");
+        if PAGE_ONLY_TYPES.contains(&ty) {
+            assert_eq!(lines.len(), 1, "{ty}: one forwarded line, got {lines:?}");
+            assert_eq!(lines[0]["type"], "midi_action", "{ty}: {}", lines[0]);
+            assert_eq!(&lines[0]["action"], action, "{ty}: the page's action is forwarded verbatim");
+        } else if ty == "shift_modifier" {
+            assert!(lines.is_empty(), "{ty}: shift is engine state, not a command: {lines:?}");
+        } else {
+            assert_eq!(lines.len(), 1, "{ty}: one engine command, got {lines:?}");
+            assert_eq!(lines[0]["type"], "result", "{ty}: the engine acted (or refused) itself: {}", lines[0]);
+        }
+    }
+    s.stop();
+}

@@ -34,13 +34,23 @@ runner_minutes:
 # strong links exceed the budget.
 cap: hard
 
-# Cost model fitted on 258 PR-head runs (R2 0.885) by fleet-af ci--whatif
-# (src/ci_whatif/cost.py, the TEST-CUT instrument): shard runner minutes =
-# shards x overhead + ledger minutes x per_ledger_minute. Five shards cost 2.6 of the 10
-# before a test runs, which leaves 9.25 ledger-minutes of tests per run.
+# Cost model: shard runner minutes = shards x overhead + ledger minutes x per_ledger_minute.
+# First fitted on 258 PR-head runs (R2 0.885) by fleet-af ci--whatif (src/ci_whatif/cost.py) at
+# 0.52 and 0.80. Refitted Mon 9 Nov 2026 against REAL minutes, because the old price let the
+# cap leak: on the last 70 PR-head ci.yml runs with a hard-cap selection, the pytest fast lane
+# jobs' summed started_at..completed_at ran median 7.8, p90 10.45 runner-min, 9 of 70 over 10,
+# against a planned median of 8.5 and none planned over 10. Real/planned was median 0.89, p75
+# 1.03, p90 1.22. A cap fills every selection to near the budget (ledger 7.2 to 9.2 min), so the
+# slope and intercept cannot be separated on these runs (least squares R2 0.14); both old
+# coefficients are scaled by the p90 ratio 1.22 instead, so a run planned at the cap lands at or
+# under it nine times in ten. Five shards now cost 3.17 of the 10 before a test runs, which
+# leaves 6.97 ledger-minutes of tests per run (was 9.25). `shards` stays the runtime --shards
+# value the selector checks; CI-DYNSHARD launches fewer, which the fitted overhead absorbs.
+# Refit with the same measure once round 6 (two shards) lands. ci/test-budget-main-hourly.yml
+# keeps its own model.
 model:
-  overhead_min_per_shard: 0.52
-  min_per_ledger_minute: 0.80
+  overhead_min_per_shard: 0.634
+  min_per_ledger_minute: 0.976
   shards: 5
 
 # Weak-link rules the `weak-links` cap may drop, in the order they are dropped: round 0's rule as

@@ -98,6 +98,22 @@ export const PRESS_SCHEDULE_LOAD_SPAN_KIND = 'transport-schedule-press-load-span
  */
 export const PRESS_SCHEDULE_ARMED_KIND = 'transport-schedule-press-armed';
 
+/**
+ * LATENCY-10437: why a press row's schedule landed when it did. `sync-join`
+ * means the press joined Beat Sync and waited for the group's shared launch
+ * time (a product choice the S2 p99 excludes); `immediate` means it was
+ * scheduled as soon as the engine could. Only press rows carry it.
+ */
+export type ScheduleReason = 'sync-join' | 'immediate';
+
+export function scheduleReasonLabel(
+	pressToScheduleMs: number | undefined,
+	syncJoin: boolean
+): { schedule_reason: ScheduleReason } | Record<string, never> {
+	if (pressToScheduleMs === undefined) return {};
+	return { schedule_reason: syncJoin ? 'sync-join' : 'immediate' };
+}
+
 /** Every kind ``scheduleRowKind`` may return for a perf ring row. */
 export type ScheduleRowKind =
 	| typeof SCHEDULE_KIND

@@ -1,0 +1,9 @@
+{
+ "map_name": "XDJ-AZ",
+ "map_const": "XDJ_AZ_MAP",
+ "map_ts": "apps/webui/frontend/src/lib/rb/midi/maps/pioneer-xdj.ts",
+ "panel_w": 895.0,
+ "panel_d": 504.1,
+ "panel_size_source": "XDJ-AZ Instruction Manual, Specifications: max. external dimensions (W x D x H) 895 x 504.1 x 133.4 mm",
+ "display_name": "4-channel all-in-one system"
+}

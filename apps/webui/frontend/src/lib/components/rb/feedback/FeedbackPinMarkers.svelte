@@ -10,7 +10,7 @@
 	import { isPinUnread, pinStyle, type PinSeen } from '$lib/rb/feedback';
 	import { resolvedPinStyle, type ResolvedPinPosition } from '$lib/rb/feedback-pin-position';
 	import {
-		anchorMovedAtPin,
+		anchorMovedBeneathPin,
 		pinBoardState,
 		type PinBoardBadge
 	} from '$lib/rb/feedback-pin-board';
@@ -54,7 +54,7 @@
 
 	function anchorMovedFor(pin: FeedbackPin): boolean {
 		if (typeof document === 'undefined') return false;
-		return anchorMovedAtPin(pin, (x, y) => document.elementFromPoint(x, y));
+		return anchorMovedBeneathPin(pin, (x, y) => document.elementsFromPoint(x, y));
 	}
 </script>
 

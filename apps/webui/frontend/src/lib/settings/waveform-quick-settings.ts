@@ -16,6 +16,8 @@
  * Requirements (mini-PRD):
  *   ✔︎ every live row resolves to exactly one catalog entry that is implemented.
  *     [if] a row id names no catalog entry, or an unimplemented one [then ⛔️]
+ *   ✔︎ a live row is a boolean, enum or number catalog entry.
+ *     [if] a row names a path_lines, link or multi_bool entry [then ⛔️]
  *   ✔︎ every live row id is a key applySettingChange accepts.
  *     [if] a popover toggle writes a key the Settings path refuses [then ⛔️]
  *   ✔︎ inert rows carry exactly the PARITY-TODO title.
@@ -89,7 +91,7 @@ export const WAVE_QS_GROUPS: readonly WaveQsGroup[] = [
 			_inert(
 				'tempo_lane',
 				'Tempo-change lane',
-				'The tempo-change lane is being built on its own branch.'
+				'The tempo-change lane is set in Settings > Performance: Show tempo changes and Tempo curve scale.'
 			)
 		]
 	},
@@ -121,9 +123,13 @@ export function resolveWaveQsSetting(catalog: readonly SettingDef[], id: string)
 		throw new Error(`waveform quick settings: no Settings catalog entry ${id}`);
 	if (!def.implemented)
 		throw new Error(`waveform quick settings: catalog entry ${id} is not implemented`);
-	if (def.control.kind !== 'boolean' && def.control.kind !== 'enum') {
+	if (
+		def.control.kind !== 'boolean' &&
+		def.control.kind !== 'enum' &&
+		def.control.kind !== 'number'
+	) {
 		throw new Error(
-			`waveform quick settings: ${id} is a ${def.control.kind} control, only boolean and enum render here`
+			`waveform quick settings: ${id} is a ${def.control.kind} control, only boolean, enum and number render here`
 		);
 	}
 	return def;

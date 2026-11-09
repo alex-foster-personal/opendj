@@ -1,7 +1,7 @@
 // requirement: IOPIN-19 (Audio I/O panel Test buttons and level meters)
 // [if] an agent sends io_device_test for a bus [then] the same beeps play on the device the panel's Test uses, and the order answers once they sounded
 // [if] the CUE Test has no CUE device picked, or the AUDIO IN Test no input [then] the order fails with the panel's reason, and nothing opens
-// [if] the bus is not master, cue or input [then] the order fails before any audio opens
+// [if] the bus is not master, cue, booth or input [then] the order fails before any audio opens
 // [if] a second Test or a preset arrives while a Test holds the headphone scope [then] it waits for that Test
 // [if] the route tears down mid-Test [then] the order fails, never answering as played
 // [if] no route session is live, or a preset owns the lifecycle [then] the order fails before any audio opens
@@ -95,7 +95,10 @@ test('an agent CUE or AUDIO IN Test with nothing picked fails with the reason an
 		assert.match(input.steps[0].error, /No audio input is picked/);
 		const bad = await run({ type: 'io_device_test', bus: 'room' });
 		assert.equal(bad.steps[0].status, 'failed');
-		assert.match(bad.steps[0].error, /bus must be master, cue or input/);
+		assert.match(bad.steps[0].error, /bus must be master, cue, booth or input/);
+		const booth = await run({ type: 'io_device_test', bus: 'booth' });
+		assert.equal(booth.steps[0].status, 'failed');
+		assert.match(booth.steps[0].error, /No BOOTH output is picked/);
 		assert.equal(opened.length, 0);
 	} finally {
 		uninstall();

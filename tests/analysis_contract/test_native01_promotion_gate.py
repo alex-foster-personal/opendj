@@ -232,8 +232,9 @@ def test_fixed_tempo_f_guard_is_still_wired() -> None:
 # -----------------------------------------------------------------------------
 
 
+@pytest.mark.requirement("NATIVE-14")
 def test_no_apps_call_set_default_beatgrid_own() -> None:
-    """[if] production seeds beatgrid=own before threshold [then] fail, [else stop]."""
+    """[if] production seeds beatgrid own before NATIVE-01/14 gates [then] fail, [else stop]."""
     apps_root = REPO_ROOT / "apps"
     offenders: list[str] = []
     for path in apps_root.rglob("*.py"):

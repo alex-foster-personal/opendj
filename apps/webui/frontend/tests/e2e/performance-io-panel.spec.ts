@@ -9,7 +9,8 @@ test('opening I/O is read-only and does not acquire or change audio routes', asy
 			history: state.history,
 			mode: state.mixer.headphones.output_mode,
 			master: state.mixer.headphones.selected_master_output_device_id,
-			cue: state.mixer.headphones.selected_output_device_id
+			cue: state.mixer.headphones.selected_output_device_id,
+			booth: state.mixer.headphones.selected_booth_output_device_id
 		};
 	});
 	await page.getByRole('button', { name: 'SHOW AUDIO I/O' }).click();
@@ -21,7 +22,8 @@ test('opening I/O is read-only and does not acquire or change audio routes', asy
 			history: state.history,
 			mode: state.mixer.headphones.output_mode,
 			master: state.mixer.headphones.selected_master_output_device_id,
-			cue: state.mixer.headphones.selected_output_device_id
+			cue: state.mixer.headphones.selected_output_device_id,
+			booth: state.mixer.headphones.selected_booth_output_device_id
 		};
 	});
 	expect(after).toEqual(before);
@@ -49,12 +51,16 @@ test('I/O hover is brief and click opens persistent settings with routing inside
 	await expect(panel.getByText('Two clicks outside, Esc, or X to dismiss')).toBeVisible();
 	await expect(panel.getByRole('button', { name: 'Practice output mode' })).toBeVisible();
 	await expect(panel.getByRole('button', { name: 'Split cable output mode' })).toBeVisible();
-	await expect(panel.getByText('BOOTH / MONITOR')).toBeVisible();
 	await expect(panel.getByText('Advanced channel assignment')).toBeVisible();
-	await expect(panel.getByRole('button', { name: 'BOOTH / MONITOR' })).toBeDisabled();
 	await expect(panel.getByRole('button', { name: 'Advanced channel assignment' })).toBeDisabled();
 	await expect(panel.getByLabel('master output device')).toBeVisible();
 	await expect(panel.getByLabel('headphone output device', { exact: true })).toBeVisible();
+	await expect(panel.getByLabel('booth output device')).toHaveCount(0);
+	await panel.getByRole('button', { name: 'Add booth / monitor' }).click();
+	await expect(panel.getByLabel('booth output device')).toBeVisible();
+	await expect(panel.getByLabel('booth gain')).toBeVisible();
+	await panel.getByLabel('booth output device').selectOption('', { force: true });
+	await expect(panel.getByLabel('booth output device')).toHaveCount(0);
 	await expect(panel.getByLabel('audio input device')).toBeVisible();
 	await expect(page.locator('.hp').getByRole('button', { name: 'Practice output mode' })).toHaveCount(0);
 	await page.keyboard.press('Escape');

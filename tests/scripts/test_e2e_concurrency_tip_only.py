@@ -1,6 +1,6 @@
 """e2e.yml main pushes are tip-only; pull requests still supersede their own runs.
 
-TEST-CUT (specs/ci-test-cut.md, Fri 2 Oct 2026). Every main push is a tree a Trunk queue
+TEST-CUT ((private path), Fri 2 Oct 2026). Every main push is a tree a Trunk queue
 draft already ran the e2e gate on, so a per-SHA push group tested each merge twice on
 the four `e2e` runners drafts wait for (14 push gates in 6.7 h waited a median 79 min).
 
@@ -8,6 +8,7 @@ Single-line intent:
   - [if] push runs keep a per-SHA group [then] every merge queues a second e2e gate, [else stop].
   - [if] push runs cancel in progress [then] a burst of merges can leave main with no verdict, [else stop].
   - [if] pull requests stop cancelling in progress [then] a new push waits behind its stale run, [else stop].
+  - [if] schedule runs share the PR group or cancel in progress [then] the hourly main-tip gate never completes, [else stop].
 """
 
 from __future__ import annotations
@@ -38,6 +39,17 @@ def test_push_runs_never_cancel_a_running_gate_and_prs_still_do() -> None:
     """[if] a push cancels in progress, or a PR stops cancelling, [then] fail, [else stop].
 
     A cancelled push leaves main with no verdict after a merge burst; a PR that stops
-    cancelling makes a new head wait behind its stale run.
+    cancelling makes a new head wait behind its stale run. Schedule runs (the hourly
+    main-tip gate and the nightly, ADR-NEW-e2e-opt-in-by-label) never cancel either.
     """
-    assert _concurrency()["cancel-in-progress"] == "${{ github.event_name != 'push' }}"
+    cancel = _concurrency()["cancel-in-progress"]
+    assert cancel == "${{ github.event_name != 'push' && github.event_name != 'schedule' }}"
+
+
+@pytest.mark.requirement("DEVOPS-10534")
+def test_schedule_runs_have_their_own_group_and_are_never_cancelled() -> None:
+    """[if] schedule runs share the PR group or cancel in progress [then] the hourly main-tip gate never completes, [else stop]."""
+    group = _concurrency()["group"]
+    assert "github.event_name == 'schedule' && 'schedule'" in group
+    assert group.index("'push-tip'") < group.index("'schedule'") < group.index("'shared'")
+    assert "!= 'schedule'" in _concurrency()["cancel-in-progress"]

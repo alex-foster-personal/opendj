@@ -157,3 +157,69 @@ test('root layout mounts the overlay and installs its hotkeys next to settings',
 	assert.match(layout, /<HotkeysOverlay \/>/);
 	assert.match(layout, /from '\$lib\/components\/rb\/hotkeys\/install-hotkeys-overlay'/);
 });
+
+// LIBUX-10456: registry commands with default keys are listed in the overlay.
+const PRESET_DEF = {
+	id: 'preset.run.bass_swap_8',
+	label: 'Bass swap over 8',
+	defaultKeys: ['Shift+1'],
+	scope: 'global'
+};
+
+test('a registry command with a default key yields one entry with its chord, label and id', () => {
+	assert.deepEqual(registryMod.hotkeyEntriesFromCommandRegistry([PRESET_DEF]), [
+		{
+			id: 'preset.run.bass_swap_8',
+			chord: 'Shift+1',
+			description: 'Bass swap over 8',
+			group: 'Transition presets'
+		}
+	]);
+});
+
+test('a registry command with no default key yields no entry', () => {
+	assert.deepEqual(
+		registryMod.hotkeyEntriesFromCommandRegistry([{ ...PRESET_DEF, defaultKeys: [] }]),
+		[]
+	);
+});
+
+test('several default keys join with " / " and a non-preset command groups by scope', () => {
+	const [entry] = registryMod.hotkeyEntriesFromCommandRegistry([
+		{ id: 'deck.nudge', label: 'Nudge', defaultKeys: ['[', ']'], scope: 'deck' }
+	]);
+	assert.equal(entry.chord, '[ / ]');
+	assert.equal(entry.group, 'Deck');
+});
+
+test('a registry id shared with a hand-written entry keeps one row, the registry one', () => {
+	const handWritten = registryMod.HOTKEY_REGISTRY;
+	const shared = { ...PRESET_DEF, id: handWritten[0].id };
+	const merged = registryMod.mergeHotkeyEntries(
+		handWritten,
+		registryMod.hotkeyEntriesFromCommandRegistry([shared])
+	);
+	const ids = merged.map((entry) => entry.id);
+	assert.equal(new Set(ids).size, ids.length, `duplicate id in the merged list: ${ids}`);
+	assert.equal(
+		merged.find((entry) => entry.id === handWritten[0].id).description,
+		'Bass swap over 8'
+	);
+	assert.equal(merged.length, handWritten.length);
+});
+
+test('the merged list holds every registry command on main that has default keys, and filterHotkeys still finds the hand-written rows', async () => {
+	const commands = await loadTypeScriptModule('src/lib/keyboard/command-registry.ts');
+	const defs = commands.listPerformanceCommands();
+	const merged = registryMod.mergeHotkeyEntries(
+		registryMod.HOTKEY_REGISTRY,
+		registryMod.hotkeyEntriesFromCommandRegistry(defs)
+	);
+	const ids = new Set(merged.map((entry) => entry.id));
+	for (const def of defs.filter((d) => d.defaultKeys.length > 0))
+		assert.ok(ids.has(def.id), `${def.id} missing`);
+	assert.equal(new Set(merged.map((e) => e.id)).size, merged.length);
+	assert.equal(filterMod.filterHotkeys(merged, '   ').length, merged.length);
+	for (const entry of registryMod.HOTKEY_REGISTRY)
+		assert.ok(ids.has(entry.id), `${entry.id} dropped from the merge`);
+});

@@ -13,6 +13,7 @@
  * fallbacks, no invented data.
  */
 
+import { relatedCriteriaQuery, type RelatedCriteriaPrefs } from './related-criteria-prefs';
 import { API_BASE, getTrack, patchTrack, timeoutSignal } from '$lib/api';
 import { normalizeRating } from '$lib/rating';
 import type { BpmAlternative, BpmAlternativeSource } from '$lib/rb/bpm-dispute';
@@ -119,6 +120,35 @@ async function _fetchJson<T>(path: string, cache?: RequestCache): Promise<T> {
 	const r = await fetch(`${RB_API_BASE}${path}`, init);
 	if (!r.ok) await _throwRbApiError(r);
 	return (await r.json()) as T;
+}
+
+/** LIBUX-10046: one Related Tracks row, the playlist row plus its score. */
+export interface RelatedHitWire extends PlaylistTrackRowWire {
+	score: number;
+	matched: string[];
+}
+
+export interface RelatedResultsWire {
+	seed_stable_id: string;
+	criteria: RelatedCriteriaPrefs;
+	items: RelatedHitWire[];
+	total: number;
+}
+
+/** LIBUX-10046: tracks related to `stableId` under `criteria` (all seven sent). */
+export async function fetchRelatedTracks(
+	stableId: string,
+	criteria: RelatedCriteriaPrefs,
+	limit = 50
+): Promise<RelatedResultsWire> {
+	// Spec 4b: Related scores the library collection; no stick route exists.
+	refuseStickRead(stableId, 'related tracks');
+	const query = relatedCriteriaQuery(criteria);
+	query.set('limit', String(limit));
+	return _fetchJson<RelatedResultsWire>(
+		trackApiPath(stableId, `/related?${query.toString()}`),
+		'no-store'
+	);
 }
 
 /** GRID-OCTAVE-02: store which tempo a disputed track is served at (the hover card's one click).
@@ -990,6 +1020,34 @@ export async function fetchQualityLadder(): Promise<QualityRung[]> {
 
 /** GET /tracks/{sid}/hot-cues - all slots, including empty-slot ETags. A
  * stick track's slots carry this session's edits (decision 2). */
+/** CUES-9967: a track's memory cues and loops plus the memory-loop revision. */
+export interface MemoryCues {
+	cues: AnlzCue[];
+	revision: string;
+	active: AnlzCue | null;
+}
+
+export async function fetchMemoryCues(stable_id: string): Promise<MemoryCues> {
+	refuseStickRead(stable_id, 'fetch memory cues');
+	return _fetchJson<MemoryCues>(`/api/v1/tracks/${encodeURIComponent(stable_id)}/memory-cues`);
+}
+
+/** CUES-9967: flag (or clear) the memory loop at `in_ms` as the track's one
+ * active loop, under the If-Match revision from `fetchMemoryCues`. */
+export async function setActiveMemoryLoop(
+	stable_id: string,
+	in_ms: number,
+	active: boolean,
+	revision: string
+): Promise<MemoryCues> {
+	refuseStickWrite(stable_id, 'set active memory loop');
+	return _putJson<MemoryCues>(
+		`/api/v1/tracks/${encodeURIComponent(stable_id)}/memory-cues/${in_ms}/active`,
+		{ active },
+		revision
+	);
+}
+
 export async function fetchHotCueSlots(stable_id: string): Promise<HotCueSlotState[]> {
 	const slots = await _fetchJson<HotCueSlotState[]>(trackApiPath(stable_id, '/hot-cues'));
 	if (!isUsbTrackId(stable_id)) return slots;

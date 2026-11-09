@@ -1,0 +1,9 @@
+{
+  "bytes": 1024,
+  "measured_main": 21590,
+  "measured_with_pr": 22009,
+  "sha": "b8089cbe1e",
+  "date": "Mon 9 Nov 2026",
+  "reason": "PR #10586: the per-device practice fragments and their glob (#10560) reach the lazy practice-replica chunk. Measured: local vite build of main e6f6e78031 and of this branch on the same host (nucbox-wsl), +419 B gzip; ceiled to KiB",
+  "payback": "none planned; replica PRs no longer conflict on shared registry files"
+}

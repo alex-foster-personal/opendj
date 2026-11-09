@@ -12,6 +12,7 @@
 	 * ui-prefs PUT.
 	 */
 	import { onMount, tick } from 'svelte';
+	import SettingNumberStepper from '$lib/components/settings/SettingNumberStepper.svelte';
 	import SettingPreview from '$lib/components/settings/SettingPreview.svelte';
 	import { SETTINGS_CATALOG } from '$lib/settings/catalog';
 	import type { SettingDef } from '$lib/settings/catalog-types';
@@ -49,6 +50,16 @@
 		if (!isAllowedSettingKey(def.id))
 			throw new Error(`waveform quick settings: ${def.id} is not an allowed setting key`);
 		return readSettingValue(def.id);
+	}
+
+	function _number(def: SettingDef): number {
+		const raw = _value(def);
+		const parsed = typeof raw === 'string' ? Number(raw) : NaN;
+		if (!Number.isFinite(parsed))
+			throw new Error(
+				`waveform quick settings: ${def.id} is a number setting but read back ${JSON.stringify(raw)}`
+			);
+		return parsed;
 	}
 
 	function _place(): void {
@@ -174,6 +185,15 @@
 										<option value={opt.value}>{opt.label}</option>
 									{/each}
 								</select>
+							{:else if def.control.kind === 'number'}
+								<SettingNumberStepper
+									id={`wqs-${def.id}`}
+									label={def.label}
+									title={def.title}
+									control={def.control}
+									value={_number(def)}
+									onchange={(next) => applySettingChange(def.id, String(next))}
+								/>
 							{/if}
 							{#if def.preview !== undefined}
 								<div class="wqs-preview">

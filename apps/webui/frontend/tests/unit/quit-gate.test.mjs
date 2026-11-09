@@ -34,10 +34,25 @@ function startQuitGateTestServer() {
 			reject(error);
 			return;
 		}
+		// The isolated frontend gate needs the locked project plus its test extra.
 		const proc = spawn(
 			uv,
-			['run', '--no-sync', 'python', '-m', 'scripts.testing.quit_gate_test_server', '--port', '0'],
-			{ cwd: REPO_ROOT, stdio: ['ignore', 'pipe', 'pipe'] }
+			[
+				'run',
+				'--locked',
+				'--extra',
+				'dev',
+				'python',
+				'-m',
+				'scripts.testing.quit_gate_test_server',
+				'--port',
+				'0'
+			],
+			{
+				cwd: REPO_ROOT,
+				env: { ...process.env, MDT_LIBRARY_MODE: 'local', PYTHONPATH: REPO_ROOT },
+				stdio: ['ignore', 'pipe', 'pipe']
+			}
 		);
 		const timer = setTimeout(() => {
 			proc.kill();

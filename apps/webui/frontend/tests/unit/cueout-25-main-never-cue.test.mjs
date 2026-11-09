@@ -66,7 +66,7 @@ test('a saved MAIN equal to the CUE device refuses the CUE (AUDFID-01), never a 
 			selectedMasterId: null,
 			currentRoomId: 'native:lg'
 		}),
-		{ masterId: null, cueId: HP, autoPinnedMaster: false }
+		{ masterId: null, cueId: HP, boothId: null, autoPinnedMaster: false }
 	);
 });
 
@@ -77,17 +77,17 @@ test('control: a distinct saved MAIN is kept and not re-pinned', () => {
 			selectedCueId: HP,
 			selectedMasterId: 'native:lg'
 		}),
-		{ masterId: 'native:lg', cueId: HP, autoPinnedMaster: false }
+		{ masterId: 'native:lg', cueId: HP, boothId: null, autoPinnedMaster: false }
 	);
 });
 
 test('selectMasterOutput refuses MAIN-on-the-CUE-device before its try, so the live MAIN route is never failed', () => {
 	const source = readFileSync(HEADPHONES, 'utf8');
 	const body = source.slice(source.indexOf('export async function selectMasterOutput('));
-	const refusal = body.indexOf('throw new Error(refusal);');
 	const sameCheck = body.indexOf(
 		'sameOutputDevice(mixerState.headphones.outputs, deviceId, cueId)'
 	);
+	const refusal = body.indexOf('throw new Error(refusal);', sameCheck);
 	const tryAt = body.indexOf('try {');
 	assert.ok(
 		sameCheck > 0 && refusal > sameCheck,

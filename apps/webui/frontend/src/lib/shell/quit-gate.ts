@@ -7,6 +7,7 @@
 import { connect as connectEventsBus, subscribe, TOPIC_SHELL_QUIT, type Unsubscribe } from '$lib/api/events-bus';
 import { reportClientError } from '$lib/client-error-reporting';
 import { flushPerformanceSessionSnapshot } from '$lib/rb/performance-session.svelte';
+import { flushPendingNote } from '$lib/set-notes/store.svelte';
 import { queryPerformanceState } from '$lib/rb/performance-ipc.svelte';
 import { detectSurface, type ShellScope } from '$lib/rb/usage-heartbeat';
 import { closeQuitConfirm, isQuitConfirmOpen, openQuitConfirm, quitVetoed } from './quit-gate-state';
@@ -22,6 +23,8 @@ export interface QuitRequestOptions {
 type QuitGateDeps = {
 	query: typeof queryPerformanceState;
 	flushSnapshot: typeof flushPerformanceSessionSnapshot;
+	/** SETNOTE-9951: the set note's pending debounced save, awaited before exit. */
+	flushNote: () => Promise<void>;
 	exitShell: () => Promise<void>;
 	detect: (scope: ShellScope) => ReturnType<typeof detectSurface>;
 	subscribeShellQuit: (listener: () => void) => Unsubscribe;
@@ -42,6 +45,7 @@ function installShellQuitBusListener(deps?: Partial<QuitGateDeps>): void {
 	const resolved: QuitGateDeps = {
 		query: deps?.query ?? queryPerformanceState,
 		flushSnapshot: deps?.flushSnapshot ?? flushPerformanceSessionSnapshot,
+		flushNote: deps?.flushNote ?? flushPendingNote,
 		exitShell: deps?.exitShell ?? exitShellDefault,
 		detect: deps?.detect ?? detectSurface,
 		subscribeShellQuit:
@@ -63,6 +67,7 @@ function installRequestQuitHook(deps?: Partial<QuitGateDeps>): void {
 	const resolved: QuitGateDeps = {
 		query: deps?.query ?? queryPerformanceState,
 		flushSnapshot: deps?.flushSnapshot ?? flushPerformanceSessionSnapshot,
+		flushNote: deps?.flushNote ?? flushPendingNote,
 		exitShell: deps?.exitShell ?? exitShellDefault,
 		detect: deps?.detect ?? detectSurface,
 		subscribeShellQuit:
@@ -127,14 +132,19 @@ function onDialogKeydown(event: KeyboardEvent): void {
 	}
 }
 
-export async function confirmQuit(deps?: Pick<QuitGateDeps, 'flushSnapshot' | 'exitShell'>): Promise<void> {
+export async function confirmQuit(
+	deps?: Partial<Pick<QuitGateDeps, 'flushSnapshot' | 'flushNote' | 'exitShell'>>
+): Promise<void> {
 	if (confirming) return;
 	confirming = true;
 	closeQuitConfirm();
 	const flush = deps?.flushSnapshot ?? flushPerformanceSessionSnapshot;
+	const flushNote = deps?.flushNote ?? flushPendingNote;
 	const exit = deps?.exitShell ?? exitShellDefault;
 	try {
 		flush();
+		// A note save that fails throws here, so the report below runs and the app stays open.
+		await flushNote();
 		await exit();
 	} catch (error) {
 		// exit() rejects when the ACL refuses process:allow-exit (issue #3058),
@@ -161,6 +171,7 @@ export function handleQuitRequest(
 	const resolved: QuitGateDeps = {
 		query: deps?.query ?? queryPerformanceState,
 		flushSnapshot: deps?.flushSnapshot ?? flushPerformanceSessionSnapshot,
+		flushNote: deps?.flushNote ?? flushPendingNote,
 		exitShell: deps?.exitShell ?? exitShellDefault,
 		detect: deps?.detect ?? detectSurface,
 		subscribeShellQuit: deps?.subscribeShellQuit ?? ((listener) => subscribe(TOPIC_SHELL_QUIT, () => listener())),
@@ -193,6 +204,7 @@ export function installQuitGate(deps?: Partial<QuitGateDeps>): () => void {
 	const resolved: QuitGateDeps = {
 		query: deps?.query ?? queryPerformanceState,
 		flushSnapshot: deps?.flushSnapshot ?? flushPerformanceSessionSnapshot,
+		flushNote: deps?.flushNote ?? flushPendingNote,
 		exitShell: deps?.exitShell ?? exitShellDefault,
 		detect: deps?.detect ?? detectSurface,
 		subscribeShellQuit:

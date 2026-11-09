@@ -14,11 +14,12 @@ import { EQ_APPLY_KIND, eqApplyStages } from '$lib/player/eq-apply';
 import { mixerApplyStages } from '$lib/player/mixer-apply';
 import {
 	latencyFloorLabels,
+	scheduleReasonLabel,
 	type ScheduleRowKind,
 	scheduleRowKind,
 	unavailableLatencyTerms
 } from '$lib/player/transport/press-audible';
-import { claimArmedHotCuePress, claimLoadSpanningPress } from '$lib/rb/deck-slots';
+import { claimArmedHotCuePress, claimLoadSpanningPress, isSyncJoinPress } from '$lib/rb/deck-slots';
 import { recordPerfEvent, recordPerfTiming } from '$lib/rb/perf-event-log';
 
 export { applyEqRamp } from '$lib/player/eq-apply';
@@ -149,12 +150,15 @@ export function scheduleRowFacts(
 			claimLoadSpanningPress(pressT0Ms),
 			claimArmedHotCuePress(pressT0Ms)
 		),
-		labels: latencyFloorLabels({
-			unavailable: unavailableLatencyTerms({
-				base: stages.base_latency_ms,
-				output: stages.output_latency_ms
+		labels: {
+			...latencyFloorLabels({
+				unavailable: unavailableLatencyTerms({
+					base: stages.base_latency_ms,
+					output: stages.output_latency_ms
+				}),
+				contextState
 			}),
-			contextState
-		})
+			...scheduleReasonLabel(stages.press_to_schedule_ms, isSyncJoinPress(pressT0Ms))
+		}
 	};
 }

@@ -82,7 +82,11 @@ def test_empty_pins_match_unpinned_order() -> None:
 
 
 def test_pinned_and_unpinned_paths_share_free_slot_expansion() -> None:
-    """Both solver paths expand free slots through one helper (issue #5935)."""
+    """Both solver paths expand free slots through one helper (issue #5935).
+
+    The expected unmet list is a snapshot of the solver's pick under the directional
+    Camelot rule scores (#10135): 8A -> 3A is jaws 0.30, so t-d follows t-a and only
+    the 2B -> 8A hard cut at position 3 is left unmet."""
     tracks = [
         TrackFeature("t-a", "A", 120.0, "8A", 3),
         TrackFeature("t-b", "B", 128.0, "8A", 4),
@@ -93,7 +97,7 @@ def test_pinned_and_unpinned_paths_share_free_slot_expansion() -> None:
     unpinned = _suggest_order_unpinned(tracks=tracks, goal=goal)
     pinned = _suggest_order_pinned(tracks=tracks, goal=goal)
     kinds = [(c.kind, c.position) for c in unpinned.constraints_unmet]
-    assert kinds == [("bpm_window", 1), ("camelot_hardcut", 2)]
+    assert kinds == [("camelot_hardcut", 3)]
     assert pinned.order == unpinned.order
     assert pinned.per_step_trace == unpinned.per_step_trace
     assert pinned.constraints_unmet == unpinned.constraints_unmet

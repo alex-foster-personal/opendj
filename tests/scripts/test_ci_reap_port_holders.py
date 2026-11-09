@@ -42,6 +42,7 @@ import subprocess
 import sys
 import tempfile
 import time
+from collections.abc import Mapping
 from pathlib import Path
 
 import pytest
@@ -111,6 +112,7 @@ def _run(
     foreign_wait_s: str = "1",
     registry_dir: Path | None = None,
     ss_bin: Path | None = None,
+    extra_env: Mapping[str, str] | None = None,
 ) -> subprocess.CompletedProcess:
     return subprocess.run(
         [str(SCRIPT), *args],
@@ -121,6 +123,7 @@ def _run(
             "MDT_CI_REAP_FOREIGN_WAIT_S": foreign_wait_s,
             "MDT_CI_PORT_OWNER_REGISTRY_DIR": str(registry_dir) if registry_dir else "/nonexistent",
             **({"MDT_CI_REAP_SS": str(ss_bin)} if ss_bin else {}),
+            **(dict(extra_env) if extra_env else {}),
         },
         capture_output=True,
         text=True,
@@ -429,6 +432,87 @@ def test_a_cross_uid_holder_is_waited_for_before_the_step_fails(tmp_path: Path) 
     finally:
         proc.kill()
         proc.wait(timeout=10)
+
+
+@pytest.mark.requirement("INFRA-08")
+def test_a_holder_released_during_the_final_second_of_the_wait_runs_the_command(
+    tmp_path: Path,
+) -> None:
+    """[if] holder frees port in the wait's last second [then] deadline probe runs cmd, [else stop]."""
+    port = _free_port()
+    sentinel = tmp_path / "held"
+    sentinel.write_text("hold", encoding="utf-8")
+    fake_ss = tmp_path / "ss-held-until-sentinel-gone"
+    fake_ss.write_text(
+        f"""#!/usr/bin/env bash
+if [ -f {sentinel!s} ]; then
+  echo 'LISTEN 0      4096   127.0.0.1:{port} 0.0.0.0:*'
+fi
+""",
+        encoding="utf-8",
+    )
+    fake_ss.chmod(0o755)
+    real_sleep = shutil.which("sleep")
+    assert real_sleep
+    sleep_dir = tmp_path / "bin"
+    sleep_dir.mkdir()
+    shim = sleep_dir / "sleep"
+    shim.write_text(
+        f"#!/usr/bin/env bash\nrm -f {sentinel!s}\nexec {real_sleep} \"$@\"\n",
+        encoding="utf-8",
+    )
+    shim.chmod(0o755)
+    result = _run(
+        str(port),
+        "--",
+        "echo",
+        "suite-ran",
+        live_re=ORPHAN,
+        foreign_wait_s="1",
+        ss_bin=fake_ss,
+        extra_env={"PATH": f"{sleep_dir}{os.pathsep}{os.environ['PATH']}"},
+    )
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert result.stdout.rstrip().endswith("suite-ran"), result.stdout
+    assert "released after 1s" in result.stdout, result.stdout
+    assert "[ERROR]" not in result.stderr, result.stderr
+
+
+@pytest.mark.requirement("INFRA-08")
+def test_two_foreign_pids_on_one_port_spend_one_bounded_wait(
+    tmp_path: Path, no_work_cwd: Path
+) -> None:
+    """[if] two foreign pids share one port [then] one bounded wait is spent, [else stop]."""
+    port = _free_port()
+    real_sleep = shutil.which("sleep")
+    assert real_sleep
+    a = subprocess.Popen([real_sleep, "300"], cwd=no_work_cwd)
+    b = subprocess.Popen([real_sleep, "300"], cwd=no_work_cwd)
+    fake_ss = tmp_path / "ss-two-sleep-holders"
+    fake_ss.write_text(
+        f"""#!/usr/bin/env bash
+echo 'LISTEN 0      4096   127.0.0.1:{port} 0.0.0.0:* users:(("sleep",pid={a.pid},fd=3),("sleep",pid={b.pid},fd=3))'
+""",
+        encoding="utf-8",
+    )
+    fake_ss.chmod(0o755)
+    try:
+        result = _run(
+            str(port),
+            live_re=ORPHAN,
+            foreign_wait_s="1",
+            ss_bin=fake_ss,
+        )
+        assert result.returncode == 1, result.stdout + result.stderr
+        assert result.stdout.count("waiting up to") == 1, result.stdout
+        assert f"pid={a.pid}" in result.stderr or f"pid={a.pid}" in result.stdout
+        assert f"pid={b.pid}" in result.stderr or f"pid={b.pid}" in result.stdout
+        assert "after the foreign-holder wait" in result.stderr, result.stderr
+        assert a.poll() is None and b.poll() is None
+    finally:
+        for proc in (a, b):
+            proc.kill()
+            proc.wait(timeout=10)
 
 
 def test_a_foreign_holder_is_waited_for_only_once(tmp_path: Path) -> None:

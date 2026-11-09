@@ -54,6 +54,7 @@ export {
 	isLibraryPanelsCollapsed,
 	noteVisibleLibraryRowCount,
 	setLibraryPanelsCollapsed,
+	settledLibraryRowCount,
 	toggleLibraryPanels
 } from '$lib/rb/library-panels.svelte';
 export {

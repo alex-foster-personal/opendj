@@ -45,6 +45,7 @@ export interface MixerConfig {
 export interface SavedOutputs {
 	master: SavedIoDevice | null;
 	cue: SavedIoDevice | null;
+	booth: SavedIoDevice | null;
 }
 
 const DEFAULT_MIXER_CONFIG: Readonly<MixerConfig> = Object.freeze({
@@ -52,7 +53,7 @@ const DEFAULT_MIXER_CONFIG: Readonly<MixerConfig> = Object.freeze({
 	alignment_mode: 'hybrid',
 	master_delay_ms: 0,
 	last_calibration: null,
-	saved_outputs: Object.freeze({ master: null, cue: null })
+	saved_outputs: Object.freeze({ master: null, cue: null, booth: null })
 });
 
 function _storage(): Storage | null {
@@ -112,6 +113,10 @@ export function assertSavedOutputs(saved: unknown): asserts saved is SavedOutput
 		if (!(role in candidate)) throw new TypeError(`saved_outputs.${role} is missing`);
 		if (candidate[role] !== null) assertSavedIoDevice(`saved_outputs.${role}`, candidate[role]);
 	}
+	// CUEOUT-13 is backward-compatible with blobs written before BOOTH existed.
+	if ('booth' in candidate && candidate.booth !== null) {
+		assertSavedIoDevice('saved_outputs.booth', candidate.booth);
+	}
 }
 
 function _malformed(cause: string): Error {
@@ -152,7 +157,11 @@ export function loadMixerConfig(): MixerConfig {
 		saved_outputs:
 			stored.saved_outputs === undefined
 				? { ...DEFAULT_MIXER_CONFIG.saved_outputs }
-				: { master: stored.saved_outputs.master, cue: stored.saved_outputs.cue }
+				: {
+						master: stored.saved_outputs.master,
+						cue: stored.saved_outputs.cue,
+						booth: stored.saved_outputs.booth ?? null
+					}
 	};
 }
 

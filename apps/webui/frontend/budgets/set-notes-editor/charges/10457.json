@@ -1,0 +1,9 @@
+{
+  "bytes": 1024,
+  "measured_main": 74403,
+  "measured_with_pr": 74548,
+  "sha": "23bc49e705",
+  "date": "Mon 9 Nov 2026",
+  "reason": "PR #10457 adds the note chip menu to the set notes editor (#9707). Measured: CI bundle check of 23bc49e705, +145 B gzip on set-notes-editor; ceiled to KiB",
+  "payback": "none planned; the growth is the feature's own code"
+}

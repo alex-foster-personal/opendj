@@ -1,0 +1,16 @@
+{
+  "version": 1,
+  "note": "Placeholder looks until the palette calibration (#9906, needs-maintainer). #9890 adds per-group targets to each look.",
+  "looks": [
+    {"id": "wash_dim", "name": "Dim wash"},
+    {"id": "wash_warm", "name": "Warm wash"},
+    {"id": "wash_cool", "name": "Cool wash"},
+    {"id": "wash_full", "name": "Full wash"},
+    {"id": "sweep_slow", "name": "Slow sweep"},
+    {"id": "sweep_fast", "name": "Fast sweep"},
+    {"id": "chase_colour", "name": "Colour chase"},
+    {"id": "pulse_white", "name": "White pulse"},
+    {"id": "split_two_tone", "name": "Two-tone split"},
+    {"id": "spot_centre", "name": "Centre spot"}
+  ]
+}

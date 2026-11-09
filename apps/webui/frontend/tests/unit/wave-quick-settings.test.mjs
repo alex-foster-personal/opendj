@@ -1,3 +1,5 @@
+// requirement: CUSTSCR-10464
+// [if] the popover lacks a number row branch with SettingNumberStepper [then] this fails, [else stop].
 // requirement: WAVEQS-8348b
 // [if] a quick-settings row names no Settings catalog entry, or one the Settings path refuses [then] this fails, [else stop].
 // [if] an inert row carries any title but the PARITY-TODO one [then] this fails, [else stop].
@@ -62,13 +64,37 @@ test('WAVEQS-8348b resolve refuses a missing or unimplemented entry (negative co
 	const fake = [{ id: 'x', implemented: false, control: { kind: 'boolean' } }];
 	assert.throws(() => qs.resolveWaveQsSetting(fake, 'x'), /not implemented/);
 	const link = [{ id: 'y', implemented: true, control: { kind: 'link', href: '/' } }];
-	assert.throws(() => qs.resolveWaveQsSetting(link, 'y'), /only boolean and enum/);
+	assert.throws(() => qs.resolveWaveQsSetting(link, 'y'), /only boolean, enum and number/);
+	const numberFake = [
+		{
+			id: 'n',
+			label: 'N',
+			title: 'N',
+			detail: 'N',
+			implemented: true,
+			control: { kind: 'number', min: 0, max: 100, step: 5, defaultValue: 50, unit: ' %' }
+		}
+	];
+	assert.equal(qs.resolveWaveQsSetting(numberFake, 'n').id, 'n');
+});
+
+test('CUSTSCR-10464 popover renders number rows through SettingNumberStepper', () => {
+	const popover = readFileSync('src/lib/components/rb/WaveQuickSettingsPopover.svelte', 'utf8');
+	assert.match(popover, /import SettingNumberStepper from/);
+	assert.match(popover, /\{:else if def\.control\.kind === 'number'\}/);
+	assert.match(popover, /applySettingChange\(def\.id, String\(next\)\)/);
 });
 
 test('WAVEQS-8348b inert rows carry exactly the PARITY-TODO title and every group is non-empty', () => {
 	assert.equal(qs.WAVE_QS_INERT_TITLE, 'not implemented - see PARITY-TODO');
 	const inert = qs.WAVE_QS_GROUPS.flatMap((g) => g.rows.filter((r) => r.kind === 'inert'));
 	assert.ok(inert.some((r) => r.id === 'tempo_lane'), 'the tempo-change lane row is reserved');
+	const tempoLane = inert.find((r) => r.id === 'tempo_lane');
+	// WAVEQS-10121: the reserved row points at the shipped Settings controls, never claims the lane is unbuilt.
+	assert.doesNotMatch(tempoLane.detail, /being built|own branch|not built/i);
+	const tempoCatalog = catalog.SETTINGS_CATALOG.filter((d) => d.id === 'show_tempo_lane' || d.id === 'tempo_lane_scale');
+	assert.equal(tempoCatalog.length, 2, 'both tempo-lane settings exist in the catalog');
+	for (const def of tempoCatalog) assert.ok(tempoLane.detail.includes(def.label), `the row names ${def.label}`);
 	for (const group of qs.WAVE_QS_GROUPS) assert.ok(group.rows.length > 0, `${group.id} is empty`);
 	const popover = readFileSync('src/lib/components/rb/WaveQuickSettingsPopover.svelte', 'utf8');
 	assert.match(popover, /title=\{WAVE_QS_INERT_TITLE\}/);
@@ -98,7 +124,11 @@ test('WAVEQS-8348e every live row has a command-bus verb that exists in the CLI 
 	for (const id of settingIds()) {
 		const verb = qs.WAVE_QS_VERBS[id];
 		assert.ok(verb, `${id} has no verb`);
-		assert.match(cli, new RegExp(`Verb\\("${verb}", "${verb}"`), `${verb} is not in apps/opendj_cli/catalog.py`);
+		assert.match(
+			cli,
+			new RegExp(`Verb\\(\\s*"${verb}"\\s*,\\s*"${verb}"`),
+			`${verb} is not in apps/opendj_cli/catalog.py`
+		);
 	}
 	const values = cli.match(/WAVEFORM_OVERLAY_VALUES: tuple\[str, \.\.\.\] = \(([^)]*)\)/);
 	assert.ok(values, 'WAVEFORM_OVERLAY_VALUES missing from the CLI catalog');

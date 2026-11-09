@@ -38,3 +38,10 @@ export async function dispatchPerformanceCommand(cmd: DispatchCmd): Promise<unkn
 	}
 	return undefined;
 }
+
+export function installPerformanceHotCueDriver(_driver: unknown): void {}
+
+/** Pass-through like real `runSyncScopedWork`; tests do not model command-queue contention. */
+export function runSyncScopedWork<T>(work: () => Promise<T>): Promise<T> {
+	return work();
+}

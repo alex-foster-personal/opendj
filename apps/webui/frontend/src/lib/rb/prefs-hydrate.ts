@@ -10,6 +10,7 @@ import {
 	type DeckLayoutMode
 } from './deck-layout-prefs';
 import { announceDeckDefaults } from './deck-default-prefs';
+import { beatJumpSizesFromPrefs, restoreBeatJumpSizes, type BeatJumpSizesByDeck } from './beat-jump-size.svelte';
 import { makeKeyFilterReadGuard } from './library-key-filter';
 import { makeDiskWriteChain } from './disk-write-chain';
 import { LYRICS_BOOLEAN_KEYS, LYRICS_LOAD_STRATEGIES, type LyricsLoadStrategy } from './lyrics-prefs';
@@ -31,6 +32,7 @@ import {
 } from './wheel-adjust';
 import { hydrateMasterMutedFromDisk } from '../player/master-mute.svelte';
 import type { CompatibleFilterPrefs } from './compatible-filter-prefs';
+import type { RelatedCriteriaPrefs } from './related-criteria-prefs';
 import { validateHiddenColumns, type HideableColumn } from './library-columns';
 import type { DiskConfirmPatch } from './verified-pref-writes';
 import { hydrateTopbarViewFromDisk, type PerfView } from './topbar-view-prefs';
@@ -128,6 +130,8 @@ export type DiskPrefsPatch = {
 	auto_play_maximize_reach?: boolean;
 	master_muted?: boolean;
 	deck_default_quantize?: boolean;
+	deck_needle_lock?: boolean;
+	beat_jump_sizes?: BeatJumpSizesByDeck;
 	hide_broken_links?: boolean;
 	library_density?: LibraryDensity;
 	sort_within_sections?: boolean;
@@ -146,6 +150,7 @@ export type DiskPrefsPatch = {
 	playlist_tree_view?: 'tree' | 'column';
 	app_mode?: DiskAppModePatch;
 	compatible_filter?: CompatibleFilterPrefs;
+	library_related_criteria?: RelatedCriteriaPrefs;
 	library_watcher_folders?: string[];
 	library_key_filter?: string[];
 };
@@ -234,6 +239,8 @@ export interface PrefsHydrateTarget {
 	auto_play_enforce_order: boolean;
 	auto_play_maximize_reach: boolean;
 	deck_default_quantize: boolean;
+	deck_needle_lock: boolean;
+	beat_jump_sizes?: BeatJumpSizesByDeck;
 	hide_broken_links: boolean;
 	library_density: LibraryDensity;
 	sort_within_sections: boolean;
@@ -247,6 +254,7 @@ export interface PrefsHydrateTarget {
 	library_watcher_folders: string[];
 	library_key_filter: string[];
 	compatible_filter: CompatibleFilterPrefs;
+	library_related_criteria: RelatedCriteriaPrefs;
 	spotify_library: SpotifyLibraryPref;
 }
 
@@ -409,8 +417,12 @@ export function makePrefsHydrator(deps: PrefsHydrateDeps): () => Promise<void> {
 		const radialClaimedAtRequest = isDiskValueSuperseded('jog_radial_waveform');
 		const jogRadialAtRequest = uiPrefs.jog_radial_waveform;
 		const body = (await unwrap(api.GET('/api/v1/ui-prefs'))) as DiskPrefsPatch;
-		const { hydrateConfirmFromDisk, hydrateCompatibleFilter, hydrateLibraryKeyFilter } =
-			await late;
+		const {
+			hydrateConfirmFromDisk,
+			hydrateCompatibleFilter,
+			hydrateRelatedCriteria,
+			hydrateLibraryKeyFilter
+		} = await late;
 		if (body.confirm !== undefined && typeof body.confirm === 'object') {
 			hydrateConfirmFromDisk(uiPrefs, body.confirm, isConfirmUnsaved);
 		}
@@ -567,6 +579,18 @@ export function makePrefsHydrator(deps: PrefsHydrateDeps): () => Promise<void> {
 			uiPrefs.deck_default_quantize = body.deck_default_quantize;
 			announceDeckDefaults(uiPrefs);
 		}
+		if (typeof body.deck_needle_lock === 'boolean' && body.deck_needle_lock !== uiPrefs.deck_needle_lock) {
+			uiPrefs.deck_needle_lock = body.deck_needle_lock;
+			announceDeckDefaults(uiPrefs);
+		}
+		// DECKUX-10470: the disk copy wins over this browser's, as for other prefs.
+		if (body.beat_jump_sizes !== undefined) {
+			const sizes = beatJumpSizesFromPrefs(body.beat_jump_sizes);
+			if (JSON.stringify(sizes) !== JSON.stringify(uiPrefs.beat_jump_sizes)) {
+				uiPrefs.beat_jump_sizes = sizes;
+				restoreBeatJumpSizes(sizes);
+			}
+		}
 		if (body.library_density === 'compact' || body.library_density === 'cosy') {
 			uiPrefs.library_density = body.library_density;
 		}
@@ -608,6 +632,7 @@ export function makePrefsHydrator(deps: PrefsHydrateDeps): () => Promise<void> {
 			);
 		}
 		hydrateCompatibleFilter(uiPrefs, body);
+		hydrateRelatedCriteria(uiPrefs, body);
 		try {
 			hydrateLibraryKeyFilter(uiPrefs, body, isLibraryKeyFilterUnsaved);
 		} catch (exc) {

@@ -93,6 +93,7 @@ test('RUNNING it: silence recovery keeps AutoPlay armed past idle threshold', as
 	let mod = null;
 	try {
 		mod = await loadRuneModule(ENTRY);
+		mod.setAutoPlayEnabled(true);
 		uninstall = mod.installAutoPlay();
 		mod.setAutoPlayTrackFeed('playlist-a', compatibleFeed());
 		await probe.flush();

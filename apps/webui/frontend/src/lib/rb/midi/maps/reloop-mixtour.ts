@@ -38,7 +38,13 @@
  *     scope). Unbound on purpose; they learn-log. PFL (note 0x03) IS bound.
  */
 
-import type { ControlHint, DeviceMap, LedRule, MidiBinding } from '$lib/rb/midi/midi-types';
+import type {
+	ControlHint,
+	DeviceMap,
+	DeviceMapEntry,
+	LedRule,
+	MidiBinding
+} from '$lib/rb/midi/midi-types';
 
 // --------------------------------------------------------------- bindings
 
@@ -215,3 +221,8 @@ export const RELOOP_MIXTOUR_MAP: DeviceMap = {
 	leds: [..._deckHotCueLeds(1, 1), ..._deckHotCueLeds(2, 2)],
 	hints: [..._deckHints(1, 1), ..._deckHints(2, 2)]
 };
+
+/** Self-registration: maps/entries.ts discovers this export, so no shared list names this map. */
+export const DEVICE_MAP_ENTRIES: readonly DeviceMapEntry[] = [
+	{ key: 'RELOOP_MIXTOUR_MAP', map: RELOOP_MIXTOUR_MAP, live: true }
+];

@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="UTF-8" standalone="no" ?>
+<NML VERSION="19">
+  <HEAD COMPANY="www.native-instruments.com" PROGRAM="Traktor"></HEAD>
+  <COLLECTION ENTRIES="3">
+    <ENTRY TITLE="A" ARTIST="Artist A"><LOCATION DIR="/:Music/:Set/:" FILE="a.mp3" VOLUME="Macintosh HD" VOLUMEID="Macintosh HD"></LOCATION></ENTRY>
+    <ENTRY TITLE="B" ARTIST="Artist B"><LOCATION DIR="/:Music/:Set/:" FILE="b.mp3" VOLUME="Macintosh HD" VOLUMEID="Macintosh HD"></LOCATION></ENTRY>
+    <ENTRY TITLE="C" ARTIST="Artist C"><LOCATION DIR="/:Music/:Set/:" FILE="c.mp3" VOLUME="Macintosh HD" VOLUMEID="Macintosh HD"></LOCATION></ENTRY>
+  </COLLECTION>
+  <PLAYLISTS>
+    <NODE TYPE="FOLDER" NAME="$ROOT">
+      <SUBNODES COUNT="1">
+        <NODE TYPE="PLAYLIST" NAME="HistoryPlaylist">
+          <PLAYLIST ENTRIES="3" TYPE="LIST" UUID="0f3b8a6c2d1e4f5a9b7c6d5e4f3a2b1c">
+            <ENTRY>
+              <PRIMARYKEY TYPE="TRACK" KEY="Macintosh HD/:Music/:Set/:a.mp3"></PRIMARYKEY>
+              <EXTENDEDDATA DECK="0" DURATION="355.0" EXTENDEDTYPE="HistoryData" PLAYEDPUBLIC="1" STARTDATE="132320267" STARTTIME="61204"></EXTENDEDDATA>
+            </ENTRY>
+            <ENTRY>
+              <PRIMARYKEY TYPE="TRACK" KEY="Macintosh HD/:Music/:Set/:b.mp3"></PRIMARYKEY>
+              <EXTENDEDDATA DECK="1" DURATION="12.0" EXTENDEDTYPE="HistoryData" PLAYEDPUBLIC="0" STARTDATE="132320267" STARTTIME="61500"></EXTENDEDDATA>
+            </ENTRY>
+            <ENTRY>
+              <PRIMARYKEY TYPE="TRACK" KEY="Macintosh HD/:Music/:Set/:c.mp3"></PRIMARYKEY>
+              <EXTENDEDDATA DECK="1" DURATION="300.5" EXTENDEDTYPE="HistoryData" PLAYEDPUBLIC="1" STARTDATE="132320267" STARTTIME="61560"></EXTENDEDDATA>
+            </ENTRY>
+          </PLAYLIST>
+        </NODE>
+      </SUBNODES>
+    </NODE>
+  </PLAYLISTS>
+</NML>

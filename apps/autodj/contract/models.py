@@ -54,6 +54,8 @@ class StyleSummary(_Wire):
     # min_body_fade_bars, pre_hit_db), null for a fixed style; the Spotify transition it mirrors, or null.
     params: StyleParamsWire | None
     spotify: str | None
+    # The tempo mode the style's plans carry: "none" for cut, drop_swap and echo_out, else "sync_to_out".
+    tempo_mode: str = "sync_to_out"
 
 
 VOCAL_BAR_THRESHOLD = 0.25
@@ -182,6 +184,10 @@ class TrackProfile:
     deck_pitch_range_pct: float | None = None
     #: Integer key shift applied on deck (for offline render commands); runtime-only, not in ``summary()``.
     heard_key_shift: int = 0
+    #: Per-bar mean of the waveform DETAIL mid / high band, each normalized to the track's loudest bar of that
+    #: band (0..1, like ``bar_bass``); None when the waveform is mono or absent.
+    bar_mid: tuple[float, ...] | None = None
+    bar_high: tuple[float, ...] | None = None
 
     @property
     def judged_bpm(self) -> float | None:
@@ -263,6 +269,22 @@ class TrackProfile:
             "loudness": {"lufs": self.lufs, "reason": self.lufs_reason},
             "transition_in_bar": self.transition_in_bar,
             "notes": list(self.notes),
+        }
+
+    def to_json(self) -> dict[str, JsonValue]:
+        """The summary plus the grid and the per-bar series (``summary()`` stays compact)."""
+
+        def series(values: tuple[float, ...] | None) -> JsonValue:
+            return None if values is None else list(values)
+
+        return {
+            **self.summary(),
+            "downbeats_s": list(self.downbeats_s),
+            "bar_energy": series(self.bar_energy),
+            "bar_bass": series(self.bar_bass),
+            "bar_mid": series(self.bar_mid),
+            "bar_high": series(self.bar_high),
+            "bar_vocals": series(self.bar_vocals),
         }
 
 

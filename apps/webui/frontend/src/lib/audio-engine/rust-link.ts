@@ -11,7 +11,7 @@ import type { DeckState } from '$lib/rb/deck-state-types';
 import type { PerformanceCommand } from '$lib/rb/performance-ipc.svelte';
 import type { AudioEngineClient, EngineCommand, EngineState } from './client';
 
-export type RustToast = (message: string, kind: 'info' | 'error') => void;
+export type RustToast = (message: string, kind: 'info' | 'warn' | 'error') => void;
 
 export const link: {
 	client: AudioEngineClient | null;
@@ -46,7 +46,7 @@ export function playheadMs(deck: DeckId): number {
 	return link.client?.positionMs(deck) ?? st.position_ms;
 }
 
-export function notify(message: string, kind: 'info' | 'error'): void {
+export function notify(message: string, kind: 'info' | 'warn' | 'error'): void {
 	if (link.toast === null) throw new Error(`Rust engine mode has no toast yet for: ${message}`);
 	link.toast(message, kind);
 }

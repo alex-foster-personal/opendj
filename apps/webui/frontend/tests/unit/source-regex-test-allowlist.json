@@ -338,6 +338,10 @@
 			"reason": "PR #6235 deck controls, written before GUARD-15 landed (#5857, Sat 31 Oct 2026): pins the AU/MA/loop-source wiring in Deck, JogDial, LoopSourceMenu and LoopCluster markup next to rendered-module IPC tests; render conversion owed by the PR's review-followup"
 		},
 		{
+			"file": "deck-compact-tier.test.mjs",
+			"reason": "SKINLAYOUT-10203 issue #10203: the contract is @container deck tier rules and data-priority wiring across Deck, DeckHeader, HotCueBank, and +page, not a single rendered mount"
+		},
+		{
 			"file": "deck-header-key-sync-order.test.mjs",
 			"reason": "pre-existing (ratchet seed 2026-10-07)"
 		},
@@ -842,6 +846,10 @@
 			"reason": "pre-existing (on main before the ratchet merged in #5857, Sat 31 Oct 2026; its seed predated them)"
 		},
 		{
+			"file": "perf-layout-feasibility.test.mjs",
+			"reason": "SKINLAYOUT-10201 (#10201): regexes /performance +page.svelte for grid-template-areas, minmax floors and the compact waverow media query so PERFORMANCE_LAYOUT_SPEC stays aligned with the shipped CSS; SSR does not surface those literals."
+		},
+		{
 			"file": "perf-meters-card-escapes-topbar.test.mjs",
 			"reason": "pre-existing (ratchet seed 2026-10-07)"
 		},
@@ -1074,10 +1082,6 @@
 			"reason": "pre-existing (on main before the ratchet merged in #5857, Sat 31 Oct 2026; its seed predated them)"
 		},
 		{
-			"file": "press-audible-floor.test.mjs",
-			"reason": "pre-existing (ratchet seed 2026-10-07)"
-		},
-		{
 			"file": "preview-cue-user-load-stop.test.mjs",
 			"reason": "pre-existing (written Wed 28 Oct 2026 on open PR #7694, the preview-gap library port, before the ratchet merged in #5857 on Sat 31 Oct 2026)"
 		},
@@ -1214,6 +1218,10 @@
 			"reason": "pre-existing (ratchet seed 2026-10-07)"
 		},
 		{
+			"file": "skin-layout.test.mjs",
+			"reason": "reads routes/performance/+page.svelte only to pin PERFORMANCE_LAYOUT_SPEC['deck-grid'].areas to the .perf-root grid-template-areas rows (#10196); a CSS grid-area map is not observable from an SSR render"
+		},
+		{
 			"file": "skin-look-preview-gap.test.mjs",
 			"reason": "#7693: pins skin CSS rules (TopBar's .free-badge display and Gothic theme.css colors); an SSR render emits no component or theme CSS, so these rules are only checkable in source"
 		},
@@ -1324,6 +1332,10 @@
 		{
 			"file": "topbar-clock-login-order.test.mjs",
 			"reason": "pre-existing (ratchet seed 2026-10-07)"
+		},
+		{
+			"file": "topbar-feature-rows-follow-cluster.test.mjs",
+			"reason": "no DOM in this suite; the test executes TopBar's real placement effect against a fake cluster/row and a recording ResizeObserver, which loadSvelteSsrModule cannot prove because SSR renders once with no layout or observers"
 		},
 		{
 			"file": "topbar-menu-surface-token.test.mjs",

@@ -6,6 +6,8 @@
 import type { DeckId } from '$lib/rb/deck-id';
 import type { CrossfaderAssign } from '$lib/rb/mixer-types';
 import type { PitchRange } from '$lib/player/constants';
+import type { KeySyncMode } from '$lib/player/key/camelot';
+import { isKeySyncMode } from '$lib/player/key/camelot';
 import { STEM_CONTROL_IDS } from '$lib/rb/stem-types';
 
 export const PERFORMANCE_SESSION_STORAGE_KEY = 'mdt.rb.performance-session.v1';
@@ -25,6 +27,10 @@ export interface PerformanceSessionDeckSnapshot {
 	beat_sync_enabled: boolean;
 	master_tempo_enabled: boolean;
 	key_sync_enabled: boolean;
+	/** KEYSYNC-01: absent in older snapshots (restore uses engine defaults). */
+	key_sync_mode?: KeySyncMode;
+	/** KEYSYNC-01: `master` or deck 1-4. Absent in older snapshots. */
+	key_sync_target?: DeckId | 'master';
 	/** RESCUE-07: playing when captured. Absent in older snapshots (read as false). */
 	playing?: boolean;
 }
@@ -85,6 +91,8 @@ export interface PerformanceSessionSnapshotInput {
 			beat_sync_enabled: boolean;
 			master_tempo_enabled: boolean;
 			key_sync_enabled: boolean;
+			key_sync_mode?: KeySyncMode;
+			key_sync_target?: DeckId | 'master';
 			playing: boolean;
 		}
 	>;
@@ -128,6 +136,20 @@ function _parseDeckSnapshot(raw: unknown): PerformanceSessionDeckSnapshot | null
 		if (typeof deck[key] !== 'boolean') return null;
 	}
 	if (deck.playing !== undefined && typeof deck.playing !== 'boolean') return null;
+	let key_sync_mode: KeySyncMode | undefined;
+	if (deck.key_sync_mode !== undefined) {
+		if (!isKeySyncMode(deck.key_sync_mode)) return null;
+		key_sync_mode = deck.key_sync_mode;
+	}
+	let key_sync_target: DeckId | 'master' | undefined;
+	if (deck.key_sync_target !== undefined) {
+		const t = deck.key_sync_target;
+		if (t === 'master' || t === 1 || t === 2 || t === 3 || t === 4) {
+			key_sync_target = t;
+		} else {
+			return null;
+		}
+	}
 	return {
 		stable_id,
 		position_ms: Math.round(position_ms),
@@ -137,6 +159,8 @@ function _parseDeckSnapshot(raw: unknown): PerformanceSessionDeckSnapshot | null
 		beat_sync_enabled: deck.beat_sync_enabled as boolean,
 		master_tempo_enabled: deck.master_tempo_enabled as boolean,
 		key_sync_enabled: deck.key_sync_enabled as boolean,
+		...(key_sync_mode !== undefined ? { key_sync_mode } : {}),
+		...(key_sync_target !== undefined ? { key_sync_target } : {}),
 		playing: deck.playing === true
 	};
 }
@@ -239,6 +263,8 @@ export function serializePerformanceSession(input: PerformanceSessionSnapshotInp
 			beat_sync_enabled: deck.beat_sync_enabled,
 			master_tempo_enabled: deck.master_tempo_enabled,
 			key_sync_enabled: deck.key_sync_enabled,
+			...(deck.key_sync_mode !== undefined ? { key_sync_mode: deck.key_sync_mode } : {}),
+			...(deck.key_sync_target !== undefined ? { key_sync_target: deck.key_sync_target } : {}),
 			playing: deck.playing
 		};
 		payload.mixer.channels[deckId] = { ...input.mixer.channels[deckId] };

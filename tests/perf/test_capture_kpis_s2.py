@@ -14,6 +14,7 @@ import pytest
 from scripts.perf.capture_kpi_ledger import CaptureMeta
 from scripts.perf.capture_kpis import main as capture_kpis_main
 from scripts.perf.capture_s2_agg import (
+    SYNC_JOIN,
     counts_as_sample,
     nearest_rank_p99,
     presses_to_ledger_rows,
@@ -263,3 +264,51 @@ def test_does_not_score_scheduled_offset_ms() -> None:
     audible = next(row for row in rows if row["kpi"] == "input_to_audible_ms_p99")
     assert audible["value"] is None
     assert not counts_as_sample(presses[0])
+
+
+# ----- LATENCY-10437 (#9699): schedule_reason -------------------------------
+
+
+def _labelled(input_to_output_ms: float, reason: str | None) -> dict:
+    press = _complete_press(input_to_output_ms)
+    if reason is not None:
+        press["labels"]["schedule_reason"] = reason
+    return press
+
+
+@pytest.mark.requirement("LATENCY-10437")
+def test_sync_join_rows_are_excluded_from_p99_and_counted_in_the_method() -> None:
+    """[if] 10 immediate and 5 sync-join rows are captured [then] p99 is over the 10 and the method names 5 excluded, [else stop]."""
+    immediate = [_labelled(20.0 + i, "immediate") for i in range(10)]
+    sync_join = [_labelled(500.0 + i, SYNC_JOIN) for i in range(5)]
+    rows = presses_to_ledger_rows(_happy_result(sync_join + immediate), _meta(), requested_presses=10)
+    s2 = next(row for row in rows if row["kpi"] == "input_to_audible_ms_p99")
+    assert s2["value"] == nearest_rank_p99([20.0 + i for i in range(10)])
+    assert s2["value"] < 500.0, "a sync-join row leaked into the p99"
+    assert "5 sync-join rows excluded" in s2["method"]
+    assert "0 rows lacked schedule_reason" in s2["method"]
+    assert not counts_as_sample(sync_join[0])
+    assert counts_as_sample(immediate[0])
+
+
+@pytest.mark.requirement("LATENCY-10437")
+def test_rows_without_schedule_reason_still_count_and_are_reported() -> None:
+    """[if] older rows carry no schedule_reason [then] they still count and the method says how many, [else stop]."""
+    old = [_labelled(30.0 + i, None) for i in range(4)]
+    new = [_labelled(40.0 + i, "immediate") for i in range(6)]
+    rows = presses_to_ledger_rows(_happy_result(old + new), _meta(), requested_presses=10)
+    s2 = next(row for row in rows if row["kpi"] == "input_to_audible_ms_p99")
+    assert s2["value"] == nearest_rank_p99([30.0 + i for i in range(4)] + [40.0 + i for i in range(6)])
+    assert "0 sync-join rows excluded; 4 rows lacked schedule_reason" in s2["method"]
+
+
+@pytest.mark.requirement("LATENCY-10437")
+def test_a_sync_join_row_with_a_partial_floor_is_not_counted_as_excluded() -> None:
+    """[if] a sync-join row has a partial floor [then] it is not counted as excluded, [else stop]."""
+    partial = _labelled(500.0, SYNC_JOIN)
+    partial["labels"]["latency_floor"] = "partial"
+    rows = presses_to_ledger_rows(
+        _happy_result([partial] + [_labelled(20.0 + i, "immediate") for i in range(10)]), _meta(), requested_presses=10
+    )
+    s2 = next(row for row in rows if row["kpi"] == "input_to_audible_ms_p99")
+    assert "0 sync-join rows excluded" in s2["method"]

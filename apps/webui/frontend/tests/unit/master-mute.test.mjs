@@ -235,6 +235,26 @@ test('the setter works before any node exists and applies on attach', () => {
 	mute.attachMasterMuteNode(null);
 });
 
+test('the extra mute node follows setMasterMuted and primary null stops writing it', () => {
+	mute.setMasterMuted(false);
+	const extra = fakeGainNode();
+	mute.attachExtraMasterMuteNode(extra);
+	assert.equal(extra.gain.value, 1);
+
+	mute.setMasterMuted(true);
+	assert.equal(extra.gain.value, 0);
+
+	mute.setMasterMuted(false);
+	assert.equal(extra.gain.value, 1);
+
+	mute.attachMasterMuteNode(null);
+	mute.setMasterMuted(true);
+	assert.equal(extra.gain.value, 1, 'a disposed extra node is not written after primary null');
+
+	mute.setMasterMuted(false);
+	mute.attachExtraMasterMuteNode(null);
+});
+
 //-----------------------------------------------------------------------------
 // engine wiring
 //

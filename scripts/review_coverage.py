@@ -64,6 +64,9 @@ Requirements (mini-PRD):
   / A gate older than main's own gate code renders no verdict (PR #1720).
     [if] a branch cut before a gate fix on main prints PASS [then broken]
     -- see scripts/review_gate_freshness.py
+  / A gate commit landing on main mid-run voids the verdict (issue #1774).
+    [if] a gate commit landing on main mid-run still lets the run print a verdict
+    [then broken]
   / Debt-only pushes carry coverage when only this PR's debt file changed since
     the reviewed head (issues #2907, #2871, ADR-0049, REVIEW-08; see
     scripts/review_coverage_carry.py). When carry applies, triage prints both
@@ -133,7 +136,12 @@ from scripts.review_coverage_carry import (
     verdicts_with_carry,
 )
 from scripts.review_docs_only import is_docs_only, render_docs_only_pass
-from scripts.review_gate_freshness import CHECKOUT_ROOT, require_gate_current_with_main
+from scripts.review_gate_freshness import (
+    CANONICAL_BRANCH,
+    CHECKOUT_ROOT,
+    gate_commit_on_main,
+    require_gate_current_with_main,
+)
 from scripts.review_no_rereview import reviewed_at_an_earlier_head
 from scripts.review_sol import SOL, is_sol_artifact, substitute_alternatives
 from scripts.review_subscription import CURSOR, GROK, LANES_BY_NAME
@@ -513,6 +521,18 @@ def _require_head_unchanged(sampled: str, current: str) -> None:
         )
 
 
+def _require_gate_unchanged(pinned: str, current: str) -> None:
+    """Issue #1774 (PR #1747 thread r3980257735): main's gate was pinned once, before every
+    network round trip, so a gate commit landing on main meanwhile left this run rendering a
+    verdict from gate code main has already replaced. Re-read just before printing; a move is
+    a failed MEASUREMENT, never a verdict."""
+    if pinned != current:
+        raise TriageError(
+            f"review-gate code on {CANONICAL_BRANCH} moved from {pinned} to {current} while "
+            "review evidence was being collected; re-run on the new gate"
+        )
+
+
 #: One row of the "reviewer coverage" table `triage` prints below, read back.
 _REVIEWER_ROW = re.compile(r"^    (?P<mark>ok|sub|MISS) +(?P<name>\w+): ", re.M)
 
@@ -542,6 +562,7 @@ def triage(pr: str) -> int:
         # landing between the head sample and the files listing must void
         # this verdict rather than certify a head nobody measured.
         _require_head_unchanged(head_sha, _head_sha(pr))
+        _require_gate_unchanged(gate_commit, gate_commit_on_main())
         print(render_docs_only_pass(pr, head_sha, gate_commit, changed_files))
         return 0
 
@@ -561,6 +582,7 @@ def triage(pr: str) -> int:
     # and whatever the head's own evidence says: an earlier review covers on its own.
     if earlier := reviewed_at_an_earlier_head(reviews, inline, issue, head_sha, lambda: _pr_commit_shas(pr)):
         _require_head_unchanged(head_sha, _head_sha(pr))  # the commit listing is one more round trip
+        _require_gate_unchanged(gate_commit, gate_commit_on_main())
         print(header)
         print(
             f"[review-coverage] PASS: {earlier[0]} reviewed earlier head {earlier[1]} of this PR; "
@@ -586,6 +608,7 @@ def triage(pr: str) -> int:
         EXPECTED_REVIEWERS,
     )
 
+    _require_gate_unchanged(gate_commit, gate_commit_on_main())
     print(header)
     print()
     print("  reviewer coverage")

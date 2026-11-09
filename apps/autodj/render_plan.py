@@ -34,6 +34,8 @@ from typing import Any
 
 from apps.autodj.contract.models import RenderLayout, RenderPlanError
 from apps.autodj.plan import (
+    FX_ACTIONS,
+    FX_CONTROLS,
     PlanEvent,
     TransitionPlan,
     beat_sync_reach_pct,
@@ -42,6 +44,9 @@ from apps.autodj.plan import (
     play_start_bar,
 )
 from apps.autodj.profile import DECK_LOAD_TRIM_DB, TrackProfile, trim_knob
+
+#: The Rust engine's own reason (apps/audio-engine/src/protocol.rs TRANSITION_FX_LATER, FXTRANS-03).
+TRANSITION_FX_REFUSAL = "transition FX are Web Audio only until their kernels are ported (FXTRANS-03)"
 
 #: The renderer's rate; 48 kHz matches the engine's default and the page.
 RENDER_SAMPLE_RATE = 48000
@@ -101,14 +106,9 @@ def layout_of(
         fold = pair_beat_sync_fold(out_j, in_j, beat_sync_reach_pct(in_profile))
         ratio = out_j / in_j * fold
     elif plan.tempo_mode == "none":
-        # Each deck runs at its own tempo, so an incoming bar is not an outgoing bar; the end is counted in
-        # incoming bars below, which is only right when the two tempos agree.
-        if not math.isclose(out_stored, in_stored, rel_tol=1e-6):
-            raise RenderPlanError(
-                f"an unsynced plan across {out_stored:g} and {in_stored:g} BPM: its incoming end is not mapped onto "
-                "the outgoing clock yet"
-            )
-        fold, ratio = 1.0, 1.0
+        # The incoming deck plays at its own rate (ratio 1.0); fold maps incoming grid bars per outgoing plan bar.
+        fold = in_stored / (out_stored * out_ratio)
+        ratio = 1.0
     else:
         raise RenderPlanError(f"unknown tempo mode {plan.tempo_mode!r}")
     end_in_bar = plan.in_.start_bar + (incoming_played_bars(plan) + context_bars) * fold
@@ -174,6 +174,10 @@ def _refuse_controls_the_render_cannot_apply(plan: TransitionPlan) -> None:
     so a crossfader move would render as no change while the page plays a fade.
     """
     for event in plan.events:
+        if event.name in FX_CONTROLS or event.name in FX_ACTIONS:
+            raise RenderPlanError(
+                f"{event.name} at bar {event.at_bar:g} cannot be rendered offline: {TRANSITION_FX_REFUSAL}"
+            )
         if event.kind == "do":
             continue
         if event.name not in RENDERED_CONTROLS:
@@ -288,9 +292,9 @@ def compile_render_plan(
     start_out_bar: float | None = None,
 ) -> dict[str, Any]:
     """The ``plan.rs`` JSON that renders ``plan`` with ``context_bars`` of each deck alone around it."""
-    layout = layout_of(plan, out_profile, in_profile, context_bars, start_out_bar=start_out_bar)
     _refuse_controls_the_render_cannot_apply(plan)
     _refuse_follower_tempo_moves(plan)
+    layout = layout_of(plan, out_profile, in_profile, context_bars, start_out_bar=start_out_bar)
     for audio in (out_audio, in_audio):
         if not audio.is_absolute():
             # The renderer resolves a relative load against the plan file's own directory (offline.rs), not the

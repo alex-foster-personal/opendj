@@ -43,6 +43,14 @@ export const MENU_COMMANDS = {
 	'deck.loop.exit': ipc('loop'),
 	'deck.beat_sync': ipc('beat_sync'),
 	'deck.master': ipc('master'),
+	// DECKMOVE-01: one IPC, two modes; copy is rekordbox / Serato "instant doubles".
+	'deck.move': ipc('deck_move'),
+	'deck.instant_double': ipc('deck_move'),
+	// "Key lock" is Master Tempo here.
+	'deck.key_lock': ipc('master_tempo'),
+	'deck.quantize': ipc('quantize'),
+	'deck.slip': ipc('slip'),
+	'deck.track_info': ipc('track_info_open'),
 	// AGENT-50: auto_play_next_arm with out_deck, in_deck and from_ms.
 	'deck.transition_out_here': ipc('auto_play_next_arm'),
 	// Hot cues.
@@ -54,6 +62,13 @@ export const MENU_COMMANDS = {
 	'mixer.filter': ipc('filter'),
 	'mixer.channel_cue': ipc('channel_cue'),
 	'mixer.assign': ipc('assign'),
+	'mixer.trim': ipc('trim'),
+	'mixer.fader': ipc('fader'),
+	'mixer.crossfader': ipc('crossfader'),
+	'mixer.auto_gain': ipc('auto_gain_offset'),
+	'stem.mute': ipc('stem_mute'),
+	'stem.solo': ipc('stem_solo'),
+	'stem.gain': ipc('stem_gain'),
 	// ANIM-01..03: a dial animation is an AGENT-03 ramp order on the command bus.
 	'mixer.animate': http('POST', '/api/v1/commands', 'opendj animate <deck> <control> "<expr>"'),
 	// Feedback pins (vocal-lane Fix / add comment, FB-12).
@@ -84,6 +99,8 @@ export const MENU_COMMANDS = {
 		'/api/v1/analysis/backfill/enqueue',
 		'python -m apps.analysis.queue_cli enqueue --lane beatgrid --backend own_beatgrid.backfill'
 	),
+	// No beatgrid lock exists yet; the deck menu names the route a lock would extend.
+	'track.grid_edit': http('PUT', '/api/v1/tracks/{stable_id}/grid-edit'),
 	'track.library_job': http('POST', '/api/v1/library-jobs/enqueue'),
 	'track.stems.generate': http('POST', '/api/v1/stems/generate'),
 	'track.remove_from_library': http('POST', '/api/v1/tracks/{stable_id}:remove'),
@@ -97,6 +114,8 @@ export const MENU_COMMANDS = {
 		'/api/v1/offload/restore',
 		'opendj offload restore <stable_id>... --for-24h|--permanent'
 	),
+	// LIBORG-10314: the playlist as a tab-separated text track list (rekordbox .txt export).
+	'playlist.export_txt': http('GET', '/api/v1/playlists/{playlist_id}/export.txt', 'opendj playlist export <playlist_id> --format txt'),
 	'playlist.offload': http('POST', '/api/v1/offload/playlists/{playlist_id}', 'opendj offload playlist <playlist_id>'),
 	'playlist.offload_restore': http(
 		'POST',
@@ -114,6 +133,17 @@ export const MENU_COMMANDS = {
 	// Playlists and smartlists.
 	'playlist.create': http('POST', '/api/v1/playlists'),
 	'playlist.update': http('PATCH', '/api/v1/playlists/{playlist_id}'),
+	// PLAYS-10523: delete a logged play / a whole history day (rekordbox History right-click Delete).
+	'history.delete_play': http(
+		'DELETE',
+		'/api/v1/tracks/{stable_id}/plays/{play_id}',
+		'opendj history delete-play <stable_id> <play_id>'
+	),
+	'history.delete_day': http(
+		'DELETE',
+		'/api/v1/history/{day}',
+		'opendj history delete-day <YYYY-MM-DD>'
+	),
 	'playlist.delete': http('DELETE', '/api/v1/playlists/{playlist_id}'),
 	'playlist.duplicate': http('POST', '/api/v1/playlists/{playlist_id}/duplicate'),
 	'playlist.remove_items': http('POST', '/api/v1/playlists/{playlist_id}/items:remove'),

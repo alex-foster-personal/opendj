@@ -77,6 +77,7 @@ router = APIRouter(prefix="/feedback", tags=["feedback"])
 MOUNT_UNDER_API_PREFIX = True
 
 _COMMENT_STATE_FILTERS = frozenset({"regressed", "harvested"})
+_REOPENED_STATUSES = frozenset({"open", "issued", "blocked"})
 
 _TODOS_FILE = "review-todos.json"
 _COMMENTS_FILE = "comments.json"
@@ -474,7 +475,8 @@ def _filter_comments_by_state(
     return [
         c
         for c in items
-        if c.get("fixed_in_sha")
+        if (c.get("status") or "open") in _REOPENED_STATUSES
+        and c.get("fixed_in_sha")
         and (c.get("updated_at") or "") > (c.get("fixed_at") or "")
     ]
 

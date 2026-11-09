@@ -3,6 +3,7 @@
  */
 
 import type { DeckId } from '$lib/rb/deck-id';
+import type { KeySyncMode } from '$lib/player/key/camelot';
 import { encodeBeatStamp, type RescueBeatStamp } from '$lib/rb/rescue-beat-stamp';
 import type { PerformanceState } from '$lib/rb/performance-ipc.svelte';
 import type { DeckLayoutMode } from '$lib/rb/deck-layout-prefs';
@@ -26,6 +27,9 @@ export interface RescueDeckSnapshot {
 	pitch_range: 8 | 16 | 100;
 	master_tempo_enabled: boolean;
 	key_sync_enabled: boolean;
+	/** KEYSYNC-01: absent on older blobs. */
+	key_sync_mode?: KeySyncMode;
+	key_sync_target?: DeckId | 'master';
 	quantize_enabled: boolean;
 	beat_sync_enabled: boolean;
 	sync_mode: 'beat' | 'bar';
@@ -120,6 +124,11 @@ export function buildRescueSnapshot(
 			pitch_range: deck.pitch_range,
 			master_tempo_enabled: deck.master_tempo_enabled,
 			key_sync_enabled: deck.key_sync_enabled,
+			key_sync_mode: deck.key_sync_mode ?? 'exact',
+			key_sync_target:
+				deck.key_sync_target === null || deck.key_sync_target === 'master'
+					? 'master'
+					: deck.key_sync_target,
 			quantize_enabled: deck.quantize_enabled,
 			beat_sync_enabled: deck.beat_sync_enabled,
 			sync_mode: deck.sync_mode,

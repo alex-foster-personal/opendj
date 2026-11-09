@@ -14,6 +14,11 @@ from scipy import fft, signal
 
 #: Low band of the kick and bass onset envelope (spec 10 section 3: 40-150 Hz).
 LOW_BAND_HZ = (40.0, 150.0)
+#: The engine's EQ shelf corners (apps/audio-engine/src/mixer.rs EQ_FREQ_LOW_HZ, EQ_FREQ_HIGH_HZ): the three bands
+#: the mixer's knobs act on (#10187). The mid knob's 1200 Hz is a bell inside the mid band, not a split.
+ENGINE_LOW_SHELF_HZ = 250.0
+ENGINE_HIGH_SHELF_HZ = 5000.0
+ENGINE_BANDS: tuple[str, ...] = ("low", "mid", "high")
 #: Envelope hop: 64 samples is 1.33 ms at 48 kHz (spec 10: hop 64).
 ENVELOPE_HOP = 64
 #: Smoothing of the rectified low band before differencing, in seconds.
@@ -48,6 +53,20 @@ def band_signal(audio: np.ndarray, sr: int, band_hz: tuple[float, float]) -> np.
     """The mono signal in ``band_hz``: a zero-phase 4th-order Butterworth band pass."""
     sos = signal.butter(4, band_hz, btype="bandpass", fs=sr, output="sos")
     return signal.sosfiltfilt(sos, mono(audio).astype(np.float64))
+
+
+def three_band(audio: np.ndarray, sr: int) -> dict[str, np.ndarray]:
+    """Split mono audio at the engine shelf corners (250 Hz and 5 kHz); decides nothing."""
+    if sr / 2 <= ENGINE_HIGH_SHELF_HZ:
+        raise ValueError(f"sample rate {sr} Hz is too low for a {ENGINE_HIGH_SHELF_HZ} Hz high shelf")
+    x = mono(audio).astype(np.float64)
+    low_sos = signal.butter(4, ENGINE_LOW_SHELF_HZ, btype="lowpass", fs=sr, output="sos")
+    high_sos = signal.butter(4, ENGINE_HIGH_SHELF_HZ, btype="highpass", fs=sr, output="sos")
+    return {
+        "low": signal.sosfiltfilt(low_sos, x),
+        "mid": band_signal(audio, sr, (ENGINE_LOW_SHELF_HZ, ENGINE_HIGH_SHELF_HZ)),
+        "high": signal.sosfiltfilt(high_sos, x),
+    }
 
 
 def span_power_db(x: np.ndarray, sr: int, edges: list[tuple[float, float]]) -> np.ndarray:
