@@ -7,7 +7,8 @@ CONTRACT this router owns:
                            ceiling_energy?}
     200:   PlayItSolveOut {playlist_id, etag, previous_order, proposed_order,
                             unchanged, steps: [PlayItStepOut],
-                            constraints_unmet: [PlayItUnmetOut], solve_ms}
+                            constraints_unmet: [PlayItUnmetOut], solve_ms,
+                            unscored_edges}
     404:   ErrorBody {error: "not_found", message}          unknown playlist
     422:   ErrorBody {error: "insufficient_data", message,
                        details: {missing: {bpm: [ids], key: [ids]}}}
@@ -78,6 +79,7 @@ class PlayItStepOut(BaseModel):
     target_energy: float
     actual_energy: float
     pin_role: Literal["opener", "peak", "closer"] | None = None
+    unscored: list[str] = Field(default_factory=list)
 
 
 class PlayItUnmetOut(BaseModel):
@@ -95,6 +97,7 @@ class PlayItSolveOut(BaseModel):
     steps: list[PlayItStepOut]
     constraints_unmet: list[PlayItUnmetOut]
     solve_ms: float
+    unscored_edges: int = 0
 
 
 def _missing_fields(features: list[TrackFeature]) -> dict[str, list[str]] | None:
@@ -210,6 +213,7 @@ def solve_play_it(
             target_energy=trace.target_energy,
             actual_energy=trace.actual_energy,
             pin_role=trace.pin_role,
+            unscored=list(trace.unscored),
         )
         for trace in result.per_step_trace
     ]
@@ -225,4 +229,5 @@ def solve_play_it(
             PlayItUnmetOut(kind=u.kind, position=u.position, detail=dict(u.detail)) for u in result.constraints_unmet
         ],
         solve_ms=result.solve_ms,
+        unscored_edges=result.unscored_edges,
     )

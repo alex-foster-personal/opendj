@@ -116,6 +116,8 @@ export type EnrichSummary = {
 	warnings?: EnrichWarning[];
 	/** LIBM-189: store covers found, waiting on the user's OK. */
 	artwork_suggestions?: number;
+	/** SETPREP-10646: genre fill from the latest ingest enrichment batch. */
+	ingest_genre?: { total: number; done?: number; needs_review?: number } | null;
 };
 
 export type EnrichWarning = {
@@ -349,6 +351,20 @@ export function dudLines(summary: EnrichSummary): CardLine[] {
  *   [if] a blocking warning is reported [then] its line is "unavailable" and the pill needs you
  *   [if] an info warning (opt-in AI genre) is reported [then] its line is a note and never flags the pill
  */
+/** SETPREP-10646: genre fill after import, once artwork for the batch has settled. */
+export function ingestGenreLine(summary: EnrichSummary): CardLine | null {
+	const counts = summary.ingest_genre;
+	if (counts === undefined || counts === null || counts.total === 0) return null;
+	const filled = counts.done ?? 0;
+	const review = counts.needs_review ?? 0;
+	return {
+		lane: 'genre',
+		tone: review > 0 ? 'working' : 'ready',
+		text: `Genre: ${n(filled)} of ${n(counts.total)} filled, ${n(review)} need a look`,
+		title: null
+	};
+}
+
 export function warningLines(summary: EnrichSummary): CardLine[] {
 	return (summary.warnings ?? []).map((w) => ({
 		lane: `warning-${w.lane}-${w.code}`,

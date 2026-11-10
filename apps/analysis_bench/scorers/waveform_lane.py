@@ -23,14 +23,13 @@ every band and increments `n_omitted`.
 from __future__ import annotations
 
 import json
-
-from apps.analysis_bench.scorers.bundle_guards import refuse_unknown
 import math
 from pathlib import Path
 from typing import Any
 
 import numpy as np
 
+from apps.analysis_bench.scorers.bundle_guards import refuse_duplicate_stable_ids, refuse_unknown
 from apps.analysis_waveform.decode import BAND_NAMES
 from apps.analysis_waveform.score import SCORER_VERSION, load_truth, pearson
 
@@ -58,13 +57,7 @@ def load_bundle(bundle: Path) -> tuple[dict[str, Any], list[dict[str, Any]]]:
     if not tracks:
         raise ValueError(f"{bundle}/manifest.json declares no tracks for the waveform lane")
     stable_ids = [track["stable_id"] for track in tracks]
-    duplicates = sorted({sid for sid in stable_ids if stable_ids.count(sid) > 1})
-    if duplicates:
-        raise ValueError(
-            f"{bundle}/manifest.json lists {len(duplicates)} duplicate track "
-            f"stable_id(s), first {duplicates[0]!r}: a malformed join must not "
-            "silently collapse into a smaller scored set."
-        )
+    refuse_duplicate_stable_ids(bundle, stable_ids, entity="track")
     return manifest, tracks
 
 

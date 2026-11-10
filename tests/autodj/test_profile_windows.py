@@ -8,6 +8,7 @@ import json
 
 import pytest
 
+from apps.autodj.contract.models import MikBoundary
 from apps.autodj.profile import ProfileError, _camelot, _sections, profile_from_payloads
 from apps.autodj.sections import own_label, phrase_label, pssi_label
 from apps.autodj.windows import mix_windows, window_at
@@ -115,8 +116,16 @@ _TRANSAI_REQ = "TRANSAI-10505"
 
 def _profile_digest_without_new_bands(p) -> str:
     data = dataclasses.asdict(p)
-    data.pop("bar_mid", None)
-    data.pop("bar_high", None)
+    for key in (
+        "bar_mid",
+        "bar_high",
+        "mik_bar_level",
+        "mik_level",
+        "mik_boundaries",
+        "mik_grid_suspect",
+        "mik_grid_note",
+    ):
+        data.pop(key, None)
     return hashlib.sha256(json.dumps(data, sort_keys=True).encode()).hexdigest()
 
 
@@ -233,6 +242,21 @@ def test_to_json_carries_the_per_bar_series() -> None:
     assert dataclasses.replace(track, bar_mid=None, bar_high=None).time_of_bar(17) == track.time_of_bar(17)
 
 
+@pytest.mark.requirement("AUTOPLAY-12017")
+def test_an_outro_shorter_than_four_bars_is_marked_too_short() -> None:
+    """[if] outro has under 4 bars left on the grid [then] too_short is set, [else stop]."""
+    arrangement = (
+        (INTRO, 16, 0.4, 0.2, False),
+        (UP, 16, 0.6, 0.5, False),
+        (CHORUS, 16, 1.0, 1.0, True),
+        (OUTRO, 3, 0.4, 0.8, False),
+    )
+    track = profile("trk-short-outro", arrangement=arrangement)
+    outro = next(window for window in mix_windows(track, "out") if window.label == "outro")
+    assert outro.max_bars == 2
+    assert outro.too_short is True
+
+
 def test_out_windows_prefer_the_outro_and_end_by_the_last_downbeat() -> None:
     track = profile("trk-a")
     windows = mix_windows(track, "out")
@@ -296,3 +320,146 @@ def test_an_unreadable_key_refuses_the_profile_rather_than_reading_as_unknown() 
     assert _camelot("8A") == "8A"
     with pytest.raises(ProfileError):
         _camelot("not a key")
+
+
+def _mik_anlz(
+    stable_id: str,
+    segments: list[dict[str, object]],
+    *,
+    bpm: float = 120.0,
+    bars: int = 8,
+    level: int = 6,
+) -> dict:
+    anlz = anlz_payload(stable_id, bpm=bpm, arrangement=((INTRO, bars, 0.5, 0.5, False),))
+    anlz["energy_source"] = "mik"
+    anlz["energy_level"] = level
+    anlz["energy_segments"] = segments
+    return anlz
+
+
+_TRANSAI_MIK_REQ = "TRANSAI-10662"
+
+
+@pytest.mark.requirement(_TRANSAI_MIK_REQ)
+def test_mik_fields_are_none_when_energy_source_is_none() -> None:
+    """[if] energy_source is none [then] mik_bar_level and mik_level are None, [else stop]."""
+    track = profile("trk-a")
+    assert track.mik_bar_level is None
+    assert track.mik_level is None
+    assert track.mik_boundaries == ()
+    assert track.mik_grid_suspect == 0
+    assert track.mik_grid_note is None
+
+
+@pytest.mark.requirement(_TRANSAI_MIK_REQ)
+def test_mik_bar_levels_use_majority_mapping_and_boundaries_snap() -> None:
+    """[if] MIK segments step mid-bar and on a downbeat [then] bars map by overlap and boundaries snap, [else stop]."""
+    beat_s = 60.0 / 120.0
+    bar_s = 4 * beat_s
+    duration = 8 * bar_s
+    anlz = _mik_anlz(
+        "mik-majority",
+        [
+            {"start_s": 0.0, "end_s": 2.6, "level": 4, "source": "mik", "start_clamped": False},
+            {"start_s": 2.6, "end_s": duration, "level": 8, "source": "mik", "start_clamped": False},
+        ],
+    )
+    track = profile_from_payloads(anlz, track_row("mik-majority", bpm=120.0, bars=8))
+    assert track.mik_level == 6
+    assert track.mik_bar_level is not None
+    assert track.mik_bar_level[0] == 4
+    assert track.mik_bar_level[1] == 8
+    assert track.mik_boundaries == (
+        MikBoundary(bar=pytest.approx(2.3), snapped_bar=None, level_before=4, level_after=8),
+    )
+    anlz["energy_segments"] = [
+        {"start_s": 0.0, "end_s": 4.0, "level": 5, "source": "mik", "start_clamped": False},
+        {"start_s": 4.0, "end_s": duration, "level": 9, "source": "mik", "start_clamped": False},
+    ]
+    snapped = profile_from_payloads(anlz, track_row("mik-majority", bpm=120.0, bars=8))
+    assert snapped.mik_boundaries[0].snapped_bar == 3
+
+
+@pytest.mark.requirement(_TRANSAI_MIK_REQ)
+def test_half_bar_mik_offset_sets_suspect_count_and_grid_note() -> None:
+    """[if] MIK boundaries sit a constant half-bar off downbeats [then] suspect counts and grid_note names it, [else stop]."""
+    beat_s = 60.0 / 120.0
+    bar_s = 4 * beat_s
+    starts = [bar_s * (index + 0.5) for index in range(3)]
+    segments = [
+        {"start_s": 0.0, "end_s": starts[0], "level": 4, "source": "mik", "start_clamped": False},
+        {"start_s": starts[0], "end_s": starts[1], "level": 6, "source": "mik", "start_clamped": False},
+        {"start_s": starts[1], "end_s": starts[2], "level": 7, "source": "mik", "start_clamped": False},
+        {"start_s": starts[2], "end_s": 8 * bar_s, "level": 5, "source": "mik", "start_clamped": False},
+    ]
+    track = profile_from_payloads(_mik_anlz("mik-offset", segments), track_row("mik-offset", bpm=120.0, bars=8))
+    assert all(boundary.snapped_bar is None for boundary in track.mik_boundaries)
+    assert track.mik_grid_suspect == len(track.mik_boundaries)
+    assert track.mik_grid_note == "MIK energy boundaries sit +0.50 bar from downbeats"
+
+
+@pytest.mark.requirement(_TRANSAI_MIK_REQ)
+def test_anlz_without_energy_keys_raises_profile_error() -> None:
+    """[if] anlz lacks energy_source [then] profile_from_payloads raises ProfileError naming it, [else stop]."""
+    anlz = anlz_payload("trk-a")
+    del anlz["energy_source"]
+    with pytest.raises(ProfileError, match="energy_source"):
+        profile_from_payloads(anlz, track_row("trk-a"))
+
+
+@pytest.mark.requirement(_TRANSAI_MIK_REQ)
+def test_a_mik_series_without_a_scalar_keeps_the_level_null() -> None:
+    """[if] MIK serves a series but no scalar [then] mik_level is None and mik_bar_level is kept, [else stop]."""
+    beat_s = 60.0 / 120.0
+    bar_s = 4 * beat_s
+    duration = 8 * bar_s
+    anlz = _mik_anlz(
+        "mik-series-only",
+        [
+            {"start_s": 0.0, "end_s": 2.6, "level": 4, "source": "mik", "start_clamped": False},
+            {"start_s": 2.6, "end_s": duration, "level": 8, "source": "mik", "start_clamped": False},
+        ],
+    )
+    anlz["energy_level"] = None
+    track = profile_from_payloads(anlz, track_row("mik-series-only", bpm=120.0, bars=8))
+    assert track.mik_level is None
+    assert track.mik_bar_level is not None
+    assert track.mik_bar_level[0] == 4
+    assert track.mik_bar_level[1] == 8
+    assert len(track.mik_boundaries) == 1
+
+
+@pytest.mark.requirement(_TRANSAI_MIK_REQ)
+def test_a_mik_scalar_without_a_series_keeps_the_bar_levels_null() -> None:
+    """[if] MIK serves a scalar but no series [then] mik_bar_level is None and mik_level is kept, [else stop]."""
+    track = profile_from_payloads(_mik_anlz("mik-scalar-only", [], level=6), track_row("mik-scalar-only"))
+    assert track.mik_level == 6
+    assert track.mik_bar_level is None
+    assert track.mik_boundaries == ()
+    assert track.mik_grid_suspect == 0
+    assert track.mik_grid_note is None
+
+
+@pytest.mark.requirement(_TRANSAI_MIK_REQ)
+def test_mik_source_with_neither_scalar_nor_series_raises() -> None:
+    """[if] energy_source is mik with neither scalar nor series [then] profile_from_payloads raises ProfileError, [else stop]."""
+    anlz = _mik_anlz("mik-empty", [])
+    anlz["energy_level"] = None
+    with pytest.raises(ProfileError, match="neither"):
+        profile_from_payloads(anlz, track_row("mik-empty"))
+
+
+@pytest.mark.requirement(_TRANSAI_MIK_REQ)
+def test_a_non_int_mik_level_still_raises() -> None:
+    """[if] MIK energy_level is a non-int scalar [then] profile_from_payloads raises ProfileError, [else stop]."""
+    beat_s = 60.0 / 120.0
+    bar_s = 4 * beat_s
+    duration = 8 * bar_s
+    segments = [
+        {"start_s": 0.0, "end_s": duration, "level": 4, "source": "mik", "start_clamped": False},
+    ]
+    for bad in ("6", True):
+        anlz = _mik_anlz("mik-bad-level", segments)
+        anlz["energy_level"] = bad
+        with pytest.raises(ProfileError, match="energy_level"):
+            profile_from_payloads(anlz, track_row("mik-bad-level", bpm=120.0, bars=8))

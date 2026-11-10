@@ -37,6 +37,7 @@
 	import GroupHint from './mixer/GroupHint.svelte';
 	import GroupPad from './mixer/GroupPad.svelte';
 	import HeadphoneCluster from './mixer/HeadphoneCluster.svelte';
+	import { selId, selectorNode } from '$lib/keyboard/selector-register';
 
 	/** Screen order of the strips, left to right (SCREENSHOT-SPEC 4). Always
 	 * 4 entries, MORE or LESS - pin 862cd3's LESS mode collapses strips 3/4
@@ -212,7 +213,11 @@
 	});
 </script>
 
-<section class="rb-mixer rb-panel" class:mixer-stems={mixerStems}>
+<section
+	class="rb-mixer rb-panel"
+	class:mixer-stems={mixerStems}
+	use:selectorNode={{ id: selId.mixer(), kind: 'group', enabled: true }}
+>
 	<div class="mixer-view-row">
 	<button
 		type="button"
@@ -285,7 +290,13 @@
 									onload={() => coverLoaded(artId)}
 									onerror={() => coverFailed(artId)}
 								/>
-								<ArtworkDeckNumber {deck} mode={uiPrefs.deck_number_art} sizePx={40} />
+								<ArtworkDeckNumber
+									{deck}
+									mode={uiPrefs.deck_number_art}
+									sizePx={40}
+									stableId={artId}
+									playing={channel.playing}
+								/>
 							</span>
 						{:else}
 							<div
@@ -347,7 +358,7 @@
 		{/each}
 	</div>
 	<div class="lower">
-		<div class="hp-row">
+		<div class="hp-row" use:selectorNode={{ id: selId.headphones(), kind: 'leaf', enabled: true }}>
 			<HeadphoneCluster
 				state={mixerState.headphones}
 				onmix={handleHeadphoneMix}
@@ -369,7 +380,9 @@
 		<div class="xfade-row">
 			<AssignMatrix bus="A" {assigns} onassign={handleAssign} />
 			<CrossfadeCurveSelect />
-			<Crossfader value={mixerState.crossfader} onchange={handleCrossfader} />
+			<div class="sel-node" use:selectorNode={{ id: selId.crossfader(), kind: 'leaf', enabled: true }}>
+				<Crossfader value={mixerState.crossfader} onchange={handleCrossfader} />
+			</div>
 			<AssignMatrix bus="B" {assigns} onassign={handleAssign} />
 		</div>
 	</div>

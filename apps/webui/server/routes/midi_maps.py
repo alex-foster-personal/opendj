@@ -20,14 +20,17 @@ files, the tier/shadowing the index was going to power is computed in the
 frontend registry (webmidi.svelte.ts ``listDeviceMaps``), and a second store
 would only add a way for the two to disagree.
 
-Feedback output (``leds``, ``meters``, ``init``) is not carried yet; bindings
-first. Adding them is an additive optional field, not a schema bump.
+Feedback output rides alongside the bindings as three additive optional lists
+(no schema bump): ``leds`` and ``meters`` in the runtime ``LedRule`` /
+``MidiMeterOutput`` shape, and ``init``, entries of ``{message: [status, data1,
+data2]}`` channel-voice triples that webmidi.svelte.ts sends once when a port
+resolves to the map. Every entry carries its own ``provenance``.
 
 Errors, by code:
   404 MIDI_MAP_NOT_FOUND         no installed map with that id
-  422 MIDI_MAP_INVALID           document rejected; message names the binding
+  422 MIDI_MAP_INVALID           document rejected; message names the binding or rule
   422 MIDI_MAP_ID_MISMATCH       body id does not match the path id
-  503 MIDI_CATALOG_UNAVAILABLE   the offline device store is not on disk
+  503 MIDI_CATALOG_UNAVAILABLE   the device store is not bundled or not on disk
 """
 
 from __future__ import annotations
@@ -130,6 +133,20 @@ class DeckBeatLoop(_Strict):
     deck: DeckId
     # Fractional loops interpolate adjacent measured PQTZ timestamps.
     beats: float = Field(gt=0, allow_inf_nan=False)
+
+
+class DeckBeatJump(_Strict):
+    type: Literal["deck_beat_jump"]
+    deck: DeckId
+    # Signed: positive jumps forward, negative back. Never zero.
+    beats: float = Field(allow_inf_nan=False)
+
+    @field_validator("beats")
+    @classmethod
+    def _beats_nonzero(cls, value: float) -> float:
+        if value == 0:
+            raise ValueError("beats must be non-zero")
+        return value
 
 
 class DeckAutoLoopToggle(_Strict):
@@ -236,6 +253,8 @@ class DeckTempoNudge(_Strict):
 class DeckJog(_Strict):
     type: Literal["deck_jog"]
     deck: DeckId
+    # Scrub ms-per-tick multiplier while paused; bend ignores it. Absent = 1.
+    scale: float | None = Field(default=None, gt=0)
 
 
 ControllerPadModeName = Literal[
@@ -275,6 +294,7 @@ MidiActionModel = Annotated[
     | DeckCue
     | DeckHotCue
     | DeckBeatLoop
+    | DeckBeatJump
     | DeckAutoLoopToggle
     | DeckLoopExit
     | DeckSyncToggle
@@ -304,7 +324,8 @@ MidiActionModel = Annotated[
 # webmidi.svelte.ts _valueFor() only returns kind:'button' for src.kind ===
 # 'note'; action-glue.svelte.ts's _pressed() throws on anything else.
 _BUTTON_ACTIONS = frozenset(
-    {"deck_play_toggle", "deck_cue", "deck_hot_cue", "deck_beat_loop", "deck_loop_exit",
+    {"deck_play_toggle", "deck_cue", "deck_hot_cue", "deck_beat_loop", "deck_beat_jump",
+     "deck_loop_exit",
      "channel_cue", "browse_load", "shift_modifier", "deck_stem_eq_toggle",
      "deck_auto_loop_toggle", "deck_sync_toggle", "deck_key_sync_toggle",
      "deck_manual_loop_cycle", "deck_loop_scale", "deck_key_nudge", "deck_tempo_nudge",
@@ -437,6 +458,150 @@ class Binding(_Strict):
         return self
 
 
+# ----- feedback output (leds, meters, init) ----------------------------------
+# Mirrors LedTrigger / LedRule / MidiMeterOutput in midi-types.ts kind for kind
+# (parity is asserted by tests/webui/test_midi_maps.py). Ranges match the
+# runtime's own fail-fast checks in sendLed / sendCc / midiMeterValue.
+
+StemName = Literal["drums", "bass", "other", "vocal"]
+
+
+class LedDeckPlaying(_Strict):
+    kind: Literal["deck_playing"]
+    deck: DeckId
+
+
+class LedDeckLoaded(_Strict):
+    kind: Literal["deck_loaded"]
+    deck: DeckId
+
+
+class LedLoopEngaged(_Strict):
+    kind: Literal["loop_engaged"]
+    deck: DeckId
+
+
+class LedLoopBeatsEngaged(_Strict):
+    kind: Literal["loop_beats_engaged"]
+    deck: DeckId
+    beats: float = Field(gt=0, allow_inf_nan=False)
+
+
+class LedBeatSyncEnabled(_Strict):
+    kind: Literal["beat_sync_enabled"]
+    deck: DeckId
+
+
+class LedBeatSyncEffective(_Strict):
+    kind: Literal["beat_sync_effective"]
+    deck: DeckId
+
+
+class LedStemEqEnabled(_Strict):
+    kind: Literal["stem_eq_enabled"]
+    deck: DeckId
+
+
+class LedStemActive(_Strict):
+    kind: Literal["stem_active"]
+    deck: DeckId
+    stem: StemName
+
+
+class LedStemSolo(_Strict):
+    kind: Literal["stem_solo"]
+    deck: DeckId
+    stem: StemName
+
+
+class LedPadModeSelected(_Strict):
+    kind: Literal["pad_mode_selected"]
+    deck: DeckId
+    mode: ControllerPadModeName
+
+
+class LedHotCuePresent(_Strict):
+    model_config = ConfigDict(populate_by_name=True)
+
+    kind: Literal["hot_cue_present"]
+    deck: DeckId
+    slot: HotCueSlot
+    pad_mode: ControllerPadModeName | None = Field(alias="padMode", default=None)
+
+
+class LedChannelCueEnabled(_Strict):
+    kind: Literal["channel_cue_enabled"]
+    deck: DeckId
+
+
+_LED_TRIGGER_MODELS: tuple[type[_Strict], ...] = (
+    LedDeckPlaying, LedDeckLoaded, LedLoopEngaged, LedLoopBeatsEngaged,
+    LedBeatSyncEnabled, LedBeatSyncEffective, LedStemEqEnabled, LedStemActive, LedStemSolo,
+    LedPadModeSelected, LedHotCuePresent, LedChannelCueEnabled,
+)
+
+LedTriggerModel = Annotated[
+    LedDeckPlaying
+    | LedDeckLoaded
+    | LedLoopEngaged
+    | LedLoopBeatsEngaged
+    | LedBeatSyncEnabled
+    | LedBeatSyncEffective
+    | LedStemEqEnabled
+    | LedStemActive
+    | LedStemSolo
+    | LedPadModeSelected
+    | LedHotCuePresent
+    | LedChannelCueEnabled,
+    Field(discriminator="kind"),
+]
+
+
+class LedOut(_Strict):
+    model_config = ConfigDict(populate_by_name=True)
+
+    ch: int = Field(ge=1, le=16)
+    note: int = Field(ge=0, le=127)
+    velocity_on: int = Field(alias="velocityOn", ge=0, le=127)
+    velocity_off: int = Field(alias="velocityOff", ge=0, le=127)
+
+
+class LedRuleDoc(_Strict):
+    model_config = ConfigDict(populate_by_name=True)
+
+    trigger: LedTriggerModel
+    pad_mode: ControllerPadModeName | None = Field(alias="padMode", default=None)
+    out: LedOut
+    provenance: Provenance
+
+
+class MeterOut(_Strict):
+    model_config = ConfigDict(populate_by_name=True)
+
+    ch: int = Field(ge=1, le=16)
+    cc: int = Field(ge=0, le=127)
+    max_value: int = Field(alias="maxValue", ge=1, le=127)
+
+
+class MeterRuleDoc(_Strict):
+    deck: DeckId
+    out: MeterOut
+    provenance: Provenance
+
+
+_StatusByte = Annotated[int, Field(ge=0x80, le=0xEF)]
+_DataByte = Annotated[int, Field(ge=0, le=127)]
+
+
+class InitMessageDoc(_Strict):
+    """One channel-voice message sent raw on connect, e.g. the DDJ-400 'CH
+    meter mode' handshake. 0xF0+ is refused: sysex is variable length and
+    WebMIDI opens with sysex:false."""
+
+    message: tuple[_StatusByte, _DataByte, _DataByte]
+    provenance: Provenance
+
+
 # webmidi.svelte.ts _resolveMap() runs `new RegExp(map.nameMatch, 'i')`, so a
 # pattern that only compiles under Python's re would break at match time in
 # the browser. Deny-list rather than shelling out to node: the packaged
@@ -461,6 +626,11 @@ class MidiMapDoc(_Strict):
     model: str = Field(min_length=1)
     name_match: str = Field(alias="nameMatch", min_length=1)
     bindings: list[Binding] = Field(min_length=1)
+    # Never None: the file is dumped by_alias without exclude_none, and the
+    # GET contract is "always a list" so old documents read back as [].
+    leds: list[LedRuleDoc] = Field(default_factory=list)
+    meters: list[MeterRuleDoc] = Field(default_factory=list)
+    init: list[InitMessageDoc] = Field(default_factory=list)
 
     @field_validator("id")
     @classmethod
@@ -680,7 +850,9 @@ def _catalog_index() -> list[CatalogDevice]:
             status_code=503,
             detail={
                 "code": "MIDI_CATALOG_UNAVAILABLE",
-                "message": f"offline device store not found at {devices_dir}",
+                "status": "device store not bundled",
+                "path": str(devices_dir),
+                "message": f"device store not bundled: no controller device files at {devices_dir}",
             },
         )
     key = (str(devices_dir), devices_dir.stat().st_mtime_ns)

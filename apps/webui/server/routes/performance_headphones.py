@@ -44,6 +44,9 @@ HEADPHONE_IPC_ROUTES: dict[str, tuple[str, str]] = {
 }
 
 HEADPHONE_ALIGNMENT_MODES = ("headphones_only", "delay_all", "hybrid")
+# keep in sync with apps/webui/frontend/src/lib/player/constants.ts HEADPHONE_OUTPUT_MODES
+# and apps/opendj_cli/catalog.py OUTPUT_MODE_VALUES (parity test in test_performance_headphones).
+HEADPHONE_OUTPUT_MODES = ("practice", "two_outputs", "split_cable")
 # keep in sync with apps/webui/frontend/src/lib/player/constants.ts
 MASTER_DELAY_MAX_MS = 1500
 
@@ -237,11 +240,13 @@ def _validate_boolean(name: str, value: object) -> bool:
 
 
 def _validate_output_mode(mode: object) -> str:
-    if mode not in ("practice", "two_outputs", "split_cable"):
+    if mode not in HEADPHONE_OUTPUT_MODES:
         raise HTTPException(
             status_code=400,
             detail=(
-                f"headphone output_mode must be practice, two_outputs, or split_cable; got {mode}"
+                "headphone output_mode must be "
+                + ", ".join(HEADPHONE_OUTPUT_MODES[:-1])
+                + f", or {HEADPHONE_OUTPUT_MODES[-1]}; got {mode}"
             ),
         )
     return mode

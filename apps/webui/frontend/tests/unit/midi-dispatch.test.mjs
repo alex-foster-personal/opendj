@@ -13,6 +13,8 @@
 //   unmapped message       -> learn-log entry (never silent)
 //   Mixtour fader CC       -> mixer_channel fader action
 //   LED rule               -> correct outbound [0x9n, note, vel] bytes
+//   installed map (#10058) -> init triples once on resolve, again on hot-plug,
+//                             never on a plain rescan; deck_playing LED lights
 //
 // Regression lines (single-line format per CLAUDE.md):
 //   if [0x90,0x0B,0x7F] on FLX10 isn't deck_play_toggle deck 1 then broken
@@ -22,6 +24,10 @@
 //   if [0xB0,0x05,64] on Mixtour isn't deck 1 fader 64/127 then broken
 //   if a queued LED write doesn't flush as [0x90|ch-1,note,vel] then broken
 //   if two LED writes to one (ch,note) within a window send twice then broken
+//   if an installed map's init triples are not sent in order on resolve then broken
+//   if a plain rescan of a resolved port resends init then broken
+//   if a hot-plug reconnect does not resend init then broken
+//   if an installed deck_playing LED rule does not light its pad then broken
 
 import assert from 'node:assert/strict';
 import { after, before, test } from 'node:test';
@@ -41,6 +47,11 @@ let mixtour; // $lib/rb/midi/maps/reloop-mixtour.ts
 let mixtourPro; // $lib/rb/midi/maps/reloop-mixtour-pro.ts
 let ddj400; // $lib/rb/midi/maps/ddj-400.ts
 let flx4; // $lib/rb/midi/maps/ddj-flx4.ts
+let installed; // $lib/rb/midi/installed-maps.ts
+let glue; // $lib/rb/midi/action-glue.svelte.ts
+let audioEngine; // $lib/rb/audio-engine.svelte.ts
+let padRuntime; // $lib/rb/midi/controller-pad-runtime.svelte.ts
+let initSentAtConnect = [];
 
 // ------------------------------------------------------- fake WebMIDI ports
 
@@ -69,6 +80,39 @@ const ddjIn = _fakeInput('ddj-in', 'DDJ-400', 'Pioneer DJ');
 const ddjOut = _fakeOutput('ddj-out', 'DDJ-400');
 const flx4In = _fakeInput('flx4-in', 'DDJ-FLX4', 'Pioneer DJ');
 const flx4Out = _fakeOutput('flx4-out', 'DDJ-FLX4');
+const instIn = _fakeInput('inst-in', 'OpenDJ Installed Pad', 'OpenDJ');
+const instOut = _fakeOutput('inst-out', 'OpenDJ Installed Pad');
+
+// Fixture numbers only, not claimed hardware numbers.
+const _CITE = { tier: 'hand', cite: 'midi-dispatch fixture', verified: false };
+const INIT_TRIPLES = [
+	[0xb0, 0x63, 0x01],
+	[0xb0, 0x64, 0x00]
+];
+const INSTALLED_DOC = {
+	schemaVersion: 1,
+	id: 'opendj-installed-pad',
+	vendor: 'OpenDJ Installed',
+	model: 'Installed Pad',
+	nameMatch: 'OpenDJ Installed Pad',
+	bindings: [
+		{
+			source: { ch: 1, kind: 'note', id: 0x20 },
+			action: { type: 'deck_play_toggle', deck: 1 },
+			provenance: _CITE
+		}
+	],
+	leds: [
+		{
+			trigger: { kind: 'deck_playing', deck: 1 },
+			padMode: null,
+			out: { ch: 1, note: 0x30, velocityOn: 0x7f, velocityOff: 0 },
+			provenance: _CITE
+		}
+	],
+	meters: [],
+	init: INIT_TRIPLES.map((message) => ({ message, provenance: _CITE }))
+};
 
 const fakeAccess = {
 	inputs: new Map([
@@ -76,13 +120,15 @@ const fakeAccess = {
 		[mixIn.id, mixIn],
 		[mixProIn.id, mixProIn],
 		[ddjIn.id, ddjIn],
-		[flx4In.id, flx4In]
+		[flx4In.id, flx4In],
+		[instIn.id, instIn]
 	]),
 	outputs: new Map([
 		[flxOut.id, flxOut],
 		[mixProOut.id, mixProOut],
 		[ddjOut.id, ddjOut],
-		[flx4Out.id, flx4Out]
+		[flx4Out.id, flx4Out],
+		[instOut.id, instOut]
 	]),
 	onstatechange: null
 };
@@ -118,6 +164,10 @@ before(async () => {
 	mixtourPro = await vite.ssrLoadModule('/src/lib/rb/midi/maps/reloop-mixtour-pro.ts');
 	ddj400 = await vite.ssrLoadModule('/src/lib/rb/midi/maps/ddj-400.ts');
 	flx4 = await vite.ssrLoadModule('/src/lib/rb/midi/maps/ddj-flx4.ts');
+	installed = await vite.ssrLoadModule('/src/lib/rb/midi/installed-maps.ts');
+	glue = await vite.ssrLoadModule('/src/lib/rb/midi/action-glue.svelte.ts');
+	audioEngine = await vite.ssrLoadModule('/src/lib/rb/audio-engine.svelte.ts');
+	padRuntime = await vite.ssrLoadModule('/src/lib/rb/midi/controller-pad-runtime.svelte.ts');
 
 	// Patch navigator.requestMIDIAccess (Node 22 ships a navigator object;
 	// fall back to redefining the global if it rejects new properties).
@@ -140,10 +190,12 @@ before(async () => {
 	webmidi.registerDeviceMap(mixtourPro.RELOOP_MIXTOUR_PRO_MAP);
 	webmidi.registerDeviceMap(ddj400.DDJ400_MAP);
 	webmidi.registerDeviceMap(flx4.FLX4_MAP);
+	webmidi.registerDeviceMap(installed.deviceMapFromDoc(INSTALLED_DOC), 'installed');
 	webmidi.registerActionHandler((action, value, deviceId) => {
 		actions.push({ action, value, deviceId });
 	});
 	await webmidi.initMidi();
+	initSentAtConnect = [...instOut.sent];
 });
 
 after(async () => {
@@ -176,6 +228,8 @@ test('initMidi requested sysex:false and resolved both fake devices to maps', ()
 	assert.notEqual(flx4Map, null);
 	assert.equal(flx4Map.bindings.length, flx4.FLX4_MAP.bindings.length);
 	assert.ok(flx4Map.bindings.length > 0);
+	assert.equal(byId.get('inst-in').mapVendor, 'OpenDJ Installed');
+	assert.equal(byId.get('inst-in').hasOutput, true);
 });
 
 // ------------------------------------------------------------ FLX10 inbound
@@ -396,6 +450,136 @@ test('Mixtour Pro VU value uses the production coalesced CC output path', async 
 	webmidi.sendCc('mix-pro-in', 1, 0x1f, 6);
 	await sleep(50);
 	assert.deepEqual(mixProOut.sent.slice(n), [[0xb0, 0x1f, 6]]);
+});
+
+// ------------------------------------------- installed map feedback (#10058)
+
+test('installed map init triples are sent once, in order, when the port resolves', () => {
+	assert.deepEqual(initSentAtConnect, INIT_TRIPLES);
+});
+
+test('a plain rescan of an already-resolved port does not resend init', () => {
+	instOut.sent.length = 0;
+	fakeAccess.onstatechange({});
+	assert.deepEqual(instOut.sent, []);
+});
+
+test('re-registering an unrelated map does not resend init', () => {
+	instOut.sent.length = 0;
+	const unrelated = { vendor: 'X', nameMatch: 'NoSuchPort', bindings: [] };
+	webmidi.registerDeviceMap(unrelated, 'installed');
+	assert.equal(webmidi.unregisterDeviceMap('NoSuchPort', 'installed'), true);
+	assert.deepEqual(instOut.sent, []);
+});
+
+test('a hot-plug reconnect resends init', () => {
+	instOut.sent.length = 0;
+	try {
+		instIn.state = 'disconnected';
+		fakeAccess.onstatechange({});
+		assert.equal(
+			webmidi.midiState.devices.some((d) => d.id === 'inst-in'),
+			false
+		);
+		assert.deepEqual(instOut.sent, []);
+		instIn.state = 'connected';
+		fakeAccess.onstatechange({});
+		assert.deepEqual(instOut.sent, INIT_TRIPLES);
+	} finally {
+		instIn.state = 'connected';
+	}
+});
+
+test('installed deck_playing LED rule lights the pad when deck 1 plays', async () => {
+	const syncLeds = () => {
+		// Exactly _syncLeds' body for one device (attachMidiGlue would replace
+		// this file's own action handler).
+		for (const o of glue.midiLedFeedback(webmidi.getDeviceMap('inst-in'), 'inst-in')) {
+			webmidi.sendLed('inst-in', o.ch, o.note, o.velocity);
+		}
+	};
+	try {
+		assert.equal(webmidi.getDeviceMap('inst-in').leds.length, 1);
+		instOut.sent.length = 0;
+		audioEngine.deckStates[1].playing = true;
+		syncLeds();
+		await sleep(webmidi.LED_THROTTLE_MS * 3);
+		assert.deepEqual(instOut.sent, [[0x90, 0x30, 0x7f]]);
+		instOut.sent.length = 0;
+		audioEngine.deckStates[1].playing = false;
+		syncLeds();
+		await sleep(webmidi.LED_THROTTLE_MS * 3);
+		assert.deepEqual(instOut.sent, [[0x90, 0x30, 0x00]]);
+	} finally {
+		audioEngine.deckStates[1].playing = false;
+	}
+});
+
+function grid(bpm, startSec, count) {
+	const spb = 60 / bpm;
+	return Array.from({ length: count }, (_, i) => ({ n: (i % 4) + 1, bpm, t: startSec + i * spb }));
+}
+
+test('FLX4 BEAT SYNC LED: deck 1 synced to deck 2 lights deck 1 only', () => {
+	const ds = audioEngine.deckStates;
+	const saved = [1, 2].map((d) => ({
+		stable_id: ds[d].stable_id,
+		duration_ms: ds[d].duration_ms,
+		anlz: ds[d].anlz,
+		beat_sync_enabled: ds[d].beat_sync_enabled,
+		playing: ds[d].playing
+	}));
+	try {
+		const beats = grid(128, 0.1, 32);
+		for (const deck of [1, 2]) {
+			Object.assign(ds[deck], {
+				stable_id: `track-${deck}`,
+				duration_ms: beats.at(-1).t * 1000,
+				anlz: { beatgrid: { source: 'rekordbox', beats, beat_count: beats.length, status: 'ok' } }
+			});
+		}
+		ds[1].beat_sync_enabled = true;
+		ds[2].beat_sync_enabled = false;
+		ds[2].playing = true;
+		const out = glue.midiLedFeedback(flx4.FLX4_MAP);
+		assert.ok(out.some((o) => o.ch === 1 && o.note === 0x58 && o.velocity === 0x7f));
+		assert.ok(out.some((o) => o.ch === 2 && o.note === 0x58 && o.velocity === 0x00));
+		ds[1].anlz = null;
+		const outGridless = glue.midiLedFeedback(flx4.FLX4_MAP);
+		assert.ok(outGridless.some((o) => o.ch === 1 && o.note === 0x58 && o.velocity === 0x00));
+	} finally {
+		for (const deck of [1, 2]) {
+			Object.assign(ds[deck], saved[deck - 1]);
+		}
+	}
+});
+
+test('FLX4 pad mode LEDs: the selected mode is lit, the others unlit', () => {
+	try {
+		padRuntime.resetControllerPadRuntime();
+		let out = glue.midiLedFeedback(flx4.FLX4_MAP);
+		assert.ok(out.some((o) => o.ch === 1 && o.note === 0x1b && o.velocity === 0x7f));
+		assert.ok(out.some((o) => o.ch === 1 && o.note === 0x1e && o.velocity === 0x00));
+		assert.ok(out.some((o) => o.ch === 1 && o.note === 0x22 && o.velocity === 0x00));
+		assert.ok(
+			!out.some((o) => o.ch === 1 && o.note === 0x20 && o.velocity !== 0x00),
+			'BEAT JUMP has no LED rule'
+		);
+		padRuntime.selectControllerPadMode(
+			undefined,
+			1,
+			'sampler',
+			() => {},
+			() => {}
+		);
+		out = glue.midiLedFeedback(flx4.FLX4_MAP);
+		assert.ok(out.some((o) => o.ch === 1 && o.note === 0x22 && o.velocity === 0x7f));
+		assert.ok(out.some((o) => o.ch === 1 && o.note === 0x1b && o.velocity === 0x00));
+		assert.ok(out.some((o) => o.ch === 1 && o.note === 0x1e && o.velocity === 0x00));
+		assert.ok(out.some((o) => o.ch === 2 && o.note === 0x1b && o.velocity === 0x7f));
+	} finally {
+		padRuntime.resetControllerPadRuntime();
+	}
 });
 
 // ------------------------------------------- per-device shift layer (CTRL)

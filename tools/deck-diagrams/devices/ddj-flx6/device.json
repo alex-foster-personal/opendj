@@ -1,0 +1,9 @@
+{
+ "map_name": "DDJ-FLX6",
+ "map_const": "FLX6_MAP",
+ "map_ts": "apps/webui/frontend/src/lib/rb/midi/maps/ddj-flx6.ts",
+ "panel_w": 676.0,
+ "panel_d": 345.7,
+ "panel_size_source": "DDJ-FLX6 product page, Specifications (676 x 345.7 mm)",
+ "display_name": "4-channel performance controller"
+}

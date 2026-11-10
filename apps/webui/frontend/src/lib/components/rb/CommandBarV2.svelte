@@ -57,7 +57,13 @@
 	import { filterForKeyCode, type LibraryFilterId } from '$lib/rb/library-filter-labels';
 	import { libraryIndexIsCurrent, loadLibraryIndex, onLibraryIndexInvalidated, peekLibraryIndex } from '$lib/rb/library-index';
 	import { createPickLoader, deckLoadMark, loadCommitted, settleForLoad, waitDeckIdle, type LoadGuard, type SettleMeta } from '$lib/rb/cmdk-load';
-	import { bpmConfidenceIn, compatibleKeyChecked, computeNextOnlyRef } from '$lib/rb/next-only-filter';
+	import {
+		bpmConfidenceIn,
+		compatibleKeyChecked,
+		computeNextOnlyRef,
+		energyIn,
+		nextOnlyReferenceDeck
+	} from '$lib/rb/next-only-filter';
 	import CmdkDeckRings from './cmdk/CmdkDeckRings.svelte';
 	import CmdkFilterRow from './cmdk/CmdkFilterRow.svelte';
 	import CmdkPreviewStrip from './cmdk/CmdkPreviewStrip.svelte';
@@ -112,6 +118,7 @@
 	import { ensureBeatgridFallback, getBeatgridFallbackEntry } from './wave/beatgrid-fallback-cache.svelte';
 	import { beatgridFallbackGate, paintAnlzForRow, readyBeatgridFallback } from './wave/wave-row-beatgrid-fallback';
 	import { sectionSpans } from './wave/sections';
+	import { formatListTotalsLine, summarizeListTotals } from '$lib/rb/list-totals';
 
 	/** What a row needs to be searched, filtered and loaded. */
 	type CmdkRow = SearchableRow &
@@ -232,21 +239,28 @@
 	const tokens = $derived(queryTokens(query));
 	/** The settings search's words: the hint and Enter read the option the shown row was found by. */
 	const settingTokens = $derived(actionTokens(query));
-	const ref = $derived(
-		computeNextOnlyRef(
-			DECK_IDS.map((d) => ({
-				is_master: decks[d].is_master,
-				playing: decks[d].playing,
-				stable_id: decks[d].stable_id,
-				key: decks[d].key,
-				bpm: decks[d].bpm,
-				pitch: decks[d].pitch,
-				bpm_confidence: bpmConfidenceIn(decks[d].stable_id, collection),
-				key_shift_semitones: decks[d].key_shift_semitones
-			})),
-			compatibleKeyChecked(uiPrefs.compatible_filter)
-		)
+	const refSlices = $derived(
+		DECK_IDS.map((d) => ({
+			is_master: decks[d].is_master,
+			playing: decks[d].playing,
+			stable_id: decks[d].stable_id,
+			key: decks[d].key,
+			bpm: decks[d].bpm,
+			pitch: decks[d].pitch,
+			bpm_confidence: bpmConfidenceIn(decks[d].stable_id, collection),
+			key_shift_semitones: decks[d].key_shift_semitones
+		}))
 	);
+	const ref = $derived.by(() => {
+		const r = computeNextOnlyRef(
+			refSlices,
+			compatibleKeyChecked(uiPrefs.compatible_filter)
+		);
+		if (r === null) return null;
+		// SETPREP-11947: the reference track's MIK energy, for the energy rule.
+		const deck = nextOnlyReferenceDeck(refSlices, compatibleKeyChecked(uiPrefs.compatible_filter));
+		return { ...r, energy: energyIn(deck?.stable_id ?? null, collection) };
+	});
 	const states = $derived(filterStates(uiPrefs));
 	/** Pane rows lack album and notes; the index row with the same id fills them for search. */
 	const playlistRows = $derived(fillSearchFields(rows, collection));
@@ -283,6 +297,19 @@
 	/** A playlist can hold one track twice (LIBM-03), so its rows are keyed by membership. */
 	const playlistKeys = $derived(rowKeys(groups.playlist.rows));
 	const lists = $derived(matchLists(playlists, query, LIST_LIMIT));
+	const cmdkSearchTotalsLine = $derived.by(() => {
+		if (!trackSearch || tokens.length === 0 || awaitingCollection) return null;
+		const seen = new Set<string>();
+		const rows: { duration_ms: number | null }[] = [];
+		for (const row of [...groups.playlist.rows, ...groups.collection.rows]) {
+			if (seen.has(row.stable_id)) continue;
+			seen.add(row.stable_id);
+			rows.push({ duration_ms: row.duration_ms ?? null });
+		}
+		const totals = summarizeListTotals(rows);
+		if (totals.count === 0) return null;
+		return formatListTotalsLine(totals);
+	});
 
 	// ---- CMDK-11..16: settings and commands as results ----
 
@@ -2350,6 +2377,13 @@
 				</ul>
 				{/if}
 				<div class="foot" data-testid="command-bar-status">
+					{#if cmdkSearchTotalsLine !== null}
+						<span
+							data-testid="command-bar-list-totals"
+							title="Track count and summed duration for matches in this search with library filters applied"
+							>{cmdkSearchTotalsLine}</span
+						>
+					{/if}
 					{#if collectionError !== null}
 						<span class="err" role="alert">Collection search unavailable: {collectionError}</span>
 					{:else if actionError !== null}
@@ -2753,5 +2787,11 @@
 	}
 	.foot .err {
 		color: var(--rb-red, #ff6b6b);
+	}
+
+	.q:focus-visible {
+		/* A11Y-11403: keyboard focus ring paired with this file's outline reset. */
+		outline: 2px solid var(--rb-focus-ring);
+		outline-offset: 2px;
 	}
 </style>

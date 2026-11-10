@@ -24,6 +24,12 @@ def _text_summary(document: dict[str, Any]) -> str:
     )
 
 
+def fetch_status_document(lock: Path | None = None) -> dict[str, Any]:
+    """Return the ``status --json`` document for *lock*, or refuse before HTTP."""
+    origin = resolve_origin(lock)
+    return build_engine_status(origin)
+
+
 def run(
     rest: Sequence[str],
     *,
@@ -38,10 +44,9 @@ def run(
             EXIT_FAILED,
         )
     try:
-        origin = resolve_origin(lock)
+        document = fetch_status_document(lock)
     except EngineNotRunning as error:
         return _fail(as_json, "engine_not_running", str(error), EXIT_NO_ENGINE)
-    document = build_engine_status(origin)
     if as_json:
         print(json.dumps(document, indent=2, sort_keys=True))
     else:

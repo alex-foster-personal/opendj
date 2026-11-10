@@ -44,6 +44,7 @@ import pytest
 from apps.analysis import backlog as backlog_mod
 from apps.analysis import store as analysis_store
 from apps.shared.state.db import open_rw as open_state_rw
+from apps.webui.server.auto_analyze_prefs import DEFAULT_AUTO_LANES
 
 _TS = "2026-09-01T00:00:00Z"
 
@@ -115,6 +116,7 @@ def _add_analysis(db: Path, sid: str, *, backend: str = "librosa") -> None:
 
 
 def _scan(db: Path, **kwargs):
+    kwargs.setdefault("lanes", DEFAULT_AUTO_LANES)
     conn = sqlite3.connect(db)
     try:
         return backlog_mod.scan(conn, **kwargs)
@@ -503,7 +505,7 @@ def test_a_folder_import_larger_than_the_sqlite_bind_limit_still_scans(state_db)
         )
         conn.commit()
 
-        out = backlog_mod.scan(conn)
+        out = backlog_mod.scan(conn, lanes=DEFAULT_AUTO_LANES)
     finally:
         conn.close()
 
@@ -543,7 +545,7 @@ def test_a_track_whose_only_path_is_a_local_location_row_is_queued(state_db, tmp
     _add_location(state_db, "loc0001", audio)
 
     with sqlite3.connect(state_db) as conn:
-        result = backlog_mod.scan(conn)
+        result = backlog_mod.scan(conn, lanes=DEFAULT_AUTO_LANES)
 
     assert [item.stable_id for item in result.pending] == ["loc0001"]
     assert result.pending[0].file_path == str(audio), (
@@ -561,7 +563,7 @@ def test_a_stale_legacy_path_falls_back_to_the_local_location(state_db, tmp_path
     _add_location(state_db, "loc0002", audio)
 
     with sqlite3.connect(state_db) as conn:
-        result = backlog_mod.scan(conn)
+        result = backlog_mod.scan(conn, lanes=DEFAULT_AUTO_LANES)
 
     assert result.unreachable == 0, (
         "the track was counted unreachable at its stale legacy path while a "
@@ -588,7 +590,7 @@ def test_corrupt_legacy_and_valid_location_queue_playback_winner(
     _add_location(state_db, sid, valid)
 
     with sqlite3.connect(state_db) as conn:
-        result = backlog_mod.scan(conn)
+        result = backlog_mod.scan(conn, lanes=DEFAULT_AUTO_LANES)
         picked = locations_mod.pick_playable(conn, sid)
 
     assert picked is not None
@@ -675,7 +677,7 @@ def test_a_retired_record_is_queued_again_and_a_current_one_is_not(tmp_path: Pat
     queued = filter_missing([TrackRef("sid-a", audio)], backend_name=_RETIRED_BACKEND, db_path=db)
     conn = sqlite3.connect(db)
     try:
-        pending = [item.stable_id for item in backlog_mod.scan(conn).pending]
+        pending = [item.stable_id for item in backlog_mod.scan(conn, lanes=DEFAULT_AUTO_LANES).pending]
     finally:
         conn.close()
     if retire:

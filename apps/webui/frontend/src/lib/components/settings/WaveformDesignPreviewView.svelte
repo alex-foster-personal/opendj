@@ -11,6 +11,7 @@
 		palette,
 		colors,
 		sample,
+		gridLines,
 		label = 'Waveform design preview'
 	}: {
 		paint: WaveformPreviewPaintFn;
@@ -18,6 +19,7 @@
 		palette: string;
 		colors: Parameters<WaveformPreviewPaintFn>[4];
 		sample: Parameters<WaveformPreviewPaintFn>[5];
+		gridLines: Parameters<WaveformPreviewPaintFn>[6];
 		label?: string;
 	} = $props();
 
@@ -49,7 +51,7 @@
 		el.width = Math.round(cssWidth * dpr);
 		el.height = Math.round(PREVIEW_HEIGHT_PX * dpr);
 		ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-		paint(ctx, cssWidth, PREVIEW_HEIGHT_PX, active, colors, sample);
+		paint(ctx, cssWidth, PREVIEW_HEIGHT_PX, active, colors, sample, gridLines);
 	});
 </script>
 
@@ -60,6 +62,7 @@
 	height={PREVIEW_HEIGHT_PX}
 	data-design={active}
 	data-palette={palette}
+	data-grid-lines={gridLines}
 	aria-label={label}
 ></canvas>
 

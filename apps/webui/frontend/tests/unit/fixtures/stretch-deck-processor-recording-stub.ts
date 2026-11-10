@@ -18,6 +18,12 @@ export interface RecordedStretchProcessor {
 	connected: boolean;
 	disposed: boolean;
 	schedules: Array<{ outputTime: number; change: Record<string, unknown> }>;
+	/** Incremented at the top of each `schedule()` call; tests can wait on entry. */
+	scheduleEntered: number;
+	/** When set, the next `schedule()` clears it and rejects with it (one-shot). */
+	scheduleError?: Error;
+	/** When set, `schedule()` awaits this before it records the change. */
+	scheduleHold?: Promise<void>;
 	/** Set by a test before the swap to make `connect` throw: a swap that fails on a deck that is not playing. */
 	connectError?: Error;
 	/** Awaited by `dispose` first, so a test can hold the window a failed swap leaves open. */
@@ -41,7 +47,8 @@ export class StretchDeckProcessor {
 			options,
 			connected: false,
 			disposed: false,
-			schedules: []
+			schedules: [],
+			scheduleEntered: 0
 		};
 		registry().push(record);
 		return {
@@ -59,6 +66,13 @@ export class StretchDeckProcessor {
 			},
 			async schedule(outputTime: number, change: Record<string, unknown>) {
 				if (record.disposed) throw new Error('stretch stub: schedule after dispose');
+				record.scheduleEntered += 1;
+				if (record.scheduleError !== undefined) {
+					const err = record.scheduleError;
+					delete record.scheduleError;
+					throw err;
+				}
+				if (record.scheduleHold !== undefined) await record.scheduleHold;
 				record.schedules.push({ outputTime, change });
 			},
 			async stop(outputTime: number) {

@@ -9,8 +9,9 @@
  *
  * HARDWARE: the XDJ-AZ was connected to the set build (da92dbd1) on Fri 6 Nov
  * 2026 (issue #10288): the port name matched this map, PLAY, CUE, pads, browse
- * and LOAD worked, and the jogs worked without SHIFT (they do nothing while
- * SHIFT is held). The RX3 has not been connected to this code.
+ * and LOAD worked, and the jogs worked without SHIFT. Shifted jog twins
+ * (CC 41 platter, CC 38 wheel side) are bound here so the jogs keep working
+ * while SHIFT is held (issue #10284). The RX3 has not been connected to this code.
  *
  * Channel layout: deck n -> channel n; browser -> 1; mixer and effects -> 5.
  *   RX3 pads: deck n -> channel 5 + n.
@@ -24,7 +25,10 @@
  * 0D) as the faders were pushed up, so the vendor list is the error.
  *
  * Jog rotation centres on 64 on both units, hence relativeCentered. Paused it
- * scrubs, playing it bends the tempo. There is no scratch: jog touch is unbound.
+ * scrubs, playing it bends the tempo. On the AZ, SHIFT sends twin CCs 41/38;
+ * those bind as deck_jog with scale 4 so a paused scrub is 4x coarser (rekordbox
+ * fast-search mimic). Bend while playing uses the same strength as the base
+ * wires. There is no scratch: jog touch is unbound.
  *
  * OUT OF CONTRACT (hints only): jog touch, needle search, track and fast search,
  * slip, reverse, quantize, Beat FX. No MidiAction exists for them.
@@ -241,7 +245,25 @@ function _azOnlyBindings(deck: DeckId): MidiBinding[] {
 		{ source: pioneerNote(ch, 63), action: { type: 'shift_modifier' } },
 		{ source: pioneerNote(ch, 20), action: { type: 'deck_key_sync_toggle', deck } },
 		{ source: pioneerNote(ch, 67), action: { type: 'deck_beat_loop', deck, beats: 4 } },
-		{ source: pioneerNote(ch, 68), action: { type: 'deck_beat_loop', deck, beats: 8 } }
+		{ source: pioneerNote(ch, 68), action: { type: 'deck_beat_loop', deck, beats: 8 } },
+		// SHIFT twins: platter CC 41 (base 34), wheel side CC 38 (base 33).
+		{
+			source: pioneerCc(ch, 41),
+			action: { type: 'deck_jog', deck, scale: 4 },
+			relative: true,
+			relativeCentered: true
+		},
+		{
+			source: pioneerCc(ch, 38),
+			action: { type: 'deck_jog', deck, scale: 4 },
+			relative: true,
+			relativeCentered: true
+		},
+		// 23/25 are the hardware SHIFT twins (distinct note ids, not shift: true).
+		{ source: pioneerNote(ch, 22), action: { type: 'deck_beat_jump', deck, beats: 1 } },
+		{ source: pioneerNote(ch, 23), action: { type: 'deck_beat_jump', deck, beats: 4 } },
+		{ source: pioneerNote(ch, 24), action: { type: 'deck_beat_jump', deck, beats: -1 } },
+		{ source: pioneerNote(ch, 25), action: { type: 'deck_beat_jump', deck, beats: -4 } }
 	];
 }
 
@@ -275,10 +297,6 @@ function _azDeckHints(deck: DeckId): ControlHint[] {
 		[21, 'DECK SELECT'],
 		[18, 'JOG MODE'],
 		[42, 'VINYL SPEED ADJUST'],
-		[22, 'BEAT JUMP FWD'],
-		[23, 'BEAT JUMP FWD +SHIFT'],
-		[24, 'BEAT JUMP REV'],
-		[25, 'BEAT JUMP REV +SHIFT'],
 		[11, 'CUE/LOOP CALL NEXT'],
 		[12, 'CUE/LOOP CALL PREV'],
 		[13, 'CUE/LOOP DELETE'],
@@ -295,7 +313,6 @@ function _azDeckHints(deck: DeckId): ControlHint[] {
 			source: pioneerNote(ch, note),
 			label: label(name)
 		})),
-		{ source: pioneerCc(ch, 41), label: label('JOG +SHIFT') },
 		...HOT_CUE_SLOTS.map((slot, pad): ControlHint => {
 			const wire = azPadWire(deck, pad);
 			return {

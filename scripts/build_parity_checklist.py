@@ -12,15 +12,16 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+from scripts import build_reqs_json
+
 ROOT = Path(__file__).resolve().parent.parent
-REQS = ROOT / "reqs.json"
 OUT = ROOT / "specs" / "parity-checklist.md"
 
 _SHIPPED = {"shipped", "done", "complete"}
 
 
 def main() -> None:
-    data = json.loads(REQS.read_text())
+    data = json.loads(build_reqs_json.ensure_output().read_text())
     v1 = data["v1"]
     lines = [
         "# Parity checklist - agentB rebuild lane",

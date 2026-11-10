@@ -79,3 +79,25 @@
 	border-style: dashed;
 	cursor: not-allowed;
 }
+/* STEMPERF-11695: quick modes; the active one carries the accent. */
+.quick {
+	background: transparent;
+	border: 1px solid var(--rb-border);
+	border-radius: 2px;
+	color: var(--rb-stem-ink, var(--rb-text));
+	font-family: var(--rb-font);
+	font-size: var(--rb-fs-label);
+	font-weight: 600;
+	padding: 1px 6px;
+	cursor: pointer;
+}
+.quick.active {
+	border-color: var(--rb-accent, #49c8ff);
+	color: color-mix(in srgb, var(--rb-accent, #49c8ff) 60%, var(--rb-text));
+}
+.quick:disabled {
+	color: var(--rb-text-dim);
+	border-color: var(--rb-border);
+	cursor: default;
+	opacity: 0.6;
+}

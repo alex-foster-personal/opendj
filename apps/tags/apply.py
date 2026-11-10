@@ -10,7 +10,8 @@ Per-file flow:
 4. Write the unified tags via ``apps.shared.tag_writer.write_tags``.
 5. Re-read the file, diff against the plan. On mismatch, restore from
    backup and fail the batch.
-6. Append rows to ``tag_provenance`` (one per field) in the dedup DB.
+6. Record the ``tag_provenance`` rows (one per field) and one
+   ``tags.provenance`` event in one StateWriter unit in the dedup DB.
 7. Emit a per-batch reversal script that restores each file from its
    sha256-keyed backup.
 """
@@ -29,6 +30,9 @@ from pathlib import Path
 from apps.dedup import contract as dedup_contract
 from apps.shared import paths
 from apps.shared.hashing import sha256_file_hex
+from apps.shared.state.db import StateStoreBusyError
+from apps.shared.state.events import FakeEventBus
+from apps.shared.state.writer import StateWriter, TagProvenanceRow
 from apps.shared.tag_writer import read_tags, write_tags
 
 from . import collect as tag_collect
@@ -82,37 +86,32 @@ def _backup(path: Path, root: Path) -> Path:
     return dst
 
 
-def _insert_provenance(
-    conn: sqlite3.Connection,
+def _record_provenance(
+    writer: StateWriter,
     *,
     stable_id: str,
     plan: tag_unify.UnifiedPlan,
 ) -> None:
     rows = [
-        (
-            stable_id,
-            field,
-            "" if getattr(plan.tags, field) is None else str(getattr(plan.tags, field)),
-            prov.source,
-            prov.confidence,
-            prov.modified_at,
+        TagProvenanceRow(
+            field=field,
+            value="" if getattr(plan.tags, field) is None else str(getattr(plan.tags, field)),
+            source=prov.source,
+            confidence=prov.confidence,
+            modified_at=prov.modified_at,
         )
         for field, prov in plan.provenance.items()
     ]
-    conn.executemany(
-        "INSERT INTO tag_provenance "
-        "(stable_id, field, value, source, confidence, modified_at) "
-        "VALUES (?, ?, ?, ?, ?, ?)",
-        rows,
-    )
-    conn.commit()
+    if not rows:
+        return
+    writer.record_tag_provenance(stable_id=stable_id, rows=rows)
 
 
 def apply_one(
     path: Path,
     *,
     backup_root: Path,
-    dedup_conn: sqlite3.Connection | None = None,
+    provenance_writer: StateWriter | None = None,
     stable_id: str | None = None,
     allow_app_running: bool = False,
     dry_run: bool = False,
@@ -191,7 +190,7 @@ def apply_one(
             error="verify failed: " + "; ".join(mismatches),
         )
 
-    if dedup_conn is not None and stable_id is not None:
+    if provenance_writer is not None and stable_id is not None:
         # P07-02: the audio write has succeeded + been verified by this
         # point. A provenance-insert failure used to propagate and abort
         # the batch without rolling the file back, which was silently
@@ -199,8 +198,8 @@ def apply_one(
         # record of the change. Catch and surface as a non-fatal warning
         # on the result so the caller can log it and continue.
         try:
-            _insert_provenance(dedup_conn, stable_id=stable_id, plan=plan)
-        except sqlite3.DatabaseError as exc:
+            _record_provenance(provenance_writer, stable_id=stable_id, plan=plan)
+        except (sqlite3.DatabaseError, StateStoreBusyError) as exc:
             return ApplyResult(
                 path=path,
                 applied=result.applied,
@@ -247,7 +246,9 @@ def run_apply(
     dedup_db = dedup_db_path or paths.DEDUP_FALLBACK_DB
 
     dedup_contract.ensure_schema(dedup_db)
-    conn = sqlite3.connect(dedup_db)
+    conn = sqlite3.connect(dedup_db, isolation_level=None)
+    # Synchronous in-process bus: no subscribers on the dedup DB, no thread to leak.
+    writer = StateWriter(conn, FakeEventBus(), actor="tags.apply")
     try:
         results: list[ApplyResult] = []
         for path in files:
@@ -255,7 +256,7 @@ def run_apply(
             res = apply_one(
                 path,
                 backup_root=backup_root,
-                dedup_conn=conn if not dry_run else None,
+                provenance_writer=writer if not dry_run else None,
                 stable_id=sid,
                 allow_app_running=allow_app_running,
                 dry_run=dry_run,
@@ -265,6 +266,7 @@ def run_apply(
             )
             results.append(res)
     finally:
+        writer.close()
         conn.close()
 
     # Only emit a reversal script when there is at least one successful

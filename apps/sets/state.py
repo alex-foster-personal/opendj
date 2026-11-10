@@ -39,6 +39,7 @@ from pathlib import Path
 from typing import Any
 
 from . import paths as sets_paths
+from .control_events import ControlEventV2
 from .manifest import now_iso
 
 # ---------------------------------------------------------------------------
@@ -71,6 +72,23 @@ SCHEMA_SQL: tuple[str, ...] = (
     )
     """,
     "CREATE INDEX IF NOT EXISTS idx_events_session ON events(session_id, timestamp_s)",
+    """
+    CREATE TABLE IF NOT EXISTS control_events (
+        id              INTEGER PRIMARY KEY AUTOINCREMENT,
+        session_id      TEXT NOT NULL REFERENCES sets(session_id) ON DELETE CASCADE,
+        seq             INTEGER NOT NULL,
+        sample          INTEGER NOT NULL,
+        sample_rate     INTEGER NOT NULL,
+        wall_clock      TEXT NOT NULL,
+        control         TEXT NOT NULL,
+        value_json      TEXT NOT NULL,
+        kind            TEXT NOT NULL CHECK (kind IN ('set', 'trigger')),
+        source          TEXT NOT NULL,
+        deck            INTEGER,
+        UNIQUE(session_id, seq)
+    )
+    """,
+    "CREATE INDEX IF NOT EXISTS idx_control_events_session ON control_events(session_id, seq)",
 )
 
 
@@ -94,6 +112,8 @@ _PHASE5_SCHEMA_SQL: tuple[str, ...] = (
     )
     """,
     "CREATE INDEX IF NOT EXISTS idx_set_events_session ON set_events(session_id, timestamp_s)",
+    SCHEMA_SQL[3],
+    SCHEMA_SQL[4],
 )
 
 
@@ -366,6 +386,75 @@ class SetsState:
                 (session_id,),
             ).fetchone()
         return int(row[0] if row else 0)
+
+    def record_control_event(self, event: ControlEventV2) -> int:
+        with self._rw() as conn:
+            cur = conn.execute(
+                """
+                INSERT INTO control_events(
+                    session_id, seq, sample, sample_rate, wall_clock, control,
+                    value_json, kind, source, deck
+                )
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    event.session_id,
+                    event.seq,
+                    event.sample,
+                    event.sample_rate,
+                    event.wall_clock,
+                    event.control,
+                    json.dumps(event.value, separators=(",", ":")),
+                    event.kind,
+                    event.source,
+                    event.deck,
+                ),
+            )
+            return int(cur.lastrowid or 0)
+
+    def max_control_seq(self, session_id: str) -> int | None:
+        with self._rw() as conn:
+            row = conn.execute(
+                "SELECT MAX(seq) FROM control_events WHERE session_id = ?",
+                (session_id,),
+            ).fetchone()
+        if row is None or row[0] is None:
+            return None
+        return int(row[0])
+
+    def list_control_events(self, session_id: str) -> list[ControlEventV2]:
+        from .control_events import parse_control_event_v2
+
+        with self._rw() as conn:
+            rows = conn.execute(
+                """
+                SELECT session_id, seq, sample, sample_rate, wall_clock, control,
+                       value_json, kind, source, deck
+                FROM control_events
+                WHERE session_id = ?
+                ORDER BY seq ASC
+                """,
+                (session_id,),
+            ).fetchall()
+        out: list[ControlEventV2] = []
+        for row in rows:
+            value = json.loads(row[6])
+            payload = {
+                "v": 2,
+                "session_id": row[0],
+                "seq": row[1],
+                "sample": row[2],
+                "sample_rate": row[3],
+                "wall_clock": row[4],
+                "control": row[5],
+                "value": value,
+                "kind": row[7],
+                "source": row[8],
+            }
+            if row[9] is not None:
+                payload["deck"] = int(row[9])
+            out.append(parse_control_event_v2(payload))
+        return out
 
 
 def _row_to_event(row: tuple[Any, ...]) -> Event:

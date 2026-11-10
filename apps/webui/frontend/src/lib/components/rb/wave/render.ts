@@ -15,6 +15,7 @@ import { vocalsOf } from '$lib/rb/vocals';
 import { shouldPaintBeatGrid } from '$lib/player/grid-features';
 import type { AnlzBeat, AnlzData, AnlzTempoChange, AnlzWaveform } from '$lib/rb/anlz-types';
 import type { LoopState } from '$lib/rb/deck-state-types';
+import type { WaveGridLines } from '$lib/rb/wave-grid-lines';
 import type { WaveformDesign } from '$lib/rb/waveform-design';
 import type { BandGains } from '$lib/rb/wave-eq-gains.svelte';
 import {
@@ -41,6 +42,7 @@ import {
 	LOOP_MIN_BAND_PX,
 	loopBandPx,
 	visibleBeatLines,
+	type BeatLineGeometry,
 	type LoopBandSource
 } from './wave-math';
 import { blockSnapApiFor, type BlockSnapApi } from './block-layout-lazy.svelte';
@@ -367,6 +369,8 @@ export interface WaveRowFrame {
 	tempoScale?: TempoLaneScale;
 	/** `show_tempo_lane` off: no tempo marks at all on this row. */
 	hideTempo?: boolean;
+	/** issue #10244 `wave_grid_lines`; default beats_bars. */
+	gridLines?: WaveGridLines;
 }
 
 /** Paint one full row frame. ctx must already be DPR-scaled so all
@@ -473,7 +477,8 @@ export function drawWaveRow(ctx: CanvasRenderingContext2D, frame: WaveRowFrame):
 				h,
 				palette,
 				frame.anlz.beatgrid.bar_phase_untrusted === true,
-				originPx
+				originPx,
+				frame.gridLines ?? 'beats_bars'
 			);
 			if (frame.hideTempo === true) {
 				// show_tempo_lane is off: nothing about tempo on this row.
@@ -1367,10 +1372,24 @@ function _drawBeatGrid(
 	h: number,
 	palette: WavePalette,
 	barPhaseUntrusted = false,
-	originPx?: number
+	originPx?: number,
+	gridLines: WaveGridLines = 'beats_bars'
 ): void {
-	ctx.fillStyle = palette.tick;
-	for (const line of visibleBeatLines(beats, tLeft, pxPerS, w, h, barPhaseUntrusted, originPx)) {
+	drawBeatGridLines(
+		ctx,
+		visibleBeatLines(beats, tLeft, pxPerS, w, h, barPhaseUntrusted, originPx, undefined, gridLines),
+		palette.tick
+	);
+}
+
+/** The one beat-line painter, shared by the deck and the Settings preview. */
+export function drawBeatGridLines(
+	ctx: CanvasRenderingContext2D,
+	lines: readonly BeatLineGeometry[],
+	color: string
+): void {
+	ctx.fillStyle = color;
+	for (const line of lines) {
 		// The low-alpha grid remains visible through the waveform. The original
 		// 8px/4px beat caps are then repainted at their stronger alpha.
 		ctx.globalAlpha = line.alpha;

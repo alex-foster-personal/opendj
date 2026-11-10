@@ -224,4 +224,39 @@ def _rounded(refs: dict[str, float]) -> dict[str, float]:
     return {k: _dec1(v) for k, v in refs.items()}
 
 
-__all__ = ["DJ_LABELS", "RULES", "label_sections"]
+def structure_suggestion_id(section: dict[str, Any]) -> str:
+    """Stable id for one structure section suggestion (NICHE, parent #345)."""
+    label = section.get("dj_label") or ""
+    return f"structure:{section['start_s']}:{section['end_s']}:{label}"
+
+
+def structure_niche_suggestions(
+    sections: Sequence[dict[str, Any]], dj_summary: dict[str, Any]
+) -> list[dict[str, Any]]:
+    """AI suggestions from labeled own sections; empty when ``dj_labels`` is unlabeled."""
+    if dj_summary.get("status") != "ok":
+        return []
+    out: list[dict[str, Any]] = []
+    for section in sections:
+        label = section.get("dj_label")
+        if not label:
+            continue
+        out.append(
+            {
+                "suggestion_id": structure_suggestion_id(section),
+                "start_s": float(section["start_s"]),
+                "end_s": float(section["end_s"]),
+                "label": str(label),
+                "source": "structure",
+            }
+        )
+    return out
+
+
+__all__ = [
+    "DJ_LABELS",
+    "RULES",
+    "label_sections",
+    "structure_niche_suggestions",
+    "structure_suggestion_id",
+]

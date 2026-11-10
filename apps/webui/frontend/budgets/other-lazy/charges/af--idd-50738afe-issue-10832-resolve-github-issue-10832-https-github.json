@@ -1,0 +1,9 @@
+{
+  "bytes": 1024,
+  "measured_main": 504209,
+  "measured_with_pr": 504547,
+  "sha": "8fc49594db",
+  "date": "Tue 10 Nov 2026",
+  "reason": "Issue #10832 adds the live Hercules DJ Console Mac Edition DeviceMap, globbed into the MIDI maps chunk. Measured locally: +338 B gzip on other-lazy; ceiled to KiB.",
+  "payback": "none planned; the growth is the new controller map"
+}

@@ -74,6 +74,22 @@ export function contrastRatio(hexA: string, hexB: string): number {
   return (lighter + 0.05) / (darker + 0.05);
 }
 
+/** Coarse floor (Euclidean sRGB distance, 0-255 channels) that tells two hues apart. */
+export const DISTINCT_COLOUR_MIN_DISTANCE = 100;
+
+/**
+ * True when two colours are far enough apart in sRGB to read as different
+ * hues (A11Y-11403: the keyboard focus ring must never look like the selector
+ * accent). A coarse floor, enough to tell amber from blue or grey, not a
+ * perceptual metric.
+ */
+export function isDistinctFrom(hexA: string, hexB: string): boolean {
+  const a = parseHex(hexA);
+  const b = parseHex(hexB);
+  const distance = Math.hypot(a.r - b.r, a.g - b.g, a.b - b.b);
+  return distance >= DISTINCT_COLOUR_MIN_DISTANCE;
+}
+
 // ----- pulling a scheme's tokens out of theme.css --------------------------
 /**
  * The hex-valued `--rb-*` custom properties declared inside ONE selector's
@@ -195,6 +211,9 @@ export const DECORATIVE_TOKENS: readonly string[] = [
 ];
 
 export const PAIRINGS: ContrastPairing[] = [
+  { fg: "rb-focus-ring", bg: "rb-bg", level: "non-text", label: "keyboard focus ring on window background (A11Y-11403)" },
+  { fg: "rb-focus-ring", bg: "rb-panel", level: "non-text", label: "focus ring on panel surface" },
+  { fg: "rb-focus-ring", bg: "rb-panel-raised", level: "non-text", label: "focus ring on deck header / raised chrome" },
   { fg: "rb-text", bg: "rb-bg", level: "body", label: "primary text on window background" },
   { fg: "rb-text", bg: "rb-panel", level: "body", label: "primary text on panel surface" },
   {
@@ -326,6 +345,12 @@ export const PAIRINGS: ContrastPairing[] = [
     level: "non-text",
     label: "PAIR fold arrow, opaque --rb-pair (PAIR-09); the subdued row ring is not covered here, see (private path)",
   },
+  // #10370: --rb-accent-text (top-bar on-state toggle text) and --rb-warn-text
+  // (enrich pill "needs you" flag) are body text on panel and raised chips.
+  { fg: "rb-accent-text", bg: "rb-panel", level: "body", label: "on-state toggle text on the top bar (BeatSyncMax, LYR, AutoPlay; #10370)" },
+  { fg: "rb-accent-text", bg: "rb-panel-raised", level: "body", label: "on-state toggle text on its raised chip" },
+  { fg: "rb-warn-text", bg: "rb-panel", level: "body", label: "enrich pill 'needs you' flag" },
+  { fg: "rb-warn-text", bg: "rb-panel-raised", level: "body", label: "warning text on raised chrome" },
 ];
 
 /**

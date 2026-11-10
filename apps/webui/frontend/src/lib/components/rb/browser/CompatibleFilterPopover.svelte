@@ -4,7 +4,7 @@
 	import { PendingKeyBuffer } from './pending-key-buffer';
 
 	type PanelComponent = Component<
-		{ onEnter: () => void; onLeave: () => void },
+		{ onEnter: () => void; onLeave: () => void; energyNote?: string | null },
 		{ handleKey: (e: KeyboardEvent) => void }
 	>;
 
@@ -19,10 +19,12 @@
 	let {
 		children,
 		mode,
+		energyNote = null,
 		loadPanel = loadRangePanel
 	}: {
 		children: Snippet;
 		mode: CompatibleMode;
+		energyNote?: string | null;
 		loadPanel?: () => Promise<PanelComponent | null>;
 	} = $props();
 	let open = $state(false);
@@ -130,7 +132,7 @@
 		data-mode={mode}
 	>{mode === 'mashup' ? 'MSH' : 'TRN'}</span>
 	{#if open && Panel !== null}
-		<Panel bind:this={panelRef} onEnter={_clearCloseTimer} onLeave={_scheduleClose} />
+		<Panel bind:this={panelRef} onEnter={_clearCloseTimer} onLeave={_scheduleClose} {energyNote} />
 	{/if}
 </div>
 

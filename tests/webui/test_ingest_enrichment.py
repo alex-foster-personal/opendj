@@ -36,6 +36,9 @@ from apps.webui.server.ingest_enrichment import (
     EnrichmentCoordinator,
     EnrichmentSources,
     EnrichWarning,
+    GenreFillOutcome,
+    GenreFillRun,
+    GENRE_LANE,
     LaneFacts,
 )
 
@@ -86,6 +89,8 @@ class Rig:
         self.retried: list[str] = []
         self.forgotten: list[str] = []
         self.warnings: list[EnrichWarning] = []
+        self.filled_genres: list[list[str]] = []
+        self.genre_available = (True, "")
         self.playlists: dict[str, list[str]] = {}
         self.covers = FakeCovers()
         self.store = tmp_path / "state" / ie.STORE_FILENAME
@@ -102,10 +107,20 @@ class Rig:
                 prioritize_fn=lambda ids: self.prioritized.append(list(ids)),
                 retry_fn=self.retried.extend,
                 forget_misses_fn=self.forgotten.extend,
+                fill_genres_fn=self._fill_genres,
+                genre_providers_available_fn=lambda: self.genre_available,
                 store_path=self.store,
             ),
             covers=self.covers,  # type: ignore[arg-type]
             clock=lambda: 1_000.0,
+        )
+
+    def _fill_genres(self, ids: Sequence[str]) -> GenreFillRun:
+        self.filled_genres.append(list(ids))
+        return GenreFillRun(
+            tuple(GenreFillOutcome(sid, "filled") for sid in ids),
+            agree=0,
+            compared=0,
         )
 
 
@@ -225,13 +240,42 @@ def test_cover_outcomes_show_per_track(rig: Rig) -> None:
     assert rig.coordinator.status("viva")["batches"][0]["lanes"]["artwork"] == {"done": 1, "suggested": 1}
 
 
-def test_lane_priority_is_essentials_then_artwork() -> None:
-    assert ie.LANE_PRIORITY == ("tags", "waveform", "beatgrid", "key", "loudness", "artwork")
+def test_lane_priority_is_essentials_then_artwork_then_genre() -> None:
+    assert ie.LANE_PRIORITY == ("tags", "waveform", "beatgrid", "key", "loudness", "artwork", "genre")
 
 
 # -----------------------------------------------------------------------------
 # ENRICH-08: nothing missing is silent
 # -----------------------------------------------------------------------------
+@pytest.mark.requirement("SETPREP-10646")
+def test_genre_waits_for_artwork_then_fills_blank_rows(rig: Rig) -> None:
+    rig.coordinator.register("viva", ["a", "b"], "materialize")
+    rig.facts = facts(["a", "b"])
+    assert rig.coordinator.tick() == ["viva"]
+    assert rig.filled_genres == []
+    rig.coordinator._record_cover("a", Outcome("found", "online cover cached"))
+    rig.coordinator._record_cover("b", Outcome("miss", "no matching recording"))
+    rig.coordinator.tick()
+    assert rig.filled_genres == [["a", "b"]]
+    batch = rig.coordinator.status("viva")["batches"][0]
+    assert batch["genre_stage"] == "done"
+    assert batch["lanes"][GENRE_LANE] == {"done": 2}
+
+
+@pytest.mark.requirement("SETPREP-10646")
+def test_genre_lane_unavailable_is_a_blocking_warning() -> None:
+    warnings = ie.capability_warnings(
+        drain_running=True,
+        unavailable={},
+        artwork_online=True,
+        ai_missing_keys=[],
+        genre_lane_unavailable="no genre model at /x/model.json",
+    )
+    by_code = {w.code: w for w in warnings}
+    assert by_code["GENRE_FILL_UNAVAILABLE"].lane == GENRE_LANE
+    assert by_code["GENRE_FILL_UNAVAILABLE"].severity == "blocking"
+
+
 @pytest.mark.requirement("ENRICH-08")
 def test_capability_warnings_name_what_is_missing_and_where() -> None:
     warnings = ie.capability_warnings(
@@ -354,7 +398,7 @@ def test_http_status_batch_and_rerun(engine: TestClient, rig: Rig) -> None:
     rig.facts = facts(["a"])
     rig.coordinator.register("viva", ["a"], "materialize")
     listing = engine.get("/api/v1/ingest/enrichment").json()
-    assert listing["lane_priority"][-1] == "artwork"
+    assert listing["lane_priority"][-1] == GENRE_LANE
     assert listing["batches"][0]["lanes"]["beatgrid"] == {"done": 1}
     one = engine.get("/api/v1/ingest/enrichment/viva").json()
     assert one["batches"][0]["track_lanes"]["a"]["key"]["state"] == "done"

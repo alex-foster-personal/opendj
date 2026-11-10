@@ -23,6 +23,16 @@ surface. Since Wed 4 Nov 2026 (ADR-NEW-bundle-budget-pr-delta) that ceiling is r
   crossing. Main's absolute size is a nightly ratchet; the repair is a rebaseline (below). Before Tue 3 Nov 2026 every PR that grew a surface rewrote one shared `limit:` number, so
 that file sat in 60 of 293 conflicting re-merges of main in a week. A PR now only ADDS a file.
 
+## Before you push a frontend change
+
+Run `pnpm bundle:charge` from `apps/webui/frontend` on your branch. It builds this tree and the
+merge base with `origin/main` (or reads main's published measurement with `--baseline <json>`),
+then writes `budgets/<surface>/charges/<branch>.json` for every surface that grew beyond the
+128 B build-noise floor and prints one line per surface (`library +1500 charged`,
+`performance +12 within noise`). Commit the written files. It edits no base and no other PR's
+charge. `--skip-build` reuses `./build`. Fill in `reason` and `payback` if the defaults do not say
+enough.
+
 ## My PR grows a surface
 
 1. Measure the surface on main and on main plus your PR, with the same build host:

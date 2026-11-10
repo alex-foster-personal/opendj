@@ -1,0 +1,9 @@
+{
+  "bytes": 1024,
+  "measured_main": 421620,
+  "measured_with_pr": 421755,
+  "sha": "429b8ec4bf",
+  "date": "Tue 10 Nov 2026",
+  "reason": "PR #10680 adds shell-missing-engine-source unit tests that import the desktop bootstrap setup.js helpers extended on this branch. CI bundle check vs merge-base main measured +135 B gzip on the performance surface (run 42705027389); ceiled to KiB.",
+  "payback": "none planned; the charge covers only this PR's measured delta"
+}

@@ -6,6 +6,8 @@
  * `MENU_COMMANDS` via `describeCommand`, and shortcut hints from
  * `HOTKEY_REGISTRY`. Entries with `run: null` stay registered but are not
  * offered as bar rows until argument prompts (#9466) or bar wiring lands.
+ * KEYB-11711 (#10357): tempo fine/coarse/reset and pitch-range cycle hotkeys
+ * each have a palette row; shortcuts are always chordOf(hotkey id), never hand-written.
  */
 import { describeCommand, MENU_COMMANDS, type MenuCommandId } from '$lib/context-menu/commands';
 import { HOTKEY_REGISTRY } from '$lib/components/rb/hotkeys/hotkeys-registry';
@@ -392,6 +394,50 @@ const SPECS: readonly PaletteCommandSpec[] = [
 			kind: 'bar',
 			build: () => ({ via: 'ipc', command: { type: 'wave_zoom_step', direction: 'in' } })
 		},
+		available: () => true
+	},
+	{
+		id: 'tempo.step_fine',
+		title: 'Step tempo fine',
+		keywords: ['tempo', 'pitch', 'nudge', 'comma', 'period'],
+		args: [],
+		menu: null,
+		hotkey: 'performance-tempo-fine',
+		run: null,
+		waits: 'Acts on the recent deck via performance hotkeys, not a bar pick.',
+		available: () => true
+	},
+	{
+		id: 'tempo.step_coarse',
+		title: 'Step tempo coarse',
+		keywords: ['tempo', 'pitch', 'shift', 'nudge'],
+		args: [],
+		menu: null,
+		hotkey: 'performance-tempo-coarse',
+		run: null,
+		waits: 'Acts on the recent deck via performance hotkeys, not a bar pick.',
+		available: () => true
+	},
+	{
+		id: 'tempo.reset',
+		title: 'Reset deck tempo',
+		keywords: ['tempo', 'pitch', 'zero', 'reset'],
+		args: [],
+		menu: null,
+		hotkey: 'performance-tempo-reset',
+		run: null,
+		waits: 'Acts on the recent deck via performance hotkeys, not a bar pick.',
+		available: () => true
+	},
+	{
+		id: 'pitch_range.cycle',
+		title: 'Cycle pitch range',
+		keywords: ['pitch', 'range', 'wide', 'percent'],
+		args: [],
+		menu: null,
+		hotkey: 'performance-pitch-range-cycle',
+		run: null,
+		waits: 'Acts on the recent deck via performance hotkeys, not a bar pick.',
 		available: () => true
 	},
 	{

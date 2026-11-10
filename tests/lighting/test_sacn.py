@@ -5,6 +5,7 @@
 
 from __future__ import annotations
 
+import json
 import struct
 import uuid
 from pathlib import Path
@@ -114,3 +115,26 @@ def test_the_same_settings_file_gives_the_same_cid_across_runs(tmp_path: Path) -
     assert first == second
     assert '"other": 1' in settings.read_text()
     assert load_or_create_cid(tmp_path / "fresh.json") != first
+
+
+def test_adding_the_cid_keeps_utf8_settings_on_a_cp1252_host(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """[if] adding the CID on a cp1252 host corrupts a UTF-8 value or writes CRLF [then] fail, [else stop]."""
+    real_read_text, real_write_text = Path.read_text, Path.write_text
+
+    def cp1252_read_text(self: Path, encoding: str | None = None, errors: str | None = None) -> str:
+        return real_read_text(self, encoding=encoding or "cp1252", errors=errors)
+
+    def cp1252_write_text(
+        self: Path, data: str, encoding: str | None = None, errors: str | None = None, newline: str | None = None
+    ) -> int:
+        crlf_default = "\r\n" if newline is None else newline
+        return real_write_text(self, data, encoding=encoding or "cp1252", errors=errors, newline=crlf_default)
+
+    monkeypatch.setattr(Path, "read_text", cp1252_read_text)
+    monkeypatch.setattr(Path, "write_text", cp1252_write_text)
+    settings = tmp_path / "settings.json"
+    settings.write_bytes(json.dumps({"source_name": "Café"}, ensure_ascii=False).encode("utf-8"))
+    load_or_create_cid(settings)
+    raw = settings.read_bytes()
+    assert b"\r\n" not in raw
+    assert json.loads(raw.decode("utf-8"))["source_name"] == "Café"

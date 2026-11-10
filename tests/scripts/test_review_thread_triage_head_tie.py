@@ -39,6 +39,7 @@ def _run(monkeypatch: pytest.MonkeyPatch, sampled: str, fetched: str) -> int:
     monkeypatch.setattr(
         review_thread_triage, "fetch_pull_request", lambda n, owner, repo: _pr(fetched)
     )
+    monkeypatch.setattr(review_thread_triage, "fetch_submitted_reviews", lambda pr, owner, repo: [])
     monkeypatch.setattr(
         review_thread_triage,
         "check_pr_head_debt_file",

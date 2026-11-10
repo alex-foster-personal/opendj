@@ -1,9 +1,11 @@
 {
-  "//": "Typechecks the React twins (*.tsx) and what they import; svelte-check does not read .tsx. Run by `pnpm check`.",
+  "//": "Typechecks the React twins (*.tsx) and what they import; svelte-check does not read .tsx. Run by `pnpm check`. Incremental: the build info lives in node_modules/.cache, which persists per self-hosted runner (scripts/ci_clean_untracked.sh keeps node_modules), so an unchanged program rechecks only what changed.",
   "extends": "./tsconfig.json",
   "compilerOptions": {
     "jsx": "react-jsx",
     "noEmit": true,
+    "incremental": true,
+    "tsBuildInfoFile": "node_modules/.cache/tsc-react.tsbuildinfo",
     "types": ["node", "vite/client", "svelte"]
   },
   "include": ["src/**/*.tsx", "src/**/*.contract.ts", "src/lib/rb/signalsmith-stretch.d.ts"]

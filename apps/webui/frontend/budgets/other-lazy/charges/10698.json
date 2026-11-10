@@ -1,0 +1,9 @@
+{
+  "bytes": 1024,
+  "measured_main": 503838,
+  "measured_with_pr": 504110,
+  "sha": "261cfcf394",
+  "date": "Tue 10 Nov 2026",
+  "reason": "branch 10698-layout-customise-screen grows the other-lazy surface; measured +272 B gzip over main; ceiled to KiB.",
+  "payback": "none planned; the growth is the change's own code on this surface"
+}

@@ -11,6 +11,8 @@ Mixxx ships no mapping for either unit. The closest is the unmerged XDJ-RX mappi
 
 Neither map has been run on hardware. The AZ list prints CH FADER as "Upper Side=0", the opposite of the RX3 list; the map assumes lower = 0.
 
+Display feasibility (ch 14 jog chrome vs full screens): [(private path)](../../research/midi/2026-11-xdj-az-displays.md) (issue #10308).
+
 ## Cross-check against rekordbox's bundled maps
 
 Every binding was compared by wire against the maps rekordbox 7 ships for these units (`XDJ-RX3.midi.csv`, `XDJ-AZ MIDI.midi.csv`).

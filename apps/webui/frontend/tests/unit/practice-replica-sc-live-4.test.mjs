@@ -1,4 +1,4 @@
-// requirement: SKIN-SC-LIVE-4 (Denon DJ SC LIVE 4 practice replica, epic #9366)
+// requirement: SKIN-10494 (Denon DJ SC LIVE 4 practice replica, epic #9366)
 // The SC LIVE 4 panel joins to SC_LIVE_4_MAP, a hints-only map: no MIDI message list is
 // published for this unit, so every control is inert with the PARITY-TODO tooltip.
 //

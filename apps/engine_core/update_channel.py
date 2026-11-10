@@ -75,22 +75,9 @@ Acceptance tests:
 
 from __future__ import annotations
 
-import argparse
-import json
-import os
-import platform
-import sys
 import time
-from collections.abc import Callable
-from dataclasses import dataclass, field, replace
-from pathlib import Path
-from typing import Any, Literal
 
 import httpx
-import yaml
-from fastapi import FastAPI, HTTPException, Request, status
-from fastapi.responses import JSONResponse
-from pydantic import BaseModel
 
 from apps.engine_core.build_info import (
     BUILD_IDENTITY_STATE_ATTR,
@@ -100,1236 +87,207 @@ from apps.engine_core.build_info import (
     resolve_build_info,
 )
 from apps.engine_core.origin import EngineNotRunning, resolve_origin
+
+# the command line
+from apps.engine_core.update_channel_cli import (
+    _apply_via_engine,
+    _check_locally,
+    _check_via_engine,
+    _emit,
+    _emit_apply,
+    _stderr_progress,
+    main,
+)
+
+#: UPDATE_FEED_URL is THE update feed directory,
+#: https://github.com/alex-foster-personal/issue-assets/releases/latest/download,
+#: defined with its rationale in update_channel_contract.py.
+# constants, status vocabulary, wire models, facade lookup
+from apps.engine_core.update_channel_contract import (
+    _ARCH_KEYS,
+    _OS_KEYS,
+    ACTIONABLE_STATUSES,
+    ANSWERED,
+    APPLY_STATUS_POLL_INTERVAL_S,
+    APPLY_TIMEOUT_S,
+    CHECKED_FEED_FILE,
+    CODE_UPDATE_CHECK_FAILED,
+    ELECTRON_FEED_FILE,
+    EXIT_APPLIED,
+    EXIT_APPLY_FAILED,
+    EXIT_NOT_APPLIED,
+    FACADE_MODULE,
+    FEED_URL_ENV,
+    RELAUNCH_BUILD_INFO_TIMEOUT_S,
+    REQUEST_TIMEOUT_S,
+    STATUS_ENGINE_MALFORMED,
+    STATUS_ENGINE_UNREACHABLE,
+    TAURI_FEED_FILE,
+    UPDATE_APPLY_PATH,
+    UPDATE_APPLY_STATUS_PATH,
+    UPDATE_CHECK_PATH,
+    UPDATE_ENDPOINT,
+    UPDATE_FEED_URL,
+    UpdateApplyAccepted,
+    UpdateApplyRefused,
+    UpdateApplyStatusOut,
+    UpdateCheckError,
+    UpdateCheckOut,
+    UpdateStatus,
+    facade,
+)
+
+# check and apply through a running engine
+from apps.engine_core.update_channel_engine_client import (
+    ApplyOutcome,
+    CheckOutcome,
+    _announced_version,
+    _apply_failed,
+    _apply_with,
+    _await_install,
+    _await_relaunch,
+    _build_identity_slice,
+    _check_shortfall,
+    _check_with,
+    _contextualise,
+    _fault,
+    _InstallWait,
+    _json_object,
+    _not_applied,
+    _read_identity,
+    _refusal_body,
+    _shortfall,
+    _start_install,
+    _verdict,
+    _version_higher,
+    apply_via_engine,
+    check_via_engine,
+)
+
+# platform keys, semver, manifest fetch, check resolution
+from apps.engine_core.update_channel_feed import (
+    _ELECTRON_ZIP_SUFFIX,
+    _electron_entry,
+    _fetch_manifest,
+    _is_electron_feed,
+    _manifest_version,
+    _mentions_other_sha,
+    _platform_entry,
+    compare_versions,
+    parse_version,
+    platform_key,
+    resolve_update_check,
+    update_endpoint,
+)
+
+# the FastAPI check and apply routes
+from apps.engine_core.update_channel_routes import (
+    _update_check_http_response,
+    add_update_apply_route,
+    add_update_check_route,
+)
 from apps.shared import platform_paths
 from apps.shared.semver import Semver as _Version
 from apps.shared.semver import parse_semver as _parse_semver
-from apps.webui.server.shell_commands import ShellCommandConflictError, shell_broker
-
-#: THE update feed directory. One string, read by this module and compiled
-#: into the Electron shell as ``UPDATE_FEED_URL`` in
-#: ``apps/desktop/electron/src/updater.ts``; a test asserts the two are
-#: identical. One release publishes both feeds into it: ``latest-mac.yml``
-#: (electron-updater) and ``latest.json`` (the Tauri updater, which carries the
-#: Electron app as the bridge for alpha installs).
-#:
-#: GitHub Releases is the standard host for both updaters and needs no server
-#: to operate. The product repository is private, so its releases are
-#: deliberately not used here: unauthenticated clients receive a 404.
-#: ``issue-assets`` is public and holds only signed release artifacts and their
-#: manifests. See docs/auto-update.md.
-UPDATE_FEED_URL: str = (
-    "https://github.com/alex-foster-personal/issue-assets"
-    "/releases/latest/download"
+from apps.webui.server.shell_commands import (
+    ShellCommandConflictError,
+    shell_broker,
 )
 
-#: The two feed files one release writes into that directory
-#: (``scripts/electron_release.py``), naming one version and one sha. Both
-#: formats are parsed; which one is read follows the endpoint's suffix.
-ELECTRON_FEED_FILE: str = "latest-mac.yml"
-TAURI_FEED_FILE: str = "latest.json"
-
-#: The file this check reads: ``latest-mac.yml``, the feed that survives
-#: deleting the Tauri shell. It was ``latest.json`` until the first Electron
-#: release (1.0.0-alpha.2, Thu 5 Nov 2026) published ``latest-mac.yml``; it was
-#: a 404 before that, and the e2e gate fetches whatever this names.
-#: (private path) section (d).
-CHECKED_FEED_FILE: str = ELECTRON_FEED_FILE
-UPDATE_ENDPOINT: str = f"{UPDATE_FEED_URL}/{CHECKED_FEED_FILE}"
-
-#: Replaces ``UPDATE_FEED_URL`` for this engine and the Electron shell alike,
-#: so a private update-install proof reads one local feed. The shell's
-#: updater still only installs a bundle signed by this team, never an older one.
-FEED_URL_ENV: str = "OPENDJ_UPDATE_FEED_URL"
-
-UPDATE_CHECK_PATH: str = "/api/v1/update/check"
-UPDATE_APPLY_PATH: str = "/api/v1/update/apply"
-UPDATE_APPLY_STATUS_PATH: str = "/api/v1/update/apply/{command_id}"
-
-#: How often the apply CLI polls command status before checking build-info.
-APPLY_STATUS_POLL_INTERVAL_S: float = 1.0
-
-#: After the shell claims apply and the old engine dies, poll the relaunched
-#: engine's build-info for this long before giving up.
-#: How long the app has to come back once the engine has gone away underneath
-#: the status poll. Post-claim engine death IS the relaunch (issue #2989), and
-#: the restart takes longer than a round trip, so it gets its own window rather
-#: than whatever is left of APPLY_TIMEOUT_S.
-RELAUNCH_BUILD_INFO_TIMEOUT_S: float = 120.0
-
-#: The error code a caller branches on when the channel could not answer.
-CODE_UPDATE_CHECK_FAILED: str = "update_check_failed"
-
-#: How long to wait on the manifest before calling the endpoint unreachable.
-#: Short on purpose: this sits behind a button a human is watching.
-REQUEST_TIMEOUT_S: float = 10.0
-
-#: Tauri's platform key: ``<os>-<arch>``, where os is darwin/windows/linux and
-#: arch is the Rust target arch. v1 ships arm64 macOS only, but the key is
-#: derived rather than hardcoded so a Windows build reports the truth.
-_OS_KEYS: dict[str, str] = {"Darwin": "darwin", "Windows": "windows", "Linux": "linux"}
-_ARCH_KEYS: dict[str, str] = {
-    "arm64": "aarch64",
-    "aarch64": "aarch64",
-    "x86_64": "x86_64",
-    "amd64": "x86_64",
-}
-
-
-UpdateStatus = Literal[
-    "update-available",
-    "up-to-date",
-    "ahead-of-channel",
-    "endpoint-unreachable",
-    "endpoint-refused",
-    "manifest-malformed",
-    "platform-unsupported",
-    "identity-unavailable",
+#: Every name this module bound before the split, private ones included: the
+#: facade's job is to keep each of them importable from here.
+__all__ = [
+    "ACTIONABLE_STATUSES",
+    "ANSWERED",
+    "APPLY_STATUS_POLL_INTERVAL_S",
+    "APPLY_TIMEOUT_S",
+    "BUILD_IDENTITY_STATE_ATTR",
+    "BUILD_INFO_PATH",
+    "CHECKED_FEED_FILE",
+    "CODE_UPDATE_CHECK_FAILED",
+    "ELECTRON_FEED_FILE",
+    "EXIT_APPLIED",
+    "EXIT_APPLY_FAILED",
+    "EXIT_NOT_APPLIED",
+    "FACADE_MODULE",
+    "FEED_URL_ENV",
+    "RELAUNCH_BUILD_INFO_TIMEOUT_S",
+    "REQUEST_TIMEOUT_S",
+    "STATUS_ENGINE_MALFORMED",
+    "STATUS_ENGINE_UNREACHABLE",
+    "TAURI_FEED_FILE",
+    "UPDATE_APPLY_PATH",
+    "UPDATE_APPLY_STATUS_PATH",
+    "UPDATE_CHECK_PATH",
+    "UPDATE_ENDPOINT",
+    "UPDATE_FEED_URL",
+    "_ARCH_KEYS",
+    "_ELECTRON_ZIP_SUFFIX",
+    "_OS_KEYS",
+    "ApplyOutcome",
+    "BuildIdentity",
+    "BuildInfoUnavailable",
+    "CheckOutcome",
+    "EngineNotRunning",
+    "ShellCommandConflictError",
+    "UpdateApplyAccepted",
+    "UpdateApplyRefused",
+    "UpdateApplyStatusOut",
+    "UpdateCheckError",
+    "UpdateCheckOut",
+    "UpdateStatus",
+    "_InstallWait",
+    "_Version",
+    "_announced_version",
+    "_apply_failed",
+    "_apply_via_engine",
+    "_apply_with",
+    "_await_install",
+    "_await_relaunch",
+    "_build_identity_slice",
+    "_check_locally",
+    "_check_shortfall",
+    "_check_via_engine",
+    "_check_with",
+    "_contextualise",
+    "_electron_entry",
+    "_emit",
+    "_emit_apply",
+    "_fault",
+    "_fetch_manifest",
+    "_is_electron_feed",
+    "_json_object",
+    "_manifest_version",
+    "_mentions_other_sha",
+    "_not_applied",
+    "_parse_semver",
+    "_platform_entry",
+    "_read_identity",
+    "_refusal_body",
+    "_shortfall",
+    "_start_install",
+    "_stderr_progress",
+    "_update_check_http_response",
+    "_verdict",
+    "_version_higher",
+    "add_update_apply_route",
+    "add_update_check_route",
+    "apply_via_engine",
+    "check_via_engine",
+    "compare_versions",
+    "facade",
+    "httpx",
+    "main",
+    "parse_version",
+    "platform_key",
+    "platform_paths",
+    "resolve_build_info",
+    "resolve_origin",
+    "resolve_update_check",
+    "shell_broker",
+    "time",
+    "update_endpoint",
 ]
-
-#: The statuses that mean "the question was answered". Anything else is a
-#: fault and must never be rendered as reassurance.
-ANSWERED: frozenset[str] = frozenset(
-    {"update-available", "up-to-date", "ahead-of-channel"}
-)
-
-#: The statuses an agent may ACT on, which is a strictly smaller set than
-#: ANSWERED. `ahead-of-channel` is a real answer (this build is newer than the
-#: channel) and not an actionable one, so a script that ran `update check &&
-#: update apply` on a zero exit must never be told it holds an update it does
-#: not. Exit 0 is reserved for these two.
-ACTIONABLE_STATUSES: frozenset[str] = frozenset({"up-to-date", "update-available"})
-
-#: Two fault codes that are NOT ``UpdateStatus`` values, and say so in their
-#: names. The status vocabulary describes the CHANNEL; these describe the
-#: ENGINE that was asked about it, and collapsing them into a channel fault
-#: would hide which of the two components to go and look at.
-STATUS_ENGINE_UNREACHABLE: str = "engine-unreachable"
-STATUS_ENGINE_MALFORMED: str = "engine-response-malformed"
-
-#: Exit codes shared by every surface that speaks to the updater, so a caller
-#: branching on them gets the same answer from the CLI, the MCP tool and the
-#: module entry point.
-EXIT_APPLIED: int = 0
-EXIT_NOT_APPLIED: int = 2
-EXIT_APPLY_FAILED: int = 3
-
-#: How long the shell has to report the order done, counted from the moment it
-#: is posted. The status poll that waits for that word had no bound at all,
-#: which let a shell that never answered hang the caller forever.
-APPLY_TIMEOUT_S: float = 600.0
-
-
-class UpdateCheckError(RuntimeError):
-    """The channel could not answer. Always names why."""
-
-    def __init__(self, status_: UpdateStatus, message: str) -> None:
-        super().__init__(message)
-        self.status: UpdateStatus = status_
-        self.message: str = message
-
-
-class UpdateApplyAccepted(BaseModel):
-    accepted: bool = True
-    available_version: str
-    command_id: str
-
-
-class UpdateApplyRefused(BaseModel):
-    status: UpdateStatus
-    detail: str
-
-
-class UpdateApplyStatusOut(BaseModel):
-    command_id: str
-    state: Literal["pending", "claimed", "succeeded", "failed"]
-    #: ``cancelled`` is an install withdrawn during its countdown (INSTALL-43);
-    #: only the engine writes it, never the shell.
-    outcome: Literal["installed", "no-update", "refused", "cancelled"] | None = None
-    error: str | None = None
-    enqueued_at_utc: str
-    claimed_at_utc: str | None = None
-    completed_at_utc: str | None = None
-    #: INSTALL-43: when the held-back install becomes claimable, and how long
-    #: is left (null once claimed, or for an order with no countdown).
-    countdown_ends_at_utc: str | None = None
-    countdown_remaining_s: float | None = None
-
-
-class UpdateCheckOut(BaseModel):
-    """What the UI and any agent read.
-
-    ``applies_via`` is stated because the answer and the action come from
-    different components: this route answers, and the Tauri updater inside
-    the desktop shell is what can act. A browser tab can learn an update
-    exists and cannot install it, and saying so beats a dead button.
-    """
-
-    status: UpdateStatus
-    endpoint: str
-    platform_key: str
-    #: The semver the running app reports -- the number the updater compares.
-    current_version: str | None = None
-    #: The semver the channel is offering, when a manifest was read.
-    available_version: str | None = None
-    #: Identity of the RUNNING build, from the payload manifest. The field
-    #: that actually distinguishes two builds carrying one semver.
-    current_git_sha: str | None = None
-    current_built_at_utc: str | None = None
-    #: Release metadata, when the manifest carried it.
-    published_at: str | None = None
-    notes: str | None = None
-    #: Set when the channel offers the same semver this build already is. The
-    #: updater will not act; a human may still be on a different commit.
-    same_version_different_build: bool = False
-    #: Present on every non-answered status. Never empty when set.
-    detail: str | None = None
-    applies_via: str = (
-        "the desktop shell's Tauri updater; this endpoint only reports"
-    )
-
-
-# ----- platform -----------------------------------------------------------
-def platform_key(system: str | None = None, machine: str | None = None) -> str:
-    """This machine's Tauri platform key, or a fault naming what it saw.
-
-    Refuses rather than guessing: a wrong key would read a manifest entry
-    built for a different architecture, and on macOS that is the difference
-    between an arm64 and an x86_64 bundle.
-    """
-    system_name = platform.system() if system is None else system
-    machine_name = platform.machine() if machine is None else machine
-    os_key = _OS_KEYS.get(system_name)
-    arch_key = _ARCH_KEYS.get(machine_name.lower())
-    if os_key is None or arch_key is None:
-        raise UpdateCheckError(
-            "platform-unsupported",
-            f"this machine reports system={system_name!r} machine="
-            f"{machine_name!r}, which does not map to a Tauri platform key",
-        )
-    return f"{os_key}-{arch_key}"
-
-
-# ----- semver -------------------------------------------------------------
-def parse_version(raw: str, source: str) -> _Version:
-    """Strict SemVer precedence, or the existing named malformed-version fault."""
-    try:
-        return _parse_semver(raw)
-    except ValueError as exc:
-        raise UpdateCheckError(
-            "manifest-malformed",
-            f"{source} is {raw!r}, which is not a semver version, so this "
-            "build cannot be ordered against the channel",
-        ) from exc
-
-
-def compare_versions(current: str, available: str) -> UpdateStatus:
-    """Which way round the running build and the channel sit.
-
-    Mirrors what ``tauri-plugin-updater`` will do with the same two strings:
-    strictly greater means an update. Equal is up to date. A running build
-    NEWER than the channel is its own answer -- that is a developer build, and
-    calling it "up to date" would hide the fact that the channel is behind.
-    """
-    here = parse_version(current, "the running app's version")
-    there = parse_version(available, "the channel manifest's 'version'")
-    if there > here:
-        return "update-available"
-    if there == here:
-        return "up-to-date"
-    return "ahead-of-channel"
-
-
-# ----- manifest -----------------------------------------------------------
-def update_endpoint(env: dict[str, str] | None = None) -> str:
-    """The feed this engine reads: ``OPENDJ_UPDATE_FEED_URL`` when set, else the public one."""
-    override = (os.environ if env is None else env).get(FEED_URL_ENV, "").strip()
-    base = override.rstrip("/") if override else UPDATE_FEED_URL
-    return f"{base}/{CHECKED_FEED_FILE}"
-
-
-def _is_electron_feed(endpoint: str) -> bool:
-    return endpoint.split("?", 1)[0].endswith((".yml", ".yaml"))
-
-
-def _fetch_manifest(endpoint: str, client: httpx.Client) -> dict[str, object]:
-    electron = _is_electron_feed(endpoint)
-    try:
-        response = client.get(
-            endpoint,
-            timeout=REQUEST_TIMEOUT_S,
-            follow_redirects=True,
-            headers={"accept": "text/yaml" if electron else "application/json"},
-        )
-    except (httpx.HTTPError, httpx.InvalidURL) as exc:
-        # InvalidURL is not an HTTPError: a malformed OPENDJ_UPDATE_FEED_URL
-        # must still be a named fault, never an unhandled 500.
-        raise UpdateCheckError(
-            "endpoint-unreachable",
-            f"{endpoint} could not be reached: {exc}",
-        ) from exc
-    if response.status_code != 200:
-        hint = ""
-        if response.status_code == 404:
-            hint = " See docs/auto-update.md for the public release host."
-        raise UpdateCheckError(
-            "endpoint-refused",
-            f"{endpoint} answered HTTP {response.status_code}.{hint}",
-        )
-    kind = "YAML" if electron else "JSON"
-    try:
-        manifest = yaml.safe_load(response.text) if electron else response.json()
-    except (ValueError, yaml.YAMLError) as exc:
-        raise UpdateCheckError(
-            "manifest-malformed",
-            f"{endpoint} answered 200 with a body that is not {kind}: {exc}",
-        ) from exc
-    if not isinstance(manifest, dict):
-        raise UpdateCheckError(
-            "manifest-malformed",
-            f"{endpoint} answered 200 with a {kind} {type(manifest).__name__}, "
-            "expected an object",
-        )
-    return manifest
-
-
-#: electron-updater's macOS zip suffix per platform key (electron-builder's
-#: ``${productName}-${version}-${arch}-mac.zip`` naming).
-_ELECTRON_ZIP_SUFFIX: dict[str, str] = {
-    "darwin-aarch64": "-arm64-mac.zip",
-    "darwin-x86_64": "-x64-mac.zip",
-}
-
-
-def _electron_entry(manifest: dict[str, object], key: str) -> dict[str, object]:
-    """The ``files`` entry this Mac would install, as a ``url``/``signature`` pair.
-
-    electron-updater verifies the zip's sha512 from this entry, then
-    Squirrel.Mac checks the bundle's code signature; an entry with no sha512
-    would be refused at install time, so it is refused here.
-    """
-    suffix = _ELECTRON_ZIP_SUFFIX.get(key)
-    if suffix is None:
-        raise UpdateCheckError(
-            "platform-unsupported",
-            f"{ELECTRON_FEED_FILE} is the macOS feed and carries no build for "
-            f"'{key}'",
-        )
-    files = manifest.get("files")
-    if not isinstance(files, list):
-        raise UpdateCheckError(
-            "manifest-malformed",
-            "the channel feed has no 'files' list, so it was not written for "
-            "electron-updater",
-        )
-    urls = [f.get("url") for f in files if isinstance(f, dict)]
-    entry = next(
-        (f for f in files if isinstance(f, dict) and str(f.get("url", "")).endswith(suffix)),
-        None,
-    )
-    if entry is None:
-        raise UpdateCheckError(
-            "platform-unsupported",
-            f"the channel feed carries no '*{suffix}' build for '{key}'. It "
-            f"offers: {urls}",
-        )
-    if not isinstance(entry.get("sha512"), str) or entry["sha512"] == "":
-        raise UpdateCheckError(
-            "manifest-malformed",
-            f"the '{entry['url']}' entry has no sha512. electron-updater "
-            "would refuse it at install time, so it is refused here.",
-        )
-    return {"url": entry["url"], "signature": entry["sha512"]}
-
-
-def _platform_entry(manifest: dict[str, object], key: str) -> dict[str, object]:
-    platforms = manifest.get("platforms")
-    if not isinstance(platforms, dict):
-        raise UpdateCheckError(
-            "manifest-malformed",
-            "the channel manifest has no 'platforms' object, so it was not "
-            "written by the Tauri bundler",
-        )
-    entry = platforms.get(key)
-    if not isinstance(entry, dict):
-        raise UpdateCheckError(
-            "platform-unsupported",
-            f"the channel manifest carries no '{key}' build. It offers: "
-            f"{sorted(platforms)}",
-        )
-    if not isinstance(entry.get("url"), str) or entry["url"] == "":
-        raise UpdateCheckError(
-            "manifest-malformed",
-            f"the '{key}' entry has no download url",
-        )
-    if not isinstance(entry.get("signature"), str) or entry["signature"] == "":
-        raise UpdateCheckError(
-            "manifest-malformed",
-            f"the '{key}' entry has no signature. An unsigned entry would be "
-            "refused by the updater at install time, so it is refused here.",
-        )
-    return entry
-
-
-def _manifest_version(manifest: dict[str, object]) -> str:
-    raw_version = manifest.get("version")
-    if not isinstance(raw_version, str):
-        raise UpdateCheckError(
-            "manifest-malformed",
-            "the channel manifest has no string 'version' field",
-        )
-    return raw_version
-
-
-# ----- resolution ---------------------------------------------------------
-def resolve_update_check(
-    identity: BuildIdentity,
-    *,
-    client: httpx.Client,
-    endpoint: str | None = None,
-    key: str | None = None,
-) -> UpdateCheckOut:
-    """Answer the question, or say precisely why it could not be answered.
-
-    Takes the resolved build identity rather than re-reading it: the running
-    build's version must be the one ``/build-info`` already published, or the
-    two readouts on the same screen could disagree.
-    """
-    endpoint = update_endpoint() if endpoint is None else endpoint
-    try:
-        resolved_key = platform_key() if key is None else key
-    except UpdateCheckError as exc:
-        return UpdateCheckOut(
-            status=exc.status,
-            endpoint=endpoint,
-            platform_key="?",
-            detail=exc.message,
-        )
-
-    if identity.info is None:
-        return UpdateCheckOut(
-            status="identity-unavailable",
-            endpoint=endpoint,
-            platform_key=resolved_key,
-            detail=(
-                "this build cannot state its own identity, so it cannot be "
-                f"compared against the channel: {identity.failure}"
-            ),
-        )
-
-    info = identity.info
-    # app_version is the number the updater compares. A payload built before
-    # that field existed has None, and guessing it would mean comparing a
-    # made-up version against a real one.
-    current_version = info.app_version
-    base = UpdateCheckOut(
-        status="up-to-date",
-        endpoint=endpoint,
-        platform_key=resolved_key,
-        current_version=current_version,
-        current_git_sha=info.git_sha,
-        current_built_at_utc=info.built_at_utc,
-    )
-    if current_version is None or current_version.strip() == "":
-        return base.model_copy(
-            update={
-                "status": "identity-unavailable",
-                "detail": (
-                    "this build's manifest carries no app_version, so there is "
-                    "no number to compare against the channel"
-                ),
-            }
-        )
-
-    electron = _is_electron_feed(endpoint)
-    try:
-        manifest = _fetch_manifest(endpoint, client)
-        entry = (_electron_entry if electron else _platform_entry)(manifest, resolved_key)
-        raw_version = _manifest_version(manifest)
-        verdict = compare_versions(current_version, raw_version)
-    except UpdateCheckError as exc:
-        return base.model_copy(
-            update={"status": exc.status, "detail": exc.message}
-        )
-
-    notes = manifest.get("releaseNotes" if electron else "notes")
-    published = manifest.get("releaseDate" if electron else "pub_date")
-    # The case the semver rule cannot see: same number, different build. The
-    # updater will not act on it, and the reader is told rather than reassured.
-    same_build_drift = verdict == "up-to-date" and _mentions_other_sha(
-        notes, info.git_sha_full, info.git_sha
-    )
-    return base.model_copy(
-        update={
-            "status": verdict,
-            "available_version": raw_version,
-            "notes": notes if isinstance(notes, str) else None,
-            "published_at": published if isinstance(published, str) else None,
-            "same_version_different_build": same_build_drift,
-            "detail": (
-                f"the channel offers {raw_version} for {resolved_key} at "
-                f"{entry['url']}"
-                if verdict == "update-available"
-                else None
-            ),
-        }
-    )
-
-
-def _mentions_other_sha(
-    notes: object, git_sha_full: str, git_sha: str
-) -> bool:
-    """Does the release name a build that is not the one running?
-
-    Deliberately conservative. Release notes are free text, so the only
-    confident reading is "notes exist, and they do NOT contain this build's
-    sha". Absent notes prove nothing and report nothing.
-    """
-    if not isinstance(notes, str) or notes.strip() == "":
-        return False
-    return git_sha_full not in notes and git_sha not in notes
-
-
-# ----- route --------------------------------------------------------------
-def _update_check_http_response(
-    identity: BuildIdentity, result: UpdateCheckOut
-) -> UpdateCheckOut | JSONResponse:
-    """Map a resolver verdict to the HTTP contract this build source carries.
-
-    Installed payloads answer 502 on a channel fault so a caller that only
-    reads the status code cannot treat an outage as reassurance. Developer
-    checkouts answer 200 with the named fault in the body: the UI and agents
-    branch on ``status``, and e2e surfaces treat any 502 from this route as a
-    defect even when the channel is genuinely unpublished.
-    """
-    if result.status in ANSWERED:
-        return result
-    info = identity.info
-    if info is not None and info.source == "repo":
-        return result
-    return JSONResponse(
-        status_code=status.HTTP_502_BAD_GATEWAY,
-        content={
-            "error": CODE_UPDATE_CHECK_FAILED,
-            "message": result.detail,
-            **result.model_dump(),
-        },
-    )
-
-
-def add_update_check_route(
-    app: FastAPI, *, endpoint: str | None = None
-) -> None:
-    """Mount the check. Resolved per request: the channel moves, the build does not."""
-
-    @app.get(
-        UPDATE_CHECK_PATH,
-        response_model=UpdateCheckOut,
-        tags=["health"],
-        name="update_check",
-        responses={
-            status.HTTP_502_BAD_GATEWAY: {
-                "description": "the update channel could not be read"
-            }
-        },
-    )
-    def update_check() -> UpdateCheckOut | JSONResponse:
-        identity: BuildIdentity = getattr(app.state, BUILD_IDENTITY_STATE_ATTR)
-        with httpx.Client() as client:
-            result = resolve_update_check(identity, client=client, endpoint=endpoint)
-        return _update_check_http_response(identity, result)
-
-
-def add_update_apply_route(
-    app: FastAPI, *, endpoint: str | None = None
-) -> None:
-    """Mount apply: enqueue shell work when the channel reports update-available."""
-
-    @app.post(
-        UPDATE_APPLY_PATH,
-        response_model=UpdateApplyAccepted,
-        tags=["health"],
-        name="update_apply",
-        status_code=status.HTTP_202_ACCEPTED,
-        responses={
-            status.HTTP_409_CONFLICT: {
-                "description": "apply refused; no shell command enqueued",
-                "model": UpdateApplyRefused,
-            }
-        },
-    )
-    def update_apply(request: Request) -> UpdateApplyAccepted | JSONResponse:
-        identity: BuildIdentity = getattr(app.state, BUILD_IDENTITY_STATE_ATTR)
-        info = identity.info
-        if info is None or info.source != "payload":
-            return JSONResponse(
-                status_code=status.HTTP_409_CONFLICT,
-                content=UpdateApplyRefused(
-                    status="identity-unavailable",
-                    detail="not a packaged build; only installed payloads may apply updates",
-                ).model_dump(),
-            )
-        with httpx.Client() as client:
-            result = resolve_update_check(identity, client=client, endpoint=endpoint)
-        if result.status != "update-available":
-            detail = result.detail or f"update check reported {result.status}"
-            return JSONResponse(
-                status_code=status.HTTP_409_CONFLICT,
-                content=UpdateApplyRefused(
-                    status=result.status,
-                    detail=detail,
-                ).model_dump(),
-            )
-        available_version = result.available_version
-        if available_version is None or available_version.strip() == "":
-            return JSONResponse(
-                status_code=status.HTTP_409_CONFLICT,
-                content=UpdateApplyRefused(
-                    status=result.status,
-                    detail="update-available without available_version",
-                ).model_dump(),
-            )
-        broker = shell_broker(request)
-        try:
-            command_id = broker.enqueue_apply(available_version)
-        except ShellCommandConflictError as error:
-            return JSONResponse(
-                status_code=status.HTTP_409_CONFLICT,
-                content=UpdateApplyRefused(
-                    status="update-available",
-                    detail=f"apply-update already pending or claimed (command_id={error.command_id})",
-                ).model_dump(),
-            )
-        return UpdateApplyAccepted(
-            available_version=available_version,
-            command_id=command_id,
-        )
-
-    @app.get(
-        UPDATE_APPLY_STATUS_PATH,
-        response_model=UpdateApplyStatusOut,
-        tags=["health"],
-        name="update_apply_status",
-    )
-    def update_apply_status(request: Request, command_id: str) -> UpdateApplyStatusOut:
-        status_payload = shell_broker(request).get_status(command_id)
-        if status_payload is None:
-            raise HTTPException(status_code=404, detail="unknown apply command")
-        return UpdateApplyStatusOut(**status_payload)
-
-
-# ----- outcomes -----------------------------------------------------------
-@dataclass(frozen=True)
-class CheckOutcome:
-    """What one check against a running engine found.
-
-    ``document`` is the engine's own answer, passed through unchanged: the
-    surfaces render it, they do not re-derive it, so three callers cannot
-    print three different stories about one channel.
-    """
-
-    status: str
-    detail: str | None
-    document: dict[str, Any]
-
-    @property
-    def actionable(self) -> bool:
-        return self.status in ACTIONABLE_STATUSES
-
-
-@dataclass(frozen=True)
-class ApplyOutcome:
-    """What one apply did, and what it can honestly claim.
-
-    ``code`` is the exit code every surface returns, and it is ``EXIT_APPLIED``
-    only for an install the before/after read PROVES: the announced version is
-    running and the build identity moved. ``reason`` is the machine-readable
-    half; ``status`` and ``detail`` are the channel's own words where it named
-    them, so an agent never has to parse prose to find out what happened.
-    """
-
-    code: int
-    reason: str
-    status: str | None = None
-    detail: str | None = None
-    check: dict[str, Any] = field(default_factory=dict)
-    before: dict[str, str | None] = field(default_factory=dict)
-    after: dict[str, str | None] = field(default_factory=dict)
-    shell_status: dict[str, Any] | None = None
-    command_id: str | None = None
-    advertised_version: str | None = None
-
-    @property
-    def applied(self) -> bool:
-        return self.code == EXIT_APPLIED
-
-
-# ----- the shared client core ---------------------------------------------
-def check_via_engine(origin: str, *, client: httpx.Client | None = None) -> CheckOutcome:
-    """Ask a RUNNING engine what the channel offers.
-
-    The engine answers for the build IT is running, which is the only identity
-    that matters to a caller on a user machine: there is no checkout to
-    resolve locally, and resolving one would compare the channel against a
-    different build than the app the user is looking at. Every way this can
-    fail to get an answer is a named fault carrying the URL, never a
-    reassurance.
-    """
-    if client is not None:
-        return _check_with(client, origin)
-    with httpx.Client() as owned:
-        return _check_with(owned, origin)
-
-
-def _check_with(client: httpx.Client, origin: str) -> CheckOutcome:
-    url = f"{origin.rstrip('/')}{UPDATE_CHECK_PATH}"
-    try:
-        response = client.get(url, timeout=REQUEST_TIMEOUT_S)
-    except httpx.HTTPError as exc:
-        return _fault(STATUS_ENGINE_UNREACHABLE, f"{url}: {exc}")
-    try:
-        document = response.json()
-    except ValueError:
-        return _fault(
-            STATUS_ENGINE_MALFORMED,
-            f"{url} answered HTTP {response.status_code} with a body that is not JSON",
-        )
-    status_field = document.get("status") if isinstance(document, dict) else None
-    if not isinstance(status_field, str) or status_field == "":
-        return _fault(
-            STATUS_ENGINE_MALFORMED,
-            f"{url} answered HTTP {response.status_code} with no 'status' field: "
-            f"{json.dumps(document)[:500]}",
-        )
-    detail = document.get("detail")
-    return CheckOutcome(
-        status=status_field,
-        detail=detail if isinstance(detail, str) and detail != "" else None,
-        document=document,
-    )
-
-
-def _fault(status: str, detail: str) -> CheckOutcome:
-    return CheckOutcome(status=status, detail=detail, document={"status": status, "detail": detail})
-
-
-def apply_via_engine(
-    origin: str,
-    timeout_s: float = APPLY_TIMEOUT_S,
-    *,
-    lock_path: Path | None = None,
-    progress: Callable[[str], None] | None = None,
-    client: httpx.Client | None = None,
-) -> ApplyOutcome:
-    """Install the announced release, then PROVE the relaunched app is it.
-
-    THE whole relaunch-and-compare path, in one place. ``apply`` is the call
-    whose correctness matters most, and a second copy of it is how two
-    surfaces drift: the packaged CLI and the module entry point both call
-    here, and neither can quietly acquire its own idea of what "installed"
-    means.
-
-    A zero exit is a CLAIM, so it is earned twice over: ``app_version`` must
-    be the version the channel announced, and ``git_sha_full`` must have
-    moved off the build that was running. Anything less is named and
-    non-zero. Every wait is bounded by ``timeout_s``, counted from the moment
-    the order is posted, because an install that never completes must fail
-    loudly rather than hang the agent that asked for it.
-    """
-    if client is not None:
-        return _apply_with(client, origin, timeout_s, lock_path, progress)
-    with httpx.Client() as owned:
-        return _apply_with(owned, origin, timeout_s, lock_path, progress)
-
-
-def _apply_with(
-    client: httpx.Client,
-    origin: str,
-    timeout_s: float,
-    lock_path: Path | None,
-    progress: Callable[[str], None] | None,
-) -> ApplyOutcome:
-    base = origin.rstrip("/")
-    before = _read_identity(client, f"{base}{BUILD_INFO_PATH}")
-    if isinstance(before, ApplyOutcome):
-        return before
-
-    check = check_via_engine(base, client=client)
-    announced_version = _announced_version(check)
-    if check.status != "update-available" or announced_version is None:
-        shortfall = _check_shortfall(check)
-        return _contextualise(shortfall, check, before, announced_version, None)
-
-    # ONE deadline from here, so the install and the restart can never add up
-    # to twice the wait a caller asked for.
-    deadline = time.monotonic() + timeout_s
-    command_id = _start_install(client, base)
-    if isinstance(command_id, ApplyOutcome):
-        return _contextualise(command_id, check, before, announced_version, None)
-    if progress is not None:
-        progress(f"enqueued {announced_version} (command_id={command_id})")
-
-    installed = _await_install(client, base, command_id, deadline, timeout_s)
-    if isinstance(installed, ApplyOutcome):
-        return _contextualise(installed, check, before, announced_version, command_id)
-    if installed.relaunch_detected:
-        relaunch_deadline = time.monotonic() + RELAUNCH_BUILD_INFO_TIMEOUT_S
-        if progress is not None:
-            progress("engine relaunch detected; polling build-info via lock file")
-    else:
-        relaunch_deadline = time.monotonic() + timeout_s
-        if progress is not None:
-            progress(f"waiting for the relaunched app to report {announced_version}")
-
-    after = _await_relaunch(client, base, before, lock_path, relaunch_deadline)
-    return _verdict(before, after, check, announced_version, command_id, timeout_s)
-
-
-def _read_identity(client: httpx.Client, url: str) -> dict[str, str | None] | ApplyOutcome:
-    """The running build's identity, or why it could not be read."""
-    try:
-        response = client.get(url, timeout=REQUEST_TIMEOUT_S)
-    except httpx.HTTPError as exc:
-        return _not_applied("engine-unreachable", detail=f"{url}: {exc}")
-    if response.status_code != 200:
-        return _not_applied(
-            "build-info-unavailable",
-            detail=(
-                f"{url} answered HTTP {response.status_code}: {response.text[:500]}"
-            ),
-        )
-    return _build_identity_slice(response.json())
-
-
-def _announced_version(check: CheckOutcome) -> str | None:
-    announced = check.document.get("available_version")
-    return announced if isinstance(announced, str) and announced != "" else None
-
-
-def _check_shortfall(check: CheckOutcome) -> ApplyOutcome:
-    """Why the channel is not offering an installable release."""
-    if check.status != "update-available":
-        return _not_applied(
-            "check-not-update-available",
-            status=check.status,
-            detail=check.detail or f"update check reported {check.status}",
-        )
-    return _not_applied(
-        "announced-version-missing",
-        status=check.status,
-        detail="update-available without available_version",
-    )
-
-
-def _start_install(client: httpx.Client, base: str) -> str | ApplyOutcome:
-    """Post the order and return its command id, or why nothing was posted."""
-    apply_url = f"{base}{UPDATE_APPLY_PATH}"
-    try:
-        response = client.post(apply_url, timeout=REQUEST_TIMEOUT_S)
-    except httpx.HTTPError as exc:
-        return _not_applied("apply-unreachable", detail=f"{apply_url}: {exc}")
-    if response.status_code != 202:
-        refusal = _refusal_body(response)
-        return _not_applied(
-            "apply-refused",
-            status=refusal.get("status"),
-            detail=refusal.get("detail")
-            or f"{apply_url} answered HTTP {response.status_code}: {response.text[:500]}",
-        )
-    accepted = _json_object(response)
-    command_id = accepted.get("command_id") if accepted is not None else None
-    if not isinstance(command_id, str) or command_id == "":
-        return _not_applied(
-            "apply-response-missing-command-id",
-            detail=f"{apply_url} answered 202 without a command_id",
-        )
-    return command_id
-
-
-@dataclass(frozen=True)
-class _InstallWait:
-    """What the install wait saw: the shell's word, or the engine going away.
-
-    A relaunch kills the engine that was serving the status route, so a
-    refusal AFTER the order was claimed is evidence the install started, not a
-    failure. Telling those apart is the whole reason this is a value rather
-    than a status document.
-    """
-
-    status: dict[str, Any] | None = None
-    relaunch_detected: bool = False
-
-
-def _await_install(
-    client: httpx.Client,
-    base: str,
-    command_id: str,
-    deadline: float,
-    timeout_s: float,
-    status_path_template: str = UPDATE_APPLY_STATUS_PATH,
-) -> _InstallWait | ApplyOutcome:
-    """Wait for the shell to report the order done, bounded by the deadline.
-
-    Returns what the shell said, or the outcome that says why the wait ended.
-    The shell is the only component that may install an update, so this is the
-    only evidence that an install was even attempted. ``status_path_template``
-    names the route that reports the order: the release channel's apply, or a
-    local build's install (INSTALL-40); both read the one shell broker.
-    """
-    status_url = f"{base}{status_path_template.format(command_id=command_id)}"
-    seen_claimed = False
-    while True:
-        if time.monotonic() >= deadline:
-            return replace(
-                _not_applied(
-                    "install-timeout",
-                    status="update-available",
-                    detail=(
-                        f"the shell did not report {command_id} installed within "
-                        f"{timeout_s:g}s"
-                    ),
-                ),
-                code=EXIT_APPLY_FAILED,
-            )
-        try:
-            response = client.get(status_url, timeout=REQUEST_TIMEOUT_S)
-        except httpx.HTTPError as exc:
-            if seen_claimed:
-                return _InstallWait(relaunch_detected=True)
-            return _not_applied(
-                "install-status-unreachable", detail=f"{status_url}: {exc}"
-            )
-        if response.status_code == 404 and seen_claimed:
-            return _InstallWait(relaunch_detected=True)
-        status_body = _json_object(response)
-        if status_body is None:
-            return _not_applied(
-                "install-status-malformed",
-                detail=(
-                    f"{status_url} answered HTTP {response.status_code}: "
-                    f"{response.text[:500]}"
-                ),
-            )
-        state = status_body.get("state")
-        if state in ("claimed", "succeeded"):
-            seen_claimed = True
-        if state == "failed":
-            error = status_body.get("error")
-            return replace(
-                _not_applied(
-                    "shell-failed",
-                    status="failed",
-                    detail=(
-                        error
-                        if isinstance(error, str) and error != ""
-                        else f"the shell reported command {command_id} failed"
-                    ),
-                ),
-                code=EXIT_APPLY_FAILED,
-                shell_status=status_body,
-            )
-        if state == "succeeded":
-            return _InstallWait(status=status_body)
-        time.sleep(APPLY_STATUS_POLL_INTERVAL_S)
-
-
-def _await_relaunch(
-    client: httpx.Client,
-    base: str,
-    before: dict[str, str | None],
-    lock_path: Path | None,
-    deadline: float,
-    arrived: Callable[[dict[str, str | None], dict[str, str | None]], bool] | None = None,
-) -> dict[str, str | None]:
-    """Poll build-info until the running identity moves, or the deadline passes.
-
-    The origin is re-resolved every pass: the relaunched app writes its own
-    lock, and it may well bind a different port than the one it replaced.
-    ``arrived`` decides when the identity has moved far enough: by default a
-    strictly higher semver (the release channel); a local build that keeps
-    its semver passes its own predicate on ``git_sha_full`` (INSTALL-40).
-    """
-    has_arrived = _version_higher if arrived is None else arrived
-    after = before
-    backoff = 1.0
-    while time.monotonic() < deadline:
-        poll_base = base
-        try:
-            poll_base = resolve_origin(lock_path).base_url
-        except EngineNotRunning:
-            poll_base = base
-        try:
-            response = client.get(
-                f"{poll_base}{BUILD_INFO_PATH}", timeout=REQUEST_TIMEOUT_S
-            )
-        except httpx.HTTPError:
-            response = None
-        if response is not None and response.status_code == 200:
-            after = _build_identity_slice(response.json())
-            if has_arrived(before, after):
-                return after
-        time.sleep(backoff)
-        backoff = min(backoff * 1.5, 10.0)
-    return after
-
-
-def _not_applied(reason: str, *, status: str | None = None, detail: str) -> ApplyOutcome:
-    """The apply was never attempted: the channel or the engine said no."""
-    return ApplyOutcome(code=EXIT_NOT_APPLIED, reason=reason, status=status, detail=detail)
-
-
-def _apply_failed(reason: str, *, detail: str) -> ApplyOutcome:
-    """The apply was attempted and did not land the announced build."""
-    return ApplyOutcome(
-        code=EXIT_APPLY_FAILED,
-        reason=reason,
-        status="update-available",
-        detail=detail,
-    )
-
-
-def _contextualise(
-    outcome: ApplyOutcome,
-    check: CheckOutcome,
-    before: dict[str, str | None],
-    announced_version: str | None,
-    command_id: str | None,
-    after: dict[str, str | None] | None = None,
-) -> ApplyOutcome:
-    """Attach the run's context to a bare outcome, so every surface has it."""
-    return replace(
-        outcome,
-        check=check.document,
-        before=before,
-        after=before if after is None else after,
-        command_id=command_id,
-        advertised_version=announced_version,
-    )
-
-
-def _verdict(
-    before: dict[str, str | None],
-    after: dict[str, str | None],
-    check: CheckOutcome,
-    announced_version: str,
-    command_id: str,
-    timeout_s: float,
-) -> ApplyOutcome:
-    """Did the relaunch land the announced build? Name the shortfall if not."""
-    shortfall = _shortfall(before, after, announced_version, timeout_s)
-    if shortfall is not None:
-        return _contextualise(shortfall, check, before, announced_version, command_id, after)
-    applied = ApplyOutcome(
-        code=EXIT_APPLIED,
-        reason="applied",
-        status="update-available",
-        detail=f"{announced_version} is running",
-    )
-    return _contextualise(applied, check, before, announced_version, command_id, after)
-
-
-def _shortfall(
-    before: dict[str, str | None],
-    after: dict[str, str | None],
-    announced_version: str,
-    timeout_s: float,
-) -> ApplyOutcome | None:
-    """Why the relaunch is not the install that was asked for, if it is not."""
-    if not _version_higher(before, after):
-        return _apply_failed(
-            "relaunch-timeout",
-            detail=(
-                f"the app still reports {before.get('app_version')} "
-                f"({before.get('git_sha_full')}) {timeout_s:g}s after the shell "
-                "reported the install done"
-            ),
-        )
-    if after.get("app_version") != announced_version:
-        return _apply_failed(
-            "version-not-announced",
-            detail=(
-                f"the relaunched app reports app_version {after.get('app_version')!r}, "
-                f"and the channel announced {announced_version!r}"
-            ),
-        )
-    if after.get("git_sha_full") == before.get("git_sha_full"):
-        return _apply_failed(
-            "build-unchanged",
-            detail=(
-                f"the relaunched app reports the same git_sha_full "
-                f"{after.get('git_sha_full')!r} as the build it replaced"
-            ),
-        )
-    return None
-
-
-def _json_object(response: httpx.Response) -> dict[str, Any] | None:
-    try:
-        body = response.json()
-    except ValueError:
-        return None
-    return body if isinstance(body, dict) else None
-
-
-def _refusal_body(response: httpx.Response) -> dict[str, Any]:
-    body = _json_object(response)
-    return body if body is not None else {}
-
-
-# ----- CLI ----------------------------------------------------------------
-def main(argv: list[str] | None = None) -> int:
-    """``python -m apps.engine_core.update_channel check``.
-
-    The agent-native half of the UI's check button: same resolver, same
-    endpoint, JSON on stdout, and a NON-ZERO exit when the channel could not
-    be read so a script cannot mistake an outage for "up to date".
-    """
-    parser = argparse.ArgumentParser(
-        prog="python -m apps.engine_core.update_channel",
-        description="Ask the Open DJ update channel what it is offering.",
-    )
-    sub = parser.add_subparsers(dest="command", required=True)
-    check = sub.add_parser("check", help="compare this build against the channel")
-    check.add_argument(
-        "--endpoint",
-        default=None,
-        help=(
-            f"feed URL to read (default: {UPDATE_ENDPOINT}, or "
-            f"${FEED_URL_ENV}/{CHECKED_FEED_FILE} when set). A '.yml' URL is "
-            "read as an electron-updater feed, a '.json' URL as a Tauri latest.json"
-        ),
-    )
-    check.add_argument(
-        "--engine",
-        default=None,
-        help=(
-            "origin of a RUNNING engine to ask instead of resolving locally, "
-            "e.g. http://127.0.0.1:8685. Use this to check the build a "
-            "packaged app is actually running."
-        ),
-    )
-    apply = sub.add_parser(
-        "apply",
-        help="request install-and-restart on a running packaged engine",
-    )
-    apply.add_argument(
-        "--engine",
-        required=True,
-        help="origin of the RUNNING engine, e.g. http://127.0.0.1:8685",
-    )
-    apply.add_argument(
-        "--timeout-s",
-        type=float,
-        default=APPLY_TIMEOUT_S,
-        help=(
-            "seconds to wait for the shell to install and the app to relaunch "
-            f"(default: {APPLY_TIMEOUT_S:g})"
-        ),
-    )
-    args = parser.parse_args(argv)
-
-    if args.command == "check":
-        if args.engine is not None:
-            return _check_via_engine(args.engine)
-        return _check_locally(args.endpoint)
-    if args.command == "apply":
-        return _apply_via_engine(args.engine, args.timeout_s)
-    raise AssertionError(f"unknown command: {args.command}")
-
-
-def _check_locally(endpoint: str | None) -> int:
-    try:
-        info = resolve_build_info(dict(os.environ), platform_paths.PROJECT_ROOT)
-        identity = BuildIdentity(info=info, failure=None)
-    except BuildInfoUnavailable as exc:
-        identity = BuildIdentity(info=None, failure=str(exc))
-    with httpx.Client() as client:
-        result = resolve_update_check(identity, client=client, endpoint=endpoint)
-    return _emit(result)
-
-
-def _check_via_engine(origin: str) -> int:
-    """Print the running engine's answer, and exit 0 only for an actionable one."""
-    outcome = check_via_engine(origin)
-    print(json.dumps(outcome.document, indent=2))
-    if not outcome.actionable:
-        print(f"[ERROR] {outcome.status}: {outcome.detail}", file=sys.stderr)
-        return EXIT_NOT_APPLIED
-    return EXIT_APPLIED
-
-
-def _emit(result: UpdateCheckOut) -> int:
-    print(json.dumps(result.model_dump(), indent=2))
-    if result.status not in ANSWERED:
-        print(f"[ERROR] {result.status}: {result.detail}", file=sys.stderr)
-        return 2
-    if result.status == "update-available":
-        print(
-            f"[UPDATE] {result.current_version} -> {result.available_version}",
-            file=sys.stderr,
-        )
-    return 0
-
-
-def _build_identity_slice(body: dict[str, object]) -> dict[str, str | None]:
-    app_version = body.get("app_version")
-    git_sha_full = body.get("git_sha_full")
-    return {
-        "app_version": app_version if isinstance(app_version, str) else None,
-        "git_sha_full": git_sha_full if isinstance(git_sha_full, str) else None,
-    }
-
-
-def _version_higher(
-    before: dict[str, str | None], after: dict[str, str | None]
-) -> bool:
-    """True when after.app_version parses and is strictly greater than before."""
-    before_ver = before.get("app_version")
-    after_ver = after.get("app_version")
-    if not isinstance(before_ver, str) or not isinstance(after_ver, str):
-        return False
-    try:
-        here = parse_version(before_ver, "pre-apply app_version")
-        there = parse_version(after_ver, "post-apply app_version")
-    except UpdateCheckError:
-        return False
-    return there > here
-
-
-def _apply_via_engine(origin: str, timeout_s: float = APPLY_TIMEOUT_S) -> int:
-    """Print what one apply found, and return its exit code.
-
-    A renderer over :func:`apply_via_engine`, not a second implementation:
-    the packaged CLI prints the SAME outcome the same way, so the two cannot
-    disagree about whether an install landed.
-    """
-    outcome = apply_via_engine(origin, timeout_s, progress=_stderr_progress)
-    _emit_apply(outcome)
-    return outcome.code
-
-
-def _stderr_progress(message: str) -> None:
-    print(f"[APPLY] {message}", file=sys.stderr)
-
-
-def _emit_apply(outcome: ApplyOutcome) -> None:
-    if outcome.check:
-        print(json.dumps(outcome.check, indent=2))
-    if outcome.shell_status is not None:
-        print(json.dumps(outcome.shell_status, indent=2))
-    if outcome.before or outcome.after:
-        print(
-            json.dumps(
-                {
-                    "before": outcome.before,
-                    "after": outcome.after,
-                    "changed": outcome.applied,
-                    "reason": outcome.reason,
-                },
-                indent=2,
-            )
-        )
-    if outcome.code != EXIT_APPLIED:
-        print(f"[ERROR] {outcome.reason}: {outcome.detail}", file=sys.stderr)
 
 
 if __name__ == "__main__":

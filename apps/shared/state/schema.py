@@ -51,8 +51,9 @@ from .migrations_v27 import _V27
 from .migrations_v28 import _V28
 from .migrations_v29 import _V29
 from .migrations_v30 import _V30
+from .migrations_v31 import _V31, seed_library_completeness_config
 
-SCHEMA_VERSION: int = 30
+SCHEMA_VERSION: int = 31
 
 
 # Each element is the set of SQL statements that take schema from N to N+1.
@@ -88,6 +89,7 @@ MIGRATIONS: list[list[str]] = [
     _V28,
     _V29,
     _V30,
+    _V31,
 ]
 
 
@@ -149,10 +151,20 @@ def apply_migrations(conn: sqlite3.Connection) -> int:
             step_idx = current
             statements = MIGRATIONS[step_idx]
             target_version = step_idx + 1
+            profile_before_v31: bool | None = None
+            if step_idx == 30:
+                from .migrations_v31 import library_profile_exists
+
+                profile_before_v31 = library_profile_exists(conn)
             for stmt in statements:
                 if _column_already_added(conn, stmt):
                     continue
                 conn.execute(stmt)
+            if target_version == 31:
+                seed_library_completeness_config(
+                    conn,
+                    expect=profile_before_v31 if profile_before_v31 is not None else False,
+                )
             conn.execute(
                 "INSERT INTO schema_meta(version, applied_at) VALUES (?, ?)",
                 (target_version, datetime.now(UTC).isoformat()),
@@ -225,6 +237,8 @@ TABLES: tuple[str, ...] = (
     "undo_journal",
     # v30 (LIBEDIT-9179). Non-destructive virtual edits over source tracks.
     "track_edit",
+    # v31 (#11219). Library HQ stems + lyric-match completeness expectation.
+    "library_completeness_config",
 )
 """Domain tables created by :data:`MIGRATIONS`. ``schema_meta`` is
 intentionally excluded -- it is infrastructure, not domain data. Four of
@@ -308,6 +322,9 @@ FOREIGN_AUTHORITY_TABLES: tuple[str, ...] = (
     # apps/shared/set_target/store.py (LIBUX-8679 set target and skip flags)
     "set_targets",
     "set_skips",
+    # apps/webui/server/crowd_requests.py (CROWDREQ-10749 crowd request session)
+    "crowd_request_session",
+    "crowd_requests",
     # SET-6586 set routes (playlist_sets schema v2)
     "playlist_component_slots",
     "playlist_components",

@@ -67,6 +67,8 @@
 	{liveBpm}
 	deckNumber={deck.deck_id}
 	deckNumberArt={uiPrefs.deck_number_art}
+	deckStableId={deck.stable_id}
+	deckPlaying={deck.playing}
 	onArtworkLoad={() => coverLoaded(loadedStableId())}
 	onArtworkError={() => coverFailed(loadedStableId())}
 />

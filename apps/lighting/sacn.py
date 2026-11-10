@@ -136,7 +136,9 @@ def load_or_create_cid(settings_path: Path) -> uuid.UUID:
     A source keeps one CID for its lifetime so receivers see one stable sender; other keys in
     the settings file are kept as they are.
     """
-    settings: dict[str, object] = json.loads(settings_path.read_text()) if settings_path.exists() else {}
+    settings: dict[str, object] = (
+        json.loads(settings_path.read_text(encoding="utf-8")) if settings_path.exists() else {}
+    )
     if not isinstance(settings, dict):
         raise TypeError(f"{settings_path} must hold a JSON object")
     stored = settings.get(CID_SETTINGS_KEY)
@@ -145,5 +147,5 @@ def load_or_create_cid(settings_path: Path) -> uuid.UUID:
     cid = uuid.uuid4()
     settings[CID_SETTINGS_KEY] = str(cid)
     settings_path.parent.mkdir(parents=True, exist_ok=True)
-    settings_path.write_text(json.dumps(settings, indent=2, sort_keys=True) + "\n")
+    settings_path.write_text(json.dumps(settings, indent=2, sort_keys=True) + "\n", encoding="utf-8", newline="\n")
     return cid

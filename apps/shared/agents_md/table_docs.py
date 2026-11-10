@@ -167,6 +167,11 @@ TABLE_DOCS: dict[str, str] = {
     "work_pref": "Which member a work shows first. Display only.",
     "undo_journal": "Before and after snapshots of library organization writes, per undo session. Machine-local.",
     "track_edit": "A non-destructive playback window and FX parameters over one source track; no audio is copied or changed.",
+    "library_completeness_config": (
+        "Singleton machine-local row holding whether the library expects every "
+        "eligible track to have HQ stems and a lyric match. Sync attachment "
+        "is a follow-up to issue #759."
+    ),
     "feedback_pins": (
         "One row per Open DJ feedback comment pin, carrying the whole pin "
         "as JSON (text, page, anchor, x/y, status, replies, author, build "
@@ -536,6 +541,16 @@ TABLE_DOCS: dict[str, str] = {
     "set_skips": (
         "Tracks marked skip-in-set per playlist (LIBUX-8679), left out of the "
         "set played length; machine-local (apps/shared/set_target/store.py)."
+    ),
+    "crowd_request_session": (
+        "The single crowd request session: open or closed, the catalog "
+        "playlist, whether free text is allowed, and the per-phone cooldown "
+        "(CROWDREQ-10749). Machine-local (apps/webui/server/crowd_requests.py)."
+    ),
+    "crowd_requests": (
+        "One guest request or message with the requester name, a requester_key "
+        "(sha256, never an address), vote count and status new, loaded or "
+        "dismissed (CROWDREQ-10749). Machine-local."
     ),
     # Migration v9 enrollment tables (ADR 12), in their own module for the
     # same 600-line reason this file was split out of column_docs.py.

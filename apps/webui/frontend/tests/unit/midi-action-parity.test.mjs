@@ -18,7 +18,7 @@ const FIXTURE = new URL(
 // Types the engine parses that the page cannot emit yet, each with the issue
 // that adds the page side. An entry the page now emits fails the test so the
 // list cannot go stale.
-const ENGINE_AHEAD = new Map([['deck_beat_jump', '#10283']]);
+const ENGINE_AHEAD = new Map([]);
 
 function _pageActionTypes() {
 	const src = readFileSync(TYPES_TS, 'utf8');
@@ -51,7 +51,7 @@ function _engineActionTypes() {
 test('every page action type is parsed by the engine, driven or page-only', () => {
 	const page = _pageActionTypes();
 	const engine = _engineActionTypes();
-	assert.ok(page.size >= 26, `midi-types.ts declares ${page.size} action types`);
+	assert.ok(page.size >= 27, `midi-types.ts declares ${page.size} action types`);
 	const missing = [...page].filter((t) => !engine.all.has(t));
 	assert.deepEqual(
 		missing,

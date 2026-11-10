@@ -214,13 +214,28 @@ export function jobSimulateAllowed(
 
 // ----- reactive store -----
 
-let jobs = $state<Record<string, TrackJob>>({});
-let badges = $state<Record<string, AnalysisBadge>>({});
+// Raw, not deep: every write replaces the record (readers key on its
+// identity), so per-entry proxies were up to ~45k unused signals (#10235).
+let jobs = $state.raw<Record<string, TrackJob>>({});
+let badges = $state.raw<Record<string, AnalysisBadge>>({});
 let _tickTimer: ReturnType<typeof setInterval> | null = null;
 const _simTimers = new Map<string, ReturnType<typeof setInterval>>();
 
 function _jobKey(kind: AnalysisKind, stableId: string): string {
 	return `${kind}:${stableId}`;
+}
+
+/** New record with one entry set; every other entry keeps its identity. */
+function _withEntry<T>(record: Record<string, T>, key: string, value: T): Record<string, T> {
+	return { ...record, [key]: value };
+}
+
+/** New record without `keys`; `record` itself when none of them is present. */
+function _withoutKeys<T>(record: Record<string, T>, keys: readonly string[]): Record<string, T> {
+	if (!keys.some((k) => k in record)) return record;
+	const next = { ...record };
+	for (const k of keys) delete next[k];
+	return next;
 }
 
 function _hasActiveJobs(): boolean {
@@ -245,34 +260,32 @@ function _onTick(): void {
 	sweepStuck();
 	const now = Date.now();
 	let changed = false;
-	const next = { ...jobs };
-	for (const [key, job] of Object.entries(next)) {
+	let next: Record<string, TrackJob> | null = null;
+	for (const [key, job] of Object.entries(jobs)) {
 		if (job.phase !== 'queued' && job.phase !== 'running') continue;
 		if (job.real) continue;
 		const p = fakeProgressAt(now - job.started_at);
 		if (Math.abs(p - job.progress) < 0.0005) continue;
+		if (next === null) next = { ...jobs };
 		next[key] = { ...job, progress: p, updated_at: now };
 		changed = true;
 	}
-	if (changed) jobs = next;
+	if (changed && next !== null) jobs = next;
 	if (!_hasActiveJobs()) _stopTicker();
 }
 
 /** Clear stuck active jobs (TTL failsafe). Returns cleared keys. */
 export function sweepStuck(now = Date.now(), ttlMs = JOB_STUCK_TTL_MS): string[] {
 	const cleared: string[] = [];
-	let next: Record<string, TrackJob> | null = null;
 	for (const [key, job] of Object.entries(jobs)) {
 		if (!isJobStuck(job, now, ttlMs)) continue;
-		if (next === null) next = { ...jobs };
-		delete next[key];
 		cleared.push(key);
 		console.warn(
 			`[job-progress] clearing stuck ${job.kind} job for ${job.stable_id} after ${ttlMs}ms`
 		);
 	}
-	if (next !== null) {
-		jobs = next;
+	if (cleared.length > 0) {
+		jobs = _withoutKeys(jobs, cleared);
 		if (!_hasActiveJobs()) _stopTicker();
 	}
 	return cleared;
@@ -332,20 +345,17 @@ export const jobProgress = {
 			progress = Math.max(seed, fakeProgressAt(now - started_at));
 		}
 
-		jobs = {
-			...jobs,
-			[key]: {
-				stable_id: job.stable_id,
-				kind: job.kind,
-				phase,
-				progress,
-				...(job.label === undefined ? {} : { label: job.label }),
-				...(job.error === undefined ? {} : { error: job.error }),
-				real,
-				started_at,
-				updated_at: job.updated_at ?? now
-			}
-		};
+		jobs = _withEntry(jobs, key, {
+			stable_id: job.stable_id,
+			kind: job.kind,
+			phase,
+			progress,
+			...(job.label === undefined ? {} : { label: job.label }),
+			...(job.error === undefined ? {} : { error: job.error }),
+			real,
+			started_at,
+			updated_at: job.updated_at ?? now
+		});
 		if (phase === 'queued' || phase === 'running') _ensureTicker();
 		else if (!_hasActiveJobs()) _stopTicker();
 	},
@@ -368,28 +378,16 @@ export const jobProgress = {
 		if (kind) {
 			const key = _jobKey(kind, stableId);
 			if (!(key in jobs)) return;
-			const next = { ...jobs };
-			delete next[key];
-			jobs = next;
+			jobs = _withoutKeys(jobs, [key]);
 			if (!_hasActiveJobs()) _stopTicker();
 			return;
 		}
-		const next = { ...jobs };
-		let changed = false;
-		for (const k of Object.keys(next)) {
-			if (k.endsWith(`:${stableId}`)) {
-				delete next[k];
-				changed = true;
-			}
-		}
-		if (changed) jobs = next;
+		const keys = Object.keys(jobs).filter((k) => k.endsWith(`:${stableId}`));
+		if (keys.length > 0) jobs = _withoutKeys(jobs, keys);
 		if (!_hasActiveJobs()) _stopTicker();
 	},
 	setBadge(stableId: string, kind: AnalysisKind, done: boolean): void {
-		badges = {
-			...badges,
-			[stableId]: { ...(badges[stableId] ?? {}), [kind]: done }
-		};
+		badges = _withEntry(badges, stableId, { ...(badges[stableId] ?? {}), [kind]: done });
 	},
 	activeFor(stableId: string): TrackJob | null {
 		return pickActiveJob(Object.values(jobs), stableId);

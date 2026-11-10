@@ -1,0 +1,9 @@
+{
+  "bytes": 1024,
+  "measured_main": 503912,
+  "measured_with_pr": 504067,
+  "sha": "3fef2ca1e2",
+  "date": "Tue 10 Nov 2026",
+  "reason": "branch af--cloud-10732--setrec-08-capture-stem-controls-as-v2-ev grows the other-lazy surface; measured +155 B gzip over main; ceiled to KiB.",
+  "payback": "none planned; the growth is the change's own code on this surface"
+}

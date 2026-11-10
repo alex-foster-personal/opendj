@@ -1,0 +1,9 @@
+{
+  "bytes": 1024,
+  "measured_main": 506734,
+  "measured_with_pr": 507343,
+  "sha": "d51be8e529",
+  "date": "Tue 10 Nov 2026",
+  "reason": "branch af--idd-5a1310db-issue-10818-resolve-github-issue-10818-https-github grows the other-lazy surface; measured +609 B gzip over main; ceiled to KiB.",
+  "payback": "none planned; the growth is the change's own code on this surface"
+}

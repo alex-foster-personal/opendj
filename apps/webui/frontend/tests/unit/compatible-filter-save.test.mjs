@@ -122,3 +122,19 @@ test('two quick range clicks compose, and a failed click never rides on a queued
 		bpm_enabled: false
 	});
 });
+
+test('SETPREP-11947: an energy_mode change PUTs the full object and commits after the write', async () => {
+	let body;
+	let committedDuringPut;
+	globalThis.fetch = async (request) => {
+		body = await request.clone().json();
+		committedDuringPut = { ...prefs.uiPrefs.compatible_filter };
+		return jsonResponse({});
+	};
+
+	await prefs.patchCompatibleFilter({ energy_mode: 'boost' });
+
+	assert.deepEqual(body, { compatible_filter: { ...BEFORE, energy_mode: 'boost' } });
+	assert.deepEqual(committedDuringPut, BEFORE, 'the pref must not commit before the PUT lands');
+	assert.deepEqual(prefs.uiPrefs.compatible_filter, { ...BEFORE, energy_mode: 'boost' });
+});

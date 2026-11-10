@@ -1,0 +1,9 @@
+{
+  "bytes": 1024,
+  "measured_main": 503894,
+  "measured_with_pr": 504218,
+  "sha": "f6eed32404",
+  "date": "Tue 10 Nov 2026",
+  "reason": "Issue #10403 adds the energy rule (within one, boost, drop) to the compatible filter. Measured: local bundle check against merge base f6eed32404, +324 B gzip on other-lazy; ceiled to KiB",
+  "payback": "none planned; the growth is the feature's own code"
+}

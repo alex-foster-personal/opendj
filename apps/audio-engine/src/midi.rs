@@ -117,8 +117,7 @@ pub enum Action {
     PlayToggle(DeckId),
     Cue(DeckId),
     BeatLoop(DeckId, f64),
-    /// Not in the page's `MidiAction` union yet; a map can bind it once the
-    /// contract gains `deck_beat_jump` (see 20-03-PLAN.md).
+    /// Page maps bind this (XDJ-AZ BEAT JUMP, issue #10283).
     BeatJump(DeckId, f64),
     LoopExit(DeckId),
     Channel(DeckId, ChannelTarget),

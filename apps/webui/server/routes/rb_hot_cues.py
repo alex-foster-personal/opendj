@@ -41,6 +41,7 @@ from fastapi import APIRouter, Depends, HTTPException, Path, Request, Response
 from pydantic import BaseModel, ConfigDict, Field, StrictBool, StrictInt
 
 from apps.adapters.rekordbox import config as rb_config
+from apps.analysis_structure.http import build_niche_intel
 from apps.shared.events import publish
 from apps.shared.state import cue_store
 from apps.shared.state import db as state_db
@@ -49,12 +50,13 @@ from apps.shared.state.writer import StateWriter
 
 from .. import rb_vendor
 from ..backend import StateBackend
-from ..deps import get_read_state, get_write_state
+from ..deps import get_library_data_dir, get_read_state, get_write_state
 
 router = APIRouter(prefix="/tracks", tags=["rb-hot-cues"])
 MOUNT_UNDER_API_PREFIX = True
 
 HotCueSlot = Literal["A", "B", "C", "D", "E", "F", "G", "H"]
+_niche_intel = build_niche_intel()
 
 _IF_MATCH_OPENAPI_PARAMETER: dict[str, Any] = {
     "name": "If-Match",
@@ -406,6 +408,148 @@ def set_active_memory_loop(
     return MemoryCuesOut(**result)
 
 
+# ---------- niche labels (parent #345, issue #11190) ------------------------
+
+
+class NicheSuggestionOut(BaseModel):
+    suggestion_id: str
+    start_s: float
+    end_s: float
+    label: str
+    source: Literal["structure"]
+    verdict: Literal["accepted", "rejected"] | None = None
+    accepted: bool = False
+
+
+class NicheRegionOut(BaseModel):
+    id: str
+    start_s: float
+    end_s: float
+    label: str
+    source: Literal["user"]
+
+
+class NicheLabelsOut(BaseModel):
+    stable_id: str
+    suggestions: list[NicheSuggestionOut]
+    regions: list[NicheRegionOut]
+    query_labels: list[str]
+
+
+class NicheRegionIn(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    start_s: float = Field(ge=0.0)
+    end_s: float = Field(gt=0.0)
+    label: str = Field(min_length=1)
+
+
+class NicheSuggestionVerdictIn(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    accepted: bool
+
+
+def _niche_view(request: Request, stable_id: str) -> NicheLabelsOut:
+    conn = state_db.open_ro(_state_db_path(request))
+    try:
+        doc = _niche_intel.view(conn, get_library_data_dir(request), stable_id)
+    finally:
+        conn.close()
+    return NicheLabelsOut(**doc)
+
+
+def _niche_write(
+    request: Request,
+    stable_id: str,
+    mutate: Callable[[dict[str, Any], list[dict[str, Any]]], dict[str, Any]],
+) -> NicheLabelsOut:
+    data_dir = get_library_data_dir(request)
+    conn = state_db.open_rw(_state_db_path(request))
+    try:
+        with StateWriter(conn, actor="webui") as writer, writer.transaction():
+            state = _niche_intel.read_state(conn, stable_id)
+            suggestions = _niche_intel.suggestions_for_track(data_dir, stable_id)
+            next_state = mutate(state, suggestions)
+
+            def write(value: dict[str, Any]) -> None:
+                writer.set_field(
+                    stable_id,
+                    _niche_intel.field_name,
+                    value,
+                    source="webui",
+                    modified_at=canonical_now(),
+                )
+
+            write(next_state)
+    finally:
+        conn.close()
+    return _niche_view(request, stable_id)
+
+
+@router.get("/{stable_id}/niche-labels", response_model=NicheLabelsOut)
+def get_niche_labels(
+    stable_id: str,
+    request: Request,
+    _backend: StateBackend = Depends(get_read_state),  # noqa: B008  # FastAPI DI
+) -> NicheLabelsOut:
+    _ = _backend.get_track(stable_id)
+    return _niche_view(request, stable_id)
+
+
+@router.put("/{stable_id}/niche-labels/regions", response_model=NicheLabelsOut)
+def put_niche_region(
+    stable_id: str,
+    body: NicheRegionIn,
+    request: Request,
+    _backend: StateBackend = Depends(get_write_state),  # noqa: B008  # FastAPI DI
+) -> NicheLabelsOut:
+    _ = _backend.get_track(stable_id)
+    if body.end_s <= body.start_s:
+        raise HTTPException(status_code=422, detail={"code": "invalid_region", "message": "end_s must be after start_s"})
+
+    def mutate(state: dict[str, Any], _suggestions: list[dict[str, Any]]) -> dict[str, Any]:
+        try:
+            return _niche_intel.record_user_region(
+                state, start_s=body.start_s, end_s=body.end_s, label=body.label
+            )
+        except ValueError as exc:
+            raise HTTPException(status_code=422, detail={"code": "invalid_region", "message": str(exc)}) from exc
+
+    return _niche_write(request, stable_id, mutate)
+
+
+@router.put(
+    "/{stable_id}/niche-labels/suggestions/{suggestion_id}",
+    response_model=NicheLabelsOut,
+)
+def put_niche_suggestion_verdict(
+    stable_id: str,
+    suggestion_id: str,
+    body: NicheSuggestionVerdictIn,
+    request: Request,
+    _backend: StateBackend = Depends(get_write_state),  # noqa: B008  # FastAPI DI
+) -> NicheLabelsOut:
+    _ = _backend.get_track(stable_id)
+    data_dir = get_library_data_dir(request)
+    conn = state_db.open_ro(_state_db_path(request))
+    try:
+        known = {
+            row["suggestion_id"]
+            for row in _niche_intel.suggestions_for_track(data_dir, stable_id)
+        }
+    finally:
+        conn.close()
+    if suggestion_id not in known:
+        raise HTTPException(
+            status_code=404,
+            detail={"code": "unknown_suggestion", "message": f"suggestion {suggestion_id!r} not on this track"},
+        )
+
+    def mutate(state: dict[str, Any], _suggestions: list[dict[str, Any]]) -> dict[str, Any]:
+        return _niche_intel.set_suggestion_verdict(state, suggestion_id, accepted=body.accepted)
+
+    return _niche_write(request, stable_id, mutate)
+
+
 __all__ = [
     "ActiveLoopIn",
     "AnlzCueOut",
@@ -414,5 +558,8 @@ __all__ = [
     "HotCueSlotOut",
     "MemoryCueOut",
     "MemoryCuesOut",
+    "NicheLabelsOut",
+    "NicheRegionIn",
+    "NicheSuggestionVerdictIn",
     "router",
 ]

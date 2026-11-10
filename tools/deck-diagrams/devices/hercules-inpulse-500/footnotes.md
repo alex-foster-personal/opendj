@@ -12,7 +12,7 @@ Ingested from Mixxx controller mapping (GPL-2.0-or-later).
 
 - 328 controls parsed from Mixxx `<control>` status/midino entries
 - Positions are an auto grid only - **spot-check required** against hardware or photos
-- No official vendor MIDI PDF; do not treat as checksum-validated tier-1
+- Official vendor MIDI chart: https://ts.hercules.com/download/sound/manuals/DJC_Inpulse500/DJControlInpulse500_MIDI_Commands.pdf (used by the Open DJ live app map in apps/webui/frontend/src/lib/rb/midi/maps/hercules-inpulse-500.ts)
 - SHIFT twins inferred only when Mixxx names end with `_shift`
 - Script-bound and HID-only surfaces may be incomplete vs real hardware
 

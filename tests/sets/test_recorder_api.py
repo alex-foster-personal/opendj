@@ -58,6 +58,12 @@ def test_recorder_start_stop_settles_real_timeline(recorder_client):
         "capture_error": None,
         "capture_source": None,
         "recordings_dir": str(service.sets_root),
+        "peak_dbfs": None,
+        "peak_dbfs_recent": None,
+        "clipped_samples": None,
+        "clip_events": None,
+        "elapsed_s": None,
+        "audio_bytes": None,
     }
     session_dir = service.sets_root / session_id
     assert not (session_dir / "recorder.pid").exists()

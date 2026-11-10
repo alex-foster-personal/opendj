@@ -157,4 +157,14 @@ def _merge_fast(payload: dict[str, Any], stable_id: str, data_dir: Path) -> dict
     }
 
 
-__all__ = ["merge_own_phrases"]
+def niche_match_citation(*, start_s: float, end_s: float, label: str, source: str) -> dict[str, Any]:
+    """One labelled span cited on a niche search hit (parent #345)."""
+    return {
+        "start_s": round(float(start_s), 3),
+        "end_s": round(float(end_s), 3),
+        "label": label,
+        "source": source,
+    }
+
+
+__all__ = ["merge_own_phrases", "niche_match_citation"]

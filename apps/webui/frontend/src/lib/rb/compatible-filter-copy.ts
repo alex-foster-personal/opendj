@@ -6,7 +6,7 @@
 import { parseCamelotKey, type CamelotRuleId } from '$lib/player/key/camelot';
 import { CAMELOT_RULES } from '$lib/player/key/camelot-rules.generated';
 import { displayKey, type KeyNotation } from '$lib/rb/key-notation';
-import type { CompatibleFilterPrefs } from '$lib/rb/compatible-filter-prefs';
+import type { CompatibleEnergyMode, CompatibleFilterPrefs } from '$lib/rb/compatible-filter-prefs';
 
 /** Pitch class -> lettered key (C = 0), the spelling the key hover uses. */
 const NOTE_LETTERS = ['C', 'C#', 'D', 'Eb', 'E', 'F', 'F#', 'G', 'Ab', 'A', 'Bb', 'B'] as const;
@@ -36,7 +36,39 @@ export function compatibleFilterSummary(prefs: CompatibleFilterPrefs): string {
 	const mode = prefs.mode === 'mashup' ? 'Mashup' : `Transition (${compatibleRuleLabels(prefs.rules)})`;
 	const shift = prefs.key_shift_max === 0 ? 'no shift' : `shift ±${prefs.key_shift_max}`;
 	const bpm = prefs.bpm_enabled ? `BPM ±${prefs.bpm_window_bpm} (${prefs.bpm_direction})` : 'BPM off';
-	return `${mode}, ${shift}, ${bpm}`;
+	const energy =
+		prefs.energy_mode !== undefined && prefs.energy_mode !== 'off'
+			? `, ${compatibleEnergyLabel(prefs.energy_mode)}`
+			: '';
+	return `${mode}, ${shift}, ${bpm}${energy}`;
+}
+
+/** SETPREP-11947: the energy rule's short label. */
+export function compatibleEnergyLabel(mode: CompatibleEnergyMode): string {
+	switch (mode) {
+		case 'within_1':
+			return 'energy within 1';
+		case 'boost':
+			return 'energy boost +1 to +2';
+		case 'drop':
+			return 'energy drop -1 to -2';
+		case 'off':
+			return 'energy off';
+	}
+}
+
+/** SETPREP-11947: one sentence per energy mode (the panel button titles). */
+export function compatibleEnergyDefinition(mode: CompatibleEnergyMode): string {
+	switch (mode) {
+		case 'within_1':
+			return 'Energy one level either side of the reference track.';
+		case 'boost':
+			return "Energy one or two levels above the reference track (Mixed In Key's Energy Boost).";
+		case 'drop':
+			return 'Energy one or two levels below the reference track.';
+		case 'off':
+			return 'Energy is not checked.';
+	}
 }
 
 /** The shifted key a row will play in, in the user's key notation (KEYSHIFT-03).

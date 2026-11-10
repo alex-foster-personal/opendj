@@ -188,6 +188,26 @@ def frame_rms_db(audio: np.ndarray, sr: int, frame_s: float) -> np.ndarray:
     return 10.0 * np.log10(np.maximum(power, _SILENCE_FLOOR))
 
 
+def second_difference(audio: np.ndarray) -> np.ndarray:
+    """|second difference| of the mono signal: where a click (a one-sample jump in level or slope) stands out."""
+    return np.abs(np.diff(mono(audio).astype(np.float64), n=2))
+
+
+def click_ratio_at(
+    d2: np.ndarray, sr: int, center_s: float, half_window_s: float = 0.02, reference_s: float = 0.1
+) -> tuple[float, int]:
+    """(click ratio near center_s, sample index of the sharpest second difference there), read from second_difference."""
+    center = round(center_s * sr)
+    lo, hi = max(0, center - int(half_window_s * sr)), min(len(d2), center + int(half_window_s * sr))
+    ref_lo, ref_hi = max(0, center - int(reference_s * sr)), min(len(d2), center + int(reference_s * sr))
+    if hi <= lo or ref_hi - ref_lo < 16:
+        raise ValueError(f"no audio around {center_s:.3f} s to look for a click in")
+    scale = 1.4826 * float(np.median(d2[ref_lo:ref_hi])) + 1e-9
+    window = d2[lo:hi]
+    peak = int(np.argmax(window))
+    return float(window[peak]) / scale, lo + peak
+
+
 def click_ratio(
     audio: np.ndarray, sr: int, center_s: float, half_window_s: float = 0.02, reference_s: float = 0.1
 ) -> float:
@@ -198,12 +218,4 @@ def click_ratio(
     second difference around it; a hi-hat or a kick does not. Robust scale:
     1.4826 * median absolute deviation.
     """
-    x = mono(audio).astype(np.float64)
-    d2 = np.abs(np.diff(x, n=2))
-    center = round(center_s * sr)
-    lo, hi = max(0, center - int(half_window_s * sr)), min(len(d2), center + int(half_window_s * sr))
-    ref_lo, ref_hi = max(0, center - int(reference_s * sr)), min(len(d2), center + int(reference_s * sr))
-    if hi <= lo or ref_hi - ref_lo < 16:
-        raise ValueError(f"no audio around {center_s:.3f} s to look for a click in")
-    scale = 1.4826 * float(np.median(d2[ref_lo:ref_hi])) + 1e-9
-    return float(d2[lo:hi].max()) / scale
+    return click_ratio_at(second_difference(audio), sr, center_s, half_window_s, reference_s)[0]

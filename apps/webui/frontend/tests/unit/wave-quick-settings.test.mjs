@@ -1,3 +1,5 @@
+// requirement: WAVEQS-11736
+// [if] the bar lines row stays inert, its title omits the CLI verb, or the CLI drops a grid value [then] this fails, [else stop].
 // requirement: CUSTSCR-10464
 // [if] the popover lacks a number row branch with SettingNumberStepper [then] this fails, [else stop].
 // requirement: WAVEQS-8348b
@@ -34,7 +36,8 @@ const OVERLAY_PREF = {
 	sections: 'show_sections',
 	lyrics: 'lyrics_waveform_overlay',
 	lyrics_scrub: 'lyrics_hover_scrub',
-	jog_radial: 'jog_radial_waveform'
+	jog_radial: 'jog_radial_waveform',
+	grid_lines: 'wave_grid_lines'
 };
 
 /** ALLOWED_SETTING_KEYS read out of apply.ts source (the module itself needs the rune singleton). */
@@ -56,7 +59,7 @@ test('WAVEQS-8348b every live row resolves to an implemented boolean or enum cat
 	}
 	// The two rows Settings shows a live preview for carry it here too.
 	const previewed = ids.filter((id) => qs.resolveWaveQsSetting(catalog.SETTINGS_CATALOG, id).preview === 'waveform');
-	assert.deepEqual(previewed.sort(), ['wave_palette', 'waveform_design']);
+	assert.deepEqual(previewed.sort(), ['wave_grid_lines', 'wave_palette', 'waveform_design']);
 });
 
 test('WAVEQS-8348b resolve refuses a missing or unimplemented entry (negative controls)', () => {
@@ -157,4 +160,20 @@ test('WAVEQS-8348/8348d the glyph title is the requirement text verbatim and ope
 	assert.doesNotMatch(button, /loadError/, 'a load error must not replace the title');
 	const popover = readFileSync('src/lib/components/rb/WaveQuickSettingsPopover.svelte', 'utf8');
 	assert.match(popover, /querySelector<HTMLElement>\(\s*'\.wqs-group select, \.wqs-group input:not\(:disabled\)'\s*\)/);
+});
+
+test('WAVEQS-11736 the bar lines row is live, its title names the CLI verb, and the CLI declares the three values', async () => {
+	const grid = await loadTypeScriptModule('src/lib/rb/wave-grid-lines.ts');
+	const rows = qs.WAVE_QS_GROUPS.flatMap((g) => g.rows);
+	assert.ok(!rows.some((r) => r.id === 'bar_lines'), 'the inert bar_lines row is gone');
+	const markers = qs.WAVE_QS_GROUPS.find((g) => g.id === 'markers');
+	assert.ok(markers.rows.some((r) => r.kind === 'setting' && r.id === 'wave_grid_lines'));
+	const def = qs.resolveWaveQsSetting(catalog.SETTINGS_CATALOG, 'wave_grid_lines');
+	assert.match(qs.waveQsRowTitle(def), /Agents: opendj set_waveform_overlay$/);
+	assert.equal(def.control.kind, 'enum');
+	assert.deepEqual(def.control.options.map((o) => o.value), ['beats_bars', 'bars', 'off']);
+	const cli = readFileSync('../../opendj_cli/catalog.py', 'utf8');
+	const values = cli.match(/WAVE_GRID_LINES_VALUES: tuple\[str, \.\.\.\] = \(([^)]*)\)/);
+	assert.ok(values, 'WAVE_GRID_LINES_VALUES missing from the CLI catalog');
+	assert.deepEqual([...values[1].matchAll(/"([^"]+)"/g)].map((m) => m[1]), [...grid.WAVE_GRID_LINES_VALUES]);
 });

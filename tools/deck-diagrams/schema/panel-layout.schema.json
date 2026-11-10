@@ -110,7 +110,10 @@
           "type": "string",
           "enum": ["deck", "mixer", "performance", "effect", "browse"]
         },
-        "midi": { "$ref": "#/$defs/wire" },
+        "midi": {
+          "description": "null: the maker publishes no wire identity for this control; it renders unwired and inert",
+          "anyOf": [{ "$ref": "#/$defs/wire" }, { "type": "null" }]
+        },
         "shift_midi": {
           "anyOf": [{ "$ref": "#/$defs/wire" }, { "type": "null" }]
         }

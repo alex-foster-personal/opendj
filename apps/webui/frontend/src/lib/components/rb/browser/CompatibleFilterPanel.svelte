@@ -5,10 +5,12 @@
 	import { openSettings } from '$lib/settings/overlay.svelte';
 	import {
 		compatibleModeDefinition,
-		compatibleFilterSummary
+		compatibleFilterSummary,
+		compatibleEnergyDefinition
 	} from '$lib/rb/compatible-filter-copy';
 	import type {
 		CompatibleBpmDirection,
+		CompatibleEnergyMode,
 		CompatibleKeyShiftMax,
 		CompatibleMode
 	} from '$lib/rb/compatible-filter-prefs';
@@ -16,7 +18,17 @@
 
 	// Loaded on first hover by CompatibleFilterPopover, so the range buttons stay
 	// out of the /performance route's eager bundle.
-	let { onEnter, onLeave }: { onEnter: () => void; onLeave: () => void } = $props();
+	let {
+		onEnter,
+		onLeave,
+		energyNote = null
+	}: { onEnter: () => void; onLeave: () => void; energyNote?: string | null } = $props();
+	const ENERGY_BUTTONS: readonly { mode: CompatibleEnergyMode; label: string }[] = [
+		{ mode: 'off', label: 'off' },
+		{ mode: 'within_1', label: '±1' },
+		{ mode: 'boost', label: 'boost' },
+		{ mode: 'drop', label: 'drop' }
+	];
 
 	// A range change commits only after the disk write lands (PR #4014, Sol P1);
 	// a rejection is shown here instead of leaving a range the disk never took.
@@ -211,10 +223,24 @@
 		<button type="button" aria-pressed={prefs.bpm_direction === 'below'} onclick={() => _setDirection('below')}>below</button>
 		<button type="button" aria-pressed={prefs.bpm_direction === 'same'} onclick={() => _setDirection('same')}>same</button>
 	</div>
+	<p class="compat-filter-heading">Energy</p>
+	<div class="compat-filter-row">
+		{#each ENERGY_BUTTONS as b (b.mode)}
+			<button
+				type="button"
+				aria-pressed={(prefs.energy_mode ?? 'off') === b.mode}
+				title={compatibleEnergyDefinition(b.mode)}
+				onclick={() => _patch({ energy_mode: b.mode })}>{b.label}</button
+			>
+		{/each}
+	</div>
 	<div class="compat-filter-summary">
 		<span title="Current compatible filter settings">{compatibleFilterSummary(prefs)}</span>
 		<button type="button" class="compat-filter-link" onclick={_openModeSettings}>Edit modes in Settings</button>
 	</div>
+	{#if energyNote}
+		<p class="compat-filter-energy-note" role="status">{energyNote}</p>
+	{/if}
 	{#if saveError}
 		<p class="compat-filter-error" role="alert" title={saveError}>{saveError}</p>
 	{/if}
@@ -316,6 +342,11 @@
 		margin-left: auto;
 		opacity: 0.65;
 		font-variant-numeric: tabular-nums;
+	}
+	.compat-filter-energy-note {
+		margin: 4px 0 0;
+		font-size: 10.5px;
+		color: var(--rb-text-dim, #838990);
 	}
 	.compat-filter-summary {
 		display: flex;

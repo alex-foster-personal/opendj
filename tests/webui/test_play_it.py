@@ -29,6 +29,7 @@ def test_solve_happy_path(client: TestClient, seed_backend: InMemoryBackend) -> 
     assert sorted(body["proposed_order"]) == sorted(body["previous_order"])
     assert len(body["steps"]) == 3
     assert body["etag"] == compute_etag("pl-002", seed_backend.get_playlist("pl-002").updated_at)
+    assert "unscored_edges" in body
 
 
 def test_production_app_registers_play_it_contract() -> None:
@@ -166,6 +167,7 @@ def test_solve_empty_playlist_returns_empty_order() -> None:
     assert body["proposed_order"] == []
     assert body["steps"] == []
     assert body["unchanged"] is True
+    assert body["unscored_edges"] == 0
 
 
 def test_solve_energy_missing_is_not_gating(client: TestClient) -> None:
@@ -174,7 +176,11 @@ def test_solve_energy_missing_is_not_gating(client: TestClient) -> None:
     # mirrors routes/copilot.py).
     r = client.post("/api/v1/play-it/pl-002/solve", json={"duration_min": 60})
     assert r.status_code == 200, r.text
-    assert all(step["energy"] is None for step in r.json()["steps"])
+    body = r.json()
+    assert all(step["energy"] is None for step in body["steps"])
+    edges = max(0, len(body["steps"]) - 1)
+    assert body["unscored_edges"] == edges
+    assert all("energy" in step["unscored"] for step in body["steps"][1:])
 
 
 @pytest.mark.requirement("SET-04")

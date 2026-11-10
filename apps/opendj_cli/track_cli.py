@@ -109,6 +109,7 @@ _USAGE = (
     "       opendj track transition-in <stable_id> [set <ms>|clear]\n"
     "       opendj track tempo <stable_id>\n"
     "       opendj track played-length <stable_id>...\n"
+    "       opendj track list-totals <stable_id>...\n"
     "       opendj track comment <stable_id> set <text> | clear\n"
     "       opendj track related <stable_id> [limit N] [bpm-percent N]\n"
     "                            [key|genre|color|rating|mytag|artist 0|1]..."
@@ -399,6 +400,14 @@ def _played_length(args: Sequence[str]) -> int:
     return api_cli.run(["POST", "/api/v1/tracks/played-length", "--json", body], as_json=True)
 
 
+def _list_totals(args: Sequence[str]) -> int:
+    """`POST /api/v1/tracks/list-totals`: track count and summed duration (LIBUX list footer)."""
+    if not args:
+        return _usage_error()
+    body = json.dumps({"stable_ids": list(args)})
+    return api_cli.run(["POST", "/api/v1/tracks/list-totals", "--json", body], as_json=True)
+
+
 def _tempo(args: Sequence[str]) -> int:
     """`GET /api/v1/tracks/{id}/tempo-stability`: verdict and tempo segments."""
     if len(args) != 1:
@@ -608,6 +617,7 @@ _API_VERBS: dict[str, Callable[[Sequence[str]], int]] = {
     TRANSITION_IN_VERB: _transition_in,
     TEMPO_VERB: _tempo,
     "played-length": _played_length,
+    "list-totals": _list_totals,
     COMMENT_VERB: _comment,
     RELATED_VERB: _related,
 }

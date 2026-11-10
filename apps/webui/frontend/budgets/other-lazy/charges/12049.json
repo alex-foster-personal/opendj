@@ -1,0 +1,9 @@
+{
+  "bytes": 1024,
+  "measured_main": 511808,
+  "measured_with_pr": 511952,
+  "sha": "282cb69c89",
+  "date": "Tue 10 Nov 2026",
+  "reason": "PR #12049: autoplay-browser-feed module in lazy browser chunks; +144 B gzip over main at CI merge-base measurement.",
+  "payback": "none planned; growth is the hostile-empty harness extraction beside BrowserPanel"
+}

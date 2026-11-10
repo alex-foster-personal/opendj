@@ -34,6 +34,10 @@ TOTAL_BARS = 2 * CONTEXT_BARS + OVERLAP_BARS
 LENGTH_S = TOTAL_BARS * BAR_S
 OVERLAP = (CONTEXT_BARS * BAR_S, (CONTEXT_BARS + OVERLAP_BARS) * BAR_S)
 SWAP_S = OVERLAP[0] + OVERLAP_BARS / 2 * BAR_S
+#: A bar away from the swap and off every downbeat, so no step or cut detector reads its edges.
+MOMENTARY_DIP_AT_S = SWAP_S + 2 * BAR_S + 0.7
+#: Between a hat and the next kick, at a time no plan event names.
+UNLISTED_CLICK_S = OVERLAP[0] + 6 * BAR_S + 0.375
 #: Low band held this far down before the swap (incoming) and after it (outgoing).
 HELD_LOW = 10 ** (-24 / 20)
 RAMP_S = 0.005
@@ -82,6 +86,13 @@ class Mutation:
     #: first 2 bars of the overlap, linear in dB, then held: the mix thins under the outgoing at unity, whose own audio
     #: (out_natural) keeps it. Default 0 keeps the locked clean fixture.
     out_mids_thin_lu: float = 0.0
+    #: The incoming low held at this EQ level (dB) until the swap instead of HELD_LOW.
+    in_low_held_db: float | None = None
+    #: Gain dip (dB) centred at momentary_dip_s with momentary_dip_s length (both decks).
+    momentary_dip_db: float = 0.0
+    momentary_dip_s: float = 0.0
+    #: Click injected at this time (not added to plan seams).
+    click_at_s: float | None = None
 
 
 def _t(length_s: float = LENGTH_S) -> np.ndarray:
@@ -184,6 +195,22 @@ def _level_mutation_gain(t: np.ndarray, mutation: Mutation) -> np.ndarray:
     return gain
 
 
+def _inject_click(mix: np.ndarray, at_s: float) -> None:
+    """The loop-seam click shape (0.3 amplitude, 2 ms decay), in-place."""
+    start = int(at_s * SR)
+    mix[start:] += 0.3 * np.exp(-np.arange(len(mix) - start) / SR / 0.002)
+
+
+def _momentary_dip_gain(t: np.ndarray, mutation: Mutation) -> np.ndarray:
+    if not mutation.momentary_dip_db:
+        return np.ones_like(t)
+    at = MOMENTARY_DIP_AT_S
+    lo, hi = at - mutation.momentary_dip_s / 2, at + mutation.momentary_dip_s / 2
+    held = 10 ** (-mutation.momentary_dip_db / 20)
+    inside = np.clip(np.minimum(t - lo, hi - t) / RAMP_S, 0.0, 1.0)
+    return 1 + (held - 1) * inside
+
+
 def _dip_gain(t: np.ndarray, mix: np.ndarray, mutation: Mutation) -> np.ndarray:
     """The gain that holds the mix ``dip_lu`` under the outgoing solo's power for ``dip_bars`` bars (1.0 elsewhere):
     the mix's own 1 s power is divided out, so the hole is flat whatever the blend does under it."""
@@ -229,8 +256,10 @@ def render(mutation: Mutation | None = None, seed: int = 0) -> tuple[np.ndarray,
         out_vocal_heard = out_vocal * 10 ** (-mutation.out_mids_thin_lu * fade / 20)
     swap = SWAP_S + mutation.step_late_s
     out_low_gain = _ramp_step(t, swap, 1.0, HELD_LOW)
-    held = 0.0 if mutation.in_lows_killed else HELD_LOW
-    in_low_gain = np.ones_like(t) if mutation.in_low_unheld else _ramp_step(t, swap, held, 1.0)
+    held_level = 0.0 if mutation.in_lows_killed else HELD_LOW
+    if mutation.in_low_held_db is not None:
+        held_level = 10 ** (mutation.in_low_held_db / 20)
+    in_low_gain = np.ones_like(t) if mutation.in_low_unheld else _ramp_step(t, swap, held_level, 1.0)
     if mutation.maintainer_low_handoff:
         out_low_gain, in_low_gain = _maintainer_handoff(t)
     if mutation.low_hole:
@@ -244,14 +273,16 @@ def render(mutation: Mutation | None = None, seed: int = 0) -> tuple[np.ndarray,
     gain = _level_mutation_gain(t, mutation)
     out_deck, in_deck = out_deck * gain, in_deck * gain
     dip = _dip_gain(t, out_deck + in_deck, mutation)
-    out_deck, in_deck = out_deck * dip, in_deck * dip
+    momentary = _momentary_dip_gain(t, mutation)
+    out_deck, in_deck = out_deck * dip * momentary, in_deck * dip * momentary
     mix = out_deck + in_deck
     seams: tuple[float, ...] = ()
     if mutation.seam_click:
         seam = OVERLAP[0] + 2 * BAR_S
         seams = (seam,)
-        start = int(seam * SR)
-        mix[start:] += 0.3 * np.exp(-np.arange(len(mix) - start) / SR / 0.002)
+        _inject_click(mix, seam)
+    if mutation.click_at_s is not None:
+        _inject_click(mix, mutation.click_at_s)
     planned = SWAP_S + (mutation.step_late_s if mutation.plan_says_late else 0.0)
     stereo = [np.stack([x, x], axis=1).astype(np.float32) for x in (mix, out_deck, in_deck)]
     downbeats = tuple(i * BAR_S for i in range(TOTAL_BARS + 1))

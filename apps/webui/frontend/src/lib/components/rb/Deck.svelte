@@ -26,6 +26,7 @@
 	import type { PitchRange } from '$lib/rb/audio-engine.svelte';
 	import { bannerSyncError, deckErrorIds, noteDeckError } from '$lib/rb/deck-error-id.svelte';
 	import { deckBannerDismissMs, deckBannerTone } from '$lib/rb/deck-banner-policy';
+	import { presentationTickFailure } from '$lib/rb/presentation-tick-failure.svelte';
 	import { createDeckHotCueActions } from '$lib/rb/deck-hot-cue-actions';
 	import {
 		performanceCommandStatus,
@@ -58,6 +59,7 @@
 	import type { DeckId } from '$lib/rb/deck-slots';
 	import type { DeckState, QuantizeGrid } from '$lib/rb/deck-state-types';
 	import type { HotCueSlot } from '$lib/rb/hot-cue-types';
+	import { quickModePlan, type StemQuickMode } from '$lib/rb/stem-quick-mode';
 	import type { StemControl } from '$lib/rb/stem-types';
 	import BeatJump from './deck/BeatJump.svelte';
 	import type { BeatJumpSize } from '$lib/rb/beat-jump-size.svelte';
@@ -89,6 +91,7 @@
 	import StripWaveform from './deck/StripWaveform.svelte';
 	import { waveSeekCommand } from './wave/wave-scrub';
 	import TransportCluster from './deck/TransportCluster.svelte';
+	import { selId, selectorNode } from '$lib/keyboard/selector-register';
 	import GridEditButtons from './deck/GridEditButtons.svelte';
 	import ReactIsland from '$lib/react/ReactIsland.svelte';
 	import { reactDeckEnabled } from '$lib/react/react-deck-flag';
@@ -172,7 +175,7 @@
 		performanceCommandStatus.deck_errors[deckId] ??
 			bannerSyncError(deck.sync_error) ??
 			deck.processor_error ??
-			queryPerformanceState().decks[deckId].presentation_clock_error
+			presentationTickFailure()
 	);
 
 	/**
@@ -212,6 +215,8 @@
 	// BeatJump stays Svelte either way: it reads deck.position_ms, which the
 	// rAF clock writes every frame, and per-frame values never go through React.
 	const reactDeck: boolean = $derived(reactDeckEnabled());
+	/** #9397: two-deck mode clips decks 3/4, so they leave the keyboard selector. */
+	const deckSelectable = $derived(!(uiPrefs.deck_layout === 'less' && (deckId === 3 || deckId === 4)));
 	// StemRow's twin reads only deck_id and stems. A plain snapshot of exactly
 	// those keeps React re-renders to stem changes; passing the live deck would
 	// re-render on nothing (React cannot see rune reads) or, spread, every frame.
@@ -613,6 +618,13 @@
 		});
 	}
 
+	/** STEMPERF-11695: one press to acapella, instrumental or everything, as the existing stem commands. */
+	async function applyStemQuickMode(mode: StemQuickMode): Promise<void> {
+		for (const command of quickModePlan(deckId, mode, deck.stems)) {
+			await runPerformanceCommandFromUi(command);
+		}
+	}
+
 	async function toggleSlip(): Promise<void> {
 		await runPerformanceCommandFromUi({
 			type: 'slip',
@@ -708,6 +720,7 @@
 	class:deck-looping={deckLook.looping}
 	data-deck={deckId}
 	data-deck-hover={deckId}
+	use:selectorNode={{ id: selId.deck(deckId), kind: 'group', enabled: deckSelectable }}
 	data-command-pending={pending}
 	use:wheelAdjust={{
 		step: WHEEL_STEP.fader,
@@ -771,7 +784,7 @@
 		<!-- The cue column absorbs spare width to preserve control alignment.
 		     LYR-14: the 2x4 bank sits on top and the lyric strip runs under it
 		     at the bank's full width, so a lyric line reads left to right. -->
-		<div class="cue-flex" bind:this={cueFlexEl}>
+		<div class="cue-flex" bind:this={cueFlexEl} use:selectorNode={{ id: selId.deckPart(deckId, 'cues'), kind: 'leaf', enabled: true }}>
 			<HotCueBank
 				{deck}
 				{pending}
@@ -795,68 +808,78 @@
 		</div>
 
 		<!-- Keep the compact transport modifiers together, outside the cue bank. -->
-		<div class="loop-col" data-priority="2">
+		<div class="loop-col" data-priority="2" use:selectorNode={{ id: selId.deckPart(deckId, 'loop'), kind: 'leaf', enabled: true }}>
 			<LoopCluster {deck} {deckId} {pending} onEngage={engageBeatLoop} onDisengage={disengageLoop} onSafetySave={saveSafetyLoop} onSafetyArm={armSafetyLoop} onSafetyClear={clearSafetyLoop} onIntervalMode={setLoopIntervalMode} onIntervalBase={setLoopIntervalBase} onStoredLoop={engageStoredLoop} onLoopIn={loopIn} onLoopOut={loopOut} onReloop={reloop} onSetActive={setActiveMemoryLoop} />
 			<div class="prio-slot" data-priority="3">
 				<BeatJump {deck} {pending} onJump={beatJump} onSize={setBeatJumpSize} />
 			</div>
 		</div>
 
-		<TransportCluster
-			{deck}
-			{pending}
-			quantizedLaunchArmed={queryQuantizedLaunchArmed(deckId)}
-			onCue={returnToCue}
-			onMemoryCueCall={callMemoryCue}
-			onPlayPause={playPause}
-		/>
+		<div class="sel-node" use:selectorNode={{ id: selId.deckPart(deckId, 'transport'), kind: 'leaf', enabled: true }}>
+			<TransportCluster
+				{deck}
+				{pending}
+				quantizedLaunchArmed={queryQuantizedLaunchArmed(deckId)}
+				onCue={returnToCue}
+				onMemoryCueCall={callMemoryCue}
+				onPlayPause={playPause}
+			/>
+		</div>
 
-		<JogDial
-			{deck}
-			{pitchRange}
-			{pending}
-			onQuantize={toggleQuantize}
-			onQuantizeGrid={setQuantizeGrid}
-			onMasterTempo={toggleMasterTempo}
-			onAutoCue={(enabled) => void runPerformanceCommandFromUi({ type: 'deck_autocue', enabled })}
-			onSlip={toggleSlip}
-		/>
+		<div class="sel-node" use:selectorNode={{ id: selId.deckPart(deckId, 'jog'), kind: 'leaf', enabled: true }}>
+			<JogDial
+				{deck}
+				{pitchRange}
+				{pending}
+				onQuantize={toggleQuantize}
+				onQuantizeGrid={setQuantizeGrid}
+				onMasterTempo={toggleMasterTempo}
+				onAutoCue={(enabled) => void runPerformanceCommandFromUi({ type: 'deck_autocue', enabled })}
+				onSlip={toggleSlip}
+			/>
+		</div>
 
-		<PitchFader
-			{deck}
-			{pitchRange}
-			{pending}
-			onTempoChange={setTempo}
-			onRangeChange={setPitchRangeUi}
-		/>
+		<div class="sel-node" use:selectorNode={{ id: selId.deckPart(deckId, 'pitch'), kind: 'leaf', enabled: true }}>
+			<PitchFader
+				{deck}
+				{pitchRange}
+				{pending}
+				onTempoChange={setTempo}
+				onRangeChange={setPitchRangeUi}
+			/>
+		</div>
 	</div>
 
-	{#if reactDeck}
-		<ReactIsland
-			load={() => import('./deck/StemRow.tsx')}
-			props={{
-				deck: stemRowDeck,
-				pending,
-				onMute: toggleStemMute,
-				onSolo: toggleStemSolo,
-				onLoad: loadStems,
-				separate: separateView,
-				onSeparate: separateStems
-			}}
-		/>
-	{:else}
-		<StemRow
-			{deck}
-			{pending}
-			onMute={toggleStemMute}
-			onSolo={toggleStemSolo}
-			onLoad={loadStems}
-			separate={separateView}
-			onSeparate={separateStems}
-			stemsResetOn={trackLoadResetEnabled('stems')}
-			onOpenResetConfig={(el) => toggleTrackLoadResetPanel('stems', el, deck.deck_id)}
-		/>
-	{/if}
+	<div class="sel-node" use:selectorNode={{ id: selId.deckPart(deckId, 'stems'), kind: 'leaf', enabled: true }}>
+		{#if reactDeck}
+			<ReactIsland
+				load={() => import('./deck/StemRow.tsx')}
+				props={{
+					deck: stemRowDeck,
+					pending,
+					onMute: toggleStemMute,
+					onSolo: toggleStemSolo,
+					onLoad: loadStems,
+					separate: separateView,
+					onSeparate: separateStems,
+					onQuickMode: applyStemQuickMode
+				}}
+			/>
+		{:else}
+			<StemRow
+				{deck}
+				{pending}
+				onMute={toggleStemMute}
+				onSolo={toggleStemSolo}
+				onLoad={loadStems}
+				separate={separateView}
+				onSeparate={separateStems}
+				onQuickMode={applyStemQuickMode}
+				stemsResetOn={trackLoadResetEnabled('stems')}
+				onOpenResetConfig={(el) => toggleTrackLoadResetPanel('stems', el, deck.deck_id)}
+			/>
+		{/if}
+	</div>
 
 	{#if controlError !== null}
 		{#if reactDeck}
@@ -1027,7 +1050,7 @@
 		flex-direction: row-reverse;
 	}
 	.main-row.mirror-main-row > .loop-col,
-	.main-row.mirror-main-row > :global(.jog) {
+	.main-row.mirror-main-row > .sel-node > :global(.jog) {
 		flex-direction: row-reverse;
 	}
 	.left-edge {

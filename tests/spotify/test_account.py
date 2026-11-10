@@ -951,6 +951,76 @@ def test_concurrent_connect_starts_leave_one_listener(tmp_path: Path) -> None:
         flow._cancel_waiting()
 
 
+@pytest.mark.requirement("SPOTIFY-11967")
+def test_wait_pkce_connect_refocuses_authorize_url_after_10s() -> None:
+    """[if] login waits and Connect is still waiting at 10s [then] the authorize URL opens again, [else stop]."""
+    clock = iter([0.0, 5.0, 10.0, 10.5])
+    opens: list[str] = []
+    waits = {"n": 0}
+
+    class _Flow:
+        def status(self) -> dict[str, Any]:
+            waits["n"] += 1
+            if waits["n"] >= 4:
+                return {"phase": "connected", "detail": None}
+            return {"phase": "waiting", "detail": None}
+
+    status = account.wait_pkce_connect(
+        _Flow(),  # type: ignore[arg-type]
+        "https://accounts.spotify.com/authorize?client_id=x",
+        open_browser=True,
+        poll_s=0.01,
+        monotonic=lambda: next(clock),
+        sleep=lambda _s: None,
+        opener=lambda url: opens.append(url) or True,
+    )
+    assert status["phase"] == "connected"
+    assert len(opens) == 1
+    assert opens[0].startswith("https://accounts.spotify.com/")
+
+
+@pytest.mark.requirement("SPOTIFY-11967")
+def test_wait_pkce_connect_with_no_browser_never_opens_url() -> None:
+    """[if] login uses --no-browser [then] wait_pkce_connect never opens the authorize URL, [else stop]."""
+    opens: list[str] = []
+    waits = {"n": 0}
+
+    class _Flow:
+        def status(self) -> dict[str, Any]:
+            waits["n"] += 1
+            return {"phase": "connected", "detail": None} if waits["n"] > 1 else {"phase": "waiting", "detail": None}
+
+    account.wait_pkce_connect(
+        _Flow(),  # type: ignore[arg-type]
+        "https://accounts.spotify.com/authorize?client_id=x",
+        open_browser=False,
+        poll_s=0.01,
+        sleep=lambda _s: None,
+        opener=lambda url: opens.append(url) or True,
+    )
+    assert opens == []
+
+
+def test_wait_pkce_connect_returns_connect_flow_terminal_phase(tmp_path: Path) -> None:
+    """[if] ConnectFlow times out waiting [then] wait_pkce_connect returns failed with its detail, [else stop]."""
+    flow = account.ConnectFlow(
+        token_path=tmp_path / "t.json",
+        client_id_path=tmp_path / "c.json",
+        server_factory=_ephemeral_factory({}),
+        timeout_s=0.2,
+    )
+    flow.start(env={"SPOTIFY_CLIENT_ID": "0123456789abcdef0123456789abcdef"})
+    status = account.wait_pkce_connect(
+        flow,
+        "https://accounts.spotify.com/authorize?client_id=x",
+        open_browser=False,
+        poll_s=0.05,
+        sleep=time.sleep,
+    )
+    assert status["phase"] == "failed"
+    assert status["detail"] == "timed out waiting for the browser"
+
+
 def test_connect_flow_times_out(tmp_path: Path) -> None:
     flow = account.ConnectFlow(
         token_path=tmp_path / "t.json",

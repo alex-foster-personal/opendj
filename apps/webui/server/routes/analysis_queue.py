@@ -48,7 +48,8 @@ from fastapi import APIRouter, HTTPException, Query, Request
 from pydantic import BaseModel
 
 from ..analysis_autostart import AutoAnalyzeState
-from . import ingest
+from ..auto_analyze_prefs import lanes_out_dict
+from . import ingest, ui_prefs
 from .ingest_scope import ORDERABLE_ANALYSIS_KINDS
 
 router = APIRouter(prefix="/analysis-queue", tags=["analysis"])
@@ -69,6 +70,13 @@ class AnalysisQueueItemOut(BaseModel):
     title: str | None
 
 
+class AutoLanesOut(BaseModel):
+    grid: bool
+    key: bool
+    sections: bool
+    vocals: bool
+
+
 class AutoAnalyzeOut(BaseModel):
     """State of the daemon's auto-drain reconcile loop."""
 
@@ -78,10 +86,11 @@ class AutoAnalyzeOut(BaseModel):
     last_started_at: float | None
     last_signature: str | None
     last_outcome: str | None
+    lanes: AutoLanesOut
 
 
 class AnalysisQueueOut(BaseModel):
-    """``analyzed + unreachable + too_long + pending`` always equals ``unmapped``."""
+    """``analyzed + unreachable + too_long + lanes_off + pending`` == ``unmapped``."""
 
     unmapped: int
     pending: int
@@ -90,6 +99,7 @@ class AnalysisQueueOut(BaseModel):
     #: Over the analyzer's track-length cap by the library's own duration:
     #: never queued, so they cannot end every drain in ``error`` (NATIVE-38).
     too_long: int
+    lanes_off: int
     signature: str
     items: list[AnalysisQueueItemOut]
     job: ingest.RefreshStatusOut
@@ -119,14 +129,18 @@ def get_analysis_queue(
     ),
 ) -> AnalysisQueueOut:
     """The analyze-on-import queue, its denominators and the drain's progress."""
-    queue = ingest.unmapped_backlog(limit=limit)
+    lanes = ui_prefs.read_auto_analyze_lanes(request.app)
+    queue = ingest.unmapped_backlog(lanes=lanes, limit=limit)
+    prefs = ui_prefs._load(ui_prefs._path(request))
     auto = _auto_state(request)
+    lane_bools = lanes_out_dict(prefs)
     return AnalysisQueueOut(
         unmapped=queue.unmapped,
         pending=queue.pending_total,
         analyzed=queue.analyzed,
         unreachable=queue.unreachable,
         too_long=queue.too_long,
+        lanes_off=queue.lanes_off,
         signature=queue.signature,
         items=[
             AnalysisQueueItemOut(
@@ -142,6 +156,7 @@ def get_analysis_queue(
             last_started_at=auto.last_started_at,
             last_signature=auto.last_signature,
             last_outcome=auto.last_outcome,
+            lanes=AutoLanesOut(**lane_bools),
         ),
     )
 

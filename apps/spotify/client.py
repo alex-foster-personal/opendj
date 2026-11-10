@@ -26,6 +26,13 @@ from apps.shared.paths import DATA_DIR
 
 __all__ = [
     "CACHE_DIR",
+    "CONNECT_WEB_PLAYBACK_SCOPES",
+    "DEFAULT_REDIRECT_URI",
+    "DEFAULT_SCOPES",
+    "SCOPE_STREAMING",
+    "SCOPE_USER_MODIFY_PLAYBACK_STATE",
+    "SCOPE_USER_READ_CURRENTLY_PLAYING",
+    "SCOPE_USER_READ_PLAYBACK_STATE",
     "TOKEN_CACHE_PATH",
     "MissingCredentialsError",
     "ReauthorizationRequired",
@@ -68,6 +75,22 @@ DEFAULT_REDIRECT_URI: str = "http://127.0.0.1:8888/callback"
 # changed and re-runs the PKCE browser flow ONCE. That is deliberate and
 # visible, not something to work around by keeping two token caches.
 DEFAULT_SCOPES: str = "playlist-read-private playlist-read-collaborative user-read-recently-played"
+
+# Connect / Web Playback SDK single-stream CUE (SPOT sprint, parent #305). Login
+# and DEFAULT_SCOPES do not request these yet; a later change extends scopes and
+# forces one deliberate re-auth.
+SCOPE_STREAMING: str = "streaming"
+SCOPE_USER_READ_PLAYBACK_STATE: str = "user-read-playback-state"
+SCOPE_USER_MODIFY_PLAYBACK_STATE: str = "user-modify-playback-state"
+SCOPE_USER_READ_CURRENTLY_PLAYING: str = "user-read-currently-playing"
+CONNECT_WEB_PLAYBACK_SCOPES: str = " ".join(
+    (
+        SCOPE_STREAMING,
+        SCOPE_USER_READ_PLAYBACK_STATE,
+        SCOPE_USER_MODIFY_PLAYBACK_STATE,
+        SCOPE_USER_READ_CURRENTLY_PLAYING,
+    )
+)
 
 
 @dataclass(frozen=True)

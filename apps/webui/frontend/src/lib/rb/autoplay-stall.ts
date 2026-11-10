@@ -33,6 +33,29 @@ export type AutoPlayStallReason =
 	| 'no-deck-playing'
 	| 'no-playing-master';
 
+/**
+ * Every terminal branch, for exhaustiveness tests.
+ *
+ * A reason missing here is a compile error; a reason listed here but absent
+ * from the union is also a compile error via the Record check below.
+ */
+export const AUTO_PLAY_STALL_REASONS = [
+	'missing-audio',
+	'no-next-in-order',
+	'no-compatible-track',
+	'candidates-failed-to-load',
+	'handoff-attempts-exhausted',
+	'handoff-incomplete',
+	'master-handover-refused',
+	'no-deck-playing',
+	'no-playing-master'
+] as const satisfies readonly AutoPlayStallReason[];
+
+const _stallReasonCoverage: Record<AutoPlayStallReason, true> = Object.fromEntries(
+	AUTO_PLAY_STALL_REASONS.map((reason) => [reason, true])
+) as Record<AutoPlayStallReason, true>;
+void _stallReasonCoverage;
+
 export interface AutoPlayStallTrack {
 	stable_id: string;
 	title: string | null;

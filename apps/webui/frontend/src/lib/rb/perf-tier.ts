@@ -84,6 +84,19 @@ export function perfTierFaultReason(): string | null {
 	return _faultReason;
 }
 
+/** True when PERFMODE-01 host facts (cpus and RAM) are present for reads. */
+export function hostInfoReadable(): boolean {
+	return _hostCpus !== null && _hostRamGiB !== null;
+}
+
+export function resolvedHostLogicalCpus(): number | null {
+	return _hostCpus;
+}
+
+export function resolvedHostRamGiB(): number | null {
+	return _hostRamGiB;
+}
+
 export function setResolvedTier(
 	tier: PerfTierName,
 	source: PerfTierSource,

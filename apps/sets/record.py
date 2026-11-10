@@ -505,6 +505,7 @@ def stop(
     )
     _clear_pid(recorder.session_dir)
     session_row = recorder.state.get_session(recorder.session_id)
+    levels = recorder._master.levels() if recorder._master is not None else None
     manifest = Manifest(
         session_id=recorder.session_id,
         started_at=(
@@ -518,6 +519,9 @@ def stop(
         event_count=recorder.state.count_events(recorder.session_id),
         deck_sources=list(recorder.config.sources),
         mp3_segments=recorder.list_segments(),
+        audio_peak_dbfs=None if levels is None else levels["peak_dbfs"],
+        clipped_samples=None if levels is None else levels["clipped_samples"],
+        clip_events=None if levels is None else levels["clip_events"],
     )
     write_manifest(recorder.session_dir, manifest)
     return manifest
@@ -580,6 +584,7 @@ def finalize(
         event_count=state_obj.count_events(session_id),
         deck_sources=[],
         mp3_segments=recorder.list_segments(),
+        # No live writer here, so no level counters survive: they stay null.
     )
     write_manifest(session_dir, manifest)
     return manifest

@@ -13,7 +13,7 @@ path = "src/main.rs"
 [dependencies]
 # Lookaround (the rules use lookbehind and lookahead) with Python-compatible
 # backtracking semantics; the plain `regex` crate has neither.
-fancy-regex = "0.17"
+fancy-regex = "0.20"
 
 [profile.release]
 opt-level = 3

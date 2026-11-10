@@ -42,8 +42,10 @@ from apps.shared.state import sync_stamp
 
 from . import config
 from .cues import HOT_CUE_SLOTS
+from apps.sync.usb.stick_model import is_canonical_volume_uuid
+
 from .errors import _open_ro, not_found, unavailable
-from .models import RbContent
+from .models import RbContent, VendorUsbMention
 
 
 def resolve_content(stable_id: str) -> RbContent:
@@ -889,6 +891,50 @@ def anlz_dir(content: RbContent) -> Path:
     return dat.parent
 
 
+def list_rekordbox_usb_mentions(master_db: Path) -> list[VendorUsbMention]:
+    """Read djmdDevice rows that name a removable USB stick (UUID-keyed).
+
+    Returns an empty list when the file is missing or unreadable. Never writes.
+    """
+    path = Path(master_db)
+    if not path.is_file():
+        return []
+    try:
+        master = _open_ro(path, "MASTER_DB")
+    except HTTPException:
+        return []
+    try:
+        rows = master.execute(
+            "SELECT ID, Name, UUID FROM djmdDevice "
+            "WHERE rb_local_deleted = 0 AND Name IS NOT NULL AND Name != ''"
+        ).fetchall()
+    except sqlite3.Error:
+        return []
+    finally:
+        master.close()
+
+    out: list[VendorUsbMention] = []
+    for device_id, name, raw_uuid in rows:
+        device_id_s = str(device_id).strip()
+        label = str(name).strip()
+        if not label:
+            continue
+        uuid: str | None = None
+        if raw_uuid is not None:
+            candidate = str(raw_uuid).strip().upper()
+            if is_canonical_volume_uuid(candidate):
+                uuid = candidate
+        out.append(
+            VendorUsbMention(
+                name=label,
+                source="rekordbox",
+                volume_uuid=uuid,
+                device_id=device_id_s or None,
+            )
+        )
+    return out
+
+
 __all__ = [
     "_asset_sibling",
     "anlz_dir",
@@ -902,6 +948,7 @@ __all__ = [
     "local_artwork_available",
     "local_audio_file",
     "local_track_file_tags",
+    "list_rekordbox_usb_mentions",
     "local_track_row",
     "resized_artwork_cache",
     "resolve_asset_path",

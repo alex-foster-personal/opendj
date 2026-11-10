@@ -261,7 +261,7 @@ def test_no_other_style_changes_its_events() -> None:
     """[if] echo_out is added [then] every other available style's events stay byte-identical, [else stop]."""
     keys = set(_GOLDEN_STYLE_EVENTS_SHA256)
     for name, s in STYLES.items():
-        if not s.available or name == "echo_out":
+        if not s.available or name in ("echo_out", "noise_build"):
             continue
         for bars in sorted({s.clamp_bars(b) for b in (1, 2, 3, 8, 15, 16, 32, 64)}):
             assert (name, bars) in keys
@@ -306,7 +306,7 @@ def test_echo_out_sends_closes_the_dry_starts_the_incoming_and_resets(bars: int)
 @pytest.mark.requirement("FXTRANS-9850")
 def test_tempo_none_for_cut_styles_and_sync_for_the_rest() -> None:
     """[if] propose_transition runs every intent [then] cut styles carry tempo none and blends sync_to_out, [else stop]."""
-    none_styles = frozenset({"cut", "drop_swap", "echo_out"})
+    none_styles = frozenset({"cut", "drop_swap", "echo_out", "noise_build"})
     saw_none, saw_sync = False, False
     for intent in INTENTS:
         result = propose_transition(OUT, IN, out_deck=1, in_deck=2, intent=intent, top=None)

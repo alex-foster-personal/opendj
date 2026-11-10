@@ -1,0 +1,9 @@
+{
+  "bytes": 1024,
+  "measured_main": 346588,
+  "measured_with_pr": 346799,
+  "sha": "e24118384e",
+  "date": "Tue 10 Nov 2026",
+  "reason": "Issue #10244 (WAVEQS-11736) adds the wave_grid_lines pref, its Settings row and preview grid, and the set_waveform_overlay grid_lines branch. Measured: local build vs base at e24118384e, +211 B gzip on library; ceiled to KiB",
+  "payback": "none planned; the growth is the feature's own code on this surface"
+}

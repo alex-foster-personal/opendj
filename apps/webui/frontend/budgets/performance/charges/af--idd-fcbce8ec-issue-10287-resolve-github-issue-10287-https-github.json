@@ -1,0 +1,9 @@
+{
+  "bytes": 1024,
+  "measured_main": 424020,
+  "measured_with_pr": 424618,
+  "sha": "38ea32ec22",
+  "date": "Tue 10 Nov 2026",
+  "reason": "Issue #10287 adds the glow and tinted deck-number artwork modes: the 8x8 canvas colour sampler, its cache and the 1 Hz animated-cover resampler in deck-number-art.ts plus the overlay's glow CSS. Measured locally on 38ea32ec22: +598 B gzip on performance; ceiled to KiB",
+  "payback": "none planned; the growth is the feature's own code"
+}

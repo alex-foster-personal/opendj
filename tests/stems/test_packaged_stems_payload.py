@@ -253,5 +253,7 @@ def test_relay_worker_writes_a_bundle_from_the_payload_without_modal(
     manifest = json.loads((bundle / "manifest.json").read_text(encoding="utf-8"))
     assert manifest["stable_id"] == SID
     assert manifest["model"]["name"].startswith("test-double:")
+    assert manifest["codec"] == "mp3"  # tier M is by-source; the publisher gate measured it (#9664)
     for name in manifest["files"].values():
-        assert (bundle / name).read_bytes()[:4] == b"fLaC"
+        assert name.endswith(".mp3")
+        assert (bundle / name).read_bytes()[:3] in {b"ID3", b"\xff\xfb"}

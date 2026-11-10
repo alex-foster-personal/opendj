@@ -1,0 +1,9 @@
+{
+  "bytes": 1024,
+  "measured_main": 345406,
+  "measured_with_pr": 345794,
+  "sha": "8fdd415fe6",
+  "date": "Tue 10 Nov 2026",
+  "reason": "Issue #10357 shares hotkeys-registry overlay rows and rb modules pulled into the library graph; measured +388 B gzip over main at merge base 10c9ddaeaf; ceiled to KiB.",
+  "payback": "none planned; shared hotkey registry strings on the library surface"
+}

@@ -21,7 +21,7 @@ import subprocess
 import sys
 from pathlib import Path
 
-from scripts.build_reqs_json import _CODE, _REQ_ID, ids_from_requirements_text
+from scripts.build_reqs_json import _CODE, _REQ_ID, FRAGMENTS_REL, fragments_text_at, ids_from_requirements_text
 from scripts.gh_pr_view import DEFAULT_REPO
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
@@ -29,7 +29,11 @@ SOURCE = ".planning/REQUIREMENTS.md"
 _MAIN_REF = "origin/main"
 _PREFIX_RE = re.compile(rf"^{_CODE}$")
 _NUMBERED = re.compile(r"^(?P<code>.+)-(?P<num>\d+)(?P<suffix>[a-z]?)$")
-_REQ_MD_MARKERS = ("a/.planning/REQUIREMENTS.md", "b/.planning/REQUIREMENTS.md")
+_REQ_MD_MARKERS = (
+    "a/.planning/REQUIREMENTS.md",
+    "b/.planning/REQUIREMENTS.md",
+    f"b/{FRAGMENTS_REL}/",
+)
 
 
 def next_requirement_id(prefix: str, main_ids: set[str], claimed_ids: set[str]) -> str:
@@ -198,6 +202,11 @@ def main(argv: list[str] | None = None) -> int:
         if main_text is None:
             print(f"[UNKNOWN] cannot read {_MAIN_REF}:{SOURCE}: {err}", file=sys.stderr)
             return 2
+        fragments, err = fragments_text_at(git, _MAIN_REF)
+        if fragments is None:
+            print(f"[UNKNOWN] cannot read {_MAIN_REF}:{FRAGMENTS_REL}/: {err}", file=sys.stderr)
+            return 2
+        main_text += "\n" + fragments
 
     main_ids = ids_from_requirements_text(main_text)
 

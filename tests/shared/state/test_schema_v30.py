@@ -36,9 +36,9 @@ def _columns(conn: sqlite3.Connection, table: str) -> set[str]:
 
 
 def test_v30_is_the_next_shared_and_engine_store_rung() -> None:
-    assert state_schema.SCHEMA_VERSION == 30
+    assert state_schema.SCHEMA_VERSION == 31
     assert state_schema.MIGRATIONS[29] is migrations_v30._V30
-    assert store_schema.SCHEMA_VERSION == 19
+    assert store_schema.SCHEMA_VERSION == 20
 
 
 def test_a_v29_database_gains_edits_membership_identity_and_write_guards(
@@ -49,7 +49,7 @@ def test_a_v29_database_gains_edits_membership_identity_and_write_guards(
     conn = sqlite3.connect(str(path))
     try:
         assert "edit_id" not in _columns(conn, "playlist_memberships")
-        assert state_schema.apply_migrations(conn) == 30
+        assert state_schema.apply_migrations(conn) == 31
         assert {
             "id",
             "source_track_id",
@@ -67,7 +67,7 @@ def test_a_v29_database_gains_edits_membership_identity_and_write_guards(
         assert conn.execute("SELECT 1 FROM sync_write_tokens WHERE table_name = 'track_edit'").fetchone()
         triggers = {str(row[0]) for row in conn.execute("SELECT name FROM sqlite_master WHERE type = 'trigger'")}
         assert set(migrations_v30.EXPECTED_TRIGGERS) <= triggers
-        assert state_schema.apply_migrations(conn) == 30
+        assert state_schema.apply_migrations(conn) == 31
     finally:
         conn.close()
 

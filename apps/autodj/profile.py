@@ -29,7 +29,16 @@ from dataclasses import replace
 from itertools import pairwise
 from typing import Any
 
-from apps.autodj.contract.models import VOCAL_BAR_THRESHOLD, HotCue, KeySegment, ProfileError, Section, TrackProfile
+from apps.autodj.contract.models import (
+    MIK_BOUNDARY_SNAP_BARS,
+    VOCAL_BAR_THRESHOLD,
+    HotCue,
+    KeySegment,
+    MikBoundary,
+    ProfileError,
+    Section,
+    TrackProfile,
+)
 from apps.autodj.sections import UNKNOWN, phrase_label
 from apps.shared.harmonic import key_to_camelot
 
@@ -349,12 +358,154 @@ def _text(track: Mapping[str, Any], key: str) -> str | None:
     return value if isinstance(value, str) else None
 
 
+_ENERGY_KEYS = ("energy_source", "energy_level", "energy_segments")
+
+
+def _require_energy_keys(stable_id: str, anlz: Mapping[str, Any]) -> None:
+    for key in _ENERGY_KEYS:
+        if key not in anlz:
+            raise ProfileError(f"{stable_id}: anlz payload has no {key}")
+
+
+def _energy_segments(anlz: Mapping[str, Any]) -> tuple[Mapping[str, Any], ...]:
+    rows = anlz.get("energy_segments")
+    if not isinstance(rows, list):
+        raise ProfileError("anlz payload energy_segments is not a list")
+    parsed: list[Mapping[str, Any]] = []
+    for row in rows:
+        if not isinstance(row, Mapping):
+            raise ProfileError("anlz payload energy_segments row is not an object")
+        parsed.append(row)
+    return tuple(parsed)
+
+
+def _offset_from_downbeat(bar: float) -> float:
+    below = math.floor(bar)
+    above = math.ceil(bar)
+    if bar - below <= above - bar + 1e-12:
+        return bar - below
+    return bar - above
+
+
+def _snap_bar(bar: float) -> int | None:
+    nearest = round(bar)
+    if abs(bar - nearest) <= MIK_BOUNDARY_SNAP_BARS + 1e-12:
+        return int(nearest)
+    return None
+
+
+def _bar_majority_levels(
+    segments: Sequence[Mapping[str, Any]],
+    downbeats: tuple[float, ...],
+    bar_s: float,
+) -> tuple[int, ...]:
+    levels: list[int] = []
+    for bar_index, start in enumerate(downbeats):
+        end = downbeats[bar_index + 1] if bar_index + 1 < len(downbeats) else start + bar_s
+        best_level: int | None = None
+        best_overlap = 0.0
+        for segment in segments:
+            seg_start = float(segment["start_s"])
+            seg_end = float(segment["end_s"])
+            level = segment["level"]
+            if not isinstance(level, int) or isinstance(level, bool):
+                raise ProfileError(f"anlz energy segment level {level!r} is not an int")
+            overlap = max(0.0, min(end, seg_end) - max(start, seg_start))
+            if overlap > best_overlap:
+                best_overlap = overlap
+                best_level = level
+        if best_level is None:
+            raise ProfileError("anlz energy segments cover no bar of the beatgrid")
+        levels.append(best_level)
+    return tuple(levels)
+
+
+def _mik_boundaries(
+    segments: Sequence[Mapping[str, Any]],
+    bar_at: Any,
+) -> tuple[MikBoundary, ...]:
+    if not segments:
+        return ()
+    ordered = sorted(segments, key=lambda row: float(row["start_s"]))
+    rows: list[MikBoundary] = []
+    previous_level = int(ordered[0]["level"])
+    for segment in ordered[1:]:
+        level = int(segment["level"])
+        start_s = float(segment["start_s"])
+        bar = float(bar_at(start_s))
+        rows.append(
+            MikBoundary(
+                bar=bar,
+                snapped_bar=_snap_bar(bar),
+                level_before=previous_level,
+                level_after=level,
+            )
+        )
+        previous_level = level
+    return tuple(rows)
+
+
+def _mik_grid_note(boundaries: tuple[MikBoundary, ...]) -> str | None:
+    unsnapped = [boundary for boundary in boundaries if boundary.snapped_bar is None]
+    if not unsnapped:
+        return None
+    offsets = [_offset_from_downbeat(boundary.bar) for boundary in unsnapped]
+    first = offsets[0]
+    if all(abs(offset - first) < 0.05 for offset in offsets) and abs(first) > MIK_BOUNDARY_SNAP_BARS + 1e-12:
+        return f"MIK energy boundaries sit {first:+.2f} bar from downbeats"
+    return None
+
+
+def _mik_from_anlz(
+    anlz: Mapping[str, Any],
+    downbeats: tuple[float, ...],
+    bar_s: float,
+    bar_at: Any,
+) -> dict[str, Any]:
+    source = anlz.get("energy_source")
+    if source == "none":
+        return {
+            "mik_bar_level": None,
+            "mik_level": None,
+            "mik_boundaries": (),
+            "mik_grid_suspect": 0,
+            "mik_grid_note": None,
+        }
+    if source != "mik":
+        raise ProfileError(f"anlz payload energy_source {source!r} is not mik or none")
+    segments = _energy_segments(anlz)
+    level = anlz.get("energy_level")
+    if level is not None and (not isinstance(level, int) or isinstance(level, bool)):
+        raise ProfileError(f"anlz payload energy_level {level!r} is not an int or null")
+    if not segments and level is None:
+        raise ProfileError(
+            "anlz payload energy_source is mik but carries neither energy_level nor energy_segments"
+        )
+    if not segments:
+        return {
+            "mik_bar_level": None,
+            "mik_level": level,
+            "mik_boundaries": (),
+            "mik_grid_suspect": 0,
+            "mik_grid_note": None,
+        }
+    boundaries = _mik_boundaries(segments, bar_at)
+    return {
+        "mik_bar_level": _bar_majority_levels(segments, downbeats, bar_s),
+        "mik_level": level,
+        "mik_boundaries": boundaries,
+        "mik_grid_suspect": sum(1 for boundary in boundaries if boundary.snapped_bar is None),
+        "mik_grid_note": _mik_grid_note(boundaries),
+    }
+
+
 def profile_from_payloads(anlz: Mapping[str, Any], track: Mapping[str, Any] | None = None) -> TrackProfile:
     """Build a profile from ``/anlz`` and (optionally) the library row."""
     track = track or {}
     stable_id = str(anlz.get("stable_id") or track.get("stable_id") or "")
     if not stable_id:
         raise ProfileError("anlz payload names no stable_id")
+    _require_energy_keys(stable_id, anlz)
     beatgrid = anlz.get("beatgrid") or {}
     beats, downbeats = _grid(stable_id, beatgrid)
     grid_trusted, grid_note = _grid_trust(beatgrid)
@@ -368,6 +519,21 @@ def profile_from_payloads(anlz: Mapping[str, Any], track: Mapping[str, Any] | No
     sections_source = str(anlz.get("phrases_source") or ("rekordbox" if phrases else "none"))
     notes += _analysis_notes(energy, bass, vocal_series, sections)
     stems = track.get("stems_available")
+
+    def bar_at(seconds: float) -> float:
+        if not downbeats:
+            raise ProfileError(f"{stable_id}: no downbeats")
+        first = downbeats[0]
+        if seconds < first:
+            return 1.0 + (seconds - first) / bar_s
+        index = bisect.bisect_right(downbeats, seconds) - 1
+        if index >= len(downbeats) - 1:
+            last = len(downbeats) - 1
+            return 1.0 + last + (seconds - downbeats[last]) / bar_s
+        start, end = downbeats[index], downbeats[index + 1]
+        return 1.0 + index + (seconds - start) / (end - start)
+
+    mik = _mik_from_anlz(anlz, downbeats, bar_s, bar_at)
     return TrackProfile(
         stable_id=stable_id,
         title=_text(track, "title"),
@@ -392,6 +558,7 @@ def profile_from_payloads(anlz: Mapping[str, Any], track: Mapping[str, Any] | No
         stems_available=stems if isinstance(stems, bool) else None,
         notes=tuple(notes),
         **_loudness(track),
+        **mik,
     )
 
 

@@ -2,6 +2,7 @@ import { expect, fireEvent, fn, userEvent, within } from 'storybook/test';
 
 import type { DeckState } from '$lib/rb/deck-state-types';
 import { separateActionView, type SeparateActionView } from '$lib/rb/stem-separate-view';
+import type { StemQuickMode } from '$lib/rb/stem-quick-mode';
 import type { StemControl, StemControlState, StemDeckState } from '$lib/rb/stem-types';
 
 /**
@@ -21,6 +22,7 @@ type Args = {
 	onLoad?: () => Promise<void>;
 	separate?: SeparateActionView | null;
 	onSeparate?: () => Promise<void>;
+	onQuickMode?: (mode: StemQuickMode) => Promise<void>;
 };
 type Ctx = { canvasElement: HTMLElement; args: Args };
 
@@ -83,6 +85,13 @@ async function expectSeparate({ canvasElement, args }: Ctx, deckId: number, enab
 }
 
 const READY_TIP = 'real htdemucs stems (demucs4) - click mute, Shift+click solo';
+
+/** STEMPERF-11695: the quick chips light from the read model alone. */
+async function expectQuickActive(root: HTMLElement, deckId: number, active: StemQuickMode | null): Promise<void> {
+	for (const mode of ['aca', 'inst', 'all'] as const) {
+		await expect(within(root).getByTestId(`stem-quick-${mode}-deck-${deckId}`)).toHaveAttribute('data-active', String(mode === active));
+	}
+}
 
 export const contracts = {
 	/** Four-stem bundle: five live chips, mute and solo state shown, click mutes, Shift+click solos. */
@@ -280,6 +289,45 @@ export const contracts = {
 		play: async (ctx: Ctx) => {
 			await expect(within(ctx.canvasElement).getByTestId('stem-status-deck-4')).toHaveAttribute('data-stems-state', 'none');
 			await expectSeparate(ctx, 4, true);
+		}
+	},
+	/** STEMPERF-11695: VOCAL soloed alone lights ACA; ALL asks for everything. */
+	QuickAca: {
+		args: { deck: deck(1, { controls: { vocal: ctl({ solo: true }), instrumental: ctl(), drums: ctl(), bass: ctl(), other: ctl() } }), pending: false, onMute: fn(), onSolo: fn(), onQuickMode: fn() } satisfies Args,
+		play: async ({ canvasElement, args }: Ctx) => {
+			await expectQuickActive(canvasElement, 1, 'aca');
+			await userEvent.click(within(canvasElement).getByTestId('stem-quick-all-deck-1'));
+			await expect(args.onQuickMode).toHaveBeenCalledWith('all');
+		}
+	},
+	/** VOCAL the only mute, no solo: INST is lit; ACA asks for the acapella. */
+	QuickInst: {
+		args: { deck: deck(1, { controls: { vocal: ctl({ muted: true }), instrumental: ctl(), drums: ctl(), bass: ctl(), other: ctl() } }), pending: false, onMute: fn(), onSolo: fn(), onQuickMode: fn() } satisfies Args,
+		play: async ({ canvasElement, args }: Ctx) => {
+			await expectQuickActive(canvasElement, 1, 'inst');
+			await userEvent.click(within(canvasElement).getByTestId('stem-quick-aca-deck-1'));
+			await expect(args.onQuickMode).toHaveBeenCalledWith('aca');
+		}
+	},
+	/** VOCAL soloed with DRUMS muted matches no quick mode. */
+	QuickCustom: {
+		args: { deck: deck(1, { controls: { vocal: ctl({ solo: true }), instrumental: ctl(), drums: ctl({ muted: true }), bass: ctl(), other: ctl() } }), pending: false, onMute: fn(), onSolo: fn(), onQuickMode: fn() } satisfies Args,
+		play: async ({ canvasElement }: Ctx) => {
+			await expectQuickActive(canvasElement, 1, null);
+			await expect(within(canvasElement).getByTestId('stem-quick-aca-deck-1')).toBeEnabled();
+		}
+	},
+	/** Stems not ready: the quick chips are inert and carry the STEM-48 status tip. */
+	QuickLoading: {
+		args: { deck: deck(1, { status: 'loading', load: { phase: 'decoding', progress: null, reason: null } }), pending: false, onMute: fn(), onSolo: fn(), onQuickMode: fn() } satisfies Args,
+		play: async ({ canvasElement }: Ctx) => {
+			const groupTitle = within(canvasElement).getByRole('group', { name: 'stem controls deck 1' }).getAttribute('title') ?? '';
+			await expect(groupTitle).not.toBe('');
+			for (const mode of ['aca', 'inst', 'all'] as const) {
+				const button = within(canvasElement).getByTestId(`stem-quick-${mode}-deck-1`);
+				await expect(button).toBeDisabled();
+				await expect(button.getAttribute('title') ?? '').toContain(groupTitle);
+			}
 		}
 	}
 };

@@ -20,7 +20,8 @@ Both lists keep GitHub's own filter semantics, evaluated by
   LATER pattern wins. `.planning/REQUIREMENTS.md` is written back in after the
   exclusions because it is a CI input, not documentation: `reqs.json` is generated
   from it and gated against it, and three commits that drifted the ledger (fa98ffda,
-  643f896b, 9bc4128f) touched only `.planning` and so skipped the PR gate.
+  643f896b, 9bc4128f) touched only `.planning` and so skipped the PR gate. The per-id
+  fragments under `(private path)/` (issue #10541) are the same input.
   `docs/perf/*.json` is written back in for the same reason: the perf KPI ledger, cards
   and map are read by the test suite (`(private path)` serves the real ledger
   against the real cards), so the nightly ledger PR (#4473) that only appends ledger rows
@@ -60,6 +61,7 @@ CI_PULL_REQUEST_PATHS: tuple[str, ...] = (
     "!blog/**",
     "!(private path)",
     ".planning/REQUIREMENTS.md",
+    "(private path)/**",
     "docs/perf/*.json",
 )
 
@@ -114,9 +116,13 @@ E2E_PATHS_IGNORE: tuple[str, ...] = (
 #:   on every in-scope one, and their footprints measured near-universal (the ratchet
 #:   scores the whole tree, the openapi dump imports every router), so under the cap
 #:   they move to main entirely.
-#: - `frontend` (unit + check + build; 3.2 min) runs only when `apps/webui/frontend/**`
-#:   or `apps/desktop/electron/**` changes (the job also runs the Electron shell's
-#:   `pnpm test`, which nothing else runs on a pull request). Its unit tests also read a few files outside that tree (the Tauri shell,
+#: - `frontend` (unit + check + build; 3.2 min) runs only when `apps/webui/frontend/**`,
+#:   `apps/desktop/electron/**` or `apps/webui/openapi.json` changes (the job also runs the
+#:   Electron shell's `pnpm test`, which nothing else runs on a pull request). The contract is
+#:   listed because the job's "Contract drift - TS client" step is the one check that the TS
+#:   client was regenerated from it: #11489 changed openapi.json alone, skipped this job and
+#:   left main red at 09:59Z Tue 10 Nov 2026 (#11842, issue #11975). A PR that regenerates both
+#:   files touches the frontend tree and ran the job already, so only a contract-only diff pays. Its unit tests also read a few files outside that tree (the Tauri shell,
 #:   the entitlements resolver, perf helpers; tests/scripts/
 #:   test_ci_fixed_jobs_by_footprint.py keeps the list); a change there is caught on
 #:   main, by decision.
@@ -150,7 +156,7 @@ E2E_PATHS_IGNORE: tuple[str, ...] = (
 CI_JOB_PATHS: dict[str, tuple[str, ...]] = {
     "audio-rust": ("apps/audio-engine/**", "(private path)", "scripts/ci_cargo_selfheal.sh"),
     "contracts": (),
-    "frontend": ("apps/webui/frontend/**", "apps/desktop/electron/**"),
+    "frontend": ("apps/webui/frontend/**", "apps/desktop/electron/**", "apps/webui/openapi.json"),
     "frontend-build": ("apps/webui/frontend/**", "apps/desktop/electron/**", "apps/webui/openapi.json"),
     "import-contracts": ("**.py", ".importlinter", "ops/quality/requirements.txt"),
     "quality": (),

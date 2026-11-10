@@ -19,14 +19,16 @@ from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any, Literal, get_args
 
-from fastapi import APIRouter, HTTPException, Request
+from fastapi import APIRouter, FastAPI, HTTPException, Request
 from pydantic import BaseModel, ConfigDict, Field, StrictBool, StrictFloat, field_validator, model_validator
 from pydantic.json_schema import SkipJsonSchema
 
+from apps.analysis.backlog import AutoLane
 from apps.shared.events import publish
 from apps.shared.harmonic import CAMELOT_RULE_IDS, DEFAULT_CAMELOT_RULE_IDS, camelot_rules_allow
 from apps.shared.paths import DATA_DIR
 
+from ..auto_analyze_prefs import AUTO_ANALYZE_BOOL_DEFAULTS, lanes_from_prefs
 from ..auto_gain_prefs import DEFAULT_AUTO_GAIN, AutoGainPrefsOut, merge_auto_gain, parse_auto_gain
 from ..library_related_prefs import (
     LibraryRelatedCriteriaOut,
@@ -121,6 +123,10 @@ _WAVE_OVERLAY_BOOL_DEFAULTS: dict[str, bool] = {
 # floored at 2 percent so jitter on a steady grid never fills the lane.
 TempoLaneScale = Literal["fixed_10", "relative"]
 _DEFAULT_TEMPO_LANE_SCALE: TempoLaneScale = "fixed_10"
+# Issue #10244: the deck waveforms' beat grid lines. beats_bars = every beat
+# plus stronger downbeats (default); bars = downbeats only; off = none.
+WaveGridLines = Literal["beats_bars", "bars", "off"]
+_DEFAULT_WAVE_GRID_LINES: WaveGridLines = "beats_bars"
 # AUDIO-DEVICE-06: auto-reconnect a stalled Bluetooth main speaker. auto = at
 # home (prep posture) only, never in gig posture; on = always; off = never.
 SpeakerAutoRecover = Literal["auto", "on", "off"]
@@ -204,10 +210,19 @@ _DEFAULT_LYRICS_BOOLS: dict[str, bool] = {
 _LYRICS_KEYS: tuple[str, ...] = (*_DEFAULT_LYRICS_BOOLS, "lyrics_load_strategy")
 
 
-def _path(request: Request) -> Path:
-    configured = getattr(request.app.state, "data_dir", None)
+def _path_for_app(app: FastAPI) -> Path:
+    configured = getattr(app.state, "data_dir", None)
     root = Path(configured) if configured is not None else DATA_DIR
     return root / "state" / _FILENAME
+
+
+def _path(request: Request) -> Path:
+    return _path_for_app(request.app)
+
+
+def read_auto_analyze_lanes(app: FastAPI) -> frozenset[AutoLane]:
+    """Analyze-on-import lanes from ui-prefs (re-read every auto-drain tick)."""
+    return lanes_from_prefs(_load(_path_for_app(app)))
 
 
 def _write_atomic(path: Path, text: str) -> None:
@@ -466,6 +481,21 @@ def _parse_tempo_lane_scale(raw: dict[str, Any]) -> str:
             detail={
                 "code": "UI_PREFS_INVALID",
                 "message": "tempo_lane_scale must be " + "|".join(get_args(TempoLaneScale)),
+            },
+        )
+    return value
+
+
+def _parse_wave_grid_lines(raw: dict[str, Any]) -> str:
+    if "wave_grid_lines" not in raw:
+        return _DEFAULT_WAVE_GRID_LINES
+    value = raw["wave_grid_lines"]
+    if value not in get_args(WaveGridLines):
+        raise HTTPException(
+            status_code=422,
+            detail={
+                "code": "UI_PREFS_INVALID",
+                "message": "wave_grid_lines must be " + "|".join(get_args(WaveGridLines)),
             },
         )
     return value
@@ -852,6 +882,9 @@ _DEFAULT_COMPATIBLE_FILTER: dict[str, Any] = {
     "mode": "transition",
     "key_shift_max": 1,
     "mashup_relative": False,
+    # SETPREP-11947: the energy rule (within one MIK level, boost +1 to +2,
+    # drop -1 to -2), after Mixed In Key's Energy Boost (mimicked). Off by default.
+    "energy_mode": "off",
 }
 
 
@@ -901,7 +934,31 @@ _COMPATIBLE_FILTER_CHECKS: dict[str, tuple[Callable[[Any], bool], str]] = {
         "must be the integer 0, 1, 2 or 3",
     ),
     "mashup_relative": (lambda v: isinstance(v, bool), "must be a boolean"),
+    "energy_mode": (
+        lambda v: isinstance(v, str) and v in ("off", "within_1", "boost", "drop"),
+        "must be off|within_1|boost|drop",
+    ),
 }
+
+
+def _reject_invalid_compatible_filter_rules(rules: list[str]) -> None:
+    """Refuse unknown or duplicate rule ids with the same message shape as ``_parse_compatible_filter``."""
+    _, rule = _COMPATIBLE_FILTER_CHECKS["rules"]
+    if not _is_camelot_rule_list(rules):
+        raise HTTPException(
+            status_code=422,
+            detail={
+                "code": "UI_PREFS_INVALID",
+                "message": f"compatible_filter.rules {rule}",
+            },
+        )
+
+
+def _validate_compatible_filter_rules(value: list[str]) -> list[str]:
+    _, rule = _COMPATIBLE_FILTER_CHECKS["rules"]
+    if not _is_camelot_rule_list(value):
+        raise ValueError(rule)
+    return value
 
 
 def _legacy_camelot_steps_rules(steps: Any) -> tuple[str, ...]:
@@ -984,6 +1041,7 @@ def _load(path: Path) -> dict[str, Any]:
             **_TOPBAR_BOOL_DEFAULTS,
             **_DECK_DEFAULT_BOOL_DEFAULTS,
             **_WAVE_OVERLAY_BOOL_DEFAULTS,
+            **AUTO_ANALYZE_BOOL_DEFAULTS,
             **_lyrics_defaults(),
             **_library_browser_bool_defaults(),
             "library_density": _DEFAULT_LIBRARY_DENSITY,
@@ -992,6 +1050,7 @@ def _load(path: Path) -> dict[str, Any]:
             "perf_view": _DEFAULT_PERF_VIEW,
             "speaker_auto_recover": _DEFAULT_SPEAKER_AUTO_RECOVER,
             "tempo_lane_scale": _DEFAULT_TEMPO_LANE_SCALE,
+            "wave_grid_lines": _DEFAULT_WAVE_GRID_LINES,
             "key_notation": _DEFAULT_KEY_NOTATION,
             "library_hidden_columns": [],
             "library_optional_columns": [],
@@ -1095,6 +1154,7 @@ def _load(path: Path) -> dict[str, Any]:
         **_parse_topbar_bool_prefs(raw),
         **_parse_deck_default_bool_prefs(raw),
         **_parse_bool_prefs(raw, _WAVE_OVERLAY_BOOL_DEFAULTS),
+        **_parse_bool_prefs(raw, AUTO_ANALYZE_BOOL_DEFAULTS),
         **_parse_lyrics(raw),
         **_parse_library_browser_bool_prefs(raw),
         "library_density": _parse_library_density(raw),
@@ -1104,6 +1164,7 @@ def _load(path: Path) -> dict[str, Any]:
         **_parse_bool_prefs(raw, {"deck_right_mirror": _DEFAULT_DECK_RIGHT_MIRROR}),
         "speaker_auto_recover": _parse_speaker_auto_recover(raw),
         "tempo_lane_scale": _parse_tempo_lane_scale(raw),
+        "wave_grid_lines": _parse_wave_grid_lines(raw),
         "key_notation": _parse_key_notation(raw),
         "library_hidden_columns": _parse_library_hidden_columns(raw),
         "library_optional_columns": _parse_library_optional_columns(raw),
@@ -1158,7 +1219,8 @@ class CompatibleFilterOut(BaseModel):
 
     ``rules`` lists the enabled ids from apps/shared/harmonic.py CAMELOT_RULES and is
     Transition's key rule; Mashup is the same wheel number (plus the relative
-    major/minor when ``mashup_relative``).
+    major/minor when ``mashup_relative``). ``energy_mode`` is the energy rule
+    (SETPREP-11947): off, within one level, boost (+1 to +2) or drop (-1 to -2).
     """
 
     model_config = ConfigDict(frozen=True)
@@ -1171,6 +1233,7 @@ class CompatibleFilterOut(BaseModel):
     mode: Literal["transition", "mashup"] = _DEFAULT_COMPATIBLE_FILTER["mode"]
     key_shift_max: Literal[0, 1, 2, 3] = _DEFAULT_COMPATIBLE_FILTER["key_shift_max"]
     mashup_relative: bool = _DEFAULT_COMPATIBLE_FILTER["mashup_relative"]
+    energy_mode: Literal["off", "within_1", "boost", "drop"] = _DEFAULT_COMPATIBLE_FILTER["energy_mode"]
 
     @field_validator("key_shift_max", mode="before")
     @classmethod
@@ -1179,6 +1242,11 @@ class CompatibleFilterOut(BaseModel):
         if type(value) is not int:
             raise ValueError("key_shift_max must be the integer 0, 1, 2 or 3")
         return value
+
+    @field_validator("rules")
+    @classmethod
+    def _rules_are_distinct_camelot_ids(cls, value: list[str]) -> list[str]:
+        return _validate_compatible_filter_rules(value)
 
 
 class LevelCalibrationOut(BaseModel):
@@ -1232,9 +1300,14 @@ class UiPrefsOut(BaseModel):
     deck_default_quantize: bool = _DEFAULT_DECK_DEFAULT_QUANTIZE
     deck_needle_lock: bool = _DEFAULT_DECK_NEEDLE_LOCK
     show_sections: bool = _DEFAULT_SHOW_SECTIONS
+    auto_analyze_grid: bool = AUTO_ANALYZE_BOOL_DEFAULTS["auto_analyze_grid"]
+    auto_analyze_key: bool = AUTO_ANALYZE_BOOL_DEFAULTS["auto_analyze_key"]
+    auto_analyze_sections: bool = AUTO_ANALYZE_BOOL_DEFAULTS["auto_analyze_sections"]
+    auto_analyze_vocals: bool = AUTO_ANALYZE_BOOL_DEFAULTS["auto_analyze_vocals"]
     speaker_auto_recover: SpeakerAutoRecover = _DEFAULT_SPEAKER_AUTO_RECOVER
     show_tempo_lane: bool = _DEFAULT_SHOW_TEMPO_LANE
     tempo_lane_scale: TempoLaneScale = _DEFAULT_TEMPO_LANE_SCALE
+    wave_grid_lines: WaveGridLines = _DEFAULT_WAVE_GRID_LINES
     deck_autocue: bool = _DEFAULT_DECK_AUTOCUE
     hide_broken_links: bool = _DEFAULT_HIDE_BROKEN_LINKS
     library_density: LibraryDensity = _DEFAULT_LIBRARY_DENSITY
@@ -1303,10 +1376,15 @@ class UiPrefsPatch(BaseModel):
     deck_default_quantize: StrictBool | None = None
     deck_needle_lock: StrictBool | None = None
     show_sections: bool | None = None
+    auto_analyze_grid: StrictBool | None = None
+    auto_analyze_key: StrictBool | None = None
+    auto_analyze_sections: StrictBool | None = None
+    auto_analyze_vocals: StrictBool | None = None
     speaker_auto_recover: SpeakerAutoRecover | None = None
     # Strict: lax bool would coerce "yes" or 1 into a write that hides the lane.
     show_tempo_lane: StrictBool | None = None
     tempo_lane_scale: TempoLaneScale | None = None
+    wave_grid_lines: WaveGridLines | None = None
     # Strict for the same reason: AU is deck-wide, a coerced 1 or "yes" would arm it.
     # Omitted means unchanged; an explicit null is refused (Sol P1, PR #6235),
     # so the contract advertises it as omittable but never nullable.
@@ -1353,8 +1431,13 @@ _NON_NULL_VIEW_PREF_KEYS = ("show_pads", "auto_play_two_deck", "perf_view", "lib
 
 
 def _merge_topbar_bool_prefs(current: dict[str, Any], body: UiPrefsPatch) -> None:
-    """Topbar booleans, the deck defaults and the wave-overlay ones (STRUCT-05 show_sections, show_tempo_lane)."""
-    for key in (*_TOPBAR_BOOL_DEFAULTS, *_DECK_DEFAULT_BOOL_DEFAULTS, *_WAVE_OVERLAY_BOOL_DEFAULTS):
+    """Topbar booleans, deck defaults, wave overlays and analyze-on-import lanes."""
+    for key in (
+        *_TOPBAR_BOOL_DEFAULTS,
+        *_DECK_DEFAULT_BOOL_DEFAULTS,
+        *_WAVE_OVERLAY_BOOL_DEFAULTS,
+        *AUTO_ANALYZE_BOOL_DEFAULTS,
+    ):
         value = getattr(body, key)
         if value is not None:
             current[key] = value
@@ -1385,10 +1468,14 @@ def _merge_compatible_filter(current: dict[str, Any], body: UiPrefsPatch) -> Non
     """Merge the named compatible-filter fields onto what is stored (LIBUX-32)."""
     if body.compatible_filter is None:
         return
+    patch = body.compatible_filter.model_dump(exclude_unset=True)
+    rules = patch.get("rules")
+    if isinstance(rules, list):
+        _reject_invalid_compatible_filter_rules(rules)
     current["compatible_filter"] = _parse_compatible_filter(
         {
             **current["compatible_filter"],
-            **body.compatible_filter.model_dump(exclude_unset=True),
+            **patch,
         }
     )
 
@@ -1517,7 +1604,15 @@ def post_library_tabs(body: LibraryTabsActionIn, request: Request) -> LibraryTab
     return LibraryTabsActionOut(library_tabs=LibraryTabsOut.model_validate(current["library_tabs"]))
 
 
-_VIEW_SCALAR_PREFS = ("library_density", "perf_view", "deck_right_mirror", "playlist_tree_view", "speaker_auto_recover", "tempo_lane_scale")
+_VIEW_SCALAR_PREFS = (
+    "library_density",
+    "perf_view",
+    "deck_right_mirror",
+    "playlist_tree_view",
+    "speaker_auto_recover",
+    "tempo_lane_scale",
+    "wave_grid_lines",
+)
 
 
 def _merge_view_scalar_prefs(current: dict[str, Any], body: UiPrefsPatch) -> None:

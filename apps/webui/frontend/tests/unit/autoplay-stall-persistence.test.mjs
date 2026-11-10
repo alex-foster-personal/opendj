@@ -63,7 +63,9 @@ const ENTRY = [
 	"export { setAutoPlayEnabled, setAutoPlayEnforceOrder, uiPrefs } from '$lib/rb/prefs.svelte';",
 	"export { setAutoPlayTrackFeed } from '$lib/rb/auto-play';",
 	"export { deckStates } from '$lib/rb/audio-engine.svelte';",
-	"export { readAutoPlayStall, noteAutoPlayHandoffStall } from '$lib/rb/autoplay-stall.svelte';"
+	"export { readAutoPlayStall, noteAutoPlayHandoffStall } from '$lib/rb/autoplay-stall.svelte';",
+	"export { toasts } from '$lib/stores.svelte';",
+	"export { AUTO_PLAY_EMPTY_CANDIDATE_FEED_TOAST } from '$lib/rb/auto-play';"
 ].join('\n');
 
 function settle() {
@@ -74,8 +76,22 @@ function settle() {
 function spentFeed() {
 	return [
 		{ stable_id: 'src-1', key: '8A', bpm: 124, file_exists: true, title: 'Source', artist: 'Ann' },
-		{ stable_id: 'gone-1', key: '8A', bpm: 124, file_exists: false, title: 'Gone One', artist: 'Bo' },
-		{ stable_id: 'gone-2', key: '9A', bpm: 125, file_exists: false, title: 'Gone Two', artist: 'Cy' }
+		{
+			stable_id: 'gone-1',
+			key: '8A',
+			bpm: 124,
+			file_exists: false,
+			title: 'Gone One',
+			artist: 'Bo'
+		},
+		{
+			stable_id: 'gone-2',
+			key: '9A',
+			bpm: 125,
+			file_exists: false,
+			title: 'Gone Two',
+			artist: 'Cy'
+		}
 	];
 }
 
@@ -157,6 +173,28 @@ async function withController(run) {
 		probe.restore();
 	}
 }
+
+test('[if] the candidate feed is empty at pick time [then] the info toast names the empty feed, not key/BPM', async () => {
+	await withController(async (mod) => {
+		mod.setAutoPlayTrackFeed('playlist-empty', []);
+		armSourceDeck(mod.deckStates, { positionMs: 95_000 });
+		await settle();
+		assert.equal(
+			mod.readAutoPlayStall(),
+			null,
+			'an empty feed is a wait state, not a PLAY-08 terminal stall'
+		);
+		const messages = mod.toasts.map((t) => t.message);
+		assert.ok(
+			messages.includes(mod.AUTO_PLAY_EMPTY_CANDIDATE_FEED_TOAST),
+			`expected empty-feed toast among: ${messages.join(' | ') || '(none)'}`
+		);
+		assert.ok(
+			!messages.some((m) => /within key \+-1 and Beat Sync BPM range/.test(m)),
+			'a frozen empty feed must not read as a key/BPM dead end'
+		);
+	});
+});
 
 test('a spent playlist records a durable stall naming the cause and the tracks', async () => {
 	await withController(async (mod) => {
@@ -308,8 +346,22 @@ test('a candidate that failed to LOAD blames the files, not key and tempo', asyn
 		// the next poll dead-ends with a remainder that looks merely
 		// incompatible. It is not: the files would not open.
 		mod.setAutoPlayTrackFeed('playlist-a', [
-			{ stable_id: 'src-1', key: '8A', bpm: 124, file_exists: true, title: 'Source', artist: 'Ann' },
-			{ stable_id: 'ghost-1', key: '8A', bpm: 124, file_exists: true, title: 'Ghost', artist: 'Bo' },
+			{
+				stable_id: 'src-1',
+				key: '8A',
+				bpm: 124,
+				file_exists: true,
+				title: 'Source',
+				artist: 'Ann'
+			},
+			{
+				stable_id: 'ghost-1',
+				key: '8A',
+				bpm: 124,
+				file_exists: true,
+				title: 'Ghost',
+				artist: 'Bo'
+			},
 			{ stable_id: 'far-1', key: '3B', bpm: 175, file_exists: true, title: 'Far', artist: 'Cy' }
 		]);
 		armSourceDeck(mod.deckStates, { positionMs: 95_000 });
@@ -340,10 +392,17 @@ test('a candidate that failed to LOAD blames the files, not key and tempo', asyn
 	});
 });
 
-test('a new playlist does not inherit the last one\'s load failures', async () => {
+test("a new playlist does not inherit the last one's load failures", async () => {
 	await withController(async (mod) => {
 		mod.setAutoPlayTrackFeed('playlist-a', [
-			{ stable_id: 'src-1', key: '8A', bpm: 124, file_exists: true, title: 'Source', artist: 'Ann' },
+			{
+				stable_id: 'src-1',
+				key: '8A',
+				bpm: 124,
+				file_exists: true,
+				title: 'Source',
+				artist: 'Ann'
+			},
 			{ stable_id: 'ghost-1', key: '8A', bpm: 124, file_exists: true, title: 'Ghost', artist: 'Bo' }
 		]);
 		armSourceDeck(mod.deckStates, { positionMs: 95_000 });
@@ -472,7 +531,11 @@ test('SHAPE GUARD: the late-failure check compares the captured arming generatio
 		/generation === _generation/,
 		'without this, "is AutoPlay on right now" answers yes for the REPLACEMENT session'
 	);
-	assert.match(source, /const generation = _generation;/, 'captured BEFORE the await, or it is not a generation');
+	assert.match(
+		source,
+		/const generation = _generation;/,
+		'captured BEFORE the await, or it is not a generation'
+	);
 	// The counter has to MOVE, or the comparison above is always true. Both
 	// edges: the arm effect (off/on) and uninstall (unmount/remount).
 	assert.equal(
@@ -530,10 +593,24 @@ test('a spent attempt budget names the three files that failed', async () => {
 		// spent on three DIFFERENT files - and their ids are the only record of
 		// which ones, because the toasts that carried them expire.
 		mod.setAutoPlayTrackFeed('playlist-a', [
-			{ stable_id: 'src-1', key: '8A', bpm: 124, file_exists: true, title: 'Source', artist: 'Ann' },
+			{
+				stable_id: 'src-1',
+				key: '8A',
+				bpm: 124,
+				file_exists: true,
+				title: 'Source',
+				artist: 'Ann'
+			},
 			{ stable_id: 'f-1', key: '8A', bpm: 124, file_exists: true, title: 'Fail One', artist: 'Bo' },
 			{ stable_id: 'f-2', key: '8A', bpm: 125, file_exists: true, title: 'Fail Two', artist: 'Cy' },
-			{ stable_id: 'f-3', key: '9A', bpm: 124, file_exists: true, title: 'Fail Three', artist: 'Di' }
+			{
+				stable_id: 'f-3',
+				key: '9A',
+				bpm: 124,
+				file_exists: true,
+				title: 'Fail Three',
+				artist: 'Di'
+			}
 		]);
 		armSourceDeck(mod.deckStates, { positionMs: 95_000 });
 		await settle();

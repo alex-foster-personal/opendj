@@ -25,6 +25,7 @@ from apps.engine_core.origin import (
     unreachable,
     verify_engine_identity,
 )
+from apps.opendj_cli.install_cli import discover_installed_launcher, is_bundled_launcher
 
 __all__ = [
     "default_lock_path",
@@ -32,6 +33,8 @@ __all__ = [
     "EngineIdentityMismatch",
     "EngineNotRunning",
     "EngineOrigin",
+    "discover_installed_launcher",
+    "is_bundled_launcher",
     "lock_document",
     "lock_path",
     "resolve_origin",

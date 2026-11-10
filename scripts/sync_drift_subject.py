@@ -78,6 +78,7 @@ from apps.shared.state import analysis_stale, sync_stamp
 from apps.shared.state import schema as state_schema
 from apps.spotify import state_aux as spotify_aux
 from apps.sync_hub import engine_identity_map, stem_meter
+from apps.webui.server import crowd_requests as crowd_requests_store
 from apps.webui.server.http_pairings_schema import (
     HTTP_PAIRINGS_SCHEMA_SOURCE,
     ensure_http_pairings_table,
@@ -348,6 +349,10 @@ STATE_AUTHORITIES: tuple[Authority, ...] = (
     Authority(
         "apps/shared/set_target/store.py",
         lambda conn, _path: set_target_store.ensure_schema(conn),
+    ),
+    Authority(
+        "apps/webui/server/crowd_requests.py",
+        lambda conn, _path: crowd_requests_store.ensure_schema(conn),
     ),
     Authority(
         "apps/spotify/state_aux.py",

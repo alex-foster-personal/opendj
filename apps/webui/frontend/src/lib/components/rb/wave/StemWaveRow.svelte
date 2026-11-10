@@ -9,6 +9,8 @@
 		stemWaveformApiPart,
 		stemWaveRowColorFromElement,
 		stemWaveRowUnavailableTip,
+		stemWaveRowClickCommand,
+		type StemWaveRowCommand,
 		STEM_WAVE_ROW_PX
 	} from './stem-waveform-ui';
 	import { drawStemWaveRow } from './render';
@@ -22,7 +24,9 @@
 		scrollPx,
 		canvasWidth,
 		windowS,
-		playheadFrac
+		playheadFrac,
+		onSolo,
+		onMute
 	}: {
 		deck: DeckState;
 		stem: StemControl;
@@ -32,7 +36,19 @@
 		/** The main row's zoom window and playhead place (WAVEZOOM-6802/05). */
 		windowS: number;
 		playheadFrac: number;
+		/** Click sends solo, Shift+click mute (issue #10317). */
+		onSolo?: ((command: StemWaveRowCommand, pressT0Ms: number) => void) | undefined;
+		onMute?: ((command: StemWaveRowCommand, pressT0Ms: number) => void) | undefined;
 	} = $props();
+
+	function solo(t0: number): void {
+		const command = stemWaveRowClickCommand(deck, stem, false);
+		if (command !== null) onSolo?.(command, t0);
+	}
+	function mute(t0: number): void {
+		const command = stemWaveRowClickCommand(deck, stem, true);
+		if (command !== null) onMute?.(command, t0);
+	}
 
 	const unavailableTip = $derived(stemWaveRowUnavailableTip(deck, stem));
 	const apiPart = $derived(
@@ -105,5 +121,9 @@
 	{stem}
 	visible={showStems && deck.stable_id !== null}
 	{unavailableTip}
+	deckId={deck.deck_id}
+	controlState={deck.stems.controls[stem] ?? null}
+	onSolo={solo}
+	onMute={mute}
 	bind:canvasEl
 />

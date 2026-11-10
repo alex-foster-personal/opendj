@@ -29,6 +29,66 @@ function row(stable_id, key, bpm, file_exists = true) {
 	return { stable_id, key, bpm, file_exists };
 }
 
+describe('auto-play scenario matrix t=0 boot rows', () => {
+	it('[if] matrix row t0-1 is read [then] no master at play start never arms, [else stop].', () => {
+		const { pickSourceDeck, shouldTriggerAutoPlay, AUTO_PLAY_THRESHOLD_MS } = mod;
+		assert.equal(pickSourceDeck([]), null);
+		assert.equal(pickSourceDeck([deck({ id: 1, playing: false, is_master: true })]), null);
+		assert.equal(
+			shouldTriggerAutoPlay({
+				enabled: true,
+				remaining_ms: 0,
+				threshold_ms: AUTO_PLAY_THRESHOLD_MS,
+				source_stable_id: null,
+				already_triggered_for: null,
+				in_flight: false
+			}),
+			false
+		);
+	});
+
+	it('[if] matrix row t0-3 is read [then] unknown duration at t=0 never arms, [else stop].', () => {
+		const { shouldTriggerAutoPlay, effectiveAutoPlayThresholdMs } = mod;
+		assert.equal(effectiveAutoPlayThresholdMs(null), null);
+		assert.equal(
+			shouldTriggerAutoPlay({
+				enabled: true,
+				remaining_ms: null,
+				threshold_ms: 16_000,
+				source_stable_id: 'x',
+				already_triggered_for: null,
+				in_flight: false
+			}),
+			false
+		);
+	});
+
+	it('[if] matrix row t0-19 is read [then] short track at t=0 never arms, [else stop].', () => {
+		const { shouldTriggerAutoPlay, remainingMs, effectiveAutoPlayThresholdMs } = mod;
+		const duration = 12_000;
+		const windowMs = effectiveAutoPlayThresholdMs(duration);
+		assert.equal(
+			shouldTriggerAutoPlay({
+				enabled: true,
+				remaining_ms: remainingMs(0, duration),
+				threshold_ms: windowMs,
+				source_stable_id: 'sting',
+				already_triggered_for: null,
+				in_flight: false
+			}),
+			false
+		);
+	});
+
+	it('[if] auto-play.ts documents t0-1, t0-3, and t0-19 [then] tests name them, [else stop].', async () => {
+		const { readFile } = await import('node:fs/promises');
+		const src = await readFile('src/lib/rb/auto-play.ts', 'utf8');
+		for (const label of ['t0-1', 't0-3', 't0-19']) {
+			assert.match(src, new RegExp(label), `matrix must name ${label}`);
+		}
+	});
+});
+
 describe('auto-play remaining / trigger', () => {
 	it('computes remaining from presentation position + duration', () => {
 		const { remainingMs } = mod;
@@ -88,7 +148,10 @@ describe('auto-play remaining / trigger', () => {
 			in_flight: false
 		};
 		assert.equal(shouldTriggerAutoPlay(base), true);
-		assert.equal(shouldTriggerAutoPlay({ ...base, remaining_ms: AUTO_PLAY_THRESHOLD_MS + 1 }), false);
+		assert.equal(
+			shouldTriggerAutoPlay({ ...base, remaining_ms: AUTO_PLAY_THRESHOLD_MS + 1 }),
+			false
+		);
 		assert.equal(shouldTriggerAutoPlay({ ...base, enabled: false }), false);
 		assert.equal(shouldTriggerAutoPlay({ ...base, in_flight: true }), false);
 		assert.equal(shouldTriggerAutoPlay({ ...base, already_triggered_for: 'a' }), false);
@@ -251,28 +314,93 @@ describe('auto-play deck pick', () => {
 });
 
 describe('[PLAY-22] auto-play prefers the partner deck (1<->2, 3<->4)', () => {
-	const pick = (decks, source) => mod.pickFollowerDeck(decks.map((d) => deck(d)), source, false);
+	const pick = (decks, source) =>
+		mod.pickFollowerDeck(
+			decks.map((d) => deck(d)),
+			source,
+			false
+		);
 	it('source 1, deck 2 loaded and stopped, 3/4 empty: deck 2 (cleared by the handoff)', () => {
 		assert.equal(
-			pick([{ id: 1, stable_id: 'src', playing: true }, { id: 2, stable_id: 'x' }, { id: 3 }, { id: 4 }], 1),
+			pick(
+				[
+					{ id: 1, stable_id: 'src', playing: true },
+					{ id: 2, stable_id: 'x' },
+					{ id: 3 },
+					{ id: 4 }
+				],
+				1
+			),
 			2
 		);
 	});
 	it('source 1, deck 2 empty: deck 2', () => {
-		assert.equal(pick([{ id: 1, stable_id: 'src', playing: true }, { id: 2 }, { id: 3 }, { id: 4 }], 1), 2);
+		assert.equal(
+			pick([{ id: 1, stable_id: 'src', playing: true }, { id: 2 }, { id: 3 }, { id: 4 }], 1),
+			2
+		);
 	});
 	it('source 2: deck 1; source 3: deck 4; source 4: deck 3', () => {
-		assert.equal(pick([{ id: 1, stable_id: 'x' }, { id: 2, stable_id: 'src', playing: true }, { id: 3 }, { id: 4 }], 2), 1);
-		assert.equal(pick([{ id: 1 }, { id: 2 }, { id: 3, stable_id: 'src', playing: true }, { id: 4, stable_id: 'y' }], 3), 4);
-		assert.equal(pick([{ id: 1 }, { id: 2 }, { id: 3, stable_id: 'y' }, { id: 4, stable_id: 'src', playing: true }], 4), 3);
-	});
-	it('partner playing: the old rule, empty first, then stopped, never a playing deck', () => {
 		assert.equal(
-			pick([{ id: 1, stable_id: 'src', playing: true }, { id: 2, stable_id: 'p', playing: true }, { id: 3, stable_id: 'x' }, { id: 4 }], 1),
+			pick(
+				[
+					{ id: 1, stable_id: 'x' },
+					{ id: 2, stable_id: 'src', playing: true },
+					{ id: 3 },
+					{ id: 4 }
+				],
+				2
+			),
+			1
+		);
+		assert.equal(
+			pick(
+				[
+					{ id: 1 },
+					{ id: 2 },
+					{ id: 3, stable_id: 'src', playing: true },
+					{ id: 4, stable_id: 'y' }
+				],
+				3
+			),
 			4
 		);
 		assert.equal(
-			pick([{ id: 1, stable_id: 'src', playing: true }, { id: 2, stable_id: 'p', playing: true }, { id: 3, stable_id: 'x' }, { id: 4, stable_id: 'z', playing: true }], 1),
+			pick(
+				[
+					{ id: 1 },
+					{ id: 2 },
+					{ id: 3, stable_id: 'y' },
+					{ id: 4, stable_id: 'src', playing: true }
+				],
+				4
+			),
+			3
+		);
+	});
+	it('partner playing: the old rule, empty first, then stopped, never a playing deck', () => {
+		assert.equal(
+			pick(
+				[
+					{ id: 1, stable_id: 'src', playing: true },
+					{ id: 2, stable_id: 'p', playing: true },
+					{ id: 3, stable_id: 'x' },
+					{ id: 4 }
+				],
+				1
+			),
+			4
+		);
+		assert.equal(
+			pick(
+				[
+					{ id: 1, stable_id: 'src', playing: true },
+					{ id: 2, stable_id: 'p', playing: true },
+					{ id: 3, stable_id: 'x' },
+					{ id: 4, stable_id: 'z', playing: true }
+				],
+				1
+			),
 			3
 		);
 	});
@@ -302,7 +430,11 @@ describe('auto-play track pick', () => {
 		const { pickNextStableId } = mod;
 		assert.equal(
 			pickNextStableId({
-				playlist: [row('source', '8A', 120), row('incompatible', '1A', 90), row('broken', '8A', 122, false)],
+				playlist: [
+					row('source', '8A', 120),
+					row('incompatible', '1A', 90),
+					row('broken', '8A', 122, false)
+				],
 				current_stable_id: 'source',
 				current_key: '8A',
 				current_bpm: 120,
@@ -385,11 +517,7 @@ describe('auto-play track pick', () => {
 
 	it('skips file_exists=false (missing / iCloud stubs) in both modes', () => {
 		const { pickNextStableId } = mod;
-		const withStub = [
-			row('a', '8A', 120),
-			row('b', '8A', 122, false),
-			row('d', '8B', 125)
-		];
+		const withStub = [row('a', '8A', 120), row('b', '8A', 122, false), row('d', '8B', 125)];
 		assert.equal(
 			pickNextStableId({
 				playlist: withStub,
@@ -470,7 +598,7 @@ describe('auto-play track pick', () => {
 		);
 	});
 
-	it('pin 0a047b: smart mode continues from the loaded track\'s own position, never the list top', () => {
+	it("pin 0a047b: smart mode continues from the loaded track's own position, never the list top", () => {
 		// the maintainer, pin 0a047b8a4e4d: a double-clicked (instant-loaded) track must
 		// have its successor computed from ITS position in the current view,
 		// not from row 0 onward. Every row here is mutually compatible (same
@@ -611,7 +739,9 @@ describe('auto-play fold-lock preference', () => {
 	function assertBoth(playlist, current, key, bpm, expected, bounds = wide) {
 		const { pickNextStableId } = chain;
 		assert.equal(
-			pickNextStableId(pickInput(playlist, current, key, bpm, { maximize_reach: false, ...bounds })),
+			pickNextStableId(
+				pickInput(playlist, current, key, bpm, { maximize_reach: false, ...bounds })
+			),
 			expected
 		);
 		assert.equal(
@@ -789,30 +919,54 @@ describe('auto-play maximize reach (slack path)', () => {
 			select_next: mod.pickNextStableId,
 			...tight
 		};
-		assert.deepEqual([...mod.simulateAutoPlayChain({
-			...input, exclude_ids: new Set(['c']), played_ids: new Set(['d'])
-		})], ['a', 'b']);
-		assert.deepEqual([...mod.simulateAutoPlayChain({ ...input, max_chain_length: 3 })], ['a', 'b', 'c']);
-		assert.deepEqual([...mod.simulateAutoPlayChain({ ...input, enforce_play_order: true })], ['a', 'b', 'c', 'd']);
+		assert.deepEqual(
+			[
+				...mod.simulateAutoPlayChain({
+					...input,
+					exclude_ids: new Set(['c']),
+					played_ids: new Set(['d'])
+				})
+			],
+			['a', 'b']
+		);
+		assert.deepEqual(
+			[...mod.simulateAutoPlayChain({ ...input, max_chain_length: 3 })],
+			['a', 'b', 'c']
+		);
+		assert.deepEqual(
+			[...mod.simulateAutoPlayChain({ ...input, enforce_play_order: true })],
+			['a', 'b', 'c', 'd']
+		);
 	});
 
 	it('charts a switched playlist from the external source metadata', () => {
 		const result = chain.simulateAutoPlayChain({
 			playlist: [row('b', '8A', 120), row('c', '8A', 120)],
-			start_stable_id: 'external', start_key: '8A', start_bpm: 120,
-			enforce_play_order: false, maximize_reach: false,
-			min_tempo_ratio: 0.84, max_tempo_ratio: 1.16
+			start_stable_id: 'external',
+			start_key: '8A',
+			start_bpm: 120,
+			enforce_play_order: false,
+			maximize_reach: false,
+			min_tempo_ratio: 0.84,
+			max_tempo_ratio: 1.16
 		});
 		assert.deepEqual([...result], ['external', 'b', 'c']);
 	});
 
 	it('never substitutes external-source metadata for an existing unknown row', () => {
-		for (const [key, bpm] of [[null, 120], ['8A', null]]) {
+		for (const [key, bpm] of [
+			[null, 120],
+			['8A', null]
+		]) {
 			const result = chain.simulateAutoPlayChain({
 				playlist: [row('source', key, bpm), row('b', '8A', 120)],
-				start_stable_id: 'source', start_key: '8A', start_bpm: 120,
-				enforce_play_order: false, maximize_reach: false,
-				min_tempo_ratio: 0.84, max_tempo_ratio: 1.16
+				start_stable_id: 'source',
+				start_key: '8A',
+				start_bpm: 120,
+				enforce_play_order: false,
+				maximize_reach: false,
+				min_tempo_ratio: 0.84,
+				max_tempo_ratio: 1.16
 			});
 			assert.deepEqual([...result], ['source']);
 		}
@@ -857,11 +1011,7 @@ describe('auto-play maximize reach (slack path)', () => {
 
 	it('broken rows never appear in either chain', () => {
 		const { simulateAutoPlayChain } = mod;
-		const withBroken = [
-			row('a', '8A', 120),
-			row('x', '8A', 120, false),
-			row('b', '8A', 120)
-		];
+		const withBroken = [row('a', '8A', 120), row('x', '8A', 120, false), row('b', '8A', 120)];
 		for (const maximize of [false, true]) {
 			const chain = simulateAutoPlayChain({
 				playlist: withBroken,
@@ -886,19 +1036,35 @@ describe('auto-play Beat Sync handoff policy', () => {
 	it('enables Beat Sync only when source wants sync and phase-lock ok', () => {
 		const { decideAutoPlayBeatSync } = mod;
 		assert.equal(
-			decideAutoPlayBeatSync({ source_beat_sync_enabled: true, phase_lock_ok: true, beat_sync_max: false }),
+			decideAutoPlayBeatSync({
+				source_beat_sync_enabled: true,
+				phase_lock_ok: true,
+				beat_sync_max: false
+			}),
 			'enable'
 		);
 		assert.equal(
-			decideAutoPlayBeatSync({ source_beat_sync_enabled: true, phase_lock_ok: false, beat_sync_max: false }),
+			decideAutoPlayBeatSync({
+				source_beat_sync_enabled: true,
+				phase_lock_ok: false,
+				beat_sync_max: false
+			}),
 			'disable'
 		);
 		assert.equal(
-			decideAutoPlayBeatSync({ source_beat_sync_enabled: false, phase_lock_ok: true, beat_sync_max: false }),
+			decideAutoPlayBeatSync({
+				source_beat_sync_enabled: false,
+				phase_lock_ok: true,
+				beat_sync_max: false
+			}),
 			'disable'
 		);
 		assert.equal(
-			decideAutoPlayBeatSync({ source_beat_sync_enabled: false, phase_lock_ok: false, beat_sync_max: false }),
+			decideAutoPlayBeatSync({
+				source_beat_sync_enabled: false,
+				phase_lock_ok: false,
+				beat_sync_max: false
+			}),
 			'disable'
 		);
 	});
@@ -908,8 +1074,16 @@ describe('auto-play Beat Sync handoff policy', () => {
 		const { decideAutoPlayBeatSync } = mod;
 		for (const source_beat_sync_enabled of [true, false]) {
 			for (const phase_lock_ok of [true, false]) {
-				const decision = decideAutoPlayBeatSync({ source_beat_sync_enabled, phase_lock_ok, beat_sync_max: true });
-				assert.notEqual(decision, 'disable', `source sync ${source_beat_sync_enabled}, lock ${phase_lock_ok}`);
+				const decision = decideAutoPlayBeatSync({
+					source_beat_sync_enabled,
+					phase_lock_ok,
+					beat_sync_max: true
+				});
+				assert.notEqual(
+					decision,
+					'disable',
+					`source sync ${source_beat_sync_enabled}, lock ${phase_lock_ok}`
+				);
 				assert.equal(decision, phase_lock_ok ? 'enable' : 'keep');
 			}
 		}
@@ -928,7 +1102,11 @@ describe('auto-play Beat Sync handoff policy', () => {
 			/decideAutoPlayBeatSync\(\{[^}]*beat_sync_max: beatSyncMax[^}]*\}\)/,
 			'if the handoff decides sync without Beat Sync Max then Max turns off mid-AutoPlay again - broken'
 		);
-		assert.match(src, /source\.beat_sync_enabled \|\| beatSyncMax/, 'with Max on the lock is probed even when the source is not synced');
+		assert.match(
+			src,
+			/source\.beat_sync_enabled \|\| beatSyncMax/,
+			'with Max on the lock is probed even when the source is not synced'
+		);
 	});
 
 	// The error this toast formats is DERIVED from the real planner, never

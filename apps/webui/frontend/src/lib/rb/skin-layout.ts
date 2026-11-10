@@ -1,5 +1,5 @@
 /**
- * SKINLAYOUT-8869, SKINLAYOUT-10489: the LAYOUT part of a skin manifest ((private path)
+ * SKINLAYOUT-8869, SKINLAYOUT-10489, SKINLAYOUT-11729: the LAYOUT part of a skin manifest ((private path)
  * section 2, ADR-0136). A skin names one preset per surface from a fixed
  * catalog; the library workspace grid and the /performance root read it as `data-layout`
  * and place the same components in different grid areas. No component forks per skin.
@@ -8,13 +8,17 @@
  *   ? SKIN_LAYOUT: every skin declares a library preset; only Green Room bends.
  *     [if] libraryLayoutFor('mono-dev') is not 'crate-desk' [then ⛔️]
  *     [if] libraryLayoutFor('green-room') is not 'three-panel' [then ⛔️]
- *   ? SKIN_LAYOUT.performance: every skin declares deck-grid; each preset has a PERFORMANCE_LAYOUT_SPEC.
+ *   ✔︎ ✅ 🎯 SKIN_LAYOUT.performance: every skin declares deck-grid except practice-ddj-flx4, which declares replica-desk; each preset has a PERFORMANCE_LAYOUT_SPEC.
  *     [if] performanceLayoutFor('green-room') is not 'deck-grid' [then ⛔️]
+ *     [if] performanceLayoutFor('default'|'mono-dev'|'light'|'green-room') is not 'deck-grid' [then ⛔️]
+ *     [if] performanceLayoutFor('practice-ddj-flx4') is not 'replica-desk' [then ⛔️]
  *     [if] the deck-grid spec's areas differ from the .perf-root grid-template-areas [then ⛔️]
  *   ? parseLibraryLayout: unknown preset ids throw.
  *     [if] parseLibraryLayout('sidebar-left') returns instead of throwing [then ⛔️]
- *   ? parsePerformanceLayout: unknown preset ids throw, naming the allowed list.
+ *   ✔︎ ✅ 🎯 parsePerformanceLayout: unknown preset ids throw, naming the allowed list.
  *     [if] parsePerformanceLayout('four-across') returns instead of throwing [then ⛔️]
+ *     [if] parsePerformanceLayout('sidebar-left') returns instead of throwing with the allowed ids [then ⛔️]
+ *     [if] parsePerformanceLayout('replica-desk') does not return 'replica-desk' [then ⛔️]
  *   ? effectivePerformanceLayout / effectiveLibraryLayout: 'auto' follows the skin.
  *     [if] effectiveLibraryLayout('auto', 'green-room') is not the skin entry [then ⛔️]
  *     [if] an explicit preset does not win over the skin default [then ⛔️]
@@ -44,9 +48,9 @@ import {
 import type { UiSkin } from './ui-skin';
 
 /** Performance surface presets. A new preset is a new grid map on /performance, never a forked page. */
-export type PerformanceLayout = 'deck-grid';
+export type PerformanceLayout = 'deck-grid' | 'replica-desk';
 
-export const PERFORMANCE_LAYOUTS: readonly PerformanceLayout[] = ['deck-grid'];
+export const PERFORMANCE_LAYOUTS: readonly PerformanceLayout[] = ['deck-grid', 'replica-desk'];
 
 /** Library surface presets. A new preset is a new grid map in CrateDeskView, never a new component. */
 export type LibraryLayout = 'crate-desk' | 'three-panel';
@@ -63,8 +67,9 @@ export const SKIN_LAYOUT: Readonly<Record<UiSkin, SkinLayout>> = {
 	'mono-dev': { library: 'crate-desk', performance: 'deck-grid' },
 	light: { library: 'crate-desk', performance: 'deck-grid' },
 	'green-room': { library: 'three-panel', performance: 'deck-grid' },
-	// Hardware practice skin: the library keeps the standard desk; the replica is /practice/<device>.
-	'practice-ddj-flx4': { library: 'crate-desk', performance: 'deck-grid' }
+	// Hardware practice skin: the library keeps the standard desk; the performance route mounts the
+	// replica desk when the preset is replica-desk (ADR-NEW-skin-performance-layout-preset).
+	'practice-ddj-flx4': { library: 'crate-desk', performance: 'replica-desk' }
 };
 
 export type LayoutSurface = 'performance' | 'library';
@@ -202,6 +207,15 @@ export const PERFORMANCE_LAYOUT_SPEC: Readonly<Record<PerformanceLayout, Perform
 		id: 'deck-grid',
 		areas: ['topbar', 'wavestack', 'deckarea', 'browser'],
 		honours: { deckLayout: true, perfView: true, pads: true },
+		floors: { wavestackRows: 4, deckRowPx: 497, libraryPx: 272 },
+		minWindow: { w: 1280, h: 720 }
+	},
+	// Provisional floors (#10271): the replica takes the deck row's slot, so it keeps deck-grid's
+	// envelope until the layout PR (#9646) sets them after the composition review.
+	'replica-desk': {
+		id: 'replica-desk',
+		areas: ['topbar', 'wavestack', 'replica', 'browser'],
+		honours: { deckLayout: false, perfView: true, pads: false },
 		floors: { wavestackRows: 4, deckRowPx: 497, libraryPx: 272 },
 		minWindow: { w: 1280, h: 720 }
 	}

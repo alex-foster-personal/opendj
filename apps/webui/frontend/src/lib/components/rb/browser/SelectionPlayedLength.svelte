@@ -1,41 +1,60 @@
 <script lang="ts">
 	/**
-	 * Library footer readout for a multi-row selection (LIBUX played length):
-	 * "8 selected · ~42m played · 61m total". Hidden under 2 selected rows.
-	 * Agent twin: POST /api/v1/tracks/played-length, opendj track played-length,
-	 * MCP tracks_played_length.
+	 * Library list footer: visible row count and summed duration, plus the
+	 * selection when 2 or more rows are selected (rekordbox parity).
+	 * Agent twin: POST /api/v1/tracks/list-totals, opendj track list-totals,
+	 * MCP tracks_list_totals.
 	 */
-	import { estimatePlayedLength, formatPlayedLength, OVERLAP_BARS } from '$lib/rb/played-length';
+	import {
+		formatLibraryFooter,
+		summarizeListTotals,
+		type DurationRow
+	} from '$lib/rb/list-totals';
 
-	type Row = { order: number; duration_ms: number | null; bpm: number | null };
+	type Row = DurationRow & { order: number };
 
-	let { rows, selectedOrders }: { rows: readonly Row[]; selectedOrders: readonly number[] } = $props();
+	let {
+		visibleRows,
+		rows,
+		selectedOrders
+	}: {
+		visibleRows: readonly Row[];
+		/** Full pane rows for resolving multi-select by order. */
+		rows: readonly Row[];
+		selectedOrders: readonly number[];
+	} = $props();
 
-	const estimate = $derived.by(() => {
+	const listTotals = $derived(summarizeListTotals(visibleRows));
+
+	const selectionTotals = $derived.by(() => {
 		if (selectedOrders.length < 2) return null;
 		const picked = new Set(selectedOrders);
-		const inputs = [];
+		const selected: Row[] = [];
 		for (const row of rows) {
 			if (!picked.has(row.order)) continue;
-			inputs.push({
-				duration_s: row.duration_ms === null ? null : row.duration_ms / 1000,
-				bpm: row.bpm,
-				mix_in_s: null,
-				mix_out_s: null
-			});
+			selected.push(row);
 		}
-		return { count: inputs.length, ...estimatePlayedLength(inputs) };
+		return summarizeListTotals(selected);
+	});
+
+	const line = $derived(formatLibraryFooter(listTotals, selectionTotals));
+
+	const listTitle = $derived.by(() => {
+		const { count, duration_ms, unknown } = listTotals;
+		const parts = [`${count} visible rows after the active filters`, `summed duration ${duration_ms} ms`];
+		if (unknown > 0) parts.push(`${unknown} without a known duration (excluded from the time)`);
+		return parts.join('; ');
 	});
 </script>
 
-{#if estimate !== null && estimate.count >= 2}
+{#if listTotals.count > 0 || (selectionTotals !== null && selectionTotals.count >= 2)}
 	<div
 		class="selection-played-length"
 		role="status"
-		data-testid="selection-played-length"
-		title={`Rough mixed length: ${estimate.from_mix_points} with mix points, ${estimate.from_rule} by rule of thumb (minus a ${OVERLAP_BARS}-bar overlap at the track BPM, or 75% without one)${estimate.unknown ? `, ${estimate.unknown} without a duration` : ''}.`}
+		data-testid="library-list-totals"
+		title={listTitle}
 	>
-		{estimate.count} selected · ~{formatPlayedLength(estimate.played_s)} played · {formatPlayedLength(estimate.total_s)} total
+		{line}
 	</div>
 {/if}
 

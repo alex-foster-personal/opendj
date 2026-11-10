@@ -571,3 +571,10 @@ test('an info warning (opt-in AI genre) is a note and never flags the pill', () 
 test('a summary with no warnings field renders no warning lines', () => {
 	assert.deepEqual(card.warningLines(summary()), []);
 });
+
+test('ingest genre fill reads filled and need-a-look counts (SETPREP-10646)', () => {
+	const line = card.ingestGenreLine(summary({}, { ingest_genre: { total: 40, done: 12, needs_review: 28 } }));
+	assert.equal(line.text, 'Genre: 12 of 40 filled, 28 need a look');
+	assert.equal(line.tone, 'working');
+	assert.equal(card.ingestGenreLine(summary({}, { ingest_genre: { total: 10, done: 10, needs_review: 0 } })).tone, 'ready');
+});

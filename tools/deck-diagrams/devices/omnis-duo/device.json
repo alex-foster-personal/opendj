@@ -1,0 +1,9 @@
+{
+ "map_name": "OMNIS-DUO",
+ "map_const": "OMNIS_DUO_MAP",
+ "map_ts": "apps/webui/frontend/src/lib/rb/midi/maps/alphatheta-omnis-duo.ts",
+ "panel_w": 500.0,
+ "panel_d": 307.0,
+ "panel_size_source": "OMNIS-DUO specifications, maximum dimensions 500 x 307 x 71 mm W x D x H (alphatheta.com)",
+ "display_name": "2-deck portable all-in-one"
+}

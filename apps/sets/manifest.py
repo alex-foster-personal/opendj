@@ -43,6 +43,10 @@ class Manifest:
     mp3_segments: list[AudioSegment] = field(default_factory=list)
     watermark: str = PRIVACY_NOTE_DEFAULT
     schema_version: int = 1
+    # Master-mix level accounting (issue #10371); null without master-mix audio.
+    audio_peak_dbfs: float | None = None
+    clipped_samples: int | None = None
+    clip_events: int | None = None
 
     def to_dict(self) -> dict[str, Any]:
         d = asdict(self)
@@ -76,6 +80,8 @@ def read_manifest(session_dir: Path) -> Manifest:
     data.setdefault("deck_sources", [])
     data.setdefault("schema_version", 1)
     data.setdefault("watermark", PRIVACY_NOTE_DEFAULT)
+    for key in ("audio_peak_dbfs", "clipped_samples", "clip_events"):
+        data.setdefault(key, None)
     return Manifest(mp3_segments=segments, **data)
 
 

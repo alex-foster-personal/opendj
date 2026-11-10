@@ -31,6 +31,8 @@ OVERVIEW_MAX_POINTS = 2000
 #: Never project a position further than this past the mirror sample (a dead page freezes).
 #: LINKCONST-01: the page's PEER_MAX_PROJECT_MS, one JSON source.
 MAX_PROJECT_S = LINK.peer_max_project_ms / 1000
+#: B2B now-playing staleness limit (``GET /api/v1/b2b/now-playing``, NOWP mirror age).
+MAX_MIRROR_AGE_S = 3.0
 
 _CAMELOT_TO_MUSICAL: dict[str, str] = {}
 for _name, (_camelot_num, _letter) in _KEY_TO_CAMELOT.items():

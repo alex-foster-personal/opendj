@@ -1,0 +1,20 @@
+{"id": "mno-01", "title": "Neon Harbor (Original Mix)", "artist": "Vessel Choir", "tags": ["must_not_overwrite"], "expect_candidate": false, "note": "store-clean title flagged must_not_overwrite"}
+{"id": "mno-02", "title": "I WON'T GO", "artist": "Mode Forge", "tags": ["must_not_overwrite", "artistic_edge"], "expect_candidate": false, "note": "styling caps must never be overwritten"}
+{"id": "clean-01", "title": "Neon Harbor (Original Mix)", "artist": "Vessel Choir", "expect_candidate": false, "note": "store-clean versioned title"}
+{"id": "clean-02", "title": "8A - 6 - Ember Tide", "artist": "Vessel Choir", "expect_candidate": false, "note": "MIK prefix only; safe tier"}
+{"id": "clean-03", "title": "Maple Hollow", "artist": "Tallow,Marrow", "expect_candidate": false, "note": "comma artist credit is intentional"}
+{"id": "appr-01", "title": "6 - Ember Tide [Official Video]", "artist": "Vessel Choir", "approved": true, "expect_candidate": false, "note": "already approved enrichment"}
+{"id": "edge-01", "title": "I WON'T GO", "artist": "Mode Forge", "expect_candidate": false, "note": "ALL CAPS styling"}
+{"id": "edge-02", "title": "Kestrel Fold x Hollow Parade", "artist": "", "expect_candidate": false, "note": "collaboration x join"}
+{"id": "edge-03", "title": "Video Gardens", "artist": "Ida Verrin", "expect_candidate": false, "note": "video word is title content"}
+{"id": "edge-04", "title": "MODEST.", "artist": "Harbor Unit", "expect_candidate": false, "note": "punctuation styling"}
+{"id": "edge-05", "title": "S.W.A.Y.", "artist": "Phase Print", "expect_candidate": false, "note": "initialism styling"}
+{"id": "edge-06", "title": "Quiet Engine", "artist": "u_v", "expect_candidate": false, "note": "deliberate artist handle"}
+{"id": "dirty-01", "title": "Vessel Choir - Ember Tide [Official Music Video]", "artist": "", "expect_candidate": true, "note": "artist jammed into title"}
+{"id": "dirty-02", "title": "8A - 6 - Ember Tide", "artist": "", "expect_candidate": true, "note": "MIK junk without filled artist"}
+{"id": "dirty-03", "title": "Say Less (Original Mix)", "artist": "Dun Harlow - Say Less (Original Mix) DANCEDJ.CLUB", "expect_candidate": true, "note": "site watermark in artist"}
+{"id": "dirty-04", "title": "[yt2mp3.cc] - Neon Harbor", "artist": "", "expect_candidate": true, "note": "download site prefix"}
+{"id": "dirty-05", "title": "Der B\u00c3\u00a4r Groovt", "artist": "", "expect_candidate": true, "note": "mojibake in title"}
+{"id": "dirty-06", "title": "6 - Ember Tide [Official Video]", "artist": "Vessel Choir", "expect_candidate": true, "note": "junk bracket on filled artist row"}
+{"id": "dirty-07", "title": "Gloam_404_All The Quiet Things", "artist": "", "expect_candidate": true, "note": "underscore jam and digits"}
+{"id": "dirty-08", "title": "404 - Cinder", "artist": "", "expect_candidate": true, "note": "bare track-number style prefix"}

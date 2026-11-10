@@ -39,7 +39,8 @@ const DEFAULTS = {
 	bpm_direction: 'both',
 	mode: 'transition',
 	key_shift_max: 1,
-	mashup_relative: false
+	mashup_relative: false,
+	energy_mode: 'off'
 };
 
 test('a fresh profile hydrates compatible_filter from GET /api/v1/ui-prefs', async () => {
@@ -52,7 +53,8 @@ test('a fresh profile hydrates compatible_filter from GET /api/v1/ui-prefs', asy
 		bpm_direction: 'below',
 		mode: 'mashup',
 		key_shift_max: 2,
-		mashup_relative: true
+		mashup_relative: true,
+		energy_mode: 'drop'
 	};
 	globalThis.fetch = async () => jsonResponse({ theme: 'dark', compatible_filter: onDisk });
 
@@ -147,4 +149,22 @@ test('a legacy camelot_steps other than 0, 1 or 2 is corrupt and throws, never r
 		);
 	}
 	assert.deepEqual(mod.validateCompatibleFilterPrefs({ camelot_steps: 0 }, 'k').rules, ['same_key', 'relative']);
+});
+
+test('SETPREP-11947: a disk object with an unknown energy_mode is skipped and the error names it', async () => {
+	const before = { ...DEFAULTS, energy_mode: 'boost' };
+	prefs.uiPrefs.compatible_filter = { ...before };
+	const originalError = console.error;
+	const logged = [];
+	console.error = (...args) => logged.push(args);
+	try {
+		globalThis.fetch = async () => jsonResponse({ compatible_filter: { energy_mode: 'loud' } });
+		await prefs.hydrateConfirmPrefsFromDisk();
+	} finally {
+		console.error = originalError;
+	}
+
+	assert.deepEqual(prefs.uiPrefs.compatible_filter, before);
+	assert.equal(logged.length, 1);
+	assert.match(logged[0].map(String).join(' '), /energy_mode/);
 });

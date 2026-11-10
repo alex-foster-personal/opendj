@@ -52,6 +52,28 @@ def test_positive_offset_moves_every_beat_later_and_keeps_tempo() -> None:
     assert [b["n"] for b in moved] == [b["n"] for b in STEADY]
 
 
+@pytest.mark.requirement("BEATGRID-12010")
+def test_bpm_override_rebuilds_from_anchor_on_apply() -> None:
+    """[if] edit holds bpm and anchor_t [then] apply uses rebuild_beats_at_bpm, [else stop]."""
+    anchor_t = 2.0
+    edit = grid_edit.make_edit(0.0, 0, bpm=128.0, anchor_t=anchor_t)
+    expected = grid_edit.rebuild_beats_at_bpm(STEADY, anchor_t, 128.0)
+    moved = grid_edit.apply_to_beats(STEADY, edit)
+    assert moved == expected
+    assert {b["bpm"] for b in moved} == {128.0}
+
+
+@pytest.mark.requirement("BEATGRID-12010")
+def test_bpm_and_anchor_t_are_paired_in_storage() -> None:
+    """[if] only one of bpm or anchor_t is set [then] make_edit refuses, [else stop]."""
+    with pytest.raises(grid_edit.GridEditError) as lone_bpm:
+        grid_edit.make_edit(0.0, 0, bpm=128.0, anchor_t=None)
+    assert lone_bpm.value.code == "GRID_EDIT_INVALID"
+    raw = '{"v": 1, "edits": {"own": {"offset_ms": 0.0, "beat_shift": 0, "bpm": 128.0}}}'
+    with pytest.raises(ValueError, match=grid_edit.FIELD):
+        grid_edit._parse_blob("a" * 40, raw)
+
+
 def test_negative_offset_moves_earlier_and_drops_beats_before_zero() -> None:
     grid = _grid([0.004, 0.504, 1.004])
     moved = grid_edit.apply_to_beats(grid, grid_edit.make_edit(-10.0, 0))

@@ -48,6 +48,7 @@ def get_summary(request: Request) -> dict[str, Any]:
         decisions=enrich_prompt.load_decisions(ingest_routes.COVERAGE_DATA_DIR),
         warnings=ingest_enrichment.coordinator_for(request.app).warnings(),
         artwork_suggestions=len(artwork_suggestions.pending_document()["pending"]),
+        ingest_genre=ingest_enrichment.coordinator_for(request.app).ingest_genre_counts(),
     )
 
 

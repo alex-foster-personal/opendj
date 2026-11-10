@@ -534,3 +534,43 @@ def test_overlapping_runs_pay_for_one_search(tmp_path: Path, providers_live: Pro
     assert sorted(outcomes) == [pipeline.OUTCOME_DONE, pipeline.OUTCOME_UP_TO_DATE]
     assert providers_live.hits["/search"] == 1
     assert providers_live.hits["/v1/chat/completions"] == 1
+
+
+@pytest.mark.requirement("SETPREP-10646")
+def test_fill_blank_genres_writes_taxonomy_genre_and_skips_user_rows(tmp_path: Path) -> None:
+    """[if] confidence is at least MIN_CONFIDENCE [then] inferred genre is stored, [else needs_review or skip]."""
+    import json
+
+    from apps.genre_infer import store
+    from apps.genre_infer.classify import train
+    from tests.genre_infer.test_classify_store import _blobs
+
+    data, state = library(tmp_path)
+    conn = _conn(state)
+    vec, lab = _blobs(n_per=30, k=2, dim=16)
+    labels = {sid: (taxonomy.NAMES[0] if lab[sid] == "a" else taxonomy.NAMES[1]) for sid in lab}
+    model = train(vec, labels, embedding_model="m", embedding_revision="r")
+    store.write_json(store.model_path(data), json.loads(model.to_json()))
+    store.append_embeddings(
+        data,
+        [{"stable_id": "t-fred", "model": "m", "revision": "r", "status": "ok", "vector": vec["g0-0"]}],
+    )
+    conn.execute(
+        "INSERT INTO track_fields (stable_id, field_name, value_json, source, confidence, modified_at) "
+        "VALUES ('t-copy', 'genre', '\"Techno\"', 'webui', 1.0, '2026-01-01T00:00:00Z')"
+    )
+    conn.commit()
+    summary = service.fill_blank_genres(conn, ["t-fred", "t-copy"], service.MIN_CONFIDENCE, data_dir=data)
+    assert summary.count("filled") == 1 and summary.count("skipped_user") == 1
+    row = conn.execute(
+        "SELECT value_json, source, confidence FROM track_fields WHERE stable_id = 't-fred' AND field_name = 'genre'"
+    ).fetchone()
+    assert row is not None and row[1] == "inferred" and row[2] >= service.MIN_CONFIDENCE
+
+
+@pytest.mark.requirement("SETPREP-10646")
+def test_fill_blank_genres_leaves_low_confidence_as_needs_review(tmp_path: Path) -> None:
+    data, state = library(tmp_path)
+    conn = _conn(state)
+    summary = service.fill_blank_genres(conn, ["t-fred"], 0.99, data_dir=data)
+    assert summary.results[0].outcome == "needs_review"

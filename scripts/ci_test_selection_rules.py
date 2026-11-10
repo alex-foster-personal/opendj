@@ -1942,13 +1942,17 @@ TREE_BOOKKEEPING_PY_ROOTS: tuple[str, ...] = ("tests/", "scripts/", "apps/")
 TREE_BOOKKEEPING_FILES = frozenset(
     {"justfile", "ci/test-scopes.yml", "pytest.ini", "pyproject.toml", "reqs.json", ".planning/REQUIREMENTS.md"}
 )
+#: Per-id requirement fragments (issue #10541) feed the same reqs.json the markers resolve to.
+TREE_BOOKKEEPING_PREFIXES: tuple[str, ...] = ("(private path)/",)
 TREE_BOOKKEEPING_REASON = "tree bookkeeping guard (Python change)"
 
 
 def touches_tree_bookkeeping(changed: list[str]) -> bool:
     """True when a changed path is an input of the tree bookkeeping guards."""
     return any(
-        path in TREE_BOOKKEEPING_FILES or (path.endswith(".py") and path.startswith(TREE_BOOKKEEPING_PY_ROOTS))
+        path in TREE_BOOKKEEPING_FILES
+        or path.startswith(TREE_BOOKKEEPING_PREFIXES)
+        or (path.endswith(".py") and path.startswith(TREE_BOOKKEEPING_PY_ROOTS))
         for path in changed
     )
 
@@ -2069,17 +2073,36 @@ def input_pinned_guards_for(changed: list[str]) -> list[InputPinnedGuard]:
 
 
 def _select_input_pinned(
-    changed: list[str], universe: list[str], selection: Selection, added: list[str] | None = None
+    changed: list[str],
+    universe: list[str],
+    selection: Selection,
+    added: list[str] | None = None,
+    pinned: tuple[tuple[str, str], ...] = (),
 ) -> None:
-    """Rank each guard a change feeds at distance 0, the new-module registry guards for `added` paths.
+    """Rank each guard a change feeds at distance 0, the new-module registry guards for `added` paths
+    and the caller's `pinned` (module, reason) pairs.
 
     Only a guard the lane collects is pinned, so a synthetic test tree without it pins nothing;
     (private path) holds the real lane to both.
     """
     collected = set(universe)
-    for guard in input_pinned_guards_for(changed) + new_module_guards_for(added or []):
-        if guard.module in collected:
-            selection.add(guard.module, guard.reason, INPUT_PINNED_DISTANCE)
+    guards = [(g.module, g.reason) for g in input_pinned_guards_for(changed) + new_module_guards_for(added or [])]
+    for module, reason in [*guards, *pinned]:
+        if module in collected:
+            selection.add(module, reason, INPUT_PINNED_DISTANCE)
+
+
+#: The module ci.yml dumps the OpenAPI contract from. A response model or route anywhere it imports
+#: moves apps/webui/openapi.json: #11727's drift was a route in apps/sets/api.py, outside the
+#: currency guard's prefixes, so the head that added it never ran the guard (Tue 10 Nov 2026).
+OPENAPI_APP_MODULE = "apps.engine_core.app"
+OPENAPI_REACH_REASON = "openapi currency guard (the engine app imports the change)"
+
+
+def _select_contract_reach(reached: dict[str, int], universe: list[str], selection: Selection) -> None:
+    """Rank the openapi currency guard at distance 0 when the engine app imports a changed module."""
+    if OPENAPI_APP_MODULE in reached and OPENAPI_CURRENCY_GUARD in set(universe):
+        selection.add(OPENAPI_CURRENCY_GUARD, OPENAPI_REACH_REASON, INPUT_PINNED_DISTANCE)
 
 
 def _demote_weak_links(selection: Selection, policy: Policy) -> None:
@@ -2099,11 +2122,15 @@ def select_tests(
     policy: Policy | None = None,
     graph: Graph | None = None,
     added: list[str] | None = None,
+    pinned: tuple[tuple[str, str], ...] = (),
 ) -> Selection:
     """The test modules a change set reaches, or FullSuite when it cannot be narrowed.
 
     `added` is the subset of `changed` the change adds (`git diff --diff-filter=A`); it pins the
     new-module registry guards. None is a caller that cannot tell, and pins none of them.
+
+    `pinned` is (module, reason) guards the caller found the change feeds by reading the diff base,
+    which this module cannot (scripts/ci_derived_inputs.py, issue #11975); each ranks at distance 0.
 
     `graph` is `Graph.load(root)` loaded once by a caller that selects many change sets over one
     checkout (scripts/ci_main_hourly.py attributes each commit of a range); selection never mutates it.
@@ -2141,7 +2168,8 @@ def select_tests(
         _select_through_named_helpers(changed, couplings, graph, universe, root, selection)
     always_run = _select_always_run(universe, root, selection)
     _select_tree_bookkeeping(changed, always_run, selection)
-    _select_input_pinned(changed, universe, selection, added)
+    _select_input_pinned(changed, universe, selection, added, pinned)
+    _select_contract_reach(reached, universe, selection)
     _demote_weak_links(selection, policy)
     selection.modules = sorted(selection.reasons)
     return selection
@@ -2177,7 +2205,11 @@ def _changed_test_neighbourhoods(changed: list[str], universe: set[str]) -> list
 
 
 def capped_full_selection(
-    changed: list[str], ignores: list[str], root: Path = REPO, added: list[str] | None = None
+    changed: list[str],
+    ignores: list[str],
+    root: Path = REPO,
+    added: list[str] | None = None,
+    pinned: tuple[tuple[str, str], ...] = (),
 ) -> Selection:
     """The whole lane, ranked for a hard cap, when `select_tests` could not narrow the change.
 
@@ -2202,6 +2234,6 @@ def capped_full_selection(
     for module in always_run:
         selection.add(module, "capped full suite: whole-tree guard", CAPPED_GUARD_DISTANCE)
     _select_tree_bookkeeping(changed, always_run, selection)
-    _select_input_pinned(changed, universe, selection, added)
+    _select_input_pinned(changed, universe, selection, added, pinned)
     selection.modules = sorted(selection.reasons)
     return selection

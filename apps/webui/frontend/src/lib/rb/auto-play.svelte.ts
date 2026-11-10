@@ -28,6 +28,7 @@ import {
 	pitchRanges
 } from '$lib/rb/audio-engine.svelte';
 import {
+	AUTO_PLAY_EMPTY_CANDIDATE_FEED_TOAST,
 	AUTO_PLAY_THRESHOLD_MS,
 	decideMasterPromotion,
 	effectiveAutoPlayThresholdMs,
@@ -46,7 +47,11 @@ import {
 	type AutoPlayHandoffPhase,
 	type AutoPlayMasterPromotion
 } from '$lib/rb/auto-play';
-import { clearChartedAutoPlayOrder, deckSongIdentities, refreshChartedAutoPlayOrder } from '$lib/rb/auto-play-chart-order';
+import {
+	clearChartedAutoPlayOrder,
+	deckSongIdentities,
+	refreshChartedAutoPlayOrder
+} from '$lib/rb/auto-play-chart-order';
 import {
 	isAutoPlayArmedEmptyActive,
 	noteAutoPlayArmedEmptyOnEnable,
@@ -72,7 +77,7 @@ import {
 	activateAutoPlayQueue,
 	autoPlayOrder,
 	clearAutoPlayOrder,
-	clearAutoPlayQueue,
+	clearAutoPlayQueue
 } from '$lib/rb/autoplay-queue.svelte';
 import { autoPlayExhaustionToast, autoPlayStallReason } from '$lib/rb/autoplay-stall';
 import { applyAutoPlayBeatSyncDecision } from '$lib/rb/auto-play-phase-lock';
@@ -251,7 +256,8 @@ async function _handoff(
 	const outcome = await runAutoPlayHandoff(nextId, {
 		stillArmed: () => _armedAt(generation),
 		followerStableId: () => deckStates[follower].stable_id,
-		unload: () => dispatchPerformanceCommand({ type: 'unload', deck: follower }, undefined, 'autoplay-handoff'),
+		unload: () =>
+			dispatchPerformanceCommand({ type: 'unload', deck: follower }, undefined, 'autoplay-handoff'),
 		load: () =>
 			dispatchPerformanceCommand(
 				_loadCommand(follower, nextId, _loadKeyShift(source.id, nextId)),
@@ -260,11 +266,18 @@ async function _handoff(
 			),
 		beatSync: () => applyAutoPlayBeatSyncDecision(source, follower),
 		play: () =>
-			dispatchPerformanceCommand({ type: 'play', deck: follower, playing: true }, undefined, 'autoplay-handoff'),
+			dispatchPerformanceCommand(
+				{ type: 'play', deck: follower, playing: true },
+				undefined,
+				'autoplay-handoff'
+			),
 		notifySyncSkip: (message) => pushToast(message, 'info'),
 		onPlayDispatched: noteAutoPlayFollowerPlayDispatched,
 		notifyCleanupFailed: (message) =>
-			pushToast(`auto-play: deck ${follower} kept ${nextId.slice(0, 12)}... after AutoPlay was switched off: ${message}`, 'error')
+			pushToast(
+				`auto-play: deck ${follower} kept ${nextId.slice(0, 12)}... after AutoPlay was switched off: ${message}`,
+				'error'
+			)
 	});
 	if (outcome === 'abandoned-disarmed') {
 		console.info(
@@ -314,7 +327,11 @@ async function _promoteMaster(): Promise<void> {
 		_promoting = true;
 		const generation = _generation;
 		try {
-			await dispatchPerformanceCommand({ type: 'master', deck: pending.deck }, undefined, 'autoplay-handoff');
+			await dispatchPerformanceCommand(
+				{ type: 'master', deck: pending.deck },
+				undefined,
+				'autoplay-handoff'
+			);
 		} catch (error: unknown) {
 			if (!_armedAt(generation)) return;
 			const message = error instanceof Error ? error.message : String(error);
@@ -390,11 +407,21 @@ function _heardMaster(deck: DeckId): { key: string | null; bpm: number | null } 
 function _loadKeyShift(sourceDeck: DeckId, track: string): number {
 	const row = getAutoPlayPlaylist().find((r) => r.stable_id === track);
 	if (row === undefined) return 0;
-	return autoPlayKeyShift(row.key, _heardMaster(sourceDeck).key, uiPrefs.compatible_filter.key_shift_max) ?? 0;
+	return (
+		autoPlayKeyShift(
+			row.key,
+			_heardMaster(sourceDeck).key,
+			uiPrefs.compatible_filter.key_shift_max
+		) ?? 0
+	);
 }
 
 /** The next track for this master by AutoPlay's rules: key and tempo AS HEARD, played set, order, reach. */
-function _pickNext(source: AutoPlayDeckSnap, follower: DeckId, excludeIds: ReadonlySet<string>): string | null {
+function _pickNext(
+	source: AutoPlayDeckSnap,
+	follower: DeckId,
+	excludeIds: ReadonlySet<string>
+): string | null {
 	const bounds = tempoBoundsFromPitchRange(pitchRanges[follower]);
 	const heard = _heardMaster(source.id);
 	return pickNextStableId({
@@ -562,8 +589,10 @@ function _resolveNextOrReportExhaustion(
 	if (nextId === null) {
 		const feed = getAutoPlayPlaylist();
 		const remaining = remainingAutoPlayCandidates({
-			playlist: feed, current_stable_id: source.stable_id,
-			exclude_ids: excludeIds, played_ids: _playedIds
+			playlist: feed,
+			current_stable_id: source.stable_id,
+			exclude_ids: excludeIds,
+			played_ids: _playedIds
 		});
 		const allMissing = remaining.length > 0 && remaining.every((r) => !r.file_exists);
 		// An empty feed is its own diagnosis and must not be reported as a
@@ -573,7 +602,7 @@ function _resolveNextOrReportExhaustion(
 		if (feed.length === 0) {
 			const feedEpoch = getAutoPlayFeedEpoch();
 			if (_waitingEmptyFeedEpoch !== feedEpoch) {
-				pushToast('auto-play: candidate feed is empty - waiting for playlist rows', 'info');
+				pushToast(AUTO_PLAY_EMPTY_CANDIDATE_FEED_TOAST, 'info');
 				_waitingEmptyFeedEpoch = feedEpoch;
 			}
 			// This is not a committed handoff. BrowserPanel deliberately publishes
@@ -660,7 +689,12 @@ async function _runHandoff(
 					`did not finish: ${message}`,
 				'error'
 			);
-			noteAutoPlayHandoffStall('handoff-incomplete', source.stable_id, message, _armedAt(generation));
+			noteAutoPlayHandoffStall(
+				'handoff-incomplete',
+				source.stable_id,
+				message,
+				_armedAt(generation)
+			);
 			return;
 		}
 		if (phase === 'follower-unload') {
@@ -671,13 +705,22 @@ async function _runHandoff(
 			_followerUnloadFailures += 1;
 			if (_followerUnloadFailures < MAX_HANDOFF_ATTEMPTS) {
 				_triggeredFor = null;
-				pushToast(`auto-play: could not clear deck ${follower} for the next track: ${message}`, 'info');
+				pushToast(
+					`auto-play: could not clear deck ${follower} for the next track: ${message}`,
+					'info'
+				);
 			} else {
 				pushToast(
 					`auto-play stopped: deck ${follower} would not clear after ${MAX_HANDOFF_ATTEMPTS} tries: ${message}`,
 					'error'
 				);
-				noteAutoPlayHandoffStall('handoff-attempts-exhausted', source.stable_id, message, _armedAt(generation), []);
+				noteAutoPlayHandoffStall(
+					'handoff-attempts-exhausted',
+					source.stable_id,
+					message,
+					_armedAt(generation),
+					[]
+				);
 			}
 			return;
 		}
@@ -700,7 +743,11 @@ async function _runHandoff(
 				_attemptsFor.failed_ids.includes(row.stable_id)
 			);
 			noteAutoPlayHandoffStall(
-				'handoff-attempts-exhausted', source.stable_id, message, _armedAt(generation), failed
+				'handoff-attempts-exhausted',
+				source.stable_id,
+				message,
+				_armedAt(generation),
+				failed
 			);
 		}
 	} finally {
@@ -753,8 +800,7 @@ async function _tick(): Promise<void> {
 	const settled = _settleTickFeed(armedSource, snaps);
 	if (settled.earlyHeld) return;
 
-	const rem =
-		resolved.remainingOverride ?? remainingMs(source.position_ms, source.duration_ms);
+	const rem = resolved.remainingOverride ?? remainingMs(source.position_ms, source.duration_ms);
 	// min(constant, duration/2): a track shorter than the constant window must
 	// not arm at t=0 (it used to load the next track over its own first beat).
 	const windowMs = effectiveAutoPlayThresholdMs(source.duration_ms);

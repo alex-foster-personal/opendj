@@ -24,6 +24,13 @@ measured layer-1 factors. The weights are PRIORS (file 15: Mosaikbox's rhythm
 0.3 and harmony 0.2, PR #3873's v0 loudness 0.2) pending the Bradley-Terry fit
 on the maintainer's execution preferences; nothing here is calibrated yet.
 
+Round 25 (#10182, scorer 0.11.0): ``momentary_hole`` reads the deepest dip on
+the 400 ms loudness series held 300 ms under the quietest same-bar-position
+reading two bars either side (free 1.5 LU, knee 3 LU, not core);
+``bass_overlap`` grades by how far both lows sit above the both-full line, not
+a yes/no count; ``seam_clicks`` also scans the whole overlap for derivative
+spikes, not only plan-named seams.
+
 Never a verdict from a failed measurement: a factor that cannot be measured
 goes to ``unknown`` with its reason and out of the composite, and with fewer
 than :data:`~apps.transition_score.contract.MIN_CORE_MEASURED` core factors
@@ -132,6 +139,21 @@ VOCAL_OVERLAP_KNEE_S = 0.5
 CUT_KNEE_MS = 10.0
 #: Mixxx crossfades every loop seam and cut (file 13): the reference has none.
 SEAM_CLICKS_KNEE = 0.5
+#: #10182 (F6): a hole this many LU deep (past the free band) halves momentary_hole. Mimicked from
+#: LOUDNESS_LOSS_VETO_LU: the linear-crossfade hole the constant-power curve removes.
+MOMENTARY_HOLE_KNEE_LU = LOUDNESS_LOSS_VETO_LU
+#: A dip must hold this long on the 400 ms momentary series to be a hole (three 100 ms readings), not one quiet window.
+MOMENTARY_HOLE_HOLD_S = 0.3
+#: The free band: PR #3873's v0 1.5 LU (LOUDNESS_KNEE_LU). The clean synthetic blend's own quietest held reading sits
+#: 1.5 LU under its neighbours (one vocal ending two seconds before the next starts), which is structure, not a hole.
+MOMENTARY_HOLE_FREE_LU = LOUDNESS_KNEE_LU
+#: The reference readings: the same bar position this many outgoing bars away. The quietest of them is the reference,
+#: so a section change (a vocal ending, a breakdown) is the track, and only a dip under both sides is a hole.
+MOMENTARY_HOLE_NEIGHBOR_BARS: tuple[int, ...] = (-2, -1, 1, 2)
+#: The scan steps by the click window's half width, so every sample sits in two windows.
+CLICK_SCAN_HOP_S = 0.02
+#: Two finds within one click window are one click.
+CLICK_MERGE_S = 0.04
 
 #: PRIOR weights, pending the Bradley-Terry fit (file 15 section 2).
 PRIOR_WEIGHTS: dict[str, float] = {
@@ -147,6 +169,7 @@ PRIOR_WEIGHTS: dict[str, float] = {
     "band_continuity_low": 0.1,  # #10187: the mix's low band against the outgoing at unity, to the handover
     "band_continuity_mid": 0.1,  # #10187: the mix's mid band against the outgoing at unity, to the handover
     "band_continuity_high": 0.1,  # #10187: the mix's high band against the outgoing at unity, to the handover
+    "momentary_hole": 0.1,  # #10182 F6: a 0.3 to 0.8 s hole the 3 s window smears
 }
 
 # ----- measurement parameters ------------------------------------------------
@@ -183,6 +206,8 @@ BASS_ACTIVE_DB_V0 = -20.0
 #: two basslines at once. His crossover never enters it (at its midpoint both sit near -4.3 dB). The comb filter of two
 #: kicks a few ms apart is the beat-offset veto's, so there is no phase term here.
 BASS_BOTH_FULL_DB = -3.0
+#: Round 25 (#10182 F7): the free allowance for both lows above the both-full line, as summed dB-beats (one beat at full).
+BASS_OVERLAP_DEPTH_KNEE_DB = BASS_BOTH_FULL_KNEE_BEATS * -BASS_BOTH_FULL_DB
 #: Round 23: a solo whose 20-150 Hz bar-median sits below this has no usable bass reference; bass_overlap is unknown
 #: rather than a floor-normalized pile-up. Mimicked from ONSET_PRESENCE_DB / VOCAL_ACTIVE_DBFS.
 BASS_REF_PRESENT_DB = -40.0
@@ -538,9 +563,11 @@ def _true_peak(t: _Tally, mix: np.ndarray, decks: tuple[np.ndarray, np.ndarray],
 
 def _dropout(t: _Tally, mix: np.ndarray, ctx: RenderContext) -> None:
     """Momentary (400 ms) loudness: a 3 s window cannot see a 0.5 s hole."""
-    _, lufs = signals.loudness_series(mix, ctx.sample_rate, signals.MOMENTARY_S)
+    centers, lufs = signals.loudness_series(mix, ctx.sample_rate, signals.MOMENTARY_S)
     if len(lufs) == 0:
-        t.unknown["dropout"] = "render shorter than one 400 ms loudness window"
+        reason = "render shorter than one 400 ms loudness window"
+        t.unknown["dropout"] = reason
+        t.unknown["momentary_hole"] = reason
         return
     hop = signals.LOUDNESS_HOP_S
     seconds = longest_run_s(lufs < DROPOUT_LUFS, hop)
@@ -548,6 +575,38 @@ def _dropout(t: _Tally, mix: np.ndarray, ctx: RenderContext) -> None:
         seconds += signals.MOMENTARY_S - hop
     t.metrics["dropout_s"] = round(seconds, 2)
     t.veto_if("dropout", seconds, DROPOUT_VETO_S, seconds > DROPOUT_VETO_S)
+    _momentary_hole(t, centers, lufs, ctx)
+
+
+def _momentary_hole(t: _Tally, centers: np.ndarray, lufs: np.ndarray, ctx: RenderContext) -> None:
+    """The deepest dip on the 400 ms series held 300 ms under neighbours at the same bar position."""
+    bar = round(4 * ctx.beat_s / signals.LOUDNESS_HOP_S)
+    held = round(MOMENTARY_HOLE_HOLD_S / signals.LOUDNESS_HOP_S)
+    start, end = ctx.overlap_s
+    inside = np.nonzero((centers >= start) & (centers <= end))[0]
+    if inside.size == 0:
+        t.unknown["momentary_hole"] = "no 400 ms loudness reading inside the overlap"
+        return
+    neighbours = []
+    for k in MOMENTARY_HOLE_NEIGHBOR_BARS:
+        shift = k * bar
+        if shift <= 0:
+            neighbours.append(np.concatenate([np.full(-shift, np.inf), lufs[: len(lufs) + shift]]))
+        else:
+            neighbours.append(np.concatenate([lufs[shift:], np.full(shift, np.inf)]))
+    references = np.min(np.stack(neighbours), axis=0)
+    deficit = references[inside] - lufs[inside]
+    deficit = np.where(np.isfinite(deficit), deficit, 0.0)
+    if len(deficit) < held:
+        t.unknown["momentary_hole"] = "overlap shorter than the 300 ms hold on the 400 ms momentary series"
+        return
+    windows = sliding_window_view(deficit, held).min(axis=1)
+    depth = max(0.0, float(windows.max()))
+    at_idx = int(windows.argmax()) + held // 2
+    at_s = float(centers[inside][at_idx]) if at_idx < len(inside) else float(centers[inside][-1])
+    t.metrics["momentary_hole_depth_lu"] = round(depth, 2)
+    t.metrics["momentary_hole_at_s"] = round(at_s, 2)
+    t.factors["momentary_hole"] = squash(max(0.0, depth - MOMENTARY_HOLE_FREE_LU), MOMENTARY_HOLE_KNEE_LU)
 
 
 def _tempo(t: _Tally, ctx: RenderContext) -> None:
@@ -819,12 +878,17 @@ def _count_both_full_beats(out_beats: np.ndarray, in_beats: np.ndarray) -> int:
     return int(np.sum((out_beats >= BASS_BOTH_FULL_DB) & (in_beats >= BASS_BOTH_FULL_DB)))
 
 
+def _both_full_depth_db(out_beats: np.ndarray, in_beats: np.ndarray) -> float:
+    """dB-beats both decks' lows sit above BASS_BOTH_FULL_DB: per beat the quieter low's excess over the line, summed."""
+    return float(np.sum(np.maximum(0.0, np.minimum(out_beats, in_beats) - BASS_BOTH_FULL_DB)))
+
+
 def _bass_overlap(t: _Tally, mix: np.ndarray, out_deck: np.ndarray, in_deck: np.ndarray, ctx: RenderContext) -> None:
     """Round 15: two readings of the low-band handoff, both from the 20-150 Hz band, per beat, each beat held to the
     level at its own position in the bar on the solo spans.
 
-    ``bass_overlap`` counts beats where BOTH decks' lows are within BASS_BOTH_FULL_DB of their own solo level (two
-    basslines at once). ``low_continuity`` reads the MIX's summed low band against the straight line from its outgoing
+    ``bass_overlap`` grades how far both decks' lows sit above the both-full line (summed dB-beats), not a yes/no count.
+    ``low_continuity`` reads the MIX's summed low band against the straight line from its outgoing
     solo level to its incoming solo level, like loudness continuity: a hole (both lows down) and a pile-up (both near
     full) both show, a handoff that keeps the sum steady does not. Both decks partly present for a few bars, as the maintainer
     hands over, is neither.
@@ -864,8 +928,10 @@ def _bass_overlap(t: _Tally, mix: np.ndarray, out_deck: np.ndarray, in_deck: np.
     out_beats = _beat_levels(out_low, sr, overlap_beats) - out_ref
     in_beats = _beat_levels(in_low, sr, overlap_beats) - in_ref
     both = _count_both_full_beats(out_beats, in_beats)
+    depth = _both_full_depth_db(out_beats, in_beats)
     t.metrics["bass_both_full_beats"] = both
-    t.factors["bass_overlap"] = squash(float(both), BASS_BOTH_FULL_KNEE_BEATS)
+    t.metrics["bass_overlap_depth_db"] = round(depth, 2)
+    t.factors["bass_overlap"] = squash(depth, BASS_OVERLAP_DEPTH_KNEE_DB)
     raw_out, raw_in = out_beats + out_ref, in_beats + in_ref
     switch = next((j for j in range(len(overlap_beats)) if raw_in[j] > raw_out[j]), len(overlap_beats))
     switch_s = overlap_beats[switch][0][0] if switch < len(overlap_beats) else ctx.overlap_s[1]
@@ -1065,7 +1131,7 @@ def _cut_to_downbeat(t: _Tally, decks: dict[str, np.ndarray], ctx: RenderContext
 SILENT_REFERENCE_ANOMALY = 1e6
 
 
-def _seam_anomaly(mix: np.ndarray, ctx: RenderContext, seam_s: float) -> tuple[float, float]:
+def _seam_anomaly(d2: np.ndarray, ctx: RenderContext, seam_s: float, length_s: float) -> tuple[float, float]:
     """(click ratio at the seam, that ratio over the same spot one to four beats either side).
 
     A kick's attack is sharp too, but it is sharp on every beat; a seam click
@@ -1073,10 +1139,10 @@ def _seam_anomaly(mix: np.ndarray, ctx: RenderContext, seam_s: float) -> tuple[f
     the neighboring beats keeps the music's own transients from reading as
     clicks (file 13: an anomaly at the wrap, not a transient).
     """
-    length_s = len(mix) / ctx.sample_rate
-    here = signals.click_ratio(mix, ctx.sample_rate, seam_s)
+    sr = ctx.sample_rate
+    here = signals.click_ratio_at(d2, sr, seam_s)[0]
     refs = [
-        signals.click_ratio(mix, ctx.sample_rate, seam_s + k * ctx.beat_s)
+        signals.click_ratio_at(d2, sr, seam_s + k * ctx.beat_s)[0]
         for k in (-4, -3, -2, -1, 1, 2, 3, 4)
         if 0.2 < seam_s + k * ctx.beat_s < length_s - 0.2
     ]
@@ -1089,20 +1155,64 @@ def _seam_anomaly(mix: np.ndarray, ctx: RenderContext, seam_s: float) -> tuple[f
     return here, (SILENT_REFERENCE_ANOMALY if here > 0 else 0.0)
 
 
+def _overlap_clicks(d2: np.ndarray, ctx: RenderContext, length_s: float) -> list[float]:
+    """Click times in the overlap from derivative spikes that pass the anomaly gate."""
+    sr = ctx.sample_rate
+    start, end = ctx.overlap_s
+    kept: list[float] = []
+    for center in np.arange(start, end, CLICK_SCAN_HOP_S):
+        try:
+            ratio, peak = signals.click_ratio_at(d2, sr, center)
+        except ValueError:
+            continue
+        if ratio <= CLICK_RATIO:
+            continue
+        at_s = peak / sr
+        try:
+            confirm_ratio, anomaly = _seam_anomaly(d2, ctx, at_s, length_s)
+        except ValueError:
+            continue
+        if (
+            confirm_ratio > CLICK_RATIO
+            and anomaly > CLICK_ANOMALY
+            and not any(abs(at_s - t) < CLICK_MERGE_S for t in kept)
+        ):
+            kept.append(at_s)
+    return kept
+
+
 def _seam_clicks(t: _Tally, mix: np.ndarray, ctx: RenderContext) -> None:
+    length_s = len(mix) / ctx.sample_rate
+    d2 = signals.second_difference(mix)
     seams = sorted(set(ctx.seams_s) | {s.at_s for s in ctx.steps})
-    if not seams:
-        t.unknown["seam_clicks"] = "not applicable: the plan has no cut, loop wrap or deck start to click"
-        return
-    found = [_seam_anomaly(mix, ctx, s) for s in seams]
-    clicks = sum(1 for ratio, anomaly in found if ratio > CLICK_RATIO and anomaly > CLICK_ANOMALY)
-    t.metrics.update(
-        seam_clicks=clicks,
-        seam_click_ratio_max=round(max(r for r, _ in found), 1),
-        seam_click_anomaly_max=round(max(a for _, a in found), 1),
+    overlap_clicks = _overlap_clicks(d2, ctx, length_s)
+    seam_click_times: list[float] = []
+    found: list[tuple[float, float]] = []
+    for s in seams:
+        try:
+            ratio, anomaly = _seam_anomaly(d2, ctx, s, length_s)
+        except ValueError:
+            continue
+        found.append((ratio, anomaly))
+        if ratio > CLICK_RATIO and anomaly > CLICK_ANOMALY:
+            seam_click_times.append(s)
+    plan_clicks = len(seam_click_times)
+    distinct = list(overlap_clicks)
+    for s in seam_click_times:
+        if not any(abs(s - t) < CLICK_MERGE_S for t in distinct):
+            distinct.append(s)
+    updates: dict[str, Any] = dict(
+        seam_clicks=plan_clicks,
         seams_checked=len(seams),
+        overlap_clicks=len(overlap_clicks),
+        overlap_click_s=[round(t, 3) for t in overlap_clicks],
+        clicks_total=len(distinct),
     )
-    t.factors["seam_clicks"] = squash(float(clicks), SEAM_CLICKS_KNEE)
+    if found:
+        updates["seam_click_ratio_max"] = round(max(r for r, _ in found), 1)
+        updates["seam_click_anomaly_max"] = round(max(a for _, a in found), 1)
+    t.metrics.update(updates)
+    t.factors["seam_clicks"] = squash(float(len(distinct)), SEAM_CLICKS_KNEE)
 
 
 def composite(factors: dict[str, float], weights: dict[str, float] = PRIOR_WEIGHTS) -> float:

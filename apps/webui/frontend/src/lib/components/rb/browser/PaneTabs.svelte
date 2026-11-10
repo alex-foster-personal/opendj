@@ -122,7 +122,8 @@
 	}
 </script>
 
-<div class="tabs" role="tablist" aria-label="browser panes">
+<div class="tabs">
+	<div class="pane-tablist" role="tablist" aria-label="browser panes">
 	{#each tabs as tab, i (i)}
 		{#if i === active && !relatedActive}
 			<div
@@ -278,8 +279,14 @@
 			</button>
 		{/if}
 	{/if}
+	</div>
 	{#if onaddpane !== undefined && canAddPaneSlot(tabs.length)}
-		<button class="tab add-pane" type="button" onclick={() => onaddpane?.()} aria-label="Blank List (+)">
+		<button
+			class="tab add-pane"
+			type="button"
+			onclick={() => onaddpane?.()}
+			aria-label="Blank List (+)"
+		>
 			Blank List (+)
 		</button>
 	{/if}
@@ -303,6 +310,13 @@
 	.tabs {
 		display: flex;
 		align-items: stretch;
+		min-width: 0;
+		overflow: hidden;
+	}
+	.pane-tablist {
+		display: flex;
+		align-items: stretch;
+		flex: 1;
 		min-width: 0;
 		overflow: hidden;
 	}

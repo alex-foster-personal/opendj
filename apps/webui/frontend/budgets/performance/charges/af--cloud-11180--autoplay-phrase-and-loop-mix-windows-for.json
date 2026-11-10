@@ -1,0 +1,9 @@
+{
+  "bytes": 1024,
+  "measured_main": 428375,
+  "measured_with_pr": 428429,
+  "sha": "1e897c8bb396",
+  "date": "Tue 10 Nov 2026",
+  "reason": "Issue #11180 adds auto-play-windows.ts on performance; CI measured +54 B gzip over main; ceiled to KiB.",
+  "payback": "none planned; phrase window helpers ship on this surface"
+}

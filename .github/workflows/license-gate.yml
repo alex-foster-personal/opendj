@@ -58,7 +58,7 @@ concurrency:
 jobs:
   license-gate:
     name: Dependency licenses are declared and allowed
-    runs-on: ${{ fromJSON(vars.CI_RUNS_ON_LINUX || '"ubuntu-latest"') }}
+    runs-on: ${{ fromJSON(vars.CI_RUNS_ON_GATE || vars.CI_RUNS_ON_LINUX || '"ubuntu-latest"') }}
     timeout-minutes: 5
     steps:
       - name: Reclaim workspace ownership before checkout

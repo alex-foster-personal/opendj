@@ -53,6 +53,8 @@ export interface JogSink {
 
 export class JogWheel {
 	private _pendingTicks = 0;
+	/** Ticks already multiplied by the paused scrub scale (bend still uses _pendingTicks). */
+	private _pendingScrubTicks = 0;
 	private _flushTimer: ReturnType<typeof setTimeout> | null = null;
 	private _releaseTimer: ReturnType<typeof setTimeout> | null = null;
 	private _settleTimer: ReturnType<typeof setTimeout> | null = null;
@@ -65,8 +67,9 @@ export class JogWheel {
 		private readonly _sink: JogSink
 	) {}
 
-	turn(delta: number): void {
+	turn(delta: number, scale = 1): void {
 		this._pendingTicks += delta;
+		this._pendingScrubTicks += delta * scale;
 		this._flushTimer ??= setTimeout(() => this._flush(), JOG_FLUSH_MS);
 		if (this._releaseTimer !== null) clearTimeout(this._releaseTimer);
 		this._releaseTimer = setTimeout(() => this._release(), JOG_RELEASE_MS);
@@ -80,9 +83,11 @@ export class JogWheel {
 	private _flush(): void {
 		this._flushTimer = null;
 		const ticks = this._pendingTicks;
+		const scrubTicks = this._pendingScrubTicks;
 		this._pendingTicks = 0;
+		this._pendingScrubTicks = 0;
 		const deck = this._read();
-		if (!deck.playing) this._scrub(deck, ticks);
+		if (!deck.playing) this._scrub(deck, scrubTicks);
 		else if (deck.followsSyncMaster) this._refuseBend();
 		else this._bend(deck, ticks);
 	}

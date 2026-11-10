@@ -21,11 +21,15 @@
  * agent-duration.ts uses for a `bars` Duration and apps/autodj/profile.py uses
  * for its bar numbers, so "bar 113" names one moment on all three.
  *
+ * #10246: `color_fx` NOISE commands (fx_noise: `param` is the level, `value` the sweep knob) run on the clock deck
+ * only, and a plan carrying one is refused at schedule (`noise_unavailable`) while the deck's color effect cannot be NOISE.
+ *
  * Known limit: the tick is a 16 ms timer, so a HIDDEN tab's throttled timers
  * (1 s, then 60 s) slow it the same way they slow a `ramp` order. The desktop
  * shell's webview is visible while a set plays.
  */
 
+import { COLOR_FX_EFFECTS } from './color-fx';
 import { barAt, downbeatsMs, msAtBar } from './plan-bars';
 import { PLAN_KNOBS } from './plan-knobs';
 import { alignmentChanged, buildPlanOverlay, failedPlanOverlay, incomingAlignment, type IncomingAlignment, type PlanOverlay, type PlanOverlayInput } from './plan-overlay';
@@ -48,10 +52,11 @@ const PLAN_COMMAND_TYPES: ReadonlySet<string> = new Set([
 	'filter',
 	'eq',
 	'crossfader',
-	'tempo'
+	'tempo',
+	'color_fx'
 ]);
 /** The command types a plan may ramp (crossfader and tempo included, AGENT-24). */
-const PLAN_RAMP_TYPES: ReadonlySet<string> = new Set(['fader', 'trim', 'filter', 'eq', 'crossfader', 'tempo']);
+const PLAN_RAMP_TYPES: ReadonlySet<string> = new Set(['fader', 'trim', 'filter', 'eq', 'crossfader', 'tempo', 'color_fx']);
 /** What `prepare` may carry: the compiler's setup (cue, tempo, Beat Sync, hoisted incoming-deck sets), never a transport play. */
 const PREPARE_TYPES: ReadonlySet<string> = new Set(['master', 'seek', 'beat_sync', 'tempo', 'fader', 'trim', 'filter', 'eq']);
 /** Setup the compiler emits only into `prepare`: a seek or Beat Sync fired mid-plan jumps the audible deck or re-syncs it. */
@@ -229,6 +234,8 @@ interface PlanDeps {
 	now: () => number;
 	/** AutoPlay has a handoff loading or starting a deck: a plan accepted now would share that deck. */
 	handoffInFlight: () => boolean;
+	/** #10246: null when the deck's color effect can be NOISE, else why not; absent means the page cannot tell. */
+	colorFxNoise?: (deck: DeckId) => string | null;
 	/** The engine's AudioContext clock in seconds: the lookahead and a scheduled step's landing are read on it (AGENT-30). */
 	contextNowSec: () => number;
 	/**
@@ -323,10 +330,38 @@ function _planDeckCommand(command: Record<string, unknown>, where: string, clock
 	if (SETUP_ONLY_TYPES.has(command.type as string)) {
 		throw new TypeError(`${where}: ${command.type} is setup and belongs in prepare, not a timed event`);
 	}
+	if (command.type === 'color_fx') _noiseCommand(command, where, clockDeck);
 	if (command.deck === undefined) return;
 	if (command.deck !== clockDeck && command.deck !== incomingDeck) {
 		throw new TypeError(`${where}: a timed command may touch only the clock or incoming deck`);
 	}
+}
+
+/** #10246: a plan's color_fx is NOISE on the clock deck, carrying exactly one of `param` (level) or `value` (sweep knob). */
+function _noiseCommand(command: Record<string, unknown>, where: string, clockDeck: DeckId): void {
+	if (command.deck !== clockDeck) throw new TypeError(`${where}: color_fx runs on the clock (outgoing) deck only`);
+	if (command.effect !== 'noise') throw new TypeError(`${where}.effect must be noise: a plan drives only the NOISE color effect`);
+	const fields = (['param', 'value'] as const).filter((field) => command[field] !== undefined);
+	if (fields.length !== 1) throw new TypeError(`${where} must carry exactly one of param or value`);
+	const number = command[fields[0]];
+	if (typeof number !== 'number' || !Number.isFinite(number) || number < 0 || number > 1) {
+		throw new RangeError(`${where}.${fields[0]} must be a finite number within 0..1`);
+	}
+}
+
+export const NOISE_RUST_REFUSAL = 'the Rust engine plays only the FILTER on the color knob; NOISE is a Web Audio color effect (COLORFX-05)';
+export const NOISE_NOT_BUILT = 'this page has no NOISE color effect yet (#9804)';
+
+/** #10246: why a deck's color effect cannot be NOISE, or null when it can. */
+export function noiseRefusal(rustColorFxUnsupported: boolean, effects: readonly string[] = COLOR_FX_EFFECTS): string | null {
+	if (rustColorFxUnsupported) return NOISE_RUST_REFUSAL;
+	if (!effects.includes('noise')) return NOISE_NOT_BUILT;
+	return null;
+}
+
+/** A color_fx command's own number field: `param` (the NOISE level) when it carries one, else `value` (the sweep knob). */
+function _noiseField(command: Record<string, unknown>): 'param' | 'value' {
+	return command.param !== undefined ? 'param' : 'value';
 }
 
 function _event(value: unknown, index: number, clockDeck: DeckId, incomingDeck: DeckId | null, bars: number): PlanEvent {
@@ -397,7 +432,8 @@ export function parsePlanOrder(payload: unknown): AgentPlanOrder {
 // --------------------------------------------------------------- execute ---
 
 function _rampKey(command: Record<string, unknown>): string {
-	return [command.type, command.deck ?? '', command.band ?? ''].join(':');
+	const third = command.type === 'color_fx' ? _noiseField(command) : (command.band ?? '');
+	return [command.type, command.deck ?? '', third].join(':');
 }
 
 function _currentValue(state: PlanStateView, command: Record<string, unknown>): number {
@@ -420,6 +456,7 @@ function _immediate(command: PlanCommand): PlanCommand {
 }
 
 function _withValue(command: PlanCommand, value: number): PlanCommand {
+	if (command.type === 'color_fx') return { ...command, [_noiseField(command)]: value };
 	return command.type === 'tempo' ? { ...command, ratio: value } : { ...command, value };
 }
 
@@ -466,6 +503,14 @@ export function createPlanRunner(deps: PlanDeps): PlanRunner {
 	 */
 	let closing = false;
 	let cancelling = false;
+	/** #10246: the NOISE level and sweep this plan last sent, by ramp key; the mirror does not carry them. */
+	const noiseLevels = new Map<string, number>();
+
+	/** A control's value now: the NOISE fields from what this plan sent (level 0, sweep centre before), else the mirror. */
+	function _valueOf(state: PlanStateView, command: Record<string, unknown>): number {
+		if (command.type !== 'color_fx') return _currentValue(state, command);
+		return noiseLevels.get(_rampKey(command)) ?? (_noiseField(command) === 'param' ? 0 : 0.5);
+	}
 
 	/**
 	 * Ends a live plan and cancels its armed launch. The tick and dispatch in flight settle first: either may still arm a
@@ -608,6 +653,10 @@ export function createPlanRunner(deps: PlanDeps): PlanRunner {
 			() => undefined
 		);
 		await sent;
+		if (command.type === 'color_fx') {
+			const field = _noiseField(command);
+			if (typeof command[field] === 'number') noiseLevels.set(_rampKey(command), command[field] as number);
+		}
 		return true;
 	}
 
@@ -863,6 +912,17 @@ export function createPlanRunner(deps: PlanDeps): PlanRunner {
 		} catch (error) {
 			reason = `${why}; a step scheduled on the audio clock could not be revoked: ${error instanceof Error ? error.message : String(error)}`;
 		}
+		// #10246: noise left riding when the plan ends is cut, so the next track does not start under it.
+		const noiseOn = [...noiseLevels].some(([key, level]) => level !== (key.endsWith(':param') ? 0 : 0.5));
+		if (noiseOn) {
+			const clock = order!.clock.deck;
+			try {
+				await _dispatch({ type: 'color_fx', deck: clock, effect: 'noise', param: 0 });
+				await _dispatch({ type: 'color_fx', deck: clock, effect: 'noise', value: 0.5 });
+			} catch (error) {
+				reason = `${reason ?? why}; the NOISE on deck ${clock} could not be cut: ${error instanceof Error ? error.message : String(error)}`;
+			}
+		}
 		const incoming = order!.incoming;
 		// The launch may still be in flight (armed only once its dispatch lands), so cancel on the fired play, not the mirror's armed flag.
 		// An operator who replaced the incoming track owns its launch now, so the cancel is sent only while the plan's track is still there.
@@ -979,7 +1039,7 @@ export function createPlanRunner(deps: PlanDeps): PlanRunner {
 			}
 			// Sol P1 #7594 (the class: read what a transition needs before mutating): the value a sent-ahead step replaces is
 			// read BEFORE the event is marked fired, and a mirror without it fails the plan rather than leaving it fired.
-			const previous = atContextSec === null ? null : await _readOrFail(() => _currentValue(deps.query(), event.command));
+			const previous = atContextSec === null ? null : await _readOrFail(() => _valueOf(deps.query(), event.command));
 			if (previous === undefined) return;
 			fired[index] = true;
 			try {
@@ -1003,7 +1063,7 @@ export function createPlanRunner(deps: PlanDeps): PlanRunner {
 		const { command, to, over_bars } = event.ramp;
 		// Read live, not the tick's snapshot: a set on this control earlier in the same tick has already moved it, and
 		// the ramp continues from there. Read before the event is marked fired, as for a set.
-		const from = await _readOrFail(() => _currentValue(_projected(), command));
+		const from = await _readOrFail(() => _valueOf(_projected(), command));
 		if (from === undefined) return;
 		fired[index] = true;
 		ramps.set(_rampKey(command), {
@@ -1506,6 +1566,11 @@ export function createPlanRunner(deps: PlanDeps): PlanRunner {
 		if (deps.handoffInFlight()) {
 			throw new Error('autoplay_handoff: AutoPlay is handing off a deck; schedule the plan once it lands');
 		}
+		const commands = [...plan.prepare, ...plan.events.map((event) => ('command' in event ? event.command : event.ramp.command))];
+		if (commands.some((command) => command.type === 'color_fx')) {
+			const why = deps.colorFxNoise ? deps.colorFxNoise(plan.clock.deck) : 'this page cannot tell whether its color effect can be NOISE';
+			if (why !== null) throw new Error(`noise_unavailable: ${why}, so a plan with fx_noise cannot run`);
+		}
 		const state = deps.query();
 		const clockRefusal = _clockRefusal(plan);
 		if (clockRefusal !== null) throw new Error(clockRefusal);
@@ -1535,6 +1600,7 @@ export function createPlanRunner(deps: PlanDeps): PlanRunner {
 		bar = now;
 		endedAt = null;
 		ramps.clear();
+		noiseLevels.clear();
 		// A previous plan's steps belong to it: a later plan's abort must never revoke them.
 		_setScheduled([]);
 		try {

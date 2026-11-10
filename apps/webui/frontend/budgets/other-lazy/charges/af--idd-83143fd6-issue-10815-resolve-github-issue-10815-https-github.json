@@ -1,0 +1,9 @@
+{
+  "bytes": 1024,
+  "measured_main": 504009,
+  "measured_with_pr": 504458,
+  "sha": "a40895cd89",
+  "date": "Tue 10 Nov 2026",
+  "reason": "Issue #10815 (MIDI-11993) adds the eager live DJ TechTools Midi Fighter Twister map module to the maps glob. Measured: local build pair at merge-base 0fc9a31202 vs branch, +449 B gzip on other-lazy; ceiled to KiB",
+  "payback": "none planned; the growth is the shipped device map"
+}

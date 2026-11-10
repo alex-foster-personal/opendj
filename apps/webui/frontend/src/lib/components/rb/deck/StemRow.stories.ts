@@ -119,6 +119,10 @@ export const NoStemsSeparate: Story = contracts.NoStemsSeparate;
 export const NoStemsNoSource: Story = contracts.NoStemsNoSource;
 export const NoStemsQueued: Story = contracts.NoStemsQueued;
 export const NoStemsFailed: Story = contracts.NoStemsFailed;
+export const QuickAca: Story = contracts.QuickAca;
+export const QuickInst: Story = contracts.QuickInst;
+export const QuickCustom: Story = contracts.QuickCustom;
+export const QuickLoading: Story = contracts.QuickLoading;
 
 /** Four-stem Demucs bundle, all live and unmuted. */
 export const Ready: Story = {

@@ -580,3 +580,151 @@ def test_a_start_that_times_out_on_the_tap_pushes_a_cancel_after_the_attach(monk
     attach_order, cancel_order = asyncio.run(run())
     assert attach_order["payload"] == {"type": "record_master_tap", "session_id": SESSION}
     assert cancel_order == {"kind": "single", "payload": {"type": "record_master_tap_cancel", "session_id": SESSION}}
+
+
+# -- level accounting (issue #10371) -------------------------------------------
+
+_FS = 32767
+
+
+def _frames(pairs: list[tuple[int, int]]) -> bytes:
+    return b"".join(struct.pack("<hh", left, right) for left, right in pairs)
+
+
+def _quiet_with_runs(total: int, runs: list[tuple[int, int]], both: bool = True) -> bytes:
+    """``total`` quiet frames with full-scale runs at (start, length)."""
+    pairs = [(100, 100)] * total
+    for start, length in runs:
+        for i in range(start, start + length):
+            pairs[i] = (_FS, _FS) if both else (_FS, 100)
+    return _frames(pairs)
+
+
+@pytest.mark.requirement("SET-11744")
+def test_a_minus_6_dbfs_sine_reads_minus_6_with_no_clips(tmp_path: Path) -> None:
+    """[if] a -6 dBFS sine does not read -6.0 with zero clips [then] broken."""
+    writer = _writer(tmp_path)
+    writer.append(stream="s", seq=0, sample_rate=RATE, pcm=_tone(4096, amplitude=10 ** (-6 / 20)))
+    levels = writer.levels()
+    assert levels["peak_dbfs"] == pytest.approx(-6.0, abs=0.1)
+    assert (levels["clipped_samples"], levels["clip_events"]) == (0, 0)
+
+
+@pytest.mark.requirement("SET-11744")
+@pytest.mark.parametrize(("frames", "both"), [(200, True), (400, False)])
+def test_one_400_sample_full_scale_run_is_one_clip_event(tmp_path: Path, frames: int, both: bool) -> None:
+    """[if] 400 full-scale samples in one run are not 400 clipped samples and 1 event [then] broken."""
+    writer = _writer(tmp_path)
+    writer.append(stream="s", seq=0, sample_rate=RATE, pcm=_quiet_with_runs(4096, [(1000, frames)], both))
+    levels = writer.levels()
+    assert (levels["clipped_samples"], levels["clip_events"], levels["peak_dbfs"]) == (400, 1, 0.0)
+
+
+@pytest.mark.requirement("SET-11744")
+def test_two_separated_runs_are_two_events_and_a_run_of_two_is_none(tmp_path: Path) -> None:
+    """[if] two separated runs are not 2 events, or a 2-frame run counts [then] broken."""
+    writer = _writer(tmp_path)
+    writer.append(stream="s", seq=0, sample_rate=RATE, pcm=_quiet_with_runs(500, [(10, 10), (120, 10)]))
+    assert writer.levels()["clip_events"] == 2
+    short = _writer(tmp_path / "short")
+    short.append(stream="s", seq=0, sample_rate=RATE, pcm=_quiet_with_runs(500, [(10, 2)]))
+    assert (short.levels()["clipped_samples"], short.levels()["clip_events"]) == (4, 0)
+
+
+@pytest.mark.requirement("SET-11744")
+def test_a_run_split_across_chunks_counts_once_but_not_across_streams(tmp_path: Path) -> None:
+    """[if] a run split over two chunks is not 1 event, or one split by a new stream is not 0 [then] broken."""
+    tail, head = _quiet_with_runs(100, [(98, 2)]), _quiet_with_runs(100, [(0, 2)])
+    same = _writer(tmp_path / "same")
+    same.append(stream="s", seq=0, sample_rate=RATE, pcm=tail)
+    same.append(stream="s", seq=1, sample_rate=RATE, pcm=head)
+    assert same.levels()["clip_events"] == 1
+    split = _writer(tmp_path / "split")
+    split.append(stream="a", seq=0, sample_rate=RATE, pcm=tail)
+    split.append(stream="b", seq=0, sample_rate=RATE, pcm=head)
+    assert split.levels()["clip_events"] == 0
+
+
+@pytest.mark.requirement("SET-11744")
+def test_recent_peak_forgets_after_3_s_of_audio(tmp_path: Path) -> None:
+    """[if] peak_dbfs_recent still shows a peak older than 3 s of audio [then] broken."""
+    writer = _writer(tmp_path)
+    writer.append(stream="s", seq=0, sample_rate=RATE, pcm=_tone(4800, amplitude=1.0))
+    quiet = _tone(24_000, amplitude=10 ** (-20 / 20))
+    for seq in range(1, 8):
+        writer.append(stream="s", seq=seq, sample_rate=RATE, pcm=quiet)
+    levels = writer.levels()
+    assert levels["peak_dbfs"] == pytest.approx(0.0, abs=0.1)
+    assert levels["peak_dbfs_recent"] == pytest.approx(-20.0, abs=0.1)
+
+
+@pytest.mark.requirement("SET-11744")
+def test_level_accounting_costs_under_10_ms_per_chunk() -> None:
+    """[if] accounting 1000 chunks of 4096 stereo frames costs 10 ms or more per chunk [then] broken."""
+    import time
+
+    chunk = _quiet_with_runs(4096, [(100, 5), (2000, 5)])
+    acc = master_mix.LevelAccumulator()
+    t0 = time.perf_counter()
+    for _ in range(1000):
+        acc.add(chunk, RATE)
+    mean_ms = time.perf_counter() - t0  # 1000 chunks: seconds == ms per chunk
+    print(f"level accounting: {mean_ms:.3f} ms per chunk")
+    assert mean_ms < 10.0
+    assert acc.clip_events == 2000
+
+
+@pytest.mark.requirement("SET-11744")
+def test_refused_chunk_changes_no_levels(tmp_path: Path) -> None:
+    """[if] a refused chunk changes the level counters [then] broken."""
+    writer = _writer(tmp_path)
+    writer.append(stream="s", seq=0, sample_rate=RATE, pcm=_tone(480))
+    before = writer.levels()
+    with pytest.raises(master_mix.MasterMixChunkRefused):
+        writer.append(stream="s", seq=5, sample_rate=RATE, pcm=_quiet_with_runs(100, [(0, 50)]))
+    assert writer.levels() == before
+
+
+@pytest.mark.requirement("SET-11744")
+def test_recorder_status_carries_peak_and_clips(master_client) -> None:
+    """[if] GET /api/sets/recorder lacks the level fields, or a tracklist-only one is non-null [then] broken."""
+    client, _ = master_client
+    client.post("/api/sets/recorder/start", json={"session_id": SESSION, "source": "master", "sources": []})
+    assert _pcm(client, 0, _quiet_with_runs(4800, [(0, 10)])).status_code == 204
+    status = client.get("/api/sets/recorder").json()
+    assert (status["peak_dbfs"], status["peak_dbfs_recent"]) == (0.0, 0.0)
+    assert (status["clipped_samples"], status["clip_events"]) == (20, 1)
+    assert status["audio_bytes"] == 4800 * master_mix.FRAME_BYTES
+    assert status["elapsed_s"] >= 0
+    client.post(f"/api/sets/recorder/{SESSION}/stop")
+    idle = client.get("/api/sets/recorder").json()
+    assert all(idle[k] is None for k in ("peak_dbfs", "clipped_samples", "clip_events", "elapsed_s"))
+    client.post("/api/sets/recorder/start", json={"session_id": "2026-10-06T04-00-00", "source": "none", "sources": []})
+    tracklist = client.get("/api/sets/recorder").json()
+    assert tracklist["active"] is True
+    assert all(tracklist[k] is None for k in ("peak_dbfs", "peak_dbfs_recent", "clipped_samples", "clip_events"))
+    assert tracklist["elapsed_s"] is not None
+
+
+@pytest.mark.requirement("SET-11744")
+def test_stop_writes_levels_into_a_schema_valid_manifest(master_client) -> None:
+    """[if] the stop manifest lacks the levels or fails the schema, or a tracklist one is non-null [then] broken."""
+    from jsonschema import Draft202012Validator
+
+    schema = json.loads((REPO_ROOT / "apps/sets/schemas/session_manifest.schema.json").read_text())
+    client, service = master_client
+    client.post("/api/sets/recorder/start", json={"session_id": SESSION, "source": "master", "sources": []})
+    _pcm(client, 0, _quiet_with_runs(4800, [(0, 10), (100, 10), (200, 10)]))
+    client.post(f"/api/sets/recorder/{SESSION}/stop")
+    manifest = json.loads((service.sets_root / SESSION / "manifest.json").read_text())
+    Draft202012Validator(schema).validate(manifest)
+    assert (manifest["audio_peak_dbfs"], manifest["clipped_samples"], manifest["clip_events"]) == (0.0, 60, 3)
+    events = [json.loads(line) for line in (service.sets_root / SESSION / "timeline.jsonl").read_text().splitlines()]
+    [closed] = [e["value"] for e in events if e["action"] == "master_mix_closed"]
+    assert closed["clip_events"] == 3
+    other = "2026-10-06T04-00-00"
+    client.post("/api/sets/recorder/start", json={"session_id": other, "source": "none", "sources": []})
+    client.post(f"/api/sets/recorder/{other}/stop")
+    plain = json.loads((service.sets_root / other / "manifest.json").read_text())
+    Draft202012Validator(schema).validate(plain)
+    assert (plain["audio_peak_dbfs"], plain["clipped_samples"], plain["clip_events"]) == (None, None, None)

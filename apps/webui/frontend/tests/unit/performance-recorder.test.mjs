@@ -249,3 +249,15 @@ test('the /sets panel reads the capture state, not just active, and polls it', (
 	assert.match(page, /setTimeout\(\(\) => void refreshRecorder\(\), after\)/);
 	assert.match(page, /captureFailureMessage\(recorder\)/);
 });
+
+test('if the REC tooltip does not say "Recording 12:34, 1.2 GB, clipped 3 times" then broken (issue #10371)', () => {
+	const base = { active: true, session_id: 's', pid: 1, owned: true, recoverable: false, capture: 'recording' };
+	const tip = (extra) => recorder.recordRailState({ ...base, elapsed_s: 754, audio_bytes: 1_200_000_000, ...extra }).tip;
+	assert.equal(tip({ clip_events: 3 }), 'Recording 12:34, 1.2 GB, clipped 3 times');
+	assert.equal(tip({ clip_events: 1 }), 'Recording 12:34, 1.2 GB, clipped 1 time');
+	assert.equal(tip({ clip_events: 0 }), 'Recording 12:34, 1.2 GB');
+	assert.equal(tip({ audio_bytes: null, clip_events: null }), 'Recording 12:34');
+	assert.equal(recorder.recordRailState({ ...base, elapsed_s: null }).tip, null);
+	assert.equal(recorder.formatRecordingElapsed(3754), '1:02:34');
+	assert.equal(recorder.formatRecordingBytes(45_600_000), '46 MB');
+});

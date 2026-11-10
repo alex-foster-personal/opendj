@@ -46,6 +46,8 @@ from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
+from scripts import build_reqs_json
+
 REPO_ROOT = Path(__file__).resolve().parent.parent
 REQS_JSON = REPO_ROOT / "reqs.json"
 DEFAULT_REPO = "private_owner/music-dj-tools"
@@ -212,6 +214,8 @@ def main(
         print(f"[reqs-cited-unflipped] UNKNOWN: {exc}", file=sys.stderr)
         return 2
 
+    if effective_reqs_path == REQS_JSON:
+        build_reqs_json.ensure_output()
     payload = json.loads(effective_reqs_path.read_text())
     try:
         prs = fetch(window.search)

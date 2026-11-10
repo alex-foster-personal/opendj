@@ -1,0 +1,100 @@
+{
+	"schema_version": 1,
+	"why": "sha256 of each default synth-signals recipe; moves only via synth-signals.test.mjs --write-manifest (issue #10402)",
+	"hashes": "sha256 hex of signalBytes(makeSignal(recipe)): left Float32 little-endian bytes, then right",
+	"recipes": {
+		"white_2s": {
+			"recipe": {
+				"kind": "white",
+				"seconds": 2,
+				"sampleRate": 48000,
+				"seed": 10402,
+				"channels": 2
+			},
+			"bytes": 768000,
+			"sha256": "b16cc97cb3a2ace5972a9a3bb34ee92e501156f1ed19dcdbd398304fac15df32"
+		},
+		"pink_2s": {
+			"recipe": {
+				"kind": "pink",
+				"seconds": 2,
+				"sampleRate": 48000,
+				"seed": 10402,
+				"channels": 2
+			},
+			"bytes": 768000,
+			"sha256": "ade3c313b2e14aacfff897d168a4e610a5fe0b4c0997ada250212ad84d4ce275"
+		},
+		"click_120_4bars": {
+			"recipe": {
+				"kind": "click",
+				"seconds": 8.2,
+				"sampleRate": 48000,
+				"seed": 10402,
+				"channels": 2,
+				"bpm": 120,
+				"bars": 4,
+				"accentDb": 6
+			},
+			"bytes": 3148800,
+			"sha256": "969bfc43391fbd78164138d7da129de4cc76424bcfc21a66b8aa098c3ef88ec8"
+		},
+		"sweep_2s": {
+			"recipe": {
+				"kind": "sweep",
+				"seconds": 2,
+				"sampleRate": 48000,
+				"seed": 10402,
+				"channels": 2
+			},
+			"bytes": 768000,
+			"sha256": "d8b6c4402a8d7b2a18f71f095c9b82390ca6fcf4af629e9a00770b209b0c8e1c"
+		},
+		"loop_124_4bars": {
+			"recipe": {
+				"kind": "loop",
+				"seconds": 8,
+				"sampleRate": 48000,
+				"seed": 10402,
+				"channels": 2,
+				"bpm": 124,
+				"bars": 4
+			},
+			"bytes": 3072000,
+			"sha256": "73e5505d4a6d46edc029355ca5f0d037bd99488d5b98a3c66af10256dc9a9198"
+		},
+		"oneshot_kick": {
+			"recipe": {
+				"kind": "oneshot_kick",
+				"seconds": 0.25,
+				"sampleRate": 48000,
+				"seed": 10402,
+				"channels": 2
+			},
+			"bytes": 96000,
+			"sha256": "8a71a0dbe7538345fab454d49dd0dd2db262a70b645bed120d715a04b14f056e"
+		},
+		"oneshot_snare": {
+			"recipe": {
+				"kind": "oneshot_snare",
+				"seconds": 0.25,
+				"sampleRate": 48000,
+				"seed": 10402,
+				"channels": 2
+			},
+			"bytes": 96000,
+			"sha256": "2ee8cab9269a0a4839fc3a42a3f668e68cfc14dc4bacb2e117c6692560200732"
+		},
+		"oneshot_hat": {
+			"recipe": {
+				"kind": "oneshot_hat",
+				"seconds": 0.1,
+				"sampleRate": 48000,
+				"seed": 10402,
+				"channels": 2
+			},
+			"bytes": 38400,
+			"sha256": "a06302690d1bb5a64c83c9aea41dcf379d5a525919fb1e92c5177f672228470b"
+		}
+	}
+}

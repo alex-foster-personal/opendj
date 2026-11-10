@@ -1,4 +1,4 @@
-import { API_BASE } from '$lib/api/client';
+import { API_BASE } from '$lib/api/base';
 import type { WebSocketLike } from '$lib/api/events-bus';
 
 import type { FrameMessage, FixtureState, Rgb, StageFixture, StagePatch } from './stage-render';

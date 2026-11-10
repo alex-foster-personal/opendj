@@ -1,0 +1,9 @@
+{
+  "bytes": 1024,
+  "measured_main": 503707,
+  "measured_with_pr": 503738,
+  "sha": "8bbe6ebd55",
+  "date": "Tue 10 Nov 2026",
+  "reason": "Issue #10317 (STEMPERF-11710) makes stem mini-waveform rows click targets (solo / Shift+click mute). Measured: local build vs main at 8bbe6ebd55, +31 B gzip on other-lazy; ceiled to KiB",
+  "payback": "none planned; the growth is the feature's own code on this surface"
+}

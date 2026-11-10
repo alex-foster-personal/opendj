@@ -285,21 +285,21 @@ test('if the Light skin pins the waveform hues then an explicit Rekordbox or Leg
 	}
 });
 
-test('if a skin without an accent glow has no knob focus outline then keyboard focus on a knob is invisible', () => {
+test('if a knob lacks the 2px --rb-focus-ring outline then keyboard focus on a knob is invisible (A11Y-11403)', () => {
 	const knob = read('lib/components/rb/mixer/Knob.svelte');
 	const rule = knob.slice(knob.indexOf('.knob:focus-visible {'), knob.indexOf('}', knob.indexOf('.knob:focus-visible {')));
 	assert.match(rule, /filter: drop-shadow\(0 0 3px var\(--rb-accent-glow\)\);/);
-	assert.match(rule, /outline: var\(--rb-focus-outline, none\);/);
+	assert.match(rule, /outline: 2px solid var\(--rb-focus-ring\);/);
 	for (const selector of [GOTHIC, LIGHT_SKIN]) {
 		const decl = block(THEME, selector);
 		assert.equal(decl['rb-accent-glow'], 'transparent', `${selector} glow`);
-		assert.equal(decl['rb-focus-outline'], '1px solid var(--rb-accent)', `${selector} has no knob focus outline`);
+		assert.ok(decl['rb-focus-ring'], `${selector} declares no --rb-focus-ring`);
 	}
 	// Every takeover stroke reads the hook (a bare amber is 1.4:1 on the Light cap).
 	const style = knob.slice(knob.indexOf('<style'));
 	assert.deepEqual(style.replace(/var\(--rb-knob-takeover, #f2b84b\)/g, '').match(/#f2b84b/gi) ?? [], []);
-	// Default keeps its glow and no outline.
-	assert.equal(block(THEME, '\n.perf-root')['rb-focus-outline'], 'none');
+	// Default declares the ring too.
+	assert.ok(block(THEME, '\n.perf-root')['rb-focus-ring']);
 });
 
 // CHROME-21: the strip and preview canvases pick light or dark band hues from

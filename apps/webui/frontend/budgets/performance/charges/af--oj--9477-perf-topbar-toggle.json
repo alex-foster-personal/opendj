@@ -1,0 +1,9 @@
+{
+  "bytes": 2048,
+  "measured_main": 425353,
+  "measured_with_pr": 427133,
+  "sha": "3564f90e18",
+  "date": "Tue 10 Nov 2026",
+  "reason": "branch af--oj--9477-perf-topbar-toggle grows the performance surface with the OJ top-bar button, oj_toggle and the shared sidebar state; measured +1780 B gzip over main; ceiled to KiB.",
+  "payback": "none planned; the growth is the change's own code on this surface"
+}

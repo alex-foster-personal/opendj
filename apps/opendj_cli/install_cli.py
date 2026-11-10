@@ -18,6 +18,9 @@ MANIFEST_KIND = "opendj-engine-payload"
 CLI_LAUNCHER_NAME = "opendj"
 DEFAULT_BIN_DIR = Path.home() / ".local" / "bin"
 DEFAULT_TARGET = DEFAULT_BIN_DIR / CLI_LAUNCHER_NAME
+# The production install location persona hosts use (issue #3067, AGT-30).
+MACOS_INSTALLED_APP = Path("/Applications/Open DJ.app")
+BUNDLED_LAUNCHER_REL = Path("Contents/Resources/payload/bin/opendj")
 
 _OUTSIDE_PAYLOAD = (
     "install-cli requires the installed app payload; run from "
@@ -46,6 +49,49 @@ def bundled_launcher(root: Path | None = None) -> Path | None:
     if payload is None:
         return None
     return payload / "bin" / CLI_LAUNCHER_NAME
+
+
+def is_bundled_launcher(path: Path) -> bool:
+    """True when *path* resolves to ``payload/bin/opendj`` with a real manifest."""
+    try:
+        resolved = path.resolve()
+    except OSError:
+        return False
+    if not resolved.is_file() or resolved.name != CLI_LAUNCHER_NAME:
+        return False
+    if resolved.parent.name != "bin":
+        return False
+    manifest = resolved.parent.parent / "manifest.json"
+    if not manifest.is_file():
+        return False
+    try:
+        data = json.loads(manifest.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return False
+    return data.get("kind") == MANIFEST_KIND
+
+
+def discover_installed_launcher(
+    *,
+    home: Path | None = None,
+    app_bundle: Path | None = None,
+) -> Path | None:
+    """The installed app's ``opendj`` launcher, or None when it is absent.
+
+    Discovery is limited to ``~/.local/bin/opendj`` and the bundled launcher
+    inside the installed ``Open DJ.app`` payload. No repo checkout or generic
+    PATH lookup is used (issue #11276).
+    """
+    home_dir = Path.home() if home is None else home
+    bundle = MACOS_INSTALLED_APP if app_bundle is None else app_bundle
+    candidates = (
+        home_dir / ".local" / "bin" / CLI_LAUNCHER_NAME,
+        bundle / BUNDLED_LAUNCHER_REL,
+    )
+    for candidate in candidates:
+        if is_bundled_launcher(candidate):
+            return candidate
+    return None
 
 
 def _ok(*, as_json: bool, message: str, payload: dict[str, object] | None = None) -> int:

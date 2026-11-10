@@ -307,7 +307,13 @@ test.describe('stale re-anchor ramp supersession @performance-stale-reanchor', (
 		expect(state.master_deck).toBe(2);
 		expect(state.decks[2].transport_pending).toBe(false);
 		expect(state.decks[2].sync_error).toBeNull();
-		expect(state.decks[2].pitch).toBeCloseTo(SYNC_MASTER_RATE, 4);
+		// The commanded 1.1 belongs to deck 1. Master/follower commands serialize and the
+		// follower ramp tail is awaited, so deck 2 finished its ramp at 1.1 * bpm1 / bpm2
+		// before the promotion ran. _realSyncPair only picks pairs whose BPMs differ by
+		// >= 0.5%, so deck 2 can never read 1.1 here (F21 saw 1.092834 = 1.1 * 0.993485,
+		// the synced follower rate). Deck 1, now following, keeps 1.1; the effective-BPM
+		// and phase checks below pin deck 2 to it.
+		expect(state.decks[1].pitch).toBeCloseTo(SYNC_MASTER_RATE, 4);
 		expect(state.decks[1].beat_sync_enabled).toBe(true);
 		expect(state.decks[1].transport_pending).toBe(false);
 		expect(state.decks[1].sync_error).toBeNull();

@@ -385,6 +385,12 @@ def served_anlz_payload(request: Request, stable_id: str, points: int) -> dict[s
     example ``/tempo-stability``, issue #8339), so none of them can resolve a
     different beatgrid source, overlay or grid edit than the deck does.
     """
+    # GRIDEDIT-6235b: the user's grid adjust / shift / BPM override for the grid just resolved.
+    return apply_stored_grid_edit(request, stable_id, measured_anlz_payload(request, stable_id, points))
+
+
+def measured_anlz_payload(request: Request, stable_id: str, points: int) -> dict[str, Any]:
+    """``served_anlz_payload`` before the stored grid edit: the measured grid only."""
     vocals_ctx = _request_vocals_ctx(request)
     # NATIVE-21: a deck load (or a selected row) moves this track to the
     # front of the ahead-of-time drain; it never becomes the only producer.
@@ -511,8 +517,6 @@ def served_anlz_payload(request: Request, stable_id: str, points: int) -> dict[s
         source=phrase_source_for_request(request),
         share=getattr(request.state, "share_audience", "local") == "share",
     )
-    # GRIDEDIT-6235b: the user's grid adjust / shift for the grid just resolved.
-    payload = apply_stored_grid_edit(request, stable_id, payload)
     try:
         return merge_mik_energy(payload, stable_id, state_db_path)
     except MalformedStoredEnergySegment as exc:

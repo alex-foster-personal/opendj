@@ -570,6 +570,13 @@ def admit(
     )
 
 
+def assert_first_import_candidate(candidate: Candidate) -> None:
+    """Refuse a first-import enqueue whose lane is outside the yaml fast list."""
+    from .config import assert_first_import_lane_allowed
+
+    assert_first_import_lane_allowed(candidate.lane)
+
+
 __all__ = [
     "BAND_20_TO_45_MIN",
     "BAND_EMPTY",
@@ -588,6 +595,7 @@ __all__ = [
     "Candidate",
     "MemoryModel",
     "Refused",
+    "assert_first_import_candidate",
     "admit",
     "band_for_longest",
     "highest_predicted_peak_mb",

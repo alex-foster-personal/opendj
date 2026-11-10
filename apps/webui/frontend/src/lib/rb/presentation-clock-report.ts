@@ -14,6 +14,10 @@
  */
 
 import { noteOutputStall } from '$lib/rb/audio-output-rebind';
+import {
+	presentationTickFailure,
+	setPresentationTickFailure
+} from '$lib/rb/presentation-tick-failure.svelte';
 import { recordPerfEvent } from '$lib/rb/perf-event-log';
 import { pushToast } from '$lib/stores.svelte';
 
@@ -30,15 +34,12 @@ type DeckId = 1 | 2 | 3 | 4;
 
 /** Per-deck: was the output clock stalled on the previous observation. */
 const _stalled: Record<DeckId, boolean> = { 1: false, 2: false, 3: false, 4: false };
-let _tickFailure: string | null = null;
 
-/** Durable failure state for the latest presentation tick. */
-export function presentationTickFailure(): string | null {
-	return _tickFailure;
-}
+/** Durable failure state for the latest presentation tick (a reactive cell). */
+export { presentationTickFailure };
 
 export function clearPresentationTickFailure(): void {
-	_tickFailure = null;
+	setPresentationTickFailure(null);
 }
 
 /** Live view for the UI, so a deck can show the operator that it is coasting. */
@@ -104,8 +105,8 @@ export function notePresentationClock(deck: DeckId, clockStalled: boolean | null
  */
 export function notePresentationTickFailure(error: unknown): void {
 	const message = error instanceof Error ? error.message : String(error);
-	const changed = _tickFailure !== message;
-	_tickFailure = message;
+	const changed = presentationTickFailure() !== message;
+	setPresentationTickFailure(message);
 	recordPerfEvent(
 		'presentation-tick-failed',
 		'the presentation frame threw, so the waveform would have frozen over live audio ' +

@@ -65,6 +65,9 @@ export interface SessionDetail {
 		capture_device: string;
 		deck_sources: string[];
 		watermark: string;
+		audio_peak_dbfs?: number | null;
+		clipped_samples?: number | null;
+		clip_events?: number | null;
 	};
 	segments: AudioSegment[];
 }

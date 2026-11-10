@@ -73,6 +73,7 @@ helper_carried_paths:
   - "apps/analysis/queue_effects.py"
   - "apps/analysis/queue_store.py"
   - "apps/analysis/queue_targets.py"
+  - "apps/analysis/queue_user_lanes.py"
   - "apps/analysis/record.py"
   - "apps/analysis/selection.py"
   - "apps/analysis/selection_cli.py"
@@ -95,6 +96,7 @@ helper_carried_paths:
   - "apps/shared/agents_md/__init__.py"
   - "apps/shared/agents_md/column_docs.py"
   - "apps/shared/agents_md/column_docs_analysis_retention.py"
+  - "apps/shared/agents_md/column_docs_crowd_requests.py"
   - "apps/shared/agents_md/column_docs_feedback.py"
   - "apps/shared/agents_md/column_docs_genre.py"
   - "apps/shared/agents_md/column_docs_library_org.py"
@@ -121,6 +123,7 @@ helper_carried_paths:
   - "apps/shared/harmonic.py"
   - "apps/shared/hashing.py"
   - "apps/shared/lazy_event_bus.py"
+  - "apps/shared/library_completeness_config.py"
   - "apps/shared/library_mode.py"
   - "apps/shared/pairings/__init__.py"
   - "apps/shared/pairings/capture_repo.py"
@@ -132,6 +135,7 @@ helper_carried_paths:
   - "apps/shared/posix_shell.py"
   - "apps/shared/process_groups.py"
   - "apps/shared/process_liveness.py"
+  - "apps/shared/scan_mass_missing.py"
   - "apps/shared/shared_read_open.py"
   - "apps/shared/smartlists/__init__.py"
   - "apps/shared/smartlists/ast.py"
@@ -141,6 +145,7 @@ helper_carried_paths:
   - "apps/shared/state/__init__.py"
   - "apps/shared/state/agents_md_cache.py"
   - "apps/shared/state/analysis_stale.py"
+  - "apps/shared/state/availability_write.py"
   - "apps/shared/state/db.py"
   - "apps/shared/state/events.py"
   - "apps/shared/state/ids.py"
@@ -170,14 +175,26 @@ helper_carried_paths:
   - "apps/shared/state/migrations_v28.py"
   - "apps/shared/state/migrations_v29.py"
   - "apps/shared/state/migrations_v30.py"
+  - "apps/shared/state/migrations_v31.py"
   - "apps/shared/state/migrations_v6_v8.py"
   - "apps/shared/state/migrations_v9.py"
+  - "apps/shared/state/order_key.py"
   - "apps/shared/state/paths.py"
+  - "apps/shared/state/play_log.py"
+  - "apps/shared/state/provenance.py"
   - "apps/shared/state/schema.py"
   - "apps/shared/state/schema_markers.py"
   - "apps/shared/state/sync_stamp.py"
   - "apps/shared/state/sync_tables.py"
   - "apps/shared/state/types.py"
+  - "apps/shared/state/writer.py"
+  - "apps/shared/state/writer_availability.py"
+  - "apps/shared/state/writer_common.py"
+  - "apps/shared/state/writer_membership_order.py"
+  - "apps/shared/state/writer_pairings.py"
+  - "apps/shared/state/writer_playlists.py"
+  - "apps/shared/state/writer_tracks.py"
+  - "apps/shared/text.py"
   - "apps/smartlists/__init__.py"
   - "apps/smartlists/evaluator.py"
   - "apps/smartlists/order_by.py"
@@ -219,25 +236,25 @@ scopes:
     # Ableton Link through the Carabiner sidecar: tempo, the Link timeline, reach and multicast diagnosis.
     sources: ["apps/ableton_link/"]
     tests: ["tests/ableton_link/"]
-    dependents: ["adapters", "agentic_testing", "ai_gateway_admin", "analysis", "analysis_beatgrid", "analysis_bench", "analysis_key", "analysis_structure", "analysis_waveform", "autodj", "b2b_pairing", "b2b_session", "b2b_sync", "b2b_transport", "bench_tryer_calibration", "cloud", "cloudsync", "database", "engine_core", "entitlements", "fixtures", "genre_infer", "lighting", "lyrics", "mik", "open_dj", "opendj_cli", "parity", "perf", "play_analytics", "quality", "reconcile", "rekordbox_analyse", "scripts", "sets", "shared", "smartlists", "spotify", "standalone", "stems", "sync_hub", "vocals", "webui"]
+    dependents: ["adapters", "agentic_testing", "ai_gateway_admin", "analysis", "analysis_beatgrid", "analysis_bench", "analysis_key", "analysis_structure", "analysis_waveform", "autodj", "b2b_pairing", "b2b_session", "b2b_sync", "b2b_transport", "bench_tryer_calibration", "cloud", "cloudsync", "database", "engine_core", "entitlements", "fixtures", "genre_infer", "lighting", "lyrics", "mik", "now_playing", "open_dj", "opendj_cli", "parity", "perf", "play_analytics", "quality", "reconcile", "rekordbox_analyse", "scripts", "sets", "shared", "smartlists", "spotify", "standalone", "stems", "sync", "sync_hub", "vocals", "webui"]
   - name: ai_gateway_admin
     sources: ["apps/ai_gateway_admin/"]
     tests: ["tests/ai_gateway_admin/"]
   - name: adapters
     sources: ["apps/adapters/"]
     tests: ["tests/adapters/"]
-    dependents: ["ableton_link", "agentic_testing", "ai_gateway_admin", "analysis", "analysis_beatgrid", "analysis_bench", "analysis_key", "analysis_loudness", "analysis_structure", "analysis_waveform", "audit", "autodj", "b2b_session", "beatbench", "bench_tryer_calibration", "cloud", "cloudsync", "database", "engine_core", "entitlements", "fixtures", "genre_infer", "lighting", "live_core", "lyrics", "lyrics_alignment", "mik", "open_dj", "opendj_cli", "parity", "perf", "play_analytics", "quality", "reconcile", "rekordbox_analyse", "scripts", "sets", "shared", "smartlists", "spotify", "standalone", "stems", "sync", "sync_hub", "vocals", "webui"]
+    dependents: ["ableton_link", "agentic_testing", "ai_gateway_admin", "analysis", "analysis_beatgrid", "analysis_bench", "analysis_key", "analysis_loudness", "analysis_structure", "analysis_waveform", "audit", "autodj", "b2b_session", "beatbench", "bench_tryer_calibration", "cloud", "cloudsync", "database", "engine_core", "entitlements", "fixtures", "genre_infer", "lighting", "live_core", "lyrics", "lyrics_alignment", "mik", "open_dj", "opendj_cli", "parity", "perf", "play_analytics", "quality", "reconcile", "rekordbox_analyse", "scripts", "sets", "shared", "smartlists", "spotify", "standalone", "stems", "stream", "sync", "sync_hub", "vocals", "webui"]
   - name: agentbox
     sources: ["(private path)/"]
     tests: ["(private path)/"]
   - name: analysis
     sources: ["apps/analysis/"]
     tests: ["tests/analysis/"]
-    dependents: ["ableton_link", "adapters", "agentic_testing", "ai_gateway_admin", "analysis_beatgrid", "analysis_bench", "analysis_key", "analysis_loudness", "analysis_structure", "analysis_waveform", "audit", "autodj", "b2b_session", "beatbench", "bench_tryer_calibration", "cloud", "cloudsync", "database", "engine_core", "entitlements", "fixtures", "genre_infer", "lighting", "live_core", "lyrics", "mik", "open_dj", "opendj_cli", "parity", "perf", "play_analytics", "quality", "reconcile", "rekordbox_analyse", "scripts", "sets", "shared", "smartlists", "spotify", "standalone", "stems", "sync", "sync_hub", "vocals", "webui"]
+    dependents: ["ableton_link", "adapters", "agentic_testing", "ai_gateway_admin", "analysis_beatgrid", "analysis_bench", "analysis_key", "analysis_loudness", "analysis_structure", "analysis_waveform", "audit", "autodj", "b2b_session", "beatbench", "bench_tryer_calibration", "cloud", "cloudsync", "database", "engine_core", "entitlements", "fixtures", "genre_infer", "lighting", "live_core", "lyrics", "lyrics_alignment", "mik", "open_dj", "opendj_cli", "parity", "perf", "play_analytics", "quality", "reconcile", "rekordbox_analyse", "scripts", "sets", "shared", "smartlists", "spotify", "standalone", "stems", "stream", "sync", "sync_hub", "vocals", "webui"]
   - name: analysis_beatgrid
     sources: ["apps/analysis_beatgrid/"]
     tests: ["tests/analysis_beatgrid/"]
-    dependents: ["ableton_link", "adapters", "agentic_testing", "ai_gateway_admin", "analysis", "analysis_bench", "analysis_key", "analysis_loudness", "analysis_structure", "analysis_waveform", "audit", "autodj", "b2b_session", "beatbench", "bench_tryer_calibration", "cloud", "cloudsync", "database", "engine_core", "entitlements", "fixtures", "genre_infer", "lighting", "live_core", "lyrics", "mik", "open_dj", "opendj_cli", "parity", "perf", "play_analytics", "quality", "reconcile", "rekordbox_analyse", "scripts", "sets", "shared", "smartlists", "spotify", "standalone", "stems", "sync", "sync_hub", "vocals", "webui"]
+    dependents: ["ableton_link", "adapters", "agentic_testing", "ai_gateway_admin", "analysis", "analysis_bench", "analysis_key", "analysis_loudness", "analysis_structure", "analysis_waveform", "audit", "autodj", "b2b_session", "beatbench", "bench_tryer_calibration", "cloud", "cloudsync", "database", "engine_core", "entitlements", "fixtures", "genre_infer", "lighting", "live_core", "lyrics", "lyrics_alignment", "mik", "open_dj", "opendj_cli", "parity", "perf", "play_analytics", "quality", "reconcile", "rekordbox_analyse", "scripts", "sets", "shared", "smartlists", "spotify", "standalone", "stems", "stream", "sync", "sync_hub", "vocals", "webui"]
   - name: analysis_bench
     sources: ["apps/analysis_bench/"]
     tests: ["tests/analysis_bench/"]
@@ -245,38 +262,38 @@ scopes:
   - name: analysis_key
     sources: ["apps/analysis_key/"]
     tests: ["tests/analysis_key/"]
-    dependents: ["ableton_link", "adapters", "agentic_testing", "ai_gateway_admin", "analysis", "analysis_beatgrid", "analysis_bench", "analysis_loudness", "analysis_structure", "analysis_waveform", "audit", "autodj", "b2b_session", "beatbench", "bench_tryer_calibration", "cloud", "cloudsync", "database", "engine_core", "entitlements", "fixtures", "genre_infer", "lighting", "live_core", "lyrics", "mik", "open_dj", "opendj_cli", "parity", "perf", "play_analytics", "quality", "reconcile", "rekordbox_analyse", "scripts", "sets", "shared", "smartlists", "spotify", "standalone", "stems", "sync", "sync_hub", "vocals", "webui"]
+    dependents: ["ableton_link", "adapters", "agentic_testing", "ai_gateway_admin", "analysis", "analysis_beatgrid", "analysis_bench", "analysis_loudness", "analysis_structure", "analysis_waveform", "audit", "autodj", "b2b_session", "beatbench", "bench_tryer_calibration", "cloud", "cloudsync", "database", "engine_core", "entitlements", "fixtures", "genre_infer", "lighting", "live_core", "lyrics", "lyrics_alignment", "mik", "open_dj", "opendj_cli", "parity", "perf", "play_analytics", "quality", "reconcile", "rekordbox_analyse", "scripts", "sets", "shared", "smartlists", "spotify", "standalone", "stems", "stream", "sync", "sync_hub", "vocals", "webui"]
   - name: analysis_loudness
     sources: ["apps/analysis_loudness/"]
     tests: ["tests/analysis_loudness/"]
-    dependents: ["ableton_link", "adapters", "agentic_testing", "ai_gateway_admin", "analysis", "analysis_beatgrid", "analysis_bench", "analysis_key", "analysis_structure", "analysis_waveform", "autodj", "b2b_session", "bench_tryer_calibration", "cloud", "cloudsync", "database", "engine_core", "entitlements", "fixtures", "genre_infer", "lighting", "lyrics", "mik", "open_dj", "opendj_cli", "parity", "perf", "play_analytics", "quality", "reconcile", "rekordbox_analyse", "scripts", "sets", "shared", "smartlists", "spotify", "standalone", "stems", "sync_hub", "vocals", "webui"]
+    dependents: ["ableton_link", "adapters", "agentic_testing", "ai_gateway_admin", "analysis", "analysis_beatgrid", "analysis_bench", "analysis_key", "analysis_structure", "analysis_waveform", "autodj", "b2b_session", "bench_tryer_calibration", "cloud", "cloudsync", "database", "engine_core", "entitlements", "fixtures", "genre_infer", "lighting", "lyrics", "mik", "open_dj", "opendj_cli", "parity", "perf", "play_analytics", "quality", "reconcile", "rekordbox_analyse", "scripts", "sets", "shared", "smartlists", "spotify", "standalone", "stems", "sync", "sync_hub", "vocals", "webui"]
   - name: analysis_structure
     sources: ["apps/analysis_structure/"]
     tests: ["tests/analysis_structure/"]
-    dependents: ["ableton_link", "adapters", "agentic_testing", "ai_gateway_admin", "analysis", "analysis_beatgrid", "analysis_bench", "analysis_key", "analysis_waveform", "autodj", "b2b_session", "bench_tryer_calibration", "cloud", "cloudsync", "database", "engine_core", "entitlements", "fixtures", "genre_infer", "lighting", "lyrics", "mik", "open_dj", "opendj_cli", "parity", "perf", "play_analytics", "quality", "reconcile", "rekordbox_analyse", "scripts", "sets", "shared", "smartlists", "spotify", "standalone", "stems", "sync_hub", "vocals", "webui"]
+    dependents: ["ableton_link", "adapters", "agentic_testing", "ai_gateway_admin", "analysis", "analysis_beatgrid", "analysis_bench", "analysis_key", "analysis_waveform", "autodj", "b2b_session", "bench_tryer_calibration", "cloud", "cloudsync", "database", "engine_core", "entitlements", "fixtures", "genre_infer", "lighting", "lyrics", "mik", "open_dj", "opendj_cli", "parity", "perf", "play_analytics", "quality", "reconcile", "rekordbox_analyse", "scripts", "sets", "shared", "smartlists", "spotify", "standalone", "stems", "sync", "sync_hub", "vocals", "webui"]
   - name: analysis_waveform
     sources: ["apps/analysis_waveform/"]
     tests: ["tests/analysis_waveform/"]
-    dependents: ["ableton_link", "adapters", "agentic_testing", "ai_gateway_admin", "analysis", "analysis_beatgrid", "analysis_bench", "analysis_key", "analysis_loudness", "analysis_structure", "audit", "autodj", "b2b_session", "beatbench", "bench_tryer_calibration", "cloud", "cloudsync", "database", "engine_core", "entitlements", "fixtures", "genre_infer", "lighting", "live_core", "lyrics", "lyrics_alignment", "mik", "open_dj", "opendj_cli", "parity", "perf", "play_analytics", "quality", "reconcile", "rekordbox_analyse", "scripts", "sets", "shared", "smartlists", "spotify", "standalone", "stems", "sync", "sync_hub", "vocals", "webui"]
+    dependents: ["ableton_link", "adapters", "agentic_testing", "ai_gateway_admin", "analysis", "analysis_beatgrid", "analysis_bench", "analysis_key", "analysis_loudness", "analysis_structure", "audit", "autodj", "b2b_session", "beatbench", "bench_tryer_calibration", "cloud", "cloudsync", "database", "engine_core", "entitlements", "fixtures", "genre_infer", "lighting", "live_core", "lyrics", "lyrics_alignment", "mik", "open_dj", "opendj_cli", "parity", "perf", "play_analytics", "quality", "reconcile", "rekordbox_analyse", "scripts", "sets", "shared", "smartlists", "spotify", "standalone", "stems", "stream", "sync", "sync_hub", "vocals", "webui"]
   - name: audit
     sources: ["apps/audit/"]
     tests: ["tests/audit/"]
-    dependents: ["ableton_link", "adapters", "agentic_testing", "ai_gateway_admin", "analysis", "analysis_beatgrid", "analysis_bench", "analysis_key", "analysis_structure", "analysis_waveform", "autodj", "b2b_session", "bench_tryer_calibration", "cloud", "cloudsync", "database", "engine_core", "entitlements", "fixtures", "genre_infer", "lighting", "lyrics", "mik", "open_dj", "opendj_cli", "parity", "perf", "play_analytics", "quality", "reconcile", "rekordbox_analyse", "scripts", "sets", "shared", "smartlists", "spotify", "standalone", "stems", "sync", "sync_hub", "vocals", "webui"]
+    dependents: ["ableton_link", "adapters", "agentic_testing", "ai_gateway_admin", "analysis", "analysis_beatgrid", "analysis_bench", "analysis_key", "analysis_loudness", "analysis_structure", "analysis_waveform", "autodj", "b2b_session", "beatbench", "bench_tryer_calibration", "cloud", "cloudsync", "database", "engine_core", "entitlements", "fixtures", "genre_infer", "lighting", "live_core", "lyrics", "lyrics_alignment", "mik", "open_dj", "opendj_cli", "parity", "perf", "play_analytics", "quality", "reconcile", "rekordbox_analyse", "scripts", "sets", "shared", "smartlists", "spotify", "standalone", "stems", "stream", "sync", "sync_hub", "vocals", "webui"]
   - name: autodj
     # The shared booth core: ordered log mirror, grab lease, turn lock, settings, op queue (B2BBOOTH).
     sources: ["apps/b2b_booth/", "apps/autodj/", "apps/transition_score/"]
     tests: ["tests/b2b_booth/", "tests/autodj/", "tests/transition_score/"]
-    dependents: ["ableton_link", "adapters", "agentic_testing", "ai_gateway_admin", "analysis", "analysis_beatgrid", "analysis_bench", "analysis_key", "analysis_structure", "analysis_waveform", "b2b_session", "bench_tryer_calibration", "cloud", "cloudsync", "database", "engine_core", "entitlements", "fixtures", "genre_infer", "lighting", "lyrics", "mik", "open_dj", "opendj_cli", "parity", "perf", "play_analytics", "quality", "reconcile", "rekordbox_analyse", "scripts", "sets", "shared", "smartlists", "spotify", "standalone", "stems", "sync_hub", "vocals", "webui"]
+    dependents: ["ableton_link", "adapters", "agentic_testing", "ai_gateway_admin", "analysis", "analysis_beatgrid", "analysis_bench", "analysis_key", "analysis_structure", "analysis_waveform", "b2b_session", "bench_tryer_calibration", "cloud", "cloudsync", "database", "engine_core", "entitlements", "fixtures", "genre_infer", "lighting", "lyrics", "mik", "open_dj", "opendj_cli", "parity", "perf", "play_analytics", "quality", "reconcile", "rekordbox_analyse", "scripts", "sets", "shared", "smartlists", "spotify", "standalone", "stems", "sync", "sync_hub", "vocals", "webui"]
   - name: b2b_pairing
     # B2B invite, accept, SPAKE2 pairing, tokens, nearby over mDNS and the LAN door.
     sources: ["apps/b2b_pairing/"]
     tests: ["tests/b2b_pairing/"]
-    dependents: ["ableton_link", "adapters", "agentic_testing", "ai_gateway_admin", "analysis", "analysis_beatgrid", "analysis_bench", "analysis_key", "analysis_structure", "analysis_waveform", "autodj", "b2b_session", "b2b_sync", "b2b_transport", "bench_tryer_calibration", "cloud", "cloudsync", "database", "engine_core", "entitlements", "fixtures", "genre_infer", "lighting", "lyrics", "mik", "open_dj", "opendj_cli", "parity", "perf", "play_analytics", "quality", "reconcile", "rekordbox_analyse", "scripts", "sets", "shared", "smartlists", "spotify", "standalone", "stems", "sync_hub", "vocals", "webui"]
+    dependents: ["ableton_link", "adapters", "agentic_testing", "ai_gateway_admin", "analysis", "analysis_beatgrid", "analysis_bench", "analysis_key", "analysis_structure", "analysis_waveform", "autodj", "b2b_session", "b2b_sync", "b2b_transport", "bench_tryer_calibration", "cloud", "cloudsync", "database", "engine_core", "entitlements", "fixtures", "genre_infer", "lighting", "lyrics", "mik", "open_dj", "opendj_cli", "parity", "perf", "play_analytics", "quality", "reconcile", "rekordbox_analyse", "scripts", "sets", "shared", "smartlists", "spotify", "standalone", "stems", "sync", "sync_hub", "vocals", "webui"]
   - name: b2b_session
     # The B2B session itself: peer now-playing, shouts, cursors, demo partner, virtual USB, room output.
     sources: ["apps/b2b_session/"]
     tests: ["tests/b2b_session/"]
-    dependents: ["shared"]
+    dependents: ["ableton_link", "adapters", "agentic_testing", "ai_gateway_admin", "analysis", "analysis_beatgrid", "analysis_bench", "analysis_key", "analysis_structure", "analysis_waveform", "autodj", "bench_tryer_calibration", "cloud", "cloudsync", "database", "engine_core", "entitlements", "fixtures", "genre_infer", "lighting", "lyrics", "mik", "now_playing", "open_dj", "opendj_cli", "parity", "perf", "play_analytics", "quality", "reconcile", "rekordbox_analyse", "scripts", "sets", "shared", "smartlists", "spotify", "standalone", "stems", "sync", "sync_hub", "vocals", "webui"]
   - name: b2b_sync
     # B2B sync between laptops: the Link relay, its clock estimator and the continuity SLO scorer.
     sources: ["apps/b2b_sync/"]
@@ -291,7 +308,7 @@ scopes:
   - name: cloud
     sources: ["apps/cloud/"]
     tests: ["tests/cloud/"]
-    dependents: ["ableton_link", "adapters", "agentic_testing", "ai_gateway_admin", "analysis", "analysis_beatgrid", "analysis_bench", "analysis_key", "analysis_loudness", "analysis_structure", "analysis_waveform", "audit", "autodj", "b2b_session", "beatbench", "bench_tryer_calibration", "cloudsync", "database", "engine_core", "entitlements", "fixtures", "genre_infer", "lighting", "live_core", "lyrics", "lyrics_alignment", "mik", "open_dj", "opendj_cli", "parity", "perf", "play_analytics", "quality", "reconcile", "rekordbox_analyse", "scripts", "sets", "shared", "smartlists", "spotify", "standalone", "stems", "sync", "sync_hub", "vocals", "webui"]
+    dependents: ["ableton_link", "adapters", "agentic_testing", "ai_gateway_admin", "analysis", "analysis_beatgrid", "analysis_bench", "analysis_key", "analysis_loudness", "analysis_structure", "analysis_waveform", "audit", "autodj", "b2b_session", "beatbench", "bench_tryer_calibration", "cloudsync", "database", "engine_core", "entitlements", "fixtures", "genre_infer", "lighting", "live_core", "lyrics", "lyrics_alignment", "mik", "open_dj", "opendj_cli", "parity", "perf", "play_analytics", "quality", "reconcile", "rekordbox_analyse", "scripts", "sets", "shared", "smartlists", "spotify", "standalone", "stems", "stream", "sync", "sync_hub", "vocals", "webui"]
   - name: database
     sources: ["apps/database/"]
     tests: ["tests/database/"]
@@ -299,11 +316,11 @@ scopes:
   - name: dedup
     sources: ["apps/dedup/"]
     tests: ["tests/dedup/"]
-    dependents: ["ableton_link", "adapters", "agentic_testing", "ai_gateway_admin", "analysis", "analysis_beatgrid", "analysis_bench", "analysis_key", "analysis_structure", "analysis_waveform", "autodj", "b2b_session", "bench_tryer_calibration", "cloud", "cloudsync", "database", "engine_core", "entitlements", "fixtures", "genre_infer", "lighting", "lyrics", "mik", "open_dj", "opendj_cli", "parity", "perf", "play_analytics", "quality", "reconcile", "rekordbox_analyse", "scripts", "sets", "shared", "smartlists", "spotify", "standalone", "stems", "sync_hub", "tags", "vocals", "webui"]
+    dependents: ["ableton_link", "adapters", "agentic_testing", "ai_gateway_admin", "analysis", "analysis_beatgrid", "analysis_bench", "analysis_key", "analysis_structure", "analysis_waveform", "autodj", "b2b_session", "bench_tryer_calibration", "cloud", "cloudsync", "database", "engine_core", "entitlements", "fixtures", "genre_infer", "lighting", "lyrics", "mik", "open_dj", "opendj_cli", "parity", "perf", "play_analytics", "quality", "reconcile", "rekordbox_analyse", "scripts", "sets", "shared", "smartlists", "spotify", "standalone", "stems", "sync", "sync_hub", "tags", "vocals", "webui"]
   - name: dj_copilot
     sources: ["apps/dj_copilot/"]
     tests: ["tests/dj_copilot/"]
-    dependents: ["ableton_link", "adapters", "agentic_testing", "ai_gateway_admin", "analysis", "analysis_beatgrid", "analysis_bench", "analysis_key", "analysis_structure", "analysis_waveform", "autodj", "b2b_session", "bench_tryer_calibration", "cloud", "cloudsync", "database", "engine_core", "entitlements", "fixtures", "genre_infer", "lighting", "lyrics", "mik", "open_dj", "opendj_cli", "parity", "perf", "play_analytics", "quality", "reconcile", "rekordbox_analyse", "scripts", "sets", "shared", "smartlists", "spotify", "standalone", "stems", "sync_hub", "vocals", "webui"]
+    dependents: ["ableton_link", "adapters", "agentic_testing", "ai_gateway_admin", "analysis", "analysis_beatgrid", "analysis_bench", "analysis_key", "analysis_structure", "analysis_waveform", "autodj", "b2b_session", "bench_tryer_calibration", "cloud", "cloudsync", "database", "engine_core", "entitlements", "fixtures", "genre_infer", "lighting", "lyrics", "mik", "open_dj", "opendj_cli", "parity", "perf", "play_analytics", "quality", "reconcile", "rekordbox_analyse", "scripts", "sets", "shared", "smartlists", "spotify", "standalone", "stems", "sync", "sync_hub", "vocals", "webui"]
   - name: engine_core
     sources: ["apps/engine_core/"]
     tests: ["tests/engine_core/"]
@@ -311,15 +328,15 @@ scopes:
   - name: entitlements
     sources: ["apps/entitlements/"]
     tests: ["tests/entitlements/"]
-    dependents: ["ableton_link", "adapters", "agentic_testing", "ai_gateway_admin", "analysis", "analysis_beatgrid", "analysis_bench", "analysis_key", "analysis_loudness", "analysis_structure", "analysis_waveform", "audit", "autodj", "b2b_session", "beatbench", "bench_tryer_calibration", "cloud", "cloudsync", "database", "engine_core", "fixtures", "genre_infer", "lighting", "live_core", "lyrics", "lyrics_alignment", "mik", "open_dj", "opendj_cli", "parity", "perf", "play_analytics", "quality", "reconcile", "rekordbox_analyse", "scripts", "sets", "shared", "smartlists", "spotify", "standalone", "stems", "sync", "sync_hub", "vocals", "webui"]
+    dependents: ["ableton_link", "adapters", "agentic_testing", "ai_gateway_admin", "analysis", "analysis_beatgrid", "analysis_bench", "analysis_key", "analysis_loudness", "analysis_structure", "analysis_waveform", "audit", "autodj", "b2b_session", "beatbench", "bench_tryer_calibration", "cloud", "cloudsync", "database", "engine_core", "fixtures", "genre_infer", "lighting", "live_core", "lyrics", "lyrics_alignment", "mik", "open_dj", "opendj_cli", "parity", "perf", "play_analytics", "quality", "reconcile", "rekordbox_analyse", "scripts", "sets", "shared", "smartlists", "spotify", "standalone", "stems", "stream", "sync", "sync_hub", "vocals", "webui"]
   - name: feature_flags
     sources: ["apps/feature_flags/"]
     tests: ["tests/feature_flags/"]
-    dependents: ["ableton_link", "adapters", "agentic_testing", "ai_gateway_admin", "analysis", "analysis_beatgrid", "analysis_bench", "analysis_key", "analysis_loudness", "analysis_structure", "analysis_waveform", "audit", "autodj", "b2b_session", "beatbench", "bench_tryer_calibration", "cloud", "cloudsync", "database", "engine_core", "entitlements", "fixtures", "genre_infer", "lighting", "live_core", "lyrics", "lyrics_alignment", "mik", "open_dj", "opendj_cli", "parity", "perf", "play_analytics", "quality", "reconcile", "rekordbox_analyse", "scripts", "sets", "shared", "smartlists", "spotify", "standalone", "stems", "sync", "sync_hub", "vocals", "webui"]
+    dependents: ["ableton_link", "adapters", "agentic_testing", "ai_gateway_admin", "analysis", "analysis_beatgrid", "analysis_bench", "analysis_key", "analysis_loudness", "analysis_structure", "analysis_waveform", "audit", "autodj", "b2b_session", "beatbench", "bench_tryer_calibration", "cloud", "cloudsync", "database", "engine_core", "entitlements", "fixtures", "genre_infer", "lighting", "live_core", "lyrics", "lyrics_alignment", "mik", "open_dj", "opendj_cli", "parity", "perf", "play_analytics", "quality", "reconcile", "rekordbox_analyse", "scripts", "sets", "shared", "smartlists", "spotify", "standalone", "stems", "stream", "sync", "sync_hub", "vocals", "webui"]
   - name: genre_infer
     sources: ["apps/genre_infer/"]
     tests: ["tests/genre_infer/"]
-    dependents: ["ableton_link", "adapters", "agentic_testing", "ai_gateway_admin", "analysis", "analysis_beatgrid", "analysis_bench", "analysis_key", "analysis_loudness", "analysis_structure", "analysis_waveform", "audit", "autodj", "b2b_session", "beatbench", "bench_tryer_calibration", "cloud", "cloudsync", "database", "engine_core", "entitlements", "fixtures", "lighting", "live_core", "lyrics", "mik", "open_dj", "opendj_cli", "parity", "perf", "play_analytics", "quality", "reconcile", "rekordbox_analyse", "scripts", "sets", "shared", "smartlists", "spotify", "standalone", "stems", "sync", "sync_hub", "vocals", "webui"]
+    dependents: ["ableton_link", "adapters", "agentic_testing", "ai_gateway_admin", "analysis", "analysis_beatgrid", "analysis_bench", "analysis_key", "analysis_loudness", "analysis_structure", "analysis_waveform", "audit", "autodj", "b2b_session", "beatbench", "bench_tryer_calibration", "cloud", "cloudsync", "database", "engine_core", "entitlements", "fixtures", "lighting", "live_core", "lyrics", "lyrics_alignment", "mik", "open_dj", "opendj_cli", "parity", "perf", "play_analytics", "quality", "reconcile", "rekordbox_analyse", "scripts", "sets", "shared", "smartlists", "spotify", "standalone", "stems", "stream", "sync", "sync_hub", "vocals", "webui"]
   - name: launcher
     sources: ["apps/launcher/"]
     tests: ["tests/launcher/"]
@@ -328,23 +345,28 @@ scopes:
     # Lighting output: beat and phrase feed, OS2L, Art-Net, sACN, fixtures, looks and shows (epic lighting fan-out, Sun 8 Nov 2026).
     sources: ["apps/lighting/"]
     tests: ["tests/lighting/"]
-    dependents: ["ableton_link", "adapters", "agentic_testing", "ai_gateway_admin", "analysis", "analysis_beatgrid", "analysis_bench", "analysis_key", "analysis_structure", "analysis_waveform", "autodj", "b2b_session", "bench_tryer_calibration", "cloud", "cloudsync", "database", "engine_core", "entitlements", "fixtures", "genre_infer", "lyrics", "mik", "open_dj", "opendj_cli", "parity", "perf", "play_analytics", "quality", "reconcile", "rekordbox_analyse", "scripts", "sets", "shared", "smartlists", "spotify", "standalone", "stems", "sync_hub", "vocals", "webui"]
+    dependents: ["ableton_link", "adapters", "agentic_testing", "ai_gateway_admin", "analysis", "analysis_beatgrid", "analysis_bench", "analysis_key", "analysis_structure", "analysis_waveform", "autodj", "b2b_session", "bench_tryer_calibration", "cloud", "cloudsync", "database", "engine_core", "entitlements", "fixtures", "genre_infer", "lyrics", "mik", "open_dj", "opendj_cli", "parity", "perf", "play_analytics", "quality", "reconcile", "rekordbox_analyse", "scripts", "sets", "shared", "smartlists", "spotify", "standalone", "stems", "sync", "sync_hub", "vocals", "webui"]
   - name: loudness
     sources: ["apps/loudness/"]
     tests: ["tests/loudness/"]
-    dependents: ["ableton_link", "adapters", "agentic_testing", "ai_gateway_admin", "analysis", "analysis_beatgrid", "analysis_bench", "analysis_key", "analysis_loudness", "analysis_structure", "analysis_waveform", "audit", "autodj", "b2b_session", "beatbench", "bench_tryer_calibration", "cloud", "cloudsync", "database", "engine_core", "entitlements", "fixtures", "genre_infer", "lighting", "live_core", "lyrics", "mik", "open_dj", "opendj_cli", "parity", "perf", "play_analytics", "quality", "reconcile", "rekordbox_analyse", "scripts", "sets", "shared", "smartlists", "spotify", "standalone", "stems", "sync", "sync_hub", "vocals", "webui"]
+    dependents: ["ableton_link", "adapters", "agentic_testing", "ai_gateway_admin", "analysis", "analysis_beatgrid", "analysis_bench", "analysis_key", "analysis_loudness", "analysis_structure", "analysis_waveform", "audit", "autodj", "b2b_session", "beatbench", "bench_tryer_calibration", "cloud", "cloudsync", "database", "engine_core", "entitlements", "fixtures", "genre_infer", "lighting", "live_core", "lyrics", "lyrics_alignment", "mik", "open_dj", "opendj_cli", "parity", "perf", "play_analytics", "quality", "reconcile", "rekordbox_analyse", "scripts", "sets", "shared", "smartlists", "spotify", "standalone", "stems", "stream", "sync", "sync_hub", "vocals", "webui"]
   - name: lyrics
     sources: ["apps/lyrics/"]
     tests: ["tests/lyrics/"]
-    dependents: ["ableton_link", "adapters", "agentic_testing", "ai_gateway_admin", "analysis", "analysis_beatgrid", "analysis_bench", "analysis_key", "analysis_loudness", "analysis_structure", "analysis_waveform", "audit", "autodj", "b2b_session", "beatbench", "bench_tryer_calibration", "cloud", "cloudsync", "database", "engine_core", "entitlements", "fixtures", "genre_infer", "lighting", "live_core", "lyrics_alignment", "mik", "open_dj", "opendj_cli", "parity", "perf", "play_analytics", "quality", "reconcile", "rekordbox_analyse", "scripts", "sets", "shared", "smartlists", "spotify", "standalone", "stems", "sync", "sync_hub", "vocals", "webui"]
+    dependents: ["ableton_link", "adapters", "agentic_testing", "ai_gateway_admin", "analysis", "analysis_beatgrid", "analysis_bench", "analysis_key", "analysis_loudness", "analysis_structure", "analysis_waveform", "audit", "autodj", "b2b_session", "beatbench", "bench_tryer_calibration", "cloud", "cloudsync", "database", "engine_core", "entitlements", "fixtures", "genre_infer", "lighting", "live_core", "lyrics_alignment", "mik", "open_dj", "opendj_cli", "parity", "perf", "play_analytics", "quality", "reconcile", "rekordbox_analyse", "scripts", "sets", "shared", "smartlists", "spotify", "standalone", "stems", "stream", "sync", "sync_hub", "vocals", "webui"]
   - name: mik
     sources: ["apps/mik/"]
     tests: ["tests/mik/"]
-    dependents: ["ableton_link", "adapters", "agentic_testing", "ai_gateway_admin", "analysis", "analysis_beatgrid", "analysis_bench", "analysis_key", "analysis_structure", "analysis_waveform", "autodj", "b2b_session", "bench_tryer_calibration", "cloud", "cloudsync", "database", "engine_core", "entitlements", "fixtures", "genre_infer", "lighting", "lyrics", "open_dj", "opendj_cli", "parity", "perf", "play_analytics", "quality", "reconcile", "rekordbox_analyse", "scripts", "sets", "shared", "smartlists", "spotify", "standalone", "stems", "sync_hub", "vocals", "webui"]
+    dependents: ["ableton_link", "adapters", "agentic_testing", "ai_gateway_admin", "analysis", "analysis_beatgrid", "analysis_bench", "analysis_key", "analysis_structure", "analysis_waveform", "autodj", "b2b_session", "bench_tryer_calibration", "cloud", "cloudsync", "database", "engine_core", "entitlements", "fixtures", "genre_infer", "lighting", "lyrics", "open_dj", "opendj_cli", "parity", "perf", "play_analytics", "quality", "reconcile", "rekordbox_analyse", "scripts", "sets", "shared", "smartlists", "spotify", "standalone", "stems", "sync", "sync_hub", "vocals", "webui"]
+  - name: now_playing
+    # NOWP-11489 (issue #10336): pure settle/stale fold; HTTP and CLI mount from webui and opendj_cli.
+    sources: ["apps/now_playing/"]
+    tests: ["tests/now_playing/"]
+    dependents: ["ableton_link", "adapters", "agentic_testing", "ai_gateway_admin", "analysis", "analysis_beatgrid", "analysis_bench", "analysis_key", "analysis_structure", "analysis_waveform", "autodj", "b2b_session", "bench_tryer_calibration", "cloud", "cloudsync", "database", "engine_core", "entitlements", "fixtures", "genre_infer", "lighting", "lyrics", "mik", "open_dj", "opendj_cli", "parity", "perf", "play_analytics", "quality", "reconcile", "rekordbox_analyse", "scripts", "sets", "shared", "smartlists", "spotify", "standalone", "stems", "sync", "sync_hub", "vocals", "webui"]
   - name: open_dj
     sources: ["apps/open_dj/"]
     tests: ["tests/open_dj/"]
-    dependents: ["ableton_link", "adapters", "agentic_testing", "ai_gateway_admin", "analysis", "analysis_beatgrid", "analysis_bench", "analysis_key", "analysis_loudness", "analysis_structure", "analysis_waveform", "audit", "autodj", "b2b_session", "beatbench", "bench_tryer_calibration", "cloud", "cloudsync", "database", "engine_core", "entitlements", "fixtures", "genre_infer", "lighting", "live_core", "lyrics", "lyrics_alignment", "mik", "opendj_cli", "parity", "perf", "play_analytics", "quality", "reconcile", "rekordbox_analyse", "scripts", "sets", "shared", "smartlists", "spotify", "standalone", "stems", "sync", "sync_hub", "vocals", "webui"]
+    dependents: ["ableton_link", "adapters", "agentic_testing", "ai_gateway_admin", "analysis", "analysis_beatgrid", "analysis_bench", "analysis_key", "analysis_loudness", "analysis_structure", "analysis_waveform", "audit", "autodj", "b2b_session", "beatbench", "bench_tryer_calibration", "cloud", "cloudsync", "database", "engine_core", "entitlements", "fixtures", "genre_infer", "lighting", "live_core", "lyrics", "lyrics_alignment", "mik", "opendj_cli", "parity", "perf", "play_analytics", "quality", "reconcile", "rekordbox_analyse", "scripts", "sets", "shared", "smartlists", "spotify", "standalone", "stems", "stream", "sync", "sync_hub", "vocals", "webui"]
   - name: opendj_cli
     sources: ["apps/opendj_cli/"]
     tests: ["tests/opendj_cli/"]
@@ -359,7 +381,7 @@ scopes:
   - name: play_analytics
     sources: ["apps/play_analytics/"]
     tests: ["tests/play_analytics/"]
-    dependents: ["ableton_link", "adapters", "agentic_testing", "ai_gateway_admin", "analysis", "analysis_beatgrid", "analysis_bench", "analysis_key", "analysis_structure", "analysis_waveform", "autodj", "b2b_session", "bench_tryer_calibration", "cloud", "cloudsync", "database", "engine_core", "entitlements", "fixtures", "genre_infer", "lighting", "lyrics", "mik", "open_dj", "opendj_cli", "parity", "perf", "quality", "reconcile", "rekordbox_analyse", "scripts", "sets", "shared", "smartlists", "spotify", "standalone", "stems", "sync_hub", "vocals", "webui"]
+    dependents: ["ableton_link", "adapters", "agentic_testing", "ai_gateway_admin", "analysis", "analysis_beatgrid", "analysis_bench", "analysis_key", "analysis_structure", "analysis_waveform", "autodj", "b2b_session", "bench_tryer_calibration", "cloud", "cloudsync", "database", "engine_core", "entitlements", "fixtures", "genre_infer", "lighting", "lyrics", "mik", "open_dj", "opendj_cli", "parity", "perf", "quality", "reconcile", "rekordbox_analyse", "scripts", "sets", "shared", "smartlists", "spotify", "standalone", "stems", "sync", "sync_hub", "vocals", "webui"]
   - name: playlist_sets
     sources: ["apps/playlist_sets/"]
     tests: ["tests/playlist_sets/"]
@@ -370,34 +392,38 @@ scopes:
   - name: reconcile
     sources: ["apps/reconcile/"]
     tests: ["tests/reconcile/"]
-    dependents: ["ableton_link", "adapters", "agentic_testing", "ai_gateway_admin", "analysis", "analysis_beatgrid", "analysis_bench", "analysis_key", "analysis_structure", "analysis_waveform", "autodj", "b2b_session", "bench_tryer_calibration", "cloud", "cloudsync", "database", "dedup", "engine_core", "entitlements", "fixtures", "genre_infer", "lighting", "lyrics", "mik", "open_dj", "opendj_cli", "parity", "perf", "play_analytics", "quality", "rekordbox_analyse", "scripts", "sets", "shared", "smartlists", "spotify", "standalone", "stems", "sync_hub", "vocals", "webui"]
+    dependents: ["ableton_link", "adapters", "agentic_testing", "ai_gateway_admin", "analysis", "analysis_beatgrid", "analysis_bench", "analysis_key", "analysis_structure", "analysis_waveform", "autodj", "b2b_session", "bench_tryer_calibration", "cloud", "cloudsync", "database", "dedup", "engine_core", "entitlements", "fixtures", "genre_infer", "lighting", "lyrics", "mik", "open_dj", "opendj_cli", "parity", "perf", "play_analytics", "quality", "rekordbox_analyse", "scripts", "sets", "shared", "smartlists", "spotify", "standalone", "stems", "sync", "sync_hub", "vocals", "webui"]
   - name: rekordbox_analyse
     sources: ["apps/rekordbox_analyse/"]
     tests: ["tests/rekordbox_analyse/"]
-    dependents: ["ableton_link", "adapters", "agentic_testing", "ai_gateway_admin", "analysis", "analysis_beatgrid", "analysis_bench", "analysis_key", "analysis_structure", "analysis_waveform", "autodj", "b2b_session", "bench_tryer_calibration", "cloud", "cloudsync", "database", "engine_core", "entitlements", "fixtures", "genre_infer", "lighting", "lyrics", "mik", "open_dj", "opendj_cli", "parity", "perf", "play_analytics", "quality", "reconcile", "scripts", "sets", "shared", "smartlists", "spotify", "standalone", "stems", "sync_hub", "vocals", "webui"]
+    dependents: ["ableton_link", "adapters", "agentic_testing", "ai_gateway_admin", "analysis", "analysis_beatgrid", "analysis_bench", "analysis_key", "analysis_structure", "analysis_waveform", "autodj", "b2b_session", "bench_tryer_calibration", "cloud", "cloudsync", "database", "engine_core", "entitlements", "fixtures", "genre_infer", "lighting", "lyrics", "mik", "open_dj", "opendj_cli", "parity", "perf", "play_analytics", "quality", "reconcile", "scripts", "sets", "shared", "smartlists", "spotify", "standalone", "stems", "sync", "sync_hub", "vocals", "webui"]
   - name: rekordbox_ingestion
     sources: ["apps/rekordbox_ingestion/"]
     tests: ["tests/rekordbox_ingestion/"]
   - name: sets
     sources: ["apps/sets/"]
     tests: ["tests/sets/"]
-    dependents: ["ableton_link", "adapters", "agentic_testing", "ai_gateway_admin", "analysis", "analysis_beatgrid", "analysis_bench", "analysis_key", "analysis_structure", "analysis_waveform", "autodj", "b2b_session", "bench_tryer_calibration", "cloud", "cloudsync", "database", "engine_core", "entitlements", "fixtures", "genre_infer", "lighting", "lyrics", "mik", "open_dj", "opendj_cli", "parity", "perf", "play_analytics", "quality", "reconcile", "rekordbox_analyse", "scripts", "shared", "smartlists", "spotify", "standalone", "stems", "sync", "sync_hub", "vocals", "webui"]
+    dependents: ["ableton_link", "adapters", "agentic_testing", "ai_gateway_admin", "analysis", "analysis_beatgrid", "analysis_bench", "analysis_key", "analysis_structure", "analysis_waveform", "autodj", "b2b_session", "bench_tryer_calibration", "cloud", "cloudsync", "database", "engine_core", "entitlements", "fixtures", "genre_infer", "lighting", "lyrics", "mik", "open_dj", "opendj_cli", "parity", "perf", "play_analytics", "quality", "reconcile", "rekordbox_analyse", "scripts", "shared", "smartlists", "spotify", "standalone", "stems", "stream", "sync", "sync_hub", "vocals", "webui"]
   - name: shared
     sources: ["apps/shared/"]
     tests: ["tests/shared/"]
-    dependents: ["ableton_link", "adapters", "agentbox", "agentic_testing", "ai_gateway_admin", "analysis", "analysis_beatgrid", "analysis_bench", "analysis_key", "analysis_loudness", "analysis_structure", "analysis_waveform", "audit", "autodj", "b2b_pairing", "b2b_session", "b2b_sync", "b2b_transport", "beatbench", "bench_tryer_calibration", "cloud", "cloudsync", "database", "dedup", "dj_copilot", "engine_core", "entitlements", "feature_flags", "fixtures", "genre_infer", "launcher", "lighting", "live_core", "loudness", "lyrics", "lyrics_alignment", "mik", "open_dj", "opendj_cli", "pairings", "parity", "perf", "play_analytics", "playlist_sets", "plugins", "quality", "reconcile", "rekordbox_analyse", "rekordbox_ingestion", "scripts", "sets", "smartlists", "spotify", "standalone", "stems", "streaming_transfer", "sync", "sync_hub", "tags", "vocals", "voice", "webui"]
+    dependents: ["ableton_link", "adapters", "agentbox", "agentic_testing", "ai_gateway_admin", "analysis", "analysis_beatgrid", "analysis_bench", "analysis_key", "analysis_loudness", "analysis_structure", "analysis_waveform", "audit", "autodj", "b2b_pairing", "b2b_session", "b2b_sync", "b2b_transport", "beatbench", "bench_tryer_calibration", "cloud", "cloudsync", "database", "dedup", "dj_copilot", "engine_core", "entitlements", "feature_flags", "fixtures", "genre_infer", "launcher", "lighting", "live_core", "loudness", "lyrics", "lyrics_alignment", "mik", "now_playing", "open_dj", "opendj_cli", "pairings", "parity", "perf", "play_analytics", "playlist_sets", "plugins", "quality", "reconcile", "rekordbox_analyse", "rekordbox_ingestion", "scripts", "sets", "smartlists", "spotify", "standalone", "stems", "stream", "streaming_transfer", "sync", "sync_hub", "tags", "vocals", "voice", "webui"]
   - name: smartlists
     sources: ["apps/smartlists/"]
     tests: ["tests/smartlists/"]
-    dependents: ["ableton_link", "adapters", "agentic_testing", "ai_gateway_admin", "analysis", "analysis_beatgrid", "analysis_bench", "analysis_key", "analysis_structure", "analysis_waveform", "autodj", "b2b_session", "bench_tryer_calibration", "cloud", "cloudsync", "database", "engine_core", "entitlements", "fixtures", "genre_infer", "lighting", "lyrics", "mik", "open_dj", "opendj_cli", "parity", "perf", "play_analytics", "quality", "reconcile", "rekordbox_analyse", "scripts", "sets", "shared", "spotify", "standalone", "stems", "sync_hub", "vocals", "webui"]
+    dependents: ["ableton_link", "adapters", "agentic_testing", "ai_gateway_admin", "analysis", "analysis_beatgrid", "analysis_bench", "analysis_key", "analysis_structure", "analysis_waveform", "autodj", "b2b_session", "bench_tryer_calibration", "cloud", "cloudsync", "database", "engine_core", "entitlements", "fixtures", "genre_infer", "lighting", "lyrics", "mik", "open_dj", "opendj_cli", "parity", "perf", "play_analytics", "quality", "reconcile", "rekordbox_analyse", "scripts", "sets", "shared", "spotify", "standalone", "stems", "sync", "sync_hub", "vocals", "webui"]
   - name: spotify
     sources: ["apps/spotify/"]
     tests: ["tests/spotify/"]
-    dependents: ["ableton_link", "adapters", "agentic_testing", "ai_gateway_admin", "analysis", "analysis_beatgrid", "analysis_bench", "analysis_key", "analysis_structure", "analysis_waveform", "autodj", "b2b_session", "bench_tryer_calibration", "cloud", "cloudsync", "database", "engine_core", "entitlements", "fixtures", "genre_infer", "lighting", "lyrics", "mik", "open_dj", "opendj_cli", "parity", "perf", "play_analytics", "quality", "reconcile", "rekordbox_analyse", "scripts", "sets", "shared", "smartlists", "standalone", "stems", "streaming_transfer", "sync_hub", "vocals", "webui"]
+    dependents: ["ableton_link", "adapters", "agentic_testing", "ai_gateway_admin", "analysis", "analysis_beatgrid", "analysis_bench", "analysis_key", "analysis_structure", "analysis_waveform", "autodj", "b2b_session", "bench_tryer_calibration", "cloud", "cloudsync", "database", "engine_core", "entitlements", "fixtures", "genre_infer", "lighting", "lyrics", "mik", "open_dj", "opendj_cli", "parity", "perf", "play_analytics", "quality", "reconcile", "rekordbox_analyse", "scripts", "sets", "shared", "smartlists", "standalone", "stems", "streaming_transfer", "sync", "sync_hub", "vocals", "webui"]
   - name: stems
     sources: ["apps/stems/"]
     tests: ["tests/stems/"]
-    dependents: ["ableton_link", "adapters", "agentic_testing", "ai_gateway_admin", "analysis", "analysis_beatgrid", "analysis_bench", "analysis_key", "analysis_loudness", "analysis_structure", "analysis_waveform", "audit", "autodj", "b2b_session", "beatbench", "bench_tryer_calibration", "cloud", "cloudsync", "database", "engine_core", "entitlements", "fixtures", "genre_infer", "lighting", "live_core", "lyrics", "lyrics_alignment", "mik", "open_dj", "opendj_cli", "parity", "perf", "play_analytics", "quality", "reconcile", "rekordbox_analyse", "scripts", "sets", "shared", "smartlists", "spotify", "standalone", "sync", "sync_hub", "vocals", "webui"]
+    dependents: ["ableton_link", "adapters", "agentic_testing", "ai_gateway_admin", "analysis", "analysis_beatgrid", "analysis_bench", "analysis_key", "analysis_loudness", "analysis_structure", "analysis_waveform", "audit", "autodj", "b2b_session", "beatbench", "bench_tryer_calibration", "cloud", "cloudsync", "database", "engine_core", "entitlements", "fixtures", "genre_infer", "lighting", "live_core", "lyrics", "lyrics_alignment", "mik", "open_dj", "opendj_cli", "parity", "perf", "play_analytics", "quality", "reconcile", "rekordbox_analyse", "scripts", "sets", "shared", "smartlists", "spotify", "standalone", "stream", "sync", "sync_hub", "vocals", "webui"]
+  - name: stream
+    sources: ["apps/stream/"]
+    tests: ["tests/stream/"]
+    dependents: ["ableton_link", "adapters", "agentic_testing", "ai_gateway_admin", "analysis", "analysis_beatgrid", "analysis_bench", "analysis_key", "analysis_structure", "analysis_waveform", "autodj", "b2b_session", "bench_tryer_calibration", "cloud", "cloudsync", "database", "engine_core", "entitlements", "fixtures", "genre_infer", "lighting", "lyrics", "mik", "open_dj", "opendj_cli", "parity", "perf", "play_analytics", "quality", "reconcile", "rekordbox_analyse", "scripts", "sets", "shared", "smartlists", "spotify", "standalone", "stems", "sync", "sync_hub", "vocals", "webui"]
   - name: streaming_transfer
     sources: ["apps/streaming_transfer/"]
     tests: ["tests/streaming_transfer/"]
@@ -408,29 +434,29 @@ scopes:
   - name: sync
     sources: ["apps/sync/"]
     tests: ["tests/sync/"]
-    dependents: ["ableton_link", "adapters", "agentic_testing", "ai_gateway_admin", "analysis", "analysis_beatgrid", "analysis_bench", "analysis_key", "analysis_structure", "analysis_waveform", "audit", "autodj", "b2b_session", "bench_tryer_calibration", "cloud", "cloudsync", "database", "engine_core", "entitlements", "fixtures", "genre_infer", "lighting", "lyrics", "mik", "open_dj", "opendj_cli", "parity", "perf", "play_analytics", "quality", "reconcile", "rekordbox_analyse", "scripts", "sets", "shared", "smartlists", "spotify", "standalone", "stems", "sync_hub", "vocals", "webui"]
+    dependents: ["ableton_link", "adapters", "agentic_testing", "ai_gateway_admin", "analysis", "analysis_beatgrid", "analysis_bench", "analysis_key", "analysis_loudness", "analysis_structure", "analysis_waveform", "audit", "autodj", "b2b_session", "beatbench", "bench_tryer_calibration", "cloud", "cloudsync", "database", "engine_core", "entitlements", "fixtures", "genre_infer", "lighting", "live_core", "lyrics", "lyrics_alignment", "mik", "open_dj", "opendj_cli", "parity", "perf", "play_analytics", "quality", "reconcile", "rekordbox_analyse", "scripts", "sets", "shared", "smartlists", "spotify", "standalone", "stems", "stream", "sync_hub", "vocals", "webui"]
   - name: sync_hub
     sources: ["apps/sync_hub/"]
     tests: ["(private path)/"]
-    dependents: ["ableton_link", "adapters", "agentic_testing", "ai_gateway_admin", "analysis", "analysis_beatgrid", "analysis_bench", "analysis_key", "analysis_loudness", "analysis_structure", "analysis_waveform", "audit", "autodj", "b2b_session", "beatbench", "bench_tryer_calibration", "cloud", "cloudsync", "database", "engine_core", "entitlements", "fixtures", "genre_infer", "lighting", "live_core", "lyrics", "lyrics_alignment", "mik", "open_dj", "opendj_cli", "parity", "perf", "play_analytics", "quality", "reconcile", "rekordbox_analyse", "scripts", "sets", "shared", "smartlists", "spotify", "standalone", "stems", "sync", "vocals", "webui"]
+    dependents: ["ableton_link", "adapters", "agentic_testing", "ai_gateway_admin", "analysis", "analysis_beatgrid", "analysis_bench", "analysis_key", "analysis_loudness", "analysis_structure", "analysis_waveform", "audit", "autodj", "b2b_session", "beatbench", "bench_tryer_calibration", "cloud", "cloudsync", "database", "engine_core", "entitlements", "fixtures", "genre_infer", "lighting", "live_core", "lyrics", "lyrics_alignment", "mik", "open_dj", "opendj_cli", "parity", "perf", "play_analytics", "quality", "reconcile", "rekordbox_analyse", "scripts", "sets", "shared", "smartlists", "spotify", "standalone", "stems", "stream", "sync", "vocals", "webui"]
   - name: tags
     sources: ["apps/tags/"]
     tests: ["tests/tags/"]
-    dependents: ["ableton_link", "adapters", "agentic_testing", "ai_gateway_admin", "analysis", "analysis_beatgrid", "analysis_bench", "analysis_key", "analysis_structure", "analysis_waveform", "autodj", "b2b_session", "bench_tryer_calibration", "cloud", "cloudsync", "database", "engine_core", "entitlements", "fixtures", "genre_infer", "lighting", "lyrics", "mik", "open_dj", "opendj_cli", "parity", "perf", "play_analytics", "quality", "reconcile", "rekordbox_analyse", "scripts", "sets", "shared", "smartlists", "spotify", "standalone", "stems", "sync_hub", "vocals", "webui"]
+    dependents: ["ableton_link", "adapters", "agentic_testing", "ai_gateway_admin", "analysis", "analysis_beatgrid", "analysis_bench", "analysis_key", "analysis_structure", "analysis_waveform", "autodj", "b2b_session", "bench_tryer_calibration", "cloud", "cloudsync", "database", "engine_core", "entitlements", "fixtures", "genre_infer", "lighting", "lyrics", "mik", "open_dj", "opendj_cli", "parity", "perf", "play_analytics", "quality", "reconcile", "rekordbox_analyse", "scripts", "sets", "shared", "smartlists", "spotify", "standalone", "stems", "sync", "sync_hub", "vocals", "webui"]
   - name: vocals
     sources: ["apps/vocals/"]
     tests: ["tests/vocals/"]
-    dependents: ["ableton_link", "adapters", "agentic_testing", "ai_gateway_admin", "analysis", "analysis_beatgrid", "analysis_bench", "analysis_key", "analysis_loudness", "analysis_structure", "analysis_waveform", "audit", "autodj", "b2b_session", "beatbench", "bench_tryer_calibration", "cloud", "cloudsync", "database", "engine_core", "entitlements", "fixtures", "genre_infer", "lighting", "live_core", "lyrics", "lyrics_alignment", "mik", "open_dj", "opendj_cli", "parity", "perf", "play_analytics", "quality", "reconcile", "rekordbox_analyse", "scripts", "sets", "shared", "smartlists", "spotify", "standalone", "stems", "sync", "sync_hub", "webui"]
+    dependents: ["ableton_link", "adapters", "agentic_testing", "ai_gateway_admin", "analysis", "analysis_beatgrid", "analysis_bench", "analysis_key", "analysis_loudness", "analysis_structure", "analysis_waveform", "audit", "autodj", "b2b_session", "beatbench", "bench_tryer_calibration", "cloud", "cloudsync", "database", "engine_core", "entitlements", "fixtures", "genre_infer", "lighting", "live_core", "lyrics", "lyrics_alignment", "mik", "open_dj", "opendj_cli", "parity", "perf", "play_analytics", "quality", "reconcile", "rekordbox_analyse", "scripts", "sets", "shared", "smartlists", "spotify", "standalone", "stems", "stream", "sync", "sync_hub", "webui"]
   - name: voice
     sources: ["apps/voice/"]
     tests: ["tests/voice/"]
-    dependents: ["ableton_link", "adapters", "agentic_testing", "ai_gateway_admin", "analysis", "analysis_beatgrid", "analysis_bench", "analysis_key", "analysis_structure", "analysis_waveform", "autodj", "b2b_session", "bench_tryer_calibration", "cloud", "cloudsync", "database", "engine_core", "entitlements", "fixtures", "genre_infer", "lighting", "lyrics", "mik", "open_dj", "opendj_cli", "parity", "perf", "play_analytics", "quality", "reconcile", "rekordbox_analyse", "scripts", "sets", "shared", "smartlists", "spotify", "standalone", "stems", "sync_hub", "vocals", "webui"]
+    dependents: ["ableton_link", "adapters", "agentic_testing", "ai_gateway_admin", "analysis", "analysis_beatgrid", "analysis_bench", "analysis_key", "analysis_structure", "analysis_waveform", "autodj", "b2b_session", "bench_tryer_calibration", "cloud", "cloudsync", "database", "engine_core", "entitlements", "fixtures", "genre_infer", "lighting", "lyrics", "mik", "open_dj", "opendj_cli", "parity", "perf", "play_analytics", "quality", "reconcile", "rekordbox_analyse", "scripts", "sets", "shared", "smartlists", "spotify", "standalone", "stems", "sync", "sync_hub", "vocals", "webui"]
   - name: webui
     # apps/set_notes/ is mounted only by the webui app; its route and CLI suites live in tests/webui/.
     sources: ["apps/webui/", "apps/set_notes/"]
     # tests/health_lights/ exercises apps/webui/server coverage, drain and playable routes.
     tests: ["tests/webui/", "tests/health_lights/"]
-    dependents: ["ableton_link", "adapters", "agentic_testing", "ai_gateway_admin", "analysis", "analysis_beatgrid", "analysis_bench", "analysis_key", "analysis_structure", "analysis_waveform", "autodj", "b2b_session", "bench_tryer_calibration", "cloud", "cloudsync", "database", "engine_core", "entitlements", "fixtures", "genre_infer", "lighting", "lyrics", "mik", "open_dj", "opendj_cli", "parity", "perf", "play_analytics", "quality", "reconcile", "rekordbox_analyse", "scripts", "sets", "shared", "smartlists", "spotify", "standalone", "stems", "sync_hub", "vocals"]
+    dependents: ["ableton_link", "adapters", "agentic_testing", "ai_gateway_admin", "analysis", "analysis_beatgrid", "analysis_bench", "analysis_key", "analysis_structure", "analysis_waveform", "autodj", "b2b_session", "bench_tryer_calibration", "cloud", "cloudsync", "database", "engine_core", "entitlements", "fixtures", "genre_infer", "lighting", "lyrics", "mik", "open_dj", "opendj_cli", "parity", "perf", "play_analytics", "quality", "reconcile", "rekordbox_analyse", "scripts", "sets", "shared", "smartlists", "spotify", "standalone", "stems", "sync", "sync_hub", "vocals"]
   - name: webui_frontend
     # The Svelte/TypeScript app under apps/webui/. No Python imports it, so its consumers
     # are the pytest inputs that MENTION it: tests that build it, read its files, or run
@@ -449,9 +475,9 @@ scopes:
     # plan, so it still runs. Consumers are found by mention (43 test modules spell one of
     # these names; no conftest or global helper does). Longest prefix: this owns the ledger
     # inside `prose`'s `.planning/`.
-    sources: [".planning/REQUIREMENTS.md", "reqs.json"]
+    sources: [".planning/REQUIREMENTS.md", "(private path)/", "reqs.json"]
     tests: []
-    dependents: ["analysis_key", "perf", "quality", "rekordbox_ingestion", "scripts"]
+    dependents: ["analysis_key", "perf", "quality", "rekordbox_ingestion", "scripts", "sync", "webui"]
     mentions: ["REQUIREMENTS.md", "reqs.json"]
   - name: workflows
     # Round 19. The workflows other than `ci.yml`, which stays a full trigger above because it
@@ -485,7 +511,7 @@ scopes:
               ".github/ISSUE_TEMPLATE/", ".github/PULL_REQUEST_TEMPLATE.md",
               ".github/FUNDING.yml"]
     tests: []
-    dependents: ["agentic_testing", "analysis_bench", "analysis_key", "cloudsync", "database", "engine_core", "fixtures", "lyrics", "mik", "open_dj", "perf", "quality", "scripts", "shared", "stems", "webui"]
+    dependents: ["agentic_testing", "analysis_bench", "analysis_key", "cloudsync", "database", "engine_core", "fixtures", "lyrics", "mik", "open_dj", "perf", "quality", "scripts", "shared", "stems", "sync", "webui"]
     mentions: ["docs", "specs", "app_docs", ".planning", "blog", "research",
                "CHANGELOG.md", "PARITY-TODO.md", "SECURITY.md", "CONTRIBUTING.md", "CODE_OF_CONDUCT.md",
                "ISSUE_TEMPLATE", "PULL_REQUEST_TEMPLATE", "FUNDING.yml"]
@@ -539,7 +565,7 @@ scopes:
   - name: live_core
     sources: ["apps/live-core/"]
     tests: ["tests/live_core/"]
-    dependents: ["scripts"]
+    dependents: ["quality", "scripts"]
     # Rust sources: no Python imports them, so consumers are found by mention
     # (tests/live_core builds the crate by path).
     mentions: ["apps/live-core", "live-core"]

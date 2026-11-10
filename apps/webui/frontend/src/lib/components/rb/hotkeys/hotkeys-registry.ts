@@ -25,7 +25,7 @@
  *     - install-hotkeys-overlay.ts imports HOTKEYS_OVERLAY_HOLD_KEY ('/')
  *       and HOTKEYS_OVERLAY_TOGGLE_KEY ('?') for the overlay's own gestures.
  *   DISPLAY-ONLY TRANSCRIPTION (handler logic stays put):
- *     - performance-hotkeys.ts (Space, +/-, ), m) -- transport/loop/pin
+ *     - performance-hotkeys.ts (Space, +/-, ), m, , . Shift+K P) -- transport/loop/pin/tempo
  *       state machine, latency-stamped Space, loop-target tracking.
  *     - technically-working-hotkeys.ts (Ctrl+R, Opt, Cmd+E) -- hold-vs-press
  *       plus pointer-edge hover, routed through performance IPC.
@@ -154,6 +154,31 @@ export const HOTKEY_REGISTRY: readonly HotkeyEntry[] = [
 		id: 'performance-wave-zoom-in',
 		chord: ']',
 		description: 'Zoom the main waveform in one step (fewer bars, down to 4)',
+		group: 'Performance'
+	},
+	{
+		id: 'performance-tempo-fine',
+		chord: ', .',
+		description: "Step the recent deck's tempo down / up 0.1%",
+		group: 'Performance'
+	},
+	{
+		id: 'performance-tempo-coarse',
+		chord: 'Shift+, .',
+		description: "Step the recent deck's tempo down / up 1.0%",
+		group: 'Performance'
+	},
+	{
+		id: 'performance-tempo-reset',
+		chord: 'Shift+K',
+		description: "Reset the recent deck's tempo to 0%",
+		group: 'Performance'
+	},
+	{
+		id: 'performance-pitch-range-cycle',
+		chord: 'P',
+		description:
+			"Cycle the recent deck's pitch range (8%, 16%, WIDE), skipping a range the current tempo does not fit",
 		group: 'Performance'
 	},
 	{

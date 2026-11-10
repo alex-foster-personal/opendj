@@ -16,6 +16,10 @@ Endpoints::
                                                        when share_state='private')
     POST   /api/sets/recorder/{id}/master-pcm      -> one int16 chunk of the page's
                                                        master mix (SET-12)
+    POST   /api/sets/recorder/{id}/stream-encoder  -> start the master-mix encoder
+        body {"format": "mp3", "bitrate_kbps": 192} (STREAM-11486)
+    GET    /api/sets/recorder/stream-encoder       -> {"encoder": status or null}
+    POST   /api/sets/recorder/{id}/stream-encoder/stop -> stop it
     GET    /api/sets/{session_id}/soundcloud-export -> metadata-only tracklist
     POST   /api/sets/{session_id}/soundcloud-export
         body {"acknowledge_rights": true}           -> paste-ready comment after ack
@@ -36,6 +40,15 @@ from fastapi import Path as FPath
 from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
 from pydantic import BaseModel, Field, model_validator
 from starlette.concurrency import run_in_threadpool
+
+from apps.stream.encoder import (
+    DEFAULT_BITRATE_KBPS,
+    MAX_BITRATE_KBPS,
+    MIN_BITRATE_KBPS,
+    EncoderRequestRefused,
+    EncoderUnavailable,
+    StreamSourceNotMaster,
+)
 
 from . import paths as sets_paths
 from .audio import (
@@ -68,8 +81,10 @@ from .soundcloud_export import (
     SoundcloudExport,
     build_soundcloud_export,
 )
+from .sources.control_event_source import ControlEventIngestError, ControlEventSource
 from .sources.opendj_source import SOURCE_NAME as OPENDJ_SOURCE_NAME
 from .sources.opendj_source import DeckObservationError
+from .state import SetsState
 
 _SHARE_TRACK_VALUE_FIELDS = ("title", "artist", "album")
 
@@ -248,6 +263,36 @@ class RecorderStatus(BaseModel):
         default=None,
         description="The directory every session folder is written under.",
     )
+    peak_dbfs: float | None = Field(
+        default=None,
+        description=(
+            "Session peak of the master mix in dBFS, 20 log10(|peak| / 32768) over accepted "
+            "int16 chunks (issue #10371); null when this process records no master-mix audio."
+        ),
+    )
+    peak_dbfs_recent: float | None = Field(
+        default=None,
+        description="Peak dBFS over the last 3 s of accepted master-mix audio; null as peak_dbfs.",
+    )
+    clipped_samples: int | None = Field(
+        default=None,
+        description="Master-mix samples at full scale (+32767 or -32768); null as peak_dbfs.",
+    )
+    clip_events: int | None = Field(
+        default=None,
+        description=(
+            "Runs of 3 or more consecutive master-mix frames with a full-scale sample; "
+            "null as peak_dbfs."
+        ),
+    )
+    elapsed_s: float | None = Field(
+        default=None,
+        description="Seconds since the owned recording started; null when idle or not owned.",
+    )
+    audio_bytes: int | None = Field(
+        default=None,
+        description="Master-mix PCM bytes accepted so far; null when no master-mix audio is recorded here.",
+    )
 
 
 class RecorderRecoveryRequest(BaseModel):
@@ -294,6 +339,13 @@ class SoundcloudExportResponse(BaseModel):
 
 class SoundcloudExportAckRequest(BaseModel):
     acknowledge_rights: bool = False
+
+
+class ControlEventsRequest(BaseModel):
+    """A batch of control-event v2 rows, oldest (lowest seq) first."""
+
+    session_id: str = Field(min_length=1, max_length=64)
+    events: list[dict[str, Any]] = Field(min_length=1, max_length=600)
 
 
 class DeckObservationsRequest(BaseModel):
@@ -351,6 +403,42 @@ def _opendj_source(request: Request) -> Any:
         return _recorder_service(request).active_source(OPENDJ_SOURCE_NAME)
     except RecorderConflict as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
+
+
+_CONTROL_EVENT_SOURCES: dict[str, ControlEventSource] = {}
+_CONTROL_EVENT_SOURCES_LOCK = threading.Lock()
+
+
+def _control_event_source(request: Request, session_id: str) -> ControlEventSource:
+    service = _recorder_service(request)
+    with service._lock:
+        recorder = service._recorder
+        if recorder is None:
+            raise HTTPException(
+                status_code=409,
+                detail="no HTTP-owned recorder is active; control events need a live REC session",
+            )
+        if recorder.session_id != session_id:
+            raise HTTPException(
+                status_code=409,
+                detail=(
+                    f"events were sampled under session {session_id!r} but "
+                    f"{recorder.session_id!r} is recording now"
+                ),
+            )
+        db_path = service.db_path
+        session_dir = sets_paths.session_dir(session_id, root=service.sets_root)
+    with _CONTROL_EVENT_SOURCES_LOCK:
+        existing = _CONTROL_EVENT_SOURCES.get(session_id)
+        if existing is not None:
+            return existing
+        source = ControlEventSource(
+            session_id=session_id,
+            state=SetsState(db_path=db_path),
+            session_dir=session_dir,
+        )
+        _CONTROL_EVENT_SOURCES[session_id] = source
+        return source
 
 
 def _validated_recorder_session_id(service: RecorderService, session_id: str) -> None:
@@ -566,6 +654,48 @@ async def api_recorder_master_pcm(
     return Response(status_code=204)
 
 
+class StreamEncoderStartRequest(BaseModel):
+    format: Literal["mp3", "aac", "opus"]
+    bitrate_kbps: int = Field(DEFAULT_BITRATE_KBPS, ge=MIN_BITRATE_KBPS, le=MAX_BITRATE_KBPS)
+
+
+@router.get("/recorder/stream-encoder")
+def api_stream_encoder_status(request: Request) -> dict[str, Any]:
+    """The master-mix stream encoder's status, or null when none was started."""
+    return {"encoder": _recorder_service(request).stream_encoder_status()}
+
+
+@router.post("/recorder/{session_id}/stream-encoder", status_code=201)
+async def api_stream_encoder_start(
+    request: Request, session_id: str, body: StreamEncoderStartRequest
+) -> dict[str, Any]:
+    """Tee a ``source: master`` recording into an encoder (STREAM-11486)."""
+    service = _recorder_service(request)
+    _validated_recorder_session_id(service, session_id)
+    try:
+        return await run_in_threadpool(
+            service.start_stream_encoder, session_id, fmt=body.format, bitrate_kbps=body.bitrate_kbps
+        )
+    except StreamSourceNotMaster as exc:
+        raise HTTPException(status_code=409, detail={"code": exc.code, "message": str(exc)}) from exc
+    except EncoderUnavailable as exc:
+        raise HTTPException(status_code=503, detail={"code": exc.code, "message": str(exc)}) from exc
+    except EncoderRequestRefused as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    except RecorderConflict as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+
+
+@router.post("/recorder/{session_id}/stream-encoder/stop")
+async def api_stream_encoder_stop(request: Request, session_id: str) -> dict[str, Any]:
+    service = _recorder_service(request)
+    _validated_recorder_session_id(service, session_id)
+    try:
+        return await run_in_threadpool(service.stop_stream_encoder)
+    except RecorderConflict as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+
+
 @router.post("/recorder/{session_id}/stop", response_model=RecorderStatus)
 async def api_recorder_stop(request: Request, session_id: str) -> dict[str, Any]:
     service = _recorder_service(request)
@@ -591,6 +721,25 @@ async def api_recorder_recover(
         )
     except RecorderConflict as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
+
+
+# ---------------------------------------------------------------------------
+# Control-event v2 ingest (SETREC-08 stems; shared with sibling SETREC slices)
+# ---------------------------------------------------------------------------
+
+
+@router.post("/control-events", status_code=202)
+async def api_submit_control_events(
+    request: Request,
+    body: ControlEventsRequest,
+) -> dict[str, Any]:
+    """Ingest page-owned control moves into controls.jsonl and sets.db."""
+    source = _control_event_source(request, body.session_id)
+    try:
+        accepted = source.submit_many(body.events)
+    except ControlEventIngestError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    return {"accepted": accepted, "session_id": body.session_id}
 
 
 # ---------------------------------------------------------------------------

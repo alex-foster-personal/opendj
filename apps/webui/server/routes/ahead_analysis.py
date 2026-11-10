@@ -8,7 +8,9 @@
   POST /ahead-analysis/retry      re-arm failed tracks and unavailable lanes
   POST /ahead-analysis/bump/{id}  move one track to the front of the drain
   PUT  /ahead-analysis/next-up    AutoPlay's next tracks, analyzed (beatgrid,
-                                  key) even while a deck plays (NATIVE-5886)
+                                  key) even while a deck plays (NATIVE-5886);
+                                  the head's stem-set is prefetched from R2
+                                  when only the cloud has it (STEM-11747)
 
 CLI twin: ``python -m apps.webui.ahead_analysis_cli``.
 
@@ -26,6 +28,7 @@ from pydantic import BaseModel, ConfigDict, Field
 from apps.webui.server.ahead_analysis import AheadDrain
 from apps.webui.server.routes.armed_service import armed_service
 from apps.webui.server.routes.state import LEASE_HEADER, live_mirror_lease
+from apps.webui.server.routes.stems_prefetch import stem_prefetch_deps
 
 router = APIRouter(prefix="/ahead-analysis", tags=["ahead-analysis"])
 MOUNT_UNDER_API_PREFIX = True
@@ -92,7 +95,17 @@ async def put_next_up(
                     "holder": None if current is None else current.holder,
                 },
             )
-    return {"ok": True, "next_up": drain.set_next_up(body.stable_ids)}
+    next_up = drain.set_next_up(body.stable_ids)
+    _offer_stem_prefetch(next_up, request)
+    return {"ok": True, "next_up": next_up}
+
+
+def _offer_stem_prefetch(next_up: list[str], request: Request) -> None:
+    """The head's stem-set is fetched ahead (STEM-11747). Never blocks or raises into the PUT."""
+    prefetcher = getattr(request.app.state, "stem_next_up_prefetch", None)
+    if prefetcher is None or not next_up:
+        return
+    prefetcher.offer(next_up[0], stem_prefetch_deps(request))
 
 
 @router.post("/bump/{stable_id}")

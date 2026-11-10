@@ -570,6 +570,63 @@ test('quick-action labels and gate helpers stay shared with the status tab', () 
 	assert.equal(forced.body.force, true);
 });
 
+/** if a refused sync decision is formatted then the notice is error with the refusal reason */
+test('syncRefusedNotice maps a refuse decision to an error notice', () => {
+	assert.deepEqual(view.syncRefusedNotice({ kind: 'refuse', reason: 'R' }), {
+		kind: 'error',
+		text: 'R'
+	});
+});
+
+/** if sync completes then the ok notice names pushed and pulled counts with ok or inconclusive */
+test('syncResultNotice maps a sync run to an ok notice with row counts', () => {
+	assert.deepEqual(
+		view.syncResultNotice({
+			pushed: 3,
+			pulled: 2,
+			digest_inconclusive: false,
+			rounds: 1,
+			hub_seq: 9
+		}),
+		{ kind: 'ok', text: 'Sync ok: pushed 3, pulled 2.' }
+	);
+	assert.deepEqual(
+		view.syncResultNotice({
+			pushed: 3,
+			pulled: 2,
+			digest_inconclusive: true,
+			rounds: 1,
+			hub_seq: 9
+		}),
+		{ kind: 'ok', text: 'Sync inconclusive: pushed 3, pulled 2.' }
+	);
+});
+
+/** if sync fails then the notice uses presentCloudSyncError summary and keeps raw text in details */
+test('syncFailureNotice maps an API error to a sync failed notice without HTTP codes in text', () => {
+	const raw =
+		'a CloudSync sync (a Sync now or a scheduler round) is already running against this data dir';
+	const error = new ApiError(409, 'CLOUDSYNC_SYNC_IN_PROGRESS', raw, new Response());
+	const notice = view.syncFailureNotice(error);
+	const presented = view.presentCloudSyncError(error);
+	assert.equal(notice.kind, 'error');
+	assert.equal(notice.text, `Sync failed: ${presented.summary}`);
+	assert.equal(notice.details, raw);
+	assert.doesNotMatch(notice.text, /HTTP 409/);
+});
+
+/** if status reload has no error then refresh is ok, otherwise the load error is shown */
+test('refreshStatusNotice maps load error null to ok and non-null to failed refresh', () => {
+	assert.deepEqual(view.refreshStatusNotice(null), {
+		kind: 'ok',
+		text: 'CloudSync status refreshed.'
+	});
+	assert.deepEqual(view.refreshStatusNotice('boom'), {
+		kind: 'error',
+		text: 'Failed to refresh status: boom'
+	});
+});
+
 test('the config form mirrors the backend validator', () => {
 	/** if enabled=true with no hub, or a non-http hub, reaches the PUT then broken */
 	assert.equal(view.configPutBody({ enabled: true, hubUrl: ' ', machineName: '' }).kind, 'refuse');

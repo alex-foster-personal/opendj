@@ -20,8 +20,8 @@ test('fc60002b81a8: ap-next-btn split shares AutoPlay highlight, hover accent, a
 	);
 	assert.match(
 		topbar,
-		/\.ap-wrap > \.ap-next-btn:hover\s*\{[^}]*color:\s*var\(--rb-accent\)/,
-		'ap-next-btn hover must turn the icon accent-blue'
+		/\.ap-wrap > \.ap-next-btn:hover\s*\{[^}]*color:\s*var\(--rb-accent-text\)/,
+		'ap-next-btn hover must turn the icon to the accent text token (#10370)'
 	);
 	assert.match(
 		topbar,

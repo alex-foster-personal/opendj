@@ -24,6 +24,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import io
 import json
 from pathlib import Path
@@ -92,6 +93,9 @@ def test_upload_stores_the_file_and_returns_a_fetchable_url(client: TestClient, 
     assert attachment["content_type"] == "image/png"
     assert attachment["size_bytes"] == len(png)
     assert attachment["url"] == f"/api/v1/feedback/attachments/{attachment['id']}"
+    assert attachment["content_hash"] == hashlib.sha256(png).hexdigest()
+    assert len(attachment["content_hash"]) == 64
+    assert attachment["content_hash"] == attachment["content_hash"].lower()
 
     files = _attachment_files(tmp_path)
     assert len(files) == 1

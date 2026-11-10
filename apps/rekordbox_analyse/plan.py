@@ -119,6 +119,11 @@ def normalise_path(path: str) -> str:
     return unicodedata.normalize("NFC", path)
 
 
+def playlists_by_name(playlists: Iterable[RbPlaylist]) -> dict[str, RbPlaylist]:
+    """Index playlists by name; the last row wins when Rekordbox holds duplicate names."""
+    return {pl.name: pl for pl in playlists}
+
+
 def _skip_reason(track: OdjTrack, file_exists: Callable[[str], bool]) -> SkipReason | None:
     if not track.file_path:
         return "no_file_path"
@@ -248,4 +253,5 @@ __all__ = [
     "RbTrack",
     "build_plan",
     "normalise_path",
+    "playlists_by_name",
 ]

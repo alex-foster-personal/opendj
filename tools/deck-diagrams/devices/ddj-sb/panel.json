@@ -1,0 +1,1300 @@
+{
+ "format": "opendj-panel-layout/1",
+ "device": "ddj-sb",
+ "display_name": "2-channel Serato beginner controller",
+ "units": "mm",
+ "panel": {
+  "w": 487.0,
+  "d": 271.2
+ },
+ "device_map": "DDJ_SB_MAP",
+ "sources": {
+  "panel_size": "Pioneer DJ DDJ-SB archived specifications: Dimensions (W x D x H) 487.0 x 271.2 x 58.5 mm",
+  "wire": "apps/webui/frontend/src/lib/rb/midi/maps/ddj-sb.ts (DDJ-SB List of MIDI messages ver. 1.00)",
+  "positions": "measured trace of the official top-panel drawing, normalised for the renderer; reference: devices/ddj-sb/panel.reference.json (ADR-0137)"
+ },
+ "out_of_scope": [
+  "pad modes other than HOT CUE: pads carry the HOT CUE wire identity (AUTO LOOP mode is bound in the map)",
+  "MSB/LSB companion CCs: each control carries its MSB",
+  "MASTER LEVEL, HEADPHONES VOL and FILTER FADE send no MIDI: channel-16 placeholder hints",
+  "FX ON and LEVEL/BEATS are drawn, inert",
+  "jog touch and wheel-side rows, fader-start notes, rear and front panel (MIC LEVEL)",
+  "TEMPO and VINYL/KEY LOCK sit on the outer edges (mirrored, not translated)"
+ ],
+ "controls": [
+  {
+   "id": "d1-tempo",
+   "fig": "5",
+   "type": "fader",
+   "label": "TEMPO",
+   "does": "Tempo slider, vertical: minus at the top, plus at the bottom (deck 1)",
+   "x": 17.0,
+   "y": 20.0,
+   "w": 13.0,
+   "h": 68.0,
+   "section": "deck",
+   "midi": {
+    "ch": 1,
+    "kind": "cc",
+    "id": 0
+   },
+   "shift_midi": {
+    "ch": 1,
+    "kind": "cc",
+    "id": 5
+   }
+  },
+  {
+   "id": "d1-key-lock",
+   "fig": "7",
+   "type": "button",
+   "label": "KEY LOCK",
+   "does": "Hold the current key while the tempo changes (deck 1)",
+   "x": 15.0,
+   "y": 99.0,
+   "w": 22.0,
+   "h": 16.0,
+   "section": "deck",
+   "midi": {
+    "ch": 1,
+    "kind": "note",
+    "id": 26
+   },
+   "shift_midi": {
+    "ch": 1,
+    "kind": "note",
+    "id": 96
+   }
+  },
+  {
+   "id": "d1-vinyl",
+   "fig": "6",
+   "type": "button",
+   "label": "VINYL",
+   "does": "Jog scratch on; with SHIFT, slip (deck 1)",
+   "x": 15.0,
+   "y": 149.5,
+   "w": 22.0,
+   "h": 17.0,
+   "section": "deck",
+   "midi": {
+    "ch": 1,
+    "kind": "note",
+    "id": 23
+   },
+   "shift_midi": {
+    "ch": 1,
+    "kind": "note",
+    "id": 78
+   }
+  },
+  {
+   "id": "d1-jog",
+   "fig": "4",
+   "type": "jog",
+   "label": "JOG",
+   "does": "Scratch or nudge the track; with SHIFT, search (deck 1)",
+   "x": 49.5,
+   "y": 48.5,
+   "w": 128.0,
+   "h": 128.0,
+   "section": "deck",
+   "midi": {
+    "ch": 1,
+    "kind": "cc",
+    "id": 34
+   },
+   "shift_midi": {
+    "ch": 1,
+    "kind": "cc",
+    "id": 31
+   }
+  },
+  {
+   "id": "d1-mode-hot-cue",
+   "fig": "35",
+   "type": "button",
+   "label": "HOT CUE",
+   "does": "Pad mode: hot cue; with SHIFT, hot cue 5-8 (deck 1)",
+   "x": 50.5,
+   "y": 191.0,
+   "w": 25.0,
+   "h": 10.0,
+   "section": "deck",
+   "midi": {
+    "ch": 1,
+    "kind": "note",
+    "id": 27
+   },
+   "shift_midi": {
+    "ch": 1,
+    "kind": "note",
+    "id": 105
+   }
+  },
+  {
+   "id": "d1-mode-auto-loop",
+   "fig": "36",
+   "type": "button",
+   "label": "AUTO LOOP",
+   "does": "Pad mode: auto loop; with SHIFT, roll (deck 1)",
+   "x": 82.0,
+   "y": 191.0,
+   "w": 25.0,
+   "h": 10.0,
+   "section": "deck",
+   "midi": {
+    "ch": 1,
+    "kind": "note",
+    "id": 30
+   },
+   "shift_midi": {
+    "ch": 1,
+    "kind": "note",
+    "id": 107
+   }
+  },
+  {
+   "id": "d1-mode-manual-loop",
+   "fig": "37",
+   "type": "button",
+   "label": "MANUAL LOOP",
+   "does": "Pad mode: manual loop; with SHIFT, hot loop (deck 1)",
+   "x": 114.0,
+   "y": 191.0,
+   "w": 25.0,
+   "h": 10.0,
+   "section": "deck",
+   "midi": {
+    "ch": 1,
+    "kind": "note",
+    "id": 32
+   },
+   "shift_midi": {
+    "ch": 1,
+    "kind": "note",
+    "id": 109
+   }
+  },
+  {
+   "id": "d1-mode-sampler",
+   "fig": "38",
+   "type": "button",
+   "label": "SAMPLER",
+   "does": "Pad mode: sampler; with SHIFT, bank (deck 1)",
+   "x": 146.0,
+   "y": 191.0,
+   "w": 25.0,
+   "h": 10.0,
+   "section": "deck",
+   "midi": {
+    "ch": 1,
+    "kind": "note",
+    "id": 34
+   },
+   "shift_midi": {
+    "ch": 1,
+    "kind": "note",
+    "id": 111
+   }
+  },
+  {
+   "id": "d1-play-pause",
+   "fig": "1",
+   "type": "button",
+   "label": "PLAY/PAUSE",
+   "does": "Start or pause the deck (deck 1)",
+   "x": 49.5,
+   "y": 236.0,
+   "w": 27.0,
+   "h": 24.0,
+   "section": "deck",
+   "midi": {
+    "ch": 1,
+    "kind": "note",
+    "id": 11
+   },
+   "shift_midi": {
+    "ch": 1,
+    "kind": "note",
+    "id": 71
+   }
+  },
+  {
+   "id": "d1-cue",
+   "fig": "2",
+   "type": "button",
+   "label": "CUE",
+   "does": "Set or return to the cue point (deck 1)",
+   "x": 81.0,
+   "y": 236.0,
+   "w": 27.0,
+   "h": 24.0,
+   "section": "deck",
+   "midi": {
+    "ch": 1,
+    "kind": "note",
+    "id": 12
+   },
+   "shift_midi": {
+    "ch": 1,
+    "kind": "note",
+    "id": 72
+   }
+  },
+  {
+   "id": "d1-sync",
+   "fig": "3",
+   "type": "button",
+   "label": "SYNC",
+   "does": "Beat sync on; with SHIFT, sync off (deck 1)",
+   "x": 113.0,
+   "y": 236.0,
+   "w": 27.0,
+   "h": 24.0,
+   "section": "deck",
+   "midi": {
+    "ch": 1,
+    "kind": "note",
+    "id": 88
+   },
+   "shift_midi": {
+    "ch": 1,
+    "kind": "note",
+    "id": 92
+   }
+  },
+  {
+   "id": "d1-shift",
+   "fig": "8",
+   "type": "button",
+   "label": "SHIFT",
+   "does": "Hold for each control's second function (deck 1)",
+   "x": 145.0,
+   "y": 236.0,
+   "w": 27.0,
+   "h": 24.0,
+   "section": "deck",
+   "midi": {
+    "ch": 1,
+    "kind": "note",
+    "id": 63
+   },
+   "shift_midi": null
+  },
+  {
+   "id": "d1-pad-1",
+   "fig": "31",
+   "type": "pad",
+   "label": "PAD 1",
+   "does": "Hot cue A (deck 1, HOT CUE mode)",
+   "x": 49.5,
+   "y": 207.0,
+   "w": 27.0,
+   "h": 27.0,
+   "section": "performance",
+   "midi": {
+    "ch": 8,
+    "kind": "note",
+    "id": 0
+   },
+   "shift_midi": {
+    "ch": 8,
+    "kind": "note",
+    "id": 8
+   }
+  },
+  {
+   "id": "d1-pad-2",
+   "fig": "32",
+   "type": "pad",
+   "label": "PAD 2",
+   "does": "Hot cue B (deck 1, HOT CUE mode)",
+   "x": 81.0,
+   "y": 207.0,
+   "w": 27.0,
+   "h": 27.0,
+   "section": "performance",
+   "midi": {
+    "ch": 8,
+    "kind": "note",
+    "id": 1
+   },
+   "shift_midi": {
+    "ch": 8,
+    "kind": "note",
+    "id": 9
+   }
+  },
+  {
+   "id": "d1-pad-3",
+   "fig": "33",
+   "type": "pad",
+   "label": "PAD 3",
+   "does": "Hot cue C (deck 1, HOT CUE mode)",
+   "x": 113.0,
+   "y": 207.0,
+   "w": 27.0,
+   "h": 27.0,
+   "section": "performance",
+   "midi": {
+    "ch": 8,
+    "kind": "note",
+    "id": 2
+   },
+   "shift_midi": {
+    "ch": 8,
+    "kind": "note",
+    "id": 10
+   }
+  },
+  {
+   "id": "d1-pad-4",
+   "fig": "34",
+   "type": "pad",
+   "label": "PAD 4",
+   "does": "Hot cue D (deck 1, HOT CUE mode)",
+   "x": 145.0,
+   "y": 207.0,
+   "w": 27.0,
+   "h": 27.0,
+   "section": "performance",
+   "midi": {
+    "ch": 8,
+    "kind": "note",
+    "id": 3
+   },
+   "shift_midi": {
+    "ch": 8,
+    "kind": "note",
+    "id": 11
+   }
+  },
+  {
+   "id": "d2-tempo",
+   "fig": "5",
+   "type": "fader",
+   "label": "TEMPO",
+   "does": "Tempo slider, vertical: minus at the top, plus at the bottom (deck 2)",
+   "x": 458.0,
+   "y": 20.0,
+   "w": 13.0,
+   "h": 68.0,
+   "section": "deck",
+   "midi": {
+    "ch": 2,
+    "kind": "cc",
+    "id": 0
+   },
+   "shift_midi": {
+    "ch": 2,
+    "kind": "cc",
+    "id": 5
+   }
+  },
+  {
+   "id": "d2-key-lock",
+   "fig": "7",
+   "type": "button",
+   "label": "KEY LOCK",
+   "does": "Hold the current key while the tempo changes (deck 2)",
+   "x": 451.5,
+   "y": 99.0,
+   "w": 22.0,
+   "h": 16.0,
+   "section": "deck",
+   "midi": {
+    "ch": 2,
+    "kind": "note",
+    "id": 26
+   },
+   "shift_midi": {
+    "ch": 2,
+    "kind": "note",
+    "id": 96
+   }
+  },
+  {
+   "id": "d2-vinyl",
+   "fig": "6",
+   "type": "button",
+   "label": "VINYL",
+   "does": "Jog scratch on; with SHIFT, slip (deck 2)",
+   "x": 451.5,
+   "y": 149.5,
+   "w": 22.0,
+   "h": 17.0,
+   "section": "deck",
+   "midi": {
+    "ch": 2,
+    "kind": "note",
+    "id": 23
+   },
+   "shift_midi": {
+    "ch": 2,
+    "kind": "note",
+    "id": 78
+   }
+  },
+  {
+   "id": "d2-jog",
+   "fig": "4",
+   "type": "jog",
+   "label": "JOG",
+   "does": "Scratch or nudge the track; with SHIFT, search (deck 2)",
+   "x": 311.0,
+   "y": 48.5,
+   "w": 128.0,
+   "h": 128.0,
+   "section": "deck",
+   "midi": {
+    "ch": 2,
+    "kind": "cc",
+    "id": 34
+   },
+   "shift_midi": {
+    "ch": 2,
+    "kind": "cc",
+    "id": 31
+   }
+  },
+  {
+   "id": "d2-mode-hot-cue",
+   "fig": "35",
+   "type": "button",
+   "label": "HOT CUE",
+   "does": "Pad mode: hot cue; with SHIFT, hot cue 5-8 (deck 2)",
+   "x": 318.5,
+   "y": 191.0,
+   "w": 25.0,
+   "h": 10.0,
+   "section": "deck",
+   "midi": {
+    "ch": 2,
+    "kind": "note",
+    "id": 27
+   },
+   "shift_midi": {
+    "ch": 2,
+    "kind": "note",
+    "id": 105
+   }
+  },
+  {
+   "id": "d2-mode-auto-loop",
+   "fig": "36",
+   "type": "button",
+   "label": "AUTO LOOP",
+   "does": "Pad mode: auto loop; with SHIFT, roll (deck 2)",
+   "x": 350.0,
+   "y": 191.0,
+   "w": 25.0,
+   "h": 10.0,
+   "section": "deck",
+   "midi": {
+    "ch": 2,
+    "kind": "note",
+    "id": 30
+   },
+   "shift_midi": {
+    "ch": 2,
+    "kind": "note",
+    "id": 107
+   }
+  },
+  {
+   "id": "d2-mode-manual-loop",
+   "fig": "37",
+   "type": "button",
+   "label": "MANUAL LOOP",
+   "does": "Pad mode: manual loop; with SHIFT, hot loop (deck 2)",
+   "x": 382.0,
+   "y": 191.0,
+   "w": 25.0,
+   "h": 10.0,
+   "section": "deck",
+   "midi": {
+    "ch": 2,
+    "kind": "note",
+    "id": 32
+   },
+   "shift_midi": {
+    "ch": 2,
+    "kind": "note",
+    "id": 109
+   }
+  },
+  {
+   "id": "d2-mode-sampler",
+   "fig": "38",
+   "type": "button",
+   "label": "SAMPLER",
+   "does": "Pad mode: sampler; with SHIFT, bank (deck 2)",
+   "x": 414.0,
+   "y": 191.0,
+   "w": 25.0,
+   "h": 10.0,
+   "section": "deck",
+   "midi": {
+    "ch": 2,
+    "kind": "note",
+    "id": 34
+   },
+   "shift_midi": {
+    "ch": 2,
+    "kind": "note",
+    "id": 111
+   }
+  },
+  {
+   "id": "d2-play-pause",
+   "fig": "1",
+   "type": "button",
+   "label": "PLAY/PAUSE",
+   "does": "Start or pause the deck (deck 2)",
+   "x": 317.5,
+   "y": 236.0,
+   "w": 27.0,
+   "h": 24.0,
+   "section": "deck",
+   "midi": {
+    "ch": 2,
+    "kind": "note",
+    "id": 11
+   },
+   "shift_midi": {
+    "ch": 2,
+    "kind": "note",
+    "id": 71
+   }
+  },
+  {
+   "id": "d2-cue",
+   "fig": "2",
+   "type": "button",
+   "label": "CUE",
+   "does": "Set or return to the cue point (deck 2)",
+   "x": 349.0,
+   "y": 236.0,
+   "w": 27.0,
+   "h": 24.0,
+   "section": "deck",
+   "midi": {
+    "ch": 2,
+    "kind": "note",
+    "id": 12
+   },
+   "shift_midi": {
+    "ch": 2,
+    "kind": "note",
+    "id": 72
+   }
+  },
+  {
+   "id": "d2-sync",
+   "fig": "3",
+   "type": "button",
+   "label": "SYNC",
+   "does": "Beat sync on; with SHIFT, sync off (deck 2)",
+   "x": 381.0,
+   "y": 236.0,
+   "w": 27.0,
+   "h": 24.0,
+   "section": "deck",
+   "midi": {
+    "ch": 2,
+    "kind": "note",
+    "id": 88
+   },
+   "shift_midi": {
+    "ch": 2,
+    "kind": "note",
+    "id": 92
+   }
+  },
+  {
+   "id": "d2-shift",
+   "fig": "8",
+   "type": "button",
+   "label": "SHIFT",
+   "does": "Hold for each control's second function (deck 2)",
+   "x": 413.0,
+   "y": 236.0,
+   "w": 27.0,
+   "h": 24.0,
+   "section": "deck",
+   "midi": {
+    "ch": 2,
+    "kind": "note",
+    "id": 63
+   },
+   "shift_midi": null
+  },
+  {
+   "id": "d2-pad-1",
+   "fig": "31",
+   "type": "pad",
+   "label": "PAD 1",
+   "does": "Hot cue A (deck 2, HOT CUE mode)",
+   "x": 317.5,
+   "y": 207.0,
+   "w": 27.0,
+   "h": 27.0,
+   "section": "performance",
+   "midi": {
+    "ch": 9,
+    "kind": "note",
+    "id": 0
+   },
+   "shift_midi": {
+    "ch": 9,
+    "kind": "note",
+    "id": 8
+   }
+  },
+  {
+   "id": "d2-pad-2",
+   "fig": "32",
+   "type": "pad",
+   "label": "PAD 2",
+   "does": "Hot cue B (deck 2, HOT CUE mode)",
+   "x": 349.0,
+   "y": 207.0,
+   "w": 27.0,
+   "h": 27.0,
+   "section": "performance",
+   "midi": {
+    "ch": 9,
+    "kind": "note",
+    "id": 1
+   },
+   "shift_midi": {
+    "ch": 9,
+    "kind": "note",
+    "id": 9
+   }
+  },
+  {
+   "id": "d2-pad-3",
+   "fig": "33",
+   "type": "pad",
+   "label": "PAD 3",
+   "does": "Hot cue C (deck 2, HOT CUE mode)",
+   "x": 381.0,
+   "y": 207.0,
+   "w": 27.0,
+   "h": 27.0,
+   "section": "performance",
+   "midi": {
+    "ch": 9,
+    "kind": "note",
+    "id": 2
+   },
+   "shift_midi": {
+    "ch": 9,
+    "kind": "note",
+    "id": 10
+   }
+  },
+  {
+   "id": "d2-pad-4",
+   "fig": "34",
+   "type": "pad",
+   "label": "PAD 4",
+   "does": "Hot cue D (deck 2, HOT CUE mode)",
+   "x": 413.0,
+   "y": 207.0,
+   "w": 27.0,
+   "h": 27.0,
+   "section": "performance",
+   "midi": {
+    "ch": 9,
+    "kind": "note",
+    "id": 3
+   },
+   "shift_midi": {
+    "ch": 9,
+    "kind": "note",
+    "id": 11
+   }
+  },
+  {
+   "id": "ch1-hi",
+   "fig": "11",
+   "type": "knob",
+   "label": "HI",
+   "does": "EQ high band (channel 1)",
+   "x": 201.0,
+   "y": 22.0,
+   "w": 19.0,
+   "h": 19.0,
+   "section": "mixer",
+   "midi": {
+    "ch": 1,
+    "kind": "cc",
+    "id": 7
+   },
+   "shift_midi": null
+  },
+  {
+   "id": "ch1-mid",
+   "fig": "12",
+   "type": "knob",
+   "label": "MID",
+   "does": "EQ mid band (channel 1)",
+   "x": 201.0,
+   "y": 47.5,
+   "w": 19.0,
+   "h": 19.0,
+   "section": "mixer",
+   "midi": {
+    "ch": 1,
+    "kind": "cc",
+    "id": 11
+   },
+   "shift_midi": null
+  },
+  {
+   "id": "ch1-low",
+   "fig": "13",
+   "type": "knob",
+   "label": "LOW",
+   "does": "EQ low band (channel 1)",
+   "x": 201.0,
+   "y": 73.5,
+   "w": 19.0,
+   "h": 19.0,
+   "section": "mixer",
+   "midi": {
+    "ch": 1,
+    "kind": "cc",
+    "id": 15
+   },
+   "shift_midi": null
+  },
+  {
+   "id": "ch1-filter",
+   "fig": "14",
+   "type": "knob",
+   "label": "FILTER",
+   "does": "Channel filter: LPF left, HPF right (channel 1)",
+   "x": 201.0,
+   "y": 103.0,
+   "w": 19.0,
+   "h": 19.0,
+   "section": "mixer",
+   "midi": {
+    "ch": 7,
+    "kind": "cc",
+    "id": 23
+   },
+   "shift_midi": null
+  },
+  {
+   "id": "ch1-ch-cue",
+   "fig": "15",
+   "type": "button",
+   "label": "CH CUE",
+   "does": "Headphone cue for this channel (channel 1)",
+   "x": 201.5,
+   "y": 137.0,
+   "w": 18.0,
+   "h": 13.0,
+   "section": "mixer",
+   "midi": {
+    "ch": 1,
+    "kind": "note",
+    "id": 84
+   },
+   "shift_midi": {
+    "ch": 1,
+    "kind": "note",
+    "id": 104
+   }
+  },
+  {
+   "id": "ch1-ch-fader",
+   "fig": "10",
+   "type": "fader",
+   "label": "CH FADER",
+   "does": "Channel volume (channel 1)",
+   "x": 204.5,
+   "y": 157.0,
+   "w": 18.0,
+   "h": 62.0,
+   "section": "mixer",
+   "midi": {
+    "ch": 1,
+    "kind": "cc",
+    "id": 19
+   },
+   "shift_midi": null
+  },
+  {
+   "id": "ch2-hi",
+   "fig": "11",
+   "type": "knob",
+   "label": "HI",
+   "does": "EQ high band (channel 2)",
+   "x": 270.5,
+   "y": 22.0,
+   "w": 19.0,
+   "h": 19.0,
+   "section": "mixer",
+   "midi": {
+    "ch": 2,
+    "kind": "cc",
+    "id": 7
+   },
+   "shift_midi": null
+  },
+  {
+   "id": "ch2-mid",
+   "fig": "12",
+   "type": "knob",
+   "label": "MID",
+   "does": "EQ mid band (channel 2)",
+   "x": 270.5,
+   "y": 47.5,
+   "w": 19.0,
+   "h": 19.0,
+   "section": "mixer",
+   "midi": {
+    "ch": 2,
+    "kind": "cc",
+    "id": 11
+   },
+   "shift_midi": null
+  },
+  {
+   "id": "ch2-low",
+   "fig": "13",
+   "type": "knob",
+   "label": "LOW",
+   "does": "EQ low band (channel 2)",
+   "x": 270.5,
+   "y": 73.5,
+   "w": 19.0,
+   "h": 19.0,
+   "section": "mixer",
+   "midi": {
+    "ch": 2,
+    "kind": "cc",
+    "id": 15
+   },
+   "shift_midi": null
+  },
+  {
+   "id": "ch2-filter",
+   "fig": "14",
+   "type": "knob",
+   "label": "FILTER",
+   "does": "Channel filter: LPF left, HPF right (channel 2)",
+   "x": 270.5,
+   "y": 103.0,
+   "w": 19.0,
+   "h": 19.0,
+   "section": "mixer",
+   "midi": {
+    "ch": 7,
+    "kind": "cc",
+    "id": 24
+   },
+   "shift_midi": null
+  },
+  {
+   "id": "ch2-ch-cue",
+   "fig": "15",
+   "type": "button",
+   "label": "CH CUE",
+   "does": "Headphone cue for this channel (channel 2)",
+   "x": 271.0,
+   "y": 137.0,
+   "w": 18.0,
+   "h": 13.0,
+   "section": "mixer",
+   "midi": {
+    "ch": 2,
+    "kind": "note",
+    "id": 84
+   },
+   "shift_midi": {
+    "ch": 2,
+    "kind": "note",
+    "id": 104
+   }
+  },
+  {
+   "id": "ch2-ch-fader",
+   "fig": "10",
+   "type": "fader",
+   "label": "CH FADER",
+   "does": "Channel volume (channel 2)",
+   "x": 273.5,
+   "y": 157.0,
+   "w": 18.0,
+   "h": 62.0,
+   "section": "mixer",
+   "midi": {
+    "ch": 2,
+    "kind": "cc",
+    "id": 19
+   },
+   "shift_midi": null
+  },
+  {
+   "id": "browse",
+   "fig": "27",
+   "type": "encoder",
+   "label": "BROWSE",
+   "does": "Scroll the library",
+   "x": 235.0,
+   "y": 21.5,
+   "w": 20.0,
+   "h": 20.0,
+   "section": "browse",
+   "midi": {
+    "ch": 7,
+    "kind": "cc",
+    "id": 64
+   },
+   "shift_midi": {
+    "ch": 7,
+    "kind": "cc",
+    "id": 100
+   }
+  },
+  {
+   "id": "load-1",
+   "fig": "28",
+   "type": "button",
+   "label": "LOAD",
+   "does": "Load the selected track to the left deck",
+   "x": 220.0,
+   "y": 13.0,
+   "w": 16.0,
+   "h": 8.0,
+   "section": "browse",
+   "midi": {
+    "ch": 7,
+    "kind": "note",
+    "id": 70
+   },
+   "shift_midi": {
+    "ch": 7,
+    "kind": "note",
+    "id": 88
+   }
+  },
+  {
+   "id": "load-2",
+   "fig": "29",
+   "type": "button",
+   "label": "LOAD",
+   "does": "Load the selected track to the right deck",
+   "x": 255.0,
+   "y": 13.0,
+   "w": 16.0,
+   "h": 8.0,
+   "section": "browse",
+   "midi": {
+    "ch": 7,
+    "kind": "note",
+    "id": 71
+   },
+   "shift_midi": {
+    "ch": 7,
+    "kind": "note",
+    "id": 89
+   }
+  },
+  {
+   "id": "back",
+   "fig": "30",
+   "type": "button",
+   "label": "BACK",
+   "does": "Leave the current library folder",
+   "x": 235.5,
+   "y": 48.5,
+   "w": 19.0,
+   "h": 11.0,
+   "section": "browse",
+   "midi": {
+    "ch": 7,
+    "kind": "note",
+    "id": 101
+   },
+   "shift_midi": {
+    "ch": 7,
+    "kind": "note",
+    "id": 102
+   }
+  },
+  {
+   "id": "master-level",
+   "fig": "16",
+   "type": "knob",
+   "label": "MASTER LEVEL",
+   "does": "Master output level (analog, no MIDI)",
+   "x": 235.5,
+   "y": 73.5,
+   "w": 19.0,
+   "h": 19.0,
+   "section": "mixer",
+   "midi": {
+    "ch": 16,
+    "kind": "cc",
+    "id": 0
+   },
+   "shift_midi": null
+  },
+  {
+   "id": "phones-mix",
+   "fig": "17",
+   "type": "knob",
+   "label": "HEADPHONES MIX",
+   "does": "Blend cue and master in the headphones",
+   "x": 235.5,
+   "y": 103.0,
+   "w": 19.0,
+   "h": 19.0,
+   "section": "mixer",
+   "midi": {
+    "ch": 7,
+    "kind": "cc",
+    "id": 5
+   },
+   "shift_midi": null
+  },
+  {
+   "id": "phones-vol",
+   "fig": "18",
+   "type": "knob",
+   "label": "HEADPHONES VOL",
+   "does": "Headphone level (analog, no MIDI)",
+   "x": 235.5,
+   "y": 134.0,
+   "w": 19.0,
+   "h": 19.0,
+   "section": "mixer",
+   "midi": {
+    "ch": 16,
+    "kind": "cc",
+    "id": 1
+   },
+   "shift_midi": null
+  },
+  {
+   "id": "filter-fade",
+   "fig": "19",
+   "type": "button",
+   "label": "FILTER FADE",
+   "does": "Filter-fade on the crossfader (local LED, no MIDI)",
+   "x": 235.0,
+   "y": 210.5,
+   "w": 20.0,
+   "h": 20.0,
+   "section": "mixer",
+   "midi": {
+    "ch": 16,
+    "kind": "note",
+    "id": 0
+   },
+   "shift_midi": null
+  },
+  {
+   "id": "crossfader",
+   "fig": "9",
+   "type": "crossfader",
+   "label": "CROSSFADER",
+   "does": "Blend the left and right decks",
+   "x": 218.0,
+   "y": 239.5,
+   "w": 54.0,
+   "h": 22.0,
+   "section": "mixer",
+   "midi": {
+    "ch": 7,
+    "kind": "cc",
+    "id": 31
+   },
+   "shift_midi": null
+  },
+  {
+   "id": "fx1-1",
+   "fig": "20",
+   "type": "button",
+   "label": "1",
+   "does": "FX 1 slot 1 on",
+   "x": 57.5,
+   "y": 28.5,
+   "w": 16.0,
+   "h": 13.0,
+   "section": "effect",
+   "midi": {
+    "ch": 5,
+    "kind": "note",
+    "id": 71
+   },
+   "shift_midi": {
+    "ch": 5,
+    "kind": "note",
+    "id": 99
+   }
+  },
+  {
+   "id": "fx1-2",
+   "fig": "22",
+   "type": "button",
+   "label": "2",
+   "does": "FX 1 slot 2 on",
+   "x": 81.5,
+   "y": 28.5,
+   "w": 16.0,
+   "h": 13.0,
+   "section": "effect",
+   "midi": {
+    "ch": 5,
+    "kind": "note",
+    "id": 72
+   },
+   "shift_midi": {
+    "ch": 5,
+    "kind": "note",
+    "id": 100
+   }
+  },
+  {
+   "id": "fx1-3",
+   "fig": "25",
+   "type": "button",
+   "label": "3",
+   "does": "FX 1 slot 3 on",
+   "x": 105.5,
+   "y": 28.5,
+   "w": 16.0,
+   "h": 13.0,
+   "section": "effect",
+   "midi": {
+    "ch": 5,
+    "kind": "note",
+    "id": 73
+   },
+   "shift_midi": {
+    "ch": 5,
+    "kind": "note",
+    "id": 101
+   }
+  },
+  {
+   "id": "fx1-level",
+   "fig": "23",
+   "type": "knob",
+   "label": "LEVEL/BEATS",
+   "does": "FX 1 amount; with SHIFT, beat value",
+   "x": 148.5,
+   "y": 20.0,
+   "w": 20.0,
+   "h": 23.0,
+   "section": "effect",
+   "midi": {
+    "ch": 5,
+    "kind": "cc",
+    "id": 2
+   },
+   "shift_midi": {
+    "ch": 5,
+    "kind": "cc",
+    "id": 0
+   }
+  },
+  {
+   "id": "fx2-1",
+   "fig": "21",
+   "type": "button",
+   "label": "1",
+   "does": "FX 2 slot 1 on",
+   "x": 325.5,
+   "y": 28.5,
+   "w": 16.0,
+   "h": 13.0,
+   "section": "effect",
+   "midi": {
+    "ch": 6,
+    "kind": "note",
+    "id": 71
+   },
+   "shift_midi": {
+    "ch": 6,
+    "kind": "note",
+    "id": 99
+   }
+  },
+  {
+   "id": "fx2-2",
+   "fig": "24",
+   "type": "button",
+   "label": "2",
+   "does": "FX 2 slot 2 on",
+   "x": 349.5,
+   "y": 28.5,
+   "w": 16.0,
+   "h": 13.0,
+   "section": "effect",
+   "midi": {
+    "ch": 6,
+    "kind": "note",
+    "id": 72
+   },
+   "shift_midi": {
+    "ch": 6,
+    "kind": "note",
+    "id": 100
+   }
+  },
+  {
+   "id": "fx2-3",
+   "fig": "26",
+   "type": "button",
+   "label": "3",
+   "does": "FX 2 slot 3 on",
+   "x": 374.0,
+   "y": 28.5,
+   "w": 16.0,
+   "h": 13.0,
+   "section": "effect",
+   "midi": {
+    "ch": 6,
+    "kind": "note",
+    "id": 73
+   },
+   "shift_midi": {
+    "ch": 6,
+    "kind": "note",
+    "id": 101
+   }
+  },
+  {
+   "id": "fx2-level",
+   "fig": "27",
+   "type": "knob",
+   "label": "LEVEL/BEATS",
+   "does": "FX 2 amount; with SHIFT, beat value",
+   "x": 416.5,
+   "y": 20.0,
+   "w": 20.0,
+   "h": 23.0,
+   "section": "effect",
+   "midi": {
+    "ch": 6,
+    "kind": "cc",
+    "id": 2
+   },
+   "shift_midi": {
+    "ch": 6,
+    "kind": "cc",
+    "id": 0
+   }
+  }
+ ]
+}

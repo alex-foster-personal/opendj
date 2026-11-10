@@ -370,6 +370,8 @@ class NodeShim {
 			for (const l of node.listeners) {
 				if (l.type === event.type && !l.capture) l.fn.call(node, event);
 			}
+			// stopPropagation(): the rest of this node's listeners ran, ancestors do not.
+			if (event.cancelBubble === true) break;
 		}
 		return true;
 	}

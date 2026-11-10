@@ -462,6 +462,8 @@ def _install_armed_stem_hydration(
 
     app.state.stem_hydration_source = source
     app.state.stem_hydration_data_dir = data_dir
+    if getattr(app.state, "stem_next_up_prefetch", None) is None:
+        app.state.stem_next_up_prefetch = stem_hydration.NextUpStemPrefetcher()
     # This process serves decks, so its registry is the one eviction may trust.
     stem_hydration.OPEN_DECKS.holds_decks = True
     app.state.stem_hydration_unarmed_reason = None
@@ -498,6 +500,7 @@ def _bind_stem_hydration(app: FastAPI, *, data_dir: Path, enabled: bool) -> None
     from apps.cloud.stem_source import arm_stem_hydration_source
 
     app.state.stem_hydration_source = None
+    app.state.stem_next_up_prefetch = None  # unarmed: never prefetch
     app.state.stem_hydration_data_dir = None
     app.state.stem_hydration_unarmed_reason = None
     app.state.stem_hydration_unarmed_kind = None

@@ -89,6 +89,7 @@
 		createAutoPlayFeedSnapshot,
 		getAutoPlayRankOf,
 		setAutoPlayTrackFeed,
+		stepAutoPlayBrowserFeed,
 		getSpotifyPendingTracks,
 		type SpotifyPendingTrack,
 		fillAllTracksFromIndex,
@@ -152,7 +153,8 @@
 	import {
 		createFilterDebounce,
 		recordCollectionSearchTiming,
-		recordFilterTiming,
+		recordFilterDropped,
+		recordFilterTimingOnPaint,
 		recordLibraryLoadTiming,
 		recordPlaylistSwitchFirstRowsMs,
 		recordPlaylistTreeReadyMs,
@@ -236,6 +238,9 @@
 		invalidatePlaylistFirstPage,
 		invalidateAllPlaylistFirstPages,
 		computeNextOnlyRef,
+		nextOnlyReferenceDeck,
+		energyIn,
+		compatibleEnergyNote,
 		bpmConfidenceIn,
 		peekLibraryIndex,
 		compatibleKeyChecked,
@@ -926,8 +931,17 @@
 				key_shift_semitones: s.key_shift_semitones
 			};
 		});
-		return computeNextOnlyRef(slices, compatibleKeyChecked(uiPrefs.compatible_filter));
+		const ref = computeNextOnlyRef(slices, compatibleKeyChecked(uiPrefs.compatible_filter));
+		if (ref === null) return null;
+		// SETPREP-11947: the reference track's MIK energy, for the energy rule.
+		const deck = nextOnlyReferenceDeck(slices, compatibleKeyChecked(uiPrefs.compatible_filter));
+		return { ...ref, energy: energyIn(deck?.stable_id ?? null, peekLibraryIndex()?.items ?? pane.rows) };
 	});
+	const compatibleEnergyNoteText = $derived(
+		uiPrefs.next_only_filter
+			? compatibleEnergyNote(applyLibraryFilters(pane.rows, uiPrefs), nextOnlyRef, uiPrefs.compatible_filter)
+			: null
+	);
 
 	const selectedRowKey = $derived(selectedRowKeyIn(pane.selected_id, [pane.search_results, pane.rows])); // #7599 key wheel Compatible reference
 	const _applyKeyFilterFinal = (rows: BrowserRow[]) => applyLibraryKeyFilter(rows, uiPrefs.library_key_filter); // #7599 hard veto, search fallbacks too
@@ -2803,7 +2817,9 @@
 			uiPrefs.library_key_filter.join(','),
 			uiPrefs.next_only_filter ? 'next-only' : 'all-next',
 			nextOnlyRef?.key ?? '',
-			nextOnlyRef?.bpm ?? ''
+			nextOnlyRef?.bpm ?? '',
+			nextOnlyRef?.energy ?? '',
+			uiPrefs.compatible_filter.energy_mode ?? 'off'
 		].join('|')
 	);
 
@@ -2840,26 +2856,13 @@
 	// current view, and while AutoPlay runs it publishes nothing, so re-sorting
 	// mid-set cannot re-order a set in flight.
 	$effect(() => {
-		const decision = autoPlayFeed.step(
-			uiPrefs.auto_play_enabled,
-			pane.playlist_id,
-			renderedRows.map((r) => ({
-				stable_id: r.stable_id,
-				...(r.edit_id == null ? {} : { edit_id: r.edit_id }),
-				...(r.in_ms == null ? {} : { in_ms: r.in_ms }),
-				...(r.out_ms == null ? {} : { out_ms: r.out_ms }),
-				...(r.is_edit === true ? { is_edit: true } : {}),
-				key: r.key,
-				bpm: r.bpm,
-				// Pending (null) is not playable yet; AutoPlay skips it like a
-				// missing row until the disk probe settles it.
-				file_exists: r.file_exists === true,
-				title: r.title,
-				artist: r.artist
-			})),
-			autoPlayFilterKey,
-			pane.load_progress !== null
-		);
+		const decision = stepAutoPlayBrowserFeed(autoPlayFeed, {
+			enabled: uiPrefs.auto_play_enabled,
+			playlistId: pane.playlist_id,
+			renderedRows,
+			filterKey: autoPlayFilterKey,
+			membershipHydrating: pane.load_progress !== null
+		});
 		autoPlaySnapshotActive = autoPlayFeed.active;
 		autoPlaySnapshotMatchesView = autoPlayFeed.matches(visibleRows);
 		if (decision.publish !== null) setAutoPlayTrackFeed(pane.playlist_id, decision.publish);
@@ -3388,20 +3391,24 @@
 	async function _applyFilter(paneIndex: number, settle: FilterSettle): Promise<void> {
 		const p = panes[paneIndex];
 		p.setSearch(settle.query);
-		// Only the ACTIVE pane owns the visibleRows derived, so a burst that
-		// settles after a pane switch still applies its query but has no
-		// recompute of its own to report.
-		if (paneIndex !== activePane) return;
+		// A burst that settles after a pane switch still applies its query, but never
+		// paints where the user is looking: its keystrokes are DROPPED (S7), not latencies.
+		if (paneIndex !== activePane) {
+			recordFilterDropped(settle.keystrokes);
+			return;
+		}
 		// Wait for the flush so the number below is the pass the user actually
 		// waited on, rather than a second pass run purely to measure the first.
 		await tick();
-		recordFilterTiming({
-			keystrokes: settle.keystrokes,
-			coalescedMs: settle.coalescedMs,
-			computeMs: _lastVisibleComputeMs,
-			rowsIn: wholeCollectionActive ? p.search_results.length : p.rows.length,
-			rowsOut: renderedRows.length
-		});
+		recordFilterTimingOnPaint(
+			{
+				settle,
+				computeMs: _lastVisibleComputeMs,
+				rowsIn: wholeCollectionActive ? p.search_results.length : p.rows.length,
+				rowsOut: renderedRows.length
+			},
+			(cb) => requestAnimationFrame(() => cb(performance.now()))
+		);
 	}
 
 	function setSearch(next: string): void {
@@ -4139,7 +4146,7 @@
 					user-facing label changes, to the one the maintainer asked for.
 				-->
 				<label class="next-only">
-					<CompatibleFilterPopover mode={uiPrefs.compatible_filter.mode}>
+					<CompatibleFilterPopover mode={uiPrefs.compatible_filter.mode} energyNote={compatibleEnergyNoteText}>
 						<input
 							type="checkbox"
 							aria-label="Show only tracks compatible with the reference deck (master, else playing, else any loaded with key and BPM)"
@@ -4238,7 +4245,7 @@
 			/>
 		{:else}
 		<SessionPlayedBanner />
-		<SelectionPlayedLength rows={pane.rows} selectedOrders={pane.selected_orders} />
+		<SelectionPlayedLength visibleRows={renderedRows} rows={pane.rows} selectedOrders={pane.selected_orders} />
 		<OffloadProgress />
 		<LibraryLoadIndicator
 			loading={pane.loading}

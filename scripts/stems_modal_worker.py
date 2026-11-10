@@ -453,8 +453,9 @@ def run(
     transport: str = TRANSPORT_RELAY,
 ) -> int:
     """Separate every track, writing and announcing each as it lands."""
-    from apps.stems.bundle_publish import publish_stems_local
+    from apps.stems.bundle_publish import publish_stems_local, route_stem_codec
 
+    requested_codec = route_stem_codec(tier_key)
     separator, separator_name = load_separator(transport)
     preset = preset_for_tier(tier_key)
     if separator_name not in {TRANSPORT_RELAY, TRANSPORT_DIRECT}:
@@ -498,7 +499,7 @@ def run(
             continue
         track = next(t for t in tracks if t.stable_id == stable_id)
         written, _elapsed = publish_stems_local(
-            stable_id, track.audio_path, result, preset, data_dir
+            stable_id, track.audio_path, result, preset, data_dir, requested_codec=requested_codec
         )
         done += 1
         protocol.emit(

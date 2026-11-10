@@ -6,10 +6,9 @@
  * outgoing-deck unload so the fader never strands.
  *
  * Its own file/featurette, deliberately simple and imperfect - no PSSI
- * phrase-kind mapping exists yet (see anlz-types.ts AnlzPhrase), so "the
- * first drop" is APPROXIMATED as a fixed beat count from where the incoming
- * track's bass enters, mirroring the documented fallback the old PR #1063
- * used when phrase data was absent. All engine interaction happens through
+ * incoming drop timing still uses a bass-entry approximation when phrase
+ * moments are absent; mix-out / mix-in bar choice is in auto-play-windows.ts
+ * when both decks carry phrase analysis (#11180). All engine interaction happens through
  * existing performance commands (beat_loop, eq, seek/play) - this module
  * adds no audio-engine.svelte.ts surface, only pure decision logic plus a
  * thin orchestrator (auto-play-next.svelte.ts) that dispatches them.
@@ -31,12 +30,20 @@
  */
 
 import { exactBeatLoopRangeMs } from '$lib/player/transport/loops';
-import type { AnlzBeat, AnlzWaveform } from '$lib/rb/anlz-types';
+import type { AnlzBeat, AnlzPhrase, AnlzVocals, AnlzWaveform } from '$lib/rb/anlz-types';
+import {
+	beatIndexForBar,
+	hasPhraseAnalysis,
+	mixWindowsForTrack,
+	type AutoPlayMixPair,
+	type AutoPlayMixTrackInput
+} from '$lib/rb/auto-play-windows';
 
 /** Poll-side watchdog: release and disarm if bass never enters within this span. */
 export const AUTO_PLAY_NEXT_MAX_LOOP_MS = 120_000;
 
 const AUTO_PLAY_NEXT_BEAT_LOOP_SPAN = 8;
+export { AUTO_PLAY_NEXT_BEAT_LOOP_SPAN };
 const ONE_SAMPLE_MS_48K = (1 / 48_000) * 1000;
 /** 4/4 bar. B-16 is 16 of these before the end of the grid. */
 const BEATS_PER_BAR = 4;
@@ -109,7 +116,12 @@ function _profile(
 ): [number, number, number] | null {
 	if (startBeatIdx < 0 || startBeatIdx + beatSpan > beats.length) return null;
 	const [lo] = _detailIndexRange(waveform.detail.low, beats, startBeatIdx, durationSec);
-	const [, hi] = _detailIndexRange(waveform.detail.low, beats, startBeatIdx + beatSpan - 1, durationSec);
+	const [, hi] = _detailIndexRange(
+		waveform.detail.low,
+		beats,
+		startBeatIdx + beatSpan - 1,
+		durationSec
+	);
 	const low = _windowMean(waveform.detail.low, lo, hi);
 	const mid = _windowMean(waveform.detail.mid, lo, hi);
 	const high = _windowMean(waveform.detail.high, lo, hi);
@@ -117,20 +129,11 @@ function _profile(
 	return [low, mid, high];
 }
 
-function _downbeatAlignedLoopFits(
-	beats: readonly AnlzBeat[],
-	startBeatIdx: number,
-	beatSpan: number
-): boolean {
-	let snappedStart = startBeatIdx;
-	while (snappedStart < beats.length && beats[snappedStart].n !== 1) {
-		snappedStart += 1;
-	}
-	return snappedStart + beatSpan < beats.length && beats[snappedStart].n === 1;
-}
-
 /** Cosine similarity of two 3-vectors, 0..1 (profiles are non-negative energy). */
-function _similarity(a: readonly [number, number, number], b: readonly [number, number, number]): number {
+function _similarity(
+	a: readonly [number, number, number],
+	b: readonly [number, number, number]
+): number {
 	const dot = a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
 	const magA = Math.hypot(a[0], a[1], a[2]);
 	const magB = Math.hypot(b[0], b[1], b[2]);
@@ -224,6 +227,73 @@ function _findLoopAroundBMinus16(
  * this is an 8-beat span near B-16 (see `_findLoopAroundBMinus16`). Shorter
  * grids use the last repetitive 8-beat window. Null when nothing fits.
  */
+export function autoPlayMixTrackInput(
+	beats: readonly AnlzBeat[],
+	durationSec: number,
+	phrases: readonly AnlzPhrase[],
+	phrasesSource?: string,
+	vocals?: AnlzVocals | null
+): AutoPlayMixTrackInput {
+	const input: AutoPlayMixTrackInput = {
+		beats,
+		duration_sec: durationSec,
+		phrases
+	};
+	if (phrasesSource !== undefined) input.phrases_source = phrasesSource;
+	if (vocals !== undefined) input.vocals = vocals;
+	return input;
+}
+
+export type { AutoPlayMixPair, AutoPlayMixTrackInput };
+
+/**
+ * Ranked phrase windows for one deck, or [] when phrase analysis is absent
+ * (callers keep the B-16 / 8-beat loop fallback).
+ */
+export function autoPlayMixWindows(input: AutoPlayMixTrackInput, role: 'out' | 'in', limit = 5) {
+	return mixWindowsForTrack(input, role, limit);
+}
+
+function _downbeatAlignedLoopFits(
+	beats: readonly AnlzBeat[],
+	startBeatIdx: number,
+	beatSpan: number
+): boolean {
+	let snappedStart = startBeatIdx;
+	while (snappedStart < beats.length && beats[snappedStart].n !== 1) {
+		snappedStart += 1;
+	}
+	return snappedStart + beatSpan < beats.length && beats[snappedStart].n === 1;
+}
+
+/**
+ * Prefer a phrase-ranked mix-out bar when analysis exists; otherwise the
+ * DECKGAP-7691g B-16 / repetitive 8-beat window.
+ */
+export function findAutoPlayNextLoopWindow(
+	waveform: AnlzWaveform,
+	beats: readonly AnlzBeat[],
+	durationSec: number,
+	config: AutoPlayNextConfig,
+	mixInput?: AutoPlayMixTrackInput | null,
+	beatSpan = AUTO_PLAY_NEXT_BEAT_LOOP_SPAN
+): { startBeatIdx: number; endBeatIdx: number; mix_out_bar: number | null } | null {
+	_assertBeats(beats);
+	if (mixInput !== null && mixInput !== undefined && hasPhraseAnalysis(mixInput)) {
+		const ranked = mixWindowsForTrack(mixInput, 'out', 1);
+		const best = ranked[0];
+		if (best !== undefined) {
+			const startBeatIdx = beatIndexForBar(beats, best.start_bar);
+			if (startBeatIdx !== null && _downbeatAlignedLoopFits(beats, startBeatIdx, beatSpan)) {
+				return { startBeatIdx, endBeatIdx: startBeatIdx + beatSpan, mix_out_bar: best.start_bar };
+			}
+		}
+	}
+	const fallback = findRepetitiveLoopWindow(waveform, beats, durationSec, config, beatSpan);
+	if (fallback === null) return null;
+	return { ...fallback, mix_out_bar: null };
+}
+
 export function findRepetitiveLoopWindow(
 	waveform: AnlzWaveform,
 	beats: readonly AnlzBeat[],

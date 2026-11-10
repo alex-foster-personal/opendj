@@ -161,12 +161,15 @@ class AttachmentOut(BaseModel):
     """A screenshot pasted into a comment pin (issue #1333, part 2 of #928).
 
     ``url`` is the GET route that streams the stored bytes back (relative,
-    same convention as ``issue_url`` on ``CommentOut``); ``content_type`` and
-    ``size_bytes`` are recorded once, at upload time, so a caller can decide
-    whether to fetch the bytes without a HEAD round trip first. The bytes
-    themselves live under ``<data-dir>/feedback/attachments/`` - see
-    ``feedback_attachments.py``, the module that actually writes and serves
-    them; this file only owns the small record ``comments.json`` carries.
+    same convention as ``issue_url`` on ``CommentOut``); ``content_type``,
+    ``size_bytes``, and ``content_hash`` are recorded once, at upload time, so
+    a caller can decide whether to fetch the bytes without a HEAD round trip
+    first. ``content_hash`` is a lowercase hex SHA-256 of the stored bytes for
+    a later asset-tier push; it is absent on attachments uploaded before issue
+    #11234. The bytes themselves live under
+    ``<data-dir>/feedback/attachments/`` - see ``feedback_attachments.py``, the
+    module that actually writes and serves them; this file only owns the small
+    record ``comments.json`` carries.
     """
 
     model_config = ConfigDict(frozen=True)
@@ -175,6 +178,7 @@ class AttachmentOut(BaseModel):
     content_type: str
     size_bytes: int
     url: str
+    content_hash: str | None = None
 
 
 class CommentReplyOut(BaseModel):

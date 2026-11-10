@@ -107,7 +107,10 @@ jobs:
     # Runner is a repo-variable switch; see ci.yml's `test` job for the full
     # rationale. Empty vars.CI_RUNS_ON_LINUX -> hosted ubuntu-latest.
     runs-on: ${{ fromJSON(vars.CI_RUNS_ON_LINUX || '"ubuntu-latest"') }}
-    timeout-minutes: 20
+    # 45, not 20: the periodic row-1 run hit 20 on 7/7 nights (21-28 Sep
+    # 2026, audit #4264 F5) and produced no result. Pinned by
+    # tests/quality/test_periodic_checks_window_failure_alarm.py.
+    timeout-minutes: 45
 
     steps:
       # Pre-checkout hygiene for the persistent self-hosted workspace (#1338).

@@ -50,10 +50,15 @@ from apps.autodj.styles import STYLES
 
 #: Spec 09-transitions-fx 4.2: the outgoing deck's color ECHO send and its dry level (0..1), and the action that
 #: puts the effect, its knob and the dry back to their pre-plan values.
-FX_CONTROLS: frozenset[str] = frozenset({"fx_echo", "fx_dry"})
+#: #10246: fx_noise rides the color NOISE (level 0..1 as the PARAMETER, sweep -1..1 as the COLOR knob).
+FX_CONTROLS: frozenset[str] = frozenset({"fx_echo", "fx_dry", "fx_noise"})
 FX_ACTIONS: frozenset[str] = frozenset({"fx_reset"})
-#: #9848 empties this when compile.py and agent-plan.ts carry the fx controls.
-PAGE_PENDING_FX: frozenset[str] = FX_CONTROLS | FX_ACTIONS
+#: fx_noise's fields, in the order one event splits into.
+NOISE_FIELDS: tuple[str, ...] = ("level", "sweep")
+#: #9848 empties this when compile.py and agent-plan.ts carry the fx controls. fx_noise is compiled and the page
+#: parses it, refusing it with its own reason until NOISE exists (#9804), so live validation does not name it here;
+#: a plan with fx_noise still carries fx_reset, which stays pending on #9848.
+PAGE_PENDING_FX: frozenset[str] = frozenset({"fx_echo", "fx_dry", "fx_reset"})
 #: Per-deck controls a plan may set or ramp, and the bus command each becomes.
 DECK_CONTROLS: frozenset[str] = frozenset({"fader", "trim", "filter", "eq_low", "eq_mid", "eq_high", "tempo"}) | (
     FX_CONTROLS
@@ -196,13 +201,34 @@ def _member(value: Any, allowed: frozenset[str], where: str) -> str:
     return value
 
 
-def _single(mapping: Any, where: str) -> tuple[str, float]:
+def _single(mapping: Any, where: str) -> tuple[str, Any]:
     if not isinstance(mapping, Mapping) or len(mapping) != 1:
         raise PlanError(f'{where} must name exactly one control, e.g. {{"fader": 1.0}}')
     ((name, value),) = mapping.items()
     if name not in CONTROLS:
         raise PlanError(f"{where} control {name!r} is not one of {sorted(CONTROLS)}")
+    if name == "fx_noise":
+        return str(name), value
     return str(name), _number(value, f"{where}.{name}")
+
+
+def _noise_fields(value: Any, where: str) -> list[tuple[str, float]]:
+    """fx_noise's ``{level, sweep}`` object as ``(field, value)`` pairs in :data:`NOISE_FIELDS` order."""
+    if not isinstance(value, Mapping) or not value:
+        raise PlanError(f'{where} must be an object with level and/or sweep, e.g. {{"level": 0.8, "sweep": 0.7}}')
+    unknown = [key for key in value if key not in NOISE_FIELDS]
+    if unknown:
+        raise PlanError(f"{where} field {unknown[0]!r} is not one of {list(NOISE_FIELDS)}")
+    pairs: list[tuple[str, float]] = []
+    for key in NOISE_FIELDS:
+        if key not in value:
+            continue
+        number = _number(value[key], f"{where}.{key}")
+        low = 0.0 if key == "level" else -1.0
+        if not low <= number <= 1.0:
+            raise PlanError(f"{where}.{key} must be within {low:g}..1, got {number:g}")
+        pairs.append((key, number))
+    return pairs
 
 
 def _check_control(name: str, value: float, deck: int | None, where: str) -> None:
@@ -218,7 +244,7 @@ def _check_control(name: str, value: float, deck: int | None, where: str) -> Non
         raise PlanError(f"{where}: {name} must be within 0..1 (bus control units), got {value}")
 
 
-def _event(document: Any, index: int) -> PlanEvent:
+def _event(document: Any, index: int) -> list[PlanEvent]:
     where = f"events[{index}]"
     if not isinstance(document, Mapping):
         raise PlanError(f"{where} must be an object")
@@ -233,15 +259,24 @@ def _event(document: Any, index: int) -> PlanEvent:
         action = _member(document["do"], ACTIONS, f"{where}.do")
         if deck is None:
             raise PlanError(f"{where}: do {action} needs a deck")
-        return PlanEvent(at_bar=at_bar, deck=deck, kind="do", name=str(action))
+        return [PlanEvent(at_bar=at_bar, deck=deck, kind="do", name=str(action))]
     name, value = _single(document[kind], f"{where}.{kind}")
-    _check_control(name, value, deck, where)
+    if name == "fx_noise":
+        if deck is None:
+            raise PlanError(f"{where}: fx_noise needs a deck")
+        fields = _noise_fields(value, f"{where}.{kind}.fx_noise")
+    else:
+        _check_control(name, value, deck, where)
+        fields = [(None, value)]
     over_bars = 0.0
     if kind == "ramp":
         over_bars = _number(document.get("over_bars", 0), f"{where}.over_bars")
         if over_bars <= 0:
             raise PlanError(f"{where}: a ramp needs over_bars > 0 (use set for a jump)")
-    return PlanEvent(at_bar=at_bar, deck=deck, kind=kind, name=name, value=value, over_bars=over_bars)
+    return [
+        PlanEvent(at_bar=at_bar, deck=deck, kind=kind, name=name, value=number, over_bars=over_bars, field=part)
+        for part, number in fields
+    ]
 
 
 def _tempo_mode(document: Mapping[str, Any]) -> str:
@@ -321,7 +356,11 @@ def parse_plan(document: Any) -> TransitionPlan:
     shape = document.get("shape")
     if shape is not None and shape not in SHAPES:
         raise PlanError(f"shape must be one of {sorted(SHAPES)} or null, got {shape!r}")
-    parsed_events = [_in_field(f"events[{index}]", partial(_event, event, index)) for index, event in enumerate(events)]
+    parsed_events = [
+        parsed
+        for index, event in enumerate(events)
+        for parsed in _in_field(f"events[{index}]", partial(_event, event, index))
+    ]
     return TransitionPlan(
         out=_in_field("out", lambda: _side(document.get("out"), "out")),
         in_=_in_field("in", lambda: _side(document.get("in"), "in")),
@@ -387,7 +426,9 @@ def _value_at(events: list[PlanEvent], deck: int | None, control: str, at: float
 
 
 def _lane(events: list[PlanEvent], deck: int | None, control: str) -> list[PlanEvent]:
-    """The control's sets and ramps in bar order (stable, so same-bar events keep plan order)."""
+    """The control's sets and ramps in bar order (stable, so same-bar events keep plan order).
+
+    Field-split controls (fx_noise) are read with :func:`_field_end`, never here."""
     return sorted(
         (e for e in events if e.deck == deck and e.name == control and e.kind in ("set", "ramp")),
         key=lambda e: e.at_bar,
@@ -1132,8 +1173,19 @@ def _fx_errors(plan: TransitionPlan) -> list[str]:
         return errors
     if not any(e.kind == "do" and e.name == "fx_reset" and e.deck == out and e.at_bar == plan.bars for e in plan.events):
         errors.append(
-            f"the plan sets fx_echo/fx_dry but never runs fx_reset at the handover (bar {plan.bars}): "
-            "the deck would keep its echo"
+            f"the plan sets {', '.join(sorted({e.name for e in plan.events if e.name in FX_CONTROLS}))} but never "
+            f"runs fx_reset at the handover (bar {plan.bars}): the deck would keep its effect"
+        )
+    level = _field_end(plan, out, "fx_noise", "level")
+    if level is not None and level > 1e-9:
+        errors.append(
+            f"fx_noise level is {level:g} at the plan's end (bar {plan.bars}): cut the noise to 0 by the handover, "
+            "or the next track starts under it"
+        )
+    sweep = _field_end(plan, out, "fx_noise", "sweep")
+    if sweep is not None and abs(sweep) > 1e-9:
+        errors.append(
+            f"fx_noise sweep is {sweep:g} at the plan's end (bar {plan.bars}): bring the sweep back to 0 by the handover"
         )
     dry_close_end = 0.0
     for event in plan.events:
@@ -1151,6 +1203,15 @@ def _fx_errors(plan: TransitionPlan) -> list[str]:
             "fx_reset would cut the echo tail"
         )
     return errors
+
+
+def _field_end(plan: TransitionPlan, deck: int, name: str, field: str) -> float | None:
+    """A field-split control's value at the plan's end: the latest-starting set or ramp wins, at its target."""
+    lane = sorted(
+        (e for e in plan.events if e.deck == deck and e.name == name and e.field == field and e.kind != "do"),
+        key=lambda e: e.at_bar,
+    )
+    return lane[-1].value if lane else None
 
 
 def _gives_way(event: PlanEvent, out_deck: int) -> bool:

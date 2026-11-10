@@ -1,5 +1,5 @@
 /**
- * Library "next-only" appropriateness: Camelot family + BPM window.
+ * Library "next-only" appropriateness: Camelot family + BPM window + energy rule.
  */
 import {
 	compatibleKeyShift,
@@ -54,6 +54,8 @@ export function selectSearchFilterFallback<T>(
 export interface NextOnlyRef {
 	key: string | null;
 	bpm: number | null;
+	/** SETPREP-11947: the reference track's MIK energy; null/absent = unknown, energy rule skipped. */
+	energy?: number | null;
 }
 
 export interface NextOnlyDeckSlice {
@@ -102,29 +104,86 @@ export function computeNextOnlyRef(
 	states: readonly NextOnlyDeckSlice[],
 	needsKey: boolean = true
 ): NextOnlyRef | null {
+	const s = nextOnlyReferenceDeck(states, needsKey);
+	if (s === null || !bpmIsKnown(s.bpm, s.bpm_confidence)) return null;
+	if (!(typeof s.pitch === 'number' && s.pitch > 0)) {
+		throw new Error(`computeNextOnlyRef: reference deck ${s.stable_id} has no tempo ratio; pass pitch`);
+	}
+	const bpm = s.bpm * s.pitch;
+	if (s.key === null) return { key: null, bpm };
+	// Match against the key the deck is heard in, not its source key.
+	const shift = s.key_shift_semitones;
+	if (!Number.isInteger(shift)) {
+		throw new Error(
+			`computeNextOnlyRef: reference deck ${s.stable_id} has no key shift; pass key_shift_semitones`
+		);
+	}
+	return { key: shift === 0 ? s.key : effectiveCamelotKey(s.key, shift), bpm };
+}
+
+/** The deck computeNextOnlyRef takes as the reference, or null. */
+export function nextOnlyReferenceDeck(
+	states: readonly NextOnlyDeckSlice[],
+	needsKey: boolean = true
+): NextOnlyDeckSlice | null {
 	const ordered = [
 		...states.filter((s) => s.is_master && s.stable_id !== null),
 		...states.filter((s) => s.playing && s.stable_id !== null),
 		...states.filter((s) => s.stable_id !== null)
 	];
 	for (const s of ordered) {
-		if ((s.key !== null || !needsKey) && bpmIsKnown(s.bpm, s.bpm_confidence)) {
-			if (!(typeof s.pitch === 'number' && s.pitch > 0)) {
-				throw new Error(`computeNextOnlyRef: reference deck ${s.stable_id} has no tempo ratio; pass pitch`);
-			}
-			const bpm = s.bpm * s.pitch;
-			if (s.key === null) return { key: null, bpm };
-			// Match against the key the deck is heard in, not its source key.
-			const shift = s.key_shift_semitones;
-			if (!Number.isInteger(shift)) {
-				throw new Error(
-					`computeNextOnlyRef: reference deck ${s.stable_id} has no key shift; pass key_shift_semitones`
-				);
-			}
-			return { key: shift === 0 ? s.key : effectiveCamelotKey(s.key, shift), bpm };
-		}
+		if ((s.key !== null || !needsKey) && bpmIsKnown(s.bpm, s.bpm_confidence)) return s;
 	}
 	return null;
+}
+
+/** SETPREP-11947: an energy is known when it is a finite number. */
+export function energyIsKnown(e: number | null | undefined): e is number {
+	return typeof e === 'number' && Number.isFinite(e);
+}
+
+/** SETPREP-11947: the library's MIK energy for a loaded deck track, from the held rows. */
+export function energyIn(
+	stableId: string | null,
+	rows: readonly { stable_id: string; energy?: number | null }[] | null | undefined
+): number | null {
+	if (stableId === null || !rows) return null;
+	const e = rows.find((r) => r.stable_id === stableId)?.energy;
+	return energyIsKnown(e) ? e : null;
+}
+
+/** SETPREP-11947: the energy rule. Off (or absent) and an unknown reference
+ * energy keep every row; a row with no energy is excluded otherwise. */
+export function energyMatchesCompatiblePrefs(
+	rowEnergy: number | null | undefined,
+	refEnergy: number | null | undefined,
+	prefs: CompatibleFilterPrefs
+): boolean {
+	const mode = prefs.energy_mode;
+	if (mode === undefined || mode === 'off') return true;
+	if (!energyIsKnown(refEnergy)) return true;
+	if (!energyIsKnown(rowEnergy)) return false;
+	const d = rowEnergy - refEnergy;
+	if (mode === 'within_1') return d >= -1 && d <= 1;
+	if (mode === 'boost') return d >= 1 && d <= 2;
+	if (mode === 'drop') return d >= -2 && d <= -1;
+	throw new Error(`energyMatchesCompatiblePrefs: unknown energy_mode ${String(mode)}`);
+}
+
+export const ENERGY_RULE_SKIPPED_NOTE = 'Energy rule skipped: the reference track has no energy';
+
+/** SETPREP-11947: the panel note for the energy rule, or null when there is nothing to say. */
+export function compatibleEnergyNote(
+	rows: readonly { energy?: number | null }[],
+	ref: NextOnlyRef | null,
+	prefs: CompatibleFilterPrefs
+): string | null {
+	const mode = prefs.energy_mode;
+	if (mode === undefined || mode === 'off' || ref === null) return null;
+	if (!energyIsKnown(ref.energy)) return ENERGY_RULE_SKIPPED_NOTE;
+	const n = rows.filter((r) => !energyIsKnown(r.energy)).length;
+	if (n === 0) return null;
+	return n === 1 ? '1 row has no energy' : `${n} rows have no energy`;
 }
 
 export function bpmMatchesCompatiblePrefs(
@@ -189,7 +248,7 @@ export function compatibleRowKeyShift(
 }
 
 export function isAppropriateNext(
-	row: { key: string | null; bpm: number | null; bpm_confidence?: number | null },
+	row: { key: string | null; bpm: number | null; bpm_confidence?: number | null; energy?: number | null },
 	ref: NextOnlyRef,
 	prefs: CompatibleFilterPrefs = COMPATIBLE_FILTER_DEFAULTS
 ): boolean {
@@ -197,6 +256,7 @@ export function isAppropriateNext(
 		// No rule ticked means the key is not checked: BPM alone decides.
 		(!compatibleKeyChecked(prefs) || compatibleRowKeyShift(row.key, ref.key, prefs) !== null) &&
 		// COMPATBPM-03: a placeholder BPM (confidence 0) is unknown, never a match.
-		bpmMatchesCompatiblePrefs(bpmIsKnown(row.bpm, row.bpm_confidence) ? row.bpm : null, ref.bpm, prefs)
+		bpmMatchesCompatiblePrefs(bpmIsKnown(row.bpm, row.bpm_confidence) ? row.bpm : null, ref.bpm, prefs) &&
+		energyMatchesCompatiblePrefs(row.energy, ref.energy, prefs)
 	);
 }

@@ -34,6 +34,7 @@ injecting the named defect; see the PR body for the output):
 """
 from __future__ import annotations
 
+import hashlib
 import io
 import json
 import logging
@@ -511,16 +512,17 @@ def test_attachment_metadata_syncs_and_the_missing_bytes_are_reported(
 ) -> None:
     """[if] a screenshot pin syncs [then] missing bytes are reported, [else stop]."""
     pin = air.drop("see screenshot")
+    png = _png()
     uploaded = air.http.post(
         f"/api/v1/feedback/comments/{pin['id']}/attachment",
-        files={"file": ("shot.png", _png(), "image/png")},
+        files={"file": ("shot.png", png, "image/png")},
     )
     assert uploaded.status_code == 201, uploaded.text
     air.sync()
     silver.sync()
-
     attachment = silver.pins()[pin["id"]]["attachment"]
     assert attachment == uploaded.json()["attachment"]
+    assert attachment["content_hash"] == hashlib.sha256(png).hexdigest()
     fetched = silver.http.get(attachment["url"])
     assert fetched.status_code == 404
     assert fetched.json()["detail"]["code"] == "ATTACHMENT_BYTES_NOT_SYNCED"
@@ -528,3 +530,84 @@ def test_attachment_metadata_syncs_and_the_missing_bytes_are_reported(
     assert on_silver["pins"][0]["attachment_bytes"] == "missing"
     assert on_silver["store"]["attachments_missing"] == 1
     assert air.status(pin["id"])["pins"][0]["attachment_bytes"] == "present"
+
+
+# ----- attachment content_hash (issue #11234) ---------------------------------
+
+
+def _attachment_without_hash(attachment_id: str) -> dict[str, Any]:
+    return {
+        "id": attachment_id,
+        "content_type": "image/png",
+        "size_bytes": 123,
+        "url": f"/api/v1/feedback/attachments/{attachment_id}",
+    }
+
+
+@pytest.mark.requirement("FBSYNC-12073")
+def test_upload_records_lowercase_sha256_content_hash(air: Engine) -> None:
+    """[if] a pin screenshot uploads [then] attachment has 64-char lowercase sha256, [else stop]."""
+    pin = air.drop("hash me")
+    png = _png()
+    uploaded = air.http.post(
+        f"/api/v1/feedback/comments/{pin['id']}/attachment",
+        files={"file": ("shot.png", png, "image/png")},
+    )
+    assert uploaded.status_code == 201, uploaded.text
+    content_hash = uploaded.json()["attachment"]["content_hash"]
+    assert content_hash == hashlib.sha256(png).hexdigest()
+    assert len(content_hash) == 64
+    assert content_hash == content_hash.lower()
+
+
+@pytest.mark.requirement("FBSYNC-12073")
+def test_synced_attachment_metadata_includes_content_hash(air: Engine, silver: Engine) -> None:
+    """[if] a hashed pin syncs A to B [then] B attachment content_hash matches A, [else stop]."""
+    pin = air.drop("sync hash")
+    png = _png()
+    air.http.post(
+        f"/api/v1/feedback/comments/{pin['id']}/attachment",
+        files={"file": ("shot.png", png, "image/png")},
+    )
+    air.sync()
+    silver.sync()
+    expected = hashlib.sha256(png).hexdigest()
+    on_b = silver.pins()[pin["id"]]["attachment"]
+    assert on_b["content_hash"] == expected
+    assert silver.row(pin["id"]) is not None
+    stored = json.loads(silver.row(pin["id"])[0])
+    assert stored["attachment"]["content_hash"] == expected
+
+
+@pytest.mark.requirement("FBSYNC-12073")
+def test_synced_attachment_without_local_bytes_still_404s_not_synced(
+    air: Engine, silver: Engine
+) -> None:
+    """[if] B has no local file [then] GET answers ATTACHMENT_BYTES_NOT_SYNCED, [else stop]."""
+    pin = air.drop("bytes gap")
+    air.http.post(
+        f"/api/v1/feedback/comments/{pin['id']}/attachment",
+        files={"file": ("shot.png", _png(), "image/png")},
+    )
+    air.sync()
+    silver.sync()
+    attachment = silver.pins()[pin["id"]]["attachment"]
+    fetched = silver.http.get(attachment["url"])
+    assert fetched.status_code == 404
+    assert fetched.json()["detail"]["code"] == "ATTACHMENT_BYTES_NOT_SYNCED"
+    assert silver.status(pin["id"])["pins"][0]["attachment_bytes"] == "missing"
+
+
+@pytest.mark.requirement("FBSYNC-12073")
+def test_legacy_attachment_without_content_hash_still_loads(air: Engine) -> None:
+    """[if] a pin lacks content_hash [then] GET /comments still lists it, [else stop]."""
+    pin_id = "legacyatt000"
+    air.seed({
+        **_pin_doc(pin_id, "old screenshot", _T_OLD, "air"),
+        "attachment": _attachment_without_hash("abcabcabcabc"),
+    })
+    comments = air.http.get("/api/v1/feedback/comments")
+    assert comments.status_code == 200, comments.text
+    loaded = comments.json()["comments"][0]["attachment"]
+    assert loaded["id"] == "abcabcabcabc"
+    assert "content_hash" not in loaded or loaded.get("content_hash") is None

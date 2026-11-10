@@ -12,3 +12,28 @@ export function summarizeReorder(previous: string[], proposed: string[]): Reorde
 	const moved = proposed.reduce((count, id, i) => count + (previous[i] === id ? 0 : 1), 0);
 	return { movedCount: moved, unchanged: moved === 0 };
 }
+
+const TERM_ORDER = ['key', 'bpm', 'energy', 'artist'] as const;
+
+/** Header line for edges the solver could not fully score. Null when none. */
+export function formatUnscoredEdges(
+	unscoredEdges: number,
+	totalEdges: number,
+	missingTerms: readonly string[]
+): string | null {
+	if (unscoredEdges <= 0) {
+		return null;
+	}
+	const seen = new Set(missingTerms);
+	const reasons: string[] = [];
+	for (const term of TERM_ORDER) {
+		if (seen.delete(term)) {
+			reasons.push(`${term} missing`);
+		}
+	}
+	for (const term of seen) {
+		reasons.push(`${term} missing`);
+	}
+	const suffix = reasons.length > 0 ? ` (${reasons.join(', ')})` : '';
+	return `${unscoredEdges} of ${totalEdges} edges unscored${suffix}`;
+}

@@ -1,0 +1,40 @@
+{
+	"disabledRules": [
+		{
+			"rule": "color-contrast",
+			"reason": "Owned by UICONTRAST-01 (tests/e2e/ui-contrast-audit.spec.ts), which measures composited backdrops, SVG fills and forced :hover per skin; axe reads declared colours and would double-report with a weaker instrument. That spec is quarantined on #8527."
+		}
+	],
+	"findings": [
+		{
+			"rule": "nested-interactive",
+			"selector": "div[data-testid=\"playlist-folder\"]",
+			"surfaces": ["performance-more", "performance-less", "library-context-menu"],
+			"reason": "Playlists folder row is role=button for expand and hosts grid/create controls; restructuring to separate hit targets is tracked under browser tree UX epic #10346."
+		},
+		{
+			"rule": "nested-interactive",
+			"selector": "div[data-playlist-id=\"e2e-fixture-empty\"]",
+			"surfaces": ["performance-more", "performance-less", "library-context-menu"],
+			"reason": "Playlist tree rows are draggable role=button shells with inline action links; flattening that pattern needs a dedicated playlist-tree a11y pass in #10346."
+		},
+		{
+			"rule": "nested-interactive",
+			"selector": "div[data-playlist-id=\"e2e-fixture-populated\"]",
+			"surfaces": ["performance-more", "performance-less", "library-context-menu"],
+			"reason": "Playlist tree rows are draggable role=button shells with inline action links; flattening that pattern needs a dedicated playlist-tree a11y pass in #10346."
+		},
+		{
+			"rule": "nested-interactive",
+			"selector": ".tab[role=\"tab\"][draggable=\"true\"]",
+			"surfaces": ["performance-more", "performance-less"],
+			"reason": "Active pane tab is a draggable tabpanel chrome with lock, stepper and close buttons; redesign is deferred to multi-pane browser a11y work in #10346."
+		},
+		{
+			"rule": "nested-interactive",
+			"selector": ".tab.active[role=\"tab\"]",
+			"surfaces": ["library-context-menu"],
+			"reason": "Active pane tab is a draggable tabpanel chrome with lock, stepper and close buttons; redesign is deferred to multi-pane browser a11y work in #10346."
+		}
+	]
+}

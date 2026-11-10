@@ -1,0 +1,9 @@
+{
+  "bytes": 256,
+  "measured_main": 509338,
+  "measured_with_pr": 509495,
+  "sha": "1e897c8bb396",
+  "date": "Tue 10 Nov 2026",
+  "reason": "Issue #11180 shares auto-play-windows.ts on other-lazy; CI measured +157 B gzip over main; ceiled to 256 B allowance.",
+  "payback": "none planned; phrase window helpers on the shared lazy surface"
+}

@@ -25,7 +25,8 @@
  * fires them in bursts.
  *
  * Ring row kinds owned here:
- *   library-filter              - one settled local filter interaction
+ *   library-filter              - one settled local filter interaction (per-keystroke
+ *                                keystroke_ms on paint, or dropped after pane switch)
  *   library-load-all-tracks     - one completed All Tracks cursor walk
  *   library-load-playlist       - one completed playlist hydrate
  *   library-playlist-tree-ready - playlist tree first paint after boot
@@ -114,6 +115,8 @@ export interface FilterSettle {
 	keystrokes: number;
 	/** First keystroke of the burst to this settle, in ms. */
 	coalescedMs: number;
+	/** `now()` time of every keystroke in the burst, in order. */
+	readonly keyAt: readonly number[];
 }
 
 export interface FilterDebounce {
@@ -131,17 +134,18 @@ export interface FilterDebounce {
  * Coalesce a keystroke burst into a single settle.
  *
  * Trailing-edge only: the point is that the intermediate queries are never
- * filtered on, so there is no leading call. `now` is injected so the coalesced
- * span is measurable under mocked timers.
+ * filtered on, so there is no leading call. The default clock is
+ * `performance.now` so keystroke times share the same clock as the rAF paint
+ * timestamp; inject `now` for mocked timers in Node tests.
  */
 export function createFilterDebounce(
 	onSettle: (settle: FilterSettle) => void,
 	delayMs: number = LOCAL_FILTER_DEBOUNCE_MS,
-	now: () => number = () => Date.now()
+	now: () => number = () => performance.now()
 ): FilterDebounce {
 	let timer: ReturnType<typeof setTimeout> | null = null;
 	let keystrokes = 0;
-	let firstKeyAt = 0;
+	const keyAt: number[] = [];
 	let latest = '';
 
 	function _settle(): void {
@@ -150,11 +154,13 @@ export function createFilterDebounce(
 		const burst: FilterSettle = {
 			query: latest,
 			keystrokes,
-			coalescedMs: Math.max(0, Math.round(now() - firstKeyAt))
+			coalescedMs: Math.max(0, Math.round(now() - keyAt[0])),
+			keyAt: [...keyAt]
 		};
 		// Cleared BEFORE the callback so a keystroke arriving during it opens a
 		// new interaction rather than inflating the one just reported.
 		keystrokes = 0;
+		keyAt.length = 0;
 		onSettle(burst);
 	}
 
@@ -163,7 +169,7 @@ export function createFilterDebounce(
 			return timer !== null;
 		},
 		push(query: string): void {
-			if (keystrokes === 0) firstKeyAt = now();
+			keyAt.push(now());
 			keystrokes += 1;
 			latest = query;
 			if (timer !== null) clearTimeout(timer);
@@ -175,6 +181,7 @@ export function createFilterDebounce(
 				timer = null;
 			}
 			keystrokes = 0;
+			keyAt.length = 0;
 		},
 		flush(): void {
 			if (timer === null) return;
@@ -186,8 +193,13 @@ export function createFilterDebounce(
 
 // ------------------------------------------------------------- recorders
 
+/** One latency per keystroke: first key first, paintedAt minus each key time. */
+export function keystrokeLatencies(keyAt: readonly number[], paintedAt: number): number[] {
+	return keyAt.map((t) => Math.max(0, Math.round(paintedAt - t)));
+}
+
 /**
- * One settled local filter interaction.
+ * One settled local filter interaction after paint.
  *
  * `keystrokes` is what makes the row readable: without it a 6-keypress burst
  * and a single keypress look identical, and the whole point of the debounce is
@@ -201,13 +213,57 @@ export function recordFilterTiming(args: {
 	/** Pane rows the pass started from (the real denominator). */
 	rowsIn: number;
 	rowsOut: number;
+	keystrokeMs: readonly number[];
+	dropped: number;
 }): void {
-	recordPerfTiming('library-filter', {
-		keystrokes: args.keystrokes,
-		coalesced_ms: Math.round(args.coalescedMs),
-		compute_ms: Math.round(args.computeMs),
-		rows_in: args.rowsIn,
-		rows_out: args.rowsOut
+	recordPerfTiming(
+		'library-filter',
+		{
+			keystrokes: args.keystrokes,
+			coalesced_ms: Math.round(args.coalescedMs),
+			compute_ms: Math.round(args.computeMs),
+			rows_in: args.rowsIn,
+			rows_out: args.rowsOut,
+			dropped: args.dropped
+		},
+		null,
+		undefined,
+		{ keystroke_ms: [...args.keystrokeMs] }
+	);
+}
+
+/**
+ * Record one settled filter on the active pane after the first painted frame.
+ */
+export function recordFilterTimingOnPaint(
+	args: {
+		settle: FilterSettle;
+		computeMs: number;
+		rowsIn: number;
+		rowsOut: number;
+	},
+	raf: (cb: (t: number) => void) => void
+): void {
+	raf((paintedAt) => {
+		recordFilterTiming({
+			keystrokes: args.settle.keystrokes,
+			coalescedMs: args.settle.coalescedMs,
+			computeMs: args.computeMs,
+			rowsIn: args.rowsIn,
+			rowsOut: args.rowsOut,
+			keystrokeMs: keystrokeLatencies(args.settle.keyAt, paintedAt),
+			dropped: 0
+		});
+	});
+}
+
+/**
+ * Keystrokes whose burst settled after a pane switch (never painted on screen).
+ */
+export function recordFilterDropped(keystrokes: number): void {
+	if (keystrokes <= 0) return;
+	recordPerfTiming('library-filter', { keystrokes, dropped: keystrokes }, null, undefined, {
+		keystroke_ms: []
 	});
 }
 

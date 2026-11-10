@@ -46,8 +46,10 @@ from apps.opendj_cli.mcp_enrichment_tools import register_enrichment_tools
 from apps.opendj_cli.mcp_genre_tools import register_genre_tools
 from apps.opendj_cli.mcp_key_tools import register_key_tools
 from apps.opendj_cli.mcp_offload_tools import register_offload_tools
+from apps.opendj_cli.mcp_list_totals_tools import register_list_totals_tools
 from apps.opendj_cli.mcp_played_length_tools import register_played_length_tools
 from apps.opendj_cli.mcp_rekordbox_analyse_tools import register_rekordbox_analyse_tools
+from apps.opendj_cli.mcp_requests_tools import register_requests_tools
 from apps.opendj_cli.mcp_safety import (
     SafetyRefusal,
     guard_library_request,
@@ -56,8 +58,8 @@ from apps.opendj_cli.mcp_safety import (
 )
 from apps.opendj_cli.mcp_sdk import MCPServer, ToolAnnotations, ToolError
 from apps.opendj_cli.mcp_session_tools import register_session_tools
-from apps.opendj_cli.mcp_source_flags_tools import register_source_flags_tools
 from apps.opendj_cli.mcp_set_tools import register_set_tools
+from apps.opendj_cli.mcp_source_flags_tools import register_source_flags_tools
 from apps.opendj_cli.mcp_tempo_tools import register_tempo_tools
 from apps.opendj_cli.mcp_track_tools import register_track_tools
 from apps.opendj_cli.mcp_update_tools import register_update_tools
@@ -703,6 +705,12 @@ def create_server(*, command_timeout_s: float = ORDER_TIMEOUT_S) -> MCPServer:
         tool_error=_tool_error,
         engine_not_running=_engine_not_running,
     )
+    register_list_totals_tools(
+        server,
+        lock_path=lambda: _state.lock_path,
+        tool_error=_tool_error,
+        engine_not_running=_engine_not_running,
+    )
     register_source_flags_tools(
         server,
         lock_path=lambda: _state.lock_path,
@@ -716,6 +724,12 @@ def create_server(*, command_timeout_s: float = ORDER_TIMEOUT_S) -> MCPServer:
         engine_not_running=_engine_not_running,
     )
     register_session_tools(
+        server,
+        lock_path=lambda: _state.lock_path,
+        tool_error=_tool_error,
+        engine_not_running=_engine_not_running,
+    )
+    register_requests_tools(
         server,
         lock_path=lambda: _state.lock_path,
         tool_error=_tool_error,

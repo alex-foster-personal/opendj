@@ -11,14 +11,31 @@ from __future__ import annotations
 
 import sqlite3
 from collections.abc import Mapping, Sequence
+from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 from apps.adapters.rekordbox import config as rb_config
 from apps.shared.state import db as state_db
+from apps.shared.state import provenance as state_provenance
+from apps.shared.state import sync_stamp
 from apps.shared.state.locations import bulk_local_audio_paths
 
-from . import findings, groups, keystore, library_tags, pipeline, providers, tag_write, taxonomy
+from . import (
+    classify,
+    display,
+    findings,
+    groups,
+    keystore,
+    library_tags,
+    pipeline,
+    providers,
+    store,
+    tag_write,
+    taxonomy,
+)
+
+MIN_CONFIDENCE: float = 0.6
 
 MAX_IDS = 500
 
@@ -244,6 +261,179 @@ def similar(conn: sqlite3.Connection, stable_id: str, limit: int) -> dict[str, A
     }
 
 
+@dataclass(frozen=True)
+class GenreFillTrack:
+    stable_id: str
+    outcome: Literal["filled", "needs_review", "skipped_user", "skipped_has_genre"]
+    genre: str | None = None
+    confidence: float | None = None
+    reason: str | None = None
+
+
+@dataclass
+class FillBlankGenresSummary:
+    results: list[GenreFillTrack] = field(default_factory=list)
+    agree: int = 0
+    compared: int = 0
+
+    def count(self, outcome: str) -> int:
+        return sum(1 for row in self.results if row.outcome == outcome)
+
+
+def classifier_model_path(data_dir: Path) -> Path:
+    return store.model_path(data_dir)
+
+
+def fill_providers_available(data_dir: Path, master_path: Path | None = None) -> tuple[bool, str]:
+    """Whether any ingest-genre provider can run (library-tag and/or the local classifier)."""
+    master = master_path or rb_config.MASTER_PLAIN_DB
+    has_library = master.is_file()
+    model = classifier_model_path(data_dir)
+    if has_library or model.is_file():
+        return True, ""
+    return (
+        False,
+        f"no rekordbox database at {master} and no genre model at {model}; "
+        "train one with `python -m apps.genre_infer train`",
+    )
+
+
+def _load_classifier(data_dir: Path) -> tuple[classify.GenreModel | None, dict[str, list[float]]]:
+    mp = classifier_model_path(data_dir)
+    if not mp.is_file():
+        return None, {}
+    try:
+        model = classify.GenreModel.from_json(mp.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return None, {}
+    vectors, _failures, emb_model, emb_revision = store.load_embeddings(data_dir)
+    if (emb_model, emb_revision) != (model.embedding_model, model.embedding_revision):
+        return model, {}
+    return model, vectors
+
+
+def _blank_genre_ids(conn: sqlite3.Connection, stable_ids: Sequence[str]) -> list[str]:
+    """Live ids whose library row has no genre yet; user-typed genres are never touched."""
+    ids = _require_tracks(conn, stable_ids)
+    typed = groups.user_genres(conn, groups.load(conn), ids)
+    row_genres = display.read_for_rows(conn, ids)
+    fields = library_tags.field_genres(conn, ids)
+    master = rb_config.MASTER_PLAIN_DB
+    rekordbox = library_tags.rekordbox_genres(conn, ids, master) if master.is_file() else {}
+    blank: list[str] = []
+    for sid in ids:
+        if typed.get(sid):
+            continue
+        user, imported = fields.get(sid, (None, None))
+        if user and str(user).strip():
+            continue
+        library = rekordbox.get(sid) or imported
+        if row_genres.chosen(sid, user_genre=None, library_genre=library) is not None:
+            continue
+        blank.append(sid)
+    return blank
+
+
+def _library_tag_genre(conn: sqlite3.Connection, sid: str, master_path: Path) -> tuple[str | None, float | None]:
+    user, imported = library_tags.field_genres(conn, [sid]).get(sid, (None, None))
+    library = library_tags.rekordbox_genres(conn, [sid], master_path).get(sid) or imported
+    if not library or not str(library).strip():
+        return None, None
+    canon = taxonomy.canonical(str(library))
+    if canon is None:
+        return None, 0.0
+    return canon, 1.0
+
+
+def _classifier_genre(
+    model: classify.GenreModel | None, vectors: Mapping[str, Sequence[float]], sid: str
+) -> tuple[str | None, float | None]:
+    if model is None or sid not in vectors:
+        return None, None
+    suggestion = classify.suggest(model, {sid: vectors[sid]}).get(sid)
+    if suggestion is None:
+        return None, None
+    canon = taxonomy.canonical(suggestion.genre)
+    if canon is None:
+        return None, suggestion.confidence
+    return canon, suggestion.confidence
+
+
+def _top_genre(
+    conn: sqlite3.Connection,
+    sid: str,
+    *,
+    data_dir: Path,
+    master_path: Path,
+    model: classify.GenreModel | None,
+    vectors: Mapping[str, Sequence[float]],
+) -> tuple[str | None, float | None]:
+    genre, conf = _library_tag_genre(conn, sid, master_path)
+    if genre is not None:
+        return genre, conf
+    return _classifier_genre(model, vectors, sid)
+
+
+def fill_blank_genres(
+    conn: sqlite3.Connection,
+    stable_ids: Sequence[str],
+    min_confidence: float,
+    *,
+    data_dir: Path,
+    master_path: Path | None = None,
+) -> FillBlankGenresSummary:
+    """Fill blank library genres from library-tag then the local classifier (SETPREP-10646)."""
+    master = master_path or rb_config.MASTER_PLAIN_DB
+    model, vectors = _load_classifier(data_dir)
+    summary = FillBlankGenresSummary()
+    ids = _require_tracks(conn, stable_ids)
+    typed = groups.user_genres(conn, groups.load(conn), ids)
+    row_genres = display.read_for_rows(conn, ids)
+    fields = library_tags.field_genres(conn, ids)
+    rekordbox = library_tags.rekordbox_genres(conn, ids, master) if master.is_file() else {}
+    for sid in ids:
+        if typed.get(sid):
+            summary.results.append(GenreFillTrack(sid, "skipped_user", reason="genre typed in the Library"))
+            continue
+        user, imported = fields.get(sid, (None, None))
+        if user and str(user).strip():
+            summary.results.append(GenreFillTrack(sid, "skipped_user", reason="genre typed in the Library"))
+            continue
+        library = rekordbox.get(sid) or imported
+        if row_genres.chosen(sid, user_genre=None, library_genre=library) is not None:
+            summary.results.append(GenreFillTrack(sid, "skipped_has_genre", reason="genre already shown"))
+            continue
+        genre, confidence = _top_genre(conn, sid, data_dir=data_dir, master_path=master, model=model, vectors=vectors)
+        if genre is None or confidence is None or confidence < min_confidence:
+            summary.results.append(
+                GenreFillTrack(
+                    sid,
+                    "needs_review",
+                    genre=genre,
+                    confidence=confidence,
+                    reason=None if genre is None else f"confidence {confidence:.2f} below {min_confidence}",
+                )
+            )
+            continue
+        state_provenance.write_field(
+            conn,
+            stable_id=sid,
+            field_name="genre",
+            value=genre,
+            source="inferred",
+            modified_at=sync_stamp.canonical_now(),
+            confidence=float(confidence),
+        )
+        summary.results.append(GenreFillTrack(sid, "filled", genre=genre, confidence=float(confidence)))
+        ref = library_tags.rekordbox_genres(conn, [sid], master).get(sid)
+        if ref:
+            summary.compared += 1
+            if taxonomy.canonical(ref) == genre:
+                summary.agree += 1
+    conn.commit()
+    return summary
+
+
 def write_chosen_tag(
     conn: sqlite3.Connection, *, data_dir: Path, stable_id: str, master_path: Path | None = None
 ) -> dict[str, Any]:
@@ -270,8 +460,14 @@ def write_chosen_tag(
 
 __all__ = [
     "MAX_IDS",
+    "MIN_CONFIDENCE",
+    "FillBlankGenresSummary",
+    "GenreFillTrack",
     "UnknownTrack",
     "attach_finding",
+    "classifier_model_path",
+    "fill_blank_genres",
+    "fill_providers_available",
     "genres_for",
     "infer",
     "remove_finding",

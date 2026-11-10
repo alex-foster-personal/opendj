@@ -160,4 +160,10 @@
 	.xfader:focus-visible .thumb-visual {
 		box-shadow: 0 0 4px var(--rb-accent-glow);
 	}
+
+	.xfader:focus-visible {
+		/* A11Y-11403: keyboard focus ring paired with this file's outline reset. */
+		outline: 2px solid var(--rb-focus-ring);
+		outline-offset: 2px;
+	}
 </style>

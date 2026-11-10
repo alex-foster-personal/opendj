@@ -210,27 +210,27 @@ test('permissions: only the short list, only for loopback pages', () => {
 	assert.equal(permissionAllowed('midi', 'https://example.com'), false);
 	assert.equal(permissionAllowed('midi', 'opendj://app'), false);
 });
-// External allow-list (ELECTRON-05, EL-17-F8): mirrors Tauri opener scope.
+// Clicked-link handling (ELECTRON-05, EL-18): isExternalUrlAllowed. Bridge scope (EL-17-F8 / ELECTRON-8308) is opener.test.ts.
 const fourDigitPort = 1000 + (process.pid % 9000);
 const fiveDigitPort = 10000 + (process.pid % 55536);
 
-test('openExternal allows named local http with four-digit port and slash', () => {
+test('link handling allows named local http with four-digit port and slash', () => {
 	const url = `http://opendj.localhost:${fourDigitPort}/settings`;
 	assert.equal(isExternalUrlAllowed(url), true, url);
 });
-test('openExternal allows named local http with five-digit port and path', () => {
+test('link handling allows named local http with five-digit port and path', () => {
 	const url = `http://opendj.localhost:${fiveDigitPort}/performance/deck`;
 	assert.equal(isExternalUrlAllowed(url), true, url);
 });
-test('openExternal allows Google OAuth consent URL with query marker', () => {
+test('link handling allows Google OAuth consent URL with query marker', () => {
 	const url =
 		'https://accounts.google.com/o/oauth2/v2/auth?client_id=example&redirect_uri=opendj&response_type=code';
 	assert.equal(isExternalUrlAllowed(url), true, url);
 });
-test('openExternal allows exact BlackHole installer URL', () => {
+test('link handling allows exact BlackHole installer URL', () => {
 	assert.equal(isExternalUrlAllowed('https://existential.audio/blackhole/'), true);
 });
-test('openExternal allows the https links the UI already renders (purchase, privacy)', () => {
+test('link handling allows the https links the UI already renders (purchase, privacy)', () => {
 	for (const url of [
 		'https://www.beatport.com/track/example/123456',
 		'https://artist.bandcamp.com/track/example',
@@ -240,12 +240,12 @@ test('openExternal allows the https links the UI already renders (purchase, priv
 		assert.equal(isExternalUrlAllowed(url), true, url);
 	}
 });
-test('openExternal rejects userinfo attacker shape on named local port', () => {
+test('link handling rejects userinfo attacker shape on named local port', () => {
 	const url = `http://opendj.localhost:${fourDigitPort}@attacker.example/`;
 	assert.equal(isExternalUrlAllowed(url), false, url);
 });
 const USERINFO_AT = '@';
-test('openExternal rejects named local and OAuth near-misses', () => {
+test('link handling rejects named local and OAuth near-misses', () => {
 	for (const [label, url] of [
 		['no port', 'http://opendj.localhost/settings'],
 		['three-digit port', `http://opendj.localhost:${100 + (process.pid % 900)}/`],

@@ -129,7 +129,16 @@ export function storeMachinePressure(snapshot: PressureSnapshot): boolean {
 /** True when the KERNEL reports memory pressure (level 2 or above). The churn
  * early warning alone does not count: it leads the kernel (PERFMODE-18). */
 export function kernelPressureIsElevated(snapshot: PressureSnapshot | null): boolean {
-	return snapshot !== null && snapshot.kernelLevel !== null && snapshot.kernelLevel >= KERNEL_ELEVATED_LEVEL;
+	return (
+		snapshot !== null &&
+		snapshot.kernelLevel !== null &&
+		snapshot.kernelLevel >= KERNEL_ELEVATED_LEVEL
+	);
+}
+
+/** True when the session xrun count rose more than S1_XRUN_DELTA_MAX since baseline. */
+export function xrunWindowDeltaExceedsMax(current: number, baseline: number): boolean {
+	return current - baseline > S1_XRUN_DELTA_MAX;
 }
 
 /** True when kernel or churn crosses the locked PERFMODE-04 thresholds. */
@@ -312,9 +321,7 @@ async function _pollOnce(): Promise<void> {
  * the interval and the visibility listener behave exactly as before: a
  * hidden tab stops the timer, a visible one resamples immediately.
  */
-export function startMachinePressurePolling(
-	scheduler: BootScheduler = bootScheduler
-): () => void {
+export function startMachinePressurePolling(scheduler: BootScheduler = bootScheduler): () => void {
 	if (typeof window === 'undefined' || typeof document === 'undefined') {
 		return () => {};
 	}

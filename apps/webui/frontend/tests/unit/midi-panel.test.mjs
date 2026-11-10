@@ -197,6 +197,10 @@ test('friendlyLabel turns action types into human labels', () => {
 	assert.equal(fmt.friendlyLabel({ type: 'deck_cue', deck: 2 }), 'Cue (deck 2)');
 	assert.equal(fmt.friendlyLabel({ type: 'deck_hot_cue', deck: 3, slot: 'D' }), 'Hot cue D (deck 3)');
 	assert.equal(fmt.friendlyLabel({ type: 'deck_beat_loop', deck: 1, beats: 4 }), 'Beat loop 4 (deck 1)');
+	assert.equal(
+		fmt.friendlyLabel({ type: 'deck_beat_jump', deck: 2, beats: -4 }),
+		'Beat jump -4 (deck 2)'
+	);
 	assert.equal(fmt.friendlyLabel({ type: 'deck_loop_exit', deck: 2 }), 'Loop exit (deck 2)');
 	assert.equal(fmt.friendlyLabel({ type: 'mixer_channel', deck: 1, target: 'trim' }), 'Trim (deck 1)');
 	assert.equal(fmt.friendlyLabel({ type: 'mixer_channel', deck: 4, target: 'fader' }), 'Channel fader (deck 4)');

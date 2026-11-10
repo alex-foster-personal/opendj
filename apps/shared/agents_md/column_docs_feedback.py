@@ -18,7 +18,10 @@ FEEDBACK_COLUMN_DOCS: dict[str, dict[str, str]] = {
             "CommentOut model returns (CHECK json_valid). Includes status, "
             "agent_note, issue_url, author, the build stamp, the environment "
             "(machine name, UI kind, viewport, release) and attachment "
-            "METADATA. Attachment BYTES do not sync (FBSYNC-05)."
+            "metadata (id, content type, size, url, and when present a "
+            "lowercase hex SHA-256 content_hash of the bytes). Attachment "
+            "BYTES do not sync yet (FBSYNC-05); content_hash is for a later "
+            "asset-tier push."
         ),
         "updated_at": (
             "NOT NULL. The pin's own last-edit time (its updated_at, else its "

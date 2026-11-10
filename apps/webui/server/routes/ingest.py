@@ -63,13 +63,14 @@ from pydantic import BaseModel
 
 from apps.analysis import backlog
 from apps.analysis import run as analysis_run
+from apps.analysis.backlog import ANALYZER_LANES, AutoLane
 from apps.analysis.lanes import own_backend
 from apps.shared.events import publish
 from apps.shared.paths import AUDIO_EXTENSIONS, INGEST_INBOX, PROJECT_ROOT, STATE_DB
 from apps.shared.state.db import open_ro
 from apps.stems.artifacts import DEFAULT_STEMS_DIR, stem_roots
 from apps.webui.server import coverage_cloud
-from apps.webui.server.routes import ingest_coverage
+from apps.webui.server.routes import ingest_coverage, ui_prefs
 from apps.webui.server.routes.ingest_analysis_argv import CliFailed, build_analysis_argv
 from apps.webui.server.routes.ingest_coverage_out import (
     COVERAGE_CACHED_HELP,
@@ -89,6 +90,7 @@ from apps.webui.server.routes.ingest_job import (
     _systemic_message,
     missing_by_step,
     tracks_on_disk,
+    valid_stem_bundle_ids,
 )
 from apps.webui.server.routes.ingest_scope import RefreshIn, resolve_scope, unmapped_steps
 from apps.webui.server.routes.ingest_track import select_track_target
@@ -398,6 +400,38 @@ def _step_stems(job: _RefreshJob, targets: list[tuple[str, str]]) -> None:
 
 
 def _step_vocals(job: _RefreshJob, targets: list[tuple[str, str]]) -> None:
+    if not targets:
+        job.step_total = 0
+        job.step_done = 0
+        _log(job, "vocals: no targets")
+        return
+    if job.scope == UNMAPPED_SCOPE:
+        job.step_total = len(targets)
+        job.step_done = 0
+        _log(job, f"vocals: {len(targets)} track(s); from-stems per stable id")
+        failures: list[str] = []
+        for stable_id, _path in targets:
+            try:
+                _run_cli(
+                    job,
+                    [
+                        sys.executable,
+                        "-m",
+                        "apps.vocals",
+                        "from-stems",
+                        "--live",
+                        "--stable-id",
+                        stable_id,
+                    ],
+                )
+            except CliFailed as exc:
+                failures.append(f"{stable_id}: {exc}")
+            job.step_done += 1
+        if failures:
+            raise RuntimeError(
+                f"vocals failed on {len(failures)} track(s): " + "; ".join(failures)
+            )
+        return
     job.step_total = len(targets)
     job.step_done = 0
     _log(job, f"vocals: {len(targets)} missing cache; from-stems backfill")
@@ -423,13 +457,17 @@ _STEP_RUNNERS = {
 }
 
 
-def unmapped_backlog(*, limit: int | None = None) -> backlog.Backlog:
+def unmapped_backlog(
+    *,
+    lanes: frozenset[AutoLane],
+    limit: int | None = None,
+) -> backlog.Backlog:
     """The analyze-on-import queue. One accessor for its three readers (the
     drain, GET /analysis-queue, the auto-drain) so they cannot disagree about
     which state DB it lives in."""
     conn = open_ro()
     try:
-        return backlog.scan(conn, limit=limit)
+        return backlog.scan(conn, lanes=lanes, limit=limit)
     finally:
         conn.close()
 
@@ -448,11 +486,23 @@ _UNMAPPED_SKIP_REASONS: dict[str, str] = {
 }
 
 
+def _unmapped_skip_reason(job: _RefreshJob, skipped: str) -> str:
+    lanes = job.auto_lanes or frozenset()
+    if skipped == "analysis":
+        return "grid, key and sections are off in Settings > Analysis"
+    if skipped == "vocals" and "vocals" not in lanes:
+        return (
+            "off in Settings > Analysis (auto_analyze_vocals); "
+            "order vocals per track instead"
+        )
+    return _UNMAPPED_SKIP_REASONS.get(skipped, "needs the Rekordbox import first (id-keyed)")
+
+
 def _log_id_keyed_skips(job: _RefreshJob, steps: list[str], scope: str) -> None:
     """Say which steps this scope cannot run, and why. Never silently."""
     for skipped in steps:
         reason = (
-            _UNMAPPED_SKIP_REASONS.get(skipped) if scope == UNMAPPED_SCOPE else None
+            _unmapped_skip_reason(job, skipped) if scope == UNMAPPED_SCOPE else None
         ) or "needs the Rekordbox import first (id-keyed)"
         _log(job, f"{skipped}: skipped for {scope} scope - {reason}")
 
@@ -473,22 +523,44 @@ def _batch_targets(
 
 
 def _unmapped_targets(
-    job: _RefreshJob, _roots: tuple[Path, ...]
+    job: _RefreshJob, roots: tuple[Path, ...]
 ) -> dict[str, list[tuple[str, str]]]:
     """Locally imported tracks: a tracks row, no live rekordbox twin."""
-    queue = unmapped_backlog()
+    assert job.auto_lanes is not None
+    queue = unmapped_backlog(lanes=job.auto_lanes)
     job.queue_signature = queue.signature
-    _log(job, f"unmapped scope: {queue.pending_total} of {queue.unmapped} "
-              f"rekordbox-unmapped tracks need analysis ({queue.analyzed} already "
-              f"analyzed, {queue.unreachable} unreachable, {queue.too_long} over the length cap)")
+    _log(
+        job,
+        f"unmapped scope: {queue.pending_total} of {queue.unmapped} "
+        f"rekordbox-unmapped tracks queued ({queue.analyzed} already analyzed, "
+        f"{queue.unreachable} unreachable, {queue.too_long} over the length cap, "
+        f"{queue.lanes_off} with every lane off); lanes={','.join(queue.lanes) or 'none'}",
+    )
     _log_id_keyed_skips(job, job.skipped_steps, UNMAPPED_SCOPE)
+    analyzer_on = bool(set(job.auto_lanes) & ANALYZER_LANES)
+    analysis_targets = [
+        (i.stable_id, i.candidate_paths or (i.file_path,))
+        for i in queue.pending
+    ] if analyzer_on else []
+    vocals_targets: list[tuple[str, str]] = []
+    if "vocals" in job.auto_lanes:
+        stems_done, _corrupt = valid_stem_bundle_ids(roots)
+        vocals_targets = [
+            (item.stable_id, item.candidate_paths or (item.file_path,))
+            for item in queue.pending
+            if item.stable_id in stems_done
+        ]
+        missing_stems = len(queue.pending) - len(vocals_targets)
+        if missing_stems:
+            _log(
+                job,
+                f"vocals: {missing_stems} pending track(s) have no stem bundle yet; "
+                "vocals are derived from stems, so they are made once stems exist",
+            )
     return {
-        "analysis": [
-            (i.stable_id, i.candidate_paths or (i.file_path,))
-            for i in queue.pending
-        ],
+        "analysis": analysis_targets,
         "stems": [],
-        "vocals": [],
+        "vocals": vocals_targets,
     }
 
 
@@ -585,6 +657,7 @@ def _start_refresh_job(
     guard: Callable[[], None] | None = None,
     *,
     stem_cloud: coverage_cloud.StemCloud,
+    auto_lanes: frozenset[AutoLane] | None = None,
 ) -> _RefreshJob:
     """Claim the one slot and hand back THE job created, not the slot.
 
@@ -608,7 +681,9 @@ def _start_refresh_job(
             raise HTTPException(422, "no steps enabled in ingest config")
         skipped: list[str] = []
         if scope == UNMAPPED_SCOPE:
-            steps, skipped = unmapped_steps(steps)
+            if auto_lanes is None:
+                raise ValueError("unmapped refresh requires auto_lanes")
+            steps, skipped = unmapped_steps(steps, auto_lanes)
         if scope == "track":
             assert body is not None and body.analysis_kind is not None
             track_step = (
@@ -629,9 +704,16 @@ def _start_refresh_job(
             and body.analysis_kind is not None
         )
         orders = {body.stable_id: body.analysis_kind} if is_track_order and body is not None else {}
-        job = _RefreshJob(started_at=time.time(), steps=steps, scope=scope,
-                          batch_dir=batch_dir, skipped_steps=skipped, analysis_orders=orders,
-                          stem_cloud=stem_cloud)
+        job = _RefreshJob(
+            started_at=time.time(),
+            steps=steps,
+            scope=scope,
+            batch_dir=batch_dir,
+            skipped_steps=skipped,
+            analysis_orders=orders,
+            stem_cloud=stem_cloud,
+            auto_lanes=auto_lanes if scope == UNMAPPED_SCOPE else None,
+        )
         _JOBS.current = job
         if scope == UNMAPPED_SCOPE:
             _JOBS.last_unmapped = job
@@ -643,9 +725,18 @@ def _start_refresh_job(
 
 @router.post("/refresh", response_model=RefreshStatusOut, status_code=202)
 def start_refresh(request: Request, body: RefreshIn | None = None) -> RefreshStatusOut:
+    scope, _batch = resolve_scope(body, INGEST_INBOX)
+    auto_lanes = (
+        ui_prefs.read_auto_analyze_lanes(request.app)
+        if scope == UNMAPPED_SCOPE
+        else None
+    )
     return _status_of(
         _start_refresh_job(
-            body, _stem_roots(request.app), stem_cloud=stem_cloud_for(request.app)
+            body,
+            _stem_roots(request.app),
+            stem_cloud=stem_cloud_for(request.app),
+            auto_lanes=auto_lanes,
         )
     )
 

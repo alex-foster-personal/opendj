@@ -82,7 +82,7 @@ def _charge_bytes(growth: int) -> int:
 def _parse_budget_overs(text: str) -> list[tuple[str, int, int, int, int]]:
     out: list[tuple[str, int, int, int, int]] = []
     for raw in text.splitlines():
-        line = _ANSI.sub("", _TS.sub("", raw)).rstrip("\n")
+        line = _TS.sub("", _ANSI.sub("", raw)).rstrip("\n")
         m = _BUDGET_ERR.match(line)
         if not m:
             continue
@@ -146,7 +146,10 @@ def _fetch_frontend_log(head_sha: str) -> str:
     )
     if listed.returncode != 0 or not listed.stdout.strip():
         raise RuntimeError(f"gh run list failed: {listed.stderr.strip() or listed.stdout}")
-    run_id = json.loads(listed.stdout)[0]["databaseId"]
+    runs = json.loads(listed.stdout)
+    if not runs:
+        raise RuntimeError(f"no ci.yml run for {head_sha[:10]}")
+    run_id = runs[0]["databaseId"]
     jobs = _run(["gh", "run", "view", str(run_id), "--repo", repo, "--json", "jobs"])
     if jobs.returncode != 0:
         raise RuntimeError(f"gh run view failed: {jobs.stderr.strip()}")
@@ -160,7 +163,7 @@ def _fetch_frontend_log(head_sha: str) -> str:
     )
     if job_id is None:
         raise RuntimeError("no frontend unit job in CI run")
-    logs = _run(["gh", "api", f"repos/{repo}/actions/jobs/{job_id}/logs"])
+    logs = _run(["gh", "api", f"repos/{repo}/actions/jobs/{job_id}/logs", "--allow-escape-sequences"])
     if logs.returncode != 0:
         raise RuntimeError(f"gh api logs failed: {logs.stderr.strip()}")
     return logs.stdout
@@ -386,10 +389,7 @@ def _run_checks(root: Path, base_branch: str, pr: int) -> tuple[bool, str]:
     ]
     try:
         for argv, ok, is_write in steps:
-            if argv is None:
-                proc = _run_format_check(root, write=is_write)
-            else:
-                proc = _run(argv, cwd=root)
+            proc = _run_format_check(root, write=is_write) if argv is None else _run(argv, cwd=root)
             if proc.returncode not in ok:
                 tail = (proc.stdout + proc.stderr).strip().splitlines()[-8:]
                 return False, "\n".join(tail)

@@ -37,7 +37,7 @@
 	});
 </script>
 
-<WaveformDesignPreviewView paint={paintWaveformPreview} {active} {palette} {colors} {sample} {label} />
+<WaveformDesignPreviewView paint={paintWaveformPreview} {active} {palette} {colors} {sample} gridLines={uiPrefs.wave_grid_lines} {label} />
 {#if active === 'blocks' && blockSnapLoadError() !== null}
 	<!-- DECKUX-42: say why deck rows paint the fixed pitch rather than look snapped-but-wrong.
 	     Reload, not a promise to retry: the browser can keep a failed module

@@ -12,12 +12,17 @@
  * every 'blocks' bar with the one mono color, so Gothic's grayscale-shaded
  * blocks showed as flat white bars in Settings.
  */
-import { drawWaveBands, type BandPalette } from '$lib/components/rb/wave/render';
+import { drawBeatGridLines, drawWaveBands, type BandPalette } from '$lib/components/rb/wave/render';
+import { visibleBeatLines } from '$lib/components/rb/wave/wave-math';
+import type { WaveGridLines } from '$lib/rb/wave-grid-lines';
+import { PREVIEW_SAMPLE_BEATS, PREVIEW_SAMPLE_SECONDS } from './waveform-preview-beats';
 import type { AnlzWaveform } from '$lib/rb/anlz-types';
 import type { WaveformDesign } from '$lib/rb/waveform-design';
 
 /** The dark fill every preview is painted on (the colors are its dark-face hues). */
 export const PREVIEW_BACKGROUND = '#0a0c10';
+/** The preview's beat grid color (line alphas come from the geometry). */
+export const PREVIEW_GRID_COLOR = '#ffffff';
 const _DESIGNS: ReadonlySet<string> = new Set<WaveformDesign>(['tri-band', 'mono', 'line', 'blocks']);
 
 export function paintWaveformPreview(
@@ -26,7 +31,8 @@ export function paintWaveformPreview(
 	h: number,
 	design: WaveformDesign,
 	c: BandPalette,
-	sample: AnlzWaveform | null
+	sample: AnlzWaveform | null,
+	gridLines: WaveGridLines
 ): void {
 	if (!_DESIGNS.has(design)) {
 		throw new Error(`waveform preview has no painter for design ${String(design)}`);
@@ -39,6 +45,19 @@ export function paintWaveformPreview(
 	// background only, never an invented waveform.
 	if (sample === null) return;
 	drawWaveBands(ctx, sample, w, h, c, design, 0);
+	// issue #10244: the deck's own grid geometry and painter over real beats.
+	const lines = visibleBeatLines(
+		PREVIEW_SAMPLE_BEATS,
+		0,
+		w / PREVIEW_SAMPLE_SECONDS,
+		w,
+		h,
+		false,
+		undefined,
+		undefined,
+		gridLines
+	);
+	drawBeatGridLines(ctx, lines, PREVIEW_GRID_COLOR);
 }
 
 export type WaveformPreviewPaintFn = typeof paintWaveformPreview;

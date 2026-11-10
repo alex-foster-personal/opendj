@@ -16,6 +16,8 @@
  *     [if] BEAT SYNC on deck N does not fire deck_sync_toggle deck N [then] ⛔️
  *   ✔︎ A control the map neither binds nor hints throws: the layout and map disagree.
  *     [if] a layout control with a wire number absent from the map resolves silently [then] ⛔️
+ *   ✔︎ A control whose midi is null (wire unavailable) resolves to kind 'unwired' and renders inert with the PARITY-TODO title; no number is invented to satisfy the map.
+ *     [if] a null-wire control resolves bound, or a present wire the map lacks stops throwing [then] ⛔️
  */
 
 import type {
@@ -46,7 +48,8 @@ export interface PanelControl {
 	w: number;
 	h: number;
 	section: string;
-	midi: PanelWire;
+	/** What the control sends; null = the maker publishes no wire identity (unwired, never invented). */
+	midi: PanelWire | null;
 	/** What the control sends while SHIFT is held; null = no documented shifted row. */
 	shift_midi: PanelWire | null;
 }
@@ -90,7 +93,8 @@ export const PRACTICE_WIRE_BINDINGS: readonly MidiBinding[] = (() => {
 /** `wire` is what the control sends on the resolved layer (base, or SHIFT's row). */
 export type ResolvedControl =
 	| { kind: 'bound'; control: PanelControl; wire: PanelWire; binding: MidiBinding }
-	| { kind: 'inert'; control: PanelControl; wire: PanelWire; hint: string };
+	| { kind: 'inert'; control: PanelControl; wire: PanelWire; hint: string }
+	| { kind: 'unwired'; control: PanelControl; wire: null };
 
 function _sameSource(a: PanelWire, b: MidiBinding['source']): boolean {
 	return a.ch === b.ch && a.kind === b.kind && a.id === b.id;
@@ -109,6 +113,11 @@ export function resolveControl(
 	control: PanelControl,
 	shiftHeld = false
 ): ResolvedControl {
+	if (control.midi === null) {
+		if (control.shift_midi !== null)
+			throw new Error(`practice layout ${control.id} has a shifted row but no base wire`);
+		return { kind: 'unwired', control, wire: null };
+	}
 	const wire = shiftHeld && control.shift_midi !== null ? control.shift_midi : control.midi;
 	const onWire = map.bindings.filter((b) => _sameSource(wire, b.source));
 	const binding =
@@ -150,6 +159,8 @@ export function inputValueFor(
 /** Plain-words hover text: what the control does, and what it fires in Open DJ. */
 export function controlTitle(resolved: ResolvedControl): string {
 	const base = `${resolved.control.label}: ${resolved.control.does}`;
+	if (resolved.kind === 'unwired')
+		return `${base}. not implemented - see PARITY-TODO (no MIDI identity published for this control)`;
 	if (resolved.kind === 'inert')
 		return `${base}. not implemented - see PARITY-TODO (${resolved.hint})`;
 	return `${base}. Fires ${describeAction(resolved.binding.action)}`;

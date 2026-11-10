@@ -286,6 +286,11 @@ TABLES: dict[str, str] = {
     "work_dismissal": "A pair the user said is not a version of each other.",
     "work_pref": "Which member a work shows first. Display only.",
     "track_edit": "A non-destructive playback window and FX parameters over one source track; no audio is copied or changed.",
+    "library_completeness_config": (
+        "Singleton row for whether this library expects HQ stems and a lyric "
+        "match on every track that can have them. Machine-local until "
+        "CloudSync attaches (parent #759)."
+    ),
     "undo_journal": "Before and after snapshots of library organization writes, per undo session. Machine-local.",
     "feedback_pins": (
         "One in-app feedback comment pin, shared across every machine on "
@@ -307,6 +312,15 @@ TABLES: dict[str, str] = {
     # ----- set target and skip flags (LIBUX-8679) ------------------------
     "set_targets": "Optional target length of a playlist shown as a set.",
     "set_skips": "One track marked skip-in-set within a playlist set.",
+    "crowd_request_session": (
+        "The one current crowd request session: whether it is open, which "
+        "catalog playlist guests may pick from, whether they may type a "
+        "message, and the per-phone cooldown."
+    ),
+    "crowd_requests": (
+        "One guest track request or short message, with the requester name, "
+        "a sha256 requester_key (never an address), vote count and status."
+    ),
     # ----- play orders ---------------------------------------------------
     "play_orders": "One ordered sequence of tracks prepared for performance.",
     "play_order_entries": "One track's slot within one play order.",

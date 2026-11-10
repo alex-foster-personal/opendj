@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from pathlib import Path
 
 import pytest
@@ -25,7 +26,11 @@ def manifest_text() -> str:
 def test_header_override_pins_mcp_1_30_0(manifest_text: str) -> None:
     header = manifest_text.split("annotated-types==", 1)[0]
     assert "mcp==1.30.0" in header
-    assert "semgrep==1.179.0" in header
+    installed = re.search(r"^semgrep==(\S+) \\$", manifest_text, flags=re.M)
+    assert installed, "if the install set has no semgrep pin then the manifest is broken"
+    assert f"semgrep=={installed.group(1)}" in header, (
+        "if the header recipe names another semgrep than the install set then the doc is stale"
+    )
 
 
 def test_install_set_pins_mcp_1_30_0(manifest_text: str) -> None:

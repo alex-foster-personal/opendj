@@ -480,12 +480,12 @@
 	.knob.warn-red .indicator:not(.white):not(.rainbow) {
 		stroke: var(--rb-knob-alarm);
 	}
-	/* Gothic and Light have no accent glow (transparent), so they draw a
-	 * focus outline instead (--rb-focus-outline, theme.css); Default has none. */
+	/* A11Y-11403: the app-wide keyboard focus ring (--rb-focus-ring, theme.css)
+	 * pairs the reset above; Default keeps its accent glow as decoration. */
 	.knob:focus-visible {
 		filter: drop-shadow(0 0 3px var(--rb-accent-glow));
-		outline: var(--rb-focus-outline, none);
-		outline-offset: 1px;
+		outline: 2px solid var(--rb-focus-ring);
+		outline-offset: 2px;
 	}
 	svg {
 		display: block;
@@ -582,4 +582,5 @@
 	.knob.knob-stem-accent .label {
 		color: var(--knob-accent-color);
 	}
+
 </style>

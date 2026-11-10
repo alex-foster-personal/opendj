@@ -83,6 +83,10 @@ class GridEditOut(BaseModel):
     beat_shift: int
     #: Tempo anchors, sorted by time; empty when the grid keeps its measured tempo.
     anchors: list[AnchorOut] = Field(default_factory=list)
+    #: Constant-tempo override; null with ``anchor_t`` when the measured grid stands.
+    bpm: float | None = None
+    #: Served-time anchor the override is tied to; null when ``bpm`` is null.
+    anchor_t: float | None = None
     #: When the edit in force was made (an undo restores the earlier edit's time); null when never edited.
     modified_at: str | None
 
@@ -95,6 +99,9 @@ class GridEditNudgeIn(BaseModel):
     offset_ms: float = Field(0.0, ge=-grid_edit.MAX_OFFSET_MS, le=grid_edit.MAX_OFFSET_MS)
     #: Relative grid-shift step in whole beats, later when positive.
     beats: StrictInt = Field(0, ge=-64, le=64)
+    #: Constant-tempo override; must be paired with ``anchor_t``.
+    bpm: float | None = None
+    anchor_t: float | None = None
 
 
 class GridEditSetIn(BaseModel):
@@ -103,6 +110,8 @@ class GridEditSetIn(BaseModel):
     source: grid_edit.GridSource | None = None
     offset_ms: float
     beat_shift: StrictInt = Field(ge=-64, le=64)
+    bpm: float | None = None
+    anchor_t: float | None = None
 
 
 class GridEditAnchorIn(BaseModel):
@@ -188,6 +197,8 @@ def _out(stable_id: str, source: grid_edit.GridSource, stored: grid_edit.StoredG
         offset_ms=edit.offset_ms,
         beat_shift=edit.beat_shift,
         anchors=[AnchorOut(at_s=a.at_s, bpm=a.bpm) for a in edit.anchors],
+        bpm=edit.bpm,
+        anchor_t=edit.anchor_t,
         modified_at=stored.modified_at,
     )
 
@@ -316,10 +327,28 @@ def nudge_grid_edit(
     _backend: StateBackend = Depends(get_write_state),  # noqa: B008  # FastAPI DI
 ) -> GridEditOut:
     """Move the grid by a step: ``offset_ms`` is grid adjust, ``beats`` grid shift."""
-    if body.offset_ms == 0 and body.beats == 0:
+    if body.offset_ms == 0 and body.beats == 0 and body.bpm is None and body.anchor_t is None:
         raise HTTPException(
             status_code=422,
-            detail={"code": "GRID_EDIT_EMPTY", "message": "a nudge needs offset_ms or beats"},
+            detail={"code": "GRID_EDIT_EMPTY", "message": "a nudge needs offset_ms, beats, or bpm"},
+        )
+    if (body.bpm is None) != (body.anchor_t is None):
+        raise HTTPException(
+            status_code=422,
+            detail={"code": "GRID_EDIT_INVALID", "message": "bpm and anchor_t must be set together"},
+        )
+    if body.bpm is not None:
+        return _write(
+            request,
+            stable_id,
+            body.source,
+            lambda edit: grid_edit.make_edit(
+                edit.offset_ms,
+                edit.beat_shift,
+                anchors=edit.anchors,
+                bpm=body.bpm,
+                anchor_t=body.anchor_t,
+            ),
         )
     return _write(
         request,
@@ -340,7 +369,13 @@ def set_grid_edit(
         request,
         stable_id,
         body.source,
-        lambda edit: grid_edit.make_edit(body.offset_ms, body.beat_shift, anchors=edit.anchors),
+        lambda edit: grid_edit.make_edit(
+            body.offset_ms,
+            body.beat_shift,
+            anchors=edit.anchors,
+            bpm=body.bpm,
+            anchor_t=body.anchor_t,
+        ),
     )
 
 
@@ -349,7 +384,7 @@ def reset_grid_edit(
     request: Request,
     stable_id: str,
     source: grid_edit.GridSource | None = None,
-    part: Literal["adjust", "shift"] | None = None,
+    part: Literal["adjust", "shift", "bpm"] | None = None,
     _backend: StateBackend = Depends(get_write_state),  # noqa: B008  # FastAPI DI
 ) -> GridEditOut:
     """Back to the measured grid. A write of the identity, so history keeps the old edit.
@@ -359,11 +394,28 @@ def reset_grid_edit(
     """
     if part == "adjust":
         return _write(
-            request, stable_id, source, lambda edit: grid_edit.make_edit(0.0, edit.beat_shift, anchors=edit.anchors)
+            request,
+            stable_id,
+            source,
+            lambda edit: grid_edit.make_edit(
+                0.0, edit.beat_shift, anchors=edit.anchors, bpm=edit.bpm, anchor_t=edit.anchor_t
+            ),
         )
     if part == "shift":
         return _write(
-            request, stable_id, source, lambda edit: grid_edit.make_edit(edit.offset_ms, 0, anchors=edit.anchors)
+            request,
+            stable_id,
+            source,
+            lambda edit: grid_edit.make_edit(
+                edit.offset_ms, 0, anchors=edit.anchors, bpm=edit.bpm, anchor_t=edit.anchor_t
+            ),
+        )
+    if part == "bpm":
+        return _write(
+            request,
+            stable_id,
+            source,
+            lambda edit: grid_edit.make_edit(edit.offset_ms, edit.beat_shift, anchors=edit.anchors),
         )
     return _write(request, stable_id, source, lambda _edit: grid_edit.IDENTITY)
 

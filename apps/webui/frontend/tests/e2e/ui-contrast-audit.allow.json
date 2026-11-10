@@ -1,93 +1,6 @@
 {
   "findings": [
     {
-      "el": "div[data-testid=\"enrich-pill\"].enrich-pill > span.enrich-flag",
-      "skins": [
-        "light",
-        "theme-light"
-      ],
-      "surfaces": [
-        "performance-less",
-        "performance-hover"
-      ],
-      "reason": "Found by the SVG pixel sampler (this PR, Nov 4 2026): the enrich pill's \"needs you\" flag is #e8a13a text over a light panel, light #1.94:1 and theme-light #2.15:1 (needs 4.5:1). The pill sits over a replaced svg, so this text was unmeasured before and is measured now. Product decision for CORE (flag color or panel): listed on #5638."
-    },
-    {
-      "el": "header.rb-topbar.rb-panel > button.bsm-toggle.topbar-slot-bsm.on",
-      "skins": [
-        "default"
-      ],
-      "surfaces": [
-        "performance-less",
-        "performance-more"
-      ],
-      "reason": "Pre-existing on main, found by the first W34 audit run (Tue 6 Oct 2026): worst default \"BeatSyncMax\" #2f6fd6 on #1a1e25 = 3.47:1 (needs 4.5:1). TopBar.svelte. Listed in the W34 findings table on #5638 for triage. Optional: the state is a persisted ui pref (beat_sync_max, level_calibration) that other e2e specs sharing the data dir toggle, so it renders only on some runs.",
-      "optional": true
-    },
-    {
-      "el": "span.lyr-wrap.topbar-slot-lyr-wrap > button.bsm-toggle.topbar-slot-lyr.on",
-      "skins": [
-        "default"
-      ],
-      "surfaces": [
-        "performance-less",
-        "performance-more"
-      ],
-      "reason": "Pre-existing on main, found by the first W34 audit run (Tue 6 Oct 2026): worst default \"LYR\" #2f6fd6 on #1a1e25 = 3.47:1 (needs 4.5:1). TopBar.svelte. Listed in the W34 findings table on #5638 for triage."
-    },
-    {
-      "el": "span.ap-wrap.topbar-slot-autoplay.on > button.bsm-toggle.on",
-      "skins": [
-        "default"
-      ],
-      "surfaces": [
-        "performance-hover",
-        "performance-less",
-        "performance-more"
-      ],
-      "reason": "Pre-existing on main, found by the first W34 audit run (Tue 6 Oct 2026): worst default \"AutoPlay\" #2f6fd6 on #1a1e25 = 3.47:1 (needs 4.5:1). TopBar.svelte. Listed in the W34 findings table on #5638 for triage. Optional (no stale check): AutoPlay on/off and next-queued state vary with fixture timing (CI runs 37527961989 and 37533391962 each saw a different combination).",
-      "optional": true
-    },
-    {
-      "el": "span.ap-wrap.topbar-slot-autoplay > button.bsm-toggle",
-      "skins": [
-        "default"
-      ],
-      "surfaces": [
-        "performance-hover",
-        "performance-less",
-        "performance-more"
-      ],
-      "reason": "Pre-existing on main: the AutoPlay toggle without .on, for runs where AutoPlay is off. Under forced hover it takes the same #2f6fd6 accent on #1a1e25 (3.47:1, needs 4.5:1) as the ap-next-btn entry. TopBar.svelte. Listed in the W34 findings table on #5638 for triage. Optional (no stale check): AutoPlay on/off and next-queued state vary with fixture timing (CI runs 37527961989 and 37533391962 each saw a different combination).",
-      "optional": true
-    },
-    {
-      "el": "span.ap-wrap.topbar-slot-autoplay.on > button.bsm-toggle.ap-next-btn.on",
-      "skins": [
-        "default"
-      ],
-      "surfaces": [
-        "performance-hover",
-        "performance-less",
-        "performance-more"
-      ],
-      "reason": "Pre-existing on main, found by the first W34 audit run (Tue 6 Oct 2026): worst default \">|\" #2f6fd6 on #1a1e25 = 3.47:1 (needs 4.5:1). TopBar.svelte. Listed in the W34 findings table on #5638 for triage. Optional (no stale check): AutoPlay on/off and next-queued state vary with fixture timing (CI runs 37527961989 and 37533391962 each saw a different combination).",
-      "optional": true
-    },
-    {
-      "el": "span.ap-wrap.topbar-slot-autoplay.on > button.bsm-toggle.ap-next-btn",
-      "skins": [
-        "default"
-      ],
-      "surfaces": [
-        "performance-hover",
-        "performance-less",
-        "performance-more"
-      ],
-      "reason": "Pre-existing on main, found by W34 CI run 37527961989 (Tue 6 Oct 2026): default \">|\" #2f6fd6 on #1a1e25 = 3.47:1 (needs 4.5:1) under forced hover, the same accent-on-panel color as the .on entry above. TopBar.svelte. Listed in the W34 findings table on #5638 for triage. Optional (no stale check): AutoPlay on/off and next-queued state vary with fixture timing (CI runs 37527961989 and 37533391962 each saw a different combination).",
-      "optional": true
-    },
-    {
       "el": "section.rb-deck.rb-panel > span.load-latency",
       "skins": [
         "default",
@@ -1285,19 +1198,6 @@
   ],
   "unmeasured": [
     {
-      "el": "span.explainer > button.round.cue",
-      "skins": [
-        "default",
-        "theme-light"
-      ],
-      "surfaces": [
-        "performance-hover",
-        "performance-less",
-        "performance-more"
-      ],
-      "reason": "TransportCluster.svelte CUE button paints its label over a gradient, which this audit cannot composite; Gothic replaces the gradient with a flat fill and is measured."
-    },
-    {
       "el": "svg.dial > text.bpm",
       "skins": [
         "default",
@@ -1358,19 +1258,18 @@
       "reason": "JogDial.svelte SVG text: it paints with `fill` over the dial's own shapes, not over a CSS background, so this instrument cannot measure it. Named here so the gap is explicit rather than passed silently (Codex on #5727, Wed 7 Oct 2026)."
     },
     {
-      "el": "button[data-testid=\"waveform-seek-deck-1\"].strip > span.no-anlz",
+      "el": "span.q-badge > span.q-label",
       "skins": [
-        "default",
         "mono-dev",
-        "light",
-        "theme-light"
+        "light"
       ],
       "surfaces": [
+        "library",
         "performance-hover",
         "performance-less",
         "performance-more"
       ],
-      "reason": "StripWaveform.svelte paints the NO OWN GRID label over the waveform <canvas>, a replaced element with no CSS color to composite. Before Codex's image-backdrop finding on #5727 it was measured against the panel behind the canvas (light 2.77:1)."
+      "reason": "QualityBadge.svelte applies filter: var(--rb-quality-filter), which mono-dev resolves to grayscale(1), so the painted colors are not the computed pair this audit reads (Codex on #5727, Wed 7 Oct 2026). Reported unmeasured rather than certified from pre-filter colors; the other skins have no filter and are measured. Since #5812 the Light skin applies the same grayscale artwork/quality filter, so the Light pass reports it too."
     },
     {
       "el": "button[data-testid=\"waveform-seek-deck-1\"].strip > span.grid-provider",
@@ -1385,21 +1284,7 @@
         "performance-less",
         "performance-more"
       ],
-      "reason": "StripWaveform.svelte paints the DECKUX-LABEL-01 grid provider chip over the waveform <canvas>, a replaced element with no CSS color to composite; same gap as span.no-anlz above."
-    },
-    {
-      "el": "span.q-badge > span.q-label",
-      "skins": [
-        "mono-dev",
-        "light"
-      ],
-      "surfaces": [
-        "library",
-        "performance-hover",
-        "performance-less",
-        "performance-more"
-      ],
-      "reason": "QualityBadge.svelte applies filter: var(--rb-quality-filter), which mono-dev resolves to grayscale(1), so the painted colors are not the computed pair this audit reads (Codex on #5727, Wed 7 Oct 2026). Reported unmeasured rather than certified from pre-filter colors; the other skins have no filter and are measured. Since #5812 the Light skin applies the same grayscale artwork/quality filter, so the Light pass reports it too."
+      "reason": "StripWaveform.svelte .grid-provider paints at opacity 0.8 over the waveform <canvas>; the backdrop pixel sampler (#10368) compares against the uncomposited text colour, so faded text stays unmeasured rather than guessed."
     }
   ]
 }

@@ -503,31 +503,27 @@ def _farm_publisher() -> Any:
     return _farm_function(tree, "_publish_stems_local", namespace)
 
 
-def _publish_result(ext: str) -> dict[str, Any]:
-    return {
-        "source_sha256": "0" * 64,
-        "stem_ext": ext,
-        "stem_codec": ext,
-        "size_policy": None,
-        "audio": {"sample_rate": 44100, "frame_count": 88200, "channels": 2},
-        "stems": {part: f"{part}-{ext}".encode() for part in bundle_publish.STEM_PARTS},
-    }
-
-
 PUBLISHERS = {"mirror": lambda: bundle_publish.publish_stems_local, "farm": _farm_publisher}
 
 
+@pytest.mark.requires_audio_stack
 @pytest.mark.parametrize("writer", sorted(PUBLISHERS))
 def test_a_flac_bundle_republished_as_mp3_keeps_only_the_manifest_files(writer: str, tmp_path: Path) -> None:
+    from tests.stems.stem_set_support import compliant_mp3_parts, lossless_parts, mp3_source, publish_result
+
     publish = PUBLISHERS[writer]()
     preset = bundle_publish.PRESETS["htdemucs-ov0.25"]
     bundle = tmp_path / "state" / "stems" / SID
-    publish(SID, Path("/music/a.mp3"), _publish_result("flac"), preset, tmp_path)
+    source = mp3_source(tmp_path / "music" / "a.mp3", kbps=320)
+    publish(
+        SID, source, publish_result(lossless_parts("flac", seed=1), "flac"), preset, tmp_path, requested_codec="flac"
+    )
     (bundle / "notes.txt").write_text("not a stem part\n")  # an unrelated file is kept
     (bundle / "extra").mkdir()
     (bundle / "extra" / "vocals.flac").write_bytes(b"nested, not a top-level part")
 
-    publish(SID, Path("/music/a.mp3"), _publish_result("mp3"), preset, tmp_path)
+    mp3 = publish_result(compliant_mp3_parts(source, seed=2, tmp=tmp_path / "parts"), "mp3")
+    publish(SID, source, mp3, preset, tmp_path, requested_codec="by-source")
 
     manifest = json.loads((bundle / "manifest.json").read_text())
     top = sorted(p.name for p in bundle.iterdir() if p.is_file())
@@ -536,20 +532,25 @@ def test_a_flac_bundle_republished_as_mp3_keeps_only_the_manifest_files(writer: 
     assert (bundle / "extra" / "vocals.flac").is_file()
 
 
+@pytest.mark.requires_audio_stack
 @pytest.mark.parametrize("writer", sorted(PUBLISHERS))
 def test_a_same_codec_republish_still_replaces_every_part(writer: str, tmp_path: Path) -> None:
     """Control: the removal cannot take the parts the new manifest names."""
+    from tests.stems.stem_set_support import compliant_mp3_parts, mp3_source, publish_result
+
     publish = PUBLISHERS[writer]()
     preset = bundle_publish.PRESETS["htdemucs-ov0.25"]
     bundle = tmp_path / "state" / "stems" / SID
-    publish(SID, Path("/music/a.mp3"), _publish_result("mp3"), preset, tmp_path)
-    again = _publish_result("mp3")
-    again["stems"] = {part: b"second " + part.encode() for part in bundle_publish.STEM_PARTS}
+    source = mp3_source(tmp_path / "music" / "a.mp3", kbps=320)
+    first = compliant_mp3_parts(source, seed=1, tmp=tmp_path / "first")
+    publish(SID, source, publish_result(first, "mp3"), preset, tmp_path, requested_codec="by-source")
+    second = compliant_mp3_parts(source, seed=2, tmp=tmp_path / "second")
+    assert second != first
 
-    publish(SID, Path("/music/a.mp3"), again, preset, tmp_path)
+    publish(SID, source, publish_result(second, "mp3"), preset, tmp_path, requested_codec="by-source")
 
     for part in bundle_publish.STEM_PARTS:
-        assert (bundle / f"{part}.mp3").read_bytes() == b"second " + part.encode()
+        assert (bundle / f"{part}.mp3").read_bytes() == second[part]
     assert sorted(p.name for p in bundle.iterdir()) == sorted(
         ["manifest.json", *(f"{part}.mp3" for part in bundle_publish.STEM_PARTS)]
     )

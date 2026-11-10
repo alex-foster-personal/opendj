@@ -11,6 +11,18 @@ import {
 export type CompatibleBpmDirection = "both" | "above" | "below" | "same";
 export type CompatibleMode = "transition" | "mashup";
 export type CompatibleKeyShiftMax = 0 | 1 | 2 | 3;
+/** SETPREP-11947: the energy rule, after Mixed In Key's Energy Boost
+ * convention (mimicked). `off` checks no energy. */
+export type CompatibleEnergyMode = "off" | "within_1" | "boost" | "drop";
+export const COMPATIBLE_ENERGY_MODES: readonly CompatibleEnergyMode[] = [
+  "off",
+  "within_1",
+  "boost",
+  "drop",
+];
+export function isCompatibleEnergyMode(v: unknown): v is CompatibleEnergyMode {
+  return v === "off" || v === "within_1" || v === "boost" || v === "drop";
+}
 
 export interface CompatibleFilterPrefs {
   /** Enabled rule ids (player/key/camelot-rules.generated.ts). Empty = key not checked. */
@@ -23,6 +35,9 @@ export interface CompatibleFilterPrefs {
   mode: CompatibleMode;
   key_shift_max: CompatibleKeyShiftMax;
   mashup_relative: boolean;
+  /** SETPREP-11947: within one MIK energy level of the reference track, boost
+   * (+1 to +2) or drop (-1 to -2). Absent acts as off. */
+  energy_mode: CompatibleEnergyMode;
 }
 
 export const COMPATIBLE_FILTER_DEFAULTS: CompatibleFilterPrefs = {
@@ -34,6 +49,7 @@ export const COMPATIBLE_FILTER_DEFAULTS: CompatibleFilterPrefs = {
   mode: "transition",
   key_shift_max: 1,
   mashup_relative: false,
+  energy_mode: "off",
 };
 
 const LEGACY_CAMELOT_STEPS_RULES: Record<0 | 1 | 2, readonly CamelotRuleId[]> = {
@@ -61,6 +77,7 @@ const FIELD_CHECKS: Record<
   mode: (v) => v === "transition" || v === "mashup",
   key_shift_max: (v) => v === 0 || v === 1 || v === 2 || v === 3,
   mashup_relative: isBool,
+  energy_mode: isCompatibleEnergyMode,
 };
 
 export function validateCompatibleFilterPrefs(

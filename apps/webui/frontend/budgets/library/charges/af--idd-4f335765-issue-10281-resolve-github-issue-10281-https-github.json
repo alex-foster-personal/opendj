@@ -1,0 +1,9 @@
+{
+  "bytes": 1024,
+  "measured_main": 346360,
+  "measured_with_pr": 346781,
+  "sha": "9c8b06d719",
+  "date": "Tue 10 Nov 2026",
+  "reason": "Issue #10281 (PERF-CAPTURE-11886) records per-keystroke library-filter paint latencies: createFilterDebounce keyAt burst, recordFilterTimingOnPaint rAF, recordFilterDropped and PerfEvent.series on the library route. Measured locally vs merge-base main at 9c8b06d719: +421 B gzip on library; ceiled to KiB",
+  "payback": "none planned; observability-only code on the library surface"
+}

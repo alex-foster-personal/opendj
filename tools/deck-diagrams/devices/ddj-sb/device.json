@@ -1,0 +1,9 @@
+{
+ "map_name": "DDJ-SB(?:$|[^0-9])",
+ "map_const": "DDJ_SB_MAP",
+ "map_ts": "apps/webui/frontend/src/lib/rb/midi/maps/ddj-sb.ts",
+ "panel_w": 487.0,
+ "panel_d": 271.2,
+ "panel_size_source": "Pioneer DJ DDJ-SB archived specifications: Dimensions (W x D x H) 487.0 x 271.2 x 58.5 mm",
+ "display_name": "2-channel Serato beginner controller"
+}

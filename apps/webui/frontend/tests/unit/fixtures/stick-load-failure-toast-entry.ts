@@ -15,5 +15,5 @@ export {
 	reportDeckLoadFailure
 } from '$lib/rb/deck-load-context';
 export { toasts } from '$lib/stores.svelte';
-export { ApiError } from '$lib/api/client';
+export { ApiError } from '$lib/api/errors';
 export { RbApiError } from '$lib/rb/api-rb-error';

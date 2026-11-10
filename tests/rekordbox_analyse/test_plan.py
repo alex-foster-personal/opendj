@@ -18,6 +18,7 @@ from apps.rekordbox_analyse.plan import (
     RbPlaylist,
     RbTrack,
     build_plan,
+    playlists_by_name,
 )
 
 pytestmark = pytest.mark.requirement("RBXAN-8322")
@@ -124,3 +125,15 @@ def test_plan_sha_changes_with_content():
     a = _plan([OdjTrack("s1", "/m/a.mp3")])
     b = _plan([OdjTrack("s1", "/m/b.mp3")])
     assert a.plan_sha != b.plan_sha and a.plan_sha == _plan([OdjTrack("s1", "/m/a.mp3")]).plan_sha
+
+
+def test_playlists_by_name_indexes_and_last_duplicate_wins():
+    """[if] duplicate Rekordbox playlist names exist [then] the last row wins in the index, [else stop]."""
+    pls = (
+        RbPlaylist("1", "dup", False, ()),
+        RbPlaylist("2", "dup", False, ("10",)),
+        RbPlaylist("3", "solo", False, ("11",)),
+    )
+    by_name = playlists_by_name(pls)
+    assert by_name["dup"].playlist_id == "2"
+    assert by_name["solo"].member_ids == ("11",)

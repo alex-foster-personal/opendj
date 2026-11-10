@@ -46,9 +46,7 @@ from apps.vocals.cli import (
 DEMUCS_REALTIME_FACTOR = 1.36
 DEFAULT_TRICKLE_LIMIT = 5
 WORKER_TIMEOUT_S = 60 * 60
-WORKER_SCRIPT = (
-    Path(__file__).resolve().parents[2] / "scripts" / "stem_bundle_worker.py"
-)
+WORKER_SCRIPT = Path(__file__).resolve().parents[2] / "scripts" / "stem_bundle_worker.py"
 CATEGORY_CACHED = "cached_stems"
 CATEGORY_MISSING_STEM = CATEGORY_MISSING  # reuse vocals missing-file label
 
@@ -142,9 +140,7 @@ def run_worker(
     device: str,
     timeout_s: float = WORKER_TIMEOUT_S,
 ) -> dict[str, Any]:
-    py = os.environ.get("MDT_STEM_WORKER_PYTHON") or os.environ.get(
-        "MDT_VOCAL_WORKER_PYTHON"
-    )
+    py = os.environ.get("MDT_STEM_WORKER_PYTHON") or os.environ.get("MDT_VOCAL_WORKER_PYTHON")
     if py:
         cmd = [
             py,
@@ -185,8 +181,7 @@ def run_worker(
     )
     if proc.returncode != 0:
         raise RuntimeError(
-            f"stem worker failed ({proc.returncode}): "
-            f"{(proc.stderr or proc.stdout or '').strip()[-2000:]}"
+            f"stem worker failed ({proc.returncode}): {(proc.stderr or proc.stdout or '').strip()[-2000:]}"
         )
     lines = [ln for ln in (proc.stdout or "").splitlines() if ln.strip()]
     if not lines:
@@ -246,15 +241,9 @@ def cmd_trickle(args: argparse.Namespace) -> int:
     todo = order_todo([t for t in tracks if t.category == CATEGORY_TODO], rank)
     batch = todo[: args.limit]
     device = (
-        args.device
-        or os.environ.get("MDT_STEM_WORKER_DEVICE")
-        or os.environ.get("MDT_VOCAL_WORKER_DEVICE")
-        or "auto"
+        args.device or os.environ.get("MDT_STEM_WORKER_DEVICE") or os.environ.get("MDT_VOCAL_WORKER_DEVICE") or "auto"
     )
-    print(
-        f"stem trickle {'LIVE' if live else 'DRY-RUN'} "
-        f"n={len(batch)}/{len(todo)} device={device}"
-    )
+    print(f"stem trickle {'LIVE' if live else 'DRY-RUN'} n={len(batch)}/{len(todo)} device={device}")
     if not batch:
         print("nothing to do")
         return 0
@@ -262,9 +251,7 @@ def cmd_trickle(args: argparse.Namespace) -> int:
     for i, tr in enumerate(batch, 1):
         assert tr.audio_path is not None
         out = root / tr.stable_id
-        reason = (
-            "; no stored length in state.db, sorts last" if tr.length_s == 0 else ""
-        )
+        reason = "; no stored length in state.db, sorts last" if tr.length_s == 0 else ""
         print(f"[{i}/{len(batch)}] {tr.stable_id} {tr.title!r} -> {out}{reason}")
         if not live:
             continue
@@ -280,10 +267,7 @@ def cmd_trickle(args: argparse.Namespace) -> int:
             print(f"  FAIL: {exc}", file=sys.stderr)
             continue
         wall = time.perf_counter() - t0
-        print(
-            f"  OK wall={wall:.1f}s rt={result.get('realtime_factor')} "
-            f"device={result.get('device_used')}"
-        )
+        print(f"  OK wall={wall:.1f}s rt={result.get('realtime_factor')} device={result.get('device_used')}")
         ok += 1
     print(f"done: {ok}/{len(batch)} ok" if live else f"dry-run listed {len(batch)}")
     return 0 if (not live) or ok > 0 or not batch else 1
@@ -305,10 +289,7 @@ def cmd_one(args: argparse.Namespace) -> int:
         print(f"already have valid bundle at {out} (pass --force to recompute)")
         return 0
     device = (
-        args.device
-        or os.environ.get("MDT_STEM_WORKER_DEVICE")
-        or os.environ.get("MDT_VOCAL_WORKER_DEVICE")
-        or "auto"
+        args.device or os.environ.get("MDT_STEM_WORKER_DEVICE") or os.environ.get("MDT_VOCAL_WORKER_DEVICE") or "auto"
     )
     print(f"stem one LIVE {match.stable_id} {match.title!r} device={device}")
     result = run_worker(
@@ -355,15 +336,16 @@ def resolve_audio_path(data_dir: Path, stable_id: str) -> Path:
     path_map = load_path_map(Path(data_dir))
     with sqlite3.connect(f"file:{db}?mode=ro", uri=True) as conn:
         row = conn.execute(
-            "SELECT file_path FROM tracks "
-            "WHERE stable_id = ? AND deleted_at IS NULL",
+            "SELECT file_path FROM tracks WHERE stable_id = ? AND deleted_at IS NULL",
             (stable_id,),
         ).fetchone()
         if row is None:
             raise FileNotFoundError(f"no track {stable_id!r} in {db}")
         canonical_path = row[0]
         path = state_locations.local_audio_path(
-            conn, stable_id, path_map=path_map,
+            conn,
+            stable_id,
+            path_map=path_map,
         )
     if path is not None and path.is_file():
         return path
@@ -386,8 +368,7 @@ def _duration_from_state(data_dir: Path, stable_id: str) -> float:
     db = data_dir / "state" / "state.db"
     with sqlite3.connect(f"file:{db}?mode=ro", uri=True) as conn:
         row = conn.execute(
-            "SELECT duration_ms FROM tracks "
-            "WHERE stable_id = ? AND deleted_at IS NULL",
+            "SELECT duration_ms FROM tracks WHERE stable_id = ? AND deleted_at IS NULL",
             (stable_id,),
         ).fetchone()
     if row is None:
@@ -413,10 +394,7 @@ def cmd_estimate(args: argparse.Namespace) -> int:
 
     if args.seconds is None and args.stable_id is None:
         raise SystemExit("error: pass --seconds or --stable-id")
-    duration_s = (
-        args.seconds if args.seconds is not None
-        else _duration_from_state(Path(data_dir), args.stable_id)
-    )
+    duration_s = args.seconds if args.seconds is not None else _duration_from_state(Path(data_dir), args.stable_id)
 
     keys = [args.tier] if args.tier else list(tiercfg.TIERS)
     rows: list[dict[str, Any]] = []
@@ -424,7 +402,9 @@ def cmd_estimate(args: argparse.Namespace) -> int:
         tier = tiercfg.get_tier(key)
         card = args.gpu or tier.gpu
         row: dict[str, Any] = {
-            "tier": tier.key, "name": tier.name, "gpu": card,
+            "tier": tier.key,
+            "name": tier.name,
+            "gpu": card,
             "preset": tier.preset_tag,
         }
         try:
@@ -449,10 +429,7 @@ def cmd_estimate(args: argparse.Namespace) -> int:
             usd = f"${row['usd']:.4f}"
         else:
             wall = usd = "NOT MEASURED"
-        print(
-            f"{row['tier']:<6} {row['name']:<11} {row['gpu']:<10} "
-            f"{wall:>13} {usd:>10}  {row['preset']}"
-        )
+        print(f"{row['tier']:<6} {row['name']:<11} {row['gpu']:<10} {wall:>13} {usd:>10}  {row['preset']}")
     unmeasured = [r for r in rows if not r["measured"]]
     if unmeasured:
         print(f"\n{len(unmeasured)} rung(s) have no benchmark on this card:")
@@ -542,10 +519,7 @@ def cmd_build_index(args: argparse.Namespace) -> int:
     index = stem_index.build_index_from_journal(journal_path)
     cache_path = stem_index.save_cached_index(args.data_dir, index)
     n_files = sum(len(files) for files in index.values())
-    print(
-        f"built index from {journal_path}: {len(index)} bundles, {n_files} files "
-        f"-> cached at {cache_path}"
-    )
+    print(f"built index from {journal_path}: {len(index)} bundles, {n_files} files -> cached at {cache_path}")
     if not args.publish:
         return 0
     from apps.cloud.config import CloudConfig
@@ -577,9 +551,7 @@ def cmd_bulk_hydrate(args: argparse.Namespace) -> int:
 
     source = resolve_stem_hydration_source(args.data_dir)
     if source is None:
-        raise SystemExit(
-            "error: bulk-hydrate needs cloud mode with R2 credentials or a configured hub"
-        )
+        raise SystemExit("error: bulk-hydrate needs cloud mode with R2 credentials or a configured hub")
     from apps.cloud.stem_source import StemSourceError, hub_transport_failure_kind
 
     index = stem_index.load_cached_index(args.data_dir)
@@ -629,11 +601,30 @@ def cmd_bulk_hydrate(args: argparse.Namespace) -> int:
         print(f"  fetched {outcome.stable_id} ({outcome.status}, {outcome.bytes_fetched} bytes)")
     for outcome in report.skipped:
         print(f"  skipped {outcome.stable_id} ({outcome.reason})")
-    print(
-        f"done: {len(report.fetched)} fetched, {len(report.skipped)} skipped, "
-        f"{report.bytes_fetched / 1e6:.1f} MB"
-    )
+    print(f"done: {len(report.fetched)} fetched, {len(report.skipped)} skipped, {report.bytes_fetched / 1e6:.1f} MB")
     return 0
+
+
+def cmd_audit_quality(args: argparse.Namespace) -> int:
+    """Exit 0 when every set is COMPLIANT and N > 0; 1 when not; 2 on self-test or store errors."""
+    import json as json_mod
+    import sys
+
+    from apps.stems.stem_set_audit import AuditError, run_audit
+
+    try:
+        report = run_audit(stems_dir(args.data_dir))
+    except AuditError as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 2
+    if args.json:
+        print(json_mod.dumps(report.to_json(), indent=2))
+    else:
+        for row in report.rows:
+            axis = f" [{row.axis}]" if row.axis else ""
+            print(f"{row.status:<10} {row.stable_id}{axis} {row.reason}")
+        print(report.summary_line())
+    return 0 if report.passed else 1
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -660,12 +651,8 @@ def build_parser() -> argparse.ArgumentParser:
     # a silent dry-run default reads as "safe by default" while leaving the
     # operator no way to say which they meant, so argparse refuses instead.
     trickle_mode = trickle.add_mutually_exclusive_group(required=True)
-    trickle_mode.add_argument(
-        "--dry-run", action="store_true", help="list the batch only, run no worker"
-    )
-    trickle_mode.add_argument(
-        "--live", action="store_true", help="execute the worker for each queued track"
-    )
+    trickle_mode.add_argument("--dry-run", action="store_true", help="list the batch only, run no worker")
+    trickle_mode.add_argument("--live", action="store_true", help="execute the worker for each queued track")
     trickle.set_defaults(func=cmd_trickle)
 
     one = sub.add_parser("one", parents=[common])
@@ -675,16 +662,18 @@ def build_parser() -> argparse.ArgumentParser:
     one.set_defaults(func=cmd_one)
 
     est = sub.add_parser(
-        "estimate", parents=[common],
+        "estimate",
+        parents=[common],
         help="how long each S/M/L tier takes for a track, on Modal",
     )
     est.add_argument(
-        "--seconds", type=float, default=None,
+        "--seconds",
+        type=float,
+        default=None,
         help="track duration; or use --stable-id to read it from state.db",
     )
     est.add_argument("--stable-id", default=None)
-    est.add_argument("--tier", choices=_TIER_CHOICES, default=None,
-                     help="default: show every rung of the ladder")
+    est.add_argument("--tier", choices=_TIER_CHOICES, default=None, help="default: show every rung of the ladder")
     est.add_argument("--gpu", default=None, help="override the card")
     est.add_argument("--json", action="store_true")
     est.set_defaults(func=cmd_estimate)
@@ -709,18 +698,21 @@ def build_parser() -> argparse.ArgumentParser:
     cancel.set_defaults(func=cmd_cancel)
 
     build_index = sub.add_parser(
-        "build-index", parents=[common],
+        "build-index",
+        parents=[common],
         help="fold the R2 push journal into the local stem-index cache (ADR-0024)",
     )
     build_index.add_argument("--journal", type=Path, default=None)
     build_index.add_argument(
-        "--publish", action="store_true",
+        "--publish",
+        action="store_true",
         help="also overwrite the R2 pointer object so other machines can fetch it",
     )
     build_index.set_defaults(func=cmd_build_index)
 
     bulk_hydrate = sub.add_parser(
-        "bulk-hydrate", parents=[common],
+        "bulk-hydrate",
+        parents=[common],
         help="hydrate many R2-indexed stem bundles within a byte budget (ADR-0024)",
     )
     bulk_ids = bulk_hydrate.add_mutually_exclusive_group(required=True)
@@ -728,16 +720,26 @@ def build_parser() -> argparse.ArgumentParser:
     bulk_ids.add_argument("--playlist", default=None)
     bulk_hydrate.add_argument("--budget-bytes", type=int, required=True)
     bulk_hydrate.add_argument(
-        "--include-reserved", action="store_true",
+        "--include-reserved",
+        action="store_true",
         help="also hydrate stable_ids in the reservation guard file "
-             "(state/stem-order-reserved-100.json) -- off by default",
+        "(state/stem-order-reserved-100.json) -- off by default",
     )
     bulk_hydrate.add_argument(
-        "--refresh-index", action="store_true",
+        "--refresh-index",
+        action="store_true",
         help="fetch the published R2 index into the local cache before hydrating",
     )
     bulk_hydrate.add_argument("--json", action="store_true")
     bulk_hydrate.set_defaults(func=cmd_bulk_hydrate)
+
+    audit = sub.add_parser(
+        "audit-quality",
+        parents=[common],
+        help="classify every stem-set as COMPLIANT, VIOLATION or UNKNOWN against the whole-set rule (STEM-10946)",
+    )
+    audit.add_argument("--json", action="store_true")
+    audit.set_defaults(func=cmd_audit_quality)
 
     return p
 

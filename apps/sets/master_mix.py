@@ -24,13 +24,22 @@ The capture is ``starting`` until the first chunk, ``recording`` while chunks
 arrive, and ``failed`` (with the reason) when none arrived within
 :data:`ATTACH_TIMEOUT_S` of the start or for :data:`STALL_TIMEOUT_S` since the
 last one: the page that was recording closed, or its engine stopped.
+
+Every accepted chunk also feeds a :class:`LevelAccumulator` (issue #10371):
+peak dBFS (session maximum and a rolling :data:`RECENT_PEAK_WINDOW_S` value in
+audio time), full-scale samples, and clip events (runs of 3 or more frames with
+a full-scale sample), mimicking the clip indicator of every DJ recorder.
 """
 
 from __future__ import annotations
 
+import array
+import math
 import struct
+import sys
 import threading
 import time
+from collections import deque
 from collections.abc import Callable
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
@@ -55,6 +64,20 @@ MAX_CHUNK_BYTES = 4 * 1024 * 1024
 MIN_SAMPLE_RATE = 8_000
 MAX_SAMPLE_RATE = 192_000
 _HEADER_BYTES = 44
+#: The rolling ``peak_dbfs_recent`` window, in seconds of accepted audio.
+RECENT_PEAK_WINDOW_S = 3.0
+#: Full-scale int16 values; either one is a clipped sample.
+_FULL_SCALE = (32767, -32768)
+#: A clip event is a run of at least this many consecutive clipped frames.
+CLIP_EVENT_MIN_FRAMES = 3
+#: dBFS of one LSB: digital silence reads this, so the value stays finite.
+SILENCE_FLOOR_DBFS = round(20 * math.log10(1 / 32768), 2)
+
+
+#: Given ``(pcm, sample_rate)`` for each ACCEPTED chunk, after its WAV write
+#: and outside the writer lock. A tee must not block and must not raise: it
+#: runs on the master-pcm route's request path (STREAM-11486).
+MasterMixTee = Callable[[bytes, int], None]
 
 
 class MasterMixChunkRefused(ValueError):
@@ -80,6 +103,65 @@ def _wav_header(sample_rate: int, data_bytes: int) -> bytes:
         + b"data"
         + struct.pack("<I", data_bytes)
     )
+
+
+def _dbfs(peak_abs: int) -> float:
+    return round(20 * math.log10(max(peak_abs, 1) / 32768), 2)
+
+
+class LevelAccumulator:
+    """Peak and clip accounting over int16 stereo chunks; no numpy."""
+
+    def __init__(self) -> None:
+        self.peak_abs: int | None = None
+        self.clipped_samples = 0
+        self.clip_events = 0
+        self._run_frames = 0
+        self._audio_s = 0.0
+        self._recent: deque[tuple[float, int]] = deque()
+
+    def add(self, pcm: bytes, sample_rate: int) -> None:
+        samples = array.array("h")
+        samples.frombytes(pcm)
+        if sys.byteorder == "big":
+            samples.byteswap()
+        hi, lo = max(samples), min(samples)
+        chunk_peak = max(hi, -lo)
+        n_clip = samples.count(_FULL_SCALE[0]) + samples.count(_FULL_SCALE[1])
+        if n_clip or self._run_frames:
+            self._scan_runs(samples)
+        self.clipped_samples += n_clip
+        self.peak_abs = chunk_peak if self.peak_abs is None else max(self.peak_abs, chunk_peak)
+        self._audio_s += len(pcm) // FRAME_BYTES / sample_rate
+        self._recent.append((self._audio_s, chunk_peak))
+        while self._recent[0][0] <= self._audio_s - RECENT_PEAK_WINDOW_S:
+            self._recent.popleft()
+
+    def _scan_runs(self, samples: array.array[int]) -> None:
+        run = self._run_frames
+        events = 0
+        for left, right in zip(samples[0::2], samples[1::2], strict=True):
+            if left in _FULL_SCALE or right in _FULL_SCALE:
+                run += 1
+                if run == CLIP_EVENT_MIN_FRAMES:
+                    events += 1
+            else:
+                run = 0
+        self._run_frames = run
+        self.clip_events += events
+
+    def new_stream(self) -> None:
+        """A new stream follows a gap, so an open clip run ends there."""
+        self._run_frames = 0
+
+    def snapshot(self) -> dict[str, float | int | None]:
+        recent = max((p for _, p in self._recent), default=None)
+        return {
+            "peak_dbfs": None if self.peak_abs is None else _dbfs(self.peak_abs),
+            "peak_dbfs_recent": None if recent is None else _dbfs(recent),
+            "clipped_samples": self.clipped_samples,
+            "clip_events": self.clip_events,
+        }
 
 
 class _Segment:
@@ -135,11 +217,13 @@ class MasterMixWriter:
         self._next_seq = 0
         self._segment: _Segment | None = None
         self._closed = False
+        self._tees: list[MasterMixTee] = []
         # What the page SENT and this writer accepted, counted from the request
         # bodies, independently of what reached disk: the two must match exactly.
         self.chunks_accepted = 0
         self.frames_accepted = 0
         self.streams = 0
+        self._levels = LevelAccumulator()
 
     # -- capture-handle surface (what Recorder.capture_state reads) --------
 
@@ -191,6 +275,7 @@ class MasterMixWriter:
                 self._stream = stream
                 self.streams += 1
                 self._next_seq = 0
+                self._levels.new_stream()
                 self._close_segment()
             if seq != self._next_seq:
                 raise MasterMixChunkRefused(
@@ -212,6 +297,26 @@ class MasterMixWriter:
                 self._first_frame_at = self._last_chunk_at - len(pcm) / FRAME_BYTES / sample_rate
             self.chunks_accepted += 1
             self.frames_accepted += len(pcm) // FRAME_BYTES
+            self._levels.add(pcm, sample_rate)
+            tees = tuple(self._tees)
+        for tee in tees:
+            tee(pcm, sample_rate)
+
+    def add_tee(self, tee: MasterMixTee) -> None:
+        """Hand every later accepted chunk to ``tee`` too; the WAV is unchanged."""
+        with self._lock:
+            self._tees.append(tee)
+
+    def remove_tee(self, tee: MasterMixTee) -> None:
+        """Stop handing chunks to ``tee``; ValueError if it was never added."""
+        with self._lock:
+            self._tees.remove(tee)
+
+    @property
+    def sample_rate(self) -> int | None:
+        """The open segment's rate, or None before the first chunk."""
+        with self._lock:
+            return None if self._segment is None else self._segment.sample_rate
 
     def _open_segment(self, sample_rate: int) -> _Segment:
         """A new ``audio_<UTC start>.wav``; a taken second moves to the next one."""
@@ -247,7 +352,12 @@ class MasterMixWriter:
             return None
         return self._ms_since_start(self._first_frame_at)
 
-    def summary(self) -> dict[str, int | None]:
+    def levels(self) -> dict[str, float | int | None]:
+        """Peak and clip counters so far (issue #10371); still valid after close."""
+        with self._lock:
+            return self._levels.snapshot()
+
+    def summary(self) -> dict[str, float | int | None]:
         """What was accepted, for the ``master_mix_closed`` timeline event: the
         frame total must equal the WAV frames on disk across every segment."""
         with self._lock:
@@ -257,6 +367,7 @@ class MasterMixWriter:
                 "streams": self.streams,
                 "start_to_first_frame_ms": self.start_to_first_frame_ms(),
                 "start_to_tap_attached_ms": self._ms_since_start(self._attached_at),
+                **self._levels.snapshot(),
             }
 
     def close(self) -> None:
@@ -268,10 +379,15 @@ class MasterMixWriter:
 
 __all__ = [
     "ATTACH_TIMEOUT_S",
+    "CLIP_EVENT_MIN_FRAMES",
     "MASTER_MIX_DEVICE_LABEL",
     "MAX_CHUNK_BYTES",
+    "RECENT_PEAK_WINDOW_S",
+    "SILENCE_FLOOR_DBFS",
     "STALL_TIMEOUT_S",
+    "LevelAccumulator",
     "MasterMixChunkRefused",
     "MasterMixRecordingStopped",
+    "MasterMixTee",
     "MasterMixWriter",
 ]

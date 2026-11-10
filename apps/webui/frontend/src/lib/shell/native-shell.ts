@@ -46,8 +46,18 @@ interface ElectronShellBridge {
 		close(): Promise<void>;
 		importBrowserLogins(): Promise<SideLoginImportOutcome>;
 	};
+	/** Extra labelled windows such as the library second screen. */
+	windows?: {
+		open(label: WindowLabel): Promise<void>;
+		close(label: WindowLabel): Promise<void>;
+		focus(label: WindowLabel): Promise<void>;
+	};
 	listCoreAudioOutputs(): Promise<unknown[]>;
 }
+
+export type WindowAction = 'open' | 'close' | 'focus';
+export type WindowLabel = 'second-screen';
+export const WINDOW_LABELS: readonly WindowLabel[] = ['second-screen'];
 
 export type SideLoginImportOutcome =
 	| { kind: 'imported'; browser: string; cookies: number; sites: string[] }
@@ -166,4 +176,28 @@ export async function listCoreAudioOutputs(scope: Scope = globalThis): Promise<u
 	const electron = electronBridge(scope);
 	if (electron === null || typeof electron.listCoreAudioOutputs !== 'function') return null;
 	return electron.listCoreAudioOutputs();
+}
+
+/**
+ * Open, close or focus a labelled extra window through the desktop shell.
+ * A browser tab is refused with a reason that names the shell, never ignored.
+ */
+export async function controlShellWindow(
+	action: WindowAction,
+	label: WindowLabel,
+	scope: Scope = globalThis
+): Promise<void> {
+	const electron = electronBridge(scope);
+	if (electron !== null) {
+		const windows = electron.windows;
+		const fn = windows === undefined ? undefined : windows[action];
+		if (typeof fn !== 'function') {
+			throw new Error('this Electron shell cannot control extra windows; update the Open DJ app');
+		}
+		await fn(label);
+		return;
+	}
+	throw new Error(
+		'no desktop shell: the window command needs the Open DJ desktop shell, not a browser tab'
+	);
 }

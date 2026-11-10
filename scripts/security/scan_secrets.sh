@@ -65,7 +65,9 @@ scan_python() {
 
 # The Python runner receives the same paths and range that this wrapper and lib.sh use.
 export SECURITY_REPO_ROOT SECURITY_WORK_DIR SECURITY_BIN_DIR SECURITY_SUMMARY_FILE SECURITY_BASE_REF
-export SECURITY_BASE_SHA="${SECURITY_BASE_SHA:-}"
+if [[ -n "${SECURITY_BASE_SHA:-}" ]]; then
+  export SECURITY_BASE_SHA
+fi
 export SECURITY_HEAD_SHA="${SECURITY_HEAD_SHA:-}"
 
 # ----- main -----------------------------------------------------------------------------------

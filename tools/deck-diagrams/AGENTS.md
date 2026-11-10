@@ -4,7 +4,7 @@ Tracking: https://github.com/private_owner/music-dj-tools/issues/371
 
 ## Skill (main workflow)
 
-**Read and follow:** [`.agents/skills/deck-diagram-recreate/SKILL.md`](../../.agents/skills/deck-diagram-recreate/SKILL.md)
+**Read and follow:** [`(private path)`](../../.agents/skills/deck-diagram-recreate/SKILL.md)
 
 That skill is the functional entry point. This directory holds assets, schemas, HTML decks, and helpers the skill produces.
 
@@ -36,6 +36,9 @@ open tools/deck-diagrams/devices/ddj-flx10/deck.html
 
 - Geometry lives here, **not** in runtime `apps/webui/.../midi/maps/*.ts`.
 - Diagrams **consume** MIDI expected maps; they do not invent note numbers.
+- When the maker publishes no wire identity (HID-only units), a practice `panel.json` control
+  carries `midi: null` (wire unavailable) and renders unwired and inert; never fill it with a
+  placeholder number.
 - SHIFT is a first-class layer. Pad modes are additional layers when present.
 - HID-only surfaces (jog screens, VU bitmaps) stay out of scope - list them in `footnotes.md`.
 - No U+2013 or U+2014 characters in files.

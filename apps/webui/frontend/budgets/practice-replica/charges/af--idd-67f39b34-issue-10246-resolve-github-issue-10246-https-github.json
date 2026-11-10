@@ -1,0 +1,9 @@
+{
+  "bytes": 1024,
+  "measured_main": 30672,
+  "measured_with_pr": 30676,
+  "sha": "2868124f2d",
+  "date": "Tue 10 Nov 2026",
+  "reason": "Issue #10246 (FXTRANS-11737) adds the fx_noise color_fx NOISE path and noise_unavailable refusal to agent-plan.ts and agent-orders.ts. Measured: local build vs main at 2868124f2d, +4 B gzip on practice-replica; ceiled to KiB",
+  "payback": "none planned; the growth is the feature's own code on this surface"
+}

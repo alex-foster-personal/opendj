@@ -292,3 +292,48 @@ test('listCoreAudioOutputs forwards the Electron bridge and is absent elsewhere'
 	assert.equal(await mod.listCoreAudioOutputs({}), null);
 	assert.equal(await mod.listCoreAudioOutputs({ __TAURI_INTERNALS__: {} }), null);
 });
+
+test('controlShellWindow refuses a browser tab with a reason that names the shell', async () => {
+	await assert.rejects(mod.controlShellWindow('open', 'second-screen', {}), /desktop shell/);
+});
+
+test('controlShellWindow refuses a Tauri shell with the same named refusal', async () => {
+	await assert.rejects(
+		mod.controlShellWindow('open', 'second-screen', { __TAURI_INTERNALS__: {} }),
+		/desktop shell/
+	);
+});
+
+test('controlShellWindow opens, closes and focuses through the Electron bridge', async () => {
+	const calls = [];
+	const scope = {
+		opendjShell: {
+			kind: 'electron',
+			version: 3,
+			windows: {
+				open: async (label) => {
+					calls.push(['open', label]);
+				},
+				close: async (label) => {
+					calls.push(['close', label]);
+				},
+				focus: async (label) => {
+					calls.push(['focus', label]);
+				}
+			}
+		}
+	};
+	await mod.controlShellWindow('open', 'second-screen', scope);
+	await mod.controlShellWindow('focus', 'second-screen', scope);
+	await mod.controlShellWindow('close', 'second-screen', scope);
+	assert.deepEqual(calls, [
+		['open', 'second-screen'],
+		['focus', 'second-screen'],
+		['close', 'second-screen']
+	]);
+});
+
+test('an Electron shell without extra-window support fails loud', async () => {
+	const { scope } = electronScope();
+	await assert.rejects(mod.controlShellWindow('open', 'second-screen', scope), /Electron shell/);
+});

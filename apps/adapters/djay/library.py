@@ -28,10 +28,12 @@ from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
 
+from apps.adapters.rekordbox.models import VendorUsbMention
 from apps.open_dj import CuePoint, OpenDjLibrary, Playlist, Track
 from apps.open_dj.provenance import utc_mtime
 from apps.shared import djay_db
 from apps.shared.normalised import NormalisedAnalysis, NormalisedCue
+from apps.sync.usb.stick_model import is_canonical_volume_uuid
 
 
 @dataclass(frozen=True)
@@ -246,3 +248,108 @@ def _cues_by_uuid(db_path: Path) -> tuple[dict[str, list[NormalisedCue]], int]:
         if cues:
             out[str(key)] = cues
     return out, unreadable
+
+
+_DJAY_USB_COLLECTIONS = (
+    "removableMediaVolumes",
+    "removableVolumes",
+    "externalVolumes",
+)
+
+_VOLUME_PATH_MARKERS = ("/Volumes/", "file:///Volumes/")
+
+
+def _djay_tsaf_field(data: bytes, field: str) -> str | None:
+    marker = f"\x08{field}\x00".encode()
+    idx = data.find(marker)
+    if idx < 1:
+        return None
+    start = idx - 1
+    while start > 0 and data[start] != 0x08:
+        start -= 1
+    if start <= 0 or data[start] != 0x08:
+        return None
+    try:
+        return data[start + 1 : idx].decode("utf-8").strip()
+    except UnicodeDecodeError:
+        return None
+
+
+def _mention_from_djay_blob(data: bytes) -> VendorUsbMention | None:
+    kv = djay_db._tsaf_kv(data)
+    name = (
+        (kv.get("name") or kv.get("volumeName") or kv.get("title") or "").strip()
+    )
+    raw_uuid = (kv.get("volumeUUID") or kv.get("uuid") or "").strip().upper()
+    volume_uuid = raw_uuid if raw_uuid and is_canonical_volume_uuid(raw_uuid) else None
+    if not name and volume_uuid is None:
+        name = _djay_tsaf_field(data, "volumeName") or _djay_tsaf_field(data, "name")
+        if not name:
+            return None
+    return VendorUsbMention(
+        name=name,
+        source="djay",
+        volume_uuid=volume_uuid,
+    )
+
+
+def _mention_from_djay_path(file_uri: str) -> VendorUsbMention | None:
+    path = djay_db._file_uri_to_path(file_uri)
+    if path is None:
+        return None
+    parts = path.parts
+    if len(parts) < 3 or parts[0] != "/" or parts[1] != "Volumes":
+        return None
+    label = parts[2].strip()
+    if not label:
+        return None
+    return VendorUsbMention(name=label, source="djay", volume_uuid=None)
+
+
+def list_djay_usb_mentions(db_path: Path) -> list[VendorUsbMention]:
+    """Read-only USB stick names remembered in djay's MediaLibrary.db."""
+    path = Path(db_path)
+    if not path.is_file():
+        return []
+    con = sqlite3.connect(f"file:{path.resolve().as_uri()}?mode=ro", uri=True)
+    by_uuid: dict[str, VendorUsbMention] = {}
+    by_label: dict[str, VendorUsbMention] = {}
+    try:
+        for collection in _DJAY_USB_COLLECTIONS:
+            try:
+                rows = con.execute(
+                    "SELECT data FROM database2 WHERE collection = ?", (collection,)
+                ).fetchall()
+            except sqlite3.Error:
+                continue
+            for (data,) in rows:
+                if not data:
+                    continue
+                mention = _mention_from_djay_blob(data)
+                if mention is None:
+                    continue
+                if mention.volume_uuid is not None:
+                    by_uuid.setdefault(mention.volume_uuid, mention)
+                else:
+                    key = mention.name.casefold()
+                    by_label.setdefault(key, mention)
+
+        for (_key, data) in con.execute(
+            "SELECT key, data FROM database2 "
+            "WHERE collection = 'localMediaItemLocations'"
+        ):
+            if not data:
+                continue
+            uri = djay_db._tsaf_kv(data).get("sourceURIs", "")
+            if not uri or not any(marker in uri for marker in _VOLUME_PATH_MARKERS):
+                continue
+            mention = _mention_from_djay_path(uri)
+            if mention is None:
+                continue
+            key = mention.name.casefold()
+            by_label.setdefault(key, mention)
+    except sqlite3.Error:
+        return []
+    finally:
+        con.close()
+    return [*by_uuid.values(), *by_label.values()]

@@ -31,7 +31,11 @@ from apps.shared.smartlists import (
     SmartlistRuleError,
     validate_rule,
 )
+from apps.shared.state.play_log import PLAY_KIND
 from apps.smartlists.order_by import ORDER_BY_SQL
+
+# Keep aligned with materializer.DEFAULT_MARKER_PREFIX (avoid import cycle).
+_SMARTLIST_PLAYLIST_PREFIX = "[SL] "
 
 
 class EvaluatorError(ValueError):
@@ -47,6 +51,30 @@ def _sql_literal(s: str) -> str:
     if not s.replace("_", "").isalnum():
         raise EvaluatorError(f"refusing unsafe identifier {s!r}")
     return "'" + s + "'"
+
+
+def _smartlist_field_sql(field: str) -> str:
+    sl_prefix = _SMARTLIST_PLAYLIST_PREFIX.replace("'", "''")
+    sl_len = len(_SMARTLIST_PLAYLIST_PREFIX)
+    mapping = {
+        "play_count": (
+            f"(SELECT COUNT(*) FROM events e "
+            f"WHERE e.kind = {_sql_literal(PLAY_KIND)} AND e.stable_id = tracks.stable_id)"
+        ),
+        "duration_s": "((tracks.duration_ms + 500) / 1000)",
+        "playlist_count": (
+            "(SELECT COUNT(DISTINCT m.playlist_id) FROM playlist_memberships m "
+            "JOIN playlists p ON p.playlist_id = m.playlist_id "
+            "WHERE m.stable_id = tracks.stable_id "
+            "AND (m.deleted_at IS NULL OR m.deleted_at = '') "
+            "AND (p.deleted_at IS NULL OR p.deleted_at = '') "
+            f"AND substr(COALESCE(p.name, ''), 1, {sl_len}) != '{sl_prefix}')"
+        ),
+    }
+    try:
+        return mapping[field]
+    except KeyError as exc:
+        raise EvaluatorError(f"no smartlist SQL for field {field!r}") from exc
 
 
 def _eav_scalar(field: str) -> str:
@@ -159,6 +187,10 @@ def _compile_predicate(node: dict, selection: Selection) -> tuple[str, list[Any]
     if field == "paired_with":
         return _compile_paired_with(op, value)
 
+    if field in ("play_count", "duration_s", "playlist_count"):
+        col = _smartlist_field_sql(field)
+        return _compile_scalar_op(field, op, col, value, FIELD_TYPES[field])
+
     # Lane-owned fields resolve through apps.analysis.selection, which is
     # also what the track read model calls: same module, same Selection,
     # same table-choice rule, so the two readers cannot disagree.
@@ -208,6 +240,8 @@ def _order_by_needs_join(order_by: str) -> str | None:
         "rating desc": "rating",
         "energy asc": "energy",
         "energy desc": "energy",
+        "play_count asc": "play_count",
+        "play_count desc": "play_count",
     }
     return mapping.get(order_by)
 
@@ -237,11 +271,14 @@ def evaluate(
     if eav_order_field is not None:
         # ORDER BY is a reader too: sorting a promoted lane by the
         # rekordbox column would order the list by a value no cell shows.
-        order_col = (
-            field_column_sql(eav_order_field, selection)
-            if eav_order_field in PROJECTION_FIELDS
-            else _eav_scalar(eav_order_field)
-        )
+        if eav_order_field == "play_count":
+            order_col = _smartlist_field_sql("play_count")
+        else:
+            order_col = (
+                field_column_sql(eav_order_field, selection)
+                if eav_order_field in PROJECTION_FIELDS
+                else _eav_scalar(eav_order_field)
+            )
         select = f"SELECT tracks.stable_id, {order_col} AS _{eav_order_field} "
     else:
         select = "SELECT tracks.stable_id "

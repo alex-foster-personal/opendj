@@ -1,0 +1,9 @@
+{
+  "bytes": 1024,
+  "measured_main": 496719,
+  "measured_with_pr": 497062,
+  "sha": "0103b35abc",
+  "date": "Mon 9 Nov 2026",
+  "reason": "PR #10707 adds the PLAY IT unscored-edges panel header (formatUnscoredEdges plus the warning line) on the other-lazy surface; measured +343 B gzip over main on CI of 0103b35abc; ceiled to KiB.",
+  "payback": "none planned; the growth is the feature's own code on this surface"
+}

@@ -31,13 +31,15 @@ rules:
       # Repinned Fri 6 Nov 2026 (were 922 and 2109, before that 917 and 2102): the same two
       # steps, moved down by lines added above them. Repinned again Mon 9 Nov 2026 (were 926
       # and 2113) for the opt-in label, the hourly schedule (ADR-NEW-e2e-opt-in-by-label) and the skip of non-green workflow_run events (#10534).
-      - e2e.yml:962
-      - e2e.yml:2151
+      # Repinned Tue 10 Nov 2026 (were 962 and 2151): hygiene steps above the lane writer moved again (#11114).
+      - e2e.yml:1007
+      - e2e.yml:2255
   artipacked:
     ignore:
       # These checkouts keep credentials because a later step runs git fetch
       # (periodic-checks preview-drift, on a runner with no other
       # credential for this private repo) or git fetch + push (debt-index-regen).
       # None of these jobs uploads the checkout as an artifact.
-      - debt-index-regen.yml:127
-      - periodic-checks.yml:1059
+      # Repinned Tue 10 Nov 2026 (were 127 and 1059): checkout pins moved with hygiene blocks (#11114).
+      - debt-index-regen.yml:142
+      - periodic-checks.yml:1165

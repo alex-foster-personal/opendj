@@ -20,6 +20,7 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 mod engine;
+mod engine_dev_override;
 mod engine_log;
 mod http_paths;
 mod launch;
@@ -451,7 +452,7 @@ fn resolve_existing_components(path: &Path) -> Result<PathBuf, String> {
     Ok(resolved)
 }
 
-fn payload_dir(app: &AppHandle) -> Result<PathBuf, engine::EngineError> {
+fn bundled_payload_dir(app: &AppHandle) -> Result<PathBuf, engine::EngineError> {
     let resources = app
         .path()
         .resource_dir()
@@ -460,6 +461,39 @@ fn payload_dir(app: &AppHandle) -> Result<PathBuf, engine::EngineError> {
             detail: format!("Resolving the bundle resource directory failed: {err}"),
         })?;
     Ok(resources.join(engine::PAYLOAD_DIR))
+}
+
+fn resolve_payload_for_spawn(
+    bundled: &Path,
+    data_dir: &Path,
+) -> Result<PathBuf, engine::MissingEngineSource> {
+    let configured = engine_dev_override::configured_engine_source_directory(data_dir);
+    let key = engine_dev_override::active_engine_source_config_key(data_dir);
+    engine::resolve_engine_payload_dir(bundled, configured.as_deref(), key)
+}
+
+fn missing_engine_source_boot_query(
+    missing: &engine::MissingEngineSource,
+    health_port: u16,
+) -> String {
+    engine_dev_override::missing_engine_source_bootstrap_query(missing, health_port)
+}
+
+fn spawn_reset_poll_thread(app: AppHandle, health: Arc<shell_health::ShellHealthServer>) {
+    std::thread::spawn(move || {
+        loop {
+            if health.take_reset_bundled_payload_request() {
+                engine::append_shell_log("INFO", "reset bundled payload accepted; relaunching");
+                let app = app.clone();
+                let restart = app.clone();
+                let _ = app.run_on_main_thread(move || {
+                    restart.request_restart();
+                });
+                return;
+            }
+            std::thread::sleep(Duration::from_millis(200));
+        }
+    });
 }
 
 fn show_stop_or_quit_dialog(pid: u32, detail: &str, lock_path: &Path) -> bool {
@@ -487,8 +521,7 @@ fn show_stop_or_quit_dialog(pid: u32, detail: &str, lock_path: &Path) -> bool {
 /// macOS must run on the main thread, and the failure path here MUST raise
 /// one: the alternative is the blank window this whole design exists to
 /// eliminate. Waiting costs the measured ~1.5s of a cold boot.
-fn start_engine(app: &AppHandle) -> Result<Supervised, engine::EngineError> {
-    let payload = payload_dir(app)?;
+fn start_engine(app: &AppHandle, payload: &Path) -> Result<Supervised, engine::EngineError> {
     let data_dir = app_data_dir(app)?;
     let log_path = data_dir.join(ENGINE_LOG);
     let lock_path = launch::lock_path(&data_dir);
@@ -519,19 +552,19 @@ fn start_engine(app: &AppHandle) -> Result<Supervised, engine::EngineError> {
                         ),
                     );
                     launch::stop_holder_pid(pid);
-                    spawn_fresh_engine(&payload, &data_dir, &log_path)
+                    spawn_fresh_engine(payload, &data_dir, &log_path)
                 }
             }
         }
         LaunchPlan::StopOrQuit { pid, detail } => {
             if show_stop_or_quit_dialog(pid, &detail, &lock_path) {
                 launch::stop_holder_pid(pid);
-                spawn_fresh_engine(&payload, &data_dir, &log_path)
+                spawn_fresh_engine(payload, &data_dir, &log_path)
             } else {
                 Err(engine::EngineError::new("Open DJ could not start.", detail))
             }
         }
-        LaunchPlan::Spawn => spawn_fresh_engine(&payload, &data_dir, &log_path),
+        LaunchPlan::Spawn => spawn_fresh_engine(payload, &data_dir, &log_path),
     }
 }
 
@@ -756,22 +789,61 @@ fn main() {
                 fail_visibly(&failure);
             }
 
-            // An externally supplied origin means an operator is driving this
-            // build against an engine they started. Honour it exactly, and do
-            // not start a second engine behind their back.
-            let (origin, running) = match std::env::var(ENGINE_ORIGIN_ENV) {
-                Ok(value) if value.trim().is_empty() => panic!(
-                    "{ENGINE_ORIGIN_ENV} is set but empty; give a full \
-                     loopback origin including the port, or unset it to let \
-                     the app start its own bundled engine"
-                ),
-                Ok(value) => (value.trim().to_string(), None),
-                Err(_) => match start_engine(&handle) {
-                    Ok(started) => (started.origin(), Some(started)),
-                    Err(failure) => fail_visibly(&failure),
-                },
-            };
-            let mut boot_engine = BootSupervisedGuard::new(running, data_dir.clone());
+            let bundled_payload =
+                bundled_payload_dir(&handle).unwrap_or_else(|failure| fail_visibly(&failure));
+            let (origin, mut boot_engine, bootstrap_url, resolved_payload) =
+                match std::env::var(ENGINE_ORIGIN_ENV) {
+                    Ok(value) if value.trim().is_empty() => panic!(
+                        "{ENGINE_ORIGIN_ENV} is set but empty; give a full \
+                         loopback origin including the port, or unset it to let \
+                         the app start its own bundled engine"
+                    ),
+                    Ok(value) => (
+                        value.trim().to_string(),
+                        BootSupervisedGuard::new(None, data_dir.clone()),
+                        "index.html".to_string(),
+                        None,
+                    ),
+                    Err(_) => match resolve_payload_for_spawn(&bundled_payload, &data_dir) {
+                        Err(missing) => {
+                            engine::append_shell_log(
+                                "ERROR",
+                                &format!("{missing}; refusing to spawn the engine"),
+                            );
+                            let health = match shell_health::ShellHealthServer::start(&data_dir) {
+                                Ok(server) => Arc::new(server),
+                                Err(err) => fail_visibly(&engine::EngineError::new(
+                                    "Open DJ cannot start.",
+                                    err,
+                                )),
+                            };
+                            health.update(shell_health::ShellHealthSnapshot {
+                                status: "fatal".into(),
+                                engine: "missing-source".into(),
+                                lock_pid: None,
+                                lock_port: None,
+                                exit_code: None,
+                                reason: Some(missing.to_string()),
+                            });
+                            spawn_reset_poll_thread(handle.clone(), Arc::clone(&health));
+                            (
+                                "http://127.0.0.1:0".to_string(),
+                                BootSupervisedGuard::new(None, data_dir.clone()),
+                                missing_engine_source_boot_query(&missing, health.port()),
+                                None,
+                            )
+                        }
+                        Ok(payload) => match start_engine(&handle, &payload) {
+                            Ok(started) => (
+                                started.origin(),
+                                BootSupervisedGuard::new(Some(started), data_dir.clone()),
+                                "index.html".to_string(),
+                                Some(payload),
+                            ),
+                            Err(failure) => fail_visibly(&failure),
+                        },
+                    },
+                };
             let package = app.package_info();
             let identity = shell_build_identity(&package.version.to_string());
             // CUEOUT-22: the native headphone cue output. A failure to start it
@@ -807,7 +879,7 @@ fn main() {
             // overlay labels the window without a second place to edit.
             let title = package.name.clone();
             let (store, placement) = open_window_state(&handle, &data_dir);
-            let builder = WebviewWindowBuilder::new(app, MAIN_WINDOW_LABEL, WebviewUrl::App("index.html".into()))
+            let builder = WebviewWindowBuilder::new(app, MAIN_WINDOW_LABEL, WebviewUrl::App(bootstrap_url.into()))
                 .title(title);
             let builder = match &placement {
                 Some(found) => builder
@@ -855,7 +927,9 @@ fn main() {
             app.manage(store);
 
             if let Some(started) = boot_engine.take() {
-                let payload = payload_dir(&handle).unwrap_or_else(|failure| fail_visibly(&failure));
+                let payload = resolved_payload
+                    .clone()
+                    .unwrap_or_else(|| bundled_payload.clone());
                 let paths = SupervisorPaths {
                     payload,
                     data_dir: data_dir.clone(),

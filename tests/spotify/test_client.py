@@ -11,7 +11,9 @@ from types import SimpleNamespace
 import pytest
 
 from apps.spotify.client import (
+    CONNECT_WEB_PLAYBACK_SCOPES,
     DEFAULT_REDIRECT_URI,
+    DEFAULT_SCOPES,
     MissingCredentialsError,
     SpotifyClient,
 )
@@ -24,6 +26,20 @@ def fake_cache_dir(tmp_path: Path) -> Path:
     d = tmp_path / "cache"
     d.mkdir()
     return d
+
+
+@pytest.mark.requirement("SPOTIFY-11967")
+def test_default_scopes_stay_on_playlist_and_history_only() -> None:
+    """[if] DEFAULT_SCOPES is read [then] it lists import and history scopes only, [else stop]."""
+    assert DEFAULT_SCOPES == "playlist-read-private playlist-read-collaborative user-read-recently-played"
+
+
+@pytest.mark.requirement("SPOTIFY-11967")
+def test_connect_playback_scopes_are_not_in_default_login_scopes() -> None:
+    """[if] CONNECT_WEB_PLAYBACK_SCOPES is read [then] login DEFAULT_SCOPES excludes each one, [else stop]."""
+    default = set(DEFAULT_SCOPES.split())
+    for scope in CONNECT_WEB_PLAYBACK_SCOPES.split():
+        assert scope not in default
 
 
 def test_from_env_uses_registered_loopback_callback(

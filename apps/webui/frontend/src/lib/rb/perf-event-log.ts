@@ -427,11 +427,18 @@ export function stageTimer(
 }
 
 /** Always-on stage timing (ms). One console.info + ring entry. */
+function _seriesSummary(series: Record<string, number[]>): string {
+	return Object.entries(series)
+		.map(([k, v]) => `${k}=${v.join(',')}`)
+		.join(' ');
+}
+
 export function recordPerfTiming(
 	kind: string,
 	stages: Record<string, number>,
 	deck: 1 | 2 | 3 | 4 | null = null,
-	labels?: Record<string, string>
+	labels?: Record<string, string>,
+	series?: Record<string, number[]>
 ): void {
 	const stageBits = _stageSummary(stages);
 	const labelBits =
@@ -440,7 +447,13 @@ export function recordPerfTiming(
 			: Object.entries(labels)
 					.map(([k, v]) => `${k}=${v}`)
 					.join(' ');
-	const message = labelBits === '' ? stageBits : `${stageBits} ${labelBits}`;
+	const seriesBits = series === undefined ? '' : _seriesSummary(series);
+	const bits = [stageBits, labelBits, seriesBits].filter((b) => b !== '');
+	const message = bits.join(' ');
+	const seriesCopy =
+		series === undefined
+			? {}
+			: { series: Object.fromEntries(Object.entries(series).map(([k, v]) => [k, [...v]])) };
 	_push({
 		t: new Date().toISOString(),
 		kind,
@@ -452,7 +465,8 @@ export function recordPerfTiming(
 		// instead of unknown.
 		severity: 'info',
 		stages: { ...stages },
-		...(labels === undefined ? {} : { labels: { ...labels } })
+		...(labels === undefined ? {} : { labels: { ...labels } }),
+		...seriesCopy
 	});
 	const deckBit = deck === null ? '' : ` deck=${deck}`;
 	console.info(`[perf] ${kind}${deckBit} ${message}`);

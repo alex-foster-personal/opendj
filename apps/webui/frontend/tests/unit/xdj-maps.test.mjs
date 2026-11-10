@@ -1,4 +1,6 @@
-// requirement: CTRL-01
+// requirement: CTRL-01 CTRL-11720
+//   if AZ BEAT JUMP notes do not emit deck_beat_jump with the fixed beat sizes then broken
+//   if RX3 gains deck_beat_jump bindings then broken
 // Wire numbers are read off the official XDJ-RX3 and XDJ-AZ MIDI message lists.
 //   if either map fails the core validator then broken
 //   if play/cue/tempo/fader/PFL wires drift from the lists then broken
@@ -95,14 +97,33 @@ test('AZ pads split across two channels with a 19-note stride', () => {
 });
 
 test('jog platter and side both bind centre-64 relative wires', () => {
-	for (const map of [maps.XDJ_RX3_MAP, maps.XDJ_AZ_MAP]) {
-		const jogs = map.bindings.filter((b) => b.action.type === 'deck_jog' && b.action.deck === 3);
-		assert.deepEqual(jogs.map((b) => b.source.id).sort(), [33, 34]);
-		for (const jog of jogs) {
-			assert.equal(jog.source.ch, 3);
-			assert.equal(jog.relative, true);
-			assert.equal(jog.relativeCentered, true);
-		}
+	const rx3 = maps.XDJ_RX3_MAP.bindings.filter(
+		(b) => b.action.type === 'deck_jog' && b.action.deck === 3
+	);
+	assert.deepEqual(rx3.map((b) => b.source.id).sort(), [33, 34]);
+	for (const jog of rx3) {
+		assert.equal(jog.source.ch, 3);
+		assert.equal(jog.relative, true);
+		assert.equal(jog.relativeCentered, true);
+		assert.equal(jog.action.scale, undefined);
+	}
+	const az = maps.XDJ_AZ_MAP.bindings.filter(
+		(b) => b.action.type === 'deck_jog' && b.action.deck === 3
+	);
+	assert.deepEqual(az.map((b) => b.source.id).sort(), [33, 34, 38, 41]);
+	for (const jog of az) {
+		assert.equal(jog.source.ch, 3);
+		assert.equal(jog.relative, true);
+		assert.equal(jog.relativeCentered, true);
+	}
+	const shifted = az.filter((b) => b.source.id === 38 || b.source.id === 41);
+	assert.equal(shifted.length, 2);
+	for (const jog of shifted) {
+		assert.equal(jog.action.scale, 4);
+	}
+	const base = az.filter((b) => b.source.id === 33 || b.source.id === 34);
+	for (const jog of base) {
+		assert.equal(jog.action.scale, undefined);
 	}
 	assert.equal(webmidi.decodeRelativeCentered(0x41), 1);
 	assert.equal(webmidi.decodeRelativeCentered(0x3f), -1);
@@ -110,6 +131,7 @@ test('jog platter and side both bind centre-64 relative wires', () => {
 
 test('jog scrub stops at the track ends and a bend stays in range', async () => {
 	const jog = await vite.ssrLoadModule('/src/lib/rb/midi/jog.ts');
+	// Base: 4 ticks * 2.5 ms = +10 ms (fixture pinned for CTRL-01 / #10284).
 	assert.equal(jog.jogScrubTargetMs(1000, 5000, 4), 1010);
 	assert.equal(jog.jogScrubTargetMs(1, 5000, -30), 0);
 	assert.equal(jog.jogScrubTargetMs(4999, 5000, 30), 5000);
@@ -123,6 +145,98 @@ test('SHIFT exists only where the list gives it a wire', () => {
 	assert.equal(shifts(maps.XDJ_RX3_MAP).length, 0);
 	assert.equal(shifts(maps.XDJ_AZ_MAP).length, 4);
 	assert.deepEqual(shifts(maps.XDJ_AZ_MAP)[0].source, { ch: 1, kind: 'note', id: 63 });
+});
+
+test('AZ BEAT JUMP wires bind deck_beat_jump on every deck; RX3 unchanged', () => {
+	const beatJumpNotes = [
+		[22, 1],
+		[23, 4],
+		[24, -1],
+		[25, -4]
+	];
+	const hintSources = new Set(
+		maps.XDJ_AZ_MAP.hints.map((h) => `${h.source.ch}:${h.source.kind}:${h.source.id}`)
+	);
+	for (const deck of [1, 2, 3, 4]) {
+		for (const [note, beats] of beatJumpNotes) {
+			const binding = one(
+				maps.XDJ_AZ_MAP,
+				(b) =>
+					b.action.type === 'deck_beat_jump' &&
+					b.action.deck === deck &&
+					b.source.ch === deck &&
+					b.source.id === note
+			);
+			assert.equal(binding.shift, undefined);
+			assert.equal(binding.action.beats, beats);
+			assert.equal(hintSources.has(`${deck}:note:${note}`), false);
+		}
+	}
+	assert.equal(
+		maps.XDJ_RX3_MAP.bindings.filter((b) => b.action.type === 'deck_beat_jump').length,
+		0
+	);
+});
+
+function wire(input, status, d1, d2) {
+	assert.notEqual(input.onmidimessage, null);
+	input.onmidimessage({ data: Uint8Array.of(status, d1, d2) });
+}
+
+test('AZ BEAT JUMP note bytes decode to deck_beat_jump actions', async () => {
+	const actions = [];
+	const azIn = {
+		id: 'az-in',
+		name: 'XDJ-AZ',
+		manufacturer: 'AlphaTheta',
+		state: 'connected',
+		onmidimessage: null
+	};
+	const fakeAccess = {
+		inputs: new Map([['az-in', azIn]]),
+		outputs: new Map(),
+		onstatechange: null
+	};
+	const request = async () => fakeAccess;
+	const priorNav = globalThis.navigator;
+	try {
+		try {
+			globalThis.navigator.requestMIDIAccess = request;
+		} catch {
+			Object.defineProperty(globalThis, 'navigator', {
+				value: { requestMIDIAccess: request },
+				configurable: true
+			});
+		}
+		webmidi._resetMidiForTests();
+		webmidi.registerDeviceMap(maps.XDJ_AZ_MAP);
+		webmidi.registerActionHandler((action, value) => {
+			actions.push({ action, value });
+		});
+		await webmidi.initMidi();
+		wire(azIn, 0x90, 22, 0x7f);
+		wire(azIn, 0x91, 24, 0x7f);
+		wire(azIn, 0x90, 63, 0x7f);
+		wire(azIn, 0x90, 23, 0x7f);
+		wire(azIn, 0x93, 25, 0x7f);
+		wire(azIn, 0x80, 22, 0x00);
+		assert.deepEqual(actions[0].action, { type: 'deck_beat_jump', deck: 1, beats: 1 });
+		assert.equal(actions[0].value.pressed, true);
+		assert.deepEqual(actions[1].action, { type: 'deck_beat_jump', deck: 2, beats: -1 });
+		assert.deepEqual(actions[2].action, { type: 'deck_beat_jump', deck: 1, beats: 4 });
+		assert.deepEqual(actions[3].action, { type: 'deck_beat_jump', deck: 4, beats: -4 });
+		assert.equal(actions[actions.length - 1].value.pressed, false);
+	} finally {
+		webmidi.unregisterActionHandler();
+		webmidi._resetMidiForTests();
+		if (priorNav) {
+			try {
+				globalThis.navigator.requestMIDIAccess = priorNav.requestMIDIAccess;
+			} catch {
+				Object.defineProperty(globalThis, 'navigator', { value: priorNav, configurable: true });
+			}
+		}
+	}
 });
 
 // ---------------------------------------------------- jog wheel behaviour
@@ -194,4 +308,21 @@ test('a sync follower refuses the bend once per gesture', async () => {
 	await wait(120);
 	assert.equal(seen.refused, 1);
 	assert.equal(seen.tempos.length, 0);
+});
+
+test('a paused shifted tick scrubs 4x the base tick', async () => {
+	const { wheel, seen } = await wheelRig({});
+	wheel.turn(1, 4);
+	await wait(60);
+	assert.deepEqual(seen.seeks, [1010]);
+	assert.equal(seen.tempos.length, 0);
+});
+
+test('a playing shifted tick bends exactly like the base tick', async () => {
+	const { wheel, seen } = await wheelRig({ playing: true });
+	wheel.turn(5, 4);
+	await wait(40);
+	// 5 ticks * 0.002 bend = +0.01, scale ignored while playing.
+	assert.ok(Math.abs(seen.tempos[0] - 1.01) < 1e-9);
+	assert.equal(seen.seeks.length, 0);
 });

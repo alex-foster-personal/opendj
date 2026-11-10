@@ -278,9 +278,9 @@ def test_enumeration_finds_the_jobs_the_reviews_named() -> None:
 
 
 def test_enumeration_exempts_hosted_jobs() -> None:
-    """No real workflow launches Python on a GitHub-hosted runner since Wed 4 Nov 2026 (the
-    Trunk quarantine review went with ADR-NEW-trunk-removed-from-pr-ci), so the exemption is
-    proved on a synthetic hosted job spliced beside the real ones."""
+    """Every real job that launches Python on a GitHub-hosted runner (since #6577,
+    track-catcher-core.yml:core, allowlisted in test_hosted_runner_pins_are_allowlisted) is
+    exempt, and so is a synthetic hosted job spliced beside the real ones."""
     workflows = _workflows()
     real_hosted = [
         f"{name}:{job_id}"
@@ -289,7 +289,8 @@ def test_enumeration_exempts_hosted_jobs() -> None:
         if is_github_hosted(job.get("runs-on"))
         and any(launch_tokens(step, job) for step in job.get("steps", []))
     ]
-    assert not real_hosted, f"a real hosted job launches Python again: {real_hosted}"
+    enumerated = self_hosted_jobs(workflows)
+    assert not [k for k in real_hosted if k in enumerated], f"a hosted job was enumerated: {real_hosted}"
     hosted_job = {"runs-on": "ubuntu-latest", "steps": [{"run": "python3 -m scripts.probe"}]}
     assert is_github_hosted(hosted_job["runs-on"])
     assert launch_tokens(hosted_job["steps"][0], hosted_job), "positive control: the launch is seen"

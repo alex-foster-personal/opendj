@@ -63,7 +63,8 @@ log = logging.getLogger(__name__)
 
 ESSENTIAL_LANES: tuple[str, ...] = ("tags", "waveform", "beatgrid", "key", "loudness")
 ARTWORK_LANE: str = "artwork"
-LANE_PRIORITY: tuple[str, ...] = (*ESSENTIAL_LANES, ARTWORK_LANE)
+GENRE_LANE: str = "genre"
+LANE_PRIORITY: tuple[str, ...] = (*ESSENTIAL_LANES, ARTWORK_LANE, GENRE_LANE)
 #: Own-analysis backend per essential lane (``ahead_analysis.LANE_ORDER``).
 LANE_BACKENDS: dict[str, str] = {
     "loudness": "own_loudness.backfill",
@@ -71,10 +72,15 @@ LANE_BACKENDS: dict[str, str] = {
     "key": "own_key.backfill",
     "waveform": "own_waveform.backfill",
 }
-LaneState = Literal["done", "pending", "failed", "declined", "placeholder", "unavailable", "absent", "suggested"]
+LaneState = Literal[
+    "done", "pending", "failed", "declined", "placeholder", "unavailable", "absent", "suggested", "needs_review"
+]
 #: States after which a lane will not change without a rerun or a fix.
-SETTLED: frozenset[str] = frozenset({"done", "failed", "declined", "placeholder", "unavailable", "absent", "suggested"})
+SETTLED: frozenset[str] = frozenset(
+    {"done", "failed", "declined", "placeholder", "unavailable", "absent", "suggested", "needs_review"}
+)
 ArtworkStage = Literal["waiting", "queued"]
+GenreStage = Literal["waiting", "done"]
 MAX_BATCHES: int = 50
 TICK_INTERVAL_S: float = 5.0
 STORE_FILENAME: str = "ingest-enrichment.json"
@@ -89,6 +95,7 @@ class Batch:
     stable_ids: list[str]
     registered_at: float
     artwork: ArtworkStage = "waiting"
+    genre: GenreStage = "waiting"
 
 
 @dataclass(frozen=True)
@@ -182,6 +189,7 @@ def capability_warnings(
     unavailable: Mapping[str, str],
     artwork_online: bool,
     ai_missing_keys: Sequence[str],
+    genre_lane_unavailable: str | None = None,
 ) -> list[EnrichWarning]:
     """What cannot run here and why, each naming where to fix it (ENRICH-08)."""
     warnings: list[EnrichWarning] = []
@@ -212,6 +220,16 @@ def capability_warnings(
                 "Remove ODJ_ARTWORK_ONLINE=0 from the environment Open DJ starts with, then restart it.",
             )
         )
+    if genre_lane_unavailable:
+        warnings.append(
+            EnrichWarning(
+                GENRE_LANE,
+                "GENRE_FILL_UNAVAILABLE",
+                f"Blank genres are not filled after import: {genre_lane_unavailable}",
+                "Put a rekordbox master database beside the state dir or train a local genre model, then rerun the batch.",
+                "blocking",
+            )
+        )
     if ai_missing_keys:
         warnings.append(
             EnrichWarning(
@@ -228,6 +246,20 @@ def capability_warnings(
 # -----------------------------------------------------------------------------
 # coordinator
 # -----------------------------------------------------------------------------
+@dataclass(frozen=True)
+class GenreFillOutcome:
+    stable_id: str
+    state: str
+    reason: str | None = None
+
+
+@dataclass(frozen=True)
+class GenreFillRun:
+    outcomes: tuple[GenreFillOutcome, ...]
+    agree: int
+    compared: int
+
+
 @dataclass
 class EnrichmentSources:
     """The coordinator's view of the engine, injected so tests need no engine."""
@@ -244,6 +276,8 @@ class EnrichmentSources:
     retry_fn: Callable[[Sequence[str]], None] | None
     #: Forget cached cover misses so a rerun looks them up again.
     forget_misses_fn: Callable[[Sequence[str]], None]
+    fill_genres_fn: Callable[[Sequence[str]], GenreFillRun]
+    genre_providers_available_fn: Callable[[], tuple[bool, str]]
     store_path: Path | None = None
 
 
@@ -258,6 +292,8 @@ class EnrichmentCoordinator:
         self._batches: dict[str, Batch] = {}
         self._watermark: int | None = None
         self._cover_outcomes: dict[str, Outcome] = {}
+        self._genre_outcomes: dict[str, tuple[str, str | None]] = {}
+        self._genre_quality: dict[str, tuple[int, int]] = {}
         self._warned: set[tuple[str, str]] = set()
         self._wake = threading.Event()
         self._halt = threading.Event()
@@ -325,7 +361,39 @@ class EnrichmentCoordinator:
                 len(batch.stable_ids),
             )
             released.append(batch.batch_id)
+        self._maybe_fill_genres()
         return released
+
+    def _maybe_fill_genres(self) -> None:
+        available, reason = self._src.genre_providers_available_fn()
+        with self._lock:
+            candidates = [
+                batch
+                for batch in self._batches.values()
+                if batch.artwork == "queued" and batch.genre == "waiting" and self._batch_artwork_settled(batch)
+            ]
+        for batch in candidates:
+            if not available:
+                with self._lock:
+                    for sid in batch.stable_ids:
+                        self._genre_outcomes[sid] = ("unavailable", reason)
+                    batch.genre = "done"
+                    self._save()
+                continue
+            run = self._src.fill_genres_fn(batch.stable_ids)
+            with self._lock:
+                for row in run.outcomes:
+                    self._genre_outcomes[row.stable_id] = (row.state, row.reason)
+                self._genre_quality[batch.batch_id] = (run.agree, run.compared)
+                batch.genre = "done"
+                self._save()
+            log.info(
+                "ingest enrichment: batch %s artwork settled, genre fill for %d tracks (%d agree / %d compared)",
+                batch.batch_id,
+                len(batch.stable_ids),
+                run.agree,
+                run.compared,
+            )
 
     def _record_cover(self, stable_id: str, outcome: Outcome) -> None:
         with self._lock:
@@ -361,19 +429,30 @@ class EnrichmentCoordinator:
 
     def _batch_status(self, batch: Batch, with_tracks: bool) -> dict[str, Any]:
         rows: dict[str, dict[str, tuple[str, str | None]]] = {
-            sid: {**lanes, ARTWORK_LANE: self._artwork_state(sid, batch)}
+            sid: {
+                **lanes,
+                ARTWORK_LANE: self._artwork_state(sid, batch),
+                GENRE_LANE: self._genre_state(sid, batch),
+            }
             for sid, lanes in essential_states(batch.stable_ids, self._src.facts_fn(batch.stable_ids)).items()
         }
+        agree, compared = self._genre_quality.get(batch.batch_id, (0, 0))
         out: dict[str, Any] = {
             "batch_id": batch.batch_id,
             "source": batch.source,
             "registered_at": batch.registered_at,
             "tracks": len(batch.stable_ids),
             "artwork_stage": batch.artwork,
+            "genre_stage": batch.genre,
             "essentials_settled": batch_settled(
-                {sid: {k: v for k, v in lanes.items() if k != ARTWORK_LANE} for sid, lanes in rows.items()}
+                {
+                    sid: {k: v for k, v in lanes.items() if k not in (ARTWORK_LANE, GENRE_LANE)}
+                    for sid, lanes in rows.items()
+                }
             ),
+            "artwork_settled": self._batch_artwork_settled(batch),
             "lanes": lane_counts(rows, LANE_PRIORITY),
+            "genre_quality": {"agree": agree, "compared": compared},
         }
         if with_tracks:
             out["track_lanes"] = {
@@ -398,6 +477,48 @@ class EnrichmentCoordinator:
             return "unavailable", outcome.reason
         return "failed", outcome.reason
 
+    def _batch_artwork_settled(self, batch: Batch) -> bool:
+        if batch.artwork == "waiting":
+            return False
+        return all(self._artwork_state(sid, batch)[0] in SETTLED for sid in batch.stable_ids)
+
+    def _genre_state(self, sid: str, batch: Batch) -> tuple[str, str | None]:
+        if batch.artwork != "queued" or not self._batch_artwork_settled(batch):
+            return "pending", "waits until artwork for the batch has settled"
+        if batch.genre == "waiting":
+            return "pending", "queued after artwork"
+        state, reason = self._genre_outcomes.get(sid, ("pending", "queued for genre fill"))
+        if state == "filled":
+            return "done", reason
+        if state == "needs_review":
+            return "needs_review", reason
+        if state in ("skipped_user", "skipped_has_genre"):
+            return "done", reason
+        if state == "unavailable":
+            return "unavailable", reason
+        return state, reason
+
+    def ingest_genre_counts(self) -> dict[str, int] | None:
+        """Aggregate genre-lane counts for the enrich card (latest batch with any outcome)."""
+        with self._lock:
+            batches = [batch for batch in self._batches.values() if batch.genre == "done"]
+        if not batches:
+            return None
+        batch = max(batches, key=lambda row: row.registered_at)
+        counts: dict[str, int] = {}
+        for sid in batch.stable_ids:
+            state = self._genre_outcomes.get(sid, ("pending", None))[0]
+            if state == "filled":
+                counts["done"] = counts.get("done", 0) + 1
+            elif state == "needs_review":
+                counts["needs_review"] = counts.get("needs_review", 0) + 1
+            elif state == "unavailable":
+                counts["unavailable"] = counts.get("unavailable", 0) + 1
+            elif state in ("skipped_user", "skipped_has_genre"):
+                counts["done"] = counts.get("done", 0) + 1
+        counts["total"] = len(batch.stable_ids)
+        return counts
+
     # --- rerun --------------------------------------------------------------------
     def rerun(self, *, batch_id: str | None = None, playlist_id: str | None = None) -> dict[str, Any]:
         """Enrich a batch or a playlist again: forget its failures and cover misses, re-prioritise."""
@@ -419,6 +540,7 @@ class EnrichmentCoordinator:
         with self._lock:
             for sid in ids:
                 self._cover_outcomes.pop(sid, None)
+                self._genre_outcomes.pop(sid, None)
         batch = self.register(name, ids, source)
         return {"ok": True, "batch_id": batch.batch_id, "tracks": len(ids)}
 
@@ -430,8 +552,9 @@ class EnrichmentCoordinator:
         payload = json.loads(path.read_text(encoding="utf-8"))
         self._watermark = payload["watermark"]
         for raw in payload["batches"]:
-            batch = Batch(**raw)
+            batch = Batch(**{**raw, "genre": raw.get("genre", "waiting")})
             batch.artwork = "waiting"  # outcomes are not persisted; a re-release reads the cache
+            batch.genre = "waiting"
             self._batches[batch.batch_id] = batch
 
     def _save(self) -> None:
@@ -552,7 +675,9 @@ def playlist_member_ids(conn_factory: Callable[[], sqlite3.Connection], playlist
 
 def build_for_app(app: Any) -> EnrichmentCoordinator:
     from apps.analysis_waveform import local_waveform
+    from apps.adapters.rekordbox import config as rb_config
     from apps.genre_infer import providers as genre_providers
+    from apps.genre_infer import service as genre_service
     from apps.shared import artwork_sources
     from apps.shared.state import db as state_db_module
     from apps.shared.state.ingest import tag_refresh
@@ -590,14 +715,40 @@ def build_for_app(app: Any) -> EnrichmentCoordinator:
             drain_running=running is not None,
         )
 
+    data_dir = None if state_db is None else Path(state_db).parent.parent
+
     def warnings() -> list[EnrichWarning]:
         running = drain()
+        genre_unavailable: str | None = None
+        if data_dir is not None:
+            ok, reason = genre_service.fill_providers_available(data_dir, rb_config.MASTER_PLAIN_DB)
+            if not ok:
+                genre_unavailable = reason
         return capability_warnings(
             drain_running=running is not None,
             unavailable=dict(running.status().unavailable) if running is not None else {},
             artwork_online=artwork_sources.online_enabled(),
             ai_missing_keys=genre_providers.missing_keys(),
+            genre_lane_unavailable=genre_unavailable,
         )
+
+    def fill_genres(ids: Sequence[str]) -> GenreFillRun:
+        if data_dir is None:
+            return GenreFillRun((), 0, 0)
+        conn = state_db_module.open_rw(Path(state_db))
+        try:
+            summary = genre_service.fill_blank_genres(
+                conn, ids, genre_service.MIN_CONFIDENCE, data_dir=data_dir, master_path=rb_config.MASTER_PLAIN_DB
+            )
+            outcomes = tuple(GenreFillOutcome(row.stable_id, row.outcome, row.reason) for row in summary.results)
+            return GenreFillRun(outcomes, summary.agree, summary.compared)
+        finally:
+            conn.close()
+
+    def genre_providers_available() -> tuple[bool, str]:
+        if data_dir is None:
+            return False, "no state database"
+        return genre_service.fill_providers_available(data_dir, rb_config.MASTER_PLAIN_DB)
 
     def forget_misses(ids: Sequence[str]) -> None:
         from apps.adapters.rekordbox import paths
@@ -626,9 +777,11 @@ def build_for_app(app: Any) -> EnrichmentCoordinator:
             prioritize_fn=prioritize,
             retry_fn=retry,
             forget_misses_fn=forget_misses,
+            fill_genres_fn=fill_genres,
+            genre_providers_available_fn=genre_providers_available,
             # An app built with no state.db path (unit-test apps) keeps its batches in memory only.
             store_path=None if state_db is None else Path(state_db).parent / STORE_FILENAME,
-        )
+        ),
     )
 
 
@@ -643,11 +796,13 @@ def coordinator_for(app: Any) -> EnrichmentCoordinator:
 
 __all__ = [
     "ESSENTIAL_LANES",
+    "GENRE_LANE",
     "LANE_PRIORITY",
     "Batch",
     "EnrichWarning",
     "EnrichmentCoordinator",
     "EnrichmentSources",
+    "GenreFillOutcome",
     "LaneFacts",
     "batch_settled",
     "build_for_app",

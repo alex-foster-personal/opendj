@@ -26,9 +26,11 @@ import {
 	WAVE_SPLIT_MASTER_SETTING
 } from './wave-palette-setting';
 import { WAVE_EQ_REFLECT_SETTING } from './wave-eq-reflect-setting';
+import { WAVE_GRID_LINES_SETTING } from './wave-grid-lines-setting';
 import { WAVE_ZOOM_SETTINGS } from './wave-zoom-setting';
 import { DEV_UI_SETTING, HIDE_TODO_SETTING } from './dev-ui-setting';
 import { VARIANT_REGISTRY } from './variant-setting';
+import { AUTO_ANALYZE_SETTINGS } from './analysis-settings';
 import { SHOW_SECTIONS_SETTING } from './show-sections-setting';
 import { DECK_NUMBER_ART_SETTING } from './deck-number-art-setting';
 import { SPEAKER_AUTO_RECOVER_SETTING } from './speaker-link-setting';
@@ -52,6 +54,7 @@ export const SETTING_GROUPS: readonly SettingGroup[] = [
 	{ id: 'appearance', label: 'Appearance' },
 	{ id: 'library', label: 'Library' },
 	{ id: 'performance', label: 'Performance' },
+	{ id: 'analysis', label: 'Analysis' },
 	{ id: 'confirmations', label: 'Confirmations' },
 	{ id: 'sync', label: 'Sync' },
 	{ id: 'cloudsync', label: 'CloudSync' },
@@ -225,6 +228,25 @@ export const SETTINGS_CATALOG: readonly SettingDef[] = [
 		}
 	},
 	{
+		id: 'compatible_filter.energy_mode',
+		label: 'Compatible filter energy',
+		group: 'library',
+		keywords: ['compatible', 'energy', 'boost', 'drop', 'mik', 'mixed in key'],
+		title: 'Keep tracks by energy against the reference track',
+		detail:
+			"Off checks no energy. Within 1 keeps tracks one Mixed In Key energy level either side of the reference track; Boost keeps one or two levels above it (Mixed In Key's Energy Boost); Drop keeps one or two levels below it. A track with no energy is left out while the rule is on, and the rule is skipped when the reference track has no energy.",
+		implemented: true,
+		control: {
+			kind: 'enum',
+			options: [
+				{ value: 'off', label: 'Off' },
+				{ value: 'within_1', label: 'Within 1' },
+				{ value: 'boost', label: 'Boost +1 to +2' },
+				{ value: 'drop', label: 'Drop -1 to -2' }
+			]
+		}
+	},
+	{
 		id: 'remixes_filter',
 		label: 'Remixes library filter',
 		group: 'library',
@@ -371,6 +393,7 @@ export const SETTINGS_CATALOG: readonly SettingDef[] = [
 	MIDI_ENABLED_SETTING,
 	AUTO_GAIN_ENABLED_SETTING,
 	AUTO_GAIN_TARGET_SETTING,
+	...AUTO_ANALYZE_SETTINGS,
 	SHOW_SECTIONS_SETTING,
 	DECK_NUMBER_ART_SETTING,
 	SPEAKER_AUTO_RECOVER_SETTING,
@@ -419,6 +442,7 @@ export const SETTINGS_CATALOG: readonly SettingDef[] = [
 	},
 	WAVE_PALETTE_SETTING,
 	WAVE_EQ_REFLECT_SETTING,
+	WAVE_GRID_LINES_SETTING,
 	UI_SKIN_SETTING,
 	PERFORMANCE_LAYOUT_SETTING,
 	LIBRARY_LAYOUT_SETTING,

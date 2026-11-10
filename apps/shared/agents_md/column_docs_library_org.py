@@ -102,6 +102,13 @@ LIBRARY_ORG_COLUMN_DOCS: dict[str, dict[str, str]] = {
             "created_by": "Undo session or actor that created the edit.",
         }
     ),
+    "library_completeness_config": {
+        "id": "Singleton primary key; always 1.",
+        "expect_hq_stems_and_lyric_match": (
+            "When 1, every track that can have HQ stems and a lyric match is expected to have both."
+        ),
+        "seeded_at": "RFC 3339 UTC when the row was first written by migration v31.",
+    },
     "undo_journal": {
         "id": "Primary key and the undo_id a write returns.",
         "session_id": "The undo stack this entry belongs to.",

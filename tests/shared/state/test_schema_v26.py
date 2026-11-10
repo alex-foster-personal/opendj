@@ -19,7 +19,14 @@ from pathlib import Path
 import pytest
 
 from apps.engine_core.store import schema as store_schema
-from apps.shared.state import migrations_v26, migrations_v27, migrations_v28, migrations_v29, migrations_v30
+from apps.shared.state import (
+    migrations_v26,
+    migrations_v27,
+    migrations_v28,
+    migrations_v29,
+    migrations_v30,
+    migrations_v31,
+)
 from apps.shared.state import schema as state_schema
 
 pytestmark = [
@@ -76,8 +83,8 @@ def _seed_v25_rows(path: Path) -> None:
 
 
 def test_the_ladder_is_linear_with_library_org_at_26() -> None:
-    assert state_schema.SCHEMA_VERSION == 30, "if the state ladder target is not 30 then broken"
-    assert len(state_schema.MIGRATIONS) == 30, "if the ladder has a gap or a duplicate step then broken"
+    assert state_schema.SCHEMA_VERSION == 31, "if the state ladder target is not 31 then broken"
+    assert len(state_schema.MIGRATIONS) == 31, "if the ladder has a gap or a duplicate step then broken"
     assert state_schema.MIGRATIONS[24] is state_schema._V25, "if v25 is not transition memory then broken"
     assert state_schema.MIGRATIONS[25] is migrations_v26._V26, "if v26 is not library organization then broken"
     assert state_schema.MIGRATIONS[26] is migrations_v27._V27, "if v27 is not path_availability mtime then broken"
@@ -88,6 +95,7 @@ def test_the_ladder_is_linear_with_library_org_at_26() -> None:
     assert state_schema.MIGRATIONS[29] is migrations_v30._V30, (
         "if v30 is not track_edit + playlist_memberships.edit_id then broken"
     )
+    assert state_schema.MIGRATIONS[30] is migrations_v31._V31, "if v31 is not library completeness config then broken"
 
 
 def test_a_v25_db_upgrades_to_v26_and_keeps_its_rows(tmp_path: Path) -> None:
@@ -190,18 +198,18 @@ def test_a_db_newer_than_the_code_is_left_alone(tmp_path: Path) -> None:
     path = tmp_path / "state.db"
     _ladder_to(path, 26)
     conn = sqlite3.connect(str(path))
-    conn.execute("INSERT INTO schema_meta(version, applied_at) VALUES (31, 'future')")
+    conn.execute("INSERT INTO schema_meta(version, applied_at) VALUES (32, 'future')")
     conn.commit()
     schema_before = conn.execute("SELECT sql FROM sqlite_master ORDER BY name").fetchall()
     try:
-        assert state_schema.apply_migrations(conn) == 31
+        assert state_schema.apply_migrations(conn) == 32
         assert conn.execute("SELECT sql FROM sqlite_master ORDER BY name").fetchall() == schema_before
     finally:
         conn.close()
 
 
 def test_the_engine_store_holds_both_rungs_fresh_and_adopted(tmp_path: Path) -> None:
-    assert store_schema.SCHEMA_VERSION == 19
+    assert store_schema.SCHEMA_VERSION == 20
     fresh = sqlite3.connect(":memory:")
     store_schema.apply_migrations(fresh)
     assert {"pair_transitions", *_LIBRARY_TABLES} <= _tables(fresh)

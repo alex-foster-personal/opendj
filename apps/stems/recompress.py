@@ -21,7 +21,9 @@ WHAT IT TOUCHES. Bundle directories under this machine's stem roots
 (``<data>/state/stems`` and the RoFormer root), and only those whose parts are
 FLAC or WAV while their source is MP3/M4A. A lossless source keeps FLAC; a
 bundle that is already MP3 is left alone. R2 copies and the hydration index are
-NOT touched: re-publishing is a separate, deliberate step.
+NOT touched: re-publishing is a separate, deliberate step. An R2 hydrate
+also calls reencode_staged_bundle on its private verify copy before
+publishing (#9665).
 
 SAFETY.
   * Dry run by default: it prints what it would do and writes nothing.
@@ -112,7 +114,7 @@ from apps.stems.bundle_lock import (
 from apps.stems.bundle_lock import (
     fsync_tree as _fsync_tree,
 )
-from apps.stems.stem_encode import encode_part
+from apps.stems.stem_encode import encode_part, require_mp3_encoder
 
 LOSSLESS_MEDIA_TYPES: frozenset[str] = frozenset({"audio/flac", "audio/wav"})
 LIVE_JOB_STATUSES: tuple[str, ...] = ("queued", "running", "cancelling")
@@ -130,7 +132,7 @@ MP3_MEDIA_TYPE = "audio/mpeg"
 # of its whole-set target: CBR container overhead (Info frame, LAME padding,
 # ID3) is well under 2% on a track, so 5% never mistakes an old 320 kbps or
 # V0 part for a compliant one, and never flags a fresh STEM-8231 part.
-AT_POLICY_KBPS_SLACK = 1.05
+AT_POLICY_KBPS_SLACK = pol.AT_POLICY_KBPS_SLACK
 SKIP_LOSSLESS_SOURCE = "lossless source keeps FLAC"
 SKIP_NO_SOURCE = "no source file on disk"
 SKIP_UNKNOWN_SOURCE = "source format has no policy"
@@ -224,7 +226,7 @@ def _live_track_paths(connection: sqlite3.Connection, ids: list[str]) -> dict[st
     return found
 
 
-def _library_paths(data_dir: Path, stable_ids: Sequence[str]) -> dict[str, str]:
+def library_paths(data_dir: Path, stable_ids: Sequence[str]) -> dict[str, str]:
     """stable_id -> the library's current file for this machine, read-only; {} if no db.
 
     Every track with a live library row is keyed, "" when it names no file.
@@ -459,7 +461,7 @@ def plan(data_dir: Path, *, only: Iterable[str] = (), roots: Sequence[Path] | No
             if wanted and child.name not in wanted:
                 continue
             found.append((root, child.name))
-    library = _library_paths(data_dir, sorted({sid for _root, sid in found}))
+    library = library_paths(data_dir, sorted({sid for _root, sid in found}))
     return [classify(root, sid, library.get(sid)) for root, sid in found]
 
 
@@ -1099,6 +1101,63 @@ def _copy_unlocked(bundle_dir: Path, snapshot: Path) -> None:
         ) from exc
 
 
+def _write_mp3_bundle(
+    bundle: StemBundle,
+    stable_id: str,
+    old_raw: dict[str, Any],
+    source_path: Path,
+    source_digest: str,
+    source_bytes: int,
+    duration_s: float,
+    new_root: Path,
+) -> tuple[dict[str, int], dict[str, str], list[dict[str, Any]]]:
+    """Encode ``bundle`` to the policy MP3 at ``new_root/stable_id``, write its
+    manifest and re-read it strictly. Returns (part_bytes, mp3_settings, violations)."""
+    align = bundle.alignment
+    source_kbps = pol.effective_bitrate_kbps(source_bytes, duration_s)
+    rung1 = pol.mp3_lame_settings_for_source_kbps(source_kbps)
+
+    new_dir = new_root / stable_id
+    new_dir.mkdir()
+    part_bytes: dict[str, int] = {}
+    settings: dict[str, str] = {}
+    frame_count = _true_frame_count(bundle, stable_id)
+    for part in bundle.parts:
+        part_bytes[part], settings[part] = _encode_part_to_mp3(
+            bundle, stable_id, part, new_dir / f"{part}.mp3", rung1, source_bytes, source_kbps, frame_count
+        )
+    violations = [
+        dataclasses.asdict(v)
+        for v in pol.assert_lossy_stems_not_larger_than_source(
+            source_bytes=source_bytes, part_sizes=part_bytes, codec="mp3"
+        )
+    ]
+    manifest = _mp3_manifest(
+        bundle,
+        stable_id,
+        old_raw,
+        source_path,
+        source_digest,
+        {
+            "source_bytes": source_bytes,
+            "source_kbps": round(source_kbps, 2),
+            "mp3_settings": settings,
+            "part_bytes": part_bytes,
+            "violations": violations,
+        },
+        frame_count,
+    )
+    # Every part's hash, as register-stems writes them: the lyrics stems
+    # hydrate path fetches parts by these and refuses a manifest without
+    # them (Codex on #6820).
+    manifest["files_sha256"] = {part: sha256_file_hex(new_dir / rel) for part, rel in manifest["files"].items()}
+    (new_dir / "manifest.json").write_text(json.dumps(manifest, indent=2) + "\n", encoding="utf-8", newline="\n")
+    reread = load_stem_bundle(stable_id, roots=[new_root])
+    if reread.media_type != "audio/mpeg" or reread.alignment != dataclasses.replace(align, frame_count=frame_count):
+        raise StemArtifactError(f"{stable_id}: re-read bundle is {reread.media_type} {reread.alignment}")
+    return part_bytes, settings, violations
+
+
 def recompress_bundle(
     candidate: Candidate,
     backup_root: Path,
@@ -1139,7 +1198,7 @@ def recompress_bundle(
         snapshot = snapshot_root / stable_id
         with bundle_lock(bundle_dir):
             pinned = _pin_generation(bundle_dir, snapshot)
-            library_path = _library_paths(data_dir_of_bundle(bundle_dir), [stable_id]).get(stable_id)
+            library_path = library_paths(data_dir_of_bundle(bundle_dir), [stable_id]).get(stable_id)
         if not pinned:
             _copy_unlocked(bundle_dir, snapshot)
         # The plan is stale by now: another writer may have replaced the bundle,
@@ -1149,7 +1208,6 @@ def recompress_bundle(
         read_fingerprint = bundle_fingerprint(snapshot)
         bundle = load_stem_bundle(stable_id, roots=[snapshot_root])
         old_raw = _raw_manifest(snapshot)
-        align = bundle.alignment
         source_digest = _require_recorded_source(stable_id, old_raw, source_path)
         source_signature = _source_signature(source_path)
         source_bytes = source_signature[0]
@@ -1159,49 +1217,10 @@ def recompress_bundle(
         duration_s = _source_duration_s(source_path)
         if duration_s is None:
             raise BundleChangedError(f"{stable_id}: {source_path} no longer reports a duration; left as it is")
-        source_kbps = pol.effective_bitrate_kbps(source_bytes, duration_s)
-        rung1 = pol.mp3_lame_settings_for_source_kbps(source_kbps)
-
         new_dir = work / stable_id
-        new_dir.mkdir()
-        part_bytes: dict[str, int] = {}
-        settings: dict[str, str] = {}
-        frame_count = _true_frame_count(bundle, stable_id)
-        for part in bundle.parts:
-            part_bytes[part], settings[part] = _encode_part_to_mp3(
-                bundle, stable_id, part, new_dir / f"{part}.mp3", rung1, source_bytes, source_kbps, frame_count
-            )
-        violations = [
-            dataclasses.asdict(v)
-            for v in pol.assert_lossy_stems_not_larger_than_source(
-                source_bytes=source_bytes, part_sizes=part_bytes, codec="mp3"
-            )
-        ]
-        manifest = _mp3_manifest(
-            bundle,
-            stable_id,
-            old_raw,
-            source_path,
-            source_digest,
-            {
-                "source_bytes": source_bytes,
-                "source_kbps": round(source_kbps, 2),
-                "mp3_settings": settings,
-                "part_bytes": part_bytes,
-                "violations": violations,
-            },
-            frame_count,
+        _part_bytes, settings, violations = _write_mp3_bundle(
+            bundle, stable_id, old_raw, source_path, source_digest, source_bytes, duration_s, work
         )
-        # Every part's hash, as register-stems writes them: the lyrics stems
-        # hydrate path fetches parts by these and refuses a manifest without
-        # them (Codex on #6820).
-        manifest["files_sha256"] = {part: sha256_file_hex(new_dir / rel) for part, rel in manifest["files"].items()}
-        (new_dir / "manifest.json").write_text(
-            json.dumps(manifest, indent=2) + "\n", encoding="utf-8", newline="\n"
-        )
-        reread = load_stem_bundle(stable_id, roots=[work])
-        if reread.media_type != "audio/mpeg" or reread.alignment != dataclasses.replace(align, frame_count=frame_count):
-            raise StemArtifactError(f"{stable_id}: re-read bundle is {reread.media_type} {reread.alignment}")
 
         def source_unchanged() -> None:
             # The encode ran without the lock, so state.db may have relinked
@@ -1209,7 +1228,7 @@ def recompress_bundle(
             # (Codex on #6821). Re-read both under the swap's lock: the MP3
             # sizes were chosen against the source as it was. The content
             # hash catches a rewrite the size and mtime miss (Codex on #6820).
-            library_now = _library_paths(data_dir_of_bundle(bundle_dir), [stable_id]).get(stable_id)
+            library_now = library_paths(data_dir_of_bundle(bundle_dir), [stable_id]).get(stable_id)
             _require_still_eligible(snapshot_root, stable_id, candidate, library_now)
             if not source_path.is_file() or _source_signature(source_path) != source_signature:
                 raise BundleChangedError(
@@ -1257,6 +1276,56 @@ def _remove_work(work: Path, stable_id: str, failure: BaseException | None) -> N
         raise WorkspaceCleanupError(
             f"{stable_id}: could not remove the work directory {work}: {cleanup_error}{during}"
         ) from cleanup_error
+
+
+@dataclasses.dataclass(frozen=True)
+class StagedOutcome:
+    """One privately staged bundle after :func:`reencode_staged_bundle`."""
+
+    stable_id: str
+    before_bytes: int
+    after_bytes: int
+    media_type_before: str
+    mp3_settings: dict[str, str]
+    violations: list[dict[str, Any]]
+
+
+def reencode_staged_bundle(candidate: Candidate) -> StagedOutcome:
+    """Re-encode an ELIGIBLE bundle in a PRIVATE staging root to the policy MP3, in place.
+
+    For a copy no reader or scan sees (an R2 hydrate's verify container,
+    #9665): no bundle lock, no snapshot, no backup, no journal. On any failure
+    the work dir is removed and ``root/stable_id`` is left as it was.
+
+    * [if] the candidate is not ELIGIBLE or has no source [then] ValueError, nothing written
+    * [if] this install cannot write MP3 [then] Mp3EncoderUnavailableError before any decode
+    * [if] the encode succeeds [then] ``root`` holds only ``stable_id``, now MP3
+    """
+    if candidate.verdict != ELIGIBLE or candidate.source_path is None:
+        raise ValueError(f"{candidate.stable_id} is not eligible: {candidate.verdict}")
+    require_mp3_encoder()
+    root, stable_id, source_path = candidate.root, candidate.stable_id, candidate.source_path
+    bundle_dir = root / stable_id
+    bundle = load_stem_bundle(stable_id, roots=[root])
+    old_raw = _raw_manifest(bundle_dir)
+    work = root / ".reencode"
+    work.mkdir()
+    try:
+        source_digest = _require_recorded_source(stable_id, old_raw, source_path)
+        duration_s = _source_duration_s(source_path)
+        if duration_s is None:
+            raise BundleChangedError(f"{stable_id}: {source_path} reports no duration; left as it is")
+        _parts, settings, violations = _write_mp3_bundle(
+            bundle, stable_id, old_raw, source_path, source_digest, source_path.stat().st_size, duration_s, work
+        )
+        before = _dir_bytes(bundle_dir)
+        old = root / ".reencode-old"
+        os.rename(bundle_dir, old)
+        os.rename(work / stable_id, bundle_dir)
+        shutil.rmtree(old)
+    finally:
+        _remove_work(work, stable_id, sys.exc_info()[1])
+    return StagedOutcome(stable_id, before, _dir_bytes(bundle_dir), bundle.media_type, settings, violations)
 
 
 # ----- CLI ---------------------------------------------------------------------

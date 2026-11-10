@@ -1,0 +1,9 @@
+{
+  "bytes": 1024,
+  "measured_main": 479012,
+  "measured_with_pr": 479191,
+  "sha": "4d0150f408",
+  "date": "Mon 9 Nov 2026",
+  "reason": "PR #10465 adds the DDJ-FLX6 practice replica panel and map to the /practice route. Measured: CI bundle check of 4d0150f408, +179 B gzip on other-lazy; ceiled to KiB",
+  "payback": "none planned; the growth is the feature's own code"
+}

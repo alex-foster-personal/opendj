@@ -75,6 +75,16 @@ def test_set_layout_preset_builds_command(surface: str, preset: str) -> None:
     }
 
 
+@pytest.mark.requirement("SKINLAYOUT-11729")
+def test_set_layout_preset_accepts_replica_desk() -> None:
+    """[if] set_layout_preset refuses replica-desk [then] agents cannot pick the practice performance preset, [else stop]."""
+    assert parse_invocation(["set_layout_preset", "performance", "replica-desk"]).command == {
+        "type": "set_layout_preset",
+        "surface": "performance",
+        "preset": "replica-desk",
+    }
+
+
 @pytest.mark.requirement("SKINLAYOUT-10199")
 def test_set_layout_preset_rejects_unknown_tokens() -> None:
     """[if] unknown surface or preset tokens parse [then] the enum is not enforced, [else stop]."""

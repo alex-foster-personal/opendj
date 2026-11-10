@@ -107,7 +107,9 @@ _CLIENT_ERRORS_COMMAND = "client_errors"
 _ENRICHMENT_COMMAND = "enrichment"
 _ARTWORK_COMMAND = "artwork"
 _LIGHTING_COMMAND = "lighting"
+_MIDI_COMMAND = "midi"
 _SESSION_COMMAND = "session"
+_REQUESTS_COMMAND = "requests"
 _WINDOW_COMMAND = "window"
 _PRACTICE_COMMAND = "practice"
 _PLAYLIST_COMMAND = "playlist"
@@ -118,6 +120,7 @@ _INSTALL_COMMAND = "install-cli"
 _MCP_COMMAND = "mcp"
 _UPDATE_COMMAND = "update"
 _LIBRARY_COMMAND = "library"
+_NOW_PLAYING_COMMAND = "now-playing"
 _DJ_COMMAND = "dj"
 _WORK_COMMAND = "work"
 _EDIT_COMMAND = "edit"
@@ -790,7 +793,9 @@ def _run_standalone(head: str, rest: list[str], args: argparse.Namespace) -> int
     if head == _WINDOW_COMMAND:
         from apps.opendj_cli import window_cli
 
-        return window_cli.run(rest, as_json=args.json, lock=args.lock)
+        return window_cli.run(
+            rest, as_json=args.json, lock=args.lock, timeout_s=args.timeout, settle_s=args.settle
+        )
     if head == _SET_COMMAND:
         from apps.opendj_cli import set_cli
 
@@ -839,11 +844,32 @@ def _run_practice(tokens: Sequence[str]) -> int | None:
 
 def _run_early(tokens: Sequence[str]) -> int | None:
     """Subcommands that parse their own flags, tried before the global parser; None = not one of them."""
-    for runner in (_run_client_errors, _run_practice, _run_lighting, _run_library):
+    for runner in (
+        _run_client_errors,
+        _run_practice,
+        _run_lighting,
+        _run_midi,
+        _run_library,
+        _run_requests,
+        _run_now_playing,
+    ):
         code = runner(tokens)
         if code is not None:
             return code
     return None
+
+
+
+def _run_requests(tokens: Sequence[str]) -> int | None:
+    """``requests`` carries --playlist/--text/--cooldown/--status, so it parses its own flags."""
+    position = _command_position(tokens)
+    if position is None or tokens[position] != _REQUESTS_COMMAND:
+        return None
+    global_tokens, rest = list(tokens[:position]), list(tokens[position + 1 :])
+    args = _parser(as_json="--json" in global_tokens).parse_args([*global_tokens, _REQUESTS_COMMAND])
+    from apps.opendj_cli import requests_cli
+
+    return requests_cli.run(rest, as_json=args.json, lock=args.lock)
 
 
 def _run_client_errors(tokens: Sequence[str]) -> int | None:
@@ -868,6 +894,30 @@ def _run_lighting(tokens: Sequence[str]) -> int | None:
     from apps.opendj_cli import lighting_cli
 
     return lighting_cli.run(rest, as_json=args.json)
+
+
+def _run_midi(tokens: Sequence[str]) -> int | None:
+    """``midi monitor`` listens on a controller and does not need the engine."""
+    split = _split_subcommand(tokens, _MIDI_COMMAND)
+    if split is None:
+        return None
+    global_tokens, rest = split
+    args = _parser(as_json="--json" in global_tokens).parse_args([*global_tokens, _MIDI_COMMAND])
+    from apps.opendj_cli import midi_cli
+
+    return midi_cli.run(rest, as_json=args.json)
+
+
+def _run_now_playing(tokens: Sequence[str]) -> int | None:
+    """``now-playing`` carries ``--watch``, so it is split off before the global parser."""
+    split = _split_subcommand(tokens, _NOW_PLAYING_COMMAND)
+    if split is None:
+        return None
+    global_tokens, rest = split
+    args = _parser(as_json="--json" in global_tokens).parse_args([*global_tokens, _NOW_PLAYING_COMMAND])
+    from apps.opendj_cli import now_playing_cli
+
+    return now_playing_cli.run(rest, as_json=args.json, lock=args.lock)
 
 
 def _run_library(tokens: Sequence[str]) -> int | None:

@@ -32,9 +32,32 @@ does not model those rows as observed production metadata.
    doppler secrets set -p construct -c dev_af SPOTIFY_CLIENT_ID=<id>
    ```
 
+4. Sign in once (opens your browser, listens on `127.0.0.1:8888/callback`):
+
+   ```sh
+   doppler run -p construct -c dev_af -- python -m apps.spotify login
+   ```
+
+   The flow writes the token to `~/.music-dj-tools/spotify-token.json`. If the
+   tab is still open after 10 s, `login` opens the authorize URL again so the
+   sign-in window comes back to the front. Use `--no-browser` to print the URL
+   only.
+
+### OAuth scopes
+
+`DEFAULT_SCOPES` (playlist import + listen history today):
+
+`playlist-read-private playlist-read-collaborative user-read-recently-played`
+
+Future Connect / Web Playback SDK single-stream CUE uses the separate constant
+`CONNECT_WEB_PLAYBACK_SCOPES` in `apps/spotify/client.py`
+(`streaming`, `user-read-playback-state`, `user-modify-playback-state`,
+`user-read-currently-playing`). `login` does not request them yet; adding a scope
+invalidates the cached token and forces a deliberate re-auth.
+
 ## Usage
 
-Dry run first; review `data/spotify/import-<id>-<ts>/`.
+Dry run first; review `(private path)<id>-<ts>/`.
 
 ```sh
 make spotify-import   URL=https://open.spotify.com/playlist/<id>

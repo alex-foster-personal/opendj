@@ -3,8 +3,6 @@
 from __future__ import annotations
 
 import json
-import os
-import tempfile
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -17,6 +15,14 @@ from apps.rescue.contract import (
     RescueSnapshotInvalidError,
     RescueSnapshotTooLargeError,
 )
+from apps.rescue.validate import (
+    compact_json,
+    empty_index,
+    index_to_dict,
+    parse_index,
+    validate_snapshot,
+)
+from apps.shared.atomic_text import write_atomic
 
 __all__ = [
     "MAX_BYTES",
@@ -30,13 +36,6 @@ __all__ = [
     "read_latest",
     "write_atomic",
 ]
-
-_SCHEMA = 1
-_SLOT_RANGE = f"0..{RING_SIZE - 1}"
-
-
-def _compact_json(payload: dict[str, Any]) -> str:
-    return json.dumps(payload, separators=(",", ":"), ensure_ascii=False)
 
 
 def _ring_has_data(index: RescueIndex) -> bool:
@@ -61,103 +60,17 @@ class _RescueRingPaths:
         return self.rescue_dir / f"ring-{slot}.json"
 
 
-def write_atomic(path: Path, text: str) -> None:
-    """Same contract as ``apps.webui.server.routes.feedback.write_atomic``."""
-    path.parent.mkdir(parents=True, exist_ok=True)
-    fd, temp_name = tempfile.mkstemp(prefix=f".{path.name}.", suffix=".tmp", dir=path.parent)
-    temp = Path(temp_name)
-    try:
-        with os.fdopen(fd, "w", encoding="utf-8") as handle:
-            handle.write(text)
-            handle.flush()
-            os.fsync(handle.fileno())
-        os.replace(temp, path)
-    except BaseException:
-        temp.unlink(missing_ok=True)
-        raise
-    if os.name == "posix":
-        dir_fd = os.open(path.parent, os.O_RDONLY)
-        try:
-            os.fsync(dir_fd)
-        finally:
-            os.close(dir_fd)
-
-
-def _empty_index() -> RescueIndex:
-    return RescueIndex(
-        schema=_SCHEMA,
-        newest_slot=0,
-        slots=tuple(RescueSlotMeta(slot=i, captured_at_ms=0, bytes=0) for i in range(RING_SIZE)),
-    )
-
-
-def _parse_index(raw: dict[str, Any]) -> RescueIndex:
-    if raw.get("schema") != _SCHEMA:
-        raise RescueSnapshotInvalidError("index schema must be 1")
-    newest_slot = raw.get("newest_slot")
-    if not isinstance(newest_slot, int) or not 0 <= newest_slot < RING_SIZE:
-        raise RescueSnapshotInvalidError(f"index newest_slot must be {_SLOT_RANGE}")
-    slots_raw = raw.get("slots")
-    if not isinstance(slots_raw, list) or len(slots_raw) != RING_SIZE:
-        raise RescueSnapshotInvalidError(f"index slots must list {RING_SIZE} entries")
-    slots: list[RescueSlotMeta] = []
-    for entry in slots_raw:
-        if not isinstance(entry, dict):
-            raise RescueSnapshotInvalidError("index slot entry must be an object")
-        slot = entry.get("slot")
-        captured_at_ms = entry.get("captured_at_ms")
-        bytes_ = entry.get("bytes")
-        if not isinstance(slot, int) or not 0 <= slot < RING_SIZE:
-            raise RescueSnapshotInvalidError(f"index slot must be {_SLOT_RANGE}")
-        if not isinstance(captured_at_ms, int) or captured_at_ms < 0:
-            raise RescueSnapshotInvalidError("index captured_at_ms must be a non-negative int")
-        if not isinstance(bytes_, int) or bytes_ < 0:
-            raise RescueSnapshotInvalidError("index bytes must be a non-negative int")
-        slots.append(RescueSlotMeta(slot=slot, captured_at_ms=captured_at_ms, bytes=bytes_))
-    return RescueIndex(schema=_SCHEMA, newest_slot=newest_slot, slots=tuple(slots))
-
-
-def _index_to_dict(index: RescueIndex) -> dict[str, Any]:
-    return {
-        "schema": index.schema,
-        "newest_slot": index.newest_slot,
-        "slots": [
-            {"slot": slot.slot, "captured_at_ms": slot.captured_at_ms, "bytes": slot.bytes} for slot in index.slots
-        ],
-    }
-
-
 def _load_index(paths: _RescueRingPaths) -> RescueIndex:
     path = paths.index_file
     if not path.is_file():
-        return _empty_index()
+        return empty_index()
     try:
         raw = json.loads(path.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError) as error:
         raise RescueSnapshotInvalidError(f"index is not parseable JSON: {error}") from error
     if not isinstance(raw, dict):
         raise RescueSnapshotInvalidError("index root must be an object")
-    return _parse_index(raw)
-
-
-def _validate_snapshot(payload: dict[str, Any]) -> int:
-    if payload.get("schema") != _SCHEMA:
-        raise RescueSnapshotInvalidError("snapshot schema must be 1")
-    captured_at_ms = payload.get("captured_at_ms")
-    if not isinstance(captured_at_ms, int) or captured_at_ms < 0:
-        raise RescueSnapshotInvalidError("snapshot captured_at_ms must be a non-negative int")
-    reason = payload.get("reason")
-    if reason not in {"periodic", "transport", "load"}:
-        raise RescueSnapshotInvalidError("snapshot reason must be periodic, transport, or load")
-    if payload.get("app_posture") != "gig":
-        raise RescueSnapshotInvalidError("snapshot app_posture must be gig")
-    decks = payload.get("decks")
-    if not isinstance(decks, dict):
-        raise RescueSnapshotInvalidError("snapshot decks must be an object")
-    size = len(_compact_json(payload).encode("utf-8"))
-    if size > MAX_BYTES:
-        raise RescueSnapshotTooLargeError(f"snapshot is {size} bytes; max is {MAX_BYTES}")
-    return size
+    return parse_index(raw)
 
 
 def _read_slot_snapshot(paths: _RescueRingPaths, slot: int) -> dict[str, Any] | None:
@@ -195,16 +108,16 @@ def read_latest(data_dir: Path) -> dict[str, Any] | None:
 
 
 def append_snapshot(data_dir: Path, payload: dict[str, Any]) -> dict[str, Any]:
-    size = _validate_snapshot(payload)
+    size = validate_snapshot(payload)
     paths = _RescueRingPaths.from_data_dir(data_dir)
     index = _load_index(paths)
     next_slot = (index.newest_slot + 1) % RING_SIZE if _ring_has_data(index) else 0
     captured_at_ms = int(payload["captured_at_ms"])
 
-    write_atomic(paths.ring_slot(next_slot), _compact_json(payload) + "\n")
+    write_atomic(paths.ring_slot(next_slot), compact_json(payload) + "\n")
 
     slots = list(index.slots)
     slots[next_slot] = RescueSlotMeta(slot=next_slot, captured_at_ms=captured_at_ms, bytes=size)
-    updated = RescueIndex(schema=_SCHEMA, newest_slot=next_slot, slots=tuple(slots))
-    write_atomic(paths.index_file, json.dumps(_index_to_dict(updated), indent=2) + "\n")
+    updated = RescueIndex(schema=1, newest_slot=next_slot, slots=tuple(slots))
+    write_atomic(paths.index_file, json.dumps(index_to_dict(updated), indent=2) + "\n")
     return {"slot": next_slot, "captured_at_ms": captured_at_ms, "bytes": size}

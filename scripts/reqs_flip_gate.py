@@ -30,6 +30,7 @@ import re
 import sys
 from pathlib import Path
 
+from scripts import build_reqs_json
 from scripts.gh_pr_view import (
     DEFAULT_REPO,
 )
@@ -86,6 +87,8 @@ def main(
     args = parser.parse_args(argv)
 
     try:
+        if reqs_path == REQS_JSON:
+            build_reqs_json.ensure_output()
         payload = json.loads(reqs_path.read_text())
     except Exception as exc:
         print(f"[reqs-flip-gate] UNKNOWN: could not read {reqs_path} ({exc})", file=sys.stderr)

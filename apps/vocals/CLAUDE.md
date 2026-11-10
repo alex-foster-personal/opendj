@@ -42,3 +42,13 @@ python -m apps.vocals from-stems --live --stable-id <id>
 
 Cache contract: `apps/vocals/cache.py`. Listing UI reads vocals via
 `rb_vendor.vocals_for_content` on hydrated rows (PreviewStrip blue bars).
+
+## module layout
+
+- `cli.py`: demucs run path (`_worker_command`, `_terminate_worker_tree`, `run_worker`, `_process_one`, `cmd_trickle`, `cmd_one`), `build_parser`, `main`; re-exports the names callers import from the siblings.
+- `cli_library.py`: `Ctx`, `VocalTrack`, db plumbing, track loading, `classify`, queue ordering and budget.
+- `cli_claims.py`: `TrackClaim` lease locking.
+- `cli_worker.py`: worker config constants and `preflight_worker`.
+- `cli_scan.py` / `cli_from_stems.py`: the scan and from-stems subcommands.
+- `cli_parser.py`: `build_vocals_parser(handlers)`, the argparse surface.
+- Names tests monkeypatch on `apps.vocals.cli` (`run_worker`, `_process_one`, `_worker_command`, `_terminate_worker_tree`) and their callers stay defined in cli.py.

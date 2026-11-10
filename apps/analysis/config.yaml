@@ -16,6 +16,16 @@ analyzer:
 concurrency:
   per_worker_budget_mb: 650
 
+# Fast analysis record lanes for first folder import (issue #11152, parent #305).
+# User job lanes (stems, lyrics, genre) and deferred detector lanes
+# (provenance, rip_quality) stay out until explicitly added elsewhere.
+first_import:
+  lanes:
+    - loudness
+    - beatgrid
+    - key
+    - waveform
+
 energy:
   # RMS-dBFS upper bounds -> 1..10 energy bins.  Genre-sensitive.
   rms_dbfs_bins:

@@ -1,0 +1,9 @@
+{
+  "bytes": 1024,
+  "measured_main": 503990,
+  "measured_with_pr": 504121,
+  "sha": "092377d284",
+  "date": "Tue 10 Nov 2026",
+  "reason": "PR #11379 changes no runtime frontend code (its only src change is type declarations in api-types.ts); the measured +131 B gzip on other-lazy (+191 B on the run before) is build noise just over the 128 B tolerance. Ceiled to KiB.",
+  "payback": "none needed; no code grows the surface, so the next rebaseline folds it to zero"
+}

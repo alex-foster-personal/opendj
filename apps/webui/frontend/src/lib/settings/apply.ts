@@ -15,6 +15,7 @@ import { UI_SKIN_CHOICES, parseUiSkin, parseWaveSplitMaster } from '$lib/rb/ui-s
 import { parseWavePlayheadMode, parseWaveZoom } from '$lib/rb/wave-zoom';
 import { parseSpeakerAutoRecover, SPEAKER_AUTO_RECOVER_PREFS } from '$lib/rb/speaker-link-prefs';
 import { parseTempoLaneScale } from '$lib/rb/tempo-lane-prefs';
+import { requireWaveGridLines } from '$lib/rb/wave-grid-lines';
 import {
 	DECK_LAYOUT_DURATIONS_MS,
 	setAutoPlayEnabled,
@@ -46,11 +47,16 @@ import {
 	setMixerStems,
 	setDeckHoverLink,
 	setShowSections,
+	setAutoAnalyzeGrid,
+	setAutoAnalyzeKey,
+	setAutoAnalyzeSections,
+	setAutoAnalyzeVocals,
 	setDeckNumberArt,
 	requireDeckNumberArt,
 	setSpeakerAutoRecover,
 	setShowTempoLane,
 	setTempoLaneScale,
+	setWaveGridLines,
 	setWaveformDesign,
 	setWavePalette,
 	setLayoutOverride,
@@ -169,6 +175,7 @@ export const ALLOWED_SETTING_KEYS = [
 	'compatible_filter.mode',
 	'compatible_filter.mashup_relative',
 	'compatible_filter.key_shift_max',
+	'compatible_filter.energy_mode',
 	'remixes_filter',
 	'vocals_filter',
 	'available_offline_filter',
@@ -186,10 +193,15 @@ export const ALLOWED_SETTING_KEYS = [
 	'show_stems',
 	'deck_hover_link',
 	'show_sections',
+	'auto_analyze_grid',
+	'auto_analyze_key',
+	'auto_analyze_sections',
+	'auto_analyze_vocals',
 	'deck_number_art',
 	'speaker_auto_recover',
 	'show_tempo_lane',
 	'tempo_lane_scale',
+	'wave_grid_lines',
 	'waveform_design',
 	'wave_eq_reflect',
 	'wave_palette',
@@ -346,6 +358,36 @@ function _readLibraryUiPref(key: _LibraryUiPrefKey): SettingValue {
 	}
 }
 
+const _ANALYSIS_AUTO_PREF_KEYS = [
+	'auto_analyze_grid',
+	'auto_analyze_key',
+	'auto_analyze_sections',
+	'auto_analyze_vocals'
+] as const satisfies readonly AllowedSettingKey[];
+
+type _AnalysisAutoPrefKey = (typeof _ANALYSIS_AUTO_PREF_KEYS)[number];
+
+function _isAnalysisAutoPrefKey(key: AllowedSettingKey): key is _AnalysisAutoPrefKey {
+	return (_ANALYSIS_AUTO_PREF_KEYS as readonly string[]).includes(key);
+}
+
+function _readAnalysisAutoPref(key: _AnalysisAutoPrefKey): SettingValue {
+	switch (key) {
+		case 'auto_analyze_grid':
+			return uiPrefs.auto_analyze_grid;
+		case 'auto_analyze_key':
+			return uiPrefs.auto_analyze_key;
+		case 'auto_analyze_sections':
+			return uiPrefs.auto_analyze_sections;
+		case 'auto_analyze_vocals':
+			return uiPrefs.auto_analyze_vocals;
+		default: {
+			const _exhaustive: never = key;
+			return _unhandledSettingKey(_exhaustive);
+		}
+	}
+}
+
 const _APPEARANCE_AND_DECK_UI_PREF_KEYS = [
 	'jog_radial_waveform',
 	'show_stems',
@@ -355,6 +397,7 @@ const _APPEARANCE_AND_DECK_UI_PREF_KEYS = [
 	'speaker_auto_recover',
 	'show_tempo_lane',
 	'tempo_lane_scale',
+	'wave_grid_lines',
 	'waveform_design',
 	'wave_eq_reflect',
 	'wave_palette',
@@ -403,6 +446,8 @@ function _readAppearanceAndDeckUiPref(key: _AppearanceAndDeckUiPrefKey): Setting
 			return uiPrefs.show_tempo_lane;
 		case 'tempo_lane_scale':
 			return uiPrefs.tempo_lane_scale;
+		case 'wave_grid_lines':
+			return uiPrefs.wave_grid_lines;
 		case 'waveform_design':
 			return uiPrefs.waveform_design;
 		case 'wave_eq_reflect':
@@ -483,7 +528,7 @@ function _readConfirmSetting(key: _ConfirmSettingKey): SettingValue {
 
 type _NumericAndExternalSettingKey = Exclude<
 	AllowedSettingKey,
-	_LibraryUiPrefKey | _AppearanceAndDeckUiPrefKey | _ConfirmSettingKey
+	_LibraryUiPrefKey | _AnalysisAutoPrefKey | _AppearanceAndDeckUiPrefKey | _ConfirmSettingKey
 >;
 
 function _readNumericAndExternalSetting(key: _NumericAndExternalSettingKey): SettingValue {
@@ -493,6 +538,7 @@ function _readNumericAndExternalSetting(key: _NumericAndExternalSettingKey): Set
 		case 'compatible_filter.mode':
 		case 'compatible_filter.mashup_relative':
 		case 'compatible_filter.key_shift_max':
+		case 'compatible_filter.energy_mode':
 			return readCompatibleFilterSetting(uiPrefs.compatible_filter, key);
 		case 'pin_visible_days':
 			return String(uiPrefs.pin_visible_days);
@@ -531,6 +577,7 @@ export function readSettingValue(key: AllowedSettingKey | VariantSettingId): Set
 	if (isVariantSettingId(key)) return readVariant(key);
 	const allowed = key as AllowedSettingKey;
 	if (_isLibraryUiPrefKey(allowed)) return _readLibraryUiPref(allowed);
+	if (_isAnalysisAutoPrefKey(allowed)) return _readAnalysisAutoPref(allowed);
 	if (_isAppearanceAndDeckUiPrefKey(allowed)) return _readAppearanceAndDeckUiPref(allowed);
 	if (_isConfirmSettingKey(allowed)) return _readConfirmSetting(allowed);
 	return _readNumericAndExternalSetting(allowed);
@@ -610,6 +657,7 @@ export function applySettingChange(key: string, value: SettingValue): void {
 			return;
 		case 'compatible_filter.mode':
 		case 'compatible_filter.key_shift_max':
+		case 'compatible_filter.energy_mode':
 			_applyCompatibleFilterSetting(key, value);
 			return;
 		case 'remixes_filter':
@@ -670,6 +718,18 @@ export function applySettingChange(key: string, value: SettingValue): void {
 		case 'show_sections':
 			setShowSections(_asBool(value, key));
 			return;
+		case 'auto_analyze_grid':
+			setAutoAnalyzeGrid(_asBool(value, key));
+			return;
+		case 'auto_analyze_key':
+			setAutoAnalyzeKey(_asBool(value, key));
+			return;
+		case 'auto_analyze_sections':
+			setAutoAnalyzeSections(_asBool(value, key));
+			return;
+		case 'auto_analyze_vocals':
+			setAutoAnalyzeVocals(_asBool(value, key));
+			return;
 		case 'deck_number_art':
 			setDeckNumberArt(requireDeckNumberArt(value, key));
 			return;
@@ -690,6 +750,9 @@ export function applySettingChange(key: string, value: SettingValue): void {
 			setTempoLaneScale(scale);
 			return;
 		}
+		case 'wave_grid_lines':
+			setWaveGridLines(requireWaveGridLines(value, key));
+			return;
 		case 'waveform_design': {
 			const design = parseWaveformDesignPref(value);
 			if (design === undefined) {

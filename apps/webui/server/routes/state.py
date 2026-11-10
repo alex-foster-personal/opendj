@@ -395,6 +395,10 @@ async def publish_ui_mirror(
     request.app.state.ui_mirror = stored
     request.app.state.ui_mirror_received_monotonic = monotonic()
     pair_capture.observe_mirror(request, body)
+    from apps.webui.server.routes.now_playing import observe_now_playing
+
+    # NOWP: fold the streamer now-playing feed on each mirror ingest.
+    observe_now_playing(request.app, stored)
     # CUEOUT-18: the mirror stays last-writer-wins; the headphone state is
     # also kept per reporting client, so one tab cannot overwrite another's.
     mixer = body.get("mixer")
@@ -440,6 +444,10 @@ async def get_ui_mirror(request: Request) -> dict[str, Any] | JSONResponse:
         return JSONResponse(status_code=409, content={"client_open": False})
     document = deepcopy(mirror)
     document.pop(MIRROR_RECEIVED_MONOTONIC_KEY, None)
+    # SECONDSCREEN: agents read which extra shell windows are open. An older
+    # page that has not published the field yet still answers an empty list.
+    if not isinstance(document.get("windows"), list):
+        document["windows"] = []
     # CLOUDSYNC-14: the same verdict the server gate reaches, so the UI gate agrees.
     document["mirror_stale"] = mirror_is_stale(mirror, None)
     # AGENT-22: engine-observed, never page-reported: a dead order loop keeps

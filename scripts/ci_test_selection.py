@@ -663,6 +663,21 @@ def _changed_paths(root: Path, event: Event, range_record: dict) -> tuple[list[s
     return pr_changed_paths(root, event.head_sha), pr_changed_paths(root, event.head_sha, ADDED_FILTER), None, ""
 
 
+def _derived_block_pins(root: Path, changed: list[str], base: str | None) -> tuple[tuple[str, str], ...]:
+    """The derived-block guards this diff can move (scripts/ci_derived_inputs.py, issue #11975),
+    read against `base`, or the PR merge commit's merge base when `base` is None."""
+    # Deferred like `load_config`: the scope-job helpers import this module under a bare python3
+    # with no PyYAML, and only a selection reads ci/test-scopes.yml.
+    try:
+        from scripts.ci_derived_inputs import pinned_derived_guards
+    except ImportError as unavailable:
+        raise FullSuite(
+            f"the derived-block reader needs PyYAML, not importable under {sys.executable}: {unavailable}"
+        ) from unavailable
+    diff_base = base if base is not None else _git(root, "merge-base", "HEAD^1", "HEAD^2")
+    return tuple(pinned_derived_guards(root, changed, diff_base))
+
+
 def _main_push_note(event: Event, since: str, prs: list[int], dropped: list[str]) -> str:
     """The reason suffix a main push adds: its base, its merged PRs, and what it dropped."""
     if not event.main_push:
@@ -681,6 +696,7 @@ def _select_or_cap(
     policy: Policy | None,
     main_push: bool = False,
     added: list[str] | None = None,
+    pinned: tuple[tuple[str, str], ...] = (),
 ) -> tuple[Selection, str | None]:
     """The narrowed selection, or under a hard cap the ranked whole lane with the reason it could not narrow.
 
@@ -691,11 +707,11 @@ def _select_or_cap(
     not a failed read, so it ranks the lane like any unnarrowable change.
     """
     try:
-        return select_tests(changed, ignores, root, policy, added=added), None
+        return select_tests(changed, ignores, root, policy, added=added, pinned=pinned), None
     except FullSuite as unnarrowable:
         if budget is None or not budget.hard or not (changed or main_push):
             raise
-        return capped_full_selection(changed, ignores, root, added), str(unnarrowable)
+        return capped_full_selection(changed, ignores, root, added, pinned), str(unnarrowable)
 
 
 def decide(  # noqa: PLR0913 -- the two TEST-CUT variables are keyword-only, one per cut
@@ -807,7 +823,8 @@ def decide(  # noqa: PLR0913 -- the two TEST-CUT variables are keyword-only, one
     try:
         policy = policy_from(by_name, demote, root)
         changed, added, base, since = _changed_paths(root, event, range_record)
-        selection, capped_over = _select_or_cap(changed, ignores, root, budget, policy, event.main_push, added)
+        pinned = _derived_block_pins(root, changed, base)
+        selection, capped_over = _select_or_cap(changed, ignores, root, budget, policy, event.main_push, added, pinned)
         universe = lane_universe(selection.graph_paths, ignores, root)
         add_declared(selection, declared)
         ledger = json.loads((root / DURATIONS_NAME).read_text(encoding="utf-8"))

@@ -22,6 +22,7 @@
   --fg: #e6e9ef;
   --muted: #9aa4b2;
   --accent: #ffb43a;
+  --rb-focus-ring: #ffb43a; /* shell keyboard focus ring (A11Y-11403); /performance overrides per skin */
   --accent-dim: #7a5a1f;
   --danger: #ff5a5a;
   /* The middle rung of the toast scale (pin 9bf12adccb45). Distinct from
@@ -42,6 +43,19 @@
   --success: #4ade80;
   --info: #276e86;
   --on-info: #ffffff;
+  /* Chat-kit citation pills and streaming bubble (issue #11169). */
+  --chat-citation-verified-fg: var(--success);
+  --chat-citation-verified-border: color-mix(in srgb, var(--success) 55%, var(--border));
+  --chat-citation-verified-bg: color-mix(in srgb, var(--success) 14%, var(--surface-raised));
+  --chat-citation-warn-fg: var(--warning);
+  --chat-citation-warn-border: color-mix(in srgb, var(--warning) 55%, var(--border));
+  --chat-citation-warn-bg: color-mix(in srgb, var(--warning) 14%, var(--surface-raised));
+  --chat-citation-fail-fg: var(--danger);
+  --chat-citation-fail-border: color-mix(in srgb, var(--danger) 55%, var(--border));
+  --chat-citation-fail-bg: color-mix(in srgb, var(--danger) 14%, var(--surface-raised));
+  --chat-bubble-border: var(--border);
+  --chat-bubble-bg: var(--surface-raised);
+  --chat-bubble-cursor: var(--accent);
   /* Left inset of /performance's bottom bar (BrowserPanel's `.bottom-bar`
      reads this as its `padding-left`). It used to reserve 232px for a fixed
      link strip that sat over the bar's left end; the strip is gone
@@ -69,6 +83,7 @@ html[data-theme='light'] {
   --fg: #27241f;
   --muted: #5d574e;
   --accent: #9a5300;
+  --rb-focus-ring: #a35a00;
   --accent-dim: #9c7a3c;
   --danger: #b42318;
   --warning: #a44b11;
@@ -104,6 +119,13 @@ html[data-skin='light'] {
 
 * {
   box-sizing: border-box;
+}
+
+/* A11Y-11403: one keyboard-focus ring app-wide (WCAG 2.4.7 / 2.4.13, VS Code focusBorder look).
+ * :focus-visible, not :focus, so a mouse click on a button, knob or fader shows no ring. */
+:focus-visible {
+  outline: 2px solid var(--rb-focus-ring);
+  outline-offset: 2px;
 }
 
 html,

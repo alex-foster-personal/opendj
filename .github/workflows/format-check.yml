@@ -40,7 +40,7 @@ env:
 jobs:
   format-check:
     name: format check (changed files)
-    runs-on: ${{ fromJSON(vars.CI_RUNS_ON_LINUX || '"ubuntu-latest"') }}
+    runs-on: ${{ fromJSON(vars.CI_RUNS_ON_GATE || vars.CI_RUNS_ON_LINUX || '"ubuntu-latest"') }}
     timeout-minutes: 8
     steps:
       - name: Reclaim workspace ownership before checkout

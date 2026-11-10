@@ -31,7 +31,8 @@ const meta = {
 		active: 'tri-band',
 		palette: 'rekordbox',
 		colors: resolveWaveBandColors('dark', 'rekordbox'),
-		sample
+		sample,
+		gridLines: 'beats_bars'
 	}
 } satisfies Meta<typeof WaveformDesignPreviewView>;
 

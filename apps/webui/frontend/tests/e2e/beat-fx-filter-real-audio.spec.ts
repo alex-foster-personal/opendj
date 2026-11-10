@@ -36,6 +36,8 @@ import { expect, test, type Page } from '@playwright/test';
 import { build } from 'esbuild';
 import { fileURLToPath } from 'node:url';
 
+type BeatFxFilterBundle = typeof import('../../src/lib/rb/fx/beat-fx-filter-kernel');
+
 const FRONTEND_ROOT = fileURLToPath(new URL('../..', import.meta.url));
 const SR = 48_000;
 const QUANTUM = 128;
@@ -80,8 +82,7 @@ async function kernelBundle(): Promise<string> {
 async function render(page: Page, plan: Plan): Promise<number[][]> {
 	return page.evaluate(
 		async ({ plan, sr, engageSec, releaseSec }) => {
-			// eslint-disable-next-line @typescript-eslint/no-explicit-any
-			const mod = (globalThis as any).beatFxFilter;
+			const mod = (globalThis as unknown as { beatFxFilter: BeatFxFilterBundle }).beatFxFilter;
 			const frames = Math.round(sr * plan.seconds);
 			const ctx = new OfflineAudioContext(3, frames, sr);
 			const buffer = ctx.createBuffer(1, frames, sr);
@@ -322,8 +323,7 @@ test.describe('beat FX FILTER kernel (real audio)', () => {
 	test('CPU: kernel render cost against a bare gain (#9777 row)', async ({ page }) => {
 		const timing = await page.evaluate(
 			async ({ sr }) => {
-				// eslint-disable-next-line @typescript-eslint/no-explicit-any
-				const mod = (globalThis as any).beatFxFilter;
+				const mod = (globalThis as unknown as { beatFxFilter: BeatFxFilterBundle }).beatFxFilter;
 				const frames = sr * 10;
 				async function once(withKernel: boolean): Promise<number> {
 					const ctx = new OfflineAudioContext(2, frames, sr);

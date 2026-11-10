@@ -7,6 +7,7 @@
   {"source": {"ch": 1, "kind": "note", "id": 2}, "action": {"type": "deck_cue", "deck": 1}},
   {"source": {"ch": 1, "kind": "note", "id": 3}, "action": {"type": "deck_hot_cue", "deck": 1, "slot": "A"}},
   {"source": {"ch": 1, "kind": "note", "id": 4}, "action": {"type": "deck_beat_loop", "deck": 1, "beats": 4}},
+  {"source": {"ch": 1, "kind": "note", "id": 27}, "action": {"type": "deck_beat_jump", "deck": 1, "beats": -1}},
   {"source": {"ch": 1, "kind": "note", "id": 5}, "action": {"type": "deck_auto_loop_toggle", "deck": 1}},
   {"source": {"ch": 1, "kind": "note", "id": 6}, "action": {"type": "deck_loop_exit", "deck": 1}},
   {"source": {"ch": 1, "kind": "note", "id": 7}, "action": {"type": "deck_sync_toggle", "deck": 1}},

@@ -109,7 +109,7 @@ jobs:
     # and the head lives in this repository; a branch name alone is caller-controlled
     # (Codex r4120216186).
     name: adr check
-    runs-on: ${{ fromJSON(vars.CI_RUNS_ON_LINUX || '"ubuntu-latest"') }}
+    runs-on: ${{ fromJSON(vars.CI_RUNS_ON_GATE || vars.CI_RUNS_ON_LINUX || '"ubuntu-latest"') }}
     timeout-minutes: 5
     steps:
       - name: Reclaim workspace ownership before checkout
@@ -260,7 +260,7 @@ jobs:
     if: ${{ !(startsWith(github.head_ref, 'trunk-merge/') && github.event.pull_request.user.login == 'trunk-io[bot]' && github.event.pull_request.head.repo.full_name == github.repository) }}
     name: reqs flip gate
     # See the runner-selection note on ci.yml's `test` job.
-    runs-on: ${{ fromJSON(vars.CI_RUNS_ON_LINUX || '"ubuntu-latest"') }}
+    runs-on: ${{ fromJSON(vars.CI_RUNS_ON_GATE || vars.CI_RUNS_ON_LINUX || '"ubuntu-latest"') }}
     # A checkout and one stdlib script that makes a single `gh pr view` call.
     # Anything past five minutes is stuck, not slow.
     timeout-minutes: 5
@@ -376,7 +376,7 @@ jobs:
     if: ${{ !(startsWith(github.head_ref, 'trunk-merge/') && github.event.pull_request.user.login == 'trunk-io[bot]' && github.event.pull_request.head.repo.full_name == github.repository) }}
     name: ci tests declarations
     # See the runner-selection note on ci.yml's `test` job.
-    runs-on: ${{ fromJSON(vars.CI_RUNS_ON_LINUX || '"ubuntu-latest"') }}
+    runs-on: ${{ fromJSON(vars.CI_RUNS_ON_GATE || vars.CI_RUNS_ON_LINUX || '"ubuntu-latest"') }}
     # Thu 5 Nov 2026: #8822, #8857, #8761 and #9003 each lost a full CI cycle to one malformed
     # `CI-Tests:` line that the selector refuses (HARD CAP REFUSED) only once the shards run. This
     # job runs the selector's own parser and path rules on the body, in seconds, on every PR
@@ -493,7 +493,7 @@ jobs:
   error_id_evidence:
     if: ${{ !(startsWith(github.head_ref, 'trunk-merge/') && github.event.pull_request.user.login == 'trunk-io[bot]' && github.event.pull_request.head.repo.full_name == github.repository) }}
     name: error id evidence
-    runs-on: ${{ fromJSON(vars.CI_RUNS_ON_LINUX || '"ubuntu-latest"') }}
+    runs-on: ${{ fromJSON(vars.CI_RUNS_ON_GATE || vars.CI_RUNS_ON_LINUX || '"ubuntu-latest"') }}
     timeout-minutes: 5
     steps:
       - name: Reclaim workspace ownership before checkout

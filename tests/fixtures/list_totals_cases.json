@@ -1,0 +1,22 @@
+{
+  "_doc": "Shared by tests/shared/test_list_totals.py and apps/webui/frontend/tests/unit/list-totals.test.mjs (LIBUX list footer).",
+  "cases": [
+    {
+      "name": "mixed known",
+      "durations_ms": [60000, 125000],
+      "totals": { "count": 2, "duration_ms": 185000, "unknown": 0 },
+      "line": "2 tracks, 3:05"
+    },
+    {
+      "name": "one unknown",
+      "durations_ms": [60000, null],
+      "totals": { "count": 2, "duration_ms": 60000, "unknown": 1 },
+      "line": "2 tracks, 1:00 (+1 unknown)"
+    }
+  ],
+  "footer": {
+    "list": { "count": 3, "duration_ms": 3660000, "unknown": 0 },
+    "selection": { "count": 2, "duration_ms": 300000, "unknown": 0 },
+    "text": "3 tracks, 1:01:00 · selected: 2 tracks, 5:00"
+  }
+}

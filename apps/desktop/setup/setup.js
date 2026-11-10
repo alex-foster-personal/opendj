@@ -351,6 +351,78 @@ export function startBootstrap({
  * why Relaunch said "never told which port" every time in the Tauri shell
  * (Thu 1 Oct 2026). The injected global stays as the Electron preload's path.
  */
+const RESET_BUNDLED_PAYLOAD_PATH = '/api/v1/reset-bundled-payload';
+
+export function resetBundledPayloadUrl(healthPort) {
+	return `http://127.0.0.1:${healthPort}${RESET_BUNDLED_PAYLOAD_PATH}`;
+}
+
+export function parseMissingEngineSourceQuery(search) {
+	const params = new URLSearchParams(search);
+	if (params.get('missing-engine-source') !== '1') {
+		return null;
+	}
+	const fromUrl = Number(params.get('health') ?? 0);
+	return {
+		path: params.get('path') ?? '(unknown)',
+		config_key: params.get('key') ?? '(unknown)',
+		health_port:
+			Number.isInteger(fromUrl) && fromUrl > 0
+				? fromUrl
+				: (globalThis.__OPENDJ_ENGINE_SUPERVISOR__?.health_port ?? null)
+	};
+}
+
+function showMissingEngineSource(missing) {
+	byId('root').dataset.state = 'missing-source';
+	byId('checking-view').hidden = true;
+	byId('unreachable-view').hidden = true;
+	byId('fatal-view').hidden = true;
+	byId('missing-source-view').hidden = false;
+	byId('missing-source-path').textContent = missing.path;
+	byId('missing-source-key').textContent = missing.config_key;
+}
+
+export function resetBundledPayload({ healthPort, setStatus, fetchImpl = globalThis.fetch } = {}) {
+	setStatus('working', 'Clearing the override and restarting...');
+	if (!healthPort) {
+		setStatus(
+			'bad',
+			'Cannot reset: this window was never told which port the shell listens on. Quit Open DJ and open it again.'
+		);
+		return Promise.resolve({ ok: false, reason: 'no-health-port' });
+	}
+	const url = resetBundledPayloadUrl(healthPort);
+	return fetchImpl(url, { method: 'POST', mode: 'no-cors', cache: 'no-store' })
+		.then(() => {
+			setStatus('working', 'Reset accepted. Restarting Open DJ...');
+			return { ok: true };
+		})
+		.catch((err) => {
+			const detail = err instanceof Error ? err.message : String(err);
+			setStatus(
+				'bad',
+				`Reset was refused at ${url} (${detail || 'connection refused'}).`
+			);
+			return { ok: false, reason: 'request-refused', detail };
+		});
+}
+
+function wireResetBundledPayloadButton(missing) {
+	const button = byId('reset-bundled-payload');
+	button.addEventListener('click', () => {
+		button.disabled = true;
+		void resetBundledPayload({
+			healthPort: missing?.health_port,
+			setStatus: (tone, message) => setButtonStatus('reset-bundled-status', tone, message)
+		}).then((result) => {
+			if (!result.ok) {
+				button.disabled = false;
+			}
+		});
+	});
+}
+
 export function parseFatalQuery(search) {
 	const params = new URLSearchParams(search);
 	if (params.get('fatal') !== '1') {
@@ -415,8 +487,12 @@ function defaultNavigate(origin) {
 // Auto-start only in a real page, never when imported by a test runner.
 if (typeof document !== 'undefined' && document.getElementById('root') !== null) {
 	const search = globalThis.location?.search ?? '';
+	const missingSource = parseMissingEngineSourceQuery(search);
 	const fatal = parseFatalQuery(search);
-	if (fatal !== null) {
+	if (missingSource !== null) {
+		showMissingEngineSource(missingSource);
+		wireResetBundledPayloadButton(missingSource);
+	} else if (fatal !== null) {
 		showFatal(fatal);
 		wireRelaunchButton(fatal, search);
 	} else if (globalThis.__OPENDJ_ENGINE_SUPERVISOR__?.engine === 'dead') {

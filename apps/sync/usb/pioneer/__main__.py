@@ -32,6 +32,12 @@ Subcommands
     Prints ``pdb_path``, ``bytes``, and ``tracks`` on success; errors go to
     stderr as JSON and exit 1.
 
+``anlz-ext --input TRACK.json [--output PATH]``
+    Encode ``ANLZ0000.EXT`` from a JSON spec (USBEXP-10746): duration, beat grid,
+    hot and memory cues, tri-band detail columns and optional phrases. Default
+    prints a dry-run summary (column count, byte length, sha256); ``--output``
+    also writes the bytes.
+
 ``artwork --target DIR --track STABLE_ID[=COVER_PATH] ... [--apply] [--online] [--no-library]``
     The classic export's artwork step without the UI (USBEXP-10048): plan
     the ``PIONEER/Artwork/<nnnnn>/a<id>.jpg`` + ``a<id>_m.jpg`` files and the
@@ -44,9 +50,11 @@ Subcommands
 
 Requirement: CAT-06.
 """
+
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import logging
 import os
@@ -56,6 +64,7 @@ from typing import Any
 
 from apps.shared.rekordbox_writeback import require_writeback_enabled
 
+from .anlz_writer import BeatInput, CueInput, PhraseInput, TrackAnalysisInput, build_ext
 from .artwork_export import (
     ArtworkExportError,
     ArtworkSource,
@@ -96,9 +105,7 @@ def _parse_playlist_spec(raw: str) -> tuple[str, list[int]]:
     the rightmost ``:`` splits name from the id list.
     """
     if ":" not in raw:
-        raise ValueError(
-            f"playlist spec must contain ':' separating NAME from IDs: {raw!r}"
-        )
+        raise ValueError(f"playlist spec must contain ':' separating NAME from IDs: {raw!r}")
     name, _, ids_part = raw.rpartition(":")
     name = name.strip()
     if not name:
@@ -109,9 +116,7 @@ def _parse_playlist_spec(raw: str) -> tuple[str, list[int]]:
     try:
         ids = [int(x.strip()) for x in ids_part.split(",") if x.strip()]
     except ValueError as exc:
-        raise ValueError(
-            f"playlist track ids must be integers: {raw!r} ({exc})"
-        ) from exc
+        raise ValueError(f"playlist track ids must be integers: {raw!r} ({exc})") from exc
     return name, ids
 
 
@@ -123,40 +128,29 @@ def _parse_track_spec(raw: str) -> tuple[int, dict[str, Any]]:
     raise :class:`ValueError`.
     """
     if ":" not in raw:
-        raise ValueError(
-            f"track spec must contain ':' separating ID from FIELD=VALUE list: {raw!r}"
-        )
+        raise ValueError(f"track spec must contain ':' separating ID from FIELD=VALUE list: {raw!r}")
     id_part, _, rest = raw.partition(":")
     try:
         track_id = int(id_part.strip())
     except ValueError as exc:
-        raise ValueError(
-            f"track id must be an integer in spec: {raw!r} ({exc})"
-        ) from exc
+        raise ValueError(f"track id must be an integer in spec: {raw!r} ({exc})") from exc
     overlay: dict[str, Any] = {}
     for chunk in rest.split(","):
         chunk = chunk.strip()
         if not chunk:
             continue
         if "=" not in chunk:
-            raise ValueError(
-                f"track field must be FIELD=VALUE: {chunk!r} (in {raw!r})"
-            )
+            raise ValueError(f"track field must be FIELD=VALUE: {chunk!r} (in {raw!r})")
         field, _, value = chunk.partition("=")
         field = field.strip()
         value = value.strip()
         if field not in _WRITE_TRACK_FIELDS:
-            raise ValueError(
-                f"unknown track field {field!r}; "
-                f"expected one of {sorted(_WRITE_TRACK_FIELDS)}"
-            )
+            raise ValueError(f"unknown track field {field!r}; expected one of {sorted(_WRITE_TRACK_FIELDS)}")
         if field in {"rating", "bpmx100", "color_id"}:
             try:
                 overlay[field] = int(value)
             except ValueError as exc:
-                raise ValueError(
-                    f"track field {field!r} must be an integer: {value!r} ({exc})"
-                ) from exc
+                raise ValueError(f"track field {field!r} must be an integer: {value!r} ({exc})") from exc
         else:
             overlay[field] = value
     return track_id, overlay
@@ -180,12 +174,8 @@ def _cmd_write(args: argparse.Namespace) -> int:
         "mode": "apply" if args.apply else "dry-run",
         "template": str(template),
         "output": str(output),
-        "playlists": [
-            {"name": name, "track_ids": ids} for name, ids in playlist_specs
-        ],
-        "track_updates": [
-            {"id": tid, "overlay": overlay} for tid, overlay in track_specs
-        ],
+        "playlists": [{"name": name, "track_ids": ids} for name, ids in playlist_specs],
+        "track_updates": [{"id": tid, "overlay": overlay} for tid, overlay in track_specs],
     }
 
     if not args.apply:
@@ -210,9 +200,7 @@ def _cmd_write(args: argparse.Namespace) -> int:
         )
         return 4
 
-    playlists = [
-        PlaylistSpec(name=name, track_ids=tuple(ids)) for name, ids in playlist_specs
-    ]
+    playlists = [PlaylistSpec(name=name, track_ids=tuple(ids)) for name, ids in playlist_specs]
     track_updates = []
     for tid, overlay in track_specs:
         kwargs: dict[str, Any] = {"id": tid}
@@ -278,11 +266,7 @@ def _cmd_diff_matrix(args: argparse.Namespace) -> int:
         args.json.write_text(render_matrix_json(rows), encoding="utf-8")
         print(f"[i] Wrote {args.json}", file=sys.stderr)
 
-    bad = [
-        r for r in rows
-        if r.status not in ("ok", "skipped")
-        or r.verdict == "unexpected_divergence"
-    ]
+    bad = [r for r in rows if r.status not in ("ok", "skipped") or r.verdict == "unexpected_divergence"]
     return 2 if bad else 0
 
 
@@ -317,9 +301,7 @@ def _cmd_agent_export(args: argparse.Namespace) -> int:
     # Default OFF (no hidden defaults); strict parse (fail fast).
     quit_after_raw = os.environ.get("MDT_RB_QUIT_AFTER", "0")
     if quit_after_raw not in {"0", "1"}:
-        raise SystemExit(
-            f"MDT_RB_QUIT_AFTER must be '0' or '1', got {quit_after_raw!r}"
-        )
+        raise SystemExit(f"MDT_RB_QUIT_AFTER must be '0' or '1', got {quit_after_raw!r}")
     quit_after = quit_after_raw == "1"
 
     result = run_export_agent(cfg)
@@ -352,8 +334,7 @@ def _cmd_agent_export(args: argparse.Namespace) -> int:
         else:
             summary["quit_after"] = False
             print(
-                "→ Quit-after skipped: export did not succeed, leaving "
-                "rekordbox open for inspection",
+                "→ Quit-after skipped: export did not succeed, leaving rekordbox open for inspection",
                 file=sys.stderr,
             )
     json.dump(summary, sys.stdout, indent=2, default=str)
@@ -450,6 +431,65 @@ def _cmd_artwork(args: argparse.Namespace) -> int:
     return 0
 
 
+def _cue_input(raw: dict[str, Any]) -> CueInput:
+    return CueInput(
+        str(raw["kind"]),
+        int(raw["pad"]),
+        int(raw["position_ms"]),
+        comment=raw.get("comment"),
+        color=raw.get("color"),
+        loop_end_ms=raw.get("loop_end_ms"),
+    )
+
+
+def _track_from_json(data: dict[str, Any]) -> TrackAnalysisInput:
+    beats = tuple(BeatInput(int(b["beat_in_bar"]), float(b["bpm"]), int(b["time_ms"])) for b in data["beats"])
+    hot = tuple(_cue_input(c) for c in data.get("hot_cues", ()))
+    mem = tuple(_cue_input(c) for c in data.get("memory_cues", ()))
+    phrases = data.get("phrases")
+    phrase_models = None
+    if phrases is not None:
+        phrase_models = tuple(PhraseInput(int(p["start_beat"]), int(p["kind"])) for p in phrases)
+    return TrackAnalysisInput(
+        float(data["duration_s"]),
+        beats,
+        hot,
+        mem,
+        tuple(int(x) for x in data["detail_low"]),
+        tuple(int(x) for x in data["detail_mid"]),
+        tuple(int(x) for x in data["detail_high"]),
+        phrase_models,
+        phrase_end_beat=int(data.get("phrase_end_beat", 0)),
+        phrase_mood=int(data.get("phrase_mood", 1)),
+    )
+
+
+def _cmd_anlz_ext(args: argparse.Namespace) -> int:
+    payload = json.loads(Path(args.input).read_text(encoding="utf-8"))
+    try:
+        track = _track_from_json(payload)
+        ext = build_ext(track)
+    except (KeyError, TypeError, ValueError) as exc:
+        json.dump({"error": "anlz_ext_invalid", "message": str(exc)}, sys.stderr)
+        sys.stderr.write("\n")
+        return 1
+    columns = round(track.duration_s * 150)
+    json.dump(
+        {
+            "columns": columns,
+            "bytes": len(ext),
+            "sha256": hashlib.sha256(ext).hexdigest(),
+            "dry_run": True,
+        },
+        sys.stdout,
+        indent=2,
+    )
+    sys.stdout.write("\n")
+    if args.output is not None:
+        Path(args.output).write_bytes(ext)
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(
         prog="python -m apps.sync.usb.pioneer",
@@ -469,10 +509,7 @@ def main(argv: list[str] | None = None) -> int:
 
     write = sub.add_parser(
         "write",
-        help=(
-            "Overlay playlists + track updates on a OneLibrary template "
-            "(Prototype B; requires sqlcipher3)."
-        ),
+        help=("Overlay playlists + track updates on a OneLibrary template (Prototype B; requires sqlcipher3)."),
         description=(
             "Copy a Rekordbox-produced exportLibrary.db template to "
             "--output and overlay zero or more new playlists + track "
@@ -633,6 +670,11 @@ def main(argv: list[str] | None = None) -> int:
         help="Do not read the library; tracks without =COVER_PATH have no artwork.",
     )
     art.set_defaults(func=_cmd_artwork)
+
+    anlz_ext = sub.add_parser("anlz-ext", help="Encode ANLZ0000.EXT from a JSON track spec (USBEXP-10746).")
+    anlz_ext.add_argument("--input", required=True, help="JSON file with duration, beats, cues and detail bands.")
+    anlz_ext.add_argument("--output", default=None, help="Optional path to write the .EXT bytes.")
+    anlz_ext.set_defaults(func=_cmd_anlz_ext)
 
     args = parser.parse_args(argv)
     return args.func(args)

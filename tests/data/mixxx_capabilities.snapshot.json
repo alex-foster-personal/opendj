@@ -1,0 +1,116 @@
+{
+  "adapter": "mixxx",
+  "fields": [
+    {
+      "field": "track_id",
+      "rationale": "library.id, kept as the vendor id",
+      "supports": "lossless"
+    },
+    {
+      "field": "file_path",
+      "rationale": "track_locations.location (absolute)",
+      "supports": "lossless"
+    },
+    {
+      "field": "title",
+      "rationale": "",
+      "supports": "lossless"
+    },
+    {
+      "field": "album",
+      "rationale": "",
+      "supports": "lossless"
+    },
+    {
+      "field": "bpm",
+      "rationale": "",
+      "supports": "lossless"
+    },
+    {
+      "field": "artists",
+      "rationale": "one artist string, not split",
+      "supports": "lossy"
+    },
+    {
+      "field": "key_camelot",
+      "rationale": "Mixxx key text (Lancelot, Open Key or traditional) mapped through one table; unknown text dropped and counted",
+      "supports": "lossy"
+    },
+    {
+      "field": "rating",
+      "rationale": "0-5 stars",
+      "supports": "lossless"
+    },
+    {
+      "field": "duration_ms",
+      "rationale": "seconds x 1000",
+      "supports": "lossless"
+    },
+    {
+      "field": "play_count",
+      "rationale": "timesplayed",
+      "supports": "lossless"
+    },
+    {
+      "field": "color_rgb",
+      "rationale": "24-bit RGB (Mixxx 2.3+)",
+      "supports": "lossless"
+    },
+    {
+      "field": "cue_points.hot",
+      "rationale": "type 1, pad = hotcue",
+      "supports": "lossless"
+    },
+    {
+      "field": "cue_points.loop",
+      "rationale": "type 4, length converted from samples",
+      "supports": "lossless"
+    },
+    {
+      "field": "cue_points.load",
+      "rationale": "type 2 main cue",
+      "supports": "lossless"
+    },
+    {
+      "field": "cue_points.memory",
+      "rationale": "Mixxx has no memory cues",
+      "supports": "unsupported"
+    },
+    {
+      "field": "cue_points.color",
+      "rationale": "24-bit RGB",
+      "supports": "lossless"
+    },
+    {
+      "field": "cue_points.other",
+      "rationale": "intro, outro, jump, beat, N60dB markers dropped and counted",
+      "supports": "unsupported"
+    },
+    {
+      "field": "beats",
+      "rationale": "beatgrid blob not read",
+      "supports": "unsupported"
+    },
+    {
+      "field": "genre_year",
+      "rationale": "stored as x_mixxx_genre / x_mixxx_year extensions",
+      "supports": "lossy"
+    },
+    {
+      "field": "playlists",
+      "rationale": "PlaylistTracks.position order; hidden Auto DJ and set-log playlists skipped",
+      "supports": "lossless"
+    },
+    {
+      "field": "crates",
+      "rationale": "unordered in Mixxx; imported as playlists under a Crates folder",
+      "supports": "lossy"
+    },
+    {
+      "field": "write",
+      "rationale": "read-only reader",
+      "supports": "unsupported"
+    }
+  ],
+  "version": "0.1.0"
+}

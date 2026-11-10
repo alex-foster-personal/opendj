@@ -63,9 +63,7 @@ class ProvenanceOut(BaseModel):
     source: str
     confidence: float | None = None
     modified_at: str
-    status: Literal[
-        "ok", "failed", "missing", "available-not-selected", "too_short", "no_pulse"
-    ]
+    status: Literal["ok", "failed", "missing", "available-not-selected", "too_short", "no_pulse"]
     reason: str | None = None
 
 
@@ -213,6 +211,22 @@ class OffloadOut(BaseModel):
     error: str | None = None
 
 
+class AnlzEnergySegmentOut(BaseModel):
+    """One Mixed In Key energy segment as ``/anlz`` ``energy_segments`` serves it (issue #10123).
+
+    Seconds on the track's timeline, MIK's 1 to 10 level as stored, and
+    ``start_clamped`` true only where MIK's own start was negative and was
+    clamped to 0 at import. The document also carries ``energy_level`` (int or
+    null, the MIK scalar) and ``energy_source`` (``mik`` or ``none``).
+    """
+
+    start_s: float
+    end_s: float
+    level: int = Field(ge=1, le=10)
+    source: Literal["mik"]
+    start_clamped: bool
+
+
 class CloudTransferOut(BaseModel):
     """A real in-process CloudSync asset operation for one library row."""
 
@@ -227,7 +241,6 @@ class CloudTransferOut(BaseModel):
         if self.bytes_total is not None and self.bytes_transferred > self.bytes_total:
             raise ValueError("bytes_transferred must not exceed bytes_total")
         return self
-
 
 
 _STANDARD_MISSING_REASON = {
@@ -279,13 +292,13 @@ def compact_listing_analysis_wire(data: dict[str, Any]) -> dict[str, Any]:
     return data
 
 
-
 class SourceFlagOut(BaseModel):
     """SRCFLAG-01..03: one flag-only finding about a track's source file."""
 
     code: Literal["length_mismatch", "stems_other_recording", "hardlinked_write"]
     severity: Literal["warning", "info"]
     message: str
+
 
 class TrackListItemOut(TrackOut):
     """TrackOut + parity row fields (shared API contract item 1).
@@ -330,7 +343,8 @@ class TrackListItemOut(TrackOut):
     # artwork_available is inherited from TrackOut (same tri-state).
     artwork_status: Literal["ok", "no_image_path", "unresolved", "file_missing"]
     # Display-only MIK value. Null means the browser must render an empty
-    # Energy cell and use energy_reason rather than inventing a number.
+    # Energy cell and use energy_reason rather than inventing a number. The
+    # TIME SERIES rides ``/anlz`` (``AnlzEnergySegmentOut``), not the row.
     energy: int | None
     energy_source: Literal["mik"] | None
     energy_reason: str
@@ -359,9 +373,7 @@ class TrackListItemOut(TrackOut):
     # too_short / no_pulse: analyzed, and no tempo was measured (issue #5986).
     # The listing routes pass the same computed status TrackRowOut carries, so
     # this lane must accept it too or GET /tracks fails validation on the row.
-    bpm_status: Literal[
-        "ok", "failed", "missing", "available-not-selected", "too_short", "no_pulse"
-    ] | None = None
+    bpm_status: Literal["ok", "failed", "missing", "available-not-selected", "too_short", "no_pulse"] | None = None
     bpm_reason: str | None = None
     loudness_status: Literal["ok", "failed", "missing", "available-not-selected"] | None = None
     loudness_reason: str | None = None
@@ -619,9 +631,7 @@ class TrackRowOut(BaseModel):
     # KEY-FALLBACK-01: where the shown key came from (own, rekordbox, file_tag, mik_tag, guess).
     key_source: Literal["own", "rekordbox", "file_tag", "mik_tag", "guess"] | None = None
     # too_short / no_pulse: analyzed, and no tempo was measured (issue #5986).
-    bpm_status: Literal[
-        "ok", "failed", "missing", "available-not-selected", "too_short", "no_pulse"
-    ]
+    bpm_status: Literal["ok", "failed", "missing", "available-not-selected", "too_short", "no_pulse"]
     bpm_reason: str | None = None
     bpm_source: str | None = None
     bpm_method: str | None = None

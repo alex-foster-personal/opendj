@@ -126,7 +126,19 @@ def _stage_text(repo: Path, path: str, stage: int) -> str | None:
     return out.stdout
 
 
+def _is_ignored(repo: Path, path: str) -> bool:
+    # --no-index: a conflicted path is in the index, which check-ignore otherwise skips.
+    return _git(repo, "check-ignore", "-q", "--no-index", "--", path).returncode == 0
+
+
 def _git_add(repo: Path, path: str) -> None:
+    if _is_ignored(repo, path):
+        # reqs.json became a gitignored build artifact (issue #10541): a branch that
+        # still carries it resolves by dropping it from the index, never re-adding it.
+        out = _git(repo, "rm", "--cached", "--ignore-unmatch", "-q", "--", path)
+        if out.returncode != 0:
+            raise GeneratorFailed(f"git rm --cached failed for {path}: {out.stderr.strip()}")
+        return
     out = _git(repo, "add", "--", path)
     if out.returncode != 0:
         raise GeneratorFailed(f"git add failed for {path}: {out.stderr.strip()}")

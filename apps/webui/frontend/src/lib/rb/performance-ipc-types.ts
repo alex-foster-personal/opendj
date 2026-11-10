@@ -33,7 +33,8 @@ import type { StemSeparationSnapshot } from '$lib/rb/stem-separation-port';
 import type { TransitionIntent } from '$lib/rb/auto-play-next-plan';
 import type { Verdict } from '$lib/rb/autoplay-why';
 import type { WaveformSeekSnap } from '$lib/rb/plan-waveform-seek';
-import type { WaveformOverlay } from '$lib/rb/waveform-overlay-command';
+import type { WaveformBoolOverlay } from '$lib/rb/waveform-overlay-command';
+import type { WaveGridLines } from '$lib/rb/wave-grid-lines';
 import type { WaveformDesign, WaveformDesignPref } from '$lib/rb/waveform-design';
 import type {
 	DeckNumberArt,
@@ -69,6 +70,7 @@ import type {
 	LibraryLayout,
 	PerformanceLayout
 } from '$lib/rb/skin-layout';
+import type { WindowLabel } from '$lib/shell/native-shell';
 import type { ColorFxDeckView } from '$lib/rb/color-fx.svelte';
 import type { TrackLoadResetPrefs, TrackLoadResetId } from '$lib/rb/track-load-reset';
 import type { ArmAtPosition } from '$lib/rb/beat-sync-math';
@@ -161,7 +163,9 @@ export type PerformanceCommand =
 	/** ARTNUM-9649: the deck number drawn over each deck's artwork. */
 	| { type: 'set_deck_number_art'; mode: DeckNumberArt }
 	/** WAVEQS-8348e: the quick-settings popover's overlay switches (waveform-overlay-command.ts). */
-	| { type: 'set_waveform_overlay'; overlay: WaveformOverlay; enabled: boolean }
+	| { type: 'set_waveform_overlay'; overlay: WaveformBoolOverlay; enabled: boolean }
+	/** issue #10244: grid_lines takes a value, not a switch. */
+	| { type: 'set_waveform_overlay'; overlay: 'grid_lines'; value: WaveGridLines }
 	/** WAVEZOOM-6802: the main waveform's zoom step. deck only matters while unlinked. */
 	| { type: 'set_wave_zoom'; zoom: WaveZoom; deck?: DeckId }
 	/** WAVEZOOM-6802b: one step in (fewer bars) or out, as Ctrl/Cmd-wheel and the keys do. */
@@ -426,6 +430,8 @@ export type PerformanceCommand =
 	// Deck Quick Draw menu Track info; deck-targeted so an agent can open any deck (#9448, PRRT_kwDOSEvNd860v-hu).
 	| { type: 'track_info_open'; deck: DeckId }
 	| { type: 'track_info_close' }
+	// OJ-9477: the top bar's OJ button; toggles the agent sidebar, UI state only.
+	| { type: 'oj_toggle' }
 	/** Issue #9451: open the overlay for a library row (context menu Track info). */
 	| { type: 'track_info_open'; stable_id: string }
 	| { type: 'pairing_snapshot_open' }
@@ -448,6 +454,7 @@ export type PerformanceCommand =
 			vocals_only?: boolean;
 	  }
 	| { type: 'cmdk_mode'; mode: 'plain' | 'ai' }
+	| { type: 'window'; action: 'open' | 'close' | 'focus'; label: 'second-screen' }
 	| {
 			type: 'rescue_resume';
 			decks: Array<{ deck: DeckId; position_ms: number }>;
@@ -661,6 +668,8 @@ export interface PerformanceState {
 	pairing_snapshot: PairingSnapshot | null;
 	/** CMDK-15: the Cmd K bar as an agent sees it; null while no v2 bar is mounted. */
 	cmdk: CmdkSnapshot | null;
+	/** Open extra desktop-shell windows, by label (currently second-screen). */
+	windows: WindowLabel[];
 	technically_working: {
 		active: boolean;
 		peeking: boolean;
@@ -715,7 +724,9 @@ export interface PerformanceState {
 		wave_zoom_playhead: WavePlayheadMode;
 		wave_zoom_linked: boolean;
 		/** WAVEQS-8348e: what set_waveform_overlay reads back, one boolean per overlay. */
-		waveform_overlays: Record<WaveformOverlay, boolean>;
+		waveform_overlays: Record<WaveformBoolOverlay, boolean>;
+		/** issue #10244: what set_waveform_overlay grid_lines reads back. */
+		wave_grid_lines: WaveGridLines;
 	};
 }
 

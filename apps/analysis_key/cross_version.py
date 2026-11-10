@@ -124,10 +124,19 @@ def _key_sequences_equal(a: SegmentBlock, b: SegmentBlock) -> bool:
     return tuple(seg.key for seg in a.segments) == tuple(seg.key for seg in b.segments)
 
 
+def _with_segments(track: VersionTrack, segments: SegmentBlock) -> VersionTrack:
+    """Same version metadata with a substituted segment block."""
+    return VersionTrack(
+        stable_id=track.stable_id,
+        title=track.title,
+        artists=track.artists,
+        segments=segments,
+        grid=track.grid,
+    )
+
+
 def sequences_agree(a: VersionTrack, b: VersionTrack) -> bool:
     """Both key label sequences and interior boundaries agree after stretch."""
-    if a.segments.status != "ok" or b.segments.status != "ok":
-        return False
     if not _key_sequences_equal(a.segments, b.segments):
         return False
     na, nb = a.grid.n_bars, b.grid.n_bars
@@ -167,21 +176,7 @@ def constant_sequences_agree(a: VersionTrack, b: VersionTrack) -> bool:
     cb = _constant_block(b)
     if ca.status != "ok" or cb.status != "ok":
         return False
-    va = VersionTrack(
-        stable_id=a.stable_id,
-        title=a.title,
-        artists=a.artists,
-        segments=ca,
-        grid=a.grid,
-    )
-    vb = VersionTrack(
-        stable_id=b.stable_id,
-        title=b.title,
-        artists=b.artists,
-        segments=cb,
-        grid=b.grid,
-    )
-    return sequences_agree(va, vb)
+    return sequences_agree(_with_segments(a, ca), _with_segments(b, cb))
 
 
 def consistency_rate(tracks: Sequence[VersionTrack]) -> ConsistencyScore:

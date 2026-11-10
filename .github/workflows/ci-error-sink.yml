@@ -59,9 +59,10 @@ env:
 jobs:
   sink:
     name: Post failed completions to the error sink
-    # Runner is a repo-variable switch; see ci.yml's `test` job for the full
-    # rationale. Empty vars.CI_RUNS_ON_LINUX -> hosted ubuntu-latest.
-    runs-on: ${{ fromJSON(vars.CI_RUNS_ON_LINUX || '"ubuntu-latest"') }}
+    # Pinned to nucbox (#11341, audit #4264 F6): sink_triage reads
+    # ~/jobs/logs/opendj-error-sink.jsonl on nucbox only, so a run on another
+    # linux host writes a record nobody reads. No hosted fallback.
+    runs-on: ${{ fromJSON(vars.CI_RUNS_ON_UNPRIVILEGED_LINUX) }}
     # A reconcile pass lists 31 days of runs on top of the plain pass: 30 days read
     # 22,130 runs in 276 calls and 957 s on Tue 29 Sep 2026.
     timeout-minutes: ${{ (github.event.schedule == '23 3 * * *' || inputs.reconcile) && 30 || 10 }}

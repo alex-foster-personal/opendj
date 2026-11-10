@@ -1,0 +1,9 @@
+{
+  "bytes": 2048,
+  "measured_main": 17025,
+  "measured_with_pr": 18221,
+  "sha": "d4d05577d6",
+  "date": "Sun 8 Nov 2026",
+  "reason": "PR #10492 registers TRAKTOR_S4_MK3_MAP (apps/webui/frontend/src/lib/rb/midi/maps/traktor-s4-mk3.ts) in PRACTICE_DEVICE_MAPS, so the lazy practice-replica chunk carries the S4 MK3 inventory and its 139 hints. Measured: local vite build of main f08c1969cc and of d4d05577d6 on the same host (agentbox), +1196 B gzip; ceiled to KiB",
+  "payback": "none planned; every replica map that joins PRACTICE_DEVICE_MAPS rides this chunk until the maps load per device (epic #9366)"
+}

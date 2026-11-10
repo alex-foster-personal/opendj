@@ -1058,7 +1058,7 @@
         "type": "object"
       },
       "AnalysisQueueOut": {
-        "description": "``analyzed + unreachable + too_long + pending`` always equals ``unmapped``.",
+        "description": "``analyzed + unreachable + too_long + lanes_off + pending`` == ``unmapped``.",
         "properties": {
           "analyzed": {
             "title": "Analyzed",
@@ -1076,6 +1076,10 @@
           },
           "job": {
             "$ref": "#/components/schemas/RefreshStatusOut"
+          },
+          "lanes_off": {
+            "title": "Lanes Off",
+            "type": "integer"
           },
           "pending": {
             "title": "Pending",
@@ -1104,6 +1108,7 @@
           "analyzed",
           "unreachable",
           "too_long",
+          "lanes_off",
           "signature",
           "items",
           "job",
@@ -1832,8 +1837,19 @@
         "type": "object"
       },
       "AttachmentOut": {
-        "description": "A screenshot pasted into a comment pin (issue #1333, part 2 of #928).\n\n``url`` is the GET route that streams the stored bytes back (relative,\nsame convention as ``issue_url`` on ``CommentOut``); ``content_type`` and\n``size_bytes`` are recorded once, at upload time, so a caller can decide\nwhether to fetch the bytes without a HEAD round trip first. The bytes\nthemselves live under ``<data-dir>/feedback/attachments/`` - see\n``feedback_attachments.py``, the module that actually writes and serves\nthem; this file only owns the small record ``comments.json`` carries.",
+        "description": "A screenshot pasted into a comment pin (issue #1333, part 2 of #928).\n\n``url`` is the GET route that streams the stored bytes back (relative,\nsame convention as ``issue_url`` on ``CommentOut``); ``content_type``,\n``size_bytes``, and ``content_hash`` are recorded once, at upload time, so\na caller can decide whether to fetch the bytes without a HEAD round trip\nfirst. ``content_hash`` is a lowercase hex SHA-256 of the stored bytes for\na later asset-tier push; it is absent on attachments uploaded before issue\n#11234. The bytes themselves live under\n``<data-dir>/feedback/attachments/`` - see ``feedback_attachments.py``, the\nmodule that actually writes and serves them; this file only owns the small\nrecord ``comments.json`` carries.",
         "properties": {
+          "content_hash": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Content Hash"
+          },
           "content_type": {
             "title": "Content Type",
             "type": "string"
@@ -3192,6 +3208,9 @@
             "title": "Interval S",
             "type": "number"
           },
+          "lanes": {
+            "$ref": "#/components/schemas/AutoLanesOut"
+          },
           "last_outcome": {
             "anyOf": [
               {
@@ -3232,7 +3251,8 @@
           "attempts",
           "last_started_at",
           "last_signature",
-          "last_outcome"
+          "last_outcome",
+          "lanes"
         ],
         "title": "AutoAnalyzeOut",
         "type": "object"
@@ -3458,6 +3478,34 @@
           }
         },
         "title": "AutoGainPrefsOut",
+        "type": "object"
+      },
+      "AutoLanesOut": {
+        "properties": {
+          "grid": {
+            "title": "Grid",
+            "type": "boolean"
+          },
+          "key": {
+            "title": "Key",
+            "type": "boolean"
+          },
+          "sections": {
+            "title": "Sections",
+            "type": "boolean"
+          },
+          "vocals": {
+            "title": "Vocals",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "grid",
+          "key",
+          "sections",
+          "vocals"
+        ],
+        "title": "AutoLanesOut",
         "type": "object"
       },
       "AutoSyncOut": {
@@ -4763,6 +4811,7 @@
                 "controller_pad": "#/components/schemas/ControllerPad",
                 "controller_pad_mode": "#/components/schemas/ControllerPadMode",
                 "deck_auto_loop_toggle": "#/components/schemas/DeckAutoLoopToggle",
+                "deck_beat_jump": "#/components/schemas/DeckBeatJump",
                 "deck_beat_loop": "#/components/schemas/DeckBeatLoop",
                 "deck_cue": "#/components/schemas/DeckCue",
                 "deck_hot_cue": "#/components/schemas/DeckHotCue",
@@ -4798,6 +4847,9 @@
               },
               {
                 "$ref": "#/components/schemas/DeckBeatLoop"
+              },
+              {
+                "$ref": "#/components/schemas/DeckBeatJump"
               },
               {
                 "$ref": "#/components/schemas/DeckAutoLoopToggle"
@@ -8306,7 +8358,7 @@
         "type": "object"
       },
       "CompatibleFilterOut": {
-        "description": "Compatible-filter ranges (LIBUX-32): Camelot rule checkboxes plus the BPM window,\nand the Transition / Mashup modes with the allowed key shift (KEYSHIFT-01..05).\n\n``rules`` lists the enabled ids from apps/shared/harmonic.py CAMELOT_RULES and is\nTransition's key rule; Mashup is the same wheel number (plus the relative\nmajor/minor when ``mashup_relative``).",
+        "description": "Compatible-filter ranges (LIBUX-32): Camelot rule checkboxes plus the BPM window,\nand the Transition / Mashup modes with the allowed key shift (KEYSHIFT-01..05).\n\n``rules`` lists the enabled ids from apps/shared/harmonic.py CAMELOT_RULES and is\nTransition's key rule; Mashup is the same wheel number (plus the relative\nmajor/minor when ``mashup_relative``). ``energy_mode`` is the energy rule\n(SETPREP-11947): off, within one level, boost (+1 to +2) or drop (-1 to -2).",
         "properties": {
           "allow_half_double": {
             "default": true,
@@ -8334,6 +8386,17 @@
             "minimum": 0.0,
             "title": "Bpm Window Bpm",
             "type": "number"
+          },
+          "energy_mode": {
+            "default": "off",
+            "enum": [
+              "off",
+              "within_1",
+              "boost",
+              "drop"
+            ],
+            "title": "Energy Mode",
+            "type": "string"
           },
           "key_shift_max": {
             "default": 1,
@@ -8783,6 +8846,33 @@
           "label"
         ],
         "title": "ContextRef",
+        "type": "object"
+      },
+      "ControlEventsRequest": {
+        "description": "A batch of control-event v2 rows, oldest (lowest seq) first.",
+        "properties": {
+          "events": {
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "maxItems": 600,
+            "minItems": 1,
+            "title": "Events",
+            "type": "array"
+          },
+          "session_id": {
+            "maxLength": 64,
+            "minLength": 1,
+            "title": "Session Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "session_id",
+          "events"
+        ],
+        "title": "ControlEventsRequest",
         "type": "object"
       },
       "ControllerPad": {
@@ -9621,6 +9711,37 @@
         "title": "DeckAutoLoopToggle",
         "type": "object"
       },
+      "DeckBeatJump": {
+        "additionalProperties": false,
+        "properties": {
+          "beats": {
+            "title": "Beats",
+            "type": "number"
+          },
+          "deck": {
+            "enum": [
+              1,
+              2,
+              3,
+              4
+            ],
+            "title": "Deck",
+            "type": "integer"
+          },
+          "type": {
+            "const": "deck_beat_jump",
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "type",
+          "deck",
+          "beats"
+        ],
+        "title": "DeckBeatJump",
+        "type": "object"
+      },
       "DeckBeatLoop": {
         "additionalProperties": false,
         "properties": {
@@ -9732,6 +9853,18 @@
             ],
             "title": "Deck",
             "type": "integer"
+          },
+          "scale": {
+            "anyOf": [
+              {
+                "exclusiveMinimum": 0.0,
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Scale"
           },
           "type": {
             "const": "deck_jog",
@@ -12196,6 +12329,96 @@
         "title": "FindReplaceRowOut",
         "type": "object"
       },
+      "FindSimilarIn": {
+        "properties": {
+          "accepted_labels": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Niche only: explicit query labels. When omitted, uses user regions plus structure suggestions the user accepted.",
+            "title": "Accepted Labels"
+          },
+          "limit": {
+            "default": 20,
+            "maximum": 200.0,
+            "minimum": 1.0,
+            "title": "Limit",
+            "type": "integer"
+          },
+          "mode": {
+            "default": "niche",
+            "description": "Niche: labelled region matches only.",
+            "enum": [
+              "generic",
+              "specific",
+              "niche"
+            ],
+            "title": "Mode",
+            "type": "string"
+          },
+          "stable_id": {
+            "description": "Loaded or selected library track",
+            "title": "Stable Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "stable_id"
+        ],
+        "title": "FindSimilarIn",
+        "type": "object"
+      },
+      "FindSimilarOut": {
+        "properties": {
+          "candidates": {
+            "items": {
+              "$ref": "#/components/schemas/NicheSimilarCandidateOut"
+            },
+            "title": "Candidates",
+            "type": "array"
+          },
+          "mode": {
+            "enum": [
+              "generic",
+              "specific",
+              "niche"
+            ],
+            "title": "Mode",
+            "type": "string"
+          },
+          "provider": {
+            "title": "Provider",
+            "type": "string"
+          },
+          "query_labels": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Query Labels",
+            "type": "array"
+          },
+          "stable_id": {
+            "title": "Stable Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "stable_id",
+          "mode",
+          "provider",
+          "candidates"
+        ],
+        "title": "FindSimilarOut",
+        "type": "object"
+      },
       "FindingIn": {
         "properties": {
           "confidence": {
@@ -13107,12 +13330,34 @@
       "GridEditNudgeIn": {
         "additionalProperties": false,
         "properties": {
+          "anchor_t": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Anchor T"
+          },
           "beats": {
             "default": 0,
             "maximum": 64.0,
             "minimum": -64.0,
             "title": "Beats",
             "type": "integer"
+          },
+          "bpm": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Bpm"
           },
           "offset_ms": {
             "default": 0.0,
@@ -13142,6 +13387,17 @@
       },
       "GridEditOut": {
         "properties": {
+          "anchor_t": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Anchor T"
+          },
           "anchors": {
             "items": {
               "$ref": "#/components/schemas/AnchorOut"
@@ -13152,6 +13408,17 @@
           "beat_shift": {
             "title": "Beat Shift",
             "type": "integer"
+          },
+          "bpm": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Bpm"
           },
           "modified_at": {
             "anyOf": [
@@ -13194,11 +13461,33 @@
       "GridEditSetIn": {
         "additionalProperties": false,
         "properties": {
+          "anchor_t": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Anchor T"
+          },
           "beat_shift": {
             "maximum": 64.0,
             "minimum": -64.0,
             "title": "Beat Shift",
             "type": "integer"
+          },
+          "bpm": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Bpm"
           },
           "offset_ms": {
             "title": "Offset Ms",
@@ -14850,6 +15139,44 @@
         "title": "InferIn",
         "type": "object"
       },
+      "InitMessageDoc": {
+        "additionalProperties": false,
+        "description": "One channel-voice message sent raw on connect, e.g. the DDJ-400 'CH\nmeter mode' handshake. 0xF0+ is refused: sysex is variable length and\nWebMIDI opens with sysex:false.",
+        "properties": {
+          "message": {
+            "maxItems": 3,
+            "minItems": 3,
+            "prefixItems": [
+              {
+                "maximum": 239.0,
+                "minimum": 128.0,
+                "type": "integer"
+              },
+              {
+                "maximum": 127.0,
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "maximum": 127.0,
+                "minimum": 0.0,
+                "type": "integer"
+              }
+            ],
+            "title": "Message",
+            "type": "array"
+          },
+          "provenance": {
+            "$ref": "#/components/schemas/Provenance"
+          }
+        },
+        "required": [
+          "message",
+          "provenance"
+        ],
+        "title": "InitMessageDoc",
+        "type": "object"
+      },
       "InstallIn": {
         "properties": {
           "accept_permissions": {
@@ -15759,6 +16086,531 @@
           "message"
         ],
         "title": "LastResultOut",
+        "type": "object"
+      },
+      "LedBeatSyncEffective": {
+        "additionalProperties": false,
+        "properties": {
+          "deck": {
+            "enum": [
+              1,
+              2,
+              3,
+              4
+            ],
+            "title": "Deck",
+            "type": "integer"
+          },
+          "kind": {
+            "const": "beat_sync_effective",
+            "title": "Kind",
+            "type": "string"
+          }
+        },
+        "required": [
+          "kind",
+          "deck"
+        ],
+        "title": "LedBeatSyncEffective",
+        "type": "object"
+      },
+      "LedBeatSyncEnabled": {
+        "additionalProperties": false,
+        "properties": {
+          "deck": {
+            "enum": [
+              1,
+              2,
+              3,
+              4
+            ],
+            "title": "Deck",
+            "type": "integer"
+          },
+          "kind": {
+            "const": "beat_sync_enabled",
+            "title": "Kind",
+            "type": "string"
+          }
+        },
+        "required": [
+          "kind",
+          "deck"
+        ],
+        "title": "LedBeatSyncEnabled",
+        "type": "object"
+      },
+      "LedChannelCueEnabled": {
+        "additionalProperties": false,
+        "properties": {
+          "deck": {
+            "enum": [
+              1,
+              2,
+              3,
+              4
+            ],
+            "title": "Deck",
+            "type": "integer"
+          },
+          "kind": {
+            "const": "channel_cue_enabled",
+            "title": "Kind",
+            "type": "string"
+          }
+        },
+        "required": [
+          "kind",
+          "deck"
+        ],
+        "title": "LedChannelCueEnabled",
+        "type": "object"
+      },
+      "LedDeckLoaded": {
+        "additionalProperties": false,
+        "properties": {
+          "deck": {
+            "enum": [
+              1,
+              2,
+              3,
+              4
+            ],
+            "title": "Deck",
+            "type": "integer"
+          },
+          "kind": {
+            "const": "deck_loaded",
+            "title": "Kind",
+            "type": "string"
+          }
+        },
+        "required": [
+          "kind",
+          "deck"
+        ],
+        "title": "LedDeckLoaded",
+        "type": "object"
+      },
+      "LedDeckPlaying": {
+        "additionalProperties": false,
+        "properties": {
+          "deck": {
+            "enum": [
+              1,
+              2,
+              3,
+              4
+            ],
+            "title": "Deck",
+            "type": "integer"
+          },
+          "kind": {
+            "const": "deck_playing",
+            "title": "Kind",
+            "type": "string"
+          }
+        },
+        "required": [
+          "kind",
+          "deck"
+        ],
+        "title": "LedDeckPlaying",
+        "type": "object"
+      },
+      "LedHotCuePresent": {
+        "additionalProperties": false,
+        "properties": {
+          "deck": {
+            "enum": [
+              1,
+              2,
+              3,
+              4
+            ],
+            "title": "Deck",
+            "type": "integer"
+          },
+          "kind": {
+            "const": "hot_cue_present",
+            "title": "Kind",
+            "type": "string"
+          },
+          "padMode": {
+            "anyOf": [
+              {
+                "enum": [
+                  "hot_cue",
+                  "bounce_loop",
+                  "pitch_cue",
+                  "instant_fx",
+                  "auto_loop",
+                  "sampler",
+                  "saved_loops",
+                  "neural_mix"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Padmode"
+          },
+          "slot": {
+            "enum": [
+              "A",
+              "B",
+              "C",
+              "D",
+              "E",
+              "F",
+              "G",
+              "H"
+            ],
+            "title": "Slot",
+            "type": "string"
+          }
+        },
+        "required": [
+          "kind",
+          "deck",
+          "slot"
+        ],
+        "title": "LedHotCuePresent",
+        "type": "object"
+      },
+      "LedLoopBeatsEngaged": {
+        "additionalProperties": false,
+        "properties": {
+          "beats": {
+            "exclusiveMinimum": 0.0,
+            "title": "Beats",
+            "type": "number"
+          },
+          "deck": {
+            "enum": [
+              1,
+              2,
+              3,
+              4
+            ],
+            "title": "Deck",
+            "type": "integer"
+          },
+          "kind": {
+            "const": "loop_beats_engaged",
+            "title": "Kind",
+            "type": "string"
+          }
+        },
+        "required": [
+          "kind",
+          "deck",
+          "beats"
+        ],
+        "title": "LedLoopBeatsEngaged",
+        "type": "object"
+      },
+      "LedLoopEngaged": {
+        "additionalProperties": false,
+        "properties": {
+          "deck": {
+            "enum": [
+              1,
+              2,
+              3,
+              4
+            ],
+            "title": "Deck",
+            "type": "integer"
+          },
+          "kind": {
+            "const": "loop_engaged",
+            "title": "Kind",
+            "type": "string"
+          }
+        },
+        "required": [
+          "kind",
+          "deck"
+        ],
+        "title": "LedLoopEngaged",
+        "type": "object"
+      },
+      "LedOut": {
+        "additionalProperties": false,
+        "properties": {
+          "ch": {
+            "maximum": 16.0,
+            "minimum": 1.0,
+            "title": "Ch",
+            "type": "integer"
+          },
+          "note": {
+            "maximum": 127.0,
+            "minimum": 0.0,
+            "title": "Note",
+            "type": "integer"
+          },
+          "velocityOff": {
+            "maximum": 127.0,
+            "minimum": 0.0,
+            "title": "Velocityoff",
+            "type": "integer"
+          },
+          "velocityOn": {
+            "maximum": 127.0,
+            "minimum": 0.0,
+            "title": "Velocityon",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "ch",
+          "note",
+          "velocityOn",
+          "velocityOff"
+        ],
+        "title": "LedOut",
+        "type": "object"
+      },
+      "LedPadModeSelected": {
+        "additionalProperties": false,
+        "properties": {
+          "deck": {
+            "enum": [
+              1,
+              2,
+              3,
+              4
+            ],
+            "title": "Deck",
+            "type": "integer"
+          },
+          "kind": {
+            "const": "pad_mode_selected",
+            "title": "Kind",
+            "type": "string"
+          },
+          "mode": {
+            "enum": [
+              "hot_cue",
+              "bounce_loop",
+              "pitch_cue",
+              "instant_fx",
+              "auto_loop",
+              "sampler",
+              "saved_loops",
+              "neural_mix"
+            ],
+            "title": "Mode",
+            "type": "string"
+          }
+        },
+        "required": [
+          "kind",
+          "deck",
+          "mode"
+        ],
+        "title": "LedPadModeSelected",
+        "type": "object"
+      },
+      "LedRuleDoc": {
+        "additionalProperties": false,
+        "properties": {
+          "out": {
+            "$ref": "#/components/schemas/LedOut"
+          },
+          "padMode": {
+            "anyOf": [
+              {
+                "enum": [
+                  "hot_cue",
+                  "bounce_loop",
+                  "pitch_cue",
+                  "instant_fx",
+                  "auto_loop",
+                  "sampler",
+                  "saved_loops",
+                  "neural_mix"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Padmode"
+          },
+          "provenance": {
+            "$ref": "#/components/schemas/Provenance"
+          },
+          "trigger": {
+            "discriminator": {
+              "mapping": {
+                "beat_sync_effective": "#/components/schemas/LedBeatSyncEffective",
+                "beat_sync_enabled": "#/components/schemas/LedBeatSyncEnabled",
+                "channel_cue_enabled": "#/components/schemas/LedChannelCueEnabled",
+                "deck_loaded": "#/components/schemas/LedDeckLoaded",
+                "deck_playing": "#/components/schemas/LedDeckPlaying",
+                "hot_cue_present": "#/components/schemas/LedHotCuePresent",
+                "loop_beats_engaged": "#/components/schemas/LedLoopBeatsEngaged",
+                "loop_engaged": "#/components/schemas/LedLoopEngaged",
+                "pad_mode_selected": "#/components/schemas/LedPadModeSelected",
+                "stem_active": "#/components/schemas/LedStemActive",
+                "stem_eq_enabled": "#/components/schemas/LedStemEqEnabled",
+                "stem_solo": "#/components/schemas/LedStemSolo"
+              },
+              "propertyName": "kind"
+            },
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/LedDeckPlaying"
+              },
+              {
+                "$ref": "#/components/schemas/LedDeckLoaded"
+              },
+              {
+                "$ref": "#/components/schemas/LedLoopEngaged"
+              },
+              {
+                "$ref": "#/components/schemas/LedLoopBeatsEngaged"
+              },
+              {
+                "$ref": "#/components/schemas/LedBeatSyncEnabled"
+              },
+              {
+                "$ref": "#/components/schemas/LedBeatSyncEffective"
+              },
+              {
+                "$ref": "#/components/schemas/LedStemEqEnabled"
+              },
+              {
+                "$ref": "#/components/schemas/LedStemActive"
+              },
+              {
+                "$ref": "#/components/schemas/LedStemSolo"
+              },
+              {
+                "$ref": "#/components/schemas/LedPadModeSelected"
+              },
+              {
+                "$ref": "#/components/schemas/LedHotCuePresent"
+              },
+              {
+                "$ref": "#/components/schemas/LedChannelCueEnabled"
+              }
+            ],
+            "title": "Trigger"
+          }
+        },
+        "required": [
+          "trigger",
+          "out",
+          "provenance"
+        ],
+        "title": "LedRuleDoc",
+        "type": "object"
+      },
+      "LedStemActive": {
+        "additionalProperties": false,
+        "properties": {
+          "deck": {
+            "enum": [
+              1,
+              2,
+              3,
+              4
+            ],
+            "title": "Deck",
+            "type": "integer"
+          },
+          "kind": {
+            "const": "stem_active",
+            "title": "Kind",
+            "type": "string"
+          },
+          "stem": {
+            "enum": [
+              "drums",
+              "bass",
+              "other",
+              "vocal"
+            ],
+            "title": "Stem",
+            "type": "string"
+          }
+        },
+        "required": [
+          "kind",
+          "deck",
+          "stem"
+        ],
+        "title": "LedStemActive",
+        "type": "object"
+      },
+      "LedStemEqEnabled": {
+        "additionalProperties": false,
+        "properties": {
+          "deck": {
+            "enum": [
+              1,
+              2,
+              3,
+              4
+            ],
+            "title": "Deck",
+            "type": "integer"
+          },
+          "kind": {
+            "const": "stem_eq_enabled",
+            "title": "Kind",
+            "type": "string"
+          }
+        },
+        "required": [
+          "kind",
+          "deck"
+        ],
+        "title": "LedStemEqEnabled",
+        "type": "object"
+      },
+      "LedStemSolo": {
+        "additionalProperties": false,
+        "properties": {
+          "deck": {
+            "enum": [
+              1,
+              2,
+              3,
+              4
+            ],
+            "title": "Deck",
+            "type": "integer"
+          },
+          "kind": {
+            "const": "stem_solo",
+            "title": "Kind",
+            "type": "string"
+          },
+          "stem": {
+            "enum": [
+              "drums",
+              "bass",
+              "other",
+              "vocal"
+            ],
+            "title": "Stem",
+            "type": "string"
+          }
+        },
+        "required": [
+          "kind",
+          "deck",
+          "stem"
+        ],
+        "title": "LedStemSolo",
         "type": "object"
       },
       "LevelCalibrationOut": {
@@ -16845,6 +17697,46 @@
           "rows"
         ],
         "title": "ListSectionsOut",
+        "type": "object"
+      },
+      "ListTotalsIn": {
+        "properties": {
+          "stable_ids": {
+            "items": {
+              "type": "string"
+            },
+            "minItems": 1,
+            "title": "Stable Ids",
+            "type": "array"
+          }
+        },
+        "required": [
+          "stable_ids"
+        ],
+        "title": "ListTotalsIn",
+        "type": "object"
+      },
+      "ListTotalsOut": {
+        "properties": {
+          "count": {
+            "title": "Count",
+            "type": "integer"
+          },
+          "duration_ms": {
+            "title": "Duration Ms",
+            "type": "integer"
+          },
+          "unknown": {
+            "title": "Unknown",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "count",
+          "duration_ms",
+          "unknown"
+        ],
+        "title": "ListTotalsOut",
         "type": "object"
       },
       "ListingOut": {
@@ -18619,6 +19511,64 @@
         "title": "MetadataShareResponse",
         "type": "object"
       },
+      "MeterOut": {
+        "additionalProperties": false,
+        "properties": {
+          "cc": {
+            "maximum": 127.0,
+            "minimum": 0.0,
+            "title": "Cc",
+            "type": "integer"
+          },
+          "ch": {
+            "maximum": 16.0,
+            "minimum": 1.0,
+            "title": "Ch",
+            "type": "integer"
+          },
+          "maxValue": {
+            "maximum": 127.0,
+            "minimum": 1.0,
+            "title": "Maxvalue",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "ch",
+          "cc",
+          "maxValue"
+        ],
+        "title": "MeterOut",
+        "type": "object"
+      },
+      "MeterRuleDoc": {
+        "additionalProperties": false,
+        "properties": {
+          "deck": {
+            "enum": [
+              1,
+              2,
+              3,
+              4
+            ],
+            "title": "Deck",
+            "type": "integer"
+          },
+          "out": {
+            "$ref": "#/components/schemas/MeterOut"
+          },
+          "provenance": {
+            "$ref": "#/components/schemas/Provenance"
+          }
+        },
+        "required": [
+          "deck",
+          "out",
+          "provenance"
+        ],
+        "title": "MeterRuleDoc",
+        "type": "object"
+      },
       "MidiMapDoc": {
         "additionalProperties": false,
         "description": "One controller, as installed. camelCase on the wire to match DeviceMap.",
@@ -18634,6 +19584,27 @@
           "id": {
             "title": "Id",
             "type": "string"
+          },
+          "init": {
+            "items": {
+              "$ref": "#/components/schemas/InitMessageDoc"
+            },
+            "title": "Init",
+            "type": "array"
+          },
+          "leds": {
+            "items": {
+              "$ref": "#/components/schemas/LedRuleDoc"
+            },
+            "title": "Leds",
+            "type": "array"
+          },
+          "meters": {
+            "items": {
+              "$ref": "#/components/schemas/MeterRuleDoc"
+            },
+            "title": "Meters",
+            "type": "array"
           },
           "model": {
             "minLength": 1,
@@ -19204,6 +20175,230 @@
           "stable_ids"
         ],
         "title": "NextUpIn",
+        "type": "object"
+      },
+      "NicheCitationOut": {
+        "properties": {
+          "end_s": {
+            "title": "End S",
+            "type": "number"
+          },
+          "label": {
+            "title": "Label",
+            "type": "string"
+          },
+          "source": {
+            "enum": [
+              "structure",
+              "user"
+            ],
+            "title": "Source",
+            "type": "string"
+          },
+          "start_s": {
+            "title": "Start S",
+            "type": "number"
+          }
+        },
+        "required": [
+          "start_s",
+          "end_s",
+          "label",
+          "source"
+        ],
+        "title": "NicheCitationOut",
+        "type": "object"
+      },
+      "NicheLabelsOut": {
+        "properties": {
+          "query_labels": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Query Labels",
+            "type": "array"
+          },
+          "regions": {
+            "items": {
+              "$ref": "#/components/schemas/NicheRegionOut"
+            },
+            "title": "Regions",
+            "type": "array"
+          },
+          "stable_id": {
+            "title": "Stable Id",
+            "type": "string"
+          },
+          "suggestions": {
+            "items": {
+              "$ref": "#/components/schemas/NicheSuggestionOut"
+            },
+            "title": "Suggestions",
+            "type": "array"
+          }
+        },
+        "required": [
+          "stable_id",
+          "suggestions",
+          "regions",
+          "query_labels"
+        ],
+        "title": "NicheLabelsOut",
+        "type": "object"
+      },
+      "NicheRegionIn": {
+        "additionalProperties": false,
+        "properties": {
+          "end_s": {
+            "exclusiveMinimum": 0.0,
+            "title": "End S",
+            "type": "number"
+          },
+          "label": {
+            "minLength": 1,
+            "title": "Label",
+            "type": "string"
+          },
+          "start_s": {
+            "minimum": 0.0,
+            "title": "Start S",
+            "type": "number"
+          }
+        },
+        "required": [
+          "start_s",
+          "end_s",
+          "label"
+        ],
+        "title": "NicheRegionIn",
+        "type": "object"
+      },
+      "NicheRegionOut": {
+        "properties": {
+          "end_s": {
+            "title": "End S",
+            "type": "number"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "label": {
+            "title": "Label",
+            "type": "string"
+          },
+          "source": {
+            "const": "user",
+            "title": "Source",
+            "type": "string"
+          },
+          "start_s": {
+            "title": "Start S",
+            "type": "number"
+          }
+        },
+        "required": [
+          "id",
+          "start_s",
+          "end_s",
+          "label",
+          "source"
+        ],
+        "title": "NicheRegionOut",
+        "type": "object"
+      },
+      "NicheSimilarCandidateOut": {
+        "properties": {
+          "citations": {
+            "items": {
+              "$ref": "#/components/schemas/NicheCitationOut"
+            },
+            "title": "Citations",
+            "type": "array"
+          },
+          "score": {
+            "title": "Score",
+            "type": "number"
+          },
+          "stable_id": {
+            "title": "Stable Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "stable_id",
+          "score",
+          "citations"
+        ],
+        "title": "NicheSimilarCandidateOut",
+        "type": "object"
+      },
+      "NicheSuggestionOut": {
+        "properties": {
+          "accepted": {
+            "default": false,
+            "title": "Accepted",
+            "type": "boolean"
+          },
+          "end_s": {
+            "title": "End S",
+            "type": "number"
+          },
+          "label": {
+            "title": "Label",
+            "type": "string"
+          },
+          "source": {
+            "const": "structure",
+            "title": "Source",
+            "type": "string"
+          },
+          "start_s": {
+            "title": "Start S",
+            "type": "number"
+          },
+          "suggestion_id": {
+            "title": "Suggestion Id",
+            "type": "string"
+          },
+          "verdict": {
+            "anyOf": [
+              {
+                "enum": [
+                  "accepted",
+                  "rejected"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Verdict"
+          }
+        },
+        "required": [
+          "suggestion_id",
+          "start_s",
+          "end_s",
+          "label",
+          "source"
+        ],
+        "title": "NicheSuggestionOut",
+        "type": "object"
+      },
+      "NicheSuggestionVerdictIn": {
+        "additionalProperties": false,
+        "properties": {
+          "accepted": {
+            "title": "Accepted",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "accepted"
+        ],
+        "title": "NicheSuggestionVerdictIn",
         "type": "object"
       },
       "NoSourceClearOut": {
@@ -21554,6 +22749,11 @@
           "unchanged": {
             "title": "Unchanged",
             "type": "boolean"
+          },
+          "unscored_edges": {
+            "default": 0,
+            "title": "Unscored Edges",
+            "type": "integer"
           }
         },
         "required": [
@@ -21683,6 +22883,13 @@
           "transition_hint": {
             "title": "Transition Hint",
             "type": "string"
+          },
+          "unscored": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Unscored",
+            "type": "array"
           }
         },
         "required": [
@@ -25085,6 +26292,18 @@
             "title": "Active",
             "type": "boolean"
           },
+          "audio_bytes": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Master-mix PCM bytes accepted so far; null when no master-mix audio is recorded here.",
+            "title": "Audio Bytes"
+          },
           "capture": {
             "description": "The audio capture of the recording: none (not recording, or tracklist only), unknown (owned by another process), waiting_permission (macOS's microphone prompt is up and nothing is written yet), recording, or failed (SET-11).",
             "enum": [
@@ -25129,9 +26348,69 @@
             "description": "What the owned recording records (master, loopback, external, none); null when idle or owned by another process. A master recording is fed by the /performance page, which attaches its master tap when it reads this (SET-12).",
             "title": "Capture Source"
           },
+          "clip_events": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Runs of 3 or more consecutive master-mix frames with a full-scale sample; null as peak_dbfs.",
+            "title": "Clip Events"
+          },
+          "clipped_samples": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Master-mix samples at full scale (+32767 or -32768); null as peak_dbfs.",
+            "title": "Clipped Samples"
+          },
+          "elapsed_s": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Seconds since the owned recording started; null when idle or not owned.",
+            "title": "Elapsed S"
+          },
           "owned": {
             "title": "Owned",
             "type": "boolean"
+          },
+          "peak_dbfs": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Session peak of the master mix in dBFS, 20 log10(|peak| / 32768) over accepted int16 chunks (issue #10371); null when this process records no master-mix audio.",
+            "title": "Peak Dbfs"
+          },
+          "peak_dbfs_recent": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Peak dBFS over the last 3 s of accepted master-mix audio; null as peak_dbfs.",
+            "title": "Peak Dbfs Recent"
           },
           "pid": {
             "anyOf": [
@@ -26423,6 +27702,50 @@
           "triple_validated"
         ],
         "title": "RelocateCandidateOut",
+        "type": "object"
+      },
+      "RequestIn": {
+        "additionalProperties": false,
+        "properties": {
+          "requester_key": {
+            "minLength": 1,
+            "title": "Requester Key",
+            "type": "string"
+          },
+          "requester_name": {
+            "maxLength": 24,
+            "minLength": 1,
+            "title": "Requester Name",
+            "type": "string"
+          },
+          "stable_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Stable Id"
+          },
+          "text": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Text"
+          }
+        },
+        "required": [
+          "requester_name",
+          "requester_key"
+        ],
+        "title": "RequestIn",
         "type": "object"
       },
       "RerunIn": {
@@ -28087,6 +29410,58 @@
           "proposal_ids"
         ],
         "title": "SelectionIn",
+        "type": "object"
+      },
+      "SessionIn": {
+        "additionalProperties": false,
+        "properties": {
+          "catalog_playlist_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Catalog Playlist Id"
+          },
+          "cooldown_s": {
+            "anyOf": [
+              {
+                "exclusiveMinimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cooldown S"
+          },
+          "free_text_allowed": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Free Text Allowed"
+          },
+          "open": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Open"
+          }
+        },
+        "title": "SessionIn",
         "type": "object"
       },
       "SessionPlayedIn": {
@@ -31007,6 +32382,31 @@
           "tiers"
         ],
         "title": "StemsSetupOut",
+        "type": "object"
+      },
+      "StreamEncoderStartRequest": {
+        "properties": {
+          "bitrate_kbps": {
+            "default": 192,
+            "maximum": 320.0,
+            "minimum": 32.0,
+            "title": "Bitrate Kbps",
+            "type": "integer"
+          },
+          "format": {
+            "enum": [
+              "mp3",
+              "aac",
+              "opus"
+            ],
+            "title": "Format",
+            "type": "string"
+          }
+        },
+        "required": [
+          "format"
+        ],
+        "title": "StreamEncoderStartRequest",
         "type": "object"
       },
       "StripCoverageOut": {
@@ -37292,6 +38692,26 @@
             "title": "App Posture",
             "type": "string"
           },
+          "auto_analyze_grid": {
+            "default": true,
+            "title": "Auto Analyze Grid",
+            "type": "boolean"
+          },
+          "auto_analyze_key": {
+            "default": true,
+            "title": "Auto Analyze Key",
+            "type": "boolean"
+          },
+          "auto_analyze_sections": {
+            "default": true,
+            "title": "Auto Analyze Sections",
+            "type": "boolean"
+          },
+          "auto_analyze_vocals": {
+            "default": false,
+            "title": "Auto Analyze Vocals",
+            "type": "boolean"
+          },
           "auto_gain": {
             "$ref": "#/components/schemas/AutoGainPrefsOut"
           },
@@ -37646,6 +39066,16 @@
             "title": "Vocals Filter",
             "type": "boolean"
           },
+          "wave_grid_lines": {
+            "default": "beats_bars",
+            "enum": [
+              "beats_bars",
+              "bars",
+              "off"
+            ],
+            "title": "Wave Grid Lines",
+            "type": "string"
+          },
           "wheel_sensitivity": {
             "$ref": "#/components/schemas/WheelSensitivityOut"
           }
@@ -37679,6 +39109,50 @@
               }
             ],
             "title": "App Posture"
+          },
+          "auto_analyze_grid": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Auto Analyze Grid"
+          },
+          "auto_analyze_key": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Auto Analyze Key"
+          },
+          "auto_analyze_sections": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Auto Analyze Sections"
+          },
+          "auto_analyze_vocals": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Auto Analyze Vocals"
           },
           "auto_gain": {
             "anyOf": [
@@ -38360,6 +39834,22 @@
               }
             ],
             "title": "Vocals Filter"
+          },
+          "wave_grid_lines": {
+            "anyOf": [
+              {
+                "enum": [
+                  "beats_bars",
+                  "bars",
+                  "off"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Wave Grid Lines"
           },
           "wheel_sensitivity": {
             "anyOf": [
@@ -39611,6 +41101,28 @@
             "default": false,
             "title": "Simulated",
             "type": "boolean"
+          },
+          "vendor_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Vendor Name"
+          },
+          "vendor_source": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Vendor Source"
           }
         },
         "required": [
@@ -41702,6 +43214,50 @@
         ]
       }
     },
+    "/api/sets/control-events": {
+      "post": {
+        "description": "Ingest page-owned control moves into controls.jsonl and sets.db.",
+        "operationId": "api_submit_control_events_api_sets_control_events_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ControlEventsRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Api Submit Control Events Api Sets Control Events Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Api Submit Control Events",
+        "tags": [
+          "sets"
+        ]
+      }
+    },
     "/api/sets/deck-observations": {
       "get": {
         "description": "Why a row did or did not appear: per-deck dwell against the threshold.",
@@ -41870,6 +43426,30 @@
           }
         },
         "summary": "Api Recorder Start",
+        "tags": [
+          "sets"
+        ]
+      }
+    },
+    "/api/sets/recorder/stream-encoder": {
+      "get": {
+        "description": "The master-mix stream encoder's status, or null when none was started.",
+        "operationId": "api_stream_encoder_status_api_sets_recorder_stream_encoder_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Api Stream Encoder Status Api Sets Recorder Stream Encoder Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Api Stream Encoder Status",
         "tags": [
           "sets"
         ]
@@ -42046,6 +43626,105 @@
           }
         },
         "summary": "Api Recorder Stop",
+        "tags": [
+          "sets"
+        ]
+      }
+    },
+    "/api/sets/recorder/{session_id}/stream-encoder": {
+      "post": {
+        "description": "Tee a ``source: master`` recording into an encoder (STREAM-11486).",
+        "operationId": "api_stream_encoder_start_api_sets_recorder__session_id__stream_encoder_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "session_id",
+            "required": true,
+            "schema": {
+              "title": "Session Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/StreamEncoderStartRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Api Stream Encoder Start Api Sets Recorder  Session Id  Stream Encoder Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Api Stream Encoder Start",
+        "tags": [
+          "sets"
+        ]
+      }
+    },
+    "/api/sets/recorder/{session_id}/stream-encoder/stop": {
+      "post": {
+        "operationId": "api_stream_encoder_stop_api_sets_recorder__session_id__stream_encoder_stop_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "session_id",
+            "required": true,
+            "schema": {
+              "title": "Session Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Api Stream Encoder Stop Api Sets Recorder  Session Id  Stream Encoder Stop Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Api Stream Encoder Stop",
         "tags": [
           "sets"
         ]
@@ -47189,6 +48868,57 @@
         "summary": "Complete Command",
         "tags": [
           "agent-commands"
+        ]
+      }
+    },
+    "/api/v1/copilot/find-similar-tracks": {
+      "post": {
+        "operationId": "find_similar_tracks_route_api_v1_copilot_find_similar_tracks_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/FindSimilarIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FindSimilarOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "unknown track"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "unknown or unimplemented mode"
+          }
+        },
+        "summary": "Find Similar Tracks Route",
+        "tags": [
+          "copilot"
         ]
       }
     },
@@ -53251,6 +54981,30 @@
         "summary": "Patch Tag",
         "tags": [
           "library-organization"
+        ]
+      }
+    },
+    "/api/v1/now-playing": {
+      "get": {
+        "description": "The one track the room hears (3 s settle), previous five, stale flag and generation.",
+        "operationId": "get_now_playing_api_v1_now_playing_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Get Now Playing Api V1 Now Playing Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Get Now Playing",
+        "tags": [
+          "now-playing"
         ]
       }
     },
@@ -59373,6 +61127,327 @@
         ]
       }
     },
+    "/api/v1/requests": {
+      "delete": {
+        "operationId": "delete_requests_api_v1_requests_delete",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": {
+                    "type": "integer"
+                  },
+                  "title": "Response Delete Requests Api V1 Requests Delete",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Delete Requests",
+        "tags": [
+          "requests"
+        ]
+      },
+      "get": {
+        "operationId": "list_requests_api_v1_requests_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "status",
+            "required": false,
+            "schema": {
+              "default": "new",
+              "enum": [
+                "new",
+                "loaded",
+                "dismissed",
+                "all"
+              ],
+              "title": "Status",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response List Requests Api V1 Requests Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Requests",
+        "tags": [
+          "requests"
+        ]
+      },
+      "post": {
+        "operationId": "post_request_api_v1_requests_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RequestIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          }
+        },
+        "summary": "Post Request",
+        "tags": [
+          "requests"
+        ]
+      }
+    },
+    "/api/v1/requests/session": {
+      "get": {
+        "operationId": "get_session_api_v1_requests_session_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Get Session Api V1 Requests Session Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Get Session",
+        "tags": [
+          "requests"
+        ]
+      },
+      "put": {
+        "operationId": "put_session_api_v1_requests_session_put",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SessionIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          }
+        },
+        "summary": "Put Session",
+        "tags": [
+          "requests"
+        ]
+      }
+    },
+    "/api/v1/requests/{request_id}/vote": {
+      "post": {
+        "operationId": "vote_request_api_v1_requests__request_id__vote_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "request_id",
+            "required": true,
+            "schema": {
+              "title": "Request Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Vote Request",
+        "tags": [
+          "requests"
+        ]
+      }
+    },
+    "/api/v1/requests/{request_id}:dismiss": {
+      "post": {
+        "operationId": "dismiss_request_api_v1_requests__request_id__dismiss_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "request_id",
+            "required": true,
+            "schema": {
+              "title": "Request Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Dismiss Request",
+        "tags": [
+          "requests"
+        ]
+      }
+    },
+    "/api/v1/requests/{request_id}:loaded": {
+      "post": {
+        "operationId": "loaded_request_api_v1_requests__request_id__loaded_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "request_id",
+            "required": true,
+            "schema": {
+              "title": "Request Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Loaded Request",
+        "tags": [
+          "requests"
+        ]
+      }
+    },
     "/api/v1/rescue/restore": {
       "post": {
         "operationId": "rescue_restore_api_v1_rescue_restore_post",
@@ -64954,6 +67029,47 @@
         ]
       }
     },
+    "/api/v1/tracks/list-totals": {
+      "post": {
+        "operationId": "tracks_list_totals",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ListTotalsIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ListTotalsOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Tracks List Totals",
+        "tags": [
+          "tracks"
+        ]
+      }
+    },
     "/api/v1/tracks/lyrics-cached-ids": {
       "get": {
         "description": "List cached lyric timelines so the UI can skip explicit cache-miss reads.",
@@ -65772,7 +67888,8 @@
                 {
                   "enum": [
                     "adjust",
-                    "shift"
+                    "shift",
+                    "bpm"
                   ],
                   "type": "string"
                 },
@@ -66980,6 +69097,161 @@
           }
         },
         "summary": "Set Active Memory Loop",
+        "tags": [
+          "rb-hot-cues"
+        ]
+      }
+    },
+    "/api/v1/tracks/{stable_id}/niche-labels": {
+      "get": {
+        "operationId": "get_niche_labels_api_v1_tracks__stable_id__niche_labels_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "stable_id",
+            "required": true,
+            "schema": {
+              "title": "Stable Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NicheLabelsOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Niche Labels",
+        "tags": [
+          "rb-hot-cues"
+        ]
+      }
+    },
+    "/api/v1/tracks/{stable_id}/niche-labels/regions": {
+      "put": {
+        "operationId": "put_niche_region_api_v1_tracks__stable_id__niche_labels_regions_put",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "stable_id",
+            "required": true,
+            "schema": {
+              "title": "Stable Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/NicheRegionIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NicheLabelsOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Put Niche Region",
+        "tags": [
+          "rb-hot-cues"
+        ]
+      }
+    },
+    "/api/v1/tracks/{stable_id}/niche-labels/suggestions/{suggestion_id}": {
+      "put": {
+        "operationId": "put_niche_suggestion_verdict_api_v1_tracks__stable_id__niche_labels_suggestions__suggestion_id__put",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "stable_id",
+            "required": true,
+            "schema": {
+              "title": "Stable Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "suggestion_id",
+            "required": true,
+            "schema": {
+              "title": "Suggestion Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/NicheSuggestionVerdictIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NicheLabelsOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Put Niche Suggestion Verdict",
         "tags": [
           "rb-hot-cues"
         ]

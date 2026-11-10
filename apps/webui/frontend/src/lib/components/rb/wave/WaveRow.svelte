@@ -616,6 +616,7 @@
 			palette,
 			bandGains,
 			uiPrefs.show_sections,
+			uiPrefs.wave_grid_lines,
 			splitPartner?.id ?? null,
 			partnerAnlz,
 			partnerPaintMs,
@@ -657,7 +658,7 @@
 		}
 		if (splitPartner !== null && partnerState !== null && partnerPaintMs !== null && partnerState.duration_ms !== null) {
 			const half = Math.floor(cssH / 2);
-			const common = { widthCss: cssW, heightCss: half, palette: paintPalette, showSections: uiPrefs.show_sections, waveformDesign: effectiveWaveformDesign(uiPrefs.waveform_design, uiPrefs.ui_skin), windowS: view.windowS, playheadFrac: view.frac, ...(view.cacheWindowS === undefined ? {} : { cacheWindowS: view.cacheWindowS }) };
+			const common = { widthCss: cssW, heightCss: half, palette: paintPalette, showSections: uiPrefs.show_sections, gridLines: uiPrefs.wave_grid_lines, waveformDesign: effectiveWaveformDesign(uiPrefs.waveform_design, uiPrefs.ui_skin), windowS: view.windowS, playheadFrac: view.frac, ...(view.cacheWindowS === undefined ? {} : { cacheWindowS: view.cacheWindowS }) };
 			paintSplitRow(
 				el,
 				ctx,
@@ -712,6 +713,7 @@
 			playheadTone: syncPlayheadTone,
 			playheadTimeMs: performance.now(),
 			showSections: uiPrefs.show_sections,
+			gridLines: uiPrefs.wave_grid_lines,
 			waveformDesign: effectiveWaveformDesign(uiPrefs.waveform_design, uiPrefs.ui_skin),
 			masterDownbeatOverlay,
 			masterBeatGhost,
@@ -826,6 +828,7 @@
 		void (zoomRefDeck === null ? null : getDeckState(zoomRefDeck.id).position_ms);
 		void uiPrefs.wave_zoom_playhead;
 		void uiPrefs.show_sections;
+		void uiPrefs.wave_grid_lines;
 		// STRUCT-05: subscribe to the lazily loaded section painter so the
 		// bands paint as soon as it lands after the pref turns on.
 		void sectionsApiFor(uiPrefs.show_sections);
@@ -1031,7 +1034,9 @@ estimated from the render clock and may run ahead of what you hear."
 				</span>
 			{/if}
 		</div>
-		<StemWaveStack {deck} {showStems} scrollPx={stemScrollPx} canvasWidth={cssW} windowS={laneView.windowS} playheadFrac={laneView.frac} />
+		<StemWaveStack {deck} {showStems} scrollPx={stemScrollPx} canvasWidth={cssW} windowS={laneView.windowS} playheadFrac={laneView.frac}
+			onSolo={(command, t0) => void runPerformanceCommandFromUi(command, t0)}
+			onMute={(command, t0) => void runPerformanceCommandFromUi(command, t0)} />
 	</div>
 </div>
 

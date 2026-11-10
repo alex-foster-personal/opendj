@@ -99,13 +99,14 @@ from apps.shared.state.migrations_v27 import _V27 as _LEGACY_V27
 from apps.shared.state.migrations_v28 import _V28 as _LEGACY_V28
 from apps.shared.state.migrations_v29 import _V29 as _LEGACY_V29
 from apps.shared.state.migrations_v30 import _V30 as _LEGACY_V30
+from apps.shared.state.migrations_v31 import _V31 as _LEGACY_V31
 
 _WHITESPACE_RE = re.compile(r"\s+")
 _IF_NOT_EXISTS_RE = re.compile(r"\bIF\s+NOT\s+EXISTS\b", re.IGNORECASE)
 
 # --- version counters -----------------------------------------------------
 
-SCHEMA_VERSION: int = 19
+SCHEMA_VERSION: int = 20
 """Target version of the consolidated ladder (index into :data:`MIGRATIONS`)."""
 
 VERSION_OFFSET: int = 1000
@@ -118,7 +119,7 @@ creating it from scratch. Distinct from the ``VERSION_OFFSET + n`` rows so a
 reader can tell "this file predates consolidation" from "this file was born
 consolidated"."""
 
-LEGACY_SHARED_STATE_VERSION: int = 30
+LEGACY_SHARED_STATE_VERSION: int = 31
 """Terminal version of ``apps/shared/state/schema.py``'s own ladder."""
 
 BUSY_TIMEOUT_MS: int = 5000
@@ -1069,6 +1070,7 @@ TABLES: dict[str, tuple[str, ...]] = {
     "library_org": (
         "playlist_section", "tag_type", "tag_meta", "tag_synonym", "work",
         "work_member", "work_dismissal", "work_pref", "undo_journal", "track_edit",
+        "library_completeness_config",
     ),
     "path_index": ("path_availability",),
     "curation": ("pairings", "smartlists"),
@@ -1258,9 +1260,15 @@ _V19: list[str] = [
 ]
 """18 -> 19: non-destructive virtual edits (legacy ladder v30, LIBEDIT-9179)."""
 
+_V20: list[str] = [
+    statement.replace("CREATE TABLE ", "CREATE TABLE IF NOT EXISTS ")
+    for statement in _LEGACY_V31
+]
+"""19 -> 20: library HQ stems + lyric-match completeness config (legacy v31, #11219)."""
+
 MIGRATIONS: list[list[str]] = [
     _V1, _V2, _V3, _V4, _V5, _V6, _V7, _V8, _V9, _V10, _V11, _V12, _V13,
-    _V14, _V15, _V16, _V17, _V18, _V19,
+    _V14, _V15, _V16, _V17, _V18, _V19, _V20,
 ]
 
 ALL_DDL: list[str] = [stmt for rung in MIGRATIONS for stmt in rung]

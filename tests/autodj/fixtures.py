@@ -63,6 +63,9 @@ def anlz_payload(
         bar += bars
     return {
         "stable_id": stable_id,
+        "energy_segments": [],
+        "energy_level": None,
+        "energy_source": "none",
         "points": len(low),
         "waveform": {
             "kind": "tri",

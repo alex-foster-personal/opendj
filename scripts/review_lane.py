@@ -48,6 +48,10 @@ HEAD_AGREE_TIMEOUT_S: int = 90
 #: it is applied, so the two halves of a finding's marker cannot disagree.
 BLOCKING_SEVERITIES: frozenset[str] = frozenset({"P0", "P1"})
 
+CARRIED_FINDINGS_HEADER = (
+    "Findings with no postable line anchor, kept here rather than dropped:"
+)
+
 #: Shields colors matching the Codex bot's own badges, so every reviewer
 #: renders identically in a thread list. `review_thread_parse._SEVERITY_BADGE`
 #: reads the P-level straight out of this URL.
@@ -130,6 +134,23 @@ class Finding:
         return (
             f"{badge}\n{self.verdict} {self.severity}: {self.title}\n\n{self.detail}\n\n{marker}\n"
         )
+
+
+def carried_finding_lines(finding: Finding) -> list[str]:
+    """One carried finding as summary lines `review_carried.parse_carried` reads back.
+
+    The DETAIL travels with the title: carrying only the title drops the failing
+    input and the remediation, which for a P0 is most of the finding. Every detail
+    line is indented, not just the first. The reader stops the carried block at the
+    first unindented line, so a multiline detail indented only on line one hid every
+    carried finding after it, a P1 included (issue #10765). The title is joined onto
+    the bullet line for the same reason.
+    """
+    where = f"`{finding.path}`" + (f":{finding.line}" if finding.line else "")
+    title = " ".join(withheld(finding.title).splitlines())
+    lines = [f"- {finding.verdict} {finding.severity}: {where} -- {title}"]
+    lines += [f"  {line}" if line.strip() else "" for line in withheld(finding.detail).splitlines()]
+    return lines
 
 
 def normalized_finding_title(text: str) -> str:

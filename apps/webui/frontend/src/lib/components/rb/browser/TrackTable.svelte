@@ -4003,8 +4003,8 @@
 	/* Keyboard focus (roving tabindex, track-table-keyboard.ts): the active
 	 * row a screen reader announces and arrows move from. */
 	tbody tr:focus-visible {
-		outline: 1px solid var(--rb-accent);
-		outline-offset: -1px;
+		outline: 2px solid var(--rb-focus-ring); /* A11Y-11403 */
+		outline-offset: -2px;
 	}
 	/* Loaded on a non-master deck: yellow edge + wash (distinct from master gold). */
 	tbody tr.loaded:not(.rb-row-master):not(.rb-row-selected) {
@@ -5161,5 +5161,11 @@
 	}
 	table.hide-stems :is(th.h-stems, td.c-stems) {
 		display: none;
+	}
+
+	tbody tr.rb-row-job:focus-visible {
+		/* A11Y-11403: keyboard focus ring paired with this file's outline reset. */
+		outline: 2px solid var(--rb-focus-ring) !important;
+		outline-offset: -2px;
 	}
 </style>

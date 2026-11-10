@@ -38,7 +38,8 @@ const step = (
 	energy: 6,
 	key_camelot: '8A',
 	actual_energy: 6,
-	target_energy: 6
+	target_energy: 6,
+	unscored: []
 });
 
 const solve = (over: Partial<Solve> = {}): Solve => ({
@@ -55,6 +56,7 @@ const solve = (over: Partial<Solve> = {}): Solve => ({
 		step(4, tracks[3], 'wind down', 'closer')
 	],
 	constraints_unmet: [],
+	unscored_edges: 0,
 	...over
 });
 

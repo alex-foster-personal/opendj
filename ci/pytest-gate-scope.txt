@@ -30,6 +30,7 @@ tests/lyrics
 tests/lyrics_alignment
 tests/lyrics_search
 tests/mik
+tests/now_playing
 tests/open_dj
 tests/opendj_cli
 tests/ops
@@ -46,10 +47,12 @@ tests/shared
 tests/skins
 tests/smartlists
 tests/standalone
+tests/stream
 tests/streaming_transfer
 tests/sync
 (private path)
 tests/test_analysis_backlog.py
+tests/test_analysis_backlog_lanes.py
 tests/test_analysis_backlog_token.py
 tests/test_analysis_run_classification.py
 tests/test_analysis_source.py

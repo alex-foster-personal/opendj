@@ -4,32 +4,33 @@ import { expect } from 'storybook/test';
 import SelectionPlayedLength from './SelectionPlayedLength.svelte';
 
 const rows = [
-	{ order: 1, duration_ms: 300_000, bpm: 120 },
-	{ order: 2, duration_ms: 200_000, bpm: null },
-	{ order: 3, duration_ms: 100_000, bpm: 120 }
+	{ order: 1, duration_ms: 300_000 },
+	{ order: 2, duration_ms: 200_000 },
+	{ order: 3, duration_ms: 100_000 }
 ];
 
 const meta = {
 	title: 'Contracts/Browser/SelectionPlayedLength',
 	component: SelectionPlayedLength,
 	tags: ['autodocs'],
-	args: { rows, selectedOrders: [1, 2] }
+	args: { visibleRows: rows, rows, selectedOrders: [1, 2] }
 } satisfies Meta<typeof SelectionPlayedLength>;
 export default meta;
 type Story = StoryObj<typeof meta>;
 
-/** Two rows selected: count, rough mixed length and total. */
+/** Two rows selected: list line plus selection suffix. */
 export const TwoSelected: Story = {
 	play: async ({ canvasElement }) => {
-		const readout = canvasElement.querySelector('[data-testid="selection-played-length"]');
-		await expect(readout?.textContent).toContain('2 selected · ~6m played · 8m total');
+		const readout = canvasElement.querySelector('[data-testid="library-list-totals"]');
+		await expect(readout?.textContent).toContain('selected: 2 tracks, 8:20');
 	}
 };
 
-/** One row selected: nothing renders. */
+/** One row selected: no selection suffix. */
 export const OneSelected: Story = {
 	args: { selectedOrders: [1] },
 	play: async ({ canvasElement }) => {
-		await expect(canvasElement.querySelector('[data-testid="selection-played-length"]')).toBeNull();
+		const readout = canvasElement.querySelector('[data-testid="library-list-totals"]');
+		await expect(readout?.textContent).not.toContain('selected:');
 	}
 };

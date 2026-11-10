@@ -9,6 +9,7 @@ those paths can break, in parallel, and prints the exact fix for each red.
 
     python -m scripts.pre_push_guards run [--base origin/main]   # exit 1 on a blocking FAIL
     python -m scripts.pre_push_guards write-carry-paths          # regenerate the carry list (1-2 min)
+    python -m scripts.pre_push_guards write-dependents           # regenerate the scope dependents (~1 min)
 
 Status per guard: PASS, FAIL (blocks: the same check CI runs, failing at this HEAD), WARN (could
 not measure here, or a heuristic that needs the slow check), SKIP (no changed path can reach it).
@@ -27,6 +28,7 @@ LEARNED from one new path and FOUND in unchanged files, which a changed-files sc
 from __future__ import annotations
 
 import argparse
+import json
 import os
 import re
 import shutil
@@ -34,7 +36,7 @@ import subprocess
 import sys
 import time
 from collections import Counter
-from collections.abc import Callable, Iterable
+from collections.abc import Callable, Iterable, Mapping
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from pathlib import Path
@@ -48,11 +50,12 @@ from scripts.ci_plan import (
     Scope,
     _owner_index,
     matches,
+    observed_dependents,
     read_changes,
     read_config,
 )
 from scripts.ci_plan_carry import _loads_code_by_name, _module_files, helper_carried_paths
-from scripts.ci_plan_sources import _imported_names, is_test_module
+from scripts.ci_plan_sources import _imported_names, is_test_module, pytest_inputs
 
 FRONTEND = "apps/webui/frontend/"
 # Same exclusion list as `just pre-push` step 8: frontend paths proven not to reach the build.
@@ -224,6 +227,27 @@ def replace_carry_block(text: str, paths: frozenset[str]) -> str:
     return "".join(lines[: start + 1] + block + lines[end:])
 
 
+SCOPE_NAME = re.compile(r"^  - name: (\S+)\s*$")
+SCOPE_TESTS = "    tests:"
+SCOPE_DEPENDENTS = "    dependents:"
+
+
+def replace_dependents_blocks(text: str, dependents: Mapping[str, tuple[str, ...]]) -> str:
+    """`text` with every scope's `dependents:` line set from `dependents`, written right after the
+    scope's `tests:` line as one JSON list, and dropped for a scope with none; nothing else moves."""
+    out: list[str] = []
+    scope: str | None = None
+    for line in text.splitlines(keepends=True):
+        if named := SCOPE_NAME.match(line):
+            scope = named[1]
+        if scope is not None and line.startswith(SCOPE_DEPENDENTS):
+            continue
+        out.append(line)
+        if scope is not None and line.startswith(SCOPE_TESTS) and dependents.get(scope):
+            out.append(f"{SCOPE_DEPENDENTS} {json.dumps(list(dependents[scope]))}\n")
+    return "".join(out)
+
+
 # ----- runners -----
 
 
@@ -371,16 +395,27 @@ def write_carry_paths(root: Path = REPO) -> int:
     return 0
 
 
+def write_dependents(root: Path = REPO) -> int:
+    config = read_config(root / "ci" / "test-scopes.yml")
+    observed = observed_dependents(config, pytest_inputs(root / "tests"), root)
+    path = root / CONFIG_PATH.relative_to(REPO)
+    path.write_text(replace_dependents_blocks(path.read_text(encoding="utf-8"), observed), encoding="utf-8")
+    print(f"[pre-push-guards] wrote the dependents of {len(observed)} scopes to ci/test-scopes.yml")
+    return 0
+
+
 def main(argv: Iterable[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     sub = parser.add_subparsers(dest="command", required=True)
     run = sub.add_parser("run", help="run the guards the branch diff can break")
     run.add_argument("--base", default="origin/main")
     sub.add_parser("write-carry-paths", help="regenerate helper_carried_paths in ci/test-scopes.yml")
+    sub.add_parser("write-dependents", help="regenerate every scope's dependents in ci/test-scopes.yml")
     args = parser.parse_args(list(argv) if argv is not None else None)
     commands: dict[str, Callable[[], int]] = {
         "run": lambda: run_guards(args.base),
         "write-carry-paths": write_carry_paths,
+        "write-dependents": write_dependents,
     }
     try:
         return commands[args.command]()

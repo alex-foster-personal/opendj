@@ -16,7 +16,7 @@
  * reports the reason through `onfailure`; the daemon then marks the capture
  * failed too, after its 5 s stall window. */
 
-import { API_BASE } from '$lib/api/client';
+import { API_BASE } from '$lib/api/base';
 import { masterMixUnavailableReason } from '$lib/sets/record-input-choice';
 import { masterMixTapPoint } from '$lib/rb/audio-engine.svelte';
 

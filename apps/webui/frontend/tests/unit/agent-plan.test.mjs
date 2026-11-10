@@ -36,7 +36,8 @@ function rig({
 	handingOff = () => false, // AutoPlay reports a handoff in flight: schedule refuses while it does
 	hold = null, // (command, state) => a promise the dispatch waits on AFTER its effect lands, or null: a command still in flight
 	stemsSilent = {}, // deck => true when its ready stem parts are all muted (the page answers with everyStemPartSilent)
-	onOverlay = undefined // the waveform's overlay feed (WAVEPLAN-7896)
+	onOverlay = undefined, // the waveform's overlay feed (WAVEPLAN-7896)
+	colorFxNoise = undefined // #10246: null when the deck's color effect can be NOISE, else the refusal reason
 } = {}) {
 	const dispatched = [];
 	const lag = { hideArmed: false, holdWrites: false };
@@ -119,6 +120,7 @@ function rig({
 		now: () => now,
 		handoffInFlight: handingOff,
 		onOverlay,
+		colorFxNoise,
 		// The AudioContext clock: 1000 s ahead of the page clock, so a test can tell the two apart.
 		contextNowSec: () => 1000 + now / 1000,
 		// One engine observation: the clock deck's playhead with the context time it was presented at.
@@ -3479,4 +3481,70 @@ test('WAVEPLAN-7896b: what prepare sets is the starting point, not a knob the op
 	await runner.tick();
 	assert.equal(incomingFader(), 0.6, 'a knob moved after preparation outranks the prepared value');
 	await runner.dispose();
+});
+
+// #10246 (FXTRANS-11737): fx_noise compiles to color_fx NOISE commands; the page refuses them until NOISE can run.
+function noiseOrder() {
+	const base = order();
+	return order({
+		events: [
+			{ at_bar: 0, command: { type: 'color_fx', deck: 1, effect: 'noise', param: 0 } },
+			{ at_bar: 0, ramp: { command: { type: 'color_fx', deck: 1, effect: 'noise', param: 0.8 }, to: 0.8, over_bars: 4 } },
+			{ at_bar: 0, ramp: { command: { type: 'color_fx', deck: 1, effect: 'noise', value: 0.85 }, to: 0.85, over_bars: 4 } },
+			...base.events
+		]
+	});
+}
+
+test('[if] colorFxNoise allows NOISE [then] noise level and sweep ramps progress on their own keys, [else stop]', async () => {
+	const { runner, dispatched, at } = rig({ clockBar: 19, colorFxNoise: () => null });
+	await runner.schedule(noiseOrder());
+	at(20);
+	await runner.tick();
+	at(22);
+	await runner.tick();
+	const params = dispatched.filter((c) => c.type === 'color_fx' && c.param !== undefined).map((c) => c.param);
+	const values = dispatched.filter((c) => c.type === 'color_fx' && c.value !== undefined).map((c) => c.value);
+	assert.ok(params.some((p) => Math.abs(p - 0.4) < 1e-9), `level ramp reaches half way: ${params}`);
+	assert.ok(values.some((v) => Math.abs(v - 0.675) < 1e-9), `sweep ramp reaches half way: ${values}`);
+});
+
+test('[if] the deck cannot play NOISE [then] schedule refuses with noise_unavailable and the reason, [else stop]', async () => {
+	const rust = rig({ clockBar: 19, colorFxNoise: () => plan.NOISE_RUST_REFUSAL });
+	await assert.rejects(() => rust.runner.schedule(noiseOrder()), (error) => error.message.startsWith('noise_unavailable:') && error.message.includes(plan.NOISE_RUST_REFUSAL));
+	const blind = rig({ clockBar: 19 });
+	await assert.rejects(() => blind.runner.schedule(noiseOrder()), /noise_unavailable: this page cannot tell/);
+});
+
+test('noiseRefusal names the Rust engine first, then the missing NOISE kernel', () => {
+	assert.equal(plan.noiseRefusal(true), plan.NOISE_RUST_REFUSAL);
+	assert.equal(plan.noiseRefusal(false, ['filter', 'space', 'echo']), plan.NOISE_NOT_BUILT);
+	assert.equal(plan.noiseRefusal(false), plan.NOISE_NOT_BUILT);
+	assert.equal(plan.noiseRefusal(false, ['filter', 'noise']), null);
+});
+
+test('a color_fx plan command must be NOISE on the clock deck with exactly one of param or value', () => {
+	const withEvent = (command) => order({ events: [{ at_bar: 0, command }, ...order().events] });
+	assert.throws(() => plan.parsePlanOrder(withEvent({ type: 'color_fx', deck: 2, effect: 'noise', param: 0.5 })), /clock \(outgoing\) deck only/);
+	assert.throws(() => plan.parsePlanOrder(withEvent({ type: 'color_fx', deck: 1, effect: 'echo', param: 0.5 })), /effect must be noise/);
+	assert.throws(() => plan.parsePlanOrder(withEvent({ type: 'color_fx', deck: 1, effect: 'noise', param: 0.5, value: 0.5 })), /exactly one of param or value/);
+	assert.throws(() => plan.parsePlanOrder(withEvent({ type: 'color_fx', deck: 1, effect: 'noise', param: 1.5 })), /within 0..1/);
+	assert.doesNotThrow(() => plan.parsePlanOrder(noiseOrder()));
+});
+
+test('[if] a plan aborts with the noise up [then] the NOISE level is cut and the sweep centred, [else stop]', async () => {
+	const { runner, state, dispatched, at } = rig({ clockBar: 19, colorFxNoise: () => null });
+	await runner.schedule(noiseOrder());
+	at(20);
+	await runner.tick();
+	at(21);
+	await runner.tick();
+	Object.assign(state.decks[2], { playing: true, quantized_launch_armed: null });
+	const before = dispatched.length;
+	await runner.amend({ id: 'plan-test', action: 'abort' });
+	const after = dispatched.slice(before);
+	assert.deepEqual(after.slice(0, 2), [
+		{ type: 'color_fx', deck: 1, effect: 'noise', param: 0 },
+		{ type: 'color_fx', deck: 1, effect: 'noise', value: 0.5 }
+	]);
 });

@@ -230,6 +230,10 @@
 		font-size: 1.05rem;
 		outline: none;
 	}
+	/* The browser's default placeholder grey is 4.2:1 here; the muted token clears AA in every skin. */
+	.hk-search::placeholder {
+		color: var(--muted, #9aa4b2);
+	}
 	.hk-search:focus {
 		border-color: var(--accent, #ffb43a);
 	}
@@ -315,5 +319,11 @@
 		color: #111;
 		padding: 0;
 		border-radius: 2px;
+	}
+
+	.hk-search:focus-visible {
+		/* A11Y-11403: keyboard focus ring paired with this file's outline reset. */
+		outline: 2px solid var(--rb-focus-ring);
+		outline-offset: 2px;
 	}
 </style>

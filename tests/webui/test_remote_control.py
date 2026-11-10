@@ -87,8 +87,8 @@ def test_right_code_pairs_ping_and_rotates_code(state_dir: Path) -> None:
     asyncio.run(run())
 
 
-def test_wrong_code_counts_and_fifth_closes_listener(state_dir: Path) -> None:
-    """[if] a wrong code is posted [then] 403 wrong_code; fifth closes the listener, [else stop]."""
+def test_wrong_code_counts_and_fifth_locks_out_pairing(state_dir: Path) -> None:
+    """[if] a wrong code is posted [then] 403 wrong_code; the fifth locks pairing out and leaves the listener up."""
 
     async def run() -> None:
         session = await _open_session(state_dir)
@@ -112,12 +112,22 @@ def test_wrong_code_counts_and_fifth_closes_listener(state_dir: Path) -> None:
                     headers={"host": f"127.0.0.1:{port}"},
                 )
                 assert last.status_code == 403
-                for _ in range(100):
-                    if _port_refuses(port):
-                        break
-                    await asyncio.sleep(0.05)
-                assert _port_refuses(port)
+                assert last.json()["tries_left"] == 0
                 assert session.status == "locked_out"
+                assert not _port_refuses(port)
+                still_up = await lan.get(
+                    _url(port, "/request/api/session"),
+                    headers={"host": f"127.0.0.1:{port}"},
+                )
+                assert still_up.status_code == 200, still_up.text
+                again = await lan.post(
+                    _url(port, PAIR_PATH),
+                    json={"code": "BAD-C0D", "device_name": "nope"},
+                    headers={"host": f"127.0.0.1:{port}"},
+                )
+                assert again.status_code == 403
+                assert again.json()["detail"] == "wrong_code"
+                assert again.json()["tries_left"] == 0
         finally:
             await session.close()
 

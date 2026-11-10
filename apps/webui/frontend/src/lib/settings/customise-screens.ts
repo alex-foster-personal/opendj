@@ -4,7 +4,7 @@
  * Rows read through `readSettingValue` and write through `applySettingChange`.
  *
  * Registry shape (issue #9439): screens resolve at import via `defineCustomiseScreens`.
- * AB-1 (#9439) registers WAVEFORM_SCREEN first when it lands; Decks and Library follow until then.
+ * AB-1 (#9439) registers WAVEFORM_SCREEN first when it lands; Decks, Library and Layout follow until then.
  *
  * Requirements (mini-PRD):
  *   ✔︎ every live row resolves at registry import; an unknown catalog key fails loading this module.
@@ -49,13 +49,12 @@ export function defineCustomiseScreens(
 	return out;
 }
 
-/** Pinned order: spike `customise-screen-inventory` Decks (12), section 2.4. */
+/** Pinned order: spike `customise-screen-inventory` Decks (11 after deck_layout moved to Layout, #10266), section 2.4. */
 const DECKS_GROUPS: readonly CustomiseGroup[] = [
 	{
 		id: 'layout',
 		label: 'Layout',
 		rows: [
-			{ kind: 'setting', id: 'deck_layout' },
 			{ kind: 'setting', id: 'deck_layout_animate' },
 			{ kind: 'setting', id: 'deck_layout_duration_ms' }
 		]
@@ -128,6 +127,7 @@ export const LIBRARY_SCREEN: CustomiseScreenDef = {
 				{ kind: 'setting', id: 'compatible_filter.mode' },
 				{ kind: 'setting', id: 'compatible_filter.mashup_relative' },
 				{ kind: 'setting', id: 'compatible_filter.key_shift_max' },
+				{ kind: 'setting', id: 'compatible_filter.energy_mode' },
 				{ kind: 'setting', id: 'remixes_filter' },
 				{ kind: 'setting', id: 'vocals_filter' },
 				{ kind: 'setting', id: 'available_offline_filter' }
@@ -143,6 +143,59 @@ export const LIBRARY_SCREEN: CustomiseScreenDef = {
 		}
 	]
 };
+
+/** Look-variant keys (PLAN.md look variants); listed only when the catalog holds them. */
+export const LAYOUT_LOOK_VARIANT_IDS = [
+	'layout_variant.two_deck_wide',
+	'layout_variant.library_first',
+	'layout_variant.pad_grid',
+	'layout_variant.vertical_waves',
+	'layout_variant.four_across'
+] as const;
+
+/** Mode keys that may land after the Layout screen; deck_layout is required today. */
+export const LAYOUT_MODE_OPTIONAL_IDS = ['perf_view', 'show_pads'] as const;
+
+function catalogHas(catalog: readonly SettingDef[], id: string): boolean {
+	return catalog.some((entry) => entry.id === id);
+}
+
+function settingRowsPresent(
+	catalog: readonly SettingDef[],
+	ids: readonly string[]
+): CustomiseRow[] {
+	return ids
+		.filter((id) => catalogHas(catalog, id))
+		.map((id) => ({ kind: 'setting' as const, id }));
+}
+
+/**
+ * Layout screen (#10266): performance and library presets, look variants when
+ * catalogued, and modes (deck_layout moved here from Decks; perf_view and
+ * show_pads when catalogued). Guarded like #9442 so missing variant keys do
+ * not block the screen. Data only.
+ */
+export function layoutScreenDef(catalog: readonly SettingDef[]): CustomiseScreenDef {
+	const presets: CustomiseRow[] = [
+		{ kind: 'setting', id: 'layout_override.performance' },
+		{ kind: 'setting', id: 'layout_override.library' }
+	];
+	const look = settingRowsPresent(catalog, LAYOUT_LOOK_VARIANT_IDS);
+	const modes: CustomiseRow[] = [
+		{ kind: 'setting', id: 'deck_layout' },
+		...settingRowsPresent(catalog, LAYOUT_MODE_OPTIONAL_IDS)
+	];
+	const groups: CustomiseGroup[] = [
+		{ id: 'presets', label: 'Presets', rows: presets },
+		...(look.length > 0 ? [{ id: 'look', label: 'Look', rows: look }] : []),
+		{ id: 'modes', label: 'Modes', rows: modes }
+	];
+	return { id: 'layout', label: 'Layout', groups };
+}
+
+export const LAYOUT_SCREEN: CustomiseScreenDef = layoutScreenDef(SETTINGS_CATALOG);
+
+const CUSTOMISE_SCREEN_DEFS = [DECKS_SCREEN, LIBRARY_SCREEN, LAYOUT_SCREEN] as const;
 
 /** A catalog id that no customisation screen shows, with the one-line reason (spike #9438 §3, §4 (a)). */
 export interface SettingsOnlyRow {
@@ -200,14 +253,24 @@ export const SETTINGS_ONLY: ReadonlyArray<SettingsOnlyRow> = [
 			'Added by #9767 after the spike. It changes how the overview strip responds to clicks, not what a screen displays; no screen placement decided yet.'
 	},
 	{
-		id: 'layout_override.performance',
+		id: 'auto_analyze_grid',
 		reason:
-			'Added by #10199 after the spike. A per-surface layout preset that belongs on the spike §2.7 Layout screen, which has no definition yet.'
+			'Added by #10259. Analyze-on-import lane toggle in the Settings Analysis group; no customise screen yet.'
 	},
 	{
-		id: 'layout_override.library',
+		id: 'auto_analyze_key',
 		reason:
-			'Added by #10199 after the spike. A per-surface layout preset that belongs on the spike §2.7 Layout screen, which has no definition yet.'
+			'Added by #10259. Analyze-on-import lane toggle in the Settings Analysis group; no customise screen yet.'
+	},
+	{
+		id: 'auto_analyze_sections',
+		reason:
+			'Added by #10259. Analyze-on-import lane toggle in the Settings Analysis group; no customise screen yet.'
+	},
+	{
+		id: 'auto_analyze_vocals',
+		reason:
+			'Added by #10259. Analyze-on-import lane toggle in the Settings Analysis group; no customise screen yet.'
 	},
 	// Awaiting a screen: move the row onto that screen when its definition lands.
 	{
@@ -235,7 +298,6 @@ export const SETTINGS_ONLY: ReadonlyArray<SettingsOnlyRow> = [
 	{ id: 'theme', reason: 'Awaiting the Colours / skin screen (spike §2.8).' }
 ];
 
-const CUSTOMISE_SCREEN_DEFS = [DECKS_SCREEN, LIBRARY_SCREEN] as const;
 
 /** Every customise screen, in menu order. Resolved at import: an unknown key fails loading this module. */
 export const CUSTOMISE_SCREENS: readonly ResolvedCustomiseScreen[] = defineCustomiseScreens(

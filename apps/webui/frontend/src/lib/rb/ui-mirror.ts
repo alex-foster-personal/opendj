@@ -94,6 +94,8 @@ export function buildUiMirror(): Record<string, unknown> {
 	return {
 		client_open: true,
 		client_id: MIRROR_CLIENT_ID,
+		// SECONDSCREEN: extra shell window labels when the shell reports them.
+		windows: Array.isArray(state.windows) ? state.windows : [],
 		// AGENT-20: the document version. From 2 the engine refuses a publish
 		// missing the autoplay_* fields; an unversioned (older) page is still
 		// accepted during the release, with a logged warning and no default.

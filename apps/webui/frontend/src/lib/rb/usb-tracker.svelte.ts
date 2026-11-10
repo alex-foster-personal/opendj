@@ -65,6 +65,8 @@ type ApiVolume = {
 	protocol?: string | null;
 	hide_reason?: string | null;
 	access?: UsbAccess;
+	vendor_name?: string | null;
+	vendor_source?: string | null;
 };
 
 type ApiList = { volumes: ApiVolume[]; scanned_at: number };
@@ -614,6 +616,15 @@ function _musicVerdict(api: ApiVolume, role: UsbRole, answer: boolean | undefine
 	return role !== 'mounted_drive' && role !== 'disk_image' && api.is_music;
 }
 
+function _vendorKnown(api: ApiVolume): boolean {
+	const name = api.vendor_name;
+	return typeof name === 'string' && name.trim() !== '';
+}
+
+function _userOverrodeVendor(row: UsbVolumeKnown): boolean {
+	return row.forgotten === true || row.yours !== null || row.music_answer !== undefined;
+}
+
 function _ingest(remote: ApiVolume[]): void {
 	const now = Date.now();
 	const byId = new Map(usbTracker.volumes.map((v) => [v.id, v]));
@@ -627,6 +638,7 @@ function _ingest(remote: ApiVolume[]): void {
 		const prev = byId.get(api.id);
 		const role = api.role ?? 'other';
 		const autoNonMusic = !_musicVerdict(api, role, undefined);
+		const vendorKnown = _vendorKnown(api);
 		if (prev === undefined) {
 			const row: UsbVolumeKnown = {
 				id: api.id,
@@ -646,7 +658,7 @@ function _ingest(remote: ApiVolume[]): void {
 				present: true,
 				simulated: api.simulated,
 				// Skip first-seen nag for Fixed HDDs / disk images.
-				needs_prompt: !autoNonMusic
+				needs_prompt: !autoNonMusic && !vendorKnown
 			};
 			byId.set(api.id, row);
 			freshIds.push(api.id);
@@ -669,8 +681,12 @@ function _ingest(remote: ApiVolume[]): void {
 			if (api.access !== undefined) prev.access = api.access;
 			if (autoNonMusic) prev.needs_prompt = false;
 			prev.is_music = _musicVerdict(api, role, prev.music_answer);
-			// Keep user rename; only fill empty.
-			if (!prev.name) prev.name = api.name;
+			if (vendorKnown && !_userOverrodeVendor(prev)) {
+				prev.name = api.name;
+				prev.needs_prompt = false;
+			} else if (!prev.name) {
+				prev.name = api.name;
+			}
 		}
 	}
 

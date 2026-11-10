@@ -22,6 +22,7 @@ import { setResolvedPosture } from './app-posture';
 import { PERF_TIER_PREFS, type PerfTierPref } from './perf-tier-prefs';
 import { parseSpeakerAutoRecover, type SpeakerAutoRecoverPref } from './speaker-link-prefs';
 import { parseTempoLaneScale, type TempoLaneScale } from './tempo-lane-prefs';
+import { parseWaveGridLines, type WaveGridLines } from './wave-grid-lines';
 import { parseAutoSync, parseLevelCalibration } from './prefs-fields';
 import { writeBootStampMirror } from './gig-stamp-mirror';
 import { hydrateMidiEnabledFromDisk } from '../components/rb/midi/midi-enabled-choice';
@@ -103,9 +104,14 @@ export type DiskPrefsPatch = {
 	show_stems?: boolean;
 	deck_hover_link?: boolean;
 	show_sections?: boolean;
+	auto_analyze_grid?: boolean;
+	auto_analyze_key?: boolean;
+	auto_analyze_sections?: boolean;
+	auto_analyze_vocals?: boolean;
 	speaker_auto_recover?: SpeakerAutoRecoverPref;
 	show_tempo_lane?: boolean;
 	tempo_lane_scale?: TempoLaneScale;
+	wave_grid_lines?: WaveGridLines;
 	jog_radial_waveform?: boolean;
 	deck_layout?: DeckLayoutMode;
 	deck_layout_animate?: boolean;
@@ -209,9 +215,14 @@ export interface PrefsHydrateTarget {
 	show_stems: boolean;
 	deck_hover_link: boolean;
 	show_sections: boolean;
+	auto_analyze_grid: boolean;
+	auto_analyze_key: boolean;
+	auto_analyze_sections: boolean;
+	auto_analyze_vocals: boolean;
 	speaker_auto_recover: SpeakerAutoRecoverPref;
 	show_tempo_lane: boolean;
 	tempo_lane_scale: TempoLaneScale;
+	wave_grid_lines: WaveGridLines;
 	jog_radial_waveform: boolean;
 	deck_layout: DeckLayoutMode;
 	deck_layout_animate: boolean;
@@ -451,6 +462,18 @@ export function makePrefsHydrator(deps: PrefsHydrateDeps): () => Promise<void> {
 		if (typeof body.show_sections === 'boolean') {
 			uiPrefs.show_sections = body.show_sections;
 		}
+		if (typeof body.auto_analyze_grid === 'boolean') {
+			uiPrefs.auto_analyze_grid = body.auto_analyze_grid;
+		}
+		if (typeof body.auto_analyze_key === 'boolean') {
+			uiPrefs.auto_analyze_key = body.auto_analyze_key;
+		}
+		if (typeof body.auto_analyze_sections === 'boolean') {
+			uiPrefs.auto_analyze_sections = body.auto_analyze_sections;
+		}
+		if (typeof body.auto_analyze_vocals === 'boolean') {
+			uiPrefs.auto_analyze_vocals = body.auto_analyze_vocals;
+		}
 		const speakerAutoRecover = parseSpeakerAutoRecover(body.speaker_auto_recover);
 		if (speakerAutoRecover !== undefined) {
 			uiPrefs.speaker_auto_recover = speakerAutoRecover;
@@ -461,6 +484,10 @@ export function makePrefsHydrator(deps: PrefsHydrateDeps): () => Promise<void> {
 		const tempoLaneScale = parseTempoLaneScale(body.tempo_lane_scale);
 		if (tempoLaneScale !== undefined) {
 			uiPrefs.tempo_lane_scale = tempoLaneScale;
+		}
+		const waveGridLines = parseWaveGridLines(body.wave_grid_lines);
+		if (waveGridLines !== undefined) {
+			uiPrefs.wave_grid_lines = waveGridLines;
 		}
 		const radialChangedDuringGet = uiPrefs.jog_radial_waveform !== jogRadialAtRequest;
 		if (radialClaimedAtRequest || isDiskValueSuperseded('jog_radial_waveform')) {

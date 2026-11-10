@@ -22,6 +22,36 @@ export interface RecordRailState {
 /** How often an idle REC re-reads the recorder (SET-12). */
 export const IDLE_POLL_MS = 5000;
 
+/** `m:ss`, or `h:mm:ss` from one hour (754 s gives `12:34`). */
+export function formatRecordingElapsed(seconds: number): string {
+	const total = Math.floor(seconds);
+	const h = Math.floor(total / 3600);
+	const m = Math.floor((total % 3600) / 60);
+	const s = String(total % 60).padStart(2, '0');
+	return h > 0 ? `${h}:${String(m).padStart(2, '0')}:${s}` : `${m}:${s}`;
+}
+
+/** Decimal SI size: `1.2 GB` from 1e9 bytes, otherwise whole `MB`. */
+export function formatRecordingBytes(bytes: number): string {
+	return bytes >= 1e9 ? `${(bytes / 1e9).toFixed(1)} GB` : `${Math.round(bytes / 1e6)} MB`;
+}
+
+/** `clipped N times` when the master mix clipped (issue #10371), else empty. */
+export function clipSuffix(clipEvents: number | null | undefined): string {
+	if (!clipEvents) return '';
+	return clipEvents === 1 ? 'clipped 1 time' : `clipped ${clipEvents} times`;
+}
+
+/** `Recording 12:34, 1.2 GB, clipped 3 times`; null without an elapsed time. */
+export function recordingTip(status: RecorderStatus): string | null {
+	if (status.elapsed_s == null) return null;
+	const parts = [`Recording ${formatRecordingElapsed(status.elapsed_s)}`];
+	if (status.audio_bytes != null) parts.push(formatRecordingBytes(status.audio_bytes));
+	const clipped = clipSuffix(status.clip_events);
+	if (clipped) parts.push(clipped);
+	return parts.join(', ');
+}
+
 export function recordRailState(status: RecorderStatus): RecordRailState {
 	if (!status.active) {
 		// SET-12: a recording an agent starts over HTTP (`python -m apps.sets rec
@@ -52,7 +82,7 @@ export function recordRailState(status: RecorderStatus): RecordRailState {
 				poll: null
 			};
 		case 'recording':
-			return { recording: true, waiting: false, tip: null, poll: 3000 };
+			return { recording: true, waiting: false, tip: recordingTip(status), poll: 3000 };
 		default:
 			// none (tracklist only) and unknown (another process owns it): no
 			// capture of ours whose state can change.

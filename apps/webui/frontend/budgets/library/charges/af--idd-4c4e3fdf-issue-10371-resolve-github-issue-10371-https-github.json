@@ -1,0 +1,9 @@
+{
+  "bytes": 1024,
+  "measured_main": 346599,
+  "measured_with_pr": 346602,
+  "sha": "d3ecf252d4",
+  "date": "Tue 10 Nov 2026",
+  "reason": "Issue #10371 (SET-11744) adds the REC tooltip elapsed, size and clip suffix and the /sets peak and clip line. Measured: local build vs base at d3ecf252d4, +3 B gzip on library; ceiled to KiB",
+  "payback": "none planned; the growth is the feature's own code on this surface"
+}

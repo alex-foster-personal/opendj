@@ -33,6 +33,12 @@ import { expect, test, type Page } from '@playwright/test';
 import { build } from 'esbuild';
 import { fileURLToPath } from 'node:url';
 
+type EchoBundle = typeof import('../../src/lib/rb/fx/echo-kernel') &
+	Pick<
+		typeof import('../../src/lib/rb/color-fx-graph'),
+		'COLOR_FX_ECHO_MAX_DELAY_SEC' | 'ECHO_LOOP_HP_HZ' | 'ECHO_LOOP_LP_HZ'
+	>;
+
 const FRONTEND_ROOT = fileURLToPath(new URL('../..', import.meta.url));
 const SR = 48_000;
 const QUANTUM = 128;
@@ -98,8 +104,7 @@ async function render(page: Page, opts: RenderOpts): Promise<RenderResult> {
 			beat,
 			quantum
 		}) => {
-			// eslint-disable-next-line @typescript-eslint/no-explicit-any
-			const mod = (globalThis as any).echoKernel;
+			const mod = (globalThis as unknown as { echoKernel: EchoBundle }).echoKernel;
 			const frames = Math.round(sr * seconds);
 			const ctx = new OfflineAudioContext(2, frames, sr);
 			const buffer = ctx.createBuffer(1, frames, sr);

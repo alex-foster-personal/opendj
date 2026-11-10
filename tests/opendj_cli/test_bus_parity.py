@@ -42,7 +42,7 @@ _SAMPLE_TOKENS = (
     "A", "bad", "beat", "low", "next", "top", "vocal",
     "beatgrid", "own", "practice", "hybrid", "pickup", "tri-band", "mono-dev", "mono", "auto", "ai",
     "phase-meter", "smooth", "in", "elastic", "tone", "sections", "space", "stems", "exact", "move", "halo",
-    "performance", "browser.tree", "300",
+    "performance", "browser.tree", "300", "open", "second-screen", "bars", "beats_bars", "grid_lines", "off",
 )
 
 
@@ -78,6 +78,25 @@ def test_every_command_on_the_bus_has_a_verb() -> None:
 def test_fractional_beat_loop_cli_preserves_the_requested_length(beats: str) -> None:
     assert parse_invocation(["beat_loop", "2", beats, "1000"]).command == {
         "type": "beat_loop", "deck": 2, "beats": float(beats), "start_ms": 1000,
+    }
+
+
+@pytest.mark.requirement("WAVEQS-11736")
+@pytest.mark.parametrize("value", ["beats_bars", "bars", "off"])
+def test_set_waveform_overlay_grid_lines_builds_the_bus_command(value: str) -> None:
+    """[if] grid_lines is set to each allowed value [then] the bus command matches, [else stop]."""
+    assert parse_invocation(["set_waveform_overlay", "grid_lines", f"value={value}"]).command == {
+        "type": "set_waveform_overlay", "overlay": "grid_lines", "value": value,
+    }
+
+
+@pytest.mark.requirement("WAVEQS-11736")
+def test_set_waveform_overlay_rejects_an_unknown_grid_value_and_keeps_the_switch_form() -> None:
+    """[if] grid_lines gets a bad value [then] InvocationError and sections still parse, [else stop]."""
+    with pytest.raises(InvocationError):
+        parse_invocation(["set_waveform_overlay", "grid_lines", "value=dots"])
+    assert parse_invocation(["set_waveform_overlay", "sections", "true"]).command == {
+        "type": "set_waveform_overlay", "overlay": "sections", "enabled": True,
     }
 
 
@@ -191,13 +210,14 @@ def test_set_perf_view_and_show_pads_build_the_bus_commands() -> None:
 
 
 def test_set_deck_number_art_builds_the_bus_command() -> None:
-    """[if] set_deck_number_art halo does not build the typed command [then] agents lose parity with the Appearance setting."""
-    assert parse_invocation(["set_deck_number_art", "halo"]).command == {
-        "type": "set_deck_number_art",
-        "mode": "halo",
-    }
+    """[if] set_deck_number_art halo/glow/tinted does not build the typed command [then] agents lose parity with the Appearance setting."""
+    for mode in ("halo", "glow", "tinted"):
+        assert parse_invocation(["set_deck_number_art", mode]).command == {
+            "type": "set_deck_number_art",
+            "mode": mode,
+        }
     with pytest.raises(InvocationError):
-        parse_invocation(["set_deck_number_art", "tinted"])
+        parse_invocation(["set_deck_number_art", "outline"])
 
 
 def test_autoplay_verdict_builds_the_bus_command() -> None:

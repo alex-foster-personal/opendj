@@ -75,13 +75,13 @@ def _query_ms(event: dict[str, Any]) -> float:
     return float(value)
 
 
-def unique_search_rows(snapshots: Iterable[object]) -> list[dict[str, Any]]:
-    """Every ``library-search-collection`` row once, in first-seen order."""
+def unique_rows_of_kind(snapshots: Iterable[object], kind: str) -> list[dict[str, Any]]:
+    """Every row of ``kind`` once, in first-seen order."""
     seen: set[tuple[str, ...]] = set()
     rows: list[dict[str, Any]] = []
     for snapshot in snapshots:
         for event in _events_of(snapshot):
-            if not isinstance(event, dict) or event.get("kind") != S8_EVENT_KIND:
+            if not isinstance(event, dict) or event.get("kind") != kind:
                 continue
             key = _identity(event)
             if key in seen:
@@ -89,6 +89,11 @@ def unique_search_rows(snapshots: Iterable[object]) -> list[dict[str, Any]]:
             seen.add(key)
             rows.append(event)
     return rows
+
+
+def unique_search_rows(snapshots: Iterable[object]) -> list[dict[str, Any]]:
+    """Every ``library-search-collection`` row once, in first-seen order."""
+    return unique_rows_of_kind(snapshots, S8_EVENT_KIND)
 
 
 # ----------------------------------------------------------------------------- scoring

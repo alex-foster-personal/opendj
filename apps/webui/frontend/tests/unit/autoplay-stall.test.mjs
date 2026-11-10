@@ -31,12 +31,15 @@ import { loadTypeScriptModule } from './load-typescript.mjs';
 
 let mod;
 
+let autoPlay;
+
 before(async () => {
 	mod = await loadTypeScriptModule('src/lib/rb/autoplay-stall.ts');
+	autoPlay = await loadTypeScriptModule('src/lib/rb/auto-play.ts');
 });
 
-function row(stable_id, title = null, artist = null) {
-	return { stable_id, key: '8A', bpm: 124, file_exists: false, title, artist };
+function row(stable_id, title = null, artist = null, file_exists = false) {
+	return { stable_id, key: '8A', bpm: 124, file_exists, title, artist };
 }
 
 // REQ: PLAY-14 / pin b91c8ba9b84b
@@ -91,16 +94,7 @@ describe('describeAutoPlayStall', () => {
 	});
 
 	it('has a distinct headline and resume line for every reason', () => {
-		const reasons = [
-			'missing-audio',
-			'no-next-in-order',
-			'no-compatible-track',
-			'candidates-failed-to-load',
-			'handoff-attempts-exhausted',
-			'handoff-incomplete',
-			'master-handover-refused',
-			'no-deck-playing'
-		];
+		const reasons = [...mod.AUTO_PLAY_STALL_REASONS];
 		const headlines = new Set();
 		const resumes = new Set();
 		for (const reason of reasons) {
@@ -125,7 +119,10 @@ describe('describeAutoPlayStall', () => {
 			// error, i.e. the banner fails to draw at all.
 			blocked: [row('a', 'Alpha', 'Ann'), row('a', 'Alpha', 'Ann'), row('b', 'Beta', 'Ben')]
 		});
-		assert.deepEqual(stall.blocked.map((t) => t.stable_id), ['a', 'b']);
+		assert.deepEqual(
+			stall.blocked.map((t) => t.stable_id),
+			['a', 'b']
+		);
 		assert.equal(stall.blocked_total, 2, 'the operator relinks files, not positions');
 		assert.equal(
 			new Set(stall.blocked.map((t) => t.stable_id)).size,
@@ -321,5 +318,123 @@ describe('autoPlayStallReason / autoPlayExhaustionToast', () => {
 			'a handoff failure has no exhaustion toast; silently returning one would be a mis-report'
 		);
 		assert.throws(() => mod.autoPlayExhaustionToast('no-deck-playing'), /not an exhaustion toast/);
+	});
+
+	it('[if] remaining rows are playable but none fit key and BPM [then] reason is no-compatible-track', () => {
+		assert.equal(
+			mod.autoPlayStallReason({ all_missing: false, load_failures: false, enforce_order: false }),
+			'no-compatible-track'
+		);
+		assert.equal(
+			mod.autoPlayExhaustionToast('no-compatible-track'),
+			'auto-play: no unplayed playlist track within key +-1 and Beat Sync BPM range'
+		);
+	});
+
+	it('[if] every remaining row is missing audio [then] reason is missing-audio, not no-compatible-track', () => {
+		const remaining = autoPlay.remainingAutoPlayCandidates({
+			playlist: [
+				row('src-1', 'Source', 'Ann', true),
+				row('gone-1', 'Gone', 'Bo', false),
+				row('gone-2', 'Far', 'Cy', false)
+			],
+			current_stable_id: 'src-1',
+			exclude_ids: new Set(),
+			played_ids: new Set()
+		});
+		const allMissing = remaining.length > 0 && remaining.every((r) => !r.file_exists);
+		assert.equal(allMissing, true);
+		assert.equal(
+			mod.autoPlayStallReason({
+				all_missing: allMissing,
+				load_failures: false,
+				enforce_order: false
+			}),
+			'missing-audio'
+		);
+		assert.notEqual(
+			mod.autoPlayExhaustionToast('missing-audio'),
+			mod.autoPlayExhaustionToast('no-compatible-track')
+		);
+	});
+
+	it('[if] remaining playable rows exist but none fit [then] exhaustion is no-compatible-track', () => {
+		const remaining = autoPlay.remainingAutoPlayCandidates({
+			playlist: [row('far-1', 'Far', 'Bo', true), row('src-1', 'Source', 'Ann', true)],
+			current_stable_id: 'src-1',
+			exclude_ids: new Set(),
+			played_ids: new Set()
+		});
+		assert.equal(remaining.length, 1);
+		const reason = mod.autoPlayStallReason({
+			all_missing: remaining.length > 0 && remaining.every((r) => !r.file_exists),
+			load_failures: false,
+			enforce_order: false
+		});
+		assert.equal(reason, 'no-compatible-track');
+		assert.equal(
+			mod.autoPlayExhaustionToast(reason),
+			'auto-play: no unplayed playlist track within key +-1 and Beat Sync BPM range'
+		);
+	});
+});
+
+describe('AUTO_PLAY_STALL_REASONS coverage', () => {
+	const constructInputs = {
+		'missing-audio': { blocked: [row('missing-1', 'Gone', 'Ann')] },
+		'no-next-in-order': { blocked: [row('next-1', 'Later', 'Ben', true)] },
+		'no-compatible-track': { blocked: [row('far-1', 'Far', 'Cy', true)] },
+		'candidates-failed-to-load': { blocked: [row('fail-1', 'Fail', 'Di', true)] },
+		'handoff-attempts-exhausted': { blocked: [], detail: 'load refused' },
+		'handoff-incomplete': { blocked: [], detail: 'play refused' },
+		'master-handover-refused': { blocked: [], detail: 'setDeckMaster refused' },
+		'no-deck-playing': { blocked: [] },
+		'no-playing-master': { blocked: [] }
+	};
+
+	it('[if] a listed AutoPlayStallReason has no constructed describe [then] this test names it', () => {
+		const missing = [];
+		for (const reason of mod.AUTO_PLAY_STALL_REASONS) {
+			const fixture = constructInputs[reason];
+			if (fixture === undefined) {
+				missing.push(reason);
+				continue;
+			}
+			const stall = mod.describeAutoPlayStall({
+				reason,
+				source_stable_id: 'src-1',
+				blocked: fixture.blocked ?? [],
+				detail: fixture.detail
+			});
+			assert.equal(stall.reason, reason);
+			assert.notEqual(stall.headline, '');
+			assert.notEqual(stall.resume, '');
+		}
+		assert.deepEqual(
+			missing,
+			[],
+			`no unit constructs these AutoPlayStallReason values: ${missing.join(', ')}`
+		);
+	});
+
+	it('names every handoff and idle branch in autoPlayStallDiagnosticMessage', () => {
+		const handoff = [
+			'candidates-failed-to-load',
+			'handoff-attempts-exhausted',
+			'handoff-incomplete',
+			'master-handover-refused'
+		];
+		for (const reason of handoff) {
+			const line = mod.autoPlayStallDiagnosticMessage(reason, 'detail');
+			assert.match(line, new RegExp(`run failed: ${reason}`));
+		}
+		assert.match(
+			mod.autoPlayStallDiagnosticMessage('no-deck-playing', null),
+			/arm failed: no-deck-playing/
+		);
+		assert.match(
+			mod.autoPlayStallDiagnosticMessage('no-playing-master', null),
+			/arm failed: no-playing-master/
+		);
 	});
 });

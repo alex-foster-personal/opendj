@@ -3,6 +3,7 @@ import type { CSSProperties, MouseEvent } from 'react';
 import type { DeckState } from '$lib/rb/deck-state-types';
 import { stemCssColor } from '$lib/rb/stem-colors';
 import type { SeparateActionView } from '$lib/rb/stem-separate-view';
+import { quickModeActive, type StemQuickMode } from '$lib/rb/stem-quick-mode';
 import { stemStatusView } from '$lib/rb/stem-status';
 import type { StemControl } from '$lib/rb/stem-types';
 
@@ -25,7 +26,15 @@ export type StemRowProps = {
 	/** STEM-77: the "Separate this track" action on a NO STEMS deck, or null. */
 	separate?: SeparateActionView | null;
 	onSeparate?: () => Promise<void>;
+	/** STEMPERF-11695: apply an ACA / INST / ALL quick mode. Deck only. */
+	onQuickMode?: (mode: StemQuickMode) => Promise<void>;
 };
+
+const QUICK: readonly { mode: StemQuickMode; label: string; tip: string }[] = [
+	{ mode: 'aca', label: 'ACA', tip: 'Acapella: only VOCAL plays' },
+	{ mode: 'inst', label: 'INST', tip: 'Instrumental: VOCAL muted, every solo cleared' },
+	{ mode: 'all', label: 'ALL', tip: 'Everything: every mute and solo cleared, gains kept' }
+];
 
 const STEMS: readonly { id: StemControl; label: string }[] = [
 	{ id: 'vocal', label: 'VOCAL' },
@@ -45,7 +54,8 @@ export default function StemRow({
 	onSolo,
 	onLoad,
 	separate = null,
-	onSeparate
+	onSeparate,
+	onQuickMode
 }: StemRowProps) {
 	const stems = deck.stems;
 	const visibleStems = STEMS.filter(
@@ -55,6 +65,7 @@ export default function StemRow({
 	const unavailable = (stem: StemControl): boolean => ready && !stems.available_controls.includes(stem);
 	const view = stemStatusView(stems);
 	const statusTip = view.tip;
+	const quickActive = quickModeActive(stems);
 
 	function chipTip(stem: StemControl, label: string): string {
 		if (unavailable(stem)) {
@@ -107,6 +118,25 @@ export default function StemRow({
 					</button>
 				);
 			})}
+			{onQuickMode !== undefined &&
+				QUICK.map((q) => (
+					<button
+						key={q.mode}
+						type="button"
+						className={cls('quick', quickActive === q.mode && 'active')}
+						disabled={!ready}
+						aria-busy={pending}
+						aria-pressed={quickActive === q.mode}
+						data-active={quickActive === q.mode}
+						data-testid={`stem-quick-${q.mode}-${testIdScope}-${deck.deck_id}`}
+						data-performance-control={`stem-quick-${q.mode}`}
+						title={`${q.tip}. ${statusTip}`}
+						aria-label={`${q.label} quick stem mode deck ${deck.deck_id}`}
+						onClick={async () => await onQuickMode(q.mode)}
+					>
+						{q.label}
+					</button>
+				))}
 			{onLoad !== undefined && view.label !== '' && (view.action !== null ? (
 					<button
 						className={cls('status', 'action', view.name === 'error' && 'failed')}

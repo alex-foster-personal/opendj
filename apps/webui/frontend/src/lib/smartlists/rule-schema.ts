@@ -24,6 +24,9 @@ export type FieldName =
 	| 'color_tag'
 	| 'added_date'
 	| 'last_played'
+	| 'play_count'
+	| 'duration_s'
+	| 'playlist_count'
 	| 'paired_with';
 
 export type Op = '=' | '!=' | '<' | '<=' | '>' | '>=' | 'between' | 'in' | 'contains' | 'missing';
@@ -40,6 +43,9 @@ export const FIELD_TYPES: Record<FieldName, FieldType> = {
 	color_tag: 'string',
 	added_date: 'date',
 	last_played: 'date',
+	play_count: 'number',
+	duration_s: 'number',
+	playlist_count: 'number',
 	paired_with: 'string'
 };
 
@@ -61,6 +67,9 @@ export const ALLOWED_OPS_BY_FIELD: Record<FieldName, Op[]> = {
 	color_tag: STRING_OPS,
 	added_date: DATE_OPS,
 	last_played: DATE_OPS,
+	play_count: NUMERIC_OPS,
+	duration_s: NUMERIC_OPS,
+	playlist_count: NUMERIC_OPS,
 	paired_with: PAIRED_WITH_OPS
 };
 
@@ -75,6 +84,10 @@ export const ORDER_BY_OPTIONS: string[] = [
 	'rating asc',
 	'energy asc',
 	'energy desc',
+	'play_count desc',
+	'play_count asc',
+	'duration_s asc',
+	'duration_s desc',
 	'random'
 ];
 

@@ -43,10 +43,16 @@
  *     [if] two installed documents claim the same nameMatch (a raced PUT past
  *       the daemon's own clash check) after the previous generation has
  *       already been unregistered [then ⛔️] broken
+ *   ✔︎ deviceMapFromDoc hands leds, meters and init to the runtime map without
+ *     provenance (#10058), so the glue lights LEDs, drives meters and sends
+ *     the connect-time handshake for an installed map like a builtin.
+ *     [if] an installed doc with a deck_playing led rule yields a runtime map
+ *       with no leds [then ⛔️] broken
+ *     [if] a bindings-only doc yields a runtime map with a leds key [then ⛔️] broken
  */
 
 import { RB_API_BASE, RbApiError } from '$lib/rb/api-rb';
-import type { DeviceMap, MidiBinding } from '$lib/rb/midi/midi-types';
+import type { DeviceMap, LedRule, LedTrigger, MidiBinding, MidiMeterOutput } from '$lib/rb/midi/midi-types';
 import {
 	listDeviceMaps,
 	registerDeviceMap,
@@ -68,6 +74,31 @@ export interface InstalledMapDoc {
 	model: string;
 	nameMatch: string;
 	bindings: (MidiBinding & { provenance: BindingProvenance })[];
+	/** Optional: older daemons and fixtures omit them; the daemon returns []. */
+	leds?: WithProvenance<LedRuleDoc>[];
+	meters?: WithProvenance<MidiMeterOutput>[];
+	init?: { message: number[]; provenance: BindingProvenance }[];
+}
+
+type WithProvenance<T> = T & { provenance: BindingProvenance };
+
+/** The daemon serialises an absent optional padMode as null, on the rule and
+ * on a hot_cue_present trigger. */
+type LedRuleDoc = Omit<LedRule, 'padMode' | 'trigger'> & {
+	trigger: LedTrigger | (Extract<LedTrigger, { kind: 'hot_cue_present' }> & { padMode: null });
+	padMode?: LedRule['padMode'] | null;
+};
+
+/** Drop provenance and null padModes so the result is exactly a runtime LedRule. */
+function _ledRuleFromDoc({ provenance: _p, padMode, trigger, ...rest }: WithProvenance<LedRuleDoc>): LedRule {
+	const rule: LedRule = { ...rest, trigger: _triggerFromDoc(trigger) };
+	if (padMode !== undefined && padMode !== null) rule.padMode = padMode;
+	return rule;
+}
+
+function _triggerFromDoc(trigger: LedRuleDoc['trigger']): LedTrigger {
+	if (trigger.kind !== 'hot_cue_present' || trigger.padMode !== null) return trigger as LedTrigger;
+	return { kind: trigger.kind, deck: trigger.deck, slot: trigger.slot };
 }
 
 export interface InstalledMapSummary {
@@ -101,13 +132,21 @@ async function _getJson<T>(path: string): Promise<T> {
 	return (await r.json()) as T;
 }
 
-/** Strip the UI-only provenance field; what is left IS a DeviceMap. */
+/** Strip the UI-only provenance field; what is left IS a DeviceMap. Feedback
+ * lists are only set when non-empty, so a bindings-only document yields exactly
+ * the runtime map it always did. */
 export function deviceMapFromDoc(doc: InstalledMapDoc): DeviceMap {
-	return {
+	const map: DeviceMap = {
 		vendor: doc.vendor,
 		nameMatch: doc.nameMatch,
 		bindings: doc.bindings.map(({ provenance: _p, ...binding }) => binding)
 	};
+	if (doc.leds !== undefined && doc.leds.length > 0) map.leds = doc.leds.map(_ledRuleFromDoc);
+	if (doc.meters !== undefined && doc.meters.length > 0) {
+		map.meters = doc.meters.map(({ provenance: _p, ...meter }) => meter);
+	}
+	if (doc.init !== undefined && doc.init.length > 0) map.init = doc.init.map((m) => [...m.message]);
+	return map;
 }
 
 /** Convert and validate one complete installed-map generation before the

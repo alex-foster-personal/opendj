@@ -8,6 +8,8 @@ from typing import Literal
 from fastapi import HTTPException
 from pydantic import BaseModel
 
+from apps.analysis.backlog import ANALYZER_LANES, AutoLane
+
 TrackAnalysisKind = Literal["vocals", "beatgrid", "key", "stems"]
 ORDERABLE_ANALYSIS_KINDS: frozenset[str] = frozenset({"vocals", "beatgrid", "key", "stems"})
 
@@ -50,11 +52,34 @@ def resolve_scope(body: RefreshIn | None, ingest_inbox: Path) -> tuple[str, Path
     return "batch", batch_dir
 
 
-def unmapped_steps(steps: list[str]) -> tuple[list[str], list[str]]:
-    """Return the sole runnable unmapped step and the explicit exclusions."""
-    if "analysis" not in steps:
+def unmapped_steps(
+    steps: list[str],
+    lanes: frozenset[AutoLane],
+) -> tuple[list[str], list[str]]:
+    """Return runnable unmapped steps for the enabled analyze-on-import lanes."""
+    if not lanes:
         raise HTTPException(
             422,
-            "scope=unmapped runs the analysis step only, and analysis is disabled in the ingest config",
+            "every analyze-on-import lane is off (Settings > Analysis: "
+            "auto_analyze_grid/key/sections/vocals); a manual order still works",
         )
-    return ["analysis"], [step for step in steps if step != "analysis"]
+    run: list[str] = []
+    skipped: list[str] = []
+    if lanes & ANALYZER_LANES:
+        if "analysis" not in steps:
+            raise HTTPException(
+                422,
+                "scope=unmapped runs the analysis step only, and analysis is disabled in the ingest config",
+            )
+        run.append("analysis")
+    elif "analysis" in steps:
+        skipped.append("analysis")
+    if "vocals" in lanes:
+        if "vocals" in steps:
+            run.append("vocals")
+    elif "vocals" in steps:
+        skipped.append("vocals")
+    for step in steps:
+        if step not in run and step not in skipped:
+            skipped.append(step)
+    return run, skipped

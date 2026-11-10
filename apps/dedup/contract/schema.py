@@ -12,6 +12,7 @@ Tables:
 * ``duplicate_clusters``  -- one row per cluster.
 * ``track_aliases``       -- one row per alias -> canonical.
 * ``tag_provenance``      -- insert-only history of unified-tag writes.
+* ``events``              -- StateWriter event log for tag-provenance units.
 """
 
 from __future__ import annotations
@@ -59,6 +60,19 @@ CREATE TABLE IF NOT EXISTS tag_provenance (
 );
 CREATE INDEX IF NOT EXISTS idx_provenance_field
     ON tag_provenance(stable_id, field);
+
+-- Durable event log, same DDL as state.db (apps/shared/state/migrations.py).
+-- StateWriter appends one row per tag-provenance unit (apps.tags.apply).
+CREATE TABLE IF NOT EXISTS events (
+    id           INTEGER PRIMARY KEY AUTOINCREMENT,
+    ts           TEXT NOT NULL,
+    kind         TEXT NOT NULL,
+    stable_id    TEXT,
+    payload_json TEXT,
+    actor        TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_events_ts ON events(ts);
+CREATE INDEX IF NOT EXISTS idx_events_stable_id ON events(stable_id) WHERE stable_id IS NOT NULL;
 """
 
 

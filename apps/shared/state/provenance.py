@@ -79,6 +79,8 @@ WRAPPED_FIELDS: frozenset[str] = frozenset(
         # movement, soloist, ensemble, conductor, label, recording_year). Written
         # only by apps.shared.state.library_org.set_classical.
         "classical",
+        # Parent #345 Niche mode: user waveform regions + structure suggestion verdicts.
+        "niche_labels",
     }
 )
 

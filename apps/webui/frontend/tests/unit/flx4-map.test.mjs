@@ -21,8 +21,12 @@
 //   if any deck-3 or deck-4 binding exists then broken
 //   if hints collide with bound sources then broken
 //   if JOG and BEAT SYNC are not hinted then broken
+//   if a FLX4 LED rule targets a wire absent from panel.json then broken
+//   if a button without a MIDI-OUT row gets a LED rule then broken
+//   if BEAT SYNC / HOT CUE / PAD FX / SAMPLER lose their LED rule then broken
 
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 import { after, before, test } from 'node:test';
 import { fileURLToPath } from 'node:url';
 import { resolve } from 'node:path';
@@ -31,6 +35,20 @@ import { createServer } from 'vite';
 import { svelte } from '@sveltejs/vite-plugin-svelte';
 
 const FRONTEND_ROOT = fileURLToPath(new URL('../..', import.meta.url));
+const PANEL = JSON.parse(
+	readFileSync(
+		resolve(FRONTEND_ROOT, '../../../tools/deck-diagrams/devices/ddj-flx4/panel.json'),
+		'utf8'
+	)
+);
+const MIDI_TYPES_TS = readFileSync(resolve(FRONTEND_ROOT, 'src/lib/rb/midi/midi-types.ts'), 'utf8');
+const LED_TRIGGER_BLOCK = MIDI_TYPES_TS.slice(
+	MIDI_TYPES_TS.indexOf('export type LedTrigger ='),
+	MIDI_TYPES_TS.indexOf('export interface LedRule')
+);
+const LED_TRIGGER_KINDS = new Set(
+	[...LED_TRIGGER_BLOCK.matchAll(/kind: '(\w+)'/g)].map((m) => m[1])
+);
 
 let vite;
 let webmidi;
@@ -222,7 +240,14 @@ test('browse encoder relative CC 0x40 (+shift 0x64), loads 0x46/0x47 ([PDF] 4-1/
 
 test('LED rules: play/cue/reloop/cue-bus + 8 pad rules per deck ([PDF] MIDI-OUT)', () => {
 	const leds = mapModule.FLX4_MAP.leds;
-	assert.equal(leds.length, 2 * (4 + 8));
+	const legacyKinds = new Set([
+		'deck_playing',
+		'deck_loaded',
+		'loop_engaged',
+		'channel_cue_enabled',
+		'hot_cue_present'
+	]);
+	assert.equal(leds.filter((r) => legacyKinds.has(r.trigger.kind)).length, 2 * (4 + 8));
 	for (const deck of DECKS) {
 		const loop = leds.filter((r) => r.trigger.kind === 'loop_engaged' && r.trigger.deck === deck);
 		assert.equal(loop[0].out.note, 0x4d);
@@ -232,6 +257,107 @@ test('LED rules: play/cue/reloop/cue-bus + 8 pad rules per deck ([PDF] MIDI-OUT)
 		assert.deepEqual(chCue[0].out, { ch: deck, note: 0x54, velocityOn: 0x7f, velocityOff: 0x00 });
 	}
 	assert.equal(leds.filter((r) => r.out.note === 0x14).length, 0);
+});
+
+test('LED rules: BEAT SYNC + HOT CUE / PAD FX / SAMPLER mode per deck ([PDF] 1-10, 5-1/5-2/5-4)', () => {
+	const leds = mapModule.FLX4_MAP.leds;
+	assert.equal(leds.length, 2 * (4 + 8 + 4));
+	for (const deck of DECKS) {
+		const sync = leds.filter(
+			(r) => r.trigger.kind === 'beat_sync_effective' && r.trigger.deck === deck
+		);
+		assert.equal(sync.length, 1);
+		assert.deepEqual(sync[0].out, { ch: deck, note: 0x58, velocityOn: 0x7f, velocityOff: 0x00 });
+		const modeCases = [
+			['hot_cue', 0x1b],
+			['instant_fx', 0x1e],
+			['sampler', 0x22]
+		];
+		for (const [mode, note] of modeCases) {
+			const rule = leds.filter(
+				(r) =>
+					r.trigger.kind === 'pad_mode_selected' &&
+					r.trigger.deck === deck &&
+					r.trigger.mode === mode
+			);
+			assert.equal(rule.length, 1);
+			assert.deepEqual(rule[0].out, { ch: deck, note, velocityOn: 0x7f, velocityOff: 0x00 });
+		}
+		assert.equal(
+			leds.filter((r) => r.out.ch === deck && r.out.note === 0x20).length,
+			0,
+			'BEAT JUMP has no LED rule'
+		);
+	}
+});
+
+test('every LED rule lights a panel.json control, with a known trigger kind', () => {
+	const noteControls = PANEL.controls.filter((c) => c.midi?.kind === 'note');
+	const byWire = new Map(noteControls.map((c) => [`${c.midi.ch}:${c.midi.id}`, c.id]));
+	for (const rule of mapModule.FLX4_MAP.leds) {
+		assert.ok(
+			LED_TRIGGER_KINDS.has(rule.trigger.kind),
+			`unknown trigger kind ${rule.trigger.kind}`
+		);
+		const key = `${rule.out.ch}:${rule.out.note}`;
+		assert.ok(byWire.has(key), `LED (${rule.out.ch}, ${rule.out.note}) has no panel control`);
+	}
+});
+
+test('buttons without a LED rule are listed with a reason', () => {
+	const NO_LED_RULE = {
+		'd1-shift': '[PDF] 1-3 has no MIDI-OUT row.',
+		'd2-shift': '[PDF] 1-3 has no MIDI-OUT row.',
+		'd1-call-prev': '[PDF] 1-8 has no MIDI-OUT row.',
+		'd2-call-prev': '[PDF] 1-8 has no MIDI-OUT row.',
+		'd1-call-next': '[PDF] 1-9 has no MIDI-OUT row.',
+		'd2-call-next': '[PDF] 1-9 has no MIDI-OUT row.',
+		'd1-in':
+			'[PDF] 1-5 has MIDI-OUT but loop IN/OUT are hint-only; loop state shows on 4 BEAT/EXIT.',
+		'd2-in':
+			'[PDF] 1-5 has MIDI-OUT but loop IN/OUT are hint-only; loop state shows on 4 BEAT/EXIT.',
+		'd1-out':
+			'[PDF] 1-6 has MIDI-OUT but loop IN/OUT are hint-only; loop state shows on 4 BEAT/EXIT.',
+		'd2-out':
+			'[PDF] 1-6 has MIDI-OUT but loop IN/OUT are hint-only; loop state shows on 4 BEAT/EXIT.',
+		'd1-beat-jump':
+			'[PDF] 5-3 has MIDI-OUT but ControllerPadMode has no beat-jump mode, so no engine state can light it.',
+		'd2-beat-jump':
+			'[PDF] 5-3 has MIDI-OUT but ControllerPadMode has no beat-jump mode, so no engine state can light it.',
+		'master-cue': '[PDF] 3-2 has no MIDI-OUT row.',
+		'load-1':
+			'[PDF] 4-2 has no MIDI-OUT row; channel-16 track-load illumination is a one-shot, not button state.',
+		'load-2':
+			'[PDF] 4-3 has no MIDI-OUT row; channel-16 track-load illumination is a one-shot, not button state.',
+		'smart-cfx': '[PDF] 3-10 has MIDI-OUT but the engine has no Smart CFX state (hint-only).',
+		'smart-fader': '[PDF] 3-13 has MIDI-OUT but the engine has no Smart Fader state (hint-only).',
+		'fx-ch': '[PDF] 2-1 lists no MIDI-OUT in the table.',
+		'fx-select': '[PDF] 2-2 lists no MIDI-OUT in the table.',
+		'beat-prev': '[PDF] 2-3 lists no MIDI-OUT in the table.',
+		'beat-next': '[PDF] 2-4 lists no MIDI-OUT in the table.',
+		'fx-on': '[PDF] 2-6 lists no MIDI-OUT in the table.'
+	};
+	const noteControls = PANEL.controls.filter((c) => c.midi?.kind === 'note');
+	const byWire = new Map(noteControls.map((c) => [`${c.midi.ch}:${c.midi.id}`, c.id]));
+	const lit = new Set();
+	for (const rule of mapModule.FLX4_MAP.leds) {
+		const id = byWire.get(`${rule.out.ch}:${rule.out.note}`);
+		assert.ok(id, `unmapped LED wire ch=${rule.out.ch} note=${rule.out.note}`);
+		lit.add(id);
+	}
+	const buttonsAndPads = PANEL.controls
+		.filter((c) => c.type === 'button' || c.type === 'pad')
+		.map((c) => c.id);
+	const noRuleKeys = Object.keys(NO_LED_RULE);
+	const covered = [...lit, ...noRuleKeys];
+	assert.deepEqual(new Set(covered), new Set(buttonsAndPads));
+	assert.equal([...lit].filter((id) => noRuleKeys.includes(id)).length, 0);
+	for (const reason of Object.values(NO_LED_RULE)) {
+		assert.ok(typeof reason === 'string' && reason.length > 0);
+	}
+	for (const id of ['d1-shift', 'd2-shift', 'master-cue', 'load-1', 'load-2']) {
+		assert.ok(id in NO_LED_RULE);
+	}
 });
 
 test('hints name real unbound controls and never shadow a bound source', () => {

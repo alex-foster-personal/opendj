@@ -8,7 +8,9 @@ remote scope only and is useless off the LAN (private, loopback and CGNAT source
 addresses only, reusing the speaker's address rule).
 
 The main engine API stays loopback-only. This module owns a separate FastAPI app
-on ``0.0.0.0`` exposing ``POST /remote/pair`` and ``GET /remote/ping`` only.
+on ``0.0.0.0`` exposing ``POST /remote/pair``, ``GET /remote/ping``,
+public ``/request/api/*`` crowd-request routes while a session is open, and the
+public crowd page at ``GET /request``.
 """
 
 from __future__ import annotations
@@ -29,12 +31,13 @@ from typing import Any, Literal
 
 import uvicorn
 from fastapi import FastAPI, HTTPException, Request
-from fastapi.responses import JSONResponse
-from starlette.exceptions import HTTPException as StarletteHTTPException
+from fastapi.responses import FileResponse, JSONResponse
 from pydantic import BaseModel, Field
+from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from apps.b2b_pairing.b2b_pairing import PairingError, generate_code, normalize_code
 from apps.shared.private_files import is_owner_only, restrict_to_owner
+from apps.webui.server.frontend_build import frontend_build_dir
 from apps.webui.server.remote_speaker import (
     LISTENER_CONCURRENCY,
     LISTENER_GRACEFUL_SHUTDOWN_S,
@@ -51,6 +54,13 @@ REMOTE_CONTROL_BIND_HOST = "0.0.0.0"
 REMOTE_CONTROL_DEFAULT_PORT = 47810
 PAIR_PATH = "/remote/pair"
 PING_PATH = "/remote/ping"
+REQUEST_PAGE_PATH = "/request"
+REQUEST_PAGE_ASSETS = {
+    "index.html": "text/html; charset=utf-8",
+    "request.js": "text/javascript; charset=utf-8",
+    "request-render.js": "text/javascript; charset=utf-8",
+    "request.css": "text/css; charset=utf-8",
+}
 REMOTE_DEVICES_FILE = "remote-devices.json"
 MAX_WRONG_CODES = 5
 MAX_BODY_BYTES = 16 * 1024
@@ -91,6 +101,7 @@ class RemoteSession:
     state_dir: Path
     bind_host: str = REMOTE_CONTROL_BIND_HOST
     requested_port: int = REMOTE_CONTROL_DEFAULT_PORT
+    engine_url: str = "http://127.0.0.1"
     status: ControlStatus = "listening"
     port: int | None = None
     address: str | None = None
@@ -162,8 +173,12 @@ class RemoteSession:
         self.wrong_codes += 1
         if self.wrong_codes >= MAX_WRONG_CODES:
             self.status = "locked_out"
-            logger.warning("remote control: %s wrong codes; listener closed", MAX_WRONG_CODES)
-            self.close_soon()
+            # Public /request/api routes share this listener, so a pairing
+            # lockout must not stop the uvicorn server.
+            logger.warning(
+                "remote control: %s wrong codes; pairing locked out (listener stays up)",
+                MAX_WRONG_CODES,
+            )
         return False
 
     def pair_device(self, device_name: str) -> tuple[DeviceRecord, str]:
@@ -219,7 +234,7 @@ class RemoteSession:
         self.port = int(sock.getsockname()[1])
         self.address, self.address_error = lan_address()
         config = uvicorn.Config(
-            build_listener_app(self, engine_url="http://engine"),
+            build_listener_app(self, engine_url=self.engine_url),
             log_level="warning",
             access_log=False,
             lifespan="off",
@@ -270,6 +285,28 @@ class RemoteSession:
         task.add_done_callback(self._background.discard)
 
 
+def request_page_dir() -> Path:
+    """Serve built static files, falling back to the source tree before a frontend build."""
+    built = frontend_build_dir() / "request"
+    if (built / "index.html").is_file():
+        return built
+    return Path(__file__).resolve().parents[1] / "frontend" / "static" / "request"
+
+
+def serve_request_page_file(name: str) -> FileResponse:
+    """Return one allowlisted file from the crowd request page directory."""
+    if name not in REQUEST_PAGE_ASSETS:
+        raise HTTPException(status_code=404, detail="Not Found")
+    path = request_page_dir() / name
+    if not path.is_file():
+        raise HTTPException(status_code=404, detail="Not Found")
+    return FileResponse(
+        path,
+        media_type=REQUEST_PAGE_ASSETS[name],
+        headers={"Cache-Control": "no-cache"},
+    )
+
+
 def _bearer_token(request: Request) -> str | None:
     header = request.headers.get("authorization")
     if header is None:
@@ -281,8 +318,9 @@ def _bearer_token(request: Request) -> str | None:
 
 
 def build_listener_app(session: RemoteSession, engine_url: str) -> FastAPI:
-    """The LAN remote-control app: pair and ping behind :class:`ListenerGuard`."""
-    del engine_url  # reserved for a later listener-served page origin
+    """The LAN remote-control app: pair, ping, public request routes, and the /request page."""
+    from apps.webui.server.remote_control_requests import mount_public_request_routes
+
     if session.port is None:
         raise RuntimeError("bind the listener before building its app")
     host = session.address or "127.0.0.1"
@@ -314,6 +352,17 @@ def build_listener_app(session: RemoteSession, engine_url: str) -> FastAPI:
     async def get_ping(request: Request) -> PingOut:
         record = session.authenticate(_bearer_token(request))
         return PingOut(device_id=record.device_id, device_name=record.device_name)
+
+    mount_public_request_routes(app, engine_url)
+
+    @app.get(REQUEST_PAGE_PATH)
+    @app.get(f"{REQUEST_PAGE_PATH}/")
+    async def get_request_page() -> FileResponse:
+        return serve_request_page_file("index.html")
+
+    @app.get(f"{REQUEST_PAGE_PATH}/{{name}}")
+    async def get_request_page_asset(name: str) -> FileResponse:
+        return serve_request_page_file(name)
 
     return app
 

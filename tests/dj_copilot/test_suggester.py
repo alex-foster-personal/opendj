@@ -79,7 +79,7 @@ def test_rationale_tags_populated(tmp_path) -> None:
         conn.close()
 
 
-def test_explain_stub_text(tmp_path) -> None:
+def test_explain_text_uses_scored_terms(tmp_path) -> None:
     db = tmp_path / "s.db"
     conn = sqlite3.connect(str(db), isolation_level=None)
     try:
@@ -90,8 +90,7 @@ def test_explain_stub_text(tmp_path) -> None:
             top_n=1,
             explain=True,
         )
-        assert out[0].explain_text is not None
-        assert len(out[0].explain_text) > 0
+        assert out[0].explain_text == ("8A to 8A, same key; 120 to 121 BPM (+0.8%); energy 5 to 5")
     finally:
         conn.close()
 

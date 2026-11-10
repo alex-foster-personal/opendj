@@ -131,6 +131,8 @@ class _RefreshJob:
     #: started. OFF counts nothing as in cloud, so a job built without one
     #: can only over-target, never skip a bundle that is genuinely missing.
     stem_cloud: coverage_cloud.StemCloud = coverage_cloud.OFF
+    #: Unmapped scope only: analyze-on-import lanes read when the job started.
+    auto_lanes: frozenset[str] | None = None
 
 
 _job_lock = threading.RLock()

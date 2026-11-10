@@ -18,6 +18,7 @@ from typing import Any
 
 from apps.analysis_structure import dj_labels
 from apps.analysis_structure.dj_labels import label_sections
+from apps.analysis_structure import pipeline
 from apps.analysis_structure.pipeline import build_sidecar, write_sidecar
 from apps.analysis_structure.serve import merge_own_phrases
 
@@ -190,6 +191,160 @@ def test_energy_pulled_out_after_a_drum_intro_is_a_breakdown_before_the_first_dr
     plan[1] = plan[0]
     result = label_sections(_sections([p[0] for p in plan]), _envelopes(plan))
     assert _labels(result)[:2] == ["intro", "intro"]
+
+
+def _write_ok_sidecar(tmp_path, stable_id: str, *, lengths: list[float] | None = None) -> dict[str, Any]:
+    plan = CLASSIC if lengths is None else [(length, ON, ON, -6.0, None) for length in lengths]
+    raw = _raw(_envelopes(plan))
+    sections = _sections([p[0] for p in plan] if lengths is None else lengths)
+    doc = build_sidecar(stable_id, raw, GRID, GRID_ID)
+    write_sidecar(tmp_path, doc)
+    return doc
+
+
+def test_niche_suggestions_list_structure_labels_but_query_stays_empty_until_accepted():
+    """[if] dj_labels ok [then] suggestions list sections and query stays empty until accept, else stop."""
+    doc = build_sidecar("src", _raw(_envelopes(CLASSIC)), GRID, GRID_ID)
+    suggestions = dj_labels.structure_niche_suggestions(doc["sections"], doc["dj_labels"])
+    assert suggestions and all(row["source"] == "structure" for row in suggestions)
+    state = pipeline.empty_niche_state()
+    assert pipeline.accepted_query_labels(state, suggestions) == []
+
+
+def test_user_niche_region_is_stored_and_listed_back(tmp_path):
+    """[if] user records a region [then] it is stored on the track and listed back, else stop."""
+    from apps.shared.state import db as state_db
+    from apps.shared.state.sync_stamp import canonical_now
+    from apps.shared.state.writer import StateWriter
+
+    db_path = tmp_path / "state.db"
+    conn = state_db.open_rw(db_path)
+    try:
+        with StateWriter(conn, actor="test") as writer:
+            writer.upsert_track(
+                stable_id="t1",
+                stable_id_tier="inferred",
+                title="T",
+                artists=["A"],
+                album=None,
+                isrc=None,
+                duration_ms=120_000,
+                file_path=None,
+            )
+            state = pipeline.record_user_region(
+                pipeline.empty_niche_state(), start_s=12.0, end_s=44.0, label="weird riser"
+            )
+            writer.set_field(
+                "t1",
+                pipeline.NICHE_LABELS_FIELD,
+                state,
+                source="webui",
+                modified_at=canonical_now(),
+            )
+        listed = pipeline.read_niche_state(conn, "t1")["regions"]
+    finally:
+        conn.close()
+    assert listed == [
+        {
+            "id": "user:12.0:44.0:weird riser",
+            "start_s": 12.0,
+            "end_s": 44.0,
+            "label": "weird riser",
+            "source": "user",
+        }
+    ]
+
+
+def test_niche_search_returns_labelled_matches_with_citations_not_cosine_neighbours(tmp_path):
+    """[if] one accepted label [then] hits share that label with cited regions, else stop."""
+    from apps.shared.state import db as state_db
+    from apps.shared.state.sync_stamp import canonical_now
+    from apps.shared.state.writer import StateWriter
+
+    data_dir = tmp_path / "data"
+    _write_ok_sidecar(data_dir, "src")
+    _write_ok_sidecar(data_dir, "hit")
+    flat = [(32.0, ON, ON, -6.0, None)] * 6
+    flat_doc = build_sidecar("miss", _raw(_envelopes(flat)), GRID, GRID_ID)
+    write_sidecar(data_dir, flat_doc)
+
+    db_path = data_dir / "state.db"
+    conn = state_db.open_rw(db_path)
+    try:
+        with StateWriter(conn, actor="test") as writer:
+            for sid in ("src", "hit", "miss"):
+                writer.upsert_track(
+                    stable_id=sid,
+                    stable_id_tier="inferred",
+                    title=sid,
+                    artists=["A"],
+                    album=None,
+                    isrc=None,
+                    duration_ms=120_000,
+                    file_path=None,
+                )
+            suggestions = pipeline.niche_suggestions_for_track(data_dir, "src")
+            state = pipeline.set_suggestion_verdict(
+                pipeline.empty_niche_state(),
+                suggestions[2]["suggestion_id"],
+                accepted=True,
+            )
+            writer.set_field(
+                "src",
+                pipeline.NICHE_LABELS_FIELD,
+                state,
+                source="webui",
+                modified_at=canonical_now(),
+            )
+        doc = pipeline.niche_find_similar(conn, data_dir, stable_id="src", limit=10)
+        hits = {row["stable_id"] for row in doc["candidates"]}
+    finally:
+        conn.close()
+    assert "hit" in hits and "miss" not in hits
+    cited = doc["candidates"][0]["citations"][0]
+    assert cited["label"] == "drop" and cited["source"] == "structure"
+
+
+def test_unlabeled_structure_has_no_suggestions_but_user_regions_still_query(tmp_path):
+    """[if] dj_labels unlabeled [then] suggestions empty and user regions still query, else stop."""
+    from apps.shared.state import db as state_db
+    from apps.shared.state.sync_stamp import canonical_now
+    from apps.shared.state.writer import StateWriter
+
+    data_dir = tmp_path / "data"
+    flat = [(32.0, ON, ON, -6.0, None)] * 6
+    doc = build_sidecar("flat", _raw(_envelopes(flat)), GRID, GRID_ID)
+    assert doc["dj_labels"]["status"] == "unlabeled"
+    write_sidecar(data_dir, doc)
+    db_path = data_dir / "state.db"
+    conn = state_db.open_rw(db_path)
+    try:
+        with StateWriter(conn, actor="test") as writer:
+            writer.upsert_track(
+                stable_id="flat",
+                stable_id_tier="inferred",
+                title="flat",
+                artists=["A"],
+                album=None,
+                isrc=None,
+                duration_ms=120_000,
+                file_path=None,
+            )
+            state = pipeline.record_user_region(
+                pipeline.empty_niche_state(), start_s=1.0, end_s=9.0, label="custom"
+            )
+            writer.set_field(
+                "flat",
+                pipeline.NICHE_LABELS_FIELD,
+                state,
+                source="webui",
+                modified_at=canonical_now(),
+            )
+        suggestions = pipeline.niche_suggestions_for_track(data_dir, "flat")
+        labels = pipeline.accepted_query_labels(pipeline.read_niche_state(conn, "flat"), suggestions)
+    finally:
+        conn.close()
+    assert suggestions == [] and labels == ["custom"]
 
 
 def test_a_silent_lead_in_and_fade_tail_do_not_make_a_flat_track_contrasty():

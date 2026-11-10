@@ -54,7 +54,7 @@ import re
 from decimal import Decimal, InvalidOperation
 from typing import Any
 
-from apps.autodj.plan import ACTIONS, CONTROLS, MIXER_CONTROLS, PlanError, TransitionPlan, parse_plan
+from apps.autodj.plan import ACTIONS, CONTROLS, MIXER_CONTROLS, NOISE_FIELDS, PlanError, TransitionPlan, parse_plan
 
 #: The value words a score may use in place of a number.
 VALUE_WORDS: dict[str, float] = {"kill": 0.0, "flat": 0.5, "full": 1.0}
@@ -179,6 +179,13 @@ def _control_and_args(mixer: bool, rest: list[str], where: str) -> tuple[str, li
 
 def _change(control: str, args: list[str], over: float | None, where: str) -> dict[str, Any]:
     """The set or ramp half of an event, from what follows the control name."""
+    if control == "fx_noise":
+        if not args or args[0] not in NOISE_FIELDS:
+            raise ScoreError(f"{where}: fx_noise needs a field, one of {', '.join(NOISE_FIELDS)}")
+        change = _change(args[0], args[1:], over, where)
+        kind = "ramp" if "ramp" in change else "set"
+        change[kind] = {"fx_noise": change[kind]}
+        return change
     if len(args) == 2 and args[0] == "->":
         if over is None:
             raise ScoreError(f"{where}: a ramp needs a range, like @0..8")
@@ -365,6 +372,8 @@ def _event_text(event: Any) -> str:
     if event.kind == "do":
         return f"{when:<8} {who} {event.name}"
     control = "" if event.name in MIXER_CONTROLS else f"{event.name} "
+    if event.field is not None:
+        control += f"{event.field} "
     arrow = "-> " if event.kind == "ramp" else ""
     return f"{when:<8} {who} {control}{arrow}{_value_text(event.name, _event_value(event))}"
 
@@ -420,7 +429,8 @@ def _lane_name(event: Any) -> str:
     who = "mix" if event.deck is None else f"D{event.deck}"
     if event.kind == "do":
         return f"{who} deck"
-    return f"{who} {'xfader' if event.name in MIXER_CONTROLS else event.name}"
+    lane = "xfader" if event.name in MIXER_CONTROLS else event.name
+    return f"{who} {lane}" if event.field is None else f"{who} {lane}.{event.field}"
 
 
 def _lane_rank(name: str) -> tuple[str, int, str]:

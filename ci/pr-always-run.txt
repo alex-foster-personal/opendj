@@ -235,3 +235,6 @@ tests/test_no_unguarded_posix_imports.py
 # LATENCY-03 ratchet: hands REPO to scripts.quality_latency.evaluate and _read_sources, which read
 # fixed paths under the checkout. An apps/webui frontend edit can miss it through import links alone.
 tests/scripts/test_quality_latency.py
+
+# Whole-tree index readers found by (private path) (Tue 10 Nov 2026).
+(private path)

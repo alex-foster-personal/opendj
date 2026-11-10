@@ -53,6 +53,31 @@ def _stderr_tail(stderr: str) -> str:
     return stderr[-_STDERR_TAIL_CHARS:]
 
 
+def _summary_token_to_float(raw: str) -> float:
+    """Parse one ebur128 summary token; ``-inf`` is digital silence, not an error."""
+    if raw == "-inf":
+        return float("-inf")
+    return float(raw)
+
+
+def _ebur128_scan_argv(binary: str, path: Path) -> list[str]:
+    """ffmpeg argv for a single-file EBU R128 scan with true-peak reporting."""
+    return [
+        binary,
+        "-hide_banner",
+        "-nostats",
+        "-i",
+        str(path),
+        "-map",
+        "a:0",
+        "-af",
+        "ebur128=peak=true",
+        "-f",
+        "null",
+        "-",
+    ]
+
+
 class LoudnessError(RuntimeError):
     """Raised for every failure mode. There is no degraded result."""
 
@@ -132,12 +157,7 @@ def _parse_summary(stderr: str, path: Path) -> dict[str, float]:
             )
         # The filter prints running values during the pass and the summary last,
         # so the final match is the summary figure.
-        raw = matches[-1]
-        if raw == "-inf":
-            # Digital silence. Real, not an error, but it must not become 0.0.
-            found[field] = float("-inf")
-        else:
-            found[field] = float(raw)
+        found[field] = _summary_token_to_float(matches[-1])
     return found
 
 
@@ -176,20 +196,7 @@ def scan_file(path: Path, binary: str | None = None) -> LoudnessScan:
         raise LoudnessError(f"not a file: {path}")
     binary = binary or require_ffmpeg()
     completed = subprocess.run(
-        [
-            binary,
-            "-hide_banner",
-            "-nostats",
-            "-i",
-            str(path),
-            "-map",
-            "a:0",
-            "-af",
-            "ebur128=peak=true",
-            "-f",
-            "null",
-            "-",
-        ],
+        _ebur128_scan_argv(binary, path),
         capture_output=True,
         text=True,
         timeout=SCAN_TIMEOUT_S,

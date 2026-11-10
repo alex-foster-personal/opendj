@@ -147,6 +147,7 @@ STYLE_FAMILY: dict[str, str] = {
     "cut": "cut",
     "drop_swap": "cut",
     "echo_out": "fx",
+    "noise_build": "fx",
     "stem_swap": "stem",
     "loop_extend": "loop",
     # D13: its own family, outside the core lanes, so it never enters the taste factorial; added as role "lull".

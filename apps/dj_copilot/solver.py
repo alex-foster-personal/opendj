@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import contextlib
 import time
 from collections.abc import Mapping
 from dataclasses import dataclass, field
@@ -30,6 +31,12 @@ W_KEY: float = 0.35
 W_BPM: float = 0.35
 W_ENERGY: float = 0.25
 W_ARTIST: float = 0.05
+_TERM_WEIGHTS: dict[str, float] = {
+    "key": W_KEY,
+    "bpm": W_BPM,
+    "energy": W_ENERGY,
+    "artist": W_ARTIST,
+}
 
 ARTIST_REPEAT_COOLDOWN: int = 8
 AVG_TRACK_MINUTES: float = 4.0
@@ -56,6 +63,7 @@ class StepTrace:
     actual_energy: float
     transition_hint: str
     pin_role: PinRole = None
+    unscored: tuple[str, ...] = ()
 
 
 @dataclass(slots=True)
@@ -65,6 +73,7 @@ class SolveResult:
     per_step_trace: list[StepTrace]
     constraints_unmet: list[UnmetConstraint]
     solve_ms: float
+    unscored_edges: int = 0
 
 
 def _camelot_dist_or_none(a: str | None, b: str | None) -> int | None:
@@ -104,46 +113,81 @@ class _BeamState:
     recent_artists: tuple[str | None, ...]
 
 
+def _weighted_mean(terms: dict[str, float]) -> float:
+    """Weighted mean over the measured terms only (AGENT-33)."""
+    weight = sum(_TERM_WEIGHTS[name] for name in terms)
+    if weight == 0.0:
+        return 0.0
+    return sum(_TERM_WEIGHTS[name] * value for name, value in terms.items()) / weight
+
+
+def _bpm_term(prev: TrackFeature, cand: TrackFeature) -> tuple[float | None, bool]:
+    """BPM score and whether the wider window was used. None when a tempo is unknown."""
+    prev_bpm = prev.bpm
+    cand_bpm = cand.bpm
+    if prev_bpm is None or cand_bpm is None or prev_bpm <= 0 or cand_bpm <= 0:
+        return None, False
+    tight = bpm_compatibility(prev_bpm, cand_bpm, max_diff_pct=MAX_BPM_DIFF_PCT)
+    if tight > 0.0:
+        return tight, False
+    relaxed = bpm_compatibility(prev_bpm, cand_bpm, max_diff_pct=_BPM_RELAX_WINDOW_PCT)
+    if relaxed > 0.0:
+        return relaxed * 0.5, True
+    return tight, False
+
+
+def _key_term(prev: TrackFeature, cand: TrackFeature) -> float | None:
+    """Camelot compatibility, or None when a key is unknown or unparseable."""
+    pk = prev.key_camelot
+    ck = cand.key_camelot
+    if not pk or not ck:
+        return None
+    with contextlib.suppress(ValueError):
+        return camelot_compatibility(pk, ck)
+    return None
+
+
+def _energy_term(cand: TrackFeature, target_energy_slot: float) -> float | None:
+    """Distance from the goal energy slot, or None when energy is unknown."""
+    if cand.energy is None:
+        return None
+    return max(0.0, 1.0 - abs(target_energy_slot - float(cand.energy)) / 9.0)
+
+
+def _artist_term(cand: TrackFeature, recent_artists_set: set[str | None]) -> float | None:
+    """Artist-repeat score, or None when the artist is unknown."""
+    if cand.artist is None:
+        return None
+    return 0.0 if cand.artist in recent_artists_set else 1.0
+
+
 def _score_candidate_inline(
     *,
     prev: TrackFeature,
     cand: TrackFeature,
     target_energy_slot: float,
     recent_artists_set: set[str | None],
-) -> tuple[float, bool]:
-    tight = bpm_compatibility(prev.bpm, cand.bpm, max_diff_pct=MAX_BPM_DIFF_PCT)
-    bpm_relaxed = False
-    bpm_score = tight
-    if tight == 0.0 and prev.bpm is not None and cand.bpm is not None:
-        relaxed = bpm_compatibility(prev.bpm, cand.bpm, max_diff_pct=_BPM_RELAX_WINDOW_PCT)
-        if relaxed > 0.0:
-            bpm_score = relaxed * 0.5
-            bpm_relaxed = True
-    pk = prev.key_camelot
-    ck = cand.key_camelot
-    if not pk or not ck:
-        key_score = 0.5
-    else:
-        try:
-            key_score = camelot_compatibility(pk, ck)
-        except ValueError:
-            key_score = 0.5
-    if cand.energy is None:
-        energy_score = 0.5
-    else:
-        energy_score = max(0.0, 1.0 - abs(target_energy_slot - float(cand.energy)) / 9.0)
-    if cand.artist is None:
-        artist_score = 0.5
-    elif cand.artist in recent_artists_set:
-        artist_score = 0.0
-    else:
-        artist_score = 1.0
-    composite = W_KEY * key_score + W_BPM * bpm_score + W_ENERGY * energy_score + W_ARTIST * artist_score
-    return composite, bpm_relaxed
+) -> tuple[float, bool, tuple[str, ...]]:
+    """Score one edge. A term that cannot be measured is omitted, never filled with a neutral value."""
+    terms: dict[str, float] = {}
+    bpm_score, bpm_relaxed = _bpm_term(prev, cand)
+    if bpm_score is not None:
+        terms["bpm"] = bpm_score
+    key_score = _key_term(prev, cand)
+    if key_score is not None:
+        terms["key"] = key_score
+    energy_score = _energy_term(cand, target_energy_slot)
+    if energy_score is not None:
+        terms["energy"] = energy_score
+    artist_score = _artist_term(cand, recent_artists_set)
+    if artist_score is not None:
+        terms["artist"] = artist_score
+    unscored = tuple(name for name in ("key", "bpm", "energy", "artist") if name not in terms)
+    return _weighted_mean(terms), bpm_relaxed, unscored
 
 
-# (score, stable_id, occurrence, track, bpm_relaxed), the sort key first.
-_Scored = tuple[float, str, int, TrackFeature, bool]
+# (score, stable_id, occurrence, track, bpm_relaxed, unscored), the sort key first.
+_Scored = tuple[float, str, int, TrackFeature, bool, tuple[str, ...]]
 
 
 def _advance(
@@ -161,7 +205,7 @@ def _advance(
     `record_unmet` is False for a pinned slot, which keeps the parent's unmet
     constraints unchanged; free slots record bpm_window and camelot_hardcut.
     """
-    score, _sid, occurrence, cand, relaxed = scored
+    score, _sid, occurrence, cand, relaxed, unscored = scored
     dist = _camelot_dist_or_none(prev.key_camelot, cand.key_camelot)
     delta = _bpm_delta_pct(prev.bpm, cand.bpm)
     trace = StepTrace(
@@ -174,6 +218,7 @@ def _advance(
         actual_energy=float(cand.energy) if cand.energy is not None else 0.0,
         transition_hint=_infer_hint(prev, cand, relaxed),
         pin_role=pin_role,
+        unscored=unscored,
     )
     unmet = list(state.unmet)
     if record_unmet and relaxed:
@@ -226,13 +271,13 @@ def _expand_free_slot(
     for occurrence, cand in enumerate(tracks):
         if occurrence in chosen:
             continue
-        score, relaxed = _score_candidate_inline(
+        score, relaxed, unscored = _score_candidate_inline(
             prev=prev,
             cand=cand,
             target_energy_slot=target_energy_slot,
             recent_artists_set=recent_set,
         )
-        scored.append((score, cand.stable_id, occurrence, cand, relaxed))
+        scored.append((score, cand.stable_id, occurrence, cand, relaxed, unscored))
     if not scored:
         return [state]
     scored.sort(key=lambda x: (-x[0], x[1]))
@@ -264,7 +309,7 @@ def _advance_reserved_slot(
         return None
     prev = tracks[state.occurrence_order[-1]]
     cand = tracks[occurrence]
-    score, relaxed = _score_candidate_inline(
+    score, relaxed, unscored = _score_candidate_inline(
         prev=prev,
         cand=cand,
         target_energy_slot=target_energy_slot,
@@ -273,7 +318,7 @@ def _advance_reserved_slot(
     return _advance(
         state,
         prev=prev,
-        scored=(score, cand.stable_id, occurrence, cand, relaxed),
+        scored=(score, cand.stable_id, occurrence, cand, relaxed, unscored),
         slot_idx=slot_idx,
         target_energy_slot=target_energy_slot,
         pin_role=pin_role,
@@ -329,6 +374,7 @@ def _result(order: list[str], best: _BeamState, t0: float) -> SolveResult:
         per_step_trace=list(best.traces),
         constraints_unmet=list(best.unmet),
         solve_ms=solve_ms,
+        unscored_edges=sum(1 for t in best.traces if t.unscored),
     )
 
 

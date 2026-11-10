@@ -41,6 +41,13 @@ export interface PerfEvent {
 	 */
 	labels?: Record<string, string>;
 	/**
+	 * Per-item ms values where one burst carries many measurements (for example
+	 * one keystroke-to-paint latency per keystroke). Optional and additive:
+	 * rows written before this field existed stay valid. Kept out of `stages`
+	 * because `stages` is a scalar duration map.
+	 */
+	series?: Record<string, number[]>;
+	/**
 	 * Correlation id for rows that something on screen also shows.
 	 *
 	 * A toast prints this id and copies it to the clipboard, so the id here and

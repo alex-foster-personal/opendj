@@ -17,7 +17,9 @@
 		onArtworkLoad,
 		onArtworkError,
 		deckNumber = null,
-		deckNumberArt = 'off'
+		deckNumberArt = 'off',
+		deckStableId = null,
+		deckPlaying = false
 	}: {
 		/** The loaded track's full title, shown whole on hover. */
 		fullTitle: string;
@@ -37,6 +39,10 @@
 		deckNumber?: number | null;
 		/** ARTNUM-9649: the Deck number on artwork pref. */
 		deckNumberArt?: DeckNumberArt;
+		/** ARTNUM-11719: the loaded track's stable_id, the tint sampler's cache key. */
+		deckStableId?: string | null;
+		/** ARTNUM-11719: the deck plays (animated-cover resampling). */
+		deckPlaying?: boolean;
 	} = $props();
 
 	const trackName = $derived(gutterTrackTitle(fullTitle));
@@ -84,7 +90,13 @@
 				}}
 			/>
 			{#if artworkLoaded && deckNumber !== null}
-				<ArtworkDeckNumber deck={deckNumber} mode={deckNumberArt} sizePx={artSizePx} />
+				<ArtworkDeckNumber
+					deck={deckNumber}
+					mode={deckNumberArt}
+					sizePx={artSizePx}
+					stableId={deckStableId}
+					playing={deckPlaying}
+				/>
 			{/if}
 		</span>
 	{:else}

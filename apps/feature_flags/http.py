@@ -13,6 +13,7 @@ from pydantic import BaseModel, ConfigDict
 
 from apps.feature_flags import (
     FlagState,
+    FlagStore,
     store_build_refusal,
     store_profile_is_source,
 )
@@ -74,7 +75,7 @@ class FlagsOut(BaseModel):
     flags: list[FlagOut]
 
 
-def _store_build_refusal(flag: FlagState, *, from_store_profile: bool, sandboxed: bool) -> RefusalOut | None:
+def refusal_out(flag: FlagState, *, from_store_profile: bool, sandboxed: bool) -> RefusalOut | None:
     """Adapt :func:`apps.feature_flags.store_build_refusal` to the account wire model.
 
     The decision itself lives in ``apps.feature_flags`` so the USB gate
@@ -86,6 +87,43 @@ def _store_build_refusal(flag: FlagState, *, from_store_profile: bool, sandboxed
     if refusal is None:
         return None
     return RefusalOut(code=refusal.code, message=refusal.message, ui_title=refusal.ui_title)
+
+
+def flag_out(flag: FlagState, *, from_store_profile: bool, sandboxed: bool) -> FlagOut:
+    """Map one resolved flag to the HTTP wire model."""
+    return FlagOut(
+        flag_id=flag.flag_id,
+        enabled=flag.enabled,
+        default=flag.default,
+        overridden=flag.overridden,
+        owner=flag.owner,
+        note=flag.note,
+        retire_by=flag.retire_by,
+        refusal=refusal_out(
+            flag,
+            from_store_profile=from_store_profile,
+            sandboxed=sandboxed,
+        ),
+    )
+
+
+def flags_out_from_store(store: FlagStore, *, sandboxed: bool) -> FlagsOut:
+    """Build the GET /flags payload from a boot-time :class:`FlagStore`."""
+    from_store_profile = store_profile_is_source(store)
+    return FlagsOut(
+        path=str(store.path),
+        file_present=store.file_present,
+        build_profile=selected_profile(),
+        sandboxed=sandboxed,
+        flags=[
+            flag_out(
+                flag,
+                from_store_profile=from_store_profile,
+                sandboxed=sandboxed,
+            )
+            for flag in store.snapshot()
+        ],
+    )
 
 
 def _process_is_sandboxed() -> bool:
@@ -111,28 +149,4 @@ def read_flags(request: Request) -> FlagsOut:
             "file per request to cover for a missing boot step"
         ),
     )
-    from_store_profile = store_profile_is_source(store)
-    sandboxed = _process_is_sandboxed()
-    return FlagsOut(
-        path=str(store.path),
-        file_present=store.file_present,
-        build_profile=selected_profile(),
-        sandboxed=sandboxed,
-        flags=[
-            FlagOut(
-                flag_id=flag.flag_id,
-                enabled=flag.enabled,
-                default=flag.default,
-                overridden=flag.overridden,
-                owner=flag.owner,
-                note=flag.note,
-                retire_by=flag.retire_by,
-                refusal=_store_build_refusal(
-                    flag,
-                    from_store_profile=from_store_profile,
-                    sandboxed=sandboxed,
-                ),
-            )
-            for flag in store.snapshot()
-        ],
-    )
+    return flags_out_from_store(store, sandboxed=_process_is_sandboxed())

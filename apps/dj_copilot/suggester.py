@@ -6,7 +6,7 @@ Composition:
             -> translate scores to rationale_tags -> top_n
 
 The optional ``explain=True`` path is synchronous in Phase 13: it calls
-the stub explainer inline. The documented event-bus contract
+the deterministic explainer inline. The documented event-bus contract
 (``ai.explain_requested`` / ``ai.explain_response``) is shipped in
 ``(private path)`` for Phase 14 / Phase 17 consumers.
 """
@@ -20,7 +20,7 @@ from datetime import UTC, datetime
 from apps.shared.harmonic import TrackFeature
 
 from .candidates import filter_candidates
-from .explainer_stub import explain as _stub_explain
+from .explainer import explain as _explain
 from .peak_pressure import PeakPlay, apply_pressure_prior, compute_peak_pressure
 from .rank_stage1 import ScoredCandidate, rank_stage1
 from .rank_stage2 import rerank_with_pairings
@@ -116,7 +116,11 @@ def suggest_next(
     out: list[RankedSuggestion] = []
     for sc in top:
         tags = _rationale_tags(sc)
-        explain_text = _stub_explain(sc) if explain else None
+        if explain:
+            cand_tf = sc.candidate or TrackFeature(sc.stable_id, None, None, None, None)
+            explain_text = _explain(current, cand_tf, sc.rationale)
+        else:
+            explain_text = None
         out.append(
             RankedSuggestion(
                 stable_id=sc.stable_id,

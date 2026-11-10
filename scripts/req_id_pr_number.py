@@ -40,7 +40,7 @@ import sys
 from collections import Counter
 from pathlib import Path
 
-from scripts.build_reqs_json import _REQ_ID
+from scripts.build_reqs_json import _REQ_ID, FRAGMENTS_REL, fragments_text_at, fragments_text_in
 
 SOURCE = ".planning/REQUIREMENTS.md"
 CARRIED = "(private path)"
@@ -72,6 +72,17 @@ def _show(git: str, rev: str, path: str = SOURCE) -> tuple[str | None, str]:
     if "does not exist" in proc.stderr or "exists on disk, but not in" in proc.stderr:
         return "", ""
     return None, f"git show {rev}:{path} exited {proc.returncode}: {proc.stderr.strip() or '(no stderr)'}"
+
+
+def _with_fragments(git: str, rev: str, shown: tuple[str | None, str]) -> tuple[str | None, str]:
+    """REQUIREMENTS.md text at rev plus every (private path) fragment there (issue #10541)."""
+    text, err = shown
+    if text is None:
+        return None, err
+    fragments, frag_err = fragments_text_at(git, rev)
+    if fragments is None:
+        return None, frag_err
+    return text + "\n" + fragments, ""
 
 
 def _read_worktree(path: str) -> str:
@@ -147,8 +158,12 @@ def main(argv: list[str] | None = None) -> int:
         print("[UNKNOWN] git is not on PATH, so neither side can be read", file=sys.stderr)
         return 2
     head_label = "the working tree" if args.head_worktree else args.head
-    base_text, base_err = _show(git, args.base)
-    head_text, head_err = (_read_worktree(SOURCE), "") if args.head_worktree else _show(git, args.head)
+    base_text, base_err = _with_fragments(git, args.base, _show(git, args.base))
+    head_text, head_err = (
+        (_read_worktree(SOURCE) + "\n" + fragments_text_in(Path(FRAGMENTS_REL)), "")
+        if args.head_worktree
+        else _with_fragments(git, args.head, _show(git, args.head))
+    )
     if base_text is None or head_text is None:
         print(f"[UNKNOWN] cannot read {SOURCE} at {args.base} or {head_label}", file=sys.stderr)
         for err in (base_err, head_err):

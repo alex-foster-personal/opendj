@@ -498,6 +498,10 @@
 			"reason": "pre-existing (ratchet seed 2026-10-07)"
 		},
 		{
+			"file": "focus-ring-scan.test.mjs",
+			"reason": "A11Y-11403 (#10361) is by design a source scan: it pairs each outline reset with a :focus-visible ring across every component stylesheet, which no single render can see; the focus-ring-tab-stops e2e is the rendered check"
+		},
+		{
 			"file": "footer-midi-contrast.test.mjs",
 			"reason": "pre-existing (on main before the ratchet merged in #5857, Sat 31 Oct 2026; its seed predated them)"
 		},
@@ -1652,6 +1656,10 @@
 		{
 			"file": "gridfit-deck-warning.test.mjs",
 			"reason": "GRIDFIT-03 / issue #9325 (Fri 6 Nov 2026): behaviour runs the real grid-audio-fit module with a stubbed fetch; one wiring check reads DeckHeader.svelte to pin that the grid-fit $effect depends only on stable_id and anlz-present and calls requestGridAudioFit through untrack; effects do not run during SSR, so tracking is only visible in source"
+		},
+		{
+			"file": "presentation-tick-failure-reactive.test.mjs",
+			"reason": "PERF-GRID-12026: the reactive cell is tested by running the real Svelte runtime; the one source read is a negative guard that Deck.svelte's controlError $derived does not call queryPerformanceState, which rendering Deck cannot observe (it would only show the banner text, not which dependency the derived tracks)"
 		}
 	]
 }

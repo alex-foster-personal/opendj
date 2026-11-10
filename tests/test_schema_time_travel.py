@@ -38,6 +38,7 @@ from pathlib import Path
 
 import pytest
 
+from apps.shared.library_completeness_config import read_expect_hq_stems_and_lyric_match
 from apps.shared.state import db as state_db
 from apps.shared.state import schema as state_schema
 from apps.shared.state.locations import LocationError, list_locations
@@ -168,3 +169,20 @@ def test_unclaimed_machine_id_is_refused_not_served(
 
     with pytest.raises(LocationError, match="machine_id"):
         list_locations(migrated, "timetravel01")
+
+
+@pytest.mark.requirement("LIBM-12060")
+def test_time_travel_old_library_seeds_completeness_expectation_true(migrated: sqlite3.Connection) -> None:
+    """[if] an existing migrated library is upgraded [then] the completeness flag is stored true, [else stop]."""
+    assert read_expect_hq_stems_and_lyric_match(migrated) is True
+
+
+@pytest.mark.requirement("LIBM-12060")
+def test_time_travel_fresh_empty_db_leaves_completeness_expectation_false(tmp_path: Path) -> None:
+    """[if] a brand-new empty state.db is migrated [then] the completeness flag is stored false, [else stop]."""
+    path = tmp_path / "empty.db"
+    conn = state_db.open_rw(path, apply_schema=True)
+    try:
+        assert read_expect_hq_stems_and_lyric_match(conn) is False
+    finally:
+        conn.close()

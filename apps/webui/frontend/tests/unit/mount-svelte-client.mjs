@@ -115,3 +115,40 @@ export { mount, unmount, flushSync };
 	_bundles.set(viteApiBase, promise);
 	return promise;
 }
+
+/** Bundle StemWaveRowView for a real client mount (issue #10317). */
+export async function bundleStemWaveRowViewClient() {
+	const key = 'stem-wave-row-view';
+	const cached = _bundles.get(key);
+	if (cached) return cached;
+	const promise = (async () => {
+		const entry = `
+import { mount, unmount, flushSync } from 'svelte';
+export { default as StemWaveRowView } from '$lib/components/rb/wave/StemWaveRowView.svelte';
+export { mount, unmount, flushSync };
+`;
+		const result = await build({
+			stdin: {
+				contents: entry,
+				resolveDir: FRONTEND_ROOT,
+				loader: 'js',
+				sourcefile: 'stem-wave-row-view-client-entry.mjs'
+			},
+			absWorkingDir: FRONTEND_ROOT,
+			alias: { $lib: LIB_ROOT },
+			bundle: true,
+			define: { 'import.meta.env.DEV': 'false' },
+			format: 'esm',
+			logLevel: 'silent',
+			platform: 'browser',
+			conditions: ['browser'],
+			plugins: [viteUrlSuffixPlugin, svelteClientBundlePlugin()],
+			target: 'es2022',
+			write: false
+		});
+		if (!result.outputFiles[0]) throw new Error('stem wave row view client: empty bundle');
+		return importBundledSource(result.outputFiles[0].text, 'stem-wave-row-view-client');
+	})();
+	_bundles.set(key, promise);
+	return promise;
+}

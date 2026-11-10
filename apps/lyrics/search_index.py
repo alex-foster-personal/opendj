@@ -3,7 +3,7 @@
 Builds a searchable index of the flattened lyric documents the Part 1
 boundary defines (:mod:`apps.lyrics.search_contract`,
 ``build_search_document``) into a dedicated SQLite file next to the lyrics
-cache (``data/state/lyrics-index.db``), one bounded batch per call. The
+cache (``(private path)``), one bounded batch per call. The
 background job (:class:`apps.lyrics.index_job.LyricIndexJob`) runs one batch
 per poll and yields to the UI between batches, so indexing pauses within one
 poll of the UI becoming active and resumes from the on-disk checkpoint once
@@ -69,6 +69,7 @@ from __future__ import annotations
 import sqlite3
 from pathlib import Path
 
+from apps.lyrics.fuzzy_match import merge_fts_and_fuzzy
 from apps.lyrics.search_index_batch import (
     DEFAULT_BATCH_MAX_DOCS,
     MAX_REMOVAL_FRACTION,
@@ -172,7 +173,10 @@ def search_documents(
         return [], 0
     conn = sqlite3.connect(str(db_path))
     try:
-        return search(conn, query, limit=limit, offset=offset)
+        fts_ids, fts_total = search(conn, query, limit=limit, offset=offset)
+        if offset != 0:
+            return fts_ids, fts_total
+        return merge_fts_and_fuzzy(conn, query, fts_ids, fts_total, limit=limit)
     finally:
         conn.close()
 

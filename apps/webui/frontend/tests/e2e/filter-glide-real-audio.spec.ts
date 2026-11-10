@@ -38,6 +38,10 @@ import { fileURLToPath } from 'node:url';
 
 import { SpecAudioParam } from '../unit/fixtures/spec-audio-param.mjs';
 
+type FilterGlideModule = typeof import('../../src/lib/rb/filter-glide') &
+	Pick<typeof import('../../src/lib/player/constants'), 'FILTER_GLIDE_S'> &
+	Pick<typeof import('../../src/lib/rb/audio-engine-guards'), 'filterParamsFromKnob'>;
+
 const FRONTEND_ROOT = fileURLToPath(new URL('../..', import.meta.url));
 const SR = 48_000;
 const QUANTUM = 128;
@@ -106,8 +110,7 @@ async function renderChromium(
 ): Promise<number[]> {
 	return page.evaluate(
 		async ({ domain, hzs, startHz, upfront, sr, quantum, frames }) => {
-			// eslint-disable-next-line @typescript-eslint/no-explicit-any
-			const mod = (globalThis as any).filterGlide;
+			const mod = (globalThis as unknown as { filterGlide: FilterGlideModule }).filterGlide;
 			const ctx = new OfflineAudioContext(1, frames, sr);
 			const src = new ConstantSourceNode(ctx, { offset: startHz });
 			src.connect(ctx.destination);
@@ -131,8 +134,12 @@ async function renderChromium(
 	);
 }
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-function renderStandIn(mod: any, domain: Domain, hzs: number[], startHz: number): number[] {
+function renderStandIn(
+	mod: FilterGlideModule,
+	domain: Domain,
+	hzs: number[],
+	startHz: number
+): number[] {
 	const p = new SpecAudioParam(startHz, SR);
 	hzs.forEach((hz, i) => {
 		p.renderTo(i * QUANTUM);

@@ -26,9 +26,9 @@ serde_json = "1"
 launcher-drag-core = { path = "../drag-core" }
 
 [target.'cfg(target_os = "macos")'.dependencies]
-objc2 = "0.5"
-objc2-foundation = { version = "0.2", features = ["NSString", "NSArray"] }
-objc2-app-kit = { version = "0.2", features = ["NSWorkspace", "NSRunningApplication"] }
+objc2 = "0.6"
+objc2-foundation = { version = "0.3", features = ["NSString", "NSArray"] }
+objc2-app-kit = { version = "0.3", features = ["NSWorkspace", "NSRunningApplication"] }
 
 [features]
 custom-protocol = ["tauri/custom-protocol"]

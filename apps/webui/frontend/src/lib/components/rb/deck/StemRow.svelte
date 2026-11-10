@@ -1,10 +1,12 @@
 <script lang="ts">
 	// Real precomputed Demucs controls. Click toggles mute; Shift+click toggles
 	// solo. Both paths dispatch through the typed browser-agent command surface.
+	// STEMPERF-11695: ACA / INST / ALL quick chips (deck only) plan the same commands.
 	import type { DeckState } from '$lib/rb/deck-state-types';
 	import { stemCssColor } from '$lib/rb/stem-colors';
 	import type { SeparateActionView } from '$lib/rb/stem-separate-view';
 	import { stemStatusView } from '$lib/rb/stem-status';
+	import { quickModeActive, type StemQuickMode } from '$lib/rb/stem-quick-mode';
 	import type { StemControl } from '$lib/rb/stem-types';
 
 	let {
@@ -17,7 +19,8 @@
 		separate = null,
 		onSeparate,
 		stemsResetOn = false,
-		onOpenResetConfig = () => {}
+		onOpenResetConfig = () => {},
+		onQuickMode
 	}: {
 		deck: DeckState;
 		pending: boolean;
@@ -35,7 +38,17 @@
 		stemsResetOn?: boolean;
 		/** Opens the track-load reset panel from the chip, anchored on the chip element. */
 		onOpenResetConfig?: (el: HTMLElement) => void;
+		/** STEMPERF-11695: apply an ACA / INST / ALL quick mode. The deck passes it;
+		 * the mixer strip does not, so its row stays narrow. */
+		onQuickMode?: (mode: StemQuickMode) => Promise<void>;
 	} = $props();
+
+	const QUICK: readonly { mode: StemQuickMode; label: string; tip: string }[] = [
+		{ mode: 'aca', label: 'ACA', tip: 'Acapella: only VOCAL plays' },
+		{ mode: 'inst', label: 'INST', tip: 'Instrumental: VOCAL muted, every solo cleared' },
+		{ mode: 'all', label: 'ALL', tip: 'Everything: every mute and solo cleared, gains kept' }
+	];
+	const quickActive = $derived(quickModeActive(deck.stems));
 
 	const STEMS: readonly { id: StemControl; label: string }[] = [
 		{ id: 'vocal', label: 'VOCAL' },
@@ -108,6 +121,26 @@
 			{testIdScope === 'channel' ? stem.label.slice(0, 3) : stem.label}
 		</button>
 	{/each}
+	{#if onQuickMode !== undefined}
+		{#each QUICK as q (q.mode)}
+			<button
+				type="button"
+				class="quick"
+				class:active={quickActive === q.mode}
+				disabled={!ready}
+				aria-busy={pending}
+				aria-pressed={quickActive === q.mode}
+				data-active={quickActive === q.mode}
+				data-testid={`stem-quick-${q.mode}-${testIdScope}-${deck.deck_id}`}
+				data-performance-control={`stem-quick-${q.mode}`}
+				title={`${q.tip}. ${statusTip}`}
+				aria-label={`${q.label} quick stem mode deck ${deck.deck_id}`}
+				onclick={async () => await onQuickMode(q.mode)}
+			>
+				{q.label}
+			</button>
+		{/each}
+	{/if}
 	<button
 		type="button"
 		class="reset-cfg"
@@ -252,6 +285,28 @@
 		opacity: 0.3;
 		border-style: dashed;
 		cursor: not-allowed;
+	}
+	/* STEMPERF-11695: quick modes; the active one carries the accent. */
+	.quick {
+		background: transparent;
+		border: 1px solid var(--rb-border);
+		border-radius: 2px;
+		color: var(--rb-stem-ink, var(--rb-text));
+		font-family: var(--rb-font);
+		font-size: var(--rb-fs-label);
+		font-weight: 600;
+		padding: 1px 6px;
+		cursor: pointer;
+	}
+	.quick.active {
+		border-color: var(--rb-accent, #49c8ff);
+		color: color-mix(in srgb, var(--rb-accent, #49c8ff) 60%, var(--rb-text));
+	}
+	.quick:disabled {
+		color: var(--rb-text-dim);
+		border-color: var(--rb-border);
+		cursor: default;
+		opacity: 0.6;
 	}
 	/* DECKGAP-7691 (pin 251822d6104b): opens the per-item "reset on new track" list. */
 	.reset-cfg {

@@ -33,6 +33,15 @@ test('503 leaves STANDARD with named reason', async () => {
 	assert.equal(mod.resolvedTier(), 'STANDARD');
 	assert.match(mod.tierHoverSuffix(), /host_info_unavailable/);
 	assert.equal(mod.tierOnNowLabel(), 'On now: Standard (pending host)');
+	assert.equal(mod.hostInfoReadable(), false);
+});
+
+test('[if] tier fetch stored host facts [then] hostInfoReadable is true', async () => {
+	const mod = await loadTypeScriptModule('src/lib/rb/perf-tier.ts');
+	mod.setResolvedTier('HIGH', 'auto', 'HIGH', { logical_cpus: 10, ram_bytes: 32 * 1024 ** 3 });
+	assert.equal(mod.hostInfoReadable(), true);
+	assert.equal(mod.resolvedHostLogicalCpus(), 10);
+	assert.equal(mod.resolvedHostRamGiB(), 32);
 });
 
 test('tierOnNowLabel covers every resolved-tier and source pair', async () => {

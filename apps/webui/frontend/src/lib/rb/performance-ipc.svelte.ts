@@ -1,3 +1,4 @@
+// MOD-ZONE: ORANGE | (private path)
 /**
  * Typed, fail-fast browser command surface for /performance.
  *
@@ -49,6 +50,11 @@
  */
 
 import { _parseCommand, _deck, _validatedPressStamp } from './performance-ipc-guards';
+import {
+	controlShellWindow,
+	type WindowAction,
+	type WindowLabel
+} from '$lib/shell/native-shell';
 import { postVerdict, type Verdict } from '$lib/rb/autoplay-why';
 import {
 	COMPATIBLE_KEY_SHIFT_MAX,
@@ -156,6 +162,7 @@ import {
 	withDeckCommandSource,
 	type CommandSource
 } from './deck-stop-log';
+import { captureStemCommand } from '$lib/sets/control-event-recorder';
 import {
 	assertLoopGridBase,
 	loopIntervalChoices,
@@ -192,6 +199,7 @@ import {
 	setDeckNumberArt,
 	setShowSections,
 	setLyricsWaveformOverlay,
+	setWaveGridLines,
 	setLyricsHoverScrub,
 	setJogRadialWaveform,
 	setLayoutOverride,
@@ -287,6 +295,7 @@ import {
 	trackInfoSnapshot,
 	type TrackInfoDeck
 } from '$lib/rb/track-info-state.svelte';
+import { toggleOjSidebar } from '$lib/assistant/oj-sidebar.svelte';
 import {
 	TRACK_LOAD_RESET_IDS,
 	applyTrackLoadChannelReset,
@@ -470,6 +479,10 @@ let _commandSequence = 0;
 let _commandHistory: Array<{ id: string; type: PerformanceCommand['type'] }> = [];
 let _deckCommandIds: Record<DeckId, string | null> = { 1: null, 2: null, 3: null, 4: null };
 let _pairingSnapshot: PairingSnapshot | null = $state(null);
+
+/** Labels of the extra shell windows this page has opened and not closed,
+ * reported as `PerformanceState.windows`. Focus leaves the set unchanged. */
+let _openShellWindows: WindowLabel[] = $state([]);
 
 /** Narrow test seam for exercising queryPerformanceState()'s pairing_snapshot
  * clone directly, without driving the full pairing_snapshot_open/save command
@@ -1352,6 +1365,7 @@ export function queryPerformanceState(): PerformanceState {
 		pairing_snapshot:
 			_pairingSnapshot === null ? null : structuredClone($state.snapshot(_pairingSnapshot)),
 		cmdk: _cmdkAdapter === null ? null : structuredClone($state.snapshot(_cmdkAdapter.snapshot())),
+		windows: [..._openShellWindows],
 		technically_working: {
 			active: isTechModeActive(),
 			peeking: isPeeking(),
@@ -1414,7 +1428,8 @@ export function queryPerformanceState(): PerformanceState {
 				lyrics: uiPrefs.lyrics_waveform_overlay,
 				lyrics_scrub: uiPrefs.lyrics_hover_scrub,
 				jog_radial: uiPrefs.jog_radial_waveform
-			}
+			},
+			wave_grid_lines: uiPrefs.wave_grid_lines
 		}
 	};
 }
@@ -1657,6 +1672,7 @@ export function performanceCommandQueueScopes(
 		|| command.type === 'track_info_toggle'
 		|| command.type === 'track_info_open'
 		|| command.type === 'track_info_close'
+		|| command.type === 'oj_toggle'
 		|| command.type === 'pairing_snapshot_open'
 		|| command.type === 'pairing_snapshot_remove_eq_adjuster'
 		|| command.type === 'pairing_snapshot_save'
@@ -1674,6 +1690,7 @@ export function performanceCommandQueueScopes(
 		|| command.type === 'cmdk_close'
 		|| command.type === 'cmdk_pick'
 		|| command.type === 'cmdk_mode'
+		|| command.type === 'window'
 		|| command.type === 'playlist_redo'
 		|| command.type === 'playlist_history_jump'
 		|| command.type === 'feedback_mark'
@@ -2047,8 +2064,18 @@ async function _execute(command: PerformanceCommand, pressT0Ms?: number): Promis
 		await engine.setMasterTempo(command.deck, command.enabled);
 	} else if (command.type === 'stem_mute') {
 		engine.setStemMute(command.deck, command.stem, command.muted, pressT0Ms);
+		void captureStemCommand(
+			command,
+			deckCommandSource(command.deck) ?? 'app-command',
+			pressT0Ms ?? performance.now()
+		);
 	} else if (command.type === 'stem_solo') {
 		engine.setStemSolo(command.deck, command.stem, command.solo, pressT0Ms, command.exclusive);
+		void captureStemCommand(
+			command,
+			deckCommandSource(command.deck) ?? 'app-command',
+			pressT0Ms ?? performance.now()
+		);
 	} else if (command.type === 'stem_eq_mode') {
 		engine.setStemEqMode(command.deck, command.enabled);
 	} else if (command.type === 'stem_load') {
@@ -2088,6 +2115,11 @@ async function _execute(command: PerformanceCommand, pressT0Ms?: number): Promis
 		await separateLoadedDeck(command.deck, expected, () => getDeckState(command.deck));
 	} else if (command.type === 'stem_gain') {
 		engine.setStemGain(command.deck, command.stem, command.value);
+		void captureStemCommand(
+			command,
+			deckCommandSource(command.deck) ?? 'app-command',
+			pressT0Ms ?? performance.now()
+		);
 	} else if (command.type === 'slip') {
 		await engine.setSlip(command.deck, command.enabled);
 	} else if (command.type === 'key_sync') {
@@ -2222,13 +2254,17 @@ async function _execute(command: PerformanceCommand, pressT0Ms?: number): Promis
 	} else if (command.type === 'set_deck_number_art') {
 		setDeckNumberArt(command.mode);
 	} else if (command.type === 'set_waveform_overlay') {
-		const setOverlay = {
-			sections: setShowSections,
-			lyrics: setLyricsWaveformOverlay,
-			lyrics_scrub: setLyricsHoverScrub,
-			jog_radial: setJogRadialWaveform
-		}[command.overlay];
-		setOverlay(command.enabled);
+		if (command.overlay === 'grid_lines') {
+			setWaveGridLines(command.value);
+		} else {
+			const setOverlay = {
+				sections: setShowSections,
+				lyrics: setLyricsWaveformOverlay,
+				lyrics_scrub: setLyricsHoverScrub,
+				jog_radial: setJogRadialWaveform
+			}[command.overlay];
+			setOverlay(command.enabled);
+		}
 	} else if (command.type === 'set_waveform_design') {
 		setWaveformDesign(command.design);
 	} else if (command.type === 'set_wave_zoom') {
@@ -2414,6 +2450,8 @@ async function _execute(command: PerformanceCommand, pressT0Ms?: number): Promis
 		}
 	} else if (command.type === 'track_info_close') {
 		closeTrackInfo();
+	} else if (command.type === 'oj_toggle') {
+		toggleOjSidebar();
 	} else if (command.type === 'pairing_snapshot_open') {
 		_pairingSnapshot = _openPairingSnapshot();
 	} else if (command.type === 'pairing_snapshot_remove_eq_adjuster') {
@@ -2481,6 +2519,8 @@ async function _execute(command: PerformanceCommand, pressT0Ms?: number): Promis
 		);
 	} else if (command.type === 'cmdk_mode') {
 		_cmdk(command.type).setMode(command.mode);
+	} else if (command.type === 'window') {
+		await applyWindowCommand(command.action, command.label);
 	} else if (command.type === 'playlist_undo') {
 		if (_playlistHistoryAdapter === null) {
 			throw new Error('playlist_undo requires a mounted playlist history panel');
@@ -3482,6 +3522,16 @@ function _toastId(id: unknown): string {
 
 function _captureUnknown(deck: unknown): DeckAudioSnapshot {
 	return copyDeckAudioSnapshot(engine.captureDeckAudio(_deck(deck)));
+}
+
+async function applyWindowCommand(action: WindowAction, label: WindowLabel): Promise<void> {
+	await controlShellWindow(action, label);
+	// Only a bridge call that resolved changes the set; a refusal throws above.
+	if (action === 'open') {
+		if (!_openShellWindows.includes(label)) _openShellWindows = [..._openShellWindows, label];
+	} else if (action === 'close') {
+		_openShellWindows = _openShellWindows.filter((open) => open !== label);
+	}
 }
 
 /** Test hook: parse one performance command message. */

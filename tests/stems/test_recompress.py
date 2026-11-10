@@ -193,7 +193,7 @@ AT_RULE_192 = {"vocals": 64, "other": 64, "drums": 96, "bass": 96}  # STEM-8231 
 
 @pytest.mark.requirement("STEM-8231")
 def test_an_old_rule_mp3_bundle_is_eligible_and_a_compliant_one_is_not(tmp_path: Path) -> None:
-    """[if] a 320-per-part MP3 bundle is skipped, or a STEM-8231 one re-encoded [then] broken."""
+    """[if] a 320-per-part MP3 bundle is skipped or a STEM-8231 one is re-encoded [then] broken, [else stop]."""
     data = _data_dir(tmp_path)
     _mp3_bundle(data, "oldrule", _source(tmp_path, "a"), OLD_RULE)
     _mp3_bundle(data, "atrule", _source(tmp_path, "b"), AT_RULE_192)
@@ -204,8 +204,7 @@ def test_an_old_rule_mp3_bundle_is_eligible_and_a_compliant_one_is_not(tmp_path:
 @pytest.mark.requirement("STEM-8231")
 @pytest.mark.parametrize("schema", [3, 1])
 def test_live_pass_shrinks_an_old_rule_mp3_bundle_to_the_whole_set_rule(tmp_path: Path, schema: int) -> None:
-    """[if] the shrink leaves a part over its STEM-8231 rate, puts bass/drums under
-    96, or changes the frame count [then] broken."""
+    """[if] the shrink leaves a part over STEM-8231, under-floors bass/drums, or changes frames [then] broken, [else stop]."""
     data = _data_dir(tmp_path)
     source = _source(tmp_path, "a")  # 192 kbps
     bundle = _mp3_bundle(data, "oldrule", source, OLD_RULE, schema=schema)
@@ -595,7 +594,8 @@ result = {
 }
 marker.write_text("publishing")
 bundle_publish.publish_stems_local(
-    sid, Path("/music/a.mp3"), result, bundle_publish.PRESETS["hdemucs_mmi-ov0.25"], data_dir
+    sid, Path("/music/a.mp3"), result, bundle_publish.PRESETS["hdemucs_mmi-ov0.25"], data_dir,
+    requested_codec="flac",
 )
 """
 
@@ -667,7 +667,7 @@ def test_a_publish_stages_its_parts_before_it_takes_the_bundle_lock(tmp_path: Pa
     def publish() -> None:
         try:
             bundle_publish.publish_stems_local(
-                "staged", Path("/music/a.mp3"), fresh, bundle_publish.PRESETS["hdemucs_mmi-ov0.25"], data
+                "staged", Path("/music/a.mp3"), fresh, bundle_publish.PRESETS["hdemucs_mmi-ov0.25"], data, requested_codec="flac"
             )
         except BaseException as exc:  # noqa: BLE001 - reported below
             errors.append(exc)
@@ -742,7 +742,7 @@ def test_a_publish_mid_encode_is_not_clobbered(tmp_path: Path) -> None:
             what="the re-compress snapshot",
         )
         bundle_publish.publish_stems_local(
-            "racing", Path("/music/a.mp3"), fresh, bundle_publish.PRESETS["hdemucs_mmi-ov0.25"], data
+            "racing", Path("/music/a.mp3"), fresh, bundle_publish.PRESETS["hdemucs_mmi-ov0.25"], data, requested_codec="flac"
         )
         published.append(_snapshot(bundle))
 
@@ -1023,7 +1023,10 @@ def test_the_farm_local_publish_waits_for_the_bundle_lock(tmp_path: Path) -> Non
     done = threading.Event()
 
     def publish() -> None:
-        farm_publish("farm", Path("/music/a.mp3"), fresh, bundle_publish.PRESETS["hdemucs_mmi-ov0.25"], data)
+        farm_publish(
+            "farm", Path("/music/a.mp3"), fresh, bundle_publish.PRESETS["hdemucs_mmi-ov0.25"], data,
+            requested_codec="flac",
+        )
         done.set()
 
     with bundle_lock(bundle):
@@ -1224,7 +1227,7 @@ def test_a_machine_local_track_location_beats_a_foreign_tracks_file_path(tmp_pat
     production ``StateWriter``. Control: with the location row gone, the
     foreign path is reported missing, never replaced by the manifest's.
 
-    MUTATION TARGET: read only ``tracks.file_path`` in ``_library_paths``.
+    MUTATION TARGET: read only ``tracks.file_path`` in ``library_paths``.
     """
     from apps.shared.state import db as state_db
     from apps.shared.state.writer import StateWriter
@@ -1943,7 +1946,7 @@ def test_a_dry_run_plan_never_mints_a_machine_id(tmp_path: Path) -> None:
     machine's, so the plan uses ``tracks.file_path``. Control: with the id
     file in place the machine-local location still wins.
 
-    MUTATION TARGET: let ``_library_paths`` resolve without passing the read id.
+    MUTATION TARGET: let ``library_paths`` resolve without passing the read id.
     """
     from apps.shared.state import db as state_db
     from apps.shared.state import machine_identity, sync_stamp
@@ -1987,7 +1990,7 @@ def test_a_live_row_with_no_source_never_falls_back_to_the_manifest(tmp_path: Pa
     #6820). Control: with the row deleted the manifest's path is still the
     fallback.
 
-    MUTATION TARGET: drop rows with an empty path in ``_library_paths``.
+    MUTATION TARGET: drop rows with an empty path in ``library_paths``.
     """
     from apps.shared.state import db as state_db
     from apps.shared.state.writer import StateWriter

@@ -417,8 +417,10 @@ def _last_logged_seq(conn: sqlite3.Connection) -> dict[str, int]:
 def attachment_bytes(root: Path, doc: dict[str, Any]) -> AttachmentBytes:
     """Whether the screenshot a pin names is on THIS machine (FBSYNC-05).
 
-    Attachment bytes do not sync yet, only their metadata does, so a pin
-    pulled from another machine names a file this one never received.
+    Attachment bytes do not sync yet, only their metadata does (including an
+    optional ``content_hash`` when the upload recorded one), so a pin pulled
+    from another machine names a file this one never received. ``content_hash``
+    does not change this answer: only whether the local file exists.
     """
     attachment = doc.get("attachment")
     if not attachment:

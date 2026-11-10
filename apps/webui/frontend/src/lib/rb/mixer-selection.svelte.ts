@@ -16,6 +16,24 @@ export const mixerSelection = $state<{ selected: DeckId[]; clickedDeck: DeckId |
 	clickedDeck: null
 });
 
+type MixerSelectionListener = (selected: readonly DeckId[]) => void;
+const _selectionListeners = new Set<MixerSelectionListener>();
+
+/** Called after every write to `mixerSelection.selected`. The /performance
+ * listeners bind their non-passive window wheel only while a deck is selected
+ * (PERF-UI-13, #10369), and `$effect` does not run in the node tests. */
+export function onMixerSelectionChange(listener: MixerSelectionListener): () => void {
+	_selectionListeners.add(listener);
+	return () => {
+		_selectionListeners.delete(listener);
+	};
+}
+
+function _setSelected(next: DeckId[]): void {
+	mixerSelection.selected = next;
+	for (const listener of _selectionListeners) listener(next);
+}
+
 export function isSelected(deck: DeckId): boolean {
 	return mixerSelection.selected.includes(deck);
 }
@@ -36,7 +54,7 @@ export function clickSelect(deck: DeckId, shift: boolean): void {
 		} else {
 			next.add(deck);
 		}
-		mixerSelection.selected = [...next].sort((a, b) => a - b);
+		_setSelected([...next].sort((a, b) => a - b));
 	} else {
 		resetToSingle(deck);
 	}
@@ -46,14 +64,14 @@ export function clickSelect(deck: DeckId, shift: boolean): void {
 
 export function resetToSingle(deck: DeckId | null): void {
 	if (deck === null) {
-		mixerSelection.selected = [];
+		_setSelected([]);
 		return;
 	}
-	mixerSelection.selected = [deck];
+	_setSelected([deck]);
 }
 
 export function clearSelection(): void {
-	mixerSelection.selected = [];
+	_setSelected([]);
 }
 
 /** Deck load resets multi-select back to the loading deck only. */

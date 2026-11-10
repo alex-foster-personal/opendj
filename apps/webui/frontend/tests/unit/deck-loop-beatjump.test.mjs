@@ -577,8 +577,8 @@ test('e09c63131832 LOOP and JUMP column labels stay side by side', async () => {
 	const deckSource = await readFile('src/lib/components/rb/Deck.svelte', 'utf8');
 	const jumpSource = await readFile('src/lib/components/rb/deck/BeatJump.svelte', 'utf8');
 	const loopSource = await readFile('src/lib/components/rb/deck/LoopCluster.svelte', 'utf8');
-	const cueFlexOpen = deckSource.indexOf('<div class="cue-flex"');
-	const loopColOpen = deckSource.indexOf('<div class="loop-col"');
+	const cueFlexOpen = deckSource.search(/<div\s+class="cue-flex"/);
+	const loopColOpen = deckSource.search(/<div\s+class="loop-col"/);
 	assert.ok(cueFlexOpen >= 0 && loopColOpen > cueFlexOpen, 'cue-flex region is present');
 	const loopClusterPos = deckSource.indexOf('<LoopCluster', loopColOpen);
 	const beatJumpPos = deckSource.indexOf('<BeatJump', loopColOpen);
@@ -607,8 +607,8 @@ test('LOOP and JUMP are visible headings in their requested left-to-right column
 	const jumpSource = await readFile('src/lib/components/rb/deck/BeatJump.svelte', 'utf8');
 	const loopSource = await readFile('src/lib/components/rb/deck/LoopCluster.svelte', 'utf8');
 	// The controls remain out of cue-flex, with LOOP left and JUMP right.
-	const cueFlexOpen = deckSource.indexOf('<div class="cue-flex"');
-	const loopColOpen = deckSource.indexOf('<div class="loop-col"');
+	const cueFlexOpen = deckSource.search(/<div\s+class="cue-flex"/);
+	const loopColOpen = deckSource.search(/<div\s+class="loop-col"/);
 	assert.ok(cueFlexOpen >= 0 && loopColOpen > cueFlexOpen, 'cue-flex region is present');
 	assert.doesNotMatch(deckSource.slice(cueFlexOpen, loopColOpen), /<BeatJump\b/);
 	const loopClusterPos = deckSource.indexOf('<LoopCluster', loopColOpen);

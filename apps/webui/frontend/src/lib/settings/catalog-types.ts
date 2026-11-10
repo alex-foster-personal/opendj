@@ -7,6 +7,7 @@ export type SettingGroupId =
 	| 'appearance'
 	| 'library'
 	| 'performance'
+	| 'analysis'
 	| 'confirmations'
 	| 'sync'
 	| 'cloudsync'

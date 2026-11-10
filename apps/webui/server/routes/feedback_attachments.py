@@ -3,7 +3,8 @@
 Split out of ``feedback.py``/``feedback_pins.py`` the same way (600-line file
 budget): this module owns the one thing neither of those needs - storing and
 serving the image bytes a pin can carry. ``comments.json`` only ever holds the
-small ``AttachmentOut`` record (id, content_type, size_bytes, url); the bytes
+small ``AttachmentOut`` record (id, content_type, size_bytes, url,
+content_hash); the bytes
 themselves live one level down, under ``<data-dir>/feedback/attachments/``.
 
 Endpoints (all under /api/v1/feedback):
@@ -19,6 +20,7 @@ every check, so a rejected upload leaves no orphan file behind.
 
 from __future__ import annotations
 
+import hashlib
 import io
 import re
 import uuid
@@ -211,6 +213,7 @@ async def upload_attachment(comment_id: str, request: Request, file: Annotated[U
                 content_type=content_type,
                 size_bytes=len(data),
                 url=f"/api/v1/feedback/attachments/{attachment_id}",
+                content_hash=hashlib.sha256(data).hexdigest(),
             )
             merged = {**item, "attachment": attachment.model_dump(), "updated_at": _now()}
             validated = CommentOut.model_validate(merged)

@@ -5,6 +5,7 @@ that object can settle its poll threads and ffmpeg process safely.
 """
 from __future__ import annotations
 
+import contextlib
 import json
 import logging
 import os
@@ -14,11 +15,12 @@ from pathlib import Path
 from typing import Any, Literal
 
 from apps.shared.process_liveness import pid_is_alive
+from apps.stream.encoder import MasterMixEncoder, require_master_source
 
 from . import capture as capture_mod
 from . import paths as sets_paths
 from . import record as record_mod
-from .master_mix import MASTER_MIX_DEVICE_LABEL, MasterMixRecordingStopped
+from .master_mix import FRAME_BYTES, MASTER_MIX_DEVICE_LABEL, MasterMixRecordingStopped
 from .state import SetsState
 
 #: Manifest/DB capture_device for a session started without audio (SET-10).
@@ -40,6 +42,15 @@ _DEVICE_SOURCES: frozenset[str] = frozenset({"loopback", "external"})
 LATE_CHUNK_CANARY = 2
 
 _log = logging.getLogger(__name__)
+#: Status level fields when this process records no master-mix audio (#10371).
+_NO_LEVELS: dict[str, Any] = {
+    "peak_dbfs": None,
+    "peak_dbfs_recent": None,
+    "clipped_samples": None,
+    "clip_events": None,
+    "elapsed_s": None,
+    "audio_bytes": None,
+}
 
 
 class RecorderConflict(RuntimeError):
@@ -77,12 +88,24 @@ class RecorderService:
         self._lock = threading.Lock()
         self._recorder: record_mod.Recorder | None = None
         self._source: RecordSource | None = None
+        self._encoder: MasterMixEncoder | None = None
         # Recordings this daemon stopped cleanly, newest last, so a chunk the
         # page had in flight at the stop is told apart from a lost one (SET-12).
         self._cleanly_stopped: list[str] = []
         # Late chunks dropped per cleanly stopped recording: one is the normal
         # in-flight chunk; more is a page tap still streaming (the canary).
         self._late_chunks: dict[str, int] = {}
+
+    def _owned_levels(self, recorder: record_mod.Recorder) -> dict[str, Any]:
+        """Elapsed time, master-mix bytes and level counters (issue #10371)."""
+        master = recorder._master
+        if master is None:
+            return {**_NO_LEVELS, "elapsed_s": round(recorder._rel_ts(), 3)}
+        return {
+            **master.levels(),
+            "elapsed_s": round(recorder._rel_ts(), 3),
+            "audio_bytes": master.frames_accepted * FRAME_BYTES,
+        }
 
     def _idle_status(self) -> dict[str, Any]:
         return {
@@ -94,6 +117,7 @@ class RecorderService:
             "capture": "none",
             "capture_source": None,
             "recordings_dir": str(self.sets_root),
+            **_NO_LEVELS,
         }
 
     def _owned_status(self, recorder: record_mod.Recorder) -> dict[str, Any]:
@@ -107,6 +131,7 @@ class RecorderService:
             "capture_error": recorder.capture_error(),
             "capture_source": self._source,
             "recordings_dir": str(self.sets_root),
+            **self._owned_levels(recorder),
         }
 
     def status(self) -> dict[str, Any]:
@@ -129,6 +154,7 @@ class RecorderService:
             "capture": "unknown",
             "capture_source": None,
             "recordings_dir": str(self.sets_root),
+            **_NO_LEVELS,
         }
 
     def start(
@@ -360,6 +386,51 @@ class RecorderService:
                 )
         writer.append(stream=stream, seq=seq, sample_rate=sample_rate, pcm=pcm)
 
+    def start_stream_encoder(self, session_id: str, *, fmt: str, bitrate_kbps: int) -> dict[str, Any]:
+        """Tee the live master recording into an encoder subprocess (STREAM-11486)."""
+        with self._lock:
+            recorder = self._recorder
+            if recorder is None or recorder.session_id != session_id:
+                active = "nothing" if recorder is None else f"session {recorder.session_id}"
+                raise RecorderConflict(f"{active} is recording here, not {session_id}")
+            require_master_source(self._source)
+            if self._encoder is not None and self._encoder.status().state == "running":
+                raise RecorderConflict(f"a stream encoder is already running for session {session_id}")
+            writer = recorder._master
+            if writer is None:
+                raise RecorderConflict(f"session {session_id} has no master-mix writer")
+            rate = writer.sample_rate
+            if rate is None:
+                raise RecorderConflict(
+                    "no master-mix audio has arrived yet, so its sample rate is unknown; "
+                    "start the stream once the recording is capturing"
+                )
+            encoder = MasterMixEncoder(fmt=fmt, bitrate_kbps=bitrate_kbps, sample_rate=rate)
+        encoder.start()
+        writer.add_tee(encoder.tee)
+        with self._lock:
+            self._encoder = encoder
+        return encoder.status().to_dict()
+
+    def stream_encoder_status(self) -> dict[str, Any] | None:
+        with self._lock:
+            return None if self._encoder is None else self._encoder.status().to_dict()
+
+    def stop_stream_encoder(self) -> dict[str, Any]:
+        with self._lock:
+            if self._encoder is None:
+                raise RecorderConflict("no stream encoder is running")
+            return self._stop_encoder_locked()
+
+    def _stop_encoder_locked(self) -> dict[str, Any]:
+        encoder = self._encoder
+        assert encoder is not None
+        writer = None if self._recorder is None else self._recorder._master
+        if writer is not None:
+            with contextlib.suppress(ValueError):  # already removed by an earlier stop
+                writer.remove_tee(encoder.tee)
+        return encoder.stop().to_dict()
+
     def active_source(self, name: str) -> Any:
         """Return the named source attached to the owned recorder.
 
@@ -400,6 +471,8 @@ class RecorderService:
                 raise RecorderConflict(
                     f"session {self._recorder.session_id} is active, not {session_id}"
                 )
+            if self._encoder is not None:
+                self._stop_encoder_locked()
             record_mod.stop(self._recorder)
             if self._source == "master":
                 self._cleanly_stopped = [*self._cleanly_stopped[-7:], self._recorder.session_id]
@@ -437,6 +510,8 @@ class RecorderService:
         with self._lock:
             if self._recorder is None:
                 return
+            if self._encoder is not None:
+                self._stop_encoder_locked()
             record_mod.stop(self._recorder)
             self._recorder = None
             self._source = None

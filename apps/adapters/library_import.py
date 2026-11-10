@@ -40,7 +40,7 @@ honestly). A rekordbox XML export's label, remixer, composer, grouping, year,
 date added, mix, bit rate, sample rate and size are read but not stored (no state
 field holds them yet); they are counted in the summary as "carried, not stored".
 
-Run it as ``python -m apps.adapters.library_import serato|traktor|rekordbox-xml|djay|virtualdj
+Run it as ``python -m apps.adapters.library_import serato|traktor|rekordbox-xml|djay|virtualdj|mixxx
 [--source P] [--write]``. VirtualDJ's BPM, key, rating, comments, genre and cues are counted
 as read, not stored, until DJIMPORT-10056b widens ``track_fields.source``.
 ``serato-history [--source <_Serato_>] [--write]`` appends Serato's played history to the play
@@ -77,8 +77,8 @@ from apps.shared.state.sync_stamp import canonical_from
 from apps.shared.state.writer import StateWriter
 from apps.shared.state.writer_common import compute_playlist_id
 
-Vendor = Literal["serato", "traktor", "rekordbox-xml", "djay", "virtualdj"]
-VENDORS: tuple[Vendor, ...] = ("serato", "traktor", "rekordbox-xml", "djay", "virtualdj")
+Vendor = Literal["serato", "traktor", "rekordbox-xml", "djay", "virtualdj", "mixxx"]
+VENDORS: tuple[Vendor, ...] = ("serato", "traktor", "rekordbox-xml", "djay", "virtualdj", "mixxx")
 #: Imports that append to the play log rather than the library.
 HISTORY_COMMANDS: tuple[str, ...] = ("serato-history", "traktor-history")
 #: Kept for callers of the Traktor-only name; the same commands.
@@ -86,11 +86,14 @@ PLAY_SOURCES: tuple[str, ...] = HISTORY_COMMANDS
 
 #: The ``track_fields.source`` each import writes. A rekordbox XML export is
 #: labeled with the format it is in, ``rekordbox``, whichever app wrote it.
+#: Mixxx uses ``open-dj-tool`` because the state source CHECK has no ``mixxx``;
+#: the import is fill-only, like rekordbox-xml on a shared label.
 _SOURCE: dict[str, str] = {
     "serato": "serato",
     "traktor": "traktor",
     "rekordbox-xml": "rekordbox",
     "djay": "djay",
+    "mixxx": "open-dj-tool",
 }
 
 #: Vendors whose field/cue provenance label is not in ``track_fields`` yet (DJIMPORT-10056b).
@@ -668,6 +671,23 @@ def read_vendor(vendor: Vendor, source: Path) -> VendorRead:
             }),
             vdj.songs_streaming,
         )
+    if vendor == "mixxx":
+        from apps.adapters.mixxx import read_mixxx_library
+
+        mixxx = read_mixxx_library(source)
+        notes = {
+            "location dropped: deleted in Mixxx": mixxx.tracks_fs_deleted,
+            "track dropped: hidden in Mixxx": mixxx.tracks_hidden,
+            **mixxx.notes,
+        }
+        return VendorRead(
+            mixxx.library,
+            _decoded_path,
+            _nonzero(notes),
+            mixxx.tracks_fs_deleted
+            + mixxx.tracks_hidden
+            + mixxx.notes.get("location dropped: no file path in Mixxx", 0),
+        )
     raise ValueError(f"unknown vendor {vendor!r}")
 
 
@@ -746,6 +766,18 @@ def default_source(vendor: Vendor) -> Path | None:
     if vendor == "virtualdj":
         candidate = home / "Documents" / "VirtualDJ"
         return candidate if (candidate / "database.xml").is_file() else None
+    if vendor == "mixxx":
+        from apps.adapters.mixxx import DEFAULT_LIBRARY_CANDIDATES
+
+        found: list[Path] = []
+        for rel in DEFAULT_LIBRARY_CANDIDATES:
+            candidate = home / rel
+            if candidate.is_file():
+                found.append(candidate)
+        if not found:
+            return None
+        # Prefer the sandboxed container path when both exist.
+        return found[0]
     return None
 
 
@@ -1057,6 +1089,11 @@ _WHERE: dict[str, str] = {
     "rekordbox-xml": "a rekordbox XML export (from rekordbox, Lexicon, Engine DJ or VirtualDJ); required",
     "djay": "djay's MediaLibrary.db (default ~/Music/djay/djay Media Library.djayMediaLibrary/MediaLibrary.db)",
     "virtualdj": "the VirtualDJ folder holding database.xml and MyLists (default ~/Documents/VirtualDJ)",
+    "mixxx": (
+        "Mixxx's mixxxdb.sqlite (default: sandboxed "
+        "~/Library/Containers/org.mixxx.mixxx/... path, then "
+        "~/Library/Application Support/Mixxx/)"
+    ),
     "traktor-history": "the Traktor folder holding History/ (default: the newest Traktor folder in ~/Documents/Native Instruments)",
     "serato-history": "the _Serato_ folder holding History/Sessions (default ~/Music/_Serato_)",
 }

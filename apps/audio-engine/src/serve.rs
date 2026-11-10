@@ -33,8 +33,11 @@ use std::time::{Duration, Instant};
 use serde_json::Value;
 
 use crate::deck::Track;
+use crate::engine::{
+    DeckId, Engine, EngineCmd, ErrorCode, EventSource, MailboxItem, Rejected, Retired, Snapshot,
+    MAX_BLOCK, MAX_DECKS,
+};
 use crate::midi::{self, MapSet, Routed, Router};
-use crate::engine::{DeckId, Engine, EngineCmd, ErrorCode, Rejected, Retired, Snapshot, MAX_BLOCK, MAX_DECKS};
 use crate::offline::TrackCache;
 use crate::protocol::{self, Advance, Command, HostTime, LoadSpec, ProtoError, RegridSpec};
 
@@ -105,7 +108,8 @@ const UNSTATED_TAIL_S: usize = 600;
 /// entry a beat).
 fn load_bytes(spec: &LoadSpec) -> usize {
     use crate::deck::Beat;
-    spec.path.len() + spec.beats.len() * (2 * std::mem::size_of::<Beat>() + std::mem::size_of::<usize>())
+    spec.path.len()
+        + spec.beats.len() * (2 * std::mem::size_of::<Beat>() + std::mem::size_of::<usize>())
 }
 
 /// A load's share of `LOAD_BYTES`, given back when it is dropped: with the
@@ -132,7 +136,10 @@ struct Meter {
 
 impl Meter {
     fn new(used: Arc<AtomicUsize>) -> Meter {
-        Meter { charged: AtomicUsize::new(0), used }
+        Meter {
+            charged: AtomicUsize::new(0),
+            used,
+        }
     }
 
     /// Hold at least `bytes`.
@@ -146,7 +153,8 @@ impl Meter {
 
 impl Drop for Meter {
     fn drop(&mut self) {
-        self.used.fetch_sub(*self.charged.get_mut(), Ordering::AcqRel);
+        self.used
+            .fetch_sub(*self.charged.get_mut(), Ordering::AcqRel);
     }
 }
 
@@ -175,7 +183,10 @@ type Origin = (ClientId, Option<Value>);
 /// Take `seq`'s origin, giving back what it held. A seq with none answers on
 /// stdio without an id, as before there were socket clients.
 fn take_origin(ids: &Mutex<HashMap<u64, Pending>>, seq: u64) -> Origin {
-    ids.lock().unwrap().remove(&seq).map_or((STDIO, None), |p| (p.client, p.id))
+    ids.lock()
+        .unwrap()
+        .remove(&seq)
+        .map_or((STDIO, None), |p| (p.client, p.id))
 }
 
 /// One line from stdin, read within `MAX_LINE_BYTES`.
@@ -221,13 +232,19 @@ fn read_line(input: &mut impl BufRead, buf: &mut Vec<u8>) -> io::Result<ReadLine
         Ok(l) => ReadLine::Line(l),
         Err(e) => ReadLine::Skipped(ProtoError::new(
             ErrorCode::Invalid,
-            format!("a line that is not UTF-8 was skipped (invalid byte at {})", e.utf8_error().valid_up_to()),
+            format!(
+                "a line that is not UTF-8 was skipped (invalid byte at {})",
+                e.utf8_error().valid_up_to()
+            ),
         )),
     })
 }
 
 fn too_long() -> ProtoError {
-    ProtoError::new(ErrorCode::Invalid, format!("a line longer than {MAX_LINE_BYTES} bytes was skipped"))
+    ProtoError::new(
+        ErrorCode::Invalid,
+        format!("a line longer than {MAX_LINE_BYTES} bytes was skipped"),
+    )
 }
 
 /// Lines the reader has handed over and the control side not yet handled.
@@ -318,7 +335,11 @@ impl Hub {
     pub fn new(stdio: Box<dyn Write + Send>) -> Hub {
         let mut clients = HashMap::new();
         clients.insert(STDIO, Sink::Stdio(stdio));
-        Hub { clients: Mutex::new(clients), next: AtomicU32::new(STDIO + 1), closed: Arc::default() }
+        Hub {
+            clients: Mutex::new(clients),
+            next: AtomicU32::new(STDIO + 1),
+            closed: Arc::default(),
+        }
     }
 
     /// Set once a stdio write has failed. The control loop reads it before
@@ -434,11 +455,23 @@ pub fn serve_fake(
         let res: Result<(), ProtoError> = parsed.and_then(|cmd| match cmd {
             Command::Load(spec) => {
                 let track = load(&spec)?;
-                engine.apply(EngineCmd::Load { deck: spec.deck, track }).map(drop).map_err(Into::into)
+                engine
+                    .apply(EngineCmd::Load {
+                        deck: spec.deck,
+                        track,
+                    })
+                    .map(drop)
+                    .map_err(Into::into)
             }
             Command::Regrid(spec) => {
                 let track = engine.regridded(spec.deck, spec.beats, spec.bpm)?;
-                engine.apply(EngineCmd::Regrid { deck: spec.deck, track }).map(drop).map_err(Into::into)
+                engine
+                    .apply(EngineCmd::Regrid {
+                        deck: spec.deck,
+                        track,
+                    })
+                    .map(drop)
+                    .map_err(Into::into)
             }
             Command::Apply(c) => engine.apply(c).map(drop).map_err(Into::into),
             Command::Advance(a) => {
@@ -469,8 +502,14 @@ pub fn serve_fake(
                 for r in routed.drain(..) {
                     match r {
                         Routed::Engine(cmd) => {
-                            let res = engine.apply(cmd).map(drop).map_err(ProtoError::from);
-                            midi_lines.push(protocol::result_json(Some(&Value::String(midi_seq.next())), &res));
+                            let res = engine
+                                .apply_with_source(cmd, EventSource::Controller)
+                                .map(drop)
+                                .map_err(ProtoError::from);
+                            midi_lines.push(protocol::result_json(
+                                Some(&Value::String(midi_seq.next())),
+                                &res,
+                            ));
                         }
                         other => midi_lines.extend(page_line(&port, &other)),
                     }
@@ -488,7 +527,10 @@ pub fn serve_fake(
             send(&mut out, &protocol::result_json(id.as_ref(), &res))?;
         }
         if then_state {
-            send(&mut out, &protocol::state_json(&engine.snapshot(), None, state_seq))?;
+            send(
+                &mut out,
+                &protocol::state_json(&engine.snapshot(), None, state_seq),
+            )?;
         }
         if stop {
             break;
@@ -559,13 +601,19 @@ pub struct MidiSink(mpsc::Sender<Msg>);
 impl MidiSink {
     /// Hand over bytes that arrived on `port`. False once serve has stopped.
     pub fn send(&self, port: &str, bytes: &[u8]) -> bool {
-        self.0.send(Msg::Midi { port: port.to_string(), bytes: bytes.to_vec() }).is_ok()
+        self.0
+            .send(Msg::Midi {
+                port: port.to_string(),
+                bytes: bytes.to_vec(),
+            })
+            .is_ok()
     }
 }
 
 /// Opens the engine's MIDI input ports. Returns what must be kept alive for
 /// them to stay open, and the `midi_ports` line announcing which it claimed.
-pub type MidiOpener = Box<dyn FnOnce(&MapSet, MidiSink) -> Result<(Box<dyn std::any::Any>, Value), String> + Send>;
+pub type MidiOpener =
+    Box<dyn FnOnce(&MapSet, MidiSink) -> Result<(Box<dyn std::any::Any>, Value), String> + Send>;
 
 /// How a threaded serve takes MIDI: the maps it routes with, and, with
 /// `--midi`, the opener for real ports.
@@ -577,7 +625,10 @@ pub struct MidiSetup {
 impl MidiSetup {
     /// The built-in maps and no ports: `midi_inject` works, nothing is opened.
     pub fn inject_only() -> MidiSetup {
-        MidiSetup { router: Router::new(MapSet::builtin().expect("the embedded maps load")), open: None }
+        MidiSetup {
+            router: Router::new(MapSet::builtin().expect("the embedded maps load")),
+            open: None,
+        }
     }
 }
 
@@ -591,7 +642,7 @@ type StateMsg = (Snapshot, u64, u64);
 /// touches in `process` is preallocated.
 pub struct AudioSide {
     engine: Engine,
-    cmd_rx: rtrb::Consumer<(u64, EngineCmd)>,
+    cmd_rx: rtrb::Consumer<MailboxItem>,
     res_tx: rtrb::Producer<AudioResult>,
     state_tx: rtrb::Producer<StateMsg>,
     state_req: Arc<AtomicBool>,
@@ -650,11 +701,16 @@ impl AudioSide {
         // result ring full, the rest wait in the command ring until the pump
         // drains it, so nothing is lost and nothing is freed here.
         while self.res_tx.slots() > 0 {
-            let Ok((seq, cmd)) = self.cmd_rx.pop() else { break };
+            let Ok((seq, cmd, source)) = self.cmd_rx.pop() else {
+                break;
+            };
             self.applied += 1;
-            let r = self.engine.apply(cmd);
+            let r = self.engine.apply_with_source(cmd, source);
             let pushed = self.res_tx.push((seq, r));
-            debug_assert!(pushed.is_ok(), "a slot was checked free and this is the only producer");
+            debug_assert!(
+                pushed.is_ok(),
+                "a slot was checked free and this is the only producer"
+            );
         }
         // Commands held back by a full result ring may have been sent before
         // the request: leave it for a block that has applied them. Commands
@@ -680,9 +736,13 @@ impl AudioSide {
         // due: a full ring drops it).
         let mut published_at_end = false;
         while done < n {
-            let to_boundary = self.frames_per_state.saturating_sub(self.frames_since_state).max(1);
+            let to_boundary = self
+                .frames_per_state
+                .saturating_sub(self.frames_since_state)
+                .max(1);
             let chunk = ((n - done) as u64).min(to_boundary) as usize;
-            self.engine.render(&mut self.scratch[done * 2..(done + chunk) * 2]);
+            self.engine
+                .render(&mut self.scratch[done * 2..(done + chunk) * 2]);
             done += chunk;
             self.frames_since_state += chunk as u64;
             published_at_end = false;
@@ -710,7 +770,10 @@ impl AudioSide {
     fn publish(&mut self, now_ns: u64, frames_in: usize) -> bool {
         self.frames_since_state = 0;
         let in_ns = frames_in as u64 * 1_000_000_000 / self.engine.sample_rate() as u64;
-        let queued = self.state_tx.push((self.engine.snapshot(), now_ns + in_ns, self.answered)).is_ok();
+        let queued = self
+            .state_tx
+            .push((self.engine.snapshot(), now_ns + in_ns, self.answered))
+            .is_ok();
         if queued {
             self.state_sent.store(self.answered, Ordering::Release);
         }
@@ -721,12 +784,23 @@ impl AudioSide {
 pub(crate) enum Msg {
     Line(ClientId, String),
     /// Bytes from the engine's own MIDI input.
-    Midi { port: String, bytes: Vec<u8> },
+    Midi {
+        port: String,
+        bytes: Vec<u8>,
+    },
     /// A line the reader skipped (too long, or not UTF-8), with its refusal.
     Skipped(ProtoError),
-    Decoded { seq: u64, deck: DeckId, result: Result<Arc<Track>, ProtoError> },
+    Decoded {
+        seq: u64,
+        deck: DeckId,
+        result: Result<Arc<Track>, ProtoError>,
+    },
     /// The head of a load whose decode is still running (`HEAD_MS`).
-    Head { seq: u64, deck: DeckId, track: Arc<Track> },
+    Head {
+        seq: u64,
+        deck: DeckId,
+        track: Arc<Track>,
+    },
     Eof,
     /// Reading stdin failed: the session ends as at EOF, and then fails.
     InputFailed(io::Error),
@@ -762,7 +836,9 @@ enum Queued {
 /// The control half: owns the command ring's producer, the per-deck load
 /// queues and the id bookkeeping. Runs on the main thread.
 struct Control {
-    cmd_tx: rtrb::Producer<(u64, EngineCmd)>,
+    cmd_tx: rtrb::Producer<MailboxItem>,
+    /// The next mailbox push comes from hardware MIDI (`source=controller`).
+    midi_tag_next_push: bool,
     ids: Ids,
     hub: Arc<Hub>,
     msg_tx: mpsc::Sender<Msg>,
@@ -831,6 +907,7 @@ impl Control {
         for r in routed.drain(..) {
             match r {
                 Routed::Engine(cmd) => {
+                    self.midi_tag_next_push = true;
                     let id = self.midi_seq.next();
                     self.dispatch((STDIO, Some(Value::String(id))), cmd);
                 }
@@ -872,7 +949,15 @@ impl Control {
     fn seq(&mut self, (client, id): Origin) -> u64 {
         let seq = self.next_seq;
         self.next_seq += 1;
-        self.ids.lock().unwrap().insert(seq, Pending { client, id, hold: None, pcm: None });
+        self.ids.lock().unwrap().insert(
+            seq,
+            Pending {
+                client,
+                id,
+                hold: None,
+                pcm: None,
+            },
+        );
         seq
     }
 
@@ -880,15 +965,27 @@ impl Control {
     /// mailbox is full and the command was dropped.
     fn push_seq(&mut self, seq: u64, cmd: EngineCmd) -> bool {
         let holds = match &cmd {
-            EngineCmd::Load { deck, track } | EngineCmd::Regrid { deck, track } | EngineCmd::Extend { deck, track } => {
-                Some((*deck, Some(track.clone())))
-            }
+            EngineCmd::Load { deck, track }
+            | EngineCmd::Regrid { deck, track }
+            | EngineCmd::Extend { deck, track } => Some((*deck, Some(track.clone()))),
             EngineCmd::Unload { deck } => Some((*deck, None)),
             _ => None,
         };
-        if self.cmd_tx.push((seq, cmd)).is_err() {
+        let source = if self.midi_tag_next_push {
+            self.midi_tag_next_push = false;
+            EventSource::Controller
+        } else {
+            EventSource::User
+        };
+        if self.cmd_tx.push((seq, cmd, source)).is_err() {
             let origin = take_origin(&self.ids, seq);
-            self.reply(&origin, Err(ProtoError::new(ErrorCode::Invalid, "engine mailbox is full; command dropped")));
+            self.reply(
+                &origin,
+                Err(ProtoError::new(
+                    ErrorCode::Invalid,
+                    "engine mailbox is full; command dropped",
+                )),
+            );
             return false;
         }
         if let Some((deck, t)) = holds {
@@ -901,12 +998,30 @@ impl Control {
     fn deck_of(cmd: &EngineCmd) -> Option<DeckId> {
         use EngineCmd::*;
         match cmd {
-            Load { deck, .. } | Regrid { deck, .. } | Extend { deck, .. } | Unload { deck } | Play { deck, .. } | PlayToggle { deck } | Cue { deck }
-            | Seek { deck, .. } | TempoFader { deck, .. } | Quantize { deck, .. } | QuantizeGrid { deck, .. }
-            | Loop { deck, .. } | BeatLoop { deck, .. } | BeatJump { deck, .. } | Tempo { deck, .. }
-            | PitchRange { deck, .. } | MasterTempo { deck, .. } | KeyNudge { deck, .. } | Trim { deck, .. } | AutoGain { deck, .. }
-            | Eq { deck, .. } | Filter { deck, .. }
-            | Fader { deck, .. } | Assign { deck, .. } => Some(*deck),
+            Load { deck, .. }
+            | Regrid { deck, .. }
+            | Extend { deck, .. }
+            | Unload { deck }
+            | Play { deck, .. }
+            | PlayToggle { deck }
+            | Cue { deck }
+            | Seek { deck, .. }
+            | TempoFader { deck, .. }
+            | Quantize { deck, .. }
+            | QuantizeGrid { deck, .. }
+            | Loop { deck, .. }
+            | BeatLoop { deck, .. }
+            | BeatJump { deck, .. }
+            | Tempo { deck, .. }
+            | PitchRange { deck, .. }
+            | MasterTempo { deck, .. }
+            | KeyNudge { deck, .. }
+            | Trim { deck, .. }
+            | AutoGain { deck, .. }
+            | Eq { deck, .. }
+            | Filter { deck, .. }
+            | Fader { deck, .. }
+            | Assign { deck, .. } => Some(*deck),
             Crossfader { .. } | MasterVolume { .. } | MasterMute { .. } => None,
         }
     }
@@ -914,7 +1029,9 @@ impl Control {
     /// Park `item` behind the deck's pending load, if it has one. Returns
     /// the item back when the deck has no load pending, so it runs now.
     fn park(&mut self, deck: DeckId, item: Queued) -> Option<Queued> {
-        let Some(q) = self.waiting[deck as usize - 1].as_mut() else { return Some(item) };
+        let Some(q) = self.waiting[deck as usize - 1].as_mut() else {
+            return Some(item);
+        };
         // A tail is never dropped for room: it ends a load already running,
         // so the queue may run past its bound by one for it.
         if q.len() < QUEUE_SLOTS || matches!(item, Queued::Tail(..)) {
@@ -968,7 +1085,13 @@ impl Control {
                 let seq = self.seq(id);
                 let _ = self.push_seq(seq, EngineCmd::Regrid { deck, track });
             }
-            None => self.reply(&id, Err(ProtoError::new(ErrorCode::NoTrack, "no track loaded on this deck"))),
+            None => self.reply(
+                &id,
+                Err(ProtoError::new(
+                    ErrorCode::NoTrack,
+                    "no track loaded on this deck",
+                )),
+            ),
         }
     }
 
@@ -990,7 +1113,10 @@ impl Control {
             return;
         }
         self.load_used.fetch_add(bytes, Ordering::AcqRel);
-        let charge = Charge { bytes, used: self.load_used.clone() };
+        let charge = Charge {
+            bytes,
+            used: self.load_used.clone(),
+        };
         if let Some(load) = self.park(deck, Queued::Load(id, spec, charge)) {
             self.release(deck, VecDeque::from([load]));
         }
@@ -1038,7 +1164,12 @@ impl Control {
                     |bytes| meter.at_least(bytes),
                 )
             }))
-            .unwrap_or_else(|_| Err(ProtoError::new(ErrorCode::Decode, format!("decoding {} failed unexpectedly (panic)", spec.path))));
+            .unwrap_or_else(|_| {
+                Err(ProtoError::new(
+                    ErrorCode::Decode,
+                    format!("decoding {} failed unexpectedly (panic)", spec.path),
+                ))
+            });
             // The control side holds the meter from here on, for as long as
             // the decoded samples wait to reach the deck.
             drop(meter);
@@ -1057,7 +1188,11 @@ impl Control {
         // The rest decodes into a buffer that grows to the whole track
         // before anything here sees it: charge it now, or rapid loads on
         // every deck grow whole-track buffers no budget stops.
-        let frames = if track.frames > track.available() { track.frames } else { track.sample_rate as usize * UNSTATED_TAIL_S };
+        let frames = if track.frames > track.available() {
+            track.frames
+        } else {
+            track.sample_rate as usize * UNSTATED_TAIL_S
+        };
         if let Some(meter) = self.meters.get(&seq) {
             meter.at_least(frames.saturating_mul(2 * std::mem::size_of::<f32>()));
         }
@@ -1079,12 +1214,15 @@ impl Control {
     }
 
     fn finish_load(&mut self, seq: u64, deck: DeckId, result: Result<Arc<Track>, ProtoError>) {
-        if self.tailing[deck as usize - 1] == Some(seq) && self.loading[deck as usize - 1] != Some(seq) {
+        if self.tailing[deck as usize - 1] == Some(seq)
+            && self.loading[deck as usize - 1] != Some(seq)
+        {
             // The rest of a load whose head is out.
             self.tailing[deck as usize - 1] = None;
             if let Some(Queued::Tail(seq, result)) = self.park(deck, Queued::Tail(seq, result)) {
                 if self.cmd_tx.slots() == 0 {
-                    self.waiting[deck as usize - 1] = Some(VecDeque::from([Queued::Tail(seq, result)]));
+                    self.waiting[deck as usize - 1] =
+                        Some(VecDeque::from([Queued::Tail(seq, result)]));
                 } else {
                     self.send_tail(deck, seq, result);
                 }
@@ -1112,7 +1250,10 @@ impl Control {
                 // on its deck and the one it replaced has been freed.
                 let bytes = track.pcm.capacity() * std::mem::size_of::<f32>();
                 self.pcm_used.fetch_add(bytes, Ordering::AcqRel);
-                let charge = Charge { bytes, used: self.pcm_used.clone() };
+                let charge = Charge {
+                    bytes,
+                    used: self.pcm_used.clone(),
+                };
                 if let Some(p) = self.ids.lock().unwrap().get_mut(&seq) {
                     p.pcm = Some(charge);
                 }
@@ -1147,22 +1288,39 @@ impl Control {
         // Sent or dropped, the rest is charged below as the deck's track.
         let _held = self.meters.remove(&seq);
         let path = self.load_paths.remove(&seq).unwrap_or_default();
-        let Some(head) = self.on_deck[deck as usize - 1].clone().filter(|t| t.decoding && t.load_id == seq) else {
+        let Some(head) = self.on_deck[deck as usize - 1]
+            .clone()
+            .filter(|t| t.decoding && t.load_id == seq)
+        else {
             return;
         };
         let internal = self.seq((NOBODY, None));
         match result {
             Ok(whole) => {
-                let mut track = Track::new(whole.sample_rate, whole.pcm.clone(), head.beats.clone(), head.bpm)
-                    .with_source(whole.source.clone());
+                let mut track = Track::new(
+                    whole.sample_rate,
+                    whole.pcm.clone(),
+                    head.beats.clone(),
+                    head.bpm,
+                )
+                .with_source(whole.source.clone());
                 track.load_id = seq;
                 track.end_frame = whole.end_frame;
                 let bytes = track.pcm.capacity() * std::mem::size_of::<f32>();
                 self.pcm_used.fetch_add(bytes, Ordering::AcqRel);
                 if let Some(p) = self.ids.lock().unwrap().get_mut(&internal) {
-                    p.pcm = Some(Charge { bytes, used: self.pcm_used.clone() });
+                    p.pcm = Some(Charge {
+                        bytes,
+                        used: self.pcm_used.clone(),
+                    });
                 }
-                let _ = self.push_seq(internal, EngineCmd::Extend { deck, track: Arc::new(track) });
+                let _ = self.push_seq(
+                    internal,
+                    EngineCmd::Extend {
+                        deck,
+                        track: Arc::new(track),
+                    },
+                );
             }
             Err(e) => {
                 let _ = self.push_seq(internal, EngineCmd::Unload { deck });
@@ -1179,13 +1337,17 @@ impl Control {
     fn release(&mut self, deck: DeckId, mut q: VecDeque<Queued>) {
         while let Some(item) = q.pop_front() {
             match item {
-                Queued::Ready(..) | Queued::Cmd(..) | Queued::Regrid(..) | Queued::Tail(..) if self.cmd_tx.slots() == 0 => {
+                Queued::Ready(..) | Queued::Cmd(..) | Queued::Regrid(..) | Queued::Tail(..)
+                    if self.cmd_tx.slots() == 0 =>
+                {
                     q.push_front(item);
                     break;
                 }
                 // Decoded audio waits on the output: the load starts once
                 // results flow and give it room.
-                Queued::Load(..) if self.pcm_full() || self.decodes[deck as usize - 1] >= DECODES_PER_DECK => {
+                Queued::Load(..)
+                    if self.pcm_full() || self.decodes[deck as usize - 1] >= DECODES_PER_DECK =>
+                {
                     q.push_front(item);
                     break;
                 }
@@ -1216,7 +1378,9 @@ impl Control {
         (0..MAX_DECKS).any(|d| {
             self.loading[d].is_none()
                 && self.waiting[d].as_ref().is_some_and(|q| {
-                    !(matches!(q.front(), Some(Queued::Load(..))) && self.decodes[d] >= DECODES_PER_DECK && !self.pcm_full())
+                    !(matches!(q.front(), Some(Queued::Load(..)))
+                        && self.decodes[d] >= DECODES_PER_DECK
+                        && !self.pcm_full())
                 })
         })
     }
@@ -1244,7 +1408,10 @@ impl Control {
                 let origin = take_origin(&self.ids, seq);
                 self.reply(
                     &origin,
-                    Err(ProtoError::new(ErrorCode::Invalid, "the engine shut down before this load finished")),
+                    Err(ProtoError::new(
+                        ErrorCode::Invalid,
+                        "the engine shut down before this load finished",
+                    )),
                 );
             }
             if let Some(q) = self.waiting[d].take() {
@@ -1256,7 +1423,9 @@ impl Control {
     /// One deck's work ahead of state request `f` has gone to the audio
     /// side (or failed); once every deck's has, the request is made.
     fn fence_passed(&mut self, f: u64) {
-        let Some(left) = self.fences.get_mut(&f) else { return };
+        let Some(left) = self.fences.get_mut(&f) else {
+            return;
+        };
         *left -= 1;
         if *left == 0 {
             self.fences.remove(&f);
@@ -1291,7 +1460,13 @@ impl Control {
                 // Only shutdown refuses a decoded load: it never ran.
                 Queued::Ready(seq, _) => {
                     let origin = take_origin(&self.ids, seq);
-                    self.reply(&origin, Err(ProtoError::new(ErrorCode::Invalid, "the engine stopped before this command ran")));
+                    self.reply(
+                        &origin,
+                        Err(ProtoError::new(
+                            ErrorCode::Invalid,
+                            "the engine stopped before this command ran",
+                        )),
+                    );
                     continue;
                 }
                 // The work ahead of it is done with, failed or not: the state
@@ -1306,7 +1481,10 @@ impl Control {
             };
             self.reply(
                 &id,
-                Err(ProtoError::new(ErrorCode::Invalid, "the load this command waited on failed; command dropped")),
+                Err(ProtoError::new(
+                    ErrorCode::Invalid,
+                    "the load this command waited on failed; command dropped",
+                )),
             );
         }
     }
@@ -1317,7 +1495,13 @@ impl Control {
             return;
         }
         let (id, _) = protocol::parse_line(line);
-        self.reply(&(client, id), Err(ProtoError::new(ErrorCode::Invalid, "the engine is shutting down")));
+        self.reply(
+            &(client, id),
+            Err(ProtoError::new(
+                ErrorCode::Invalid,
+                "the engine is shutting down",
+            )),
+        );
     }
 
     #[cfg(test)]
@@ -1412,7 +1596,15 @@ pub fn serve_threaded(
     run_audio: impl FnOnce(AudioSide, Arc<AtomicBool>) + Send + 'static,
     ws: Option<WsListen>,
 ) -> io::Result<()> {
-    serve_threaded_with(io::BufReader::new(io::stdin()), io::stdout(), sample_rate, clock, midi, run_audio, ws)
+    serve_threaded_with(
+        io::BufReader::new(io::stdin()),
+        io::stdout(),
+        sample_rate,
+        clock,
+        midi,
+        run_audio,
+        ws,
+    )
 }
 
 #[cfg(test)]
@@ -1456,7 +1648,8 @@ fn serve_threaded_with(
     let (_midi_ports, ports_line) = match midi.open {
         None => (None, None),
         Some(open) => {
-            let (keep, line) = open(midi.router.maps(), MidiSink(msg_tx.clone())).map_err(io::Error::other)?;
+            let (keep, line) =
+                open(midi.router.maps(), MidiSink(msg_tx.clone())).map_err(io::Error::other)?;
             (Some(keep), Some(line))
         }
     };
@@ -1508,10 +1701,12 @@ fn serve_threaded_with(
     };
     let audio_stop = stop.clone();
     let exit_tx = msg_tx.clone();
-    let audio_thread = std::thread::Builder::new().name("odj-audio".into()).spawn(move || {
-        run_audio(audio, audio_stop);
-        let _ = exit_tx.send(Msg::AudioExited);
-    })?;
+    let audio_thread = std::thread::Builder::new()
+        .name("odj-audio".into())
+        .spawn(move || {
+            run_audio(audio, audio_stop);
+            let _ = exit_tx.send(Msg::AudioExited);
+        })?;
 
     // Pump: results to their sender, snapshots to everyone; retired tracks
     // freed here. The pump stops only after the audio side has, so a result
@@ -1549,7 +1744,10 @@ fn serve_threaded_with(
             }
             while let Ok((snap, heard_ns, state_seq)) = state_rx.pop() {
                 idle = false;
-                let host = HostTime { heard_ns, sent_ns: epoch.elapsed().as_nanos() as u64 };
+                let host = HostTime {
+                    heard_ns,
+                    sent_ns: epoch.elapsed().as_nanos() as u64,
+                };
                 write(None, &protocol::state_json(&snap, Some(host), state_seq));
             }
             if pump_stop_flag.load(Ordering::Relaxed) && idle {
@@ -1591,6 +1789,7 @@ fn serve_threaded_with(
 
     let mut control = Control {
         cmd_tx,
+        midi_tag_next_push: false,
         ids,
         hub,
         msg_tx,
@@ -1704,7 +1903,11 @@ fn serve_threaded_with(
                 break;
             }
             let wait = deadline.saturating_duration_since(Instant::now());
-            match msg_rx.recv_timeout(if control.staged() { wait.min(Duration::from_millis(1)) } else { wait }) {
+            match msg_rx.recv_timeout(if control.staged() {
+                wait.min(Duration::from_millis(1))
+            } else {
+                wait
+            }) {
                 Ok(Msg::Decoded { seq, deck, result }) => control.decoded(seq, deck, result),
                 Ok(Msg::Head { seq, deck, track }) => control.head_loaded(seq, deck, track),
                 Ok(Msg::AudioExited) => {
@@ -1718,7 +1921,13 @@ fn serve_threaded_with(
                 // Nothing sent after shutdown or EOF is taken, but a socket
                 // client still gets a result for it.
                 Ok(Msg::Line(client, l)) if client != STDIO => control.refuse_line(client, &l),
-                Ok(Msg::Line(..) | Msg::Midi { .. } | Msg::Skipped(_) | Msg::Eof | Msg::InputFailed(_)) => {}
+                Ok(
+                    Msg::Line(..)
+                    | Msg::Midi { .. }
+                    | Msg::Skipped(_)
+                    | Msg::Eof
+                    | Msg::InputFailed(_),
+                ) => {}
                 Err(mpsc::RecvTimeoutError::Timeout) => {}
                 Err(mpsc::RecvTimeoutError::Disconnected) => break,
             }
@@ -1744,24 +1953,41 @@ fn serve_threaded_with(
     let _ = pump.join();
     // Anything still without a result never ran: its audio side died with
     // it in the mailbox, or the drain gave up. Refuse each one by its id.
-    let unanswered: Vec<Origin> = control.ids.lock().unwrap().drain().map(|(_, p)| (p.client, p.id)).collect();
+    let unanswered: Vec<Origin> = control
+        .ids
+        .lock()
+        .unwrap()
+        .drain()
+        .map(|(_, p)| (p.client, p.id))
+        .collect();
     for origin in unanswered {
         control.reply(
             &origin,
-            Err(ProtoError::new(ErrorCode::Invalid, "the engine stopped before this command ran")),
+            Err(ProtoError::new(
+                ErrorCode::Invalid,
+                "the engine stopped before this command ran",
+            )),
         );
     }
     if audio_failed {
-        return Err(io::Error::other("the audio side stopped before shutdown (see stderr)"));
+        return Err(io::Error::other(
+            "the audio side stopped before shutdown (see stderr)",
+        ));
     }
     // A write that failed while the engine stopped (the reply to
     // `engine_shutdown`, the pump's last states and results, or the refusals
     // just above) is a lost result too.
     if output_closed || control.closed.load(Ordering::Acquire) {
-        return Err(io::Error::new(io::ErrorKind::BrokenPipe, "the output closed, so the engine stopped"));
+        return Err(io::Error::new(
+            io::ErrorKind::BrokenPipe,
+            "the output closed, so the engine stopped",
+        ));
     }
     if let Some(e) = input_failed {
-        return Err(io::Error::new(e.kind(), format!("reading stdin failed, so the engine stopped: {e}")));
+        return Err(io::Error::new(
+            e.kind(),
+            format!("reading stdin failed, so the engine stopped: {e}"),
+        ));
     }
     Ok(())
 }
@@ -1788,13 +2014,23 @@ pub fn run_wall(block_frames: usize) -> impl FnOnce(AudioSide, Arc<AtomicBool>) 
 mod tests {
     use super::*;
 
-    fn side(res_slots: usize) -> (AudioSide, rtrb::Producer<(u64, EngineCmd)>, rtrb::Consumer<AudioResult>) {
+    fn side(
+        res_slots: usize,
+    ) -> (
+        AudioSide,
+        rtrb::Producer<MailboxItem>,
+        rtrb::Consumer<AudioResult>,
+    ) {
         let (side, cmd_tx, res_rx, _state_rx) = side_at(48000, u64::MAX, res_slots);
         (side, cmd_tx, res_rx)
     }
 
-    type SideParts =
-        (AudioSide, rtrb::Producer<(u64, EngineCmd)>, rtrb::Consumer<AudioResult>, rtrb::Consumer<StateMsg>);
+    type SideParts = (
+        AudioSide,
+        rtrb::Producer<MailboxItem>,
+        rtrb::Consumer<AudioResult>,
+        rtrb::Consumer<StateMsg>,
+    );
 
     fn side_at(sample_rate: u32, frames_per_state: u64, res_slots: usize) -> SideParts {
         let (cmd_tx, cmd_rx) = rtrb::RingBuffer::new(16);
@@ -1838,9 +2074,15 @@ mod tests {
         // Within one block, each state is heard one interval after the last.
         side.process(1024);
         let first = drain(&mut states);
-        assert_eq!(first.iter().map(|s| s.0).collect::<Vec<_>>(), vec![per, 2 * per, 3 * per]);
+        assert_eq!(
+            first.iter().map(|s| s.0).collect::<Vec<_>>(),
+            vec![per, 2 * per, 3 * per]
+        );
         let step = per * 1_000_000_000 / 8000;
-        assert!(first.windows(2).all(|w| w[1].1 - w[0].1 == step), "{first:?}");
+        assert!(
+            first.windows(2).all(|w| w[1].1 - w[0].1 == step),
+            "{first:?}"
+        );
         for _ in 1..10 {
             side.process(1024);
         }
@@ -1866,7 +2108,10 @@ mod tests {
         let (mut side, _cmd, _res, mut states) = side_at(8000, u64::MAX, 4);
         side.state_req.store(true, Ordering::Relaxed);
         side.process(100);
-        assert_eq!(drain(&mut states).iter().map(|s| s.0).collect::<Vec<_>>(), vec![100]);
+        assert_eq!(
+            drain(&mut states).iter().map(|s| s.0).collect::<Vec<_>>(),
+            vec![100]
+        );
         side.process(100);
         assert!(drain(&mut states).is_empty(), "the request was consumed");
     }
@@ -1880,24 +2125,39 @@ mod tests {
         while side.state_tx.push((side.engine.snapshot(), 0, 0)).is_ok() {}
         side.state_req.store(true, Ordering::Relaxed);
         side.process(100);
-        assert!(side.state_req.load(Ordering::Relaxed), "the request was cleared with its state dropped");
+        assert!(
+            side.state_req.load(Ordering::Relaxed),
+            "the request was cleared with its state dropped"
+        );
         assert_eq!(drain(&mut states).len(), 64);
         // The ring drained, the next block sends it, and then it is spent.
         side.process(100);
-        assert_eq!(drain(&mut states).iter().map(|s| s.0).collect::<Vec<_>>(), vec![200]);
+        assert_eq!(
+            drain(&mut states).iter().map(|s| s.0).collect::<Vec<_>>(),
+            vec![200]
+        );
         assert!(!side.state_req.load(Ordering::Relaxed));
         side.process(100);
-        assert!(drain(&mut states).is_empty(), "the request outlived its state");
+        assert!(
+            drain(&mut states).is_empty(),
+            "the request outlived its state"
+        );
         // Likewise when the block's own periodic state is the one dropped.
         let per = 100;
         let (mut side, _cmd, _res, mut states) = side_at(8000, per, 4);
         while side.state_tx.push((side.engine.snapshot(), 0, 0)).is_ok() {}
         side.state_req.store(true, Ordering::Relaxed);
         side.process(100);
-        assert!(side.state_req.load(Ordering::Relaxed), "a dropped periodic state satisfied the request");
+        assert!(
+            side.state_req.load(Ordering::Relaxed),
+            "a dropped periodic state satisfied the request"
+        );
         drain(&mut states);
         side.process(50);
-        assert_eq!(drain(&mut states).iter().map(|s| s.0).collect::<Vec<_>>(), vec![150]);
+        assert_eq!(
+            drain(&mut states).iter().map(|s| s.0).collect::<Vec<_>>(),
+            vec![150]
+        );
     }
 
     #[test]
@@ -1909,20 +2169,35 @@ mod tests {
         side.mid_block = Some(|r, _| r.store(true, Ordering::Release));
         side.process(100);
         side.mid_block = None;
-        assert_eq!(drain(&mut states).iter().map(|s| s.0).collect::<Vec<_>>(), vec![100], "the periodic state");
-        assert!(side.state_req.load(Ordering::Relaxed), "a state from before the request answered it");
+        assert_eq!(
+            drain(&mut states).iter().map(|s| s.0).collect::<Vec<_>>(),
+            vec![100],
+            "the periodic state"
+        );
+        assert!(
+            side.state_req.load(Ordering::Relaxed),
+            "a state from before the request answered it"
+        );
         side.process(50);
-        assert_eq!(drain(&mut states).iter().map(|s| s.0).collect::<Vec<_>>(), vec![150]);
+        assert_eq!(
+            drain(&mut states).iter().map(|s| s.0).collect::<Vec<_>>(),
+            vec![150]
+        );
         // Control: a request there before the block is answered by the
         // block's periodic state, not by a second one.
         side.state_req.store(true, Ordering::Release);
         side.process(100);
-        assert_eq!(drain(&mut states).iter().map(|s| s.0).collect::<Vec<_>>(), vec![250]);
+        assert_eq!(
+            drain(&mut states).iter().map(|s| s.0).collect::<Vec<_>>(),
+            vec![250]
+        );
         assert!(!side.state_req.load(Ordering::Relaxed));
     }
 
     fn states(rx: &mut rtrb::Consumer<StateMsg>) -> Vec<(u64, bool, u64)> {
-        std::iter::from_fn(|| rx.pop().ok()).map(|(s, _, n)| (s.frame, s.master_muted, n)).collect()
+        std::iter::from_fn(|| rx.pop().ok())
+            .map(|(s, _, n)| (s.frame, s.master_muted, n))
+            .collect()
     }
 
     #[test]
@@ -1934,13 +2209,23 @@ mod tests {
         // u64::MAX, which hid them.
         let (mut side, mut cmd_tx, mut res_rx, mut rx) = side_at(8000, 50, 1);
         for muted in [false, true] {
-            cmd_tx.push((muted as u64, EngineCmd::MasterMute { muted })).unwrap();
+            cmd_tx
+                .push((
+                    muted as u64,
+                    EngineCmd::MasterMute { muted },
+                    EventSource::User,
+                ))
+                .unwrap();
         }
         side.state_fence.store(2, Ordering::Release);
         side.state_asked.store(1, Ordering::Release);
         side.state_req.store(true, Ordering::Release);
         side.process(100);
-        assert_eq!(states(&mut rx), vec![(50, false, 0), (100, false, 0)], "a state before the mute carries its number");
+        assert_eq!(
+            states(&mut rx),
+            vec![(50, false, 0), (100, false, 0)],
+            "a state before the mute carries its number"
+        );
         assert!(side.state_req.load(Ordering::Relaxed));
         assert!(res_rx.pop().unwrap().1.is_ok());
         // Control: the block that applies the mute answers it, and its
@@ -1956,17 +2241,28 @@ mod tests {
         // empty, so commands sent after it, kept coming, held it back for
         // good. It waits for the commands sent before it, and no more.
         let (mut side, mut cmd_tx, mut res_rx, mut rx) = side_at(8000, 50, 1);
-        cmd_tx.push((0, EngineCmd::MasterMute { muted: true })).unwrap();
+        cmd_tx
+            .push((0, EngineCmd::MasterMute { muted: true }, EventSource::User))
+            .unwrap();
         side.state_fence.store(1, Ordering::Release);
         side.state_asked.store(1, Ordering::Release);
         side.state_req.store(true, Ordering::Release);
         // Sent after the request, and held by the full result ring block
         // after block, as sustained traffic would keep the ring.
-        cmd_tx.push((1, EngineCmd::MasterMute { muted: false })).unwrap();
+        cmd_tx
+            .push((1, EngineCmd::MasterMute { muted: false }, EventSource::User))
+            .unwrap();
         side.process(100);
-        assert_eq!(states(&mut rx), vec![(50, true, 1), (100, true, 1)], "the mute, applied, was not answered");
+        assert_eq!(
+            states(&mut rx),
+            vec![(50, true, 1), (100, true, 1)],
+            "the mute, applied, was not answered"
+        );
         assert!(!side.state_req.load(Ordering::Relaxed));
-        assert!(!side.cmd_rx.is_empty(), "the later command was applied: the ring was not held");
+        assert!(
+            !side.cmd_rx.is_empty(),
+            "the later command was applied: the ring was not held"
+        );
         // Control: a request sent after that command waits for it.
         side.state_fence.store(2, Ordering::Release);
         side.state_asked.store(2, Ordering::Release);
@@ -1976,7 +2272,11 @@ mod tests {
         assert!(side.state_req.load(Ordering::Relaxed));
         assert!(res_rx.pop().unwrap().1.is_ok());
         side.process(50);
-        assert_eq!(states(&mut rx), vec![(250, false, 2)], "answered before the unmute ahead of it");
+        assert_eq!(
+            states(&mut rx),
+            vec![(250, false, 2)],
+            "answered before the unmute ahead of it"
+        );
     }
 
     #[test]
@@ -1998,10 +2298,20 @@ mod tests {
         }
         let (mut c, _cmd_rx, _out) = control();
         let seen = Arc::new(Mutex::new(Vec::new()));
-        c.hub = Arc::new(Hub::new(Box::new(SeesRequest(c.state_req.clone(), seen.clone()))));
+        c.hub = Arc::new(Hub::new(Box::new(SeesRequest(
+            c.state_req.clone(),
+            seen.clone(),
+        ))));
         c.closed = c.hub.closed();
-        assert!(c.handle_line(&serde_json::json!({"cmd": {"type": "engine_state"}}).to_string(), "wall"));
-        assert_eq!(*seen.lock().unwrap(), vec![false], "the request was visible before its ok was written");
+        assert!(c.handle_line(
+            &serde_json::json!({"cmd": {"type": "engine_state"}}).to_string(),
+            "wall"
+        ));
+        assert_eq!(
+            *seen.lock().unwrap(),
+            vec![false],
+            "the request was visible before its ok was written"
+        );
         // Control: it is made once the ok is out.
         assert!(c.state_req.load(Ordering::Acquire));
     }
@@ -2013,11 +2323,17 @@ mod tests {
         // state queue full, re-arm, and never run again.
         let (mut c, _cmd_rx, _out) = control();
         assert!(!c.draining(), "an idle engine is kept from stopping");
-        assert!(c.handle_line(&serde_json::json!({"cmd": {"type": "engine_state"}}).to_string(), "wall"));
+        assert!(c.handle_line(
+            &serde_json::json!({"cmd": {"type": "engine_state"}}).to_string(),
+            "wall"
+        ));
         assert!(c.draining());
         // A block takes it: the flag clears, the state is not queued yet.
         c.state_req.store(false, Ordering::Release);
-        assert!(c.draining(), "the drain ended with the request taken but its state not queued");
+        assert!(
+            c.draining(),
+            "the drain ended with the request taken but its state not queued"
+        );
         // Control: once a state carrying its number is queued, it may stop.
         c.state_sent.store(1, Ordering::Release);
         assert!(!c.draining());
@@ -2027,7 +2343,11 @@ mod tests {
         side.state_asked.store(1, Ordering::Release);
         side.state_req.store(true, Ordering::Release);
         side.process(100);
-        assert_eq!(side.state_sent.load(Ordering::Acquire), 0, "a state that did not fit was counted sent");
+        assert_eq!(
+            side.state_sent.load(Ordering::Acquire),
+            0,
+            "a state that did not fit was counted sent"
+        );
         drain(&mut rx);
         side.process(100);
         assert_eq!(side.state_sent.load(Ordering::Acquire), 1);
@@ -2060,17 +2380,29 @@ mod tests {
         // before the request, so the state waits for the block that applies it.
         let (mut side, mut cmd_tx, mut res_rx, mut states) = side_at(8000, u64::MAX, 1);
         for muted in [false, true] {
-            cmd_tx.push((muted as u64, EngineCmd::MasterMute { muted })).unwrap();
+            cmd_tx
+                .push((
+                    muted as u64,
+                    EngineCmd::MasterMute { muted },
+                    EventSource::User,
+                ))
+                .unwrap();
         }
         side.state_fence.store(2, Ordering::Release);
         side.state_req.store(true, Ordering::Release);
         side.process(64);
-        assert!(drain(&mut states).is_empty(), "a state went out with a command before it still waiting");
+        assert!(
+            drain(&mut states).is_empty(),
+            "a state went out with a command before it still waiting"
+        );
         assert!(res_rx.pop().unwrap().1.is_ok());
         side.process(64);
         let got: Vec<_> = std::iter::from_fn(|| states.pop().ok()).collect();
         assert_eq!(got.len(), 1);
-        assert!(got[0].0.master_muted, "the state is from before the second command");
+        assert!(
+            got[0].0.master_muted,
+            "the state is from before the second command"
+        );
         assert_eq!(got[0].0.frame, 128);
     }
 
@@ -2082,12 +2414,17 @@ mod tests {
         // command sent before either, which is all either asked for.
         let (mut side, mut cmd_tx, _res_rx, mut states) = side_at(8000, u64::MAX, 16);
         side.state_req.store(true, Ordering::Release);
-        cmd_tx.push((0, EngineCmd::MasterMute { muted: true })).unwrap();
+        cmd_tx
+            .push((0, EngineCmd::MasterMute { muted: true }, EventSource::User))
+            .unwrap();
         side.state_req.store(true, Ordering::Release);
         side.process(64);
         let got: Vec<_> = std::iter::from_fn(|| states.pop().ok()).collect();
         assert_eq!(got.len(), 1);
-        assert!(got[0].0.master_muted, "the state predates a command sent before the second request");
+        assert!(
+            got[0].0.master_muted,
+            "the state predates a command sent before the second request"
+        );
         // Control: a request after that block gets a state of its own, and a
         // block with none asked publishes none.
         side.state_req.store(true, Ordering::Release);
@@ -2099,7 +2436,7 @@ mod tests {
 
     /// A control side with its own mailbox, reading nothing from the load
     /// threads it starts, so a test settles each load itself.
-    fn control() -> (Control, rtrb::Consumer<(u64, EngineCmd)>, Captured) {
+    fn control() -> (Control, rtrb::Consumer<MailboxItem>, Captured) {
         let (cmd_tx, cmd_rx) = rtrb::RingBuffer::new(CMD_SLOTS);
         let out = Captured::default();
         let (msg_tx, msg_rx) = mpsc::channel();
@@ -2107,6 +2444,7 @@ mod tests {
         let hub = Arc::new(Hub::new(Box::new(out.clone())));
         let control = Control {
             cmd_tx,
+            midi_tag_next_push: false,
             ids: Arc::default(),
             closed: hub.closed(),
             hub,
@@ -2143,7 +2481,10 @@ mod tests {
     fn decode_threads_done(c: &Control) {
         let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
         while c.meters.values().any(|m| Arc::strong_count(m) > 1) {
-            assert!(std::time::Instant::now() < deadline, "a decode thread kept its meter");
+            assert!(
+                std::time::Instant::now() < deadline,
+                "a decode thread kept its meter"
+            );
             std::thread::yield_now();
         }
     }
@@ -2159,31 +2500,82 @@ mod tests {
         // mailbox, so the state went out before either had happened.
         let (mut c, mut cmd_rx, _out) = control();
         let line = |c: &mut Control, v: Value| assert!(c.handle_line(&v.to_string(), "wall"));
-        line(&mut c, serde_json::json!({"cmd": {"type": "load", "deck": 1, "path": "nope-1.wav"}}));
-        line(&mut c, serde_json::json!({"cmd": {"type": "play", "deck": 1, "playing": true}}));
+        line(
+            &mut c,
+            serde_json::json!({"cmd": {"type": "load", "deck": 1, "path": "nope-1.wav"}}),
+        );
+        line(
+            &mut c,
+            serde_json::json!({"cmd": {"type": "play", "deck": 1, "playing": true}}),
+        );
         line(&mut c, serde_json::json!({"cmd": {"type": "engine_state"}}));
-        assert!(!c.state_req.load(Ordering::Acquire), "the state was asked for ahead of the parked play");
-        assert_eq!(c.state_asked.load(Ordering::Acquire), 0, "numbered ahead of the parked play");
+        assert!(
+            !c.state_req.load(Ordering::Acquire),
+            "the state was asked for ahead of the parked play"
+        );
+        assert_eq!(
+            c.state_asked.load(Ordering::Acquire),
+            0,
+            "numbered ahead of the parked play"
+        );
         c.decoded(c.loading[0].unwrap(), 1, silent_track());
-        assert!(c.state_req.load(Ordering::Acquire), "the state was never asked for");
-        assert_eq!(c.state_asked.load(Ordering::Acquire), 1, "asked for without its number");
-        assert_eq!(c.state_fence.load(Ordering::Acquire), 2, "fenced on other than the load and the play before it");
-        let sent: Vec<_> = std::iter::from_fn(|| cmd_rx.pop().ok()).map(|(_, cmd)| cmd).collect();
-        assert!(matches!(sent[..], [EngineCmd::Load { .. }, EngineCmd::Play { .. }]), "{sent:?}");
+        assert!(
+            c.state_req.load(Ordering::Acquire),
+            "the state was never asked for"
+        );
+        assert_eq!(
+            c.state_asked.load(Ordering::Acquire),
+            1,
+            "asked for without its number"
+        );
+        assert_eq!(
+            c.state_fence.load(Ordering::Acquire),
+            2,
+            "fenced on other than the load and the play before it"
+        );
+        let sent: Vec<_> = std::iter::from_fn(|| cmd_rx.pop().ok())
+            .map(|(_, cmd, _)| cmd)
+            .collect();
+        assert!(
+            matches!(sent[..], [EngineCmd::Load { .. }, EngineCmd::Play { .. }]),
+            "{sent:?}"
+        );
         // A load that fails lets it through (the state after that is the
         // one asked for), and a second load queued behind the first holds
         // it again.
         c.state_req.store(false, Ordering::Relaxed);
-        line(&mut c, serde_json::json!({"cmd": {"type": "load", "deck": 2, "path": "nope-2.wav"}}));
-        line(&mut c, serde_json::json!({"cmd": {"type": "load", "deck": 2, "path": "nope-3.wav"}}));
-        line(&mut c, serde_json::json!({"cmd": {"type": "load", "deck": 3, "path": "nope-4.wav"}}));
+        line(
+            &mut c,
+            serde_json::json!({"cmd": {"type": "load", "deck": 2, "path": "nope-2.wav"}}),
+        );
+        line(
+            &mut c,
+            serde_json::json!({"cmd": {"type": "load", "deck": 2, "path": "nope-3.wav"}}),
+        );
+        line(
+            &mut c,
+            serde_json::json!({"cmd": {"type": "load", "deck": 3, "path": "nope-4.wav"}}),
+        );
         line(&mut c, serde_json::json!({"cmd": {"type": "engine_state"}}));
-        c.decoded(c.loading[2].unwrap(), 3, Err(ProtoError::new(ErrorCode::Decode, "bad")));
-        assert!(!c.state_req.load(Ordering::Acquire), "asked for with deck 2's loads still ahead of it");
+        c.decoded(
+            c.loading[2].unwrap(),
+            3,
+            Err(ProtoError::new(ErrorCode::Decode, "bad")),
+        );
+        assert!(
+            !c.state_req.load(Ordering::Acquire),
+            "asked for with deck 2's loads still ahead of it"
+        );
         c.decoded(c.loading[1].unwrap(), 2, silent_track());
-        assert!(!c.state_req.load(Ordering::Acquire), "asked for with deck 2's second load still ahead of it");
+        assert!(
+            !c.state_req.load(Ordering::Acquire),
+            "asked for with deck 2's second load still ahead of it"
+        );
         c.decoded(c.loading[1].unwrap(), 2, silent_track());
-        assert!(c.state_req.load(Ordering::Acquire), "the state was never asked for");
+        assert!(
+            c.state_req.load(Ordering::Acquire),
+            "the state was never asked for"
+        );
         assert_eq!(c.state_asked.load(Ordering::Acquire), 2);
         // Control: with nothing pending it is asked for at once.
         c.state_req.store(false, Ordering::Relaxed);
@@ -2209,20 +2601,33 @@ mod tests {
         // a slot and the last parked command was refused on release.
         let (mut c, mut cmd_rx, out) = control();
         let line = |c: &mut Control, v: Value| assert!(c.handle_line(&v.to_string(), "wall"));
-        line(&mut c, serde_json::json!({"cmd": {"type": "load", "deck": 1, "path": "nope.wav"}}));
+        line(
+            &mut c,
+            serde_json::json!({"cmd": {"type": "load", "deck": 1, "path": "nope.wav"}}),
+        );
         for i in 0..=QUEUE_SLOTS {
-            line(&mut c, serde_json::json!({"id": i, "cmd": {"type": "fader", "deck": 1, "value": 0.5}}));
+            line(
+                &mut c,
+                serde_json::json!({"id": i, "cmd": {"type": "fader", "deck": 1, "value": 0.5}}),
+            );
         }
         c.decoded(c.loading[0].unwrap(), 1, silent_track());
         let sent = std::iter::from_fn(|| cmd_rx.pop().ok()).count();
         // The load and every parked command fill the mailbox, to the slot:
         // one fewer would refuse a command the mailbox had room for.
-        assert_eq!(sent, CMD_SLOTS, "the load and every parked command reach the mailbox");
+        assert_eq!(
+            sent, CMD_SLOTS,
+            "the load and every parked command reach the mailbox"
+        );
         let text = String::from_utf8(out.0.lock().unwrap().clone()).unwrap();
         let full: Vec<Value> = text
             .lines()
             .map(|l| serde_json::from_str::<Value>(l).unwrap())
-            .filter(|v| v["error"]["message"].as_str().is_some_and(|m| m.contains("mailbox is full")))
+            .filter(|v| {
+                v["error"]["message"]
+                    .as_str()
+                    .is_some_and(|m| m.contains("mailbox is full"))
+            })
             .collect();
         // Control: the one past the bound is still refused, at once.
         assert_eq!(full.len(), 1, "{full:?}");
@@ -2232,35 +2637,90 @@ mod tests {
     #[test]
     fn a_progressive_load_answers_on_its_head_and_swaps_in_the_whole_track_with_the_deck_grid() {
         let (mut c, mut cmd_rx, out) = control();
-        let spec = |deck: DeckId| LoadSpec { deck, path: "nope.wav".into(), beats: vec![], bpm: None, end_ms: None };
+        let spec = |deck: DeckId| LoadSpec {
+            deck,
+            path: "nope.wav".into(),
+            beats: vec![],
+            bpm: None,
+            end_ms: None,
+        };
         let text = |out: &Captured| String::from_utf8(out.0.lock().unwrap().clone()).unwrap();
         c.load((STDIO, Some("a".into())), spec(1));
         let a = c.loading[0].unwrap();
         // Work sent while the head decodes waits behind the load.
-        c.dispatch((STDIO, Some("p".into())), EngineCmd::Play { deck: 1, playing: true });
+        c.dispatch(
+            (STDIO, Some("p".into())),
+            EngineCmd::Play {
+                deck: 1,
+                playing: true,
+            },
+        );
         assert!(cmd_rx.pop().is_err(), "the play went ahead of the load");
-        c.head_loaded(a, 1, Arc::new(Track::head(48000, vec![0.0; 960], Some(4800), vec![], None, a)));
+        c.head_loaded(
+            a,
+            1,
+            Arc::new(Track::head(
+                48000,
+                vec![0.0; 960],
+                Some(4800),
+                vec![],
+                None,
+                a,
+            )),
+        );
         // The head goes as the load, by the load's own seq (so its result is
         // the load's result), and the play right behind it: neither waits
         // for the rest of the file.
-        assert!(matches!(cmd_rx.pop(), Ok((seq, EngineCmd::Load { track, .. })) if seq == a && track.decoding));
-        assert!(matches!(cmd_rx.pop(), Ok((_, EngineCmd::Play { playing: true, .. }))));
+        assert!(
+            matches!(cmd_rx.pop(), Ok((seq, EngineCmd::Load { track, .. }, ..)) if seq == a && track.decoding)
+        );
+        assert!(matches!(
+            cmd_rx.pop(),
+            Ok((_, EngineCmd::Play { playing: true, .. }, ..))
+        ));
         assert_eq!((c.loading[0], c.tailing[0]), (None, Some(a)));
         // A grid set while the rest decodes is the one the whole track gets.
         use crate::deck::Beat;
-        let grid: Vec<Beat> = (0..4).map(|i| Beat { time_ms: i as f64 * 25.0, downbeat: i == 0, bpm: None }).collect();
-        c.regrid((STDIO, Some("g".into())), RegridSpec { deck: 1, beats: grid.clone(), bpm: Some(120.0) });
-        assert!(matches!(cmd_rx.pop(), Ok((_, EngineCmd::Regrid { .. }))));
+        let grid: Vec<Beat> = (0..4)
+            .map(|i| Beat {
+                time_ms: i as f64 * 25.0,
+                downbeat: i == 0,
+                bpm: None,
+            })
+            .collect();
+        c.regrid(
+            (STDIO, Some("g".into())),
+            RegridSpec {
+                deck: 1,
+                beats: grid.clone(),
+                bpm: Some(120.0),
+            },
+        );
+        assert!(matches!(
+            cmd_rx.pop(),
+            Ok((_, EngineCmd::Regrid { .. }, ..))
+        ));
         let mut whole = Track::new(48000, vec![0.5; 9600], vec![], None);
         whole.load_id = a;
         let whole = Arc::new(whole);
         c.decoded(a, 1, Ok(whole.clone()));
-        let Ok((x, EngineCmd::Extend { deck: 1, track })) = cmd_rx.pop() else { panic!("the whole track was not sent") };
-        assert!(Arc::ptr_eq(&track.pcm, &whole.pcm), "the whole track's samples were copied");
-        assert_eq!(track.beats, grid, "the whole track lost the grid set since the head");
+        let Ok((x, EngineCmd::Extend { deck: 1, track }, _)) = cmd_rx.pop() else {
+            panic!("the whole track was not sent")
+        };
+        assert!(
+            Arc::ptr_eq(&track.pcm, &whole.pcm),
+            "the whole track's samples were copied"
+        );
+        assert_eq!(
+            track.beats, grid,
+            "the whole track lost the grid set since the head"
+        );
         assert!(!track.decoding && track.load_id == a && track.frames == 4800);
         // Its result goes nowhere: no client sent it.
-        assert_eq!(c.ids.lock().unwrap().get(&x).map(|p| p.client), Some(NOBODY));
+        assert_eq!(
+            c.ids.lock().unwrap().get(&x).map(|p| p.client),
+            Some(NOBODY)
+        );
         assert_eq!(c.tailing[0], None);
         assert!(!text(&out).contains("error"), "{}", text(&out));
 
@@ -2268,37 +2728,75 @@ mod tests {
         // that rest is dropped, never sent onto the new track.
         c.load((STDIO, Some("b".into())), spec(2));
         let b = c.loading[1].unwrap();
-        c.head_loaded(b, 2, Arc::new(Track::head(48000, vec![0.0; 960], None, vec![], None, b)));
-        assert!(matches!(cmd_rx.pop(), Ok((seq, EngineCmd::Load { .. })) if seq == b));
+        c.head_loaded(
+            b,
+            2,
+            Arc::new(Track::head(48000, vec![0.0; 960], None, vec![], None, b)),
+        );
+        assert!(matches!(cmd_rx.pop(), Ok((seq, EngineCmd::Load { .. }, ..)) if seq == b));
         c.load((STDIO, Some("c".into())), spec(2));
         let cs = c.loading[1].unwrap();
         let mut rest = Track::new(48000, vec![0.5; 9600], vec![], None);
         rest.load_id = b;
         c.decoded(b, 2, Ok(Arc::new(rest)));
-        c.decoded(cs, 2, Ok(Arc::new(Track::new(48000, vec![0.0; 960], vec![], None))));
-        assert!(matches!(cmd_rx.pop(), Ok((seq, EngineCmd::Load { .. })) if seq == cs));
-        assert!(cmd_rx.pop().is_err(), "a replaced head's rest reached the deck");
+        c.decoded(
+            cs,
+            2,
+            Ok(Arc::new(Track::new(48000, vec![0.0; 960], vec![], None))),
+        );
+        assert!(matches!(cmd_rx.pop(), Ok((seq, EngineCmd::Load { .. }, ..)) if seq == cs));
+        assert!(
+            cmd_rx.pop().is_err(),
+            "a replaced head's rest reached the deck"
+        );
 
         // The rest of a file that fails to decode after its head played
         // empties the deck and says so to every client.
         c.load((STDIO, Some("d".into())), spec(3));
         let d = c.loading[2].unwrap();
-        c.head_loaded(d, 3, Arc::new(Track::head(48000, vec![0.0; 960], None, vec![], None, d)));
-        assert!(matches!(cmd_rx.pop(), Ok((seq, EngineCmd::Load { .. })) if seq == d));
-        c.decoded(d, 3, Err(ProtoError::new(ErrorCode::Decode, "decode error in late.mp3: bad frame")));
-        assert!(matches!(cmd_rx.pop(), Ok((_, EngineCmd::Unload { deck: 3 }))), "the cut-short track stayed on the deck");
+        c.head_loaded(
+            d,
+            3,
+            Arc::new(Track::head(48000, vec![0.0; 960], None, vec![], None, d)),
+        );
+        assert!(matches!(cmd_rx.pop(), Ok((seq, EngineCmd::Load { .. }, ..)) if seq == d));
+        c.decoded(
+            d,
+            3,
+            Err(ProtoError::new(
+                ErrorCode::Decode,
+                "decode error in late.mp3: bad frame",
+            )),
+        );
+        assert!(
+            matches!(cmd_rx.pop(), Ok((_, EngineCmd::Unload { deck: 3 }, ..))),
+            "the cut-short track stayed on the deck"
+        );
         let t = text(&out);
-        assert!(t.contains(r#""type":"load_failed""#) && t.contains("late.mp3"), "{t}");
+        assert!(
+            t.contains(r#""type":"load_failed""#) && t.contains("late.mp3"),
+            "{t}"
+        );
         // It names the load it ends by that load's file, so a page with a
         // newer load still in flight can tell it is not that one's.
         assert!(t.contains(r#""path":"nope.wav""#), "{t}");
         // Control: a load that was never progressive still finishes as before.
         c.load((STDIO, Some("e".into())), spec(4));
         let e = c.loading[3].unwrap();
-        c.decoded(e, 4, Ok(Arc::new(Track::new(48000, vec![0.0; 960], vec![], None))));
-        assert!(matches!(cmd_rx.pop(), Ok((seq, EngineCmd::Load { track, .. })) if seq == e && !track.decoding));
+        c.decoded(
+            e,
+            4,
+            Ok(Arc::new(Track::new(48000, vec![0.0; 960], vec![], None))),
+        );
+        assert!(
+            matches!(cmd_rx.pop(), Ok((seq, EngineCmd::Load { track, .. }, ..)) if seq == e && !track.decoding)
+        );
         assert!(cmd_rx.pop().is_err());
-        assert!(c.load_paths.is_empty(), "a finished load kept its path: {:?}", c.load_paths);
+        assert!(
+            c.load_paths.is_empty(),
+            "a finished load kept its path: {:?}",
+            c.load_paths
+        );
     }
 
     #[test]
@@ -2306,11 +2804,21 @@ mod tests {
         // Codex on 2c3ed9bde: A's tail, parked behind replacement B, was
         // dropped when B failed, leaving A's head to run into silence.
         let (mut c, mut cmd_rx, _out) = control();
-        let spec = || LoadSpec { deck: 1, path: "nope.wav".into(), beats: vec![], bpm: None, end_ms: None };
+        let spec = || LoadSpec {
+            deck: 1,
+            path: "nope.wav".into(),
+            beats: vec![],
+            bpm: None,
+            end_ms: None,
+        };
         c.load((STDIO, Some("a".into())), spec());
         let a = c.loading[0].unwrap();
-        c.head_loaded(a, 1, Arc::new(Track::head(48000, vec![0.0; 960], None, vec![], None, a)));
-        assert!(matches!(cmd_rx.pop(), Ok((seq, EngineCmd::Load { .. })) if seq == a));
+        c.head_loaded(
+            a,
+            1,
+            Arc::new(Track::head(48000, vec![0.0; 960], None, vec![], None, a)),
+        );
+        assert!(matches!(cmd_rx.pop(), Ok((seq, EngineCmd::Load { .. }, ..)) if seq == a));
         c.load((STDIO, Some("b".into())), spec());
         let b = c.loading[0].unwrap();
         let mut whole = Track::new(48000, vec![0.5; 9600], vec![], None);
@@ -2318,7 +2826,9 @@ mod tests {
         c.decoded(a, 1, Ok(Arc::new(whole)));
         assert!(cmd_rx.pop().is_err(), "A's tail went ahead of B");
         c.decoded(b, 1, Err(ProtoError::new(ErrorCode::Decode, "bad")));
-        let Ok((_, EngineCmd::Extend { deck: 1, track })) = cmd_rx.pop() else { panic!("A's tail was dropped with B") };
+        let Ok((_, EngineCmd::Extend { deck: 1, track }, _)) = cmd_rx.pop() else {
+            panic!("A's tail was dropped with B")
+        };
         assert!(track.load_id == a && !track.decoding);
         assert!(cmd_rx.pop().is_err());
 
@@ -2326,15 +2836,23 @@ mod tests {
         // dropped, never sent onto B.
         c.load((STDIO, Some("c".into())), spec());
         let cs = c.loading[0].unwrap();
-        c.head_loaded(cs, 1, Arc::new(Track::head(48000, vec![0.0; 960], None, vec![], None, cs)));
-        assert!(matches!(cmd_rx.pop(), Ok((seq, EngineCmd::Load { .. })) if seq == cs));
+        c.head_loaded(
+            cs,
+            1,
+            Arc::new(Track::head(48000, vec![0.0; 960], None, vec![], None, cs)),
+        );
+        assert!(matches!(cmd_rx.pop(), Ok((seq, EngineCmd::Load { .. }, ..)) if seq == cs));
         c.load((STDIO, Some("d".into())), spec());
         let d = c.loading[0].unwrap();
         let mut rest = Track::new(48000, vec![0.5; 9600], vec![], None);
         rest.load_id = cs;
         c.decoded(cs, 1, Ok(Arc::new(rest)));
-        c.decoded(d, 1, Ok(Arc::new(Track::new(48000, vec![0.0; 960], vec![], None))));
-        assert!(matches!(cmd_rx.pop(), Ok((seq, EngineCmd::Load { .. })) if seq == d));
+        c.decoded(
+            d,
+            1,
+            Ok(Arc::new(Track::new(48000, vec![0.0; 960], vec![], None))),
+        );
+        assert!(matches!(cmd_rx.pop(), Ok((seq, EngineCmd::Load { .. }, ..)) if seq == d));
         assert!(cmd_rx.pop().is_err(), "C's rest reached D");
     }
 
@@ -2343,7 +2861,13 @@ mod tests {
         // Codex on 2c3ed9bde: each head released the next load at once, so
         // rapid loads piled up decoder threads and whole-track buffers.
         let (mut c, mut cmd_rx, _out) = control();
-        let spec = || LoadSpec { deck: 1, path: "nope.wav".into(), beats: vec![], bpm: None, end_ms: None };
+        let spec = || LoadSpec {
+            deck: 1,
+            path: "nope.wav".into(),
+            beats: vec![],
+            bpm: None,
+            end_ms: None,
+        };
         let head = |seq| Arc::new(Track::head(48000, vec![0.0; 960], None, vec![], None, seq));
         c.load((STDIO, Some("a".into())), spec());
         let a = c.loading[0].unwrap();
@@ -2356,7 +2880,10 @@ mod tests {
         // A third waits: A's tail and B's are both still decoding.
         c.load((STDIO, Some("c".into())), spec());
         assert_eq!(c.loading[0], None, "a third decode started on the deck");
-        assert!(!c.staged(), "a load held by the decode cap must not be polled");
+        assert!(
+            !c.staged(),
+            "a load held by the decode cap must not be polled"
+        );
         while cmd_rx.pop().is_ok() {}
         // A's tail ends: C starts, and A's rest never reaches the deck.
         let mut rest = Track::new(48000, vec![0.5; 9600], vec![], None);
@@ -2379,25 +2906,46 @@ mod tests {
         let (mut c, mut cmd_rx, out) = control();
         c.pcm_budget = 4000;
         let used = |c: &Control| c.pcm_used.load(Ordering::Acquire);
-        let track = |n: usize| -> Result<Arc<Track>, ProtoError> { Ok(Arc::new(Track::new(48000, vec![0.0; n], vec![], None))) };
-        let spec = |deck: DeckId| LoadSpec { deck, path: "nope.wav".into(), beats: vec![], bpm: None, end_ms: None };
+        let track = |n: usize| -> Result<Arc<Track>, ProtoError> {
+            Ok(Arc::new(Track::new(48000, vec![0.0; n], vec![], None)))
+        };
+        let spec = |deck: DeckId| LoadSpec {
+            deck,
+            path: "nope.wav".into(),
+            beats: vec![],
+            bpm: None,
+            end_ms: None,
+        };
         c.load((STDIO, Some("a".into())), spec(1));
         c.load((STDIO, Some("b".into())), spec(1));
         let a = c.loading[0].unwrap();
         c.decoded(a, 1, track(1002));
-        assert_eq!(used(&c), 1002 * 4, "the decoded samples are not held against the budget");
-        assert!(matches!(cmd_rx.pop(), Ok((seq, EngineCmd::Load { .. })) if seq == a), "the decoded load did not go");
+        assert_eq!(
+            used(&c),
+            1002 * 4,
+            "the decoded samples are not held against the budget"
+        );
+        assert!(
+            matches!(cmd_rx.pop(), Ok((seq, EngineCmd::Load { .. }, ..)) if seq == a),
+            "the decoded load did not go"
+        );
         // Its result is not out, so b, queued behind it, waits to decode,
         // and so does a new load on another deck.
         assert_eq!(c.loading[0], None, "a decode started past the budget");
         c.load((STDIO, Some("c".into())), spec(2));
-        assert_eq!(c.loading[1], None, "a decode started past the budget on another deck");
+        assert_eq!(
+            c.loading[1], None,
+            "a decode started past the budget on another deck"
+        );
         assert!(c.staged(), "the held loads are not retried");
         // The pump writes a's result: the room is given back and both start.
         drop(take_id(&c.ids, a));
         assert_eq!(used(&c), 0);
         c.release_staged();
-        assert!(c.loading[0].is_some() && c.loading[1].is_some(), "the held loads never started");
+        assert!(
+            c.loading[0].is_some() && c.loading[1].is_some(),
+            "the held loads never started"
+        );
         // Nothing was refused on the way.
         let text = String::from_utf8(out.0.lock().unwrap().clone()).unwrap();
         assert!(!text.contains("error"), "{text}");
@@ -2406,7 +2954,10 @@ mod tests {
         c.load((STDIO, Some("e".into())), spec(1));
         c.decoded(b, 1, track(1000));
         assert_eq!(used(&c), 4000);
-        assert!(c.loading[0].is_some(), "a decode within the budget held the next one back");
+        assert!(
+            c.loading[0].is_some(),
+            "a decode within the budget held the next one back"
+        );
         c.decoded(d, 2, track(10));
         let _ = take_id(&c.ids, b);
     }
@@ -2420,35 +2971,87 @@ mod tests {
         // length its file states.
         let (mut c, mut cmd_rx, _out) = control();
         let used = |c: &Control| c.pcm_used.load(Ordering::Acquire);
-        let spec = |deck: DeckId| LoadSpec { deck, path: "nope.wav".into(), beats: vec![], bpm: None, end_ms: None };
+        let spec = |deck: DeckId| LoadSpec {
+            deck,
+            path: "nope.wav".into(),
+            beats: vec![],
+            bpm: None,
+            end_ms: None,
+        };
         let f32s = std::mem::size_of::<f32>();
         c.pcm_budget = 2 * 48000 * 2 * f32s;
         c.load((STDIO, Some("a".into())), spec(1));
         let a = c.loading[0].unwrap();
-        c.head_loaded(a, 1, Arc::new(Track::head(48000, vec![0.0; 960], Some(48000), vec![], None, a)));
+        c.head_loaded(
+            a,
+            1,
+            Arc::new(Track::head(
+                48000,
+                vec![0.0; 960],
+                Some(48000),
+                vec![],
+                None,
+                a,
+            )),
+        );
         let head = 960 * f32s;
-        assert_eq!(used(&c), head + 48000 * 2 * f32s, "the rest is not charged at the file's stated length");
+        assert_eq!(
+            used(&c),
+            head + 48000 * 2 * f32s,
+            "the rest is not charged at the file's stated length"
+        );
         // A second deck's rest passes the budget: no third decode starts,
         // on its deck or any other, while both rests decode.
         c.load((STDIO, Some("b".into())), spec(2));
         let b = c.loading[1].unwrap();
-        c.head_loaded(b, 2, Arc::new(Track::head(48000, vec![0.0; 960], Some(48000), vec![], None, b)));
+        c.head_loaded(
+            b,
+            2,
+            Arc::new(Track::head(
+                48000,
+                vec![0.0; 960],
+                Some(48000),
+                vec![],
+                None,
+                b,
+            )),
+        );
         c.load((STDIO, Some("c".into())), spec(3));
-        assert_eq!(c.loading[2], None, "a decode started while the rests already filled the budget");
+        assert_eq!(
+            c.loading[2], None,
+            "a decode started while the rests already filled the budget"
+        );
         while cmd_rx.pop().is_ok() {}
         for seq in [a, b] {
             drop(take_id(&c.ids, seq));
         }
-        assert_eq!(used(&c), 2 * 48000 * 2 * f32s, "the rests stopped being charged when the heads' results went out");
+        assert_eq!(
+            used(&c),
+            2 * 48000 * 2 * f32s,
+            "the rests stopped being charged when the heads' results went out"
+        );
         // A's rest decodes at its real size and goes to the deck, where its
         // track holds it until that result is out.
         let mut whole = Track::new(48000, vec![0.5; 4000], vec![], None);
         whole.load_id = a;
-        c.on_deck[0] = Some(Arc::new(Track::head(48000, vec![0.0; 960], Some(48000), vec![], None, a)));
+        c.on_deck[0] = Some(Arc::new(Track::head(
+            48000,
+            vec![0.0; 960],
+            Some(48000),
+            vec![],
+            None,
+            a,
+        )));
         decode_threads_done(&c);
         c.decoded(a, 1, Ok(Arc::new(whole)));
-        let Ok((x, EngineCmd::Extend { deck: 1, .. })) = cmd_rx.pop() else { panic!("A's rest was not sent") };
-        assert_eq!(used(&c), 4000 * f32s + 48000 * 2 * f32s, "A's rest is not held once, at its real size");
+        let Ok((x, EngineCmd::Extend { deck: 1, .. }, _)) = cmd_rx.pop() else {
+            panic!("A's rest was not sent")
+        };
+        assert_eq!(
+            used(&c),
+            4000 * f32s + 48000 * 2 * f32s,
+            "A's rest is not held once, at its real size"
+        );
         drop(take_id(&c.ids, x));
         // B's rest fails: its charge is given back and C starts.
         decode_threads_done(&c);
@@ -2465,7 +3068,11 @@ mod tests {
         drop(take_id(&c.ids, cs));
         c.load((STDIO, Some("d".into())), spec(4));
         let d = c.loading[3].unwrap();
-        c.head_loaded(d, 4, Arc::new(Track::head(48000, vec![0.0; 960], None, vec![], None, d)));
+        c.head_loaded(
+            d,
+            4,
+            Arc::new(Track::head(48000, vec![0.0; 960], None, vec![], None, d)),
+        );
         drop(take_id(&c.ids, d));
         assert_eq!(used(&c), 48000 * UNSTATED_TAIL_S * 2 * f32s);
         c.load((STDIO, Some("e".into())), spec(4));
@@ -2476,7 +3083,11 @@ mod tests {
         c.decoded(d, 4, Ok(Arc::new(rest)));
         // Parked behind E, it still holds its samples, so it stays charged
         // (at its estimate, which is above its real size here).
-        assert_eq!(used(&c), 48000 * UNSTATED_TAIL_S * 2 * f32s, "a rest parked behind a later load is not charged");
+        assert_eq!(
+            used(&c),
+            48000 * UNSTATED_TAIL_S * 2 * f32s,
+            "a rest parked behind a later load is not charged"
+        );
         decode_threads_done(&c);
         c.decoded(e, 4, silent_track());
         while cmd_rx.pop().is_ok() {}
@@ -2486,10 +3097,32 @@ mod tests {
         // dropped as it decodes, and gives its charge back then.
         c.load((STDIO, Some("f".into())), spec(4));
         let f = c.loading[3].unwrap();
-        c.head_loaded(f, 4, Arc::new(Track::head(48000, vec![0.0; 960], Some(4800), vec![], None, f)));
+        c.head_loaded(
+            f,
+            4,
+            Arc::new(Track::head(
+                48000,
+                vec![0.0; 960],
+                Some(4800),
+                vec![],
+                None,
+                f,
+            )),
+        );
         c.load((STDIO, Some("g".into())), spec(4));
         let g = c.loading[3].unwrap();
-        c.head_loaded(g, 4, Arc::new(Track::head(48000, vec![0.0; 960], Some(4800), vec![], None, g)));
+        c.head_loaded(
+            g,
+            4,
+            Arc::new(Track::head(
+                48000,
+                vec![0.0; 960],
+                Some(4800),
+                vec![],
+                None,
+                g,
+            )),
+        );
         while cmd_rx.pop().is_ok() {}
         for seq in [f, g] {
             drop(take_id(&c.ids, seq));
@@ -2498,7 +3131,11 @@ mod tests {
         rest.load_id = f;
         decode_threads_done(&c);
         c.decoded(f, 4, Ok(Arc::new(rest)));
-        assert_eq!(used(&c), 4800 * 2 * f32s, "a rest dropped behind a newer head kept its charge");
+        assert_eq!(
+            used(&c),
+            4800 * 2 * f32s,
+            "a rest dropped behind a newer head kept its charge"
+        );
     }
 
     #[test]
@@ -2510,12 +3147,22 @@ mod tests {
         // grows (`Meter`), so the budget sees it and holds the next decode.
         let (mut c, mut cmd_rx, _out) = control();
         let used = |c: &Control| c.pcm_used.load(Ordering::Acquire);
-        let spec = |deck: DeckId| LoadSpec { deck, path: "nope.wav".into(), beats: vec![], bpm: None, end_ms: None };
+        let spec = |deck: DeckId| LoadSpec {
+            deck,
+            path: "nope.wav".into(),
+            beats: vec![],
+            bpm: None,
+            end_ms: None,
+        };
         let estimate = 48000 * UNSTATED_TAIL_S * 2 * std::mem::size_of::<f32>();
         c.pcm_budget = 2 * estimate;
         c.load((STDIO, Some("a".into())), spec(1));
         let a = c.loading[0].unwrap();
-        c.head_loaded(a, 1, Arc::new(Track::head(48000, vec![0.0; 960], None, vec![], None, a)));
+        c.head_loaded(
+            a,
+            1,
+            Arc::new(Track::head(48000, vec![0.0; 960], None, vec![], None, a)),
+        );
         while cmd_rx.pop().is_ok() {}
         drop(take_id(&c.ids, a));
         decode_threads_done(&c);
@@ -2529,18 +3176,35 @@ mod tests {
         // A's buffer grows past its estimate, as the decode thread reports.
         let meter = c.meters.get(&a).expect("A's rest has no meter").clone();
         meter.at_least(estimate / 2);
-        assert_eq!(used(&c), estimate, "a smaller report lowered or added to the charge");
+        assert_eq!(
+            used(&c),
+            estimate,
+            "a smaller report lowered or added to the charge"
+        );
         meter.at_least(3 * estimate);
-        assert_eq!(used(&c), 3 * estimate, "growth past the estimate is not charged");
+        assert_eq!(
+            used(&c),
+            3 * estimate,
+            "growth past the estimate is not charged"
+        );
         c.load((STDIO, Some("c".into())), spec(3));
-        assert_eq!(c.loading[2], None, "a decode started while a growing rest passed the budget");
+        assert_eq!(
+            c.loading[2], None,
+            "a decode started while a growing rest passed the budget"
+        );
         // The rest reaches the deck: everything it held is given back.
         drop(meter);
         let mut whole = Track::new(48000, vec![0.5; 9600], vec![], None);
         whole.load_id = a;
         c.decoded(a, 1, Ok(Arc::new(whole)));
-        let Ok((x, EngineCmd::Extend { deck: 1, .. })) = cmd_rx.pop() else { panic!("A's rest was not sent") };
-        assert_eq!(used(&c), 9600 * std::mem::size_of::<f32>(), "the rest's meter outlived it");
+        let Ok((x, EngineCmd::Extend { deck: 1, .. }, _)) = cmd_rx.pop() else {
+            panic!("A's rest was not sent")
+        };
+        assert_eq!(
+            used(&c),
+            9600 * std::mem::size_of::<f32>(),
+            "the rest's meter outlived it"
+        );
         drop(take_id(&c.ids, x));
         assert_eq!(used(&c), 0);
         c.release_staged();
@@ -2551,15 +3215,35 @@ mod tests {
     fn a_decode_thread_charges_its_buffer_as_it_fills() {
         // The wiring the growth charge depends on: a real file's decode
         // raises its load's meter while it runs, before any result is seen.
-        let tmp = tempfile::Builder::new().prefix("odj-audio-test-serve-meter-").tempdir().unwrap();
+        let tmp = tempfile::Builder::new()
+            .prefix("odj-audio-test-serve-meter-")
+            .tempdir()
+            .unwrap();
         let path = tmp.path().join("a.wav");
-        crate::wav::write_f32(&mut io::BufWriter::new(std::fs::File::create(&path).unwrap()), 48000, &vec![0.1; 96000]).unwrap();
+        crate::wav::write_f32(
+            &mut io::BufWriter::new(std::fs::File::create(&path).unwrap()),
+            48000,
+            &vec![0.1; 96000],
+        )
+        .unwrap();
         let (mut c, _cmd_rx, _out) = control();
-        c.load((STDIO, Some("a".into())), LoadSpec { deck: 1, path: path.display().to_string(), beats: vec![], bpm: None, end_ms: None });
+        c.load(
+            (STDIO, Some("a".into())),
+            LoadSpec {
+                deck: 1,
+                path: path.display().to_string(),
+                beats: vec![],
+                bpm: None,
+                end_ms: None,
+            },
+        );
         let a = c.loading[0].unwrap();
         decode_threads_done(&c);
         let charged = c.meters[&a].charged.load(Ordering::Acquire);
-        assert!(charged >= 96000 * std::mem::size_of::<f32>(), "the decode charged {charged} bytes for 96000 samples");
+        assert!(
+            charged >= 96000 * std::mem::size_of::<f32>(),
+            "the decode charged {charged} bytes for 96000 samples"
+        );
         assert_eq!(c.pcm_used.load(Ordering::Acquire), charged);
         tmp.close().unwrap();
     }
@@ -2575,7 +3259,13 @@ mod tests {
         let spec = |deck: DeckId, path: String, beats: usize| LoadSpec {
             deck,
             path,
-            beats: (0..beats).map(|i| Beat { time_ms: i as f64, downbeat: i % 4 == 0, bpm: None }).collect(),
+            beats: (0..beats)
+                .map(|i| Beat {
+                    time_ms: i as f64,
+                    downbeat: i % 4 == 0,
+                    bpm: None,
+                })
+                .collect(),
             bpm: None,
             end_ms: None,
         };
@@ -2596,7 +3286,11 @@ mod tests {
             let text = String::from_utf8(out.0.lock().unwrap().clone()).unwrap();
             text.lines()
                 .map(|l| serde_json::from_str::<Value>(l).unwrap())
-                .filter(|v| v["error"]["message"].as_str().is_some_and(|m| m.contains("engine is full")))
+                .filter(|v| {
+                    v["error"]["message"]
+                        .as_str()
+                        .is_some_and(|m| m.contains("engine is full"))
+                })
                 .map(|v| v["id"].clone())
                 .collect()
         };
@@ -2604,24 +3298,38 @@ mod tests {
         // To the byte: a load that fits the room left goes, on another deck
         // too, and one byte more is refused.
         let room = LOAD_BYTES - used(&c);
-        c.load((STDIO, Some("over".into())), spec(2, "x".repeat(room + 1), 0));
+        c.load(
+            (STDIO, Some("over".into())),
+            spec(2, "x".repeat(room + 1), 0),
+        );
         c.load((STDIO, Some("fits".into())), spec(2, "x".repeat(room), 0));
-        assert_eq!(full(&out), [Value::from(2), Value::from(3), Value::from("over")]);
+        assert_eq!(
+            full(&out),
+            [Value::from(2), Value::from(3), Value::from("over")]
+        );
         assert!(c.loading[1].is_some(), "a load that fits was refused");
         assert_eq!(used(&c), LOAD_BYTES);
         // A decoded load holds its payload until its result is out, not
         // just until it is in the mailbox.
         let first = c.loading[0].unwrap();
         c.decoded(first, 1, silent_track());
-        assert_eq!(used(&c), LOAD_BYTES, "given back before the audio side took it");
+        assert_eq!(
+            used(&c),
+            LOAD_BYTES,
+            "given back before the audio side took it"
+        );
         assert!(take_id(&c.ids, first).is_some());
         assert_eq!(used(&c), LOAD_BYTES - each);
         // A failed decode gives back its own and what was parked behind it,
         // and at shutdown the rest; nothing is held for good.
-        c.decoded(c.loading[0].unwrap(), 1, Err(ProtoError::new(ErrorCode::Decode, "bad")));
+        c.decoded(
+            c.loading[0].unwrap(),
+            1,
+            Err(ProtoError::new(ErrorCode::Decode, "bad")),
+        );
         assert_eq!(used(&c), room);
         c.refuse_pending();
-        while let Ok((seq, _)) = cmd_rx.pop() {
+        while let Ok((seq, _, _)) = cmd_rx.pop() {
             take_id(&c.ids, seq);
         }
         assert_eq!(used(&c), 0);
@@ -2629,7 +3337,10 @@ mod tests {
         // else is held, so any load a line can carry is taken alone; the
         // next is refused while it is held.
         let (mut c, _cmd_rx, out) = control();
-        c.load((STDIO, Some("alone".into())), spec(1, "x".repeat(LOAD_BYTES + 1), 0));
+        c.load(
+            (STDIO, Some("alone".into())),
+            spec(1, "x".repeat(LOAD_BYTES + 1), 0),
+        );
         assert!(c.loading[0].is_some(), "a lone load was refused");
         c.load((STDIO, Some("next".into())), spec(2, "y.wav".into(), 0));
         assert_eq!(full(&out), [Value::from("next")]);
@@ -2645,46 +3356,92 @@ mod tests {
         // load itself waits, with 500 commands behind it.
         let (mut c, mut cmd_rx, out) = control();
         let line = |c: &mut Control, v: Value| assert!(c.handle_line(&v.to_string(), "wall"));
-        line(&mut c, serde_json::json!({"cmd": {"type": "load", "deck": 1, "path": "nope.wav"}}));
+        line(
+            &mut c,
+            serde_json::json!({"cmd": {"type": "load", "deck": 1, "path": "nope.wav"}}),
+        );
         let parked = 500;
         for i in 0..parked {
-            line(&mut c, serde_json::json!({"id": i, "cmd": {"type": "fader", "deck": 1, "value": 0.5}}));
+            line(
+                &mut c,
+                serde_json::json!({"id": i, "cmd": {"type": "fader", "deck": 1, "value": 0.5}}),
+            );
         }
         for _ in 0..CMD_SLOTS {
-            line(&mut c, serde_json::json!({"cmd": {"type": "crossfader", "value": 0.5}}));
+            line(
+                &mut c,
+                serde_json::json!({"cmd": {"type": "crossfader", "value": 0.5}}),
+            );
         }
         c.decoded(c.loading[0].unwrap(), 1, silent_track());
         assert!(c.staged(), "the decoded load did not wait for room");
         // Sent while the deck's work waits: it goes after that work, and an
         // `engine_state` waits for all of it.
-        line(&mut c, serde_json::json!({"id": "late", "cmd": {"type": "fader", "deck": 1, "value": 0.25}}));
-        line(&mut c, serde_json::json!({"id": "state", "cmd": {"type": "engine_state"}}));
+        line(
+            &mut c,
+            serde_json::json!({"id": "late", "cmd": {"type": "fader", "deck": 1, "value": 0.25}}),
+        );
+        line(
+            &mut c,
+            serde_json::json!({"id": "state", "cmd": {"type": "engine_state"}}),
+        );
         let mut order = Vec::new();
         let mut rounds = 0;
         while c.staged() {
             // The audio side drains a block's worth, then the control side
             // sends on what now fits.
             for _ in 0..100 {
-                if let Ok((seq, cmd)) = cmd_rx.pop() {
-                    order.push((seq, matches!(cmd, EngineCmd::Load { .. }), matches!(cmd, EngineCmd::Fader { .. })));
+                if let Ok((seq, cmd, _)) = cmd_rx.pop() {
+                    order.push((
+                        seq,
+                        matches!(cmd, EngineCmd::Load { .. }),
+                        matches!(cmd, EngineCmd::Fader { .. }),
+                    ));
                 }
             }
-            assert!(!c.state_req.load(Ordering::Acquire) || !c.staged(), "the state was asked before the work ahead of it went");
+            assert!(
+                !c.state_req.load(Ordering::Acquire) || !c.staged(),
+                "the state was asked before the work ahead of it went"
+            );
             c.release_staged();
             rounds += 1;
             assert!(rounds < 100, "the staged work never drained");
         }
-        order.extend(std::iter::from_fn(|| cmd_rx.pop().ok()).map(|(seq, cmd)| (seq, matches!(cmd, EngineCmd::Load { .. }), matches!(cmd, EngineCmd::Fader { .. }))));
-        assert!(c.state_req.load(Ordering::Acquire), "the state was never asked");
+        order.extend(
+            std::iter::from_fn(|| cmd_rx.pop().ok()).map(|(seq, cmd, _)| {
+                (
+                    seq,
+                    matches!(cmd, EngineCmd::Load { .. }),
+                    matches!(cmd, EngineCmd::Fader { .. }),
+                )
+            }),
+        );
+        assert!(
+            c.state_req.load(Ordering::Acquire),
+            "the state was never asked"
+        );
         let text = String::from_utf8(out.0.lock().unwrap().clone()).unwrap();
-        assert!(!text.contains("mailbox is full"), "accepted work was refused:\n{text}");
+        assert!(
+            !text.contains("mailbox is full"),
+            "accepted work was refused:\n{text}"
+        );
         // The load, then every parked fader and the late one, in order.
-        let deck: Vec<&(u64, bool, bool)> = order.iter().filter(|(_, load, fader)| *load || *fader).collect();
+        let deck: Vec<&(u64, bool, bool)> = order
+            .iter()
+            .filter(|(_, load, fader)| *load || *fader)
+            .collect();
         assert_eq!(deck.len(), 1 + parked + 1);
         assert!(deck[0].1, "the load did not go first");
-        assert!(deck.windows(2).all(|w| w[0].0 < w[1].0), "the deck's work went out of order");
+        assert!(
+            deck.windows(2).all(|w| w[0].0 < w[1].0),
+            "the deck's work went out of order"
+        );
         let ids = c.ids.lock().unwrap();
-        assert!(ids.values().any(|p| p.id.as_ref() == Some(&Value::from("late"))), "the late command never reached the mailbox");
+        assert!(
+            ids.values()
+                .any(|p| p.id.as_ref() == Some(&Value::from("late"))),
+            "the late command never reached the mailbox"
+        );
     }
 
     #[test]
@@ -2693,11 +3450,19 @@ mod tests {
         // on work that waits for room, with no further input to wake it; and
         // when stdin closes first, the shutdown drain sends it on too rather
         // than refuse work it accepted.
-        let tmp = tempfile::Builder::new().prefix("odj-audio-test-staged-").tempdir().unwrap();
+        let tmp = tempfile::Builder::new()
+            .prefix("odj-audio-test-staged-")
+            .tempdir()
+            .unwrap();
         let d = tmp.path().to_path_buf();
         std::fs::create_dir_all(&d).unwrap();
         let wav = d.join("a.wav");
-        crate::wav::write_f32(&mut io::BufWriter::new(std::fs::File::create(&wav).unwrap()), 48000, &[0.0; 9600]).unwrap();
+        crate::wav::write_f32(
+            &mut io::BufWriter::new(std::fs::File::create(&wav).unwrap()),
+            48000,
+            &[0.0; 9600],
+        )
+        .unwrap();
         for close_first in [false, true] {
             let (reader, mut writer) = io::pipe().unwrap();
             let out = Captured::default();
@@ -2705,24 +3470,44 @@ mod tests {
             let (tx, rx) = mpsc::channel();
             let (o, g) = (out.clone(), go.clone());
             std::thread::spawn(move || {
-                let r = serve_threaded_from(io::BufReader::new(reader), o, 48000, "wall", MidiSetup::inject_only(), move |mut side, stop| {
-                    while !stop.load(Ordering::Relaxed) {
-                        if g.load(Ordering::Relaxed) {
-                            side.process(64);
+                let r = serve_threaded_from(
+                    io::BufReader::new(reader),
+                    o,
+                    48000,
+                    "wall",
+                    MidiSetup::inject_only(),
+                    move |mut side, stop| {
+                        while !stop.load(Ordering::Relaxed) {
+                            if g.load(Ordering::Relaxed) {
+                                side.process(64);
+                            }
+                            std::thread::sleep(Duration::from_millis(1));
                         }
-                        std::thread::sleep(Duration::from_millis(1));
-                    }
-                });
+                    },
+                );
                 let _ = tx.send(r);
             });
             // The mailbox fills while the audio side is held, then the load
             // decodes into no room, with work parked behind it.
             for _ in 0..CMD_SLOTS {
-                writeln!(writer, r#"{{"cmd": {{"type": "crossfader", "value": 0.5}}}}"#).unwrap();
+                writeln!(
+                    writer,
+                    r#"{{"cmd": {{"type": "crossfader", "value": 0.5}}}}"#
+                )
+                .unwrap();
             }
-            writeln!(writer, r#"{{"id": "load", "cmd": {{"type": "load", "deck": 1, "path": {}}}}}"#, Value::from(wav.display().to_string())).unwrap();
+            writeln!(
+                writer,
+                r#"{{"id": "load", "cmd": {{"type": "load", "deck": 1, "path": {}}}}}"#,
+                Value::from(wav.display().to_string())
+            )
+            .unwrap();
             for i in 0..200 {
-                writeln!(writer, r#"{{"id": {i}, "cmd": {{"type": "fader", "deck": 1, "value": 0.5}}}}"#).unwrap();
+                writeln!(
+                    writer,
+                    r#"{{"id": {i}, "cmd": {{"type": "fader", "deck": 1, "value": 0.5}}}}"#
+                )
+                .unwrap();
             }
             std::thread::sleep(Duration::from_millis(300));
             let writer = if close_first {
@@ -2738,7 +3523,11 @@ mod tests {
                 let text = String::from_utf8(out.0.lock().unwrap().clone()).unwrap();
                 // serve is still writing: a line is whole only once its newline is out.
                 let whole = text.rfind('\n').map_or(0, |i| i + 1);
-                text[..whole].lines().map(|l| serde_json::from_str::<Value>(l).unwrap()).filter(|v| v["type"] == "result").collect()
+                text[..whole]
+                    .lines()
+                    .map(|l| serde_json::from_str::<Value>(l).unwrap())
+                    .filter(|v| v["type"] == "result")
+                    .collect()
             };
             let deadline = Instant::now() + Duration::from_secs(10);
             while !results().iter().any(|v| v["id"] == 199) && Instant::now() < deadline {
@@ -2748,14 +3537,34 @@ mod tests {
             let got = results();
             drop(writer);
             let stopping = Instant::now();
-            rx.recv_timeout(Duration::from_secs(10)).expect("serve hung").unwrap();
+            rx.recv_timeout(Duration::from_secs(10))
+                .expect("serve hung")
+                .unwrap();
             let stopped_in = stopping.elapsed();
-            let case = if close_first { "stdin closed first" } else { "stdin open" };
-            assert!(got.iter().any(|v| v["id"] == 199), "{case}: the parked work never went");
-            assert!(got.iter().filter(|v| v["id"] == "load" || v["id"].is_u64()).all(|v| v["ok"] == true), "{case}: {got:?}");
-            assert!(took < LOAD_DRAIN_LIMIT / 2, "{case}: the parked work took {took:?}");
+            let case = if close_first {
+                "stdin closed first"
+            } else {
+                "stdin open"
+            };
+            assert!(
+                got.iter().any(|v| v["id"] == 199),
+                "{case}: the parked work never went"
+            );
+            assert!(
+                got.iter()
+                    .filter(|v| v["id"] == "load" || v["id"].is_u64())
+                    .all(|v| v["ok"] == true),
+                "{case}: {got:?}"
+            );
+            assert!(
+                took < LOAD_DRAIN_LIMIT / 2,
+                "{case}: the parked work took {took:?}"
+            );
             // With nothing left waiting, stopping does not sit out the limit.
-            assert!(stopped_in < LOAD_DRAIN_LIMIT / 2, "{case}: stopping took {stopped_in:?}");
+            assert!(
+                stopped_in < LOAD_DRAIN_LIMIT / 2,
+                "{case}: stopping took {stopped_in:?}"
+            );
         }
         tmp.close().unwrap();
     }
@@ -2764,7 +3573,15 @@ mod tests {
     fn a_full_result_ring_holds_commands_back_instead_of_dropping_results() {
         let (mut side, mut cmd_tx, mut res_rx) = side(2);
         for seq in 0..5 {
-            cmd_tx.push((seq, EngineCmd::MasterMute { muted: seq % 2 == 0 })).unwrap();
+            cmd_tx
+                .push((
+                    seq,
+                    EngineCmd::MasterMute {
+                        muted: seq % 2 == 0,
+                    },
+                    EventSource::User,
+                ))
+                .unwrap();
         }
         side.process(64);
         // Two slots, two results; the other three stay queued, not lost.
@@ -2790,9 +3607,18 @@ mod tests {
         let (reader, _writer) = io::pipe().unwrap();
         let (tx, rx) = mpsc::channel();
         std::thread::spawn(move || {
-            let _ = tx.send(serve_threaded_from(io::BufReader::new(reader), io::sink(), 48000, "wall", MidiSetup::inject_only(), |_side, _stop| {}));
+            let _ = tx.send(serve_threaded_from(
+                io::BufReader::new(reader),
+                io::sink(),
+                48000,
+                "wall",
+                MidiSetup::inject_only(),
+                |_side, _stop| {},
+            ));
         });
-        let r = rx.recv_timeout(Duration::from_secs(10)).expect("serve hung after its audio side stopped");
+        let r = rx
+            .recv_timeout(Duration::from_secs(10))
+            .expect("serve hung after its audio side stopped");
         assert!(r.is_err());
     }
 
@@ -2834,14 +3660,23 @@ mod tests {
         assert!(hub.broadcast(&v).is_ok());
         assert_eq!(hub.socket_clients(), 0);
         assert_eq!(rx.try_iter().count(), 1);
-        assert!(hub.send_to(id, &v).is_ok(), "a client that has gone is skipped");
+        assert!(
+            hub.send_to(id, &v).is_ok(),
+            "a client that has gone is skipped"
+        );
         // A result sent to one stalled socket is the same: dropped, no error.
         let (tx, rx) = mpsc::sync_channel(1);
         let id = hub.add_socket(tx).unwrap();
         assert!(hub.send_to(id, &v).is_ok());
-        assert!(hub.send_to(id, &v).is_ok(), "a stalled socket's result stopped the engine");
+        assert!(
+            hub.send_to(id, &v).is_ok(),
+            "a stalled socket's result stopped the engine"
+        );
         assert_eq!((hub.socket_clients(), rx.try_iter().count()), (0, 1));
-        assert!(!hub.closed().load(Ordering::Acquire), "a stalled socket closed the output");
+        assert!(
+            !hub.closed().load(Ordering::Acquire),
+            "a stalled socket closed the output"
+        );
         // Control: stdio failing is the error that stops the engine, with a
         // socket beside it, and that socket still gets the line.
         let hub = Hub::new(Box::new(Dead));
@@ -2850,7 +3685,10 @@ mod tests {
         assert!(!hub.closed().load(Ordering::Acquire));
         assert!(hub.broadcast(&v).is_err());
         // Set by the failing write itself, while it still holds the lock.
-        assert!(hub.closed().load(Ordering::Acquire), "stdio failed and the output is not marked closed");
+        assert!(
+            hub.closed().load(Ordering::Acquire),
+            "stdio failed and the output is not marked closed"
+        );
         assert!(hub.send_to(STDIO, &v).is_err());
         assert!(hub.send_to(id, &v).is_ok());
         assert_eq!(rx.try_iter().count(), 2);
@@ -2861,13 +3699,28 @@ mod tests {
         let (c, _cmd_rx, out) = control();
         let (tx, rx) = mpsc::sync_channel(4);
         let client = c.hub.add_socket(tx).unwrap();
-        c.refuse_line(client, r#"{"id": "late", "cmd": {"type": "crossfader", "value": 0.5}}"#);
+        c.refuse_line(
+            client,
+            r#"{"id": "late", "cmd": {"type": "crossfader", "value": 0.5}}"#,
+        );
         c.refuse_line(client, "   ");
-        let got: Vec<Value> = rx.try_iter().map(|l| serde_json::from_str(&l).unwrap()).collect();
+        let got: Vec<Value> = rx
+            .try_iter()
+            .map(|l| serde_json::from_str(&l).unwrap())
+            .collect();
         assert_eq!(got.len(), 1, "one result, none for a blank line: {got:?}");
-        assert_eq!((got[0]["id"].clone(), got[0]["ok"].clone()), (serde_json::json!("late"), serde_json::json!(false)));
-        assert!(got[0]["error"]["message"].as_str().unwrap().contains("shutting down"));
-        assert!(out.0.lock().unwrap().is_empty(), "stdio got a socket's refusal");
+        assert_eq!(
+            (got[0]["id"].clone(), got[0]["ok"].clone()),
+            (serde_json::json!("late"), serde_json::json!(false))
+        );
+        assert!(got[0]["error"]["message"]
+            .as_str()
+            .unwrap()
+            .contains("shutting down"));
+        assert!(
+            out.0.lock().unwrap().is_empty(),
+            "stdio got a socket's refusal"
+        );
     }
 
     #[test]
@@ -2879,20 +3732,36 @@ mod tests {
         let (tx, rx) = mpsc::channel();
         let o = out.clone();
         std::thread::spawn(move || {
-            let r = serve_threaded_from(io::BufReader::new(reader), o, 48000, "wall", MidiSetup::inject_only(), |side, _stop| {
-                // Die once the command is in the mailbox, never before: a fixed
-                // 300 ms sleep let a starved runner's reader land the line after
-                // the audio side had already gone (CI, Thu 22 Oct 2026).
-                let deadline = Instant::now() + Duration::from_secs(10);
-                while side.cmd_rx.slots() == 0 {
-                    assert!(Instant::now() < deadline, "the command never reached the mailbox");
-                    std::thread::sleep(Duration::from_millis(1));
-                }
-            });
+            let r = serve_threaded_from(
+                io::BufReader::new(reader),
+                o,
+                48000,
+                "wall",
+                MidiSetup::inject_only(),
+                |side, _stop| {
+                    // Die once the command is in the mailbox, never before: a fixed
+                    // 300 ms sleep let a starved runner's reader land the line after
+                    // the audio side had already gone (CI, Thu 22 Oct 2026).
+                    let deadline = Instant::now() + Duration::from_secs(10);
+                    while side.cmd_rx.slots() == 0 {
+                        assert!(
+                            Instant::now() < deadline,
+                            "the command never reached the mailbox"
+                        );
+                        std::thread::sleep(Duration::from_millis(1));
+                    }
+                },
+            );
             let _ = tx.send(r);
         });
-        writeln!(writer, r#"{{"id": "stuck", "cmd": {{"type": "crossfader", "value": 0.5}}}}"#).unwrap();
-        let r = rx.recv_timeout(Duration::from_secs(10)).expect("serve hung after its audio side stopped");
+        writeln!(
+            writer,
+            r#"{{"id": "stuck", "cmd": {{"type": "crossfader", "value": 0.5}}}}"#
+        )
+        .unwrap();
+        let r = rx
+            .recv_timeout(Duration::from_secs(10))
+            .expect("serve hung after its audio side stopped");
         assert!(r.is_err());
         let text = String::from_utf8(out.0.lock().unwrap().clone()).unwrap();
         let result = text
@@ -2901,14 +3770,23 @@ mod tests {
             .find(|v| v["type"] == "result" && v["id"] == "stuck")
             .unwrap_or_else(|| panic!("no result for the stranded command:\n{text}"));
         assert_eq!(result["ok"], false, "{result}");
-        assert!(result["error"]["message"].as_str().unwrap().contains("stopped before"), "{result}");
+        assert!(
+            result["error"]["message"]
+                .as_str()
+                .unwrap()
+                .contains("stopped before"),
+            "{result}"
+        );
     }
 
     fn lines_of(out: &Captured) -> Vec<Value> {
         let text = String::from_utf8(out.0.lock().unwrap().clone()).unwrap();
         // serve is still writing: a line is whole only once its newline is out.
         let whole = text.rfind('\n').map_or(0, |i| i + 1);
-        text[..whole].lines().map(|l| serde_json::from_str::<Value>(l).unwrap()).collect()
+        text[..whole]
+            .lines()
+            .map(|l| serde_json::from_str::<Value>(l).unwrap())
+            .collect()
     }
 
     #[test]
@@ -2931,7 +3809,11 @@ mod tests {
         // midir callback does.
         let open: MidiOpener = Box::new(|maps: &MapSet, sink: MidiSink| {
             let port = "DDJ-FLX4 MIDI 1".to_string();
-            let map = maps.resolve(&port).expect("the FLX4 map").name_match.clone();
+            let map = maps
+                .resolve(&port)
+                .expect("the FLX4 map")
+                .name_match
+                .clone();
             let line = midi::ports_json(&[(port.clone(), map)], &["IAC Bus 1".to_string()]);
             std::thread::spawn(move || {
                 sink.send(&port, &[0xb6, 0x1f, 0x00]); // crossfader hard left
@@ -2944,32 +3826,74 @@ mod tests {
         let out = Captured::default();
         let o = out.clone();
         let (tx, rx) = mpsc::channel();
-        let setup = MidiSetup { router: Router::new(MapSet::builtin().unwrap()), open: Some(open) };
+        let setup = MidiSetup {
+            router: Router::new(MapSet::builtin().unwrap()),
+            open: Some(open),
+        };
         std::thread::spawn(move || {
-            let _ = tx.send(serve_threaded_from(io::BufReader::new(reader), o, 48000, "wall", setup, run_wall(256)));
+            let _ = tx.send(serve_threaded_from(
+                io::BufReader::new(reader),
+                o,
+                48000,
+                "wall",
+                setup,
+                run_wall(256),
+            ));
         });
         // Wait for the three MIDI messages to be handled, then stop.
         let deadline = Instant::now() + Duration::from_secs(10);
-        while lines_of(&out).iter().filter(|l| l["type"] == "midi_action" || l["type"] == "midi_unmapped" || l["id"] == "midi-0").count() < 3 {
-            assert!(Instant::now() < deadline, "MIDI never came through: {:?}", lines_of(&out));
+        while lines_of(&out)
+            .iter()
+            .filter(|l| {
+                l["type"] == "midi_action" || l["type"] == "midi_unmapped" || l["id"] == "midi-0"
+            })
+            .count()
+            < 3
+        {
+            assert!(
+                Instant::now() < deadline,
+                "MIDI never came through: {:?}",
+                lines_of(&out)
+            );
             std::thread::sleep(Duration::from_millis(5));
         }
-        writeln!(writer, r#"{{"id": "s", "cmd": {{"type": "engine_state"}}}}"#).unwrap();
+        writeln!(
+            writer,
+            r#"{{"id": "s", "cmd": {{"type": "engine_state"}}}}"#
+        )
+        .unwrap();
         std::thread::sleep(Duration::from_millis(100));
-        writeln!(writer, r#"{{"id": "bye", "cmd": {{"type": "engine_shutdown"}}}}"#).unwrap();
+        writeln!(
+            writer,
+            r#"{{"id": "bye", "cmd": {{"type": "engine_shutdown"}}}}"#
+        )
+        .unwrap();
         rx.recv_timeout(Duration::from_secs(10)).unwrap().unwrap();
         let lines = lines_of(&out);
         // hello, then the claim, before anything else.
         assert_eq!(lines[0]["type"], "hello");
-        assert_eq!(lines[1], serde_json::json!({"type": "midi_ports", "claimed": [{"port": "DDJ-FLX4 MIDI 1", "map": "DDJ-FLX4"}], "unclaimed": ["IAC Bus 1"]}));
+        assert_eq!(
+            lines[1],
+            serde_json::json!({"type": "midi_ports", "claimed": [{"port": "DDJ-FLX4 MIDI 1", "map": "DDJ-FLX4"}], "unclaimed": ["IAC Bus 1"]})
+        );
         // The crossfader went to the engine: a result, and the state shows it.
-        let r = lines.iter().find(|l| l["id"] == "midi-0").expect("a result for the MIDI crossfader");
+        let r = lines
+            .iter()
+            .find(|l| l["id"] == "midi-0")
+            .expect("a result for the MIDI crossfader");
         assert_eq!(r["ok"], true, "{r}");
-        let last_state = lines.iter().rev().find(|l| l["type"] == "state").expect("a state");
+        let last_state = lines
+            .iter()
+            .rev()
+            .find(|l| l["type"] == "state")
+            .expect("a state");
         assert_eq!(last_state["mixer"]["crossfader"], 0.0);
         // The hot cue went to the page, verbatim; the jog touch was reported.
         let a = lines.iter().find(|l| l["type"] == "midi_action").unwrap();
-        assert_eq!(a["action"], serde_json::json!({"type": "deck_hot_cue", "deck": 1, "slot": "C"}));
+        assert_eq!(
+            a["action"],
+            serde_json::json!({"type": "deck_hot_cue", "deck": 1, "slot": "C"})
+        );
         assert_eq!(a["value"]["pressed"], true);
         let u = lines.iter().find(|l| l["type"] == "midi_unmapped").unwrap();
         assert_eq!(u["hint"], "JOG touch (deck 1)");
@@ -2977,13 +3901,30 @@ mod tests {
 
     #[test]
     fn a_midi_opener_that_fails_stops_serve_before_hello() {
-        let open: MidiOpener = Box::new(|_: &MapSet, _: MidiSink| Err("MIDI input is unavailable: test".to_string()));
+        let open: MidiOpener =
+            Box::new(|_: &MapSet, _: MidiSink| Err("MIDI input is unavailable: test".to_string()));
         let (reader, _writer) = io::pipe().unwrap();
         let out = Captured::default();
-        let setup = MidiSetup { router: Router::new(MapSet::builtin().unwrap()), open: Some(open) };
-        let r = serve_threaded_from(io::BufReader::new(reader), out.clone(), 48000, "wall", setup, run_wall(256));
-        assert!(r.unwrap_err().to_string().contains("MIDI input is unavailable"));
-        assert!(lines_of(&out).is_empty(), "nothing, not even hello, before the failure");
+        let setup = MidiSetup {
+            router: Router::new(MapSet::builtin().unwrap()),
+            open: Some(open),
+        };
+        let r = serve_threaded_from(
+            io::BufReader::new(reader),
+            out.clone(),
+            48000,
+            "wall",
+            setup,
+            run_wall(256),
+        );
+        assert!(r
+            .unwrap_err()
+            .to_string()
+            .contains("MIDI input is unavailable"));
+        assert!(
+            lines_of(&out).is_empty(),
+            "nothing, not even hello, before the failure"
+        );
     }
 
     #[test]
@@ -2999,28 +3940,49 @@ mod tests {
             let o = out.clone();
             let started = Instant::now();
             std::thread::spawn(move || {
-                let r = serve_threaded_from(io::Cursor::new(input), o, 48000, "wall", MidiSetup::inject_only(), |mut side, stop| loop {
-                    std::thread::sleep(Duration::from_millis(50));
-                    if stop.load(Ordering::Relaxed) {
-                        break;
-                    }
-                    side.process(64);
-                });
+                let r = serve_threaded_from(
+                    io::Cursor::new(input),
+                    o,
+                    48000,
+                    "wall",
+                    MidiSetup::inject_only(),
+                    |mut side, stop| loop {
+                        std::thread::sleep(Duration::from_millis(50));
+                        if stop.load(Ordering::Relaxed) {
+                            break;
+                        }
+                        side.process(64);
+                    },
+                );
                 let _ = tx.send(r);
             });
-            rx.recv_timeout(Duration::from_secs(10)).expect("serve hung").unwrap();
+            rx.recv_timeout(Duration::from_secs(10))
+                .expect("serve hung")
+                .unwrap();
             let text = String::from_utf8(out.0.lock().unwrap().clone()).unwrap();
-            let lines: Vec<Value> = text.lines().map(|l| serde_json::from_str(l).unwrap()).collect();
+            let lines: Vec<Value> = text
+                .lines()
+                .map(|l| serde_json::from_str(l).unwrap())
+                .collect();
             (lines, started.elapsed())
         };
         let (lines, _) = run("{\"id\": \"s\", \"cmd\": {\"type\": \"engine_state\"}}\n");
-        assert!(lines.iter().any(|v| v["id"] == "s" && v["ok"] == true), "{lines:?}");
-        assert!(lines.iter().any(|v| v["type"] == "state"), "the acknowledged state never came: {lines:?}");
+        assert!(
+            lines.iter().any(|v| v["id"] == "s" && v["ok"] == true),
+            "{lines:?}"
+        );
+        assert!(
+            lines.iter().any(|v| v["type"] == "state"),
+            "the acknowledged state never came: {lines:?}"
+        );
         // Control: with no request pending, EOF stops at once rather than
         // waiting out the drain limit.
         let (lines, took) = run("");
         assert!(!lines.iter().any(|v| v["type"] == "state"), "{lines:?}");
-        assert!(took < DRAIN_LIMIT / 2, "stopping took {took:?} with nothing to wait for");
+        assert!(
+            took < DRAIN_LIMIT / 2,
+            "stopping took {took:?} with nothing to wait for"
+        );
     }
 
     /// Output that works until `fail` is set, then refuses every write, as
@@ -3050,41 +4012,69 @@ mod tests {
         // Either writer may meet the closed output first: the pump (a result
         // or a state from a running audio side) or the control side (a reply
         // it writes itself, here to a malformed line).
-        for (line, audio_runs) in [(r#"{"id": 1, "cmd": {"type": "crossfader", "value": 0.5}}"#, true), ("not json", false)] {
+        for (line, audio_runs) in [
+            (
+                r#"{"id": 1, "cmd": {"type": "crossfader", "value": 0.5}}"#,
+                true,
+            ),
+            ("not json", false),
+        ] {
             let (reader, mut writer) = io::pipe().unwrap();
             let out = Closable::default();
             let (tx, rx) = mpsc::channel();
             let (o, audio_stopped) = (out.clone(), Arc::new(AtomicBool::new(false)));
             let stopped = audio_stopped.clone();
             std::thread::spawn(move || {
-                let r = serve_threaded_from(io::BufReader::new(reader), o, 48000, "wall", MidiSetup::inject_only(), move |mut side, stop| {
-                    while !stop.load(Ordering::Relaxed) {
-                        if audio_runs {
-                            side.process(64);
+                let r = serve_threaded_from(
+                    io::BufReader::new(reader),
+                    o,
+                    48000,
+                    "wall",
+                    MidiSetup::inject_only(),
+                    move |mut side, stop| {
+                        while !stop.load(Ordering::Relaxed) {
+                            if audio_runs {
+                                side.process(64);
+                            }
+                            std::thread::sleep(Duration::from_millis(1));
                         }
-                        std::thread::sleep(Duration::from_millis(1));
-                    }
-                    stopped.store(true, Ordering::Relaxed);
-                });
+                        stopped.store(true, Ordering::Relaxed);
+                    },
+                );
                 let _ = tx.send(r);
             });
             // Control: a working output keeps a session with stdin open going.
             writeln!(writer, "{line}").unwrap();
-            let has_result = || String::from_utf8(out.text.0.lock().unwrap().clone()).unwrap().contains(r#""type":"result""#);
+            let has_result = || {
+                String::from_utf8(out.text.0.lock().unwrap().clone())
+                    .unwrap()
+                    .contains(r#""type":"result""#)
+            };
             let deadline = Instant::now() + Duration::from_secs(10);
             while !has_result() && Instant::now() < deadline {
                 if let Ok(r) = rx.recv_timeout(Duration::from_millis(5)) {
                     panic!("{line}: serve ended with its output working: {r:?}");
                 }
             }
-            assert!(has_result(), "{line}: the result never arrived with the output working");
+            assert!(
+                has_result(),
+                "{line}: the result never arrived with the output working"
+            );
             // A loaded host can only make this pass more easily, never fail it.
-            assert!(rx.recv_timeout(Duration::from_millis(300)).is_err(), "{line}: serve ended after its result with the output working");
+            assert!(
+                rx.recv_timeout(Duration::from_millis(300)).is_err(),
+                "{line}: serve ended after its result with the output working"
+            );
             out.fail.store(true, Ordering::Relaxed);
             writeln!(writer, "{line}").unwrap();
-            let r = rx.recv_timeout(Duration::from_secs(10)).unwrap_or_else(|_| panic!("{line}: serve kept running with its output closed"));
+            let r = rx
+                .recv_timeout(Duration::from_secs(10))
+                .unwrap_or_else(|_| panic!("{line}: serve kept running with its output closed"));
             assert_eq!(r.unwrap_err().kind(), io::ErrorKind::BrokenPipe, "{line}");
-            assert!(audio_stopped.load(Ordering::Relaxed), "{line}: the audio side was left running");
+            assert!(
+                audio_stopped.load(Ordering::Relaxed),
+                "{line}: the audio side was left running"
+            );
             drop(writer);
         }
     }
@@ -3118,19 +4108,34 @@ mod tests {
         // pump fails to write while the engine drains.
         let run = |input: &'static str, needle: &'static str| {
             let out = FailsOn(needle, Captured::default(), Vec::new());
-            serve_threaded_from(io::Cursor::new(input), out, 48000, "wall", MidiSetup::inject_only(), |mut side, stop| {
-                while !stop.load(Ordering::Relaxed) {
-                    side.process(64);
-                    std::thread::sleep(Duration::from_millis(1));
-                }
-            })
+            serve_threaded_from(
+                io::Cursor::new(input),
+                out,
+                48000,
+                "wall",
+                MidiSetup::inject_only(),
+                |mut side, stop| {
+                    while !stop.load(Ordering::Relaxed) {
+                        side.process(64);
+                        std::thread::sleep(Duration::from_millis(1));
+                    }
+                },
+            )
         };
         let bye = "{\"id\": \"bye\", \"cmd\": {\"type\": \"engine_shutdown\"}}\n";
         let r = run(bye, "\"bye\"");
-        assert_eq!(r.unwrap_err().kind(), io::ErrorKind::BrokenPipe, "a lost shutdown reply reported success");
+        assert_eq!(
+            r.unwrap_err().kind(),
+            io::ErrorKind::BrokenPipe,
+            "a lost shutdown reply reported success"
+        );
         let asked = "{\"id\": \"s\", \"cmd\": {\"type\": \"engine_state\"}}\n{\"id\": \"bye\", \"cmd\": {\"type\": \"engine_shutdown\"}}\n";
         let r = run(asked, "\"type\":\"state\"");
-        assert_eq!(r.unwrap_err().kind(), io::ErrorKind::BrokenPipe, "a lost state while stopping reported success");
+        assert_eq!(
+            r.unwrap_err().kind(),
+            io::ErrorKind::BrokenPipe,
+            "a lost state while stopping reported success"
+        );
         // Control: with every write delivered, the same sessions end well.
         assert!(run(bye, "never written").is_ok());
         assert!(run(asked, "never written").is_ok());
@@ -3148,13 +4153,23 @@ mod tests {
         }
         let run = |tail: Box<dyn io::Read + Send>| {
             let out = Captured::default();
-            let line = io::Cursor::new(b"{\"id\": \"f\", \"cmd\": {\"type\": \"master_mute\", \"muted\": true}}\n".to_vec());
-            let r = serve_threaded_from(io::BufReader::new(io::Read::chain(line, tail)), out.clone(), 48000, "wall", MidiSetup::inject_only(), |mut side, stop| {
-                while !stop.load(Ordering::Relaxed) {
-                    side.process(64);
-                    std::thread::sleep(Duration::from_millis(1));
-                }
-            });
+            let line = io::Cursor::new(
+                b"{\"id\": \"f\", \"cmd\": {\"type\": \"master_mute\", \"muted\": true}}\n"
+                    .to_vec(),
+            );
+            let r = serve_threaded_from(
+                io::BufReader::new(io::Read::chain(line, tail)),
+                out.clone(),
+                48000,
+                "wall",
+                MidiSetup::inject_only(),
+                |mut side, stop| {
+                    while !stop.load(Ordering::Relaxed) {
+                        side.process(64);
+                        std::thread::sleep(Duration::from_millis(1));
+                    }
+                },
+            );
             let text = String::from_utf8(out.0.lock().unwrap().clone()).unwrap();
             (r, text)
         };
@@ -3228,20 +4243,29 @@ mod tests {
             let t = std::thread::Builder::new()
                 .name("serve-control".into())
                 .spawn(move || {
-                    serve_threaded_from(io::BufReader::new(reader), out, 48000, "wall", MidiSetup::inject_only(), move |mut side, stop| {
-                        while !stop.load(Ordering::Relaxed) {
+                    serve_threaded_from(
+                        io::BufReader::new(reader),
+                        out,
+                        48000,
+                        "wall",
+                        MidiSetup::inject_only(),
+                        move |mut side, stop| {
+                            while !stop.load(Ordering::Relaxed) {
+                                side.process(64);
+                                std::thread::sleep(Duration::from_millis(1));
+                            }
+                            // Whatever reached the mailbox is applied.
                             side.process(64);
-                            std::thread::sleep(Duration::from_millis(1));
-                        }
-                        // Whatever reached the mailbox is applied.
-                        side.process(64);
-                        *h.lock().unwrap() = Some(side.engine.snapshot().master_volume);
-                    })
+                            *h.lock().unwrap() = Some(side.engine.snapshot().master_volume);
+                        },
+                    )
                 })
                 .unwrap();
             writer.write_all(first.as_bytes()).unwrap();
             if dies.is_some() {
-                held_rx.recv_timeout(Duration::from_secs(10)).expect("no write was held");
+                held_rx
+                    .recv_timeout(Duration::from_secs(10))
+                    .expect("no write was held");
             }
             writer.write_all(rest.as_bytes()).unwrap();
             if dies.is_some() {
@@ -3259,14 +4283,20 @@ mod tests {
         // The control side meets it first, refusing a malformed line.
         let (r, volume) = run("not json\n", moves.clone(), Some(false));
         assert_eq!(r.unwrap_err().kind(), io::ErrorKind::BrokenPipe);
-        assert_ne!(volume, 0.25, "lines read before the output closed were applied after it");
+        assert_ne!(
+            volume, 0.25,
+            "lines read before the output closed were applied after it"
+        );
         // The pump meets it first, writing a result: it holds the output, so
         // the control side waits on it to refuse the next line, and the moves
         // pile up behind that. Only the pump's write fails here.
         let first = "{\"id\": 1, \"cmd\": {\"type\": \"crossfader\", \"value\": 0.5}}\n";
         let (r, volume) = run(first, format!("not json\n{moves}"), Some(true));
         assert_eq!(r.unwrap_err().kind(), io::ErrorKind::BrokenPipe);
-        assert_ne!(volume, 0.25, "lines read before the pump met the closed output were applied after it");
+        assert_ne!(
+            volume, 0.25,
+            "lines read before the pump met the closed output were applied after it"
+        );
         // Control: with the output working, the same lines are applied.
         let (r, volume) = run("not json\n", moves, None);
         r.unwrap();
@@ -3319,7 +4349,8 @@ mod tests {
 
     impl Write for Stalled {
         fn write(&mut self, b: &[u8]) -> io::Result<usize> {
-            while self.text.0.lock().unwrap().contains(&b'\n') && !self.open.load(Ordering::SeqCst) {
+            while self.text.0.lock().unwrap().contains(&b'\n') && !self.open.load(Ordering::SeqCst)
+            {
                 std::thread::sleep(Duration::from_millis(5));
             }
             self.text.write(b)
@@ -3343,21 +4374,49 @@ mod tests {
             ("9-byte", |_| 9, 200_000, LINE_SLOTS + 1 + 8192 / 9 + 1),
             ("1 MiB", |_| 1 << 20, 100, LINE_BYTES / (1 << 20) + 2),
             // A length counts the newline: one byte past the limit is + 2.
-            ("oversized", |i| if i < LINE_SLOTS { 9 } else { MAX_LINE_BYTES + 2 }, LINE_SLOTS + 20, LINE_SLOTS + 2),
+            (
+                "oversized",
+                |i| {
+                    if i < LINE_SLOTS {
+                        9
+                    } else {
+                        MAX_LINE_BYTES + 2
+                    }
+                },
+                LINE_SLOTS + 20,
+                LINE_SLOTS + 2,
+            ),
         ];
         for (len, len_of, cap, bound) in cases {
             let made = Arc::new(std::sync::atomic::AtomicUsize::new(0));
             let end = Arc::new(AtomicBool::new(false));
-            let input = io::BufReader::with_capacity(8192, Lines { len_of, cur: 0, at: 0, made: made.clone(), end: end.clone(), cap });
+            let input = io::BufReader::with_capacity(
+                8192,
+                Lines {
+                    len_of,
+                    cur: 0,
+                    at: 0,
+                    made: made.clone(),
+                    end: end.clone(),
+                    cap,
+                },
+            );
             let out = Stalled::default();
             let (tx, rx) = mpsc::channel();
             let o = out.clone();
             std::thread::spawn(move || {
-                let r = serve_threaded_from(input, o, 48000, "wall", MidiSetup::inject_only(), |_side, stop| {
-                    while !stop.load(Ordering::Relaxed) {
-                        std::thread::sleep(Duration::from_millis(1));
-                    }
-                });
+                let r = serve_threaded_from(
+                    input,
+                    o,
+                    48000,
+                    "wall",
+                    MidiSetup::inject_only(),
+                    |_side, stop| {
+                        while !stop.load(Ordering::Relaxed) {
+                            std::thread::sleep(Duration::from_millis(1));
+                        }
+                    },
+                );
                 let _ = tx.send(r);
             });
             let settled = || {
@@ -3372,19 +4431,40 @@ mod tests {
                 }
             };
             let held = settled();
-            assert!(held <= bound, "{len} lines: read {held} lines with the output stalled (bound {bound})");
+            assert!(
+                held <= bound,
+                "{len} lines: read {held} lines with the output stalled (bound {bound})"
+            );
             // Control: once the output moves, reading resumes and every
             // line gets its result.
             out.open.store(true, Ordering::SeqCst);
             let deadline = Instant::now() + Duration::from_secs(10);
-            while made.load(Ordering::SeqCst) < held + 5.min(cap - held) && Instant::now() < deadline {
+            while made.load(Ordering::SeqCst) < held + 5.min(cap - held)
+                && Instant::now() < deadline
+            {
                 std::thread::sleep(Duration::from_millis(5));
             }
             end.store(true, Ordering::SeqCst);
-            rx.recv_timeout(Duration::from_secs(20)).expect("serve hung").unwrap();
-            let lines = out.text.0.lock().unwrap().iter().filter(|&&c| c == b'\n').count();
-            assert!(made.load(Ordering::SeqCst) > held || held == cap, "{len} lines: reading never resumed");
-            assert_eq!(lines, 1 + made.load(Ordering::SeqCst), "{len} lines: one result per line");
+            rx.recv_timeout(Duration::from_secs(20))
+                .expect("serve hung")
+                .unwrap();
+            let lines = out
+                .text
+                .0
+                .lock()
+                .unwrap()
+                .iter()
+                .filter(|&&c| c == b'\n')
+                .count();
+            assert!(
+                made.load(Ordering::SeqCst) > held || held == cap,
+                "{len} lines: reading never resumed"
+            );
+            assert_eq!(
+                lines,
+                1 + made.load(Ordering::SeqCst),
+                "{len} lines: one result per line"
+            );
         }
     }
 
@@ -3408,28 +4488,59 @@ mod tests {
         // One at the end with no newline is refused too.
         input.extend(std::iter::repeat_n(b'x', MAX_LINE_BYTES + 5));
         let check = |text: &str| {
-            let results: Vec<Value> = text.lines().map(|l| serde_json::from_str::<Value>(l).unwrap()).filter(|v| v["type"] == "result").collect();
+            let results: Vec<Value> = text
+                .lines()
+                .map(|l| serde_json::from_str::<Value>(l).unwrap())
+                .filter(|v| v["type"] == "result")
+                .collect();
             assert_eq!(results.len(), 4, "{results:?}");
             // The threaded clocks write results from two threads, so their
             // order is not the lines' order.
-            let skipped = results.iter().filter(|r| r["id"].is_null()).collect::<Vec<_>>();
+            let skipped = results
+                .iter()
+                .filter(|r| r["id"].is_null())
+                .collect::<Vec<_>>();
             assert_eq!(skipped.len(), 2, "{results:?}");
-            assert!(skipped.iter().all(|r| r["error"]["message"].as_str().unwrap().contains("longer than")), "{skipped:?}");
+            assert!(
+                skipped.iter().all(|r| r["error"]["message"]
+                    .as_str()
+                    .unwrap()
+                    .contains("longer than")),
+                "{skipped:?}"
+            );
             for id in ["max", "after"] {
-                let r = results.iter().find(|r| r["id"] == id).unwrap_or_else(|| panic!("no result for {id}: {results:?}"));
+                let r = results
+                    .iter()
+                    .find(|r| r["id"] == id)
+                    .unwrap_or_else(|| panic!("no result for {id}: {results:?}"));
                 assert_eq!(r["ok"], true, "{r}");
             }
         };
         let mut out = Vec::new();
-        serve_fake(io::Cursor::new(input.clone()), &mut out, 48000, |_| unreachable!(), None, MidiSetup::inject_only().router).unwrap();
+        serve_fake(
+            io::Cursor::new(input.clone()),
+            &mut out,
+            48000,
+            |_| unreachable!(),
+            None,
+            MidiSetup::inject_only().router,
+        )
+        .unwrap();
         check(&String::from_utf8(out).unwrap());
         let out = Captured::default();
-        serve_threaded_from(io::Cursor::new(input), out.clone(), 48000, "wall", MidiSetup::inject_only(), |mut side, stop| {
-            while !stop.load(Ordering::Relaxed) {
-                side.process(64);
-                std::thread::sleep(Duration::from_millis(1));
-            }
-        })
+        serve_threaded_from(
+            io::Cursor::new(input),
+            out.clone(),
+            48000,
+            "wall",
+            MidiSetup::inject_only(),
+            |mut side, stop| {
+                while !stop.load(Ordering::Relaxed) {
+                    side.process(64);
+                    std::thread::sleep(Duration::from_millis(1));
+                }
+            },
+        )
         .unwrap();
         check(&String::from_utf8(out.0.lock().unwrap().clone()).unwrap());
     }
@@ -3440,35 +4551,70 @@ mod tests {
         // the fake clock with an error and the threaded ones as at EOF, with
         // no result for it. It is refused like any malformed line.
         let mut input = Vec::new();
-        input.extend_from_slice(b"{\"id\": \"bad\", \"cmd\": {\"type\": \"crossfader\", \"value\": 0.5}} \xff\xfe\n");
+        input.extend_from_slice(
+            b"{\"id\": \"bad\", \"cmd\": {\"type\": \"crossfader\", \"value\": 0.5}} \xff\xfe\n",
+        );
         input.extend_from_slice(b"\xc3\n");
         // Control: UTF-8 past ASCII is read as usual, and so is what follows.
-        input.extend_from_slice("{\"id\": \"caf\u{e9}\", \"cmd\": {\"type\": \"crossfader\", \"value\": 0.5}}\n".as_bytes());
-        input.extend_from_slice(b"{\"id\": \"after\", \"cmd\": {\"type\": \"master_volume\", \"value\": 0.5}}\n");
+        input.extend_from_slice(
+            "{\"id\": \"caf\u{e9}\", \"cmd\": {\"type\": \"crossfader\", \"value\": 0.5}}\n"
+                .as_bytes(),
+        );
+        input.extend_from_slice(
+            b"{\"id\": \"after\", \"cmd\": {\"type\": \"master_volume\", \"value\": 0.5}}\n",
+        );
         let check = |text: &str| {
-            let results: Vec<Value> = text.lines().map(|l| serde_json::from_str::<Value>(l).unwrap()).filter(|v| v["type"] == "result").collect();
+            let results: Vec<Value> = text
+                .lines()
+                .map(|l| serde_json::from_str::<Value>(l).unwrap())
+                .filter(|v| v["type"] == "result")
+                .collect();
             assert_eq!(results.len(), 4, "{results:?}");
             let skipped: Vec<_> = results.iter().filter(|r| r["id"].is_null()).collect();
             assert_eq!(skipped.len(), 2, "{results:?}");
             for r in &skipped {
                 assert_eq!(r["error"]["code"], "invalid", "{r}");
-                assert!(r["error"]["message"].as_str().unwrap().contains("not UTF-8"), "{r}");
+                assert!(
+                    r["error"]["message"]
+                        .as_str()
+                        .unwrap()
+                        .contains("not UTF-8"),
+                    "{r}"
+                );
             }
             for id in ["caf\u{e9}", "after"] {
-                let r = results.iter().find(|r| r["id"] == id).unwrap_or_else(|| panic!("no result for {id}: {results:?}"));
+                let r = results
+                    .iter()
+                    .find(|r| r["id"] == id)
+                    .unwrap_or_else(|| panic!("no result for {id}: {results:?}"));
                 assert_eq!(r["ok"], true, "{r}");
             }
         };
         let mut out = Vec::new();
-        serve_fake(io::Cursor::new(input.clone()), &mut out, 48000, |_| unreachable!(), None, MidiSetup::inject_only().router).unwrap();
+        serve_fake(
+            io::Cursor::new(input.clone()),
+            &mut out,
+            48000,
+            |_| unreachable!(),
+            None,
+            MidiSetup::inject_only().router,
+        )
+        .unwrap();
         check(&String::from_utf8(out).unwrap());
         let out = Captured::default();
-        serve_threaded_from(io::Cursor::new(input), out.clone(), 48000, "wall", MidiSetup::inject_only(), |mut side, stop| {
-            while !stop.load(Ordering::Relaxed) {
-                side.process(64);
-                std::thread::sleep(Duration::from_millis(1));
-            }
-        })
+        serve_threaded_from(
+            io::Cursor::new(input),
+            out.clone(),
+            48000,
+            "wall",
+            MidiSetup::inject_only(),
+            |mut side, stop| {
+                while !stop.load(Ordering::Relaxed) {
+                    side.process(64);
+                    std::thread::sleep(Duration::from_millis(1));
+                }
+            },
+        )
         .unwrap();
         check(&String::from_utf8(out.0.lock().unwrap().clone()).unwrap());
     }
@@ -3479,35 +4625,63 @@ mod tests {
         // Codex on 00209c94: commands for a deck whose load is still decoding
         // queued without limit. The load reads a FIFO nobody writes to yet,
         // so it stays pending until the test lets it fail.
-        let tmp = tempfile::Builder::new().prefix("odj-audio-test-serve-parked-").tempdir().unwrap();
+        let tmp = tempfile::Builder::new()
+            .prefix("odj-audio-test-serve-parked-")
+            .tempdir()
+            .unwrap();
         let dir = tmp.path().to_path_buf();
         std::fs::create_dir_all(&dir).unwrap();
         let fifo = dir.join("slow.wav");
         let _ = std::fs::remove_file(&fifo);
-        assert!(std::process::Command::new("mkfifo").arg(&fifo).status().unwrap().success());
+        assert!(std::process::Command::new("mkfifo")
+            .arg(&fifo)
+            .status()
+            .unwrap()
+            .success());
         let (reader, mut writer) = io::pipe().unwrap();
         let out = Captured::default();
         let (tx, rx) = mpsc::channel();
         let o = out.clone();
         std::thread::spawn(move || {
-            let r = serve_threaded_from(io::BufReader::new(reader), o, 48000, "wall", MidiSetup::inject_only(), |mut side, stop| {
-                while !stop.load(Ordering::Relaxed) {
-                    side.process(64);
-                    std::thread::sleep(Duration::from_millis(1));
-                }
-            });
+            let r = serve_threaded_from(
+                io::BufReader::new(reader),
+                o,
+                48000,
+                "wall",
+                MidiSetup::inject_only(),
+                |mut side, stop| {
+                    while !stop.load(Ordering::Relaxed) {
+                        side.process(64);
+                        std::thread::sleep(Duration::from_millis(1));
+                    }
+                },
+            );
             let _ = tx.send(r);
         });
         let results = || -> Vec<Value> {
             let text = String::from_utf8(out.0.lock().unwrap().clone()).unwrap();
             // serve is still writing: a line is whole only once its newline is out.
             let whole = text.rfind('\n').map_or(0, |i| i + 1);
-            text[..whole].lines().map(|l| serde_json::from_str::<Value>(l).unwrap()).filter(|v| v["type"] == "result").collect()
+            text[..whole]
+                .lines()
+                .map(|l| serde_json::from_str::<Value>(l).unwrap())
+                .filter(|v| v["type"] == "result")
+                .collect()
         };
-        writeln!(writer, "{}", serde_json::json!({"id": "load", "cmd": {"type": "load", "deck": 1, "path": fifo}})).unwrap();
+        writeln!(
+            writer,
+            "{}",
+            serde_json::json!({"id": "load", "cmd": {"type": "load", "deck": 1, "path": fifo}})
+        )
+        .unwrap();
         let extra = 50;
         for i in 0..QUEUE_SLOTS + extra {
-            writeln!(writer, "{}", serde_json::json!({"id": i, "cmd": {"type": "fader", "deck": 1, "value": 0.5}})).unwrap();
+            writeln!(
+                writer,
+                "{}",
+                serde_json::json!({"id": i, "cmd": {"type": "fader", "deck": 1, "value": 0.5}})
+            )
+            .unwrap();
         }
         // Past the bound, each is refused at once, while the load still waits.
         let deadline = Instant::now() + Duration::from_secs(10);
@@ -3519,17 +4693,32 @@ mod tests {
         for r in &early {
             let i = r["id"].as_u64().unwrap() as usize;
             assert!(i >= QUEUE_SLOTS, "{r}");
-            assert!(r["error"]["message"].as_str().unwrap().contains("engine mailbox is full"), "{r}");
+            assert!(
+                r["error"]["message"]
+                    .as_str()
+                    .unwrap()
+                    .contains("engine mailbox is full"),
+                "{r}"
+            );
         }
         // Control: the first QUEUE_SLOTS stayed parked, and when the load
         // fails (the FIFO opened and closed with nothing in it) each of them
         // is refused as waiting on it, not as a full mailbox.
         drop(std::fs::OpenOptions::new().write(true).open(&fifo).unwrap());
         drop(writer);
-        rx.recv_timeout(Duration::from_secs(20)).expect("serve hung").unwrap();
+        rx.recv_timeout(Duration::from_secs(20))
+            .expect("serve hung")
+            .unwrap();
         let all = results();
         assert_eq!(all.len(), QUEUE_SLOTS + extra + 1, "one result per command");
-        let waited = all.iter().filter(|r| r["error"]["message"].as_str().is_some_and(|m| m.contains("waited on failed"))).count();
+        let waited = all
+            .iter()
+            .filter(|r| {
+                r["error"]["message"]
+                    .as_str()
+                    .is_some_and(|m| m.contains("waited on failed"))
+            })
+            .count();
         assert_eq!(waited, QUEUE_SLOTS);
         tmp.close().unwrap();
     }
@@ -3538,7 +4727,10 @@ mod tests {
     fn threaded_loads_of_one_file_share_its_samples() {
         // Codex's case: on the wall and device clocks every load decoded its
         // own copy, even of a file another deck held or was still decoding.
-        let tmp = tempfile::Builder::new().prefix("odj-audio-test-serve-share-").tempdir().unwrap();
+        let tmp = tempfile::Builder::new()
+            .prefix("odj-audio-test-serve-share-")
+            .tempdir()
+            .unwrap();
         let dir = tmp.path().to_path_buf();
         std::fs::create_dir_all(&dir).unwrap();
         let write = |name: &str, v: f32| {
@@ -3551,24 +4743,50 @@ mod tests {
         let (reader, mut writer) = io::pipe().unwrap();
         let (tx, rx) = mpsc::channel();
         std::thread::spawn(move || {
-            let _ = serve_threaded_from(io::BufReader::new(reader), io::sink(), 48000, "wall", MidiSetup::inject_only(), move |mut side, stop| {
-                while !stop.load(Ordering::Relaxed) {
-                    side.process(64);
-                    std::thread::sleep(Duration::from_millis(1));
-                }
-                let pcm = |d| side.engine.deck(d).and_then(|d| d.loaded()).map(|t| t.pcm.clone());
-                let _ = tx.send([pcm(1), pcm(2), pcm(3)]);
-            });
+            let _ = serve_threaded_from(
+                io::BufReader::new(reader),
+                io::sink(),
+                48000,
+                "wall",
+                MidiSetup::inject_only(),
+                move |mut side, stop| {
+                    while !stop.load(Ordering::Relaxed) {
+                        side.process(64);
+                        std::thread::sleep(Duration::from_millis(1));
+                    }
+                    let pcm = |d| {
+                        side.engine
+                            .deck(d)
+                            .and_then(|d| d.loaded())
+                            .map(|t| t.pcm.clone())
+                    };
+                    let _ = tx.send([pcm(1), pcm(2), pcm(3)]);
+                },
+            );
         });
         // Decks 1 and 2 load a.wav back to back, so the second load arrives
         // while the first is still decoding; deck 3 loads another file.
         for (deck, path) in [(1, &a), (2, &a), (3, &b)] {
-            writeln!(writer, "{}", serde_json::json!({"cmd": {"type": "load", "deck": deck, "path": path}})).unwrap();
+            writeln!(
+                writer,
+                "{}",
+                serde_json::json!({"cmd": {"type": "load", "deck": deck, "path": path}})
+            )
+            .unwrap();
         }
         drop(writer);
-        let [one, two, three] = rx.recv_timeout(Duration::from_secs(10)).expect("serve hung");
-        let (one, two, three) = (one.expect("deck 1 loaded"), two.expect("deck 2 loaded"), three.expect("deck 3 loaded"));
-        assert!(Arc::ptr_eq(&one, &two), "deck 2 decoded a second copy of a.wav");
+        let [one, two, three] = rx
+            .recv_timeout(Duration::from_secs(10))
+            .expect("serve hung");
+        let (one, two, three) = (
+            one.expect("deck 1 loaded"),
+            two.expect("deck 2 loaded"),
+            three.expect("deck 3 loaded"),
+        );
+        assert!(
+            Arc::ptr_eq(&one, &two),
+            "deck 2 decoded a second copy of a.wav"
+        );
         // Control: another file gets its own samples.
         assert!(!Arc::ptr_eq(&one, &three));
         assert_eq!((one[0], three[0]), (0.1, 0.2));
@@ -3578,13 +4796,27 @@ mod tests {
     #[test]
     fn a_load_of_a_file_being_decoded_waits_and_shares_it() {
         // Many threads load one file at once: one decode, one copy.
-        let tmp = tempfile::Builder::new().prefix("odj-audio-test-cache-race-").tempdir().unwrap();
+        let tmp = tempfile::Builder::new()
+            .prefix("odj-audio-test-cache-race-")
+            .tempdir()
+            .unwrap();
         let dir = tmp.path().to_path_buf();
         std::fs::create_dir_all(&dir).unwrap();
         let p = dir.join("a.wav");
-        crate::wav::write_f32(&mut io::BufWriter::new(std::fs::File::create(&p).unwrap()), 48000, &vec![0.1; 960_000]).unwrap();
+        crate::wav::write_f32(
+            &mut io::BufWriter::new(std::fs::File::create(&p).unwrap()),
+            48000,
+            &vec![0.1; 960_000],
+        )
+        .unwrap();
         let cache = Arc::new(TrackCache::default());
-        let spec = LoadSpec { deck: 1, path: p.display().to_string(), beats: vec![], bpm: None, end_ms: None };
+        let spec = LoadSpec {
+            deck: 1,
+            path: p.display().to_string(),
+            beats: vec![],
+            bpm: None,
+            end_ms: None,
+        };
         let tracks: Vec<Arc<Track>> = (0..8)
             .map(|_| {
                 let (cache, spec, p) = (cache.clone(), spec.clone(), p.clone());
@@ -3594,7 +4826,10 @@ mod tests {
             .into_iter()
             .map(|h| h.join().unwrap())
             .collect();
-        assert!(tracks.iter().all(|t| Arc::ptr_eq(&t.pcm, &tracks[0].pcm)), "concurrent loads decoded more than one copy");
+        assert!(
+            tracks.iter().all(|t| Arc::ptr_eq(&t.pcm, &tracks[0].pcm)),
+            "concurrent loads decoded more than one copy"
+        );
         // Control: once every holder lets go, the samples are freed.
         let samples = Arc::downgrade(&tracks[0].pcm);
         drop(tracks);
@@ -3605,18 +4840,44 @@ mod tests {
     #[test]
     fn an_advance_is_bounded_before_it_renders() {
         let hour = MAX_ADVANCE_S * 48000;
-        assert_eq!(advance_frames(Advance::Frames(hour), 48000, None).unwrap(), hour);
-        assert_eq!(advance_frames(Advance::Ms(MAX_ADVANCE_S as f64 * 1000.0), 48000, None).unwrap(), hour);
-        for a in [Advance::Frames(hour + 1), Advance::Frames(u64::MAX), Advance::Ms(1e300), Advance::Ms(3_600_001.0)] {
-            assert_eq!(advance_frames(a, 48000, None).unwrap_err().code, ErrorCode::Invalid, "{a:?}");
+        assert_eq!(
+            advance_frames(Advance::Frames(hour), 48000, None).unwrap(),
+            hour
+        );
+        assert_eq!(
+            advance_frames(Advance::Ms(MAX_ADVANCE_S as f64 * 1000.0), 48000, None).unwrap(),
+            hour
+        );
+        for a in [
+            Advance::Frames(hour + 1),
+            Advance::Frames(u64::MAX),
+            Advance::Ms(1e300),
+            Advance::Ms(3_600_001.0),
+        ] {
+            assert_eq!(
+                advance_frames(a, 48000, None).unwrap_err().code,
+                ErrorCode::Invalid,
+                "{a:?}"
+            );
         }
         // A recording stops where its WAV file would: the last frame that
         // fits is accepted, one more is not.
         let max = crate::wav::MAX_F32_FRAMES;
-        assert_eq!(advance_frames(Advance::Frames(1000), 48000, Some(max - 1000)).unwrap(), 1000);
-        assert_eq!(advance_frames(Advance::Frames(1001), 48000, Some(max - 1000)).unwrap_err().code, ErrorCode::Invalid);
+        assert_eq!(
+            advance_frames(Advance::Frames(1000), 48000, Some(max - 1000)).unwrap(),
+            1000
+        );
+        assert_eq!(
+            advance_frames(Advance::Frames(1001), 48000, Some(max - 1000))
+                .unwrap_err()
+                .code,
+            ErrorCode::Invalid
+        );
         // Control: without a recording the same advance is fine.
-        assert_eq!(advance_frames(Advance::Frames(1001), 48000, None).unwrap(), 1001);
+        assert_eq!(
+            advance_frames(Advance::Frames(1001), 48000, None).unwrap(),
+            1001
+        );
     }
 
     #[test]
@@ -3638,6 +4899,10 @@ mod tests {
         let t1 = side.epoch.elapsed().as_nanos() as u64;
         side.process(480);
         let (_, host_ns, _) = state_rx.pop().unwrap();
-        assert!((10_000_000..20_000_000).contains(&(host_ns - t1)), "lead {} ns", host_ns - t1);
+        assert!(
+            (10_000_000..20_000_000).contains(&(host_ns - t1)),
+            "lead {} ns",
+            host_ns - t1
+        );
     }
 }

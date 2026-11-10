@@ -6,6 +6,7 @@
 //   if right-deck pad 7 does not fire deck_hot_cue deck 2 slot G on channel 11 then broken
 //   if channel 4's COLOR knob does not fire mixer_channel filter deck 4 then broken
 //   if the DECK SELECT box for deck 3 resolves as bound while the map only hints it then broken
+//   if a shifted jog is not deck_jog scale 4 on its own deck then broken
 //   if practiceMapFor cannot find XDJ_AZ_MAP then broken
 
 import assert from 'node:assert/strict';
@@ -88,5 +89,15 @@ test('hinted-only controls are inert with the parity tooltip', () => {
 	assert.deepEqual(select3.wire, { ch: 3, kind: 'note', id: 21 });
 	assert.match(bindings.controlTitle(select3), /not implemented - see PARITY-TODO/);
 	assert.equal(byId('fx-on-off').kind, 'inert');
-	assert.equal(byId('d2-jog', true).kind, 'inert');
+});
+
+test('shifted jogs stay bound as deck_jog at scale 4', () => {
+	for (const [id, deck] of [
+		['d1-jog', 1],
+		['d2-jog', 2]
+	]) {
+		const jog = byId(id, true);
+		assert.equal(jog.kind, 'bound');
+		assert.deepEqual(jog.binding.action, { type: 'deck_jog', deck, scale: 4 });
+	}
 });

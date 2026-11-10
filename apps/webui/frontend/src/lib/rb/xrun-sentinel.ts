@@ -78,12 +78,21 @@ let _flushSequence = 0;
 let _installGeneration = 0;
 const _flushWaiters = new Map<
 	string,
-	{ resolve: (counter: XrunSessionCounter) => void; reject: (error: Error) => void; timeout: number }
+	{
+		resolve: (counter: XrunSessionCounter) => void;
+		reject: (error: Error) => void;
+		timeout: number;
+	}
 >();
 
 /** Cumulative xruns for this app session. Agent-readable, no UI required. */
 export function readXrunSessionCounter(): XrunSessionCounter {
 	return { ..._session };
+}
+
+/** Session xrun total for pressure and preflight predicates (PERFMODE-02 / PERFMODE-04). */
+export function readXrunSessionTotal(): number {
+	return _session.xruns;
 }
 
 /** What the ui-mirror publishes: the session count and the detector's own state. */
@@ -94,7 +103,9 @@ export function readXrunSentinelMirror(): XrunSessionCounter & { detector: XrunD
 /** Flush the audio-thread xrun window and resolve only after its port acknowledgement. */
 export function flushXrunSessionCounter(): Promise<XrunSessionCounter> {
 	if (_node === null) {
-		return Promise.reject(new Error('xrun sentinel is not armed, so its counter cannot be flushed'));
+		return Promise.reject(
+			new Error('xrun sentinel is not armed, so its counter cannot be flushed')
+		);
 	}
 	const requestId = `xrun-flush-${++_flushSequence}`;
 	return new Promise((resolve, reject) => {
@@ -152,20 +163,26 @@ function _onReport(data: unknown): void {
 
 function _onMessage(data: unknown): void {
 	if (
-		typeof data === 'object' && data !== null &&
+		typeof data === 'object' &&
+		data !== null &&
 		(data as { kind?: unknown }).kind === 'xrun-flush-ack' &&
 		typeof (data as { requestId?: unknown }).requestId === 'string'
 	) {
 		const requestId = (data as { requestId: string }).requestId;
 		const waiter = _flushWaiters.get(requestId);
 		if (waiter === undefined) {
-			recordPerfEvent('xrun-sentinel-bad-report', `unexpected xrun flush acknowledgement: ${requestId}`);
+			recordPerfEvent(
+				'xrun-sentinel-bad-report',
+				`unexpected xrun flush acknowledgement: ${requestId}`
+			);
 			return;
 		}
 		window.clearTimeout(waiter.timeout);
 		_flushWaiters.delete(requestId);
 		if ((data as { judging?: unknown }).judging !== true) {
-			waiter.reject(new Error('xrun sentinel has not completed cadence warmup; its counter is not ready'));
+			waiter.reject(
+				new Error('xrun sentinel has not completed cadence warmup; its counter is not ready')
+			);
 			return;
 		}
 		waiter.resolve(readXrunSessionCounter());
@@ -241,7 +258,8 @@ async function _install(ctx: AudioContext, generation: number): Promise<void> {
 		// Armed only on the worklet's own word that it is judging gaps (a window
 		// report or a flush acknowledgement), and only for the node installed
 		// now: a replaced node, or one that already threw, arms nothing.
-		if (event.data?.judging === true && _node === node && _detector !== 'failed') _detector = 'armed';
+		if (event.data?.judging === true && _node === node && _detector !== 'failed')
+			_detector = 'armed';
 		_onMessage(event.data);
 	};
 	node.addEventListener('processorerror', () => {

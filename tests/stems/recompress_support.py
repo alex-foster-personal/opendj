@@ -7,6 +7,7 @@ own decode, encode and swap code against bundles of the shape the farm writes.
 
 from __future__ import annotations
 
+import functools
 import json
 import sqlite3
 from collections.abc import Sequence
@@ -117,6 +118,8 @@ def _the_two_flac_publishers() -> dict[str, Any]:
     namespace = _farm_namespace(tree)
     _farm_function(tree, "_stem_manifest", namespace)
     return {
-        "bundle_publish": bundle_publish.publish_stems_local,
-        "modal_vocal_farm": _farm_function(tree, "_publish_stems_local", namespace),
+        "bundle_publish": functools.partial(bundle_publish.publish_stems_local, requested_codec="flac"),
+        "modal_vocal_farm": functools.partial(
+            _farm_function(tree, "_publish_stems_local", namespace), requested_codec="flac"
+        ),
     }

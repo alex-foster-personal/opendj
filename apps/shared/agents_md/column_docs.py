@@ -43,6 +43,7 @@ guards against drift; this file only supplies the meaning.
 from __future__ import annotations
 
 from .column_docs_analysis_retention import ANALYSIS_RETENTION_COLUMN_DOCS
+from .column_docs_crowd_requests import CROWD_REQUEST_COLUMN_DOCS
 from .column_docs_feedback import FEEDBACK_COLUMN_DOCS
 from .column_docs_genre import GENRE_COLUMN_DOCS
 from .column_docs_library_org import LIBRARY_ORG_COLUMN_DOCS, PLAYLIST_ORG_COLUMN_DOCS
@@ -697,4 +698,6 @@ COLUMN_DOCS: dict[str, dict[str, str]] = {
     **SYNC_GATE_COLUMN_DOCS,
     # Set target and skip flags (LIBUX-8679).
     **SET_TARGET_COLUMN_DOCS,
+    # Crowd request session and list (CROWDREQ-10749).
+    **CROWD_REQUEST_COLUMN_DOCS,
 }

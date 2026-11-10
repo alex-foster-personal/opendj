@@ -10,6 +10,7 @@
 </script>
 
 <script lang="ts">
+	import { selId, selectorNode } from '$lib/keyboard/selector-register';
 	import { untrack } from 'svelte';
 	import { truncationTip } from '$lib/ui/truncation-tip';
 	import { shownKey } from '$lib/rb/key-notation';
@@ -560,7 +561,12 @@
 	const cloudPercent = $derived(cloudDownload === null ? null : operationPercent(cloudDownload.op));
 </script>
 
-<div class="deck-header" class:mirrored data-mirrored={mirrored}>
+<div
+	class="deck-header"
+	class:mirrored
+	data-mirrored={mirrored}
+	use:selectorNode={{ id: selId.deckPart(deckId, 'header'), kind: 'leaf', enabled: true }}
+>
 	{#if cloudDownload !== null}
 		<div
 			class="deck-cloud-download"
@@ -600,7 +606,13 @@
 						onload={() => coverLoaded(sid)}
 						onerror={() => coverFailed(sid)}
 					/>
-					<ArtworkDeckNumber deck={deckId} mode={uiPrefs.deck_number_art} sizePx={67} />
+					<ArtworkDeckNumber
+						deck={deckId}
+						mode={uiPrefs.deck_number_art}
+						sizePx={67}
+						stableId={sid}
+						playing={deck.playing}
+					/>
 				{:else}
 					<span
 						class="art placeholder"

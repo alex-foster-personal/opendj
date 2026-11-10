@@ -44,8 +44,10 @@ import type { StemControl } from '$lib/rb/stem-types';
 import { parseSkinSettings } from '$lib/rb/ui-skin';
 import { isValidRelatedBpmPercent, RELATED_CRITERIA_FLAGS } from '$lib/rb/related-criteria-prefs';
 import { parseWaveformDesignPref } from '$lib/rb/waveform-design';
-import { parseWaveformOverlay } from '$lib/rb/waveform-overlay-command';
+import { parseWaveformBoolOverlay } from '$lib/rb/waveform-overlay-command';
+import { requireWaveGridLines } from '$lib/rb/wave-grid-lines';
 import { TRACK_LOAD_RESET_IDS, type TrackLoadResetId } from '$lib/rb/track-load-reset';
+import { WINDOW_LABELS } from '$lib/shell/native-shell';
 import { MEMORY_CUE_CALL_DIRECTIONS, type MemoryCueCallDirection } from '$lib/rb/memory-cue-call';
 
 import type { PerformanceCommand } from './performance-ipc-types';
@@ -530,7 +532,7 @@ export function _parseCommand(message: unknown): PerformanceCommand {
 		_exactKeys(record, ['type']);
 		return { type };
 	}
-	if (type === 'tech_mode_toggle' || type === 'track_info_toggle' || type === 'track_info_close') {
+	if (type === 'tech_mode_toggle' || type === 'track_info_toggle' || type === 'track_info_close' || type === 'oj_toggle') {
 		_exactKeys(record, ['type']);
 		return { type };
 	}
@@ -606,6 +608,20 @@ export function _parseCommand(message: unknown): PerformanceCommand {
 		if (record.mode !== 'plain' && record.mode !== 'ai')
 			throw new TypeError("cmdk_mode mode must be 'plain' or 'ai'");
 		return { type, mode: record.mode };
+	}
+	if (type === 'window') {
+		_exactKeys(record, ['type', 'action', 'label']);
+		if (record.action !== 'open' && record.action !== 'close' && record.action !== 'focus') {
+			throw new TypeError(`window action must be open, close or focus, got ${String(record.action)}`);
+		}
+		const label =
+			typeof record.label === 'string' ? WINDOW_LABELS.find((known) => known === record.label) : undefined;
+		if (label === undefined) {
+			throw new TypeError(
+				`unknown window label ${JSON.stringify(record.label)}; known: ${WINDOW_LABELS.join(', ')}`
+			);
+		}
+		return { type, action: record.action, label };
 	}
 	if (type === 'playlist_undo' || type === 'playlist_redo' || type === 'rescue_stop_all') {
 		_exactKeys(record, ['type']);
@@ -769,10 +785,14 @@ export function _parseCommand(message: unknown): PerformanceCommand {
 		return { type, mode: requireDeckNumberArt(record.mode, 'mode') };
 	}
 	if (type === 'set_waveform_overlay') {
+		if (record.overlay === 'grid_lines') {
+			_exactKeys(record, ['type', 'overlay', 'value']);
+			return { type, overlay: 'grid_lines', value: requireWaveGridLines(record.value, 'value') };
+		}
 		_exactKeys(record, ['type', 'overlay', 'enabled']);
 		return {
 			type,
-			overlay: parseWaveformOverlay(record.overlay),
+			overlay: parseWaveformBoolOverlay(record.overlay),
 			enabled: _boolean('enabled', record.enabled)
 		};
 	}

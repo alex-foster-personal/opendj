@@ -8,7 +8,13 @@ beatgrid cascade.
 
 from __future__ import annotations
 
+from .lane_enums import FIRST_IMPORT_DEFERRED_LANES
+
 USER_JOB_LANES: tuple[str, ...] = ("stems", "lyrics", "genre")
+FIRST_IMPORT_FORBIDDEN_LANES: tuple[str, ...] = (
+    *USER_JOB_LANES,
+    *FIRST_IMPORT_DEFERRED_LANES,
+)
 USER_BATCH_IDS: dict[str, str] = {
     "stems": "ub_stems",
     "lyrics": "ub_lyrics",
@@ -24,3 +30,14 @@ SKIP_UP_TO_DATE: str = "up_to_date"
 SKIP_NO_LYRICS_FOUND: str = "no_lyrics_found"
 SKIP_DETAIL: str = "skipped: up to date"
 MAX_ENQUEUE_IDS: int = 5000
+
+__all__ = [
+    "FIRST_IMPORT_FORBIDDEN_LANES",
+    "MAX_ENQUEUE_IDS",
+    "SKIP_DETAIL",
+    "SKIP_NO_LYRICS_FOUND",
+    "SKIP_UP_TO_DATE",
+    "USER_BACKENDS",
+    "USER_BATCH_IDS",
+    "USER_JOB_LANES",
+]

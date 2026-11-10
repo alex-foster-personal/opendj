@@ -3,7 +3,7 @@
 	// order and its apply/undo. The container loads the playlist and makes
 	// every request; the goal fields are bindable so it reads what was typed.
 	import type { components } from '$lib/api-types';
-	import { summarizeReorder } from '$lib/play-it-diff';
+	import { formatUnscoredEdges, summarizeReorder } from '$lib/play-it-diff';
 
 	type PlayItSolveOut = components['schemas']['PlayItSolveOut'];
 	type PlaylistTrack = components['schemas']['PlaylistDetail']['tracks'][number];
@@ -45,6 +45,14 @@
 	const summary = $derived(
 		result ? summarizeReorder(result.previous_order, result.proposed_order) : null
 	);
+
+	const unscoredHeader = $derived.by(() => {
+		if (!result || (result.unscored_edges ?? 0) <= 0) {
+			return null;
+		}
+		const terms = result.steps.flatMap((step) => step.unscored ?? []);
+		return formatUnscoredEdges(result.unscored_edges, Math.max(0, result.steps.length - 1), terms);
+	});
 
 	function trackLabel(track: PlaylistTrack): string {
 		const title = track.title ?? track.stable_id;
@@ -138,6 +146,9 @@
 	{/if}
 
 	{#if result}
+		{#if unscoredHeader}
+			<p class="warn">{unscoredHeader}</p>
+		{/if}
 		{#if summary?.unchanged}
 			<p>PLAY IT agrees with the current order -- nothing to apply.</p>
 		{:else}

@@ -89,7 +89,6 @@
 	style={sourceFlagged !== null ? `--source-ring:${ANALYSIS_ISSUE_COLORS[sourceFlagged]}` : undefined}
 	data-source-flagged={sourceFlagged ?? undefined}
 	title={containerTitle}
-	aria-label={containerTitle}
 >
 	{#each ANALYSIS_DOT_SLOTS as kind, i (i)}
 		{#if kind === null}

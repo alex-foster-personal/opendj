@@ -1,0 +1,9 @@
+{
+  "bytes": 2048,
+  "measured_main": 503846,
+  "measured_with_pr": 505229,
+  "sha": "58b281f0e1",
+  "date": "Tue 10 Nov 2026",
+  "reason": "Issue #10247 (PERF-BOOT-11728) moves TrackLoadResetPanel off the /performance boot bundle into its own lazy chunk (1193 B gzip), which other-lazy now measures. Measured: local build vs main at 58b281f0e1, +1383 B gzip on other-lazy; ceiled to KiB",
+  "payback": "none planned; these are the panel's own bytes, moved off the boot path"
+}

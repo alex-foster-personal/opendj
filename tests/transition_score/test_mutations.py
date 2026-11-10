@@ -30,10 +30,10 @@ from apps.transition_score.scorer import (
     RenderContext,
     score_render,
 )
-from tests.transition_score.synth import BEAT_S, Mutation, render
+from tests.transition_score.synth import BEAT_S, MOMENTARY_DIP_AT_S, UNLISTED_CLICK_S, Mutation, render
 
 #: The clean fixture must score at least this; below it the measure is penalizing a good transition.
-CLEAN_FLOOR = 0.8
+CLEAN_FLOOR = 0.85
 #: Seeds that vary the fixture's noise and hats; M's spread across them is the noise band.
 NOISE_SEEDS = (0, 1, 2, 3)
 #: A drop smaller than this is not a drop, whatever the noise band says.
@@ -69,10 +69,14 @@ def test_clean_render_scores_high_with_every_core_factor_measured() -> None:
     assert result.score is not None and result.score >= CLEAN_FLOOR, (
         "if the clean render scores low then M penalizes good transitions"
     )
-    assert result.scorer_version == SCORER_VERSION == "0.10.0"
+    assert result.scorer_version == SCORER_VERSION == "0.11.0"
     for name in BAND_FACTORS:
         assert name in result.factors and result.factors[name] >= 0.95
     assert result.metrics["band_handover"] == "plan_step"
+    assert result.factors["momentary_hole"] >= 0.95
+    assert result.factors["bass_overlap"] == 1.0
+    assert result.metrics["overlap_clicks"] == 0
+    assert result.metrics["bass_overlap_depth_db"] == 0.0
 
 
 def test_noise_band_is_small_against_the_drops() -> None:
@@ -103,6 +107,8 @@ MUTATIONS: dict[str, Mutation] = {
     "1 s dropout": Mutation(gap_s=1.0),
     "6 LU under the outgoing natural level for 4 bars": Mutation(dip_lu=6.0, dip_bars=4.0),
     "outgoing mids thin 3 LU": Mutation(out_mids_thin_lu=3.0),
+    "6 dB 600 ms momentary dip": Mutation(momentary_dip_db=6.0, momentary_dip_s=0.6),
+    "click at an unlisted time": Mutation(click_at_s=UNLISTED_CLICK_S),
 }
 
 
@@ -153,6 +159,8 @@ def test_each_layer1_mutation_moves_its_own_factor() -> None:
         "two vocals overlap": "vocal_overlap",
         "3 LU loudness bump": "loudness_continuity",
         "loop-seam click": "seam_clicks",
+        "6 dB 600 ms momentary dip": "momentary_hole",
+        "click at an unlisted time": "seam_clicks",
         "swap 26 ms late": "cut_to_downbeat",
         "beat +15 ms": "alignment",
     }
@@ -659,7 +667,7 @@ def test_a_bass_free_solo_reports_bass_overlap_unknown() -> None:
         assert "bass_overlap" not in result.factors
         assert "bass_both_full_beats" not in result.metrics
         assert result.measured.k == 6 and result.measured.n == 7
-        assert result.scorer_version == SCORER_VERSION == "0.10.0"
+        assert result.scorer_version == SCORER_VERSION == "0.11.0"
         assert result.score is not None
     pile = _score(Mutation(in_low_unheld=True))
     assert "bass_overlap" in pile.factors and pile.metrics["bass_both_full_beats"] >= 8
@@ -777,3 +785,65 @@ def test_band_continuity_weighs_a_tenth_each_and_is_not_core() -> None:
     for name in BAND_FACTORS:
         assert PRIOR_WEIGHTS[name] == 0.1
         assert name not in CORE_FACTORS
+
+
+# ----- #10182: momentary hole, graded bass overlap, whole-overlap click scan -----------------------------
+
+
+@pytest.mark.requirement("TRANSAI-11098")
+def test_a_600_ms_6_db_dip_reads_as_a_momentary_hole_while_loudness_continuity_holds() -> None:
+    """[if] a 6 dB 600 ms dip sits in the overlap [then] momentary_hole falls, [else stop]."""
+    mutation = Mutation(momentary_dip_db=6.0, momentary_dip_s=0.6)
+    result = _score(mutation)
+    clean_lc = _score().factors["loudness_continuity"]
+    lc_band = _loudness_continuity_noise_band()
+    assert result.factors["momentary_hole"] < 0.5
+    assert result.metrics["momentary_hole_depth_lu"] > 4.5
+    assert abs(result.metrics["momentary_hole_at_s"] - MOMENTARY_DIP_AT_S) < 0.4
+    assert "dropout" not in [v.name for v in result.vetoes]
+    assert abs(clean_lc - result.factors["loudness_continuity"]) < max(2 * lc_band, MIN_DROP)
+
+
+@pytest.mark.requirement("TRANSAI-11098")
+def test_an_outgoing_breakdown_is_not_a_momentary_hole() -> None:
+    """[if] the outgoing track itself breaks down 10 LU [then] momentary_hole stays high, [else stop]."""
+    assert _score(Mutation(out_breakdown_lu=10.0)).factors["momentary_hole"] >= 0.9
+
+
+@pytest.mark.requirement("TRANSAI-11098")
+def test_incoming_low_eq_orders_m_and_grades_bass_depth() -> None:
+    """[if] incoming low EQ rises from -15 dB toward 0 dB [then] M falls monotonically, [else stop]."""
+    scores = [_score(Mutation(in_low_held_db=db)).score for db in (-15.0, -6.0, 0.0)]
+    assert scores[0] is not None and scores[1] is not None and scores[2] is not None
+    assert scores[0] > scores[1] > scores[2]
+    at_0 = _score(Mutation(in_low_held_db=0.0))
+    at_m15 = _score(Mutation(in_low_held_db=-15.0))
+    at_m1_5 = _score(Mutation(in_low_held_db=-1.5))
+    assert at_0.metrics["bass_overlap_depth_db"] > 0.0
+    assert at_m15.metrics["bass_overlap_depth_db"] == 0.0
+    depth_0 = at_0.metrics["bass_overlap_depth_db"]
+    depth_m1_5 = at_m1_5.metrics["bass_overlap_depth_db"]
+    assert 0.0 < depth_m1_5 < depth_0
+    assert at_m1_5.factors["bass_overlap"] > at_0.factors["bass_overlap"]
+
+
+@pytest.mark.requirement("TRANSAI-11098")
+def test_a_click_at_a_time_no_plan_event_names_is_found() -> None:
+    """[if] a click is injected off-plan [then] overlap_clicks finds it and M falls, [else stop]."""
+    clean = _score()
+    result = _score(Mutation(click_at_s=UNLISTED_CLICK_S))
+    assert result.metrics["overlap_clicks"] >= 1
+    found = result.metrics["overlap_click_s"]
+    assert any(abs(t - UNLISTED_CLICK_S) < 0.005 for t in found)
+    assert result.metrics["seam_clicks"] == 0
+    assert result.factors["seam_clicks"] < clean.factors["seam_clicks"] - 0.2
+
+
+@pytest.mark.requirement("TRANSAI-11098")
+def test_a_plan_without_seams_still_scans_the_overlap() -> None:
+    """[if] the plan has no seams [then] the overlap scan still finds an injected click, [else stop]."""
+    mix, out_deck, in_deck, ctx = render(Mutation(click_at_s=UNLISTED_CLICK_S))
+    thin = dataclasses.replace(ctx, steps=(), seams_s=())
+    result = score_render(mix, out_deck, in_deck, thin)
+    assert "seam_clicks" in result.factors
+    assert result.metrics["overlap_clicks"] >= 1

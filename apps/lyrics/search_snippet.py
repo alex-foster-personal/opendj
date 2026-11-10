@@ -14,21 +14,16 @@ from pathlib import Path
 
 from apps.lyrics.asr_hallucination import servable_lyrics
 from apps.lyrics.cache import LyricLine, cache_path, load
+from apps.lyrics.fuzzy_match import best_lyric_line
 
 
 def _query_terms(query: str) -> list[str]:
     return [term.lower() for term in query.strip().split() if term]
 
 
-def _best_line(lines: tuple[LyricLine, ...], terms: list[str]) -> LyricLine:
-    """The line matching the most query terms, earliest line breaking ties.
-
-    A query's terms can land on different lines (the FTS index matches
-    across the whole flattened document, not one line), so this picks the
-    single line that carries the most of them rather than the first line
-    matching anything at all.
-    """
-    best_line = lines[0]
+def _best_line(lines: tuple[LyricLine, ...], terms: list[str]) -> LyricLine | None:
+    """The line matching the most query terms, earliest line breaking ties."""
+    best_line: LyricLine | None = None
     best_score = -1
     for line in lines:
         lowered = line.text.lower()
@@ -36,7 +31,9 @@ def _best_line(lines: tuple[LyricLine, ...], terms: list[str]) -> LyricLine:
         if score > best_score:
             best_score = score
             best_line = line
-    return best_line
+    if best_score > 0 and best_line is not None:
+        return best_line
+    return None
 
 
 def matched_snippet(data_dir: Path, stable_id: str, query: str) -> str | None:
@@ -57,7 +54,13 @@ def matched_snippet(data_dir: Path, stable_id: str, query: str) -> str | None:
     lyrics = None if lyrics is None else servable_lyrics(lyrics)
     if lyrics is None:
         return None
-    return _best_line(lyrics.lines, terms).text
+    exact = _best_line(lyrics.lines, terms)
+    if exact is not None:
+        return exact.text
+    fuzzy = best_lyric_line(lyrics, query)
+    if fuzzy is None:
+        return None
+    return fuzzy.text
 
 
 __all__ = ["matched_snippet"]

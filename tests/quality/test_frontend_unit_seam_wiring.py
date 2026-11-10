@@ -22,6 +22,8 @@ Regression lines:
   - if `test:unit`, `test:unit:slow` or `test:unit:all` stops chaining
     check:unit-seams ahead of `node --test` then a local run skips the guard,
     so broken
+  - if the gating `frontend` job stops running the live escape-hatch hard zero
+    then a compiler suppression reaches main unchecked (#10611), so broken
 """
 
 from __future__ import annotations
@@ -99,3 +101,14 @@ def test_unit_scripts_chain_the_seam_check_first(script: str) -> None:
     assert "pnpm run check:unit-seams &&" in command, f"{script} no longer runs the seam check"
     node_test = command.index("node --experimental-strip-types --test")
     assert command.index("check:unit-seams") < node_test, f"{script} must run the seam check before node --test"
+
+
+ESCAPE_HATCH_TEST = "tests/quality/test_frontend_typing_gate.py::test_live_frontend_tree_has_no_escape_hatches"
+
+
+def test_frontend_job_runs_the_escape_hatch_hard_zero() -> None:
+    """If the gating frontend job drops the live escape-hatch test, a suppression reaches main."""
+    runs = _runs(_jobs()["frontend"])
+    hits = [run for run in runs if ESCAPE_HATCH_TEST in run]
+    assert hits, f"ci.yml `frontend` job no longer runs {ESCAPE_HATCH_TEST}"
+    assert all("pytest" in run for run in hits), "the escape-hatch step must run it under pytest"

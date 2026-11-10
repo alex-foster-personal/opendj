@@ -663,7 +663,7 @@ jobs:
     # Same guard as `scope`: the gate is the only reader of the list, and it never runs for
     # a CI completion that was not a success.
     if: ${{ !cancelled() && vars.TRUNK_QUARANTINE_CI == 'true' && (github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success') }}
-    runs-on: ${{ fromJSON((github.event_name == 'pull_request' && startsWith(github.head_ref, 'trunk-merge/') && github.event.pull_request.user.login == 'trunk-io[bot]' && github.event.pull_request.head.repo.full_name == github.repository) && vars.CI_RUNS_ON_MERGE_QUEUE || vars.CI_RUNS_ON_LINUX || '"ubuntu-latest"') }}
+    runs-on: ${{ fromJSON((github.event_name == 'pull_request' && startsWith(github.head_ref, 'trunk-merge/') && github.event.pull_request.user.login == 'trunk-io[bot]' && github.event.pull_request.head.repo.full_name == github.repository) && vars.CI_RUNS_ON_MERGE_QUEUE || vars.CI_RUNS_ON_GATE || vars.CI_RUNS_ON_LINUX || '"ubuntu-latest"') }}
     timeout-minutes: 5
     permissions:
       contents: read
@@ -2647,7 +2647,7 @@ jobs:
     # verdict job itself is skipped and no runner is taken to publish `skipped`; e2e verdict is not
     # a required status and nothing waits on it for a red CI head. Any other event runs as before.
     if: ${{ always() && (github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success') }}
-    runs-on: ${{ fromJSON((github.event_name == 'pull_request' && startsWith(github.head_ref, 'trunk-merge/') && github.event.pull_request.user.login == 'trunk-io[bot]' && github.event.pull_request.head.repo.full_name == github.repository) && vars.CI_RUNS_ON_MERGE_QUEUE || vars.CI_RUNS_ON_LINUX || '"ubuntu-latest"') }}
+    runs-on: ${{ fromJSON((github.event_name == 'pull_request' && startsWith(github.head_ref, 'trunk-merge/') && github.event.pull_request.user.login == 'trunk-io[bot]' && github.event.pull_request.head.repo.full_name == github.repository) && vars.CI_RUNS_ON_MERGE_QUEUE || vars.CI_RUNS_ON_GATE || vars.CI_RUNS_ON_LINUX || '"ubuntu-latest"') }}
     timeout-minutes: 5
     # The one job that writes: it publishes `e2e verdict` on the pull request head
     # (last step), because GitHub attaches this run's own check-runs to main's tip on

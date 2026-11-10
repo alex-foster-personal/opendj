@@ -145,6 +145,34 @@ def test_cli_import_default_max_tracks_is_safe() -> None:
     assert parser.parse_args(["import", "id", "--max-tracks", "0"]).max_tracks == 0
 
 
+@pytest.mark.requirement("SPOTIFY-11967")
+def test_cli_login_no_browser_skips_browser_open(monkeypatch: pytest.MonkeyPatch) -> None:
+    """[if] the operator used --no-browser [then] login never opens the authorize URL, [else stop]."""
+    opens: list[str] = []
+    captured: dict[str, bool] = {}
+
+    class _Flow:
+        def start(self) -> str:
+            return "https://accounts.spotify.com/authorize?client_id=x"
+
+    def _wait(
+        flow: object,
+        url: str,
+        *,
+        open_browser: bool,
+        **_: object,
+    ) -> dict[str, str | None]:
+        captured["open_browser"] = open_browser
+        return {"phase": "connected", "detail": None}
+
+    monkeypatch.setattr("apps.spotify.account.ConnectFlow", lambda: _Flow())
+    monkeypatch.setattr("apps.spotify.account.wait_pkce_connect", _wait)
+    monkeypatch.setattr("apps.spotify.account.open_pkce_authorize_url", lambda url: opens.append(url))
+    assert cli_main(["login", "--no-browser"]) == 0
+    assert opens == []
+    assert captured.get("open_browser") is False
+
+
 @pytest.mark.requirement("SPOT-6555")
 @pytest.mark.parametrize(("body", "problem"), [(b"{not json", "not JSON"), (b'{"client_id": "\xff"}', "not UTF-8")])
 def test_cli_login_reports_an_unreadable_client_id(

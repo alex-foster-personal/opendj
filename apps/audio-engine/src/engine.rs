@@ -1,3 +1,4 @@
+// MOD-ZONE: RED | (private path)
 //! The engine actor: the single owner of playback state.
 //!
 //! Every sender (UI, MIDI, agent, CLI) reaches the engine through `apply`, one
@@ -98,51 +99,430 @@ impl EqBand {
     }
 }
 
+/// Who originated a captured control change (SETREC v2 `source` field).
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
+pub enum EventSource {
+    #[default]
+    User,
+    Controller,
+    Agent,
+    Replay,
+}
+
+impl EventSource {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            EventSource::User => "user",
+            EventSource::Controller => "controller",
+            EventSource::Agent => "agent",
+            EventSource::Replay => "replay",
+        }
+    }
+}
+
+/// One mixer control change captured for set recording v2 (SETREC-05).
+#[derive(Clone, Debug, PartialEq)]
+pub struct CapturedMixerEvent {
+    pub control: &'static str,
+    pub value: f64,
+    pub sample: u64,
+    pub source: EventSource,
+}
+
+/// Coalesce continuous mixer moves to the 10 ms render quantum in
+/// `(private path)` (via PR #10726): first and last values kept.
+pub const CAPTURE_QUANTUM_MS: u64 = 10;
+
+const MIXER_CAPTURE_SLOTS: usize = 40;
+const CAPTURE_READY_CAP: usize = 512;
+
+#[derive(Clone, Copy, Debug, Default)]
+struct CoalesceSlot {
+    control: &'static str,
+    window: u64,
+    first: Option<(f64, u64, EventSource)>,
+    last: Option<(f64, u64, EventSource)>,
+    used: bool,
+}
+
+impl CoalesceSlot {
+    fn clear(&mut self) {
+        *self = CoalesceSlot::default();
+        self.control = "";
+    }
+}
+
+struct MixerCapture {
+    quantum_frames: u64,
+    slots: [CoalesceSlot; MIXER_CAPTURE_SLOTS],
+    ready: [Option<CapturedMixerEvent>; CAPTURE_READY_CAP],
+    ready_head: usize,
+    ready_tail: usize,
+}
+
+impl MixerCapture {
+    fn new(sample_rate: u32) -> MixerCapture {
+        let quantum_frames = (u64::from(sample_rate) * CAPTURE_QUANTUM_MS / 1000).max(1);
+        MixerCapture {
+            quantum_frames,
+            slots: [CoalesceSlot::default(); MIXER_CAPTURE_SLOTS],
+            ready: std::array::from_fn(|_| None),
+            ready_head: 0,
+            ready_tail: 0,
+        }
+    }
+
+    fn slot_index(control: &'static str) -> Option<usize> {
+        mixer_control_index(control)
+    }
+
+    fn push_ready(&mut self, control: &'static str, value: f64, sample: u64, source: EventSource) {
+        let next = (self.ready_tail + 1) % CAPTURE_READY_CAP;
+        if next == self.ready_head {
+            return;
+        }
+        self.ready[self.ready_tail] = Some(CapturedMixerEvent {
+            control,
+            value,
+            sample,
+            source,
+        });
+        self.ready_tail = next;
+    }
+
+    fn emit_slot_window(
+        control: &'static str,
+        first: Option<(f64, u64, EventSource)>,
+        last: Option<(f64, u64, EventSource)>,
+        out: &mut Self,
+    ) {
+        let Some((value, sample, source)) = first else {
+            return;
+        };
+        out.push_ready(control, value, sample, source);
+        if let Some((lv, ls, lsrc)) = last {
+            if (lv - value).abs() > f64::EPSILON {
+                out.push_ready(control, lv, ls, lsrc);
+            }
+        }
+    }
+
+    fn flush_slot(&mut self, slot: &mut CoalesceSlot) {
+        let first = slot.first.take();
+        let last = slot.last.take();
+        Self::emit_slot_window(slot.control, first, last, self);
+    }
+
+    fn note(&mut self, control: &'static str, value: f64, sample: u64, source: EventSource) {
+        let Some(idx) = Self::slot_index(control) else {
+            return;
+        };
+        let window = sample / self.quantum_frames;
+        if !self.slots[idx].used || self.slots[idx].control != control {
+            let mut fresh = CoalesceSlot::default();
+            fresh.control = control;
+            fresh.used = true;
+            self.slots[idx] = fresh;
+        }
+        if self.slots[idx].first.is_some() && self.slots[idx].window != window {
+            let control_id = self.slots[idx].control;
+            let first = self.slots[idx].first.take();
+            let last = self.slots[idx].last.take();
+            Self::emit_slot_window(control_id, first, last, self);
+        }
+        let slot = &mut self.slots[idx];
+        slot.window = window;
+        if slot.first.is_none() {
+            slot.first = Some((value, sample, source));
+        } else {
+            slot.last = Some((value, sample, source));
+        }
+    }
+
+    fn drain(&mut self) -> Vec<CapturedMixerEvent> {
+        for i in 0..MIXER_CAPTURE_SLOTS {
+            if self.slots[i].used {
+                let mut slot = CoalesceSlot::default();
+                std::mem::swap(&mut self.slots[i], &mut slot);
+                self.flush_slot(&mut slot);
+                if slot.used {
+                    std::mem::swap(&mut self.slots[i], &mut slot);
+                }
+            }
+        }
+        let mut out = Vec::new();
+        while self.ready_head != self.ready_tail {
+            if let Some(ev) = self.ready[self.ready_head].take() {
+                out.push(ev);
+            }
+            self.ready_head = (self.ready_head + 1) % CAPTURE_READY_CAP;
+        }
+        out
+    }
+}
+
+/// Stable mixer control ids (`apps/sets/control_ids.py` mirrors this table).
+pub fn mixer_control_id_trim(deck: DeckId) -> Option<&'static str> {
+    match deck {
+        1 => Some("deck.1.trim"),
+        2 => Some("deck.2.trim"),
+        3 => Some("deck.3.trim"),
+        4 => Some("deck.4.trim"),
+        _ => None,
+    }
+}
+
+pub fn mixer_control_id_auto_gain(deck: DeckId) -> Option<&'static str> {
+    match deck {
+        1 => Some("deck.1.auto_gain"),
+        2 => Some("deck.2.auto_gain"),
+        3 => Some("deck.3.auto_gain"),
+        4 => Some("deck.4.auto_gain"),
+        _ => None,
+    }
+}
+
+pub fn mixer_control_id_eq(deck: DeckId, band: EqBand) -> Option<&'static str> {
+    let band = match band {
+        EqBand::Low => "low",
+        EqBand::Mid => "mid",
+        EqBand::High => "high",
+    };
+    match deck {
+        1 => Some(match band {
+            "low" => "deck.1.eq.low",
+            "mid" => "deck.1.eq.mid",
+            _ => "deck.1.eq.high",
+        }),
+        2 => Some(match band {
+            "low" => "deck.2.eq.low",
+            "mid" => "deck.2.eq.mid",
+            _ => "deck.2.eq.high",
+        }),
+        3 => Some(match band {
+            "low" => "deck.3.eq.low",
+            "mid" => "deck.3.eq.mid",
+            _ => "deck.3.eq.high",
+        }),
+        4 => Some(match band {
+            "low" => "deck.4.eq.low",
+            "mid" => "deck.4.eq.mid",
+            _ => "deck.4.eq.high",
+        }),
+        _ => None,
+    }
+}
+
+pub fn mixer_control_id_filter(deck: DeckId) -> Option<&'static str> {
+    match deck {
+        1 => Some("deck.1.filter"),
+        2 => Some("deck.2.filter"),
+        3 => Some("deck.3.filter"),
+        4 => Some("deck.4.filter"),
+        _ => None,
+    }
+}
+
+pub fn mixer_control_id_fader(deck: DeckId) -> Option<&'static str> {
+    match deck {
+        1 => Some("deck.1.fader"),
+        2 => Some("deck.2.fader"),
+        3 => Some("deck.3.fader"),
+        4 => Some("deck.4.fader"),
+        _ => None,
+    }
+}
+
+pub fn mixer_control_id_assign(deck: DeckId) -> Option<&'static str> {
+    match deck {
+        1 => Some("deck.1.assign"),
+        2 => Some("deck.2.assign"),
+        3 => Some("deck.3.assign"),
+        4 => Some("deck.4.assign"),
+        _ => None,
+    }
+}
+
+pub const MIXER_CONTROL_CROSSFADER: &str = "mixer.crossfader";
+pub const MIXER_CONTROL_MASTER_VOLUME: &str = "mixer.master_volume";
+pub const MIXER_CONTROL_MASTER_MUTE: &str = "mixer.master_mute";
+
+fn mixer_control_index(control: &'static str) -> Option<usize> {
+    const TABLE: [&str; 35] = [
+        "deck.1.trim",
+        "deck.2.trim",
+        "deck.3.trim",
+        "deck.4.trim",
+        "deck.1.auto_gain",
+        "deck.2.auto_gain",
+        "deck.3.auto_gain",
+        "deck.4.auto_gain",
+        "deck.1.eq.low",
+        "deck.1.eq.mid",
+        "deck.1.eq.high",
+        "deck.2.eq.low",
+        "deck.2.eq.mid",
+        "deck.2.eq.high",
+        "deck.3.eq.low",
+        "deck.3.eq.mid",
+        "deck.3.eq.high",
+        "deck.4.eq.low",
+        "deck.4.eq.mid",
+        "deck.4.eq.high",
+        "deck.1.filter",
+        "deck.2.filter",
+        "deck.3.filter",
+        "deck.4.filter",
+        "deck.1.fader",
+        "deck.2.fader",
+        "deck.3.fader",
+        "deck.4.fader",
+        "deck.1.assign",
+        "deck.2.assign",
+        "deck.3.assign",
+        "deck.4.assign",
+        MIXER_CONTROL_CROSSFADER,
+        MIXER_CONTROL_MASTER_VOLUME,
+        MIXER_CONTROL_MASTER_MUTE,
+    ];
+    TABLE.iter().position(|&id| id == control)
+}
+
+pub fn assign_to_capture_value(assign: Assign) -> f64 {
+    match assign {
+        Assign::A => 0.0,
+        Assign::Thru => 0.5,
+        Assign::B => 1.0,
+    }
+}
+
 /// A command the engine applies. Field names and units follow the audio
 /// subset of the page's `PerformanceCommand`; `Load` carries an already
 /// decoded track because decoding never happens on the audio thread.
 #[derive(Clone, Debug)]
 pub enum EngineCmd {
-    Load { deck: DeckId, track: Arc<Track> },
+    Load {
+        deck: DeckId,
+        track: Arc<Track>,
+    },
     /// The loaded audio with a new beatgrid, built off the audio thread by
     /// `Track::with_grid` from the deck's current track.
-    Regrid { deck: DeckId, track: Arc<Track> },
+    Regrid {
+        deck: DeckId,
+        track: Arc<Track>,
+    },
     /// The whole decoded track for the head a progressive load put on the
     /// deck (`Deck::extend`), built off the audio thread with the deck's
     /// current grid. Refused if the deck holds anything else by then.
-    Extend { deck: DeckId, track: Arc<Track> },
-    Unload { deck: DeckId },
-    Play { deck: DeckId, playing: bool },
+    Extend {
+        deck: DeckId,
+        track: Arc<Track>,
+    },
+    Unload {
+        deck: DeckId,
+    },
+    Play {
+        deck: DeckId,
+        playing: bool,
+    },
     /// Play if paused, pause if playing, decided when the engine applies it,
     /// so a toggle queued behind another sender's play still flips the state
     /// the engine actually has (a controller's PLAY button, plan 20-03).
-    PlayToggle { deck: DeckId },
-    Cue { deck: DeckId },
-    Quantize { deck: DeckId, enabled: bool },
-    QuantizeGrid { deck: DeckId, beats: u8 },
-    Seek { deck: DeckId, position_ms: f64, quantize: bool },
-    Loop { deck: DeckId, bounds_ms: Option<(f64, f64)>, quantize: bool },
-    BeatLoop { deck: DeckId, beats: f64, start_ms: Option<f64> },
-    BeatJump { deck: DeckId, beats: f64 },
-    Tempo { deck: DeckId, ratio: f64 },
+    PlayToggle {
+        deck: DeckId,
+    },
+    Cue {
+        deck: DeckId,
+    },
+    Quantize {
+        deck: DeckId,
+        enabled: bool,
+    },
+    QuantizeGrid {
+        deck: DeckId,
+        beats: u8,
+    },
+    Seek {
+        deck: DeckId,
+        position_ms: f64,
+        quantize: bool,
+    },
+    Loop {
+        deck: DeckId,
+        bounds_ms: Option<(f64, f64)>,
+        quantize: bool,
+    },
+    BeatLoop {
+        deck: DeckId,
+        beats: f64,
+        start_ms: Option<f64>,
+    },
+    BeatJump {
+        deck: DeckId,
+        beats: f64,
+    },
+    Tempo {
+        deck: DeckId,
+        ratio: f64,
+    },
     /// A tempo fader position, 0..1 bottom to top, read against the deck's
     /// own pitch range when applied: 0 is -range, 0.5 is 1.0, 1 is +range
     /// (the page's `pitchRatioFromFader`, plan 20-03).
-    TempoFader { deck: DeckId, value: f64 },
-    PitchRange { deck: DeckId, range: f64 },
-    MasterTempo { deck: DeckId, enabled: bool },
-    KeyNudge { deck: DeckId, semitones: i32 },
-    Trim { deck: DeckId, value: f64 },
+    TempoFader {
+        deck: DeckId,
+        value: f64,
+    },
+    PitchRange {
+        deck: DeckId,
+        range: f64,
+    },
+    MasterTempo {
+        deck: DeckId,
+        enabled: bool,
+    },
+    KeyNudge {
+        deck: DeckId,
+        semitones: i32,
+    },
+    Trim {
+        deck: DeckId,
+        value: f64,
+    },
     /// Auto gain in dB at the trim stage, under the knob (AUTOGAIN-02).
-    AutoGain { deck: DeckId, db: f64 },
-    Eq { deck: DeckId, band: EqBand, value: f64 },
-    Filter { deck: DeckId, value: f64 },
-    Fader { deck: DeckId, value: f64 },
-    Assign { deck: DeckId, assign: Assign },
-    Crossfader { value: f64 },
-    MasterVolume { value: f64 },
-    MasterMute { muted: bool },
+    AutoGain {
+        deck: DeckId,
+        db: f64,
+    },
+    Eq {
+        deck: DeckId,
+        band: EqBand,
+        value: f64,
+    },
+    Filter {
+        deck: DeckId,
+        value: f64,
+    },
+    Fader {
+        deck: DeckId,
+        value: f64,
+    },
+    Assign {
+        deck: DeckId,
+        assign: Assign,
+    },
+    Crossfader {
+        value: f64,
+    },
+    MasterVolume {
+        value: f64,
+    },
+    MasterMute {
+        muted: bool,
+    },
 }
+
+/// One command the control thread enqueues for the audio thread.
+pub type MailboxItem = (u64, EngineCmd, EventSource);
 
 /// A tempo fader position (0..1) as a ratio within the deck's pitch range in
 /// percent, as the page's `pitchRatioFromFader` computes it: both ends land
@@ -234,7 +614,12 @@ struct MasterMeter {
 
 impl MasterMeter {
     fn new() -> MasterMeter {
-        MasterMeter { window_frames: METER_WINDOW_FRAMES, sum_sq: 0.0, frames: 0, rms: 0.0 }
+        MasterMeter {
+            window_frames: METER_WINDOW_FRAMES,
+            sum_sq: 0.0,
+            frames: 0,
+            rms: 0.0,
+        }
     }
 
     fn add(&mut self, mono: f32) {
@@ -261,6 +646,7 @@ pub struct Engine {
     mute_gain: f64,
     frame: u64,
     meter: MasterMeter,
+    mixer_capture: MixerCapture,
 }
 
 impl Engine {
@@ -276,6 +662,7 @@ impl Engine {
             mute_gain: 1.0,
             frame: 0,
             meter: MasterMeter::new(),
+            mixer_capture: MixerCapture::new(sample_rate),
         };
         // The page's default assign matrix (`_defaultChannel`): odd decks on
         // A, even decks on B. The strips start at the gain that gives, with
@@ -303,9 +690,19 @@ impl Engine {
 
     /// The deck's current audio with a new grid, for `EngineCmd::Regrid`.
     /// Allocates: call off the audio thread.
-    pub fn regridded(&self, deck: DeckId, beats: Vec<Beat>, bpm: Option<f64>) -> Result<Arc<Track>, EngineError> {
-        let d = self.deck(deck).ok_or(EngineError::new(ErrorCode::Invalid, "no such deck"))?;
-        let t = d.track.as_ref().ok_or(EngineError::new(ErrorCode::NoTrack, "no track loaded on this deck"))?;
+    pub fn regridded(
+        &self,
+        deck: DeckId,
+        beats: Vec<Beat>,
+        bpm: Option<f64>,
+    ) -> Result<Arc<Track>, EngineError> {
+        let d = self
+            .deck(deck)
+            .ok_or(EngineError::new(ErrorCode::Invalid, "no such deck"))?;
+        let t = d.track.as_ref().ok_or(EngineError::new(
+            ErrorCode::NoTrack,
+            "no track loaded on this deck",
+        ))?;
         Ok(Arc::new(t.with_grid(beats, bpm)))
     }
 
@@ -313,7 +710,9 @@ impl Engine {
         let i = (deck as usize)
             .checked_sub(1)
             .ok_or(EngineError::new(ErrorCode::Invalid, "deck must be 1..4"))?;
-        self.decks.get_mut(i).ok_or(EngineError::new(ErrorCode::Invalid, "deck must be 1..4"))
+        self.decks
+            .get_mut(i)
+            .ok_or(EngineError::new(ErrorCode::Invalid, "deck must be 1..4"))
     }
 
     fn apply_crossfader(&mut self) {
@@ -324,27 +723,60 @@ impl Engine {
         }
     }
 
-    /// Apply one command at the current frame.
+    fn capture_mixer(&mut self, control: &'static str, value: f64, source: EventSource) {
+        self.mixer_capture.note(control, value, self.frame, source);
+    }
+
+    /// Mixer control rows coalesced on the audio thread, drained by the recorder.
+    pub fn drain_mixer_capture(&mut self) -> Vec<CapturedMixerEvent> {
+        self.mixer_capture.drain()
+    }
+
+    /// Apply one command at the current frame (`source=user`).
     pub fn apply(&mut self, cmd: EngineCmd) -> Result<Retired, Rejected> {
+        self.apply_with_source(cmd, EventSource::User)
+    }
+
+    /// Apply with an explicit v2 `source` tag (MIDI uses `controller`).
+    pub fn apply_with_source(
+        &mut self,
+        cmd: EngineCmd,
+        source: EventSource,
+    ) -> Result<Retired, Rejected> {
         use EngineCmd::*;
         match cmd {
             // A refused load gives its track back rather than dropping it here.
             Load { deck, track } => {
                 return match self.deck_mut(deck) {
                     Ok(d) => Ok(d.load(track)),
-                    Err(error) => Err(Rejected { error, track: Some(track) }),
+                    Err(error) => Err(Rejected {
+                        error,
+                        track: Some(track),
+                    }),
                 }
             }
             Regrid { deck, track } => {
                 return match self.deck_mut(deck) {
-                    Ok(d) => d.regrid(track).map(Some).map_err(|(error, t)| Rejected { error, track: Some(t) }),
-                    Err(error) => Err(Rejected { error, track: Some(track) }),
+                    Ok(d) => d.regrid(track).map(Some).map_err(|(error, t)| Rejected {
+                        error,
+                        track: Some(t),
+                    }),
+                    Err(error) => Err(Rejected {
+                        error,
+                        track: Some(track),
+                    }),
                 }
             }
             Extend { deck, track } => {
                 return match self.deck_mut(deck) {
-                    Ok(d) => d.extend(track).map(Some).map_err(|(error, t)| Rejected { error, track: Some(t) }),
-                    Err(error) => Err(Rejected { error, track: Some(track) }),
+                    Ok(d) => d.extend(track).map(Some).map_err(|(error, t)| Rejected {
+                        error,
+                        track: Some(t),
+                    }),
+                    Err(error) => Err(Rejected {
+                        error,
+                        track: Some(track),
+                    }),
                 }
             }
             Unload { deck } => return Ok(self.deck_mut(deck)?.unload()),
@@ -357,9 +789,23 @@ impl Engine {
             Cue { deck } => self.deck_mut(deck)?.cue()?,
             Quantize { deck, enabled } => self.deck_mut(deck)?.set_quantize(enabled),
             QuantizeGrid { deck, beats } => self.deck_mut(deck)?.set_quantize_grid(beats)?,
-            Seek { deck, position_ms, quantize } => self.deck_mut(deck)?.seek_with_quantize(position_ms, quantize)?,
-            Loop { deck, bounds_ms, quantize } => self.deck_mut(deck)?.set_loop_with(bounds_ms, quantize)?,
-            BeatLoop { deck, beats, start_ms } => self.deck_mut(deck)?.beat_loop(beats, start_ms)?,
+            Seek {
+                deck,
+                position_ms,
+                quantize,
+            } => self
+                .deck_mut(deck)?
+                .seek_with_quantize(position_ms, quantize)?,
+            Loop {
+                deck,
+                bounds_ms,
+                quantize,
+            } => self.deck_mut(deck)?.set_loop_with(bounds_ms, quantize)?,
+            BeatLoop {
+                deck,
+                beats,
+                start_ms,
+            } => self.deck_mut(deck)?.beat_loop(beats, start_ms)?,
             BeatJump { deck, beats } => self.deck_mut(deck)?.beat_jump(beats)?,
             Tempo { deck, ratio } => self.deck_mut(deck)?.set_tempo(ratio)?,
             TempoFader { deck, value } => {
@@ -372,41 +818,68 @@ impl Engine {
             KeyNudge { deck, semitones } => self.deck_mut(deck)?.nudge_key(semitones)?,
             Trim { deck, value } => {
                 let v = mixer::check_unit(value)?;
-                self.deck_mut(deck)?.set_trim(v)
+                self.deck_mut(deck)?.set_trim(v);
+                if let Some(id) = mixer_control_id_trim(deck) {
+                    self.capture_mixer(id, v, source);
+                }
             }
             AutoGain { deck, db } => {
                 let db = mixer::check_auto_gain_db(db)?;
-                self.deck_mut(deck)?.set_auto_gain_db(db)
+                self.deck_mut(deck)?.set_auto_gain_db(db);
+                if let Some(id) = mixer_control_id_auto_gain(deck) {
+                    self.capture_mixer(id, db, source);
+                }
             }
             Eq { deck, band, value } => {
                 let v = mixer::check_unit(value)?;
-                self.deck_mut(deck)?.set_eq(band.index(), v)
+                self.deck_mut(deck)?.set_eq(band.index(), v);
+                if let Some(id) = mixer_control_id_eq(deck, band) {
+                    self.capture_mixer(id, v, source);
+                }
             }
             Filter { deck, value } => {
                 let v = mixer::check_unit(value)?;
-                self.deck_mut(deck)?.set_filter(v)
+                self.deck_mut(deck)?.set_filter(v);
+                if let Some(id) = mixer_control_id_filter(deck) {
+                    self.capture_mixer(id, v, source);
+                }
             }
             Fader { deck, value } => {
                 let v = mixer::check_unit(value)?;
-                self.deck_mut(deck)?.set_fader(v)
+                self.deck_mut(deck)?.set_fader(v);
+                if let Some(id) = mixer_control_id_fader(deck) {
+                    self.capture_mixer(id, v, source);
+                }
             }
             Assign { deck, assign } => {
                 let x = self.crossfader;
                 let d = self.deck_mut(deck)?;
                 d.assign = assign;
                 d.set_xf_gain(mixer::xf_gain(assign, x));
+                if let Some(id) = mixer_control_id_assign(deck) {
+                    self.capture_mixer(id, assign_to_capture_value(assign), source);
+                }
             }
             Crossfader { value } => {
-                self.crossfader = mixer::check_unit(value)?;
+                let v = mixer::check_unit(value)?;
+                self.crossfader = v;
                 self.apply_crossfader();
+                self.capture_mixer(MIXER_CONTROL_CROSSFADER, v, source);
             }
             MasterVolume { value } => {
-                self.master_volume = mixer::check_unit(value)?;
+                let v = mixer::check_unit(value)?;
+                self.master_volume = v;
                 self.master_gain.set(self.master_volume);
+                self.capture_mixer(MIXER_CONTROL_MASTER_VOLUME, v, source);
             }
             MasterMute { muted } => {
                 self.master_muted = muted;
                 self.mute_gain = if muted { 0.0 } else { 1.0 };
+                self.capture_mixer(
+                    MIXER_CONTROL_MASTER_MUTE,
+                    if muted { 1.0 } else { 0.0 },
+                    source,
+                );
             }
         }
         Ok(None)
@@ -494,7 +967,11 @@ impl Engine {
                 playing: d.playing,
                 position_ms: t.frames_to_ms(d.pos),
                 duration_ms: t.duration_ms(),
-                decoded_ms: if t.decoding { t.frames_to_ms(t.available() as f64) } else { t.duration_ms() },
+                decoded_ms: if t.decoding {
+                    t.frames_to_ms(t.available() as f64)
+                } else {
+                    t.duration_ms()
+                },
                 tempo: d.tempo,
                 master_tempo: d.master_tempo,
                 key_shift: d.key_shift,
@@ -503,7 +980,9 @@ impl Engine {
                 pitch_range: d.pitch_range,
                 quantize: d.quantize,
                 quantize_grid: d.quantize_grid,
-                loop_ms: d.looping.map(|(a, b)| (t.frames_to_ms(a), t.frames_to_ms(b))),
+                loop_ms: d
+                    .looping
+                    .map(|(a, b)| (t.frames_to_ms(a), t.frames_to_ms(b))),
                 loop_beats: d.looping.and(d.loop_beats),
                 trim: d.trim,
                 eq: d.eq,
@@ -572,7 +1051,9 @@ impl KnobTarget {
             EngineCmd::Eq { deck, band, .. } => KnobTarget::Eq(deck, band),
             EngineCmd::Filter { deck, .. } => KnobTarget::Filter(deck),
             EngineCmd::Fader { deck, .. } => KnobTarget::Fader(deck),
-            EngineCmd::Tempo { deck, .. } | EngineCmd::Load { deck, .. } | EngineCmd::Unload { deck } => KnobTarget::Tempo(deck),
+            EngineCmd::Tempo { deck, .. }
+            | EngineCmd::Load { deck, .. }
+            | EngineCmd::Unload { deck } => KnobTarget::Tempo(deck),
             _ => return None,
         })
     }
@@ -591,7 +1072,13 @@ mod tests {
             pcm.push(v);
             pcm.push(v);
         }
-        let beats = (0..(secs * 2.0) as usize).map(|i| Beat { time_ms: i as f64 * 500.0, downbeat: i % 4 == 0, bpm: None }).collect();
+        let beats = (0..(secs * 2.0) as usize)
+            .map(|i| Beat {
+                time_ms: i as f64 * 500.0,
+                downbeat: i % 4 == 0,
+                bpm: None,
+            })
+            .collect();
         Track::new(sr, pcm, beats, None)
     }
 
@@ -623,14 +1110,29 @@ mod tests {
     fn play_toggle_flips_the_state_the_engine_has_when_it_applies() {
         let mut e = Engine::new(48000);
         // No track: refused like play, not silently accepted.
-        assert_eq!(e.apply(EngineCmd::PlayToggle { deck: 1 }).unwrap_err().code, ErrorCode::NoTrack);
-        e.apply(EngineCmd::Load { deck: 1, track: Arc::new(tone(48000, 440.0, 2.0)) }).unwrap();
+        assert_eq!(
+            e.apply(EngineCmd::PlayToggle { deck: 1 }).unwrap_err().code,
+            ErrorCode::NoTrack
+        );
+        e.apply(EngineCmd::Load {
+            deck: 1,
+            track: Arc::new(tone(48000, 440.0, 2.0)),
+        })
+        .unwrap();
         e.apply(EngineCmd::PlayToggle { deck: 1 }).unwrap();
         assert!(e.snapshot().decks[0].playing);
         // Another sender started it first: the toggle reads that and pauses,
         // where a toggle decided by the sender's stale view would play again.
-        e.apply(EngineCmd::Play { deck: 1, playing: false }).unwrap();
-        e.apply(EngineCmd::Play { deck: 1, playing: true }).unwrap();
+        e.apply(EngineCmd::Play {
+            deck: 1,
+            playing: false,
+        })
+        .unwrap();
+        e.apply(EngineCmd::Play {
+            deck: 1,
+            playing: true,
+        })
+        .unwrap();
         e.apply(EngineCmd::PlayToggle { deck: 1 }).unwrap();
         assert!(!e.snapshot().decks[0].playing);
         // A pause by toggle sets the cue where it stopped, as play(false) does.
@@ -640,20 +1142,39 @@ mod tests {
     #[test]
     fn tempo_fader_reads_the_decks_own_pitch_range() {
         let mut e = Engine::new(48000);
-        e.apply(EngineCmd::Load { deck: 1, track: Arc::new(tone(48000, 440.0, 2.0)) }).unwrap();
+        e.apply(EngineCmd::Load {
+            deck: 1,
+            track: Arc::new(tone(48000, 440.0, 2.0)),
+        })
+        .unwrap();
         let tempo = |e: &Engine| e.snapshot().decks[0].tempo;
         for (v, want) in [(0.0, 0.84), (0.5, 1.0), (1.0, 1.16)] {
-            e.apply(EngineCmd::TempoFader { deck: 1, value: v }).unwrap();
+            e.apply(EngineCmd::TempoFader { deck: 1, value: v })
+                .unwrap();
             assert_eq!(tempo(&e), want, "fader {v} at 16%");
         }
-        e.apply(EngineCmd::TempoFader { deck: 1, value: 0.5 }).unwrap();
-        e.apply(EngineCmd::PitchRange { deck: 1, range: 8.0 }).unwrap();
-        e.apply(EngineCmd::TempoFader { deck: 1, value: 1.0 }).unwrap();
+        e.apply(EngineCmd::TempoFader {
+            deck: 1,
+            value: 0.5,
+        })
+        .unwrap();
+        e.apply(EngineCmd::PitchRange {
+            deck: 1,
+            range: 8.0,
+        })
+        .unwrap();
+        e.apply(EngineCmd::TempoFader {
+            deck: 1,
+            value: 1.0,
+        })
+        .unwrap();
         assert_eq!(tempo(&e), 1.08, "the top of an 8% fader is +8%, not +16%");
         // Out of 0..1 is refused as a fader value, naming that, rather than
         // as the ratio it would have made; and it changes nothing.
         for v in [1.01, -0.01, f64::NAN] {
-            let err = e.apply(EngineCmd::TempoFader { deck: 1, value: v }).unwrap_err();
+            let err = e
+                .apply(EngineCmd::TempoFader { deck: 1, value: v })
+                .unwrap_err();
             assert_eq!(err.code, ErrorCode::Invalid);
             assert!(err.message.contains("within 0..1"), "{v}: {}", err.message);
         }
@@ -662,8 +1183,16 @@ mod tests {
 
     fn playing_tone(hz: f64, src_sr: u32) -> Engine {
         let mut e = Engine::new(48000);
-        e.apply(EngineCmd::Load { deck: 1, track: Arc::new(tone(src_sr, hz, 10.0)) }).unwrap();
-        e.apply(EngineCmd::Play { deck: 1, playing: true }).unwrap();
+        e.apply(EngineCmd::Load {
+            deck: 1,
+            track: Arc::new(tone(src_sr, hz, 10.0)),
+        })
+        .unwrap();
+        e.apply(EngineCmd::Play {
+            deck: 1,
+            playing: true,
+        })
+        .unwrap();
         e
     }
 
@@ -671,15 +1200,27 @@ mod tests {
     fn varispeed_tempo_changes_pitch_and_rate_conversion_is_exact() {
         // Control: tempo 1.0 at a 44.1 kHz source rendered at 48 kHz keeps 1 kHz.
         let mut e = playing_tone(1000.0, 44100);
-        e.apply(EngineCmd::MasterTempo { deck: 1, enabled: false }).unwrap();
+        e.apply(EngineCmd::MasterTempo {
+            deck: 1,
+            enabled: false,
+        })
+        .unwrap();
         let mut buf = vec![0.0f32; 48000 * 2];
         e.render(&mut buf);
         let f = freq(&buf, 48000.0);
         assert!((f - 1000.0).abs() < 0.5, "tempo 1.0 measured {f}");
 
         let mut e = playing_tone(1000.0, 44100);
-        e.apply(EngineCmd::MasterTempo { deck: 1, enabled: false }).unwrap();
-        e.apply(EngineCmd::Tempo { deck: 1, ratio: 1.08 }).unwrap();
+        e.apply(EngineCmd::MasterTempo {
+            deck: 1,
+            enabled: false,
+        })
+        .unwrap();
+        e.apply(EngineCmd::Tempo {
+            deck: 1,
+            ratio: 1.08,
+        })
+        .unwrap();
         e.render(&mut buf);
         let f = freq(&buf, 48000.0);
         assert!((f - 1080.0).abs() < 0.5, "tempo 1.08 measured {f}");
@@ -689,7 +1230,10 @@ mod tests {
 
     /// RMS of the (L + R) / 2 downmix over frames `from..to` of a stereo buffer.
     fn mono_rms(buf: &[f32], from: usize, to: usize) -> f32 {
-        let s: f64 = buf[from * 2..to * 2].chunks_exact(2).map(|c| (((c[0] + c[1]) * 0.5) as f64).powi(2)).sum();
+        let s: f64 = buf[from * 2..to * 2]
+            .chunks_exact(2)
+            .map(|c| (((c[0] + c[1]) * 0.5) as f64).powi(2))
+            .sum();
         (s / (to - from) as f64).sqrt() as f32
     }
 
@@ -704,7 +1248,10 @@ mod tests {
         let want = mono_rms(&buf, 10 * w, 11 * w);
         let got = e.snapshot().master_rms;
         assert!(want > 0.05, "the tone reaches the bus: {want}");
-        assert!((got - want).abs() < want * 1e-4, "meter {got} vs the 11th 2048-frame window {want}");
+        assert!(
+            (got - want).abs() < want * 1e-4,
+            "meter {got} vs the 11th 2048-frame window {want}"
+        );
     }
 
     #[test]
@@ -720,18 +1267,36 @@ mod tests {
         let want = mono_rms(&buf, 10 * w, 11 * w);
         let got = e.snapshot().master_rms;
         assert!(want > 0.05, "the tone reaches the bus: {want}");
-        assert!((got - want).abs() < want * 1e-4, "meter {got} vs the bus {want}");
+        assert!(
+            (got - want).abs() < want * 1e-4,
+            "meter {got} vs the bus {want}"
+        );
         // Muted: the device gets silence, the meter still reads the bus,
         // as the page's analyser sits ahead of its mute node.
         e.apply(EngineCmd::MasterMute { muted: true }).unwrap();
         e.render(&mut buf);
-        assert!(buf.iter().all(|&x| x == 0.0), "the mute silences the output");
-        assert!(e.snapshot().master_rms > 0.05, "a mute is not a dropout: {}", e.snapshot().master_rms);
+        assert!(
+            buf.iter().all(|&x| x == 0.0),
+            "the mute silences the output"
+        );
+        assert!(
+            e.snapshot().master_rms > 0.05,
+            "a mute is not a dropout: {}",
+            e.snapshot().master_rms
+        );
         // Paused: the bus goes quiet and the meter reads it.
         e.apply(EngineCmd::MasterMute { muted: false }).unwrap();
-        e.apply(EngineCmd::Play { deck: 1, playing: false }).unwrap();
+        e.apply(EngineCmd::Play {
+            deck: 1,
+            playing: false,
+        })
+        .unwrap();
         e.render(&mut buf);
-        assert!(e.snapshot().master_rms < 1e-6, "paused meter {}", e.snapshot().master_rms);
+        assert!(
+            e.snapshot().master_rms < 1e-6,
+            "paused meter {}",
+            e.snapshot().master_rms
+        );
     }
 
     /// Frequency of the left channel after the stretcher's start-up.
@@ -743,12 +1308,23 @@ mod tests {
     fn master_tempo_keeps_pitch_and_moves_the_playhead() {
         for (mt, want_hz) in [(true, 1000.0), (false, 1080.0)] {
             let mut e = playing_tone(1000.0, 48000);
-            e.apply(EngineCmd::MasterTempo { deck: 1, enabled: mt }).unwrap();
-            e.apply(EngineCmd::Tempo { deck: 1, ratio: 1.08 }).unwrap();
+            e.apply(EngineCmd::MasterTempo {
+                deck: 1,
+                enabled: mt,
+            })
+            .unwrap();
+            e.apply(EngineCmd::Tempo {
+                deck: 1,
+                ratio: 1.08,
+            })
+            .unwrap();
             let mut buf = vec![0.0f32; 48000 * 2];
             e.render(&mut buf);
             let f = settled_freq(&buf);
-            assert!((f - want_hz).abs() < 2.0, "master_tempo {mt}: {f} Hz, want {want_hz}");
+            assert!(
+                (f - want_hz).abs() < 2.0,
+                "master_tempo {mt}: {f} Hz, want {want_hz}"
+            );
             // Either way the track moves at the tempo.
             let pos = e.snapshot().decks[0].position_ms;
             assert!((pos - 1080.0).abs() < 1e-6, "position {pos}");
@@ -761,48 +1337,100 @@ mod tests {
         // own deck default (MT lit) says it does.
         let mut e = playing_tone(1000.0, 48000);
         assert!(e.snapshot().decks[0].master_tempo);
-        e.apply(EngineCmd::Tempo { deck: 1, ratio: 1.08 }).unwrap();
+        e.apply(EngineCmd::Tempo {
+            deck: 1,
+            ratio: 1.08,
+        })
+        .unwrap();
         let mut buf = vec![0.0f32; 48000 * 2];
         e.render(&mut buf);
         let f = settled_freq(&buf);
-        assert!((f - 1000.0).abs() < 2.0, "default deck at tempo 1.08: {f} Hz, want 1000");
+        assert!(
+            (f - 1000.0).abs() < 2.0,
+            "default deck at tempo 1.08: {f} Hz, want 1000"
+        );
         // Control: turned off, the same move is varispeed again.
         let mut e = playing_tone(1000.0, 48000);
-        e.apply(EngineCmd::MasterTempo { deck: 1, enabled: false }).unwrap();
-        e.apply(EngineCmd::Tempo { deck: 1, ratio: 1.08 }).unwrap();
+        e.apply(EngineCmd::MasterTempo {
+            deck: 1,
+            enabled: false,
+        })
+        .unwrap();
+        e.apply(EngineCmd::Tempo {
+            deck: 1,
+            ratio: 1.08,
+        })
+        .unwrap();
         e.render(&mut buf);
         let f = settled_freq(&buf);
-        assert!((f - 1080.0).abs() < 2.0, "MT off at tempo 1.08: {f} Hz, want 1080");
+        assert!(
+            (f - 1080.0).abs() < 2.0,
+            "MT off at tempo 1.08: {f} Hz, want 1080"
+        );
     }
 
     #[test]
     fn key_shift_moves_pitch_by_semitones_with_or_without_master_tempo() {
         for mt in [true, false] {
             let mut e = playing_tone(1000.0, 48000);
-            e.apply(EngineCmd::MasterTempo { deck: 1, enabled: mt }).unwrap();
-            e.apply(EngineCmd::KeyNudge { deck: 1, semitones: 1 }).unwrap();
-            e.apply(EngineCmd::KeyNudge { deck: 1, semitones: 1 }).unwrap();
+            e.apply(EngineCmd::MasterTempo {
+                deck: 1,
+                enabled: mt,
+            })
+            .unwrap();
+            e.apply(EngineCmd::KeyNudge {
+                deck: 1,
+                semitones: 1,
+            })
+            .unwrap();
+            e.apply(EngineCmd::KeyNudge {
+                deck: 1,
+                semitones: 1,
+            })
+            .unwrap();
             let mut buf = vec![0.0f32; 48000 * 2];
             e.render(&mut buf);
             let want = 1000.0 * 2f64.powf(2.0 / 12.0);
             let f = settled_freq(&buf);
-            assert!((f - want).abs() < 2.0, "master_tempo {mt}: {f} Hz, want {want}");
+            assert!(
+                (f - want).abs() < 2.0,
+                "master_tempo {mt}: {f} Hz, want {want}"
+            );
             assert_eq!(e.snapshot().decks[0].key_shift, 2);
         }
         // The page's range is -12..12, and a load resets the shift.
         let mut e = playing_tone(1000.0, 48000);
         for _ in 0..12 {
-            e.apply(EngineCmd::KeyNudge { deck: 1, semitones: -1 }).unwrap();
+            e.apply(EngineCmd::KeyNudge {
+                deck: 1,
+                semitones: -1,
+            })
+            .unwrap();
         }
-        assert_eq!(e.apply(EngineCmd::KeyNudge { deck: 1, semitones: -1 }).unwrap_err().code, ErrorCode::Invalid);
-        e.apply(EngineCmd::Load { deck: 1, track: Arc::new(tone(48000, 500.0, 1.0)) }).unwrap();
+        assert_eq!(
+            e.apply(EngineCmd::KeyNudge {
+                deck: 1,
+                semitones: -1
+            })
+            .unwrap_err()
+            .code,
+            ErrorCode::Invalid
+        );
+        e.apply(EngineCmd::Load {
+            deck: 1,
+            track: Arc::new(tone(48000, 500.0, 1.0)),
+        })
+        .unwrap();
         assert_eq!(e.snapshot().decks[0].key_shift, 0);
     }
 
     /// Frame of the first sample above half of the peak, left channel.
     fn onset(buf: &[f32]) -> usize {
         let peak = buf.iter().step_by(2).fold(0.0f32, |m, x| m.max(x.abs()));
-        buf.iter().step_by(2).position(|x| x.abs() > peak * 0.5).unwrap()
+        buf.iter()
+            .step_by(2)
+            .position(|x| x.abs() > peak * 0.5)
+            .unwrap()
     }
 
     fn clicks(sr: u32, secs: f64, every_s: f64) -> Track {
@@ -828,10 +1456,27 @@ mod tests {
         // Same rule here, so position, loops and beat maths need no offset.
         let render = |mt: bool| {
             let mut e = Engine::new(48000);
-            e.apply(EngineCmd::Load { deck: 1, track: Arc::new(clicks(48000, 3.0, 1.0)) }).unwrap();
-            e.apply(EngineCmd::MasterTempo { deck: 1, enabled: mt }).unwrap();
-            e.apply(EngineCmd::Seek { deck: 1, position_ms: 500.0, quantize: true }).unwrap();
-            e.apply(EngineCmd::Play { deck: 1, playing: true }).unwrap();
+            e.apply(EngineCmd::Load {
+                deck: 1,
+                track: Arc::new(clicks(48000, 3.0, 1.0)),
+            })
+            .unwrap();
+            e.apply(EngineCmd::MasterTempo {
+                deck: 1,
+                enabled: mt,
+            })
+            .unwrap();
+            e.apply(EngineCmd::Seek {
+                deck: 1,
+                position_ms: 500.0,
+                quantize: true,
+            })
+            .unwrap();
+            e.apply(EngineCmd::Play {
+                deck: 1,
+                playing: true,
+            })
+            .unwrap();
             let mut buf = vec![0.0f32; 48000 * 2];
             e.render(&mut buf);
             onset(&buf)
@@ -839,7 +1484,10 @@ mod tests {
         let (plain, stretched) = (render(false), render(true));
         assert_eq!(plain, 24000);
         let off_ms = (stretched as f64 - plain as f64) / 48.0;
-        assert!(off_ms.abs() <= 2.0, "stretched click {off_ms:.2} ms from the varispeed one");
+        assert!(
+            off_ms.abs() <= 2.0,
+            "stretched click {off_ms:.2} ms from the varispeed one"
+        );
     }
 
     #[test]
@@ -849,14 +1497,26 @@ mod tests {
         // key nudge landing mid-render on the same frame.
         let render = |block: usize| {
             let mut e = playing_tone(440.0, 48000);
-            e.apply(EngineCmd::MasterTempo { deck: 1, enabled: true }).unwrap();
-            e.apply(EngineCmd::Tempo { deck: 1, ratio: 0.94 }).unwrap();
+            e.apply(EngineCmd::MasterTempo {
+                deck: 1,
+                enabled: true,
+            })
+            .unwrap();
+            e.apply(EngineCmd::Tempo {
+                deck: 1,
+                ratio: 0.94,
+            })
+            .unwrap();
             let mut out = vec![0.0f32; 48000 * 2];
             let (head, tail) = out.split_at_mut(9600 * 2);
             for c in head.chunks_mut(block * 2) {
                 e.render(c);
             }
-            e.apply(EngineCmd::KeyNudge { deck: 1, semitones: 1 }).unwrap();
+            e.apply(EngineCmd::KeyNudge {
+                deck: 1,
+                semitones: 1,
+            })
+            .unwrap();
             for c in tail.chunks_mut(block * 2) {
                 e.render(c);
             }
@@ -872,21 +1532,39 @@ mod tests {
     #[test]
     fn switching_master_tempo_mid_play_does_not_drop_out() {
         let mut e = playing_tone(440.0, 48000);
-        e.apply(EngineCmd::Tempo { deck: 1, ratio: 1.04 }).unwrap();
+        e.apply(EngineCmd::Tempo {
+            deck: 1,
+            ratio: 1.04,
+        })
+        .unwrap();
         let mut buf = vec![0.0f32; 24000 * 2];
         e.render(&mut buf);
         let before = rms_db(&buf[12000 * 2..]);
-        e.apply(EngineCmd::MasterTempo { deck: 1, enabled: true }).unwrap();
+        e.apply(EngineCmd::MasterTempo {
+            deck: 1,
+            enabled: true,
+        })
+        .unwrap();
         let mut sw = vec![0.0f32; 480 * 2];
         e.render(&mut sw);
         // 10 ms windows across the switch stay within 1.5 dB of steady play;
         // an unprimed stretcher fades in over about 40 ms instead.
         let during = rms_db(&sw);
-        assert!((during - before).abs() < 1.5, "switch window {during:.2} dB vs {before:.2} dB");
-        e.apply(EngineCmd::MasterTempo { deck: 1, enabled: false }).unwrap();
+        assert!(
+            (during - before).abs() < 1.5,
+            "switch window {during:.2} dB vs {before:.2} dB"
+        );
+        e.apply(EngineCmd::MasterTempo {
+            deck: 1,
+            enabled: false,
+        })
+        .unwrap();
         e.render(&mut sw);
         let back = rms_db(&sw);
-        assert!((back - before).abs() < 1.5, "switch back {back:.2} dB vs {before:.2} dB");
+        assert!(
+            (back - before).abs() < 1.5,
+            "switch back {back:.2} dB vs {before:.2} dB"
+        );
     }
 
     #[test]
@@ -897,23 +1575,42 @@ mod tests {
         let reference = rms_db(&buf[48000..]);
         // Flat EQ, unity trim and fader: a 0.5-amplitude sine is -9.03 dBFS,
         // less the equal-power crossfader's 3.01 dB at center (deck 1 is on A).
-        assert!((reference - (-9.0309 - 3.0103)).abs() < 0.1, "flat measured {reference}");
+        assert!(
+            (reference - (-9.0309 - 3.0103)).abs() < 0.1,
+            "flat measured {reference}"
+        );
 
         let mut cut = playing_tone(100.0, 48000);
-        cut.apply(EngineCmd::Eq { deck: 1, band: EqBand::Low, value: 0.0 }).unwrap();
+        cut.apply(EngineCmd::Eq {
+            deck: 1,
+            band: EqBand::Low,
+            value: 0.0,
+        })
+        .unwrap();
         cut.render(&mut buf);
         let killed = rms_db(&buf[48000..]);
-        assert!(reference - killed > 20.0, "low kill only cut {} dB", reference - killed);
+        assert!(
+            reference - killed > 20.0,
+            "low kill only cut {} dB",
+            reference - killed
+        );
     }
 
     #[test]
     fn crossfader_and_mute_reach_the_output() {
         let mut e = playing_tone(1000.0, 48000);
-        e.apply(EngineCmd::Assign { deck: 1, assign: Assign::A }).unwrap();
+        e.apply(EngineCmd::Assign {
+            deck: 1,
+            assign: Assign::A,
+        })
+        .unwrap();
         e.apply(EngineCmd::Crossfader { value: 1.0 }).unwrap();
         let mut buf = vec![0.0f32; 48000 * 2];
         e.render(&mut buf);
-        assert!(rms_db(&buf[48000..]) < -120.0, "deck on A still audible at crossfader B");
+        assert!(
+            rms_db(&buf[48000..]) < -120.0,
+            "deck on A still audible at crossfader B"
+        );
         e.apply(EngineCmd::Crossfader { value: 0.0 }).unwrap();
         e.render(&mut buf);
         assert!(rms_db(&buf[48000..]) > -10.0);
@@ -960,12 +1657,24 @@ mod tests {
         // from full volume and blip the deck in.
         let peak = |b: &[f32]| b.iter().fold(0.0f32, |m, &x| m.max(x.abs()));
         let mut e = Engine::new(48000);
-        e.apply(EngineCmd::Load { deck: 2, track: Arc::new(tone(48000, 1000.0, 3.0)) }).unwrap();
-        e.apply(EngineCmd::Assign { deck: 2, assign: Assign::B }).unwrap();
+        e.apply(EngineCmd::Load {
+            deck: 2,
+            track: Arc::new(tone(48000, 1000.0, 3.0)),
+        })
+        .unwrap();
+        e.apply(EngineCmd::Assign {
+            deck: 2,
+            assign: Assign::B,
+        })
+        .unwrap();
         e.apply(EngineCmd::Crossfader { value: 0.0 }).unwrap();
         let mut buf = vec![0.0f32; 48000 * 2];
         e.render(&mut buf);
-        e.apply(EngineCmd::Play { deck: 2, playing: true }).unwrap();
+        e.apply(EngineCmd::Play {
+            deck: 2,
+            playing: true,
+        })
+        .unwrap();
         let mut first = vec![0.0f32; 480 * 2];
         e.render(&mut first);
         assert!(peak(&first) < 1e-6, "deck blipped in at {}", peak(&first));
@@ -975,9 +1684,17 @@ mod tests {
         let mut u = playing_tone(1000.0, 48000);
         u.render(&mut first);
         let full = 0.5 * mixer::xf_gain(Assign::A, 0.5) as f32;
-        assert!(peak(&first) > full * 0.99, "untouched deck started at {}, full is {full}", peak(&first));
+        assert!(
+            peak(&first) > full * 0.99,
+            "untouched deck started at {}, full is {full}",
+            peak(&first)
+        );
         // And a stopped deck goes exactly silent once its tails are over.
-        u.apply(EngineCmd::Play { deck: 1, playing: false }).unwrap();
+        u.apply(EngineCmd::Play {
+            deck: 1,
+            playing: false,
+        })
+        .unwrap();
         u.render(&mut buf);
         u.render(&mut buf);
         assert_eq!(peak(&buf), 0.0);
@@ -986,35 +1703,114 @@ mod tests {
     #[test]
     fn out_of_range_and_state_errors_are_refused() {
         let mut e = Engine::new(48000);
-        assert_eq!(e.apply(EngineCmd::Eq { deck: 1, band: EqBand::Low, value: 1.2 }).unwrap_err().code, ErrorCode::Invalid);
-        assert_eq!(e.apply(EngineCmd::Play { deck: 1, playing: true }).unwrap_err().code, ErrorCode::NoTrack);
-        assert_eq!(e.apply(EngineCmd::Fader { deck: 5, value: 0.5 }).unwrap_err().code, ErrorCode::Invalid);
-        assert_eq!(e.apply(EngineCmd::Fader { deck: 0, value: 0.5 }).unwrap_err().code, ErrorCode::Invalid);
+        assert_eq!(
+            e.apply(EngineCmd::Eq {
+                deck: 1,
+                band: EqBand::Low,
+                value: 1.2
+            })
+            .unwrap_err()
+            .code,
+            ErrorCode::Invalid
+        );
+        assert_eq!(
+            e.apply(EngineCmd::Play {
+                deck: 1,
+                playing: true
+            })
+            .unwrap_err()
+            .code,
+            ErrorCode::NoTrack
+        );
+        assert_eq!(
+            e.apply(EngineCmd::Fader {
+                deck: 5,
+                value: 0.5
+            })
+            .unwrap_err()
+            .code,
+            ErrorCode::Invalid
+        );
+        assert_eq!(
+            e.apply(EngineCmd::Fader {
+                deck: 0,
+                value: 0.5
+            })
+            .unwrap_err()
+            .code,
+            ErrorCode::Invalid
+        );
         // A refused load hands its track back instead of dropping it here.
         let t = Arc::new(Track::new(48000, vec![0.0f32; 96], vec![], None));
-        let r = e.apply(EngineCmd::Load { deck: 5, track: t.clone() }).unwrap_err();
+        let r = e
+            .apply(EngineCmd::Load {
+                deck: 5,
+                track: t.clone(),
+            })
+            .unwrap_err();
         assert_eq!(r.code, ErrorCode::Invalid);
         assert!(r.track.as_ref().is_some_and(|x| Arc::ptr_eq(x, &t)));
         // Control: a good load keeps it on the deck.
-        assert!(e.apply(EngineCmd::Load { deck: 1, track: t.clone() }).unwrap().is_none());
+        assert!(e
+            .apply(EngineCmd::Load {
+                deck: 1,
+                track: t.clone()
+            })
+            .unwrap()
+            .is_none());
         // Persistent deck controls show in the state feed.
-        e.apply(EngineCmd::Assign { deck: 2, assign: Assign::B }).unwrap();
-        e.apply(EngineCmd::PitchRange { deck: 2, range: 8.0 }).unwrap();
+        e.apply(EngineCmd::Assign {
+            deck: 2,
+            assign: Assign::B,
+        })
+        .unwrap();
+        e.apply(EngineCmd::PitchRange {
+            deck: 2,
+            range: 8.0,
+        })
+        .unwrap();
         let s = e.snapshot();
-        assert_eq!((s.decks[1].assign, s.decks[1].pitch_range), (Assign::B, 8.0));
+        assert_eq!(
+            (s.decks[1].assign, s.decks[1].pitch_range),
+            (Assign::B, 8.0)
+        );
         assert_eq!((s.decks[0].assign, s.decks[0].cue_ms), (Assign::A, None));
     }
 
     #[test]
     fn the_snapshot_says_whether_the_loop_is_a_beat_loop() {
         let mut e = Engine::new(48000);
-        let grid = (0..20).map(|i| Beat { time_ms: i as f64 * 500.0, downbeat: i % 4 == 0, bpm: None }).collect();
-        let t = Arc::new(Track::new(48000, vec![0.0f32; 48000 * 2 * 10], grid, Some(120.0)));
+        let grid = (0..20)
+            .map(|i| Beat {
+                time_ms: i as f64 * 500.0,
+                downbeat: i % 4 == 0,
+                bpm: None,
+            })
+            .collect();
+        let t = Arc::new(Track::new(
+            48000,
+            vec![0.0f32; 48000 * 2 * 10],
+            grid,
+            Some(120.0),
+        ));
         e.apply(EngineCmd::Load { deck: 1, track: t }).unwrap();
-        e.apply(EngineCmd::BeatLoop { deck: 1, beats: 4.0, start_ms: Some(1000.0) }).unwrap();
+        e.apply(EngineCmd::BeatLoop {
+            deck: 1,
+            beats: 4.0,
+            start_ms: Some(1000.0),
+        })
+        .unwrap();
         let d = e.snapshot().decks[0];
-        assert_eq!((d.loop_ms, d.loop_beats), (Some((1000.0, 3000.0)), Some(4.0)));
-        e.apply(EngineCmd::Loop { deck: 1, bounds_ms: Some((1000.0, 3000.0)), quantize: true }).unwrap();
+        assert_eq!(
+            (d.loop_ms, d.loop_beats),
+            (Some((1000.0, 3000.0)), Some(4.0))
+        );
+        e.apply(EngineCmd::Loop {
+            deck: 1,
+            bounds_ms: Some((1000.0, 3000.0)),
+            quantize: true,
+        })
+        .unwrap();
         assert_eq!(e.snapshot().decks[0].loop_beats, None);
     }
 
@@ -1026,14 +1822,30 @@ mod tests {
         // So the crossfader works with no assign sent: hard to A silences
         // deck 2 and leaves deck 1 at full level.
         for deck in [1, 2] {
-            e.apply(EngineCmd::Load { deck, track: Arc::new(tone(48000, 440.0, 1.0)) }).unwrap();
-            e.apply(EngineCmd::Play { deck, playing: true }).unwrap();
+            e.apply(EngineCmd::Load {
+                deck,
+                track: Arc::new(tone(48000, 440.0, 1.0)),
+            })
+            .unwrap();
+            e.apply(EngineCmd::Play {
+                deck,
+                playing: true,
+            })
+            .unwrap();
         }
         e.apply(EngineCmd::Crossfader { value: 0.0 }).unwrap();
         let mut buf = vec![0.0f32; 4800 * 2];
         e.render(&mut buf);
-        assert!((e.decks[0].level_gain() - 1.0).abs() < 1e-3, "{}", e.decks[0].level_gain());
-        assert!(e.decks[1].level_gain() < 1e-3, "{}", e.decks[1].level_gain());
+        assert!(
+            (e.decks[0].level_gain() - 1.0).abs() < 1e-3,
+            "{}",
+            e.decks[0].level_gain()
+        );
+        assert!(
+            e.decks[1].level_gain() < 1e-3,
+            "{}",
+            e.decks[1].level_gain()
+        );
         // At rest in the middle, a fresh engine starts at the equal-power
         // gain rather than gliding down to it from THRU's 1.0.
         let e = Engine::new(48000);
@@ -1046,13 +1858,30 @@ mod tests {
     fn replaced_track_is_handed_back_not_dropped() {
         let mut e = Engine::new(48000);
         let a = Arc::new(tone(48000, 440.0, 1.0));
-        assert!(e.apply(EngineCmd::Load { deck: 2, track: a.clone() }).unwrap().is_none());
-        let retired = e.apply(EngineCmd::Load { deck: 2, track: Arc::new(tone(48000, 440.0, 1.0)) }).unwrap();
+        assert!(e
+            .apply(EngineCmd::Load {
+                deck: 2,
+                track: a.clone()
+            })
+            .unwrap()
+            .is_none());
+        let retired = e
+            .apply(EngineCmd::Load {
+                deck: 2,
+                track: Arc::new(tone(48000, 440.0, 1.0)),
+            })
+            .unwrap();
         assert!(Arc::ptr_eq(retired.as_ref().unwrap(), &a));
     }
 
     fn grid(every_ms: f64, secs: f64) -> Vec<Beat> {
-        (0..(secs * 1000.0 / every_ms) as usize).map(|i| Beat { time_ms: i as f64 * every_ms, downbeat: i % 4 == 0, bpm: None }).collect()
+        (0..(secs * 1000.0 / every_ms) as usize)
+            .map(|i| Beat {
+                time_ms: i as f64 * every_ms,
+                downbeat: i % 4 == 0,
+                bpm: None,
+            })
+            .collect()
     }
 
     #[test]
@@ -1060,16 +1889,30 @@ mod tests {
         let run = |regrid: bool| {
             let mut e = Engine::new(48000);
             let t = Arc::new(tone(48000, 440.0, 4.0));
-            e.apply(EngineCmd::Load { deck: 1, track: t.clone() }).unwrap();
-            e.apply(EngineCmd::Play { deck: 1, playing: true }).unwrap();
+            e.apply(EngineCmd::Load {
+                deck: 1,
+                track: t.clone(),
+            })
+            .unwrap();
+            e.apply(EngineCmd::Play {
+                deck: 1,
+                playing: true,
+            })
+            .unwrap();
             let mut buf = vec![0.0f32; 14400 * 2];
             e.render(&mut buf);
             let before = e.snapshot().decks[0];
             if regrid {
                 let g = e.regridded(1, grid(400.0, 4.0), Some(150.0)).unwrap();
-                assert!(Arc::ptr_eq(&g.pcm, &t.pcm), "the new grid must share the decoded samples");
+                assert!(
+                    Arc::ptr_eq(&g.pcm, &t.pcm),
+                    "the new grid must share the decoded samples"
+                );
                 let retired = e.apply(EngineCmd::Regrid { deck: 1, track: g }).unwrap();
-                assert!(Arc::ptr_eq(retired.as_ref().unwrap(), &t), "the old track comes back to be freed off-thread");
+                assert!(
+                    Arc::ptr_eq(retired.as_ref().unwrap(), &t),
+                    "the old track comes back to be freed off-thread"
+                );
             }
             let after = e.snapshot().decks[0];
             assert_eq!(before.position_ms, after.position_ms);
@@ -1077,32 +1920,223 @@ mod tests {
             let mut out = vec![0.0f32; 4800 * 2];
             e.render(&mut out);
             // 300 ms in: nearest beat is 400 ms on the new grid, 500 ms on the old.
-            e.apply(EngineCmd::Play { deck: 1, playing: false }).unwrap();
-            e.apply(EngineCmd::Seek { deck: 1, position_ms: 300.0, quantize: true }).unwrap();
-            e.apply(EngineCmd::BeatJump { deck: 1, beats: 1.0 }).unwrap();
+            e.apply(EngineCmd::Play {
+                deck: 1,
+                playing: false,
+            })
+            .unwrap();
+            e.apply(EngineCmd::Seek {
+                deck: 1,
+                position_ms: 300.0,
+                quantize: true,
+            })
+            .unwrap();
+            e.apply(EngineCmd::BeatJump {
+                deck: 1,
+                beats: 1.0,
+            })
+            .unwrap();
             (out, e.snapshot().decks[0].position_ms)
         };
         let (a, jump_new) = run(true);
         let (b, jump_old) = run(false);
         assert_eq!(a, b, "a grid swap must not touch the audio");
         assert!((jump_new - 800.0).abs() < 1e-6, "{jump_new}");
-        assert!((jump_old - 1000.0).abs() < 1e-6, "control: the old grid jumps to {jump_old}");
+        assert!(
+            (jump_old - 1000.0).abs() < 1e-6,
+            "control: the old grid jumps to {jump_old}"
+        );
     }
 
     #[test]
     fn set_beatgrid_is_refused_once_the_deck_holds_other_audio() {
         let mut e = Engine::new(48000);
-        assert_eq!(e.regridded(1, grid(500.0, 1.0), None).unwrap_err().code, ErrorCode::NoTrack);
-        e.apply(EngineCmd::Load { deck: 1, track: Arc::new(tone(48000, 440.0, 2.0)) }).unwrap();
+        assert_eq!(
+            e.regridded(1, grid(500.0, 1.0), None).unwrap_err().code,
+            ErrorCode::NoTrack
+        );
+        e.apply(EngineCmd::Load {
+            deck: 1,
+            track: Arc::new(tone(48000, 440.0, 2.0)),
+        })
+        .unwrap();
         let stale = e.regridded(1, grid(400.0, 2.0), None).unwrap();
         let fresh = Arc::new(tone(48000, 880.0, 2.0));
-        e.apply(EngineCmd::Load { deck: 1, track: fresh.clone() }).unwrap();
-        let r = e.apply(EngineCmd::Regrid { deck: 1, track: stale.clone() }).unwrap_err();
+        e.apply(EngineCmd::Load {
+            deck: 1,
+            track: fresh.clone(),
+        })
+        .unwrap();
+        let r = e
+            .apply(EngineCmd::Regrid {
+                deck: 1,
+                track: stale.clone(),
+            })
+            .unwrap_err();
         assert_eq!(r.error.code, ErrorCode::Invalid);
-        assert!(Arc::ptr_eq(r.track.as_ref().unwrap(), &stale), "a refused grid is handed back, not dropped here");
-        assert!(Arc::ptr_eq(e.deck(1).unwrap().track.as_ref().unwrap(), &fresh));
+        assert!(
+            Arc::ptr_eq(r.track.as_ref().unwrap(), &stale),
+            "a refused grid is handed back, not dropped here"
+        );
+        assert!(Arc::ptr_eq(
+            e.deck(1).unwrap().track.as_ref().unwrap(),
+            &fresh
+        ));
         // Control: built from the track the deck now holds, it is accepted.
         let ok = e.regridded(1, grid(400.0, 2.0), None).unwrap();
         assert!(e.apply(EngineCmd::Regrid { deck: 1, track: ok }).is_ok());
+    }
+
+    #[test]
+    fn mixer_capture_crossfader_sweep_keeps_first_and_last_per_quantum() {
+        let mut e = Engine::new(48000);
+        for v in [0.0, 0.15, 0.35, 0.55, 0.75, 1.0] {
+            e.apply(EngineCmd::Crossfader { value: v }).unwrap();
+        }
+        let xf: Vec<_> = e
+            .drain_mixer_capture()
+            .into_iter()
+            .filter(|ev| ev.control == MIXER_CONTROL_CROSSFADER)
+            .collect();
+        assert_eq!(
+            xf.len(),
+            2,
+            "first and last only in one 10 ms quantum, got {xf:?}"
+        );
+        assert_eq!(xf[0].value, 0.0);
+        assert_eq!(xf[1].value, 1.0);
+        let quantum = e.sample_rate() as u64 * CAPTURE_QUANTUM_MS / 1000;
+        let mut buf = vec![0.0f32; (quantum * 2) as usize];
+        e.render(&mut buf);
+        e.apply(EngineCmd::Crossfader { value: 0.0 }).unwrap();
+        e.apply(EngineCmd::Crossfader { value: 0.25 }).unwrap();
+        e.apply(EngineCmd::Crossfader { value: 0.5 }).unwrap();
+        let xf2: Vec<_> = e
+            .drain_mixer_capture()
+            .into_iter()
+            .filter(|ev| ev.control == MIXER_CONTROL_CROSSFADER)
+            .collect();
+        assert_eq!(xf2.len(), 2);
+        assert_eq!(xf2[0].value, 0.0);
+        assert_eq!(xf2[1].value, 0.5);
+    }
+
+    #[test]
+    fn mixer_capture_eq_from_controller_is_tagged_controller() {
+        let mut e = Engine::new(48000);
+        e.apply(EngineCmd::Load {
+            deck: 1,
+            track: Arc::new(tone(48000, 440.0, 0.5)),
+        })
+        .unwrap();
+        e.apply_with_source(
+            EngineCmd::Eq {
+                deck: 1,
+                band: EqBand::Low,
+                value: 0.25,
+            },
+            EventSource::Controller,
+        )
+        .unwrap();
+        let hit = e
+            .drain_mixer_capture()
+            .into_iter()
+            .find(|ev| ev.control == "deck.1.eq.low")
+            .expect("eq low was captured");
+        assert_eq!(hit.source, EventSource::Controller);
+    }
+
+    #[test]
+    fn mixer_capture_scripted_session_covers_every_mixer_control_id() {
+        use crate::mixer::Assign;
+        let mut e = Engine::new(48000);
+        for deck in 1u8..=4 {
+            e.apply(EngineCmd::Load {
+                deck,
+                track: Arc::new(tone(48000, 400.0 + deck as f64 * 40.0, 0.5)),
+            })
+            .unwrap();
+        }
+        let assigns = [Assign::A, Assign::B, Assign::Thru, Assign::A];
+        for deck in 1u8..=4 {
+            let di = deck as f64;
+            let assign = assigns[(deck - 1) as usize];
+            e.apply(EngineCmd::Trim {
+                deck,
+                value: 0.5 + di * 0.01,
+            })
+            .unwrap();
+            e.apply(EngineCmd::AutoGain {
+                deck,
+                db: -2.0 + di,
+            })
+            .unwrap();
+            for band in [EqBand::Low, EqBand::Mid, EqBand::High] {
+                e.apply(EngineCmd::Eq {
+                    deck,
+                    band,
+                    value: 0.4 + di * 0.05,
+                })
+                .unwrap();
+            }
+            e.apply(EngineCmd::Filter { deck, value: 0.5 }).unwrap();
+            e.apply(EngineCmd::Fader { deck, value: 0.75 }).unwrap();
+            e.apply(EngineCmd::Assign { deck, assign }).unwrap();
+        }
+        e.apply(EngineCmd::Crossfader { value: 0.35 }).unwrap();
+        e.apply(EngineCmd::MasterVolume { value: 0.9 }).unwrap();
+        e.apply(EngineCmd::MasterMute { muted: true }).unwrap();
+        e.apply(EngineCmd::MasterMute { muted: false }).unwrap();
+        let seen: std::collections::BTreeSet<&'static str> = e
+            .drain_mixer_capture()
+            .into_iter()
+            .map(|ev| ev.control)
+            .collect();
+        const WANT: &[&str] = &[
+            "deck.1.trim",
+            "deck.2.trim",
+            "deck.3.trim",
+            "deck.4.trim",
+            "deck.1.auto_gain",
+            "deck.2.auto_gain",
+            "deck.3.auto_gain",
+            "deck.4.auto_gain",
+            "deck.1.eq.low",
+            "deck.1.eq.mid",
+            "deck.1.eq.high",
+            "deck.2.eq.low",
+            "deck.2.eq.mid",
+            "deck.2.eq.high",
+            "deck.3.eq.low",
+            "deck.3.eq.mid",
+            "deck.3.eq.high",
+            "deck.4.eq.low",
+            "deck.4.eq.mid",
+            "deck.4.eq.high",
+            "deck.1.filter",
+            "deck.2.filter",
+            "deck.3.filter",
+            "deck.4.filter",
+            "deck.1.fader",
+            "deck.2.fader",
+            "deck.3.fader",
+            "deck.4.fader",
+            "deck.1.assign",
+            "deck.2.assign",
+            "deck.3.assign",
+            "deck.4.assign",
+            MIXER_CONTROL_CROSSFADER,
+            MIXER_CONTROL_MASTER_VOLUME,
+            MIXER_CONTROL_MASTER_MUTE,
+        ];
+        let missing: Vec<_> = WANT
+            .iter()
+            .filter(|id| !seen.contains(*id))
+            .copied()
+            .collect();
+        assert!(
+            missing.is_empty(),
+            "scripted session missed controls: {missing:?}"
+        );
     }
 }

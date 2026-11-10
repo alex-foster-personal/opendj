@@ -24,7 +24,6 @@ import { loadTypeScriptModule } from './load-typescript.mjs';
 
 /** Pinned display order for the Decks screen (spike Decks 12). */
 const DECKS_IDS_ORDER = [
-	'deck_layout',
 	'deck_layout_animate',
 	'deck_layout_duration_ms',
 	'deck_left_mirror',
@@ -223,7 +222,11 @@ function allScreenRowIds(screen) {
 }
 
 test('registry: screen ids (waveform prepends when #9439 lands)', () => {
-	assert.deepEqual(customiseScreens.CUSTOMISE_SCREENS.map((s) => s.id), ['decks', 'library']);
+	assert.deepEqual(customiseScreens.CUSTOMISE_SCREENS.map((s) => s.id), [
+		'decks',
+		'library',
+		'layout'
+	]);
 });
 
 test('CUSTSCR-9441 decks screen label, ids order and catalogue membership', () => {
@@ -407,12 +410,12 @@ test('library: every screen row maps to SETTINGS_CATALOG and allowed keys', () =
 	}
 });
 
-test('library group catalog coverage (17 entries; two non-boolean/enum omitted)', () => {
+test('library group catalog coverage (18 entries; two non-boolean/enum omitted)', () => {
 	const screen = customiseScreens.customiseScreen('library');
 	const rowIds = new Set(allScreenRowIds(screen));
 
 	const lib = catalog.SETTINGS_CATALOG.filter((e) => e.group === 'library');
-	assert.equal(lib.length, 17);
+	assert.equal(lib.length, 18);
 
 	for (const e of lib) {
 		if (e.control.kind === 'boolean' || e.control.kind === 'enum') {
@@ -452,7 +455,7 @@ test('library: group layout and unique row ids', () => {
 
 	const ids = allScreenRowIds(screen);
 	assert.equal(new Set(ids).size, ids.length);
-	assert.equal(ids.length, 16);
+	assert.equal(ids.length, 17);
 });
 
 test('library_density is compact|cosy enum only; no row-px settings in catalog', () => {
@@ -569,6 +572,93 @@ test('defineCustomiseScreens / customiseScreen negative controls', async () => {
 	);
 
 	assert.throws(() => customiseScreen('nope'), /unknown screen nope/);
+});
+
+// requirement: SKINLAYOUT (issue #10266): the Layout customise screen.
+test('layout: every listed key exists in SETTINGS_CATALOG; no key shared with other screens', () => {
+	const layoutIds = customiseScreens.customiseSettingIds(
+		customiseScreens.customiseScreenDef('layout')
+	);
+	assert.ok(layoutIds.includes('layout_override.performance'));
+	assert.ok(layoutIds.includes('layout_override.library'));
+	assert.ok(layoutIds.includes('deck_layout'), 'deck_layout lives on Layout, not Decks');
+	assert.ok(!DECKS_IDS_ORDER.includes('deck_layout'));
+
+	for (const id of layoutIds) {
+		assert.ok(
+			catalog.SETTINGS_CATALOG.find((e) => e.id === id),
+			`${id} missing from SETTINGS_CATALOG`
+		);
+		customiseScreens.resolveCustomiseSetting(catalog.SETTINGS_CATALOG, 'layout', id);
+	}
+
+	const otherIds = new Set();
+	for (const screen of customiseScreens.CUSTOMISE_SCREENS) {
+		if (screen.id === 'layout') continue;
+		for (const id of allScreenRowIds(screen)) otherIds.add(id);
+	}
+	for (const id of layoutIds) {
+		assert.ok(!otherIds.has(id), `${id} appears on another customise screen`);
+	}
+
+	const screen = customiseScreens.customiseScreen('layout');
+	assert.equal(screen.label, 'Layout');
+	assert.ok(screen.groups.some((g) => g.id === 'presets'));
+	assert.ok(screen.groups.some((g) => g.id === 'modes'));
+	const lookPresent = customiseScreens.LAYOUT_LOOK_VARIANT_IDS.some((id) =>
+		catalog.SETTINGS_CATALOG.some((e) => e.id === id)
+	);
+	assert.equal(
+		screen.groups.some((g) => g.id === 'look'),
+		lookPresent,
+		'Look group is listed exactly when a variant key is in the catalog'
+	);
+});
+
+test('layout: stub catalog missing variant keys still resolves Presets and Modes', () => {
+	const stub = catalog.SETTINGS_CATALOG.filter(
+		(e) =>
+			!customiseScreens.LAYOUT_LOOK_VARIANT_IDS.includes(e.id) &&
+			!customiseScreens.LAYOUT_MODE_OPTIONAL_IDS.includes(e.id)
+	);
+	const def = customiseScreens.layoutScreenDef(stub);
+	assert.deepEqual(
+		def.groups.map((g) => g.id),
+		['presets', 'modes']
+	);
+	assert.deepEqual(customiseScreens.customiseSettingIds(def), [
+		'layout_override.performance',
+		'layout_override.library',
+		'deck_layout'
+	]);
+	const [resolved] = customiseScreens.defineCustomiseScreens(stub, [def]);
+	assert.equal(resolved.id, 'layout');
+	assert.deepEqual(
+		resolved.groups.map((g) => g.id),
+		['presets', 'modes']
+	);
+});
+
+test('layout: with look variants in a stub catalog the Look group appears', () => {
+	const donor = catalog.SETTINGS_CATALOG.find((e) => e.id === 'deck_layout');
+	assert.ok(donor);
+	const stub = [
+		...catalog.SETTINGS_CATALOG,
+		...customiseScreens.LAYOUT_LOOK_VARIANT_IDS.map((id) => ({
+			...donor,
+			id,
+			label: id
+		}))
+	];
+	const def = customiseScreens.layoutScreenDef(stub);
+	assert.deepEqual(
+		def.groups.map((g) => g.id),
+		['presets', 'look', 'modes']
+	);
+	assert.deepEqual(
+		def.groups.find((g) => g.id === 'look').rows.map((r) => r.id),
+		[...customiseScreens.LAYOUT_LOOK_VARIANT_IDS]
+	);
 });
 
 test('CUSTSCR-10206 every implemented catalog id is in exactly one screen or SETTINGS_ONLY', () => {

@@ -26,12 +26,12 @@ test('mirrored main row also reverses the loop | jump pair and the jog dial | mo
 	assert.match(deck, /\.main-row\.mirror-main-row \{\s*flex-direction: row-reverse;/);
 	assert.match(
 		deck,
-		/\.main-row\.mirror-main-row > \.loop-col,\s*\.main-row\.mirror-main-row > :global\(\.jog\) \{\s*flex-direction: row-reverse;/
+		/\.main-row\.mirror-main-row > \.loop-col,\s*\.main-row\.mirror-main-row > \.sel-node > :global\(\.jog\) \{\s*flex-direction: row-reverse;/
 	);
 });
 
 test('mirrored header flips art, body and sync chrome, and moves the chrome to the inner edge', () => {
-	assert.match(header, /<div class="deck-header" class:mirrored data-mirrored=\{mirrored\}>/);
+	assert.match(header, /<div\s+class="deck-header"\s+class:mirrored\s+data-mirrored=\{mirrored\}/);
 	assert.match(
 		header,
 		/\.deck-header\.mirrored,\s*\.deck-header\.mirrored \.header-body,\s*\.deck-header\.mirrored \.chrome \{\s*flex-direction: row-reverse;/

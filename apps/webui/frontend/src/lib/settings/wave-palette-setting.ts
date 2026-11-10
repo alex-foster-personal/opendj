@@ -7,7 +7,8 @@ import {
 import type { SettingDef } from './catalog-types';
 
 const PERFORMANCE_LAYOUT_LABELS: Record<PerformanceLayout, string> = {
-	'deck-grid': 'Deck grid'
+	'deck-grid': 'Deck grid',
+	'replica-desk': 'Replica desk'
 };
 
 const LIBRARY_LAYOUT_LABELS: Record<LibraryLayout, string> = {

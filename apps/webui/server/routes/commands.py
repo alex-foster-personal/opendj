@@ -543,6 +543,30 @@ def _check_autoplay_commands(body: dict[str, Any]) -> None:
         # PLAY-18: the off-needs-a-user rule is USER_ONLY_OFF's, shared with Quantize.
 
 
+WINDOW_ACTIONS = frozenset({"open", "close", "focus"})
+WINDOW_LABELS = ("second-screen",)
+
+
+def _check_window_commands(body: dict[str, Any]) -> None:
+    """A window command is ``{type, action, label}`` with a known label.
+
+    The page validates it again before dispatch; checking here too means a
+    malformed or unknown label is a 422 at once, not a failed step later.
+    """
+    known = ", ".join(WINDOW_LABELS)
+    for command in _order_commands(body):
+        if not isinstance(command, dict) or command.get("type") != "window":
+            continue
+        if set(command) != {"type", "action", "label"}:
+            raise ValueError(f"window takes type, action and label, got {sorted(command)}")
+        action = command["action"]
+        if action not in WINDOW_ACTIONS:
+            raise ValueError(f"window action must be open, close or focus, got {action!r}")
+        label = command["label"]
+        if not isinstance(label, str) or label not in WINDOW_LABELS:
+            raise ValueError(f"unknown window label {label!r}; known: {known}")
+
+
 #: DECKUX-39 / PLAY-18: command types whose OFF only a person may ask for, and
 #: the name the refusal uses. The page enforces the same rule (agent-orders.ts).
 USER_ONLY_OFF = {"quantize": "Quantize", "autoplay": "AutoPlay"}
@@ -641,6 +665,7 @@ async def post_command(request: Request, body: dict[str, Any]) -> dict[str, Any]
     try:
         order = _order(body)
         _check_autoplay_commands(body)
+        _check_window_commands(body)
         _check_user_only_offs(body)
         muted_to_persist = _master_mute_from_order(body)
     except (ValueError, TypeError) as error:

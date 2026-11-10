@@ -94,7 +94,8 @@ function recordingContext() {
 /** Band colors the preview painter lays down (its background excluded). */
 function previewColors(painter, design, c) {
 	const { ctx, colors } = recordingContext();
-	painter.paintWaveformPreview(ctx, W, H, design, c, sampleMod.previewSampleWaveform());
+	// Grid off: the parity is a bands-only check against the pre-W15 painter.
+	painter.paintWaveformPreview(ctx, W, H, design, c, sampleMod.previewSampleWaveform(), 'off');
 	colors.delete(painter.PREVIEW_BACKGROUND);
 	return colors;
 }
@@ -216,7 +217,7 @@ test('CHROME-18 mutation check: the pre-W15 painter (blocks in one color) fails 
 
 test('CHROME-18 if the preview stops painting through the deck renderer or with the deck palette then parity is by luck', () => {
 	const painterSrc = readFileSync('src/lib/settings/waveform-preview-paint.ts', 'utf8');
-	assert.match(painterSrc, /import \{ drawWaveBands, type BandPalette \} from '\$lib\/components\/rb\/wave\/render';/);
+	assert.match(painterSrc, /import \{ drawBeatGridLines, drawWaveBands, type BandPalette \} from '\$lib\/components\/rb\/wave\/render';/);
 	assert.match(painterSrc, /drawWaveBands\(ctx, sample, w, h, c, design, 0\);/);
 	assert.doesNotMatch(painterSrc, /switch \(design\)/, 'no per-design painter of its own');
 	const componentSrc = readFileSync('src/lib/components/settings/WaveformDesignPreview.svelte', 'utf8');
@@ -227,7 +228,7 @@ test('CHROME-18 if the preview stops painting through the deck renderer or with 
 test('CHROME-18 if the sample chunk has not loaded then the preview paints its background only, never an invented waveform', () => {
 	const c = palette.resolveWaveBandColors('dark', 'mono');
 	const { ctx, colors } = recordingContext();
-	paint.paintWaveformPreview(ctx, W, H, 'blocks', c, null);
+	paint.paintWaveformPreview(ctx, W, H, 'blocks', c, null, 'off');
 	assert.deepEqual([...colors], [paint.PREVIEW_BACKGROUND]);
 	// Control: the same call with the sample paints bands.
 	assert.ok(previewColors(paint, 'blocks', c).size >= 2);

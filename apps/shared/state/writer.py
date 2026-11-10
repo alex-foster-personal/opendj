@@ -31,8 +31,9 @@ from __future__ import annotations
 import itertools
 import json
 import sqlite3
-from collections.abc import Callable, Iterator
+from collections.abc import Callable, Iterator, Sequence
 from contextlib import contextmanager
+from dataclasses import dataclass
 from datetime import datetime
 from typing import Any
 
@@ -53,6 +54,17 @@ from .writer_playlists import _PlaylistWriterMixin
 from .writer_tracks import _TrackWriterMixin
 
 _Clock = Callable[[], datetime]
+
+
+@dataclass(frozen=True, slots=True)
+class TagProvenanceRow:
+    """One unified tag value and the source it came from (one ``tag_provenance`` row)."""
+
+    field: str
+    value: str
+    source: str
+    confidence: float
+    modified_at: str | None
 
 
 class _QueuedBus:
@@ -356,9 +368,49 @@ class StateWriter(
             )
             self.bus.publish(ev)
 
+    # --- tag provenance ---------------------------------------------
+
+    def record_tag_provenance(
+        self, *, stable_id: str, rows: Sequence[TagProvenanceRow]
+    ) -> Event:
+        """Insert one track's ``tag_provenance`` rows and one ``tags.provenance`` event as one unit."""
+        if not rows:
+            raise ValueError("record_tag_provenance needs at least one row")
+        now = self._now_iso()
+        with self._tx() as conn:
+            conn.executemany(
+                "INSERT INTO tag_provenance "
+                "(stable_id, field, value, source, confidence, modified_at) "
+                "VALUES (?, ?, ?, ?, ?, ?)",
+                [
+                    (stable_id, r.field, r.value, r.source, r.confidence, r.modified_at)
+                    for r in rows
+                ],
+            )
+            ev = self._append_event(
+                kind="tags.provenance",
+                stable_id=stable_id,
+                payload={
+                    "fields": [
+                        {
+                            "field": r.field,
+                            "value": r.value,
+                            "source": r.source,
+                            "confidence": r.confidence,
+                            "modified_at": r.modified_at,
+                        }
+                        for r in rows
+                    ]
+                },
+                ts=now,
+            )
+            self.bus.publish(ev)
+        return ev
+
 
 __all__ = [
     "StateWriter",
+    "TagProvenanceRow",
     "compute_playlist_id",
     "immediate_transaction",
     "next_playlist_revision",

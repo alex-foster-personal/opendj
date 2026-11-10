@@ -1,6 +1,7 @@
 import { isTextEntryTarget } from '$lib/keyboard/text-entry-target';
 import { resolveCommentPinHotkey } from './comment-pin-hotkey-routing';
 import { isNativeInteractiveTarget } from './performance-hotkeys-target';
+import type { TempoKeyAction } from './tempo-keys';
 
 export type PerformanceShortcutAction =
 	| { kind: 'space'; quantize: boolean }
@@ -8,7 +9,10 @@ export type PerformanceShortcutAction =
 	| { kind: 'loop-resize'; factor: 0.5 | 2 }
 	| { kind: 'loop-exit' }
 	| { kind: 'wave-zoom'; direction: 'in' | 'out' }
-	| { kind: 'grid-jump'; bars: number; repeat: boolean };
+	| { kind: 'grid-jump'; bars: number; repeat: boolean }
+	| { kind: 'tempo-step'; direction: 1 | -1; coarse: boolean }
+	| { kind: 'tempo-reset'; repeat: boolean }
+	| { kind: 'pitch-range-cycle'; repeat: boolean };
 
 export interface PerformanceShortcutKeyEvent {
 	code: string;
@@ -44,6 +48,8 @@ export interface PerformanceShortcutHandlers {
 	/** WAVEZOOM-6802b: one main-waveform zoom step. */
 	waveZoomStep: (direction: 'in' | 'out') => void;
 	gridJump?: (bars: number) => void;
+	/** #10357: tempo step, reset and pitch-range cycle on the recent deck. */
+	tempoKey?: (action: TempoKeyAction) => void;
 }
 
 /** Pure routing for /performance global shortcuts; null means leave the event alone. */
@@ -88,6 +94,19 @@ export function resolvePerformanceShortcutAction(
 	// the bracket pair: [ shows more of the track, ] shows less.
 	if (e.key === '[') return { kind: 'wave-zoom', direction: 'out' };
 	if (e.key === ']') return { kind: 'wave-zoom', direction: 'in' };
+	if (e.key === '.' || e.key === '>') {
+		return { kind: 'tempo-step', direction: 1, coarse: e.shiftKey === true };
+	}
+	if (e.key === ',' || e.key === '<') {
+		return { kind: 'tempo-step', direction: -1, coarse: e.shiftKey === true };
+	}
+	// Plain k is reserved for master tempo (#10352).
+	if (e.shiftKey === true && (e.key === 'K' || e.key === 'k')) {
+		return { kind: 'tempo-reset', repeat: e.repeat === true };
+	}
+	if (e.shiftKey !== true && (e.key === 'p' || e.key === 'P')) {
+		return { kind: 'pitch-range-cycle', repeat: e.repeat === true };
+	}
 	return null;
 }
 
@@ -141,6 +160,19 @@ export function handlePerformanceShortcutKeydown(
 			// Select all or a browser bookmark mid-hold.
 			e.stopPropagation?.();
 			if (!action.repeat) handlers.gridJump?.(action.bars);
+			break;
+		case 'tempo-step':
+			handlers.tempoKey?.({
+				kind: 'tempo-step',
+				direction: action.direction,
+				coarse: action.coarse
+			});
+			break;
+		case 'tempo-reset':
+			if (!action.repeat) handlers.tempoKey?.({ kind: 'tempo-reset' });
+			break;
+		case 'pitch-range-cycle':
+			if (!action.repeat) handlers.tempoKey?.({ kind: 'pitch-range-cycle' });
 			break;
 	}
 	return true;

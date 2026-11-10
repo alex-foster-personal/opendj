@@ -29,6 +29,30 @@
 				</p>
 			</section>
 
+			<section id="missing-source-view" class="view" hidden>
+				<h1>Open DJ cannot start</h1>
+				<p class="lede">
+					The configured engine source directory does not exist.
+				</p>
+				<dl class="facts">
+					<dt>Missing path</dt>
+					<dd><code id="missing-source-path">(unknown)</code></dd>
+					<dt>Setting</dt>
+					<dd><code id="missing-source-key">(unknown)</code></dd>
+				</dl>
+				<div class="actions">
+					<button id="reset-bundled-payload" type="button">
+						Reset to bundled payload
+					</button>
+					<span
+						class="button-status"
+						id="reset-bundled-status"
+						role="status"
+						aria-live="polite"
+					></span>
+				</div>
+			</section>
+
 			<section id="fatal-view" class="view" hidden>
 				<h1>Open DJ engine stopped</h1>
 				<p class="lede">

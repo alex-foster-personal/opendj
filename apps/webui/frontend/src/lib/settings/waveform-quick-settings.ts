@@ -75,11 +75,7 @@ export const WAVE_QS_GROUPS: readonly WaveQsGroup[] = [
 				'Phrase markers',
 				'Phrase markers (intro, verse, chorus) are always drawn.'
 			),
-			_inert(
-				'bar_lines',
-				'Bar and downbeat lines',
-				'The beat grid, bar and downbeat lines are always drawn.'
-			),
+			{ kind: 'setting', id: 'wave_grid_lines' },
 			_inert('hot_cues', 'Hot cues', 'Hot cue markers are always drawn.'),
 			_inert('memory_cues', 'Memory cues', 'Memory cue markers are always drawn.'),
 			_inert('loop_cues', 'Loop cues', 'Saved loop bands are always drawn.'),
@@ -153,5 +149,6 @@ export const WAVE_QS_VERBS: Readonly<Record<string, string>> = {
 	show_sections: 'set_waveform_overlay',
 	lyrics_waveform_overlay: 'set_waveform_overlay',
 	lyrics_hover_scrub: 'set_waveform_overlay',
-	jog_radial_waveform: 'set_waveform_overlay'
+	jog_radial_waveform: 'set_waveform_overlay',
+	wave_grid_lines: 'set_waveform_overlay'
 };

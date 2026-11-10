@@ -78,6 +78,7 @@ import type { DeckId } from '$lib/player/constants';
 export { deckWaveZoom, parseWavePlayheadMode, parseWaveZoom, type WavePlayheadMode, type WaveZoom };
 import {
 	DECK_NUMBER_ART_PREF_DEFAULTS,
+	DECK_NUMBER_ART_VALUES,
 	parseDeckNumberArt,
 	requireDeckNumberArt,
 	validateDeckNumberArtPrefFields,
@@ -86,6 +87,12 @@ import {
 } from './deck-number-art';
 // Re-exported for the performance IPC (import fan-out limit).
 export { requireDeckNumberArt, type DeckNumberArt };
+import {
+	AUTO_ANALYZE_PREF_DEFAULTS,
+	makeAutoAnalyzeSetters,
+	validateAutoAnalyzePrefFields,
+	type AutoAnalyzePrefsState
+} from './auto-analyze-prefs';
 import {
 	SECTION_OVERLAY_PREF_DEFAULTS,
 	makeSectionOverlaySetters,
@@ -104,6 +111,12 @@ import {
 	validateTempoLanePrefFields,
 	type TempoLanePrefsState
 } from './tempo-lane-prefs';
+import {
+	WAVE_GRID_LINES_PREF_DEFAULTS,
+	makeWaveGridLinesSetter,
+	validateWaveGridLinesPrefFields,
+	type WaveGridLinesPrefsState
+} from './wave-grid-lines';
 import {
 	LIBRARY_FILTER_PREF_DEFAULTS,
 	makeLibraryFilterSetters,
@@ -273,9 +286,11 @@ export interface RbUiPrefs
 		TopbarViewPrefsState,
 		DeckDefaultPrefs,
 		SectionOverlayPrefsState,
+		AutoAnalyzePrefsState,
 		DeckNumberArtPrefsState,
 		SpeakerLinkPrefsState,
 		TempoLanePrefsState,
+		WaveGridLinesPrefsState,
 		WaveZoomPrefsState {
 	/** Width, in CSS pixels, of the resizable playlist tree (220 through 520). */
 	playlist_tree_width: number;
@@ -539,9 +554,11 @@ const DEFAULTS: RbUiPrefs = {
 	horizontal_wheel_knob: 'filter',
 	drag_sensitivity: { base: DRAG_DEFAULTS.base, falloff_px: DRAG_DEFAULTS.falloffPx },
 	...SECTION_OVERLAY_PREF_DEFAULTS,
+	...AUTO_ANALYZE_PREF_DEFAULTS,
 	...DECK_NUMBER_ART_PREF_DEFAULTS,
 	...SPEAKER_LINK_PREF_DEFAULTS,
 	...TEMPO_LANE_PREF_DEFAULTS,
+	...WAVE_GRID_LINES_PREF_DEFAULTS,
 	...WAVE_ZOOM_PREF_DEFAULTS,
 	...LYRICS_PREF_DEFAULTS,
 	...LIBRARY_FILTER_PREF_DEFAULTS,
@@ -1097,12 +1114,16 @@ function _assembleLoadedPrefs(
 				: validateDragSensitivity(parsed.drag_sensitivity, STORAGE_KEY),
 		...SECTION_OVERLAY_PREF_DEFAULTS,
 		...validateSectionOverlayPrefFields(parsed, STORAGE_KEY),
+		...AUTO_ANALYZE_PREF_DEFAULTS,
+		...validateAutoAnalyzePrefFields(parsed, STORAGE_KEY),
 		...DECK_NUMBER_ART_PREF_DEFAULTS,
 		...validateDeckNumberArtPrefFields(parsed as Record<string, unknown>, STORAGE_KEY),
 		...SPEAKER_LINK_PREF_DEFAULTS,
 		...validateSpeakerLinkPrefFields(parsed, STORAGE_KEY),
 		...TEMPO_LANE_PREF_DEFAULTS,
 		...validateTempoLanePrefFields(parsed, STORAGE_KEY),
+		...WAVE_GRID_LINES_PREF_DEFAULTS,
+		...validateWaveGridLinesPrefFields(parsed as Record<string, unknown>, STORAGE_KEY),
 		...WAVE_ZOOM_PREF_DEFAULTS,
 		...validateWaveZoomPrefFields(parsed as Record<string, unknown>, STORAGE_KEY),
 		...LYRICS_PREF_DEFAULTS,
@@ -1430,6 +1451,14 @@ export const { setShowSections, toggleShowSections } = makeSectionOverlaySetters
 	(patch) => void _syncDiskPrefs(patch)
 );
 
+/** ANALYSIS-11724: which lanes the analyze-on-import drain runs automatically. */
+export const {
+	setAutoAnalyzeGrid,
+	setAutoAnalyzeKey,
+	setAutoAnalyzeSections,
+	setAutoAnalyzeVocals
+} = makeAutoAnalyzeSetters(uiPrefs, _persist, (patch) => void _syncDiskPrefs(patch));
+
 /** AUDIO-DEVICE-06: auto-reconnect a stalled Bluetooth main speaker (default auto). */
 export const { setSpeakerAutoRecover } = makeSpeakerLinkSetters(
 	uiPrefs,
@@ -1439,6 +1468,13 @@ export const { setSpeakerAutoRecover } = makeSpeakerLinkSetters(
 
 /** Tempo-change lane (PR #8342): lane visibility and curve scale (default on, fixed_10). */
 export const { setShowTempoLane, setTempoLaneScale } = makeTempoLaneSetters(
+	uiPrefs,
+	_persist,
+	(patch) => void _syncDiskPrefs(patch)
+);
+
+/** Beat grid lines (issue #10244): beats_bars (default), bars, off. */
+export const { setWaveGridLines } = makeWaveGridLinesSetter(
 	uiPrefs,
 	_persist,
 	(patch) => void _syncDiskPrefs(patch)
@@ -1868,7 +1904,7 @@ _applySkinFromUrl();
 
 /** ARTNUM-9649: the deck number drawn over each deck's artwork (default off). */
 export function setDeckNumberArt(next: DeckNumberArt): void {
-	if (parseDeckNumberArt(next) === undefined) throw new Error(`deck_number_art must be off|halo, got ${String(next)}`);
+	if (parseDeckNumberArt(next) === undefined) throw new Error(`deck_number_art must be ${DECK_NUMBER_ART_VALUES.join('|')}, got ${String(next)}`);
 	uiPrefs.deck_number_art = next;
 	_persist();
 }

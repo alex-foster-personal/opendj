@@ -34,7 +34,10 @@ from pydantic import JsonValue
 #: 0.9.0 = round 23: bass_overlap is unknown when either solo's 20-150 Hz bar-median is below BASS_REF_PRESENT_DB.
 #: 0.10.0 = #10187: band_continuity_low/mid/high, the mix's short-term band loudness (engine shelves 250 Hz /
 #: 5 kHz) under the outgoing at unity from the overlap start to the handover, knee 1.5 LU, weight 0.1 each, not core.
-SCORER_VERSION = "0.10.0"
+#: 0.11.0 = #10182 (round 25): momentary_hole (400 ms series under its same-position neighbours, held 300 ms, free
+#: 1.5 LU, knee 3 LU, weight 0.1, not core); bass_overlap graded by depth (bass_overlap_depth_db, knee 3 dB-beats);
+#: seam_clicks also scans the whole overlap (overlap_clicks).
+SCORER_VERSION = "0.11.0"
 #: The core factors ``measured`` counts (k of n); a composite needs at least
 #: :data:`MIN_CORE_MEASURED` of them (spec 10 section 3).
 CORE_FACTORS: tuple[str, ...] = (

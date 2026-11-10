@@ -50,8 +50,9 @@ from typing import Any, Protocol
 
 from . import admission, queue_store
 from .depends_on import declared_dependency, dependency_identity, dependency_matches
+from .config import first_import_lanes
 from .lane_enums import LANES
-from .lanes import parse_own_backend
+from .lanes import own_backend, parse_own_backend
 from .record import AnalysisRecord
 from .worker_sizing import (
     HostCapacity,
@@ -132,6 +133,14 @@ class EnqueueResult:
     @property
     def offered(self) -> int:
         return self.admitted + self.refused
+
+
+@dataclass(frozen=True)
+class FirstImportEnqueueResult:
+    """One first-import enqueue call: yaml lanes and one batch per lane."""
+
+    lanes: tuple[str, ...]
+    results: tuple[EnqueueResult, ...]
 
 
 def _model_dict(model: admission.MemoryModel) -> dict[str, Any]:
@@ -242,6 +251,45 @@ def enqueue(
         band=plan.band,
         model=plan.model,
     )
+
+
+def enqueue_first_import(
+    conn: sqlite3.Connection,
+    stable_ids: Sequence[str],
+    resolver: TargetResolver,
+    *,
+    note: str | None = None,
+    model: admission.MemoryModel | None = None,
+    host: HostCapacity | None = None,
+    per_worker_budget_mb: float | None = None,
+) -> FirstImportEnqueueResult:
+    """Enqueue only the yaml-backed fast lanes for new tracks on first import.
+
+    Each configured lane gets its own batch under the matching own_* backfill
+    producer. User job lanes and deferred detector lanes are never consulted.
+    """
+    if not stable_ids:
+        raise QueueError("enqueue_first_import called with no stable_ids")
+    lanes = first_import_lanes()
+    results: list[EnqueueResult] = []
+    for lane in lanes:
+        backend = own_backend(lane, "backfill")
+        candidates = resolver(conn, stable_ids, lane=lane, backend=backend)
+        for candidate in candidates:
+            admission.assert_first_import_candidate(candidate)
+        if not candidates:
+            continue
+        results.append(
+            enqueue(
+                conn,
+                candidates,
+                note=note or "first import",
+                model=model,
+                host=host,
+                per_worker_budget_mb=per_worker_budget_mb,
+            )
+        )
+    return FirstImportEnqueueResult(lanes=lanes, results=tuple(results))
 
 
 #-----------------------------------------------------------------------------
@@ -646,6 +694,8 @@ __all__ = [
     "cascade_dependents",
     "clear_stale_for_record",
     "enqueue",
+    "enqueue_first_import",
+    "FirstImportEnqueueResult",
     "progress",
     "requeue_for_version_bump",
     "resume",

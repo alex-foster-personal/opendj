@@ -10,7 +10,12 @@ import pytest
 from apps.dj_copilot.set_goal import SetGoal
 from apps.dj_copilot.solver import (
     ARTIST_REPEAT_COOLDOWN,
+    W_ARTIST,
+    W_BPM,
+    W_ENERGY,
+    W_KEY,
     UnmetConstraint,
+    _score_candidate_inline,
     suggest_order,
 )
 from apps.shared.harmonic import MAX_BPM_DIFF_PCT, TrackFeature
@@ -198,3 +203,123 @@ def test_transition_hints_populated() -> None:
     assert r.per_step_trace[0].transition_hint == "start"
     for tr in r.per_step_trace[1:]:
         assert tr.transition_hint != ""
+
+
+GOLDEN_COMPLETE_ORDER_SEED3 = [
+    "t-00002",
+    "t-00001",
+    "t-00013",
+    "t-00014",
+    "t-00003",
+    "t-00004",
+    "t-00016",
+    "t-00017",
+    "t-00018",
+    "t-00019",
+    "t-00007",
+    "t-00008",
+    "t-00009",
+    "t-00006",
+    "t-00005",
+    "t-00015",
+    "t-00000",
+    "t-00011",
+    "t-00010",
+    "t-00012",
+]
+GOLDEN_COMPLETE_SCORES_SEED3 = [
+    1.0,
+    0.867982,
+    0.972576,
+    0.907604,
+    0.878884,
+    0.945677,
+    0.960131,
+    0.839174,
+    0.712392,
+    0.822159,
+    0.958211,
+    0.675306,
+    0.926802,
+    0.676786,
+    0.910169,
+    0.633893,
+    0.611862,
+    0.741768,
+    0.564465,
+    0.573797,
+]
+
+
+def test_complete_fixture_keeps_current_order() -> None:
+    """[if] every field is present [then] the order matches the pre-change golden, [else stop]."""
+    tracks = make_tracks(20, seed=3)
+    result = suggest_order(tracks=tracks, goal=_goal_peak())
+    assert result.order == GOLDEN_COMPLETE_ORDER_SEED3
+    assert [round(score, 6) for score in result.per_step_scores] == GOLDEN_COMPLETE_SCORES_SEED3
+    assert result.unscored_edges == 0
+    assert all(trace.unscored == () for trace in result.per_step_trace)
+
+
+@pytest.mark.parametrize(
+    ("cand", "missing"),
+    [
+        (TrackFeature("b", "B", 120.0, None, 5), "key"),
+        (TrackFeature("b", "B", None, "8A", 5), "bpm"),
+        (TrackFeature("b", "B", 120.0, "8A", None), "energy"),
+    ],
+    ids=["key", "bpm", "energy"],
+)
+def test_missing_term_is_unscored_and_weights_renormalize(cand: TrackFeature, missing: str) -> None:
+    """[if] a candidate lacks one term [then] it is unscored and the rest renormalize, [else stop]."""
+    prev = TrackFeature("a", "A", 120.0, "8A", 5)
+    score, _relaxed, unscored = _score_candidate_inline(
+        prev=prev, cand=cand, target_energy_slot=5.0, recent_artists_set=set()
+    )
+    assert unscored == (missing,)
+    # every measurable term is perfect, so the renormalized mean is 1.0; a neutral filler would pull it below
+    assert score == pytest.approx(1.0)
+
+
+def test_unknown_artist_is_unscored_and_cooldown_still_applies() -> None:
+    """[if] artist is unknown [then] artist is unscored; known artists still cool down, [else stop]."""
+    prev = TrackFeature("a", "Known", 120.0, "8A", 5)
+    unknown = TrackFeature("b", None, 120.0, "8A", 5)
+    score, _relaxed, unscored = _score_candidate_inline(
+        prev=prev, cand=unknown, target_energy_slot=5.0, recent_artists_set={"Known"}
+    )
+    assert unscored == ("artist",)
+    expected = (W_KEY * 1.0 + W_BPM * 1.0 + W_ENERGY * 1.0) / (W_KEY + W_BPM + W_ENERGY)
+    assert score == pytest.approx(expected)
+
+    repeat = TrackFeature("c", "Known", 120.0, "8A", 5)
+    score_repeat, _relaxed_repeat, unscored_repeat = _score_candidate_inline(
+        prev=prev, cand=repeat, target_energy_slot=5.0, recent_artists_set={"Known"}
+    )
+    assert unscored_repeat == ()
+    expected_repeat = (W_KEY + W_BPM + W_ENERGY + W_ARTIST * 0.0) / (W_KEY + W_BPM + W_ENERGY + W_ARTIST)
+    assert score_repeat == pytest.approx(expected_repeat)
+
+    other = TrackFeature("d", "Other", 120.0, "8A", 5)
+    score_other, _relaxed_other, unscored_other = _score_candidate_inline(
+        prev=prev, cand=other, target_energy_slot=5.0, recent_artists_set={"Known"}
+    )
+    assert unscored_other == ()
+    assert score_other == pytest.approx(1.0)
+
+
+def test_unscored_edges_count_matches_flagged_traces() -> None:
+    """[if] some edges lack key, BPM or energy [then] unscored_edges matches flagged traces, [else stop]."""
+    tracks = [
+        TrackFeature("t-a", "A", 120.0, "8A", 5),
+        TrackFeature("t-b", "B", 120.0, None, 5),
+        TrackFeature("t-c", "C", None, "9A", 5),
+        TrackFeature("t-d", "D", 121.0, "8A", None),
+    ]
+    result = suggest_order(tracks=tracks, goal=SetGoal(duration_min=30))
+    flagged = [trace for trace in result.per_step_trace if trace.unscored]
+    assert result.unscored_edges == len(flagged)
+    assert result.unscored_edges >= 1
+    assert result.per_step_trace[0].unscored == ()
+    terms = {term for trace in flagged for term in trace.unscored}
+    assert terms & {"key", "bpm", "energy"}

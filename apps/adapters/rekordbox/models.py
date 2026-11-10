@@ -1,11 +1,11 @@
 """The two row shapes the rekordbox read path hands out.
 
 Moved verbatim from ``apps/webui/server/rb_vendor.py`` C0 (source lines
-172-195 on ``af--t4-design``) per ``.planning/t3b-decomposition-map.md``
+172-195 on ``af--t4-design``) per ``(private path)``
 section 2 target #1.
 
 Both field shapes are a public contract, not an internal detail:
-``tests/test_reconcile_route.py`` and ``tests/test_relocate_route.py``
+``(private path)`` and ``(private path)``
 construct :class:`RbRowMeta` directly and monkeypatch ``bulk_rb_meta`` to
 return it, so renaming or reordering a field breaks callers that never
 import this module.
@@ -13,6 +13,19 @@ import this module.
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import Literal
+
+VendorUsbSource = Literal["rekordbox", "djay"]
+
+
+@dataclass(frozen=True)
+class VendorUsbMention:
+    """A read-only USB stick name the user set in a DJ vendor library."""
+
+    name: str
+    source: VendorUsbSource
+    volume_uuid: str | None = None
+    device_id: str | None = None
 
 
 @dataclass(frozen=True)
@@ -44,4 +57,4 @@ class RbRowMeta:
     image_path: str | None = None
 
 
-__all__ = ["RbContent", "RbRowMeta"]
+__all__ = ["RbContent", "RbRowMeta", "VendorUsbMention", "VendorUsbSource"]

@@ -6,9 +6,6 @@
 (private path) merge=union
 (private path) merge=union
 (private path) merge=union
-# reqs.json is generated structured JSON. Leave it unassigned so divergent edits
-# conflict instead of silently producing invalid JSON.
-
 # Line endings (Windows parity, spike S2 / build B0): LF in the working tree on
 # every host, so byte-pinned fixtures hash the same on a Windows checkout with
 # core.autocrlf=true as on macOS. Fixtures are opted out of conversion entirely
@@ -34,7 +31,6 @@ tools/deck-diagrams/devices/**/*.json linguist-generated=true
 tools/deck-diagrams/devices/**/*.html linguist-generated=true
 apps/webui/openapi.json linguist-generated=true
 apps/webui/frontend/src/lib/api-types.ts linguist-generated=true
-reqs.json linguist-generated=true
 .test_durations linguist-generated=true
 pylock.*.toml linguist-generated=true
 # Byte-pinned text fixtures: each file's sha256 and size are recorded in its

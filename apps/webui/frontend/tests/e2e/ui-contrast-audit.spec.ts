@@ -4,11 +4,13 @@ import { fileURLToPath } from 'node:url';
 import { expect, test, type Page } from '@playwright/test';
 
 import { waitForPerformanceIpc } from './support/performance-ready';
+import { expectFirstRunSetup } from './support/expect-first-run-setup';
+import { checkFolder, chooseFolderBranch, setupDialog } from './support/onboarding-wizard';
 import { appendEmptyRescueSnapshot } from './support/rescue-snapshot';
 import { applySkin, expectSkin, restoreThemeAfterEach, SKINS, type Skin } from './support/skin-prefs';
 import {
 	renderedContrastAudit,
-	sampleSvgBackdrops,
+	sampleUnmeasuredBackdrops,
 	trackCanvasText,
 	type ContrastFinding,
 	type RenderedContrastReport,
@@ -28,8 +30,20 @@ import {
 // tests/unit/color-contrast.test.mjs check the colors a skin declares; this
 // checks what the browser paints, which is where Gothic's white-on-#d6d6d6
 // MORE button (1.45:1) hid.
+// requirement: UICONTRAST-11766 (issue #10372) [if] the first-run wizard on
+// the Find your music step (one folder row, its refusal sentence, the
+// disabled import) or the hotkeys overlay (grid view, then list view with a
+// filter) paints text below AA in any of those four passes [then] the run
+// fails unless allowlisted with a reason [else stop].
 
-type Surface = 'performance-more' | 'performance-less' | 'performance-hover' | 'library' | 'settings';
+type Surface =
+	| 'performance-more'
+	| 'performance-less'
+	| 'performance-hover'
+	| 'library'
+	| 'settings'
+	| 'setup'
+	| 'hotkeys';
 
 interface AllowEntry {
 	el: string;
@@ -58,8 +72,8 @@ test.beforeEach(async ({ page }) => {
 });
 restoreThemeAfterEach();
 
-async function _audit(page: Page): Promise<RenderedContrastReport> {
-	return sampleSvgBackdrops(page, await page.evaluate(renderedContrastAudit, undefined));
+async function _audit(page: Page, scope?: string): Promise<RenderedContrastReport> {
+	return sampleUnmeasuredBackdrops(page, await page.evaluate(renderedContrastAudit, scope));
 }
 
 const HOVER_OWNER = 'data-contrast-hover-owner';
@@ -229,6 +243,10 @@ const MEASURED_FLOOR: Record<Surface, number> = {
 	'performance-hover': 245,
 	library: 30,
 	settings: 96,
+	// Tue 10 Nov 2026 (#10372): fewest per pass were setup 21 (empty folder row)
+	// and hotkeys 18 (list view filtered to "deck"), each less about 10%.
+	setup: 19,
+	hotkeys: 16,
 };
 
 const PLANTED = 'planted-bad-pair';
@@ -240,18 +258,31 @@ const PLANTED = 'planted-bad-pair';
 const DECK_LOADING_SWEEP = /section\.rb-deck[\w.-]*\.loading[\w.-]*::after/;
 
 /** Audit with one known-bad pair planted (#777777 on #888888); it must be flagged. */
-async function _auditPlantedOnce(page: Page): Promise<RenderedContrastReport> {
-	await page.evaluate((text) => {
-		const el = document.createElement('div');
-		el.id = 'contrast-planted';
-		el.textContent = text;
-		el.style.cssText =
-			'position:fixed;right:0;bottom:0;z-index:2147483647;background:#888888;color:#777777;font-size:12px;padding:2px';
-		document.body.appendChild(el);
-	}, PLANTED);
-	const report = await _audit(page);
-	await page.evaluate(() => document.getElementById('contrast-planted')?.remove());
-	return report;
+async function _auditPlantedOnce(page: Page, scope?: string): Promise<RenderedContrastReport> {
+	// A scoped audit sees only its root, so the planted pair goes inside it, and
+	// the root is marked as a probe so report.probes lists what it measured.
+	await page.evaluate(
+		([text, sel]) => {
+			const root = sel === null ? document.body : document.querySelector(sel);
+			if (!root) throw new Error(`contrast audit scope ${sel} is not on the page`);
+			if (sel !== null) root.setAttribute('data-contrast-probe', '');
+			const el = document.createElement('div');
+			el.id = 'contrast-planted';
+			el.textContent = text;
+			el.style.cssText =
+				'position:fixed;right:0;bottom:0;z-index:2147483647;background:#888888;color:#777777;font-size:12px;padding:2px';
+			root.appendChild(el);
+		},
+		[PLANTED, scope ?? null] as const
+	);
+	try {
+		return await _audit(page, scope);
+	} finally {
+		await page.evaluate((sel) => {
+			document.getElementById('contrast-planted')?.remove();
+			if (sel !== null) document.querySelector(sel)?.removeAttribute('data-contrast-probe');
+		}, scope ?? null);
+	}
 }
 
 /**
@@ -266,11 +297,11 @@ async function _auditPlantedOnce(page: Page): Promise<RenderedContrastReport> {
  * discarded, never recorded and never excused. A sweep that does not clear
  * fails here with the elements it covered.
  */
-async function _auditPlanted(page: Page): Promise<RenderedContrastReport> {
+async function _auditPlanted(page: Page, scope?: string): Promise<RenderedContrastReport> {
 	let settled: RenderedContrastReport | null = null;
 	await expect(async () => {
 		await expect(page.locator('section.rb-deck.loading')).toHaveCount(0, { timeout: 30_000 });
-		const report = await _auditPlantedOnce(page);
+		const report = await _auditPlantedOnce(page, scope);
 		const midLoad = report.unmeasured.filter((u) => DECK_LOADING_SWEEP.test(u.why));
 		expect(
 			midLoad.map((u) => `${u.el}: ${u.why}`),
@@ -288,14 +319,13 @@ function _allowed(list: AllowEntry[], skin: Skin, surface: Surface, el: string):
 	return list.find((a) => a.el === el && a.skins.includes(skin) && a.surfaces.includes(surface));
 }
 
-test('every visible text element clears WCAG AA in every skin, or is allowlisted with a reason', async ({ page }) => {
-	// QUARANTINED Wed 4 Nov 2026 (#8527): suspected regression, not a flake. The audit names an
-	// unmeasurable ag-readout knob svg and a c-key contrast shortfall. Remove once #8527 is fixed and
-	// the spec is green 3 runs in a row.
-	test.fixme(true, 'ag-readout knob svg unmeasurable and c-key below AA, see #8527');
-	test.setTimeout(240_000);
-	await page.setViewportSize({ width: 1600, height: 900 });
-
+/**
+ * One audit run's recorder: checks each report against its floor and the
+ * planted control, sorts findings into allowed and NEW, and at the end fails
+ * on anything unallowed or stale. Staleness covers only the allowlist entries
+ * naming a surface this run audits, so two tests can share one allowlist.
+ */
+function _newRun(surfaces: readonly Surface[]) {
 	const unexpected: string[] = [];
 	const unmeasuredUnexpected: string[] = [];
 	const hit = new Set<string>();
@@ -316,18 +346,49 @@ test('every visible text element clears WCAG AA in every skin, or is allowlisted
 		for (const f of report.findings) if (!dedup.has(f.el) || dedup.get(f.el)!.ratio > f.ratio) dedup.set(f.el, f);
 		for (const f of dedup.values()) {
 			const allow = _allowed(ALLOW.findings, skin, surface, f.el);
-			table.push(`${allow ? 'allowed' : 'NEW'} | ${skin} | ${surface} | ${f.el} | "${f.text}" | ${f.fg} on ${f.bg} | ${f.ratio}:1 < ${f.need}:1`);
+			table.push(`${allow ? 'allowed' : 'NEW'} | ${skin} | ${surface} | ${f.el} | "${f.text}" | ${f.fg} on ${f.bg} | ${f.ratio}:1 < ${f.need}:1 | via ${f.via}`);
 			if (allow) hit.add(`F ${skin} ${allow.el}`);
-			else unexpected.push(`${key(skin, surface, f.el)} "${f.text}" ${f.fg} on ${f.bg} = ${f.ratio}:1 (needs ${f.need}:1)`);
+			else unexpected.push(`${key(skin, surface, f.el)} "${f.text}" ${f.fg} on ${f.bg} = ${f.ratio}:1 (needs ${f.need}:1, via ${f.via})`);
 		}
 		for (const u of report.unmeasured) {
-			// SVG text (fill over shapes) is out of this instrument's reach, so each
-			// one must be named in the unmeasured allowlist, never passed silently.
+			// What stays unmeasured (filters, canvas fillText, svg-internal text,
+			// faded or off-screen text) must be named in the unmeasured allowlist,
+			// never passed silently.
 			const allow = _allowed(ALLOW.unmeasured, skin, surface, u.el);
 			if (allow) hit.add(`U ${skin} ${allow.el}`);
 			else unmeasuredUnexpected.push(`${key(skin, surface, u.el)}: ${u.why}`);
 		}
 	};
+
+	const finish = (tag: string) => {
+		console.log(`[${tag}] measured per skin and surface:\n${counts.join('\n')}`);
+		console.log(`[${tag}] measured ${measured} text elements; findings table:\n${table.join('\n')}`);
+		const stale: string[] = [];
+		for (const [kind, list] of [['F', ALLOW.findings], ['U', ALLOW.unmeasured]] as const) {
+			for (const a of list) {
+				if (!a.surfaces.some((surface) => surfaces.includes(surface))) continue;
+				expect(a.reason.trim().length, `allowlist entry ${a.el} has no reason`).toBeGreaterThan(10);
+				if (a.optional) continue;
+				for (const skin of a.skins) if (!hit.has(`${kind} ${skin} ${a.el}`)) stale.push(`${kind} ${skin} | ${a.el}`);
+			}
+		}
+		expect(unmeasuredUnexpected, 'text this audit could not measure (gradient or unparsed backdrop)').toEqual([]);
+		expect(unexpected, 'text below WCAG AA that no allowlist entry names').toEqual([]);
+		expect(stale, 'allowlist entries that matched nothing in a skin they list: remove them').toEqual([]);
+	};
+	return { record, finish };
+}
+
+test('every visible text element clears WCAG AA in every skin, or is allowlisted with a reason', async ({ page }) => {
+	// QUARANTINED Wed 4 Nov 2026 (#8527): suspected regression, not a flake. The audit names an
+	// unmeasurable ag-readout knob svg and a c-key contrast shortfall. Remove once #8527 is fixed and
+	// the spec is green 3 runs in a row.
+	test.fixme(true, 'ag-readout knob svg unmeasurable and c-key below AA, see #8527');
+	test.setTimeout(240_000);
+	await page.setViewportSize({ width: 1600, height: 900 });
+
+	const run = _newRun(['performance-more', 'performance-less', 'performance-hover', 'library', 'settings']);
+	const record = run.record;
 
 	for (const skin of SKINS) {
 		// The page's rescue auto-restore (Gig posture, which earlier specs
@@ -365,19 +426,98 @@ test('every visible text element clears WCAG AA in every skin, or is allowlisted
 		}
 	}
 
-	console.log(`[UICONTRAST-01] measured per skin and surface:\n${counts.join('\n')}`);
-	console.log(`[UICONTRAST-01] measured ${measured} text elements; findings table:\n${table.join('\n')}`);
-	const stale: string[] = [];
-	for (const [kind, list] of [['F', ALLOW.findings], ['U', ALLOW.unmeasured]] as const) {
-		for (const a of list) {
-			expect(a.reason.trim().length, `allowlist entry ${a.el} has no reason`).toBeGreaterThan(10);
-			if (a.optional) continue;
-			for (const skin of a.skins) if (!hit.has(`${kind} ${skin} ${a.el}`)) stale.push(`${kind} ${skin} | ${a.el}`);
+	run.finish('UICONTRAST-01');
+});
+
+const SETUP_SCOPE = '[role="dialog"][aria-label="First-run setup"]';
+const HOTKEYS_SCOPE = '.hk-panel';
+/** No such directory on any host, so the engine refuses it (chmod 000 cannot be planted as root). */
+const REFUSED_FOLDER = '/nonexistent/ui-contrast-audit-setup';
+
+function _expectProbed(report: RenderedContrastReport, what: string, match: (p: ContrastFinding) => boolean): void {
+	expect(report.probes.some(match), `${what} was not measured`).toBe(true);
+}
+
+async function _openHotkeys(page: Page) {
+	await page.waitForFunction(() => '__mdtPerfLog' in window);
+	await page.evaluate(() => (document.activeElement as HTMLElement | null)?.blur());
+	const dialog = page.getByRole('dialog', { name: 'Hotkeys' });
+	await expect(async () => {
+		await page.keyboard.press('?');
+		await expect(dialog).toBeVisible({ timeout: 2_000 });
+	}).toPass({ timeout: 20_000 });
+	return dialog;
+}
+
+test('the first-run wizard and the hotkeys overlay clear WCAG AA in every skin, or are allowlisted with a reason', async ({
+	page,
+}) => {
+	// Runtime budget: 25% of the five-surface test's 240 s cap (issue #10372).
+	test.setTimeout(60_000);
+	await page.setViewportSize({ width: 1600, height: 900 });
+	const run = _newRun(['setup', 'hotkeys']);
+	const started = Date.now();
+
+	for (const skin of SKINS) {
+		await appendEmptyRescueSnapshot(page.request);
+		await page.goto('/performance?muted=1', { waitUntil: 'domcontentloaded' });
+		await waitForPerformanceIpc(page);
+		await applySkin(page, skin);
+		await expect(setupDialog(page), 'a wizard was left open from the previous skin').toHaveCount(0);
+
+		// Hotkeys, grid view, empty filter so its placeholder paints.
+		const hotkeys = await _openHotkeys(page);
+		await hotkeys.getByRole('button', { name: 'Grid' }).click();
+		const grid = await _auditPlanted(page, HOTKEYS_SCOPE);
+		run.record(skin, 'hotkeys', grid);
+		_expectProbed(grid, `${skin} group header`, (p) => p.el.includes('h2.hk-section-title'));
+		_expectProbed(grid, `${skin} chord chip`, (p) => p.el.includes('kbd.hk-chord'));
+		for (const tab of ['Grid', 'List']) _expectProbed(grid, `${skin} ${tab} tab`, (p) => p.text === tab);
+		_expectProbed(grid, `${skin} filter placeholder`, (p) => p.el.endsWith('::placeholder') && p.text === 'Filter hotkeys...');
+
+		// Hotkeys, list view with a filter, so the group cells and match marks paint.
+		await hotkeys.getByRole('button', { name: 'List' }).click();
+		await hotkeys.getByLabel('Filter hotkeys').fill('deck');
+		await expect(hotkeys.locator('mark.hk-mark').first()).toBeVisible();
+		const list = await _auditPlanted(page, HOTKEYS_SCOPE);
+		run.record(skin, 'hotkeys', list);
+		_expectProbed(list, `${skin} list group cell`, (p) => p.el.includes('span.hk-group'));
+		_expectProbed(list, `${skin} filter match`, (p) => p.el.includes('mark.hk-mark'));
+		await page.keyboard.press('Escape');
+		await expect(hotkeys).toHaveCount(0);
+
+		// Setup on the Find your music step, an empty folder row first.
+		await page.goto('/setup', { waitUntil: 'domcontentloaded' });
+		const wizard = await expectFirstRunSetup(page);
+		await expectSkin(page, skin);
+		await chooseFolderBranch(page);
+		const empty = await _auditPlanted(page, SETUP_SCOPE);
+		run.record(skin, 'setup', empty);
+		_expectProbed(empty, `${skin} step counter`, (p) => p.el.includes('p.step-counter'));
+		_expectProbed(empty, `${skin} folder heading`, (p) => p.text === 'Point at a folder');
+		_expectProbed(empty, `${skin} folder path placeholder`, (p) => p.el.endsWith('::placeholder'));
+
+		// Then the planted refusal: its sentence, and the import held disabled.
+		const scan = await checkFolder(page, REFUSED_FOLDER);
+		expect(scan.exists, 'the refused folder exists on this host').toBe(false);
+		await expect(wizard.locator('p.verdict, p.fatal').first()).toBeVisible();
+		await expect(wizard.getByRole('button', { name: /^Import (this folder|these folders)$/ })).toBeDisabled();
+		const refused = await _auditPlanted(page, SETUP_SCOPE);
+		run.record(skin, 'setup', refused);
+		_expectProbed(refused, `${skin} refusal sentence`, (p) => /p\.(verdict|fatal)$/.test(p.el));
+		_expectProbed(refused, `${skin} import-unavailable reason`, (p) => p.el.endsWith('p.why'));
+		// WCAG 1.4.3 exempts inactive controls: each step link is measured or disabled.
+		const links = wizard.locator('.steps button.step-link');
+		expect(await links.count(), 'the breadcrumb has no step links').toBeGreaterThan(0);
+		for (const link of await links.all()) {
+			const text = (await link.innerText()).trim();
+			if (!refused.probes.some((p) => p.text === text)) await expect(link, `step link "${text}"`).toBeDisabled();
 		}
+		// Leave by navigating: "Continue without importing" would dismiss setup on the shared engine.
 	}
-	expect(unmeasuredUnexpected, 'text this audit could not measure (gradient or unparsed backdrop)').toEqual([]);
-	expect(unexpected, 'text below WCAG AA that no allowlist entry names').toEqual([]);
-	expect(stale, 'allowlist entries that matched nothing in a skin they list: remove them').toEqual([]);
+
+	console.log(`[UICONTRAST-11766] ${SKINS.length} skin passes took ${Date.now() - started} ms`);
+	run.finish('UICONTRAST-11766');
 });
 
 test('controls: the audit fires on Gothic white-on-accent, and composites a translucent fill', async ({ page }) => {
@@ -574,8 +714,8 @@ test('controls: the audit fires on Gothic white-on-accent, and composites a tran
 	expect(over!.ratio).toBeLessThan(1.5);
 
 	// Backdrops with no CSS color (Codex on #5727): text over a sibling <img>,
-	// and text over its row's positioned ::before gradient, must come back
-	// unmeasured, not measured against the dark panel behind them.
+	// and text over its row's positioned ::before gradient, are measured from
+	// the rendered pixels (#10368), not against the dark panel behind them.
 	await page.addStyleTag({
 		content:
 			'.probe-row { position: relative; } .probe-row::before { content: ""; position: absolute; inset: 0; background: linear-gradient(#fff, #eee); }',
@@ -586,20 +726,22 @@ test('controls: the audit fires on Gothic white-on-accent, and composites a tran
 		host.style.cssText = 'position:fixed;left:0;top:200px;z-index:99999;background:#101010;width:160px';
 		host.innerHTML =
 			'<div class="probe-img" style="position:relative;height:20px">' +
-			'<img alt="" style="position:absolute;inset:0;width:100%;height:100%" src="data:image/gif;base64,R0lGODlhAQABAIAAAP///wAAACH5BAEAAAAALAAAAAABAAEAAAICRAEAOw==">' +
+			'<img alt="" style="position:absolute;inset:0;width:100%;height:100%" src="data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 width=%221%22 height=%221%22 preserveAspectRatio=%22none%22%3E%3Crect width=%221%22 height=%221%22 fill=%22%23fff%22/%3E%3C/svg%3E">' +
 			'<span class="probe-on-img" style="position:relative;color:#ffffff;font-size:12px">onimg</span></div>' +
 			'<div class="probe-row" style="height:20px"><span class="probe-on-pseudo" style="position:relative;color:#ffffff;font-size:12px">onpseudo</span></div>';
 		document.body.appendChild(host);
 	});
 	const backdrops = await _audit(page);
-	for (const [cls, why] of [
-		['span.probe-on-img', 'replaced element'],
-		['span.probe-on-pseudo', 'pseudo-element fill'],
+	for (const [cls, max] of [
+		['span.probe-on-img', 1.1],
+		['span.probe-on-pseudo', 1.2],
 	] as const) {
-		const u = backdrops.unmeasured.find((x) => x.el.endsWith(cls));
-		expect(u?.why, `${cls} was measured against the panel instead of reported unmeasured`).toContain(why);
-		expect(backdrops.probes.some((p) => p.el.endsWith(cls))).toBe(false);
+		const probe = backdrops.probes.find((p) => p.el.endsWith(cls));
+		expect(probe?.via, `${cls} was not measured by the pixel sampler`).toBe('pixel');
+		expect(probe!.ratio, `${cls} was measured against the panel instead of its pixels`).toBeLessThan(max);
+		expect(backdrops.unmeasured.some((u) => u.el.endsWith(cls))).toBe(false);
 	}
+	expect(backdrops.probes.find((p) => p.el.endsWith('span.probe-on-img'))!.bg).toBe('#ffffff');
 
 	// Edge-ring control (PAIR-09): a row's ::after fill masked to thin strips
 	// along its edges paints nothing under text in the middle of the row, so
@@ -625,10 +767,12 @@ test('controls: the audit fires on Gothic white-on-accent, and composites a tran
 	const ring = rings.probes.find((p) => p.text === 'ringtext');
 	expect(ring, 'text inside an edge-ring pseudo was not measured').toBeTruthy();
 	expect(ring!.ratio).toBeLessThan(2);
-	expect(
-		rings.unmeasured.find((u) => u.el.endsWith('span.probe-in-thick'))?.why,
-		'text under a thick masked fill was measured instead of reported unmeasured'
-	).toContain('pseudo-element fill');
+	expect(ring!.via).toBe('css');
+	// The thick masked fill reaches the text, so it is measured from its pixels.
+	const thick = rings.probes.find((p) => p.text === 'thicktext');
+	expect(thick?.via, 'text under a thick masked fill was not pixel-sampled').toBe('pixel');
+	expect(thick!.ratio).toBeGreaterThan(4.5);
+	expect(rings.unmeasured.some((u) => u.el.endsWith('span.probe-in-thick'))).toBe(false);
 
 	// Inert styling and filters (Codex on #5727): a status row that only
 	// carries the app's inert class is text and must be measured, while the
@@ -723,30 +867,77 @@ test('controls: the audit fires on Gothic white-on-accent, and composites a tran
 	expect(cb!.el).toContain('data-component="beta"');
 });
 
-test('controls: text over a drawn svg is measured against its rendered pixels', async ({ page }) => {
+test('controls: text over svg, gradient, canvas and pseudo fills is measured against rendered pixels', async ({ page }) => {
 	// Planted pairs, no app needed: a #777 label over a #888 shape must fail at
 	// the same 1.26:1 the planted pair above reports; #000 over #fff must pass.
-	await page.setContent(`<!doctype html><body style="margin:0;background:#fff">
+	await page.setContent(`<!doctype html><head><style>
+		.probe-pct { position: relative; height: 24px; width: 200px; background: #101010 }
+		.probe-pct::before { content: ""; position: absolute; left: 0%; top: 0%; width: 100%; height: 100%; background: #ffffff }
+		</style></head><body style="margin:0;background:#fff">
 		<div style="position:relative;width:200px;height:40px">
-			<svg width="200" height="40" style="position:absolute;left:0;top:0"><rect width="200" height="40" fill="#888"/></svg>
+			<svg class="knob" width="200" height="40" style="position:absolute;left:0;top:0"><rect width="200" height="40" fill="#888"/></svg>
 			<span style="position:relative;color:#777;font-size:16px">PLANTED LOW</span>
 		</div>
 		<div style="position:relative;width:200px;height:40px;margin-top:8px">
 			<svg width="200" height="40" style="position:absolute;left:0;top:0"><rect width="200" height="40" fill="#fff"/></svg>
 			<span style="position:relative;color:#000;font-size:16px">CLEAR OK</span>
-		</div></body>`);
+		</div>
+		<div data-contrast-probe style="background:linear-gradient(#fff,#000);width:200px;line-height:20px;font-size:16px;margin-top:8px"><span style="color:#fff">GRAD WHITE</span></div>
+		<div data-contrast-probe style="background:linear-gradient(#fff,#000);width:200px;line-height:20px;font-size:16px;margin-top:8px"><span style="color:#000">GRAD BLACK</span></div>
+		<div data-contrast-probe style="background:linear-gradient(#000,#000);width:200px;line-height:20px;font-size:16px;margin-top:8px"><span style="color:#999">GRAD OK</span></div>
+		<div data-contrast-probe class="probe-canvas" style="position:relative;width:200px;height:24px;margin-top:8px;font-size:16px">
+			<canvas width="200" height="24" style="position:absolute;inset:0"></canvas>
+			<span style="position:relative;color:#777">ON CANVAS</span>
+		</div>
+		<div data-contrast-probe class="probe-pct" style="margin-top:8px;font-size:16px"><span style="position:relative;color:#ffffff">ON PCT</span></div>
+		<div data-contrast-probe style="position:fixed;left:-500px;top:0;width:200px;background:linear-gradient(#fff,#000);font-size:16px"><span style="color:#777">OFFSCREEN</span></div>
+		</body>`);
+	await page.evaluate(() => {
+		const c = document.querySelector('.probe-canvas canvas') as HTMLCanvasElement;
+		const ctx = c.getContext('2d')!;
+		ctx.fillStyle = '#888888';
+		ctx.fillRect(0, 0, c.width, c.height);
+	});
 	const label = page.locator('span', { hasText: 'PLANTED LOW' });
 	const inlineColor = () =>
 		label.evaluate((el) => [(el as HTMLElement).style.getPropertyValue('color'), (el as HTMLElement).style.getPropertyPriority('color')]);
 	const colorBefore = await inlineColor();
-	const report = await sampleSvgBackdrops(page, await page.evaluate(renderedContrastAudit, undefined));
-	const low = report.findings.find((f) => f.text === 'PLANTED LOW');
+	const report = await sampleUnmeasuredBackdrops(page, await page.evaluate(renderedContrastAudit, undefined));
+	const finding = (t: string) => report.findings.find((f) => f.text === t);
+	const low = finding('PLANTED LOW');
 	expect(low?.ratio, 'the #777 label over the #888 drawn shape was not flagged at 1.26:1').toBe(1.26);
+	expect(low?.via, 'a classed svg backdrop was not measured by the svg sampler').toBe('svg');
 	expect(report.findings.some((f) => f.text === 'CLEAR OK'), 'black over the white shape was flagged').toBe(false);
-	expect(report.unmeasured.filter((u) => u.svgBackdrop), 'a probe was left unmeasured').toEqual([]);
-	expect(await page.locator('[data-svg-backdrop]').count(), 'the probe attribute was not cleaned up').toBe(0);
+
+	const white = finding('GRAD WHITE');
+	expect(white?.via, 'white text over a gradient was not pixel-sampled').toBe('pixel');
+	expect(white!.ratio, 'white on the light end of the gradient was not the worst sample').toBeLessThan(1.3);
+	expect(parseInt(white!.bg.slice(1, 3), 16)).toBeGreaterThanOrEqual(0xd0);
+	const black = finding('GRAD BLACK');
+	expect(black?.via, 'black text over a gradient was not pixel-sampled').toBe('pixel');
+	expect(black!.ratio, 'black on the dark end of the gradient was not the worst sample').toBeLessThan(1.3);
+	expect(parseInt(black!.bg.slice(1, 3), 16)).toBeLessThanOrEqual(0x30);
+	const ok = report.probes.find((p) => p.text === 'GRAD OK');
+	expect(ok?.via).toBe('pixel');
+	expect(ok!.ratio, 'mid grey on a black gradient did not pass').toBeGreaterThan(4.5);
+	expect(finding('GRAD OK')).toBeFalsy();
+
+	const onCanvas = finding('ON CANVAS');
+	expect(onCanvas?.via, 'text over a flat canvas was not pixel-sampled').toBe('pixel');
+	expect(onCanvas!.bg).toBe('#888888');
+	expect(onCanvas!.ratio).toBe(1.26);
+	const onPct = finding('ON PCT');
+	expect(onPct?.via, 'text over a percentage-positioned ::before was not measured against its fill').toBe('pixel');
+	expect(onPct!.bg).toBe('#ffffff');
+	expect(onPct!.ratio).toBeLessThan(1.1);
+
+	expect(report.unmeasured.find((u) => u.el.endsWith('span') && u.why.includes('off-screen')), 'off-screen text was measured').toBeTruthy();
+	expect(report.probes.some((p) => p.text === 'OFFSCREEN')).toBe(false);
+	expect(report.unmeasured.filter((u) => u.backdrop), 'a tagged finding was left unsampled').toEqual([]);
+	expect(await page.locator('[data-contrast-backdrop]').count(), 'the probe attribute was not cleaned up').toBe(0);
+	expect(await page.locator('#contrast-backdrop-hide').count(), 'the hide style was not cleaned up').toBe(0);
 	expect(await inlineColor(), 'sampling changed the inline color it must restore').toEqual(colorBefore);
 	// A second run sees the same page, so it finds the same planted failure.
-	const again = await sampleSvgBackdrops(page, await page.evaluate(renderedContrastAudit, undefined));
+	const again = await sampleUnmeasuredBackdrops(page, await page.evaluate(renderedContrastAudit, undefined));
 	expect(again.findings.find((f) => f.text === 'PLANTED LOW')?.ratio, 'the second run lost the planted pair').toBe(1.26);
 });

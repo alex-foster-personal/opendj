@@ -15,6 +15,9 @@
     "deck_sources":     {"type": "array", "items": {"type": "string"}},
     "watermark":        {"type": "string"},
     "schema_version":   {"type": "integer", "minimum": 1},
+    "audio_peak_dbfs":  {"type": ["number", "null"], "maximum": 0},
+    "clipped_samples":  {"type": ["integer", "null"], "minimum": 0},
+    "clip_events":      {"type": ["integer", "null"], "minimum": 0},
     "mp3_segments": {
       "type": "array",
       "items": {

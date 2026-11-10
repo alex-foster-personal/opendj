@@ -37,9 +37,14 @@ ALLOWED_KEYS: frozenset[str] = frozenset(
         "jog_radial_waveform",
         "deck_hover_link",
         "show_sections",
+        "auto_analyze_grid",
+        "auto_analyze_key",
+        "auto_analyze_sections",
+        "auto_analyze_vocals",
         "speaker_auto_recover",
         "show_tempo_lane",
         "tempo_lane_scale",
+        "wave_grid_lines",
         "auto_sync.rekordbox",
         "auto_sync.djay",
         "auto_sync.open_dj",
@@ -54,6 +59,7 @@ _ENUM_VALUES: dict[str, frozenset[str]] = {
     "library_density": frozenset({"compact", "cosy"}),
     "speaker_auto_recover": frozenset({"auto", "on", "off"}),
     "tempo_lane_scale": frozenset({"fixed_10", "relative"}),
+    "wave_grid_lines": frozenset({"beats_bars", "bars", "off"}),
     "confirm.playlist_drop_mode": frozenset({"ask", "add", "move"}),
 }
 

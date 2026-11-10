@@ -1,0 +1,9 @@
+{
+  "bytes": 1024,
+  "measured_main": 503609,
+  "measured_with_pr": 503978,
+  "sha": "1647212f3e",
+  "date": "Tue 10 Nov 2026",
+  "reason": "Issue #10321 (STEMPERF-11695) adds the React StemRow twin quick chips (lazy ReactIsland chunk). Measured: local build vs base at 1647212f3e, +369 B gzip on other-lazy; ceiled to KiB",
+  "payback": "none planned; the growth is the feature's own code on this surface"
+}

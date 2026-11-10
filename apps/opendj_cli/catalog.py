@@ -63,7 +63,7 @@ PANEL_VALUES: tuple[str, ...] = ("next", "recommended")
 VOTE_VALUES: tuple[str, ...] = ("bad", "good", "great")
 SYNC_MODE_VALUES: tuple[str, ...] = ("beat", "bar")
 DECK_MOVE_MODE_VALUES: tuple[str, ...] = ("move", "copy")
-OUTPUT_MODE_VALUES: tuple[str, ...] = ("practice", "two_outputs")
+OUTPUT_MODE_VALUES: tuple[str, ...] = ("practice", "two_outputs", "split_cable")
 HEADPHONE_ALIGNMENT_MODE_VALUES: tuple[str, ...] = ("headphones_only", "delay_all", "hybrid")
 MIDI_TAKEOVER_MODE_VALUES: tuple[str, ...] = ("pickup", "jump")
 PITCH_RANGE_VALUES: tuple[int, ...] = (8, 16, 100)
@@ -84,9 +84,11 @@ WAVEFORM_SEEK_SNAP_VALUES: tuple[str, ...] = ("downbeat", "beat", "exact")
 COLOR_FX_EFFECT_VALUES: tuple[str, ...] = ("filter", "space", "echo", "next")
 COLOR_FX_ECHO_BEAT_VALUES: tuple[float, ...] = (0.25, 0.5, 0.75, 1.0)
 WAVEFORM_DESIGN_VALUES: tuple[str, ...] = ("auto", "tri-band", "mono", "line", "blocks")
-DECK_NUMBER_ART_VALUES: tuple[str, ...] = ("off", "halo")
+DECK_NUMBER_ART_VALUES: tuple[str, ...] = ("off", "halo", "glow", "tinted")
 #: WAVEQS-8348e: mirrors WAVEFORM_OVERLAYS in src/lib/rb/waveform-overlay-command.ts.
-WAVEFORM_OVERLAY_VALUES: tuple[str, ...] = ("sections", "lyrics", "lyrics_scrub", "jog_radial")
+WAVEFORM_OVERLAY_VALUES: tuple[str, ...] = ("sections", "lyrics", "lyrics_scrub", "jog_radial", "grid_lines")
+#: issue #10244: mirrors WAVE_GRID_LINES_VALUES in src/lib/rb/wave-grid-lines.ts.
+WAVE_GRID_LINES_VALUES: tuple[str, ...] = ("beats_bars", "bars", "off")
 WAVE_ZOOM_VALUES: tuple[str, ...] = ("4", "8", "16", "32", "64", "whole")
 WAVE_ZOOM_DIRECTION_VALUES: tuple[str, ...] = ("in", "out")
 WAVE_ZOOM_PLAYHEAD_VALUES: tuple[str, ...] = ("elastic", "center")
@@ -103,7 +105,7 @@ WAVE_PALETTE_VALUES: tuple[str, ...] = ("auto", "rekordbox", "legacy", "mono")
 WAVE_SPLIT_MASTER_VALUES: tuple[str, ...] = ("auto", "on", "off")
 # Issue #10199: mirrors LAYOUT_SURFACES / PERFORMANCE_LAYOUTS / LIBRARY_LAYOUTS in skin-layout.ts.
 LAYOUT_SURFACE_VALUES: tuple[str, ...] = ("performance", "library")
-_PERFORMANCE_LAYOUT_VALUES: tuple[str, ...] = ("deck-grid",)
+_PERFORMANCE_LAYOUT_VALUES: tuple[str, ...] = ("deck-grid", "replica-desk")
 _LIBRARY_LAYOUT_VALUES: tuple[str, ...] = ("crate-desk", "three-panel")
 LAYOUT_PRESET_VALUES: tuple[str, ...] = ("auto", *_PERFORMANCE_LAYOUT_VALUES, *_LIBRARY_LAYOUT_VALUES)
 LAYOUT_REGION_VALUES: tuple[str, ...] = tuple(LAYOUT_REGION_BOUNDS)
@@ -599,8 +601,11 @@ _VERBS: tuple[Verb, ...] = (
     Verb(
         "output_mode",
         "output_mode",
-        (arg("mode", "enum", enum_value(OUTPUT_MODE_VALUES), "practice|two_outputs"),),
-        note="CUEOUT-01: practice blends PFL into the main output; two_outputs is the split.",
+        (arg("mode", "enum", enum_value(OUTPUT_MODE_VALUES), "practice|two_outputs|split_cable"),),
+        note=(
+            "CUEOUT-01/02: practice blends PFL into the main output; two_outputs is "
+            "MAIN+CUE devices; split_cable is master L / cue R on one device."
+        ),
     ),
     Verb(
         "midi_takeover_mode",
@@ -785,8 +790,9 @@ _VERBS: tuple[Verb, ...] = (
     Verb(
         "set_deck_number_art",
         "set_deck_number_art",
-        (arg("mode", "enum", enum_value(DECK_NUMBER_ART_VALUES), "off|halo"),),
-        note="ARTNUM-9649: deck number outline over each deck's artwork; default off.",
+        (arg("mode", "enum", enum_value(DECK_NUMBER_ART_VALUES), "off|halo|glow|tinted"),),
+        note="ARTNUM-9649: deck number outline over each deck's artwork; default off. "
+        "ARTNUM-11719: glow and tinted take a colour sampled from the artwork.",
     ),
     Verb(
         "set_waveform_design",
@@ -797,11 +803,25 @@ _VERBS: tuple[Verb, ...] = (
         "set_waveform_overlay",
         "set_waveform_overlay",
         (
-            arg("overlay", "enum", enum_value(WAVEFORM_OVERLAY_VALUES), "sections|lyrics|lyrics_scrub|jog_radial"),
-            _ENABLED,
+            arg(
+                "overlay",
+                "enum",
+                enum_value(WAVEFORM_OVERLAY_VALUES),
+                "sections|lyrics|lyrics_scrub|jog_radial|grid_lines",
+            ),
+            arg("enabled", "bool", bool_value, "true|false (the switch overlays)", optional=True),
+            arg(
+                "value",
+                "enum",
+                enum_value(WAVE_GRID_LINES_VALUES),
+                "beats_bars|bars|off (grid_lines only)",
+                optional=True,
+            ),
         ),
         note="WAVEQS-8348e: the waveform quick-settings popover's switches: sections, lyrics on the waveform, "
-        "lyrics while hover-scrubbing, the radial jog waveform.",
+        "lyrics while hover-scrubbing, the radial jog waveform. "
+        "WAVEQS-11736: grid_lines takes value=beats_bars|bars|off (beat and bar lines, bar lines only, none), "
+        "as in: set_waveform_overlay grid_lines value=bars.",
     ),
     Verb(
         "set_wave_zoom",
@@ -846,7 +866,9 @@ _VERBS: tuple[Verb, ...] = (
         "set_layout_preset",
         (
             arg("surface", "enum", enum_value(LAYOUT_SURFACE_VALUES), "performance|library"),
-            arg("preset", "enum", enum_value(LAYOUT_PRESET_VALUES), "auto|deck-grid|crate-desk|three-panel"),
+            arg(
+                "preset", "enum", enum_value(LAYOUT_PRESET_VALUES), "auto|deck-grid|replica-desk|crate-desk|three-panel"
+            ),
         ),
         note="Issue #10199: any skin runs any surface preset; auto follows the skin's layout. "
         "The bus refuses a preset of the other surface with the allowed list; read back as "
@@ -949,6 +971,7 @@ _VERBS: tuple[Verb, ...] = (
     Verb("track_info_toggle", "track_info_toggle", ()),
     Verb("track_info_open", "track_info_open", (arg("stable_id", "text", text_value),)),
     Verb("track_info_close", "track_info_close", ()),
+    Verb("oj_toggle", "oj_toggle", ()),
     Verb("pairing_snapshot_open", "pairing_snapshot_open", ()),
     Verb("pairing_snapshot_remove_eq_adjuster", "pairing_snapshot_remove_eq_adjuster", (_DECK, _BAND)),
     Verb(
@@ -1028,10 +1051,27 @@ _VERBS: tuple[Verb, ...] = (
         (),
         note="RESCUE-02 Undo: stop every deck restored by rescue playback together.",
     ),
+    Verb(
+        "window",
+        "window",
+        (
+            arg("action", "enum", enum_value(("open", "close", "focus")), "open|close|focus"),
+            arg("label", "enum", enum_value(("second-screen",)), "second-screen"),
+        ),
+        note="Open, close or focus a labelled desktop-shell window. "
+        "In a browser tab the page refuses with a reason that names the shell. "
+        "query().windows and the UI mirror windows field list the labels that are open.",
+    ),
 )
 
 VERBS: dict[str, Verb] = {verb.name: verb for verb in _VERBS}
 VERB_NAMES: tuple[str, ...] = tuple(verb.name for verb in _VERBS)
+
+# CLI-only (not an AGENT-03 bus command). `opendj midi monitor` listens on a
+# MIDI port and prints each message with its exported-map action or "unmapped".
+MIDI_MONITOR_USAGE = "opendj midi monitor --device <name-match> [--seconds N]"
+MIDI_MONITOR_DEVICE_HELP = "substring match against a MIDI input port name"
+MIDI_MONITOR_SECONDS_HELP = "stop after N seconds and print fader verdicts (default: until interrupt)"
 
 # Re-exported so callers that only need "is this a deck?" do not import kinds.
 __all__ = [
@@ -1041,6 +1081,9 @@ __all__ = [
     "RAMPABLE_TYPES",
     "VERBS",
     "VERB_NAMES",
+    "MIDI_MONITOR_USAGE",
+    "MIDI_MONITOR_DEVICE_HELP",
+    "MIDI_MONITOR_SECONDS_HELP",
     "Expectation",
     "Observe",
     "Verb",

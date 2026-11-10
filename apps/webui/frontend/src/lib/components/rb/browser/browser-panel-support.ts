@@ -31,8 +31,11 @@ export {
 	bpmConfidenceIn,
 	compatibleKeyChecked,
 	compatibleRowKeyShift,
+	compatibleEnergyNote,
 	computeNextOnlyRef,
+	energyIn,
 	isAppropriateNext,
+	nextOnlyReferenceDeck,
 	resolveSearchFilterFallback,
 	selectSearchFilterFallback,
 	type NextOnlyRef
@@ -62,15 +65,16 @@ export {
 	getAutoPlayRankOf,
 	setAutoPlayTrackFeed
 } from '$lib/rb/auto-play';
+export {
+	autoPlayTrackRowsFromBrowser,
+	stepAutoPlayBrowserFeed,
+	type AutoPlayBrowserRowLike
+} from './autoplay-browser-feed';
 export { getSpotifyPendingTracks, type SpotifyPendingTrack } from '$lib/rb/spotify-api';
 export { fillAllTracksFromIndex, fillAllTracksPane, rowsForIndex } from './fill-all-tracks';
 export { clearPlaylistRowCache, fillPlaylistPane } from './fill-playlist-pane';
 export { fillAutolistPane } from './fill-autolist';
-export {
-	autolistNode,
-	isAutolistId,
-	AUTOLIST_ID
-} from './autolist-ids';
+export { autolistNode, isAutolistId, AUTOLIST_ID } from './autolist-ids';
 export { INBOX_PLAYLIST_ID, isInboxPlaylistId } from './inbox-id';
 export { queryAutolists } from '$lib/rb/api-autolists';
 export {

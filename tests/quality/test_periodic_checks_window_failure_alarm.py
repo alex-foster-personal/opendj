@@ -104,3 +104,19 @@ def test_the_alarm_fails_the_run_visibly_too() -> None:
     visible on the Actions tab too, not just in the ledger."""
     script = _alarm_script()
     assert "exit 1" in script
+
+
+FULL_CI = REPO_ROOT / ".github" / "workflows" / "full-ci.yml"
+
+
+def test_full_ci_suite_timeout_lets_the_periodic_row_finish() -> None:
+    """Issue #11343: row 1 calls full-ci.yml and died at 20 minutes 7/7 nights."""
+    full_ci = yaml.safe_load(FULL_CI.read_text(encoding="utf-8"))
+    timeouts = [job.get("timeout-minutes") for job in full_ci["jobs"].values()]
+    assert any(isinstance(m, int) and m >= 30 for m in timeouts), (
+        f"full-ci.yml suite job timeout is {timeouts}; below 30 minutes the "
+        "periodic full pytest row times out with an empty result"
+    )
+    assert _periodic()["jobs"]["full-suite"]["uses"] == "./.github/workflows/full-ci.yml", (
+        "periodic-checks.yml row 1 no longer calls full-ci.yml"
+    )

@@ -7,7 +7,8 @@ import StemWaveRowView from './StemWaveRowView.svelte';
  * dimmed, inert placeholder with the reason in its hover title; a ready stem
  * is a blank canvas that StemWaveRow paints from the fetched envelope, so
  * the story shows the empty strip and its backing, never an invented
- * waveform. The decorator gives the root a deck row's width.
+ * waveform. A live row is a click target: click solos the stem, Shift+click
+ * mutes it. The decorator gives the root a deck row's width.
  */
 const meta = {
 	title: 'Components/Wave/StemWaveRowView',
@@ -21,7 +22,15 @@ const meta = {
 			return story();
 		}
 	],
-	args: { stem: 'drums', visible: true, unavailableTip: null }
+	args: {
+		stem: 'drums',
+		visible: true,
+		unavailableTip: null,
+		deckId: 1,
+		controlState: { muted: false, solo: false },
+		onSolo: () => {},
+		onMute: () => {}
+	}
 } satisfies Meta<typeof StemWaveRowView>;
 
 export default meta;
@@ -42,6 +51,14 @@ export const NotSeparate: Story = {
 export const StemsNotReady: Story = {
 	args: { stem: 'vocal', unavailableTip: 'stems missing: no aligned artifact' }
 };
+
+/** Soloed: the row's aria-pressed is true; a click un-solos, Shift+click mutes. */
+export const Soloed: Story = {
+	args: { stem: 'vocal', controlState: { muted: false, solo: true } }
+};
+
+/** Muted: Shift+click unmutes; painting the muted state is a sibling issue. */
+export const Muted: Story = { args: { stem: 'drums', controlState: { muted: true, solo: false } } };
 
 /** Stems hidden, or no track loaded: nothing is drawn. */
 export const Hidden: Story = { args: { visible: false }, tags: ['renders-nothing'] };

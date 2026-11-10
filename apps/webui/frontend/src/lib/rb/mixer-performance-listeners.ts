@@ -1,5 +1,7 @@
 /**
  * Performance-route listeners for mixer selection and horizontal wheel (MIXUX-08).
+ * The non-passive wheel listener is bound only while the mixer deck selection is
+ * non-empty (PERF-UI-13, #10369).
  */
 import { mixerState } from './audio-engine.svelte';
 import {
@@ -9,7 +11,7 @@ import {
 	WHEEL_STEP
 } from './wheel-adjust';
 import { shouldRouteHorizontalWheel, knobCommandType } from './mixer-horizontal-wheel';
-import { getSelectedDecks, resetToSingle } from './mixer-selection.svelte';
+import { getSelectedDecks, onMixerSelectionChange, resetToSingle } from './mixer-selection.svelte';
 import { uiPrefs } from './prefs.svelte';
 import { runPerformanceCommandFromUi } from './performance-ipc.svelte';
 import { tickFaderGhostIdle } from './fader-ghost.svelte';
@@ -63,14 +65,35 @@ export function installMixerPerformanceListeners(): () => void {
 	}
 	ghostIdleRaf = requestAnimationFrame(ghostIdleLoop);
 
+	// The wheel is passive: false so it can preventDefault, and a non-passive
+	// wheel on window makes Chromium wait on the main thread before scrolling
+	// anything, the library list included (LIBM-174). Bind it only while a
+	// deck is selected (PERF-UI-13, #10369).
+	let wheelBound = false;
+	function syncSelectionWheel(): void {
+		const wanted = getSelectedDecks().length > 0;
+		if (wanted && !wheelBound) {
+			window.addEventListener('wheel', onWheel, { passive: false, capture: true });
+			wheelBound = true;
+		} else if (!wanted && wheelBound) {
+			window.removeEventListener('wheel', onWheel, true);
+			wheelBound = false;
+		}
+	}
+
 	window.addEventListener('keydown', onKeyDown, true);
 	window.addEventListener('pointerdown', onPointerDown, true);
-	window.addEventListener('wheel', onWheel, { passive: false, capture: true });
+	syncSelectionWheel();
+	const offSelectionChange = onMixerSelectionChange(syncSelectionWheel);
 
 	return () => {
+		offSelectionChange();
 		cancelAnimationFrame(ghostIdleRaf);
 		window.removeEventListener('keydown', onKeyDown, true);
 		window.removeEventListener('pointerdown', onPointerDown, true);
-		window.removeEventListener('wheel', onWheel, true);
+		if (wheelBound) {
+			window.removeEventListener('wheel', onWheel, true);
+			wheelBound = false;
+		}
 	};
 }

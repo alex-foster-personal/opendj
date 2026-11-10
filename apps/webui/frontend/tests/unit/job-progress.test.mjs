@@ -1,6 +1,32 @@
 import assert from 'node:assert/strict';
-import { before, describe, it } from 'node:test';
+import { types } from 'node:util';
+import { before, describe, it, test } from 'node:test';
+import { loadRuneModule } from './load-rune-module.mjs';
 import { loadTypeScriptModule } from './load-typescript.mjs';
+
+const RUNE_ENTRY = "export { jobProgress } from '$lib/rb/job-progress.svelte';\n";
+
+const BADGE_READER_ENTRY = [
+	RUNE_ENTRY.trimEnd(),
+	"import { flushSync } from 'svelte';",
+	"import { jobProgress } from '$lib/rb/job-progress.svelte';",
+	'export function mountBadgeReader() {',
+	'	let runs = 0;',
+	'	let lastStems = undefined as boolean | undefined;',
+	'	const dispose = $effect.root(() => {',
+	'		$effect(() => {',
+	'			runs += 1;',
+	'			lastStems = jobProgress.badges.rerun_x?.stems;',
+	'		});',
+	'	});',
+	'	flushSync();',
+	'	return {',
+	'		get runs() { return runs; },',
+	'		get lastStems() { return lastStems; },',
+	'		stop() { dispose(); }',
+	'	};',
+	'}'
+].join('\n');
 
 let mod;
 let kinds;
@@ -199,5 +225,82 @@ describe('job-progress helpers', () => {
 		assert.equal(r.n, 2);
 		assert.equal(r.label, 'vocals 1/2');
 		assert.ok(Math.abs(r.progress - (0.5 + 0.02) / 2) < 1e-9);
+	});
+});
+
+describe('job-progress raw store (PERF-UI-11091, #10235)', () => {
+	test('if 1,000 badge writes then badges and entries stay plain not proxied', async () => {
+		const m = await loadRuneModule(RUNE_ENTRY);
+		for (let i = 0; i < 1000; i++) {
+			m.jobProgress.setBadge(`b${i}`, 'stems', true);
+		}
+		assert.equal(types.isProxy(m.jobProgress.badges), false);
+		assert.equal(Object.getPrototypeOf(m.jobProgress.badges), Object.prototype);
+		assert.equal(types.isProxy(m.jobProgress.badges.b0), false);
+		assert.equal(Object.keys(m.jobProgress.badges).length, 1000);
+	});
+
+	test('if badge write for unrelated id then record identity changes and untouched entry is reused', async () => {
+		const m = await loadRuneModule(RUNE_ENTRY);
+		for (let i = 0; i < 1000; i++) {
+			m.jobProgress.setBadge(`b${i}`, 'stems', true);
+		}
+		const before = m.jobProgress.badges;
+		const b0 = before.b0;
+		m.jobProgress.setBadge('b999', 'lyrics', true);
+		assert.notEqual(m.jobProgress.badges, before);
+		assert.equal(m.jobProgress.badges.b0, b0);
+		assert.deepEqual(m.jobProgress.badges.b999, { stems: true, lyrics: true });
+	});
+
+	test('if job upserts then jobs stay plain, record changes, and untouched job entry keeps identity', async () => {
+		const m = await loadRuneModule(RUNE_ENTRY);
+		m.jobProgress.upsert({
+			stable_id: 'ja',
+			kind: 'vocals',
+			phase: 'running',
+			progress: 0.1,
+			real: true
+		});
+		m.jobProgress.upsert({
+			stable_id: 'jb',
+			kind: 'vocals',
+			phase: 'running',
+			progress: 0.2,
+			real: true
+		});
+		const jaEntry = m.jobProgress.jobs['vocals:ja'];
+		const jobsBefore = m.jobProgress.jobs;
+		m.jobProgress.upsert({
+			stable_id: 'jb',
+			kind: 'vocals',
+			phase: 'running',
+			progress: 0.5,
+			real: true
+		});
+		assert.equal(types.isProxy(m.jobProgress.jobs), false);
+		assert.notEqual(m.jobProgress.jobs, jobsBefore);
+		assert.equal(m.jobProgress.jobs['vocals:ja'], jaEntry);
+		const missingBefore = m.jobProgress.jobs;
+		m.jobProgress.clear('missing', 'vocals');
+		assert.equal(m.jobProgress.jobs, missingBefore);
+		m.jobProgress.clear('ja', 'vocals');
+		m.jobProgress.clear('jb', 'vocals');
+	});
+
+	test('if effect reads badges then setBadge reruns the effect', async () => {
+		const m = await loadRuneModule(BADGE_READER_ENTRY);
+		const harness = m.mountBadgeReader();
+		try {
+			assert.equal(harness.runs, 1);
+			assert.equal(harness.lastStems, undefined);
+			m.jobProgress.setBadge('rerun_x', 'stems', true);
+			const { flushSync } = await import('svelte');
+			flushSync();
+			assert.ok(harness.runs >= 2);
+			assert.equal(harness.lastStems, true);
+		} finally {
+			harness.stop();
+		}
 	});
 });

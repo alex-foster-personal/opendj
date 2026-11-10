@@ -24,7 +24,19 @@ const STORED = {
   mode: "mashup",
   key_shift_max: 2,
   mashup_relative: true,
+  energy_mode: "boost",
 };
+
+test("if an unknown energy_mode reads as valid then SETPREP-11947 is broken", () => {
+  assert.throws(
+    () => mod.validateCompatibleFilterPrefs({ energy_mode: "sideways" }, "k"),
+    /compatible_filter\.energy_mode invalid/,
+  );
+});
+
+test("if energy_mode does not default to off then SETPREP-11947 changes the filter", () => {
+  assert.equal(mod.COMPATIBLE_FILTER_DEFAULTS.energy_mode, "off");
+});
 
 test("if reading stored prefs drops or changes a saved key then LIBUX-32 is broken", () => {
   const read = mod.validateCompatibleFilterPrefs(

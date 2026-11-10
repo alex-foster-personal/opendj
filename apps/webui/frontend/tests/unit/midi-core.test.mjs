@@ -14,6 +14,8 @@
 //   if eq action without band doesn't throw then broken
 //   if ledTriggerActive(deck_loaded) is true on an empty deck then broken
 //   if the glue teardown leaves the action handler registered then broken
+//   if deck_beat_jump on an empty deck doesn't toast then broken
+//   if deck_beat_jump on a loaded deck doesn't reach engine.beatJump then broken
 
 import assert from 'node:assert/strict';
 import { after, before, test } from 'node:test';
@@ -223,6 +225,41 @@ test('button releases are ignored (no toast, no engine call)', () => {
 		{ kind: 'button', pressed: false, velocity: 0 }
 	);
 	assert.equal(stores.toasts.length, beforeCount);
+});
+
+test('deck_beat_jump on an empty deck toasts; release is silent', () => {
+	const beforeCount = stores.toasts.length;
+	const press = { kind: 'button', pressed: true, velocity: 127 };
+	const release = { kind: 'button', pressed: false, velocity: 0 };
+	glue.handleMidiAction({ type: 'deck_beat_jump', deck: 1, beats: 1 }, press);
+	assert.equal(stores.toasts.length, beforeCount + 1);
+	assert.match(lastToast().message, /Deck 1 is empty/);
+	glue.handleMidiAction({ type: 'deck_beat_jump', deck: 1, beats: 1 }, release);
+	assert.equal(stores.toasts.length, beforeCount + 1);
+});
+
+test('deck_beat_jump on a loaded deck reaches engine.beatJump', async () => {
+	const deck = audioEngine.deckStates[1];
+	const priorStable = deck.stable_id;
+	const priorBeatJump = audioEngine.engine.beatJump;
+	const calls = [];
+	audioEngine.engine.beatJump = async (d, beats) => {
+		calls.push([d, beats]);
+	};
+	try {
+		deck.stable_id = 'a'.repeat(40);
+		const press = { kind: 'button', pressed: true, velocity: 127 };
+		glue.handleMidiAction({ type: 'deck_beat_jump', deck: 1, beats: 1 }, press);
+		glue.handleMidiAction({ type: 'deck_beat_jump', deck: 1, beats: -1 }, press);
+		await new Promise((resolve) => setImmediate(resolve));
+		assert.deepEqual(calls, [
+			[1, 1],
+			[1, -1]
+		]);
+	} finally {
+		audioEngine.engine.beatJump = priorBeatJump;
+		deck.stable_id = priorStable;
+	}
 });
 
 test('hot cue press on an empty slot toasts the missing-slot state', () => {

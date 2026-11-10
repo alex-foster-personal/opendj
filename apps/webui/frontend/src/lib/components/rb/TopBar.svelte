@@ -99,6 +99,7 @@
 	import FeedbackWidget from './FeedbackWidget.svelte';
 	import PerfMeters from './PerfMeters.svelte';
 	import TrackInfoButton from './TrackInfoButton.svelte';
+	import OjTopBarButton from './OjTopBarButton.svelte';
 	import TrackInfoHost from './TrackInfoHost.svelte';
 	import WaveQuickSettingsButton from './WaveQuickSettingsButton.svelte';
 	import { builtExplainerBullets, builtTitle, plannedExplainerBullets, plannedTitle } from '$lib/rb/planned-explainers';
@@ -1162,6 +1163,9 @@
 	>
 	<TrackInfoHost onclose={() => void runPerformanceCommandFromUi({ type: 'track_info_close' })} />
 
+	<!-- OJ-9477: opens the OJ (agent) sidebar as a right-edge overlay; same path as the oj_toggle command. -->
+	<OjTopBarButton ontoggle={() => void runPerformanceCommandFromUi({ type: 'oj_toggle' })} />
+
 	<span class="free-badge" title={plannedTitle('free-badge')}>Free</span>
 
 	<!-- SETNOTE-6340g: the set-notes app upgrades this tag once it loads (lib/set-notes/toggle-element.ts). -->
@@ -1260,6 +1264,7 @@
 		     rule. -->
 		<div
 			class={`output-health-bar ${outputHealthDisplay.cssClass}`}
+			role="status"
 			title={outputHealthDisplay.title}
 			aria-label="output to audio device"
 		></div>
@@ -1744,7 +1749,7 @@
 		padding-right: 6px;
 	}
 	.ap-wrap > .ap-next-btn:hover {
-		color: var(--rb-accent);
+		color: var(--rb-accent-text);
 	}
 	/* The ">|" split is the least essential control in this row (an early-
 	   trigger shortcut, not a required transport) - drop it first, at the
@@ -2082,7 +2087,7 @@
 		cursor: pointer;
 	}
 	.bsm-toggle.on {
-		color: var(--rb-accent);
+		color: var(--rb-accent-text);
 		border-color: color-mix(in srgb, var(--rb-accent) 55%, var(--rb-border));
 		box-shadow: 0 0 0 1px color-mix(in srgb, var(--rb-accent) 25%, transparent);
 	}
@@ -2289,5 +2294,16 @@
 		display: inline-flex;
 		flex: 0 0 22px;
 		height: 20px;
+	}
+
+	a.mode-card:focus-visible {
+		/* A11Y-11403: keyboard focus ring paired with this file's outline reset. */
+		outline: 2px solid var(--rb-focus-ring);
+		outline-offset: 2px;
+	}
+	.master-slider:focus-visible {
+		/* A11Y-11403: keyboard focus ring paired with this file's outline reset. */
+		outline: 2px solid var(--rb-focus-ring);
+		outline-offset: 2px;
 	}
 </style>

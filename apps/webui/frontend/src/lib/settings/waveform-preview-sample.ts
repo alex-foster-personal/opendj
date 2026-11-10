@@ -25,8 +25,8 @@ const BANDS = {
 /** Points per band (901). */
 export const PREVIEW_SAMPLE_POINTS = 901;
 
-/** Seconds of music the sample spans. */
-export const PREVIEW_SAMPLE_SECONDS = 12;
+/** Seconds of music the sample spans (shared with the preview beat grid). */
+export { PREVIEW_SAMPLE_SECONDS } from './waveform-preview-beats';
 
 function _decode(b64: string): number[] {
 	const raw = atob(b64);

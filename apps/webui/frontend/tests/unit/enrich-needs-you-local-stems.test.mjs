@@ -25,8 +25,8 @@ function rule(css, selector) {
 	return css.slice(at, css.indexOf('}', at));
 }
 
-test('the needs-you flag and the stems question are a literal orange', () => {
-	assert.match(rule(view, '.enrich-flag'), /color: #e8a13a;/);
+test('the needs-you flag reads --rb-warn-text (#10370) and the stems question is a literal orange', () => {
+	assert.match(rule(view, '.enrich-flag'), /color: var\(--rb-warn-text, #e8a13a\);/);
 	assert.match(rule(view, '.enrich-line.attention'), /color: #e8a13a;/);
 	assert.match(view, /class:attention=\{summary\?\.stems\.state === 'ask'\}/);
 });

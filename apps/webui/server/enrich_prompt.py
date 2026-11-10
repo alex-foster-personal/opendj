@@ -179,6 +179,7 @@ def build_summary(
     decisions: Mapping[str, str],
     warnings: Sequence[Mapping[str, str]] = (),
     artwork_suggestions: int = 0,
+    ingest_genre: Mapping[str, int] | None = None,
 ) -> dict[str, Any]:
     stems = stems_ask(coverage, decisions)
     show = (
@@ -215,6 +216,8 @@ def build_summary(
         "warnings": [dict(w) for w in warnings],
         # LIBM-189: store covers found, saved only after the user says yes.
         "artwork_suggestions": artwork_suggestions,
+        # SETPREP-10646: genre fill counts from the latest ingest enrichment batch.
+        "ingest_genre": None if ingest_genre is None else dict(ingest_genre),
     }
 
 

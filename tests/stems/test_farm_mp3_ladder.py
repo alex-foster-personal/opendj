@@ -342,7 +342,9 @@ def test_a_farm_mp3_bundle_loads_through_the_real_reader(tmp_path: Path) -> None
     }
     preset = bundle_publish.PRESETS["hdemucs_mmi-ov0.25"]
     sid = "b" * 40
-    farm["_publish_stems_local"](sid, Path("/music/a.mp3"), result, preset, tmp_path)
+    farm["_publish_stems_local"](
+        sid, tmp_path / "source-256.mp3", result, preset, tmp_path, requested_codec="by-source"
+    )
 
     bundle = load_stem_bundle(sid, stems_dir=tmp_path / "state" / "stems")
     assert bundle.media_type == "audio/mpeg"

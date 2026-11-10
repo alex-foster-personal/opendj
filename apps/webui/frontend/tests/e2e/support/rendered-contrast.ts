@@ -1,6 +1,10 @@
 import type { Page } from '@playwright/test';
 import { PNG } from 'pngjs';
 
+import { requiredRatio, worstBackdropRatio, type BackdropVia } from './rendered-contrast-pixels';
+
+export { backdropSamplePoints, contrastRatio, requiredRatio, worstBackdropRatio } from './rendered-contrast-pixels';
+
 /**
  * Rendered contrast audit (UICONTRAST-01, orders board W34).
  *
@@ -24,14 +28,25 @@ export interface ContrastFinding {
 	bg: string;
 	ratio: number;
 	need: number;
+	/** What measured it: the in-page CSS compositor, or the backdrop pixel sampler (`svg` every pixel, `pixel` grid). */
+	via: 'css' | BackdropVia;
 }
 
 export interface UnmeasuredElement {
 	el: string;
 	why: string;
-	/** Set when the backdrop is a replaced `<svg>`: `sampleSvgBackdrops` measures
-	 * the text against its rendered pixels, found by `data-svg-backdrop`. */
-	svgBackdrop?: { id: string; text: string; fg: number[]; size: number; bold: boolean };
+	/** Set when the backdrop has pixels but no CSS colour: `sampleUnmeasuredBackdrops`
+	 * measures the text against the rendered pixels, found by `data-contrast-backdrop`. */
+	backdrop?: {
+		id: string;
+		via: BackdropVia;
+		text: string;
+		fg: number[];
+		size: number;
+		bold: boolean;
+		probe: boolean;
+		box: 'contents' | 'element';
+	};
 }
 
 export interface RenderedContrastReport {
@@ -147,18 +162,18 @@ export function renderedContrastAudit(scope?: string): RenderedContrastReport {
 	 * fills too: each joins the stack just above the ancestor it shares with
 	 * the text, faded by its own opacity.
 	 *
-	 * Two backdrops have no CSS color to read, so they make the text
-	 * unmeasured rather than measured against the panel behind them: a
-	 * replaced element (an `<img>` under a hover label) and a positioned
-	 * pseudo-element fill (a row's `::before` gradient), whose box hit
-	 * testing cannot see.
+	 * Three backdrops have no CSS color to read: a replaced element (an
+	 * `<img>`, `<canvas>` or `<svg>` under the text), a positioned
+	 * pseudo-element fill (a row's `::before` gradient) and a background-image.
+	 * They return `why` plus `via`, so `measure` hands the text to the Node-side
+	 * pixel sampler (`sampleUnmeasuredBackdrops`) instead of guessing.
 	 */
 	const paint = (
 		el: Element,
 		fg0: number[],
 		inner?: { bg: number[]; op: number },
 		at?: { x: number; y: number }
-	): { fg?: number[]; bg?: number[]; why?: string } => {
+	): { fg?: number[]; bg?: number[]; why?: string; via?: 'svg' | 'pixel' } => {
 		const chain: Element[] = [];
 		for (let e: Element | null = el; e; e = e.parentElement) chain.push(e);
 		const under = new Map<Element, { bg: number[]; op: number; img: string; who: Element }[]>();
@@ -299,8 +314,11 @@ export function renderedContrastAudit(scope?: string): RenderedContrastReport {
 		}
 		for (let i = 0; i <= top; i++) {
 			const img = layers[i].img;
-			if (img.startsWith('replaced element ') || img.startsWith('pseudo-element fill ')) return { why: img };
-			if (img && img !== 'none') return { why: `background-image on ${label(layers[i].who)}` };
+			if (img.startsWith('replaced element ')) {
+				return { why: img, via: layers[i].who.tagName.toLowerCase() === 'svg' ? 'svg' : 'pixel' };
+			}
+			if (img.startsWith('pseudo-element fill ')) return { why: img, via: 'pixel' };
+			if (img && img !== 'none') return { why: `background-image on ${label(layers[i].who)}`, via: 'pixel' };
 		}
 		const frames: { outside: number[]; a: number }[] = [];
 		let cur = [255, 255, 255, 1]; // the canvas
@@ -329,7 +347,7 @@ export function renderedContrastAudit(scope?: string): RenderedContrastReport {
 	const unmeasured: UnmeasuredElement[] = [];
 	const probes: ContrastFinding[] = [];
 	let measured = 0;
-	let svgCount = 0;
+	let backdropCount = 0;
 
 	/** The opacity `el` paints at when it is painted, sized and active, else null. */
 	const visibleOpacity = (el: Element): number | null => {
@@ -356,8 +374,9 @@ export function renderedContrastAudit(scope?: string): RenderedContrastReport {
 		suffix: string,
 		text: string,
 		style: CSSStyleDeclaration,
-		inner?: { bg: number[]; op: number },
-		ats?: { x: number; y: number }[]
+		inner: { bg: number[]; op: number } | undefined,
+		ats: { x: number; y: number }[] | undefined,
+		box: 'contents' | 'element'
 	) => {
 		const name = label(el) + suffix;
 		// SVG text paints with `fill` over shapes, not over a CSS background;
@@ -397,25 +416,28 @@ export function renderedContrastAudit(scope?: string): RenderedContrastReport {
 			const p = paint(el, fg0, inner, at);
 			if (!p.fg || !p.bg) {
 				const why = p.why ?? 'unmeasured';
-				// A replaced <svg> under the text (a drawn knob) has pixels, not a
-				// CSS color: hand the text to the Node-side pixel sampler, which
-				// needs an opaque color to compare against.
+				// A backdrop with pixels but no CSS color (gradient, svg, canvas,
+				// img, pseudo fill): hand the text to the Node-side pixel sampler,
+				// which needs an opaque color to compare against.
 				// CSS opacity on the text or an ancestor fades the painted pair, which
 				// the sampler's uncomposited color cannot see: that text stays unmeasured.
 				let opacity = 1;
 				for (let e: Element | null = el; e; e = e.parentElement) opacity *= Number(getComputedStyle(e).opacity);
-				if (/^replaced element .*svg$/.test(why) && fg0[3] >= 1 && !inner && opacity >= 1) {
-					const id = String(svgCount++);
-					el.setAttribute('data-svg-backdrop', id);
+				if (p.via && fg0[3] >= 1 && (!inner || inner.op >= 1) && opacity >= 1) {
+					const id = el.getAttribute('data-contrast-backdrop') ?? String(backdropCount++);
+					el.setAttribute('data-contrast-backdrop', id);
 					unmeasured.push({
 						el: name,
 						why,
-						svgBackdrop: {
+						backdrop: {
 							id,
+							via: p.via,
 							text: text.slice(0, 24),
 							fg: fg0,
 							size: parseFloat(style.fontSize),
-							bold: Number(style.fontWeight) >= 700
+							bold: Number(style.fontWeight) >= 700,
+							probe: !!el.closest('[data-contrast-probe]'),
+							box
 						}
 					});
 				} else {
@@ -441,6 +463,7 @@ export function renderedContrastAudit(scope?: string): RenderedContrastReport {
 			bg: hex(bg),
 			ratio: displayed,
 			need,
+			via: 'css',
 		};
 		if (el.closest('[data-contrast-probe]')) probes.push(row);
 		if (displayed < need) findings.push(row);
@@ -479,7 +502,7 @@ export function renderedContrastAudit(scope?: string): RenderedContrastReport {
 							.filter((l) => l.width > 2 && l.height > 0)
 							.flatMap((l) => [l.left + 1, l.right - 1].map((x) => ({ x, y: l.top + l.height / 2 }))),
 					];
-			measure(el, '', text, getComputedStyle(el), undefined, ats);
+			measure(el, '', text, getComputedStyle(el), undefined, ats, 'contents');
 		}
 
 		// 2. Text a form control paints without a DOM text node: its value, or its
@@ -492,13 +515,13 @@ export function renderedContrastAudit(scope?: string): RenderedContrastReport {
 			if (opacity === null) continue;
 			if (el instanceof HTMLSelectElement) {
 				const text = el.selectedOptions[0]?.text.trim() ?? '';
-				if (text) measure(el, '', text, getComputedStyle(el));
+				if (text) measure(el, '', text, getComputedStyle(el), undefined, undefined, 'element');
 				continue;
 			}
 			const input = el as HTMLInputElement | HTMLTextAreaElement;
-			if (input.value.trim()) measure(el, '', input.value.trim(), getComputedStyle(el));
+			if (input.value.trim()) measure(el, '', input.value.trim(), getComputedStyle(el), undefined, undefined, 'element');
 			else if (input.placeholder.trim()) {
-				measure(el, '::placeholder', input.placeholder.trim(), getComputedStyle(el, '::placeholder'));
+				measure(el, '::placeholder', input.placeholder.trim(), getComputedStyle(el, '::placeholder'), undefined, undefined, 'element');
 			}
 		}
 
@@ -513,7 +536,7 @@ export function renderedContrastAudit(scope?: string): RenderedContrastReport {
 				if (ps.visibility !== 'visible' || Number(ps.opacity) <= 0) continue;
 				const opacity = visibleOpacity(el);
 				if (opacity === null) continue;
-				measure(el, pseudo, text, ps, { bg: parse(ps.backgroundColor) ?? [0, 0, 0, 0], op: Number(ps.opacity) });
+				measure(el, pseudo, text, ps, { bg: parse(ps.backgroundColor) ?? [0, 0, 0, 0], op: Number(ps.opacity) }, undefined, 'element');
 			}
 		}
 
@@ -536,20 +559,6 @@ export function renderedContrastAudit(scope?: string): RenderedContrastReport {
 	return { measured, findings, unmeasured, probes };
 }
 
-function _linear(c: number): number {
-	const v = c / 255;
-	return v <= 0.03928 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4;
-}
-
-function _luminance(rgb: readonly number[]): number {
-	return 0.2126 * _linear(rgb[0]) + 0.7152 * _linear(rgb[1]) + 0.0722 * _linear(rgb[2]);
-}
-
-function _ratio(a: readonly number[], b: readonly number[]): number {
-	const la = _luminance(a);
-	const lb = _luminance(b);
-	return (Math.max(la, lb) + 0.05) / (Math.min(la, lb) + 0.05);
-}
 
 function _hex(rgb: readonly number[]): string {
 	return `#${rgb
@@ -558,78 +567,93 @@ function _hex(rgb: readonly number[]): string {
 		.join('')}`;
 }
 
+type _Box = { x: number; y: number; width: number; height: number };
+
+const HIDE_STYLE_ID = 'contrast-backdrop-hide';
+
 /**
- * Text over a replaced `<svg>` (a drawn knob) has no CSS backdrop color, so
- * `renderedContrastAudit` leaves it unmeasured and tags it `svgBackdrop`. This
- * measures it against what the browser actually rendered behind it: the text
- * is made transparent, the element is screenshotted, and the WORST pixel
- * against the text color is the result. That is conservative by design: a
- * pixel of the drawing that clashes with the text fails it, even if most of
- * the box is clear. Translucent pixels stay unmeasured, never guessed.
+ * Measures every finding `renderedContrastAudit` tagged `backdrop` (text over
+ * a gradient or other background-image, a replaced `<svg>`, `<canvas>` or
+ * `<img>`, or a positioned `::before`/`::after` fill) against the pixels the
+ * browser rendered behind it (#5787, #8527, #10368; replaces the svg-only
+ * `sampleSvgBackdrops`). All tagged text is hidden at once (`color:
+ * transparent`, `text-shadow: none`), the viewport is screenshotted once at
+ * device scale 1, and each text box is reduced to its worst ratio: every
+ * pixel for svg, a 3 by 3 grid plus the four edge midpoints otherwise. Text
+ * whose box is off-screen or zero-sized, or whose pixels are translucent,
+ * stays unmeasured; so does text the audit never tagged (filters, canvas
+ * fillText, svg-internal text, faded text).
  */
-export async function sampleSvgBackdrops(
+export async function sampleUnmeasuredBackdrops(
 	page: Page,
 	report: RenderedContrastReport
 ): Promise<RenderedContrastReport> {
+	const tagged = report.unmeasured.filter((u) => u.backdrop);
+	if (tagged.length === 0) return report;
 	const findings = [...report.findings];
-	const unmeasured: UnmeasuredElement[] = [];
+	const probes = [...report.probes];
+	const unmeasured = report.unmeasured.filter((u) => !u.backdrop);
 	let measured = report.measured;
-	for (const u of report.unmeasured) {
-		if (!u.svgBackdrop) {
-			unmeasured.push(u);
-			continue;
-		}
-		const { id, text, fg, size, bold } = u.svgBackdrop;
-		const loc = page.locator(`[data-svg-backdrop="${id}"]`);
-		// The inline color is saved with its priority and put back exactly, so a
-		// second run sees the page it saw the first time.
-		const saved = await loc.evaluate((el) => {
-			const style = (el as HTMLElement).style;
-			const prev = { value: style.getPropertyValue('color'), priority: style.getPropertyPriority('color') };
-			style.setProperty('color', 'transparent', 'important');
-			return prev;
-		});
-		let png: Buffer;
-		try {
-			png = await loc.screenshot({ animations: 'disabled', caret: 'hide' });
-		} catch (err) {
-			unmeasured.push({ el: u.el, why: `${u.why}; screenshot failed: ${String(err)}` });
-			continue;
-		} finally {
-			await loc
-				.evaluate(
-					(el, prev) => {
-						const style = (el as HTMLElement).style;
-						style.removeProperty('color');
-						if (prev.value) style.setProperty('color', prev.value, prev.priority);
-						el.removeAttribute('data-svg-backdrop');
-					},
-					saved
-				)
-				.catch(() => undefined);
-		}
-		const img = PNG.sync.read(png);
-		let worst: { ratio: number; bg: number[] } | null = null;
-		let translucent = false;
-		for (let i = 0; i < img.data.length; i += 4) {
-			if (img.data[i + 3] < 255) {
-				translucent = true;
-				break;
+	let png: Buffer;
+	let boxes: Record<string, _Box>;
+	try {
+		boxes = await page.evaluate(
+			({ styleId, want }) => {
+				const style = document.createElement('style');
+				style.id = styleId;
+				style.textContent =
+					'[data-contrast-backdrop], [data-contrast-backdrop] *, [data-contrast-backdrop]::before, [data-contrast-backdrop]::after ' +
+					'{ color: transparent !important; -webkit-text-fill-color: transparent !important; text-shadow: none !important; caret-color: transparent !important; }';
+				document.head.append(style);
+				const out: Record<string, { x: number; y: number; width: number; height: number }> = {};
+				for (const { id, box } of want) {
+					const el = document.querySelector(`[data-contrast-backdrop="${id}"]`);
+					if (!el) continue;
+					let r: DOMRect;
+					if (box === 'contents') {
+						const range = document.createRange();
+						range.selectNodeContents(el);
+						r = range.getBoundingClientRect();
+					} else if (box === 'element') {
+						r = el.getBoundingClientRect();
+					} else {
+						throw new Error(`unknown backdrop box ${String(box)}`);
+					}
+					out[id] = { x: r.left, y: r.top, width: r.width, height: r.height };
+				}
+				return out;
+			},
+			{ styleId: HIDE_STYLE_ID, want: tagged.map((u) => ({ id: u.backdrop!.id, box: u.backdrop!.box })) }
+		);
+		png = await page.screenshot({ animations: 'disabled', caret: 'hide', scale: 'css' });
+	} finally {
+		await page.evaluate((styleId) => {
+			document.getElementById(styleId)?.remove();
+			for (const el of Array.from(document.querySelectorAll('[data-contrast-backdrop]'))) {
+				el.removeAttribute('data-contrast-backdrop');
 			}
-			const bg = [img.data[i], img.data[i + 1], img.data[i + 2]];
-			const ratio = _ratio(fg, bg);
-			if (!worst || ratio < worst.ratio) worst = { ratio, bg };
+		}, HIDE_STYLE_ID);
+	}
+	const img = PNG.sync.read(png);
+	const image = { width: img.width, height: img.height, data: img.data as Uint8Array };
+	for (const u of tagged) {
+		const { id, via, text, fg, size, bold, probe } = u.backdrop!;
+		const box = boxes[id];
+		if (!box) {
+			unmeasured.push({ el: u.el, why: `${u.why}; element gone before sampling` });
+			continue;
 		}
-		if (translucent || !worst) {
-			unmeasured.push({ el: u.el, why: `${u.why}; ${translucent ? 'translucent pixels' : 'no pixels'}` });
+		const sample = worstBackdropRatio(image, box, fg, via);
+		if ('why' in sample) {
+			unmeasured.push({ el: u.el, why: `${u.why}; ${sample.why}` });
 			continue;
 		}
 		measured++;
-		const displayed = Math.round(worst.ratio * 100) / 100;
-		const need = size >= 24 || (size >= 18.66 && bold) ? 3 : 4.5;
-		if (displayed < need) {
-			findings.push({ el: u.el, text, fg: _hex(fg), bg: _hex(worst.bg), ratio: displayed, need });
-		}
+		const displayed = Math.round(sample.ratio * 100) / 100;
+		const need = requiredRatio(size, bold);
+		const row: ContrastFinding = { el: u.el, text, fg: _hex(fg), bg: _hex(sample.bg), ratio: displayed, need, via };
+		if (probe) probes.push(row);
+		if (displayed < need) findings.push(row);
 	}
-	return { ...report, measured, findings, unmeasured };
+	return { measured, findings, unmeasured, probes };
 }

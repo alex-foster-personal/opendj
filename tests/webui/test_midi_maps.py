@@ -11,6 +11,9 @@ Regression lines:
   if a map id with a path separator escapes the maps dir then broken
   if PUT does not write <data>/state/controller-maps/<id>.json then broken
   if DELETE on an absent id returns 200 then broken
+  if a LedRule with an unknown trigger kind installs then broken
+  if an init message with a 0xF0 status installs then broken
+  if a LedTrigger kind exists in midi-types.ts but not in the daemon then broken
   if a MidiAction kind in midi-types.ts has no server model then broken
   if ccButton installs on a note source or a non-button action then broken
 """
@@ -30,6 +33,7 @@ from apps.webui.server.backend import InMemoryBackend
 from apps.webui.server.routes.midi_maps import (
     _BUTTON_ACTIONS,
     _CONTINUOUS_ACTIONS,
+    _LED_TRIGGER_MODELS,
     _RELATIVE_ACTIONS,
     MidiActionModel,
 )
@@ -331,6 +335,31 @@ def test_deck_beat_loop_invalid_beats_are_refused(beats: float) -> None:
 def test_deck_beat_loop_integer_beats_still_installs(midi_client: TestClient) -> None:
     doc = _doc()
     doc["bindings"][0]["action"] = {"type": "deck_beat_loop", "deck": 1, "beats": 4}
+    r = midi_client.put("/api/v1/midi/maps/test-device", json=doc)
+    assert r.status_code == 200, r.text
+
+
+@pytest.mark.parametrize("beats", [-4, -0.5, 1, 4])
+def test_deck_beat_jump_signed_beats_validate(beats: float) -> None:
+    from apps.webui.server.routes.midi_maps import DeckBeatJump
+
+    action = DeckBeatJump.model_validate({"type": "deck_beat_jump", "deck": 1, "beats": beats})
+    assert action.beats == beats
+
+
+@pytest.mark.parametrize("beats", [0, float("inf"), float("nan")])
+def test_deck_beat_jump_invalid_beats_are_refused(beats: float) -> None:
+    from pydantic import ValidationError
+
+    from apps.webui.server.routes.midi_maps import DeckBeatJump
+
+    with pytest.raises(ValidationError):
+        DeckBeatJump.model_validate({"type": "deck_beat_jump", "deck": 1, "beats": beats})
+
+
+def test_deck_beat_jump_binding_installs(midi_client: TestClient) -> None:
+    doc = _doc()
+    doc["bindings"][0]["action"] = {"type": "deck_beat_jump", "deck": 1, "beats": -4}
     r = midi_client.put("/api/v1/midi/maps/test-device", json=doc)
     assert r.status_code == 200, r.text
 
@@ -653,6 +682,27 @@ def test_catalog_counts_are_reported_so_coverage_is_never_guessed(
     assert body["counts"]["vendor-pdf"] + body["counts"]["mixxx"] == 94
 
 
+@pytest.mark.requirement("CTRL-11712")
+def test_catalog_without_a_bundled_device_store_is_an_explicit_503(
+    midi_client: TestClient,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """[if] catalog dir is absent [then] GET /catalog returns 503 with bundled status, [else stop]."""
+    from apps.webui.server.routes import midi_maps
+
+    no_store = tmp_path / "no-store"
+    monkeypatch.setattr(midi_maps, "_CATALOG_DIR", no_store)
+    expected_devices = str(no_store / "devices")
+    r = midi_client.get("/api/v1/midi/catalog")
+    assert r.status_code == 503
+    detail = r.json()["detail"]
+    assert detail["code"] == "MIDI_CATALOG_UNAVAILABLE"
+    assert detail["status"] == "device store not bundled"
+    assert detail["path"] == expected_devices
+    assert expected_devices in detail["message"]
+
+
 # ----- every page action type installs (#10276) ------------------------------
 
 # One binding per action type the page's MidiAction union can emit
@@ -664,6 +714,7 @@ _EVERY_PAGE_ACTION: list[dict[str, Any]] = [
     {"source": {"ch": 1, "kind": "note", "id": 2}, "action": {"type": "deck_cue", "deck": 1}},
     {"source": {"ch": 1, "kind": "note", "id": 3}, "action": {"type": "deck_hot_cue", "deck": 1, "slot": "A"}},
     {"source": {"ch": 1, "kind": "note", "id": 4}, "action": {"type": "deck_beat_loop", "deck": 1, "beats": 4}},
+    {"source": {"ch": 1, "kind": "note", "id": 27}, "action": {"type": "deck_beat_jump", "deck": 1, "beats": -4}},
     {"source": {"ch": 1, "kind": "note", "id": 5}, "action": {"type": "deck_auto_loop_toggle", "deck": 1}},
     {"source": {"ch": 1, "kind": "note", "id": 6}, "action": {"type": "deck_loop_exit", "deck": 1}},
     {"source": {"ch": 1, "kind": "note", "id": 7}, "action": {"type": "deck_sync_toggle", "deck": 1}},
@@ -693,7 +744,7 @@ _EVERY_PAGE_ACTION: list[dict[str, Any]] = [
 
 def test_every_page_action_type_installs_and_reads_back(midi_client: TestClient) -> None:
     bindings = [{**b, "provenance": _cite()} for b in _EVERY_PAGE_ACTION]
-    assert len({b["action"]["type"] for b in bindings}) == 26
+    assert len({b["action"]["type"] for b in bindings}) == 27
     r = midi_client.put("/api/v1/midi/maps/test-device", json=_doc(bindings=bindings))
     assert r.status_code == 200, r.text
     back = midi_client.get("/api/v1/midi/maps/test-device").json()["bindings"]
@@ -731,6 +782,154 @@ def test_page_actions_keep_the_source_rules(
     assert want in r.json()["detail"]["message"]
 
 
+# ----- feedback output: leds, meters, init (#10058) -------------------------
+
+
+def _led(**over: Any) -> dict[str, Any]:
+    rule: dict[str, Any] = {
+        "trigger": {"kind": "deck_playing", "deck": 1},
+        "out": {"ch": 1, "note": 11, "velocityOn": 127, "velocityOff": 0},
+        "provenance": _cite("vendor-pdf"),
+    }
+    rule.update(over)
+    return rule
+
+
+def _meter(**over: Any) -> dict[str, Any]:
+    rule: dict[str, Any] = {
+        "deck": 1,
+        "out": {"ch": 1, "cc": 2, "maxValue": 127},
+        "provenance": _cite("vendor-pdf"),
+    }
+    rule.update(over)
+    return rule
+
+
+def _init(**over: Any) -> dict[str, Any]:
+    entry: dict[str, Any] = {"message": [0xB0, 2, 1], "provenance": _cite("vendor-pdf")}
+    entry.update(over)
+    return entry
+
+
+def _put_invalid(client: TestClient, doc: dict[str, Any]) -> str:
+    r = client.put("/api/v1/midi/maps/test-device", json=doc)
+    assert r.status_code == 422, r.text
+    assert r.json()["detail"]["code"] == "MIDI_MAP_INVALID"
+    return str(r.json()["detail"]["message"])
+
+
+def test_leds_meters_and_init_round_trip_through_put_and_get(
+    midi_client: TestClient, tmp_path: Path
+) -> None:
+    doc = _doc(leds=[_led()], meters=[_meter()], init=[_init()])
+    r = midi_client.put("/api/v1/midi/maps/test-device", json=doc)
+    assert r.status_code == 200, r.text
+    got = midi_client.get("/api/v1/midi/maps/test-device").json()
+    assert got["leds"][0]["trigger"] == {"kind": "deck_playing", "deck": 1}
+    assert got["leds"][0]["out"] == {"ch": 1, "note": 11, "velocityOn": 127, "velocityOff": 0}
+    assert got["leds"][0]["provenance"]["tier"] == "vendor-pdf"
+    assert got["meters"] == [_meter()]
+    assert got["init"] == [_init()]
+    on_disk = json.loads(
+        (tmp_path / "data" / "state" / "controller-maps" / "test-device.json").read_text()
+    )
+    assert on_disk["init"][0]["message"] == [0xB0, 2, 1]
+
+
+def test_a_document_without_feedback_lists_still_installs_and_reads_back_empty_lists(
+    midi_client: TestClient,
+) -> None:
+    assert midi_client.put("/api/v1/midi/maps/test-device", json=_doc()).status_code == 200
+    got = midi_client.get("/api/v1/midi/maps/test-device").json()
+    assert (got["leds"], got["meters"], got["init"]) == ([], [], [])
+
+
+def test_led_rule_with_an_unknown_trigger_kind_is_refused_with_the_rule_index(
+    midi_client: TestClient,
+) -> None:
+    bad = _led(trigger={"kind": "deck_flashing", "deck": 1})
+    assert "leds[1]" in _put_invalid(midi_client, _doc(leds=[_led(), bad]))
+
+
+@pytest.mark.parametrize("ch", [0, 17])
+def test_led_rule_out_channel_outside_1_to_16_is_refused_with_the_rule_index(
+    midi_client: TestClient, ch: int
+) -> None:
+    bad = _led(out={"ch": ch, "note": 11, "velocityOn": 127, "velocityOff": 0})
+    assert "leds[0].out" in _put_invalid(midi_client, _doc(leds=[bad]))
+
+
+@pytest.mark.parametrize("field", ["leds", "meters", "init"])
+def test_feedback_entry_without_provenance_is_refused(midi_client: TestClient, field: str) -> None:
+    entry = {"leds": _led, "meters": _meter, "init": _init}[field]()
+    del entry["provenance"]
+    assert f"{field}[0]" in _put_invalid(midi_client, _doc(**{field: [entry]}))
+
+
+@pytest.mark.parametrize(
+    "out",
+    [
+        {"ch": 1, "cc": 2, "maxValue": 0},
+        {"ch": 1, "cc": 2, "maxValue": 128},
+        {"ch": 0, "cc": 2, "maxValue": 127},
+        {"ch": 17, "cc": 2, "maxValue": 127},
+    ],
+)
+def test_meter_out_of_range_is_refused(midi_client: TestClient, out: dict[str, int]) -> None:
+    assert "meters[0].out" in _put_invalid(midi_client, _doc(meters=[_meter(out=out)]))
+
+
+@pytest.mark.parametrize(
+    "message",
+    [[0xF0, 0, 0], [0x7F, 0, 0], [0xB0, 128, 0], [0xB0, 2], [0xB0, 2, 1, 0]],
+)
+def test_init_message_must_be_a_channel_voice_triple(
+    midi_client: TestClient, message: list[int]
+) -> None:
+    assert "init[0]" in _put_invalid(midi_client, _doc(init=[_init(message=message)]))
+
+
+_EVERY_TRIGGER: list[dict[str, Any]] = [
+    {"kind": "deck_playing", "deck": 1},
+    {"kind": "deck_loaded", "deck": 2},
+    {"kind": "loop_engaged", "deck": 1},
+    {"kind": "loop_beats_engaged", "deck": 1, "beats": 0.5},
+    {"kind": "beat_sync_enabled", "deck": 1},
+    {"kind": "beat_sync_effective", "deck": 1},
+    {"kind": "stem_eq_enabled", "deck": 1},
+    {"kind": "stem_active", "deck": 1, "stem": "drums"},
+    {"kind": "stem_solo", "deck": 1, "stem": "vocal"},
+    {"kind": "pad_mode_selected", "deck": 1, "mode": "hot_cue"},
+    {"kind": "hot_cue_present", "deck": 1, "slot": "A", "padMode": "hot_cue"},
+    {"kind": "channel_cue_enabled", "deck": 1},
+]
+
+
+def test_every_runtime_led_trigger_kind_installs(midi_client: TestClient) -> None:
+    leds = [
+        _led(trigger=t, out={"ch": 1, "note": n, "velocityOn": 127, "velocityOff": 0})
+        for n, t in enumerate(_EVERY_TRIGGER)
+    ]
+    r = midi_client.put("/api/v1/midi/maps/test-device", json=_doc(leds=leds))
+    assert r.status_code == 200, r.text
+    got = midi_client.get("/api/v1/midi/maps/test-device").json()["leds"]
+    assert [rule["trigger"]["kind"] for rule in got] == [t["kind"] for t in _EVERY_TRIGGER]
+
+
+def test_led_trigger_kinds_match_midi_types_ts() -> None:
+    ts = (
+        Path(__file__).resolve().parents[2]
+        / "apps/webui/frontend/src/lib/rb/midi/midi-types.ts"
+    ).read_text(encoding="utf-8")
+    block = ts[ts.index("export type LedTrigger =") : ts.index("export interface LedRule")]
+    ts_kinds = set(re.findall(r"kind: '(\w+)'", block))
+    py_kinds = {
+        get_args(model.model_fields["kind"].annotation)[0] for model in _LED_TRIGGER_MODELS
+    }
+    assert ts_kinds == py_kinds
+    assert {t["kind"] for t in _EVERY_TRIGGER} == py_kinds
+
+
 # ----- runtime union parity and ccButton rules (#10052) ---------------------
 
 _REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -754,7 +953,7 @@ def _dense(action: dict[str, Any]) -> dict[str, Any]:
 
 def test_server_action_models_match_the_runtime_union_both_ways() -> None:
     runtime, server = _runtime_action_kinds(), _server_action_kinds()
-    assert len(runtime) >= 26, f"parsed too few kinds from midi-types.ts: {sorted(runtime)}"
+    assert len(runtime) >= 27, f"parsed too few kinds from midi-types.ts: {sorted(runtime)}"
     assert runtime - server == set(), "runtime kinds the installer refuses: add a pydantic model"
     assert server - runtime == set(), "server kinds the runtime never emits"
 

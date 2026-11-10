@@ -30,7 +30,9 @@ Two operations, matching the two buttons:
   times by "one beat" would have no single length. Stored modulo the bar,
   normalized to ``-1..2``.
 
-A third operation, tempo anchors (GRIDEDIT-10220), is rekordbox's dynamic
+A third operation, anchor/BPM retempo (issue #11138), rebuilds every beat time
+at a new constant tempo with one grid line fixed; the math lives in
+``grid_edit_bpm``. A fourth operation, tempo anchors (GRIDEDIT-10220), is rekordbox's dynamic
 grid edit: ``anchors`` is a sorted list of ``{"at_s", "bpm"}``. ``at_s`` is in
 SERVED time (after the offset; order is offset, anchors, then the bar 1
 relabel). Each anchor snaps to the current grid line nearest ``at_s`` and
@@ -120,14 +122,20 @@ class GridEdit:
     offset_ms: float = 0.0
     beat_shift: int = 0
     anchors: tuple[Anchor, ...] = ()
+    #: Constant-tempo override; paired with ``anchor_t`` in served time (after offset).
+    bpm: float | None = None
+    anchor_t: float | None = None
 
     def is_identity(self) -> bool:
-        return self.offset_ms == 0.0 and self.beat_shift == 0 and not self.anchors
+        return self.offset_ms == 0.0 and self.beat_shift == 0 and not self.anchors and self.bpm is None
 
     def as_dict(self) -> dict[str, Any]:
         out: dict[str, Any] = {"offset_ms": self.offset_ms, "beat_shift": self.beat_shift}
         if self.anchors:
             out["anchors"] = [anchor.as_dict() for anchor in self.anchors]
+        if self.bpm is not None:
+            out["bpm"] = self.bpm
+            out["anchor_t"] = self.anchor_t
         return out
 
 
@@ -167,6 +175,24 @@ def _checked_anchor(at_s: float, bpm: float) -> Anchor:
     return Anchor(at_s=round(at_s, ANCHOR_AT_DECIMALS) + 0.0, bpm=rounded_bpm + 0.0)
 
 
+def _checked_bpm_override(bpm: float | None, anchor_t: float | None) -> tuple[float | None, float | None]:
+    """A user BPM override and the served-time anchor it is tied to."""
+    if bpm is None and anchor_t is None:
+        return None, None
+    if bpm is None or anchor_t is None:
+        raise GridEditError(422, "GRID_EDIT_INVALID", "bpm and anchor_t must be set together or both omitted")
+    if isinstance(bpm, bool) or not isinstance(bpm, (int, float)) or not math.isfinite(bpm):
+        raise GridEditError(422, "GRID_EDIT_INVALID", f"bpm must be a finite number, got {bpm!r}")
+    rounded_bpm = round(float(bpm), BPM_DECIMALS) + 0.0
+    if not MIN_BPM <= rounded_bpm <= MAX_BPM:
+        raise GridEditError(
+            422, "GRID_EDIT_OUT_OF_RANGE", f"grid BPM {rounded_bpm:g} is outside {MIN_BPM:g}..{MAX_BPM:g}"
+        )
+    if not math.isfinite(anchor_t):
+        raise GridEditError(422, "GRID_EDIT_INVALID", f"anchor_t must be finite, got {anchor_t!r}")
+    return rounded_bpm, round(float(anchor_t), ANCHOR_AT_DECIMALS) + 0.0
+
+
 def _checked_anchors(anchors: Sequence[Anchor]) -> tuple[Anchor, ...]:
     checked = sorted((_checked_anchor(a.at_s, a.bpm) for a in anchors), key=lambda a: a.at_s)
     if len(checked) > MAX_ANCHORS:
@@ -176,12 +202,22 @@ def _checked_anchors(anchors: Sequence[Anchor]) -> tuple[Anchor, ...]:
     return tuple(checked)
 
 
-def make_edit(offset_ms: float, beat_shift: int, *, anchors: Sequence[Anchor] = ()) -> GridEdit:
+def make_edit(
+    offset_ms: float,
+    beat_shift: int,
+    *,
+    anchors: Sequence[Anchor] = (),
+    bpm: float | None = None,
+    anchor_t: float | None = None,
+) -> GridEdit:
     """A validated, normalized edit (absolute values)."""
+    checked_bpm, checked_anchor_t = _checked_bpm_override(bpm, anchor_t)
     return GridEdit(
         offset_ms=_checked_offset(offset_ms),
         beat_shift=normalize_beat_shift(beat_shift),
         anchors=_checked_anchors(anchors),
+        bpm=checked_bpm,
+        anchor_t=checked_anchor_t,
     )
 
 
@@ -198,7 +234,9 @@ def with_anchor(edit: GridEdit, at_s: float, bpm: float) -> GridEdit:
     hit = _nearest_anchor_index(anchors, new.at_s)
     if hit is not None:
         del anchors[hit]
-    return make_edit(edit.offset_ms, edit.beat_shift, anchors=[*anchors, new])
+    return make_edit(
+        edit.offset_ms, edit.beat_shift, anchors=[*anchors, new], bpm=edit.bpm, anchor_t=edit.anchor_t
+    )
 
 
 def without_anchor(edit: GridEdit, at_s: float) -> GridEdit:
@@ -207,7 +245,7 @@ def without_anchor(edit: GridEdit, at_s: float) -> GridEdit:
     if hit is None:
         raise GridEditError(404, "GRID_ANCHOR_NOT_FOUND", f"no tempo anchor near {at_s:g} s")
     anchors = [a for i, a in enumerate(edit.anchors) if i != hit]
-    return make_edit(edit.offset_ms, edit.beat_shift, anchors=anchors)
+    return make_edit(edit.offset_ms, edit.beat_shift, anchors=anchors, bpm=edit.bpm, anchor_t=edit.anchor_t)
 
 
 def nudged(edit: GridEdit, *, offset_ms: float = 0.0, beats: int = 0) -> GridEdit:
@@ -223,7 +261,9 @@ def nudged(edit: GridEdit, *, offset_ms: float = 0.0, beats: int = 0) -> GridEdi
     target = edit.offset_ms + offset_ms
     if abs(target) > MAX_OFFSET_MS and abs(edit.offset_ms) < MAX_OFFSET_MS:
         target = math.copysign(MAX_OFFSET_MS, target)
-    return make_edit(target, edit.beat_shift + beats, anchors=edit.anchors)
+    return make_edit(
+        target, edit.beat_shift + beats, anchors=edit.anchors, bpm=edit.bpm, anchor_t=edit.anchor_t
+    )
 
 
 def relabel_beat_number(n: int, beat_shift: int) -> int:
@@ -290,12 +330,18 @@ def _offset_markers(markers: Sequence[Mapping[str, Any]], offset_ms: float) -> l
     return [{**m, "at_s": round(float(m["at_s"]) + offset_s, 6)} for m in markers]
 
 
+from apps.shared.state.grid_edit_bpm import rebuild_beats_at_bpm
+
+
 def _edited_grid(
     beats: Sequence[Mapping[str, Any]], markers: Sequence[Mapping[str, Any]], edit: GridEdit
 ) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
-    """Offset, then anchors, then the bar 1 relabel."""
+    """Offset, then BPM override, then tempo anchors, then the bar 1 relabel."""
     moved = _offset_beats(beats, edit.offset_ms)
     moved_markers = _offset_markers(markers, edit.offset_ms) if edit.offset_ms != 0.0 else [dict(m) for m in markers]
+    if edit.bpm is not None and edit.anchor_t is not None and moved:
+        moved = rebuild_beats_at_bpm(moved, edit.anchor_t, edit.bpm)
+        moved_markers = []
     if edit.anchors and moved:
         moved, moved_markers = _anchored_grid(moved, moved_markers, edit.anchors)
     if edit.beat_shift != 0:
@@ -360,7 +406,9 @@ def apply_to_payload(payload: dict[str, Any], edit: GridEdit, source: GridSource
     # Markers move with the offset whether or not this payload carries beats,
     # so a stamped edit never leaves them at their measured times (Sol P1, #6235).
     changes = payload.get("tempo_changes")
-    if changes and edit.offset_ms != 0.0:
+    if changes and edit.bpm is not None:
+        payload["tempo_changes"] = []
+    elif changes and edit.offset_ms != 0.0:
         offset_s = edit.offset_ms / 1000.0
         payload["tempo_changes"] = [
             {**change, "at_s": round(float(change["at_s"]) + offset_s, 6)} for change in changes
@@ -408,7 +456,7 @@ def _parse_blob(stable_id: str, raw: str) -> dict[str, GridEdit]:
 
 _REQUIRED_KEYS: Final = frozenset({"offset_ms", "beat_shift"})
 # Optional keys compose as required <= keys <= allowed (#10112 adds "bpm" here).
-_ALLOWED_KEYS: Final = _REQUIRED_KEYS | {"anchors"}
+_ALLOWED_KEYS: Final = _REQUIRED_KEYS | {"anchors", "bpm", "anchor_t"}
 
 
 def _finite_number(value: object) -> bool:
@@ -441,7 +489,30 @@ def _parse_edit(where: str, edit: object) -> GridEdit:
     if isinstance(beat_shift, bool) or not isinstance(beat_shift, int):
         raise ValueError(f"{where} beat_shift is not an integer: {beat_shift!r}")
     anchors = _parse_anchors(where, edit["anchors"]) if "anchors" in edit else ()
-    return make_edit(float(offset_ms), beat_shift, anchors=anchors)
+    bpm = edit.get("bpm")
+    anchor_t = edit.get("anchor_t")
+    if (bpm is None) != (anchor_t is None):
+        raise ValueError(f"{where} bpm and anchor_t must be paired: {edit!r}")
+    if bpm is not None and (
+        isinstance(bpm, bool)
+        or not isinstance(bpm, (int, float))
+        or not math.isfinite(bpm)
+        or not MIN_BPM <= float(bpm) <= MAX_BPM
+    ):
+        raise ValueError(f"{where} bpm is out of range or not a finite number: {bpm!r}")
+    if anchor_t is not None and (
+        isinstance(anchor_t, bool)
+        or not isinstance(anchor_t, (int, float))
+        or not math.isfinite(anchor_t)
+    ):
+        raise ValueError(f"{where} anchor_t is not a finite number: {anchor_t!r}")
+    return make_edit(
+        float(offset_ms),
+        beat_shift,
+        anchors=anchors,
+        bpm=None if bpm is None else float(bpm),
+        anchor_t=None if anchor_t is None else float(anchor_t),
+    )
 
 
 def read(conn: sqlite3.Connection, stable_id: str) -> StoredGridEdits:
@@ -555,6 +626,7 @@ __all__ = [
     "nudged",
     "previous",
     "read",
+    "rebuild_beats_at_bpm",
     "relabel_beat_number",
     "with_anchor",
     "with_edit",

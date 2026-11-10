@@ -47,7 +47,7 @@ from apps.ableton_link.link_clock import DEFAULT_QUANTUM, beat_at_time, link_now
 from apps.b2b_session.b2b_cursor import CursorSlot
 from apps.b2b_session.b2b_shout import ShoutOutbox
 from apps.b2b_session.on_air import OnAirContext
-from apps.b2b_session.peer_now_playing import shape_now_playing
+from apps.b2b_session.peer_now_playing import MAX_MIRROR_AGE_S, shape_now_playing
 
 # ----------------------------------------------------------------------------- config
 #: The demo DJ's name everywhere a peer name shows (PEER row, bubbles, people list).
@@ -545,7 +545,7 @@ class DemoSession:
         assert self.link is not None
         with self._lock:
             mirror = demo_mirror(self.script_s, self.tracks, (self.positions_s[0], self.positions_s[1]), self.link.bpm)
-        answer = shape_now_playing(mirror, 0.0, DEMO_MACHINE, 3.0, OnAirContext.demo())
+        answer = shape_now_playing(mirror, 0.0, DEMO_MACHINE, MAX_MIRROR_AGE_S, OnAirContext.demo())
         by_id = {track.stable_id: track for track in self.tracks}
         for deck in answer["decks"]:
             track = by_id[deck["stable_id"]]

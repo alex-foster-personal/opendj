@@ -40,6 +40,11 @@ let backendProc;
 let apiOrigin;
 let realFetch;
 
+// Snapshot Node's HTTP client at module load. Parallel unit files
+// (`--test-concurrency=4`) replace `globalThis.fetch`; capturing later
+// would pin a stub and send prefs PUTs at this file's midi daemon.
+const nativeFetch = globalThis.fetch.bind(globalThis);
+
 /** Boot the throwaway real backend and wait for real readiness (staged boot
  * progress, then a real GET of the maps route); see midi-maps-test-server.mjs.
  * Never fabricates a port: reads back whatever uvicorn actually bound. */
@@ -49,14 +54,30 @@ async function _startBackend() {
 	return server.port;
 }
 
-/** Route any '/api/...' path at the real backend origin, exactly what the
- * Vite dev proxy does in production - the real fetch still runs. */
+/** Route only midi-maps API paths at the throwaway daemon. Every other
+ * URL (absolute prefs recorders, other files' stubs) uses native fetch so
+ * this file cannot steal `--test-concurrency=4` neighbours. */
+function _midiMapsAbsolute(url) {
+	if (typeof url !== 'string') return null;
+	if (url.startsWith('/api/v1/midi/')) return `${apiOrigin}${url}`;
+	try {
+		const parsed = new URL(url);
+		if (parsed.pathname.startsWith('/api/v1/midi/')) {
+			return `${apiOrigin}${parsed.pathname}${parsed.search}`;
+		}
+	} catch {
+		return null;
+	}
+	return null;
+}
+
 function _installRealFetchProxy() {
-	realFetch = globalThis.fetch;
+	realFetch = nativeFetch;
 	globalThis.fetch = (input, init) => {
 		const url = typeof input === 'string' ? input : input.url;
-		const absolute = /^https?:\/\//.test(url) ? url : `${apiOrigin}${url}`;
-		return realFetch(absolute, init);
+		const routed = _midiMapsAbsolute(url);
+		if (routed) return nativeFetch(routed, init);
+		return nativeFetch(input, init);
 	};
 }
 
@@ -97,8 +118,8 @@ before(async () => {
 });
 
 after(async () => {
+	globalThis.fetch = nativeFetch;
 	await vite?.close();
-	if (realFetch) globalThis.fetch = realFetch;
 	// Tree kill, not `kill()`: on Windows that ends uv.exe only and the
 	// orphaned python server holds this file's stdout pipe open forever.
 	killProcessTree(backendProc);
@@ -288,7 +309,59 @@ test('a backend error propagates instead of resolving to an empty registry', asy
 		}
 		return response;
 	};
-	await assert.rejects(() => installed.loadInstalledDeviceMaps(), /no installed map with id 'test-device'/);
+	try {
+		await assert.rejects(() => installed.loadInstalledDeviceMaps(), /no installed map with id 'test-device'/);
+	} finally {
+		globalThis.fetch = proxied;
+	}
+});
+
+// ------------------------------------------- feedback output (#10058)
+
+// Fixture numbers only, not claimed hardware numbers.
+const _FB_CITE = { tier: 'vendor-pdf', cite: 'fixture, not hardware', verified: false };
+const FEEDBACK_DOC = {
+	...DOC,
+	leds: [
+		{
+			trigger: { kind: 'deck_playing', deck: 1 },
+			padMode: null,
+			out: { ch: 1, note: 11, velocityOn: 127, velocityOff: 0 },
+			provenance: _FB_CITE
+		}
+	],
+	meters: [{ deck: 1, out: { ch: 1, cc: 2, maxValue: 127 }, provenance: _FB_CITE }],
+	init: [{ message: [0xb0, 0x02, 0x01], provenance: _FB_CITE }]
+};
+
+test('deviceMapFromDoc hands leds, meters and init to the runtime map without provenance', () => {
+	const map = installed.deviceMapFromDoc(FEEDBACK_DOC);
+	assert.equal(map.leds.length, 1);
+	assert.equal('provenance' in map.leds[0], false);
+	assert.equal('padMode' in map.leds[0], false);
+	assert.deepEqual(map.leds[0].trigger, { kind: 'deck_playing', deck: 1 });
+	assert.deepEqual(map.meters, [{ deck: 1, out: { ch: 1, cc: 2, maxValue: 127 } }]);
+	assert.deepEqual(map.init, [[0xb0, 0x02, 0x01]]);
+});
+
+test('a bindings-only doc yields a runtime map with no leds, meters or init keys', () => {
+	const map = installed.deviceMapFromDoc({ ...DOC, leds: [], meters: [], init: [] });
+	assert.equal('leds' in map, false);
+	assert.equal('meters' in map, false);
+	assert.equal('init' in map, false);
+});
+
+test('an installed map with leds is what resolveMapForPort returns (the LED test reads it)', async () => {
+	await _install(FEEDBACK_DOC);
+	await installed.loadInstalledDeviceMaps();
+	const map = webmidi.resolveMapForPort('TestDevice 1');
+	assert.equal(map.leds.length, 1);
+	assert.deepEqual(map.init, [[0xb0, 0x02, 0x01]]);
+});
+
+test('validateDeviceMap refuses an init triple with a system status byte', () => {
+	const map = installed.deviceMapFromDoc(DOC);
+	assert.throws(() => webmidi.validateDeviceMap({ ...map, init: [[0xf0, 0, 0]] }), /init\[0\]/);
 });
 
 const PROV = { tier: 'learned', cite: 'learn wizard, port TestDevice', verified: true };

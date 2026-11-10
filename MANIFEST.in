@@ -1,5 +1,6 @@
 include apps/webui/server/native/waveform/Cargo.toml
 include apps/webui/server/native/waveform/Cargo.lock
 recursive-include apps/webui/server/native/waveform/src *.rs
+include apps/webui/server/crowd_requests_denylist.txt
 include apps/tags/title_fix_vocab.json
 include apps/sync_hub/data_classes_ignored.json

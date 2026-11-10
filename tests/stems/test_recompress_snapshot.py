@@ -127,7 +127,12 @@ def test_a_publish_after_the_unlocked_copy_is_not_clobbered(tmp_path: Path, monk
         copy(src, dst)
         monkeypatch.undo()  # the publisher's own volume takes links again
         bundle_publish.publish_stems_local(
-            "racing", Path("/music/a.mp3"), fresh, bundle_publish.PRESETS["hdemucs_mmi-ov0.25"], data
+            "racing",
+            Path("/music/a.mp3"),
+            fresh,
+            bundle_publish.PRESETS["hdemucs_mmi-ov0.25"],
+            data,
+            requested_codec="flac",
         )
         published.append(_snapshot(bundle))
 

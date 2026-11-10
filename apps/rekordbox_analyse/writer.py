@@ -32,7 +32,13 @@ from typing import Any
 
 import psutil
 
-from apps.rekordbox_analyse.plan import ANALYSE_ME_PLAYLIST, VIVA_TARGET_PLAYLIST, AnalysePlan, normalise_path
+from apps.rekordbox_analyse.plan import (
+    ANALYSE_ME_PLAYLIST,
+    VIVA_TARGET_PLAYLIST,
+    AnalysePlan,
+    normalise_path,
+    playlists_by_name,
+)
 from apps.rekordbox_analyse.snapshot import (
     RbSnapshot,
     copy_with_sidecars,
@@ -317,12 +323,12 @@ def _verify(plan: AnalysePlan, before: RbSnapshot, after: RbSnapshot, integrity:
         missing = sorted(expected_paths - set(after_by_path))[:5]
         extra = sorted(set(after_by_path) - expected_paths)[:5]
         problems.append(f"collection differs from plan: missing {missing}, unexpected {extra}")
-    playlists = {pl.name: pl for pl in after.playlists}
-    analyse_me = playlists.get(ANALYSE_ME_PLAYLIST)
+    after_by_name = playlists_by_name(after.playlists)
+    analyse_me = after_by_name.get(ANALYSE_ME_PLAYLIST)
     if analyse_me is None:
         problems.append(f"{ANALYSE_ME_PLAYLIST} missing after write")
     else:
-        before_pl = {pl.name: pl for pl in before.playlists}.get(ANALYSE_ME_PLAYLIST)
+        before_pl = playlists_by_name(before.playlists).get(ANALYSE_ME_PLAYLIST)
         expected = set(before_pl.member_ids) if before_pl else set()
         expected |= {after_by_path[p] for p in plan.add_paths if p in after_by_path}
         expected |= set(plan.playlist_add_ids)
@@ -330,7 +336,7 @@ def _verify(plan: AnalysePlan, before: RbSnapshot, after: RbSnapshot, integrity:
         if set(analyse_me.member_ids) != expected:
             problems.append(f"{ANALYSE_ME_PLAYLIST} members differ from plan")
     if plan.viva_add_paths or plan.viva_add_ids:
-        viva = playlists.get(VIVA_TARGET_PLAYLIST)
+        viva = after_by_name.get(VIVA_TARGET_PLAYLIST)
         wanted = {after_by_path[p] for p in plan.viva_add_paths if p in after_by_path} | set(plan.viva_add_ids)
         if viva is None or not wanted <= set(viva.member_ids):
             problems.append(f"{VIVA_TARGET_PLAYLIST} is missing planned members")

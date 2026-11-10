@@ -1,0 +1,9 @@
+{
+  "bytes": 1024,
+  "measured_main": 23822,
+  "measured_with_pr": 24110,
+  "sha": "7f282ddc04",
+  "date": "Tue 10 Nov 2026",
+  "reason": "PR #10524 grows the practice-replica surface; measured +288 B gzip over main; ceiled to KiB.",
+  "payback": "none planned; the growth is the feature's own code on this surface"
+}

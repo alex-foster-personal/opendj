@@ -51,7 +51,7 @@ def app(tmp_path, monkeypatch):
     created by the production migrations, ``MDT_DATA_DIR`` points the drain's
     subprocess at that same file, and the drain runs the real
     ``apps.analysis.run`` CLI. Same fixture main already uses for this router
-    in tests/webui/test_ingest_routes.py.
+    in (private path).
     """
     data_dir = tmp_path / "data"
     state_db = data_dir / "state" / "state.db"
@@ -77,6 +77,7 @@ def app(tmp_path, monkeypatch):
         frontend_port=19733,
     )
     app.state.state_db = state_db
+    app.state.data_dir = data_dir
     return app
 
 
@@ -229,7 +230,9 @@ def _a_library_too_big_to_scan_quickly(app, tmp_path, *, min_window_s: float):
     _seed(app, "slow0001", _audio(tmp_path, "slow.mp3"))
 
     started = time.perf_counter()
-    backlog = ingest_mod.unmapped_backlog()
+    from apps.webui.server.auto_analyze_prefs import DEFAULT_AUTO_LANES
+
+    backlog = ingest_mod.unmapped_backlog(lanes=DEFAULT_AUTO_LANES)
     measured = time.perf_counter() - started
 
     assert backlog.pending_total == 1, (

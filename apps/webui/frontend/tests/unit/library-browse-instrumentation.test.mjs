@@ -109,7 +109,11 @@ test('a keystroke burst coalesces into ONE settle carrying the last query', () =
 	mock.timers.enable({ apis: ['setTimeout', 'Date'] });
 	try {
 		const settled = [];
-		const debounce = lib.createFilterDebounce((s) => settled.push(s), 80);
+		const debounce = lib.createFilterDebounce(
+			(s) => settled.push(s),
+			80,
+			() => Date.now()
+		);
 		for (const q of ['d', 'de', 'dee', 'deep', 'deep ', 'deep h']) {
 			debounce.push(q);
 			mock.timers.tick(10);
@@ -128,6 +132,7 @@ test('a keystroke burst coalesces into ONE settle carrying the last query', () =
 			6,
 			'if the coalesced count is lost then the ring cannot show a burst as a burst'
 		);
+		assert.equal(settled[0].keyAt.length, 6);
 		assert.ok(
 			settled[0].coalescedMs >= 80 + 50,
 			'coalescedMs must span the FIRST keystroke to the settle (50 ms of typing ' +
@@ -142,7 +147,11 @@ test('a keystroke after the window starts a fresh interaction', () => {
 	mock.timers.enable({ apis: ['setTimeout', 'Date'] });
 	try {
 		const settled = [];
-		const debounce = lib.createFilterDebounce((s) => settled.push(s), 80);
+		const debounce = lib.createFilterDebounce(
+			(s) => settled.push(s),
+			80,
+			() => Date.now()
+		);
 		debounce.push('a');
 		mock.timers.tick(80);
 		debounce.push('ab');
@@ -162,7 +171,11 @@ test('cancel drops a pending settle and flush runs it immediately', () => {
 	mock.timers.enable({ apis: ['setTimeout', 'Date'] });
 	try {
 		const settled = [];
-		const debounce = lib.createFilterDebounce((s) => settled.push(s), 80);
+		const debounce = lib.createFilterDebounce(
+			(s) => settled.push(s),
+			80,
+			() => Date.now()
+		);
 		debounce.push('house');
 		assert.equal(debounce.pending, true);
 		debounce.cancel();
@@ -191,7 +204,9 @@ test('one settled filter interaction emits exactly one library-filter ring row',
 		coalescedMs: 130,
 		computeMs: 41.6,
 		rowsIn: 8355,
-		rowsOut: 27
+		rowsOut: 27,
+		keystrokeMs: [130, 120, 110, 100, 90, 80],
+		dropped: 0
 	});
 	const rows = rowsSince(mark);
 	assert.equal(
@@ -206,8 +221,10 @@ test('one settled filter interaction emits exactly one library-filter ring row',
 		coalesced_ms: 130,
 		compute_ms: 42,
 		rows_in: 8355,
-		rows_out: 27
+		rows_out: 27,
+		dropped: 0
 	});
+	assert.deepEqual(rows[0].series, { keystroke_ms: [130, 120, 110, 100, 90, 80] });
 });
 
 test('library load rows name the source and carry the walked row count', () => {

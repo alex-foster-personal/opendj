@@ -48,6 +48,8 @@ ROLES: tuple[Role, ...] = ("out", "in")
 MAX_WINDOW_BARS = 64
 #: How many fallback bars to offer when a track has no phrase analysis.
 FALLBACK_BARS = 32
+#: Fewer bars than this on an outro out window is flagged for later refusal (#11180).
+MIN_BLEND_BARS = 4
 
 _OUT_LABEL_WEIGHT = {OUTRO: 1.0, BREAKDOWN: 0.8, BRIDGE: 0.7, INSTRUMENTAL: 0.7}
 _IN_LABEL_WEIGHT = {INTRO: 1.0, BUILD: 0.8, INSTRUMENTAL: 0.7}
@@ -71,6 +73,8 @@ class MixWindow:
     score: float
     reason: str
     pinned: bool = False
+    #: Outro tail shorter than 4 bars on the grid (issue #11180); later blends may refuse.
+    too_short: bool = False
 
     def summary(self) -> dict[str, Any]:
         return {
@@ -83,6 +87,7 @@ class MixWindow:
             "peak_bar": self.peak_bar,
             "score": round(self.score, 3),
             "reason": self.reason,
+            "too_short": self.too_short,
         }
 
 
@@ -139,6 +144,7 @@ def _out_window(profile: TrackProfile, start_bar: int, label: str, why: str) -> 
         peak_bar=None,
         score=score,
         reason="; ".join(reasons),
+        too_short=label == OUTRO and max_bars < MIN_BLEND_BARS,
     )
 
 

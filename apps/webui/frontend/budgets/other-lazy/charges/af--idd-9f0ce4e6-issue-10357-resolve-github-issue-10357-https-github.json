@@ -1,0 +1,9 @@
+{
+  "bytes": 1024,
+  "measured_main": 503710,
+  "measured_with_pr": 503853,
+  "sha": "8fdd415fe6",
+  "date": "Tue 10 Nov 2026",
+  "reason": "Issue #10357 adds tempo-keys pure helpers referenced from lazy performance chunks; measured +143 B gzip over main at merge base 10c9ddaeaf; ceiled to KiB.",
+  "payback": "none planned; the growth is the feature's own module on lazy chunks"
+}

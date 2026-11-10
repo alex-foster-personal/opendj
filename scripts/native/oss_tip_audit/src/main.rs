@@ -462,7 +462,7 @@ fn relax(e: &Expr) -> Result<Expr, String> {
         Expr::Empty | Expr::Any { .. } | Expr::Literal { .. } | Expr::Delegate { .. } => e.clone(),
         Expr::Concat(v) => Expr::Concat(v.iter().map(relax).collect::<Result<_, _>>()?),
         Expr::Alt(v) => Expr::Alt(v.iter().map(relax).collect::<Result<_, _>>()?),
-        Expr::Group(c) => Expr::Group(Box::new(relax(c)?)),
+        Expr::Group(c) => Expr::Group(std::sync::Arc::new(relax(c)?)),
         Expr::Repeat {
             child,
             lo,
@@ -478,13 +478,21 @@ fn relax(e: &Expr) -> Result<Expr, String> {
     })
 }
 
+/// fancy-regex 0.20 dropped `Delegate::size`; its delegates are single atoms
+/// (a class, a Perl class or a Unicode property), each one character wide.
+fn delegate_is_one_char(inner: &str) -> bool {
+    (inner.starts_with('[') && inner.ends_with(']'))
+        || matches!(inner, r"\d" | r"\D" | r"\w" | r"\W" | r"\s" | r"\S")
+        || ((inner.starts_with(r"\p{") || inner.starts_with(r"\P{")) && inner.ends_with('}'))
+}
+
 /// (min, max) characters consumed; max None when unbounded or unknown.
 fn width(e: &Expr) -> (usize, Option<usize>) {
     match e {
         Expr::Empty | Expr::Assertion(_) | Expr::LookAround(..) => (0, Some(0)),
         Expr::Any { .. } => (1, Some(1)),
         Expr::Literal { val, .. } => (val.chars().count(), Some(val.chars().count())),
-        Expr::Delegate { size, .. } if *size == 1 => (1, Some(1)),
+        Expr::Delegate { inner, .. } if delegate_is_one_char(inner) => (1, Some(1)),
         Expr::Concat(v) => v.iter().map(width).fold((0, Some(0)), |(a, b), (c, d)| {
             (a + c, b.zip(d).map(|(x, y)| x + y))
         }),
@@ -662,7 +670,7 @@ type Span = (usize, usize, Option<(usize, usize)>);
 fn find_all(text: &str, p: &Pattern) -> Result<Vec<Span>, String> {
     let err = |e: fancy_regex::Error| format!("regex-error:{e}");
     let mut out = Vec::new();
-    let span = |caps: fancy_regex::Captures| -> Result<Span, String> {
+    let span = |caps: fancy_regex::Captures<str>| -> Result<Span, String> {
         let m = caps.get(0).ok_or("match without group 0")?;
         Ok((
             m.start(),

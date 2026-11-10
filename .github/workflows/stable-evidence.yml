@@ -58,7 +58,9 @@ env:
 jobs:
   append:
     name: Append suite results
-    runs-on: ${{ fromJSON(vars.CI_RUNS_ON_LINUX || '"ubuntu-latest"') }}
+    # Pinned to nucbox (#11341, audit #4264 F6): the release gate reads this
+    # host's $HOME evidence, so a run on another linux host is invisible.
+    runs-on: ${{ fromJSON(vars.CI_RUNS_ON_UNPRIVILEGED_LINUX) }}
     # A reconcile pass lists 31 days of runs on top of the plain pass: 30 days read
     # 22,130 runs in 276 calls and 957 s on Tue 29 Sep 2026.
     timeout-minutes: ${{ (github.event.schedule == '41 4 * * *' || inputs.reconcile) && 30 || 10 }}

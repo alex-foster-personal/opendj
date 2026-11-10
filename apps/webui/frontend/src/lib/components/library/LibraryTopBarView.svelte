@@ -344,4 +344,15 @@
 		flex: 0 0 22px;
 		height: 20px;
 	}
+
+	.pages-list a:focus-visible {
+		/* A11Y-11403: keyboard focus ring paired with this file's outline reset. */
+		outline: 2px solid var(--rb-focus-ring);
+		outline-offset: 2px;
+	}
+	a.mode-card:focus-visible {
+		/* A11Y-11403: keyboard focus ring paired with this file's outline reset. */
+		outline: 2px solid var(--rb-focus-ring);
+		outline-offset: 2px;
+	}
 </style>

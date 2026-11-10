@@ -54,7 +54,7 @@ class StyleSummary(_Wire):
     # min_body_fade_bars, pre_hit_db), null for a fixed style; the Spotify transition it mirrors, or null.
     params: StyleParamsWire | None
     spotify: str | None
-    # The tempo mode the style's plans carry: "none" for cut, drop_swap and echo_out, else "sync_to_out".
+    # The tempo mode the style's plans carry: "none" for cut, drop_swap, echo_out and noise_build, else "sync_to_out".
     tempo_mode: str = "sync_to_out"
 
 
@@ -157,6 +157,20 @@ class HotCue:
 
 
 @dataclass(frozen=True)
+class MikBoundary:
+    """One Mixed In Key energy step on the profile bar clock (fractional bar at ``start_s``)."""
+
+    bar: float
+    snapped_bar: int | None
+    level_before: int
+    level_after: int
+
+
+#: Snap a boundary to the nearest downbeat when it falls within this many bars (one beat in 4/4).
+MIK_BOUNDARY_SNAP_BARS = 0.25
+
+
+@dataclass(frozen=True)
 class TrackProfile:
     stable_id: str
     title: str | None
@@ -188,6 +202,14 @@ class TrackProfile:
     #: band (0..1, like ``bar_bass``); None when the waveform is mono or absent.
     bar_mid: tuple[float, ...] | None = None
     bar_high: tuple[float, ...] | None = None
+    #: MIK levels per bar (majority mapping) and the served MIK scalar; each is None when
+    #: ``energy_source`` on the anlz document is ``none``, or when MIK served only the other one.
+    mik_bar_level: tuple[int, ...] | None = None
+    mik_level: int | None = None
+    mik_boundaries: tuple[MikBoundary, ...] = ()
+    #: Count of MIK boundaries that could not snap to a downbeat within :data:`MIK_BOUNDARY_SNAP_BARS`.
+    mik_grid_suspect: int = 0
+    mik_grid_note: str | None = None
 
     @property
     def judged_bpm(self) -> float | None:
@@ -306,6 +328,8 @@ class PlanEvent:
     name: str
     value: float | None = None
     over_bars: float = 0.0
+    #: The field of a multi-value control (fx_noise: ``level`` or ``sweep``); None for every scalar control.
+    field: str | None = None
 
     def target(self) -> float:
         value = self.value
@@ -318,7 +342,10 @@ class PlanEvent:
         if self.kind == "do":
             document["do"] = self.name
         else:
-            document[self.kind] = {self.name: self.value}
+            if self.field is None:
+                document[self.kind] = {self.name: self.value}
+            else:
+                document[self.kind] = {self.name: {self.field: self.value}}
             if self.kind == "ramp":
                 document["over_bars"] = self.over_bars
         return document

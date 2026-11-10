@@ -81,6 +81,13 @@ export interface DeckBeatLoopAction {
 	beats: number;
 }
 
+/** Beat jump by a signed number of grid beats (positive = forward). */
+export interface DeckBeatJumpAction {
+	type: 'deck_beat_jump';
+	deck: DeckId;
+	beats: number;
+}
+
 /** Toggle the selected loop length, or cancel an unfinished manual IN. */
 export interface DeckAutoLoopToggleAction {
 	type: 'deck_auto_loop_toggle';
@@ -135,10 +142,13 @@ export interface DeckTempoNudgeAction {
 	direction: -1 | 1;
 }
 
-/** Jog rotation. Paused: scrub. Playing: bend the tempo while it turns. */
+/** Jog rotation. Paused: scrub. Playing: bend the tempo while it turns.
+ * Optional scale multiplies scrub step size when paused (default 1); bend is unchanged. */
 export interface DeckJogAction {
 	type: 'deck_jog';
 	deck: DeckId;
+	/** Scrub ms-per-tick multiplier while paused. Bend ignores it. Default 1. */
+	scale?: number;
 }
 
 /** Device-local performance-pad mode. Kept generic so another controller can
@@ -243,6 +253,7 @@ export type MidiAction =
 	| DeckCueAction
 	| DeckHotCueAction
 	| DeckBeatLoopAction
+	| DeckBeatJumpAction
 	| DeckAutoLoopToggleAction
 	| DeckLoopExitAction
 	| DeckSyncToggleAction
@@ -315,6 +326,9 @@ export type LedTrigger =
 	| { kind: 'loop_engaged'; deck: DeckId }
 	| { kind: 'loop_beats_engaged'; deck: DeckId; beats: number }
 	| { kind: 'beat_sync_enabled'; deck: DeckId }
+	/** Lit while Beat Sync is actually applied: requested AND the deck's grid
+	 * can phase-lock (effectiveBeatSync), as the deck header lights BEAT SYNC. */
+	| { kind: 'beat_sync_effective'; deck: DeckId }
 	| { kind: 'stem_eq_enabled'; deck: DeckId }
 	| { kind: 'stem_active'; deck: DeckId; stem: 'drums' | 'bass' | 'other' | 'vocal' }
 	| { kind: 'stem_solo'; deck: DeckId; stem: 'drums' | 'bass' | 'other' | 'vocal' }
@@ -369,6 +383,11 @@ export interface DeviceMap {
 	/** Host-driven seven-segment channel meters. Values are scaled from the
 	 * engine's real 0..10 meter reading to 0..maxValue and sent as CC. */
 	meters?: MidiMeterOutput[];
+	/** Raw channel-voice messages [status, data1, data2] sent once, in order,
+	 * when a port resolves to this map and again after a hot-plug reconnect,
+	 * never on a plain rescan. The DDJ-400 'CH meter mode' handshake is the
+	 * motivating case. */
+	init?: number[][];
 	/** Documented-but-unbound controls, for learn-log best-guess hints. */
 	hints?: ControlHint[];
 }

@@ -12,6 +12,8 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any
 
+from pathlib import Path
+
 from . import bench, fast_segment, pipeline
 from .contract import CONTRACT_VERSION, PHRASE_SOURCE_LANES, StructureService
 from .service import LocalStructureService
@@ -45,6 +47,47 @@ class SegmentBench:
     pooled_agreement: Callable[[list[dict[str, Any]], str], tuple[float | None, float | None, int]]
 
 
+@dataclass(frozen=True)
+class NicheIntel:
+    """HTTP-facing niche label search helpers (issue #11190, parent #345)."""
+
+    read_state: Any
+    suggestions_for_track: Any
+    suggestions_with_verdicts: Any
+    accepted_query_labels: Any
+    record_user_region: Any
+    set_suggestion_verdict: Any
+    niche_find_similar: Any
+    normalize_niche_state: Any
+    empty_niche_state: Any
+    field_name: str
+
+    def view(self, conn, data_dir: Path, stable_id: str) -> dict[str, Any]:
+        state = self.read_state(conn, stable_id)
+        suggestions = self.suggestions_for_track(data_dir, stable_id)
+        return {
+            "stable_id": stable_id,
+            "suggestions": self.suggestions_with_verdicts(suggestions, state),
+            "regions": self.normalize_niche_state(state)["regions"],
+            "query_labels": self.accepted_query_labels(state, suggestions),
+        }
+
+
+def build_niche_intel() -> NicheIntel:
+    return NicheIntel(
+        read_state=pipeline.read_niche_state,
+        suggestions_for_track=pipeline.niche_suggestions_for_track,
+        suggestions_with_verdicts=pipeline.suggestions_with_verdicts,
+        accepted_query_labels=pipeline.accepted_query_labels,
+        record_user_region=pipeline.record_user_region,
+        set_suggestion_verdict=pipeline.set_suggestion_verdict,
+        niche_find_similar=pipeline.niche_find_similar,
+        normalize_niche_state=pipeline.normalize_niche_state,
+        empty_niche_state=pipeline.empty_niche_state,
+        field_name=pipeline.NICHE_LABELS_FIELD,
+    )
+
+
 def build_segment_bench() -> SegmentBench:
     return SegmentBench(
         grid_id=bench.GRID_ID,
@@ -65,8 +108,10 @@ def build_segment_bench() -> SegmentBench:
 __all__ = [
     "CONTRACT_VERSION",
     "PHRASE_SOURCE_LANES",
+    "NicheIntel",
     "SegmentBench",
     "StructureService",
+    "build_niche_intel",
     "build_segment_bench",
     "build_service",
 ]

@@ -11,6 +11,10 @@ ORDER_BY_SQL: dict[str, str] = {
     "rating desc": "_rating DESC",
     "energy asc": "_energy ASC",
     "energy desc": "_energy DESC",
+    "play_count asc": "_play_count ASC",
+    "play_count desc": "_play_count DESC",
+    "duration_s asc": "tracks.duration_ms ASC",
+    "duration_s desc": "tracks.duration_ms DESC",
     "random": "RANDOM()",
 }
 

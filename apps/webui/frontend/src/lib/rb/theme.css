@@ -1,3 +1,4 @@
+/* MOD-ZONE: GREEN | (private path) */
 /* rekordbox Performance-mode palette + shared control styles.
  * Scoped under .perf-root ON PURPOSE: the app-wide :root accent is orange
  * (#ffb43a) and must not change (RECON-FRONTEND 6). Every /performance
@@ -22,10 +23,12 @@
 	                                floor every other text/surface pairing
 	                                already met */
 	--rb-accent: #2f6fd6;        /* active-blue: toggles, faders, lit buttons */
+	--rb-accent-text: #8cb0e9; /* on-state toggle text on the top bar; keeps the toggle hue, clears 4.5:1 on panel and raised (#10370) */
 	--rb-on-accent: #ffffff;     /* text/glyphs ON an --rb-accent fill (Capture, lit buttons) */
 	--rb-accent-glow: rgba(47, 111, 214, 0.55); /* lit-button glow */
 	--rb-green: #35c04f;         /* loaded-track rows, loop-out chip */
 	--rb-orange: #e8a13a;        /* loop cues, warnings; legacy waveform lows */
+	--rb-warn-text: #e8a13a; /* enrich pill "needs you" flag; amber in every skin, clears 4.5:1 on panel and raised (#10370) */
 	/* Waveform bands, rekordbox/CDJ 3Band (issue #4219): dark blue low, amber
 	   mid, white high. Mirrored in wave-palette.ts; the pre-#4219 palette is
 	   the [data-wave-palette='legacy'] block below. */
@@ -80,7 +83,7 @@
 	/* MIXUX-02, the maintainer: "Filter dial should be white bg instead of black for clarity." The accent indicator keeps 3:1+ on it. */
 	--rb-color-fx-filter-face: #f0f2f5;
 	--rb-color-fx-filter-face-edge: #8a8f96;
-	--rb-focus-outline: none;          /* knob keyboard focus: Default shows the accent glow; Gothic and Light (no glow) set an outline */
+	--rb-focus-ring: #ffb43a;  /* DOM keyboard focus (A11Y-11403). Never the accent: the selector ring (#9396) owns --rb-accent. */
 	--rb-artwork-filter: none;         /* mono-dev grays artwork; html-level too, for pages outside .perf-root */
 	--rb-key-compat-border: initial;   /* unset: the compatible-key ring uses the master key's hue */
 	--rb-issue-square: initial;        /* unset: library minor-issue '!' square keeps its amber fill */
@@ -118,6 +121,7 @@
  * 4.5:1. User scheme overrides must preserve those pairs, rather than adding
  * component-local colours that can become unreadable. */
 html[data-theme='light'] .perf-root {
+	--rb-focus-ring: #a35a00;
 	--rb-pair: #7a3fd6; /* pair edge, light theme */
 	--rb-bg: #f7f3eb;
 	--rb-panel: #fffdf8;
@@ -128,10 +132,12 @@ html[data-theme='light'] .perf-root {
 	--rb-text: #27241f;
 	--rb-text-dim: #5d574e;
 	--rb-accent: #175ea8;
+	--rb-accent-text: #0f3d6e; /* on-state toggle text on the top bar; keeps the toggle hue, clears 4.5:1 on panel and raised (#10370) */
 	--rb-on-accent: #ffffff;
 	--rb-accent-glow: rgba(23, 94, 168, 0.35);
 	--rb-green: #1d7035;
 	--rb-orange: #a44b11;
+	--rb-warn-text: #925d11; /* enrich pill "needs you" flag; amber in every skin, clears 4.5:1 on panel and raised (#10370) */
 	/* Light-face 3Band: a white high band vanishes on this face, so every
 	   band is darkened to clear 3:1 against both light row backgrounds. */
 	--rb-wave-low: #1d4fa3;
@@ -243,10 +249,12 @@ html[data-skin='mono-dev'] .perf-root {
 	--rb-text: #d6d6d6;
 	--rb-text-dim: #8c8c8c;
 	--rb-accent: #d6d6d6;
+	--rb-accent-text: #d6d6d6; /* on-state toggle text on the top bar; keeps the toggle hue, clears 4.5:1 on panel and raised (#10370) */
 	--rb-on-accent: #0a0a0a;     /* pale accent fill takes dark ink */
 	--rb-accent-glow: transparent;
 	--rb-green: #e8e8e8;
 	--rb-orange: #9a9a9a;
+	--rb-warn-text: #e8a13a; /* enrich pill "needs you" flag; amber in every skin, clears 4.5:1 on panel and raised (#10370) */
 	--rb-wave-low: #6a6a6a;
 	--rb-wave-mid: #b0b0b0;
 	--rb-wave-high: #f4f4f4;
@@ -312,7 +320,7 @@ html[data-skin='mono-dev'] .perf-root {
 	--rb-knob-takeover: initial;
 	--rb-knob-stem-tint: initial;
 	/* No accent glow here, so keyboard focus on a knob is an outline. */
-	--rb-focus-outline: 1px solid var(--rb-accent);
+	--rb-focus-ring: #ffb43a;
 }
 /* Track artwork in grayscale, color back on hover. Keyed on the artwork
  * endpoint (/tracks/{sid}/artwork) rather than per-component classes, so it
@@ -418,11 +426,13 @@ html[data-skin='light'] .perf-root {
 	--rb-text: #292929;
 	--rb-text-dim: #5e5e5e;
 	--rb-accent: #292929;
+	--rb-accent-text: #292929; /* on-state toggle text on the top bar; keeps the toggle hue, clears 4.5:1 on panel and raised (#10370) */
 	--rb-on-accent: #f5f5f5;
 	--rb-accent-glow: transparent;
-	--rb-focus-outline: 1px solid var(--rb-accent); /* as Gothic: no glow, so knob focus is an outline */
+	--rb-focus-ring: #a35a00;
 	--rb-green: #171717;
 	--rb-orange: #5c5c5c;
+	--rb-warn-text: #925d11; /* enrich pill "needs you" flag; amber in every skin, clears 4.5:1 on panel and raised (#10370) */
 	/* Waveform bands: the light Rekordbox hues, which an explicit Rekordbox
 	 * choice (no data-wave-palette attribute) shows. Auto resolves to mono
 	 * (ui-skin.ts), and the palette blocks right after this one repaint the
@@ -574,11 +584,13 @@ html[data-skin='green-room'] .perf-root {
 	--rb-text: #ffffff;
 	--rb-text-dim: #b3b3b3;
 	--rb-accent: #1db954;
+	--rb-accent-text: #1db954; /* on-state toggle text on the top bar; keeps the toggle hue, clears 4.5:1 on panel and raised (#10370) */
 	--rb-on-accent: #000000; /* black ink on the green fill, 8.2:1 */
 	--rb-accent-glow: transparent;
-	--rb-focus-outline: 2px solid #ffffff;
+	--rb-focus-ring: #ffffff;
 	--rb-green: #1db954;
 	--rb-orange: #ffa42b;
+	--rb-warn-text: #e8a13a; /* enrich pill "needs you" flag; amber in every skin, clears 4.5:1 on panel and raised (#10370) */
 	--rb-wave-low: #2767d8;
 	--rb-wave-mid: #f0a020;
 	--rb-wave-high: #f4f6f8;
@@ -727,11 +739,13 @@ html[data-skin='practice-ddj-flx4'] .perf-root {
 	--rb-text: #e8ebf0;
 	--rb-text-dim: #a9b0bc;
 	--rb-accent: #4da3ff;
+	--rb-accent-text: #4da3ff; /* on-state toggle text on the top bar; keeps the toggle hue, clears 4.5:1 on panel and raised (#10370) */
 	--rb-on-accent: #000000; /* black ink on the blue fill */
 	--rb-accent-glow: transparent;
-	--rb-focus-outline: 2px solid #4da3ff;
+	--rb-focus-ring: #ffb43a;
 	--rb-green: #1db954;
 	--rb-orange: #ffa42b;
+	--rb-warn-text: #e8a13a; /* enrich pill "needs you" flag; amber in every skin, clears 4.5:1 on panel and raised (#10370) */
 	--rb-wave-low: #2767d8;
 	--rb-wave-mid: #f0a020;
 	--rb-wave-high: #f4f6f8;

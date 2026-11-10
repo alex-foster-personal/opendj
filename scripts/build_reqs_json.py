@@ -1,12 +1,31 @@
-"""Generate ``reqs.json`` from ``.planning/REQUIREMENTS.md``.
+"""Generate ``reqs.json`` from ``.planning/REQUIREMENTS.md`` plus ``(private path)/``.
 
 Usage::
 
     python -m scripts.build_reqs_json            # write reqs.json
-    python -m scripts.build_reqs_json --check    # exit 1 if reqs.json drifted
+    python -m scripts.build_reqs_json --check    # exit 1 if the sources do not build
 
-The source of truth is ``.planning/REQUIREMENTS.md``. ``reqs.json`` lives at
-the repo root so tests + CI can consume it without parsing markdown.
+The sources of truth are ``.planning/REQUIREMENTS.md`` and the per-id fragment
+files in ``(private path)/`` (issue #10541). ``reqs.json`` lives at the
+repo root so tests + CI can consume it without parsing markdown. It is a
+gitignored build artifact, never committed: a committed aggregate re-conflicted
+every open PR that added a requirement each time another one merged. Readers call
+:func:`ensure_output` (pytest does it in the root ``conftest.py``), which rebuilds
+it when it is missing or stale.
+
+Fragment files (one requirement per file, named ``<ID>.md``)::
+
+    ## v1 Requirements
+
+    ### Library (LIBM)
+
+    - [ ] **LIBM-10541** One requirement bullet, wrapped lines indented.
+
+The ``##`` line names the section, the ``###`` line the category exactly as it
+reads in REQUIREMENTS.md (a new category is appended to the end of the section).
+The fragment is stitched into the REQUIREMENTS.md text before parsing, so every
+rule below applies to it unchanged, duplicate ids included. Two PRs that each add
+their own fragment touch different paths, so neither conflicts with the other.
 
 Parsing rules (kept intentionally narrow — the ``.planning/REQUIREMENTS.md``
 file has a stable shape):
@@ -36,14 +55,22 @@ from __future__ import annotations
 import argparse
 import collections
 import json
+import os
 import re
+import subprocess
 import sys
 from pathlib import Path
 
 REPO_ROOT: Path = Path(__file__).resolve().parents[1]
 SOURCE: Path = REPO_ROOT / ".planning" / "REQUIREMENTS.md"
+REQS_MD_REL: str = ".planning/REQUIREMENTS.md"
 OUTPUT: Path = REPO_ROOT / "reqs.json"
 COVERAGE_MATRIX_TEMPLATE: Path = REPO_ROOT / "coverage-matrix.md"
+DEEPEN_HINT: str = "git fetch --deepen=900 origin main"
+#: Fragment directory, relative to the repo root. The live path is always derived
+#: from ``SOURCE`` (see :func:`_fragments_dir`) so a caller that points ``SOURCE`` at
+#: another checkout reads that checkout's fragments, never this one's.
+FRAGMENTS_REL = "(private path)"
 
 # ------------------------------------------------------------------ parser
 
@@ -110,6 +137,272 @@ def _continuation_text(lines: list[str], bullet_index: int) -> str:
 
 def _read_lines(src: Path) -> list[str]:
     return src.read_text(encoding="utf-8").splitlines()
+
+
+# ------------------------------------------------------------------ fragments
+
+_SECTION_RE = re.compile(r"^##\s+(v[\d.]+ Requirements)\s*$")
+
+
+def _fragments_dir() -> Path:
+    return SOURCE.parent / Path(FRAGMENTS_REL).name
+
+
+def fragment_paths(directory: Path) -> list[Path]:
+    """Every fragment file in ``directory`` in stable order (a README is not a fragment)."""
+    if not directory.is_dir():
+        return []
+    return sorted(p for p in directory.glob("*.md") if p.name != "README.md")
+
+
+def _fragment_parts_from_text(text: str, *, stem: str, label: str) -> tuple[str, str, list[str]]:
+    """Return (section, category header line, body lines) of one fragment, failing on any other shape."""
+    lines = text.splitlines()
+    heads = [i for i, line in enumerate(lines) if line.strip()]
+    if len(heads) < 3:
+        raise ValueError(f"{label}: a fragment needs a '## vN Requirements' line, a '### ' category and one bullet")
+    section_m = _SECTION_RE.match(lines[heads[0]].strip())
+    category = lines[heads[1]].strip()
+    if section_m is None:
+        raise ValueError(
+            f"{label}: first line must be '## v1 Requirements' (or v1.1, v2, v3), got {lines[heads[0]]!r}"
+        )
+    if not category.startswith("### "):
+        raise ValueError(f"{label}: second line must be a '### Category (CODE)' header, got {category!r}")
+    body = lines[heads[1] + 1 :]
+    while body and not body[0].strip():
+        body.pop(0)
+    while body and not body[-1].strip():
+        body.pop()
+    ids = ids_from_requirements_text("\n".join(body))
+    if ids != {stem}:
+        raise ValueError(f"{label}: must define exactly the id {stem!r} (its file name), defines {sorted(ids)}")
+    if any(line.startswith("#") for line in body):
+        raise ValueError(f"{label}: one section and one category per fragment")
+    return section_m.group(1), category, body
+
+
+def _fragment_parts(path: Path) -> tuple[str, str, list[str]]:
+    return _fragment_parts_from_text(path.read_text(encoding="utf-8"), stem=path.stem, label=str(path))
+
+
+def fragments_text_at(git: str, rev: str) -> tuple[str | None, str]:
+    """Every fragment's text at ``rev`` joined by newlines ("" for none), or None plus git's stderr.
+
+    For tools that read the requirement ids of a commit rather than a checkout
+    (``scripts.req_id_pr_number``, ``scripts.next_requirement_id``).
+    """
+    listing = subprocess.run(
+        [git, "ls-tree", "-r", "--name-only", rev, "--", f"{FRAGMENTS_REL}/"],
+        capture_output=True, text=True, encoding="utf-8", check=False,
+    )
+    if listing.returncode != 0:
+        return None, f"git ls-tree {rev} exited {listing.returncode}: {listing.stderr.strip()}"
+    texts: list[str] = []
+    for rel in sorted(listing.stdout.splitlines()):
+        if not rel.endswith(".md") or rel.endswith("/README.md"):
+            continue
+        shown = subprocess.run(
+            [git, "show", f"{rev}:{rel}"], capture_output=True, text=True, encoding="utf-8", check=False
+        )
+        if shown.returncode != 0:
+            return None, f"git show {rev}:{rel} exited {shown.returncode}: {shown.stderr.strip()}"
+        texts.append(shown.stdout)
+    return "\n".join(texts), ""
+
+
+def fragments_text_in(directory: Path) -> str:
+    """Every fragment's text in ``directory`` joined by newlines ("" for none)."""
+    return "\n".join(p.read_text(encoding="utf-8") for p in fragment_paths(directory))
+
+
+def _insert_fragment(lines: list[str], path: Path) -> list[str]:
+    section, category, body = _fragment_parts(path)
+    return _insert_fragment_parts(lines, section, category, body, label=str(path))
+
+
+def _insert_fragment_parts(lines: list[str], section: str, category: str, body: list[str], *, label: str) -> list[str]:
+    start, end = _section_bounds(lines, section)
+    if start < 0:
+        raise ValueError(f"{label}: {REQS_MD_REL} has no '## {section}' section to stitch into")
+    cat_idx = next((i for i in range(start, end) if lines[i].strip() == category), None)
+    if cat_idx is None:
+        block, region_start, region_end = ["", category, "", *body], start, end
+    else:
+        block, region_start = body, cat_idx + 1
+        region_end = next((i for i in range(region_start, end) if lines[i].startswith("#")), end)
+    insert_at = region_end
+    while insert_at > region_start and not lines[insert_at - 1].strip():
+        insert_at -= 1
+    return [*lines[:insert_at], *block, *lines[insert_at:]]
+
+
+def stitched_lines() -> list[str]:
+    """REQUIREMENTS.md lines with every fragment stitched into its section and category."""
+    if not SOURCE.exists():
+        raise FileNotFoundError(f"Cannot read requirements source: {SOURCE}")
+    lines = _read_lines(SOURCE)
+    for path in fragment_paths(_fragments_dir()):
+        lines = _insert_fragment(lines, path)
+    return lines
+
+
+def _commit_tree(repo_root: Path, commit_sha: str) -> str:
+    proc = subprocess.run(
+        ["git", "rev-parse", f"{commit_sha}^{{tree}}"],
+        cwd=repo_root,
+        capture_output=True,
+        text=True,
+        timeout=60,
+        check=False,
+    )
+    if proc.returncode != 0:
+        raise RuntimeError(
+            f"commit {commit_sha[:12]} is not present locally. Run: {DEEPEN_HINT}: {proc.stderr.strip()}"
+        )
+    return proc.stdout.strip()
+
+
+def _blob_at_tree(repo_root: Path, tree_sha: str, rel: str) -> str:
+    proc = subprocess.run(
+        ["git", "show", f"{tree_sha}:{rel}"],
+        cwd=repo_root,
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        timeout=120,
+        check=False,
+    )
+    if proc.returncode != 0:
+        raise FileNotFoundError(f"{rel} is absent in merge tree {tree_sha[:12]}: {proc.stderr.strip()}")
+    return proc.stdout
+
+
+def _fragment_paths_at_tree(repo_root: Path, tree_sha: str) -> list[str]:
+    proc = subprocess.run(
+        ["git", "ls-tree", "-r", "--name-only", tree_sha, "--", f"{FRAGMENTS_REL}/"],
+        cwd=repo_root,
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        timeout=120,
+        check=False,
+    )
+    if proc.returncode != 0:
+        raise RuntimeError(f"git ls-tree {tree_sha[:12]}:{FRAGMENTS_REL}/ failed: {proc.stderr.strip()}")
+    return sorted(
+        rel
+        for rel in proc.stdout.splitlines()
+        if rel.endswith(".md") and not rel.endswith("/README.md")
+    )
+
+
+def stitched_lines_at_tree(repo_root: Path, tree_sha: str) -> list[str]:
+    """Ledger lines after stitching every fragment file present in ``tree_sha``."""
+    lines = _blob_at_tree(repo_root, tree_sha, REQS_MD_REL).splitlines()
+    for rel in _fragment_paths_at_tree(repo_root, tree_sha):
+        stem = Path(rel).name.removesuffix(".md")
+        text = _blob_at_tree(repo_root, tree_sha, rel)
+        section, category, body = _fragment_parts_from_text(text, stem=stem, label=rel)
+        lines = _insert_fragment_parts(lines, section, category, body, label=rel)
+    return lines
+
+
+def stitched_lines_at_commit(repo_root: Path, commit_sha: str) -> list[str]:
+    return stitched_lines_at_tree(repo_root, _commit_tree(repo_root, commit_sha))
+
+
+def merged_tree_sha(base_sha: str, head_sha: str, repo_root: Path) -> str:
+    for sha in (base_sha, head_sha):
+        probe = subprocess.run(
+            ["git", "cat-file", "-e", f"{sha}^{{commit}}"],
+            cwd=repo_root,
+            capture_output=True,
+            text=True,
+            timeout=60,
+            check=False,
+        )
+        if probe.returncode != 0:
+            raise RuntimeError(f"commit {sha[:12]} is not present locally. Run: {DEEPEN_HINT}")
+    proc = subprocess.run(
+        ["git", "merge-tree", "--write-tree", base_sha, head_sha],
+        cwd=repo_root,
+        capture_output=True,
+        text=True,
+        timeout=120,
+        check=False,
+    )
+    if proc.returncode > 1:
+        raise RuntimeError(
+            f"git merge-tree --write-tree failed rc={proc.returncode}: {proc.stderr.strip()}"
+        )
+    tree = proc.stdout.splitlines()[0].strip() if proc.stdout else ""
+    if not tree:
+        raise RuntimeError("git merge-tree --write-tree printed no tree oid")
+    return tree
+
+
+def _rev_parse(ref: str, repo_root: Path) -> str:
+    proc = subprocess.run(
+        ["git", "rev-parse", ref],
+        cwd=repo_root,
+        capture_output=True,
+        text=True,
+        timeout=60,
+        check=False,
+    )
+    if proc.returncode != 0:
+        raise RuntimeError(f"git rev-parse {ref} failed rc={proc.returncode}: {proc.stderr.strip()}")
+    return proc.stdout.strip()
+
+
+def _split_merged_duplicates(
+    base_dups: dict[str, int], merged_dups: dict[str, int]
+) -> tuple[dict[str, int], dict[str, int]]:
+    """Partition merged duplicate ids into main pre-existing vs introduced by the merge."""
+    preexisting: dict[str, int] = {}
+    introduced: dict[str, int] = {}
+    for rid, merged_count in merged_dups.items():
+        if rid in base_dups:
+            preexisting[rid] = merged_count
+        else:
+            introduced[rid] = merged_count
+    return preexisting, introduced
+
+
+def run_merged_with_check(base_ref: str, head_ref: str, repo_root: Path) -> int:
+    """Fail when ``head_ref`` merged with ``base_ref`` would define any requirement id twice."""
+    try:
+        base_sha = _rev_parse(base_ref, repo_root)
+        head_sha = _rev_parse(head_ref, repo_root)
+        merged_tree = merged_tree_sha(base_sha, head_sha, repo_root)
+        merged_lines = stitched_lines_at_tree(repo_root, merged_tree)
+        merged_dups = duplicate_ids_in_lines(merged_lines)
+    except (RuntimeError, FileNotFoundError, ValueError) as exc:
+        print(f"[reqs-merge] UNKNOWN: {exc}", file=sys.stderr)
+        return 2
+    if not merged_dups:
+        print(f"[reqs-merge] OK -- no duplicate ids after merge with {base_ref}.")
+        return 0
+    base_lines = stitched_lines_at_commit(repo_root, base_sha)
+    base_dups = duplicate_ids_in_lines(base_lines)
+    preexisting, introduced = _split_merged_duplicates(base_dups, merged_dups)
+    all_listed = ", ".join(f"{rid} x{n}" for rid, n in sorted(merged_dups.items()))
+    print(
+        f"[reqs-merge] merged {REQS_MD_REL} (with {FRAGMENTS_REL}/) defines "
+        f"{len(merged_dups)} id(s) more than once: {all_listed}.",
+        file=sys.stderr,
+    )
+    if preexisting:
+        listed = ", ".join(f"{rid} x{n}" for rid, n in sorted(preexisting.items()))
+        print(
+            f"[reqs-merge] Pre-existing on {base_ref} (repair on main, not this PR): {listed}",
+            file=sys.stderr,
+        )
+    if introduced:
+        listed = ", ".join(f"{rid} x{n}" for rid, n in sorted(introduced.items()))
+        print(f"[reqs-merge] Introduced by this merge: {listed}", file=sys.stderr)
+    return 1
 
 
 def _section_bounds(lines: list[str], header: str) -> tuple[int, int]:
@@ -325,6 +618,25 @@ def _parse_traceability(lines: list[str]) -> dict[str, str]:
 # ------------------------------------------------------------------ build
 
 
+def _present_buckets_from_lines(lines: list[str]) -> tuple[dict, ...]:
+    v1 = _parse_v1(lines)
+    v2 = _parse_v2(lines)
+    v1_1_start, _ = _section_bounds(lines, "v1.1 Requirements")
+    v1_1 = (
+        _parse_versioned_requirements(lines, "v1.1 Requirements")
+        if v1_1_start >= 0
+        else None
+    )
+    v3_start, _ = _section_bounds(lines, "v3 Requirements")
+    v3 = _parse_v3(lines) if v3_start >= 0 else None
+    return tuple(bucket for bucket in (v1, v1_1, v2, v3) if bucket is not None)
+
+
+def duplicate_ids_in_lines(lines: list[str]) -> dict[str, int]:
+    """Return requirement ids defined more than once in markdown lines."""
+    return _duplicate_ids(*_present_buckets_from_lines(lines))
+
+
 def _duplicate_ids(*buckets: dict) -> dict[str, int]:
     """Requirement ids that ``REQUIREMENTS.md`` defines more than once.
 
@@ -350,9 +662,7 @@ def _duplicate_ids(*buckets: dict) -> dict[str, int]:
 
 
 def _build_payload() -> dict:
-    if not SOURCE.exists():
-        raise FileNotFoundError(f"Cannot read requirements source: {SOURCE}")
-    lines = _read_lines(SOURCE)
+    lines = stitched_lines()
     v1 = _parse_v1(lines)
     v2 = _parse_v2(lines)
     v1_1_start, _ = _section_bounds(lines, "v1.1 Requirements")
@@ -361,17 +671,9 @@ def _build_payload() -> dict:
         if v1_1_start >= 0
         else None
     )
-    # v3 is optional the same way v1.1 is: absent entirely (None, no payload
-    # key) rather than an empty dict, so a document with no v3 section behaves
-    # exactly as it did before this bucket existed.
     v3_start, _ = _section_bounds(lines, "v3 Requirements")
     v3 = _parse_v3(lines) if v3_start >= 0 else None
 
-    # Every bucket that actually exists in this document, in the order they
-    # appear in REQUIREMENTS.md. Both the duplicate-id check and the phase
-    # mapping below must walk this exact set -- a bucket present here but
-    # missing from either would let an id in it collide or traceability-match
-    # silently, same silent-miss shape as the _CODE widenings above.
     present_buckets: tuple[dict, ...] = tuple(
         bucket
         for bucket in (v1, v1_1, v2, v3)
@@ -381,7 +683,7 @@ def _build_payload() -> dict:
     if duplicates:
         listed = ", ".join(f"{rid} x{n}" for rid, n in sorted(duplicates.items()))
         raise ValueError(
-            f"{SOURCE} defines {len(duplicates)} requirement id(s) more than "
+            f"{SOURCE} (with {FRAGMENTS_REL}/) defines {len(duplicates)} requirement id(s) more than "
             f"once: {listed}. Two branches appending the same id is the normal "
             f"way this happens; renumber one side rather than deleting either, "
             f"since a traceability row may already point at it."
@@ -480,43 +782,69 @@ def _serialize(payload: dict) -> str:
     return json.dumps(payload, indent=2, ensure_ascii=False) + "\n"
 
 
+def _write_text_atomic(path: Path, text: str) -> None:
+    # Atomic: pytest-xdist workers and the controller all call ensure_output at once.
+    tmp = path.with_name(f".{path.name}.{os.getpid()}.tmp")
+    tmp.write_text(text, encoding="utf-8")
+    os.replace(tmp, path)
+
+
 def _write_output(payload: dict) -> None:
-    OUTPUT.write_text(_serialize(payload), encoding="utf-8")
+    _write_text_atomic(OUTPUT, _serialize(payload))
+
+
+def ensure_output() -> Path:
+    """Rebuild ``reqs.json`` when it is missing or stale and return its path.
+
+    ``reqs.json`` is a gitignored build artifact (issue #10541), so every reader
+    that wants the file calls this first. Raises on sources that do not build.
+    """
+    serialized = _serialize(_build_payload())
+    if not OUTPUT.exists() or OUTPUT.read_text(encoding="utf-8") != serialized:
+        _write_text_atomic(OUTPUT, serialized)
+    return OUTPUT
 
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(
         prog="scripts.build_reqs_json",
-        description="Generate reqs.json from .planning/REQUIREMENTS.md",
+        description="Generate reqs.json from .planning/REQUIREMENTS.md and (private path)/",
     )
     parser.add_argument(
         "--check",
         action="store_true",
-        help="Do not write; exit non-zero if reqs.json on disk differs.",
+        help="Do not write; exit non-zero if REQUIREMENTS.md and requirements.d/ do not build.",
+    )
+    parser.add_argument(
+        "--merged-with",
+        metavar="REF",
+        default=None,
+        help=(
+            "Exit non-zero when REF merged with HEAD would define any requirement id more "
+            "than once (union-merge duplicate gate; issue #3009)."
+        ),
+    )
+    parser.add_argument(
+        "--merge-head",
+        default="HEAD",
+        help="Commit to merge with --merged-with (default: HEAD).",
     )
     args = parser.parse_args(argv)
 
+    if args.merged_with:
+        merge_code = run_merged_with_check(args.merged_with, args.merge_head, REPO_ROOT)
+        if merge_code != 0:
+            return merge_code
+        if not args.check:
+            return 0
+
     payload = _build_payload()
-    serialized = _serialize(payload)
 
     if args.check:
-        if not OUTPUT.exists():
-            print(f"[reqs-check] {OUTPUT} is missing. Run without --check.", file=sys.stderr)
-            return 1
-        on_disk = OUTPUT.read_text(encoding="utf-8")
-        if on_disk != serialized:
-            try:
-                src_shown = SOURCE.relative_to(REPO_ROOT)
-            except ValueError:
-                src_shown = SOURCE
-            print(
-                f"[reqs-check] {OUTPUT.name} is out of sync with "
-                f"{src_shown}. Run "
-                "`python -m scripts.build_reqs_json` and commit.",
-                file=sys.stderr,
-            )
-            return 1
-        print(f"[reqs-check] OK — {len(_all_ids(payload))} requirements in sync.")
+        # reqs.json is no longer committed (issue #10541), so there is no on-disk
+        # copy to drift: the check is that the sources build (no duplicate ids, no
+        # malformed fragment). A build failure raises with the offending path.
+        print(f"[reqs-check] OK -- {len(_all_ids(payload))} requirements build from the sources.")
         return 0
 
     _write_output(payload)

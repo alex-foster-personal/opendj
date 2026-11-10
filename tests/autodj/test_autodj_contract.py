@@ -39,7 +39,7 @@ def test_list_styles_reports_echo_out_and_tempo_modes() -> None:
     assert by_name["cut"].tempo_mode == "none"
     assert by_name["drop_swap"].tempo_mode == "none"
     for name, style in STYLES.items():
-        if style.available and name not in ("cut", "drop_swap", "echo_out"):
+        if style.available and name not in ("cut", "drop_swap", "echo_out", "noise_build"):
             assert by_name[name].tempo_mode == "sync_to_out"
 
 

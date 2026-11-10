@@ -1,0 +1,9 @@
+{
+  "bytes": 1024,
+  "measured_main": 424005,
+  "measured_with_pr": 424532,
+  "sha": "8fdd415fe6",
+  "date": "Tue 10 Nov 2026",
+  "reason": "Issue #10357 (KEYB-11711) adds tempo-keys, performance-shortcut-routing branches and performance-hotkeys handlers on the performance surface; measured +527 B gzip over main at merge base 10c9ddaeaf; ceiled to KiB.",
+  "payback": "none planned; the growth is keyboard tempo and pitch-range control code on this surface"
+}

@@ -4,7 +4,8 @@
 // on the most recent channel (load / play / loop target), except while a
 // keyboard-interactive control owns focus. Tab always moves browser focus.
 // Cmd+, / Ctrl+, is owned by settings/hotkeys.ts (meta/ctrl ignored here).
-import { DECK_IDS, getDeckState } from '$lib/rb/audio-engine.svelte';
+// #10357: , . (Shift coarse) step tempo; Shift+K reset; P cycles pitch range.
+import { DECK_IDS, getDeckState, pitchRanges } from '$lib/rb/audio-engine.svelte';
 import { runPerformanceCommandFromUi, uiPrefs } from '$lib/rb/performance-ipc.svelte';
 import { getRecentDeck, noteRecentDeck } from '$lib/rb/recent-deck';
 import { mostRecentPendingLoadPlay, setPendingLoadPlayIntent, type DeckId } from '$lib/rb/deck-slots';
@@ -13,6 +14,7 @@ import { deckHoverUi } from '$lib/rb/deck-hover.svelte';
 import { armPinPlacement } from './feedback-store.svelte';
 import { handlePerformanceShortcutKeydown } from './performance-shortcut-routing';
 import { gridJumpEnabled } from './grid-jump-flag';
+import { tempoKeyCommand, type TempoKeyAction } from './tempo-keys';
 
 // Re-exported so noteLoopInteraction's callers (e.g. LoopSafetyControls.svelte)
 // can take DeckId from here instead of a fresh direct import of deck-slots.ts,
@@ -156,6 +158,19 @@ async function _gridJump(bars: number): Promise<void> {
 	await runPerformanceCommandFromUi({ type: 'grid_jump', deck, bars });
 }
 
+/** #10357: tempo keys act on the recent deck only; an empty or unset recent deck sends nothing. */
+async function _tempoKey(action: TempoKeyAction): Promise<void> {
+	const deck = getRecentDeck();
+	const st = deck === null ? null : getDeckState(deck);
+	const command = tempoKeyCommand(
+		action,
+		deck === null || st === null
+			? null
+			: { deck, loaded: st.stable_id !== null, pitch: st.pitch, range: pitchRanges[deck] }
+	);
+	if (command !== null) await runPerformanceCommandFromUi(command);
+}
+
 /** True when a pointer press landed on a deck or mixer channel rather than
  * the library, so Cmd+A means "jump back" instead of Select all. */
 function _isDeckPress(target: EventTarget | null): boolean {
@@ -193,6 +208,9 @@ export function installPerformanceHotkeys(): () => void {
 				},
 				gridJump: (bars) => {
 					void _gridJump(bars);
+				},
+				tempoKey: (action) => {
+					void _tempoKey(action);
 				}
 			},
 			{ settingsOpen: isSettingsOpen(), gridJump: gridJumpEnabled(), deckFocus }

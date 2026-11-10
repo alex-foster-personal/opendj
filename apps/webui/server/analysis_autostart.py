@@ -15,6 +15,8 @@ Two properties keep a reconcile loop from becoming a nuisance:
   fight over the one job slot.
 * It never retries an unchanged failed queue. Each attempt records the
   backlog signature it fired on; a tick whose signature matches is a no-op.
+  The scan is lane-aware: enabled lanes come from ui-prefs and are re-read
+  every tick, so a lane toggle changes the signature and re-arms the loop.
   A drain that fails (no analysis extra installed, an undecodable file) stays
   visibly failed in ``GET /ingest/refresh/status`` instead of relaunching a
   subprocess every interval. A NEW import changes the signature and re-arms
@@ -43,6 +45,8 @@ Requirements (mini-PRD):
       attempt is booked, on the next tick, against the queue the WORKER read
     [if] starting the drain raises [then] no attempt is recorded, so the next
       tick over the same queue retries instead of reporting "unchanged"
+    [if] a lane toggle changes between two ticks over the same tracks [then]
+      the second tick reports started, not unchanged
   ✔︎ ✅ wait_for_outcome(): a caller blocks on the tick recording an outcome,
     never on a wall-clock poll, so a slow runner cannot fake a failure.
     [if] a tick records an outcome [then] the waiter wakes with that value
@@ -446,8 +450,9 @@ class AutoAnalyzeWatcher:
         self._state.attempts += 1
         self._state.last_started_at = time.time()
         log.info(
-            "auto-analyze: started a drain over %d unmapped track(s)",
+            "auto-analyze: started a drain over %d unmapped track(s), lanes=%s",
             backlog.pending_total,
+            ",".join(backlog.lanes) or "none",
         )
         return "started"
 

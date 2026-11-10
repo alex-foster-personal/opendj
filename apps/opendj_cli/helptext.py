@@ -41,11 +41,22 @@ lighting tools (LIGHT-70, LIGHT-10573):
   opendj lighting monitor [--artnet] [--sacn] [--host H] [--sacn-universe U ...] [--json]
   opendj lighting replay FILE [--at S] [--json]  (same StageQuery as window.musicDjToolsLightingStage)
 
+MIDI monitor (each incoming message with its mapped action or unmapped, then fader direction):
+  opendj midi monitor --device <name-match> [--seconds N]
+
 session played set (SESSION-PLAYED-01; the green library rows, kept across crashes and relaunches):
   opendj session played | resume | new
 
-desktop window geometry (WINSTATE-01; per monitor, survives updates):
+crowd requests (CROWDREQ-10749; catalog session, request list, dismiss and loaded):
+  opendj requests open --playlist <id> [--text] [--cooldown 180]
+  opendj requests close | list [--status new] | dismiss <id> | loaded <id> | clear
+
+now playing for streamers and overlays (NOWP-11489; the track the room hears, 3 s settle):
+  opendj now-playing [--json] [--watch] [--interval S]
+
+desktop window geometry (WINSTATE-01; per monitor, survives updates) and extra windows:
   opendj window state | reset
+  opendj window open|close|focus second-screen
 
 playlist art thumbnail (ARTTHUMB-8728b) and tab-separated text track list (LIBORG-10314):
   opendj playlist thumbnail <playlist-id> [--size 64|232] [--out FILE]

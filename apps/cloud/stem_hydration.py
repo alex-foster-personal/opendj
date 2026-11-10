@@ -16,6 +16,11 @@ Two entry points:
 * :func:`bulk_hydrate` -- many bundles within a byte budget, for the CLI and
   its parity HTTP endpoint.
 
+* [if] AutoPlay names a next-up head whose stem-set is only in R2 [then]
+  :class:`NextUpStemPrefetcher` hydrates it once, one prefetch in flight
+  (STEM-11747); [if] the cache is under the STEM-39 floor [then] it is
+  skipped with ``below_cache_floor``; [if] the hub refuses [then] one
+  WARNING, and the next head is still tried.
 * [if] a bundle is already valid on local disk [then] hydration is a no-op
   that costs one strict-load, never a network call.
 * [if] the R2 index has no entry for a stable_id [then] hydration reports
@@ -35,6 +40,9 @@ Two entry points:
   STEM-40). Supersedes: the fixed-budget ``enforce_budget`` this module used
   to carry, which read 102400 MB from the policy and evicted any directory
   under the stems root, local-only renders included.
+* [if] a downloaded stem-set breaks the STEM-8231 size rule [then] it is
+  re-encoded to the policy MP3 before it enters the store, or refused with a
+  named reason and nothing left in the store (#9665).
 """
 
 from __future__ import annotations
@@ -50,7 +58,9 @@ import secrets
 import tempfile
 import threading
 import time
+from collections import deque
 from collections.abc import Callable, Iterator, Sequence
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Literal
@@ -60,6 +70,7 @@ import psutil
 from apps.cloud import asset_store, stem_cache_budget, stem_index
 from apps.cloud.eviction import HydrationError
 from apps.cloud.stem_bundles import pin_for_hydrate, unpin_hydrate
+from apps.cloud.stem_hydrate_policy import StemPolicyRefusedError, conform_fetched_bundle
 from apps.cloud.stem_source import (
     STEM_HUB_INDEX_FAILED,
     STEM_HUB_UNREACHABLE,
@@ -711,7 +722,7 @@ def _is_local(stable_id: str, stems_dir: Path) -> bool:
     return True
 
 
-def _publish_fetched(stable_id: str, *, data_dir: Path, root: Path, tmp_dir: Path) -> bool:
+def _publish_fetched(stable_id: str, *, data_dir: Path, root: Path, tmp_dir: Path) -> tuple[bool, str | None]:
     """Verify a fetched bundle, then swap it into place under the bundle writer lock.
 
     The strict reader runs on the fetched copy before anything can read it:
@@ -726,6 +737,11 @@ def _publish_fetched(stable_id: str, *, data_dir: Path, root: Path, tmp_dir: Pat
     swap, never removed then renamed in the open (Codex on #6821). Returns
     False when another writer already published a valid bundle. A copy that
     is not published is moved back to ``tmp_dir`` for the caller to discard.
+
+    The size-rule check (#9665) runs on the private verify copy, after the
+    strict verify and before the swap, under the hydrate lock only: a set
+    that breaks the rule is re-encoded there, and a refusal raises before
+    anything enters the store. Returns (published, policy note).
     """
     bundle_dir = root / stable_id
     container = tmp_dir.with_name(f"{tmp_dir.name}.verify")
@@ -734,6 +750,7 @@ def _publish_fetched(stable_id: str, *, data_dir: Path, root: Path, tmp_dir: Pat
     tmp_dir.rename(staged)
     try:
         load_stem_bundle(stable_id, roots=[container])  # strict verify, never mocked
+        policy_note = conform_fetched_bundle(container, stable_id, data_dir=data_dir)
         with exclusive_file_lock(bundle_lock_path(data_dir, stable_id)):
             # A writer killed between a swap's two renames left the only good
             # copy aside, possibly a render never uploaded. Put it back before
@@ -746,10 +763,10 @@ def _publish_fetched(stable_id: str, *, data_dir: Path, root: Path, tmp_dir: Pat
             # bundle while we were fetching. Keep the winner, discard our own
             # copy rather than clobbering it.
             if bundle_dir.exists() and _is_local(stable_id, root):
-                return False
+                return False, None
             bundle_dir.parent.mkdir(parents=True, exist_ok=True)
             replace_bundle_dir(staged, bundle_dir)
-        return True
+        return True, policy_note
     finally:
         try:
             if staged.exists():
@@ -931,9 +948,10 @@ def _hydrate_valid_one(  # noqa: PLR0911, PLR0913, C901 - one outcome per branch
             # file, so another process's hydrate of this id cannot drop it.
             pin = pin_for_hydrate(bundle_dir)
             with bundle_publish_window(data_dir, stable_id):
-                if not _publish_fetched(
+                published, policy_note = _publish_fetched(
                     stable_id, data_dir=data_dir, root=root, tmp_dir=tmp_dir
-                ):
+                )
+                if not published:
                     outcome = already_local()
                     unpin_hydrate(pin)
                     return _discard_losing_copy(tmp_dir, outcome)
@@ -950,6 +968,10 @@ def _hydrate_valid_one(  # noqa: PLR0911, PLR0913, C901 - one outcome per branch
             return HydrationOutcome(
                 stable_id, status, reason=reason, code=exc.code
             )
+        except StemPolicyRefusedError as exc:
+            reason = _discard_failed_copy(tmp_dir, str(exc))
+            unpin_hydrate(pin)
+            return HydrationOutcome(stable_id, "error", reason=reason, code=exc.code)
         except (
             HydrationError,
             asset_store.AssetStoreError,
@@ -984,7 +1006,7 @@ def _hydrate_valid_one(  # noqa: PLR0911, PLR0913, C901 - one outcome per branch
             OPEN_DECKS.mark_served(stable_id)
     finally:
         unpin_hydrate(pin)
-    return HydrationOutcome(stable_id, "hydrated", bytes_fetched=total)
+    return HydrationOutcome(stable_id, "hydrated", bytes_fetched=total, reason=policy_note)
 
 
 # --- bulk hydration --------------------------------------------------------------
@@ -1107,18 +1129,151 @@ def bulk_hydrate(
     )
 
 
+# --- next-up prefetch (STEM-11747) ------------------------------------------------
+
+PrefetchStatus = Literal["hydrated", "skipped", "failed"]
+
+#: Named skip reasons, so a test and an operator grep the same token.
+PREFETCH_SKIP_NOT_CLOUD = "not_cloud"
+PREFETCH_SKIP_BELOW_CACHE_FLOOR = "below_cache_floor"
+PREFETCH_FAILED_CODE = "STEM_PREFETCH_FAILED"
+
+
+@dataclass(frozen=True)
+class PrefetchOutcome:
+    stable_id: str
+    status: PrefetchStatus
+    reason: str | None = None
+    code: str | None = None
+
+
+@dataclass(frozen=True)
+class PrefetchDeps:
+    """What one prefetch needs, bound by the caller (the route binds them to its request)."""
+
+    state_of: Callable[[str], str]
+    floor_refusal: Callable[[], str | None]
+    hydrate: Callable[[str], HydrationOutcome]
+
+
+def _prefetch_outcome_of(stable_id: str, outcome: HydrationOutcome) -> PrefetchOutcome:
+    if outcome.status in ("hydrated", "already_local"):
+        return PrefetchOutcome(stable_id, "hydrated")
+    if outcome.status == "hub_error":
+        hub_exc = _stem_source_error_from_hub_outcome(outcome)
+        return PrefetchOutcome(stable_id, "failed", reason=hub_exc.message, code=hub_exc.code)
+    return PrefetchOutcome(
+        stable_id, "failed", reason=outcome.reason or outcome.status, code=outcome.code or PREFETCH_FAILED_CODE
+    )
+
+
+def prefetch_one(stable_id: str, deps: PrefetchDeps) -> PrefetchOutcome:
+    """Prefetch one next-up stem-set from R2, or name why not. Never raises."""
+    try:
+        state = deps.state_of(stable_id)
+        if state != "cloud":
+            return PrefetchOutcome(stable_id, "skipped", reason=f"{PREFETCH_SKIP_NOT_CLOUD}: state={state}")
+        refusal = deps.floor_refusal()
+        if refusal is not None:
+            return PrefetchOutcome(stable_id, "skipped", reason=f"{PREFETCH_SKIP_BELOW_CACHE_FLOOR}: {refusal}")
+        return _prefetch_outcome_of(stable_id, deps.hydrate(stable_id))
+    except StemSourceError as exc:
+        return PrefetchOutcome(stable_id, "failed", reason=exc.message, code=exc.code)
+    except Exception as exc:
+        log.exception("stem-prefetch: unexpected failure stable_id=%s", stable_id)
+        return PrefetchOutcome(stable_id, "failed", reason=f"{type(exc).__name__}: {exc}", code=PREFETCH_FAILED_CODE)
+
+
+class NextUpStemPrefetcher:
+    """One next-up stem-set prefetch in flight; the newest different head waits behind it.
+
+    A changed head cancels nothing in flight. A head whose prefetch failed is not
+    retried by the prefetcher (a deck load still can), and each failure code is
+    logged once at WARNING until a prefetch succeeds, so a hub outage across many
+    heads is one log line, never a retry storm.
+    """
+
+    def __init__(self, *, submit: Callable[[Callable[[], None]], object] | None = None) -> None:
+        if submit is None:
+            executor = ThreadPoolExecutor(max_workers=1, thread_name_prefix="stem-prefetch")
+            submit = executor.submit
+        self._submit = submit
+        self._lock = threading.Lock()
+        self._in_flight: str | None = None
+        self._pending: tuple[str, PrefetchDeps] | None = None
+        self._failed: set[str] = set()
+        self._logged_codes: set[str] = set()
+        self.history: deque[PrefetchOutcome] = deque(maxlen=32)
+
+    def offer(self, stable_id: str, deps: PrefetchDeps) -> bool:
+        """Queue ``stable_id`` as the next prefetch; True when accepted. Never blocks."""
+        with self._lock:
+            if (
+                stable_id == self._in_flight
+                or stable_id in self._failed
+                or (self._pending is not None and self._pending[0] == stable_id)
+            ):
+                return False
+            if self._in_flight is not None:
+                self._pending = (stable_id, deps)
+                return True
+            self._in_flight = stable_id
+        self._start(stable_id, deps)
+        return True
+
+    def _start(self, stable_id: str, deps: PrefetchDeps) -> None:
+        self._submit(lambda: self._run(stable_id, deps))
+
+    def _run(self, stable_id: str, deps: PrefetchDeps) -> None:
+        try:
+            self._record(prefetch_one(stable_id, deps))
+        finally:
+            with self._lock:
+                pending, self._pending = self._pending, None
+                self._in_flight = None if pending is None else pending[0]
+            if pending is not None:
+                self._start(*pending)
+
+    def _record(self, outcome: PrefetchOutcome) -> None:
+        self.history.append(outcome)
+        if outcome.status == "hydrated":
+            self._logged_codes.clear()
+            log.info("stem-prefetch: next-up stem-set hydrated stable_id=%s", outcome.stable_id)
+        elif outcome.status == "skipped":
+            log.info("stem-prefetch: skipped [%s] stable_id=%s", outcome.reason, outcome.stable_id)
+        elif outcome.status == "failed":
+            code = outcome.code or PREFETCH_FAILED_CODE
+            with self._lock:
+                self._failed.add(outcome.stable_id)
+                first = code not in self._logged_codes
+                self._logged_codes.add(code)
+            log.log(
+                logging.WARNING if first else logging.DEBUG,
+                "stem-prefetch: next-up stem-set not prefetched [%s] stable_id=%s: %s",
+                code,
+                outcome.stable_id,
+                outcome.reason,
+            )
+
+
 __all__ = [
     "IN_FLIGHT_MARKER",
     "OPEN_DECKS",
     "OPEN_DECK_SERVED_TTL_S",
+    "PREFETCH_SKIP_BELOW_CACHE_FLOOR",
+    "PREFETCH_SKIP_NOT_CLOUD",
     "RESERVATION_FILENAME",
     "STEM_ASSET_KIND",
     "BulkHydrateReport",
     "HydrationOutcome",
     "HydrationStatus",
+    "NextUpStemPrefetcher",
     "OpenDeckRegistry",
+    "PrefetchDeps",
+    "PrefetchOutcome",
     "bulk_hydrate",
     "hydrate_one",
     "load_reserved_ids",
+    "prefetch_one",
     "reservation_file_path",
 ]

@@ -60,6 +60,7 @@ from apps.engine_core.jobs.runner import JobRunner  # noqa: E402
 from apps.engine_core.jobs.store import JobStore  # noqa: E402
 from apps.engine_core.setup.api import router as setup_router  # noqa: E402
 from apps.shared.paths import STATE_DB  # noqa: E402
+from apps.webui.server.auto_analyze_prefs import DEFAULT_AUTO_LANES  # noqa: E402
 from apps.webui.server.routes import ingest  # noqa: E402
 from apps.webui.server.routes.analysis_queue import router as analysis_queue_router  # noqa: E402
 
@@ -138,7 +139,10 @@ def create_app() -> FastAPI:
             # recorded as such rather than read, which would raise here and
             # turn an early drain into a 500 the route itself never answers.
             entry["backlog_files"] = (
-                sorted(Path(item.file_path).name for item in ingest.unmapped_backlog().pending)
+                sorted(
+                    Path(item.file_path).name
+                    for item in ingest.unmapped_backlog(lanes=DEFAULT_AUTO_LANES).pending
+                )
                 if STATE_DB.exists()
                 else "no state.db yet"
             )

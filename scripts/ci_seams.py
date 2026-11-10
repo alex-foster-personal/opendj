@@ -171,6 +171,8 @@ _ROOT_FILES: Mapping[str, Kind] = {
 }
 
 _LEDGER = ".planning/REQUIREMENTS.md"
+#: Per-id requirement fragments (issue #10541): the same ledger, one file per id.
+_LEDGER_FRAGMENTS = "(private path)/"
 _HTTP_CONTRACT = "apps/webui/openapi.json"
 _WEBUI_TEST_SUFFIXES = (".ts", ".mjs", ".js", ".svelte")
 
@@ -206,7 +208,7 @@ def _is_ci_yml_prose(path: str) -> bool:
 def classify(path: str) -> Kind:
     """The one kind `path` belongs to. Prose is read from ci.yml's own scope list, so the
     two readers of "docs-only" cannot disagree."""
-    if path == _LEDGER:
+    if path == _LEDGER or path.startswith(_LEDGER_FRAGMENTS):
         return Kind.LEDGER
     if path == _HTTP_CONTRACT:
         return Kind.HTTP_CONTRACT
@@ -294,6 +296,12 @@ def _run_shadow() -> int:
         with Path(summary).open("a", encoding="utf-8") as out:
             out.write(f"### Seam plan (shadow)\n\n- full: {plan.full}\n")
             out.write(f"- seams: {', '.join(sorted(plan.seams)) or 'none'}\n- {plan.reason}\n")
+    # #11366: publish the plan as step outputs so later children can read it; no job
+    # `if:` reads them yet, so this still skips nothing.
+    outputs = os.environ.get("GITHUB_OUTPUT")
+    if outputs:
+        with Path(outputs).open("a", encoding="utf-8") as out:
+            out.write(f"seams={','.join(sorted(plan.seams))}\nfull={str(plan.full).lower()}\n")
     return 0
 
 

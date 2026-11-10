@@ -4,7 +4,7 @@ Investigation finding this module encodes: lyrics are NOT a bulk local
 corpus. ``apps.lyrics.service.LyricsService`` fetches line-synced lyrics
 from LRCLIB (the sole permitted free, keyless source) one stable track id at
 a time, on demand, and caches the result at
-``data/state/lyrics-cache/<stable_id>.json`` (``apps.lyrics.cache``,
+``(private path)/<stable_id>.json`` (``apps.lyrics.cache``,
 LYRICS-01). There is no bulk import and no guarantee of coverage: the
 denominator is whatever ``tracks_on_disk()`` in
 ``apps.webui.server.routes.ingest_job`` currently resolves (materialised
@@ -13,12 +13,12 @@ audio files, minus streaming-only rows), and the numerator is whatever
 shipped lyrics-completion health dot (issue #1352) already uses. This module
 does not redefine that population; Parts 2/3 inherit it unchanged.
 
-On this dev/CI checkout, coverage is 0 of 0: ``data/state/state.db`` ships
+On this dev/CI checkout, coverage is 0 of 0: ``(private path)`` ships
 empty and gitignored (no tracks ingested) and no ``lyrics-cache`` directory
 exists on disk. That is a fact about this sandboxed worktree, not a claim
 about the maintainer's real library - the real coverage fraction can only be read by
 running the existing health-dot coverage path against the real
-``data/state/state.db`` and ``data/state/lyrics-cache/``, which this
+``(private path)`` and ``(private path)/``, which this
 worktree does not have.
 
 Parts 2 (background index, #1343) and 3 (search UI, #1344) consume the
@@ -46,6 +46,10 @@ LYRIC_SEARCH_CONTRACT_SCHEMA = 1
 #: keeps roughly an order of magnitude of headroom over that measured p95,
 #: for a slower machine and for Parts 2/3 swapping in a real index.
 SEARCH_RESULT_LATENCY_P95_MS_MAX = 50.0
+
+#: Documented floor for lyric fuzzy also-search (issue #11145); canonical value
+#: lives in ``apps.lyrics.fuzzy_match.LYRIC_FUZZY_SIMILARITY_THRESHOLD``.
+from apps.lyrics.fuzzy_match import LYRIC_FUZZY_SIMILARITY_THRESHOLD  # noqa: E402
 
 
 @dataclass(frozen=True)

@@ -26,6 +26,7 @@ import secrets
 import tempfile
 import threading
 import time
+import webbrowser
 from collections.abc import Callable, Mapping
 from dataclasses import asdict, dataclass
 from http.server import BaseHTTPRequestHandler, HTTPServer
@@ -45,9 +46,12 @@ __all__ = [
     "ConnectFlow",
     "NotConnected",
     "NotConnectedReason",
+    "PKCE_BROWSER_REFOCUS_AFTER_S",
     "PLAYER_ID_RE",
     "list_account_playlists",
     "normalize_client_id",
+    "open_pkce_authorize_url",
+    "wait_pkce_connect",
     "open_account_client",
     "playlist_open_url",
     "resolve_client_id",
@@ -623,6 +627,11 @@ def _persist_signed_in_client_id(client_id: str, client_id_path: Path | None) ->
 
 ConnectPhase = Literal["idle", "waiting", "connected", "failed"]
 
+# How long ``python -m apps.spotify login`` waits before opening the authorize URL
+# again so the sign-in tab comes back to the front.
+PKCE_BROWSER_REFOCUS_AFTER_S: float = 10.0
+PKCE_BROWSER_POLL_S: float = 0.5
+
 # How long the loopback listener waits for the browser to come back.
 CONNECT_TIMEOUT_S = 300
 # How long one accepted callback socket may sit without sending its request.
@@ -630,6 +639,38 @@ CONNECT_TIMEOUT_S = 300
 # client that connects and never finishes would block the listener past both
 # the flow deadline and a replacing Connect.
 CALLBACK_READ_TIMEOUT_S = 2.0
+
+
+def open_pkce_authorize_url(
+    url: str,
+    opener: Callable[[str], bool] | None = None,
+) -> bool:
+    """Open the Spotify authorize URL in the default browser (or ``opener`` in tests)."""
+    open_url = webbrowser.open if opener is None else opener
+    return open_url(url)
+
+
+def wait_pkce_connect(
+    flow: ConnectFlow,
+    authorize_url: str,
+    *,
+    open_browser: bool,
+    refocus_after_s: float = PKCE_BROWSER_REFOCUS_AFTER_S,
+    poll_s: float = PKCE_BROWSER_POLL_S,
+    monotonic: Callable[[], float] = time.monotonic,
+    sleep: Callable[[float], None] = time.sleep,
+    opener: Callable[[str], bool] | None = None,
+) -> dict[str, Any]:
+    """Block until ``flow`` leaves ``waiting``; re-open the authorize URL once after 10 s."""
+    started = monotonic()
+    refocused = False
+    while (status := flow.status())["phase"] == "waiting":
+        elapsed = monotonic() - started
+        if open_browser and not refocused and elapsed >= refocus_after_s:
+            open_pkce_authorize_url(authorize_url, opener=opener)
+            refocused = True
+        sleep(poll_s)
+    return flow.status()
 
 
 class ConnectFlow:

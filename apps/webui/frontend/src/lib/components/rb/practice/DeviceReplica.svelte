@@ -109,13 +109,13 @@
 	{#each resolved as r (r.control.id)}
 		<div
 			class="ctl ctl-{r.control.type}"
-			class:inert={r.kind === 'inert'}
+			class:inert={r.kind !== 'bound'}
 			class:target={target === r.control.id}
 			style={_box(r)}
 			title={controlTitle(r)}
 			data-control-id={r.control.id}
 		>
-			{#if r.kind === 'inert'}
+			{#if r.kind !== 'bound'}
 				<span class="lbl" aria-disabled="true">{r.control.label}</span>
 			{:else if _isContinuous(r)}
 				<input

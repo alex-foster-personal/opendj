@@ -16,6 +16,9 @@ It is not yet what users hear by default: the page plays through Web Audio unles
 is on (`?engine=rust`), and the daemon does not start the engine unless `ODJ_AUDIO_ENGINE` is
 `wall` or `device` or a client calls `POST /api/v1/audio-engine/start`.
 
+Agent modability zones (RED / ORANGE / GREEN) for these paths:
+`(private path)`.
+
 ## Diagram
 
 ```mermaid

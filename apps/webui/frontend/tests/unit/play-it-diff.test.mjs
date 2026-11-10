@@ -24,3 +24,21 @@ test('summarizeReorder handles empty playlists', () => {
 	const summary = mod.summarizeReorder([], []);
 	assert.deepEqual(summary, { movedCount: 0, unchanged: true });
 });
+
+test('formatUnscoredEdges is null when the count is zero', () => {
+	assert.equal(mod.formatUnscoredEdges(0, 39, ['key']), null);
+});
+
+test('formatUnscoredEdges names a single missing term', () => {
+	assert.equal(
+		mod.formatUnscoredEdges(3, 39, ['key', 'key']),
+		'3 of 39 edges unscored (key missing)'
+	);
+});
+
+test('formatUnscoredEdges lists measured-term names in a stable order', () => {
+	assert.equal(
+		mod.formatUnscoredEdges(2, 10, ['artist', 'energy', 'bpm']),
+		'2 of 10 edges unscored (bpm missing, energy missing, artist missing)'
+	);
+});

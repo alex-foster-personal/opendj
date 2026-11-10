@@ -1,0 +1,9 @@
+{
+  "bytes": 1024,
+  "measured_main": 508074,
+  "measured_with_pr": 508252,
+  "sha": "5a3c1386a4",
+  "date": "Tue 10 Nov 2026",
+  "reason": "branch grokbot-10444-crowd-request-store grows the other-lazy surface; measured +178 B gzip over main; ceiled to KiB.",
+  "payback": "none planned; the growth is the change's own code on this surface"
+}

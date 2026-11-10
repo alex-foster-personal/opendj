@@ -13,6 +13,7 @@ from pathlib import Path
 import pytest
 
 from apps.shared.pairings import PairingsRepo, ensure_phase08_tables
+from apps.shared.state.schema import apply_migrations
 from apps.smartlists.repo import SmartlistsRepo
 
 _PHASE5_TEST_DDL: tuple[str, ...] = (
@@ -70,6 +71,8 @@ def state_conn(tmp_path: Path):
     for stmt in _PHASE5_TEST_DDL:
         conn.execute(stmt)
     ensure_phase08_tables(conn)
+    # Real playlist ladder (not hand-rolled DDL) for playlist_count rules (#10023).
+    apply_migrations(conn)
     try:
         yield conn
     finally:

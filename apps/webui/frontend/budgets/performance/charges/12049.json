@@ -1,0 +1,9 @@
+{
+  "bytes": 1024,
+  "measured_main": 429609,
+  "measured_with_pr": 429760,
+  "sha": "282cb69c89",
+  "date": "Tue 10 Nov 2026",
+  "reason": "PR #12049: stepAutoPlayBrowserFeed helper on the browser/performance path; +151 B gzip over main at CI merge-base measurement.",
+  "payback": "none planned; growth is the shared AutoPlay feed step the BrowserPanel and unit harness call"
+}

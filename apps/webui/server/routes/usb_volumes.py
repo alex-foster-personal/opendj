@@ -55,6 +55,7 @@ from apps.webui.server.routes.usb_root_access import (
     root_listing_deadline,
     start_root_listing,
 )
+from apps.webui.server.routes.usb_history import load_vendor_usb_history, lookup_vendor_name
 from apps.webui.server.routes.usb_root_access import (
     _reset_for_tests as _reset_root_listings_for_tests,
 )
@@ -119,6 +120,8 @@ class UsbVolume:
     #: (usb_root_access); stays "unknown" only where no listing ran, which is
     #: the simulated rows built by usb_volumes_sim.
     access: RootAccess = "unknown"
+    vendor_name: str | None = None
+    vendor_source: str | None = None
 
 
 # ----- module state (process-local; cheap) ---------------------------------
@@ -477,6 +480,8 @@ class UsbVolumeOut(BaseModel):
     #: refused Removable Volumes permission, "unknown" no listing ran
     #: (simulated volumes) or it failed for another reason.
     access: RootAccess = "unknown"
+    vendor_name: str | None = None
+    vendor_source: str | None = None
 
 
 class UsbVolumesOut(BaseModel):
@@ -522,6 +527,49 @@ def _capability_response(exc: UsbDiscoveryUnavailable) -> JSONResponse:
     )
 
 
+def _apply_vendor_history(volumes: list[UsbVolume], *, data_dir: Path) -> list[UsbVolume]:
+    history = load_vendor_usb_history(data_dir=data_dir)
+    if not (history.by_uuid or history.by_device_id or history.by_mount_name):
+        return volumes
+    merged: list[UsbVolume] = []
+    for volume in volumes:
+        uuid = (
+            volume.id.removeprefix("vol:")
+            if volume.id.startswith("vol:")
+            else None
+        )
+        hit = lookup_vendor_name(
+            history,
+            volume_id=volume.id,
+            volume_uuid=uuid,
+            mount_name=volume.name,
+        )
+        if hit is None:
+            merged.append(volume)
+            continue
+        display = volume.name
+        if hit.name and hit.name != volume.name:
+            display = hit.name
+        merged.append(
+            UsbVolume(
+                id=volume.id,
+                name=display,
+                mount_path=volume.mount_path,
+                kind=volume.kind,
+                present=volume.present,
+                simulated=volume.simulated,
+                role=volume.role,
+                protocol=volume.protocol,
+                removable=volume.removable,
+                hide_reason=volume.hide_reason,
+                access=volume.access,
+                vendor_name=hit.name,
+                vendor_source=hit.source,
+            )
+        )
+    return merged
+
+
 def _to_out(v: UsbVolume) -> UsbVolumeOut:
     kind_is_music = v.kind in ("rekordbox", "djay", "music")
     # role == "other" with no protocol/removable at all means diskutil gave us
@@ -555,6 +603,8 @@ def _to_out(v: UsbVolume) -> UsbVolumeOut:
         if not is_music
         else None,
         access=v.access,
+        vendor_name=v.vendor_name,
+        vendor_source=v.vendor_source,
     )
 
 
@@ -574,6 +624,9 @@ def get_usb_volumes(request: Request) -> UsbVolumesOut | JSONResponse:
             discovery=discovery,
             include_simulated=request.app.state.usb_simulation_enabled,
         )
+        data_dir = getattr(request.app.state, "data_dir", None)
+        if data_dir is not None:
+            vols = _apply_vendor_history(vols, data_dir=Path(data_dir))
     except UsbDiscoveryUnavailable as exc:
         return _capability_response(exc)
     return UsbVolumesOut(

@@ -1,7 +1,9 @@
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
-import { test } from 'node:test';
+import { before, mock, test } from 'node:test';
+
+import { loadTypeScriptModule } from './load-typescript.mjs';
 
 // PERF-R5 Q9 + Q10 wiring guards.
 //
@@ -22,6 +24,22 @@ import { test } from 'node:test';
 //   rebuilds it on every cache mutation
 // - if the memory meter stops going through memoryReadout then the WKWebView
 //   heap reading is a fabricated 0 MB again
+// REQ: PERF-CAPTURE-11886 - per-keystroke keystroke_ms and dropped on library-filter rows
+
+/** @type {typeof import('./fixtures/library-perf-entry.ts')} */
+let lib;
+
+before(async () => {
+	lib = await loadTypeScriptModule('tests/unit/fixtures/library-perf-entry.ts');
+});
+
+function ringMark() {
+	return lib.readPerfEvents().length;
+}
+
+function rowsSince(mark) {
+	return lib.readPerfEvents().slice(mark);
+}
 
 function source(relativePath) {
 	return readFileSync(fileURLToPath(new URL(`../../${relativePath}`, import.meta.url)), 'utf8');
@@ -54,6 +72,87 @@ test('SearchBox renders its own draft, not the debounced owner value', () => {
 	);
 });
 
+// REQ: PERF-CAPTURE-11886
+test('a five-key burst paints once with per-keystroke latencies', () => {
+	mock.timers.enable({ apis: ['setTimeout'] });
+	try {
+		let t = 0;
+		const now = () => t;
+		let rafCalls = 0;
+		const fakeRaf = (cb) => {
+			rafCalls += 1;
+			cb(500);
+		};
+		assert.deepEqual(lib.keystrokeLatencies([0, 100, 200, 300, 400], 500), [500, 400, 300, 200, 100]);
+		const mark = ringMark();
+		const debounce = lib.createFilterDebounce(
+			(settle) =>
+				lib.recordFilterTimingOnPaint({ settle, computeMs: 3, rowsIn: 100, rowsOut: 5 }, fakeRaf),
+			80,
+			now
+		);
+		const keyTimes = [0, 100, 200, 300, 400];
+		for (let i = 0; i < 5; i += 1) {
+			t = keyTimes[i];
+			debounce.push(`q${i}`);
+			if (i < 4) {
+				mock.timers.tick(10);
+			}
+		}
+		t = 480;
+		mock.timers.tick(80);
+		assert.equal(rafCalls, 1);
+		const rows = rowsSince(mark);
+		assert.equal(rows.length, 1);
+		assert.equal(rows[0].kind, 'library-filter');
+		assert.deepEqual(rows[0].series.keystroke_ms, [500, 400, 300, 200, 100]);
+		assert.equal(rows[0].stages.keystrokes, 5);
+		assert.equal(rows[0].stages.dropped, 0);
+	} finally {
+		mock.timers.reset();
+	}
+});
+
+test('pane switch mid-burst records dropped keystrokes without latencies', () => {
+	mock.timers.enable({ apis: ['setTimeout'] });
+	try {
+		let t = 0;
+		const now = () => t;
+		const mark = ringMark();
+		const debounce = lib.createFilterDebounce((settle) => lib.recordFilterDropped(settle.keystrokes), 80, now);
+		for (let i = 0; i < 3; i += 1) {
+			debounce.push(`q${i}`);
+			t += 50;
+			mock.timers.tick(50);
+		}
+		mock.timers.tick(80);
+		const rows = rowsSince(mark);
+		assert.equal(rows.length, 1);
+		assert.equal(rows[0].stages.dropped, 3);
+		assert.deepEqual(rows[0].series.keystroke_ms, []);
+		const mark2 = ringMark();
+		lib.recordFilterDropped(0);
+		assert.equal(rowsSince(mark2).length, 0);
+	} finally {
+		mock.timers.reset();
+	}
+});
+
+test('cancel does not record a drop', () => {
+	mock.timers.enable({ apis: ['setTimeout'] });
+	try {
+		const mark = ringMark();
+		const debounce = lib.createFilterDebounce(() => {}, 80, () => Date.now());
+		debounce.push('a');
+		debounce.push('ab');
+		debounce.cancel();
+		mock.timers.tick(500);
+		assert.equal(rowsSince(mark).length, 0);
+	} finally {
+		mock.timers.reset();
+	}
+});
+
 test('BrowserPanel routes keystrokes through the filter debounce', () => {
 	const src = source('src/lib/components/rb/BrowserPanel.svelte');
 	assert.match(
@@ -78,10 +177,21 @@ test('BrowserPanel routes keystrokes through the filter debounce', () => {
 		'recordPlaylistTreeReadyMs(',
 		'recordPlaylistSwitchFirstRowsMs(',
 		'recordCollectionSearchTiming(',
-		'recordFilterTiming('
+		'recordFilterTimingOnPaint(',
+		'recordFilterDropped('
 	]) {
 		assert.ok(src.includes(call), `the library path lost its ${call} instrumentation`);
 	}
+	assert.match(
+		src,
+		/if \(paneIndex !== activePane\) \{\s*recordFilterDropped\(settle\.keystrokes\);\s*return;/,
+		'inactive-pane settles must record dropped keystrokes, not latencies'
+	);
+	assert.match(
+		src,
+		/await tick\(\);\s*recordFilterTimingOnPaint\(/,
+		'active-pane settles must time to the first frame after recompute'
+	);
 	assert.match(
 		src,
 		/recordPlaylistSwitchFirstRowsMs\([\s\S]*?'playlist'/,

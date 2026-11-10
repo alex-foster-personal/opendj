@@ -184,6 +184,10 @@ function _cmdBeatLoop(deck: DeckId, beats: number): void {
 	void dispatchPerformanceCommand({ type: 'beat_loop', deck, beats });
 }
 
+function _cmdBeatJump(deck: DeckId, beats: number): void {
+	void dispatchPerformanceCommand({ type: 'beat_jump', deck, beats });
+}
+
 /** REBASE ADAPTER: disengage the active loop. */
 function _cmdLoopExit(deck: DeckId): void {
 	void dispatchPerformanceCommand({ type: 'loop', deck, loop: null });
@@ -296,6 +300,7 @@ type _DeckLoopAction = Extract<
 	{
 		type:
 			| 'deck_beat_loop'
+			| 'deck_beat_jump'
 			| 'deck_auto_loop_toggle'
 			| 'deck_loop_exit'
 			| 'deck_manual_loop_cycle'
@@ -346,6 +351,11 @@ function _handleDeckLoop(action: _DeckLoopAction, value: MidiInputValue, ctx: _M
 	switch (action.type) {
 		case 'deck_beat_loop':
 			_ifPressedOnLoadedDeck(value, action.deck, 'looping', () => _cmdBeatLoop(action.deck, action.beats));
+			return;
+		case 'deck_beat_jump':
+			_ifPressedOnLoadedDeck(value, action.deck, 'beat jumping', () =>
+				_cmdBeatJump(action.deck, action.beats)
+			);
 			return;
 		case 'deck_auto_loop_toggle':
 			_ifPressedOnLoadedDeck(value, action.deck, 'looping', () =>
@@ -413,7 +423,7 @@ function _handleDeckJog(action: Extract<MidiAction, { type: 'deck_jog' }>, value
 		throw new Error(`deck_jog requires a relative binding, got ${value.kind}`);
 	}
 	if (_deckIsEmpty(action.deck)) return;
-	_jogWheel(action.deck).turn(value.delta);
+	_jogWheel(action.deck).turn(value.delta, action.scale ?? 1);
 }
 
 function _handleControllerPadMode(
@@ -599,6 +609,7 @@ function _routeMidiAction(
 			_handleDeckTransport(action, value, pressT0Ms);
 			return;
 		case 'deck_beat_loop':
+		case 'deck_beat_jump':
 		case 'deck_auto_loop_toggle':
 		case 'deck_loop_exit':
 		case 'deck_manual_loop_cycle':
@@ -711,6 +722,8 @@ export function ledTriggerActive(trigger: LedTrigger, deviceId?: string): boolea
 		return loop !== null && loop.engaged && loop.beat_length === trigger.beats;
 	} else if (trigger.kind === 'beat_sync_enabled') {
 		return deckStates[trigger.deck].beat_sync_enabled;
+	} else if (trigger.kind === 'beat_sync_effective') {
+		return effectiveBeatSync(deckStates[trigger.deck]);
 	} else if (trigger.kind === 'stem_eq_enabled') {
 		return mixerState.channels[trigger.deck].stem_eq_mode && deckStates[trigger.deck].stems.status === 'ready';
 	} else if (trigger.kind === 'pad_mode_selected') {

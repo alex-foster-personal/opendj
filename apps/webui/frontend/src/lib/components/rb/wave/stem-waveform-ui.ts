@@ -4,6 +4,7 @@ import type { DeckState } from '$lib/rb/deck-state-types';
 import { stemColorFromToken } from '$lib/rb/stem-colors';
 import { STEM_CONTROLS } from '$lib/rb/stem-graph';
 import type { StemControl, StemLayout } from '$lib/rb/stem-types';
+import type { PerformanceCommand } from '$lib/rb/performance-ipc-types';
 
 /** Fixed CSS height for one stem mini-waveform row. */
 export const STEM_WAVE_ROW_PX = 12;
@@ -22,7 +23,10 @@ export function stemWaveformApiPart(
 	return layout === 'demucs4' ? control : null;
 }
 
-export function stemWaveRowUnavailableTip(deck: DeckState, stem: StemControl): string | null {
+export function stemWaveRowUnavailableTip(
+	deck: Pick<DeckState, 'stems'>,
+	stem: StemControl
+): string | null {
 	if (deck.stems.status !== 'ready') {
 		return `stems ${deck.stems.status}: ${deck.stems.error ?? 'no aligned artifact'}`;
 	}
@@ -48,4 +52,24 @@ export function stemWaveRowColor(stem: StemControl, computedToken = ''): string 
  */
 export function stemWaveRowColorFromElement(el: Element, stem: StemControl): string {
 	return stemWaveRowColor(stem, getComputedStyle(el).getPropertyValue(`--rb-stem-${stem}`));
+}
+
+/** The command a click on a stem mini-waveform row sends (issue #10317). */
+export type StemWaveRowCommand = Extract<PerformanceCommand, { type: 'stem_solo' | 'stem_mute' }>;
+
+/**
+ * What a click (solo, exclusive, toggling the current solo) or a Shift+click
+ * (mute, toggling the current mute) on a stem row sends; null for a row the
+ * stem-set's layout cannot drive, so an inert row never dispatches.
+ */
+export function stemWaveRowClickCommand(
+	deck: Pick<DeckState, 'deck_id' | 'stems'>,
+	stem: StemControl,
+	shiftKey: boolean
+): StemWaveRowCommand | null {
+	if (stemWaveRowUnavailableTip(deck, stem) !== null) return null;
+	const current = deck.stems.controls[stem];
+	return shiftKey
+		? { type: 'stem_mute', deck: deck.deck_id, stem, muted: !current.muted }
+		: { type: 'stem_solo', deck: deck.deck_id, stem, solo: !current.solo, exclusive: true };
 }

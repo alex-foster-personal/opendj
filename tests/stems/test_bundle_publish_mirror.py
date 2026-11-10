@@ -195,18 +195,26 @@ def test_routes_ask_for_flac_only_where_the_tier_is_flac(tier: str, codec: str) 
     assert (get_tier(tier).codec == "flac") == (codec == "flac")
 
 
+@pytest.mark.requires_audio_stack
 @pytest.mark.parametrize("codec", ["flac", "mp3"])
 def test_bundle_bytes_match_the_farm(tmp_path: Path, codec: str) -> None:
+    from tests.stems.stem_set_support import compliant_mp3_parts, lossless_parts, mp3_source, publish_result
+
     tree = _farm_tree()
     namespace = _farm_namespace(tree)
     _farm_function(tree, "_stem_manifest", namespace)
     farm_publish = _farm_function(tree, "_publish_stems_local", namespace)
     preset = bundle_publish.PRESETS["htdemucs-ov0.25"]
-    audio = Path("/music/a.mp3")
+    audio = mp3_source(tmp_path / "music" / "a.mp3", kbps=320)
+    if codec == "flac":
+        parts, requested = lossless_parts("flac", seed=1), "flac"
+    elif codec == "mp3":
+        parts, requested = compliant_mp3_parts(audio, seed=1, tmp=tmp_path / "parts"), "by-source"
+    result = publish_result(parts, codec)
 
-    farm_written, _ = farm_publish("sid-1", audio, _result(codec), preset, tmp_path / "farm")
+    farm_written, _ = farm_publish("sid-1", audio, result, preset, tmp_path / "farm", requested_codec=requested)
     ours_written, _ = bundle_publish.publish_stems_local(
-        "sid-1", audio, _result(codec), preset, tmp_path / "ours"
+        "sid-1", audio, result, preset, tmp_path / "ours", requested_codec=requested
     )
     assert ours_written == farm_written > 0
     farm_bundle = tmp_path / "farm" / "state" / "stems" / "sid-1"

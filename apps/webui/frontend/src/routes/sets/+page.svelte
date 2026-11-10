@@ -23,7 +23,7 @@
 		type TimelineEvent,
 		type Transition
 	} from './sets-api';
-	import { captureFailureMessage, recordRailState, recorderHeadline } from '$lib/sets/performance-recorder';
+	import { captureFailureMessage, clipSuffix, recordRailState, recorderHeadline } from '$lib/sets/performance-recorder';
 	import {
 		REC_STATUS_UNREACHABLE_GROUP,
 		REC_STATUS_UNREACHABLE_LIMIT,
@@ -382,6 +382,11 @@
 				<div title="Session length, hours and minutes">
 					<strong>{formatDuration(selected.summary.duration_s)}</strong><span>on the floor</span>
 				</div>
+				{#if selected.manifest.audio_peak_dbfs != null}
+					<div title="Master-mix peak level; {selected.manifest.clipped_samples ?? 0} full-scale samples">
+						<strong>{selected.manifest.audio_peak_dbfs.toFixed(1)} dBFS</strong><span>{selected.manifest.clip_events ? clipSuffix(selected.manifest.clip_events) : 'no clipping'}</span>
+					</div>
+				{/if}
 			</section>
 
 			<section class="share-panel" aria-label="Metadata-only sharing">

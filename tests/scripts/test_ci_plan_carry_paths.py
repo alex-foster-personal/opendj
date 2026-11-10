@@ -25,6 +25,7 @@ from pathlib import Path
 
 import pytest
 
+from scripts.ci_derived_inputs import CARRY_PATHS
 from scripts.ci_plan import Change, Config, Scope, Verdict, plan, read_config
 from scripts.ci_plan_carry import _is_plain_component, helper_carried_paths
 
@@ -567,5 +568,6 @@ def test_the_committed_path_list_is_exactly_the_derived_one() -> None:
     assert not repeated, f"ci/test-scopes.yml `helper_carried_paths` lists {repeated} more than once; keep one"
     assert tuple(sorted(derived)) == tuple(sorted(committed)), (
         "ci/test-scopes.yml `helper_carried_paths` no longer matches the global helpers' module closure:"
-        f" add {sorted(derived - set(committed))}, remove {sorted(set(committed) - derived)}"
+        f" add {sorted(derived - set(committed))}, remove {sorted(set(committed) - derived)};"
+        f" regenerate: {CARRY_PATHS.regenerate}"
     )

@@ -40,6 +40,7 @@ from apps.analysis.record import AnalysisRecord
 
 from ._beatgrid import downbeats_from_beats
 from ._io import atomic_write_json, utc_now_iso_seconds
+from . import dj_labels
 from .dj_labels import label_sections
 from .drop_events import mark_drops
 from .quantize import TIME_S_DECIMALS, quantize
@@ -241,16 +242,259 @@ def write_and_return(data_dir: Path, doc: dict[str, Any]) -> dict[str, Any]:
     return doc
 
 
+NICHE_LABELS_FIELD = "niche_labels"
+NICHE_STATE_V = 1
+NICHE_PROVIDER = "structure-niche-v1"
+SUGGESTION_ACCEPTED = "accepted"
+SUGGESTION_REJECTED = "rejected"
+
+
+def empty_niche_state() -> dict[str, Any]:
+    return {"v": NICHE_STATE_V, "regions": [], "suggestion_state": {}}
+
+
+def user_region_id(start_s: float, end_s: float, label: str) -> str:
+    return f"user:{start_s}:{end_s}:{label}"
+
+
+def normalize_niche_state(raw: Any) -> dict[str, Any]:
+    if not isinstance(raw, dict) or raw.get("v") != NICHE_STATE_V:
+        return empty_niche_state()
+    out: dict[str, Any] = {
+        "v": NICHE_STATE_V,
+        "regions": [],
+        "suggestion_state": {},
+    }
+    regions = raw.get("regions")
+    if isinstance(regions, list):
+        for row in regions:
+            if not isinstance(row, dict):
+                continue
+            label = row.get("label")
+            if label is None:
+                continue
+            start_s, end_s = row.get("start_s"), row.get("end_s")
+            if start_s is None or end_s is None:
+                continue
+            region_id = row.get("id") or user_region_id(float(start_s), float(end_s), str(label))
+            out["regions"].append(
+                {
+                    "id": str(region_id),
+                    "start_s": float(start_s),
+                    "end_s": float(end_s),
+                    "label": str(label),
+                    "source": "user",
+                }
+            )
+    verdicts = raw.get("suggestion_state")
+    if isinstance(verdicts, dict):
+        for sid, verdict in verdicts.items():
+            if verdict in (SUGGESTION_ACCEPTED, SUGGESTION_REJECTED):
+                out["suggestion_state"][str(sid)] = verdict
+    return out
+
+
+def read_niche_state(conn: sqlite3.Connection, stable_id: str) -> dict[str, Any]:
+    from apps.shared.state import provenance
+
+    row = provenance.read_field(conn, stable_id, NICHE_LABELS_FIELD)
+    if row is None:
+        return empty_niche_state()
+    return normalize_niche_state(row.value)
+
+
+def record_user_region(
+    state: dict[str, Any], *, start_s: float, end_s: float, label: str
+) -> dict[str, Any]:
+    if end_s <= start_s:
+        raise ValueError("end_s must be after start_s")
+    label = label.strip()
+    if not label:
+        raise ValueError("label must be non-empty")
+    next_state = normalize_niche_state(state)
+    region = {
+        "id": user_region_id(start_s, end_s, label),
+        "start_s": round(float(start_s), 3),
+        "end_s": round(float(end_s), 3),
+        "label": label,
+        "source": "user",
+    }
+    regions = [r for r in next_state["regions"] if r["id"] != region["id"]]
+    regions.append(region)
+    next_state["regions"] = sorted(regions, key=lambda r: (r["start_s"], r["id"]))
+    return next_state
+
+
+def set_suggestion_verdict(
+    state: dict[str, Any], suggestion_id: str, *, accepted: bool
+) -> dict[str, Any]:
+    next_state = normalize_niche_state(state)
+    next_state["suggestion_state"][suggestion_id] = (
+        SUGGESTION_ACCEPTED if accepted else SUGGESTION_REJECTED
+    )
+    return next_state
+
+
+def niche_suggestions_for_track(data_dir: Path, stable_id: str) -> list[dict[str, Any]]:
+    doc = load_sidecar(data_dir, stable_id)
+    if doc is None or doc.get("status") != "ok":
+        return []
+    return dj_labels.structure_niche_suggestions(doc.get("sections") or [], doc.get("dj_labels") or {})
+
+
+def suggestions_with_verdicts(
+    suggestions: list[dict[str, Any]], state: dict[str, Any]
+) -> list[dict[str, Any]]:
+    verdicts = normalize_niche_state(state)["suggestion_state"]
+    out: list[dict[str, Any]] = []
+    for row in suggestions:
+        sid = row["suggestion_id"]
+        verdict = verdicts.get(sid)
+        out.append(
+            {
+                **row,
+                "verdict": verdict,
+                "accepted": verdict == SUGGESTION_ACCEPTED,
+            }
+        )
+    return out
+
+
+def accepted_query_labels(
+    state: dict[str, Any], suggestions: list[dict[str, Any]]
+) -> list[str]:
+    """Labels that may drive a niche library search (issue #11190)."""
+    norm = normalize_niche_state(state)
+    labels: list[str] = []
+    seen: set[str] = set()
+    for region in norm["regions"]:
+        if region["label"] not in seen:
+            labels.append(region["label"])
+            seen.add(region["label"])
+    accepted_ids = {
+        sid for sid, v in norm["suggestion_state"].items() if v == SUGGESTION_ACCEPTED
+    }
+    for row in suggestions:
+        if row["suggestion_id"] in accepted_ids and row["label"] not in seen:
+            labels.append(row["label"])
+            seen.add(row["label"])
+    return labels
+
+
+def _sections_with_label(
+    doc: dict[str, Any], label: str
+) -> list[tuple[float, float, str, str]]:
+    if doc.get("status") != "ok":
+        return []
+    hits: list[tuple[float, float, str, str]] = []
+    for section in doc.get("sections") or []:
+        dj_label = section.get("dj_label")
+        if dj_label == label:
+            hits.append(
+                (float(section["start_s"]), float(section["end_s"]), str(dj_label), "structure")
+            )
+    return hits
+
+
+def _user_regions_with_label(state: dict[str, Any], label: str) -> list[tuple[float, float, str, str]]:
+    return [
+        (r["start_s"], r["end_s"], r["label"], "user")
+        for r in normalize_niche_state(state)["regions"]
+        if r["label"] == label
+    ]
+
+
+def search_niche_library(
+    conn: sqlite3.Connection,
+    data_dir: Path,
+    *,
+    source_stable_id: str,
+    query_labels: Sequence[str],
+    limit: int,
+) -> list[dict[str, Any]]:
+    """Tracks that share an accepted niche label; never embedding cosine neighbours."""
+    if not query_labels:
+        return []
+    labels = list(dict.fromkeys(str(label) for label in query_labels))
+    rows = conn.execute(
+        "SELECT stable_id FROM tracks WHERE deleted_at IS NULL AND stable_id != ?",
+        (source_stable_id,),
+    ).fetchall()
+    hits: list[dict[str, Any]] = []
+    for (stable_id,) in rows:
+        doc = load_sidecar(data_dir, stable_id)
+        state = read_niche_state(conn, stable_id)
+        citations: list[dict[str, Any]] = []
+        for label in labels:
+            for start_s, end_s, cite_label, source in (
+                *_sections_with_label(doc or {}, label),
+                *_user_regions_with_label(state, label),
+            ):
+                citations.append(
+                    {
+                        "start_s": round(float(start_s), 3),
+                        "end_s": round(float(end_s), 3),
+                        "label": cite_label,
+                        "source": source,
+                    }
+                )
+        if not citations:
+            continue
+        hits.append(
+            {
+                "stable_id": stable_id,
+                "score": float(len(citations)),
+                "citations": citations,
+            }
+        )
+    hits.sort(key=lambda row: (-row["score"], row["stable_id"]))
+    return hits[:limit]
+
+
+def niche_find_similar(
+    conn: sqlite3.Connection,
+    data_dir: Path,
+    *,
+    stable_id: str,
+    limit: int,
+    query_labels: Sequence[str] | None = None,
+) -> dict[str, Any]:
+    state = read_niche_state(conn, stable_id)
+    suggestions = niche_suggestions_for_track(data_dir, stable_id)
+    labels = list(query_labels) if query_labels is not None else accepted_query_labels(state, suggestions)
+    return {
+        "stable_id": stable_id,
+        "mode": "niche",
+        "provider": NICHE_PROVIDER,
+        "query_labels": labels,
+        "candidates": search_niche_library(
+            conn, data_dir, source_stable_id=stable_id, query_labels=labels, limit=limit
+        ),
+    }
+
+
 __all__ = [
     "PRODUCER",
     "PRODUCER_VERSION",
     "SCHEMA",
+    "NICHE_LABELS_FIELD",
+    "NICHE_PROVIDER",
+    "accepted_query_labels",
     "analyze",
     "attach_dj_labels",
     "build_sidecar",
     "cache_dir",
+    "empty_niche_state",
     "load_sidecar",
+    "niche_find_similar",
+    "niche_suggestions_for_track",
+    "normalize_niche_state",
     "own_downbeats",
+    "read_niche_state",
+    "record_user_region",
+    "search_niche_library",
+    "set_suggestion_verdict",
     "sidecar_path",
+    "suggestions_with_verdicts",
     "write_sidecar",
 ]

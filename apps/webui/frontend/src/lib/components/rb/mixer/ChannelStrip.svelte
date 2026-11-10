@@ -39,6 +39,7 @@
 	import { toggleTrackLoadResetPanel, trackLoadResetEnabled } from '$lib/rb/track-load-reset.svelte';
 	import Knob from './Knob.svelte';
 	import VFader from './VFader.svelte';
+	import { selId, selectorNode } from '$lib/keyboard/selector-register';
 
 	interface Props {
 		/** The deck this strip controls (screen order is 3 1 2 4). */
@@ -115,6 +116,8 @@
 
 	/** Decks 3/4 are secondary; lighten strip so 1/2 draw the eye. */
 	const secondary = $derived(deckId === 3 || deckId === 4);
+	/** #9397: LESS collapses the deck 3/4 strip columns, so they leave the keyboard selector. */
+	const channelSelectable = $derived(!(less && secondary));
 	const deck = $derived(getDeckState(deckId));
 	const playing = $derived(deck.playing);
 	const looped = $derived(deck.loop !== null && deck.loop.engaged);
@@ -339,6 +342,7 @@
 	class:deck-focus={focused}
 	class:selected={selected}
 	data-mixer-channel={deckId}
+	use:selectorNode={{ id: selId.channel(deckId), kind: 'group', enabled: channelSelectable }}
 	onclick={handleStripClick}
 	data-mixer-stems={stemDials}
 	role="group"
@@ -371,7 +375,7 @@
 			>
 		</div>
 	</div>
-	<div class="trim-slot">
+	<div class="trim-slot" use:selectorNode={{ id: selId.channelPart(deckId, 'trim'), kind: 'leaf', enabled: true }}>
 		<Knob
 			knobId={knobId(deckId, 'trim')}
 			label="TRIM"
@@ -384,49 +388,57 @@
 		<AutoGainReadout {deckId} onoffset={onAutoGainOffset} />
 	</div>
 	{#snippet stemDial(stem: StemControl, size: number)}
-		<Knob
-			knobId={knobId(deckId, stemKnobRole(stem))}
-			label={STEM_DIAL_LABELS[stem]}
-			accessibleLabel={stemAccessibleLabel(stem)}
-			value={deck.stems.controls[stem].gain}
-			{size}
-			accentColor={stemCssColor(stem)}
-			onchange={(value) => {
-				// Write the gain here, in the same turn as the pointer, so the
-				// dial is not waiting on stem_gain to come back around the
-				// command queue. The command still owns the audio graph.
-				deck.stems.controls[stem].gain = value;
-				onStemGain(stem, value);
-			}}
-		/>
+		<div class="sel-node" use:selectorNode={{ id: selId.channelStem(deckId, stem), kind: 'leaf', enabled: true }}>
+			<Knob
+				knobId={knobId(deckId, stemKnobRole(stem))}
+				label={STEM_DIAL_LABELS[stem]}
+				accessibleLabel={stemAccessibleLabel(stem)}
+				value={deck.stems.controls[stem].gain}
+				{size}
+				accentColor={stemCssColor(stem)}
+				onchange={(value) => {
+					// Write the gain here, in the same turn as the pointer, so the
+					// dial is not waiting on stem_gain to come back around the
+					// command queue. The command still owns the audio graph.
+					deck.stems.controls[stem].gain = value;
+					onStemGain(stem, value);
+				}}
+			/>
+		</div>
 	{/snippet}
 	<!-- Grid flows down a column then across: HI MID LOW, then VOCAL INST BASS
 	     beside them row for row. An absent stem keeps its cell empty. -->
 	<div class="eq-stack" class:with-stems={stemDials}>
-		<Knob
-			knobId={knobId(deckId, 'high')}
-			label="HI"
-			accessibleLabel={`high EQ deck ${deckId}`}
-			value={eqHigh}
-			size={eqSize}
-			onchange={(value) => oneq('high', value)}
-		/>
-		<Knob
-			knobId={knobId(deckId, 'mid')}
-			label="MID"
-			accessibleLabel={`mid EQ deck ${deckId}`}
-			value={eqMid}
-			size={eqSize}
-			onchange={(value) => oneq('mid', value)}
-		/>
-		<Knob
-			knobId={knobId(deckId, 'low')}
-			label="LOW"
-			accessibleLabel={`low EQ deck ${deckId}`}
-			value={eqLow}
-			size={eqSize}
-			onchange={(value) => oneq('low', value)}
-		/>
+		<div class="sel-node" use:selectorNode={{ id: selId.channelPart(deckId, 'high'), kind: 'leaf', enabled: true }}>
+			<Knob
+				knobId={knobId(deckId, 'high')}
+				label="HI"
+				accessibleLabel={`high EQ deck ${deckId}`}
+				value={eqHigh}
+				size={eqSize}
+				onchange={(value) => oneq('high', value)}
+			/>
+		</div>
+		<div class="sel-node" use:selectorNode={{ id: selId.channelPart(deckId, 'mid'), kind: 'leaf', enabled: true }}>
+			<Knob
+				knobId={knobId(deckId, 'mid')}
+				label="MID"
+				accessibleLabel={`mid EQ deck ${deckId}`}
+				value={eqMid}
+				size={eqSize}
+				onchange={(value) => oneq('mid', value)}
+			/>
+		</div>
+		<div class="sel-node" use:selectorNode={{ id: selId.channelPart(deckId, 'low'), kind: 'leaf', enabled: true }}>
+			<Knob
+				knobId={knobId(deckId, 'low')}
+				label="LOW"
+				accessibleLabel={`low EQ deck ${deckId}`}
+				value={eqLow}
+				size={eqSize}
+				onchange={(value) => oneq('low', value)}
+			/>
+		</div>
 		{#if stemDials}
 			{#each stemLayout.column as stem, row (row)}
 				{#if stem === null}
@@ -461,6 +473,7 @@
 			class="filter-knob"
 			data-rust-command={colorSettings.effect === 'filter' ? undefined : 'color_fx'}
 			bind:this={colorFxTriggerEl}
+			use:selectorNode={{ id: selId.channelPart(deckId, 'filter'), kind: 'leaf', enabled: true }}
 			data-testid={`color-fx-trigger-${deckId}`}
 		>
 			<Knob
@@ -540,7 +553,7 @@
 			<rect x="8.6" y="7" width="2.4" height="3.4" rx="0.8" fill="currentColor" />
 		</svg>CUE</button
 	>
-	<div class="fader-slot">
+	<div class="fader-slot" use:selectorNode={{ id: selId.channelPart(deckId, 'fader'), kind: 'leaf', enabled: true }}>
 		<VFader
 			value={fader}
 			{playing}

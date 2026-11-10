@@ -1,0 +1,9 @@
+{
+  "bytes": 1024,
+  "measured_main": 423980,
+  "measured_with_pr": 424720,
+  "sha": "1647212f3e",
+  "date": "Tue 10 Nov 2026",
+  "reason": "Issue #10321 (STEMPERF-11695) adds the Svelte deck StemRow quick chips and the stem-quick-mode plan. Measured: local build vs base at 1647212f3e, +740 B gzip on performance; ceiled to KiB",
+  "payback": "none planned; the growth is the feature's own code on this surface"
+}

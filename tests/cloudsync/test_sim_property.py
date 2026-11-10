@@ -8,7 +8,12 @@ Profiles, picked by ``MDT_CLOUDSYNC_SIM_PROFILE``:
 
 * ``ci`` (the declared default): derandomized, 50 examples, runs in CI.
 * ``deep``: 5000 random examples, on demand
-  (``just cloudsync-sim-deep``). Any other value raises.
+  (``just cloudsync-sim-deep``). Measured requirement (#7173): about 70 to
+  80 minutes for the main property on an 8-core Linux builder, extrapolated
+  from deep-shaped probes; not expected to finish inside a 900-second
+  campaign timeout. About 40 percent of per-example time is AGENTS.md
+  regeneration during ``build_fleet``. Settings stay at 5000 examples and
+  30 steps. Any other value raises.
 
 Positive controls. A green property run proves nothing until the same run is
 shown able to go red, so each control plants one real, named defect and
@@ -19,7 +24,7 @@ requires the simulation to find it:
 * the push fence recorded when rows are SELECTED instead of when they LAND
   (the round 1 loss class, ADR 08 point 3);
 * the stranded-write guard lifted, which lets the simulation reach the
-  logged P2 skew wedge (``.planning/debt/1993.md``). Deep tier only: it
+  logged P2 skew wedge (``(private path)``). Deep tier only: it
   costs 164 s on the CI runner, and the strict xfail in
   ``test_hub_sync_clock_skew.py`` is the in-CI flip trigger for D4(c).
 

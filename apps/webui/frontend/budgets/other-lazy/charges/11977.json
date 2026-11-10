@@ -1,0 +1,9 @@
+{
+  "bytes": 2048,
+  "measured_main": 503925,
+  "measured_with_pr": 505268,
+  "sha": "e4b609b7d1",
+  "date": "Tue 10 Nov 2026",
+  "reason": "Issue #10831 (PR #11977) adds HERCULES_DJ_CONSOLE_4MX_MAP; the eager MIDI map glob is a dynamic import from the performance shell, so the maps chunk is charged to other-lazy. Measured locally vs merge-base 9149e85558: 503925 -> 505268 (+1343 B gzip); ceiled to KiB",
+  "payback": "none planned; the growth is the controller map's own wires on this surface"
+}

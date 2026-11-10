@@ -50,27 +50,34 @@ Imports the dj_copilot engine directly (no subprocess), mirroring
 from __future__ import annotations
 
 import sqlite3
+from contextlib import contextmanager
+from collections.abc import Iterator
 from datetime import UTC, datetime
+from pathlib import Path
 from typing import Literal
 
-from fastapi import APIRouter, Depends, status
+from fastapi import APIRouter, Depends, Request, status
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 
+from apps.analysis_structure.http import build_niche_intel
 from apps.dj_copilot.peak_pressure import PeakPlay, compute_peak_pressure
 from apps.dj_copilot.play_it import InsufficientDataError
 from apps.dj_copilot.session_context import PlayedTrack, SessionContext
 from apps.dj_copilot.suggester import RankedSuggestion, suggest_next
 from apps.shared.harmonic import TrackFeature
+from apps.shared.state import db as state_db
 
 from ..backend import MAX_LIMIT, NotFoundError, StateBackend, Track, TrackFilter
-from ..deps import get_read_state
+from ..deps import get_library_data_dir, get_library_state_db, get_read_state
 from ..errors import ErrorBody
 from ..track_features import camelot_or_none, energy_of, track_to_feature
 
 router = APIRouter(prefix="/copilot", tags=["copilot"])
 MOUNT_UNDER_API_PREFIX = True
 _read_state = Depends(get_read_state)
+_niche_intel = build_niche_intel()
+FindSimilarMode = Literal["generic", "specific", "niche"]
 
 
 # --- request / response models (defined here; models.py is integrator-owned)
@@ -133,7 +140,52 @@ class SuggestNextOut(BaseModel):
     pressure: PeakPressureOut
 
 
+class NicheCitationOut(BaseModel):
+    start_s: float
+    end_s: float
+    label: str
+    source: Literal["structure", "user"]
+
+
+class NicheSimilarCandidateOut(BaseModel):
+    stable_id: str
+    score: float
+    citations: list[NicheCitationOut]
+
+
+class FindSimilarIn(BaseModel):
+    stable_id: str = Field(..., description="Loaded or selected library track")
+    mode: FindSimilarMode = Field("niche", description="Niche: labelled region matches only.")
+    limit: int = Field(20, ge=1, le=200)
+    accepted_labels: list[str] | None = Field(
+        None,
+        description=(
+            "Niche only: explicit query labels. When omitted, uses user regions "
+            "plus structure suggestions the user accepted."
+        ),
+    )
+
+
+class FindSimilarOut(BaseModel):
+    stable_id: str
+    mode: FindSimilarMode
+    provider: str
+    query_labels: list[str] = Field(default_factory=list)
+    candidates: list[NicheSimilarCandidateOut]
+
+
 # ----------------------------------------------------------- _helpers
+
+
+@contextmanager
+def _library_read(state_db_path: Path) -> Iterator[sqlite3.Connection]:
+    if not state_db_path.is_file():
+        raise FileNotFoundError(f"no library database at {state_db_path}")
+    conn = state_db.open_ro(state_db_path)
+    try:
+        yield conn
+    finally:
+        conn.close()
 
 
 def _load_library(backend: StateBackend) -> list[TrackFeature]:
@@ -277,6 +329,59 @@ def _pressure_out(session_tracks: list[Track]) -> PeakPressureOut:
 
 
 # ----------------------------------------------------------- route
+
+
+@router.post(
+    "/find-similar-tracks",
+    response_model=FindSimilarOut,
+    responses={
+        404: {"model": ErrorBody, "description": "unknown track"},
+        422: {"model": ErrorBody, "description": "unknown or unimplemented mode"},
+    },
+)
+def find_similar_tracks_route(
+    body: FindSimilarIn,
+    request: Request,
+    backend: StateBackend = _read_state,
+) -> FindSimilarOut | JSONResponse:
+    if body.mode != "niche":
+        return JSONResponse(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            content=ErrorBody(
+                error="invalid",
+                message=f"find-similar mode {body.mode!r} is not implemented yet",
+            ).model_dump(),
+        )
+    try:
+        backend.get_track(body.stable_id)
+    except NotFoundError as exc:
+        return JSONResponse(
+            status_code=status.HTTP_404_NOT_FOUND,
+            content=ErrorBody(error="not_found", message=str(exc)).model_dump(),
+        )
+    state_db_path = get_library_state_db(request)
+    data_dir = get_library_data_dir(request)
+    try:
+        with _library_read(state_db_path) as conn:
+            doc = _niche_intel.niche_find_similar(
+                conn,
+                data_dir,
+                stable_id=body.stable_id,
+                limit=body.limit,
+                query_labels=body.accepted_labels,
+            )
+    except FileNotFoundError as exc:
+        return JSONResponse(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            content=ErrorBody(error="no_library_db", message=str(exc)).model_dump(),
+        )
+    return FindSimilarOut(
+        stable_id=doc["stable_id"],
+        mode=doc["mode"],
+        provider=doc["provider"],
+        query_labels=list(doc["query_labels"]),
+        candidates=[NicheSimilarCandidateOut(**row) for row in doc["candidates"]],
+    )
 
 
 @router.post(

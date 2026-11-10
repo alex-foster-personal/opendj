@@ -1,4 +1,4 @@
-import { ApiError } from '../api/client';
+import { ApiError } from '../api/errors';
 import type { CommentSummary } from './feedback-pin-operator-summary';
 
 /*

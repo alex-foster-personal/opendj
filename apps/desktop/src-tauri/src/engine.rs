@@ -94,6 +94,67 @@ const STRIPPED_ENV: [&str; 4] = [
     "WEB_CONCURRENCY",
 ];
 
+#[derive(Debug, PartialEq, Eq)]
+pub struct MissingEngineSource {
+    pub path: PathBuf,
+    pub config_key: &'static str,
+}
+
+impl std::fmt::Display for MissingEngineSource {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "configured engine source directory does not exist: {} (setting: {})",
+            self.path.display(),
+            self.config_key
+        )
+    }
+}
+
+impl MissingEngineSource {
+    pub fn to_engine_error(&self) -> EngineError {
+        EngineError::new(
+            "Open DJ cannot start.",
+            format!(
+                "The configured engine source directory does not exist:\n{}\n\n\
+                 Setting: {}",
+                self.path.display(),
+                self.config_key
+            ),
+        )
+    }
+}
+
+/// Resolve which payload directory to spawn. Missing overrides stop before spawn.
+pub fn resolve_engine_payload_dir(
+    bundled_payload: &Path,
+    configured_source: Option<&Path>,
+    config_key: &'static str,
+) -> Result<PathBuf, MissingEngineSource> {
+    let Some(configured_source) = configured_source else {
+        return Ok(bundled_payload.to_path_buf());
+    };
+    let configured = configured_source.to_path_buf();
+    if !configured.is_dir() {
+        return Err(MissingEngineSource {
+            path: configured,
+            config_key,
+        });
+    }
+    Ok(payload_tree_for_existing_source(&configured))
+}
+
+fn payload_tree_for_existing_source(source: &Path) -> PathBuf {
+    if source.join(ENGINE_LAUNCHER).is_file() {
+        return source.to_path_buf();
+    }
+    let nested = source.join("apps/desktop/src-tauri/payload");
+    if nested.join(ENGINE_LAUNCHER).is_file() {
+        return nested;
+    }
+    source.to_path_buf()
+}
+
 #[derive(Debug)]
 pub struct EngineError {
     pub headline: String,

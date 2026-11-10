@@ -138,7 +138,7 @@ RESERVED_FIXED_PORTS: frozenset[int] = frozenset(
         5214,  # tests/e2e/playwright.play-analytics.config.ts
         5216,  # tests/e2e/playwright.desktop-setup.config.ts
         5228,  # tests/e2e/playwright.library-wheel.config.ts
-        5273,  # tests/e2e/playwright.kpi-boot-library-capture.config.ts (+8 more)
+        5273,  # tests/e2e/playwright.js-heap-after-pane.config.ts (+9 more)
         5277,  # tests/e2e/library-jobs-e2e-endpoints.ts
         5278,  # tests/e2e/vocals-demucs-overlay-endpoints.ts
         5311,  # tests/e2e/playwright.stretch-artifact.config.ts

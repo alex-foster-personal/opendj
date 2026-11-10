@@ -366,3 +366,134 @@ test("#4219 mutation: the dark face's white high band is rejected on the light f
     "a near-white high band on the light face must violate its pinned pairing",
   );
 });
+
+// ----- A11Y-11403: one keyboard focus ring, every skin and theme -------------
+const FOCUS_SCHEMES = {
+  "default dark": [".perf-root"],
+  "default light theme": ["html[data-theme='light'] .perf-root"],
+  "mono-dev (Gothic)": [".perf-root", "html[data-skin='mono-dev'] .perf-root"],
+  "light skin": [".perf-root", "html[data-skin='light'] .perf-root"],
+  "green-room": [".perf-root", "html[data-skin='green-room'] .perf-root"],
+  "practice-ddj-flx4": [".perf-root", "html[data-skin='practice-ddj-flx4'] .perf-root"],
+};
+const FOCUS_PAIRINGS = () => cc.PAIRINGS.filter((p) => p.fg === "rb-focus-ring");
+const focusTokens = (selectors) => Object.assign({}, ...selectors.map((sel) => cc.parseColorTokens(THEME_CSS, sel)));
+
+test("if a shipped skin's --rb-focus-ring misses 3:1 on bg, panel or the deck header fill then keyboard focus is invisible there", () => {
+  assert.deepEqual(FOCUS_PAIRINGS().map((p) => p.bg).sort(), ["rb-bg", "rb-panel", "rb-panel-raised"]);
+  for (const [scheme, selectors] of Object.entries(FOCUS_SCHEMES)) {
+    const own = cc.parseColorTokens(THEME_CSS, selectors.at(-1));
+    assert.match(own["rb-focus-ring"] ?? "", /^#[0-9a-f]{6}$/i, `${scheme} does not declare --rb-focus-ring`);
+    const violations = cc.validateScheme(focusTokens(selectors), FOCUS_PAIRINGS());
+    assert.deepEqual(violations, [], `${scheme}: ${cc.describeViolations(violations)}`);
+  }
+});
+
+test("if the focus ring reads as the selector accent then DOM focus and the selector are confused", () => {
+  for (const [scheme, selectors] of Object.entries(FOCUS_SCHEMES)) {
+    const tokens = focusTokens(selectors);
+    assert.ok(cc.isDistinctFrom(tokens["rb-focus-ring"], tokens["rb-accent"]), `${scheme}: ring ${tokens["rb-focus-ring"]} vs accent ${tokens["rb-accent"]}`);
+  }
+});
+
+test("A11Y-11403 mutation: a ring equal to the accent, or a dark ring on Default, is reported", () => {
+  const tokens = focusTokens(FOCUS_SCHEMES["default dark"]);
+  assert.equal(cc.isDistinctFrom(tokens["rb-accent"], tokens["rb-accent"]), false);
+  const violations = cc.validateScheme({ ...tokens, "rb-focus-ring": "#1a1a1a" }, FOCUS_PAIRINGS());
+  assert.ok(violations.some((v) => v.pairing.bg === "rb-bg" && v.ratio < 3), "a #1a1a1a ring on the dark bg was not reported");
+});
+
+// ----- UICONTRAST (#10370): on-state accent text and warn text -----
+const hueOf = (hex) => {
+  const h = hex.replace("#", "");
+  const [r, g, b] = [0, 2, 4].map((i) => parseInt(h.slice(i, i + 2), 16) / 255);
+  const max = Math.max(r, g, b);
+  const min = Math.min(r, g, b);
+  const l = (max + min) / 2;
+  const d = max - min;
+  if (d === 0) return { hue: 0, sat: 0 };
+  const sat = d / (1 - Math.abs(2 * l - 1));
+  let hue;
+  if (max === r) hue = ((g - b) / d) % 6;
+  else if (max === g) hue = (b - r) / d + 2;
+  else hue = (r - g) / d + 4;
+  hue = (hue * 60 + 360) % 360;
+  return { hue, sat };
+};
+const hueGap = (a, b) => {
+  const d = Math.abs(a - b) % 360;
+  return Math.min(d, 360 - d);
+};
+const AUDITED = ["default dark", "default light theme", "mono-dev (Gothic)", "light skin"];
+const ON_OFF_MIN = 1.5;
+
+test("if a skin's --rb-accent-text misses 4.5:1 on panel or raised, or drifts off the accent hue, then the top-bar on-state toggles are unreadable or off-brand (#10370)", () => {
+  for (const [scheme, selectors] of Object.entries(FOCUS_SCHEMES)) {
+    const own = cc.parseColorTokens(THEME_CSS, selectors.at(-1));
+    assert.match(own["rb-accent-text"] ?? "", /^#[0-9a-f]{6}$/i, `${scheme} must declare its own --rb-accent-text`);
+    const t = focusTokens(selectors);
+    for (const bg of ["rb-panel", "rb-panel-raised"]) {
+      const r = cc.contrastRatio(t["rb-accent-text"], t[bg]);
+      assert.ok(r >= cc.AA_BODY_TEXT, `${scheme}: accent-text ${t["rb-accent-text"]} on ${bg} ${t[bg]} = ${r.toFixed(2)}`);
+    }
+    const a = hueOf(t["rb-accent"]);
+    const x = hueOf(t["rb-accent-text"]);
+    if (a.sat < 0.05) assert.ok(x.sat < 0.05, `${scheme}: achromatic accent needs achromatic accent-text (sat ${x.sat.toFixed(2)})`);
+    else assert.ok(hueGap(a.hue, x.hue) <= 10, `${scheme}: hue ${a.hue.toFixed(1)} -> ${x.hue.toFixed(1)}`);
+  }
+});
+
+test("if on-state and off-state toggle text are under 1.5:1 apart then the on state is not distinguishable (#10370)", () => {
+  for (const scheme of AUDITED) {
+    const t = focusTokens(FOCUS_SCHEMES[scheme]);
+    const r = cc.contrastRatio(t["rb-accent-text"], t["rb-text-dim"]);
+    assert.ok(r >= ON_OFF_MIN, `${scheme}: on ${t["rb-accent-text"]} vs off ${t["rb-text-dim"]} = ${r.toFixed(2)}`);
+  }
+  const t = { ...focusTokens(FOCUS_SCHEMES["default light theme"]), "rb-accent-text": "#175ea8" };
+  assert.ok(cc.contrastRatio(t["rb-accent-text"], t["rb-text-dim"]) < ON_OFF_MIN, "the old light accent must fail the on/off check");
+});
+
+test("if --rb-warn-text misses 4.5:1 on the light panels or leaves the amber family then the enrich flag regresses (#10370)", () => {
+  for (const scheme of ["default light theme", "light skin"]) {
+    const t = focusTokens(FOCUS_SCHEMES[scheme]);
+    for (const bg of ["rb-panel", "rb-panel-raised", "rb-bg"]) {
+      const r = cc.contrastRatio(t["rb-warn-text"], t[bg]);
+      assert.ok(r >= cc.AA_BODY_TEXT, `${scheme}: warn-text ${t["rb-warn-text"]} on ${bg} ${t[bg]} = ${r.toFixed(2)}`);
+    }
+  }
+  const amber = hueOf("#e8a13a").hue;
+  for (const scheme of AUDITED) {
+    const w = hueOf(focusTokens(FOCUS_SCHEMES[scheme])["rb-warn-text"]);
+    assert.ok(w.sat >= 0.5 && hueGap(w.hue, amber) <= 10, `${scheme}: warn-text hue ${w.hue.toFixed(1)} sat ${w.sat.toFixed(2)}`);
+  }
+});
+
+test("if TopBar or EnrichCardView stop reading the text tokens then the theme fix no longer reaches the rendered toggles (#10370)", () => {
+  const top = readFileSync(join(SRC_ROOT, "lib/components/rb/TopBar.svelte"), "utf8");
+  const enrich = readFileSync(join(SRC_ROOT, "lib/components/rb/EnrichCardView.svelte"), "utf8");
+  const body = (src, sel) => {
+    const esc = sel.replace(/[.*+?^${}()|[\]\\>]/g, "\\$&");
+    const m = src.match(new RegExp(`(?:^|\\n)\\s*${esc}\\s*\\{([^}]*)\\}`));
+    assert.ok(m, `rule ${sel} not found`);
+    return m[1];
+  };
+  const on = body(top, ".bsm-toggle.on");
+  const hover = body(top, ".ap-wrap > .ap-next-btn:hover");
+  const off = body(top, ".bsm-toggle");
+  const flag = body(enrich, ".enrich-flag");
+  assert.match(on, /color:\s*var\(--rb-accent-text/);
+  assert.match(hover, /color:\s*var\(--rb-accent-text/);
+  assert.match(off, /(?:^|[;\s])color:\s*var\(--rb-text-dim\)/);
+  assert.match(flag, /color:\s*var\(--rb-warn-text/);
+  for (const b of [on, hover, off, flag]) {
+    assert.doesNotMatch(b, /(?:^|[;\s])color:\s*var\(--rb-accent\)/);
+    assert.doesNotMatch(b, /(?:^|[;\s])color:\s*#/);
+  }
+});
+
+test("if the pre-#10370 values come back then validateScheme reports the matching pairing below 4.5:1", () => {
+  const dark = { ...focusTokens(FOCUS_SCHEMES["default dark"]), "rb-accent-text": "#2f6fd6" };
+  assert.ok(cc.validateScheme(dark, cc.PAIRINGS).some((v) => v.pairing.fg === "rb-accent-text"));
+  const light = { ...focusTokens(FOCUS_SCHEMES["light skin"]), "rb-warn-text": "#e8a13a" };
+  assert.ok(cc.validateScheme(light, cc.PAIRINGS).some((v) => v.pairing.fg === "rb-warn-text"));
+});

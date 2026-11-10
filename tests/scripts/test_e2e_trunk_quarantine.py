@@ -44,7 +44,7 @@ from pathlib import Path
 import pytest
 import yaml
 
-from tests.scripts.ci_runner_routes import TOKEN_RUNS_ON
+from tests.scripts.ci_runner_routes import TOKEN_RUNS_ON_LINUX
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 E2E = REPO_ROOT / ".github" / "workflows" / "e2e.yml"
@@ -171,7 +171,7 @@ def _run_verdict_step(tmp_path: Path, outcome: str, rc: str, quarantine: str) ->
 def test_the_list_job_is_self_hosted_and_never_checks_out() -> None:
     job = _jobs()[LIST_JOB]
     assert job["name"] == "Trunk quarantined tests (list)"
-    assert job["runs-on"] == TOKEN_RUNS_ON
+    assert job["runs-on"] == TOKEN_RUNS_ON_LINUX
     assert job["timeout-minutes"] == 3
     assert job["if"] == (
         "${{ vars.TRUNK_QUARANTINE_CI == 'true' && github.event_name != 'pull_request'"
@@ -291,7 +291,7 @@ def test_the_token_never_appears_in_the_gate_or_any_checkout_job() -> None:
     assert "TRUNK_API_TOKEN" not in gate_source
     assert "TRUNK_API_TOKEN" not in yaml.safe_dump(_jobs()["gate"])
     list_job = _jobs()[LIST_JOB]
-    assert list_job["runs-on"] == TOKEN_RUNS_ON
+    assert list_job["runs-on"] == TOKEN_RUNS_ON_LINUX
     assert not _checks_out(list_job)
     for name, job in _jobs().items():
         if name == LIST_JOB:
@@ -307,7 +307,7 @@ def test_the_upload_job_stages_in_runner_temp_and_is_not_a_verdict_need() -> Non
     assert LIST_JOB not in _needs(verdict)
 
     job = _jobs()[UPLOAD_JOB]
-    assert job["runs-on"] == TOKEN_RUNS_ON
+    assert job["runs-on"] == TOKEN_RUNS_ON_LINUX
     # The workspace persists on self-hosted runners; runner.temp is emptied per job.
     find = _step(UPLOAD_JOB, step_id="e2e-root-report")
     assert '"$RUNNER_TEMP/staged-e2e-root/junit-e2e-root.xml"' in find["run"], "Find reads the persistent workspace"

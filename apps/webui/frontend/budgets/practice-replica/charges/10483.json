@@ -1,0 +1,9 @@
+{
+  "bytes": 1024,
+  "measured_main": 17029,
+  "measured_with_pr": 17991,
+  "sha": "61fb182dc1",
+  "date": "Sun 8 Nov 2026",
+  "reason": "OMNIS-DUO practice replica (epic #9366): OMNIS_DUO_MAP joins PRACTICE_DEVICE_MAPS, so the lazy practice-replica chunk carries the map (56 bindings, 88 hints, LED rules). Measured on agentbox, main at the merge base vs the branch: +962 B gzip, ceiled to KiB.",
+  "payback": "none planned; the growth is the device map itself, which the replica must carry to fire what the hardware fires"
+}

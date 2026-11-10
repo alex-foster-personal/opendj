@@ -32,7 +32,8 @@ import type {
 	CloudSyncConfigOut,
 	GrantOut,
 	GrantRequest,
-	SyncRunBody
+	SyncRunBody,
+	SyncRunOut
 } from '$lib/api-cloudsync-ops';
 
 export const INERT_TOOLTIP = 'not implemented - see PARITY-TODO';
@@ -625,6 +626,42 @@ export function forceSyncNowRequest(config: CloudSyncConfigOut | null): SyncNowD
 		kind: 'post',
 		body: { hub_url: hub.hubUrl, name: config!.effective.machine_name, force: true }
 	};
+}
+
+/** One line shown under the headline strip or in the quick actions. */
+export interface CloudSyncNotice {
+	kind: 'ok' | 'error';
+	text: string;
+	/** Raw error text for the technical-details disclosure only. */
+	details?: string;
+}
+
+/** The notice for a refused Sync now / Force sync: it explains, and nothing is sent. */
+export function syncRefusedNotice(
+	decision: Extract<SyncNowDecision, { kind: 'refuse' }>
+): CloudSyncNotice {
+	return { kind: 'error', text: decision.reason };
+}
+
+/** The notice for a completed Sync now / Force sync, with its row counts. */
+export function syncResultNotice(result: SyncRunOut): CloudSyncNotice {
+	return {
+		kind: 'ok',
+		text: `Sync ${result.digest_inconclusive ? 'inconclusive' : 'ok'}: pushed ${result.pushed}, pulled ${result.pulled}.`
+	};
+}
+
+/** The notice for a failed Sync now / Force sync; raw error text stays in details only. */
+export function syncFailureNotice(exc: unknown): CloudSyncNotice {
+	const presented = presentCloudSyncError(exc);
+	return { kind: 'error', text: `Sync failed: ${presented.summary}`, details: presented.details };
+}
+
+/** The notice after a manual status refresh: ok only when the reload recorded no error. */
+export function refreshStatusNotice(loadError: string | null): CloudSyncNotice {
+	return loadError === null
+		? { kind: 'ok', text: 'CloudSync status refreshed.' }
+		: { kind: 'error', text: `Failed to refresh status: ${loadError}` };
 }
 
 // ----------------------------------------------------------- config form

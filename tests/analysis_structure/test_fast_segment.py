@@ -157,3 +157,13 @@ def test_peaks_cut_short_by_a_bar_or_two_fail(cut_bars: int):
     # Control: a grid whose last downbeat sits within a beat of the peaks' end is a whole track.
     within_a_beat = peaks[: peaks.shape[0] - round(BAR_S / 8 * FPS)]
     assert segment(within_a_beat, _grid(within_a_beat), within_a_beat.shape[0] / FPS)["status"] == "ok"
+
+
+def test_unlabeled_own_fast_does_not_fake_niche_suggestions():
+    """[if] own-fast dj_labels unlabeled [then] niche suggestions stay empty, else stop."""
+    from apps.analysis_structure.dj_labels import structure_niche_suggestions
+
+    peaks = _peaks([(128, 200, 150, 180)])
+    result = segment(peaks, _grid(peaks), peaks.shape[0] / FPS)
+    assert result["dj_labels"]["status"] == "unlabeled"
+    assert structure_niche_suggestions(result["sections"], result["dj_labels"]) == []

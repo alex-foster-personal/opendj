@@ -258,6 +258,16 @@ def test_a_beat_3_01_db_under_solo_on_either_deck_is_not_both_full() -> None:
     assert _count_both_full_beats(np.array([-3.01]), np.array([-3.01])) == 0
 
 
+@pytest.mark.requirement("TRANSAI-11098")
+def test_both_full_depth_reads_zero_on_the_line_and_sums_the_quieter_low() -> None:
+    """[if] both lows sit on the both-full line [then] depth is 0, [else stop]."""
+    from apps.transition_score.scorer import _both_full_depth_db
+
+    assert _both_full_depth_db(np.array([-3.0]), np.array([-3.0])) == 0.0
+    assert _both_full_depth_db(np.array([0.0]), np.array([0.0])) == 3.0
+    assert _both_full_depth_db(np.array([0.0, -1.0]), np.array([-2.0, 0.0])) == 3.0
+
+
 # ----- the real renderer -------------------------------------------------------------
 
 

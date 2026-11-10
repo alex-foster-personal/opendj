@@ -23,8 +23,10 @@ from httpx import ASGITransport, AsyncClient
 
 from apps.webui.server.app import create_app
 from apps.webui.server.routes.commands import router as commands_router
+from apps.opendj_cli.catalog import OUTPUT_MODE_VALUES
 from apps.webui.server.routes.performance_headphones import (
     HEADPHONE_IPC_ROUTES,
+    HEADPHONE_OUTPUT_MODES,
 )
 from apps.webui.server.routes.performance_headphones import (
     router as headphones_router,
@@ -377,6 +379,13 @@ def test_unknown_output_mode_is_rejected() -> None:
         assert got.json()["output_mode"] == "practice"
 
     asyncio.run(run())
+
+
+@pytest.mark.requirement("CUEOUT-10753")
+def test_cli_output_mode_values_match_the_route() -> None:
+    """[if] CLI and route mode lists differ [then] one surface drifts, [else stop]."""
+    assert tuple(OUTPUT_MODE_VALUES) == tuple(HEADPHONE_OUTPUT_MODES)
+    assert set(OUTPUT_MODE_VALUES) == {"practice", "two_outputs", "split_cable"}
 
 
 def test_no_page_returns_503() -> None:

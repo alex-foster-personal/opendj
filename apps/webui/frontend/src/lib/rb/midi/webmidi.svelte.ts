@@ -174,6 +174,9 @@ let _activeControlId: string | undefined;
 
 // LED queue: deviceId -> (`${ch}:${note}` -> velocity), flushed on a timer.
 const _ledQueues: Map<string, Map<string, number>> = new Map();
+/** device id -> the map whose init handshake was last sent to it. Keyed by map
+ * identity so a plain rescan (same map object) sends nothing. */
+const _initSentFor: Map<string, DeviceMap> = new Map();
 let _ledTimer: ReturnType<typeof setInterval> | null = null;
 
 // ---------------------------------------------------------------- _helpers
@@ -250,6 +253,27 @@ function _publishResolvedDevices(): void {
 	}));
 }
 
+/** Send the map's connect-time handshake once per (device, map). A plain rescan
+ * finds the same map object and sends nothing; an unplug forgets the device
+ * (removal loops), so a reconnect sends again; a different map (an installed
+ * reload) sends its own. Raw and in order, bypassing the coalescing LED queue. */
+function _sendInitHandshake(device: _ResolvedDevice): void {
+	const init = device.map?.init;
+	if (device.map === null || init === undefined || init.length === 0) {
+		_initSentFor.delete(device.id);
+		return;
+	}
+	if (_initSentFor.get(device.id) === device.map) return;
+	if (device.output === null) {
+		console.error(
+			`[midi] ${device.name}: map declares ${init.length} init messages but the device has no MIDI output`
+		);
+		return; // not marked sent: a later snapshot that adds the output sends it
+	}
+	for (const message of init) device.output.send([...message]);
+	_initSentFor.set(device.id, device.map);
+}
+
 function _rescanWebMidiPorts(): void {
 	if (_access === null) throw new Error('_rescanWebMidiPorts before WebMIDI init');
 	// This page is leaving for djio; attaching handlers now would only be torn down.
@@ -283,6 +307,7 @@ function _rescanWebMidiPorts(): void {
 		};
 		input.onmidimessage = (ev: MIDIMessageEvent) => _dispatch(device, ev);
 		_resolved.set(input.id, device);
+		_sendInitHandshake(device);
 		_rearmTakeover(input.id);
 	}
 	for (const id of [..._resolved.keys()]) {
@@ -291,6 +316,7 @@ function _rescanWebMidiPorts(): void {
 			if (dev !== undefined) dev.detachInput();
 			_resolved.delete(id);
 			_ledQueues.delete(id);
+			_initSentFor.delete(id);
 			setDeviceShiftHeld(id, false);
 			_rearmTakeover(id);
 		}
@@ -326,6 +352,7 @@ function _applyNativeSnapshot(snapshot: _NativeMidiDevice[]): string | null {
 			existing.name = found.name;
 			existing.manufacturer = found.manufacturer;
 			existing.output = found.hasOutput ? _nativeOutput(found.id) : null;
+			_sendInitHandshake(existing);
 			continue;
 		}
 		const map = _resolveMap(found.name);
@@ -333,7 +360,7 @@ function _applyNativeSnapshot(snapshot: _NativeMidiDevice[]): string | null {
 			map !== null
 				? _buildIndex(map)
 				: { index: new Map<string, MidiBinding>(), lsbIndex: new Map<string, MidiBinding>() };
-		_resolved.set(found.id, {
+		const device: _ResolvedDevice = {
 			id: found.id,
 			name: found.name,
 			manufacturer: found.manufacturer,
@@ -343,7 +370,9 @@ function _applyNativeSnapshot(snapshot: _NativeMidiDevice[]): string | null {
 			index,
 			msbValues: new Map(),
 			lsbIndex
-		});
+		};
+		_resolved.set(found.id, device);
+		_sendInitHandshake(device);
 		_rearmTakeover(found.id);
 	}
 	for (const id of [..._resolved.keys()]) {
@@ -351,6 +380,7 @@ function _applyNativeSnapshot(snapshot: _NativeMidiDevice[]): string | null {
 		_resolved.get(id)?.detachInput();
 		_resolved.delete(id);
 		_ledQueues.delete(id);
+		_initSentFor.delete(id);
 		setDeviceShiftHeld(id, false);
 		_rearmTakeover(id);
 	}
@@ -602,6 +632,7 @@ function _reresolvePorts(): void {
 			device.index = index;
 			device.lsbIndex = lsbIndex;
 			device.msbValues.clear();
+			_sendInitHandshake(device);
 		}
 		_publishResolvedDevices();
 	}
@@ -621,6 +652,29 @@ export function validateDeviceMap(map: DeviceMap): void {
 	}
 	new RegExp(map.nameMatch); // fail fast on an invalid pattern
 	_buildIndex(map); // fail fast on duplicate/invalid bindings
+	_validateInit(map);
+}
+
+/** Same ranges as the daemon (routes/midi_maps.py InitMessageDoc): a
+ * channel-voice triple. 0xF0+ is refused: WebMIDI opens with sysex:false. */
+function _validateInit(map: DeviceMap): void {
+	for (const [at, message] of (map.init ?? []).entries()) {
+		const ok =
+			Array.isArray(message) &&
+			message.length === 3 &&
+			message.every((b) => Number.isInteger(b)) &&
+			message[0] >= 0x80 &&
+			message[0] <= 0xef &&
+			message[1] >= 0 &&
+			message[1] <= 127 &&
+			message[2] >= 0 &&
+			message[2] <= 127;
+		if (!ok) {
+			throw new Error(
+				`validateDeviceMap(${map.vendor}): init[${at}] must be a [status 0x80-0xEF, data 0-127, data 0-127] triple, got ${JSON.stringify(message)}`
+			);
+		}
+	}
 }
 
 /** Register a device map. Call for each supported controller BEFORE
@@ -797,6 +851,7 @@ export function releaseMidiInputs(): void {
 	for (const dev of _resolved.values()) dev.detachInput();
 	_resolved.clear();
 	_ledQueues.clear();
+	_initSentFor.clear();
 	if (_ledTimer !== null) {
 		clearInterval(_ledTimer);
 		_ledTimer = null;
@@ -926,6 +981,7 @@ export function _resetMidiForTests(): void {
 	_resolved.clear();
 	_deviceMaps.length = 0;
 	_ledQueues.clear();
+	_initSentFor.clear();
 	if (_ledTimer !== null) {
 		clearInterval(_ledTimer);
 		_ledTimer = null;

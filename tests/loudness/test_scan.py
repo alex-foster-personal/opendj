@@ -15,7 +15,13 @@ from pathlib import Path
 
 import pytest
 
-from apps.loudness.scan import LoudnessError, LoudnessScan, _parse_summary, scan_file
+from apps.loudness.scan import (
+    LoudnessError,
+    LoudnessScan,
+    _parse_summary,
+    _summary_token_to_float,
+    scan_file,
+)
 
 pytestmark = pytest.mark.skipif(shutil.which("ffmpeg") is None, reason="apps.loudness measures with real ffmpeg")
 
@@ -74,6 +80,11 @@ def test_non_audio_file_raises(tmp_path: Path) -> None:
         scan_file(junk)
 
 
+def test_summary_token_to_float_parses_inf_sentinel() -> None:
+    assert _summary_token_to_float("-inf") == float("-inf")
+    assert _summary_token_to_float("-14.5") == -14.5
+
+
 # if a summary missing a field parses then a partial result can escape
 def test_partial_summary_names_the_missing_field() -> None:
     partial = "  Integrated loudness:\n    I:         -14.0 LUFS\n"
@@ -93,6 +104,16 @@ def test_summary_wins_over_running_lines() -> None:
     fields = _parse_summary(stderr, Path("x.wav"))
     assert fields["integrated_lufs"] == -14.0
     assert fields["true_peak_dbtp"] == -1.5
+
+
+def test_summary_true_peak_inf_parses_as_negative_infinity() -> None:
+    stderr = (
+        "  Integrated loudness:\n    I:         -70.0 LUFS\n"
+        "  Loudness range:\n    LRA:         0.0 LU\n"
+        "  True peak:\n    Peak:       -inf dBFS\n"
+    )
+    fields = _parse_summary(stderr, Path("silent.wav"))
+    assert fields["true_peak_dbtp"] == float("-inf")
 
 
 # if gain is not clamped then applying it drives true peak over the ceiling

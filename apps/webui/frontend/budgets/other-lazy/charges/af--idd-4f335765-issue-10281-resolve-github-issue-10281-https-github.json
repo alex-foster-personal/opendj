@@ -1,0 +1,9 @@
+{
+  "bytes": 1024,
+  "measured_main": 503833,
+  "measured_with_pr": 503993,
+  "sha": "9c8b06d719",
+  "date": "Tue 10 Nov 2026",
+  "reason": "Issue #10281 touches shared perf-event-buckets and perf-event-log types imported from lazy library chunks; measured locally vs merge-base main at 9c8b06d719: +160 B gzip on other-lazy; ceiled to KiB",
+  "payback": "none planned; shared perf ring types ride existing lazy chunks"
+}

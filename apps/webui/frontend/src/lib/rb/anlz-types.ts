@@ -49,8 +49,8 @@ export interface AnlzBeat {
 	/** Present on /beatgrid-fallback beats. true = synthesized past the last
 	 * detected downbeat. Omitted on rekordbox PQTZ. */
 	extrapolated?: boolean;
-/** Set on every beat when the grid's bar phase is below the floor. */
-bar_phase_untrusted?: boolean;
+	/** Set on every beat when the grid's bar phase is below the floor. */
+	bar_phase_untrusted?: boolean;
 }
 
 /** Which producer this beatgrid block came from. REQUIRED on every payload.
@@ -224,6 +224,20 @@ export interface AnlzPhraseMoment {
 
 export type AnlzPhrasesSource = 'rekordbox' | 'own' | 'own-fast' | 'none';
 
+/** One vocal region from rekordbox PVDI or demucs vocal-cache. */
+export interface AnlzVocalRegion {
+	start_s: number;
+	end_s: number;
+	intensity?: number;
+}
+
+/** Vocals lane on GET /tracks/{stable_id}/anlz (same shape as listing rows). */
+export interface AnlzVocals {
+	status: 'rekordbox' | 'no_vocals' | 'demucs' | 'not_analyzed';
+	fps?: number;
+	regions?: AnlzVocalRegion[];
+}
+
 /** Optional analyzer hints for future dynamic key and tempo-aware sync. */
 export interface AnlzPerformanceHints {
 	/** Key changes detected across the track; absent until a real analyzer emits them. */
@@ -294,12 +308,19 @@ export interface AnlzData {
 	phrases: AnlzPhrase[];
 	/** Which producer filled `phrases`; `none` means nothing was measured. */
 	phrases_source?: AnlzPhrasesSource;
+	/** Vocal coverage for mix-window ranking; absent when never analyzed. */
+	vocals?: AnlzVocals;
 	/** Own sections only (STRUCT-07): drop, break and build MOMENTS (section starts on
 	 * the track's own downbeats), in time order. Absent or empty when the sections
 	 * have no DJ labels. */
 	phrase_moments?: AnlzPhraseMoment[];
 	/** Own-section sidecar status whenever one exists, including a failed one. */
-	own_phrases?: { status: 'ok' | 'failed' | 'pending'; reason: string | null; producer: string | null; producer_version: string | null };
+	own_phrases?: {
+		status: 'ok' | 'failed' | 'pending';
+		reason: string | null;
+		producer: string | null;
+		producer_version: string | null;
+	};
 	/** Own beatgrid payloads only: time-stamped tempo-change markers, empty
 	 * `[]` when static. A rekordbox-sourced payload has no such key at all. */
 	tempo_changes?: AnlzTempoChange[];

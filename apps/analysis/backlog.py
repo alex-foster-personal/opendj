@@ -29,8 +29,10 @@ falls in exactly one bucket, tested in this order:
      ``max_track_minutes`` cap, so the drain would answer ``TrackTooLong``
      for it every time and end every run in ``error`` (NATIVE-38). Counted
      by name, never queued.
-  4. ``pending_total`` - the work queue. ``analyzed + unreachable +
-     too_long + pending_total`` always equals ``unmapped``.
+  4. ``lanes_off`` - unmapped tracks not scheduled because every
+     analyze-on-import lane is off (no reachability probe).
+  5. ``pending_total`` - the work queue. ``analyzed + unreachable +
+     too_long + lanes_off + pending_total`` always equals ``unmapped``.
 
 Streaming rows (``spotify:`` / ``tidal:`` / ``soundcloud:`` URIs) are outside
 the population entirely: there are no local bytes to decode, so they are not
@@ -58,6 +60,13 @@ Requirements (mini-PRD):
       still pending, because the drain would analyze it
     [if] a track's stored duration is over the analyzer cap [then] it counts
       too_long and is never pending; an unknown duration stays pending
+    [if] lanes is {grid, key, sections} and one unmapped track pends [then]
+      Backlog.lanes is (grid, key, sections) and vocals is absent
+    [if] the vocals lane is turned on over the same queue [then] the signature
+      changes
+    [if] every lane is off [then] pending is empty, the track counts lanes_off
+      and the invariant holds
+    [if] lanes names an unknown lane [then ⛔️] ValueError
 """
 from __future__ import annotations
 
@@ -67,6 +76,7 @@ import sqlite3
 from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Literal
 
 from apps.shared import fs_residency, platform_paths
 from apps.shared.hashing import sha256_file_hex as _content_digest
@@ -87,6 +97,11 @@ from .backends import DEFAULT_BACKEND
 #: BEATGRID_FALLBACK_NOT_FOUND, so treating it as done would strand the track
 #: without a grid forever.
 DRAIN_BACKEND: str = DEFAULT_BACKEND
+
+AutoLane = Literal["grid", "key", "sections", "vocals"]
+AUTO_LANES: tuple[AutoLane, ...] = ("grid", "key", "sections", "vocals")
+# Grid, key and sections are written together in one librosa analyzer pass.
+ANALYZER_LANES: frozenset[AutoLane] = frozenset({"grid", "key", "sections"})
 
 #: The resolver reason meaning "this row names a service URI, not a file".
 #: ``resolve_library_path`` answers it for the streaming schemes AND for an
@@ -137,11 +152,17 @@ class BacklogItem:
 
 @dataclass(frozen=True)
 class Backlog:
-    """One scan. ``analyzed + unreachable + pending_total`` == ``unmapped``.
+    """One scan.
+
+    ``analyzed + unreachable + too_long + lanes_off + pending_total`` ==
+    ``unmapped``.
 
     ``pending`` is the LISTED slice (``limit`` applies to it alone) and
     ``pending_total`` is the real size of the queue, so a paged read can
     never be mistaken for a short backlog.
+
+    ``lanes`` names which analyze-on-import lanes this scan scheduled work
+    for (global settings, not per track).
     """
 
     pending: tuple[BacklogItem, ...]
@@ -151,6 +172,8 @@ class Backlog:
     unreachable: int
     signature: str
     too_long: int = 0
+    lanes: tuple[AutoLane, ...] = ()
+    lanes_off: int = 0
 
 
 def analyzed_ids(conn: sqlite3.Connection, *, backend: str = DRAIN_BACKEND) -> set[str]:
@@ -179,7 +202,19 @@ def analyzed_ids(conn: sqlite3.Connection, *, backend: str = DRAIN_BACKEND) -> s
     }
 
 
-def scan(conn: sqlite3.Connection, *, limit: int | None = None) -> Backlog:
+def _validate_lanes(lanes: frozenset[AutoLane]) -> tuple[AutoLane, ...]:
+    unknown = lanes.difference(AUTO_LANES)
+    if unknown:
+        raise ValueError(f"unknown analyze-on-import lane(s): {sorted(unknown)}")
+    return tuple(lane for lane in AUTO_LANES if lane in lanes)
+
+
+def scan(
+    conn: sqlite3.Connection,
+    *,
+    lanes: frozenset[AutoLane],
+    limit: int | None = None,
+) -> Backlog:
     """Compute the backlog. ``limit`` caps ``pending`` only, never the counts.
 
     Every row goes through ``platform_paths.resolve_library_path`` before it
@@ -196,6 +231,9 @@ def scan(conn: sqlite3.Connection, *, limit: int | None = None) -> Backlog:
     """
     if limit is not None and limit < 0:
         raise ValueError(f"limit must be >= 0, got {limit}")
+    enabled_lanes = _validate_lanes(lanes)
+    schedule = bool(lanes)
+    needs_probe = bool(lanes & ANALYZER_LANES) or "vocals" in lanes
     done = analyzed_ids(conn)
     cap_ms = analyzer_cap_ms()
     path_map = platform_paths.load_path_map()
@@ -208,6 +246,7 @@ def scan(conn: sqlite3.Connection, *, limit: int | None = None) -> Backlog:
     analyzed = 0
     unreachable = 0
     too_long = 0
+    lanes_off = 0
     rows = conn.execute(_UNMAPPED_SQL, {"anlz_vendor": ANLZ_VENDOR}).fetchall()
     locations = _local_location_paths(conn, [sid for sid, _, _, _ in rows])
     for stable_id, file_path, title, duration_ms in rows:
@@ -222,6 +261,11 @@ def scan(conn: sqlite3.Connection, *, limit: int | None = None) -> Backlog:
         if cap_ms is not None and duration_ms is not None and duration_ms > cap_ms:
             too_long += 1
             continue
+        if not schedule:
+            lanes_off += 1
+            continue
+        if not needs_probe:
+            continue
         item = _pending_item(
             conn, stable_id, title, path_map=path_map, machine_id=machine_id,
         )
@@ -235,8 +279,10 @@ def scan(conn: sqlite3.Connection, *, limit: int | None = None) -> Backlog:
         unmapped=unmapped,
         analyzed=analyzed,
         unreachable=unreachable,
-        signature=_signature(pending),
+        signature=_signature(pending, enabled_lanes),
         too_long=too_long,
+        lanes=enabled_lanes,
+        lanes_off=lanes_off,
     )
 
 
@@ -404,13 +450,16 @@ def _content_token(
         return None
 
 
-def _signature(pending: list[BacklogItem]) -> str:
+def _signature(pending: list[BacklogItem], lanes: tuple[AutoLane, ...]) -> str:
     """Stable digest of the FULL pending set; empty string when nothing pends.
 
     The auto-drain compares signatures to tell a NEW import from a re-read of
     the same failed queue, so a backend that cannot run never becomes a retry
     storm. It is computed before ``limit`` slices, so a paged read and a full
     read of the same library agree.
+
+    Enabled lane names are hashed first so turning a lane on or off re-arms the
+    tick even when the pending track set is unchanged.
 
     Id, path AND content token are all hashed, because a repair can move any
     one of them while leaving the others alone: a RELINK keeps the stable_id
@@ -426,6 +475,10 @@ def _signature(pending: list[BacklogItem]) -> str:
     if not pending:
         return ""
     digest = hashlib.sha256()
+    for lane in lanes:
+        digest.update(lane.encode("utf-8"))
+        digest.update(b"\x00")
+    digest.update(b"\x01")
     for item in pending:
         paths = item.candidate_paths or (item.file_path,)
         tokens = item.candidate_tokens or (item.content_token,)
@@ -437,9 +490,12 @@ def _signature(pending: list[BacklogItem]) -> str:
 
 
 __all__ = [
+    "ANALYZER_LANES",
     "ANLZ_VENDOR",
+    "AUTO_LANES",
     "DRAIN_BACKEND",
     "STREAMING_REASON",
+    "AutoLane",
     "Backlog",
     "BacklogItem",
     "analyzed_ids",

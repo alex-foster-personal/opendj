@@ -1,0 +1,9 @@
+{
+  "bytes": 1024,
+  "measured_main": 503518,
+  "measured_with_pr": 503659,
+  "sha": "374bac9b00",
+  "date": "Tue 10 Nov 2026",
+  "reason": "Issue #10361 (A11Y-11403) pairs every component outline reset with a 2px --rb-focus-ring :focus-visible rule; lazy chunks carry those rules. Measured: local build vs main at 374bac9b00, +141 B gzip on other-lazy; ceiled to KiB",
+  "payback": "none planned; the growth is the feature's own CSS"
+}

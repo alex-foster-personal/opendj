@@ -1,11 +1,9 @@
 {
  "routes": [
   {
-   "endpoint": "apps.webui.server.app_wiring._mount_frontend_or_placeholder.<locals>._index_placeholder",
-   "methods": [
-    "GET"
-   ],
-   "path": "/"
+   "endpoint": "<Mount>",
+   "methods": [],
+   "path": ""
   },
   {
    "endpoint": "apps.play_analytics.http.create_router.<locals>.get_play_analytics",
@@ -785,6 +783,13 @@
    "path": "/api/v1/commands/next"
   },
   {
+   "endpoint": "apps.webui.server.routes.commands.order_timings",
+   "methods": [
+    "GET"
+   ],
+   "path": "/api/v1/commands/timings"
+  },
+  {
    "endpoint": "apps.webui.server.routes.commands.complete_command",
    "methods": [
     "POST"
@@ -986,6 +991,34 @@
     "POST"
    ],
    "path": "/api/v1/dj/try/{job_id}/pick"
+  },
+  {
+   "endpoint": "apps.webui.server.routes.library_edits.list_track_edits",
+   "methods": [
+    "GET"
+   ],
+   "path": "/api/v1/edits"
+  },
+  {
+   "endpoint": "apps.webui.server.routes.library_edits.create_track_edit",
+   "methods": [
+    "POST"
+   ],
+   "path": "/api/v1/edits"
+  },
+  {
+   "endpoint": "apps.webui.server.routes.library_edits.delete_track_edit",
+   "methods": [
+    "DELETE"
+   ],
+   "path": "/api/v1/edits/{edit_id}"
+  },
+  {
+   "endpoint": "apps.webui.server.routes.library_edits.update_track_edit",
+   "methods": [
+    "PATCH"
+   ],
+   "path": "/api/v1/edits/{edit_id}"
   },
   {
    "endpoint": "apps.webui.server.routes.energy.backfill_collect",
@@ -1429,6 +1462,13 @@
    "path": "/api/v1/library-jobs/{lane}/{stable_id}/cancel"
   },
   {
+   "endpoint": "apps.webui.server.routes.library.export_library_xml",
+   "methods": [
+    "GET"
+   ],
+   "path": "/api/v1/library/export.xml"
+  },
+  {
    "endpoint": "apps.webui.server.routes.library.post_preview_strips",
    "methods": [
     "POST"
@@ -1457,6 +1497,13 @@
    "path": "/api/v1/library/share-root/reanchor"
   },
   {
+   "endpoint": "apps.webui.server.routes.library.get_library_strip_coverage",
+   "methods": [
+    "GET"
+   ],
+   "path": "/api/v1/library/strip-coverage"
+  },
+  {
    "endpoint": "apps.webui.server.routes.library.get_library_wheel",
    "methods": [
     "GET"
@@ -1476,6 +1523,18 @@
     "POST"
    ],
    "path": "/api/v1/lifecycle/quit"
+  },
+  {
+   "endpoint": "apps.lighting.http.api_lighting_events",
+   "methods": [],
+   "path": "/api/v1/lighting/events"
+  },
+  {
+   "endpoint": "apps.lighting.http.api_lighting_status",
+   "methods": [
+    "GET"
+   ],
+   "path": "/api/v1/lighting/status"
   },
   {
    "endpoint": "apps.webui.server.routes.lyrics_words.list_lyric_verdicts",
@@ -1786,6 +1845,13 @@
    "path": "/api/v1/performance/headphones/alignment-mode"
   },
   {
+   "endpoint": "apps.webui.server.routes.performance_headphones.post_headphone_booth_level",
+   "methods": [
+    "POST"
+   ],
+   "path": "/api/v1/performance/headphones/booth-level"
+  },
+  {
    "endpoint": "apps.webui.server.routes.performance_headphones.post_headphone_calibrate",
    "methods": [
     "POST"
@@ -1847,6 +1913,13 @@
     "POST"
    ],
    "path": "/api/v1/performance/headphones/output-mode"
+  },
+  {
+   "endpoint": "apps.webui.server.routes.performance_headphones.post_headphone_booth_select",
+   "methods": [
+    "POST"
+   ],
+   "path": "/api/v1/performance/headphones/outputs/booth"
   },
   {
    "endpoint": "apps.webui.server.routes.performance_headphones.post_headphone_master_select",
@@ -2073,6 +2146,13 @@
    "path": "/api/v1/playlists/deleted"
   },
   {
+   "endpoint": "apps.webui.server.routes.playlist_write.import_m3u_playlist",
+   "methods": [
+    "POST"
+   ],
+   "path": "/api/v1/playlists/import"
+  },
+  {
    "endpoint": "apps.webui.server.routes.playlist_write.delete_playlist",
    "methods": [
     "DELETE"
@@ -2134,6 +2214,13 @@
     "POST"
    ],
    "path": "/api/v1/playlists/{playlist_id}/entries:move"
+  },
+  {
+   "endpoint": "apps.webui.server.routes.playlists.export_playlist_text",
+   "methods": [
+    "GET"
+   ],
+   "path": "/api/v1/playlists/{playlist_id}/export.txt"
   },
   {
    "endpoint": "apps.webui.server.routes.playlist_write.delete_playlist_item",
@@ -2316,6 +2403,13 @@
     "POST"
    ],
    "path": "/api/v1/playlists/{playlist_id}:undelete"
+  },
+  {
+   "endpoint": "apps.webui.server.routes.play_import.import_traktor_history",
+   "methods": [
+    "POST"
+   ],
+   "path": "/api/v1/plays/import/traktor-history"
   },
   {
    "endpoint": "apps.webui.server.routes.practice.list_practice_devices",
@@ -3158,6 +3252,13 @@
    "path": "/api/v1/tracks/index"
   },
   {
+   "endpoint": "apps.webui.server.routes.list_totals.tracks_list_totals",
+   "methods": [
+    "POST"
+   ],
+   "path": "/api/v1/tracks/list-totals"
+  },
+  {
    "endpoint": "apps.webui.server.routes.tracks.get_lyrics_cached_ids",
    "methods": [
     "GET"
@@ -3298,11 +3399,39 @@
    "path": "/api/v1/tracks/{stable_id}/grid-edit"
   },
   {
+   "endpoint": "apps.webui.server.routes.grid_edit.get_grid_anchors",
+   "methods": [
+    "GET"
+   ],
+   "path": "/api/v1/tracks/{stable_id}/grid-edit/anchors"
+  },
+  {
+   "endpoint": "apps.webui.server.routes.grid_edit.add_grid_anchor",
+   "methods": [
+    "POST"
+   ],
+   "path": "/api/v1/tracks/{stable_id}/grid-edit/anchors"
+  },
+  {
+   "endpoint": "apps.webui.server.routes.grid_edit.remove_grid_anchor",
+   "methods": [
+    "DELETE"
+   ],
+   "path": "/api/v1/tracks/{stable_id}/grid-edit/anchors/{at_s}"
+  },
+  {
    "endpoint": "apps.webui.server.routes.grid_edit.nudge_grid_edit",
    "methods": [
     "POST"
    ],
    "path": "/api/v1/tracks/{stable_id}/grid-edit/nudge"
+  },
+  {
+   "endpoint": "apps.webui.server.routes.grid_edit.undo_grid_edit",
+   "methods": [
+    "POST"
+   ],
+   "path": "/api/v1/tracks/{stable_id}/grid-edit/undo"
   },
   {
    "endpoint": "apps.webui.server.routes.grid_provenance.get_track_grid_provenance",
@@ -3382,6 +3511,20 @@
    "path": "/api/v1/tracks/{stable_id}/lyrics/words"
   },
   {
+   "endpoint": "apps.webui.server.routes.rb_hot_cues.list_memory_cues",
+   "methods": [
+    "GET"
+   ],
+   "path": "/api/v1/tracks/{stable_id}/memory-cues"
+  },
+  {
+   "endpoint": "apps.webui.server.routes.rb_hot_cues.set_active_memory_loop",
+   "methods": [
+    "PUT"
+   ],
+   "path": "/api/v1/tracks/{stable_id}/memory-cues/{in_ms}/active"
+  },
+  {
    "endpoint": "apps.webui.server.routes.tracks.list_track_playlists",
    "methods": [
     "GET"
@@ -3408,6 +3551,13 @@
     "GET"
    ],
    "path": "/api/v1/tracks/{stable_id}/rb-meta"
+  },
+  {
+   "endpoint": "apps.webui.server.routes.track_related.related_tracks",
+   "methods": [
+    "GET"
+   ],
+   "path": "/api/v1/tracks/{stable_id}/related"
   },
   {
    "endpoint": "apps.webui.server.routes.stems.get_stem_manifest",
@@ -3842,12 +3992,6 @@
   }
  ],
  "winners": [
-  {
-   "method": "GET",
-   "path": "/",
-   "url": "/",
-   "winner": "apps.webui.server.app_wiring._mount_frontend_or_placeholder.<locals>._index_placeholder"
-  },
   {
    "method": "GET",
    "path": "/api/play-analytics",
@@ -4515,6 +4659,12 @@
    "winner": "apps.webui.server.routes.commands.next_command"
   },
   {
+   "method": "GET",
+   "path": "/api/v1/commands/timings",
+   "url": "/api/v1/commands/timings",
+   "winner": "apps.webui.server.routes.commands.order_timings"
+  },
+  {
    "method": "POST",
    "path": "/api/v1/commands/{order_id}/result",
    "url": "/api/v1/commands/sample/result",
@@ -4687,6 +4837,30 @@
    "path": "/api/v1/dj/try/{job_id}/pick",
    "url": "/api/v1/dj/try/sample/pick",
    "winner": "apps.webui.server.routes.dj_try.pick_candidate"
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/edits",
+   "url": "/api/v1/edits",
+   "winner": "apps.webui.server.routes.library_edits.list_track_edits"
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/edits",
+   "url": "/api/v1/edits",
+   "winner": "apps.webui.server.routes.library_edits.create_track_edit"
+  },
+  {
+   "method": "DELETE",
+   "path": "/api/v1/edits/{edit_id}",
+   "url": "/api/v1/edits/sample",
+   "winner": "apps.webui.server.routes.library_edits.delete_track_edit"
+  },
+  {
+   "method": "PATCH",
+   "path": "/api/v1/edits/{edit_id}",
+   "url": "/api/v1/edits/sample",
+   "winner": "apps.webui.server.routes.library_edits.update_track_edit"
   },
   {
    "method": "POST",
@@ -5067,6 +5241,12 @@
    "winner": "apps.webui.server.routes.library_jobs.cancel_library_job"
   },
   {
+   "method": "GET",
+   "path": "/api/v1/library/export.xml",
+   "url": "/api/v1/library/export.xml",
+   "winner": "apps.webui.server.routes.library.export_library_xml"
+  },
+  {
    "method": "POST",
    "path": "/api/v1/library/preview-strips",
    "url": "/api/v1/library/preview-strips",
@@ -5092,6 +5272,12 @@
   },
   {
    "method": "GET",
+   "path": "/api/v1/library/strip-coverage",
+   "url": "/api/v1/library/strip-coverage",
+   "winner": "apps.webui.server.routes.library.get_library_strip_coverage"
+  },
+  {
+   "method": "GET",
    "path": "/api/v1/library/wheel",
    "url": "/api/v1/library/wheel",
    "winner": "apps.webui.server.routes.library.get_library_wheel"
@@ -5107,6 +5293,12 @@
    "path": "/api/v1/lifecycle/quit",
    "url": "/api/v1/lifecycle/quit",
    "winner": "apps.webui.server.routes.lifecycle.request_shell_quit"
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/lighting/status",
+   "url": "/api/v1/lighting/status",
+   "winner": "apps.lighting.http.api_lighting_status"
   },
   {
    "method": "GET",
@@ -5374,6 +5566,12 @@
   },
   {
    "method": "POST",
+   "path": "/api/v1/performance/headphones/booth-level",
+   "url": "/api/v1/performance/headphones/booth-level",
+   "winner": "apps.webui.server.routes.performance_headphones.post_headphone_booth_level"
+  },
+  {
+   "method": "POST",
    "path": "/api/v1/performance/headphones/calibrate",
    "url": "/api/v1/performance/headphones/calibrate",
    "winner": "apps.webui.server.routes.performance_headphones.post_headphone_calibrate"
@@ -5425,6 +5623,12 @@
    "path": "/api/v1/performance/headphones/output-mode",
    "url": "/api/v1/performance/headphones/output-mode",
    "winner": "apps.webui.server.routes.performance_headphones.post_output_mode"
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/performance/headphones/outputs/booth",
+   "url": "/api/v1/performance/headphones/outputs/booth",
+   "winner": "apps.webui.server.routes.performance_headphones.post_headphone_booth_select"
   },
   {
    "method": "POST",
@@ -5619,6 +5823,12 @@
    "winner": "apps.webui.server.routes.playlists.list_deleted_playlists"
   },
   {
+   "method": "POST",
+   "path": "/api/v1/playlists/import",
+   "url": "/api/v1/playlists/import",
+   "winner": "apps.webui.server.routes.playlist_write.import_m3u_playlist"
+  },
+  {
    "method": "DELETE",
    "path": "/api/v1/playlists/{playlist_id}",
    "url": "/api/v1/playlists/sample",
@@ -5671,6 +5881,12 @@
    "path": "/api/v1/playlists/{playlist_id}/entries:move",
    "url": "/api/v1/playlists/sample/entries:move",
    "winner": "apps.webui.server.routes.library_org.move_entries"
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/playlists/{playlist_id}/export.txt",
+   "url": "/api/v1/playlists/sample/export.txt",
+   "winner": "apps.webui.server.routes.playlists.export_playlist_text"
   },
   {
    "method": "DELETE",
@@ -5827,6 +6043,12 @@
    "path": "/api/v1/playlists/{playlist_id}:undelete",
    "url": "/api/v1/playlists/sample:undelete",
    "winner": "apps.webui.server.routes.playlist_write.undelete_playlist"
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/plays/import/traktor-history",
+   "url": "/api/v1/plays/import/traktor-history",
+   "winner": "apps.webui.server.routes.play_import.import_traktor_history"
   },
   {
    "method": "GET",
@@ -6549,6 +6771,12 @@
    "winner": "apps.webui.server.routes.tracks.get_track_index"
   },
   {
+   "method": "POST",
+   "path": "/api/v1/tracks/list-totals",
+   "url": "/api/v1/tracks/list-totals",
+   "winner": "apps.webui.server.routes.list_totals.tracks_list_totals"
+  },
+  {
    "method": "GET",
    "path": "/api/v1/tracks/lyrics-cached-ids",
    "url": "/api/v1/tracks/lyrics-cached-ids",
@@ -6669,10 +6897,34 @@
    "winner": "apps.webui.server.routes.grid_edit.set_grid_edit"
   },
   {
+   "method": "GET",
+   "path": "/api/v1/tracks/{stable_id}/grid-edit/anchors",
+   "url": "/api/v1/tracks/sample/grid-edit/anchors",
+   "winner": "apps.webui.server.routes.grid_edit.get_grid_anchors"
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/tracks/{stable_id}/grid-edit/anchors",
+   "url": "/api/v1/tracks/sample/grid-edit/anchors",
+   "winner": "apps.webui.server.routes.grid_edit.add_grid_anchor"
+  },
+  {
+   "method": "DELETE",
+   "path": "/api/v1/tracks/{stable_id}/grid-edit/anchors/{at_s}",
+   "url": "/api/v1/tracks/sample/grid-edit/anchors/sample",
+   "winner": "apps.webui.server.routes.grid_edit.remove_grid_anchor"
+  },
+  {
    "method": "POST",
    "path": "/api/v1/tracks/{stable_id}/grid-edit/nudge",
    "url": "/api/v1/tracks/sample/grid-edit/nudge",
    "winner": "apps.webui.server.routes.grid_edit.nudge_grid_edit"
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/tracks/{stable_id}/grid-edit/undo",
+   "url": "/api/v1/tracks/sample/grid-edit/undo",
+   "winner": "apps.webui.server.routes.grid_edit.undo_grid_edit"
   },
   {
    "method": "GET",
@@ -6742,6 +6994,18 @@
   },
   {
    "method": "GET",
+   "path": "/api/v1/tracks/{stable_id}/memory-cues",
+   "url": "/api/v1/tracks/sample/memory-cues",
+   "winner": "apps.webui.server.routes.rb_hot_cues.list_memory_cues"
+  },
+  {
+   "method": "PUT",
+   "path": "/api/v1/tracks/{stable_id}/memory-cues/{in_ms}/active",
+   "url": "/api/v1/tracks/sample/memory-cues/sample/active",
+   "winner": "apps.webui.server.routes.rb_hot_cues.set_active_memory_loop"
+  },
+  {
+   "method": "GET",
    "path": "/api/v1/tracks/{stable_id}/playlists",
    "url": "/api/v1/tracks/sample/playlists",
    "winner": "apps.webui.server.routes.tracks.list_track_playlists"
@@ -6763,6 +7027,12 @@
    "path": "/api/v1/tracks/{stable_id}/rb-meta",
    "url": "/api/v1/tracks/sample/rb-meta",
    "winner": "apps.webui.server.routes.rb_assets.get_track_rb_meta"
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/tracks/{stable_id}/related",
+   "url": "/api/v1/tracks/sample/related",
+   "winner": "apps.webui.server.routes.track_related.related_tracks"
   },
   {
    "method": "GET",

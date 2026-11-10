@@ -39,12 +39,31 @@ LIGHT_RUNS_ON = (
     f"${{{{ fromJSON({MERGE_QUEUE_DISJUNCT} || vars.CI_RUNS_ON_LINUX || '\"ubuntu-latest\"') }}}}"
 )
 
+#: Mon 9 Nov 2026: gate-path jobs prefer the opt-in `CI_RUNS_ON_GATE` pool before the
+#: light pool (no-op until the repo variable is set). import-contracts, ci-gate, scope,
+#: ci-insights, e2e verdict/trunk-quarantine, and the standalone gate workflows use it.
+GATE_POOL_TAIL = "vars.CI_RUNS_ON_GATE || vars.CI_RUNS_ON_LINUX"
+PRE_ROUTE_GATE = f'${{{{ fromJSON({GATE_POOL_TAIL} || \'"ubuntu-latest"\') }}}}'
+GATE_RUNS_ON = (
+    f"${{{{ fromJSON({MERGE_QUEUE_DISJUNCT} || {GATE_POOL_TAIL} || '\"ubuntu-latest\"') }}}}"
+)
+
+#: Frontend build jobs prefer `CI_RUNS_ON_HEAVY` before the light pool (same no-op contract).
+HEAVY_POOL_TAIL = "vars.CI_RUNS_ON_HEAVY || vars.CI_RUNS_ON_LINUX"
+PRE_ROUTE_HEAVY = f'${{{{ fromJSON({HEAVY_POOL_TAIL} || \'"ubuntu-latest"\') }}}}'
+HEAVY_RUNS_ON = (
+    f"${{{{ fromJSON({MERGE_QUEUE_DISJUNCT} || {HEAVY_POOL_TAIL} || '\"ubuntu-latest\"') }}}}"
+)
+
 #: The two Trunk upload jobs (ADR-NEW-trunk-token-jobs-self-hosted): the light route
 #: with NO hosted fallback. The Actions budget refuses hosted jobs, so an unset
 #: `CI_RUNS_ON_LINUX` must fail the job loudly rather than send it back there.
-TOKEN_RUNS_ON = f"${{{{ fromJSON({MERGE_QUEUE_DISJUNCT} || vars.CI_RUNS_ON_LINUX) }}}}"
-#: The token route minus its merge-queue disjunct.
+#: ci-insights gained the gate pool ahead of LINUX the same day (Mon 9 Nov 2026).
+TOKEN_RUNS_ON = f"${{{{ fromJSON({MERGE_QUEUE_DISJUNCT} || {GATE_POOL_TAIL}) }}}}"
+#: The token route minus its merge-queue disjunct (e2e trunk upload jobs stay LINUX-only).
+PRE_ROUTE_TOKEN_GATE = f"${{{{ fromJSON({GATE_POOL_TAIL}) }}}}"
 PRE_ROUTE_TOKEN = "${{ fromJSON(vars.CI_RUNS_ON_LINUX) }}"
+TOKEN_RUNS_ON_LINUX = f"${{{{ fromJSON({MERGE_QUEUE_DISJUNCT} || vars.CI_RUNS_ON_LINUX) }}}}"
 
 #: The `quality` ratchet job (Tue 6 Oct 2026): the light chain with the opt-in
 #: `CI_RUNS_ON_QUALITY` pool ahead of `CI_RUNS_ON_LINUX`, keeping its mypy cache
@@ -182,21 +201,23 @@ FAST_RUNS_ON = with_main_fix(PRE_ROUTE_FAST)
 #: MAIN_* routes: the main-push reserve first, the repair reserve second (SHARD_RUNS_ON
 #: already carries the repair reserve first, so only the main-push one is added there).
 MAIN_LIGHT_RUNS_ON = with_main_fix(with_main_reserve(LIGHT_RUNS_ON))
+MAIN_GATE_RUNS_ON = with_main_fix(with_main_reserve(GATE_RUNS_ON))
+MAIN_HEAVY_RUNS_ON = with_main_fix(with_main_reserve(HEAVY_RUNS_ON))
 MAIN_TOKEN_RUNS_ON = with_main_fix(with_main_reserve(TOKEN_RUNS_ON))
 MAIN_SHARD_RUNS_ON = with_main_reserve(SHARD_RUNS_ON)
 MAIN_QUALITY_RUNS_ON = with_main_fix(with_main_reserve(QUALITY_RUNS_ON))
 #: The ci.yml jobs that carry the main-push reserve, and the exact route each carries.
 MAIN_RESERVED_JOBS = {
-    "scope": MAIN_LIGHT_RUNS_ON,
+    "scope": MAIN_GATE_RUNS_ON,
     "test": MAIN_SHARD_RUNS_ON,
-    "ci-gate": MAIN_LIGHT_RUNS_ON,
+    "ci-gate": MAIN_GATE_RUNS_ON,
     "ci-insights": MAIN_TOKEN_RUNS_ON,
     "contracts": MAIN_LIGHT_RUNS_ON,
-    "frontend-build": MAIN_LIGHT_RUNS_ON,
-    "frontend": MAIN_LIGHT_RUNS_ON,
+    "frontend-build": MAIN_HEAVY_RUNS_ON,
+    "frontend": MAIN_HEAVY_RUNS_ON,
     "quality": MAIN_QUALITY_RUNS_ON,
     # Wed 4 Nov 2026 (ADR-NEW-import-contracts-gate-on-pull-requests): the ci gate's route.
-    "import-contracts": MAIN_LIGHT_RUNS_ON,
+    "import-contracts": MAIN_GATE_RUNS_ON,
     # Sun 8 Nov 2026 (ADR-NEW-audio-rust-tests-on-pull-requests): the contracts job's route.
     "audio-rust": MAIN_LIGHT_RUNS_ON,
     # Mon 9 Nov 2026 (REQS-ONLY-CARRY, #10542): the scoped reqs checks a carried reqs-only

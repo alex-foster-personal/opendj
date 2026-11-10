@@ -10,6 +10,7 @@
     "check": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json && pnpm check:react",
     "check:react": "tsc -p tsconfig.react.json",
     "check:unit-seams": "node scripts/unit-test-seam-check.mjs",
+    "bundle:charge": "node scripts/bundle-charge.mjs",
     "test:unit": "svelte-kit sync && pnpm run check:unit-seams && node --experimental-strip-types --test --test-reporter=tap --test-reporter-destination=stdout --test-reporter=junit --test-reporter-destination=junit-unit.xml --test-concurrency=4 --test-timeout=120000 tests/unit/*.test.mjs",
     "test:unit:slow": "svelte-kit sync && pnpm run check:unit-seams && node --experimental-strip-types --test --test-reporter=tap --test-reporter-destination=stdout --test-reporter=junit --test-reporter-destination=junit-unit-slow.xml --test-concurrency=1 --test-timeout=120000 tests/unit/slow/*.test.mjs",
     "test:unit:all": "svelte-kit sync && pnpm run check:unit-seams && node --experimental-strip-types --test --test-reporter=tap --test-reporter-destination=stdout --test-reporter=junit --test-reporter-destination=junit-unit-all.xml --test-concurrency=4 --test-timeout=120000 tests/unit/*.test.mjs tests/unit/slow/*.test.mjs",
@@ -38,6 +39,7 @@
     "sandbox:msw": "msw init .storybook/msw --save=false"
   },
   "devDependencies": {
+    "@axe-core/playwright": "4.14.0",
     "@playwright/test": "^1.48.0",
     "@storybook/addon-docs": "10.5.10",
     "@storybook/addon-vitest": "10.6.2",

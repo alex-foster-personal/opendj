@@ -200,12 +200,12 @@
 
 	.segment:hover path,
 	.segment:focus-visible path {
-		stroke: var(--rb-focus-ring, #6af);
+		stroke: var(--rb-focus-ring);
 		stroke-width: 2;
 	}
 
 	.segment:focus-visible {
-		outline: 2px solid var(--rb-focus-ring, #6af);
+		outline: 2px solid var(--rb-focus-ring);
 		outline-offset: 0;
 	}
 

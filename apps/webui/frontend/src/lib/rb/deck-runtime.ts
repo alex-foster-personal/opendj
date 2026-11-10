@@ -46,6 +46,8 @@ export interface _DeckRuntime {
 	nextScheduleRevision: number;
 	desiredActive: boolean;
 	scheduleIntentCount: number;
+	/** Bumped when a processor failure zeroes scheduleIntentCount; an intent counted under an older epoch must not decrement the new count. */
+	scheduleIntentEpoch: number;
 	scheduleTail: Promise<void>;
 	swapTail: Promise<void>;
 	slipAnchor: SlipAnchor | null;
@@ -107,6 +109,7 @@ export function _emptyRuntime(): _DeckRuntime {
 		nextScheduleRevision: 0,
 		desiredActive: false,
 		scheduleIntentCount: 0,
+		scheduleIntentEpoch: 0,
 		scheduleTail: Promise.resolve(),
 		swapTail: Promise.resolve(),
 		slipAnchor: null,

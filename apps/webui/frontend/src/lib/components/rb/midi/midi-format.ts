@@ -130,6 +130,8 @@ export function friendlyLabel(action: MidiAction): string {
 			return `Hot cue ${action.slot} (deck ${action.deck})`;
 		case 'deck_beat_loop':
 			return `Beat loop ${action.beats} (deck ${action.deck})`;
+		case 'deck_beat_jump':
+			return `Beat jump ${action.beats > 0 ? '+' : ''}${action.beats} (deck ${action.deck})`;
 		case 'deck_auto_loop_toggle':
 			return `Auto loop toggle (deck ${action.deck})`;
 		case 'deck_loop_exit':

@@ -9,10 +9,19 @@
 	 *
 	 * AISIDE-7892j: behind `assistant.sidebar`, default OFF. While it is off there
 	 * is no tab and Cmd+I passes through untouched.
+	 *
+	 * OJ-9477: open state is shared (oj-sidebar.svelte.ts) so the top bar's OJ
+	 * button and the `oj_toggle` performance command reach the same panel. It
+	 * slides in only when ojMotionPolicy allows it: never while a deck plays on
+	 * /performance, never under prefers-reduced-motion.
 	 */
+	import { untrack } from 'svelte';
+	import { anyDeckPlaying } from '$lib/rb/playing-gate';
+	import { ojSidebar, setOjSidebarOpen, toggleOjSidebar } from '$lib/assistant/oj-sidebar.svelte';
+	import { ojSidebarAnimates } from '$lib/assistant/oj-sidebar-toggle';
 	import { assistantSidebarEnabled } from '$lib/assistant/sidebar-flag';
 	import { pushToast, TOAST_DEFAULT_MS } from '$lib/stores.svelte';
-	import { assistantChordApplies, settleFocusOnClose } from '$lib/assistant/sidebar-toggle';
+	import { assistantChordApplies } from '$lib/assistant/sidebar-toggle';
 	import {
 		ASSISTANT_CHORD_ARIA,
 		ASSISTANT_CHORD_LABEL
@@ -25,7 +34,7 @@
 
 	let { isEnabled = assistantSidebarEnabled }: { isEnabled?: () => boolean } = $props();
 	const enabled = $derived(isEnabled());
-	let open = $state(false);
+	const open = $derived(ojSidebar.open);
 	let sidebar = $state.raw<Promise<SidebarModule> | null>(null);
 	let dockWidth = $state(0);
 
@@ -35,33 +44,47 @@
 		return () => root.removeProperty(DOCK_WIDTH_VAR);
 	});
 
-	/** What had focus when the sidebar opened; closing hands focus back to it. */
-	let opener: HTMLElement | null = null;
-
 	function toggle(): void {
-		setOpen(!open);
+		toggleOjSidebar();
 	}
 
 	function setOpen(next: boolean): void {
-		if (next === open) return;
-		if (next)
-			opener = document.activeElement instanceof HTMLElement ? document.activeElement : null;
-		open = next;
-		if (next && sidebar === null) load();
-		if (!next) {
-			settleFocusOnClose(opener, () =>
-				document.activeElement instanceof HTMLElement ? document.activeElement : null
-			);
-			opener = null;
-		}
+		setOjSidebarOpen(next);
 	}
+
+	// Any opener (tab, chord, top bar button, oj_toggle) fetches the chunk on first open.
+	$effect(() => {
+		if (open && sidebar === null) load();
+	});
+
+	function onPerformanceRoute(): boolean {
+		return typeof location !== 'undefined' && location.pathname.startsWith('/performance');
+	}
+
+	function prefersReducedMotion(): boolean {
+		return (
+			typeof matchMedia === 'function' && matchMedia('(prefers-reduced-motion: reduce)').matches
+		);
+	}
+
+	/** Read once per open, so the decision is the one in force when the panel appears. */
+	const animates = $derived(
+		open &&
+			untrack(() =>
+				ojSidebarAnimates({
+					anyDeckPlaying: anyDeckPlaying(),
+					performanceVisible: onPerformanceRoute(),
+					reducedMotion: prefersReducedMotion()
+				})
+			)
+	);
 
 	function load(): void {
 		const attempt = import('./AgentSidebar.svelte');
 		sidebar = attempt;
 		attempt.catch((error: unknown) => {
 			if (sidebar === attempt) sidebar = null;
-			open = false;
+			setOjSidebarOpen(false);
 			const message = error instanceof Error ? error.message : String(error);
 			pushToast(
 				`Assistant failed to load: ${message}. Reload the page to retry.`,
@@ -94,7 +117,13 @@
 	</button>
 {/if}
 {#if sidebar}
-	<div class="assistant-dock" hidden={!open} bind:clientWidth={dockWidth}>
+	<div
+		class="assistant-dock"
+		class:oj-animate={animates}
+		data-oj-sidebar-motion={animates ? 'animated' : 'still'}
+		hidden={!open}
+		bind:clientWidth={dockWidth}
+	>
 		{#await sidebar then { default: AgentSidebar }}
 			<AgentSidebar {open} onclose={() => setOpen(false)} />
 		{:catch}
@@ -142,6 +171,17 @@
 		bottom: 0;
 		z-index: 340;
 		box-shadow: -8px 0 24px rgba(0, 0, 0, 0.35);
+	}
+	.assistant-dock.oj-animate {
+		animation: oj-slide-in 180ms ease-out;
+	}
+	@keyframes oj-slide-in {
+		from {
+			transform: translateX(100%);
+		}
+		to {
+			transform: translateX(0);
+		}
 	}
 	.assistant-dock[hidden] {
 		display: none;

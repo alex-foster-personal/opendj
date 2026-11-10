@@ -63,6 +63,16 @@ def control_command(deck: int | None, control: str, value: float) -> dict[str, A
     raise ValueError(f"no bus command for control {control!r}")
 
 
+def noise_command(deck: int, field: str, value: float) -> dict[str, Any]:
+    """#10246: one color_fx NOISE command for an fx_noise field: ``level`` is the PARAMETER (#9796), ``sweep`` (-1..1)
+    the COLOR knob (0.5 = centre)."""
+    if field == "level":
+        return {"type": "color_fx", "deck": deck, "effect": "noise", "param": value}
+    if field == "sweep":
+        return {"type": "color_fx", "deck": deck, "effect": "noise", "value": round(0.5 + 0.5 * value, 6)}
+    raise ValueError(f"fx_noise has no field {field!r}")
+
+
 def _action_command(event: PlanEvent) -> dict[str, Any]:
     assert event.deck is not None
     if event.name == "play":
@@ -80,7 +90,13 @@ def _compile_event(event: PlanEvent, previous_transport: float | None = None) ->
         at_bar = launch_bar(event.at_bar, previous_transport) if event.name == "play" else event.at_bar
         return {"at_bar": at_bar, "command": _action_command(event)}
     target = event.target()
-    command = control_command(event.deck, event.name, target)
+    if event.name == "fx_noise":
+        if event.deck is None or event.field is None:
+            raise ValueError(f"fx_noise at bar {event.at_bar:g} needs a deck and a field")
+        command = noise_command(event.deck, event.field, target)
+        target = command["param"] if "param" in command else command["value"]
+    else:
+        command = control_command(event.deck, event.name, target)
     if event.kind == "set":
         return {"at_bar": event.at_bar, "command": command}
     return {"at_bar": event.at_bar, "ramp": {"command": command, "to": target, "over_bars": event.over_bars}}

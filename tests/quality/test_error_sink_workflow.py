@@ -71,7 +71,8 @@ def test_a_failed_watched_workflow_reaches_the_kind_build_poster() -> None:
     assert "--batch-file" in poster["run"]
     assert poster["env"]["SINK_FAILURES_FILE"] == "${{ steps.sink.outputs.sink_failures_file }}"
     body = ERROR_SINK.read_text(encoding="utf-8")
-    assert "CI_RUNS_ON_LINUX" in body
+    assert "CI_RUNS_ON_UNPRIVILEGED_LINUX" in body
+    assert "ubuntu-latest" not in body
     assert "gh variable" not in body
 
 

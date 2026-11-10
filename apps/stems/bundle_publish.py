@@ -23,7 +23,10 @@ import json
 import time
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
+
+if TYPE_CHECKING:
+    from apps.stems.stem_size_policy import MeasuredStemPart
 
 # ----- CFG (mirrors scripts/modal_vocal_farm.py) -----------------------------
 BAKED_MODELS: tuple[str, ...] = ("htdemucs", "hdemucs_mmi", "htdemucs_ft")
@@ -209,12 +212,73 @@ def stem_manifest(
     }
 
 
+# ----- the quality gate (#9664) ----------------------------------------------
+def resolve_requested_codec(requested_codec: str, source_name: str) -> str:
+    """The codec the staged parts must be: the source policy's answer for by-source
+    (stem_output_codec_for_source_ext, which is "mp3" for every known source), else
+    the codec the caller named. An unknown source extension under by-source raises
+    StemQualityError from UnknownSourceFormatError."""
+    from apps.stems.stem_size_policy import (
+        StemQualityError,
+        UnknownSourceFormatError,
+        stem_output_codec_for_source_ext,
+    )
+
+    if requested_codec != STEM_CODEC_BY_SOURCE:
+        return requested_codec
+    try:
+        return stem_output_codec_for_source_ext(Path(source_name).suffix)
+    except UnknownSourceFormatError as exc:
+        raise StemQualityError(str(exc)) from exc
+
+
+def measure_staged_part(path: Path) -> MeasuredStemPart:
+    """One staged part measured by the deck's own pure-Python container reader,
+    which checks the suffix against the magic bytes. Bytes that are not the
+    container their name claims raise StemQualityError."""
+    from apps.stems.artifact_types import StemArtifactError
+    from apps.stems.artifacts import read_stem_container_metadata
+    from apps.stems.stem_size_policy import MeasuredStemPart, StemQualityError
+
+    try:
+        metadata, suffix = read_stem_container_metadata(path)
+    except StemArtifactError as exc:
+        raise StemQualityError(str(exc)) from exc
+    return MeasuredStemPart(
+        container=suffix.lstrip("."),
+        size_bytes=path.stat().st_size,
+        duration_s=metadata.frame_count / metadata.sample_rate,
+    )
+
+
+def refuse_breaking_stem_set(
+    staging: Path, ext: str, audio_path: Path, result: dict[str, Any], *, requested_codec: str
+) -> None:
+    """Measure every staged part and run stem_size_policy.assert_stem_set_publishable.
+    The source is only stat'ed when the expected codec is mp3, so the explicit
+    flac/wav control path never needs the source on disk."""
+    from apps.stems.stem_size_policy import StemQualityError, assert_stem_set_publishable
+
+    expected = resolve_requested_codec(requested_codec, audio_path.name)
+    try:
+        assert_stem_set_publishable(
+            expected_codec=expected,
+            declared_codec=result["stem_codec"],
+            source_bytes=audio_path.stat().st_size if expected == "mp3" else None,
+            parts={part: measure_staged_part(staging / f"{part}.{ext}") for part in STEM_PARTS},
+        )
+    except StemQualityError as exc:
+        raise StemQualityError(f"{audio_path.name}: {exc}") from exc
+
+
 def publish_stems_local(
     stable_id: str,
     audio_path: Path,
     result: dict[str, Any],
     preset: Preset,
     data_dir: Path,
+    *,
+    requested_codec: str,
 ) -> tuple[int, float]:
     """Write one bundle where the webui reads it; the farm's ``_publish_stems_local``.
 
@@ -227,6 +291,14 @@ def publish_stems_local(
     keeps none of the old parts, so they neither keep their storage nor show
     up in ``scan_bundles()`` against the cloud index (STEM-75); any other
     file in the directory is carried over.
+
+    ``requested_codec`` is the codec the caller asked the separator for
+    (``by-source`` or a codec by name). It has no default: FLAC or WAV parts
+    publish only when asked for by name. The staged parts are measured from
+    their own bytes at the end of staging and a set that breaks STEM-8231
+    raises StemQualityError before the lock and the swap, so the store keeps
+    what it held (#9664); nothing between that check and the rename touches
+    the part bytes, and the measuring stays out of the lock-held window.
     """
     from apps.stems.bundle_lock import publish_bundle
 
@@ -242,6 +314,7 @@ def publish_stems_local(
             part_path = staging / f"{part}.{ext}"
             part_path.write_bytes(result["stems"][part])
             written += part_path.stat().st_size
+        refuse_breaking_stem_set(staging, ext, audio_path, result, requested_codec=requested_codec)
         (staging / "manifest.json").write_text(
             json.dumps(manifest_doc, indent=2) + "\n", encoding="utf-8", newline="\n"
         )
@@ -266,9 +339,12 @@ __all__ = [
     "STEM_LAYOUT",
     "STEM_PARTS",
     "Preset",
+    "measure_staged_part",
     "preset_for_tier",
     "publish_stems_local",
+    "refuse_breaking_stem_set",
     "resolve_preset",
+    "resolve_requested_codec",
     "route_stem_codec",
     "route_stem_codec_for_source",
     "separate_track_args",

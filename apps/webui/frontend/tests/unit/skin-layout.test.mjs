@@ -1,8 +1,8 @@
-// requirement: SKINLAYOUT-8869, SKINLAYOUT-10489
+// requirement: SKINLAYOUT-8869, SKINLAYOUT-10489, SKINLAYOUT-11729
 // [if] a skin other than Green Room selects the three-panel library layout [then] Gothic, Light or Default change shape, [else stop].
 // [if] the Now Playing panel prefers the preview over the last Gig master deck [then] it shows the wrong track, [else stop].
 // [if] the Your Library search does work with an empty query [then] the library listing path gains cost, [else stop].
-// [if] a skin's performance preset is not deck-grid, or the deck-grid spec's areas drift from the /performance grid [then] the performance root changes shape with no declared preset, [else stop].
+// [if] a skin other than practice-ddj-flx4 is not deck-grid, practice-ddj-flx4 is not replica-desk, or the deck-grid spec's areas drift from the /performance grid [then] the performance root changes shape with no declared preset, [else stop].
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { before, test } from 'node:test';
@@ -26,16 +26,26 @@ test('if any skin lacks a library layout, or a skin other than Green Room bends,
 	assert.equal(L.parseLibraryLayout('three-panel'), 'three-panel');
 });
 
-test('if a skin lacks the deck-grid performance preset, or its spec drifts from the /performance grid, then the manifest is wrong', () => {
-	assert.deepEqual([...L.PERFORMANCE_LAYOUTS], ['deck-grid']);
-	for (const s of skin.UI_SKIN_CHOICES) assert.equal(L.performanceLayoutFor(s), 'deck-grid', s);
+test('if a skin declares the wrong performance preset, or the deck-grid spec drifts from the /performance grid, then the manifest is wrong', () => {
+	assert.deepEqual([...L.PERFORMANCE_LAYOUTS], ['deck-grid', 'replica-desk']);
+	for (const s of ['default', 'mono-dev', 'light', 'green-room'])
+		assert.equal(L.performanceLayoutFor(s), 'deck-grid', s);
+	assert.equal(L.performanceLayoutFor('practice-ddj-flx4'), 'replica-desk');
+	for (const s of skin.UI_SKIN_CHOICES)
+		assert.ok(L.PERFORMANCE_LAYOUTS.includes(L.performanceLayoutFor(s)), s);
+	assert.throws(() => L.performanceLayoutFor('no-such-skin'), /no layout declared for skin/);
+	assert.throws(
+		() => L.parsePerformanceLayout('sidebar-left'),
+		/performance layout must be deck-grid\|replica-desk, got sidebar-left/
+	);
+	assert.equal(L.parsePerformanceLayout('replica-desk'), 'replica-desk');
 	assert.deepEqual(
 		Object.keys(L.PERFORMANCE_LAYOUT_SPEC).sort(),
 		[...L.PERFORMANCE_LAYOUTS].sort()
 	);
 	assert.throws(
 		() => L.parsePerformanceLayout('four-across'),
-		/performance layout must be deck-grid/
+		/performance layout must be deck-grid\|replica-desk/
 	);
 	assert.equal(L.parsePerformanceLayout('deck-grid'), 'deck-grid');
 

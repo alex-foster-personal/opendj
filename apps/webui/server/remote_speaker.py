@@ -261,11 +261,13 @@ def _header_refusal(
     if scope["method"] != "POST":
         return None
     content_type = headers.get("content-type", "").split(";")[0].strip().lower()
-    if content_type != "application/json":
-        return 415, "the offer must be application/json"
     declared = headers.get("content-length")
     if declared is not None and (not declared.isdigit() or int(declared) > max_body_bytes):
         return 413, f"the offer exceeds {max_body_bytes} bytes"
+    # Empty POST (the guest vote route) has no JSON body; no-cors text/plain
+    # forms still carry a non-zero body or a non-json type and stay refused.
+    if content_type != "application/json" and declared != "0":
+        return 415, "the offer must be application/json"
     return None
 
 

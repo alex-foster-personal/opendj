@@ -71,6 +71,7 @@ from collections.abc import Collection, Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 
+from scripts.ci_gate_inherited_red import Waiver, only_test_job_failed, waiver_from_environment
 from scripts.ci_pr_scope import (
     CI_FIXED_JOBS,
     CI_JOBS_ONLY_ON_PULL_REQUEST,
@@ -487,6 +488,18 @@ def gate_verdict(needs: Mapping[str, Mapping[str, object]], *, pr: str = "?", he
     return Verdict(ok, tuple(lines))
 
 
+def apply_inherited_red(verdict: Verdict, waiver: Waiver) -> Verdict:
+    """Pass a verdict whose only failure is `test` when main's red explains all of it
+    (scripts/ci_gate_inherited_red.py); otherwise keep it failed, with the reason logged."""
+    if not waiver.granted:
+        return Verdict(False, (*verdict.lines, *waiver.lines))
+    waived = tuple(
+        line.replace("FAIL ", "ok   ", 1) + " [WAIVED: inherited main red]" if line.startswith("FAIL") else line
+        for line in verdict.lines
+    )
+    return Verdict(True, (*waived, *waiver.lines))
+
+
 def _planned_zero_shards(outputs: object) -> bool:
     """CI-DYNSHARD: the scope job planned an empty shard matrix, so `test` is skipped by design.
 
@@ -625,6 +638,8 @@ def _run_verdict() -> int:
     needs = json.loads(_required_env("NEEDS_JSON"))
     pr, head = pull_request_identity(os.environ)
     verdict = gate_verdict(needs, pr=pr, head=head)
+    if not verdict.ok and only_test_job_failed(verdict.lines, SHARD_JOB):
+        verdict = apply_inherited_red(verdict, waiver_from_environment())
     for line in verdict.lines:
         print(line)
     for line in verdict.lines:

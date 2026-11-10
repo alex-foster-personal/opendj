@@ -23,6 +23,7 @@ import { everyStemPartSilent } from '$lib/sets/deck-audibility';
 import { setPlanOverlay } from './plan-overlay-store.svelte';
 import { deckPlayingRefusal, playingDeckReplaced, type DeckPlayingRefusal } from './agent-load-refusal';
 import { LEASE_HEADER } from './leased-mirror-publisher';
+import { rustCommandUnsupported } from '$lib/audio-engine/rust-mode.svelte';
 
 type ClockDeck = 1 | 2 | 3 | 4;
 
@@ -81,7 +82,7 @@ async function _plans(): Promise<PlanRunner> {
 	const epoch = _planOpenEpoch;
 	if (epoch === null) throw new Error(PLAN_CLOSED);
 	if (_planRunner) return _planRunner;
-	const { createPlanRunner } = await import('./agent-plan');
+	const { createPlanRunner, noiseRefusal } = await import('./agent-plan');
 	if (epoch !== _planOpenEpoch) throw new Error(PLAN_CLOSED);
 	_planRunner ??= createPlanRunner({
 		dispatch: (command) => dispatchPerformanceCommand(command as PerformanceCommand, undefined, 'agent-command'),
@@ -94,6 +95,7 @@ async function _plans(): Promise<PlanRunner> {
 		clearTimer: (handle) => window.clearTimeout(handle as number),
 		now: () => Date.now(),
 		handoffInFlight: autoPlayHandoffInFlight,
+		colorFxNoise: () => noiseRefusal(rustCommandUnsupported('color_fx')),
 		contextNowSec: () => performanceContextTimeNowSec(),
 		positionAnchor: (deck) => performancePositionAnchor(deck),
 		stepState: (stepId) => performanceStepState(stepId),

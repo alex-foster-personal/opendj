@@ -112,10 +112,7 @@ def _build_parser() -> argparse.ArgumentParser:
 
 
 def _cmd_login(args: argparse.Namespace) -> int:
-    import time
-    import webbrowser
-
-    from .account import ClientIdUnreadable, ConnectFlow, NotConnected
+    from .account import ClientIdUnreadable, ConnectFlow, NotConnected, open_pkce_authorize_url, wait_pkce_connect
 
     flow = ConnectFlow()
     try:
@@ -131,9 +128,8 @@ def _cmd_login(args: argparse.Namespace) -> int:
         return EXIT_API_ERROR
     print(f"Sign in to Spotify:\n  {url}")
     if not args.no_browser:
-        webbrowser.open(url)
-    while (status := flow.status())["phase"] == "waiting":
-        time.sleep(0.5)
+        open_pkce_authorize_url(url)
+    status = wait_pkce_connect(flow, url, open_browser=not args.no_browser)
     if status["phase"] != "connected":
         print(f"ERROR: Spotify sign-in failed: {status['detail']}", file=sys.stderr)
         return EXIT_API_ERROR

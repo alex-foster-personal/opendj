@@ -16,6 +16,7 @@ from typing import Any
 import pytest
 from fastapi.testclient import TestClient
 
+from apps.shared.harmonic import CAMELOT_RULE_IDS
 from apps.shared.state import db as state_db
 from apps.webui.server.app import create_app
 from apps.webui.server.sqlite_backend import SqliteBackend
@@ -417,6 +418,7 @@ COMPATIBLE_FILTER_DEFAULTS: dict[str, Any] = {
     "mode": "transition",
     "key_shift_max": 1,
     "mashup_relative": False,
+    "energy_mode": "off",
 }
 
 
@@ -499,7 +501,7 @@ def test_ui_prefs_compatible_filter_partial_put_keeps_stored_fields(
 @pytest.mark.parametrize(
     "bad",
     (
-        {"rules": ["same_key", "tritone"]},
+        {"rules": ["same_key", "not_a_rule"]},
         {"rules": ["same_key", "same_key"]},
         {"rules": "same_key"},
         {"bpm_window_bpm": -1},
@@ -509,6 +511,9 @@ def test_ui_prefs_compatible_filter_partial_put_keeps_stored_fields(
         {"key_shift_max": 1.0},
         {"key_shift_max": True},
         {"key_shift_max": "1"},
+        {"energy_mode": "sideways"},
+        {"energy_mode": 1},
+        {"energy_mode": ["boost"]},
     ),
 )
 def test_ui_prefs_rejects_invalid_compatible_filter(
@@ -535,9 +540,41 @@ def test_ui_prefs_compatible_filter_modes_round_trip(prefs_client: TestClient) -
     }
 
 
+@pytest.mark.requirement("SETPREP-11947")
+@pytest.mark.parametrize("energy_mode", ("off", "within_1", "boost", "drop"))
+def test_ui_prefs_compatible_filter_energy_mode_round_trips(
+    prefs_client: TestClient, tmp_path: Path, energy_mode: str
+) -> None:
+    """[if] an energy mode is PUT [then] GET returns it and ui-prefs.json holds it, [else stop]."""
+    r = prefs_client.put("/api/v1/ui-prefs", json={"compatible_filter": {"energy_mode": energy_mode}})
+    assert r.status_code == 200
+    assert prefs_client.get("/api/v1/ui-prefs").json()["compatible_filter"] == {
+        **COMPATIBLE_FILTER_DEFAULTS,
+        "energy_mode": energy_mode,
+    }
+    on_disk = json.loads((tmp_path / "data" / "state" / "ui-prefs.json").read_text(encoding="utf-8"))
+    assert on_disk["compatible_filter"]["energy_mode"] == energy_mode
+
+
+@pytest.mark.requirement("SETPREP-11947")
+def test_ui_prefs_rejects_unknown_energy_mode_naming_the_field(prefs_client: TestClient) -> None:
+    """[if] an unknown energy mode is PUT [then] the 422 names energy_mode, [else stop]."""
+    r = prefs_client.put("/api/v1/ui-prefs", json={"compatible_filter": {"energy_mode": "sideways"}})
+    assert r.status_code == 422
+    assert "energy_mode" in json.dumps(r.json())
+
+
 @pytest.mark.parametrize(
     "stored",
-    ({"bpm_enabled": "yes"}, {"camelot_steps": []}, {"camelot_steps": {}}, {"camelot_steps": "1"}, {"camelot_steps": 3}),
+    (
+        {"bpm_enabled": "yes"},
+        {"camelot_steps": []},
+        {"camelot_steps": {}},
+        {"camelot_steps": "1"},
+        {"camelot_steps": 3},
+        {"energy_mode": "loud"},
+        {"energy_mode": ["boost"]},
+    ),
 )
 def test_ui_prefs_get_refuses_wrong_typed_compatible_filter_on_disk(
     prefs_client: TestClient, tmp_path: Path, stored: dict[str, Any]
@@ -571,9 +608,9 @@ def test_ui_prefs_migrates_legacy_camelot_steps_to_rules(
 
 def test_ui_prefs_unknown_camelot_rule_names_the_known_ones(prefs_client: TestClient) -> None:
     """[if] a PUT names an unknown rule [then] the 422 lists every valid rule id."""
-    r = prefs_client.put("/api/v1/ui-prefs", json={"compatible_filter": {"rules": ["tritone"]}})
+    r = prefs_client.put("/api/v1/ui-prefs", json={"compatible_filter": {"rules": ["not_a_rule"]}})
     assert r.status_code == 422
-    assert "same_key|adjacent|relative|diagonal" in json.dumps(r.json())
+    assert "|".join(CAMELOT_RULE_IDS) in json.dumps(r.json())
 
 
 def test_ui_prefs_empty_camelot_rules_is_kept(prefs_client: TestClient) -> None:

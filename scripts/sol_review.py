@@ -78,7 +78,6 @@ import uuid
 from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
-from typing import ClassVar
 
 try:
     from scripts.review_gh import TriageError, _paginated_json_list
@@ -89,9 +88,11 @@ except ModuleNotFoundError as exc:
 from scripts.codex_home import CANDIDATE_HOMES, CodexHomeUnavailable, select_codex_home
 from scripts.review_lane import (
     BADGE_COLORS,
+    CARRIED_FINDINGS_HEADER,
     REPO,
     Finding,
     anchorable_lines,
+    carried_finding_lines,
     first_group,
     parse_findings,
     post_review,
@@ -100,7 +101,6 @@ from scripts.review_lane import (
     reviewable_diff,
     split_by_anchor,
     unreviewed_note,
-    withheld,
 )
 from scripts.review_prompt import ReviewPromptConfig, SOL_FENCE, build_prompt
 from scripts.review_sol import is_sol_artifact, marker
@@ -528,15 +528,9 @@ def summary_body(
         "states (see AGENTS.md).",
     ]
     if carried:
-        lines += ["", "Findings with no postable line anchor, kept here rather than dropped:"]
+        lines += ["", CARRIED_FINDINGS_HEADER]
         for f in carried:
-            where = f"`{f.path}`" + (f":{f.line}" if f.line else "")
-            # The DETAIL travels with them. Carrying only the title dropped the
-            # failing input and the remediation, which for a P0 is most of the
-            # finding. Sol's own review of this file, P2 (Fri 5 Sep 2026).
-            lines += [f"- {f.verdict} {f.severity}: {where} -- {withheld(f.title)}"]
-            if f.detail:
-                lines += [f"  {withheld(f.detail)}"]
+            lines += carried_finding_lines(f)
     lines += unreviewed_note(unreviewed)
     lines += ["", marker(sha, seat, model, skipped=frozenset(unreviewed))]
     return "\n".join(lines)

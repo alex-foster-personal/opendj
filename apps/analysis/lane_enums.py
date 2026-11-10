@@ -25,6 +25,18 @@ SELECTION_LANES: tuple[str, ...] = (*LANES, *SELECTION_ONLY_LANES)
 LaneStatus = Literal["ok", "failed", "missing"]
 LANE_STATUSES: tuple[LaneStatus, ...] = ("ok", "failed", "missing")
 
+#: Record lanes the default first-import list may include (fast own_* backfill).
+#: ``vocal`` is omitted: it is not part of the v1 backfill set at import time.
+DEFAULT_FIRST_IMPORT_LANES: tuple[Lane, ...] = (
+    "loudness",
+    "beatgrid",
+    "key",
+    "waveform",
+)
+
+#: Named lanes reserved for future detectors (parent #305); not in :data:`LANES` yet.
+FIRST_IMPORT_DEFERRED_LANES: tuple[str, ...] = ("provenance", "rip_quality")
+
 Producer = Literal["inapp", "backfill", "cand"]
 PRODUCERS: tuple[Producer, ...] = ("inapp", "backfill", "cand")
 
@@ -36,6 +48,8 @@ class LaneContractError(ValueError):
 
 
 __all__ = [
+    "DEFAULT_FIRST_IMPORT_LANES",
+    "FIRST_IMPORT_DEFERRED_LANES",
     "LANES",
     "LANE_STATUSES",
     "OWN_BACKEND_PREFIX",

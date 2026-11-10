@@ -297,10 +297,12 @@ LOCAL_TABLE_CLASSES: tuple[DataClass, ...] = (
     ),
     fixed(
         "daemon-settings",
-        "Daemon key/value settings",
-        state_tables("settings"),
+        "Daemon key/value settings and library completeness expectation",
+        state_tables("settings", "library_completeness_config"),
         "machine_local",
-        "Machine-local by nature; CloudSync must not blindly replicate it.",
+        "Machine-local by nature; CloudSync must not blindly replicate it. "
+        "library_completeness_config (#11219) is a persisted singleton until "
+        "a sync class ships in #759.",
         (),
     ),
     fixed(
@@ -358,6 +360,17 @@ LOCAL_TABLE_CLASSES: tuple[DataClass, ...] = (
         "(apps/sync_hub/stem_meter.py, CSPAY-08). A hub's quota is not "
         "replicated -- a spoke's copy would charge a peer's downloads against "
         "its own cap -- and self-hosted daemons never create the table.",
+        (),
+    ),
+    fixed(
+        "crowd-requests",
+        "Crowd request session and list",
+        state_tables("crowd_request_session", "crowd_requests"),
+        "machine_local",
+        "Live DJ-facing request session and list (CROWDREQ-10749, "
+        "apps/webui/server/crowd_requests.py). Machine-local performance "
+        "state: another machine has its own session and must not inherit "
+        "this list. requester_key is a sha256, never an address.",
         (),
     ),
     fixed(

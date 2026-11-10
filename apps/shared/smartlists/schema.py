@@ -26,6 +26,9 @@ FIELD_TYPES: dict[str, str] = {
     "color_tag": "string",
     "added_date": "date",
     "last_played": "date",
+    "play_count": "number",
+    "duration_s": "number",
+    "playlist_count": "number",
     "paired_with": "string",
     # native-analysis v1 (NATIVE-05, NATIVE-07). These three have no
     # rekordbox equivalent and exist only in `analysis_projection`, read
@@ -52,6 +55,9 @@ ALLOWED_OPS_BY_FIELD: dict[str, tuple[str, ...]] = {
     "color_tag": _STRING_OPS,
     "added_date": _DATE_OPS,
     "last_played": _DATE_OPS,
+    "play_count": _NUMERIC_OPS,
+    "duration_s": _NUMERIC_OPS,
+    "playlist_count": _NUMERIC_OPS,
     "paired_with": ("=", "!=", "in"),
     "loudness_lufs": _NUMERIC_OPS,
     "key_change_count": _NUMERIC_OPS,

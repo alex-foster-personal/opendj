@@ -8,6 +8,7 @@ from fastapi import FastAPI
 
 from . import analysis_autostart, lyric_index_autostart
 from .routes import ingest as ingest_routes
+from .routes import ui_prefs
 
 
 def build_auto_analyze_watcher(app: FastAPI) -> analysis_autostart.AutoAnalyzeWatcher:
@@ -48,6 +49,7 @@ def build_auto_analyze_watcher(app: FastAPI) -> analysis_autostart.AutoAnalyzeWa
             ingest_routes._stem_roots(app),
             lambda: guard(last_attempted_queue()),
             stem_cloud=ingest_routes.stem_cloud_for(app),
+            auto_lanes=ui_prefs.read_auto_analyze_lanes(app),
         )
 
         def consumed() -> str | None:
@@ -135,7 +137,9 @@ def build_auto_analyze_watcher(app: FastAPI) -> analysis_autostart.AutoAnalyzeWa
 
     return analysis_autostart.AutoAnalyzeWatcher(
         app.state.auto_analyze,
-        scan_fn=ingest_routes.unmapped_backlog,
+        scan_fn=lambda: ingest_routes.unmapped_backlog(
+            lanes=ui_prefs.read_auto_analyze_lanes(app)
+        ),
         start_fn=start_unmapped_drain,
         running_fn=lambda: ingest_routes.refresh_status().running,
         attempted_fn=last_attempted_queue,

@@ -242,11 +242,53 @@ def _git_output(ctx: ScanContext, *args: str) -> str:
     ).stdout.strip()
 
 
-def _base_and_head(ctx: ScanContext) -> tuple[str, str]:
-    head = _git_output(ctx, "rev-parse", os.environ.get("SECURITY_HEAD_SHA") or "HEAD")
-    base_ref = os.environ.get("SECURITY_BASE_SHA") or os.environ.get("SECURITY_BASE_REF", "origin/main")
-    base = _git_output(ctx, "merge-base", base_ref, head)
-    return base, head
+class PrRangeError(ValueError):
+    """The PR scan range could not be resolved or has no commits to scan."""
+
+
+def _env_stripped(name: str) -> str | None:
+    raw = os.environ.get(name)
+    if raw is None:
+        return None
+    value = raw.strip()
+    return value or None
+
+
+def _git_object_exists(ctx: ScanContext, rev: str) -> bool:
+    proc = subprocess.run(
+        [ctx.git, "-C", str(ctx.repo_root), "cat-file", "-e", f"{rev}^{{commit}}"],
+        check=False,
+        capture_output=True,
+    )
+    return proc.returncode == 0
+
+
+def resolve_pr_commit_range(ctx: ScanContext) -> tuple[str, str, int]:
+    """Return merge-base..head (full SHAs) and how many commits that range contains."""
+    head_spec = _env_stripped("SECURITY_HEAD_SHA") or "HEAD"
+    head = _git_output(ctx, "rev-parse", head_spec)
+    if not _git_object_exists(ctx, head):
+        raise PrRangeError(f"HEAD object missing: {head_spec} -> {head}")
+
+    base_anchor = _env_stripped("SECURITY_BASE_SHA") or _env_stripped("SECURITY_BASE_REF") or "origin/main"
+
+    try:
+        base = _git_output(ctx, "merge-base", base_anchor, head)
+    except subprocess.CalledProcessError as exc:
+        raise PrRangeError(f"cannot resolve merge-base({base_anchor}, {head[:9]}): {exc.stderr.strip()}") from exc
+    commits = int(_git_output(ctx, "rev-list", "--count", f"{base}..{head}"))
+    return base, head, commits
+
+
+def _fail_pr_range(
+    ctx: ScanContext,
+    scanner: str,
+    control_text: str,
+    detail: str,
+) -> int:
+    print(f"FAIL: {scanner} {detail}", file=sys.stderr)
+    _row(ctx, scanner, control_text, 0, "FAIL", detail)
+    return FAIL
 
 
 def _gitleaks_summary(
@@ -333,13 +375,20 @@ def _scan_pr(ctx: ScanContext, command: list[str]) -> int:
     control_status, control_hits = _gitleaks_control(ctx, command)
     if control_status != PASS:
         return control_status
-    base, head = _base_and_head(ctx)
-    commits = int(_git_output(ctx, "rev-list", "--count", f"{base}..{head}"))
     control_text = f"fired({control_hits})"
+    try:
+        base, head, commits = resolve_pr_commit_range(ctx)
+    except PrRangeError as exc:
+        return _fail_pr_range(ctx, scanner, control_text, str(exc))
+
     short_range = f"{base[:9]}..{head[:9]}"
     if commits == 0:
-        _row(ctx, scanner, control_text, 0, "SKIP", f"no commits in {short_range}")
-        return PASS
+        return _fail_pr_range(
+            ctx,
+            scanner,
+            control_text,
+            f"no commits to scan in range {short_range} (control-only is not a PR scan)",
+        )
 
     range_report = ctx.out / "range.json"
     rc = run_gitleaks_git(

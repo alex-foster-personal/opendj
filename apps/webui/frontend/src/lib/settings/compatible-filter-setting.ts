@@ -12,7 +12,8 @@ import type { CompatibleFilterPrefs } from '$lib/rb/compatible-filter-prefs';
 export const COMPATIBLE_FILTER_SETTING_KEYS = [
 	'compatible_filter.mode',
 	'compatible_filter.mashup_relative',
-	'compatible_filter.key_shift_max'
+	'compatible_filter.key_shift_max',
+	'compatible_filter.energy_mode'
 ] as const;
 
 export type CompatibleFilterSettingKey = (typeof COMPATIBLE_FILTER_SETTING_KEYS)[number];
@@ -28,6 +29,8 @@ export function readCompatibleFilterSetting(
 			return prefs.mashup_relative;
 		case 'compatible_filter.key_shift_max':
 			return String(prefs.key_shift_max);
+		case 'compatible_filter.energy_mode':
+			return prefs.energy_mode ?? 'off';
 		default: {
 			const _exhaustive: never = key;
 			throw new Error(`Unhandled compatible filter setting: ${String(_exhaustive)}`);
@@ -54,6 +57,11 @@ export function compatibleFilterSettingPatch(
 				throw new Error(`compatible_filter.key_shift_max must be 0|1|2|3, got ${String(value)}`);
 			}
 			return { key_shift_max: Number(value) as 0 | 1 | 2 | 3 };
+		case 'compatible_filter.energy_mode':
+			if (value !== 'off' && value !== 'within_1' && value !== 'boost' && value !== 'drop') {
+				throw new Error(`compatible_filter.energy_mode must be off|within_1|boost|drop, got ${String(value)}`);
+			}
+			return { energy_mode: value };
 		default: {
 			const _exhaustive: never = key;
 			throw new Error(`Unhandled compatible filter setting: ${String(_exhaustive)}`);

@@ -22,18 +22,18 @@
 		SYNC_NOW_LABEL,
 		fetchUiMirrorForGate,
 		forceSyncNowRequest,
-		presentCloudSyncError,
+		refreshStatusNotice,
+		syncFailureNotice,
 		syncNowRequest,
+		syncRefusedNotice,
+		syncResultNotice,
 		syncRuntimeGateReason,
+		type CloudSyncNotice,
 		type UiMirrorGateDoc
 	} from './cloudsync-view';
 	import CloudSyncQuickActionsView from './CloudSyncQuickActionsView.svelte';
 
-	interface Notice {
-		kind: 'ok' | 'error';
-		text: string;
-		details?: string;
-	}
+	type Notice = CloudSyncNotice;
 
 	let {
 		getTrigger,
@@ -98,10 +98,7 @@
 			// loadGateData catches its own errors (into loadError) so a failed
 			// gate reload does not throw here - check it explicitly, or a failed
 			// reload still reports "refreshed" next to its own error alert.
-			notice =
-				loadError === null
-					? { kind: 'ok', text: 'CloudSync status refreshed.' }
-					: { kind: 'error', text: `Failed to refresh status: ${loadError}` };
+			notice = refreshStatusNotice(loadError);
 			announceStatusChanged();
 		} catch (exc) {
 			notice = { kind: 'error', text: `Failed to refresh status: ${message(exc)}` };
@@ -112,23 +109,14 @@
 
 	async function syncNow(): Promise<void> {
 		if (syncDecision.kind === 'refuse') {
-			notice = { kind: 'error', text: syncDecision.reason };
+			notice = syncRefusedNotice(syncDecision);
 			return;
 		}
 		syncing = true;
 		try {
-			const result = await runCloudSyncNow(syncDecision.body);
-			notice = {
-				kind: 'ok',
-				text: `Sync ${result.digest_inconclusive ? 'inconclusive' : 'ok'}: pushed ${result.pushed}, pulled ${result.pulled}.`
-			};
+			notice = syncResultNotice(await runCloudSyncNow(syncDecision.body));
 		} catch (exc) {
-			const presented = presentCloudSyncError(exc);
-			notice = {
-				kind: 'error',
-				text: `Sync failed: ${presented.summary}`,
-				details: presented.details
-			};
+			notice = syncFailureNotice(exc);
 		} finally {
 			syncing = false;
 			await loadGateData();
@@ -138,24 +126,15 @@
 
 	async function forceSyncNow(): Promise<void> {
 		if (forceSyncDecision.kind === 'refuse') {
-			notice = { kind: 'error', text: forceSyncDecision.reason };
+			notice = syncRefusedNotice(forceSyncDecision);
 			return;
 		}
 		warnForceSyncBypassesGate();
 		syncing = true;
 		try {
-			const result = await runCloudSyncNow(forceSyncDecision.body);
-			notice = {
-				kind: 'ok',
-				text: `Sync ${result.digest_inconclusive ? 'inconclusive' : 'ok'}: pushed ${result.pushed}, pulled ${result.pulled}.`
-			};
+			notice = syncResultNotice(await runCloudSyncNow(forceSyncDecision.body));
 		} catch (exc) {
-			const presented = presentCloudSyncError(exc);
-			notice = {
-				kind: 'error',
-				text: `Sync failed: ${presented.summary}`,
-				details: presented.details
-			};
+			notice = syncFailureNotice(exc);
 		} finally {
 			syncing = false;
 			await loadGateData();

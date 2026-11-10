@@ -5,6 +5,10 @@
  * candidate membership, so changing one replaces the feed and advances its
  * epoch at the caller. This keeps filtered-out rows out of both the picker and
  * the charted-order memo without re-sorting a running set.
+ *
+ * BOOT (PLAY-06): callers must start from an empty view at t=0 and hydrate rows
+ * explicitly. While enabled with zero rows, step() tracks the live empty view and
+ * never arms active until the first observation carries membership.
  */
 import type { AutoPlayTrackRow } from '$lib/rb/auto-play-chain';
 

@@ -245,7 +245,7 @@
         "local_filter_settle_ms",
         "library_filter_dropped_keystrokes_per_session"
       ],
-      "missing_kpi": "p95 over a real typing session. The recorded 80ms is a settle time from a controlled run, not a keystroke distribution, and the spec's budget is explicitly a p95. The spec's own breaking cell is '>250ms or dropped keystrokes': a fast p95 on the keystrokes that survived says nothing about the ones that never rendered, so library_filter_dropped_keystrokes_per_session is required alongside the latency KPI.",
+      "missing_kpi": "Instrumented, not yet captured: each settled local filter burst writes one library-filter perf event carrying series.keystroke_ms (each keystroke to the first requestAnimationFrame after the recompute) and stages.dropped (keystrokes whose burst settled after a pane switch and never painted), and uv run python -m scripts.perf.capture_s7_agg --samples <perf-event-snapshots.json> reduces ring snapshots to the library_filter_keystroke_ms_p95 and library_filter_dropped_keystrokes_per_session ledger rows (withheld under 30 keystrokes). The recorded 80ms local_filter_settle_ms stays context only: it is one controlled run's settle time, not a keystroke distribution. No ledger row exists until a real typing session is captured.",
       "lower_is_better": true,
       "budget": 50,
       "acceptable": 100,

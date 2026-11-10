@@ -25,7 +25,8 @@
 		stemsText,
 		stemsTitle,
 		stemsTone,
-		warningLines
+		warningLines,
+		ingestGenreLine
 	} from '$lib/enrich/enrich-card';
 	import { suggestionsLine } from '$lib/enrich/artwork-suggestions';
 	import { triggerFloatingAction } from '$lib/ui/clamp-to-viewport';
@@ -80,7 +81,7 @@
 	const coversLine = $derived(summary ? suggestionsLine(summary.artwork_suggestions ?? 0) : null);
 
 	const lines = $derived(
-		summary ? [...analysisLines(summary), ...[lyricsLine(summary)].filter((l) => l !== null), ...dudLines(summary), ...absentLines(summary), ...warningLines(summary)] : []
+		summary ? [...analysisLines(summary), ...[lyricsLine(summary), ingestGenreLine(summary)].filter((l) => l !== null), ...dudLines(summary), ...absentLines(summary), ...warningLines(summary)] : []
 	);
 	const stemsLine = $derived(summary ? stemsText(summary.stems) : null);
 	const declinedLine = $derived(summary ? stemsDeclinedText(summary) : null);
@@ -237,11 +238,11 @@
 		background: var(--rb-accent);
 		box-shadow: 0 0 0 2px var(--rb-accent-glow);
 	}
-	/* "needs you" is a literal orange on every skin: Gothic grays --rb-orange,
-	   and this must not follow the skin. */
+	/* "needs you" takes --rb-warn-text, amber in every skin (Gothic declares it
+	   explicitly), unlike --rb-orange, which Gothic grays (#10370). */
 	.enrich-flag {
 		flex: none;
-		color: #e8a13a;
+		color: var(--rb-warn-text, #e8a13a);
 		font-weight: 600;
 	}
 	.enrich-pill-text {

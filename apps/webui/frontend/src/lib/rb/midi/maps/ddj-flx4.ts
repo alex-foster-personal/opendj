@@ -195,12 +195,35 @@ function _modeButtonHints(deck: DeckId): ControlHint[] {
 function _ledRules(deck: DeckId): LedRule[] {
 	const ch = pioneerDeckChannel(deck);
 	// [PDF] 1-1 PLAY MIDI-OUT; 1-2 CUE MIDI-OUT; 1-7 4 BEAT/EXIT MIDI-OUT.
-	// [PDF] 3-6 CH CUE MIDI-OUT.
+	// [PDF] 1-10 BEAT SYNC MIDI-OUT; 3-6 CH CUE MIDI-OUT.
+	// [PDF] 5-1 HOT CUE MODE, 5-2 PAD FX 1 MODE, 5-4 SAMPLER MODE MIDI-OUT.
+	// 5-3 BEAT JUMP has MIDI-OUT but ControllerPadMode has no beat-jump mode (no rule).
+	// 1-3 SHIFT, 3-2 MASTER CUE, 4-2/4-3 LOAD have no MIDI-OUT row.
 	return [
 		...pioneerTransportLedRules(deck, 0x4d),
+		// [PDF] 1-10 BEAT SYNC: lit while Beat Sync is applied to this deck.
+		{
+			trigger: { kind: 'beat_sync_effective', deck },
+			out: { ch, note: 0x58, velocityOn: 0x7f, velocityOff: 0x00 }
+		},
 		{
 			trigger: { kind: 'channel_cue_enabled', deck },
 			out: { ch, note: 0x54, velocityOn: 0x7f, velocityOff: 0x00 }
+		},
+		// [PDF] 5-1 HOT CUE MODE: lit while the pads are in hot cue mode.
+		{
+			trigger: { kind: 'pad_mode_selected', deck, mode: 'hot_cue' },
+			out: { ch, note: 0x1b, velocityOn: 0x7f, velocityOff: 0x00 }
+		},
+		// [PDF] 5-2 PAD FX 1 MODE: lit while the pads are in pad FX (instant_fx) mode.
+		{
+			trigger: { kind: 'pad_mode_selected', deck, mode: 'instant_fx' },
+			out: { ch, note: 0x1e, velocityOn: 0x7f, velocityOff: 0x00 }
+		},
+		// [PDF] 5-4 SAMPLER MODE: lit while the pads are in sampler mode.
+		{
+			trigger: { kind: 'pad_mode_selected', deck, mode: 'sampler' },
+			out: { ch, note: 0x22, velocityOn: 0x7f, velocityOff: 0x00 }
 		},
 		...pioneerPadLedRules(deck, FLX4_PAD_ON, FLX4_PAD_OFF)
 	];

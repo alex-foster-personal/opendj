@@ -101,12 +101,18 @@ _LANE_HIT = {"crossfade": 0.25, "overlap": 0.75, "fade_in_fade_out": 0.5}
 HIT_ON_START = "start"  # a cut: the incoming enters on its bass, the outgoing goes on bar 0
 HIT_GATED = "gated"  # a blend: nothing on the outgoing before the hit, the body fades from it to the handover
 HIT_ON_HANDOVER = "handover"  # lull_then_drop: the outgoing holds to the handover, where the incoming drop lands
-HIT_ON_EXIT = "exit"  # echo out: the incoming enters on its bass at the exit bar E, where the outgoing dry closes
+#: echo_out and noise_build: the incoming enters on its bass at the exit bar E, where the outgoing dry closes (echo
+#: out) or the noise riser cuts on the drop (noise build).
+HIT_ON_EXIT = "exit"
 #: Spec 09-transitions-fx 4.3, mimicked from Spotify's "Echo 1/2 cut end": the send opens over the 2 beats before
 #: the exit bar to ECHO_SEND, the dry closes on it, and the tail rings ECHO_TAIL_BARS before the handover.
 ECHO_SEND = 0.7
 ECHO_SEND_BARS = 0.5  # 2 beats
 ECHO_TAIL_BARS = 1
+#: #10246, (private path) section 2.4: NOISE's riser rides the level up across the build with
+#: the filter opening, then cuts on the drop.
+NOISE_LEVEL = 0.8
+NOISE_SWEEP = 0.7
 STYLE_TEMPO_MODES = ("sync_to_out", "none")
 
 
@@ -150,7 +156,7 @@ class Style:
     hit: str = HIT_GATED
     #: A hand-built blend's lane, for its default hit bar (a parametric style reads its params).
     lane: str = "overlap"
-    #: The plan's tempo mode: "none" for the styles that do not beatmatch (cut, drop_swap, echo_out).
+    #: The plan's tempo mode: "none" for the styles that do not beatmatch (cut, drop_swap, echo_out, noise_build).
     tempo_mode: str = "sync_to_out"
 
     def __post_init__(self) -> None:
@@ -216,6 +222,19 @@ def _ramp(at_bar: float, deck: int | None, control: str, value: float, over_bars
     return {"at_bar": at_bar, "deck": deck, "ramp": {control: value}, "over_bars": over_bars}
 
 
+def _noise_set(at_bar: float, deck: int, level: float, sweep: float) -> Event:
+    return {"at_bar": at_bar, "deck": deck, "set": {"fx_noise": {"level": level, "sweep": sweep}}}
+
+
+def _noise_ramp(at_bar: float, deck: int, level: float, sweep: float, over_bars: float) -> Event:
+    return {
+        "at_bar": at_bar,
+        "deck": deck,
+        "ramp": {"fx_noise": {"level": level, "sweep": sweep}},
+        "over_bars": over_bars,
+    }
+
+
 def _do(at_bar: float, deck: int, action: str) -> Event:
     return {"at_bar": at_bar, "deck": deck, "do": action}
 
@@ -261,6 +280,23 @@ def _echo_out(bars: int, out_deck: int, in_deck: int, _hit_bar: float | None = N
         _set(exit_at - ECHO_SEND_BARS, out_deck, "fx_echo", 0.0),
         _ramp(exit_at - ECHO_SEND_BARS, out_deck, "fx_echo", ECHO_SEND, ECHO_SEND_BARS),
         _set(exit_at, out_deck, "fx_dry", 0.0),
+        _set(exit_at, in_deck, "fader", 1.0),
+        _set(exit_at, in_deck, "eq_low", FLAT),
+        _do(exit_at, in_deck, "play"),
+        *_handover(bars, out_deck, in_deck),
+        _do(bars, out_deck, "fx_reset"),
+    ]
+
+
+def _noise_build(bars: int, out_deck: int, in_deck: int, _hit_bar: float | None = None, /) -> list[Event]:
+    """Noise build (#10246): the outgoing deck's NOISE level and sweep ride up over the build to the drop bar E, cut
+    to 0 on its downbeat as the outgoing is cut and the incoming starts on its drop; the handover resets the effect."""
+    exit_at = exit_bar(bars)
+    return [
+        _noise_set(0, out_deck, 0.0, 0.0),
+        _noise_ramp(0, out_deck, NOISE_LEVEL, NOISE_SWEEP, exit_at),
+        _noise_set(exit_at, out_deck, 0.0, 0.0),
+        _set(exit_at, out_deck, "fader", KILL),
         _set(exit_at, in_deck, "fader", 1.0),
         _set(exit_at, in_deck, "eq_low", FLAT),
         _do(exit_at, in_deck, "play"),
@@ -774,6 +810,22 @@ _STYLES: tuple[Style, ...] = (
         when="The universal escape for bad pairs: a tempo gap Beat Sync cannot reach, a key clash, two vocals.",
         builder=_echo_out,
         spotify="Echo 1/2 cut end",
+        hit=HIT_ON_EXIT,
+        tempo_mode="none",
+    ),
+    Style(
+        name="noise_build",
+        summary=(
+            "A NOISE riser over the outgoing build: its level and sweep ride up to the drop bar, cut on the drop"
+            " downbeat as the incoming track starts on its drop."
+        ),
+        min_bars=2,
+        max_bars=8,
+        default_bars=5,
+        needs_beatmatch=False,
+        controls=("fx_noise",),
+        when="A build-into-drop handover between tracks that do not need to blend, for example a tempo gap.",
+        builder=_noise_build,
         hit=HIT_ON_EXIT,
         tempo_mode="none",
     ),

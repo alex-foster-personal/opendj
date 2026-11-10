@@ -1,0 +1,13 @@
+# Repo-authored free-text stems for crowd requests (issue #10445).
+# Match is lower-cased and anchored at a word boundary so "[expletive]" matches
+# "" but not a mid-word overlap. The DJ turns free text off to skip this.
+[expletive]
+[expletive]
+bitch
+asshole
+cunt
+dick
+piss
+cock
+bastard
+whore

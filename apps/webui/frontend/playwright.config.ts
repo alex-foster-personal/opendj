@@ -100,6 +100,7 @@ export default defineConfig({
 		'**/performance-*.spec.ts', // playwright.performance.config.ts (real library)
 		'**/pairing-arrow.spec.ts', // playwright.pairing-arrow.config.ts (seeds the 26-track fixture its webServer needs; `just test-pairing-arrow`)
 		'**/kpi-boot-library-capture.spec.ts', // playwright.kpi-boot-library-capture.config.ts (PERF-UI-03 boot KPI capture; operator-only)
+		'**/js-heap-after-pane.spec.ts', // playwright.js-heap-after-pane.config.ts (PERF-CAPTURE JS heap after All Tracks fill; operator-only)
 		'**/library-mode-perf-capture.spec.ts', // playwright.library-mode-perf.config.ts (PERFMODE-14 library-mode capture; operator-only)
 		'**/kpi-login-capture.spec.ts', // playwright.kpi-capture.config.ts (S13 login KPI capture; operator-only)
 		'**/kpi-s2-capture.spec.ts', // playwright.kpi-s2-capture.config.ts (S2 press-to-audible KPI capture; operator-only)
@@ -140,7 +141,8 @@ export default defineConfig({
 		'**/autoplay-error-hunt.spec.ts', // playwright.autoplay-error-hunt.config.ts (MINUTES; `just test-autoplay-hunt`)
 		'**/silence-expected-audible.spec.ts', // playwright.silence-expected-audible.config.ts (real backend + bench clips)
 		'**/libm120-scale-bench.spec.ts', // playwright.libm120.config.ts (production build benchmark)
-		'**/color-fx-placement-render.spec.ts' // playwright.color-fx-placement.config.ts (OfflineAudioContext render, no dev server)
+		'**/color-fx-placement-render.spec.ts', // playwright.color-fx-placement.config.ts (OfflineAudioContext render, no dev server)
+		'**/synth-signals-hash.spec.ts' // playwright.synth-signals.config.ts (synth-signals hashes, no dev server)
 	],
 	fullyParallel: false,
 	workers: 1,

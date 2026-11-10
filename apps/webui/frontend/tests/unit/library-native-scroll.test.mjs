@@ -58,16 +58,11 @@ function enclosingFunctionName(source, index) {
 }
 
 /**
- * Page-lifetime non-passive wheel bindings that predate PERF-UI-13 and are
- * out of #10227's scope, each with the issue that moves it to a selection
- * lifetime. Adding a line here is a product decision, not a fix.
+ * Page-lifetime non-passive wheel bindings that predate PERF-UI-13. Empty since
+ * #10369 moved the MIXUX-08 mixer wheel onto the deck selection's lifetime.
+ * Adding a line here is a product decision, not a fix.
  */
-const KNOWN_PAGE_LIFETIME_WHEEL = new Map([
-	[
-		'src/lib/rb/mixer-performance-listeners.ts',
-		'MIXUX-08 horizontal wheel on /performance, follow-up #10369'
-	]
-]);
+const KNOWN_PAGE_LIFETIME_WHEEL = new Map();
 
 test('PERF-UI-13: no non-passive window or document wheel listener outside a selection lifetime', () => {
 	const files = sourceFiles(path('src/lib'));
@@ -100,11 +95,10 @@ test('PERF-UI-13: no non-passive window or document wheel listener outside a sel
 		[],
 		'a KNOWN_PAGE_LIFETIME_WHEEL entry no longer matches; remove it'
 	);
-	// Control: the knob selection's own wheel is the one legitimate binding, so
-	// the regex must find at least that or it is not seeing anything.
+	// Control: knob-control's selection wheel and mixer's syncSelectionWheel.
 	assert.ok(
 		matches >= 2,
-		`control: the probe found ${matches} non-passive window wheel bindings, expected the selection one plus the known entries`
+		`control: the probe found ${matches} non-passive window wheel bindings, expected knob selection plus mixer deck selection`
 	);
 	assert.deepEqual(
 		offenders,

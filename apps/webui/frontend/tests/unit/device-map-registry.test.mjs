@@ -51,6 +51,13 @@ const tsFiles = (dir) =>
 		.filter((f) => f.endsWith('.ts'))
 		.sort();
 
+function committedPanels() {
+	return readdirSync(PANELS_DIR)
+		.map((d) => resolve(PANELS_DIR, d, 'panel.json'))
+		.filter((p) => existsSync(p))
+		.map((p) => JSON.parse(readFileSync(p, 'utf8')));
+}
+
 before(async () => {
 	vite = await createServer({
 		root: FRONTEND_ROOT,
@@ -98,12 +105,17 @@ test('each entry has the registry shape', () => {
 		if (live) {
 			assert.ok(map.bindings.length > 0, `${key} is live with no bindings`);
 		} else {
-			assert.ok((map.hints ?? []).length > 0, `${key} is hints-only with no hints`);
-			assert.equal(
-				devices.PRACTICE_DEVICE_MAPS[key],
-				map,
-				`${key} is hints-only with no practice fragment`
-			);
+			assert.equal(devices.PRACTICE_DEVICE_MAPS[key], map, `${key} is not live with no practice fragment`);
+			if ((map.hints ?? []).length === 0) {
+				const naming = committedPanels().filter((l) => l.device_map === key);
+				assert.ok(naming.length > 0, `${key} is not live with no hints and no panel`);
+				for (const l of naming)
+					for (const c of l.controls)
+						assert.ok(
+							c.midi === null && c.shift_midi === null,
+							`${key} has no hints, but ${l.device} ${c.id} carries a wire`
+						);
+			}
 		}
 	}
 });
@@ -144,13 +156,11 @@ test('every practice fragment registers self-registered maps under their own nam
 });
 
 test('every committed panel resolves against its practice map on both layers', () => {
-	const panels = readdirSync(PANELS_DIR)
-		.map((d) => resolve(PANELS_DIR, d, 'panel.json'))
-		.filter((p) => existsSync(p));
-	assert.ok(panels.length > 0, 'control: the panel sweep finds panels');
+	const layouts = committedPanels();
+	assert.ok(layouts.length > 0, 'control: the panel sweep finds panels');
 	const named = new Set();
-	for (const path of panels) {
-		const layout = JSON.parse(readFileSync(path, 'utf8'));
+	for (const layout of layouts) {
+		const path = resolve(PANELS_DIR, layout.device, 'panel.json');
 		const map = devices.practiceMapFor(layout);
 		named.add(layout.device_map);
 		assert.doesNotThrow(() => bindings.resolveLayout(map, layout), path);

@@ -291,6 +291,11 @@ def pytest_addoption(parser: pytest.Parser) -> None:
 
 
 def pytest_configure(config: pytest.Config) -> None:
+    # reqs.json is a gitignored build artifact (issue #10541): build it before any
+    # test module or the reqs plugin reads it. Raises on sources that do not build.
+    from scripts.build_reqs_json import ensure_output
+
+    ensure_output()
     if config.getoption("--standalone"):
         from tests.standalone.guard import assert_data_dir_clean
 

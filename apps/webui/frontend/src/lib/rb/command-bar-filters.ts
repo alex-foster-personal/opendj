@@ -32,6 +32,8 @@ export interface CmdkFilterRow {
 	bpm: number | null;
 	/** COMPATBPM-03: 0 marks a placeholder BPM, which the compatible filter treats as unknown. */
 	bpm_confidence?: number | null;
+	/** SETPREP-11947: MIK energy, for the compatible filter's energy rule. */
+	energy?: number | null;
 	file_exists: boolean | null;
 	file_availability?: string | null;
 	is_streaming?: boolean | null;

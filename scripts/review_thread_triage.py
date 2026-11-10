@@ -47,6 +47,10 @@ Requirements (mini-PRD)
   [if a PR with an untriaged P0 thread exits 0 then broken]
   [if a fully triaged PR exits nonzero then broken]
   [if a PR with no bot threads at all exits nonzero then broken]
+- `/ ` carried BLOCKING in the latest Sol/Claude/Grok/Cursor review body (issue #4508).
+  [if the latest lane review carries BLOCKING P0/P1 in its body and triage exits 0 then broken]
+  [if a carried NON-BLOCKING P2/P3 alone blocks then broken]
+  [if a newer clean lane review supersedes an older carried BLOCKING and triage still blocks then broken]
 - `/ ` read the tech-debt ledger from the PR's HEAD commit UNION its base
   branch, never a local checkout (#792, and #805 for the base half).
   [if a debt entry was appended directly to main under the workflow
@@ -97,7 +101,7 @@ import json
 import sys
 
 try:
-    from scripts import pr_scope_check, review_blocker, review_coverage, review_followups
+    from scripts import pr_scope_check, review_blocker, review_carried, review_coverage, review_followups
 except ModuleNotFoundError as exc:
     if exc.name == "scripts":
         raise SystemExit("uv run --no-sync python -m scripts.review_thread_triage") from None
@@ -219,6 +223,11 @@ def _fetch_thread_nodes(
         cursor = block["pageInfo"]["endCursor"]
     assert head_sha is not None and base_ref is not None  # one page always runs
     return nodes, head_sha, base_ref, head
+
+
+def fetch_submitted_reviews(pr: int, owner: str, repo: str) -> list[dict]:
+    """REST reviews list; overridable in tests."""
+    return review_carried.fetch_reviews(pr, owner, repo)
 
 
 def fetch_pull_request(number: int, owner: str = OWNER, repo: str = REPO) -> PullRequest:
@@ -421,7 +430,11 @@ def _describe(thread: Thread) -> str:
     )
 
 
-def _render(pr: PullRequest, follow_up_url: str | None = None) -> str:
+def _render(
+    pr: PullRequest,
+    follow_up_url: str | None = None,
+    carried_findings: tuple[review_carried.CarriedFinding, ...] = (),
+) -> str:
     lines = [
         f"PR #{pr.number} ({pr.state}{'/merged' if pr.merged else ''}): {pr.title}",
         f"review threads: {len(pr.threads)}"
@@ -451,8 +464,17 @@ def _render(pr: PullRequest, follow_up_url: str | None = None) -> str:
             f"(private path)/{pr.number}.md at {pr.head_sha} does not; filed as a follow-up):"
         )
         lines += [_describe(t) for t in pr.unindexed_debt]
+    carried_blocking = [f for f in carried_findings if f.blocking]
+    if carried_blocking:
+        lines.append("")
+        lines.append(
+            "CARRIED BLOCKING (P0/P1 in the latest Sol/Claude/Grok/Cursor review body, no review thread):"
+        )
+        for finding in carried_blocking:
+            lines.append(f"- {finding.verdict} {finding.severity} {finding.where} -- {finding.title}")
+            lines.append(f"  {finding.permalink}")
     lines.append("")
-    if pr.failing:
+    if pr.failing or carried_blocking:
         lines.append(
             "Each blocker must reach FIXED or REBUTTED before this PR merges: "
             "a reply saying which, AND a resolve. It may not be debt-logged."
@@ -463,7 +485,12 @@ def _render(pr: PullRequest, follow_up_url: str | None = None) -> str:
 
 
 def _as_json(
-    pr: PullRequest, debt_error: str | None = None, main_side_debt: list[str] | None = None
+    pr: PullRequest,
+    debt_error: str | None = None,
+    main_side_debt: list[str] | None = None,
+    *,
+    carried_findings: tuple[review_carried.CarriedFinding, ...] = (),
+    carried_error: str | None = None,
 ) -> str:
     return json.dumps(
         {
@@ -484,6 +511,19 @@ def _as_json(
             "in_progress": len(pr.in_progress),
             "debt_file_error": debt_error,
             "main_side_debt_problems": main_side_debt or [],
+            "carried_error": carried_error,
+            "carried_findings": [
+                {
+                    "verdict": f.verdict,
+                    "severity": f.severity,
+                    "where": f.where,
+                    "title": f.title,
+                    "review_id": f.review_id,
+                    "lane": f.lane,
+                    "permalink": f.permalink,
+                }
+                for f in carried_findings
+            ],
             "threads": [
                 {
                     "id": t.node_id,
@@ -541,15 +581,36 @@ def main(argv: list[str] | None = None) -> int:
         # Machine consumers read the thread payload; keep its shape stable and
         # let them call review_coverage directly rather than nesting schemas.
         try:
+            sampled_head = review_coverage._head_sha(str(args.pr))
             pr = fetch_pull_request(args.pr, owner=args.owner, repo=args.repo)
+            review_coverage._require_head_unchanged(sampled_head, pr.head_sha)
+            reviews = fetch_submitted_reviews(args.pr, args.owner, args.repo)
+            review_coverage._require_head_unchanged(
+                sampled_head, review_coverage._head_sha(str(args.pr))
+            )
+            carried, carried_error = review_carried.blocking_from(reviews, pr.url)
+            if carried_error:
+                review_blocker.unknown(f"[review-carried] COULD NOT MEASURE: {carried_error}")
+                return 3
             debt_error, main_side_debt = check_pr_head_debt_file(
                 pr.number, pr.head_sha, args.owner, args.repo
             )
+        except review_coverage.TriageError as exc:
+            review_blocker.unknown(f"[review-thread-triage] COULD NOT MEASURE: {exc}")
+            return 3
         except (LedgerReadError, HeadMovedError, BaseRetargetedError) as exc:
             print(f"[review-thread-triage] COULD NOT MEASURE: {exc}", file=sys.stderr)
             return 3
-        print(_as_json(pr, debt_error, main_side_debt))
-        return 1 if (pr.failing or debt_error) else 0
+        print(
+            _as_json(
+                pr,
+                debt_error,
+                main_side_debt,
+                carried_findings=tuple(carried),
+                carried_error=carried_error,
+            )
+        )
+        return 1 if (pr.failing or debt_error or carried) else 0
 
     try:
         # Sample the head BEFORE coverage runs. Coverage certifies whichever
@@ -566,6 +627,14 @@ def main(argv: list[str] | None = None) -> int:
         # findings outside this run's terminal-disposition check.
         pr = fetch_pull_request(args.pr, owner=args.owner, repo=args.repo)
         review_coverage._require_head_unchanged(sampled_head, pr.head_sha)
+        reviews = fetch_submitted_reviews(args.pr, args.owner, args.repo)
+        review_coverage._require_head_unchanged(
+            sampled_head, review_coverage._head_sha(str(args.pr))
+        )
+        carried, carried_error = review_carried.blocking_from(reviews, pr.url)
+        if carried_error:
+            review_blocker.unknown(f"[review-carried] COULD NOT MEASURE: {carried_error}")
+            return 3
         debt_error, main_side_debt = check_pr_head_debt_file(
             pr.number, pr.head_sha, args.owner, args.repo
         )
@@ -574,7 +643,7 @@ def main(argv: list[str] | None = None) -> int:
         try:
             follow_up_url = review_followups.file_follow_ups(args.owner, args.repo, pr.number, pr.follow_ups)
         except review_coverage.TriageError as exc:
-            if not (pr.failing or debt_error):
+            if not (pr.failing or debt_error or carried):
                 raise
             follow_up_url = f"nowhere: filing failed ({exc})"
     except review_coverage.TriageError as exc:
@@ -588,7 +657,7 @@ def main(argv: list[str] | None = None) -> int:
         print(f"[review-thread-triage] COULD NOT MEASURE: {exc}", file=sys.stderr)
         return 3
 
-    print(_render(pr, follow_up_url))
+    print(_render(pr, follow_up_url, tuple(carried)))
     debt_report = render_debt_verdict(pr.number, pr.head_sha, debt_error, main_side_debt)
     if debt_report:
         print(f"\n{debt_report}")
@@ -597,8 +666,10 @@ def main(argv: list[str] | None = None) -> int:
         # REVIEW-8220 (the maintainer, 19:30Z Mon 2 Nov 2026): a missing review is a reminder, never a hold.
         print("\nNOTE: no review is recognized for this PR; consider one where it helps (`just review <PR>`). Advisory.")
     scope_rc = pr_scope_check.main([str(args.pr), "--owner", args.owner, "--repo", args.repo])
-    rc = max(scope_rc, 1 if (pr.failing or debt_error) else 0)
-    return review_blocker.report(rc, pr.failing, debt_error, scope_rc)
+    rc = max(scope_rc, 1 if (pr.failing or debt_error or carried) else 0)
+    return review_blocker.report(
+        rc, pr.failing, debt_error, scope_rc, carried_findings=carried
+    )
 
 
 if __name__ == "__main__":

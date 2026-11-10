@@ -3,6 +3,7 @@
  * No runes, no DOM - unit-testable helpers only.
  */
 import type { AnlzBeat, AnlzData } from '$lib/rb/anlz-types';
+import type { WaveGridLines } from '$lib/rb/wave-grid-lines';
 
 /** Single definition lives in wave-window.ts (base decision); re-exported so
  * existing importers of wave-math keep working. */
@@ -110,7 +111,9 @@ export function beatLineStrideForWindow(
  * trusted bar phase it keeps every Nth beat instead.
  * `originPx`, when given, is the whole-pixel offset a cached image was blitted
  * at: each line then sits at its rounded track pixel minus that offset, the
- * same pixel as a Gothic block edge snapped to it (DECKUX-42). */
+ * same pixel as a Gothic block edge snapped to it (DECKUX-42).
+ * `gridLines` (issue #10244): 'beats_bars' is unchanged, 'bars' keeps
+ * downbeats only (stride at least 4), 'off' returns no lines. */
 export function visibleBeatLines(
 	beats: readonly AnlzBeat[],
 	tLeftSec: number,
@@ -119,17 +122,21 @@ export function visibleBeatLines(
 	rowHeight: number,
 	barPhaseUntrusted = false,
 	originPx?: number,
-	strideOverride?: number
+	strideOverride?: number,
+	gridLines: WaveGridLines = 'beats_bars'
 ): BeatLineGeometry[] {
-	if (beats.length === 0) return [];
+	if (gridLines === 'off' || beats.length === 0) return [];
 	const tRightSec = tLeftSec + widthCss / pxPerSec;
 	const lines: BeatLineGeometry[] = [];
 	const start = firstBeatAtOrAfter(beats, tLeftSec);
-	const stride =
+	let stride =
 		strideOverride !== undefined && Number.isFinite(strideOverride)
 			? strideOverride
 			: beatLineStrideForWindow(beats, tLeftSec, pxPerSec, widthCss);
 	if (stride === 0) return [];
+	// issue #10244: 'bars' raises the stride to at least 4, so a trusted grid
+	// keeps only n === 1 beats; an untrusted grid keeps every 4th beat.
+	if (gridLines === 'bars') stride = Math.max(stride, 4);
 	const bars = stride >= 4 ? _barIndexes(beats) : null;
 	for (let i = start; i < beats.length; i++) {
 		const beat = beats[i];

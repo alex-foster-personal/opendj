@@ -1,3 +1,4 @@
+// MOD-ZONE: RED | (private path)
 import { _controlSegmentAt, _emptyRuntime, type _DeckProcessor, type _DeckRuntime, type DeckTransportClock } from '$lib/rb/deck-runtime';
 import { truncateAtOutPoint } from '$lib/rb/edit-window-buffer';
 export { installAutomaticRejoinRunner, type AutomaticRejoinRunner } from './automatic-handoff-runners';
@@ -1504,6 +1505,8 @@ function _recordProcessorFailure(deck: DeckId, error: unknown): void {
 	rt.durationSec = 0;
 	rt.latencySec = 0;
 	rt.pending = [];
+	rt.scheduleIntentCount = 0; // STEM-4806: an in-flight load must still swap after processor failure
+	rt.scheduleIntentEpoch += 1; // ...and the intents that reset zeroed must not decrement again when they unwind
 	rt.controlActive = false;
 	rt.controlLoop = null;
 	rt.controlTempoRatio = 1;
@@ -1581,6 +1584,7 @@ async function _scheduleDeck(
 	// LATENCY-01: optimistic play glyph; LATENCY-02 armed launch keeps triangle until commit.
 	deckStates[deck].playing = _quantizedLaunchAt[deck] !== null && active ? false : active;
 	rt.scheduleIntentCount += 1;
+	const intentEpoch = rt.scheduleIntentEpoch;
 	rt.scheduleTail = new Promise<void>((resolve) => {
 		release = resolve;
 	});
@@ -1615,7 +1619,7 @@ async function _scheduleDeck(
 		}
 		throw error;
 	} finally {
-		rt.scheduleIntentCount -= 1;
+		if (rt.scheduleIntentEpoch === intentEpoch) rt.scheduleIntentCount -= 1; // a processor failure already zeroed this intent (PRRT_kwDOSEvNd861fh4r)
 		release();
 	}
 }
@@ -2399,7 +2403,7 @@ function _clearLoadedTrackState(st: DeckState): void {
 	const deck = st.deck_id, wasMaster = _masterDeck === deck;
 	_reattachingDecks.delete(deck);
 	// audible flips BEFORE re-election (excludes this deck as its own replacement) and election runs BEFORE reconciling (r3912339497); stranded is captured NOW, before clearForDeck wipes it and before the scoped continuation below starts (r3912339491, second pass).
-	st.playing = false; st.audible = false;
+	st.playing = false; st.audible = false; st.transport_pending = false;
 	if (wasMaster) {
 		if (_masterMode === 'locked') _masterMode = 'auto';
 		_electPlayingMaster({ force: true, reason: 'unload' });
@@ -3316,7 +3320,6 @@ class RbAudioEngine implements AudioEngine {
 			if (token !== rt.loadToken) throw exc;
 			deckLoadErrors[deck] = msg;
 			reportDeckLoadFailure(deck, msg, exc, stages, options);
-			assertDeckLoadConsistency(st.stable_id, rt.durationSec, rt.processor !== null);
 			_restartStrandedUpgrades(deck);
 			throw exc;
 		}

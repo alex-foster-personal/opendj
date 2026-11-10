@@ -10,15 +10,23 @@ const fiveDigitPort = 10000 + (process.pid % 55536);
 // userinfo built at runtime so the source never carries a mailbox-shaped string (oss_tip_audit)
 const AT = '@';
 
-test('if the bridge refuses a URL the Tauri opener allows then Settings, sign-in or the BlackHole link breaks', () => {
-	for (const url of [
-		`http://opendj.localhost:${fourDigitPort}/settings`,
-		`http://opendj.localhost:${fiveDigitPort}/performance/deck`,
-		'https://accounts.google.com/o/oauth2/v2/auth?client_id=example&redirect_uri=opendj&response_type=code',
-		'https://existential.audio/blackhole/'
-	]) {
-		assert.equal(isOpenerUrlAllowed(url), true, url);
-	}
+test('openExternal bridge allows named local http with four-digit port and slash', () => {
+	assert.equal(isOpenerUrlAllowed(`http://opendj.localhost:${fourDigitPort}/settings`), true);
+});
+test('openExternal bridge allows named local http with five-digit port and path', () => {
+	assert.equal(isOpenerUrlAllowed(`http://opendj.localhost:${fiveDigitPort}/performance/deck`), true);
+});
+test('openExternal bridge allows Google OAuth consent URL with query marker', () => {
+	const url =
+		'https://accounts.google.com/o/oauth2/v2/auth?client_id=example&redirect_uri=opendj&response_type=code';
+	assert.equal(isOpenerUrlAllowed(url), true);
+});
+test('openExternal bridge allows exact BlackHole installer URL', () => {
+	assert.equal(isOpenerUrlAllowed('https://existential.audio/blackhole/'), true);
+});
+test('openExternal bridge rejects userinfo attacker shape on named local port', () => {
+	const url = `http://opendj.localhost:${fourDigitPort}${AT}attacker.example/`;
+	assert.equal(isOpenerUrlAllowed(url), false);
 });
 
 test('if the bridge refuses a Polar checkout or portal URL then billing cannot open', () => {
