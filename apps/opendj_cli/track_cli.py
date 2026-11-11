@@ -37,6 +37,7 @@ from apps.opendj_cli import EXIT_FAILED, EXIT_NO_ENGINE, api_cli
 from apps.opendj_cli.origin import EngineNotRunning
 from apps.opendj_cli.refusal import fail as _fail
 from apps.opendj_cli.track_comment import TrackCommentError, engine_client, set_track_comment
+from apps.opendj_cli.track_tracklist_hidden import set_tracklist_hidden
 from apps.webui.server.rb_vendor_pkg.own_lane_store import state_conn_ro
 
 KEY_SEGMENTS_VERB = "key-segments"
@@ -74,6 +75,8 @@ TEMPO_VERB = "tempo"
 #: LIBUX-56: the CLI twin of the library's Comment cell editor (double-click
 #: the cell, or right-click a row and choose Edit comment).
 COMMENT_VERB = "comment"
+#: NOWP-11487: the CLI twin of the library Hide in tracklists context menu.
+TRACKLIST_HIDDEN_VERB = "hide-in-tracklists"
 #: LIBUX-10046: the CLI twin of the library's Related tab and its criteria cog.
 RELATED_VERB = "related"
 _RELATED_FLAGS = ("key", "genre", "color", "rating", "mytag", "artist")
@@ -111,6 +114,7 @@ _USAGE = (
     "       opendj track played-length <stable_id>...\n"
     "       opendj track list-totals <stable_id>...\n"
     "       opendj track comment <stable_id> set <text> | clear\n"
+    "       opendj track hide-in-tracklists <stable_id> on|off\n"
     "       opendj track related <stable_id> [limit N] [bpm-percent N]\n"
     "                            [key|genre|color|rating|mytag|artist 0|1]..."
 )
@@ -433,6 +437,25 @@ def _related(args: Sequence[str]) -> int:
     return api_cli.run(["GET", f"/api/v1/tracks/{stable_id}/related{qs}"], as_json=True)
 
 
+def _tracklist_hidden(args: Sequence[str]) -> int:
+    if len(args) != 2 or args[1] not in ("on", "off"):
+        return _usage_error()
+    hidden = args[1] == "on"
+    try:
+        base_url = api_cli.resolve_backend_base_url().base_url
+    except EngineNotRunning as error:
+        return _fail(True, "engine_not_running", str(error), EXIT_NO_ENGINE)
+    try:
+        with engine_client(base_url) as client:
+            result = set_tracklist_hidden(client, args[0], hidden)
+    except TrackCommentError as error:
+        return _fail(True, error.code, error.message, EXIT_FAILED)
+    except httpx.TransportError as error:
+        return _fail(True, "engine_unreachable", f"{base_url}: {error}", EXIT_NO_ENGINE)
+    print(json.dumps(result, indent=2, sort_keys=True))
+    return 0
+
+
 def _comment(args: Sequence[str]) -> int:
     """`PATCH /api/v1/tracks/{id}` with `{"comments": ...}`: what the Comment cell editor saves."""
     if len(args) == 2 and args[1] == "clear":
@@ -619,6 +642,7 @@ _API_VERBS: dict[str, Callable[[Sequence[str]], int]] = {
     "played-length": _played_length,
     "list-totals": _list_totals,
     COMMENT_VERB: _comment,
+    TRACKLIST_HIDDEN_VERB: _tracklist_hidden,
     RELATED_VERB: _related,
 }
 

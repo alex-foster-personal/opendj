@@ -78,6 +78,29 @@ def test_a_current_entry_round_trips_exactly(source: Path) -> None:
     assert local_waveform.local_preview_strip(SID)[0] is not None
 
 
+def test_a_tri_one_headroom_entry_is_a_cache_miss(source: Path) -> None:
+    """[if] old s16 peaks served under tri-2 headroom [then] fail, [else stop]."""
+    key = local_waveform._decode_key(source)
+    peaks = _tri_peaks()
+    legacy = ":".join(
+        str(getattr(decode.PROFILE, f.name))
+        for f in fields(decode.PROFILE)
+        if f.name != "peak_headroom_db"
+    )
+    old_version = f"tri-1:{legacy}"
+    assert old_version != local_waveform.peaks_version()
+    local_waveform._write_json(
+        local_waveform._entry_path(SID),
+        {
+            "schema": rb_config.LOCAL_WAVEFORM_CACHE_SCHEMA,
+            "peaks_version": old_version,
+            "peaks_b64": base64.b64encode(peaks.tobytes()).decode("ascii"),
+            **key,
+        },
+    )
+    assert local_waveform._cached_peaks(SID, key) is None
+
+
 def test_a_pre_tri_band_mono_entry_is_a_cache_miss(source: Path) -> None:
     key = local_waveform._decode_key(source)
     mono = np.arange(600, dtype=np.uint8)
@@ -208,10 +231,9 @@ def test_the_strip_is_the_360_byte_contract_and_is_never_padded() -> None:
     preview_b64, preview_max = local_waveform._strip_from_peaks(loud_then_quiet)
     assert preview_b64 is not None, "a full-length strip always encodes"
     raw = base64.b64decode(preview_b64)
-    # On rekordbox PWV6's scale (NATIVE-22) the high band leads: 240 -> 166,
-    # 30 -> 21.
-    assert len(raw) == 360 and preview_max == 166
-    assert max(raw[:180]) == 166 and max(raw[180:]) == 21
+    # On rekordbox PWV6's scale (NATIVE-22) the high band leads after pwv6_scale.
+    assert len(raw) == 360 and preview_max == 255
+    assert max(raw[:180]) == 255 and max(raw[180:]) == 41
 
     too_short = np.full(
         (local_waveform.STRIP_COLUMNS - 1, decode.BAND_COUNT), 240, dtype=np.uint8

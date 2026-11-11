@@ -32,6 +32,7 @@
 	import { engineUrl } from '$lib/plugins/slots.svelte';
 	import { uiPrefs } from '$lib/rb/prefs.svelte';
 	import { pushToast } from '$lib/stores.svelte';
+	import { runButtonAction, runButtonActionGate } from '$lib/ui/run-button-action';
 
 	let store = $state<PluginsOut | null>(null);
 	let loadError = $state<string | null>(null);
@@ -44,6 +45,12 @@
 	let sideloadNoticeRead = $state(false);
 	/** The build the developer reviewed; consent is to exactly this (PLUG-6522j). */
 	let sideloadPreview = $state<SideloadPreview | null>(null);
+	const pluginActionGate = runButtonActionGate(
+		() => busy,
+		(value) => {
+			busy = value;
+		}
+	);
 
 	async function checkSideload(): Promise<void> {
 		busy = 'sideload-preview';
@@ -69,28 +76,27 @@
 	}
 
 	async function load(refresh: boolean): Promise<void> {
-		busy = refresh ? 'refresh' : busy;
-		try {
-			store = await getPlugins(refresh);
-			loadError = null;
-		} catch (exc) {
-			loadError = message(exc);
-		} finally {
-			if (refresh) busy = null;
+		if (!refresh) {
+			try {
+				store = await getPlugins(false);
+				loadError = null;
+			} catch (exc) {
+				loadError = message(exc);
+			}
+			return;
 		}
+		await runButtonAction(pluginActionGate, 'refresh', async () => {
+			store = await getPlugins(true);
+			loadError = null;
+		});
 	}
 
 	async function act(id: string, work: () => Promise<{ message: string }>): Promise<void> {
-		busy = id;
-		try {
+		await runButtonAction(pluginActionGate, id, async () => {
 			const out = await work();
 			pushToast(out.message, 'info');
 			await load(false);
-		} catch (exc) {
-			pushToast(message(exc), 'error');
-		} finally {
-			busy = null;
-		}
+		});
 	}
 
 	function onPrimary(row: PluginRow): void {

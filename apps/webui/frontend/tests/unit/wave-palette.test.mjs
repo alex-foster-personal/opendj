@@ -34,7 +34,9 @@ const SELECTORS = {
 	darkLegacy: "html[data-wave-palette='legacy'] .perf-root",
 	lightLegacy: "html[data-theme='light'][data-wave-palette='legacy'] .perf-root",
 	darkMono: "html[data-wave-palette='mono'] .perf-root",
-	lightMono: "html[data-theme='light'][data-wave-palette='mono'] .perf-root"
+	lightMono: "html[data-theme='light'][data-wave-palette='mono'] .perf-root",
+	darkBlue: "html[data-wave-palette='blue'] .perf-root",
+	lightBlue: "html[data-theme='light'][data-wave-palette='blue'] .perf-root"
 };
 
 let wp;
@@ -50,6 +52,8 @@ function cascade(scheme, choice) {
 	if (scheme === 'light' && choice === 'legacy') blocks.push(SELECTORS.lightLegacy);
 	if (choice === 'mono') blocks.push(SELECTORS.darkMono);
 	if (scheme === 'light' && choice === 'mono') blocks.push(SELECTORS.lightMono);
+	if (choice === 'blue') blocks.push(SELECTORS.darkBlue);
+	if (scheme === 'light' && choice === 'blue') blocks.push(SELECTORS.lightBlue);
 	return Object.assign({}, ...blocks.map((sel) => cc.parseColorTokens(THEME_CSS, sel)));
 }
 
@@ -203,9 +207,24 @@ describe('#4219 waveform band palette', () => {
 		assert.equal(resolvePalette('dark', 'rekordbox').mono, '#3d7dd9');
 	});
 
+	it('blue: low-band energy paints #2a6ee0 dark / #1a3f86 light (issue #10253)', () => {
+		assert.equal(
+			resolvePalette('dark', 'blue').low,
+			'#2a6ee0',
+			'[if] blue dark low drifts [then] broken'
+		);
+		assert.equal(
+			resolvePalette('light', 'blue').low,
+			'#1a3f86',
+			'[if] blue light low drifts [then] broken'
+		);
+		assert.equal(wp.parseWavePalette('blue'), 'blue');
+		assert.equal(wp.parseWavePalettePref('blue'), 'blue');
+	});
+
 	it('wave-palette.ts mirrors theme.css for every scheme and choice', () => {
 		for (const scheme of ['dark', 'light']) {
-			for (const choice of ['rekordbox', 'legacy', 'mono']) {
+			for (const choice of ['rekordbox', 'legacy', 'mono', 'blue']) {
 				const tokens = cascade(scheme, choice);
 				assert.deepEqual(
 					wp.resolveWaveBandColors(scheme, choice),

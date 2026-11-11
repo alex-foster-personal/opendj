@@ -188,6 +188,23 @@ def _listing(raw: dict[str, Any], manifest: PluginManifest, channel: str) -> Lis
         raise CatalogError("bad-index", f"{manifest.plugin_id}: {exc}") from exc
     if listing.status == "experiment" and channel != "labs":
         raise CatalogError("bad-index", f"{manifest.plugin_id}: an experiment is listed only in labs")
+    provider = manifest.provider
+    if provider is not None:
+        if listing.capability_kind is None:
+            raise CatalogError("bad-index", f"{manifest.plugin_id}: a provider listing must carry capability_kind")
+        if listing.capability_kind != provider.capability_kind:
+            raise CatalogError(
+                "bad-index",
+                f"{manifest.plugin_id}: listing capability_kind {listing.capability_kind!r} "
+                f"does not match manifest {provider.capability_kind!r}",
+            )
+        if listing.store_surface == "stable-api" and provider.capability_kind not in ("API", "MCP"):
+            raise CatalogError(
+                "bad-index",
+                f"{manifest.plugin_id}: listing must not read as stable-api for {provider.capability_kind!r}",
+            )
+    elif listing.capability_kind is not None:
+        raise CatalogError("bad-index", f"{manifest.plugin_id}: capability_kind belongs only on provider listings")
     return listing
 
 

@@ -93,7 +93,7 @@ def stores(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> tuple[Path, Path]
     roformer = tmp_path / "stems-roformer-spike"
     demucs.mkdir()
     roformer.mkdir()
-    monkeypatch.setattr(stem_artifacts, "ROFORMER_STEMS_DIR", roformer)
+    monkeypatch.setattr(stem_artifacts, "PRODUCTION_ROFORMER_STEMS_DIR", roformer)
     return demucs, roformer
 
 

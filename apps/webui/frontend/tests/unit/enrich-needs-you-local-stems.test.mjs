@@ -41,6 +41,6 @@ test('a local stems plan is free and quotes no GPU clock', () => {
 	assert.match(stems, /export function isLocalStemsPlan\(plan: StemsPlan\): boolean/);
 	assert.match(
 		stems,
-		/if \(isLocalStemsPlan\(plan\)\) return `\$\{counts\} Runs on this machine\.`;/
+		/if \(isLocalStemsPlan\(plan\)\) return `\$\{counts\}\. Runs on this machine\.`;/
 	);
 });

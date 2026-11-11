@@ -9,6 +9,7 @@ The recorder is intentionally testable without a real ffmpeg or
 djay. Test fixtures pass ``capture_factory`` + ``source_factories``
 callables that return stand-in objects.
 """
+
 from __future__ import annotations
 
 import json
@@ -31,6 +32,12 @@ from .capture import (
     CaptureBackend,
     CaptureHandle,
     start_capture,
+)
+from .control_events import (
+    ControlsJsonl,
+    RawControlStamp,
+    assign_session,
+    coalesce_continuous,
 )
 from .manifest import AudioSegment, Manifest, write_manifest
 from .master_mix import MasterMixWriter
@@ -71,10 +78,7 @@ def resolve_session_id(
     base = sets_paths.resolve_sets_root(root)
     if requested is not None:
         if not _SESSION_ID_PATTERN.match(requested):
-            raise ValueError(
-                f"invalid session_id {requested!r}; expected "
-                "YYYY-MM-DDTHH-MM-SS[_N]"
-            )
+            raise ValueError(f"invalid session_id {requested!r}; expected YYYY-MM-DDTHH-MM-SS[_N]")
         return requested
     candidate = _iso_session_id(now)
     if not (base / candidate).exists():
@@ -92,11 +96,16 @@ def resolve_session_id(
 # ---------------------------------------------------------------------------
 
 
+class TimelineCorruptionError(Exception):
+    """Invalid JSON on a non-trailing timeline row."""
+
+
 class TimelineJsonl:
     """Append-only JSONL writer for a session.
 
     Each event is one ``json.dumps`` line with ``\\n``. Writes flush so
-    the file survives a crash mid-session.
+    the file survives a crash mid-session. Readers reject malformed middle
+    rows; only the final non-blank line may be invalid JSON (crash tail).
     """
 
     def __init__(self, path: Path) -> None:
@@ -111,20 +120,52 @@ class TimelineJsonl:
             fh.write("\n")
             fh.flush()
 
-    def iter_events(self) -> Iterator[dict[str, Any]]:
-        """Yield every valid JSON line. Malformed trailing line is skipped."""
+    def _nonblank_lines(self) -> list[str]:
         if not self.path.exists():
+            return []
+        lines: list[str] = []
+        with self.path.open("r", encoding="utf-8") as fh:
+            for line in fh:
+                stripped = line.strip()
+                if stripped:
+                    lines.append(stripped)
+        return lines
+
+    def _corruption(
+        self,
+        line_number: int,
+        exc: json.JSONDecodeError | None = None,
+    ) -> TimelineCorruptionError:
+        detail = f"timeline corruption at line {line_number} in {self.path.name}"
+        if exc is not None:
+            detail = f"{detail}: {exc.msg}"
+        return TimelineCorruptionError(detail)
+
+    def validate(self) -> None:
+        """Reject middle-row JSON syntax errors; allow a malformed final line."""
+        lines = self._nonblank_lines()
+        for index, line in enumerate(lines[:-1]):
+            try:
+                json.loads(line)
+            except json.JSONDecodeError as exc:
+                raise self._corruption(index + 1, exc) from exc
+
+    def iter_events(self) -> Iterator[dict[str, Any]]:
+        """Yield decoded events; middle JSON errors fail; skip malformed final line."""
+        lines = self._nonblank_lines()
+        if not lines:
             return iter(())
+
+        last_index = len(lines) - 1
+
         def _gen() -> Iterator[dict[str, Any]]:
-            with self.path.open("r", encoding="utf-8") as fh:
-                for line in fh:
-                    line = line.strip()
-                    if not line:
-                        continue
-                    try:
-                        yield json.loads(line)
-                    except json.JSONDecodeError:
-                        continue
+            for index, line in enumerate(lines):
+                try:
+                    yield json.loads(line)
+                except json.JSONDecodeError as exc:
+                    if index < last_index:
+                        raise self._corruption(index + 1, exc) from exc
+
         return _gen()
 
 
@@ -170,10 +211,13 @@ class Recorder:
     config: RecorderConfig
     state: SetsState
     timeline: TimelineJsonl
+    controls: ControlsJsonl
     session_started_at: datetime
+    _control_seq: int = 0
     _sources: dict[str, Any] = field(default_factory=dict)
     _capture: CaptureHandle | None = None
     _master: MasterMixWriter | None = None
+    _terminal_capture_error: str | None = None
     _poll_threads: list[threading.Thread] = field(default_factory=list)
     _heartbeat_thread: threading.Thread | None = None
     _stop_event: threading.Event = field(default_factory=threading.Event)
@@ -205,6 +249,24 @@ class Recorder:
             )
         )
 
+    def drain_control_stamps(self, stamps: list[RawControlStamp]) -> int:
+        """Coalesce, validate, append ``controls.jsonl`` and mirror to sqlite."""
+        if not stamps:
+            return 0
+        sample_rate = stamps[0].sample_rate
+        merged = coalesce_continuous(stamps, sample_rate=sample_rate)
+        events = assign_session(
+            self.session_id,
+            merged,
+            start_seq=self._control_seq,
+            wall_clock=self._wall,
+        )
+        for event in events:
+            self.controls.append(event)
+            self.state.record_control_event(event.to_dict())
+        self._control_seq += len(events)
+        return len(events)
+
     # ------------------------------------------------------------------
     # lifecycle
     # ------------------------------------------------------------------
@@ -222,9 +284,7 @@ class Recorder:
             self._master = MasterMixWriter(self.session_dir)
             return
         if self.config.ffmpeg_device_idx is None:
-            logger.warning(
-                "capture enabled but no ffmpeg_device_idx; skipping ffmpeg"
-            )
+            logger.warning("capture enabled but no ffmpeg_device_idx; skipping ffmpeg")
             return
         self._capture = start_capture_fn(
             self.session_dir,
@@ -236,19 +296,37 @@ class Recorder:
 
     def capture_state(self) -> str:
         """``none`` without audio capture, else the capture's own state."""
+        if self._terminal_capture_error is not None:
+            return "failed"
         if self._master is not None:
             return self._master.current_state()
         if self._capture is None:
             return "none"
         return self._capture.current_state()
 
+    def note_master_attach_failure(self, reason: str) -> None:
+        """Persist a terminal attach failure before stop (SETREC-23)."""
+        if self._master is not None:
+            self._master.mark_attach_failed(reason)
+
     def capture_error(self) -> str | None:
         """Why the capture failed, as the engine said it, when it failed and said."""
+        if self._terminal_capture_error is not None:
+            return self._terminal_capture_error
         if self._master is not None:
             return self._master.error
         if self._capture is None or self._capture.current_state() != "failed":
             return None
         return self._capture.state.error
+
+    def _close_master_capture(self) -> None:
+        """Freeze accepted frames and retain an empty capture's terminal failure."""
+        if self._master is not None:
+            # PCM appends run outside the service lock. close() serializes
+            # with them and is safe for shutdown() to repeat.
+            self._master.close()
+            if self._master.frames_accepted == 0:
+                self._terminal_capture_error = "master recording stopped before any audio frames were captured"
 
     def attach_source(self, name: str, source_obj: Any) -> None:
         """Register a deck-state source that exposes ``poll_once()``."""
@@ -316,10 +394,18 @@ class Recorder:
         if self._heartbeat_thread is not None:
             self._heartbeat_thread.join(timeout=2.0)
         if self._master is not None:
+            attach_reason = self._master.attach_failure_reason()
+            mix_summary = self._master.summary()
+            zero_frames = mix_summary.get("frames_accepted") == 0
             self._master.close()
+            if attach_reason and zero_frames:
+                self._emit_simple(
+                    "master_tap_failed",
+                    {"reason": attach_reason, "phase": "attach"},
+                )
             # SET-12: what the page sent and was accepted, so the WAV frames
             # on disk can be checked against it exactly (no pad, no dupes).
-            self._emit_simple("master_mix_closed", self._master.summary())
+            self._emit_simple("master_mix_closed", mix_summary)
         if self._capture is not None and stop_capture_fn is not None:
             try:
                 stop_capture_fn(self._capture)
@@ -399,12 +485,14 @@ def _build_recorder(
     session_dir = sets_paths.session_dir(session_id, root=sets_root)
     session_dir.mkdir(parents=True, exist_ok=True)
     timeline = TimelineJsonl(session_dir / "timeline.jsonl")
+    controls = ControlsJsonl(session_dir / "controls.jsonl")
     return Recorder(
         session_id=session_id,
         session_dir=session_dir,
         config=config,
         state=state,
         timeline=timeline,
+        controls=controls,
         session_started_at=started_at,
     )
 
@@ -417,9 +505,7 @@ def start(
     state: SetsState | None = None,
     now: datetime | None = None,
     capture_factory: Callable[[Recorder], None] | None = None,
-    source_factories: (
-        dict[str, Callable[[Recorder], Any]] | None
-    ) = None,
+    source_factories: (dict[str, Callable[[Recorder], Any]] | None) = None,
 ) -> Recorder:
     """Bring up a new recorder; NOT launched into a daemon.
 
@@ -492,18 +578,26 @@ def stop(
     *,
     stop_capture_fn: Callable[[CaptureHandle], int] | None = None,
     ended_at: datetime | None = None,
-) -> Manifest:
-    """Clean-stop the recorder; write manifest.json; update sets.ended_at."""
+) -> Manifest | None:
+    """Settle the recorder; return no manifest when master capture accepted no frames."""
     from .capture import stop_capture  # late import to keep module light
 
     end_at = ended_at or datetime.now(UTC)
-    recorder._emit_simple("session_end")
+    recorder._close_master_capture()
+    failure = (
+        {"capture": "failed", "capture_error": recorder.capture_error()}
+        if recorder._terminal_capture_error is not None
+        else None
+    )
+    recorder._emit_simple("session_end", failure)
     recorder.shutdown(stop_capture_fn=stop_capture_fn or stop_capture)
     recorder.state.end_session(
         recorder.session_id,
         ended_at=end_at.isoformat(timespec="milliseconds"),
     )
     _clear_pid(recorder.session_dir)
+    if failure is not None:
+        return None
     session_row = recorder.state.get_session(recorder.session_id)
     levels = recorder._master.levels() if recorder._master is not None else None
     manifest = Manifest(
@@ -555,15 +649,15 @@ def finalize(
     session_dir = sets_paths.session_dir(session_id, root=root)
     session_dir.mkdir(parents=True, exist_ok=True)
     timeline = TimelineJsonl(session_dir / "timeline.jsonl")
+    controls = ControlsJsonl(session_dir / "controls.jsonl")
     # Minimal recorder view so list_segments() / _emit_simple() work.
     recorder = Recorder(
         session_id=session_id,
         session_dir=session_dir,
-        config=RecorderConfig(
-            capture_device_name=row.capture_device or DEFAULT_DEVICE_NAME
-        ),
+        config=RecorderConfig(capture_device_name=row.capture_device or DEFAULT_DEVICE_NAME),
         state=state_obj,
         timeline=timeline,
+        controls=controls,
         session_started_at=started,
     )
     end_at = ended_at or datetime.now(UTC)
@@ -725,6 +819,7 @@ __all__ = [
     "DEFAULT_POLL_INTERVAL_S",
     "DEFAULT_HEARTBEAT_INTERVAL_S",
     "resolve_session_id",
+    "TimelineCorruptionError",
     "TimelineJsonl",
     "RecorderConfig",
     "Recorder",

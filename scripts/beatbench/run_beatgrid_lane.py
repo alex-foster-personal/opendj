@@ -30,6 +30,7 @@ import time
 from typing import Any
 
 from apps.analysis_beatgrid.bar_phase import assign_bar_phase, lock_bar_phase
+from apps.analysis_beatgrid.meter import estimate_beats_per_bar
 from scripts.beatbench._harness import resolve_fixture_paths
 
 RUNNER = os.path.join("apps", "analysis_beatgrid", "beat_this_runner.py")
@@ -98,8 +99,11 @@ def _reshape(raw: dict, fixtures: list, label: str) -> dict[str, Any]:
         # Bar numbering is POLICY, applied here from the pure module rather
         # than inside the torch environment, so what the table scores is the
         # same 1..4 assignment the deck will read. See bar_phase.py.
-        phase_diag = assign_bar_phase(row.get("beats") or [], row.get("downbeats") or [])
-        lock = lock_bar_phase(row.get("beats") or [], row.get("downbeats") or [])
+        beats_in = row.get("beats") or []
+        downbeats_in = row.get("downbeats") or []
+        meter = estimate_beats_per_bar(beats_in, downbeats_in)
+        phase_diag = assign_bar_phase(beats_in, downbeats_in)
+        lock = lock_bar_phase(beats_in, downbeats_in)
         beats = row.get("beats") or []
         if lock.bar_phase_unestablished:
             served_numbers: list[int] = []
@@ -120,6 +124,9 @@ def _reshape(raw: dict, fixtures: list, label: str) -> dict[str, Any]:
             "n_bars_over_length": phase_diag.n_bars_over_length,
             "n_bars_under_length": phase_diag.n_bars_under_length,
             "max_bar_beats": phase_diag.max_bar_beats,
+            "beats_per_bar": meter.beats_per_bar,
+            "beats_per_bar_status": meter.beats_per_bar_status,
+            "compound_meter_note": meter.compound_meter_note,
             "activation_peak": row.get("activation_peak"),
             "native_bpm": None,
             "runtime_s": row.get("runtime_s"),

@@ -16,6 +16,14 @@ from tests.sets.test_soundcloud_export import THREE_TRACK_TIMELINE, _seed_sessio
 _TIMESTAMP_LINE = re.compile(r"(?m)^\d+:\d{2}(?::\d{2})? ")
 
 
+@pytest.fixture(autouse=True)
+def _cli_default_state_db(sets_state_db: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(
+        "apps.shared.state.phase08_open.default_state_db_path",
+        lambda: sets_state_db,
+    )
+
+
 @pytest.fixture
 def seeded_cli(sets_root: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     _seed_session(sets_root, timeline=THREE_TRACK_TIMELINE)
@@ -58,7 +66,7 @@ def test_with_acknowledge_prints_reminder_before_comment(seeded_cli: Path, capsy
     match = _TIMESTAMP_LINE.search(out)
     assert match is not None
     assert out.index(LICENSING_REMINDER) < match.start()
-    library = build_soundcloud_export("s1", sets_root=seeded_cli)
+    library = build_soundcloud_export("s1", sets_root=seeded_cli, hidden_stable_ids=frozenset())
     assert library.comment in out
     assert "First Tune" in out
 
@@ -72,7 +80,7 @@ def test_json_with_ack_includes_sentinels_and_library_comment(
     assert rc == 0
     raw = capsys.readouterr().out
     payload = json.loads(raw)
-    library = build_soundcloud_export("s1", sets_root=seeded_cli)
+    library = build_soundcloud_export("s1", sets_root=seeded_cli, hidden_stable_ids=frozenset())
     assert payload["kind"] == "metadata_only"
     assert payload["audio_upload"] == "not_offered"
     assert payload["takeover"] == "not_offered"
@@ -99,7 +107,7 @@ def test_out_writes_comment_only_after_ack(seeded_cli: Path, capsys: pytest.Capt
     )
     assert rc == 0
     capsys.readouterr()
-    library = build_soundcloud_export("s1", sets_root=seeded_cli)
+    library = build_soundcloud_export("s1", sets_root=seeded_cli, hidden_stable_ids=frozenset())
     assert out_path.read_text(encoding="utf-8") == library.comment
     assert out_path.parent != seeded_cli / "s1"
 

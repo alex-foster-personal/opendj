@@ -1,0 +1,9 @@
+{
+  "bytes": 1024,
+  "measured_main": 514190,
+  "measured_with_pr": 514366,
+  "sha": "dded7d0b8e",
+  "date": "Wed 11 Nov 2026",
+  "reason": "PR #12171 regenerates api-types.ts for hash-pending backfill HTTP types; +176 B gzip on other-lazy (CI bundle budgets step)",
+  "payback": "none planned; OpenAPI contract types live on the shared client surface"
+}

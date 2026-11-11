@@ -5,7 +5,10 @@
  * A/D move focus across playlist -> tracks -> deck target, Enter acts on the
  * focused zone, and a double Enter on the same track row loads it the way a
  * row double-click does. Cmd/Ctrl+F (Shift for the whole collection) opens
- * the browser search. The focus zone and deck target are application state
+ * the browser search. Shift+Left/Right load the selected row to deck 1/2;
+ * Cmd/Ctrl+Shift+Left/Right instant-double from the other deck (library root
+ * only); Cmd/Ctrl+L selects and scrolls to the recent deck's track. The focus
+ * zone and deck target are application state
  * owned here, not incidental DOM focus; BrowserPanel supplies the pane and
  * search accessors it does not own.
  */
@@ -15,6 +18,7 @@ import type { DeckId } from '$lib/rb/deck-id';
 import {
 	browserNavigationMayHandle,
 	browserSelectionDelta,
+	libraryChordAction,
 	moveBrowserFocus,
 	type BrowserFocusZone
 } from '$lib/rb/browser-navigation';
@@ -30,6 +34,12 @@ export interface BrowserKeyboardDeps {
 	searchFocused(): boolean;
 	searchMode(): BrowserSearchModeRequest;
 	openSearchMode(mode: BrowserSearchModeRequest): void;
+	/** Shift+Left/Right: the deck-target load of the selected row; false when nothing is selected. */
+	loadSelectedToDeck(deck: 1 | 2): boolean;
+	/** Cmd+Shift+Left/Right: dispatch the instant double (BrowserPanel owns deck state and toasts). */
+	instantDouble(from: 1 | 2, to: 1 | 2): void;
+	/** Cmd+L: select + scroll the recent deck's track; resolves true when a row was revealed. */
+	locateRecentDeckTrack(): Promise<boolean>;
 }
 
 export interface BrowserKeyboard {
@@ -119,6 +129,41 @@ export function createBrowserKeyboard(deps: BrowserKeyboardDeps): BrowserKeyboar
 			if (e.shiftKey) deps.openSearchMode('collection');
 			else if (deps.searchFocused() && deps.searchMode() === 'filter') deps.openSearchMode('find');
 			else deps.openSearchMode('filter');
+			return;
+		}
+
+		const chord = libraryChordAction(e);
+		if (chord !== null) {
+			if (e.defaultPrevented) return;
+			if (
+				!browserNavigationMayHandle({
+					editable: editableTarget(e.target),
+					contextMenuOpen: document.querySelector('[data-testid="context-menu"]') !== null
+				})
+			) {
+				return;
+			}
+			if (
+				chord.kind === 'double' &&
+				!(e.target instanceof Element && e.target.closest('[data-library-root]'))
+			) {
+				return;
+			}
+			lastTrackEnter = null;
+			if (chord.kind === 'load') {
+				if (deps.loadSelectedToDeck(chord.deck)) e.preventDefault();
+				return;
+			}
+			e.preventDefault();
+			if (chord.kind === 'double') {
+				deps.instantDouble(chord.from, chord.to);
+				return;
+			}
+			void deps.locateRecentDeckTrack().then((revealed) => {
+				if (!revealed) return;
+				browserFocus = 'tracks';
+				focusBrowserZone();
+			});
 			return;
 		}
 

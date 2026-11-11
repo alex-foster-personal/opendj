@@ -101,6 +101,33 @@
 		stepPosition,
 		visibleSteps
 	} from '$lib/setup/wizard.svelte';
+	import {
+		isRunButtonActionPending,
+		runButtonAction,
+		runButtonActionGate
+	} from '$lib/ui/run-button-action';
+
+	let setupRetryAction = $state<string | null>(null);
+	const setupRetryGate = runButtonActionGate(
+		() => setupRetryAction,
+		(value) => {
+			setupRetryAction = value;
+		}
+	);
+
+	async function retrySetupStatus(): Promise<void> {
+		await runButtonAction(
+			setupRetryGate,
+			'setup-status-retry',
+			async () => {
+				await setupWizard.load();
+				if (setupWizard.error !== null) throw new Error(setupWizard.error);
+			},
+			{
+				toastMessage: (exc) => `Setup status could not be read: ${exc}`
+			}
+		);
+	}
 
 	/** Only a FINAL refusal (a legacy daemon that has no /api/v1/setup) makes
 	 * this surface inert. An unfinished health probe is a scanning state, not
@@ -527,8 +554,9 @@
 									<button
 										type="button"
 										class="secondary"
-										onclick={() => setupWizard.load()}
-										disabled={setupWizard.busy}
+										onclick={() => void retrySetupStatus()}
+										disabled={setupWizard.busy || isRunButtonActionPending(setupRetryGate)}
+										aria-busy={setupWizard.busy || isRunButtonActionPending(setupRetryGate)}
 										data-agent-endpoint="GET /api/v1/setup/status"
 									>
 										Try again

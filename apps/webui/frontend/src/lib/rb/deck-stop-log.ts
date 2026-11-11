@@ -36,13 +36,17 @@ export const DECK_STOP_CAUSES = [
 	'end-of-track',
 	'engine',
 	'reload',
-	'unattributed'
+	'unattributed',
+	'replay'
 ] as const;
 
 export type DeckStopCause = (typeof DECK_STOP_CAUSES)[number];
 
 /** Who a command came from; a subset of the causes. */
-export type CommandSource = Extract<DeckStopCause, 'user-ui' | 'agent-command' | 'autoplay-handoff' | 'app-command' | 'engine'>;
+export type CommandSource = Extract<
+	DeckStopCause,
+	'user-ui' | 'agent-command' | 'autoplay-handoff' | 'app-command' | 'engine' | 'replay'
+>;
 
 /** Expected stops log at info; only a stop nobody asked for warns. */
 export const DECK_STOP_WARN_CAUSES: ReadonlySet<DeckStopCause> = new Set(['unattributed', 'engine', 'reload']);

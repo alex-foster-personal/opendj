@@ -36,7 +36,7 @@ import socket
 import struct
 import threading
 from collections.abc import Callable
-from typing import Any, Literal
+from typing import Any, Literal, cast
 
 from cryptography.hazmat.primitives import hashes
 from cryptography.hazmat.primitives.kdf.hkdf import HKDF
@@ -57,16 +57,22 @@ MAX_DATAGRAM = 1200
 MAX_PAYLOAD = MAX_DATAGRAM - HEADER.size - TAG_BYTES
 RECV_WAKE_S = 0.25
 DROP_REASONS = ("malformed", "wrong_epoch", "unknown_sender", "replayed", "tampered", "no_session")
+_DIRECTIONS = frozenset({"inviter", "joiner"})
 
 
 class DatagramError(ValueError):
     pass
 
 
+def _require_direction(value: str, *, field: str) -> Direction:
+    if value not in _DIRECTIONS:
+        raise DatagramError(f"{field} must be inviter or joiner, got {value!r}")
+    return cast(Direction, value)
+
+
 def derive_key(token: str, epoch: str, sender_sid: str, direction: Direction) -> bytes:
     """The 32-byte ChaCha20-Poly1305 key of one sender session (hex ``epoch`` and ``sender_sid``)."""
-    if direction not in ("inviter", "joiner"):
-        raise DatagramError(f"direction must be inviter or joiner, got {direction!r}")
+    _require_direction(direction, field="direction")
     salt = bytes.fromhex(epoch) + bytes.fromhex(sender_sid)
     return HKDF(algorithm=hashes.SHA256(), length=32, salt=salt, info=LABEL + direction.encode()).derive(token.encode())
 
@@ -82,10 +88,8 @@ class SealedDatagrams:
     def __init__(self, token: str, side: Direction) -> None:
         if not token:
             raise DatagramError("a sealed datagram lane needs the pairing token")
-        if side not in ("inviter", "joiner"):
-            raise DatagramError(f"side must be inviter or joiner, got {side!r}")
+        self.side = _require_direction(side, field="side")
         self._token = token
-        self.side: Direction = side
         self.epoch: str | None = None
         self.sid: str | None = None
         self.peer_sid: str | None = None

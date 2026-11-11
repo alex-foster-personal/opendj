@@ -8,6 +8,11 @@ CONFIDENCE_THRESHOLD_MESSAGE = "confidence threshold must be finite and within (
 DURATION_TOLERANCE_MESSAGE = "duration tolerance must be a positive integer"
 
 
+def is_strict_positive_int(value: object) -> bool:
+    """True for int values strictly greater than zero, excluding bool."""
+    return isinstance(value, int) and not isinstance(value, bool) and value > 0
+
+
 def confidence_threshold_error(value: float) -> str | None:
     if not math.isfinite(value) or not 0 < value <= 1:
         return CONFIDENCE_THRESHOLD_MESSAGE
@@ -15,6 +20,6 @@ def confidence_threshold_error(value: float) -> str | None:
 
 
 def duration_tolerance_ms_error(value: int) -> str | None:
-    if not isinstance(value, int) or isinstance(value, bool) or value <= 0:
+    if not is_strict_positive_int(value):
         return DURATION_TOLERANCE_MESSAGE
     return None

@@ -45,6 +45,21 @@ def test_calibrate_mirrors_the_page_calibration_state() -> None:
     asyncio.run(run())
 
 
+def test_headphones_calibration_diagnostics_names_both_probes() -> None:
+    """[if] GET /headphones [then] calibration diagnostics lists chirp and click_train, [else stop]."""
+
+    async def run() -> None:
+        async with AsyncClient(transport=ASGITransport(app=_app()), base_url="http://test") as client:
+            await _open_page(client)
+            response = await client.get("/api/v1/performance/headphones")
+        assert response.status_code == 200
+        diagnostics = response.json()["calibration"]["diagnostics"]
+        assert diagnostics["probe"] == "chirp"
+        assert diagnostics["alternate_probe"] == "click_train"
+
+    asyncio.run(run())
+
+
 def test_headphones_carries_the_live_stage_one_probe() -> None:
     """CUEOUT-14: the ear-cup step is interactive, so GET /headphones must carry the
     same live probe the modal's level bar draws, or an HTTP agent drives it blind."""

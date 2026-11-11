@@ -36,7 +36,7 @@ def _ladder_to(path: Path, version: int) -> None:
 def test_v31_is_the_next_shared_and_engine_store_rung() -> None:
     """[if] the ladder is at v30 [then] v31 is the completeness config step, [else stop]."""
     assert state_schema.MIGRATIONS[30] is migrations_v31._V31
-    assert store_schema.SCHEMA_VERSION == 20
+    assert store_schema.SCHEMA_VERSION == 21
 
 
 def test_a_brand_new_empty_state_db_migrated_leaves_the_flag_false(tmp_path: Path) -> None:

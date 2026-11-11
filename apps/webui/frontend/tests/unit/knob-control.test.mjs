@@ -36,6 +36,8 @@ import { loadTypeScriptModule } from './load-typescript.mjs';
 //   is impossible
 // - if Knob.svelte stops importing knob-control then the module is dead code
 //   again and a refactor deletes the headline feature
+// - if a pickup-armed dial drops its scoped .sr-only rule or moves the hardware
+//   hint off the live title then the yellow ghost is the only cue (issue #9547)
 
 const MIXER = fileURLToPath(new URL('../../src/lib/components/rb/mixer', import.meta.url));
 
@@ -71,11 +73,13 @@ before(async () => {
 	const store = new Map();
 	globalThis.window = {
 		addEventListener: (type, fn, options) => {
-			listeners.set(type, fn);
+			const capture = options === true || options?.capture === true;
+			listeners.set(capture ? `${type}:capture` : type, fn);
 			globalThis.__listenerCalls?.push(['add', type, options]);
 		},
-		removeEventListener: (type, fn, options) => {
-			listeners.delete(type);
+		removeEventListener: (type, _fn, options) => {
+			const capture = options === true || options?.capture === true;
+			listeners.delete(capture ? `${type}:capture` : type);
 			globalThis.__listenerCalls?.push(['remove', type, options]);
 		},
 		// knob-control now pulls in wheel-adjust for the trackpad scaling, and
@@ -100,6 +104,7 @@ beforeEach(() => {
 	knobs.clearKnobLink();
 	knobs.knobUi.selectedIds = [];
 	knobs.knobUi.hoveredId = null;
+	knobs._setCommandedGlideStarterForTests(() => {});
 	// _registry is module-level state, not reset by the clears above - without
 	// this, a dial id reused across test cases (every case below reuses
 	// '1:low'/'2:low') carries a leftover registration stack into the next
@@ -285,9 +290,17 @@ test('unregistering a shadowing registration (EqOverlay closing over a mixer kno
 	});
 	knobs.unregisterKnob(a); // pops the shadow registration only
 
-	assert.equal(knobs.linkedPartnerId(a), b, 'the mixer knob underneath lost its link when only the shadow unregistered');
+	assert.equal(
+		knobs.linkedPartnerId(a),
+		b,
+		'the mixer knob underneath lost its link when only the shadow unregistered'
+	);
 	knobs.nudgeKnob(a, 0.1);
-	assert.equal(valueOf(b), 0.4, 'the link must still drive the partner after the shadow registration is gone');
+	assert.equal(
+		valueOf(b),
+		0.4,
+		'the link must still drive the partner after the shadow registration is gone'
+	);
 });
 
 // ============================================ selection + the global wheel
@@ -466,7 +479,17 @@ test('shift-clicking the selected dial deselects it', () => {
 
 /** A DOM-ish target whose closest() answers from a fixed set of matching selectors. */
 function fakeTarget(matches) {
-	return { closest: (sel) => (matches.some((m) => sel.split(',').map((x) => x.trim()).includes(m)) ? {} : null) };
+	return {
+		closest: (sel) =>
+			matches.some((m) =>
+				sel
+					.split(',')
+					.map((x) => x.trim())
+					.includes(m)
+			)
+				? {}
+				: null
+	};
 }
 
 const near = (a, b) => Math.abs(a - b) < 1e-9;
@@ -525,7 +548,10 @@ test('scroll or arrow on a selected dial moves the whole selection; on an unsele
 	knobs.shiftClickKnob(a);
 	knobs.shiftClickKnob(b);
 	knobs.nudgeKnobOrSelection(b, -0.1);
-	assert.ok(near(valueOf(a), 0.4) && near(valueOf(b), 0.4), 'the selection did not move in common mode');
+	assert.ok(
+		near(valueOf(a), 0.4) && near(valueOf(b), 0.4),
+		'the selection did not move in common mode'
+	);
 	knobs.nudgeKnobOrSelection(c, 0.1);
 	assert.ok(near(valueOf(c), 0.6));
 	assert.ok(near(valueOf(a), 0.4), 'turning an unselected dial dragged the selection along');
@@ -535,13 +561,22 @@ test('R7 pad: up+right is all up, down+right is channel A up and channel B down'
 	const sel = ['1:low', '2:low'];
 	const base = { '1:low': 0.5, '2:low': 0.5 };
 	const upRight = knobs.padDragTargets(sel, base, 0.1, 0.1);
-	assert.ok(near(upRight['1:low'], 0.6) && near(upRight['2:low'], 0.6), `up+right ${JSON.stringify(upRight)}`);
+	assert.ok(
+		near(upRight['1:low'], 0.6) && near(upRight['2:low'], 0.6),
+		`up+right ${JSON.stringify(upRight)}`
+	);
 	const downRight = knobs.padDragTargets(sel, base, 0.1, -0.1);
-	assert.ok(near(downRight['1:low'], 0.6) && near(downRight['2:low'], 0.4), 'the -45 degree diagonal is not the flip');
+	assert.ok(
+		near(downRight['1:low'], 0.6) && near(downRight['2:low'], 0.4),
+		'the -45 degree diagonal is not the flip'
+	);
 	const xOnly = knobs.padDragTargets(sel, base, 0.1, 0);
 	assert.ok(near(xOnly['2:low'], 0.5), 'pure X moved channel B - the axes are not independent');
 	const yOnly = knobs.padDragTargets(sel, base, 0, 0.1);
-	assert.ok(near(yOnly['1:low'], 0.5) && near(yOnly['2:low'], 0.6), 'pure Y must move only channel B');
+	assert.ok(
+		near(yOnly['1:low'], 0.5) && near(yOnly['2:low'], 0.6),
+		'pure Y must move only channel B'
+	);
 });
 
 test('R7 pad: X is every item on the first-selected channel; one channel puts the first on X and the rest on Y', () => {
@@ -549,7 +584,10 @@ test('R7 pad: X is every item on the first-selected channel; one channel puts th
 		x: ['2:low', '2:high'],
 		y: ['1:low', '1:fader']
 	});
-	assert.deepEqual(knobs.padAxes(['1:mid', '1:low', '1:fader']), { x: ['1:mid'], y: ['1:low', '1:fader'] });
+	assert.deepEqual(knobs.padAxes(['1:mid', '1:low', '1:fader']), {
+		x: ['1:mid'],
+		y: ['1:low', '1:fader']
+	});
 });
 
 test('R7 pad clamps, and one selected item is not a pad', () => {
@@ -559,7 +597,10 @@ test('R7 pad clamps, and one selected item is not a pad', () => {
 	assert.equal(knobs.padDragTargets(['1:low'], { '1:low': 0.5 }, 0.5, 0), null);
 	const fine = knobs.singleDragDelta(100, 0);
 	const coarse = knobs.singleDragDelta(0, 100);
-	assert.ok(fine > 0 && fine * 3 <= coarse, `horizontal ${fine} is not fine adjust next to vertical ${coarse}`);
+	assert.ok(
+		fine > 0 && fine * 3 <= coarse,
+		`horizontal ${fine} is not fine adjust next to vertical ${coarse}`
+	);
 });
 
 test('a selection drag starts only on a selected dial of a 2+ set and never accumulates', () => {
@@ -567,13 +608,24 @@ test('a selection drag starts only on a selected dial of a 2+ set and never accu
 	const b = addDial('2:low', 0.5);
 	const c = addDial('3:low', 0.5);
 	knobs.shiftClickKnob(a);
-	assert.equal(knobs.beginSelectionDrag(a), null, 'one selected dial must keep the single-dial drag');
+	assert.equal(
+		knobs.beginSelectionDrag(a),
+		null,
+		'one selected dial must keep the single-dial drag'
+	);
 	knobs.shiftClickKnob(b);
-	assert.equal(knobs.beginSelectionDrag(c), null, 'dragging an unselected dial must not move the selection');
+	assert.equal(
+		knobs.beginSelectionDrag(c),
+		null,
+		'dragging an unselected dial must not move the selection'
+	);
 	const start = knobs.beginSelectionDrag(b);
 	assert.ok(start !== null);
 	for (const d of [0.02, 0.03, 0.03, 0.02]) knobs.stepSelectionDrag(start, d, false);
-	assert.ok(near(valueOf(a), 0.6) && near(valueOf(b), 0.6), `slow drag ended at ${valueOf(a)}, ${valueOf(b)}`);
+	assert.ok(
+		near(valueOf(a), 0.6) && near(valueOf(b), 0.6),
+		`slow drag ended at ${valueOf(a)}, ${valueOf(b)}`
+	);
 	assert.equal(valueOf(c), 0.5);
 });
 
@@ -592,7 +644,7 @@ test('Esc clears the selection', () => {
 test('a click on empty space clears; a click on a knob or a control does not', () => {
 	const a = addDial('1:low', 0.5);
 	knobs.shiftClickKnob(a);
-	const down = globalThis.__listeners.get('pointerdown');
+	const down = globalThis.__listeners.get('pointerdown:capture');
 	down({ button: 0, target: fakeTarget(['[data-knob-id]']) });
 	assert.ok(knobs.isKnobSelected(a), 'clicking a knob cleared the selection');
 	down({ button: 0, target: fakeTarget(['button']) });
@@ -628,7 +680,11 @@ test('a dial re-registering its own id (value-change re-run) keeps its selection
 	knobs.unregisterKnob(b);
 	addDial(b, 0.5);
 	await Promise.resolve();
-	assert.deepEqual([...knobs.selectedKnobIds()], [a, b], 'a re-render dropped the dial from the selection');
+	assert.deepEqual(
+		[...knobs.selectedKnobIds()],
+		[a, b],
+		'a re-render dropped the dial from the selection'
+	);
 	assert.equal(knobs.linkedPartnerId(b), c, 'a re-render dropped the Alt link');
 });
 
@@ -641,7 +697,10 @@ test('agent parity: window.__mdtKnobSelection drives the same selection and move
 	assert.deepEqual(bridge.get(), [a, b]);
 	assert.ok(knobs.isKnobSelected(b), 'the bridge and the UI hold two selections');
 	bridge.nudge(0.1);
-	assert.ok(near(bridge.value(a), 0.6) && near(bridge.value(b), 0.6), 'bridge nudge is not common mode');
+	assert.ok(
+		near(bridge.value(a), 0.6) && near(bridge.value(b), 0.6),
+		'bridge nudge is not common mode'
+	);
 	const px = knobs.KNOB_CFG.dragVerticalPx * 0.1;
 	// The bridge drag runs through the pointer's drag gain (Sol P1, PR #6829):
 	// a straight drag scales both axes by one integrated gain g, so the pad
@@ -652,7 +711,10 @@ test('agent parity: window.__mdtKnobSelection drives the same selection and move
 		falloffPx: sens.DRAG_DEFAULTS.falloffPx
 	});
 	const g = gained.dy / px;
-	assert.ok(g > 0 && g < 0.99, `the default drag gain ${g} is not below 1, so this test cannot tell gained from raw`);
+	assert.ok(
+		g > 0 && g < 0.99,
+		`the default drag gain ${g} is not below 1, so this test cannot tell gained from raw`
+	);
 	bridge.drag(-px, px);
 	assert.ok(
 		near(valueOf(a), 0.6 - 0.1 * g) && near(valueOf(b), 0.6 + 0.1 * g),
@@ -690,9 +752,15 @@ test('R2: a drag on the SECOND-selected dial moves the whole group with it', () 
 	assert.equal(start.leadId, b, 'the dragged dial is not the lead');
 	knobs.stepSelectionDrag(start, 0.2, false);
 	assert.ok(near(valueOf(b), 0.7), `the dragged dial did not follow the pointer (${valueOf(b)})`);
-	assert.ok(near(valueOf(a), 0.7), `the first-selected dial did not move the same way (${valueOf(a)})`);
+	assert.ok(
+		near(valueOf(a), 0.7),
+		`the first-selected dial did not move the same way (${valueOf(a)})`
+	);
 	// The old rule: vertical travel moved only the first-selected deck, so b stayed at 0.5.
-	assert.ok(!near(valueOf(b), 0.5), 'control: b did not move, which is the old first-selected rule');
+	assert.ok(
+		!near(valueOf(b), 0.5),
+		'control: b did not move, which is the old first-selected rule'
+	);
 });
 
 test('R2: the lead is the dragged item, never selection[0], for the sign rule', () => {
@@ -712,7 +780,10 @@ test('R2: a group drag clamps each item but keeps its virtual travel, so reversi
 	assert.equal(valueOf(a), 1);
 	assert.ok(near(valueOf(b), 0.4));
 	knobs.stepSelectionDrag(start, -0.2, false);
-	assert.ok(near(valueOf(a), 0.95) && near(valueOf(b), 0.2), 'reversing the drag did not return both');
+	assert.ok(
+		near(valueOf(a), 0.95) && near(valueOf(b), 0.2),
+		'reversing the drag did not return both'
+	);
 });
 
 // ============================================ the wiring (the live regression)
@@ -781,24 +852,42 @@ test('only the headphone MIX knob opts into delayed single-click stepping', () =
 test('pointer jitter inside the click slop is a click, travel past it is a drag', () => {
 	const slop = knobs.KNOB_CFG.clickSlopPx;
 	assert.ok(slop >= 2 && slop <= 8, `click slop ${slop}px is outside a sane 2..8px band`);
-	assert.equal(knobs.pointerTravelIsDrag(0, 0), false,
-		'if a pointermove with no travel counts as a drag then a still click never steps MIX - broken');
-	assert.equal(knobs.pointerTravelIsDrag(1, -1), false,
-		'if one pixel of mouse or touch jitter counts as a drag then the 1/3 step is lost - broken');
+	assert.equal(
+		knobs.pointerTravelIsDrag(0, 0),
+		false,
+		'if a pointermove with no travel counts as a drag then a still click never steps MIX - broken'
+	);
+	assert.equal(
+		knobs.pointerTravelIsDrag(1, -1),
+		false,
+		'if one pixel of mouse or touch jitter counts as a drag then the 1/3 step is lost - broken'
+	);
 	assert.equal(knobs.pointerTravelIsDrag(slop, 0), false);
-	assert.equal(knobs.pointerTravelIsDrag(0, slop + 1), true,
-		'if travel past the slop is still a click then a short drag also fires the step - broken');
+	assert.equal(
+		knobs.pointerTravelIsDrag(0, slop + 1),
+		true,
+		'if travel past the slop is still a click then a short drag also fires the step - broken'
+	);
 	assert.equal(knobs.pointerTravelIsDrag(-(slop + 1), 0), true);
 });
 
 test('the Knob classifies drags by travel and only steps on a primary click', () => {
 	const knob = readFileSync(`${MIXER}/Knob.svelte`, 'utf8');
-	assert.match(knob, /pointerTravelIsDrag\(/,
-		'if Knob.svelte marks any pointermove as a drag then jitter swallows the MIX click - broken');
-	assert.match(knob, /\(onsingleclick !== undefined \|\| ontap !== undefined \|\| altPressInGroup\) && insideSlop/,
-		'if the click slop applies to every knob then 1-4 px fine adjustments on EQ and GAIN are discarded - broken');
-	assert.match(knob, /e\.button !== 0/,
-		'if a right or middle click starts a gesture then a context-menu click steps MIX - broken');
+	assert.match(
+		knob,
+		/pointerTravelIsDrag\(/,
+		'if Knob.svelte marks any pointermove as a drag then jitter swallows the MIX click - broken'
+	);
+	assert.match(
+		knob,
+		/\(onsingleclick !== undefined \|\| ontap !== undefined \|\| altPressInGroup\) && insideSlop/,
+		'if the click slop applies to every knob then 1-4 px fine adjustments on EQ and GAIN are discarded - broken'
+	);
+	assert.match(
+		knob,
+		/e\.button !== 0/,
+		'if a right or middle click starts a gesture then a context-menu click steps MIX - broken'
+	);
 });
 
 test('knob ids are unique across the whole mixer', () => {
@@ -823,8 +912,11 @@ test('a selected dial pinned at 1 still moves the rest of the selection on its o
 
 test('the Knob hands the raw wheel step to the selection, not a delta from the clamped value', () => {
 	const source = readFileSync(`${MIXER}/Knob.svelte`, 'utf8');
-	assert.match(source, /nudge: \(delta, event\) => nudgeKnobOrSelection\(knobId, delta, event\.altKey\)/,
-		'if the wheel derives its delta from the clamped value then a dial at 0 or 1 freezes the selection');
+	assert.match(
+		source,
+		/nudge: \(delta, event\) => nudgeKnobOrSelection\(knobId, delta, event\.altKey\)/,
+		'if the wheel derives its delta from the clamped value then a dial at 0 or 1 freezes the selection'
+	);
 });
 
 test('control: with no selection, a dial own wheel step moves only that dial, clamped as before', () => {
@@ -833,7 +925,10 @@ test('control: with no selection, a dial own wheel step moves only that dial, cl
 	knobs.nudgeKnobOrSelection(a, 0.028);
 	knobs.nudgeKnobOrSelection(b, -0.028);
 	assert.equal(valueOf(a), 1, 'a single dial at the top end left the 0..1 domain');
-	assert.ok(near(valueOf(b), 0.472), 'a single unselected dial no longer moves by exactly one step');
+	assert.ok(
+		near(valueOf(b), 0.472),
+		'a single unselected dial no longer moves by exactly one step'
+	);
 });
 
 // Sol P1 on #5701 (dfca9f762): a group move bypassed the Alt link, so a
@@ -850,7 +945,10 @@ test('a group nudge drives an unselected Alt partner inversely, with the stagger
 	knobs.nudgeSelection(0.1);
 	assert.ok(near(valueOf(b), 0.6), 'the unlinked selected dial lost common mode');
 	assert.ok(near(valueOf(p), 0.4), `the Alt partner did not move inversely (${valueOf(p)})`);
-	assert.ok(near(valueOf(a), 0.6 + 0.1 * knobs.KNOB_CFG.linkStagger), 'the rising linked dial lost its stagger');
+	assert.ok(
+		near(valueOf(a), 0.6 + 0.1 * knobs.KNOB_CFG.linkStagger),
+		'the rising linked dial lost its stagger'
+	);
 });
 
 test('both dials of a linked pair selected: the selection wins, both move together', () => {
@@ -863,12 +961,16 @@ test('both dials of a linked pair selected: the selection wins, both move togeth
 	knobs.shiftClickKnob(p);
 	knobs.shiftClickKnob(a);
 	knobs.nudgeSelection(0.1);
-	assert.ok(near(valueOf(a), 0.6) && near(valueOf(p), 0.6),
-		`a selected linked pair did not move together (${valueOf(a)}, ${valueOf(p)}) - the link overrode the selection`);
+	assert.ok(
+		near(valueOf(a), 0.6) && near(valueOf(p), 0.6),
+		`a selected linked pair did not move together (${valueOf(a)}, ${valueOf(p)}) - the link overrode the selection`
+	);
 	const start = knobs.beginSelectionDrag(a);
 	knobs.stepSelectionDrag(start, 0.1, true);
-	assert.ok(near(valueOf(a), 0.7) && near(valueOf(p), 0.5),
-		`the flipped drag on a selected linked pair gave ${valueOf(a)}, ${valueOf(p)}`);
+	assert.ok(
+		near(valueOf(a), 0.7) && near(valueOf(p), 0.5),
+		`the flipped drag on a selected linked pair gave ${valueOf(a)}, ${valueOf(p)}`
+	);
 });
 
 test('a group drag keeps the Alt link too, from the pointer-down baselines', () => {
@@ -881,12 +983,20 @@ test('a group drag keeps the Alt link too, from the pointer-down baselines', () 
 	knobs.shiftClickKnob(b);
 	const start = knobs.beginSelectionDrag(a);
 	for (const d of [0.03, 0.03, 0.04]) knobs.stepSelectionDrag(start, d, false);
-	assert.ok(near(valueOf(p), 0.4), `the partner did not track inversely without accumulating (${valueOf(p)})`);
+	assert.ok(
+		near(valueOf(p), 0.4),
+		`the partner did not track inversely without accumulating (${valueOf(p)})`
+	);
 	assert.ok(near(valueOf(b), 0.6), 'the other selected dial did not follow the lead');
 });
 
 test('control: with no link, group moves are plain common mode', () => {
-	const out = knobs.applyLinkToTargets(['1:low', '2:low'], { '1:low': 0.5, '2:low': 0.5 }, { '1:low': 0.6, '2:low': 0.6 }, null);
+	const out = knobs.applyLinkToTargets(
+		['1:low', '2:low'],
+		{ '1:low': 0.5, '2:low': 0.5 },
+		{ '1:low': 0.6, '2:low': 0.6 },
+		null
+	);
 	assert.deepEqual(out, { '1:low': 0.6, '2:low': 0.6 });
 });
 
@@ -900,7 +1010,10 @@ test('R3: two channels, Opt held: the dragged channel follows, the other goes op
 	const start = knobs.beginSelectionDrag(b);
 	knobs.stepSelectionDrag(start, 0.1, true);
 	assert.ok(near(valueOf(b), 0.6), 'the dragged item did not follow the pointer');
-	assert.ok(near(valueOf(a1), 0.4) && near(valueOf(a2), 0.4), 'the other channel did not go opposite');
+	assert.ok(
+		near(valueOf(a1), 0.4) && near(valueOf(a2), 0.4),
+		'the other channel did not go opposite'
+	);
 });
 
 test('R3 mutation control: the flip side comes from the DRAGGED channel, not the first-selected', () => {
@@ -949,16 +1062,30 @@ test('R3: the wheel with Opt flips relative to the control under the pointer, el
 	assert.ok(near(valueOf(b), 0.6) && near(valueOf(a), 0.4));
 	const onWheel = globalThis.__listeners.get('wheel');
 	knobs.setKnobHovered(null);
-	onWheel({ deltaY: -100, deltaMode: 0, wheelDeltaY: 120, altKey: true, target: null, preventDefault() {} });
+	onWheel({
+		deltaY: -100,
+		deltaMode: 0,
+		wheelDeltaY: 120,
+		altKey: true,
+		target: null,
+		preventDefault() {}
+	});
 	// Lead falls back to the first-selected (a): a up, b down.
 	assert.ok(valueOf(a) > 0.4 && valueOf(b) < 0.6, `got a=${valueOf(a)} b=${valueOf(b)}`);
 });
 
 test('R3 wiring: Knob and VFader pass e.altKey to the group drag and the wheel', () => {
 	const knob = readFileSync(`${MIXER}/Knob.svelte`, 'utf8');
-	assert.match(knob, /stepSelectionDrag\(selectionDrag, singleDragDelta\(step\.dx, step\.dy\), e\.altKey\)/);
+	assert.match(
+		knob,
+		/stepSelectionDrag\(selectionDrag, singleDragDelta\(step\.dx, step\.dy\), e\.altKey\)/
+	);
 	assert.match(knob, /nudgeKnobOrSelection\(knobId, delta, event\.altKey\)/);
-	assert.match(knob, /if \(altClick\) \{\s*altClickKnob\(knobId\)/, 'an Alt press on a grouped dial that never moves no longer arms a link');
+	assert.match(
+		knob,
+		/if \(altClick\) \{\s*altClickKnob\(knobId\)/,
+		'an Alt press on a grouped dial that never moves no longer arms a link'
+	);
 	const fader = readFileSync(`${MIXER}/VFader.svelte`, 'utf8');
 	assert.match(fader, /stepSelectionDrag\(selectionDrag, delta, e\.altKey\)/);
 	assert.match(fader, /setKnobHovered\(controlId\)/);
@@ -973,12 +1100,18 @@ test('R4: a third channel is refused with a hint; the first two stay selected', 
 	knobs.shiftClickKnob(a);
 	knobs.shiftClickKnob(b);
 	assert.equal(knobs.shiftClickKnob(c), false);
-	assert.deepEqual([...knobs.selectedKnobIds()], [a, b], 'a deck 3 item was added to a deck 1 + 2 group');
+	assert.deepEqual(
+		[...knobs.selectedKnobIds()],
+		[a, b],
+		'a deck 3 item was added to a deck 1 + 2 group'
+	);
 	assert.deepEqual(knobs.knobUi.groupHint, { id: c, text: 'Group is limited to two channels' });
 });
 
 test('R4: any number of items on one or two channels are all selected', () => {
-	const ids = ['1:low', '1:mid', '1:high', '1:fader', '2:low', '2:mid', '2:fader'].map((id) => addDial(id, 0.5));
+	const ids = ['1:low', '1:mid', '1:high', '1:fader', '2:low', '2:mid', '2:fader'].map((id) =>
+		addDial(id, 0.5)
+	);
 	for (const id of ids) assert.equal(knobs.shiftClickKnob(id), true, `${id} was refused`);
 	assert.deepEqual([...knobs.selectedKnobIds()], ids);
 	assert.equal(knobs.knobUi.groupHint, null);
@@ -999,7 +1132,10 @@ test('R4: the agent bridge refuses a three-channel selection loudly', () => {
 	addDial('1:low', 0.5);
 	addDial('2:low', 0.5);
 	addDial('3:low', 0.5);
-	assert.throws(() => globalThis.window.__mdtKnobSelection.set(['1:low', '2:low', '3:low']), /limited to two channels/);
+	assert.throws(
+		() => globalThis.window.__mdtKnobSelection.set(['1:low', '2:low', '3:low']),
+		/limited to two channels/
+	);
 });
 
 // ============================================ R7: the two-axis pad (Wed 7 Oct 2026)
@@ -1035,7 +1171,8 @@ test('R7 wiring: the pad shows at 2+, closes and clears, uses the shared gain, a
 	assert.match(pad, /stepPadDrag\(session/);
 	assert.match(pad, /dot = \{ x: 0, y: 0 \}/, 'the dot no longer springs back to centre');
 	assert.doesNotMatch(pad, /tabindex="0"/, 'the pad must never take keyboard focus');
-	for (const cls of ['gp-axis', 'gp-diag', 'gp-half', 'gp-tick']) assert.ok(pad.includes(cls), `${cls} lines are gone`);
+	for (const cls of ['gp-axis', 'gp-diag', 'gp-half', 'gp-tick'])
+		assert.ok(pad.includes(cls), `${cls} lines are gone`);
 	assert.match(pad, /TICKS = \[0\.25, 0\.5, 0\.75, 1\]/);
 	const mixer = readFileSync(`${MIXER}/../Mixer.svelte`, 'utf8');
 	assert.match(mixer, /<GroupPad \/>/);
@@ -1051,10 +1188,21 @@ test('closing the group pad mid-drag ends the drag, so a later move cannot resum
 	for (const reset of ['tracker = null;', 'session = null;', 'dot = { x: 0, y: 0 };']) {
 		assert.ok(end[1].includes(reset), `endDrag does not reset: ${reset}`);
 	}
-	assert.match(pad, /\$effect\(\(\) => \{\s*if \(!open\) endDrag\(\);\s*\}\);/, 'closing the pad keeps the drag session');
-	assert.match(pad, /onlostpointercapture=\{endDrag\}/, 'a lost pointer capture does not cancel the drag');
+	assert.match(
+		pad,
+		/\$effect\(\(\) => \{\s*if \(!open\) endDrag\(\);\s*\}\);/,
+		'closing the pad keeps the drag session'
+	);
+	assert.match(
+		pad,
+		/onlostpointercapture=\{endDrag\}/,
+		'a lost pointer capture does not cancel the drag'
+	);
 	// Control (the overshoot): a move still drives the open pad's session.
-	assert.match(pad, /if \(tracker === null \|\| session === null\) return;\n\t\tconst step = trackDragMove/);
+	assert.match(
+		pad,
+		/if \(tracker === null \|\| session === null\) return;\n\t\tconst step = trackDragMove/
+	);
 });
 
 test('the group pad stays reachable while settings is open, on any route (Sol P1, PR #6829)', () => {
@@ -1063,12 +1211,21 @@ test('the group pad stays reachable while settings is open, on any route (Sol P1
 	// backdrop on /performance. Settings mounts its own copy inside its
 	// backdrop layer, and exactly one copy shows at a time.
 	const pad = readFileSync(`${MIXER}/GroupPad.svelte`, 'utf8');
-	assert.match(pad, /const open = \$derived\(knobUi\.selectedIds\.length >= 2 && isSettingsOpen\(\) === inSettings\);/);
+	assert.match(
+		pad,
+		/const open = \$derived\(knobUi\.selectedIds\.length >= 2 && isSettingsOpen\(\) === inSettings\);/
+	);
 	const overlay = readFileSync(`${MIXER}/../../settings/SettingsOverlay.svelte`, 'utf8');
 	const backdrop = overlay.indexOf('class="so-backdrop"');
 	const mount = overlay.indexOf('<GroupPad inSettings />');
-	assert.ok(backdrop >= 0 && mount > backdrop, 'SettingsOverlay does not mount the pad inside its backdrop layer');
-	assert.ok(mount > overlay.lastIndexOf('</section>'), 'the pad must sit outside the transformed panel, or position:fixed pins it to the panel');
+	assert.ok(
+		backdrop >= 0 && mount > backdrop,
+		'SettingsOverlay does not mount the pad inside its backdrop layer'
+	);
+	assert.ok(
+		mount > overlay.lastIndexOf('</section>'),
+		'the pad must sit outside the transformed panel, or position:fixed pins it to the panel'
+	);
 });
 
 // ============================================ drag tester isolation (#6829 P1)
@@ -1079,7 +1236,11 @@ test('a drag-tester control never joins a live selection, so a tester drag canno
 	const testerB = addDial('test-b:knob', 0.5);
 	knobs.shiftClickKnob(live);
 	assert.ok(knobs.shiftClickKnob(tester), 'the tester click was refused instead of starting fresh');
-	assert.deepEqual([...knobs.knobUi.selectedIds], [tester], 'a live control stayed grouped with the tester');
+	assert.deepEqual(
+		[...knobs.knobUi.selectedIds],
+		[tester],
+		'a live control stayed grouped with the tester'
+	);
 	const start = knobs.beginSelectionDrag(tester);
 	assert.equal(start, null, 'a lone tester control started a group drag');
 	// Control: two tester controls still group and drag together.
@@ -1110,8 +1271,15 @@ test('a tester dial never links to a live one', () => {
 });
 
 test('the group hint anchors to the knob copy that is on top, not the first in the document', () => {
-	const src = readFileSync(new URL('../../src/lib/components/rb/mixer/GroupHint.svelte', import.meta.url), 'utf8');
-	assert.doesNotMatch(src, /document\.querySelector\(/, 'the hint picks the first duplicate id again');
+	const src = readFileSync(
+		new URL('../../src/lib/components/rb/mixer/GroupHint.svelte', import.meta.url),
+		'utf8'
+	);
+	assert.doesNotMatch(
+		src,
+		/document\.querySelector\(/,
+		'the hint picks the first duplicate id again'
+	);
 	assert.match(src, /querySelectorAll\([\s\S]*?\.find\(_onTop\)/);
 	assert.match(src, /elementFromPoint\(/);
 });
@@ -1130,7 +1298,10 @@ test('a group-pad press that ends on the settings backdrop does not close Settin
 	assert.ok(start > 0 && end > start, 'the backdrop handlers moved');
 	const body = overlay.slice(start, end).replace(/: (PointerEvent|MouseEvent|void)/g, '');
 	let closed = 0;
-	const handlers = new Function('closeSettings', `${body}; return { onBackdropDown, onBackdropUp, onBackdrop };`)(() => {
+	const handlers = new Function(
+		'closeSettings',
+		`${body}; return { onBackdropDown, onBackdropUp, onBackdrop };`
+	)(() => {
 		closed += 1;
 	});
 	const backdrop = {};
@@ -1165,7 +1336,10 @@ test('a press on the settings backdrop released over the panel does not close Se
 	assert.ok(start > 0 && end > start, 'the backdrop handlers moved');
 	const body = overlay.slice(start, end).replace(/: (PointerEvent|MouseEvent|void)/g, '');
 	let closed = 0;
-	const handlers = new Function('closeSettings', `${body}; return { onBackdropDown, onBackdropUp, onBackdrop };`)(() => {
+	const handlers = new Function(
+		'closeSettings',
+		`${body}; return { onBackdropDown, onBackdropUp, onBackdrop };`
+	)(() => {
 		closed += 1;
 	});
 	const backdrop = {};
@@ -1185,6 +1359,116 @@ test('a press on the settings backdrop released over the panel does not close Se
 	handlers.onBackdropDown({ target: backdrop, currentTarget: backdrop });
 	handlers.onBackdrop({ target: backdrop, currentTarget: backdrop });
 	assert.equal(closed, 1, 'a stale release closed Settings');
+});
+
+function fireCommandedKey(partial = {}) {
+	let prevented = false;
+	let stopped = false;
+	const event = {
+		key: '5',
+		metaKey: false,
+		ctrlKey: false,
+		altKey: false,
+		shiftKey: false,
+		target: null,
+		preventDefault: () => {
+			prevented = true;
+		},
+		stopPropagation: () => {
+			stopped = true;
+		},
+		...partial
+	};
+	globalThis.__listeners.get('keydown:capture')(event);
+	return { prevented, stopped };
+}
+
+test('digit 5 on selected 4:low plans a glide without changing the dial value', () => {
+	const a = addDial('4:low', 0.9);
+	knobs.shiftClickKnob(a);
+	const recorder = [];
+	knobs._setCommandedGlideStarterForTests((moves) => recorder.push(...moves));
+	const { prevented } = fireCommandedKey({ key: '5' });
+	assert.ok(prevented);
+	assert.deepEqual(recorder, [{ controlId: '4:low', from: 0.9, to: 0.5, beats: 4 }]);
+	assert.equal(valueOf(a), 0.9);
+});
+
+test('Cmd+2 on selected 4:low jumps immediately without calling the glide starter', () => {
+	const a = addDial('4:low', 0.9);
+	knobs.shiftClickKnob(a);
+	const recorder = [];
+	knobs._setCommandedGlideStarterForTests((moves) => recorder.push(...moves));
+	fireCommandedKey({ key: '2', metaKey: true });
+	assert.equal(recorder.length, 0);
+	assert.ok(near(valueOf(a), 0.125));
+});
+
+test('bare 2 with nothing selected does not stop propagation or start a glide', () => {
+	const a = addDial('4:low', 0.5);
+	const recorder = [];
+	knobs._setCommandedGlideStarterForTests((moves) => recorder.push(...moves));
+	const { stopped } = fireCommandedKey({ key: '2' });
+	assert.equal(recorder.length, 0);
+	assert.equal(valueOf(a), 0.5);
+	assert.ok(!stopped);
+});
+
+test('digit 5 on two shift-selected lows plans two glides', () => {
+	const a = addDial('1:low', 0.1);
+	const b = addDial('2:low', 0.9);
+	knobs.shiftClickKnob(a);
+	knobs.shiftClickKnob(b);
+	const recorder = [];
+	knobs._setCommandedGlideStarterForTests((moves) => recorder.push(...moves));
+	fireCommandedKey({ key: '5' });
+	assert.equal(recorder.length, 2);
+	assert.equal(recorder[0].to, 0.5);
+	assert.equal(recorder[1].to, 0.5);
+});
+
+test('a selected id with no mounted registry entry is ignored for commanded keys', () => {
+	const a = addDial('1:low', 0.5);
+	knobs.shiftClickKnob(a);
+	knobs.knobUi.selectedIds = ['1:low', '9:low'];
+	const recorder = [];
+	knobs._setCommandedGlideStarterForTests((moves) => recorder.push(...moves));
+	fireCommandedKey({ key: '5' });
+	assert.equal(recorder.length, 1);
+	assert.equal(recorder[0].controlId, '1:low');
+});
+
+test('commandedKeyHost selectedIds matches the bridge filtered to mounted ids', () => {
+	const a = addDial('1:low', 0.5);
+	const b = addDial('2:low', 0.5);
+	knobs.shiftClickKnob(a);
+	knobs.shiftClickKnob(b);
+	knobs.knobUi.selectedIds = ['1:low', '2:low', '9:low'];
+	const bridge = globalThis.window.__mdtKnobSelection.get();
+	const hostIds = knobs.commandedKeyHost().selectedIds();
+	assert.deepEqual(
+		hostIds,
+		bridge.filter((id) => id !== '9:low')
+	);
+});
+
+test('__mdtKnobSelection.command runs dial position and jump on the selection', () => {
+	const bridge = globalThis.window.__mdtKnobSelection;
+	const a = addDial('1:low', 0.2);
+	knobs.shiftClickKnob(a);
+	bridge.command('dial.jump.2');
+	assert.equal(knobs.readKnobValue(a), 0.125);
+	const b = addDial('2:low', 0.1);
+	knobs.setKnobSelection([a, b]);
+	const recorder = [];
+	knobs._setCommandedGlideStarterForTests((moves) => recorder.push(...moves));
+	bridge.command('dial.position.5');
+	assert.equal(recorder.length, 2);
+	assert.ok(recorder.every((move) => move.to === 0.5 && move.beats === 4));
+	knobs.clearKnobSelection();
+	assert.throws(() => bridge.command('dial.jump.2'), /no dial or fader is selected/);
+	assert.throws(() => bridge.command('preset.run.bass-swap-8'), TypeError);
+	assert.throws(() => bridge.command('nope'), TypeError);
 });
 
 // ============================================ onKnobHandInput (#9454)
@@ -1286,3 +1570,35 @@ test('noteKnobHandInput expands the Alt-link partner', () => {
 	assert.ok(seen.some((batch) => batch.includes(a) && batch.includes(b)));
 });
 
+// requirement: MIXUX-10355 (issue #9547)
+test('the pickup sentence stays in the accessibility tree but is visually hidden in scope', () => {
+	const knob = readFileSync(`${MIXER}/Knob.svelte`, 'utf8');
+	const style = knob.slice(knob.lastIndexOf('<style>'));
+	assert.match(
+		knob,
+		/<span class="sr-only">Hardware at \{\(takeoverGhost\.value \* 100\)\.toFixed\(0\)\}%/
+	);
+	const rule = style.match(/\.sr-only \{([^}]*)\}/);
+	assert.ok(rule, 'Knob.svelte scopes its own .sr-only rule');
+	for (const decl of [
+		'position: absolute',
+		'width: 1px',
+		'height: 1px',
+		'overflow: hidden',
+		'clip: rect(0 0 0 0)',
+		'white-space: nowrap'
+	]) {
+		assert.ok(rule[1].includes(decl), `.sr-only carries ${decl}`);
+	}
+});
+
+test('the pickup hint is hover text on the live knob title, and the ghost marker stays', () => {
+	const knob = readFileSync(`${MIXER}/Knob.svelte`, 'utf8');
+	assert.match(
+		knob,
+		/const takeoverHint = \$derived\(\s*takeoverGhost === null\s*\? ''\s*: ` - hardware at \$\{/
+	);
+	assert.match(knob, /: `\$\{label\}\$\{takeoverHint\}\$\{selected \?/);
+	assert.match(knob, /class:takeover-armed=\{takeoverGhost !== null\}/);
+	assert.match(knob, /pickup-ghost-indicator/);
+});

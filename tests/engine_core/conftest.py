@@ -25,6 +25,10 @@ from apps.engine_core.build_info import BuildIdentity, BuildInfoOut
 # PR test selection must run the engine_core tests when it changes
 # ((private path)).
 from apps.webui.server import coverage_stems_jobs  # noqa: F401
+from tests.engine_core.availability_test_support import (  # noqa: F401
+    data_dir,
+    state_db_path,
+)
 from tests.webui.conftest import seed_backend  # noqa: F401  (re-exported as fixtures)
 
 

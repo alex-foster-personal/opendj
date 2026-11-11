@@ -56,6 +56,10 @@ Requirements (mini-PRD):
     [if] --transport relay and no relay URL or identity token [then ⛔️] the
       run fails naming what is missing, and NEVER falls back to a local
       credential a tester was not supposed to have
+  ✔︎ ✅ an id whose bundle the card would play is not sent to the separator (STEM-61).
+    [if] every frozen id validates in the card's roots [then] exit 0, no separator
+    [if] one id validates and one does not [then] only the invalid one is sent
+    [if] a manifest remains but a stem file is missing [then] that id is sent
 
 Run (modal is not a repo dependency -- overlay it):
   uv run --with modal python scripts/stems_modal_worker.py \
@@ -200,6 +204,8 @@ def resolve_tracks(stable_ids: Sequence[str], data_dir: Path) -> list[TrackJob]:
     state_db = data_dir / "state" / "state.db"
     if not state_db.is_file():
         raise SystemExit(f"error: state.db missing: {state_db}")
+    from apps.shared.state import locations as state_locations
+
     connection = sqlite3.connect(f"file:{state_db}?mode=ro", uri=True)
     try:
         placeholders = ",".join("?" for _ in stable_ids)
@@ -208,6 +214,11 @@ def resolve_tracks(stable_ids: Sequence[str], data_dir: Path) -> list[TrackJob]:
             f"WHERE stable_id IN ({placeholders})",
             tuple(stable_ids),
         ).fetchall()
+        # The SAME resolution the enrich card's present set uses (STEM-58):
+        # this machine's location rows, path mapping and residency, then the
+        # raw file_path. A raw is_file() alone disagreed with the card about
+        # moved files and evicted iCloud placeholders.
+        resolved = state_locations.bulk_local_audio_paths(connection, list(stable_ids))
     finally:
         connection.close()
 
@@ -223,12 +234,9 @@ def resolve_tracks(stable_ids: Sequence[str], data_dir: Path) -> list[TrackJob]:
     missing: list[str] = []
     for stable_id in stable_ids:
         _sid, file_path, duration_ms = found[stable_id]
-        if not file_path:
-            missing.append(f"{stable_id} (no file_path)")
-            continue
-        path = Path(file_path)
-        if not path.is_file():
-            missing.append(f"{stable_id} -> {file_path}")
+        path = resolved.get(stable_id)
+        if path is None:
+            missing.append(f"{stable_id} -> {file_path or '(no file_path)'}")
             continue
         jobs.append(
             TrackJob(
@@ -445,6 +453,26 @@ def preset_for_tier(tier_key: str) -> Any:
 # ----- run -------------------------------------------------------------------
 
 
+def _bundle_playable(stable_id: str, roots: Sequence[Path]) -> bool:
+    """True only when ``load_stem_bundle`` accepts ``stable_id`` in ``roots``.
+
+    The same reader the card and the outcome check use. A directory that still
+    has ``manifest.json`` after a stem file went missing is not playable, and
+    skipping it would leave the song unrepairable on every later enqueue.
+    """
+    from apps.stems.artifacts import (
+        StemArtifactError,
+        StemBundleNotFoundError,
+        load_stem_bundle,
+    )
+
+    try:
+        load_stem_bundle(stable_id, roots=roots)
+    except (StemArtifactError, StemBundleNotFoundError):
+        return False
+    return True
+
+
 def run(
     tracks: list[TrackJob],
     tier_key: str,
@@ -454,6 +482,21 @@ def run(
 ) -> int:
     """Separate every track, writing and announcing each as it lands."""
     from apps.stems.bundle_publish import publish_stems_local, route_stem_codec
+    from apps.stems.job import stems_measure_roots
+
+    # Recheck frozen ids at run time (STEM-61). Enqueue snapshots pending
+    # songs; a serialized second job can still carry ids the first job has
+    # already bundled. Skip only a bundle the card would accept in these
+    # roots, and do it before any separator or GPU contact.
+    roots = stems_measure_roots(data_dir)
+    work = [track for track in tracks if not _bundle_playable(track.stable_id, roots)]
+    if not work:
+        names = ", ".join(track.stable_id for track in tracks[:10])
+        protocol.emit(
+            PROGRESS_CEILING,
+            f"skipped: up to date ({names})" if names else "skipped: up to date",
+        )
+        return 0
 
     requested_codec = route_stem_codec(tier_key)
     separator, separator_name = load_separator(transport)
@@ -478,7 +521,7 @@ def run(
             model=f"test-double:{separator_name}",
             tag=f"test-double:{preset.tag}",
         )
-    total = len(tracks)
+    total = len(work)
     protocol.emit(
         0.0,
         f"0/{total} stems separated (tier {tier_key}, {preset.tag})",
@@ -487,7 +530,7 @@ def run(
     done = 0
     failures: list[str] = []
     started = time.perf_counter()
-    for result in separator(tracks, tier_key):
+    for result in separator(work, tier_key):
         stable_id = result.get("stable_id", "<unknown>")
         error = result.get("error")
         if error:
@@ -497,7 +540,7 @@ def run(
                 f"{done}/{total} stems separated, {len(failures)} failed",
             )
             continue
-        track = next(t for t in tracks if t.stable_id == stable_id)
+        track = next(t for t in work if t.stable_id == stable_id)
         written, _elapsed = publish_stems_local(
             stable_id, track.audio_path, result, preset, data_dir, requested_codec=requested_codec
         )

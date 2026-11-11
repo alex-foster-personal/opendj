@@ -72,6 +72,8 @@ _DEFAULT_JOG_RADIAL_WAVEFORM = False
 _DEFAULT_SHOW_AGENT_PINS = True
 _DEFAULT_SHOW_STEMS = False
 _DEFAULT_DECK_HOVER_LINK = True
+# LIBUX-11716: shrink 4-deck view so the library shows more rows. Off by default.
+_DEFAULT_COMPACT_DECKS = False
 _DEFAULT_BEAT_SYNC_MAX = True
 _DEFAULT_AUTO_PLAY_ENABLED = False
 _DEFAULT_AUTO_PLAY_ENFORCE_ORDER = False
@@ -114,15 +116,21 @@ _DEFAULT_SHOW_SECTIONS = False
 # waveform's tempo curve. Default on: it only paints where the beatgrid
 # actually moves, so a steady track shows nothing new.
 _DEFAULT_SHOW_TEMPO_LANE = True
+# issue #10238: the blue vocal bars on the deck rows and overview strip, default on.
+_DEFAULT_SHOW_VOCAL_LANE = True
 _WAVE_OVERLAY_BOOL_DEFAULTS: dict[str, bool] = {
     "show_sections": _DEFAULT_SHOW_SECTIONS,
     "show_tempo_lane": _DEFAULT_SHOW_TEMPO_LANE,
+    "show_vocal_lane": _DEFAULT_SHOW_VOCAL_LANE,
 }
 # The tempo curve's vertical scale: fixed_10 = full height is 10 percent off
 # nominal BPM; relative = full height is the track's own largest change,
 # floored at 2 percent so jitter on a steady grid never fills the lane.
 TempoLaneScale = Literal["fixed_10", "relative"]
 _DEFAULT_TEMPO_LANE_SCALE: TempoLaneScale = "fixed_10"
+# WAVEQS-11733: deck waveform mirrored (full) or single-sided from the bottom baseline (half).
+WaveHeight = Literal["full", "half"]
+_DEFAULT_WAVE_HEIGHT: WaveHeight = "full"
 # Issue #10244: the deck waveforms' beat grid lines. beats_bars = every beat
 # plus stronger downbeats (default); bars = downbeats only; off = none.
 WaveGridLines = Literal["beats_bars", "bars", "off"]
@@ -481,6 +489,21 @@ def _parse_tempo_lane_scale(raw: dict[str, Any]) -> str:
             detail={
                 "code": "UI_PREFS_INVALID",
                 "message": "tempo_lane_scale must be " + "|".join(get_args(TempoLaneScale)),
+            },
+        )
+    return value
+
+
+def _parse_wave_height(raw: dict[str, Any]) -> WaveHeight:
+    if "wave_height" not in raw:
+        return _DEFAULT_WAVE_HEIGHT
+    value = raw["wave_height"]
+    if value not in get_args(WaveHeight):
+        raise HTTPException(
+            status_code=422,
+            detail={
+                "code": "UI_PREFS_INVALID",
+                "message": "wave_height must be " + "|".join(get_args(WaveHeight)),
             },
         )
     return value
@@ -1032,6 +1055,7 @@ def _load(path: Path) -> dict[str, Any]:
             "show_agent_pins": _DEFAULT_SHOW_AGENT_PINS,
             "show_stems": _DEFAULT_SHOW_STEMS,
             "deck_hover_link": _DEFAULT_DECK_HOVER_LINK,
+            "compact_decks": _DEFAULT_COMPACT_DECKS,
             "level_calibration": dict(_DEFAULT_LEVEL_CALIBRATION),
             "auto_gain": dict(DEFAULT_AUTO_GAIN),
             "perf_tier": _DEFAULT_PERF_TIER,
@@ -1050,6 +1074,7 @@ def _load(path: Path) -> dict[str, Any]:
             "perf_view": _DEFAULT_PERF_VIEW,
             "speaker_auto_recover": _DEFAULT_SPEAKER_AUTO_RECOVER,
             "tempo_lane_scale": _DEFAULT_TEMPO_LANE_SCALE,
+            "wave_height": _DEFAULT_WAVE_HEIGHT,
             "wave_grid_lines": _DEFAULT_WAVE_GRID_LINES,
             "key_notation": _DEFAULT_KEY_NOTATION,
             "library_hidden_columns": [],
@@ -1135,6 +1160,15 @@ def _load(path: Path) -> dict[str, Any]:
                 "message": "deck_hover_link must be a boolean",
             },
         )
+    compact_decks = raw.get("compact_decks", _DEFAULT_COMPACT_DECKS)
+    if not isinstance(compact_decks, bool):
+        raise HTTPException(
+            status_code=422,
+            detail={
+                "code": "UI_PREFS_INVALID",
+                "message": "compact_decks must be a boolean",
+            },
+        )
     return {
         "confirm": confirm,
         "theme": theme,
@@ -1145,6 +1179,7 @@ def _load(path: Path) -> dict[str, Any]:
         "show_agent_pins": show_agent_pins,
         "show_stems": show_stems,
         "deck_hover_link": deck_hover_link,
+        "compact_decks": compact_decks,
         "level_calibration": _parse_level_calibration(raw.get("level_calibration")),
         "auto_gain": parse_auto_gain(raw.get("auto_gain")),
         "perf_tier": _parse_perf_tier(raw),
@@ -1164,6 +1199,7 @@ def _load(path: Path) -> dict[str, Any]:
         **_parse_bool_prefs(raw, {"deck_right_mirror": _DEFAULT_DECK_RIGHT_MIRROR}),
         "speaker_auto_recover": _parse_speaker_auto_recover(raw),
         "tempo_lane_scale": _parse_tempo_lane_scale(raw),
+        "wave_height": _parse_wave_height(raw),
         "wave_grid_lines": _parse_wave_grid_lines(raw),
         "key_notation": _parse_key_notation(raw),
         "library_hidden_columns": _parse_library_hidden_columns(raw),
@@ -1277,6 +1313,7 @@ class UiPrefsOut(BaseModel):
     show_agent_pins: bool = _DEFAULT_SHOW_AGENT_PINS
     show_stems: bool = _DEFAULT_SHOW_STEMS
     deck_hover_link: bool = _DEFAULT_DECK_HOVER_LINK
+    compact_decks: bool = _DEFAULT_COMPACT_DECKS
     level_calibration: LevelCalibrationOut = Field(default_factory=LevelCalibrationOut)
     auto_gain: AutoGainPrefsOut = Field(default_factory=AutoGainPrefsOut)
     lyrics_global: bool = _DEFAULT_LYRICS_BOOLS["lyrics_global"]
@@ -1306,7 +1343,9 @@ class UiPrefsOut(BaseModel):
     auto_analyze_vocals: bool = AUTO_ANALYZE_BOOL_DEFAULTS["auto_analyze_vocals"]
     speaker_auto_recover: SpeakerAutoRecover = _DEFAULT_SPEAKER_AUTO_RECOVER
     show_tempo_lane: bool = _DEFAULT_SHOW_TEMPO_LANE
+    show_vocal_lane: bool = _DEFAULT_SHOW_VOCAL_LANE
     tempo_lane_scale: TempoLaneScale = _DEFAULT_TEMPO_LANE_SCALE
+    wave_height: WaveHeight = _DEFAULT_WAVE_HEIGHT
     wave_grid_lines: WaveGridLines = _DEFAULT_WAVE_GRID_LINES
     deck_autocue: bool = _DEFAULT_DECK_AUTOCUE
     hide_broken_links: bool = _DEFAULT_HIDE_BROKEN_LINKS
@@ -1347,6 +1386,7 @@ class UiPrefsPatch(BaseModel):
     show_agent_pins: bool | None = None
     show_stems: bool | None = None
     deck_hover_link: bool | None = None
+    compact_decks: bool | None = None
     level_calibration: LevelCalibrationOut | None = None
     auto_gain: AutoGainPrefsOut | None = None
     lyrics_global: bool | None = None
@@ -1383,7 +1423,10 @@ class UiPrefsPatch(BaseModel):
     speaker_auto_recover: SpeakerAutoRecover | None = None
     # Strict: lax bool would coerce "yes" or 1 into a write that hides the lane.
     show_tempo_lane: StrictBool | None = None
+    # Strict: lax bool would coerce "yes" or 1 into a write that hides the vocal bars.
+    show_vocal_lane: StrictBool | None = None
     tempo_lane_scale: TempoLaneScale | None = None
+    wave_height: WaveHeight | None = None
     wave_grid_lines: WaveGridLines | None = None
     # Strict for the same reason: AU is deck-wide, a coerced 1 or "yes" would arm it.
     # Omitted means unchanged; an explicit null is refused (Sol P1, PR #6235),
@@ -1611,6 +1654,7 @@ _VIEW_SCALAR_PREFS = (
     "playlist_tree_view",
     "speaker_auto_recover",
     "tempo_lane_scale",
+    "wave_height",
     "wave_grid_lines",
 )
 
@@ -1644,6 +1688,8 @@ def _merge_ui_prefs_patch(current: dict[str, Any], body: UiPrefsPatch) -> dict[s
         current["show_stems"] = body.show_stems
     if body.deck_hover_link is not None:
         current["deck_hover_link"] = body.deck_hover_link
+    if body.compact_decks is not None:
+        current["compact_decks"] = body.compact_decks
     _merge_lyrics(current, body)
     if body.perf_tier is not None:
         current["perf_tier"] = body.perf_tier

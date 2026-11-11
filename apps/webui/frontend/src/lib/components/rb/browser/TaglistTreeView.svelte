@@ -28,15 +28,15 @@
 
 <div class="taglist-root" data-menu-target="tree-readonly">
 	{#if error !== null}
-		<div class="row rb-inert" title={error}>
+		<div class="row rb-inert" data-testid="taglists-error" title={error}>
 			<span class="name dim">taglists unavailable</span>
 		</div>
 	{:else if catalog === null}
-		<div class="row rb-inert">
+		<div class="row rb-inert" data-testid="taglists-loading">
 			<span class="name dim">...</span>
 		</div>
 	{:else if catalog.tags.length === 0}
-		<div class="row rb-inert">
+		<div class="row rb-inert" data-testid="taglists-empty">
 			<span class="name dim">No tags yet</span>
 		</div>
 	{:else}

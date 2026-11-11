@@ -15,6 +15,10 @@ const BIN: &str = env!("CARGO_BIN_EXE_odj-audio");
 const TOKEN: &str = "test-token-0123456789abcdef0123456789";
 /// How long a line under test may take to arrive, on a loaded runner.
 const WAIT: Duration = Duration::from_secs(10);
+/// Short socket read slice so deadline waits keep draining peers under load.
+const READ_SLICE: Duration = Duration::from_millis(5);
+/// Default blocking read timeout restored after a sliced wait.
+const SOCKET_READ: Duration = Duration::from_secs(10);
 
 type Socket = WebSocket<MaybeTlsStream<TcpStream>>;
 
@@ -91,16 +95,20 @@ fn say(ws: &mut Socket, v: Value) {
 /// messages is a wall-clock budget in disguise: a slow runner fills it with
 /// states before the line under test arrives. The wait is bounded by time.
 fn until(ws: &mut Socket, mut want: impl FnMut(&Value) -> bool) -> Vec<Value> {
+    set_read_timeout(ws, READ_SLICE);
     let deadline = Instant::now() + WAIT;
     let mut seen = Vec::new();
     while Instant::now() < deadline {
-        let v = next(ws);
-        let hit = want(&v);
-        seen.push(v);
-        if hit {
-            return seen;
+        if let Some(v) = try_next(ws) {
+            let hit = want(&v);
+            seen.push(v);
+            if hit {
+                set_read_timeout(ws, SOCKET_READ);
+                return seen;
+            }
         }
     }
+    set_read_timeout(ws, SOCKET_READ);
     let states = seen.iter().filter(|v| v["type"] == "state").count();
     let rest: Vec<&Value> = seen.iter().filter(|v| v["type"] != "state").collect();
     panic!(
@@ -139,10 +147,8 @@ fn until_while_draining(
     mut want: impl FnMut(&Value) -> bool,
     mut keep: impl FnMut(&Value) -> bool,
 ) -> (Vec<Value>, Vec<Value>) {
-    let restore = Duration::from_secs(10);
-    let slice = Duration::from_millis(5);
-    set_read_timeout(ws, slice);
-    set_read_timeout(peer, slice);
+    set_read_timeout(ws, READ_SLICE);
+    set_read_timeout(peer, READ_SLICE);
     let deadline = Instant::now() + WAIT;
     let mut seen = Vec::new();
     let mut kept = Vec::new();
@@ -156,8 +162,8 @@ fn until_while_draining(
                         kept.push(v);
                     }
                 }
-                set_read_timeout(ws, restore);
-                set_read_timeout(peer, restore);
+                set_read_timeout(ws, SOCKET_READ);
+                set_read_timeout(peer, SOCKET_READ);
                 return (seen, kept);
             }
         }
@@ -167,8 +173,8 @@ fn until_while_draining(
             }
         }
     }
-    set_read_timeout(ws, restore);
-    set_read_timeout(peer, restore);
+    set_read_timeout(ws, SOCKET_READ);
+    set_read_timeout(peer, SOCKET_READ);
     let states = seen.iter().filter(|v| v["type"] == "state").count();
     let rest: Vec<&Value> = seen.iter().filter(|v| v["type"] != "state").collect();
     panic!(
@@ -389,18 +395,23 @@ fn midi_page_lines_reach_every_client_and_the_result_only_its_sender() {
         "b saw a's result during drain: {b_kept:?}"
     );
     if !b_kept.iter().any(|v| *v == action) {
-        until(&mut b, |v| *v == action);
+        let (_, _) = until_while_draining(&mut b, &mut a, |v| *v == action, |_| false);
     }
     // stdio is a client like any other: it gets the page line, never the result.
-    let restore = Duration::from_secs(10);
-    let slice = Duration::from_millis(5);
-    set_read_timeout(&mut b, slice);
+    set_read_timeout(&mut a, READ_SLICE);
+    set_read_timeout(&mut b, READ_SLICE);
     let deadline = Instant::now() + WAIT;
     loop {
         while let Some(v) = try_next(&mut b) {
             assert_ne!(
                 v["id"], "hot",
                 "b got a's result before stdio saw the page line"
+            );
+        }
+        while let Some(v) = try_next(&mut a) {
+            assert_ne!(
+                v["id"], "hot",
+                "a queue backed up and replayed the result while stdio waited"
             );
         }
         let remain = deadline.saturating_duration_since(Instant::now());
@@ -417,17 +428,23 @@ fn midi_page_lines_reach_every_client_and_the_result_only_its_sender() {
             break;
         }
     }
-    set_read_timeout(&mut b, restore);
+    set_read_timeout(&mut a, SOCKET_READ);
+    set_read_timeout(&mut b, SOCKET_READ);
 
     // Control: the result is the sender's alone. b's next reply is its own.
     say(
         &mut b,
         json!({"id": "b1", "cmd": {"type": "crossfader", "value": 0.5}}),
     );
-    let seen = until(&mut b, |v| v["id"] == "b1");
+    let (seen, a_tail) =
+        until_while_draining(&mut b, &mut a, |v| v["id"] == "b1", |v| v["id"] == "hot");
     assert!(
         seen.iter().all(|v| v["id"] != "hot"),
         "b saw a's result: {seen:?}"
+    );
+    assert!(
+        a_tail.iter().all(|v| v["id"] != "hot"),
+        "a saw b's crossfader result during drain: {a_tail:?}"
     );
     drop(e.stdin.take());
     let _ = e.child.wait();

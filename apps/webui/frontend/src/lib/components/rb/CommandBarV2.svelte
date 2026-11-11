@@ -76,6 +76,9 @@
 	import { afterAlignedLoad, alignedPlan, alignedPlay, alignedSeek, beforeAlignedLoad, cmdkEntryKey, cmdkWireId, leadFor, pairBasis, ratioInRange, reanchorSelection, seekStalled, SEEK_CORRECTIONS, SEEK_SETTLE_MS, type PairCommand, type PairSnapshot } from '$lib/rb/cmdk-pairs';
 	import { cmdkPairs, requestCmdkPairs } from '$lib/rb/cmdk-pairs-data.svelte';
 	import { rankCommands, type CommandPick } from '$lib/palette/rank';
+	import { performanceCommandsInScope, runCommand as runPerformanceCommand } from '$lib/keyboard/command-registry';
+	import { commandedScopeOf } from '$lib/rb/commanded-keys';
+	import { commandedKeyHost, selectedKnobIds } from '$lib/rb/knob-control.svelte';
 	import {
 		actionableSetting,
 		actionTokens,
@@ -99,7 +102,8 @@
 		type CmdkEntryGroup,
 		type SettingAction,
 		queryChars,
-		tracksAllowed
+		tracksAllowed,
+		registryCommandCandidates
 	} from '$lib/rb/cmdk-actions';
 	import { groupLabel } from '$lib/settings/catalog';
 	import { effectiveHideTodo, filterSettings, hasSettingsQuery } from '$lib/settings/search';
@@ -378,6 +382,7 @@
 	const commandActions = $derived(
 		actionsOn
 			? (() => {
+					const dialScope = commandedScopeOf(selectedKnobIds());
 					const rows = DECK_IDS.map((id) => ({
 						id,
 						loaded: decks[id].stable_id !== null,
@@ -389,7 +394,8 @@
 					}));
 					return [
 						...commandCandidates(rows, query),
-						...paletteCommandRows({ target, decks: rows }, query)
+						...paletteCommandRows({ target, decks: rows }, query),
+						...(dialScope === null ? [] : registryCommandCandidates(performanceCommandsInScope(dialScope)))
 					];
 				})()
 			: []
@@ -662,6 +668,18 @@
 			closeBar();
 			const { openSettings } = await import('$lib/settings/overlay.svelte');
 			openSettings(command.query);
+			return null;
+		}
+		if (command.type === 'performance') {
+			const host = commandedKeyHost();
+			if (host.selectedIds().length === 0) return fail(`${action.label} did not run: no dial or fader is selected`);
+			try {
+				runPerformanceCommand(command.id, { timeStamp: performance.now(), commanded: host });
+			} catch (exc) {
+				return fail(`${action.label} did not run: ${exc instanceof Error ? exc.message : String(exc)}`);
+			}
+			if (source === 'user-ui') noteCommandPick(commandKey(action));
+			closeBar();
 			return null;
 		}
 		if (command.type === 'palette') {

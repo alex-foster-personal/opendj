@@ -86,6 +86,27 @@ export type UsbLibraryReadNote = {
 	trackCount?: number;
 };
 
+export type UsbDeckClassHealth = {
+	deck_class: string;
+	label: string;
+	ok: boolean;
+	failures: string[];
+};
+
+export type UsbDeckHealthReport = {
+	volume_id: string;
+	rules_version: string;
+	filesystem: string;
+	scanned_paths: number;
+	deck_classes: UsbDeckClassHealth[];
+};
+
+export type UsbDeckHealthState =
+	| { state: 'loading' }
+	| { state: 'busy' }
+	| { state: 'error'; message: string }
+	| { state: 'ok'; report: UsbDeckHealthReport };
+
 // ----- state -------------------------------------------------------------
 
 export const usbTracker = $state({
@@ -106,6 +127,8 @@ export const usbTracker = $state({
 	scannedAt: null as number | null,
 	/** Library GET outcome by volume id. Not persisted: a new session re-reads. */
 	readNotes: {} as Record<string, UsbLibraryReadNote>,
+	/** Deck export health from GET /volumes/{id}/health; not persisted. */
+	deckHealth: {} as Record<string, UsbDeckHealthState>,
 	/** Which refresh the listing came from (see `usbRefreshSeq`); 0 before any. */
 	listingSeq: 0
 });
@@ -263,13 +286,9 @@ function _libraryKindWords(kind: UsbKind | undefined): string {
 	}
 }
 
-function _versionSentence(
-	kind: UsbKind | undefined,
-	note: UsbLibraryReadNote | undefined
-): string {
+function _versionSentence(kind: UsbKind | undefined, note: UsbLibraryReadNote | undefined): string {
 	if (note?.state === 'ok') {
-		const tracks =
-			typeof note.trackCount === 'number' ? `${note.trackCount} tracks. ` : '';
+		const tracks = typeof note.trackCount === 'number' ? `${note.trackCount} tracks. ` : '';
 		if (kind === 'rekordbox') {
 			return (
 				`${tracks}Version found: rekordbox Device Library (export.pdb, RBX). ` +
@@ -528,7 +547,12 @@ const _ROW_REQUIRED: Record<string, 'string' | 'boolean'> = {
  * (a typo such as "usb-stick") would replace the stored role and read as the
  * stick being unplugged, so it is malformed too (Codex 4351111102). */
 const _KINDS: Record<UsbKind, true> = { rekordbox: true, djay: true, music: true, unknown: true };
-const _ROLES: Record<UsbRole, true> = { usb_stick: true, mounted_drive: true, disk_image: true, other: true };
+const _ROLES: Record<UsbRole, true> = {
+	usb_stick: true,
+	mounted_drive: true,
+	disk_image: true,
+	other: true
+};
 const _ACCESS: Record<UsbAccess, true> = { ok: true, pending: true, denied: true, unknown: true };
 const _ROW_ENUMS: Record<string, { values: Record<string, true>; optional: boolean }> = {
 	kind: { values: _KINDS, optional: false },
@@ -573,7 +597,8 @@ export async function refreshUsbVolumes(): Promise<void> {
 		const body = await unwrap(api.GET('/api/v1/usb/volumes'));
 		if (seq !== _refreshSeq) return;
 		const malformed = _malformedListing(body);
-		if (malformed !== null) throw new Error(`the daemon's USB volume answer is malformed: ${malformed}`);
+		if (malformed !== null)
+			throw new Error(`the daemon's USB volume answer is malformed: ${malformed}`);
 		_ingest(body.volumes);
 		usbTracker.scannedAt = body.scanned_at;
 		usbTracker.listingSeq = seq;
@@ -721,9 +746,7 @@ function _mergeAliasIds(byId: Map<string, UsbVolumeKnown>, remote: ApiVolume[]):
 		const mount = api.mount_path ?? null;
 		const pathAlias = mount
 			? [...byId.values()].find(
-					(v) =>
-						v.id.startsWith('path:') &&
-						(v.mount_path === mount || v.name === api.name)
+					(v) => v.id.startsWith('path:') && (v.mount_path === mount || v.name === api.name)
 				)
 			: [...byId.values()].find((v) => v.id === `path:${api.name}`);
 		if (!pathAlias || pathAlias.id === api.id) continue;
@@ -747,5 +770,46 @@ function _onNewDetect(row: UsbVolumeKnown): void {
 	if (row.needs_prompt) {
 		usbTracker.promptId = row.id;
 		usbTracker.panelOpen = true;
+	}
+}
+
+/** Read-only deck-class export health for one mounted stick (#328, issue #11167). */
+export async function refreshUsbVolumeHealth(volumeId: string): Promise<void> {
+	usbTracker.deckHealth = { ...usbTracker.deckHealth, [volumeId]: { state: 'loading' } };
+	try {
+		const body = await unwrap(
+			api.GET('/api/v1/usb/volumes/{volume_id}/health', {
+				params: { path: { volume_id: volumeId } }
+			})
+		);
+		const report: UsbDeckHealthReport = {
+			volume_id: body.volume_id,
+			rules_version: body.rules_version,
+			filesystem: body.filesystem,
+			scanned_paths: body.scanned_paths,
+			deck_classes: body.deck_classes
+		};
+		usbTracker.deckHealth = { ...usbTracker.deckHealth, [volumeId]: { state: 'ok', report } };
+	} catch (exc) {
+		if (exc instanceof ApiError && exc.status === 409) {
+			usbTracker.deckHealth = { ...usbTracker.deckHealth, [volumeId]: { state: 'busy' } };
+			return;
+		}
+		const message =
+			exc instanceof ApiError
+				? `HTTP ${exc.status}`
+				: exc instanceof Error
+					? exc.message
+					: String(exc);
+		usbTracker.deckHealth = {
+			...usbTracker.deckHealth,
+			[volumeId]: { state: 'error', message }
+		};
+	}
+}
+
+export async function refreshDeckHealthForVolumes(volumeIds: string[]): Promise<void> {
+	for (const id of volumeIds) {
+		await refreshUsbVolumeHealth(id);
 	}
 }

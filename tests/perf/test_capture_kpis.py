@@ -24,6 +24,7 @@ from scripts.perf.capture_kpi_ledger import (
 from scripts.perf.capture_kpis import main, parse_scenarios
 from scripts.perf.capture_s5 import capture as capture_s5
 from scripts.perf.capture_s5 import headline_ms, median_ms
+from scripts.perf.capture_kpi_ledger import S12Denominator, format_s12_note
 from scripts.perf.capture_s12 import capture as capture_s12
 from scripts.perf.kpi_readings import _as_float, _resolve_cache_state_band, newest_reading
 from scripts.perf.kpi_scorecard import UNKNOWN, UNMEASURED, score_scenarios
@@ -134,15 +135,64 @@ def test_s5_warm_note_is_accepted_neither_or_both_rejected() -> None:
     assert _resolve_cache_state_band(req, "capture=perf-capture; warm cold") is None
 
 
+def _seed_s12_library(data_dir: Path, count: int, *, with_files: bool) -> None:
+    from tests.cloudsync.test_hub_sync import _DEV_A, _T0, _insert_track, _open
+
+    conn = _open(data_dir)
+    try:
+        for index in range(count):
+            stable_id = f"trk-s12-denom-{index}"
+            _insert_track(conn, stable_id, title=stable_id, updated_at=_T0, origin=_DEV_A)
+            if with_files:
+                audio = data_dir / "audio" / f"{stable_id}.mp3"
+                audio.parent.mkdir(parents=True, exist_ok=True)
+                audio.write_bytes(b"ID3")
+                conn.execute(
+                    "UPDATE tracks SET file_path = ? WHERE stable_id = ?",
+                    (str(audio), stable_id),
+                )
+        conn.commit()
+    finally:
+        conn.close()
+
+
+def _fake_sync_results() -> list[object]:
+    from types import SimpleNamespace
+
+    def one(kind: str, *, pushed: int, pulled: int) -> object:
+        return SimpleNamespace(
+            pushed=pushed,
+            pulled=pulled,
+            rounds=1,
+            timings=SimpleNamespace(
+                kind=kind,
+                total_s=1.0,
+                hello_s=0.1,
+                push_s=0.2,
+                pull_s=0.3,
+                digest_s=0.05,
+                local_digest_s=0.05,
+            ),
+        )
+
+    return [
+        one("first", pushed=1, pulled=1),
+        one("noop", pushed=0, pulled=0),
+    ]
+
+
 def test_s12_pair_sharing_capture_id_scores_first_only_unknown() -> None:
     meta = _meta()
+    denom = S12Denominator(track_count=12, present=3, unreachable=9)
+    note_first = format_s12_note(kind="first", denom=denom, sha=meta.sha)
+    note_noop = format_s12_note(kind="noop", denom=denom, sha=meta.sha)
     first = build_row(
         kpi="cloudsync_first_sync_s",
         value=8.5,
         unit="s",
         method="apps.sync_hub.sync_timing.PhaseTimer via run_sync HttpTransport",
         meta=meta,
-        note="kind=first; denominator=12 tracks; sha=abc123def",
+        note=note_first,
     )
     noop = build_row(
         kpi="cloudsync_noop_sync_s",
@@ -150,7 +200,7 @@ def test_s12_pair_sharing_capture_id_scores_first_only_unknown() -> None:
         unit="s",
         method="apps.sync_hub.sync_timing.PhaseTimer via run_sync HttpTransport",
         meta=meta,
-        note="kind=noop; denominator=12 tracks; sha=abc123def",
+        note=note_noop,
     )
     assert _score("S12", [first]).verdict == UNKNOWN
     assert _score("S12", [first, noop]).verdict == "PASS"
@@ -200,6 +250,73 @@ def test_session_meta_date_is_iso() -> None:
     meta = session_meta(sha="deadbeef", now=_dt.datetime(2026, 9, 11, tzinfo=_dt.UTC))
     assert meta.date == "2026-09-11"
     assert meta.capture_id.startswith("perf-capture-")
+
+
+@pytest.mark.requirement("PERF-12097")
+def test_s12_success_rows_name_present_zero_without_audio(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """[if] spoke copy has 100 tracks and 0 on-disk files [then] note names present 0, [else stop]."""
+    data_dir = tmp_path / "engine"
+    _seed_s12_library(data_dir, 100, with_files=False)
+    results = _fake_sync_results()
+    monkeypatch.setattr(
+        "scripts.perf.capture_s12.run_sync", lambda *_a, **_k: results.pop(0)
+    )
+    rows = capture_s12(
+        hub_url="http://hub.test",
+        meta=_meta(),
+        data_dir=data_dir,
+        track_count=100,
+    )
+    first = next(row for row in rows if row["kpi"] == "cloudsync_first_sync_s")
+    note = first["note"]
+    assert "denominator=present 0" in note
+    assert "unreachable 100" in note
+    assert note.strip() != "denominator=100 tracks"
+
+
+@pytest.mark.requirement("PERF-12097")
+def test_s12_success_rows_name_present_when_files_exist(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """[if] spoke copy has 100 tracks and 100 files [then] note names present 100, [else stop]."""
+    data_dir = tmp_path / "engine"
+    _seed_s12_library(data_dir, 100, with_files=True)
+    results = _fake_sync_results()
+    monkeypatch.setattr(
+        "scripts.perf.capture_s12.run_sync", lambda *_a, **_k: results.pop(0)
+    )
+    rows = capture_s12(
+        hub_url="http://hub.test",
+        meta=_meta(),
+        data_dir=data_dir,
+        track_count=100,
+    )
+    first = next(row for row in rows if row["kpi"] == "cloudsync_first_sync_s")
+    noop = next(row for row in rows if row["kpi"] == "cloudsync_noop_sync_s")
+    for row in (first, noop):
+        assert "denominator=present 100" in row["note"]
+        assert "unreachable 0" in row["note"]
+
+
+@pytest.mark.requirement("PERF-12097")
+def test_s12_track_count_mismatch_writes_error_rows(tmp_path: Path) -> None:
+    """[if] copied track count disagrees with health tracks [then] no numeric first/noop rows, [else stop]."""
+    data_dir = tmp_path / "engine"
+    _seed_s12_library(data_dir, 50, with_files=False)
+    rows = capture_s12(
+        hub_url="http://hub.test",
+        meta=_meta(),
+        data_dir=data_dir,
+        track_count=100,
+    )
+    required = [row for row in rows if row["kpi"] in {"cloudsync_first_sync_s", "cloudsync_noop_sync_s"}]
+    assert required
+    assert all(row["value"] is None for row in required)
+    assert all(row["status"] == "error" for row in required)
+    assert "disagrees with" in required[0]["note"]
+    assert "denominator=present" in required[0]["note"]
 
 
 def test_empty_cfg_and_missing_hub_are_error_rows() -> None:

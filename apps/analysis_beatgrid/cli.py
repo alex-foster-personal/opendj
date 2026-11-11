@@ -26,8 +26,19 @@ from typing import Any
 
 from apps.analysis_beatgrid.bar_phase import BarPhase, assign_bar_phase, lock_bar_phase
 from apps.analysis_beatgrid.bpm import estimate_bpm
+from apps.analysis_beatgrid.meter import MeterEstimate, estimate_beats_per_bar
 from apps.analysis_beatgrid.flags import evaluate_pulse
 from apps.analysis_beatgrid.tempo_change import detect_tempo_changes
+
+
+def _meter_fields(meter: MeterEstimate) -> dict[str, Any]:
+    return {
+        "beats_per_bar": meter.beats_per_bar,
+        "beats_per_bar_status": meter.beats_per_bar_status,
+        "compound_meter_note": meter.compound_meter_note,
+        "n_meter_closed_bars": meter.n_closed_bars,
+        "beats_per_bar_spacing_vote": meter.spacing_vote,
+    }
 
 
 def _bar_phase_fields(phase: BarPhase) -> dict[str, Any]:
@@ -104,8 +115,10 @@ def analyze(
             "activation_peak": pulse.activation_peak,
         }
     changes = detect_tempo_changes(beats)
-    diagnostic = assign_bar_phase(beats, result.get("downbeats") or [])
-    lock = lock_bar_phase(beats, result.get("downbeats") or [])
+    downbeats = result.get("downbeats") or []
+    meter = estimate_beats_per_bar(beats, downbeats)
+    diagnostic = assign_bar_phase(beats, downbeats)
+    lock = lock_bar_phase(beats, downbeats)
     served_numbers = lock.beat_numbers if not lock.bar_phase_unestablished else []
     phase_fields = _bar_phase_fields(diagnostic)
     if lock.bar_phase_unestablished:
@@ -118,6 +131,7 @@ def analyze(
         "downbeats": len(result.get("downbeats") or []),
         "activation_peak": pulse.activation_peak,
         **phase_fields,
+        **_meter_fields(meter),
         "beat_numbers": served_numbers,
         "chosen_phase": lock.chosen_phase,
         "bar_phase_agreement": lock.phase_agreement,

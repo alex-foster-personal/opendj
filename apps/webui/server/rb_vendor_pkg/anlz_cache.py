@@ -79,13 +79,33 @@ def _load_cached_payload(
         except (OSError, json.JSONDecodeError) as exc:
             log.warning("anlz cache unreadable, recomputing: %s (%s)", path, exc)
             return None
-    if (
-        cached.get("schema") == config.ANLZ_CACHE_SCHEMA
-        and cached.get("anlz_mtime") == anlz_mtime
-        and cached.get("points") == points
-    ):
-        return cached["payload"]
+        if (
+            cached.get("schema") == config.ANLZ_CACHE_SCHEMA
+            and cached.get("anlz_mtime") == anlz_mtime
+            and cached.get("points") == points
+        ):
+            payload = cached["payload"]
+            unreadable = payload.get("unreadable_anlz")
+            if isinstance(unreadable, list) and unreadable:
+                path.unlink(missing_ok=True)
+                return None
+            return payload
     return None
+
+
+def all_cached_payloads_fresh(stable_ids: list[str], points: int) -> bool:
+    """Whether every ``stable_ids`` row has a current on-disk cache entry."""
+    from apps.adapters.rekordbox.paths import anlz_dir, resolve_content
+
+    for stable_id in stable_ids:
+        try:
+            content = resolve_content(stable_id)
+            mtime = _anlz_mtime(anlz_dir(content))
+        except Exception:  # noqa: BLE001 -- reconcile is a presence check
+            return False
+        if _load_cached_payload(stable_id, mtime, points) is None:
+            return False
+    return True
 
 
 def _store_cached_payload(
@@ -97,6 +117,9 @@ def _store_cached_payload(
     the entry lands in a unique sibling tempfile first and only ``os.replace``
     publishes it, so concurrent readers and writers see a complete entry.
     """
+    unreadable = payload.get("unreadable_anlz")
+    if isinstance(unreadable, list) and unreadable:
+        return
     config.ANLZ_CACHE_DIR.mkdir(parents=True, exist_ok=True)
     path = _cache_path(stable_id)
     fd, tmp_name = tempfile.mkstemp(

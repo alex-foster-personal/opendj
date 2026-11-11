@@ -28,7 +28,13 @@
  */
 
 import type { BpmAlternative, BpmAlternativeSource } from '$lib/rb/bpm-dispute';
-import type { CloudTransferWire, OffloadWire, PreviewStripData, StemSummary, Vocals } from '$lib/rb/api-rb';
+import type {
+	CloudTransferWire,
+	OffloadWire,
+	PreviewStripData,
+	StemSummary,
+	Vocals
+} from '$lib/rb/api-rb';
 import type { FileAvailabilityStatus } from '$lib/rb/file-availability';
 import { gridFlagSortValue, type GridQualityRow } from '$lib/rb/analysis-issues';
 import { worksSortValue } from '$lib/rb/library-works';
@@ -104,6 +110,8 @@ export interface BrowserRow extends Pick<
 	 * lazily fetch one. Playlist rows carry it inline (contract 4). */
 	etag: string;
 	comments: string | null;
+	/** NOWP-11487: redact identity in tracklist exports when true. */
+	tracklist_hidden?: boolean;
 	duration_ms: number | null;
 	/** Inline genre when the listing or playlist row carries it; null =
 	 * fall back to lazily fetched rb_meta. */
@@ -112,6 +120,9 @@ export interface BrowserRow extends Pick<
 	genre_reason?: string | null;
 	/** GENRE-04: which provider the shown genre came from (user, beatport, odj-fused, library-tag...). */
 	genre_source?: string | null;
+	/** LIBUX-06: canonical family slug for the shown genre, when one matches. */
+	genre_family?: string | null;
+	genre_family_color?: string | null;
 	/** GENRE-02: a JEV genre-family guess; shown only while genre is empty. */
 	genre_guess?: { family: string; confidence: number; source: 'jev' } | null;
 	/** Disk truth (contract 1/4, PERF-RB-01); null ONLY while pending. */
@@ -133,6 +144,8 @@ export interface BrowserRow extends Pick<
 	is_remote?: boolean;
 	/** Durable cloud presence; unlike is_remote, stays true for local+cloud. */
 	has_remote_copy?: boolean;
+	/** Issue #11290: server verdict that deck load would fail on this host. */
+	deck_load_refusal?: 'streaming' | 'cloud_policy_unconfigured' | null;
 	/** Live CloudSync bytes from the same listing snapshot as this row. */
 	cloud_transfer?: CloudTransferWire | null;
 	/** OFFLOAD: an offloaded row stays listed and reads as in the cloud, not missing. */
@@ -475,11 +488,13 @@ export function collectionSearchEmptyMessage(
 export function canMutatePlaylist(
 	pane: Pick<PaneStore, 'playlist_id' | 'etag' | 'truncated' | 'whole_collection'>
 ): boolean {
-	return pane.playlist_id !== null
-		&& pane.playlist_id !== 'all'
-		&& pane.etag !== ''
-		&& !pane.truncated
-		&& !pane.whole_collection;
+	return (
+		pane.playlist_id !== null &&
+		pane.playlist_id !== 'all' &&
+		pane.etag !== '' &&
+		!pane.truncated &&
+		!pane.whole_collection
+	);
 }
 
 /** Remixes checkbox: only an explicit wire true passes; null (synthetic rows)
@@ -490,11 +505,7 @@ export function rowIsRemix(row: BrowserRow): boolean {
 
 // Vocals checkbox (VOCALS-FILTER-01): the three-way has-vocals rule lives in
 // ./vocals-filter; applyLibraryFilters below applies it.
-export {
-	VOCALS_FILTER_MIN_LINES,
-	vocalsFilterCounts,
-	vocalsFilterTitle
-} from './vocals-filter';
+export { VOCALS_FILTER_MIN_LINES, vocalsFilterCounts, vocalsFilterTitle } from './vocals-filter';
 
 /** Available-offline filter: local audio present, not cloud-only or streaming. */
 export function rowIsLocallyAvailable(row: BrowserRow): boolean {
@@ -546,14 +557,23 @@ export function applyLibraryFilters(
 // Only the two decisions BrowserPanel calls are re-exported: the All Tracks
 // identity and its type are read straight from ./boot-pane-selection by the
 // one suite that asserts on them, so no unreferenced export lands here.
-export { resolveBootPlaylist, shouldRetryBootPane, parseLv1, writeLv1 } from './boot-pane-selection';
+export {
+	resolveBootPlaylist,
+	shouldRetryBootPane,
+	parseLv1,
+	writeLv1
+} from './boot-pane-selection';
 
 // ------------------------------------------------ boot health-read retries
 
 // Moved to `$lib/rb/health-boot-retry` (adding these two functions here
 // pushed this file past the 600-line file-size gate); re-exported so
 // BrowserPanel.svelte's import of this barrel file is unaffected.
-export { getHealthAtBoot, getHealthFreshWithRetry, reconcileBootSnapshot } from '$lib/rb/health-boot-retry';
+export {
+	getHealthAtBoot,
+	getHealthFreshWithRetry,
+	reconcileBootSnapshot
+} from '$lib/rb/health-boot-retry';
 
 // -------------------------------------------- client search + sort pipeline
 
@@ -575,23 +595,24 @@ export function filterRows(rows: BrowserRow[], query: string, hideBroken: boolea
 	const base = hideBroken ? rows.filter((r) => !rowRendersUnavailable(r)) : rows;
 	if (query.trim() === '') return base;
 	const viaWork = viaWorkHits(query);
-	return base.filter((r) =>
-		viaWork.has(r.stable_id) ||
-		matchesSearchQuery(
-			{
-				title: r.title,
-				artist: r.artist,
-				comments: r.comments,
-				key: r.key,
-				// Every notation, so the key the cell shows always matches
-				// whatever key_notation is set (Sentry review, PR #7483).
-				key_forms: keyForms(r.key),
-				genre: listingGenre(r),
-				bpm: r.bpm,
-				rating: normalizeRating(r.rating)
-			},
-			query
-		)
+	return base.filter(
+		(r) =>
+			viaWork.has(r.stable_id) ||
+			matchesSearchQuery(
+				{
+					title: r.title,
+					artist: r.artist,
+					comments: r.comments,
+					key: r.key,
+					// Every notation, so the key the cell shows always matches
+					// whatever key_notation is set (Sentry review, PR #7483).
+					key_forms: keyForms(r.key),
+					genre: listingGenre(r),
+					bpm: r.bpm,
+					rating: normalizeRating(r.rating)
+				},
+				query
+			)
 	);
 }
 
@@ -630,7 +651,8 @@ export function sortRows(
 		const av = sortValue(a, key);
 		const bv = sortValue(b, key);
 		if (av === null && bv === null) return 0;
-		else if (av === null) return 1; // nulls always last
+		else if (av === null)
+			return 1; // nulls always last
 		else if (bv === null) return -1;
 		const base =
 			typeof av === 'string' && typeof bv === 'string'

@@ -50,6 +50,8 @@ from __future__ import annotations
 
 import os
 import sys
+from collections.abc import Mapping, Sequence
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
@@ -57,6 +59,7 @@ from apps.shared import events
 from apps.shared.stable_id import is_safe_stable_id_segment
 from apps.stems import worker_launch
 from apps.stems.selection import has_bundle
+from apps.stems.storage import StemStorage, stem_storage
 from apps.stems.tiers import DEFAULT_TIER, modal_tiers
 
 # ----- CFG -------------------------------------------------------------------
@@ -68,6 +71,8 @@ WORKER_SCRIPT: str = "scripts/stems_modal_worker.py"
 LOCAL_WORKER_SCRIPT: str = "scripts/stems_local_worker.py"
 HYDRATE_WORKER_SCRIPT: str = "scripts/stems_hydrate_worker.py"
 R2_FIRST_WORKER_SCRIPT: str = "scripts/stems_r2_first_worker.py"
+OUTCOME_MISSING_IDS_SHOWN: int = 50
+"""Missing ids named in a job's ``outcome`` JSON; the count is always whole."""
 
 
 def local_worker_script() -> str:
@@ -356,9 +361,16 @@ def compute_argv(
 
 
 def build_argv(payload: dict[str, Any]) -> list[str]:
+    stable_ids, tier, data_dir, executor = parse_payload(payload)
+    if stable_ids is None:
+        # Engine spawn only. parse_payload still accepts a scope so HTTP
+        # enqueue can resolve it to ids first; a queued legacy row that
+        # never got that rewrite must not reach a worker.
+        raise StemsJobPayloadError(
+            "scope was not resolved to stable_ids; no worker was started"
+        )
     from apps.cloud.stem_source import resolve_stem_hydration_source
 
-    stable_ids, tier, data_dir, executor = parse_payload(payload)
     root = _resolve_data_dir(data_dir)
     if resolve_stem_hydration_source(root) is not None:
         return _r2_first_argv(stable_ids, tier=tier, data_dir=data_dir, executor=executor)
@@ -408,18 +420,161 @@ def reconcile_from_disk(job: dict[str, Any]) -> str:
     return "failed"
 
 
-def stems_root(data_dir: Path | None) -> Path:
-    """Where bundles live for a given data dir.
+@dataclass(frozen=True)
+class StemsVerdict:
+    """This kind's measured ending. The composition root hands it to the
+    chassis as a ``runner.Outcome``; this package may not import the chassis."""
 
-    ``None`` means "whatever MDT_DATA_DIR says", read at CALL time rather than
-    import time so a test that repoints the env is not fighting a value this
-    module froze on first import.
+    status: str
+    message: str
+    error: str | None
+    detail: dict[str, Any]
+
+
+@dataclass(frozen=True)
+class BundleCount:
+    """Requested stem bundles against the ones that validate now (STEM-59)."""
+
+    expected: list[str]
+    present: list[str]
+    missing: list[str]
+
+    @property
+    def verdict(self) -> str:
+        if not self.missing:
+            return "complete"
+        if self.present:
+            return "partial"
+        return "none"
+
+    def as_detail(self) -> dict[str, Any]:
+        return {
+            "unit": "songs",
+            "expected": len(self.expected),
+            "present": len(self.present),
+            "missing": len(self.missing),
+            "missing_ids": self.missing[:OUTCOME_MISSING_IDS_SHOWN],
+            "verdict": self.verdict,
+        }
+
+
+def count_bundles(stable_ids: list[str], roots: Sequence[Path]) -> BundleCount:
+    """Which of ``stable_ids`` have a bundle the PLAYER would accept, in ``roots``.
+
+    The full reader, not the manifest probe: a directory with a manifest and
+    a truncated FLAC is exactly what an interrupted worker leaves, and the
+    card already counts it as not done (``valid_stem_bundle_ids``).
     """
-    if data_dir is not None:
-        return data_dir / "state" / "stems"
-    from apps.shared.platform_paths import DATA_DIR
+    from apps.stems.artifacts import (
+        StemArtifactError,
+        StemBundleNotFoundError,
+        load_stem_bundle,
+    )
 
-    return DATA_DIR / "state" / "stems"
+    present: list[str] = []
+    missing: list[str] = []
+    for stable_id in stable_ids:
+        try:
+            load_stem_bundle(stable_id, roots=roots)
+        except (StemArtifactError, StemBundleNotFoundError):
+            missing.append(stable_id)
+            continue
+        present.append(stable_id)
+    return BundleCount(expected=list(stable_ids), present=present, missing=missing)
+
+
+def _worker_reason(stderr: Sequence[str]) -> str | None:
+    """The worker's own last ``error:`` sentence, which names the cause."""
+    for line in reversed(stderr):
+        text = line.strip()
+        if text.startswith("error:"):
+            return text.removeprefix("error:").strip()
+    return None
+
+
+def verify_outcome(
+    job: dict[str, Any],
+    returncode: int,
+    stderr: Sequence[str],
+    *,
+    roots: Sequence[Path],
+) -> StemsVerdict:
+    """Succeeded only when every requested bundle validates (STEM-59).
+
+    Registered as the kind's outcome check, so the worker's exit 0 is a claim
+    and this is the measurement. A scope job has no ids to measure (it is
+    resolved at enqueue now, STEM-58), so one reaching here is failed rather
+    than trusted.
+    """
+    payload = job.get("payload") or {}
+    stable_ids = payload.get("stable_ids")
+    if not isinstance(stable_ids, list) or not stable_ids:
+        reason = (
+            "this stems job named no songs (a scope that was not resolved at enqueue), "
+            "so whether it produced anything cannot be measured"
+        )
+        return StemsVerdict(status="failed", message="stems: unmeasurable", error=reason, detail={})
+    counted = count_bundles([str(sid) for sid in stable_ids], roots)
+    n, m = len(counted.expected), len(counted.present)
+    detail = counted.as_detail()
+    if returncode == 0 and counted.verdict == "complete":
+        return StemsVerdict(
+            status="succeeded",
+            message=f"{m} of {n} songs now have stems",
+            error=None,
+            detail=detail,
+        )
+    if counted.verdict == "partial":
+        label = "partial"
+    elif counted.verdict == "complete":
+        # The bundles are on disk. "no stems made" would send an operator
+        # back through a paid batch that already finished.
+        label = "worker failed"
+    else:
+        label = "no stems made"
+    message = f"{label}: {m} of {n} songs have stems"
+    reason = _worker_reason(stderr)
+    if returncode == 0:
+        why = (
+            f"the worker exited 0 but {len(counted.missing)} requested bundle(s) do not "
+            f"exist or do not validate: {', '.join(counted.missing[:10])}"
+        )
+    elif reason is not None:
+        why = reason
+    else:
+        why = f"the stems worker exited {returncode}"
+    return StemsVerdict(status="failed", message=message, error=f"{message}. {why}", detail=detail)
+
+
+def _storage_for(
+    data_dir: Path | None, *, environ: Mapping[str, str] | None = None
+) -> StemStorage:
+    """The library-mode stem store for ``data_dir`` (``MDT_DATA_DIR`` if None)."""
+    if data_dir is None:
+        from apps.shared.platform_paths import DATA_DIR
+
+        data_dir = DATA_DIR
+    return stem_storage(environ=environ, state_dir=Path(data_dir) / "state")
+
+
+def stems_measure_roots(
+    data_dir: Path | None, *, environ: Mapping[str, str] | None = None
+) -> tuple[Path, ...]:
+    """Roots the card would accept for this data dir, in lookup order."""
+    return _storage_for(data_dir, environ=environ).roots
+
+
+def stems_root(
+    data_dir: Path | None, *, environ: Mapping[str, str] | None = None
+) -> Path:
+    """Where a worker writes bundles for this data dir.
+
+    Local mode is ``<data_dir>/state/stems``. Remote mode is the crate tree
+    the card reads (``<crate>/derived/stems/demucs4``), not a second tree
+    under ``state/`` that the card will never count. ``None`` reads
+    ``MDT_DATA_DIR`` at call time, not import time.
+    """
+    return _storage_for(data_dir, environ=environ).write_root
 
 
 __all__ = [
@@ -430,14 +585,19 @@ __all__ = [
     "PROGRESS_TRACK_KEY",
     "R2_FIRST_WORKER_SCRIPT",
     "SCOPE_PENDING",
+    "BundleCount",
     "StemsJobPayloadError",
+    "StemsVerdict",
     "build_argv",
     "canonical_payload",
     "compute_argv",
+    "count_bundles",
     "local_worker_refusal",
     "local_worker_script",
     "on_progress",
     "parse_payload",
     "reconcile_from_disk",
+    "stems_measure_roots",
     "stems_root",
+    "verify_outcome",
 ]

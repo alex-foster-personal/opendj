@@ -1,0 +1,9 @@
+{
+  "bytes": 1024,
+  "measured_main": 350707,
+  "measured_with_pr": 350873,
+  "sha": "097273ac67",
+  "date": "Wed 11 Nov 2026",
+  "reason": "PR #12632 toast copy arms M comment pin with prefilled report (FEED-12632): toast-copy-context and FeedbackPinLayer wiring reach the library chunk. Measured: CI bundle check, +166 B gzip on library; ceiled to KiB.",
+  "payback": "none planned; the growth is the feature's own code"
+}

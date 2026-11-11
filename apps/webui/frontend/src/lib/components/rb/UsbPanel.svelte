@@ -10,6 +10,7 @@
 		closeUsbPanel,
 		foldedAway,
 		presentNonForgotten,
+		refreshDeckHealthForVolumes,
 		setForgotten,
 		usbRowKindLabel,
 		usbRowReasonTag,
@@ -17,6 +18,7 @@
 		usbFormatReport,
 		usbPollDelayMs,
 		usbTracker,
+		type UsbDeckHealthState,
 		type UsbVolumeKnown
 	} from '$lib/rb/usb-tracker.svelte';
 	import { canImportUsbVolume, importUsbVolume, USB_IMPORT_TITLE } from '$lib/rb/usb-import';
@@ -45,21 +47,37 @@
 	let draftForget = $state(false);
 
 	const open = $derived(usbTracker.panelOpen);
-	const formatReport = $derived(usbFormatReport(usbTracker.volumes, usbTracker.readNotes, usbTracker.scannedAt !== null));
+	const formatReport = $derived(
+		usbFormatReport(usbTracker.volumes, usbTracker.readNotes, usbTracker.scannedAt !== null)
+	);
 	const active = $derived(presentNonForgotten());
 	// A refused or unanswered scan is not "no stick present": say which.
 	const discoveryNotice = $derived(usbDiscoveryNotice(usbTracker));
 	const retrySeconds = $derived(usbPollDelayMs(usbTracker.consecutiveFailures) / 1000);
 	const folded = $derived(foldedAway());
+	const healthVolumeIds = $derived(active.map((v) => v.id));
+
+	$effect(() => {
+		if (!open || healthVolumeIds.length === 0) return;
+		void refreshDeckHealthForVolumes(healthVolumeIds);
+	});
+
+	function deckHealthLabel(state: UsbDeckHealthState | undefined): string {
+		if (state === undefined || state.state === 'loading') return 'checking...';
+		if (state.state === 'busy') return 'busy (eject or export in progress)';
+		if (state.state === 'error') return `unavailable: ${state.message}`;
+		const fails = state.report.deck_classes.filter((c) => !c.ok);
+		if (fails.length === 0) return 'pass on all deck classes';
+		return fails.map((c) => `${c.deck_class}: ${c.failures.join(', ')}`).join('; ');
+	}
+
 	const prompt = $derived(
 		usbTracker.promptId
 			? (usbTracker.volumes.find((v) => v.id === usbTracker.promptId) ?? null)
 			: null
 	);
 
-	const confirmValid = $derived(
-		draftForget || (draftYours !== null && draftMusic !== null)
-	);
+	const confirmValid = $derived(draftForget || (draftYours !== null && draftMusic !== null));
 
 	$effect(() => {
 		if (prompt) {
@@ -109,17 +127,21 @@
 	>
 		<header class="usb-head">
 			<strong title="USB stick tracker (#328) - detect only, never writes">USB sticks</strong>
-			<button type="button" class="usb-x" onclick={close} title="Close" aria-label="Close">x</button>
+			<button type="button" class="usb-x" onclick={close} title="Close" aria-label="Close">x</button
+			>
 		</header>
 
 		<section class="usb-found" aria-label="What was found on USB" data-testid="usb-format-report">
-			<p class="usb-found-lead" title="How many volumes are mounted right now">{formatReport.drives}</p>
+			<p class="usb-found-lead" title="How many volumes are mounted right now">
+				{formatReport.drives}
+			</p>
 			<p class="usb-found-lead" title="rekordbox (RBX) only, djay only, or both">
 				{formatReport.libraries}
 			</p>
 			{#each formatReport.sticks as stick (stick.id)}
 				<p class="usb-ver" data-testid="usb-format-version">
-					<strong>{stick.name}.</strong> {stick.version}
+					<strong>{stick.name}.</strong>
+					{stick.version}
 				</p>
 			{/each}
 		</section>
@@ -193,7 +215,11 @@
 			{:else if planFailed}
 				<p class="usb-empty">
 					Analysis plan failed to load. The stick is still queued.
-					<button type="button" data-testid="usb-import-plan-retry" onclick={() => (planFailed = false)}>Retry</button>
+					<button
+						type="button"
+						data-testid="usb-import-plan-retry"
+						onclick={() => (planFailed = false)}>Retry</button
+					>
 				</p>
 			{:else}
 				<p class="usb-empty" data-testid="usb-import-plan-loading">Ranking tracks...</p>
@@ -276,38 +302,40 @@
 			{/if}
 		</details>
 
-		<section class="usb-soon" aria-label="Coming soon" data-testid="usb-compat-soon">
-			<p class="usb-soon-title">[Coming soon]</p>
-			<p>
-				USB compatibility across decks and DJ software, and read/write speed benchmarking.
+		<section class="usb-soon" aria-label="Deck export health" data-testid="usb-deck-health">
+			<p class="usb-soon-title">Deck export health (rules v0)</p>
+			<p class="usb-hint" title="Read-only scan; refused while eject or usb-export holds the stick">
+				Read-only per-stick check (FAT/exFAT, export.pdb / exportLibrary.db, path limits). No
+				writes.
 			</p>
-			<ul>
-				<li>
-					Will warn when a stick will not work on a specific old CDJ. CDJ-2000-era decks need
-					Device Library (export.pdb) on FAT32. Device Library Plus alone will not load there.
-					CDJ-3000 and Opus Quad want Device Library Plus.
-				</li>
-				<li>
-					Where to be careful: a USB 3-only stick (some SSK drives) can mount on this Mac and
-					still fail in a deck's USB 2.0 port. exFAT, or a large allocation size, does the same
-					on old players. rekordbox, djay, Serato and Engine DJ each read a different layout, so
-					a stick that is only one of them is not the other.
-				</li>
-				<li>
-					Fixes to try: re-export from rekordbox with Device Library turned on when the player
-					is a CDJ-2000-era deck. Format FAT32. Use the USB-A plug in the deck's USB 2.0 port.
-					If Open DJ's read failed on an RBX stick, eject, replug, and allow Removable Volumes,
-					then open the stick again.
-				</li>
-				<li>
-					Read/write speed is not measured yet. Benchmarking will time a read and a write and
-					warn when the stick is too slow for a set.
-				</li>
-			</ul>
+			{#each active as vol (vol.id)}
+				{@const deckHealth = usbTracker.deckHealth[vol.id]}
+				<div class="usb-health-row" data-testid="usb-deck-health-row">
+					<strong>{vol.name}</strong>
+					<span class="usb-health-detail" title={deckHealthLabel(deckHealth)}>
+						{deckHealthLabel(deckHealth)}
+					</span>
+					{#if deckHealth?.state === 'ok'}
+						<ul class="usb-health-classes">
+							{#each deckHealth.report.deck_classes as deck (deck.deck_class)}
+								<li class:fail={!deck.ok}>
+									{deck.label}: {deck.ok ? 'pass' : deck.failures.join(', ')}
+								</li>
+							{/each}
+						</ul>
+					{/if}
+				</div>
+			{:else}
+				<p class="usb-empty">No music USB present</p>
+			{/each}
+			<p class="usb-hint">Read/write speed benchmarking is still not measured.</p>
 		</section>
 
 		<footer class="usb-foot">
-			<span class="usb-hint" title="Detect + open. Analysis runs in the background and never writes to the stick.">
+			<span
+				class="usb-hint"
+				title="Detect + open. Analysis runs in the background and never writes to the stick."
+			>
 				Detect + open. Analysis runs in the background and never writes to the stick.
 			</span>
 		</footer>
@@ -381,12 +409,25 @@
 		font-weight: 700;
 		color: var(--rb-orange, #e8952a);
 	}
-	.usb-soon ul {
-		margin: 0;
-		padding-left: 16px;
+	.usb-health-row {
 		display: flex;
 		flex-direction: column;
-		gap: 4px;
+		gap: 2px;
+		padding: 4px 0;
+		border-top: 1px solid var(--rb-border);
+	}
+	.usb-health-detail {
+		font-size: 10px;
+		color: var(--rb-text-dim);
+	}
+	.usb-health-classes {
+		margin: 0;
+		padding-left: 16px;
+		font-size: 10px;
+		color: var(--rb-text-dim);
+	}
+	.usb-health-classes li.fail {
+		color: var(--rb-orange, #e8952a);
 	}
 	.usb-x {
 		background: transparent;

@@ -16,8 +16,14 @@ import { expect, test, type Page } from '@playwright/test';
 import { spendBootLanding } from './support/boot-landing';
 
 const STORE = '/src/lib/stores.svelte.ts';
+const TOAST_PIN_CTX = '/src/lib/toast-copy-context.ts';
 
-async function raise(page: Page, message: string, kind = 'info', dismissMs = 60_000): Promise<string> {
+async function raise(
+	page: Page,
+	message: string,
+	kind = 'info',
+	dismissMs = 60_000
+): Promise<string> {
 	return page.evaluate(
 		async ([store, msg, k, ms]) => {
 			const mod = await import(/* @vite-ignore */ store as string);
@@ -95,7 +101,9 @@ async function raiseAndSampleExit(
 				const cssTransitions = node
 					.getAnimations()
 					.filter((animation): animation is CSSTransition => animation instanceof CSSTransition);
-				const transformTransition = cssTransitions.find((t) => t.transitionProperty === 'transform');
+				const transformTransition = cssTransitions.find(
+					(t) => t.transitionProperty === 'transform'
+				);
 				const opacityTransition = cssTransitions.find((t) => t.transitionProperty === 'opacity');
 				const style = getComputedStyle(node);
 				return {
@@ -278,7 +286,9 @@ test('clicking a toast copies a report whose id matches the logged id', async ({
 
 	const id = await raise(page, 'copy me with my id', 'error');
 	await page.locator(`[data-toast-copy="${id}"]`).click();
-	await expect(page.locator(`[data-toast-copied="${id}"]`)).toBeVisible();
+	const copiedNote = page.locator(`[data-toast-copied="${id}"]`);
+	await expect(copiedNote).toBeVisible();
+	await expect(copiedNote).toContainText('press M to leave a comment');
 
 	const clipboard = await page.evaluate(() => navigator.clipboard.readText());
 
@@ -295,6 +305,40 @@ test('clicking a toast copies a report whose id matches the logged id', async ({
 	const logLine = consoleLines.find((l) => l.includes('[perf-event] toast-error'));
 	expect(logLine, 'every toast writes a ring row').toBeTruthy();
 	expect(logLine).toContain(`id=${id}`);
+});
+
+// REQ: FEED-12632
+// [if] a toast copy arms comment placement [then] the latest report wins, [else stop].
+test('a later toast copy re-arms the comment pin with the newest report', async ({
+	page,
+	context
+}) => {
+	await context.grantPermissions(['clipboard-read', 'clipboard-write']);
+
+	const first = await raise(page, 'first toast arm', 'error');
+	await page.locator(`[data-toast-copy="${first}"]`).click();
+	const firstArm = await page.evaluate(
+		async ([ctxMod]) => {
+			const mod = await import(/* @vite-ignore */ ctxMod as string);
+			return mod.peekToastCommentPinArm();
+		},
+		[TOAST_PIN_CTX] as const
+	);
+	expect(firstArm).not.toBeNull();
+	expect(firstArm?.logId).toBe(first);
+
+	const second = await raise(page, 'second toast arm', 'warn');
+	await page.locator(`[data-toast-copy="${second}"]`).click();
+	const secondArm = await page.evaluate(
+		async ([ctxMod]) => {
+			const mod = await import(/* @vite-ignore */ ctxMod as string);
+			return mod.peekToastCommentPinArm();
+		},
+		[TOAST_PIN_CTX] as const
+	);
+	expect(secondArm).not.toBeNull();
+	expect(secondArm?.logId).toBe(second);
+	expect(secondArm?.reportText).not.toBe(firstArm?.reportText);
 });
 
 // pin 9bf12adccb45: "still show toast but make it orange warning instead of red
@@ -385,9 +429,9 @@ test('the fourth toast evicts the oldest with an exiting marker', async ({ page 
 		window.addEventListener(
 			'toast:evicted',
 			(event) => {
-				void (window as typeof window & { recordToastEviction(logId: string): void }).recordToastEviction(
-					(event as CustomEvent<string>).detail
-				);
+				void (
+					window as typeof window & { recordToastEviction(logId: string): void }
+				).recordToastEviction((event as CustomEvent<string>).detail);
 			},
 			{ once: true }
 		);
@@ -420,10 +464,11 @@ test('the fourth toast evicts the oldest with an exiting marker', async ({ page 
 // REQ: UX-TOAST-03
 // [if] long selection-load error [then] toast width stays within viewport third [else stop].
 test('a long error toast width stays within one third of the viewport', async ({ page }) => {
-	const longMessage =
-		'selection load failed: ' + 'x'.repeat(400);
+	const longMessage = 'selection load failed: ' + 'x'.repeat(400);
 	const id = await raise(page, longMessage, 'error', 60_000);
-	const width = await page.locator(`[data-toast-id="${id}"]`).evaluate((node) => node.getBoundingClientRect().width);
+	const width = await page
+		.locator(`[data-toast-id="${id}"]`)
+		.evaluate((node) => node.getBoundingClientRect().width);
 	const viewport = page.viewportSize()?.width ?? 1280;
 	expect(width).toBeLessThanOrEqual(viewport / 3 + 4);
 });

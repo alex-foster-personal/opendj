@@ -26,15 +26,18 @@ import {
 	WAVE_SPLIT_MASTER_SETTING
 } from './wave-palette-setting';
 import { WAVE_EQ_REFLECT_SETTING } from './wave-eq-reflect-setting';
+import { WAVE_HEIGHT_SETTING } from './wave-height-setting';
 import { WAVE_GRID_LINES_SETTING } from './wave-grid-lines-setting';
 import { WAVE_ZOOM_SETTINGS } from './wave-zoom-setting';
 import { DEV_UI_SETTING, HIDE_TODO_SETTING } from './dev-ui-setting';
 import { VARIANT_REGISTRY } from './variant-setting';
 import { AUTO_ANALYZE_SETTINGS } from './analysis-settings';
 import { SHOW_SECTIONS_SETTING } from './show-sections-setting';
+import { COMPACT_DECKS_SETTING } from './compact-decks-setting';
 import { DECK_NUMBER_ART_SETTING } from './deck-number-art-setting';
 import { SPEAKER_AUTO_RECOVER_SETTING } from './speaker-link-setting';
 import { TEMPO_LANE_SETTINGS } from './tempo-lane-setting';
+import { VOCAL_LANE_SETTING } from './vocal-lane-setting';
 import {
 	PIN_VISIBLE_DAYS_DEFAULT,
 	PIN_VISIBLE_DAYS_MAX,
@@ -54,6 +57,7 @@ export const SETTING_GROUPS: readonly SettingGroup[] = [
 	{ id: 'appearance', label: 'Appearance' },
 	{ id: 'library', label: 'Library' },
 	{ id: 'performance', label: 'Performance' },
+	{ id: 'mixer', label: 'Mixer' },
 	{ id: 'analysis', label: 'Analysis' },
 	{ id: 'confirmations', label: 'Confirmations' },
 	{ id: 'sync', label: 'Sync' },
@@ -396,8 +400,10 @@ export const SETTINGS_CATALOG: readonly SettingDef[] = [
 	...AUTO_ANALYZE_SETTINGS,
 	SHOW_SECTIONS_SETTING,
 	DECK_NUMBER_ART_SETTING,
+	COMPACT_DECKS_SETTING,
 	SPEAKER_AUTO_RECOVER_SETTING,
 	...TEMPO_LANE_SETTINGS,
+	VOCAL_LANE_SETTING,
 	{
 		id: 'show_stems',
 		label: 'Stem mini-waveforms',
@@ -423,10 +429,10 @@ export const SETTINGS_CATALOG: readonly SettingDef[] = [
 		id: 'waveform_design',
 		label: 'Waveform design',
 		group: 'performance',
-		keywords: ['waveform', 'design', 'auto', 'skin', 'tri-band', 'mono', 'line', 'blocks', 'wavestack', 'strip'],
+		keywords: ['waveform', 'design', 'auto', 'skin', 'tri-band', 'mono', 'line', 'blocks', 'rgb', 'wavestack', 'strip'],
 		title: 'Deck and library waveform paint style',
 		detail:
-			'Auto (default) follows the skin: Gothic paints blocks, Default and Light paint tri-band. Tri-band matches rekordbox-style stacked frequency bands. Mono draws a single envelope. Line draws a stroke outline. Blocks draws bars stacked in the band colors (shades of gray in the Mono palette). The preview shows the effective design for the current skin, painted by the deck renderer itself on a real 12 s track sample.',
+			'Auto (default) follows the skin: Gothic paints blocks, Default and Light paint tri-band. Tri-band matches rekordbox-style stacked frequency bands. Mono draws a single envelope. Line draws a stroke outline. Blocks draws bars stacked in the band colors (shades of gray in the Mono palette). RGB draws one envelope colored by frequency balance: red lows, green mids, blue highs, as rekordbox RGB does. The preview shows the effective design for the current skin, painted by the deck renderer itself on a real 12 s track sample.',
 		implemented: true,
 		preview: 'waveform',
 		control: {
@@ -436,11 +442,13 @@ export const SETTINGS_CATALOG: readonly SettingDef[] = [
 				{ value: 'tri-band', label: 'Tri-band bars' },
 				{ value: 'mono', label: 'Mono envelope' },
 				{ value: 'line', label: 'Line outline' },
-				{ value: 'blocks', label: 'Blocks (mono bars)' }
+				{ value: 'blocks', label: 'Blocks (mono bars)' },
+				{ value: 'rgb', label: 'RGB (frequency color)' }
 			]
 		}
 	},
 	WAVE_PALETTE_SETTING,
+	WAVE_HEIGHT_SETTING,
 	WAVE_EQ_REFLECT_SETTING,
 	WAVE_GRID_LINES_SETTING,
 	UI_SKIN_SETTING,
@@ -468,7 +476,7 @@ export const SETTINGS_CATALOG: readonly SettingDef[] = [
 	{
 		id: 'mixer_stems',
 		label: 'Mixer stem dials (S)',
-		group: 'performance',
+		group: 'mixer',
 		keywords: ['stem', 'stems', 'mixer', 'vocal', 'inst', 'bass', 'drums', 'dial', 'knob', 's button'],
 		title: 'Stem level dials beside the EQ on every channel with stems',
 		detail:
@@ -801,7 +809,7 @@ export const SETTINGS_CATALOG: readonly SettingDef[] = [
 	{
 		id: 'crossfade_curve',
 		label: 'Crossfader curve',
-		group: 'performance',
+		group: 'mixer',
 		keywords: ['crossfader', 'curve', 'magic', 'xfade'],
 		title: 'Crossfader blend curve',
 		detail: 'Magic crossfader is live; other curves are placeholders until built.',

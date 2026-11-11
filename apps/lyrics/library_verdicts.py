@@ -128,7 +128,7 @@ from apps.lyrics import store
 from apps.lyrics.vocal_presence import coverage_verdict
 from apps.shared.state import sync_stamp
 from apps.stems.artifacts import (
-    ROFORMER_STEMS_DIR,
+    PRODUCTION_ROFORMER_STEMS_DIR,
     StemArtifactError,
     StemBundle,
     StemBundleNotFoundError,
@@ -204,7 +204,7 @@ class VerdictBackfillReport:
 def _bundle_roots(data_dir: Path) -> tuple[Path, Path]:
     """(demucs4 root, roformer2 root) for THIS ``--data-dir``.
 
-    ``apps.stems.artifacts.ROFORMER_STEMS_DIR`` is a module
+    ``apps.stems.artifacts.PRODUCTION_ROFORMER_STEMS_DIR`` is a module
     constant resolved from the process's ``MDT_DATA_DIR``/repo default at
     import time, NOT from a CLI ``--data-dir``. Passing it straight to
     :func:`load_stem_bundle` would silently search the wrong machine's
@@ -213,7 +213,7 @@ def _bundle_roots(data_dir: Path) -> tuple[Path, Path]:
     both roots here are computed from the SAME ``data_dir`` the caller gave.
     """
     demucs_root = vfrom_stems.stems_dir(data_dir)
-    roformer_root = data_dir / "state" / ROFORMER_STEMS_DIR.name
+    roformer_root = data_dir / "state" / PRODUCTION_ROFORMER_STEMS_DIR.name
     return demucs_root, roformer_root
 
 

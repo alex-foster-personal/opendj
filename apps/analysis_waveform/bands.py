@@ -23,6 +23,7 @@ from typing import Any
 
 import numpy as np
 
+from apps.analysis_waveform.decode import PROFILE as _DECODE_PROFILE
 from apps.analysis_waveform.native import _WAVEFORM_NATIVE
 
 # The ONE browser-strip width (SPIKE-A1 section 2): uint8[120][3] interleaved
@@ -91,7 +92,8 @@ PWV6_FULL_SCALE_SINE: tuple[int, int, int] = (69, 86, 176)
 PWV6_MUSIC_GAIN: tuple[int, int, int] = (83, 56, 176)
 #: Bumped whenever the bytes ``pwv6_scale`` writes for the same peaks change.
 PWV6_SCALE_VERSION: str = "pwv6-music-1"
-_OWN_PEAK_FULL_SCALE: float = 255.0
+# Matches decode headroom: 255 is +6 dBFS, so 0 dBFS is half a byte scale.
+_OWN_PEAK_FULL_SCALE: float = 255.0 / _DECODE_PROFILE.peak_full_scale_linear
 
 
 def unit_float_peaks(peaks: np.ndarray) -> np.ndarray:

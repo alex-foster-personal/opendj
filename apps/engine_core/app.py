@@ -33,6 +33,7 @@ from typing import Annotated, Any
 from fastapi import Depends, FastAPI, Request
 from fastapi.routing import APIRoute
 
+from apps.analysis import anlz_cache_job
 from apps.cloud import job as cloud_job
 from apps.engine_core.account.api import (
     account_router,
@@ -77,6 +78,7 @@ from apps.engine_core.setup.folder_rescan_scheduler import folder_rescan_lifespa
 from apps.engine_core.setup.jobs import SETUP_IMPORT_KIND
 from apps.engine_core.setup.library_events import on_setup_import_progress
 from apps.engine_core.local_update import add_app_update_routes
+from apps.engine_core.stems_wiring import wire_stems_truth
 from apps.engine_core.update_channel import add_update_apply_route, add_update_check_route
 from apps.engine_core.ws import TOPIC_HEALTH_CHANGED, WsHub, events_endpoint
 from apps.feature_flags import load_flags
@@ -167,6 +169,10 @@ def create_app(
     # process-global and idempotent, and it must happen before the jobs router
     # can be reached, or an enqueue for a real kind would 400 as unknown.
     _register_job_kinds(app)
+    # STEM-59: a stems job ends succeeded only on measured bundles, in the
+    # roots this app's coverage reads. Bound to this runner so a second
+    # engine in-process cannot retarget the measurement.
+    wire_stems_truth(app, runner)
     app.include_router(jobs_router, prefix=API_PREFIX)
     # Engine-only: the plan describes a run only an engine can start.
     app.include_router(stems_plan_router, prefix=API_PREFIX)
@@ -301,6 +307,12 @@ def _register_job_kinds(app: FastAPI | None = None) -> None:
     register_progress_observer(SETUP_IMPORT_KIND, _on_setup_import_progress)
     register_worker(cloud_job.JOB_KIND, cloud_job.build_argv)
     register_reconcile(cloud_job.JOB_KIND, cloud_job.reconcile_from_disk)
+    from apps.webui.server.rb_vendor_pkg import anlz_cache_rebuild
+
+    register_worker(anlz_cache_job.JOB_KIND, anlz_cache_job.build_argv)
+    register_reconcile(
+        anlz_cache_job.JOB_KIND, anlz_cache_rebuild.reconcile_from_disk
+    )
 
 
 # ----- legacy composition ------------------------------------------------

@@ -8,8 +8,22 @@ from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 import pytest
+from fastapi import FastAPI
 
+from apps.sets.api import SETS_API_PREFIX, SETS_V1_API_PREFIX
+from apps.sets.api import router as sets_router
 from apps.sets.state import SetsState
+from apps.shared.state import db as state_db
+
+
+def mount_sets_router(app: FastAPI, *, v1_alias: bool = False) -> None:
+    """Mount the sets HTTP router at the production legacy prefix."""
+    app.include_router(sets_router, prefix=SETS_API_PREFIX)
+    if v1_alias:
+        app.include_router(sets_router, prefix=SETS_V1_API_PREFIX)
+
+
+_FIELD_STAMP = "2026-11-10T00:00:00+00:00"
 
 # ---------------------------------------------------------------------------
 # state / paths
@@ -22,6 +36,35 @@ def sets_root(tmp_path: Path) -> Path:
     root = tmp_path / "sets"
     root.mkdir(parents=True, exist_ok=True)
     return root
+
+
+@pytest.fixture
+def sets_state_db(tmp_path: Path) -> Path:
+    """Empty migrated state.db for sets routes that read tracklist_hidden."""
+    db_path = tmp_path / "state.db"
+    conn = state_db.open_rw(db_path)
+    conn.close()
+    return db_path
+
+
+def hide_track_in_state_db(db_path: Path, stable_id: str) -> None:
+    conn = state_db.open_rw(db_path)
+    try:
+        conn.execute(
+            "INSERT OR IGNORE INTO tracks (stable_id, stable_id_tier, title, artists_json, "
+            "file_path, created_at, updated_at) VALUES (?, 'inferred', 'placeholder', "
+            "'[\"Artist\"]', '/music/placeholder.mp3', ?, ?)",
+            (stable_id, _FIELD_STAMP, _FIELD_STAMP),
+        )
+        conn.execute(
+            "INSERT INTO track_fields(stable_id, field_name, value_json, source, "
+            "confidence, modified_at, updated_at, origin_device_id) "
+            "VALUES (?, 'tracklist_hidden', 'true', 'webui', 1.0, ?, ?, 'test-device')",
+            (stable_id, _FIELD_STAMP, _FIELD_STAMP),
+        )
+        conn.commit()
+    finally:
+        conn.close()
 
 
 @pytest.fixture

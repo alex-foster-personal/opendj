@@ -40,9 +40,11 @@ import {
 	CUE_LATENCY_PEAK_MIN,
 	CUE_LATENCY_PEAK_TARGET,
 	CUE_LATENCY_PREROLL_MS,
+	buildCalibrationReference,
+	calibrationProbeDiagnostics,
 	crossCorrelateLagMs,
 	cueLatencyCaptureMs,
-	cueLatencySweep
+	type CalibrationProbeKind
 } from '$lib/player/cue-latency';
 import {
 	CueAlignMeasurementUnstable,
@@ -156,6 +158,8 @@ export interface CueAlignEffects {
 	setDelays(delays: { head_delay_ms: number; master_delay_ms: number }): void;
 	alignmentMode(): HeadphoneAlignmentMode;
 	deviceIds(): { cue: string; master: string | null };
+	/** Which calibration stimulus this run plays, from persisted mixer config. */
+	calibrationProbe(): CalibrationProbeKind;
 	/** Observer, not a decision input: stage one reports each rung it tries and
 	 * the peak it got, so the operator can move the ear cup and watch the number
 	 * climb instead of waiting for a verdict. Nothing branches on it. */
@@ -262,8 +266,7 @@ export function createCueAlignController(
 
 	function _resetDiagnostics(): void {
 		calibration.diagnostics = {
-			probe: 'chirp',
-			alternate_probe: 'unavailable',
+			...calibrationProbeDiagnostics(effects.calibrationProbe()),
 			failure: null,
 			master_measurements_ms: [],
 			cue_measurements_ms: [],
@@ -294,7 +297,7 @@ export function createCueAlignController(
 		if (!Number.isFinite(sampleRate) || sampleRate <= 0) {
 			throw new RangeError(`calibration sampleRate must be positive, got ${sampleRate}`);
 		}
-		const reference = cueLatencySweep({ sampleRate });
+		const reference = buildCalibrationReference(sampleRate, effects.calibrationProbe());
 		const capture = await effects.openCapture(
 			mic,
 			cueLatencyCaptureMs(CUE_ALIGN_MAX_LAG_MS),

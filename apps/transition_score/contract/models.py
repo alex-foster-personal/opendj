@@ -119,6 +119,24 @@ class ScoreResult:
         }
 
 
+DEFAULT_ENERGY_JSON = _json.dumps(
+    {
+        "line": "energy unscored (no MIK series)",
+        "numbers": [],
+        "unscored": True,
+        "mik_grid_suspect": False,
+        "grid_warning": None,
+        "out": None,
+        "in": None,
+        "overlap_out_start_bar": None,
+        "overlap_out_end_bar": None,
+        "overlap_in_start_bar": None,
+        "overlap_in_end_bar": None,
+        "boundaries": [],
+    }
+)
+
+
 @dataclass(frozen=True)
 class Candidate:
     """One rendered and scored transition plan."""
@@ -143,6 +161,8 @@ class Candidate:
     refused: str | None = None
     #: The kept 16-bit mix (``try_plans(keep_renders_in=...)``), or None when the caller kept no renders.
     render_path: str | None = None
+    #: MIK energy seam line and strip for the open review page (issue #10132).
+    energy_json: str = DEFAULT_ENERGY_JSON
 
     @property
     def plan(self) -> dict[str, JsonValue]:
@@ -165,6 +185,11 @@ class Candidate:
         return _json.loads(self.unknown_json)
 
     @property
+    def energy(self) -> dict[str, JsonValue]:
+        """The MIK energy block as a fresh JSON object; the stored contract value remains immutable."""
+        return _json.loads(self.energy_json)
+
+    @property
     def rank_group(self) -> str:
         """Round 8: "measured" when alignment was measured, else "alignment unknown" (ranked below every measured
         one); "refused" when the candidate could not be rendered (ranked last)."""
@@ -175,6 +200,7 @@ class Candidate:
     def to_json(self) -> dict[str, JsonValue]:
         return {
             "id": self.id,
+            "energy": self.energy,
             "plan": self.plan,
             "plan_sha256": self.plan_sha256,
             "style": self.style,

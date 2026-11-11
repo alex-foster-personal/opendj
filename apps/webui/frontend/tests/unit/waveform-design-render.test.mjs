@@ -7,5 +7,6 @@ const { parseWaveformDesign, WAVEFORM_DESIGN_DEFAULT } =
 test('waveform design pref defaults and validates', () => {
 	assert.equal(WAVEFORM_DESIGN_DEFAULT, 'tri-band');
 	assert.equal(parseWaveformDesign('line'), 'line');
+	assert.equal(parseWaveformDesign('rgb'), 'rgb');
 	assert.throws(() => parseWaveformDesign('stem'));
 });

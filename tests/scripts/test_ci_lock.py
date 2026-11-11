@@ -133,9 +133,9 @@ def test_the_git_requirement_is_actually_compared() -> None:
 @pytest.mark.parametrize(
     "old,new",
     [
-        ("regex==2026.7.19\n", "regex==2026.7.19\nsix>=1.0\n"),  # added
-        ("regex==2026.7.19\n", "\n"),  # removed
-        ("regex==2026.7.19\n", "regex==2026.7.18\n"),  # re-pinned
+        ("regex==2026.9.29\n", "regex==2026.9.29\nsix>=1.0\n"),  # added
+        ("regex==2026.9.29\n", "\n"),  # removed
+        ("regex==2026.9.29\n", "regex==2026.9.28\n"),  # re-pinned
     ],
     ids=["added", "removed", "repinned"],
 )
@@ -150,13 +150,13 @@ def test_requirements_edit_without_recompile_is_drift(tmp_path: Path, old: str, 
 def test_comment_only_edit_is_not_drift(tmp_path: Path) -> None:
     """Overshoot control: requirements.txt is mostly comments, which do not resolve."""
     root = _copy_lock_tree(tmp_path, CI_LOCK)
-    _edit(root / "requirements.txt", "regex==2026.7.19\n", "regex==2026.7.19  # trailing note\n# new line\n\n")
+    _edit(root / "requirements.txt", "regex==2026.9.29\n", "regex==2026.9.29  # trailing note\n# new line\n\n")
     assert not lock_problems(CI_LOCK, root)
 
 
 def test_locked_version_outside_the_specifier_is_drift_even_when_restamped(tmp_path: Path) -> None:
     root = _copy_lock_tree(tmp_path, CI_LOCK)
-    _edit(root / "requirements.txt", "regex==2026.7.19\n", "regex==2026.7.18\n")
+    _edit(root / "requirements.txt", "regex==2026.9.29\n", "regex==2026.9.28\n")
     _restamp(root, CI_LOCK)
     problems = lock_problems(CI_LOCK, root)
     assert problems and all("regex" in p and "outside" in p for p in problems), problems
@@ -172,7 +172,7 @@ def test_git_requirement_at_another_commit_is_drift_even_when_restamped(tmp_path
 
 def test_requirement_absent_from_the_lock_is_drift_even_when_restamped(tmp_path: Path) -> None:
     root = _copy_lock_tree(tmp_path, CI_LOCK)
-    _edit(root / "requirements.txt", "regex==2026.7.19\n", "regex==2026.7.19\nnot-a-locked-package>=1\n")
+    _edit(root / "requirements.txt", "regex==2026.9.29\n", "regex==2026.9.29\nnot-a-locked-package>=1\n")
     _restamp(root, CI_LOCK)
     assert lock_problems(CI_LOCK, root) == ["pylock.ci.toml: not-a-locked-package>=1: not in the lock"]
 
@@ -183,7 +183,7 @@ def test_requirement_absent_from_the_lock_is_drift_even_when_restamped(tmp_path:
 @pytest.mark.parametrize("line", ["--index-url https://example.invalid/simple", "-e ."])
 def test_unmodeled_option_line_is_unmeasurable(tmp_path: Path, line: str) -> None:
     root = _copy_lock_tree(tmp_path, CI_LOCK)
-    _edit(root / "requirements.txt", "regex==2026.7.19\n", f"regex==2026.7.19\n{line}\n")
+    _edit(root / "requirements.txt", "regex==2026.9.29\n", f"regex==2026.9.29\n{line}\n")
     with pytest.raises(Unmeasurable, match="option line"):
         lock_problems(CI_LOCK, root)
 
@@ -191,7 +191,7 @@ def test_unmodeled_option_line_is_unmeasurable(tmp_path: Path, line: str) -> Non
 def test_the_cli_checks_the_tree_it_is_given(tmp_path: Path) -> None:
     """--repo-root must reach the drift comparison, not just the file reads."""
     root = _copy_every_lock(tmp_path)
-    _edit(root / "requirements.txt", "regex==2026.7.19\n", "regex==2026.7.19\nnot-a-locked-package>=1\n")
+    _edit(root / "requirements.txt", "regex==2026.9.29\n", "regex==2026.9.29\nnot-a-locked-package>=1\n")
 
     result = _check_cli(root)
 

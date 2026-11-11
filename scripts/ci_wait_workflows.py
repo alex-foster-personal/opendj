@@ -104,6 +104,10 @@ def _pull_request_trigger(on: dict) -> dict | None:
     trigger = on.get("pull_request")
     if trigger is None:
         follow = on.get("workflow_run")
+        # A `branches: [main]` filter matches only main runs of the proxied workflow, never
+        # a pull request head's run (ci-main-flake-rerun.yml, #11377), so it owes no check.
+        if isinstance(follow, dict) and follow.get("branches") == ["main"]:
+            return None
         if isinstance(follow, dict) and PULL_REQUEST_PROXY_WORKFLOW in (follow.get("workflows") or []):
             # A workflow_run trigger carries no path filter of its own; the in-run scope
             # (scripts/ci_pr_scope.py) is the only list, as for a bare pull_request.

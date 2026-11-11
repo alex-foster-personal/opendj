@@ -1,0 +1,9 @@
+{
+  "bytes": 1024,
+  "measured_main": 442093,
+  "measured_with_pr": 442263,
+  "sha": "ca91315081",
+  "date": "Wed 11 Nov 2026",
+  "reason": "branch af--stems-job-truth grows the performance surface; measured +170 B gzip over main; ceiled to KiB.",
+  "payback": "none planned; the growth is the change's own code on this surface"
+}

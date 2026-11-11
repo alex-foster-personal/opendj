@@ -57,7 +57,7 @@ Requirements (mini-PRD):
 
 from __future__ import annotations
 
-from fastapi import APIRouter, HTTPException, Query, Request, Response, status
+from fastapi import APIRouter, HTTPException, Query, Request, Response
 from pydantic import BaseModel, ConfigDict
 
 import apps.feature_flags.http as _flags_http
@@ -80,8 +80,8 @@ from apps.feature_flags.http import (
 )
 from apps.shared.engine_app_state import require_app_state
 from apps.shared.sandbox import is_sandboxed
-from apps.webui.server.auth import SESSION_COOKIE_NAME, SessionUser
-from apps.webui.server.routes.auth import session_store, signed_in_user
+from apps.webui.server.auth import SESSION_COOKIE_NAME
+from apps.webui.server.routes.auth import require_signed_in_user, session_store, signed_in_user
 
 account_router = APIRouter(prefix="/account", tags=["account"])
 entitlements_router = APIRouter(prefix="/entitlements", tags=["entitlements"])
@@ -246,21 +246,6 @@ def _local_data(state_db: str) -> list[LocalDataOut]:
     ]
 
 
-def _require_user(request: Request) -> SessionUser:
-    user = signed_in_user(request)
-    if user is None:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail={
-                "code": "AUTH_REQUIRED",
-                "message": (
-                    "not signed in, so there is no account to act on. Sign in with POST /api/v1/auth/login first."
-                ),
-            },
-        )
-    return user
-
-
 # ----- account ------------------------------------------------------------
 @account_router.get("", response_model=AccountOut)
 def read_account(request: Request) -> AccountOut:
@@ -315,7 +300,10 @@ def delete_account(
     token for a row that no longer exists would leave the UI showing a signed
     in state that resolves to nobody.
     """
-    user = _require_user(request)
+    user = require_signed_in_user(
+        request,
+        message=("not signed in, so there is no account to act on. Sign in with POST /api/v1/auth/login first."),
+    )
     if confirm != ACCOUNT_DELETE_CONFIRM:
         raise HTTPException(
             status_code=422,

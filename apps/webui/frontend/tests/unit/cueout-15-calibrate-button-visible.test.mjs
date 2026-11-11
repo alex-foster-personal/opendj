@@ -1,7 +1,6 @@
-// requirement: CUEOUT-15 (CALIBRATE is discoverable before a cue device is picked)
-// [if] the mixer is in practice mode [then] the CALIBRATE button is rendered, disabled, so the operator can find it
-// [if] the button lives inside the two_outputs-only block [then] it is invisible until a CUE device is selected - broken
-// (found Wed 16 Sep 2026 driving the preview: the I/O row showed no CALIBRATE at all in practice mode)
+// requirement: CUEOUT-15 / IOPIN-07 (CALIBRATE is discoverable with device pickers)
+// [if] the mixer is in two_outputs mode [then] the CALIBRATE button is in the device menu, disabled until cue is picked
+// [if] CALIBRATE sits outside the device pickers [then] operators lose context during calibration - broken
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { test } from 'node:test';
@@ -11,14 +10,10 @@ const SOURCE = new URL(
 	import.meta.url
 );
 
-test('CALIBRATE stays inside I/O but outside the two_outputs-only section', () => {
+test('CALIBRATE stays inside I/O beside the output pickers when two_outputs is active', () => {
 	const source = readFileSync(SOURCE, 'utf8');
 	assert.match(source, /\{#if ioSurface\.open\}[\s\S]*?class="hp-panel"/);
-	assert.match(
-		source,
-		/\{#if headphoneState\.output_mode === 'two_outputs'\}[\s\S]*?<\/section>\s*\{\/if\}\s*<section class="hp-section hp-calibration-section"/,
-		'CALIBRATE must be rendered after the two_outputs-only section, still within I/O'
-	);
+	assert.match(source, /data-io-calibration-block/);
 	assert.match(source, /aria-label="CALIBRATE CUE ALIGNMENT"/);
 	assert.match(
 		source,

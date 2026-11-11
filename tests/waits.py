@@ -90,6 +90,11 @@ class _SignallingServer(uvicorn.Server):
             self.startup_complete.set()
 
 
+def uvicorn_startup_thread_died(exc: BaseException) -> bool:
+    """True when uvicorn's server thread ended before signaling startup complete."""
+    return isinstance(exc, RuntimeError) and "server thread exited during startup" in str(exc)
+
+
 def start_uvicorn_in_thread(
     config: uvicorn.Config,
     *,

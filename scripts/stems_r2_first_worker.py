@@ -69,7 +69,19 @@ def _compute_argv(
             stable_ids, tier=tier, data_dir=data_dir, executor=executor
         )
     except StemsJobPayloadError as exc:
-        raise SystemExit(f"error: {exc}") from exc
+        # The job's outcome check quotes this line as the reason, so it is
+        # written for the person who pressed Separate (STEM-59).
+        where = "on this Mac" if executor == "local" else "on the separation service"
+        raise SystemExit(
+            f"error: {len(stable_ids)} song(s) have no stems anywhere and cannot be "
+            f"separated {where}: {exc}. "
+            + (
+                "Allow remote processing in CloudSync settings so the separation "
+                "service can make them, or turn on on-device stems for this build."
+                if executor == "local"
+                else "Check the separation service settings and try again."
+            )
+        ) from exc
 
 
 def _run_compute(

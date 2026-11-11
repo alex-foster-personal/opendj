@@ -11,6 +11,7 @@ Requirements:
   ✔︎ Pre-M1 hardware is refused before live stems can start.
   ✔︎ M1 and M2 select low quality, while M3 or newer selects high quality.
   ✔︎ Four decks report the eight-bar lookahead required over two decks.
+  ✔︎ Each enabled plan reports the locked PERFBATCH-06 live-generation working-set ceiling.
 
 Acceptance tests:
   [if] a pre-M1 machine is offered live stems [then ⛔️]
@@ -45,6 +46,10 @@ BENCHMARK_ITERATIONS: Final[int] = 50_000
 BENCHMARK_MIN_HASHES_PER_SECOND: Final[int] = 20_000
 TWO_DECK_LOOKAHEAD_BARS: Final[int] = 4
 FOUR_DECK_LOOKAHEAD_BARS: Final[int] = 8
+# PERFBATCH-06 locked live-generation working set: model + activations + lookahead PCM,
+# exclusive of already-decoded playback PCM. Design ceilings; measurement is a later gate.
+LOW_QUALITY_WORKING_SET_CEILING_MIB: Final[int] = 512
+HIGH_QUALITY_WORKING_SET_CEILING_MIB: Final[int] = 1024
 SUPPORTED_DECK_COUNTS: Final[frozenset[int]] = frozenset({2, 4})
 # Realistic DJ tempo range; outside it the lookahead division overflows (tiny BPM) or rounds to 0 ms (huge BPM).
 MIN_PLAN_BPM: Final[float] = 20.0
@@ -97,9 +102,45 @@ class LiveStemsPlan:
     bpm: float
     lookahead_bars: int
     lookahead_ms: int
+    working_set_ceiling_mib: int
 
     def to_dict(self) -> dict[str, object]:
         return asdict(self)
+
+
+def _validate_persisted_tiers(capability: LiveStemsCapability, *, path: Path) -> None:
+    """Reject structurally valid records that contradict the LATENCY-04 tier table."""
+    if capability.machine_class in {
+        LiveStemsMachineClass.PRE_M1,
+        LiveStemsMachineClass.UNKNOWN,
+    } and capability.enabled:
+        raise LiveStemsCapabilityError(
+            f"live-stems capability at {path} is enabled on "
+            f"{capability.machine_class.value}; live stems requires Apple "
+            f"M{MINIMUM_APPLE_SILICON_MAJOR} or newer"
+        )
+    if not capability.enabled and capability.quality is not LiveStemsQuality.DISABLED:
+        raise LiveStemsCapabilityError(
+            f"live-stems capability at {path} is disabled but quality is "
+            f"{capability.quality.value}; expected {LiveStemsQuality.DISABLED.value}"
+        )
+    if capability.machine_class in {
+        LiveStemsMachineClass.M1,
+        LiveStemsMachineClass.M2,
+    } and capability.quality is LiveStemsQuality.HIGH:
+        raise LiveStemsCapabilityError(
+            f"live-stems capability at {path} selects high quality on "
+            f"{capability.machine_class.value}; M1 and M2 require low quality"
+        )
+    if (
+        capability.machine_class is LiveStemsMachineClass.M3_OR_NEWER
+        and capability.enabled
+        and capability.quality is LiveStemsQuality.LOW
+    ):
+        raise LiveStemsCapabilityError(
+            f"live-stems capability at {path} selects low quality on "
+            f"Apple M{HIGH_QUALITY_APPLE_SILICON_MAJOR} or newer; high quality is required"
+        )
 
 
 # ----- assessment ---------------------------------------------------------
@@ -271,6 +312,7 @@ def load_capability(data_dir: Path) -> LiveStemsCapability:
             f"live-stems capability at {path} has schema {capability.schema}; "
             f"expected {CAPABILITY_SCHEMA}"
         )
+    _validate_persisted_tiers(capability, path=path)
     return capability
 
 
@@ -310,6 +352,17 @@ def reassess_persisted_capability(
 
 
 # ----- live-stems plan ---------------------------------------------------
+def _working_set_ceiling_mib(quality: LiveStemsQuality) -> int:
+    """The locked PERFBATCH-06 working-set ceiling for a quality, or a named refusal."""
+    if quality is LiveStemsQuality.LOW:
+        return LOW_QUALITY_WORKING_SET_CEILING_MIB
+    if quality is LiveStemsQuality.HIGH:
+        return HIGH_QUALITY_WORKING_SET_CEILING_MIB
+    raise LiveStemsCapabilityError(
+        f"no live-generation working-set ceiling is locked for quality {quality.value}"
+    )
+
+
 def plan_live_stems(
     capability: LiveStemsCapability, *, deck_count: int, bpm: float
 ) -> LiveStemsPlan:
@@ -334,6 +387,7 @@ def plan_live_stems(
         bpm=bpm,
         lookahead_bars=lookahead_bars,
         lookahead_ms=round(lookahead_bars * 4 * 60_000 / bpm),
+        working_set_ceiling_mib=_working_set_ceiling_mib(capability.quality),
     )
 
 

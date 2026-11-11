@@ -20,6 +20,7 @@ MAX_DMX_SLOTS = 512
 MAX_NET = 127
 MAX_SUBNET = 15
 MAX_UNIVERSE = 15
+MAX_PORT_ADDRESS = 0x7FFF
 MAX_SEQUENCE = 255
 SEQUENCE_OFF = 0
 
@@ -37,15 +38,27 @@ def _require_range(name: str, value: int, low: int, high: int) -> None:
         raise ValueError(f"{name} must be {low}..{high}, got {value}")
 
 
+def _require_address_field(name: str, value: int, high: int) -> None:
+    if isinstance(value, bool) or not isinstance(value, int):
+        raise ValueError(f"{name} must be an integer, got {value!r}")  # noqa: TRY004 - address validation uses ValueError
+    _require_range(name, value, 0, high)
+
+
 # ----------------------------------------------------------------------------- public api
 
 
 def port_address(net: int, subnet: int, universe: int) -> int:
-    """15-bit Port-Address from Net 0..127, Sub-Net 0..15 and Universe 0..15."""
-    _require_range("net", net, 0, MAX_NET)
-    _require_range("subnet", subnet, 0, MAX_SUBNET)
-    _require_range("universe", universe, 0, MAX_UNIVERSE)
+    """Pack 7:4:4 integers; raise ValueError for non-integers, booleans or invalid ranges."""
+    _require_address_field("net", net, MAX_NET)
+    _require_address_field("subnet", subnet, MAX_SUBNET)
+    _require_address_field("universe", universe, MAX_UNIVERSE)
     return (net << 8) | (subnet << 4) | universe
+
+
+def unpack_port_address(address: int) -> tuple[int, int, int]:
+    """Return (net, subnet, universe); raise ValueError unless address is an integer 0..32767."""
+    _require_address_field("port_address", address, MAX_PORT_ADDRESS)
+    return address >> 8, (address >> 4) & MAX_SUBNET, address & MAX_UNIVERSE
 
 
 def next_sequence(sequence: int) -> int:
@@ -58,7 +71,7 @@ def encode_artdmx(port_address: int, data: bytes, sequence: int, physical: int =
     """One ArtDmx packet. Odd-length data is padded with a zero slot to the even length Art-Net requires."""
     if port_address == 0:
         raise ValueError("Port-Address 0 is deprecated in Art-Net 4; use universe 1 or higher")
-    _require_range("port_address", port_address, 1, 0x7FFF)
+    _require_range("port_address", port_address, 1, MAX_PORT_ADDRESS)
     _require_range("sequence", sequence, SEQUENCE_OFF, MAX_SEQUENCE)
     _require_range("physical", physical, 0, 255)
     slots = bytes(data)

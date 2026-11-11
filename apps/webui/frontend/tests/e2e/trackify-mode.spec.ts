@@ -108,8 +108,83 @@ async function _openTrackifyFromGig(page: import('@playwright/test').Page): Prom
 	await page.waitForFunction(() => window.musicDjToolsTrackify?.version === 1);
 }
 
-test('mode chooser navigates to Trackify listening shell', async ({ page }) => {
+test('mode chooser opens Trackify listening shell without gig chrome', async ({ page }) => {
 	await _openTrackifyFromGig(page);
+	await expect(page.getByTestId('trackify-position-bar')).toBeVisible();
+	await expect(page.locator('canvas')).toHaveCount(0);
+	await expect(page.getByTestId('mixer-stems-toggle')).toHaveCount(0);
+	await expect(page.getByTestId('waveform-play-deck-1')).toHaveCount(0);
+});
+
+test('entering Trackify stamps uiPrefs app_mode to music-player', async ({ page }) => {
+	await _openTrackifyFromGig(page);
+	const appMode = await page.evaluate(() => {
+		const raw = localStorage.getItem('mdt.rb.ui-prefs.v1');
+		if (raw === null) throw new Error('ui prefs missing');
+		const parsed = JSON.parse(raw) as { app_mode?: unknown };
+		return parsed.app_mode;
+	});
+	expect(appMode).toBe('music-player');
+});
+
+test('position bar binds deck 1 duration_ms and position_ms after load', async ({ page }) => {
+	test.setTimeout(120_000);
+	await page.goto('/music-player?muted=1', { waitUntil: 'domcontentloaded' });
+	await page.waitForFunction(() => window.musicDjToolsTrackify?.version === 1);
+	const goodId = await page.evaluate(async () => {
+		const response = await fetch('/api/v1/tracks?limit=1');
+		if (!response.ok) throw new Error(`tracks list failed (${response.status})`);
+		const payload = await response.json();
+		const items = Array.isArray(payload.items) ? payload.items : [];
+		if (items.length === 0) throw new Error('fixture library has no tracks');
+		return items[0].stable_id as string;
+	});
+	await page.evaluate(async (stableId) => {
+		const ipc = window.musicDjToolsTrackify;
+		const perf = window.musicDjToolsPerformance;
+		if (ipc === undefined || perf === undefined)
+			throw new Error('Trackify or performance IPC missing');
+		ipc.toggle_autoplay(false, true);
+		if (perf.query().decks[1].stable_id !== null) {
+			await perf.dispatch({ type: 'unload', deck: 1 });
+		}
+		await ipc.e2e_force_load?.(stableId);
+	}, goodId);
+	await expect
+		.poll(
+			async () =>
+				page.evaluate(() => {
+					const deck = window.musicDjToolsTrackify?.query().deck;
+					return deck?.duration_ms ?? 0;
+				}),
+			{ timeout: 30_000, message: 'loaded track should publish duration_ms' }
+		)
+		.toBeGreaterThan(0);
+	const snapshot = await page.evaluate(() => {
+		const deck = window.musicDjToolsTrackify!.query().deck;
+		const fill = document.querySelector('[data-testid="trackify-position-bar"] .position-fill');
+		return {
+			positionMs: deck.position_ms ?? 0,
+			durationMs: deck.duration_ms ?? 0,
+			width: fill instanceof HTMLElement ? Number.parseFloat(fill.style.width) : 0
+		};
+	});
+	const expectedPct = Math.min(100, Math.max(0, (snapshot.positionMs / snapshot.durationMs) * 100));
+	expect(snapshot.width).toBeCloseTo(expectedPct, 0);
+	await expect(page.getByTestId('trackify-position-bar')).toBeVisible();
+	await expect(page.locator('.trackify-player .times span').nth(1)).not.toHaveText('-:--');
+});
+
+test('unmounting Trackify stops deck 1 and tears down Trackify IPC', async ({ page }) => {
+	test.setTimeout(120_000);
+	await page.goto('/music-player?muted=1', { waitUntil: 'domcontentloaded' });
+	await page.waitForFunction(() => window.musicDjToolsTrackify?.version === 1);
+	await page.goto('/performance?muted=1', { waitUntil: 'domcontentloaded' });
+	await page.waitForFunction(() => window.musicDjToolsTrackify === undefined);
+	await page.waitForFunction(() => window.musicDjToolsPerformance?.version === 1);
+	const deck = await page.evaluate(() => window.musicDjToolsPerformance!.query().decks[1]);
+	expect(deck.playing).toBe(false);
+	expect(deck.stable_id).toBe(null);
 });
 
 test('failed load skips to the next track with a dismissible toast within 2 s', async ({

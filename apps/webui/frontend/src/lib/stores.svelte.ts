@@ -8,16 +8,27 @@ import {
 	type HealthHistoryEntry
 } from '../routes/admin/health-history';
 import { auth } from './auth.svelte';
-import { onClientErrorAck, reportClientError, type ClientErrorContext } from './client-error-reporting';
-import { classifyToastError, type ToastErrorClass } from './toast-error-classification';
 import {
-	formatToastPresentation,
-	type ToastPresentation
-} from './toast-presentation';
-import { oldestNonExitingIndex, TOAST_MAX_VISIBLE } from './toast-tray-policy';
+	onClientErrorAck,
+	reportClientError,
+	type ClientErrorContext
+} from './client-error-reporting';
+import { classifyToastError, type ToastErrorClass } from './toast-error-classification';
+import { formatToastPresentation, type ToastPresentation } from './toast-presentation';
+import {
+	oldestNonExitingIndex,
+	TOAST_COPIED_NOTE_MS,
+	TOAST_MAX_VISIBLE
+} from './toast-tray-policy';
 import { readShellBuild } from './rb/build-identity';
 import { mintErrorId } from './rb/error-id';
-import { gatherToastCopyExtras, type ToastCopyDeckSnapshot } from './toast-copy-context';
+import {
+	armToastCommentPin,
+	gatherToastCopyExtras,
+	type ToastCopyDeckSnapshot
+} from './toast-copy-context';
+
+export { clearToastCommentPinArm, peekToastCommentPinArm } from './toast-copy-context';
 import { isPerformanceRoutePath } from './rb/performance-preset';
 import { lastPerfError } from './rb/silence-dropout';
 import { readPerfEvents, recordPerfEvent } from './rb/perf-event-log';
@@ -182,6 +193,12 @@ function _find(logId: string): Toast | undefined {
 /** Default auto-dismiss delay when a caller does not name its own. */
 export const TOAST_DEFAULT_MS = 5000;
 
+/** Raise an error toast with the caught value as pushToast's classification cause. */
+export function pushToastForFailure(exc: unknown, message?: string): void {
+	const text = message ?? (exc instanceof Error ? exc.message : String(exc));
+	pushToast(text, 'error', TOAST_DEFAULT_MS, exc);
+}
+
 /**
  * Every toast outlives its own on-screen dismissal in the perf-event-log
  * ring (localStorage + console) - toasts vanish after TOAST_DEFAULT_MS with
@@ -267,8 +284,10 @@ export function pushToast(
 	);
 	// Group only when a caller names the same control. Every occurrence still
 	// has its own log row; the displayed message/id refer to the latest one.
-	const existing = groupKey === undefined ? undefined :
-		toasts.find((toast) => toast.groupKey === groupKey && toast.kind === kind);
+	const existing =
+		groupKey === undefined
+			? undefined
+			: toasts.find((toast) => toast.groupKey === groupKey && toast.kind === kind);
 	const toast =
 		existing ??
 		({
@@ -475,10 +494,8 @@ export async function copyToast(logId: string): Promise<string> {
 	// Query stripped: it can carry ids a report has no business republishing,
 	// and the path is what identifies the surface.
 	const page = href === '' ? UNKNOWN : href.split('?')[0].split('#')[0];
-	const pathname =
-		typeof window === 'undefined' ? '' : (window.location?.pathname ?? '');
-	const occurrenceSuffix =
-		toast.count > 1 ? `\nOccurrences: ${toast.count}` : '';
+	const pathname = typeof window === 'undefined' ? '' : (window.location?.pathname ?? '');
+	const occurrenceSuffix = toast.count > 1 ? `\nOccurrences: ${toast.count}` : '';
 	let deckSnapshots: readonly ToastCopyDeckSnapshot[] | undefined;
 	if (isPerformanceRoutePath(pathname)) {
 		try {
@@ -529,6 +546,7 @@ export async function copyToast(logId: string): Promise<string> {
 		typeof navigator === 'undefined' ? undefined : navigator.clipboard,
 		typeof window !== 'undefined' && window.isSecureContext === true
 	);
+	armToastCommentPin(toast.logId, text, TOAST_COPIED_NOTE_MS);
 	return text;
 }
 

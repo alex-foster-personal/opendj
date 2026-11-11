@@ -223,3 +223,14 @@ test('the merged list holds every registry command on main that has default keys
 	for (const entry of registryMod.HOTKEY_REGISTRY)
 		assert.ok(ids.has(entry.id), `${entry.id} dropped from the merge`);
 });
+
+// if the overlay lacks any of the three Library rows then broken
+test('KEYB-11643: library load, instant-double and locate chords are listed under Library', () => {
+	const byId = Object.fromEntries(registryMod.HOTKEY_REGISTRY.map((entry) => [entry.id, entry]));
+	for (const id of ['library-load-deck', 'library-instant-double', 'library-locate']) {
+		assert.equal(byId[id].group, 'Library', id);
+	}
+	assert.match(byId['library-load-deck'].chord, /Shift\+Left/);
+	assert.match(byId['library-instant-double'].chord, /Cmd\+Shift\+Left/);
+	assert.equal(byId['library-locate'].chord, 'Cmd+L');
+});

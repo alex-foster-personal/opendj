@@ -18,9 +18,10 @@ from collections.abc import Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
 
+from apps.adapters.rekordbox import config as rb_config
 from apps.shared.state import db as state_db
 
-from . import findings, groups
+from . import findings, groups, library_tags
 
 
 @dataclass(frozen=True)
@@ -69,4 +70,25 @@ def load_for_rows(state_db_path: Path, stable_ids: Sequence[str]) -> RowGenres:
         conn.close()
 
 
-__all__ = ["RowGenres", "load_for_rows", "read_for_rows"]
+def chosen_for_stable_ids(
+    conn: sqlite3.Connection,
+    stable_ids: Sequence[str],
+    *,
+    master_path: Path | None = None,
+) -> dict[str, findings.Chosen | None]:
+    """The library row's chosen genre per id (same resolution as ``_genre_for_display``)."""
+    if not stable_ids:
+        return {}
+    row_genres = read_for_rows(conn, stable_ids)
+    fields = library_tags.field_genres(conn, stable_ids)
+    rekordbox = library_tags.rekordbox_genres(conn, stable_ids, master_path or rb_config.MASTER_PLAIN_DB)
+    out: dict[str, findings.Chosen | None] = {}
+    for sid in stable_ids:
+        own_typed, imported = fields.get(sid, (None, None))
+        user = row_genres.typed.get(sid) or own_typed
+        library = rekordbox.get(sid) or imported
+        out[sid] = row_genres.chosen(sid, user_genre=user, library_genre=library)
+    return out
+
+
+__all__ = ["RowGenres", "chosen_for_stable_ids", "load_for_rows", "read_for_rows"]

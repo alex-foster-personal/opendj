@@ -33,6 +33,12 @@ Both lists keep GitHub's own filter semantics, evaluated by
   seed, so this is a measured trade, not an oversight: a ledger edit is normally written
   by the progress API, which validates it, and the nightly full suite (full-ci.yml) runs
   those readers on main; a broken hand edit is fixed forward from there.
+  Markdown is documentation only at the root and under the documentation trees: a `.md`
+  anywhere else (`adws/`, `apps/`, `.agents/`, a new top-level directory) is in scope, so
+  the pytest lane runs its always-run guards (ci/pr-always-run.txt). be05b4b5ab (#12784)
+  changed a spec and `adws/adw_data/sessions/d27ed712/context_handoff/plan.md`; the old
+  `!**.md` called both documentation, ran 0 gated jobs, and main went red at 1ef009cae5.
+  An out-of-scope change set still runs `scripts.ci_tree_hygiene` in the scope job.
 - `E2E_PATHS_IGNORE` is a `paths-ignore` list: in scope when at least one changed file
   is not ignored. `e2e.yml`'s `push` trigger must carry the same list as a literal,
   because GitHub reads trigger filters from the workflow file and nowhere else;
@@ -54,6 +60,11 @@ from collections.abc import Collection, Sequence
 CI_PULL_REQUEST_PATHS: tuple[str, ...] = (
     "**",
     "!**.md",
+    # ...but only root markdown is documentation by name: re-include every nested .md (the
+    # matcher is fnmatch, whose * crosses /, so root-only needs this pair), then the doc trees.
+    "*/**.md",
+    "!app_docs/**.md",
+    "!research/**.md",
     "!docs/**",
     "!handoffs/**",
     "!.planning/**",

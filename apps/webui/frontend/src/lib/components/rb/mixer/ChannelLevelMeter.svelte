@@ -26,7 +26,9 @@
 	import { peekDeckMeterReading } from '$lib/rb/audio-engine.svelte';
 	import {
 		METER_FLOOR_DBFS,
-		clipHeldUntil, clipLit, createClipPipCursor,
+		clipHeldUntil,
+		clipLit,
+		createClipPipCursor,
 		segmentBand,
 		segmentsLitFromDbfs,
 		segmentThresholdsForRed
@@ -83,17 +85,13 @@
 		pipCursor.activate(untrack(() => peekDeckMeterReading(deckId).heardClipSeq));
 		const tick = (now: number): void => {
 			const reading = peekDeckMeterReading(deckId);
-			// Pre-crossfader peaks sit ~3 dB above the master bus at the
-			// default center crossfade, which is enough to paint this bar red
-			// while the top-right meter stays amber. Color (and the clip pip)
-			// follow the level that actually reaches the master: the worklet's
-			// post-crossfader `heard` peak through its own ballistics, never the
-			// pre-crossfader reading re-scaled by the crossfader's position now,
-			// which would rewrite a decaying bar whenever the fader moved
-			// (Sol P1, #6829). An ?extroute= deck's heard source is its fader.
-			const heardDb = reading.heardDb;
-			lit = segmentsLitFromDbfs(heardDb, thresholds);
-			db = heardDb;
+			// Orange/red segments follow the post-channel-fader tap (`db`), the
+			// same point the volume slider drives (pin `3dc62dbb909c`, issue
+			// #11321). The clip pip alone uses post-crossfader `heard` peaks
+			// (Sol P1, #6829) so a crossfader move never rewrites a latched clip.
+			const channelDb = reading.db;
+			lit = segmentsLitFromDbfs(channelDb, thresholds);
+			db = channelDb;
 			// The pip holds like the tap's own latch, or a one-frame clip never
 			// shows. It lights on any post-crossfader clip the tap recorded since
 			// the last frame, judged on the audio thread through the crossfader
@@ -111,9 +109,7 @@
 
 	// Every numeric readout carries what the number actually is, per house rule.
 	const readout = $derived(
-		db <= METER_FLOOR_DBFS
-			? 'silent'
-			: `${db.toFixed(1)} dBFS${clipped ? ' - CLIPPING' : ''}`
+		db <= METER_FLOOR_DBFS ? 'silent' : `${db.toFixed(1)} dBFS${clipped ? ' - CLIPPING' : ''}`
 	);
 </script>
 
@@ -121,12 +117,12 @@
 	class="rb-channel-level-meter"
 	class:clipped
 	role="meter"
-	aria-label={`channel ${deckId} level, post-EQ post-fader, after the crossfader`}
+	aria-label={`channel ${deckId} level, post-EQ post-channel-fader`}
 	aria-valuemin={METER_FLOOR_DBFS}
 	aria-valuemax={0}
 	aria-valuenow={db}
 	aria-valuetext={readout}
-	title={`Post-EQ, post-fader channel level after the crossfader: ${readout}. Responds to trim, EQ, the channel volume fader, and the crossfader. With one channel up and the crossfader centered, this matches the top-right master meter before anyone presses R. Red means digital clipping on the way to the master, not speaker risk.`}
+	title={`Post-EQ, post-channel-fader level: ${readout}. Responds to trim, EQ, and the channel volume fader (pin 3dc62dbb909c). The clip pip alone follows the post-crossfader path. Red means digital clipping at this tap, not speaker risk.`}
 >
 	<!--
 		Keyed by index, not segment.threshold: a low red-calibration anchor clamps

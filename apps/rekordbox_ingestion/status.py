@@ -66,6 +66,11 @@ class BatchStatus:
     def complete(self) -> bool:
         return self.denominator > 0 and self.counts["ANALYZED"] == self.denominator
 
+    @property
+    def in_rekordbox_count(self) -> int:
+        """Tracks present in djmdContent (imported or fully analyzed)."""
+        return self.counts["IMPORTED"] + self.counts["ANALYZED"]
+
     def to_dict(self) -> dict:
         return {**asdict(self), "complete": self.complete}
 

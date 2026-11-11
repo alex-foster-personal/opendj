@@ -10,6 +10,9 @@
  * join the same selection as `deck:fader`. Esc or a
  * click on empty space clears the set. Plain click/drag does not select.
  * Alt/Option+click two knobs to link (turn one down => other up).
+ * Digits 1-9 glide the selection to a commanded position over 4 beats;
+ * Cmd/Ctrl+digit jumps there now (#9453). Same commands appear in Cmd-K while
+ * a dial or fader is selected, and via `window.__mdtKnobSelection.command`.
  *
  * the maintainer, Tue 6 Oct 2026: "we had a feature where we could select multiple
  * knobs with shift held. on any click&drag then or scroll etc (as per usual
@@ -18,8 +21,20 @@
  * is both / all knobs up, up and left is one up, one down".
  */
 
+import { isTextEntryTarget } from '$lib/keyboard/text-entry-target';
+import { isSettingsOpen } from '$lib/settings/overlay.svelte';
 import { detectWheelInputKind, scaledWheelStep } from './wheel-adjust';
 import { gainedStraightDrag } from './drag-sensitivity.svelte';
+import {
+	handleCommandedKeydown,
+	type CommandedKeyDeps,
+	type CommandedMove
+} from './commanded-keys';
+import {
+	PERFORMANCE_COMMAND_REGISTRY,
+	runCommand as runPerformanceCommand,
+	type PerformanceCommandId
+} from '$lib/keyboard/command-registry';
 import type { StemControl } from './stem-types';
 
 // ----- central sensitivity (tweak here; not buried in components) -----
@@ -330,7 +345,8 @@ export function applyLinkToTargets(
 	const driverBase = baselines[driver];
 	const partnerBase = baselines[partner];
 	const driverTarget = out[driver];
-	if (driverBase === undefined || partnerBase === undefined || driverTarget === undefined) return out;
+	if (driverBase === undefined || partnerBase === undefined || driverTarget === undefined)
+		return out;
 	const next = applyLinkedDelta(driverBase, partnerBase, driverTarget - driverBase);
 	out[driver] = next.primary;
 	out[partner] = next.secondary;
@@ -433,7 +449,9 @@ export function setKnobSelection(ids: readonly string[]): void {
 	const next: string[] = [];
 	for (const id of ids) if (!next.includes(id)) next.push(id);
 	if (next.some((id) => isTestControl(id) !== isTestControl(next[0]))) {
-		throw new RangeError(`a selection cannot mix drag-tester and live controls; got ${next.join(', ')}`);
+		throw new RangeError(
+			`a selection cannot mix drag-tester and live controls; got ${next.join(', ')}`
+		);
 	}
 	const channels = selectionChannels(next);
 	if (channels.length > GROUP_MAX_CHANNELS) {
@@ -445,6 +463,30 @@ export function setKnobSelection(ids: readonly string[]): void {
 
 let _hintTimer: ReturnType<typeof setTimeout> | null = null;
 
+function _showHint(id: string, text: string): void {
+	knobUi.groupHint = { id, text };
+	if (_hintTimer !== null) clearTimeout(_hintTimer);
+	_hintTimer = setTimeout(() => {
+		knobUi.groupHint = null;
+		_hintTimer = null;
+	}, 2500);
+}
+
+let _startGlides = (moves: readonly CommandedMove[]): void => {
+	void import('./commanded-move-start').then((m) => m.startCommandedGlides(moves, _refuseGlide));
+};
+
+function _refuseGlide(id: string): void {
+	_showHint(id, 'No timed move for this control; Cmd+digit jumps');
+}
+
+/** Test-only: replace the glide starter (D3 #9454 owns the real runner later). */
+export function _setCommandedGlideStarterForTests(
+	fn: (moves: readonly CommandedMove[]) => void
+): void {
+	_startGlides = fn;
+}
+
 /**
  * Shift+click: toggle a control in or out of the ordered selection set. A
  * control on a third channel is refused, not swapped for the oldest (R4
@@ -452,12 +494,7 @@ let _hintTimer: ReturnType<typeof setTimeout> | null = null;
  */
 export function shiftClickKnob(id: string): boolean {
 	if (wouldExceedChannelLimit(knobUi.selectedIds, id)) {
-		knobUi.groupHint = { id, text: GROUP_LIMIT_HINT };
-		if (_hintTimer !== null) clearTimeout(_hintTimer);
-		_hintTimer = setTimeout(() => {
-			knobUi.groupHint = null;
-			_hintTimer = null;
-		}, 2500);
+		_showHint(id, GROUP_LIMIT_HINT);
 		return false;
 	}
 	knobUi.groupHint = null;
@@ -630,7 +667,8 @@ export function nudgeSelection(delta: number, opts: GroupNudgeOptions = {}): voi
  */
 export function nudgeKnobOrSelection(id: string, delta: number, flip: boolean = false): void {
 	_noteHandInput([id]);
-	if (isKnobSelected(id) && knobUi.selectedIds.length >= 2) nudgeSelection(delta, { leadId: id, flip });
+	if (isKnobSelected(id) && knobUi.selectedIds.length >= 2)
+		nudgeSelection(delta, { leadId: id, flip });
 	else nudgeKnob(id, delta);
 }
 
@@ -702,7 +740,9 @@ export function stepSelectionDrag(start: SelectionDragStart, delta: number, flip
 	_noteHandInput(start.ids);
 	const signs = leadDragSigns(start.ids, start.leadId, flip);
 	for (const id of start.ids) start.offsets[id] = (start.offsets[id] ?? 0) + signs[id] * delta;
-	_applyTargets(applyLinkToTargets(start.ids, start.baselines, groupDragTargets(start), knobUi.link));
+	_applyTargets(
+		applyLinkToTargets(start.ids, start.baselines, groupDragTargets(start), knobUi.link)
+	);
 }
 
 /**
@@ -713,8 +753,11 @@ export function stepPadDrag(start: SelectionDragStart, dx: number, dy: number): 
 	if (!Number.isFinite(dx) || !Number.isFinite(dy) || (dx === 0 && dy === 0)) return;
 	_noteHandInput(start.ids);
 	const axes = padAxes(start.ids);
-	for (const id of start.ids) start.offsets[id] = (start.offsets[id] ?? 0) + (axes.x.includes(id) ? dx : dy);
-	_applyTargets(applyLinkToTargets(start.ids, start.baselines, groupDragTargets(start), knobUi.link));
+	for (const id of start.ids)
+		start.offsets[id] = (start.offsets[id] ?? 0) + (axes.x.includes(id) ? dx : dy);
+	_applyTargets(
+		applyLinkToTargets(start.ids, start.baselines, groupDragTargets(start), knobUi.link)
+	);
 }
 
 /** Pad drag start: the whole 2+ selection, no lead (the pad itself is the pointer). */
@@ -760,9 +803,34 @@ function _onWindowKeyDown(e: KeyboardEvent): void {
 	if (e.key === 'Escape') clearKnobSelection();
 }
 
+/** The live dial/fader selection as the command registry's `commanded` host (#9453). */
+export function commandedKeyHost(): CommandedKeyDeps {
+	return {
+		selectedIds: () => knobUi.selectedIds.filter((id) => _registry.has(id)),
+		readValue: readKnobValue,
+		setAbsolute: setKnobAbsolute,
+		startGlides: (moves) => _startGlides(moves),
+		isTyping: (t) => isTextEntryTarget(t ?? null),
+		settingsOpen: isSettingsOpen
+	};
+}
+
+function _onWindowCommandedKey(e: KeyboardEvent): void {
+	const host = commandedKeyHost();
+	handleCommandedKeydown(e, host, (command) =>
+		runPerformanceCommand(command.id, { timeStamp: e.timeStamp, commanded: host })
+	);
+}
+
 function _onWindowPointerDown(e: PointerEvent): void {
 	if (e.button !== 0 || knobUi.selectedIds.length === 0) return;
 	if (isEmptySpaceTarget(e.target)) clearKnobSelection();
+}
+
+// Bound once for the module's life: an empty selection is a no-op in the handler,
+// and capture means a claimed Cmd+2/Cmd+4 never reaches deck-layout-hotkeys (bubble phase).
+if (typeof window !== 'undefined') {
+	window.addEventListener('keydown', _onWindowCommandedKey, { capture: true });
 }
 
 /**
@@ -805,6 +873,8 @@ export interface KnobSelectionBridge {
 	drag: (dx: number, dy: number) => void;
 	/** Current value of a dial, or null when it is not mounted. */
 	value: (id: string) => number | null;
+	/** Run a dial/fader command (`dial.position.N`, `dial.jump.N`) on the selection, as its key does. */
+	command: (id: string) => void;
 }
 
 export function installKnobSelectionGlobal(): void {
@@ -840,7 +910,18 @@ export function installKnobSelectionGlobal(): void {
 				nudgeKnob(ids[0], singleDragDelta(gained.dx, gained.dy));
 			}
 		},
-		value: (id) => readKnobValue(id)
+		value: (id) => readKnobValue(id),
+		command: (id) => {
+			const def = PERFORMANCE_COMMAND_REGISTRY.get(id as PerformanceCommandId);
+			if (def === undefined || (!def.scopes.includes('dial') && !def.scopes.includes('fader'))) {
+				throw new TypeError(`not a dial or fader command: ${id}`);
+			}
+			const host = commandedKeyHost();
+			if (host.selectedIds().length === 0) {
+				throw new Error('no dial or fader is selected');
+			}
+			runPerformanceCommand(def.id, { timeStamp: performance.now(), commanded: host });
+		}
 	};
 	(window as Window & { __mdtKnobSelection?: KnobSelectionBridge }).__mdtKnobSelection = bridge;
 }

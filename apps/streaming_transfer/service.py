@@ -172,6 +172,30 @@ def _target_as_local(target: SoundCloudTrack) -> LocalTrack:
     )
 
 
+def _duration_exceeds_tolerance(source_ms: int, target_ms: int, tolerance_ms: int) -> bool:
+    return abs(source_ms - target_ms) > tolerance_ms
+
+
+def _incomplete_source_reason(track: SpotifyTrack) -> str | None:
+    if not track.title.strip() or not track.artists or track.duration_ms <= 0:
+        return "source_metadata_incomplete"
+    return None
+
+
+def _require_transfer_params(
+    *,
+    target_service: str,
+    confidence_threshold: float,
+    duration_tolerance_ms: int,
+) -> None:
+    if target_service != "soundcloud":
+        raise TransferContractError(f"unsupported transfer target: {target_service!r}")
+    if error := confidence_threshold_error(confidence_threshold):
+        raise TransferContractError(error)
+    if error := duration_tolerance_ms_error(duration_tolerance_ms):
+        raise TransferContractError(error)
+
+
 def _ungradable(
     source: SpotifyTrack,
     reason: str,
@@ -214,12 +238,11 @@ def plan_transfer(
     duration_tolerance_ms: int,
 ) -> TransferPlan:
     """Score every source and explicitly queue every below-threshold candidate."""
-    if target_service != "soundcloud":
-        raise TransferContractError(f"unsupported transfer target: {target_service!r}")
-    if error := confidence_threshold_error(confidence_threshold):
-        raise TransferContractError(error)
-    if error := duration_tolerance_ms_error(duration_tolerance_ms):
-        raise TransferContractError(error)
+    _require_transfer_params(
+        target_service=target_service,
+        confidence_threshold=confidence_threshold,
+        duration_tolerance_ms=duration_tolerance_ms,
+    )
     expected = {track.spotify_uri for track in source.tracks}
     missing = expected - set(candidates)
     extras = set(candidates) - expected
@@ -233,10 +256,8 @@ def plan_transfer(
     escalations: list[Escalation] = []
     ungradable: list[TransferRecord] = []
     for track in source.tracks:
-        if not track.title.strip() or not track.artists or track.duration_ms <= 0:
-            ungradable.append(
-                _ungradable(track, "source_metadata_incomplete", duration_tolerance_ms)
-            )
+        if (reason := _incomplete_source_reason(track)) is not None:
+            ungradable.append(_ungradable(track, reason, duration_tolerance_ms))
             continue
         target_rows = tuple(candidates[track.spotify_uri])
         if not target_rows:
@@ -312,9 +333,10 @@ def resolve_transfer(
         selected = targets.get(decision.target_id) if decision.target_id else None
         if decision.target_id is not None and selected is None:
             raise TransferContractError(f"LLM selected an unoffered target: {decision.target_id!r}")
-        duration_mismatch = selected is not None and (
-            abs(escalation.source.duration_ms - selected.duration_ms)
-            > plan.duration_tolerance_ms
+        duration_mismatch = selected is not None and _duration_exceeds_tolerance(
+            escalation.source.duration_ms,
+            selected.duration_ms,
+            plan.duration_tolerance_ms,
         )
         accepted = selected is not None and not duration_mismatch and (
             decision.confidence >= plan.confidence_threshold

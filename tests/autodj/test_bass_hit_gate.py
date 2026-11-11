@@ -8,14 +8,17 @@ from __future__ import annotations
 
 import math
 from dataclasses import replace
+from itertools import pairwise
 from typing import Any
 
 import pytest
 
-from apps.autodj.plan import SHAPES, PlanError, _Replay, parse_plan, state_at, validate_plan
+from apps.autodj.compile import compile_plan
+from apps.autodj.plan import SHAPES, PlanError, PlanEvent, _Replay, parse_plan, state_at, validate_plan
 from apps.autodj.propose import (
     BASS_ENTRY_HOLD_BARS,
     incoming_bass_entry,
+    phrase_snap_bar,
     place_hit,
     propose_transition,
 )
@@ -23,17 +26,22 @@ from apps.autodj.styles import (
     CROSSOVER_MIN_BARS,
     FLAT,
     HIT_GATED,
+    KILL,
     PRE_HIT_LOW,
     STYLES,
     crossover_bars,
+    default_hit_bar,
     exit_bar,
     hit_bounds,
+    knob_amp,
 )
 from apps.autodj.windows import MixWindow
 from tests.autodj.fixtures import CHORUS, DOWN, INTRO, OUTRO, UP, profile
 
 OUT_DECK, IN_DECK = 1, 2
 GATED = sorted(name for name, s in STYLES.items() if s.available and s.hit == HIT_GATED)
+# Three-band fade has explicit per-band power coverage below; these laws assume flat incoming mids.
+LEGACY_GATED = [name for name in GATED if name not in ("three_band_fade", "bass_phrase_swap")]
 #: An incoming track whose steady bass starts at its bar 33 (the chorus), after a bass-light intro and build.
 LATE_DROP = (
     (INTRO, 16, 0.4, 0.2, False),
@@ -127,7 +135,11 @@ def test_no_gated_style_touches_the_outgoing_deck_before_the_hit(name: str) -> N
             now = state_at(plan, step / 16, bar=math.floor(step / 16))
             assert not _gives_way(previous, now), f"{name}: the outgoing gives way at bar {step / 16} before hit {hit}"
             previous = now
-        crossed = hit + crossover_bars(bars - hit)
+        crossed = (
+            math.floor(hit + (bars - hit) / 4 + 0.5) + 0.5
+            if name == "three_band_fade"
+            else hit + crossover_bars(bars - hit)
+        )
         after = state_at(plan, crossed, bar=math.floor(crossed))
         assert after.out_low < FLAT and after.in_low == pytest.approx(FLAT), f"{name}: no bass crossover after {hit}"
 
@@ -154,7 +166,7 @@ def test_validation_refuses_an_outgoing_move_before_the_recorded_hit_and_allows_
 
 
 @pytest.mark.requirement("AGENT-41")
-@pytest.mark.parametrize("name", GATED)
+@pytest.mark.parametrize("name", LEGACY_GATED)
 def test_the_incoming_smashes_in_while_the_outgoing_fades_long_inside_one_deck_of_lows(name: str) -> None:
     """[if] a gated blend's hit lands late [then] the incoming smashes in inside one deck of lows, [else stop].
 
@@ -181,7 +193,10 @@ def test_the_incoming_smashes_in_while_the_outgoing_fades_long_inside_one_deck_o
         for s in range(int(hit * 16), bars * 16)
         if state_at(plan, s / 16, bar=math.floor(s / 16)).out_fader > 1e-3
     ]
-    assert still_up[-1] - hit >= style.min_body_fade_bars - 1 / 16 - 1e-9, f"{name}: body fade shorter than its minimum"
+    min_audible = style.min_body_fade_bars - 1 / 16 - 1e-9
+    if style.params is not None and style.params.fade_shape == "smooth":
+        min_audible -= 1 / 16  # S-curve + linear ramp replay: audible tail ends one step sooner than equal_power.
+    assert still_up[-1] - hit >= min_audible, f"{name}: body fade shorter than its minimum"
     worst = 0.0
     for s in range(int(hit * 32), bars * 32 - 1):
         row = state_at(plan, s / 32, bar=math.floor(s / 32))
@@ -224,6 +239,44 @@ def test_a_bass_that_never_lands_or_a_missing_series_is_said_never_guessed() -> 
     unknown = place_hit(STYLES["bass_swap_blend"], _out_window(), replace(flat, bar_bass=None), 1, 16)
     assert unknown.refused is None and unknown.entry is not None
     assert unknown.entry["in_bar"] is None and "unknown" in unknown.entry["note"]
+
+
+def _bar_bass_from(first_bar: int, length: int = 64) -> tuple[float, ...]:
+    return tuple(0.2 if bar < first_bar else 1.0 for bar in range(1, length + 1))
+
+
+@pytest.mark.requirement("AUTODJ-11838")
+def test_phrase_swap_lands_on_the_incoming_four_bar_boundary_not_center() -> None:
+    """[if] incoming bass is steady from bar 12 [then] phrase hits that boundary not center, [else stop]."""
+    flat = profile("trk-in", arrangement=((INTRO, 64, 0.4, 0.2, False),))
+    incoming = replace(flat, bar_bass=_bar_bass_from(12))
+    assert incoming_bass_entry(incoming, 1) == 12
+    placed = place_hit(STYLES["bass_phrase_swap"], _out_window(), incoming, 1, 32)
+    assert placed.refused is None and placed.entry is not None
+    center = default_hit_bar("overlap", 32, STYLES["bass_phrase_swap"].min_body_fade_bars)
+    assert placed.hit_bar == 11.0 and placed.hit_bar != center
+    assert placed.entry["hit_plan_bar"] == 11.0
+
+
+@pytest.mark.requirement("AUTODJ-11838")
+def test_phrase_swap_snaps_entry_bar_ten_to_the_next_four_bar_boundary() -> None:
+    """[if] bass entry is bar 10 [then] phrase snap is bar 12 on the plan, [else stop]."""
+    assert phrase_snap_bar(10) == 12
+    flat = profile("trk-in", arrangement=((INTRO, 64, 0.4, 0.2, False),))
+    incoming = replace(flat, bar_bass=_bar_bass_from(10))
+    placed = place_hit(STYLES["bass_phrase_swap"], _out_window(), incoming, 1, 32)
+    assert placed.refused is None and placed.entry is not None
+    assert placed.entry["in_bar"] == 10 and placed.hit_bar == 11.0
+    assert "4-bar boundary" in placed.note
+
+
+@pytest.mark.requirement("AUTODJ-11838")
+def test_phrase_swap_refuses_a_missing_bar_bass_series() -> None:
+    """[if] bar_bass is missing [then] phrase refuses, never default_hit_bar, [else stop]."""
+    flat = profile("trk-in", arrangement=((INTRO, 64, 0.4, 0.2, False),))
+    placed = place_hit(STYLES["bass_phrase_swap"], _out_window(), replace(flat, bar_bass=None), 1, 32)
+    assert placed.refused is not None and "phrase swap cannot be placed" in placed.refused
+    assert placed.entry is None
 
 
 @pytest.mark.requirement("AGENT-37")
@@ -425,7 +478,7 @@ def test_a_folded_lull_lands_the_drop_exactly_on_the_handover() -> None:
 KILLED_ENTRY = {"filter_sweep", "melt"}
 #: Styles that swap the lows ON the hit instead of crossing them over (D14: a first-class choice, not the default).
 SWAPS = {"bass_swap_blend"}
-CROSSOVERS = sorted(set(GATED) - SWAPS)
+CROSSOVERS = sorted(set(LEGACY_GATED) - SWAPS)
 
 
 def _low_db(knob: float) -> float:
@@ -516,7 +569,7 @@ def test_a_swap_lands_its_hit_at_full_and_starts_the_fade_after_it(name: str) ->
 
 
 @pytest.mark.requirement("AGENT-44")
-@pytest.mark.parametrize("name", GATED)
+@pytest.mark.parametrize("name", LEGACY_GATED)
 def test_the_two_bodies_never_sum_above_one_deck_after_the_hit(name: str) -> None:
     """[if] a gated blend runs past its hit [then] the two bodies stay within one deck in power, [else stop].
 
@@ -589,3 +642,117 @@ def test_the_crossover_lows_stay_at_one_deck_unless_the_trim_cap_binds(name: str
         assert lows <= 1.0 + 0.05 or at_cap, f"{name}: lows {lows:.3f} with the trim under its cap at {s / 64}"
     # Control: the trim is not always at its cap (it bounds the lows, it is not a blanket 2 dB cut).
     assert capped < (cross * 64) / 2, f"{name}: the trim sits at its cap for most of the crossover"
+
+
+# ----- Three-band fade: replay compiled controls, including hoisted parks ------------------------------------------
+
+
+def _compiled_band_replay(bars: int, hit: float, out_deck: int, in_deck: int) -> _Replay:
+    """Translate the actual page order back to lanes, preserving prepare and same-bar ordering."""
+    document = _plan_doc("three_band_fade", bars, hit)
+    document["out"]["deck"], document["in"]["deck"] = out_deck, in_deck
+    document["events"] = STYLES["three_band_fade"].build(bars, out_deck, in_deck, hit)
+    order = compile_plan(parse_plan(document), profile("trk-in"), plan_id="three-band-power")["plan"]
+    events: list[PlanEvent] = []
+    rows = [{"at_bar": 0.0, "command": command} for command in order["prepare"]] + order["events"]
+    for row in rows:
+        ramp = row.get("ramp")
+        command = ramp["command"] if ramp is not None else row["command"]
+        kind = command["type"]
+        if kind == "play":
+            events.append(PlanEvent(row["at_bar"], command["deck"], "do", "play" if command["playing"] else "stop"))
+        elif kind in {"eq", "fader"}:
+            name = "eq_" + command["band"] if kind == "eq" else "fader"
+            events.append(
+                PlanEvent(
+                    row["at_bar"],
+                    command["deck"],
+                    "ramp" if ramp is not None else "set",
+                    name,
+                    ramp["to"] if ramp is not None else command["value"],
+                    ramp["over_bars"] if ramp is not None else 0.0,
+                )
+            )
+    return _Replay(events)
+
+
+def _compiled_band_gain(replay: _Replay, deck: int, band: str, at: float, *, outgoing: bool) -> float:
+    if not replay.playing(deck, at, outgoing):
+        return 0.0
+    return replay.value(deck, "fader", at, 1.0) * knob_amp(replay.value(deck, "eq_" + band, at, FLAT))
+
+
+@pytest.mark.parametrize("bars", [12, 15, 16, 17, 32])
+@pytest.mark.parametrize("placement", ["early", "default", "latest", "fractional"])
+@pytest.mark.parametrize(("out_deck", "in_deck"), [(1, 2), (2, 1)])
+@pytest.mark.requirement("TRANSAI-12185")
+def test_three_band_fade_compiled_crossings_keep_one_deck_of_power(
+    bars: int, placement: str, out_deck: int, in_deck: int
+) -> None:
+    """[if] three bands cross after the hit [then] compiled gains retain unity power, [else stop]."""
+    hits = {
+        "early": 2.0,
+        "default": float(min(bars - 8, round(0.75 * bars))),
+        "latest": float(bars - 8),
+        "fractional": 2.5,
+    }
+    hit = hits[placement]
+    body = bars - hit
+    low, mid, high = [math.floor(hit + body * fraction + 0.5) for fraction in (0.25, 0.5, 0.75)]
+    windows = {
+        "low": (low - 0.5, low + 0.5),
+        "mid": (mid - body / 4, mid + body / 4),
+        "high": (2 * high - bars, float(bars)),
+    }
+    replay = _compiled_band_replay(bars, hit, out_deck, in_deck)
+    for band, center in zip(("low", "mid", "high"), (low, mid, high), strict=True):
+        start, end = windows[band]
+        assert hit <= start < center < end <= bars
+        samples = sorted(
+            {
+                start,
+                float(center),
+                end,
+                *[step / 64 for step in range(math.ceil(start * 64), math.floor(end * 64) + 1)],
+            }
+        )
+        differences = []
+        for at in samples:
+            out_gain = _compiled_band_gain(replay, out_deck, band, at, outgoing=True)
+            in_gain = _compiled_band_gain(replay, in_deck, band, at, outgoing=False)
+            db = 10 * math.log10(out_gain**2 + in_gain**2)
+            assert -1.5 <= db <= 1.5, (bars, hit, band, at, db)
+            differences.append((at, out_gain - in_gain))
+            if band == "low":
+                out_low = replay.value(out_deck, "eq_low", at, FLAT)
+                in_low = replay.value(in_deck, "eq_low", at, FLAT)
+                assert out_low >= PRE_HIT_LOW - 1e-6
+                assert not (_low_db(out_low) > -3.0 and _low_db(in_low) > -3.0)
+        crossings = [
+            left[0] + (right[0] - left[0]) * left[1] / (left[1] - right[1])
+            for left, right in pairwise(differences)
+            if left[1] > 0 >= right[1]
+        ]
+        assert len(crossings) == 1, (bars, hit, band, crossings)
+        assert crossings[0] == pytest.approx(center, abs=1 / 64), (bars, hit, band, crossings)
+        assert replay.value(in_deck, "eq_" + band, end, FLAT) == pytest.approx(FLAT)
+    # The low handover is one bar; its raw outgoing knob stays killed after its extra-bar deadline.
+    deadline = low + 1.5
+    assert replay.value(out_deck, "eq_low", low + 0.5, FLAT) == pytest.approx(PRE_HIT_LOW, abs=1e-6)
+    assert replay.value(in_deck, "fader", low, 1.0) == pytest.approx(1.0)
+    for step in range(math.ceil(deadline * 64), bars * 64):
+        at = step / 64
+        assert replay.value(out_deck, "eq_low", at, FLAT) == pytest.approx(KILL)
+        assert _compiled_band_gain(replay, out_deck, "low", at, outgoing=True) <= 0.1
+    for step in range(math.floor(hit * 64)):
+        at = step / 64
+        assert replay.value(out_deck, "fader", at, 1.0) == 1.0
+        for band in ("low", "mid", "high"):
+            assert replay.value(out_deck, "eq_" + band, at, FLAT) == FLAT
+    assert replay.value(in_deck, "eq_low", hit, FLAT) == pytest.approx(PRE_HIT_LOW)
+    assert replay.value(in_deck, "eq_mid", 0.0, FLAT) == KILL
+    assert replay.value(in_deck, "eq_high", 0.0, FLAT) == KILL
+    assert not replay.playing(out_deck, bars, True)
+    assert replay.value(out_deck, "fader", bars, 1.0) == 1.0
+    for band in ("low", "mid", "high"):
+        assert replay.value(out_deck, "eq_" + band, bars, FLAT) == FLAT

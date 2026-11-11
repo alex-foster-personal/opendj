@@ -16,6 +16,7 @@ recomputed instead of silently mixed with answers to a different question.
 from __future__ import annotations
 
 TAXONOMY_VERSION: str = "beatport46+custom/v1"
+ENRICHMENT_MAP_VERSION: str = "enrichment-tag-map/v1"
 
 INSTRUCTIONS: tuple[str, ...] = (
     "The STATE describes one track in a DJ's music library: artist, title (with mix name), album, record label, year, tempo, key, comments and file name, whichever are known.",  # noqa: E501 (frozen prompt text)
@@ -84,4 +85,17 @@ def canonical(name: str) -> str | None:
     return next((g for g in NAMES if g.casefold() == wanted), None)
 
 
-__all__ = ["GENRES", "INSTRUCTIONS", "NAMES", "TAXONOMY_VERSION", "canonical"]
+def beatport_taxonomy_version() -> str:
+    """Beatport list version used by genre inference (distinct from vendor enrichment maps)."""
+    return TAXONOMY_VERSION
+
+
+__all__ = [
+    "ENRICHMENT_MAP_VERSION",
+    "GENRES",
+    "INSTRUCTIONS",
+    "NAMES",
+    "TAXONOMY_VERSION",
+    "beatport_taxonomy_version",
+    "canonical",
+]

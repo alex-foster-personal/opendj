@@ -34,6 +34,12 @@ CLAIM_DEADLINE_S = 5.0
 ATTACH_DEADLINE_S = 10.0
 
 
+def _fail_master_tap(message: str, *, cause: BaseException | None = None) -> None:
+    if cause is not None:
+        raise MasterTapUnavailable(message) from cause
+    raise MasterTapUnavailable(message)
+
+
 class OrderBusMasterTap:
     """Push the attach to the leader /performance page over the order bus."""
 
@@ -53,33 +59,41 @@ class OrderBusMasterTap:
         order_id, result = broker.submit(
             {"kind": "single", "payload": {"type": RECORD_MASTER_TAP_COMMAND, "session_id": session_id}}
         )
-        if not await broker.claimed_within(order_id, CLAIM_DEADLINE_S):
+        try:
+            if not await broker.claimed_within(order_id, CLAIM_DEADLINE_S):
+                broker.discard(order_id)
+                self._push_cancel(broker, session_id)
+                _fail_master_tap(
+                    f"no /performance page took the order within {CLAIM_DEADLINE_S:g} s "
+                    "(the page on record is not leading)"
+                )
+            try:
+                outcome = await asyncio.wait_for(asyncio.shield(result), ATTACH_DEADLINE_S)
+            except TimeoutError as exc:
+                # The page is still attaching. Keep its order on record so its
+                # late result lands (a withdrawn order 404s the page's order loop),
+                # and push the cancel, which the page runs right after the attach:
+                # the late tap tears itself down instead of streaming (SET-12).
+                self._settle_later(broker, order_id, result)
+                self._push_cancel(broker, session_id)
+                _fail_master_tap(
+                    f"the page took the order but did not connect its tap within {ATTACH_DEADLINE_S:g} s",
+                    cause=exc,
+                )
+            broker.discard(order_id)
+            steps = outcome.get("steps") if isinstance(outcome, dict) else None
+            if not isinstance(steps, list) or len(steps) != 1 or not isinstance(steps[0], dict):
+                self._push_cancel(broker, session_id)
+                _fail_master_tap(f"the page answered the tap order with {outcome!r}")
+            if steps[0].get("status") != "succeeded":
+                self._push_cancel(broker, session_id)
+                _fail_master_tap(str(steps[0].get("error") or steps[0]))
+        except MasterTapUnavailable:
+            raise
+        except BaseException:
             broker.discard(order_id)
             self._push_cancel(broker, session_id)
-            raise MasterTapUnavailable(
-                f"no /performance page took the order within {CLAIM_DEADLINE_S:g} s "
-                "(the page on record is not leading)"
-            )
-        try:
-            outcome = await asyncio.wait_for(asyncio.shield(result), ATTACH_DEADLINE_S)
-        except TimeoutError as exc:
-            # The page is still attaching. Keep its order on record so its
-            # late result lands (a withdrawn order 404s the page's order loop),
-            # and push the cancel, which the page runs right after the attach:
-            # the late tap tears itself down instead of streaming (SET-12).
-            self._settle_later(broker, order_id, result)
-            self._push_cancel(broker, session_id)
-            raise MasterTapUnavailable(
-                f"the page took the order but did not connect its tap within {ATTACH_DEADLINE_S:g} s"
-            ) from exc
-        broker.discard(order_id)
-        steps = outcome.get("steps") if isinstance(outcome, dict) else None
-        if not isinstance(steps, list) or len(steps) != 1 or not isinstance(steps[0], dict):
-            self._push_cancel(broker, session_id)
-            raise MasterTapUnavailable(f"the page answered the tap order with {outcome!r}")
-        if steps[0].get("status") != "succeeded":
-            self._push_cancel(broker, session_id)
-            raise MasterTapUnavailable(str(steps[0].get("error") or steps[0]))
+            raise
 
     def _push_cancel(self, broker: _OrderBroker, session_id: str) -> None:
         """Submit ``record_master_tap_cancel`` and settle it in the background."""

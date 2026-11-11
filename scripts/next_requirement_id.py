@@ -1,11 +1,13 @@
 """Next free requirement id for a prefix (issue #8634).
 
-Considers ids defined on ``origin/main`` at ``.planning/REQUIREMENTS.md`` and ids
-added in open PR diffs to that file. Does not fill gaps; returns max+1 with at
+Considers ids defined on ``origin/main`` at ``.planning/REQUIREMENTS.md`` (and its
+fragments) and ids added by open PRs to those files. One ``gh pr list`` names the open PRs
+and their head SHAs (``MAX_GH_CALLS``); each PR's diff is read from git after fetching
+``refs/pull/<N>/head``, so a run spends one gh call however many PRs are open. Does not fill gaps; returns max+1 with at
 least two digits (``OPS-47``), or ``{prefix}-01`` when the prefix has no numeric
 ids yet.
 
-The caller must keep ``origin/main`` current; this module does not ``git fetch``.
+The caller must keep ``origin/main`` current; this module fetches only PR heads it lacks.
 
     python -m scripts.next_requirement_id OPS
     python -m scripts.next_requirement_id OPS --open-prs-json fixture.json --main-text main.md
@@ -74,13 +76,6 @@ def ids_from_unified_diff(diff: str) -> set[str]:
     return claimed
 
 
-def is_gh_pr_diff_unknown(stderr: str, returncode: int) -> bool:
-    """True when ``gh pr diff`` failure means claims cannot be measured."""
-    if returncode == 0:
-        return False
-    return "HTTP 406" in stderr or returncode != 0
-
-
 def parse_open_prs_json(text: str) -> set[str]:
     """Parse ``--open-prs-json`` fixture: explicit ids and/or PR diffs."""
     data = json.loads(text)
@@ -126,16 +121,40 @@ def _git_show_main(git: str, main_ref: str) -> tuple[str | None, str]:
     return None, proc.stderr.strip() or f"git show exited {proc.returncode}"
 
 
-def _live_claimed_ids(repo: str) -> tuple[set[str] | None, str]:
-    gh = shutil.which("gh")
-    if gh is None:
-        return None, "gh is not on PATH"
+# ----- live claims: one gh call, diffs from git ------------------------------------------
+#: Hard cap on gh invocations per run. One ``gh pr list`` names the open PRs and their heads;
+#: every diff is read from git (``refs/pull/<N>/head``), which spends no REST or GraphQL budget.
+#: A ``gh pr diff`` per PR made 370 calls in 15 min on the human login (Wed 11 Nov 2026).
+MAX_GH_CALLS = 1
+OPEN_PR_LIMIT = 1000
+_FETCH_CHUNK = 100
+_CLAIM_PATHS = (SOURCE, f"{FRAGMENTS_REL}/")
+
+
+class GhCallCapExceeded(RuntimeError):
+    """A run tried more gh calls than ``MAX_GH_CALLS``."""
+
+
+class GhCallBudget:
+    """Counts gh invocations and refuses the one past ``cap``."""
+
+    def __init__(self, cap: int = MAX_GH_CALLS) -> None:
+        self.cap = cap
+        self.spent = 0
+
+    def spend(self, what: str) -> None:
+        if self.spent >= self.cap:
+            raise GhCallCapExceeded(f"gh call cap {self.cap} reached; refused: gh {what}")
+        self.spent += 1
+
+
+def _open_pr_heads(gh: str, repo: str, budget: GhCallBudget) -> tuple[dict[int, str] | None, str]:
+    """``{number: headRefOid}`` for every open PR, from one ``gh pr list``."""
+    budget.spend("pr list")
     proc = subprocess.run(
-        [gh, "pr", "list", "--repo", repo, "--state", "open", "--limit", "1000", "--json", "number"],
-        capture_output=True,
-        text=True,
-        encoding="utf-8",
-        check=False,
+        [gh, "pr", "list", "--repo", repo, "--state", "open", "--limit", str(OPEN_PR_LIMIT),
+         "--json", "number,headRefOid"],
+        capture_output=True, text=True, encoding="utf-8", check=False,
     )
     if proc.returncode != 0:
         return None, proc.stderr.strip() or f"gh pr list exited {proc.returncode}"
@@ -145,22 +164,68 @@ def _live_claimed_ids(repo: str) -> tuple[set[str] | None, str]:
         return None, f"gh pr list returned invalid JSON: {exc}"
     if not isinstance(rows, list):
         return None, "gh pr list did not return a JSON list"
-    claimed: set[str] = set()
+    if len(rows) >= OPEN_PR_LIMIT:
+        return None, f"gh pr list returned {len(rows)} rows, the --limit; the open PR list may be truncated"
+    heads: dict[int, str] = {}
     for row in rows:
-        if not isinstance(row, dict) or "number" not in row:
-            return None, "gh pr list row missing number"
-        number = row["number"]
-        diff_proc = subprocess.run(
-            [gh, "pr", "diff", str(number), "--repo", repo],
-            capture_output=True,
-            text=True,
-            encoding="utf-8",
-            check=False,
+        if not isinstance(row, dict) or not isinstance(row.get("number"), int) or not row.get("headRefOid"):
+            return None, f"gh pr list row missing number or headRefOid: {row!r}"
+        heads[row["number"]] = str(row["headRefOid"])
+    return heads, ""
+
+
+def _has_commit(git: str, sha: str) -> bool:
+    proc = subprocess.run([git, "cat-file", "-e", f"{sha}^{{commit}}"], capture_output=True, check=False)
+    return proc.returncode == 0
+
+
+def _fetch_pr_heads(git: str, numbers: list[int]) -> str:
+    """Fetch ``refs/pull/<N>/head`` objects (git protocol, no API budget); "" or git's stderr."""
+    for i in range(0, len(numbers), _FETCH_CHUNK):
+        refspecs = [f"refs/pull/{n}/head" for n in numbers[i:i + _FETCH_CHUNK]]
+        proc = subprocess.run(
+            [git, "fetch", "--quiet", "--no-tags", "--no-write-fetch-head", "origin", *refspecs],
+            capture_output=True, text=True, encoding="utf-8", check=False,
         )
-        if is_gh_pr_diff_unknown(diff_proc.stderr, diff_proc.returncode):
-            return None, diff_proc.stderr.strip() or f"gh pr diff {number} failed"
-        claimed |= ids_from_unified_diff(diff_proc.stdout)
+        if proc.returncode != 0:
+            return proc.stderr.strip() or f"git fetch exited {proc.returncode}"
+    return ""
+
+
+def _claims_from_git(git: str, main_ref: str, heads: dict[int, str]) -> tuple[set[str] | None, str]:
+    """Ids on ``+`` lines of ``main_ref..head`` over the requirement files, per open PR head.
+
+    A two-dot tree diff (no merge base) is a superset of the PR's own additions: it may also
+    show lines ``main_ref`` has since dropped, which can only over-claim (a skipped number),
+    never under-claim. The merge-base form cost about a minute per run over ~300 open PRs.
+    """
+    missing = sorted(n for n, sha in heads.items() if not _has_commit(git, sha))
+    if missing:
+        err = _fetch_pr_heads(git, missing)
+        if err:
+            return None, f"git fetch refs/pull/*/head failed: {err}"
+    claimed: set[str] = set()
+    for number, sha in sorted(heads.items()):
+        if not _has_commit(git, sha):
+            return None, f"PR #{number} head {sha} not found after fetching refs/pull/{number}/head (re-run)"
+        proc = subprocess.run(
+            [git, "diff", main_ref, sha, "--", *_CLAIM_PATHS],
+            capture_output=True, text=True, encoding="utf-8", check=False,
+        )
+        if proc.returncode != 0:
+            return None, f"git diff {main_ref} {sha} (PR #{number}) failed: {proc.stderr.strip()}"
+        claimed |= ids_from_unified_diff(proc.stdout)
     return claimed, ""
+
+
+def _live_claimed_ids(repo: str, git: str, main_ref: str) -> tuple[set[str] | None, str]:
+    gh = shutil.which("gh")
+    if gh is None:
+        return None, "gh is not on PATH"
+    heads, err = _open_pr_heads(gh, repo, GhCallBudget())
+    if heads is None:
+        return None, err
+    return _claims_from_git(git, main_ref, heads)
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -191,13 +256,15 @@ def main(argv: list[str] | None = None) -> int:
         print(f"[UNKNOWN] invalid prefix {prefix!r}", file=sys.stderr)
         return 2
 
+    git = shutil.which("git")
+    needs_git = args.main_text is None or args.open_prs_json is None
+    if needs_git and git is None:
+        print("[UNKNOWN] git is not on PATH", file=sys.stderr)
+        return 2
     if args.main_text is not None:
         main_text = args.main_text.read_text(encoding="utf-8")
     else:
-        git = shutil.which("git")
-        if git is None:
-            print("[UNKNOWN] git is not on PATH", file=sys.stderr)
-            return 2
+        assert git is not None
         main_text, err = _git_show_main(git, _MAIN_REF)
         if main_text is None:
             print(f"[UNKNOWN] cannot read {_MAIN_REF}:{SOURCE}: {err}", file=sys.stderr)
@@ -217,7 +284,8 @@ def main(argv: list[str] | None = None) -> int:
             print(f"[UNKNOWN] --open-prs-json: {exc}", file=sys.stderr)
             return 2
     else:
-        claimed_ids, err = _live_claimed_ids(args.repo)
+        assert git is not None
+        claimed_ids, err = _live_claimed_ids(args.repo, git, _MAIN_REF)
         if claimed_ids is None:
             print(f"[UNKNOWN] {err}", file=sys.stderr)
             return 2

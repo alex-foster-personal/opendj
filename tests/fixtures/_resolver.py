@@ -50,7 +50,9 @@ from __future__ import annotations
 
 import json
 import os
+import shutil
 from pathlib import Path
+from typing import Any
 
 from apps.shared.hashing import sha256_file
 
@@ -61,8 +63,11 @@ __all__ = [
     "FixtureContractMismatch",
     "FixtureNotAvailable",
     "external_host",
+    "copy_verified_manifest_files",
+    "fixture_manifest_path",
     "fixture_path",
     "verify_fixture_contract",
+    "verify_fixture_manifest",
 ]
 
 
@@ -234,3 +239,107 @@ def verify_fixture_contract(name: str, root: Path) -> None:
             "corrupted fixture tree must fail closed rather than be "
             "accepted unchanged."
         )
+
+
+def fixture_manifest_path(slug: str) -> Path:
+    """Return ``tests/fixtures/<slug>.manifest.json`` for a sibling pin file."""
+    if not slug or "/" in slug or "\\" in slug or slug.startswith("."):
+        raise ValueError(f"Invalid fixture manifest slug {slug!r}: must be a single path component.")
+    return FIXTURES_ROOT / f"{slug}.manifest.json"
+
+
+def _manifest_entry_digest(entry: Any) -> str:
+    if isinstance(entry, dict):
+        digest = entry.get("sha256")
+        if isinstance(digest, str) and digest:
+            return digest
+    if isinstance(entry, str) and entry:
+        return entry
+    raise FixtureContractMismatch("manifest file entry is missing a sha256 digest")
+
+
+def _manifest_entry_bytes(entry: Any) -> int | None:
+    if isinstance(entry, dict):
+        size = entry.get("bytes")
+        return size if isinstance(size, int) else None
+    return None
+
+
+def verify_fixture_manifest(slug: str) -> dict[str, Any]:
+    """Verify every pinned file under ``FIXTURES_ROOT`` against ``<slug>.manifest.json``.
+
+    Raises :class:`FixtureContractMismatch` on wrong contract identity, a
+    missing or extra pin, a checksum or byte-count mismatch, or an unsafe path.
+    Sibling manifests must live outside import trees so a scan does not treat
+    the pin file itself as audio.
+    """
+    manifest_path = fixture_manifest_path(slug)
+    if not manifest_path.is_file():
+        raise FileNotFoundError(f"Fixture manifest {slug!r} not found at {manifest_path}.")
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    if manifest.get("contract_version") != 1 or manifest.get("fixture") != slug:
+        raise FixtureContractMismatch(
+            f"Unsupported fixture manifest at {manifest_path}: expected "
+            f"contract_version=1, fixture={slug!r}, got "
+            f"contract_version={manifest.get('contract_version')!r}, "
+            f"fixture={manifest.get('fixture')!r}."
+        )
+    files = manifest.get("files")
+    if not isinstance(files, dict) or not files:
+        raise FixtureContractMismatch(f"Fixture manifest at {manifest_path} pins no files.")
+    root = FIXTURES_ROOT.resolve()
+    for rel, pinned in files.items():
+        if not isinstance(rel, str) or rel.startswith(("/", "\\")) or ".." in Path(rel).parts:
+            raise FixtureContractMismatch(f"Fixture manifest at {manifest_path} has an unsafe path: {rel!r}.")
+        source = (root / rel).resolve()
+        if root not in source.parents:
+            raise FixtureContractMismatch(f"Fixture manifest at {manifest_path} path escapes fixtures: {rel!r}.")
+        if not source.is_file():
+            raise FixtureContractMismatch(
+                f"Fixture manifest at {manifest_path} pins missing file {rel!r} at "
+                f"{source}. A canonical fixture host without the file must fail closed."
+            )
+        expected = _manifest_entry_digest(pinned)
+        actual = sha256_file(source)
+        if actual != expected:
+            raise FixtureContractMismatch(
+                f"{rel} does not match its manifest checksum at {manifest_path}: "
+                f"expected {expected}, got {actual}. Canonical fixture audio is "
+                "immutable during feature work."
+            )
+        expected_bytes = _manifest_entry_bytes(pinned)
+        if expected_bytes is not None:
+            size = source.stat().st_size
+            if size != expected_bytes:
+                raise FixtureContractMismatch(
+                    f"{rel} matches by digest but not by size at {manifest_path} "
+                    f"({expected_bytes} recorded, {size} read)."
+                )
+    return manifest
+
+
+def copy_verified_manifest_files(
+    slug: str,
+    dest: Path,
+    *,
+    prefixes: tuple[str, ...] | None = None,
+    flatten: bool = False,
+) -> list[Path]:
+    """Copy manifest-pinned files into a disposable ``dest`` after verification.
+
+    When ``flatten`` is true, every copied file lands at ``dest/<basename>`` so a
+    caller can point folder import at a single directory root.
+    """
+    manifest = verify_fixture_manifest(slug)
+    files: dict[str, Any] = manifest["files"]
+    written: list[Path] = []
+    dest_root = dest.resolve()
+    for rel in sorted(files):
+        if prefixes is not None and not any(rel.startswith(prefix) for prefix in prefixes):
+            continue
+        src = (FIXTURES_ROOT / rel).resolve()
+        target = dest_root / src.name if flatten else dest_root / rel
+        target.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(src, target)
+        written.append(target)
+    return written

@@ -326,3 +326,43 @@ test('a playing shifted tick bends exactly like the base tick', async () => {
 	assert.ok(Math.abs(seen.tempos[0] - 1.01) < 1e-9);
 	assert.equal(seen.seeks.length, 0);
 });
+
+test('AZ hints cover every unbound documented pad row on all four decks', () => {
+	const names = [
+		'HOT CUE',
+		'HOT CUE +SHIFT',
+		'BEAT LOOP',
+		'BEAT LOOP +SHIFT',
+		'PAD FX1 PAGE1',
+		'PAD FX1 PAGE2',
+		'PAD FX2 PAGE1',
+		'PAD FX2 PAGE2',
+		'SLIP LOOP +SHIFT',
+		'BEAT JUMP',
+		'BEAT JUMP +SHIFT',
+		'GATE CUE',
+		'GATE CUE +SHIFT',
+		'BEAT LOOP2',
+		'BEAT LOOP2 +SHIFT',
+		'KEY SHIFT',
+		'KEY SHIFT +SHIFT',
+		'BEAT JUMP2',
+		'BEAT JUMP2 +SHIFT'
+	];
+	for (const deck of [1, 2, 3, 4])
+		for (let pad = 0; pad < 8; pad++) {
+			for (let offset = 0; offset < 19; offset++) {
+				const ch = (pad < 4 ? 5 : 9) + deck;
+				const id = 19 * (pad % 4) + offset;
+				const matches = (r) => r.source.ch === ch && r.source.kind === 'note' && r.source.id === id;
+				if (offset === 0 || offset === 2) {
+					assert.equal(maps.XDJ_AZ_MAP.bindings.filter(matches).length, 1);
+				} else {
+					const hint = maps.XDJ_AZ_MAP.hints.filter(matches);
+					assert.equal(hint.length, 1, `deck ${deck} pad ${pad + 1} offset ${offset}`);
+					assert.equal(hint[0].label, `${names[offset]} PAD ${pad + 1} (deck ${deck})`);
+					assert.equal(maps.XDJ_AZ_MAP.bindings.filter(matches).length, 0);
+				}
+			}
+		}
+});

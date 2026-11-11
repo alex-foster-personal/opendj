@@ -17,6 +17,7 @@ import {
 	assertMasterDelayMs,
 	type HeadphoneAlignmentMode
 } from '$lib/player/constants';
+import { assertCalibrationProbe, type CalibrationProbeKind } from '$lib/player/cue-latency';
 import { assertSavedIoDevice, type SavedIoDevice } from '$lib/player/io-device-access';
 
 const MIXER_CONFIG_STORAGE_KEY = 'mdt.rb.mixer-config.v1';
@@ -36,6 +37,8 @@ export interface MixerConfig {
 	head_delay_ms: number;
 	alignment_mode: HeadphoneAlignmentMode;
 	master_delay_ms: number;
+	/** IOPIN-07: default sweep (`chirp`); `click_train` is the retained alternate. */
+	calibration_probe: CalibrationProbeKind;
 	last_calibration: CueCalibrationRecord | null;
 	/** IOPIN-14: the outputs the operator last picked, by browser device id
 	 * and name, so a later session can say what became of them. */
@@ -52,6 +55,7 @@ const DEFAULT_MIXER_CONFIG: Readonly<MixerConfig> = Object.freeze({
 	head_delay_ms: 0,
 	alignment_mode: 'hybrid',
 	master_delay_ms: 0,
+	calibration_probe: 'chirp',
 	last_calibration: null,
 	saved_outputs: Object.freeze({ master: null, cue: null, booth: null })
 });
@@ -98,6 +102,7 @@ function _assertMixerConfigPatch(patch: Partial<MixerConfig>): void {
 	if (patch.head_delay_ms !== undefined) assertHeadDelayMs(patch.head_delay_ms);
 	if (patch.alignment_mode !== undefined) assertHeadphoneAlignmentMode(patch.alignment_mode);
 	if (patch.master_delay_ms !== undefined) assertMasterDelayMs(patch.master_delay_ms);
+	if (patch.calibration_probe !== undefined) assertCalibrationProbe(patch.calibration_probe);
 	if (patch.last_calibration !== undefined && patch.last_calibration !== null) {
 		assertCueCalibrationRecord(patch.last_calibration);
 	}
@@ -150,6 +155,7 @@ export function loadMixerConfig(): MixerConfig {
 		head_delay_ms: stored.head_delay_ms ?? DEFAULT_MIXER_CONFIG.head_delay_ms,
 		alignment_mode: stored.alignment_mode ?? DEFAULT_MIXER_CONFIG.alignment_mode,
 		master_delay_ms: stored.master_delay_ms ?? DEFAULT_MIXER_CONFIG.master_delay_ms,
+		calibration_probe: stored.calibration_probe ?? DEFAULT_MIXER_CONFIG.calibration_probe,
 		last_calibration:
 			stored.last_calibration === undefined
 				? DEFAULT_MIXER_CONFIG.last_calibration

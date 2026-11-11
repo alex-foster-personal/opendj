@@ -454,7 +454,7 @@ _DECK_ROWS: dict[str, DeckRow] = {
         "Pad mode: hot cues",
         "note",
         34,
-        None,
+        38,
     ),
     "pad-mode-beat-loop": (
         "5-2",
@@ -463,7 +463,7 @@ _DECK_ROWS: dict[str, DeckRow] = {
         "Pad mode: beat loops",
         "note",
         35,
-        None,
+        39,
     ),
     "pad-mode-slip-loop": (
         "5-3",
@@ -472,7 +472,7 @@ _DECK_ROWS: dict[str, DeckRow] = {
         "Pad mode: slip loops",
         "note",
         36,
-        None,
+        40,
     ),
     "pad-mode-beat-jump": (
         "5-4",
@@ -481,13 +481,37 @@ _DECK_ROWS: dict[str, DeckRow] = {
         "Pad mode: beat jump",
         "note",
         37,
-        None,
+        41,
     ),
 }
 _DECK_ORDER = list(_DECK_ROWS)
 
 # AZ pads: pads 1-4 on channel 5 + deck, pads 5-8 on channel 9 + deck; hot cue note
 # 19 * (pad index within the row); +SHIFT sends the next note (pioneer-xdj.ts azPadWire).
+# Derived rows: e7ce5a5758e8688b33ca2ad5d5690ce65dec5574 midi.json,
+# blob ab10e82c8f6a541e659f3da848521838e95440a1; vendor checksum SOURCE_PDF_SHA256.
+# Preserve the source FX page names and unavailable SLIP LOOP base.
+PAD_MODE_OFFSETS: dict[str, tuple[str, int | None, int | None]] = {
+    "hot_cue": ("HOT CUE", 0, 1),
+    "beat_loop": ("BEAT LOOP", 2, 3),
+    "pad_fx1_page1": ("PAD FX1 PAGE1", 4, None),
+    "pad_fx1_page2": ("PAD FX1 PAGE2", 5, None),
+    "pad_fx2_page1": ("PAD FX2 PAGE1", 6, None),
+    "pad_fx2_page2": ("PAD FX2 PAGE2", 7, None),
+    "slip_loop": ("SLIP LOOP", None, 8),
+    "beat_jump": ("BEAT JUMP", 9, 10),
+    "gate_cue": ("GATE CUE", 11, 12),
+    "beat_loop2": ("BEAT LOOP2", 13, 14),
+    "key_shift": ("KEY SHIFT", 15, 16),
+    "beat_jump2": ("BEAT JUMP2", 17, 18),
+}
+PAD_MODE_SELECTORS = {
+    "hot-cue": ("hot_cue", "gate_cue"),
+    "beat-loop": ("beat_loop", "beat_loop2"),
+    "slip-loop": ("slip_loop", "key_shift"),
+    "beat-jump": ("beat_jump", "beat_jump2"),
+}
+
 _PAD_FIGS = ["5-5", "5-6", "5-7", "5-8", "5-9", "5-10", "5-11", "5-12"]
 
 # fig, type, label, does, section, ch, kind, number, shift number
@@ -1454,6 +1478,30 @@ def _check(controls: list[Control], pos: dict[str, tuple[float, float, float, fl
             raise SystemExit(f"[ERROR] {c.id} lies outside the panel")
 
 
+def _control_document(control: Control) -> dict[str, object]:
+    row = asdict(control)
+    if control.type == "pad":
+        deck = int(control.id[1])
+        pad = int(control.id.rsplit("-", 1)[1]) - 1
+        ch = (5 if pad < 4 else 9) + deck
+        note = 19 * (pad % 4)
+        row["pad_layer_group"] = f"d{deck}"
+        row["pad_layers"] = {
+            mode: {
+                "label": f"{label} PAD {pad + 1}",
+                "does": f"Inspect {label} pad {pad + 1} (deck {deck})",
+                "midi": asdict(Wire(ch, "note", note + base)) if base is not None else None,
+                "shift_midi": asdict(Wire(ch, "note", note + shift)) if shift is not None else None,
+            }
+            for mode, (label, base, shift) in PAD_MODE_OFFSETS.items()
+        }
+    elif "-pad-mode-" in control.id:
+        base, shift = PAD_MODE_SELECTORS[control.id.split("-pad-mode-", 1)[1]]
+        row["pad_layer_group"] = control.id[:2]
+        row["pad_layer_select"] = {"base": base, "shift": shift}
+    return row
+
+
 def build() -> tuple[dict[str, object], dict[str, object]]:
     """Return (panel.json document, panel.reference.json document)."""
     raw, pos = _positions()
@@ -1520,14 +1568,21 @@ def build() -> tuple[dict[str, object], dict[str, object]]:
         "out_of_scope": [
             "deck 3 and deck 4 transport: the left deck carries deck 1 wires and the right deck deck 2 wires "
             "(power-on selection); DECK SELECT boxes carry the selected deck's channel",
-            "pad modes other than HOT CUE: pads carry the HOT CUE wire identity, +SHIFT the gate-cue row",
             "MSB/LSB companion CCs: TEMPO carries its MSB",
             "hardware-only controls with no MIDI row: JOG FEEL, JOG RING, MIC 1/2 LEVEL, SHORT CUT, MIXER SETTINGS, the six screen buttons, USB STOP",
             "FX SELECT is a rotary switch with one CC per position; the control carries the DELAY position",
             "touch screen, needle search on the overall waveform, level meters and the jog displays",
             "crossfader assign and input select switches (utility settings, not panel controls)",
         ],
-        "controls": [asdict(c) for c in controls],
+        "pad_layer_groups": {
+            f"d{deck}": {
+                "label": f"{'Left' if deck == 1 else 'Right'} pad layer",
+                "default_mode": "hot_cue",
+                "modes": [{"id": mode, "label": row[0]} for mode, row in PAD_MODE_OFFSETS.items()],
+            }
+            for deck in (1, 2)
+        },
+        "controls": [_control_document(c) for c in controls],
     }
     return panel, reference
 

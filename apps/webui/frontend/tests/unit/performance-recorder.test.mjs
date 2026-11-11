@@ -200,7 +200,10 @@ test('REC lights only once audio is written, not while the macOS microphone prom
 	const failed = recorder.recordRailState({ ...base, capture: 'failed' });
 	assert.equal(failed.recording, false);
 	assert.equal(failed.poll, null);
-	assert.match(failed.tip, /stopped recording/);
+	assert.match(failed.tip, /Set recording failed/);
+	assert.doesNotMatch(failed.tip, /stopped recording; click to stop/);
+	const stopped = recorder.recordRailState({ ...base, capture: 'stopped' });
+	assert.match(stopped.tip, /stopped recording; click to stop/);
 	// Controls: audio being written, and a tracklist-only recording, light REC.
 	for (const capture of ['recording', 'none', 'unknown']) {
 		const state = recorder.recordRailState({ ...base, capture });
@@ -240,7 +243,7 @@ test('the /sets panel reads the capture state, not just active, and polls it', (
 	const base = { active: true, session_id: 's', pid: 1, owned: true, recoverable: false };
 	assert.equal(recorder.recorderHeadline({ ...base, capture: 'waiting_permission' }), 'Waiting for microphone permission');
 	assert.equal(recorder.recorderHeadline({ ...base, capture: 'starting' }), 'Starting the audio input');
-	assert.equal(recorder.recorderHeadline({ ...base, capture: 'failed' }), 'Audio input stopped');
+	assert.equal(recorder.recorderHeadline({ ...base, capture: 'failed' }), 'Audio input failed');
 	assert.equal(recorder.recorderHeadline({ ...base, capture: 'recording' }), 'Recording');
 	assert.equal(recorder.recorderHeadline({ ...base, active: false, capture: 'none' }), 'Recorder ready');
 	const page = readFileSync(new URL('../../src/routes/sets/+page.svelte', import.meta.url), 'utf8');
@@ -248,6 +251,65 @@ test('the /sets panel reads the capture state, not just active, and polls it', (
 	assert.match(page, /<strong>\{recorderHeadline\(recorder\)\}<\/strong>/);
 	assert.match(page, /setTimeout\(\(\) => void refreshRecorder\(\), after\)/);
 	assert.match(page, /captureFailureMessage\(recorder\)/);
+});
+
+test('if master capture stalls after accepting audio then REC tip keeps the stall reason after refresh', () => {
+	// [if] master capture stalls after accepting audio [then] failure tip names stall [⛔️ if clean stop only]
+	const base = { active: true, session_id: 'stall-s', pid: 1, owned: true, recoverable: false };
+	const stall = 'no master-mix audio';
+	const failed = recorder.recordRailState(
+		{ ...base, capture: 'failed', capture_error: stall },
+		null
+	);
+	assert.match(failed.tip, /no master-mix audio/);
+	assert.doesNotMatch(failed.tip, /stopped recording; click to stop/);
+	const retained = recorder.updateRetainedCaptureFailure(null, {
+		...base,
+		capture: 'failed',
+		capture_error: stall
+	});
+	const afterRefresh = recorder.recordRailState(
+		{ ...base, capture: 'stopped', capture_error: null },
+		retained
+	);
+	assert.match(afterRefresh.tip, /no master-mix audio/);
+});
+
+test('if an input capture reports its terminal reason then REC tip keeps it without capture_error', () => {
+	// [if] an input capture reports its terminal reason [then] tip shows engine line [⛔️ if generic stop]
+	const base = { active: true, session_id: 'mic-s', pid: 1, owned: true, recoverable: false };
+	const why = 'microphone access for Open DJ is off; turn it on in System Settings';
+	assert.match(
+		recorder.recordRailState({ ...base, capture: 'failed', capture_error: why }).tip,
+		/System Settings/
+	);
+	const retained = { sessionId: 'mic-s', reason: why };
+	const refreshed = recorder.recordRailState(
+		{ ...base, capture: 'stopped', capture_error: null },
+		retained
+	);
+	assert.match(refreshed.tip, /System Settings/);
+});
+
+test('if a user stops a healthy recording then REC tip is idle and retention does not leak', () => {
+	// [if] a user stops a healthy recording [then] idle rail [⛔️ if prior failure tip]
+	const base = { active: true, session_id: 'clean-s', pid: 1, owned: true, recoverable: false };
+	const idle = recorder.recordRailState({ ...base, active: false, capture: 'none' }, {
+		sessionId: 'old-s',
+		reason: 'no master-mix audio'
+	});
+	assert.equal(idle.tip, null);
+	assert.equal(idle.recording, false);
+	const staleRetention = { sessionId: 'old-s', reason: 'no master-mix audio' };
+	const newSession = recorder.recordRailState(
+		{ ...base, session_id: 'new-s', capture: 'stopped' },
+		staleRetention
+	);
+	assert.match(newSession.tip, /stopped recording; click to stop/);
+	assert.equal(
+		recorder.updateRetainedCaptureFailure(staleRetention, { ...base, active: false, capture: 'none' }),
+		null
+	);
 });
 
 test('if the REC tooltip does not say "Recording 12:34, 1.2 GB, clipped 3 times" then broken (issue #10371)', () => {

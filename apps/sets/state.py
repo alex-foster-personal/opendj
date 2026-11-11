@@ -32,7 +32,7 @@ from __future__ import annotations
 import json
 import sqlite3
 import threading
-from collections.abc import Callable, Iterator
+from collections.abc import Callable, Iterator, Mapping
 from contextlib import contextmanager
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
@@ -387,7 +387,32 @@ class SetsState:
             ).fetchone()
         return int(row[0] if row else 0)
 
-    def record_control_event(self, event: ControlEventV2) -> int:
+    # --- control events (SETREC-03) ------------------------------------
+
+    def record_control_event(self, event: ControlEventV2 | Mapping[str, Any]) -> int:
+        """Append one v2 control row; ``seq`` must be unique per session."""
+        if isinstance(event, ControlEventV2):
+            session_id = event.session_id
+            seq = event.seq
+            sample = event.sample
+            sample_rate = event.sample_rate
+            wall_clock = event.wall_clock
+            control = event.control
+            value = event.value
+            kind = event.kind
+            source = event.source
+            deck = event.deck
+        else:
+            session_id = str(event["session_id"])
+            seq = int(event["seq"])
+            sample = int(event["sample"])
+            sample_rate = int(event["sample_rate"])
+            wall_clock = str(event["wall_clock"])
+            control = str(event["control"])
+            value = event["value"]
+            kind = str(event["kind"])
+            source = str(event["source"])
+            deck = event.get("deck")
         with self._rw() as conn:
             cur = conn.execute(
                 """
@@ -398,16 +423,16 @@ class SetsState:
                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
-                    event.session_id,
-                    event.seq,
-                    event.sample,
-                    event.sample_rate,
-                    event.wall_clock,
-                    event.control,
-                    json.dumps(event.value, separators=(",", ":")),
-                    event.kind,
-                    event.source,
-                    event.deck,
+                    session_id,
+                    seq,
+                    sample,
+                    sample_rate,
+                    wall_clock,
+                    control,
+                    json.dumps(value, separators=(",", ":"), sort_keys=True),
+                    kind,
+                    source,
+                    deck,
                 ),
             )
             return int(cur.lastrowid or 0)
@@ -421,6 +446,9 @@ class SetsState:
         if row is None or row[0] is None:
             return None
         return int(row[0])
+
+    def fetch_control_events(self, session_id: str) -> list[dict[str, Any]]:
+        return [row.to_dict() for row in self.list_control_events(session_id)]
 
     def list_control_events(self, session_id: str) -> list[ControlEventV2]:
         from .control_events import parse_control_event_v2

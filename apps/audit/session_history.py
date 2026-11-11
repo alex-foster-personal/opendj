@@ -97,7 +97,7 @@ def _spotify_name_index() -> dict[str, tuple[str, str]]:
     human-readable name is resolved live from Spotify at display time and is
     NOT persisted. We rebuild it from (a) ``session_resolved.json`` written by
     the API resolver and (b) every cached playlist payload under
-    ``data/spotify/cache/``. File-backed so re-runs need no network.
+    ``(private path)/``. File-backed so re-runs need no network.
     """
     idx: dict[str, tuple[str, str]] = {}
     sp_dir = paths.DATA_DIR / "spotify"
@@ -130,13 +130,22 @@ def _content_id_to_playlists(db) -> dict[str, list[str]]:
     return index
 
 
+def _is_history_leaf_name(name: object) -> bool:
+    return str(name or "").upper().startswith("HISTORY")
+
+
+def _iter_history_leaves(db, *, newest_first: bool = True):
+    """HISTORY session nodes, optionally sorted newest-first by ``created_at``."""
+    leaves = [
+        h for h in db.get_history() if _is_history_leaf_name(getattr(h, "Name", ""))
+    ]
+    leaves.sort(key=lambda h: str(getattr(h, "created_at", "")), reverse=newest_first)
+    return leaves
+
+
 def _most_recent_history(db):
     """Return the newest leaf HISTORY node (the one with actual songs)."""
-    leaves = [
-        h for h in db.get_history()
-        if str(getattr(h, "Name", "")).upper().startswith("HISTORY")
-    ]
-    leaves.sort(key=lambda h: str(getattr(h, "created_at", "")), reverse=True)
+    leaves = _iter_history_leaves(db)
     return leaves[0] if leaves else None
 
 
@@ -272,9 +281,7 @@ def main() -> None:
     db = rekordbox_db.open_db(paths.REKORDBOX_LIVE_DB)
 
     if args.list:
-        leaves = [h for h in db.get_history()
-                  if str(getattr(h, "Name", "")).upper().startswith("HISTORY")]
-        leaves.sort(key=lambda h: str(getattr(h, "created_at", "")), reverse=True)
+        leaves = _iter_history_leaves(db)
         console.print(f"[bold]{len(leaves)} sessions:[/bold]")
         for h in leaves[:30]:
             console.print(f"  {getattr(h,'created_at','?')}  id={h.ID}  {getattr(h,'Name','?')}")

@@ -87,6 +87,7 @@ tests/test_pairing_capture_route.py
 tests/test_paths_data_dir_override.py
 (private path)
 tests/test_playlist_add.py
+(private path)
 tests/test_playlist_add_member_reads.py
 tests/test_playlist_forbid_duplicates.py
 tests/test_playlist_memberships_scale.py
@@ -119,6 +120,7 @@ tests/test_title_fix_long_recording_boundary.py
 tests/test_title_fix_safe_tier.py
 tests/test_title_fix_store_recovery.py
 tests/test_title_fix_third_party_marks.py
+(private path)
 tests/test_uv_run_no_sync.py
 tests/test_waits_uvicorn_shutdown.py
 tests/transition_score

@@ -111,6 +111,28 @@ const targetNotMaster = (ctx: PaletteContext): boolean => {
 
 const SPECS: readonly PaletteCommandSpec[] = [
 	{
+		id: 'dial.position',
+		title: 'Move selected dial to position',
+		keywords: ['dial', 'fader', 'knob', 'digit', 'animate'],
+		args: [],
+		menu: null,
+		hotkey: 'dial-position',
+		run: null,
+		waits: 'Needs a selected dial or fader; press a digit on the deck.',
+		available: () => true
+	},
+	{
+		id: 'dial.jump',
+		title: 'Jump selected dial to position',
+		keywords: ['dial', 'fader', 'knob', 'digit', 'instant'],
+		args: [],
+		menu: null,
+		hotkey: 'dial-jump',
+		run: null,
+		waits: 'Needs a selected dial or fader; press Cmd+digit on the deck.',
+		available: () => true
+	},
+	{
 		id: 'deck.unload',
 		title: 'Eject deck',
 		keywords: ['unload', 'clear', 'empty'],
@@ -452,6 +474,18 @@ const SPECS: readonly PaletteCommandSpec[] = [
 		available: () => true
 	},
 	{
+		id: 'edge_sampler.fire_tab',
+		title: 'Fire edge sampler tab',
+		keywords: ['sampler', 'edge', 'hot cue', 'tab'],
+		args: [],
+		menu: null,
+		hotkey: 'edge-sampler-tab',
+		run: null,
+		waits:
+			'Digits 1 through 0 fire tabs on the last edge used when the edge sampler is on (Electron).',
+		available: () => true
+	},
+	{
 		id: 'playlist.undo',
 		title: 'Undo playlist change',
 		keywords: ['revert', 'history', 'undo'],
@@ -502,6 +536,39 @@ const SPECS: readonly PaletteCommandSpec[] = [
 		run: null,
 		waits: 'The bar does not read whether the floating EQ panel is raised.',
 		available: () => true
+	},
+	{
+		id: 'library.load_deck',
+		title: 'Load selection to deck 1 / deck 2',
+		keywords: ['library', 'load', 'shift', 'arrow'],
+		args: [],
+		menu: null,
+		hotkey: 'library-load-deck',
+		run: null,
+		waits: 'Acts on the library selection via Shift+Left/Right, not a bar pick.',
+		available: () => true
+	},
+	{
+		id: 'library.instant_double',
+		title: 'Instant double from library',
+		keywords: ['library', 'double', 'copy', 'shift'],
+		args: [],
+		menu: null,
+		hotkey: 'library-instant-double',
+		run: null,
+		waits: 'Cmd/Ctrl+Shift+Left/Right in the library dispatches deck_move copy; not a bar pick.',
+		available: () => true
+	},
+	{
+		id: 'library.locate',
+		title: 'Locate recent deck track',
+		keywords: ['library', 'locate', 'scroll', 'recent'],
+		args: [],
+		menu: null,
+		hotkey: 'library-locate',
+		run: null,
+		waits: 'Cmd/Ctrl+L in the library reveals the recent deck track; not a bar pick.',
+		available: () => true
 	}
 ];
 
@@ -536,6 +603,7 @@ const exclusions = {
 	'track.add_to_playlist': NEEDS_TRACK,
 	'track.edit': NEEDS_TRACK,
 	'track.comment': NEEDS_TRACK,
+	'track.tracklist_hidden': NEEDS_TRACK,
 	'track.relocate': NEEDS_TRACK,
 	'track.reveal': NEEDS_TRACK,
 	'track.playlists': NEEDS_TRACK,

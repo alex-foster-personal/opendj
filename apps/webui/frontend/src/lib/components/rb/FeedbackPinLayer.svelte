@@ -16,11 +16,20 @@
 		type PinSeen
 	} from '$lib/rb/feedback';
 	import { isPinWithinVisibleDays } from '$lib/rb/feedback-pin-age';
-	import { isPinOnPage, parseShowHarvestedPins, SHOW_HARVESTED_PINS_KEY } from '$lib/rb/feedback-pin-board';
-	import { readPinsVisible, writePinsVisible, onPinsVisibleChanged } from '$lib/rb/feedback-pin-visibility';
+	import {
+		isPinOnPage,
+		parseShowHarvestedPins,
+		SHOW_HARVESTED_PINS_KEY
+	} from '$lib/rb/feedback-pin-board';
+	import {
+		readPinsVisible,
+		writePinsVisible,
+		onPinsVisibleChanged
+	} from '$lib/rb/feedback-pin-visibility';
 	import { uiPrefs } from '$lib/rb/prefs.svelte';
 	import { readPinSeen, writePinSeen } from '$lib/rb/feedback-pin-seen';
 	import { readParkedPinDraft, restoreParkedPinDraft } from '$lib/rb/feedback-pin-draft-restore';
+	import { takeToastCommentPinDraftText } from '$lib/toast-copy-context';
 	import { persistParkedPinDraft } from '$lib/rb/feedback-pin-draft-persist';
 	import { pushToast } from '$lib/stores.svelte';
 	import {
@@ -85,15 +94,14 @@
 	   comment (the draft bubble) hides the markers again unless the
 	   checkbox is on. Pin 2230ee193a61. */
 	const pagePins = $derived(
-		pinsVisible ||
-		feedbackState.pinsPeek ||
-		feedbackState.placementArmed
+		pinsVisible || feedbackState.pinsPeek || feedbackState.placementArmed
 			? feedbackState.pins.filter((p) => {
 					if (!isPinDrawn(p)) return false;
 					if (!isPinOnPage(p, pathname)) return false;
 					if (p.author === 'agent' && !uiPrefs.show_agent_pins) return false;
 					if (p.status === 'harvested' && !showHarvestedPins) return false;
-					if (!isPinWithinVisibleDays(p.created_at, uiPrefs.pin_visible_days, Date.now())) return false;
+					if (!isPinWithinVisibleDays(p.created_at, uiPrefs.pin_visible_days, Date.now()))
+						return false;
 					return true;
 				})
 			: []
@@ -114,7 +122,8 @@
 		const positions = new Map<string, ResolvedPinPosition>();
 		if (typeof window === 'undefined' || pagePins.length === 0) return positions;
 		const viewport = { w: window.innerWidth, h: window.innerHeight };
-		for (const pin of pagePins) positions.set(pin.id, resolvePinPosition(pin, measureSelector, viewport));
+		for (const pin of pagePins)
+			positions.set(pin.id, resolvePinPosition(pin, measureSelector, viewport));
 		return positions;
 	});
 	function _draftSaveError(err: unknown): void {
@@ -275,7 +284,9 @@
 		const offVis = onPinsVisibleChanged(() => {
 			pinsVisible = readPinsVisible(window.localStorage);
 		});
-		showHarvestedPins = parseShowHarvestedPins(window.localStorage.getItem(SHOW_HARVESTED_PINS_KEY));
+		showHarvestedPins = parseShowHarvestedPins(
+			window.localStorage.getItem(SHOW_HARVESTED_PINS_KEY)
+		);
 		_globals().__mdtPinSeen = {
 			get: () => ({ ...pinSeen }),
 			markSeen: (id: string) => markSeen(id)
@@ -384,25 +395,25 @@
 	function handlePlacementPointerDown(e: PointerEvent): void {
 		e.preventDefault();
 		e.stopPropagation();
-		const point = pinFromClient(
-			e.clientX,
-			e.clientY,
-			window.innerWidth,
-			window.innerHeight
-		);
+		const point = pinFromClient(e.clientX, e.clientY, window.innerWidth, window.innerHeight);
 		const under = resolvePinAnchorAt(e.clientX, e.clientY, (x, y) =>
 			document.elementsFromPoint(x, y)
 		);
 		const anchor = describeAnchor(under ?? null);
 		// resolvePinAnchorAt types its result as the DOM-free AnchorishElement
 		// for node:test; here it is always the real element elementsFromPoint returned.
-		const placement = capturePinPlacement({ x: e.clientX, y: e.clientY }, under as Element | null, anchor);
+		const placement = capturePinPlacement(
+			{ x: e.clientX, y: e.clientY },
+			under as Element | null,
+			anchor
+		);
 		disarmPinPlacement();
+		const toastReport = takeToastCommentPinDraftText();
 		pushPinDraft({
 			point,
 			anchor,
 			viewport: { width: window.innerWidth, height: window.innerHeight },
-			text: '',
+			text: toastReport ?? '',
 			page: pathname,
 			followOn: null,
 			placement

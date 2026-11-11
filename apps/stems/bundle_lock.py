@@ -3,7 +3,10 @@
 One stable_id's bundle directory (``<data>/state/<stem root>/<stable_id>``) is
 written by several processes: a stems job's publish
 (``apps.stems.bundle_publish.publish_stems_local`` for the relay and direct
-Modal routes, ``scripts/stem_bundle_worker.py`` for the local route), an R2
+Modal routes, ``scripts/stem_bundle_worker.py`` for the local route, which
+also upserts ``state/stem-bundle-index.json`` through
+``apps.cloud.stem_index_sync.record_published_bundle_if_shared`` after each
+live swap into a shared stem root), an R2
 hydrate (``apps.cloud.stem_hydration.hydrate_one``), the lyrics RoFormer
 writers (``apps.lyrics.register_stems``, ``apps.lyrics.stems_sync``, through
 :func:`store_writer_lock`), the GCE farm import (``apps.stems.farm_import``), and the STEM-58
@@ -107,8 +110,9 @@ def store_writer_lock(bundle_dir: Path) -> Iterator[None]:
     """The bundle lock for a writer whose root may lie outside a data dir.
 
     The lyrics RoFormer writers (``apps.lyrics.register_stems.register_pair``
-    and ``apps.lyrics.stems_sync.hydrate``) write ``<data>/state/
-    stems-roformer-spike`` in production, which the STEM-58 pass and eviction
+    and ``apps.lyrics.stems_sync.hydrate``) write
+    ``PRODUCTION_ROFORMER_STEMS_DIR`` in production, which the STEM-58 pass and
+    eviction
     both rewrite, so there they hold :func:`bundle_lock` like every other
     writer. Pointed at a root outside any
     ``<data>/state`` (a tool's scratch root, a test's tmp root), no

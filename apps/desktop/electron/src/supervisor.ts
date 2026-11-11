@@ -459,6 +459,8 @@ export class EngineSupervisor {
 
 	private async attemptRestart(): Promise<boolean> {
 		if (this.stopped) return false;
+		this.phase = 'restarting';
+		this.updateSurfaces();
 		const reason = deathReason(this.unresponsive, this.exitCode);
 		const { payload, dataDir, logPath } = this.paths;
 		if (this.stopped) return false;

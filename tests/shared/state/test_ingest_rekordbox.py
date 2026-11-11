@@ -92,6 +92,65 @@ def test_ingest_tier_breakdown_counts_match_ops(rb_fixture: Path, writer_and_con
     assert set(report.tier_counts).issubset({"isrc", "fingerprint", "inferred"})
 
 
+@pytest.mark.requirement("LIBM-12770")
+def test_ingest_rb_reuses_vendor_linked_row_on_path_remap(monkeypatch, writer_and_conn, tmp_path: Path) -> None:
+    """[if] state holds vendor V at old path [then] remap reuse, [else stop]."""
+    from apps.shared.state.ids import stable_id
+    from apps.shared.state.ingest.path_identity import resolve_rb_existing_stable_id
+
+    writer, conn = writer_and_conn
+    old_path = str(tmp_path / "Users" / "dev" / "song.mp3")
+    new_path = str(tmp_path / "Music" / "air-library" / "song.mp3")
+    vendor = "test-vendor-11425"
+    sid, tier = stable_id(isrc=None, abs_path=old_path, mtime=1.0)
+    writer.upsert_track(
+        stable_id=sid,
+        stable_id_tier=tier,
+        title="x",
+        artists=[],
+        album=None,
+        isrc=None,
+        duration_ms=1000,
+        file_path=old_path,
+        content_hash="d" * 64,
+    )
+    writer.set_vendor_id(sid, "rekordbox", vendor)
+
+    class _FakeRbDb:
+        def get_cue(self):
+            return []
+
+        def close(self):
+            return None
+
+    import pyrekordbox
+
+    row = {
+        "id": vendor,
+        "title": "x",
+        "artist": "",
+        "album": "",
+        "folder_path": new_path,
+        "is_streaming": False,
+        "isrc": None,
+        "bpm": None,
+        "rating": None,
+        "duration_ms": 1000,
+        "file_size": 500,
+        "key_name": None,
+        "updated_at": None,
+    }
+    monkeypatch.setattr(pyrekordbox, "Rekordbox6Database", lambda *a, **k: _FakeRbDb())
+    monkeypatch.setattr(rb_ingest, "_rb_rows", lambda _rb: iter([row]))
+    monkeypatch.setattr(rb_ingest, "_rb_playlists", lambda _rb: iter([]))
+    monkeypatch.setattr(rb_ingest, "_content_hash_for", lambda _p, _s: "d" * 64)
+
+    assert resolve_rb_existing_stable_id(conn, vendor, "d" * 64, None) == (sid, tier)
+    report = rb_ingest.ingest_rb(writer, tmp_path / "rb.db", dry_run=False)
+    assert report.tracks_inserted == 0
+    assert conn.execute("SELECT stable_id FROM tracks").fetchone()[0] == sid
+
+
 def test_ingest_idempotent(rb_fixture: Path, writer_and_conn) -> None:
     writer, conn = writer_and_conn
     first = rb_ingest.ingest_rb(writer, rb_fixture, dry_run=False)

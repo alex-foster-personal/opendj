@@ -16,18 +16,21 @@ from pathlib import Path
 import pytest
 
 from apps.analysis_bench import rounds
+from tests.analysis_bench import parity_fixtures
 
-_REPORT = {
-    "lane": "beatgrid",
-    "scorer_version": "1.1.0",
-    "bundle": {"lane": "beatgrid", "version": "v1", "bundle_id": "abc123"},
-    "table": "| candidate | n |\n|---|---|\n| beat_this | 90 |",
-    "arms": {
-        "beat_this": {"role": "candidate"},
-        "truth_offset": {"role": "positive_control"},
-        "constant_128": {"role": "negative_control"},
-    },
-}
+_REPORT = parity_fixtures.attach_synthetic_hosts(
+    {
+        "lane": "beatgrid",
+        "scorer_version": "1.1.0",
+        "bundle": {"lane": "beatgrid", "version": "v1", "bundle_id": "abc123"},
+        "table": "| candidate | n |\n|---|---|\n| beat_this | 90 |",
+        "arms": {
+            "beat_this": {"role": "candidate", "fixed": {"f_measure_mean": 0.9}},
+            "truth_offset": {"role": "positive_control"},
+            "constant_128": {"role": "negative_control"},
+        },
+    }
+)
 
 
 def test_first_round_uses_the_lane_floor(tmp_path: Path) -> None:
@@ -54,7 +57,9 @@ def test_append_writes_a_greppable_block(tmp_path: Path) -> None:
     assert "scorer 1.1.0" in text
     assert "bundle beatgrid/v1" in text
     assert "abc123" in text
-    assert "nucbox-wsl" in text
+    assert "posted from `nucbox-wsl`" in text
+    assert "macOS arm64" in text
+    assert "**parity**" in text
     assert text.startswith("# spec")
     assert rounds.next_round_number(text, "beatgrid", floor=2) == 3
 

@@ -232,6 +232,26 @@ def step_songs(
     return {**out, "red": is_red(out["failed"], sum(out.values()))}
 
 
+def pending_song_targets(
+    index: SongIndex, present: Sequence[str], done: set[str], terminal: set[str], failed: set[str]
+) -> list[str]:
+    """One stable_id per song :func:`step_songs` counts as pending (STEM-58).
+
+    The card's "not yet" made actionable: the same precedence (done > terminal >
+    pending > failed), so ``len`` of this equals ``step_songs(...)["pending"]``
+    by construction. The representative is the song's first member, in
+    ``present`` order, that is itself still worth an attempt (not failed).
+    """
+    targets: list[str] = []
+    for members in _members(index, present).values():
+        if any(sid in done for sid in members) or any(sid in terminal for sid in members):
+            continue
+        attemptable = [sid for sid in members if sid not in failed]
+        if attemptable:
+            targets.append(attemptable[0])
+    return targets
+
+
 LaneInput = tuple[Sequence[str], set[str], Mapping[str, str], Mapping[str, str]]
 
 
@@ -278,6 +298,7 @@ __all__ = [
     "dud_label",
     "is_red",
     "lane_songs",
+    "pending_song_targets",
     "read_song_index",
     "song_key",
     "step_songs",

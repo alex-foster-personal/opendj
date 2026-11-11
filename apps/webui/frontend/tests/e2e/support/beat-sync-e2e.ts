@@ -9,6 +9,8 @@
  * nothing to do with sync. In fixture mode the grid exists only when the
  * fixture was built with `--seed-own-beatgrid` (playwright.performance.config.ts
  * OWN_BEATGRID_SEEDED); without it the specs skip and say so.
+ *
+ * IPC query/dispatch readers live in `deck-driver.ts` (re-exported here as query/dispatch).
  */
 import { expect, test, type APIRequestContext, type Page } from '@playwright/test';
 
@@ -19,7 +21,13 @@ import type {
 } from '../../../src/lib/rb/performance-ipc.svelte';
 import type { DeckId } from '../../../src/lib/rb/deck-slots';
 
-export const API_BASE = process.env.PERFORMANCE_E2E_API_BASE ?? 'http://127.0.0.1:8686';
+import { API_BASE, dispatchPerformance, queryPerformance } from './deck-driver';
+import { waitForPerformanceIpc } from './performance-ready';
+
+export { API_BASE };
+export const query = queryPerformance;
+export const dispatch = dispatchPerformance;
+export const waitForIpc = waitForPerformanceIpc;
 const UI_BASE = (
 	process.env.PERFORMANCE_E2E_BASE_URL ??
 	process.env.PERFORMANCE_E2E_UI_BASE ??
@@ -74,33 +82,11 @@ export async function ownGridTrack(request: APIRequestContext, title: string): P
 	};
 }
 
-export async function waitForIpc(page: Page): Promise<void> {
-	await page.waitForFunction(() => window.musicDjToolsPerformance?.version === 1);
-}
-
 export async function gotoPerformance(page: Page): Promise<void> {
 	await page.setViewportSize({ width: 1280, height: 800 });
 	await page.goto(`${UI_BASE}/performance`);
 	await waitForIpc(page);
 	await dispatch(page, { type: 'master_volume', value: 0.1 });
-}
-
-export async function query(page: Page): Promise<PerformanceState> {
-	await waitForIpc(page);
-	return page.evaluate(() => {
-		const ipc = window.musicDjToolsPerformance;
-		if (ipc === undefined) throw new Error('performance IPC is not installed');
-		return ipc.query();
-	});
-}
-
-export async function dispatch(page: Page, command: PerformanceCommand): Promise<PerformanceState> {
-	await waitForIpc(page);
-	return page.evaluate(async (message) => {
-		const ipc = window.musicDjToolsPerformance;
-		if (ipc === undefined) throw new Error('performance IPC is not installed');
-		return ipc.dispatch(message);
-	}, command);
 }
 
 /** Wait for the deck to be loaded with a grid of at least 32 beats. */

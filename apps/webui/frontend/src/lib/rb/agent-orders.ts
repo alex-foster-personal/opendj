@@ -267,7 +267,17 @@ async function _one(command: unknown): Promise<AgentStepResult> {
 	try {
 		const order = _command(command) as unknown as Record<string, unknown>;
 		if (order.type === 'record_master_tap') await _recordMasterTap(order);
-		else if (order.type === 'io_device_test') return { status: 'succeeded', result: await _ioDeviceTest(order) };
+		else if (order.type === 'replay_takeover') {
+			if (typeof order.control !== 'string') {
+				throw new TypeError('replay_takeover order requires a string control');
+			}
+			const keys = Object.keys(order);
+			if (keys.some((k) => k !== 'type' && k !== 'control')) {
+				throw new TypeError('replay_takeover order allows only type and control');
+			}
+			const { replayTakeOver } = await import('./set-replay.svelte');
+			return { status: 'succeeded', result: replayTakeOver(String(order.control), 'agent') };
+		} else if (order.type === 'io_device_test') return { status: 'succeeded', result: await _ioDeviceTest(order) };
 		else if (order.type === 'record_master_tap_cancel') {
 			// The start gave up on the tap: tear it down, never stream (SET-12).
 			(await import('$lib/sets/master-mix-capture')).cancelMasterMixCapture(String(order.session_id));

@@ -20,6 +20,7 @@ QUICK_DRAW_SOURCE = REPO_ROOT / "apps/webui/frontend/src/lib/rb/quick-draw-catal
 MIRROR_SOURCE = REPO_ROOT / "apps/webui/frontend/src/lib/rb/ui-mirror.ts"
 
 _MIRROR_DECK_OPEN = "Object.entries(state.decks).map(([id, deck]) => [id, {"
+_MIRROR_BROWSER_OPEN = "browser: {"
 _MIRROR_OPEN = "export function buildUiMirror()"
 
 _COMMAND_UNION = "export type PerformanceCommand ="
@@ -225,6 +226,36 @@ def mirror_deck_keys() -> frozenset[str]:
             break
     if not keys:
         raise AssertionError(f"no deck keys parsed out of {MIRROR_SOURCE}")
+    return frozenset(keys)
+
+
+def mirror_browser_keys() -> frozenset[str]:
+    """Every key ``buildUiMirror`` publishes under ``browser``."""
+    lines = MIRROR_SOURCE.read_text(encoding="utf-8").splitlines()
+    start = next(
+        (index for index, line in enumerate(lines) if _MIRROR_BROWSER_OPEN in line),
+        None,
+    )
+    if start is None:
+        raise AssertionError(
+            f"the browser projection opener is not in {MIRROR_SOURCE}; this reader "
+            "is pinned to a shape that has changed and must be updated, not skipped"
+        )
+    keys: set[str] = set()
+    depth = 0
+    for line in lines[start:]:
+        stripped = line.strip()
+        if stripped.startswith("//"):
+            continue
+        if depth == 1:
+            for match in re.finditer(r"(?:^|[{,]|\s)([a-z_][a-z0-9_]*)\s*:", stripped):
+                keys.add(match.group(1))
+        depth += line.count("{") - line.count("}")
+        if depth <= 0 and keys:
+            break
+    if not keys:
+        raise AssertionError(f"no browser keys parsed out of {MIRROR_SOURCE}")
+    assert "playlist" in keys, "browser.playlist is the observation contract for playlist selection"
     return frozenset(keys)
 
 

@@ -54,7 +54,16 @@ export function applyTrimStage(
 }
 
 // The engine reaches the trim stage's auto gain input through the module that owns the stage.
-export { autoGainLinear, deckAutoGain, freshTrackAutoGain, publishDeckAutoGain, registerAutoGainApplier, setAutoGainLiveGuard, setDeckAutoGainUserOffset, settleTrackAutoGain } from '$lib/rb/auto-gain.svelte';
+export {
+	autoGainLinear,
+	deckAutoGain,
+	freshTrackAutoGain,
+	publishDeckAutoGain,
+	registerAutoGainApplier,
+	setAutoGainLiveGuard,
+	setDeckAutoGainUserOffset,
+	settleTrackAutoGain
+} from '$lib/rb/auto-gain.svelte';
 
 export function buildDeckChannelGraph(deps: {
 	ctx: AudioContext;
@@ -89,7 +98,10 @@ export function buildDeckChannelGraph(deps: {
 		high.type = 'highshelf';
 		high.frequency.value = EQ_FREQ_HIGH_HZ;
 		high.gain.value = eqDbFromKnob(ch.eq_high);
-		const { lpHz, hpHz, dryGain, lpWetGain, hpWetGain } = colorFilterParamsForBuild(deck, ch.filter);
+		const { lpHz, hpHz, dryGain, lpWetGain, hpWetGain } = colorFilterParamsForBuild(
+			deck,
+			ch.filter
+		);
 		const filterLp = deps.ctx.createBiquadFilter();
 		filterLp.type = 'lowpass';
 		filterLp.Q.value = FILTER_Q;
@@ -196,7 +208,10 @@ export async function reattachLoadedDeckProcessors(deps: {
 		deck: DeckId,
 		ctx: AudioContext,
 		buffer: AudioBuffer
-	) => Promise<{ processor: { connect(node: AudioNode): void; latencySec(): Promise<number> }; buffer: AudioBuffer }>;
+	) => Promise<{
+		processor: { connect(node: AudioNode): void; latencySec(): Promise<number> };
+		buffer: AudioBuffer;
+	}>;
 	onPresentationReset: (deck: DeckId, positionSec: number) => void;
 	onProcessorAttached: (
 		deck: DeckId,
@@ -229,10 +244,7 @@ export async function rebuildKeepingLoadedDecks(deps: {
 	clearDeckGraph: (deck: DeckId) => void;
 	disarmInstrumentation: () => void;
 	extraDisposeNodes: () => readonly AudioNode[];
-	disposeResources: (resources: {
-		processors: unknown[];
-		nodes: AudioNode[];
-	}) => Promise<void>;
+	disposeResources: (resources: { processors: unknown[]; nodes: AudioNode[] }) => Promise<void>;
 	resetGraphState: () => void;
 	ensureGraph: () => AudioContext;
 	reattach: (ctx: AudioContext, snaps: readonly LoadedDeckRecreateSnap[]) => Promise<void>;
@@ -321,11 +333,19 @@ export interface GraphRecreateEngineAccess {
 	detachProcessor(deck: DeckId): DisposableProcessor | null;
 	disarmInstrumentation(): void;
 	muteNode(): GainNode | null;
-	disposeResources(resources: { processors: DisposableProcessor[]; nodes: AudioNode[] }): Promise<void>;
+	disposeResources(resources: {
+		processors: DisposableProcessor[];
+		nodes: AudioNode[];
+	}): Promise<void>;
 	resetGraphState(): void;
 	ensureGraph(): AudioContext;
 	resetPresentation(deck: DeckId, positionSec: number): void;
-	attachProcessor(deck: DeckId, processor: MixProcessor, buffer: AudioBuffer, latencySec: number): void;
+	attachProcessor(
+		deck: DeckId,
+		processor: MixProcessor,
+		buffer: AudioBuffer,
+		latencySec: number
+	): void;
 	processorFailed(deck: DeckId, processor: MixProcessor, error: unknown): void;
 	schedulePlayingDeck(snap: LoadedDeckRecreateSnap, ctx: AudioContext): Promise<void>;
 	maybeUpgradeStems(snap: LoadedDeckRecreateSnap, buffer: AudioBuffer, ctx: AudioContext): void;
@@ -339,7 +359,9 @@ export async function recreateFromEngineAccess(access: GraphRecreateEngineAccess
 		detachProcessor: (deck) => access.detachProcessor(deck),
 		collectNodes: (deck) => {
 			const nodes = access.runtime(deck).nodes;
-			return nodes === null ? [] : Object.values(nodes).filter((node): node is AudioNode => node !== null);
+			return nodes === null
+				? []
+				: Object.values(nodes).filter((node): node is AudioNode => node !== null);
 		},
 		clearDeckGraph: (deck) => {
 			const rt = access.runtime(deck);
@@ -371,13 +393,21 @@ export interface EngineGraphRecreateBindings {
 	clearDeckGraph(deck: DeckId): void;
 	getNodes(deck: DeckId): DeckChannelNodes | null;
 	onPresentationReset(deck: DeckId, positionSec: number): void;
-	onProcessorAttached(deck: DeckId, processor: MixProcessor, buffer: AudioBuffer, latencySec: number): void;
+	onProcessorAttached(
+		deck: DeckId,
+		processor: MixProcessor,
+		buffer: AudioBuffer,
+		latencySec: number
+	): void;
 	onProcessorFailure(deck: DeckId, processor: MixProcessor, error: unknown): void;
 	schedulePlayingDeck(snap: LoadedDeckRecreateSnap, ctx: AudioContext): Promise<void>;
 	maybeUpgradeStems(snap: LoadedDeckRecreateSnap, buffer: AudioBuffer, ctx: AudioContext): void;
 	disarmInstrumentation(): void;
 	extraDisposeNodes(): readonly AudioNode[];
-	disposeResources(resources: { processors: DisposableProcessor[]; nodes: AudioNode[] }): Promise<void>;
+	disposeResources(resources: {
+		processors: DisposableProcessor[];
+		nodes: AudioNode[];
+	}): Promise<void>;
 	resetGraphState(): void;
 	ensureGraph(): AudioContext;
 }
@@ -424,7 +454,8 @@ export async function recreateEngineGraph(bindings: EngineGraphRecreateBindings)
 				onProcessorAttached: (deck, processor, buffer, latencySec) =>
 					bindings.onProcessorAttached(deck, processor as MixProcessor, buffer, latencySec),
 				schedulePlayingDeck: (snap, scheduleCtx) => bindings.schedulePlayingDeck(snap, scheduleCtx),
-				maybeUpgradeStems: (snap, buffer, stemCtx) => bindings.maybeUpgradeStems(snap, buffer, stemCtx)
+				maybeUpgradeStems: (snap, buffer, stemCtx) =>
+					bindings.maybeUpgradeStems(snap, buffer, stemCtx)
 			})
 	});
 }
@@ -442,7 +473,10 @@ export {
 	wireAudioOutputTopology,
 	type DjOutputProfile
 } from '$lib/rb/audio-output-topology';
-export { clearDjOutputResolution, publishDjOutputResolution } from '$lib/rb/audio-output-status.svelte';
+export {
+	clearDjOutputResolution,
+	publishDjOutputResolution
+} from '$lib/rb/audio-output-status.svelte';
 // Bug #58 graph-rebuild retry and the engine-recovery stop marker, re-exported
 // for audio-engine.svelte.ts so that file stays inside the import fan-out ratchet.
 export {
@@ -454,5 +488,16 @@ export {
 	reattachingDeckMessage
 } from '$lib/rb/graph-rebuild-retry';
 export { markEngineRecoveryStop } from '$lib/rb/engine-recovery-stop';
+export {
+	createGraphRebuildRetryController,
+	type GraphRebuildRetryController,
+	type GraphRebuildRetryControllerPorts,
+	type GraphRebuildRetryDeckRuntime,
+	type GraphRebuildRetryDeckState
+} from '$lib/rb/graph-rebuild-retry-controller';
+export {
+	resetStretchAddModuleTimeoutMs,
+	setStretchAddModuleTimeoutMs
+} from '$lib/rb/stretch-worklet-ready';
 // COLORFX-01: the color knob's per-effect drive, re-exported for the same reason.
 export { applyColorKnob } from '$lib/rb/color-fx.svelte';

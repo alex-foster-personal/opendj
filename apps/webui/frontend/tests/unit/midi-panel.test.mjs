@@ -218,6 +218,10 @@ test('friendlyLabel turns action types into human labels', () => {
 	assert.equal(fmt.friendlyLabel({ type: 'headphone_mix' }), 'Headphones mix');
 	assert.equal(fmt.friendlyLabel({ type: 'headphone_level' }), 'Headphones level');
 	assert.equal(fmt.friendlyLabel({ type: 'master_cue', mode: 'latch' }), 'Master cue');
+	assert.equal(
+		fmt.friendlyLabel({ type: 'color_fx', deck: 1, effect: 'filter' }),
+		'Colour FX filter (deck 1)'
+	);
 });
 
 test('bestGuessHint names a documented-but-unbound control, else null', () => {

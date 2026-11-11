@@ -267,7 +267,8 @@ test('if the Light skin pins the waveform hues then an explicit Rekordbox or Leg
 	const effective = {
 		rekordbox: skinBlock,
 		mono: { ...skinBlock, ...block(THEME, "html[data-skin='light'][data-wave-palette='mono'] .perf-root") },
-		legacy: { ...skinBlock, ...block(THEME, "html[data-skin='light'][data-wave-palette='legacy'] .perf-root") }
+		legacy: { ...skinBlock, ...block(THEME, "html[data-skin='light'][data-wave-palette='legacy'] .perf-root") },
+		blue: { ...skinBlock, ...block(THEME, "html[data-skin='light'][data-wave-palette='blue'] .perf-root") }
 	};
 	for (const [choice, decl] of Object.entries(effective)) {
 		const want = resolveWaveBandColors('light', choice);
@@ -276,7 +277,7 @@ test('if the Light skin pins the waveform hues then an explicit Rekordbox or Leg
 		}
 	}
 	// Equal specificity with the theme's light palette blocks, so the skin's must come later.
-	for (const choice of ['mono', 'legacy']) {
+	for (const choice of ['mono', 'legacy', 'blue']) {
 		assert.ok(
 			THEME.indexOf(`html[data-skin='light'][data-wave-palette='${choice}'] .perf-root {`) >
 				THEME.indexOf(`html[data-theme='light'][data-wave-palette='${choice}'] .perf-root {`),

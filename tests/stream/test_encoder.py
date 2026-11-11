@@ -17,7 +17,6 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from apps.sets import capture, master_mix
-from apps.sets.api import router
 from apps.sets.master_tap import MASTER_TAP_CHANNEL_STATE
 from apps.sets.recorder_service import RecorderService
 from apps.shared import ffmpeg as ffmpeg_mod
@@ -30,6 +29,7 @@ from apps.stream.encoder import (
     build_encoder_command,
     require_master_source,
 )
+from tests.sets.conftest import mount_sets_router
 
 pytestmark = pytest.mark.requirement("STREAM-11486")
 
@@ -277,7 +277,7 @@ def client(tmp_path: Path):
     app = FastAPI()
     app.state.sets_recorder_service = service
     setattr(app.state, MASTER_TAP_CHANNEL_STATE, _Page())
-    app.include_router(router)
+    mount_sets_router(app)
     with TestClient(app) as test_client:
         yield test_client, service
 

@@ -28,6 +28,7 @@ const serverTrack = (over: Partial<Track> = {}): Track => ({
 	has_rb_mapping: true,
 	lyrics_available: false,
 	stems_available: false,
+	tracklist_hidden: false,
 	created_at: '2026-09-01T10:00:00.000000Z',
 	updated_at: '2026-10-12T21:30:00.000000Z',
 	...over

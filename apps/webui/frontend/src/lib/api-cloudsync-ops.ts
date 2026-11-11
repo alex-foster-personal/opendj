@@ -5,6 +5,7 @@
  *     POST    /api/v1/cloudsync/sync     (apps/webui/server/routes/cloudsync_ops.py)
  *     GET     /api/v1/cloudsync/fleet    (same file)
  *     POST    /api/v1/cloudsync/enrollment-grants (same file)
+ *     POST/GET /api/v1/cloudsync/hash-pending-backfill (cloudsync_hash_backfill.py)
  *
  * Unlike `api-cloudsync.ts`, these routes are in the generated OpenAPI
  * `paths`, so this module uses the shared `api` client with its real types:
@@ -25,6 +26,8 @@ export type SyncRunOut = Schemas['apps__webui__server__routes__cloudsync_ops__Sy
 export type FleetOut = Schemas['FleetOut'];
 export type GrantIn = Schemas['GrantIn'];
 export type GrantOut = Schemas['GrantOut'];
+export type HashPendingBackfillStartIn = Schemas['HashPendingBackfillStartIn'];
+export type HashPendingBackfillProgressOut = Schemas['HashPendingBackfillProgressOut'];
 /** GrantIn with the server-defaulted ttl left optional: omitting it takes the
  * backend's own default (GrantIn.ttl_seconds) rather than a copy of it here. */
 export type GrantRequest = Omit<GrantIn, 'ttl_seconds'> & { ttl_seconds?: number };
@@ -56,4 +59,14 @@ export async function resumeCloudsyncSchedulerOwed(): Promise<{ ok: boolean }> {
  */
 export async function mintEnrollmentGrant(body: GrantRequest): Promise<GrantOut> {
 	return unwrap(api.POST('/api/v1/cloudsync/enrollment-grants', { body: body as GrantIn }));
+}
+
+export async function startHashPendingBackfill(
+	body: HashPendingBackfillStartIn
+): Promise<HashPendingBackfillProgressOut> {
+	return unwrap(api.POST('/api/v1/cloudsync/hash-pending-backfill', { body }));
+}
+
+export async function getHashPendingBackfillProgress(): Promise<HashPendingBackfillProgressOut> {
+	return unwrap(api.GET('/api/v1/cloudsync/hash-pending-backfill', {}));
 }

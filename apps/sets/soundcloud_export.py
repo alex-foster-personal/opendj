@@ -13,6 +13,8 @@ from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Any
 
+from apps.shared.state.tracklist_hidden import HIDDEN_LABEL
+
 from . import paths as sets_paths
 from .record import TimelineJsonl
 from .sessions import get_session
@@ -142,7 +144,10 @@ def _timestamp_s(event: dict[str, Any]) -> float:
     return float(raw)
 
 
-def _iter_kept_plays(events: Iterator[dict[str, Any]]) -> Iterator[SoundcloudTracklistRow]:
+def _iter_kept_plays(
+    events: Iterator[dict[str, Any]],
+    hidden_stable_ids: frozenset[str],
+) -> Iterator[SoundcloudTracklistRow]:
     last_stable_id: str | None = None
     have_last = False
     for event in events:
@@ -154,6 +159,8 @@ def _iter_kept_plays(events: Iterator[dict[str, Any]]) -> Iterator[SoundcloudTra
         title = _optional_string(value.get("title"))
         artist = _optional_string(value.get("artist"))
         stable_id = _stable_id(event.get("track_stable_id"))
+        if stable_id is not None and stable_id in hidden_stable_ids:
+            title = artist = HIDDEN_LABEL
         if stable_id is None and title is None:
             continue
         if have_last and stable_id is not None and stable_id == last_stable_id:
@@ -181,14 +188,19 @@ def _comment_from(rows: list[SoundcloudTracklistRow]) -> str:
     return "".join(f"{row.timestamp_label} {row.display_name}\n" for row in rows)
 
 
-def build_soundcloud_export(session_id: str, *, sets_root: Path | None = None) -> SoundcloudExport:
+def build_soundcloud_export(
+    session_id: str,
+    *,
+    sets_root: Path | None = None,
+    hidden_stable_ids: frozenset[str],
+) -> SoundcloudExport:
     """Read ``timeline.jsonl`` for a finalized session and build the export."""
     session = get_session(session_id, sets_root=sets_root)
     if session is None:
         raise SessionNotFound(f"session {session_id!r} not found")
     session_path = sets_paths.session_dir(session_id, root=sets_root)
     events = TimelineJsonl(session_path / "timeline.jsonl").iter_events()
-    tracklist = list(_iter_kept_plays(events))
+    tracklist = list(_iter_kept_plays(events, hidden_stable_ids))
     return SoundcloudExport(
         session_id=session.summary.session_id,
         tracklist=tracklist,

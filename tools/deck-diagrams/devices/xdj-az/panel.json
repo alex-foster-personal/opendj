@@ -15,13 +15,122 @@
  },
  "out_of_scope": [
   "deck 3 and deck 4 transport: the left deck carries deck 1 wires and the right deck deck 2 wires (power-on selection); DECK SELECT boxes carry the selected deck's channel",
-  "pad modes other than HOT CUE: pads carry the HOT CUE wire identity, +SHIFT the gate-cue row",
   "MSB/LSB companion CCs: TEMPO carries its MSB",
   "hardware-only controls with no MIDI row: JOG FEEL, JOG RING, MIC 1/2 LEVEL, SHORT CUT, MIXER SETTINGS, the six screen buttons, USB STOP",
   "FX SELECT is a rotary switch with one CC per position; the control carries the DELAY position",
   "touch screen, needle search on the overall waveform, level meters and the jog displays",
   "crossfader assign and input select switches (utility settings, not panel controls)"
  ],
+ "pad_layer_groups": {
+  "d1": {
+   "label": "Left pad layer",
+   "default_mode": "hot_cue",
+   "modes": [
+    {
+     "id": "hot_cue",
+     "label": "HOT CUE"
+    },
+    {
+     "id": "beat_loop",
+     "label": "BEAT LOOP"
+    },
+    {
+     "id": "pad_fx1_page1",
+     "label": "PAD FX1 PAGE1"
+    },
+    {
+     "id": "pad_fx1_page2",
+     "label": "PAD FX1 PAGE2"
+    },
+    {
+     "id": "pad_fx2_page1",
+     "label": "PAD FX2 PAGE1"
+    },
+    {
+     "id": "pad_fx2_page2",
+     "label": "PAD FX2 PAGE2"
+    },
+    {
+     "id": "slip_loop",
+     "label": "SLIP LOOP"
+    },
+    {
+     "id": "beat_jump",
+     "label": "BEAT JUMP"
+    },
+    {
+     "id": "gate_cue",
+     "label": "GATE CUE"
+    },
+    {
+     "id": "beat_loop2",
+     "label": "BEAT LOOP2"
+    },
+    {
+     "id": "key_shift",
+     "label": "KEY SHIFT"
+    },
+    {
+     "id": "beat_jump2",
+     "label": "BEAT JUMP2"
+    }
+   ]
+  },
+  "d2": {
+   "label": "Right pad layer",
+   "default_mode": "hot_cue",
+   "modes": [
+    {
+     "id": "hot_cue",
+     "label": "HOT CUE"
+    },
+    {
+     "id": "beat_loop",
+     "label": "BEAT LOOP"
+    },
+    {
+     "id": "pad_fx1_page1",
+     "label": "PAD FX1 PAGE1"
+    },
+    {
+     "id": "pad_fx1_page2",
+     "label": "PAD FX1 PAGE2"
+    },
+    {
+     "id": "pad_fx2_page1",
+     "label": "PAD FX2 PAGE1"
+    },
+    {
+     "id": "pad_fx2_page2",
+     "label": "PAD FX2 PAGE2"
+    },
+    {
+     "id": "slip_loop",
+     "label": "SLIP LOOP"
+    },
+    {
+     "id": "beat_jump",
+     "label": "BEAT JUMP"
+    },
+    {
+     "id": "gate_cue",
+     "label": "GATE CUE"
+    },
+    {
+     "id": "beat_loop2",
+     "label": "BEAT LOOP2"
+    },
+    {
+     "id": "key_shift",
+     "label": "KEY SHIFT"
+    },
+    {
+     "id": "beat_jump2",
+     "label": "BEAT JUMP2"
+    }
+   ]
+  }
+ },
  "controls": [
   {
    "id": "d1-loop-in",
@@ -591,7 +700,16 @@
     "kind": "note",
     "id": 34
    },
-   "shift_midi": null
+   "shift_midi": {
+    "ch": 1,
+    "kind": "note",
+    "id": 38
+   },
+   "pad_layer_group": "d1",
+   "pad_layer_select": {
+    "base": "hot_cue",
+    "shift": "gate_cue"
+   }
   },
   {
    "id": "d1-pad-mode-beat-loop",
@@ -609,7 +727,16 @@
     "kind": "note",
     "id": 35
    },
-   "shift_midi": null
+   "shift_midi": {
+    "ch": 1,
+    "kind": "note",
+    "id": 39
+   },
+   "pad_layer_group": "d1",
+   "pad_layer_select": {
+    "base": "beat_loop",
+    "shift": "beat_loop2"
+   }
   },
   {
    "id": "d1-pad-mode-slip-loop",
@@ -627,7 +754,16 @@
     "kind": "note",
     "id": 36
    },
-   "shift_midi": null
+   "shift_midi": {
+    "ch": 1,
+    "kind": "note",
+    "id": 40
+   },
+   "pad_layer_group": "d1",
+   "pad_layer_select": {
+    "base": "slip_loop",
+    "shift": "key_shift"
+   }
   },
   {
    "id": "d1-pad-mode-beat-jump",
@@ -645,7 +781,16 @@
     "kind": "note",
     "id": 37
    },
-   "shift_midi": null
+   "shift_midi": {
+    "ch": 1,
+    "kind": "note",
+    "id": 41
+   },
+   "pad_layer_group": "d1",
+   "pad_layer_select": {
+    "base": "beat_jump",
+    "shift": "beat_jump2"
+   }
   },
   {
    "id": "d1-deck-select-a",
@@ -703,6 +848,157 @@
     "ch": 6,
     "kind": "note",
     "id": 1
+   },
+   "pad_layer_group": "d1",
+   "pad_layers": {
+    "hot_cue": {
+     "label": "HOT CUE PAD 1",
+     "does": "Inspect HOT CUE pad 1 (deck 1)",
+     "midi": {
+      "ch": 6,
+      "kind": "note",
+      "id": 0
+     },
+     "shift_midi": {
+      "ch": 6,
+      "kind": "note",
+      "id": 1
+     }
+    },
+    "beat_loop": {
+     "label": "BEAT LOOP PAD 1",
+     "does": "Inspect BEAT LOOP pad 1 (deck 1)",
+     "midi": {
+      "ch": 6,
+      "kind": "note",
+      "id": 2
+     },
+     "shift_midi": {
+      "ch": 6,
+      "kind": "note",
+      "id": 3
+     }
+    },
+    "pad_fx1_page1": {
+     "label": "PAD FX1 PAGE1 PAD 1",
+     "does": "Inspect PAD FX1 PAGE1 pad 1 (deck 1)",
+     "midi": {
+      "ch": 6,
+      "kind": "note",
+      "id": 4
+     },
+     "shift_midi": null
+    },
+    "pad_fx1_page2": {
+     "label": "PAD FX1 PAGE2 PAD 1",
+     "does": "Inspect PAD FX1 PAGE2 pad 1 (deck 1)",
+     "midi": {
+      "ch": 6,
+      "kind": "note",
+      "id": 5
+     },
+     "shift_midi": null
+    },
+    "pad_fx2_page1": {
+     "label": "PAD FX2 PAGE1 PAD 1",
+     "does": "Inspect PAD FX2 PAGE1 pad 1 (deck 1)",
+     "midi": {
+      "ch": 6,
+      "kind": "note",
+      "id": 6
+     },
+     "shift_midi": null
+    },
+    "pad_fx2_page2": {
+     "label": "PAD FX2 PAGE2 PAD 1",
+     "does": "Inspect PAD FX2 PAGE2 pad 1 (deck 1)",
+     "midi": {
+      "ch": 6,
+      "kind": "note",
+      "id": 7
+     },
+     "shift_midi": null
+    },
+    "slip_loop": {
+     "label": "SLIP LOOP PAD 1",
+     "does": "Inspect SLIP LOOP pad 1 (deck 1)",
+     "midi": null,
+     "shift_midi": {
+      "ch": 6,
+      "kind": "note",
+      "id": 8
+     }
+    },
+    "beat_jump": {
+     "label": "BEAT JUMP PAD 1",
+     "does": "Inspect BEAT JUMP pad 1 (deck 1)",
+     "midi": {
+      "ch": 6,
+      "kind": "note",
+      "id": 9
+     },
+     "shift_midi": {
+      "ch": 6,
+      "kind": "note",
+      "id": 10
+     }
+    },
+    "gate_cue": {
+     "label": "GATE CUE PAD 1",
+     "does": "Inspect GATE CUE pad 1 (deck 1)",
+     "midi": {
+      "ch": 6,
+      "kind": "note",
+      "id": 11
+     },
+     "shift_midi": {
+      "ch": 6,
+      "kind": "note",
+      "id": 12
+     }
+    },
+    "beat_loop2": {
+     "label": "BEAT LOOP2 PAD 1",
+     "does": "Inspect BEAT LOOP2 pad 1 (deck 1)",
+     "midi": {
+      "ch": 6,
+      "kind": "note",
+      "id": 13
+     },
+     "shift_midi": {
+      "ch": 6,
+      "kind": "note",
+      "id": 14
+     }
+    },
+    "key_shift": {
+     "label": "KEY SHIFT PAD 1",
+     "does": "Inspect KEY SHIFT pad 1 (deck 1)",
+     "midi": {
+      "ch": 6,
+      "kind": "note",
+      "id": 15
+     },
+     "shift_midi": {
+      "ch": 6,
+      "kind": "note",
+      "id": 16
+     }
+    },
+    "beat_jump2": {
+     "label": "BEAT JUMP2 PAD 1",
+     "does": "Inspect BEAT JUMP2 pad 1 (deck 1)",
+     "midi": {
+      "ch": 6,
+      "kind": "note",
+      "id": 17
+     },
+     "shift_midi": {
+      "ch": 6,
+      "kind": "note",
+      "id": 18
+     }
+    }
    }
   },
   {
@@ -725,6 +1021,157 @@
     "ch": 6,
     "kind": "note",
     "id": 20
+   },
+   "pad_layer_group": "d1",
+   "pad_layers": {
+    "hot_cue": {
+     "label": "HOT CUE PAD 2",
+     "does": "Inspect HOT CUE pad 2 (deck 1)",
+     "midi": {
+      "ch": 6,
+      "kind": "note",
+      "id": 19
+     },
+     "shift_midi": {
+      "ch": 6,
+      "kind": "note",
+      "id": 20
+     }
+    },
+    "beat_loop": {
+     "label": "BEAT LOOP PAD 2",
+     "does": "Inspect BEAT LOOP pad 2 (deck 1)",
+     "midi": {
+      "ch": 6,
+      "kind": "note",
+      "id": 21
+     },
+     "shift_midi": {
+      "ch": 6,
+      "kind": "note",
+      "id": 22
+     }
+    },
+    "pad_fx1_page1": {
+     "label": "PAD FX1 PAGE1 PAD 2",
+     "does": "Inspect PAD FX1 PAGE1 pad 2 (deck 1)",
+     "midi": {
+      "ch": 6,
+      "kind": "note",
+      "id": 23
+     },
+     "shift_midi": null
+    },
+    "pad_fx1_page2": {
+     "label": "PAD FX1 PAGE2 PAD 2",
+     "does": "Inspect PAD FX1 PAGE2 pad 2 (deck 1)",
+     "midi": {
+      "ch": 6,
+      "kind": "note",
+      "id": 24
+     },
+     "shift_midi": null
+    },
+    "pad_fx2_page1": {
+     "label": "PAD FX2 PAGE1 PAD 2",
+     "does": "Inspect PAD FX2 PAGE1 pad 2 (deck 1)",
+     "midi": {
+      "ch": 6,
+      "kind": "note",
+      "id": 25
+     },
+     "shift_midi": null
+    },
+    "pad_fx2_page2": {
+     "label": "PAD FX2 PAGE2 PAD 2",
+     "does": "Inspect PAD FX2 PAGE2 pad 2 (deck 1)",
+     "midi": {
+      "ch": 6,
+      "kind": "note",
+      "id": 26
+     },
+     "shift_midi": null
+    },
+    "slip_loop": {
+     "label": "SLIP LOOP PAD 2",
+     "does": "Inspect SLIP LOOP pad 2 (deck 1)",
+     "midi": null,
+     "shift_midi": {
+      "ch": 6,
+      "kind": "note",
+      "id": 27
+     }
+    },
+    "beat_jump": {
+     "label": "BEAT JUMP PAD 2",
+     "does": "Inspect BEAT JUMP pad 2 (deck 1)",
+     "midi": {
+      "ch": 6,
+      "kind": "note",
+      "id": 28
+     },
+     "shift_midi": {
+      "ch": 6,
+      "kind": "note",
+      "id": 29
+     }
+    },
+    "gate_cue": {
+     "label": "GATE CUE PAD 2",
+     "does": "Inspect GATE CUE pad 2 (deck 1)",
+     "midi": {
+      "ch": 6,
+      "kind": "note",
+      "id": 30
+     },
+     "shift_midi": {
+      "ch": 6,
+      "kind": "note",
+      "id": 31
+     }
+    },
+    "beat_loop2": {
+     "label": "BEAT LOOP2 PAD 2",
+     "does": "Inspect BEAT LOOP2 pad 2 (deck 1)",
+     "midi": {
+      "ch": 6,
+      "kind": "note",
+      "id": 32
+     },
+     "shift_midi": {
+      "ch": 6,
+      "kind": "note",
+      "id": 33
+     }
+    },
+    "key_shift": {
+     "label": "KEY SHIFT PAD 2",
+     "does": "Inspect KEY SHIFT pad 2 (deck 1)",
+     "midi": {
+      "ch": 6,
+      "kind": "note",
+      "id": 34
+     },
+     "shift_midi": {
+      "ch": 6,
+      "kind": "note",
+      "id": 35
+     }
+    },
+    "beat_jump2": {
+     "label": "BEAT JUMP2 PAD 2",
+     "does": "Inspect BEAT JUMP2 pad 2 (deck 1)",
+     "midi": {
+      "ch": 6,
+      "kind": "note",
+      "id": 36
+     },
+     "shift_midi": {
+      "ch": 6,
+      "kind": "note",
+      "id": 37
+     }
+    }
    }
   },
   {
@@ -747,6 +1194,157 @@
     "ch": 6,
     "kind": "note",
     "id": 39
+   },
+   "pad_layer_group": "d1",
+   "pad_layers": {
+    "hot_cue": {
+     "label": "HOT CUE PAD 3",
+     "does": "Inspect HOT CUE pad 3 (deck 1)",
+     "midi": {
+      "ch": 6,
+      "kind": "note",
+      "id": 38
+     },
+     "shift_midi": {
+      "ch": 6,
+      "kind": "note",
+      "id": 39
+     }
+    },
+    "beat_loop": {
+     "label": "BEAT LOOP PAD 3",
+     "does": "Inspect BEAT LOOP pad 3 (deck 1)",
+     "midi": {
+      "ch": 6,
+      "kind": "note",
+      "id": 40
+     },
+     "shift_midi": {
+      "ch": 6,
+      "kind": "note",
+      "id": 41
+     }
+    },
+    "pad_fx1_page1": {
+     "label": "PAD FX1 PAGE1 PAD 3",
+     "does": "Inspect PAD FX1 PAGE1 pad 3 (deck 1)",
+     "midi": {
+      "ch": 6,
+      "kind": "note",
+      "id": 42
+     },
+     "shift_midi": null
+    },
+    "pad_fx1_page2": {
+     "label": "PAD FX1 PAGE2 PAD 3",
+     "does": "Inspect PAD FX1 PAGE2 pad 3 (deck 1)",
+     "midi": {
+      "ch": 6,
+      "kind": "note",
+      "id": 43
+     },
+     "shift_midi": null
+    },
+    "pad_fx2_page1": {
+     "label": "PAD FX2 PAGE1 PAD 3",
+     "does": "Inspect PAD FX2 PAGE1 pad 3 (deck 1)",
+     "midi": {
+      "ch": 6,
+      "kind": "note",
+      "id": 44
+     },
+     "shift_midi": null
+    },
+    "pad_fx2_page2": {
+     "label": "PAD FX2 PAGE2 PAD 3",
+     "does": "Inspect PAD FX2 PAGE2 pad 3 (deck 1)",
+     "midi": {
+      "ch": 6,
+      "kind": "note",
+      "id": 45
+     },
+     "shift_midi": null
+    },
+    "slip_loop": {
+     "label": "SLIP LOOP PAD 3",
+     "does": "Inspect SLIP LOOP pad 3 (deck 1)",
+     "midi": null,
+     "shift_midi": {
+      "ch": 6,
+      "kind": "note",
+      "id": 46
+     }
+    },
+    "beat_jump": {
+     "label": "BEAT JUMP PAD 3",
+     "does": "Inspect BEAT JUMP pad 3 (deck 1)",
+     "midi": {
+      "ch": 6,
+      "kind": "note",
+      "id": 47
+     },
+     "shift_midi": {
+      "ch": 6,
+      "kind": "note",
+      "id": 48
+     }
+    },
+    "gate_cue": {
+     "label": "GATE CUE PAD 3",
+     "does": "Inspect GATE CUE pad 3 (deck 1)",
+     "midi": {
+      "ch": 6,
+      "kind": "note",
+      "id": 49
+     },
+     "shift_midi": {
+      "ch": 6,
+      "kind": "note",
+      "id": 50
+     }
+    },
+    "beat_loop2": {
+     "label": "BEAT LOOP2 PAD 3",
+     "does": "Inspect BEAT LOOP2 pad 3 (deck 1)",
+     "midi": {
+      "ch": 6,
+      "kind": "note",
+      "id": 51
+     },
+     "shift_midi": {
+      "ch": 6,
+      "kind": "note",
+      "id": 52
+     }
+    },
+    "key_shift": {
+     "label": "KEY SHIFT PAD 3",
+     "does": "Inspect KEY SHIFT pad 3 (deck 1)",
+     "midi": {
+      "ch": 6,
+      "kind": "note",
+      "id": 53
+     },
+     "shift_midi": {
+      "ch": 6,
+      "kind": "note",
+      "id": 54
+     }
+    },
+    "beat_jump2": {
+     "label": "BEAT JUMP2 PAD 3",
+     "does": "Inspect BEAT JUMP2 pad 3 (deck 1)",
+     "midi": {
+      "ch": 6,
+      "kind": "note",
+      "id": 55
+     },
+     "shift_midi": {
+      "ch": 6,
+      "kind": "note",
+      "id": 56
+     }
+    }
    }
   },
   {
@@ -769,6 +1367,157 @@
     "ch": 6,
     "kind": "note",
     "id": 58
+   },
+   "pad_layer_group": "d1",
+   "pad_layers": {
+    "hot_cue": {
+     "label": "HOT CUE PAD 4",
+     "does": "Inspect HOT CUE pad 4 (deck 1)",
+     "midi": {
+      "ch": 6,
+      "kind": "note",
+      "id": 57
+     },
+     "shift_midi": {
+      "ch": 6,
+      "kind": "note",
+      "id": 58
+     }
+    },
+    "beat_loop": {
+     "label": "BEAT LOOP PAD 4",
+     "does": "Inspect BEAT LOOP pad 4 (deck 1)",
+     "midi": {
+      "ch": 6,
+      "kind": "note",
+      "id": 59
+     },
+     "shift_midi": {
+      "ch": 6,
+      "kind": "note",
+      "id": 60
+     }
+    },
+    "pad_fx1_page1": {
+     "label": "PAD FX1 PAGE1 PAD 4",
+     "does": "Inspect PAD FX1 PAGE1 pad 4 (deck 1)",
+     "midi": {
+      "ch": 6,
+      "kind": "note",
+      "id": 61
+     },
+     "shift_midi": null
+    },
+    "pad_fx1_page2": {
+     "label": "PAD FX1 PAGE2 PAD 4",
+     "does": "Inspect PAD FX1 PAGE2 pad 4 (deck 1)",
+     "midi": {
+      "ch": 6,
+      "kind": "note",
+      "id": 62
+     },
+     "shift_midi": null
+    },
+    "pad_fx2_page1": {
+     "label": "PAD FX2 PAGE1 PAD 4",
+     "does": "Inspect PAD FX2 PAGE1 pad 4 (deck 1)",
+     "midi": {
+      "ch": 6,
+      "kind": "note",
+      "id": 63
+     },
+     "shift_midi": null
+    },
+    "pad_fx2_page2": {
+     "label": "PAD FX2 PAGE2 PAD 4",
+     "does": "Inspect PAD FX2 PAGE2 pad 4 (deck 1)",
+     "midi": {
+      "ch": 6,
+      "kind": "note",
+      "id": 64
+     },
+     "shift_midi": null
+    },
+    "slip_loop": {
+     "label": "SLIP LOOP PAD 4",
+     "does": "Inspect SLIP LOOP pad 4 (deck 1)",
+     "midi": null,
+     "shift_midi": {
+      "ch": 6,
+      "kind": "note",
+      "id": 65
+     }
+    },
+    "beat_jump": {
+     "label": "BEAT JUMP PAD 4",
+     "does": "Inspect BEAT JUMP pad 4 (deck 1)",
+     "midi": {
+      "ch": 6,
+      "kind": "note",
+      "id": 66
+     },
+     "shift_midi": {
+      "ch": 6,
+      "kind": "note",
+      "id": 67
+     }
+    },
+    "gate_cue": {
+     "label": "GATE CUE PAD 4",
+     "does": "Inspect GATE CUE pad 4 (deck 1)",
+     "midi": {
+      "ch": 6,
+      "kind": "note",
+      "id": 68
+     },
+     "shift_midi": {
+      "ch": 6,
+      "kind": "note",
+      "id": 69
+     }
+    },
+    "beat_loop2": {
+     "label": "BEAT LOOP2 PAD 4",
+     "does": "Inspect BEAT LOOP2 pad 4 (deck 1)",
+     "midi": {
+      "ch": 6,
+      "kind": "note",
+      "id": 70
+     },
+     "shift_midi": {
+      "ch": 6,
+      "kind": "note",
+      "id": 71
+     }
+    },
+    "key_shift": {
+     "label": "KEY SHIFT PAD 4",
+     "does": "Inspect KEY SHIFT pad 4 (deck 1)",
+     "midi": {
+      "ch": 6,
+      "kind": "note",
+      "id": 72
+     },
+     "shift_midi": {
+      "ch": 6,
+      "kind": "note",
+      "id": 73
+     }
+    },
+    "beat_jump2": {
+     "label": "BEAT JUMP2 PAD 4",
+     "does": "Inspect BEAT JUMP2 pad 4 (deck 1)",
+     "midi": {
+      "ch": 6,
+      "kind": "note",
+      "id": 74
+     },
+     "shift_midi": {
+      "ch": 6,
+      "kind": "note",
+      "id": 75
+     }
+    }
    }
   },
   {
@@ -791,6 +1540,157 @@
     "ch": 10,
     "kind": "note",
     "id": 1
+   },
+   "pad_layer_group": "d1",
+   "pad_layers": {
+    "hot_cue": {
+     "label": "HOT CUE PAD 5",
+     "does": "Inspect HOT CUE pad 5 (deck 1)",
+     "midi": {
+      "ch": 10,
+      "kind": "note",
+      "id": 0
+     },
+     "shift_midi": {
+      "ch": 10,
+      "kind": "note",
+      "id": 1
+     }
+    },
+    "beat_loop": {
+     "label": "BEAT LOOP PAD 5",
+     "does": "Inspect BEAT LOOP pad 5 (deck 1)",
+     "midi": {
+      "ch": 10,
+      "kind": "note",
+      "id": 2
+     },
+     "shift_midi": {
+      "ch": 10,
+      "kind": "note",
+      "id": 3
+     }
+    },
+    "pad_fx1_page1": {
+     "label": "PAD FX1 PAGE1 PAD 5",
+     "does": "Inspect PAD FX1 PAGE1 pad 5 (deck 1)",
+     "midi": {
+      "ch": 10,
+      "kind": "note",
+      "id": 4
+     },
+     "shift_midi": null
+    },
+    "pad_fx1_page2": {
+     "label": "PAD FX1 PAGE2 PAD 5",
+     "does": "Inspect PAD FX1 PAGE2 pad 5 (deck 1)",
+     "midi": {
+      "ch": 10,
+      "kind": "note",
+      "id": 5
+     },
+     "shift_midi": null
+    },
+    "pad_fx2_page1": {
+     "label": "PAD FX2 PAGE1 PAD 5",
+     "does": "Inspect PAD FX2 PAGE1 pad 5 (deck 1)",
+     "midi": {
+      "ch": 10,
+      "kind": "note",
+      "id": 6
+     },
+     "shift_midi": null
+    },
+    "pad_fx2_page2": {
+     "label": "PAD FX2 PAGE2 PAD 5",
+     "does": "Inspect PAD FX2 PAGE2 pad 5 (deck 1)",
+     "midi": {
+      "ch": 10,
+      "kind": "note",
+      "id": 7
+     },
+     "shift_midi": null
+    },
+    "slip_loop": {
+     "label": "SLIP LOOP PAD 5",
+     "does": "Inspect SLIP LOOP pad 5 (deck 1)",
+     "midi": null,
+     "shift_midi": {
+      "ch": 10,
+      "kind": "note",
+      "id": 8
+     }
+    },
+    "beat_jump": {
+     "label": "BEAT JUMP PAD 5",
+     "does": "Inspect BEAT JUMP pad 5 (deck 1)",
+     "midi": {
+      "ch": 10,
+      "kind": "note",
+      "id": 9
+     },
+     "shift_midi": {
+      "ch": 10,
+      "kind": "note",
+      "id": 10
+     }
+    },
+    "gate_cue": {
+     "label": "GATE CUE PAD 5",
+     "does": "Inspect GATE CUE pad 5 (deck 1)",
+     "midi": {
+      "ch": 10,
+      "kind": "note",
+      "id": 11
+     },
+     "shift_midi": {
+      "ch": 10,
+      "kind": "note",
+      "id": 12
+     }
+    },
+    "beat_loop2": {
+     "label": "BEAT LOOP2 PAD 5",
+     "does": "Inspect BEAT LOOP2 pad 5 (deck 1)",
+     "midi": {
+      "ch": 10,
+      "kind": "note",
+      "id": 13
+     },
+     "shift_midi": {
+      "ch": 10,
+      "kind": "note",
+      "id": 14
+     }
+    },
+    "key_shift": {
+     "label": "KEY SHIFT PAD 5",
+     "does": "Inspect KEY SHIFT pad 5 (deck 1)",
+     "midi": {
+      "ch": 10,
+      "kind": "note",
+      "id": 15
+     },
+     "shift_midi": {
+      "ch": 10,
+      "kind": "note",
+      "id": 16
+     }
+    },
+    "beat_jump2": {
+     "label": "BEAT JUMP2 PAD 5",
+     "does": "Inspect BEAT JUMP2 pad 5 (deck 1)",
+     "midi": {
+      "ch": 10,
+      "kind": "note",
+      "id": 17
+     },
+     "shift_midi": {
+      "ch": 10,
+      "kind": "note",
+      "id": 18
+     }
+    }
    }
   },
   {
@@ -813,6 +1713,157 @@
     "ch": 10,
     "kind": "note",
     "id": 20
+   },
+   "pad_layer_group": "d1",
+   "pad_layers": {
+    "hot_cue": {
+     "label": "HOT CUE PAD 6",
+     "does": "Inspect HOT CUE pad 6 (deck 1)",
+     "midi": {
+      "ch": 10,
+      "kind": "note",
+      "id": 19
+     },
+     "shift_midi": {
+      "ch": 10,
+      "kind": "note",
+      "id": 20
+     }
+    },
+    "beat_loop": {
+     "label": "BEAT LOOP PAD 6",
+     "does": "Inspect BEAT LOOP pad 6 (deck 1)",
+     "midi": {
+      "ch": 10,
+      "kind": "note",
+      "id": 21
+     },
+     "shift_midi": {
+      "ch": 10,
+      "kind": "note",
+      "id": 22
+     }
+    },
+    "pad_fx1_page1": {
+     "label": "PAD FX1 PAGE1 PAD 6",
+     "does": "Inspect PAD FX1 PAGE1 pad 6 (deck 1)",
+     "midi": {
+      "ch": 10,
+      "kind": "note",
+      "id": 23
+     },
+     "shift_midi": null
+    },
+    "pad_fx1_page2": {
+     "label": "PAD FX1 PAGE2 PAD 6",
+     "does": "Inspect PAD FX1 PAGE2 pad 6 (deck 1)",
+     "midi": {
+      "ch": 10,
+      "kind": "note",
+      "id": 24
+     },
+     "shift_midi": null
+    },
+    "pad_fx2_page1": {
+     "label": "PAD FX2 PAGE1 PAD 6",
+     "does": "Inspect PAD FX2 PAGE1 pad 6 (deck 1)",
+     "midi": {
+      "ch": 10,
+      "kind": "note",
+      "id": 25
+     },
+     "shift_midi": null
+    },
+    "pad_fx2_page2": {
+     "label": "PAD FX2 PAGE2 PAD 6",
+     "does": "Inspect PAD FX2 PAGE2 pad 6 (deck 1)",
+     "midi": {
+      "ch": 10,
+      "kind": "note",
+      "id": 26
+     },
+     "shift_midi": null
+    },
+    "slip_loop": {
+     "label": "SLIP LOOP PAD 6",
+     "does": "Inspect SLIP LOOP pad 6 (deck 1)",
+     "midi": null,
+     "shift_midi": {
+      "ch": 10,
+      "kind": "note",
+      "id": 27
+     }
+    },
+    "beat_jump": {
+     "label": "BEAT JUMP PAD 6",
+     "does": "Inspect BEAT JUMP pad 6 (deck 1)",
+     "midi": {
+      "ch": 10,
+      "kind": "note",
+      "id": 28
+     },
+     "shift_midi": {
+      "ch": 10,
+      "kind": "note",
+      "id": 29
+     }
+    },
+    "gate_cue": {
+     "label": "GATE CUE PAD 6",
+     "does": "Inspect GATE CUE pad 6 (deck 1)",
+     "midi": {
+      "ch": 10,
+      "kind": "note",
+      "id": 30
+     },
+     "shift_midi": {
+      "ch": 10,
+      "kind": "note",
+      "id": 31
+     }
+    },
+    "beat_loop2": {
+     "label": "BEAT LOOP2 PAD 6",
+     "does": "Inspect BEAT LOOP2 pad 6 (deck 1)",
+     "midi": {
+      "ch": 10,
+      "kind": "note",
+      "id": 32
+     },
+     "shift_midi": {
+      "ch": 10,
+      "kind": "note",
+      "id": 33
+     }
+    },
+    "key_shift": {
+     "label": "KEY SHIFT PAD 6",
+     "does": "Inspect KEY SHIFT pad 6 (deck 1)",
+     "midi": {
+      "ch": 10,
+      "kind": "note",
+      "id": 34
+     },
+     "shift_midi": {
+      "ch": 10,
+      "kind": "note",
+      "id": 35
+     }
+    },
+    "beat_jump2": {
+     "label": "BEAT JUMP2 PAD 6",
+     "does": "Inspect BEAT JUMP2 pad 6 (deck 1)",
+     "midi": {
+      "ch": 10,
+      "kind": "note",
+      "id": 36
+     },
+     "shift_midi": {
+      "ch": 10,
+      "kind": "note",
+      "id": 37
+     }
+    }
    }
   },
   {
@@ -835,6 +1886,157 @@
     "ch": 10,
     "kind": "note",
     "id": 39
+   },
+   "pad_layer_group": "d1",
+   "pad_layers": {
+    "hot_cue": {
+     "label": "HOT CUE PAD 7",
+     "does": "Inspect HOT CUE pad 7 (deck 1)",
+     "midi": {
+      "ch": 10,
+      "kind": "note",
+      "id": 38
+     },
+     "shift_midi": {
+      "ch": 10,
+      "kind": "note",
+      "id": 39
+     }
+    },
+    "beat_loop": {
+     "label": "BEAT LOOP PAD 7",
+     "does": "Inspect BEAT LOOP pad 7 (deck 1)",
+     "midi": {
+      "ch": 10,
+      "kind": "note",
+      "id": 40
+     },
+     "shift_midi": {
+      "ch": 10,
+      "kind": "note",
+      "id": 41
+     }
+    },
+    "pad_fx1_page1": {
+     "label": "PAD FX1 PAGE1 PAD 7",
+     "does": "Inspect PAD FX1 PAGE1 pad 7 (deck 1)",
+     "midi": {
+      "ch": 10,
+      "kind": "note",
+      "id": 42
+     },
+     "shift_midi": null
+    },
+    "pad_fx1_page2": {
+     "label": "PAD FX1 PAGE2 PAD 7",
+     "does": "Inspect PAD FX1 PAGE2 pad 7 (deck 1)",
+     "midi": {
+      "ch": 10,
+      "kind": "note",
+      "id": 43
+     },
+     "shift_midi": null
+    },
+    "pad_fx2_page1": {
+     "label": "PAD FX2 PAGE1 PAD 7",
+     "does": "Inspect PAD FX2 PAGE1 pad 7 (deck 1)",
+     "midi": {
+      "ch": 10,
+      "kind": "note",
+      "id": 44
+     },
+     "shift_midi": null
+    },
+    "pad_fx2_page2": {
+     "label": "PAD FX2 PAGE2 PAD 7",
+     "does": "Inspect PAD FX2 PAGE2 pad 7 (deck 1)",
+     "midi": {
+      "ch": 10,
+      "kind": "note",
+      "id": 45
+     },
+     "shift_midi": null
+    },
+    "slip_loop": {
+     "label": "SLIP LOOP PAD 7",
+     "does": "Inspect SLIP LOOP pad 7 (deck 1)",
+     "midi": null,
+     "shift_midi": {
+      "ch": 10,
+      "kind": "note",
+      "id": 46
+     }
+    },
+    "beat_jump": {
+     "label": "BEAT JUMP PAD 7",
+     "does": "Inspect BEAT JUMP pad 7 (deck 1)",
+     "midi": {
+      "ch": 10,
+      "kind": "note",
+      "id": 47
+     },
+     "shift_midi": {
+      "ch": 10,
+      "kind": "note",
+      "id": 48
+     }
+    },
+    "gate_cue": {
+     "label": "GATE CUE PAD 7",
+     "does": "Inspect GATE CUE pad 7 (deck 1)",
+     "midi": {
+      "ch": 10,
+      "kind": "note",
+      "id": 49
+     },
+     "shift_midi": {
+      "ch": 10,
+      "kind": "note",
+      "id": 50
+     }
+    },
+    "beat_loop2": {
+     "label": "BEAT LOOP2 PAD 7",
+     "does": "Inspect BEAT LOOP2 pad 7 (deck 1)",
+     "midi": {
+      "ch": 10,
+      "kind": "note",
+      "id": 51
+     },
+     "shift_midi": {
+      "ch": 10,
+      "kind": "note",
+      "id": 52
+     }
+    },
+    "key_shift": {
+     "label": "KEY SHIFT PAD 7",
+     "does": "Inspect KEY SHIFT pad 7 (deck 1)",
+     "midi": {
+      "ch": 10,
+      "kind": "note",
+      "id": 53
+     },
+     "shift_midi": {
+      "ch": 10,
+      "kind": "note",
+      "id": 54
+     }
+    },
+    "beat_jump2": {
+     "label": "BEAT JUMP2 PAD 7",
+     "does": "Inspect BEAT JUMP2 pad 7 (deck 1)",
+     "midi": {
+      "ch": 10,
+      "kind": "note",
+      "id": 55
+     },
+     "shift_midi": {
+      "ch": 10,
+      "kind": "note",
+      "id": 56
+     }
+    }
    }
   },
   {
@@ -857,6 +2059,157 @@
     "ch": 10,
     "kind": "note",
     "id": 58
+   },
+   "pad_layer_group": "d1",
+   "pad_layers": {
+    "hot_cue": {
+     "label": "HOT CUE PAD 8",
+     "does": "Inspect HOT CUE pad 8 (deck 1)",
+     "midi": {
+      "ch": 10,
+      "kind": "note",
+      "id": 57
+     },
+     "shift_midi": {
+      "ch": 10,
+      "kind": "note",
+      "id": 58
+     }
+    },
+    "beat_loop": {
+     "label": "BEAT LOOP PAD 8",
+     "does": "Inspect BEAT LOOP pad 8 (deck 1)",
+     "midi": {
+      "ch": 10,
+      "kind": "note",
+      "id": 59
+     },
+     "shift_midi": {
+      "ch": 10,
+      "kind": "note",
+      "id": 60
+     }
+    },
+    "pad_fx1_page1": {
+     "label": "PAD FX1 PAGE1 PAD 8",
+     "does": "Inspect PAD FX1 PAGE1 pad 8 (deck 1)",
+     "midi": {
+      "ch": 10,
+      "kind": "note",
+      "id": 61
+     },
+     "shift_midi": null
+    },
+    "pad_fx1_page2": {
+     "label": "PAD FX1 PAGE2 PAD 8",
+     "does": "Inspect PAD FX1 PAGE2 pad 8 (deck 1)",
+     "midi": {
+      "ch": 10,
+      "kind": "note",
+      "id": 62
+     },
+     "shift_midi": null
+    },
+    "pad_fx2_page1": {
+     "label": "PAD FX2 PAGE1 PAD 8",
+     "does": "Inspect PAD FX2 PAGE1 pad 8 (deck 1)",
+     "midi": {
+      "ch": 10,
+      "kind": "note",
+      "id": 63
+     },
+     "shift_midi": null
+    },
+    "pad_fx2_page2": {
+     "label": "PAD FX2 PAGE2 PAD 8",
+     "does": "Inspect PAD FX2 PAGE2 pad 8 (deck 1)",
+     "midi": {
+      "ch": 10,
+      "kind": "note",
+      "id": 64
+     },
+     "shift_midi": null
+    },
+    "slip_loop": {
+     "label": "SLIP LOOP PAD 8",
+     "does": "Inspect SLIP LOOP pad 8 (deck 1)",
+     "midi": null,
+     "shift_midi": {
+      "ch": 10,
+      "kind": "note",
+      "id": 65
+     }
+    },
+    "beat_jump": {
+     "label": "BEAT JUMP PAD 8",
+     "does": "Inspect BEAT JUMP pad 8 (deck 1)",
+     "midi": {
+      "ch": 10,
+      "kind": "note",
+      "id": 66
+     },
+     "shift_midi": {
+      "ch": 10,
+      "kind": "note",
+      "id": 67
+     }
+    },
+    "gate_cue": {
+     "label": "GATE CUE PAD 8",
+     "does": "Inspect GATE CUE pad 8 (deck 1)",
+     "midi": {
+      "ch": 10,
+      "kind": "note",
+      "id": 68
+     },
+     "shift_midi": {
+      "ch": 10,
+      "kind": "note",
+      "id": 69
+     }
+    },
+    "beat_loop2": {
+     "label": "BEAT LOOP2 PAD 8",
+     "does": "Inspect BEAT LOOP2 pad 8 (deck 1)",
+     "midi": {
+      "ch": 10,
+      "kind": "note",
+      "id": 70
+     },
+     "shift_midi": {
+      "ch": 10,
+      "kind": "note",
+      "id": 71
+     }
+    },
+    "key_shift": {
+     "label": "KEY SHIFT PAD 8",
+     "does": "Inspect KEY SHIFT pad 8 (deck 1)",
+     "midi": {
+      "ch": 10,
+      "kind": "note",
+      "id": 72
+     },
+     "shift_midi": {
+      "ch": 10,
+      "kind": "note",
+      "id": 73
+     }
+    },
+    "beat_jump2": {
+     "label": "BEAT JUMP2 PAD 8",
+     "does": "Inspect BEAT JUMP2 pad 8 (deck 1)",
+     "midi": {
+      "ch": 10,
+      "kind": "note",
+      "id": 74
+     },
+     "shift_midi": {
+      "ch": 10,
+      "kind": "note",
+      "id": 75
+     }
+    }
    }
   },
   {
@@ -1427,7 +2780,16 @@
     "kind": "note",
     "id": 34
    },
-   "shift_midi": null
+   "shift_midi": {
+    "ch": 2,
+    "kind": "note",
+    "id": 38
+   },
+   "pad_layer_group": "d2",
+   "pad_layer_select": {
+    "base": "hot_cue",
+    "shift": "gate_cue"
+   }
   },
   {
    "id": "d2-pad-mode-beat-loop",
@@ -1445,7 +2807,16 @@
     "kind": "note",
     "id": 35
    },
-   "shift_midi": null
+   "shift_midi": {
+    "ch": 2,
+    "kind": "note",
+    "id": 39
+   },
+   "pad_layer_group": "d2",
+   "pad_layer_select": {
+    "base": "beat_loop",
+    "shift": "beat_loop2"
+   }
   },
   {
    "id": "d2-pad-mode-slip-loop",
@@ -1463,7 +2834,16 @@
     "kind": "note",
     "id": 36
    },
-   "shift_midi": null
+   "shift_midi": {
+    "ch": 2,
+    "kind": "note",
+    "id": 40
+   },
+   "pad_layer_group": "d2",
+   "pad_layer_select": {
+    "base": "slip_loop",
+    "shift": "key_shift"
+   }
   },
   {
    "id": "d2-pad-mode-beat-jump",
@@ -1481,7 +2861,16 @@
     "kind": "note",
     "id": 37
    },
-   "shift_midi": null
+   "shift_midi": {
+    "ch": 2,
+    "kind": "note",
+    "id": 41
+   },
+   "pad_layer_group": "d2",
+   "pad_layer_select": {
+    "base": "beat_jump",
+    "shift": "beat_jump2"
+   }
   },
   {
    "id": "d2-deck-select-a",
@@ -1539,6 +2928,157 @@
     "ch": 7,
     "kind": "note",
     "id": 1
+   },
+   "pad_layer_group": "d2",
+   "pad_layers": {
+    "hot_cue": {
+     "label": "HOT CUE PAD 1",
+     "does": "Inspect HOT CUE pad 1 (deck 2)",
+     "midi": {
+      "ch": 7,
+      "kind": "note",
+      "id": 0
+     },
+     "shift_midi": {
+      "ch": 7,
+      "kind": "note",
+      "id": 1
+     }
+    },
+    "beat_loop": {
+     "label": "BEAT LOOP PAD 1",
+     "does": "Inspect BEAT LOOP pad 1 (deck 2)",
+     "midi": {
+      "ch": 7,
+      "kind": "note",
+      "id": 2
+     },
+     "shift_midi": {
+      "ch": 7,
+      "kind": "note",
+      "id": 3
+     }
+    },
+    "pad_fx1_page1": {
+     "label": "PAD FX1 PAGE1 PAD 1",
+     "does": "Inspect PAD FX1 PAGE1 pad 1 (deck 2)",
+     "midi": {
+      "ch": 7,
+      "kind": "note",
+      "id": 4
+     },
+     "shift_midi": null
+    },
+    "pad_fx1_page2": {
+     "label": "PAD FX1 PAGE2 PAD 1",
+     "does": "Inspect PAD FX1 PAGE2 pad 1 (deck 2)",
+     "midi": {
+      "ch": 7,
+      "kind": "note",
+      "id": 5
+     },
+     "shift_midi": null
+    },
+    "pad_fx2_page1": {
+     "label": "PAD FX2 PAGE1 PAD 1",
+     "does": "Inspect PAD FX2 PAGE1 pad 1 (deck 2)",
+     "midi": {
+      "ch": 7,
+      "kind": "note",
+      "id": 6
+     },
+     "shift_midi": null
+    },
+    "pad_fx2_page2": {
+     "label": "PAD FX2 PAGE2 PAD 1",
+     "does": "Inspect PAD FX2 PAGE2 pad 1 (deck 2)",
+     "midi": {
+      "ch": 7,
+      "kind": "note",
+      "id": 7
+     },
+     "shift_midi": null
+    },
+    "slip_loop": {
+     "label": "SLIP LOOP PAD 1",
+     "does": "Inspect SLIP LOOP pad 1 (deck 2)",
+     "midi": null,
+     "shift_midi": {
+      "ch": 7,
+      "kind": "note",
+      "id": 8
+     }
+    },
+    "beat_jump": {
+     "label": "BEAT JUMP PAD 1",
+     "does": "Inspect BEAT JUMP pad 1 (deck 2)",
+     "midi": {
+      "ch": 7,
+      "kind": "note",
+      "id": 9
+     },
+     "shift_midi": {
+      "ch": 7,
+      "kind": "note",
+      "id": 10
+     }
+    },
+    "gate_cue": {
+     "label": "GATE CUE PAD 1",
+     "does": "Inspect GATE CUE pad 1 (deck 2)",
+     "midi": {
+      "ch": 7,
+      "kind": "note",
+      "id": 11
+     },
+     "shift_midi": {
+      "ch": 7,
+      "kind": "note",
+      "id": 12
+     }
+    },
+    "beat_loop2": {
+     "label": "BEAT LOOP2 PAD 1",
+     "does": "Inspect BEAT LOOP2 pad 1 (deck 2)",
+     "midi": {
+      "ch": 7,
+      "kind": "note",
+      "id": 13
+     },
+     "shift_midi": {
+      "ch": 7,
+      "kind": "note",
+      "id": 14
+     }
+    },
+    "key_shift": {
+     "label": "KEY SHIFT PAD 1",
+     "does": "Inspect KEY SHIFT pad 1 (deck 2)",
+     "midi": {
+      "ch": 7,
+      "kind": "note",
+      "id": 15
+     },
+     "shift_midi": {
+      "ch": 7,
+      "kind": "note",
+      "id": 16
+     }
+    },
+    "beat_jump2": {
+     "label": "BEAT JUMP2 PAD 1",
+     "does": "Inspect BEAT JUMP2 pad 1 (deck 2)",
+     "midi": {
+      "ch": 7,
+      "kind": "note",
+      "id": 17
+     },
+     "shift_midi": {
+      "ch": 7,
+      "kind": "note",
+      "id": 18
+     }
+    }
    }
   },
   {
@@ -1561,6 +3101,157 @@
     "ch": 7,
     "kind": "note",
     "id": 20
+   },
+   "pad_layer_group": "d2",
+   "pad_layers": {
+    "hot_cue": {
+     "label": "HOT CUE PAD 2",
+     "does": "Inspect HOT CUE pad 2 (deck 2)",
+     "midi": {
+      "ch": 7,
+      "kind": "note",
+      "id": 19
+     },
+     "shift_midi": {
+      "ch": 7,
+      "kind": "note",
+      "id": 20
+     }
+    },
+    "beat_loop": {
+     "label": "BEAT LOOP PAD 2",
+     "does": "Inspect BEAT LOOP pad 2 (deck 2)",
+     "midi": {
+      "ch": 7,
+      "kind": "note",
+      "id": 21
+     },
+     "shift_midi": {
+      "ch": 7,
+      "kind": "note",
+      "id": 22
+     }
+    },
+    "pad_fx1_page1": {
+     "label": "PAD FX1 PAGE1 PAD 2",
+     "does": "Inspect PAD FX1 PAGE1 pad 2 (deck 2)",
+     "midi": {
+      "ch": 7,
+      "kind": "note",
+      "id": 23
+     },
+     "shift_midi": null
+    },
+    "pad_fx1_page2": {
+     "label": "PAD FX1 PAGE2 PAD 2",
+     "does": "Inspect PAD FX1 PAGE2 pad 2 (deck 2)",
+     "midi": {
+      "ch": 7,
+      "kind": "note",
+      "id": 24
+     },
+     "shift_midi": null
+    },
+    "pad_fx2_page1": {
+     "label": "PAD FX2 PAGE1 PAD 2",
+     "does": "Inspect PAD FX2 PAGE1 pad 2 (deck 2)",
+     "midi": {
+      "ch": 7,
+      "kind": "note",
+      "id": 25
+     },
+     "shift_midi": null
+    },
+    "pad_fx2_page2": {
+     "label": "PAD FX2 PAGE2 PAD 2",
+     "does": "Inspect PAD FX2 PAGE2 pad 2 (deck 2)",
+     "midi": {
+      "ch": 7,
+      "kind": "note",
+      "id": 26
+     },
+     "shift_midi": null
+    },
+    "slip_loop": {
+     "label": "SLIP LOOP PAD 2",
+     "does": "Inspect SLIP LOOP pad 2 (deck 2)",
+     "midi": null,
+     "shift_midi": {
+      "ch": 7,
+      "kind": "note",
+      "id": 27
+     }
+    },
+    "beat_jump": {
+     "label": "BEAT JUMP PAD 2",
+     "does": "Inspect BEAT JUMP pad 2 (deck 2)",
+     "midi": {
+      "ch": 7,
+      "kind": "note",
+      "id": 28
+     },
+     "shift_midi": {
+      "ch": 7,
+      "kind": "note",
+      "id": 29
+     }
+    },
+    "gate_cue": {
+     "label": "GATE CUE PAD 2",
+     "does": "Inspect GATE CUE pad 2 (deck 2)",
+     "midi": {
+      "ch": 7,
+      "kind": "note",
+      "id": 30
+     },
+     "shift_midi": {
+      "ch": 7,
+      "kind": "note",
+      "id": 31
+     }
+    },
+    "beat_loop2": {
+     "label": "BEAT LOOP2 PAD 2",
+     "does": "Inspect BEAT LOOP2 pad 2 (deck 2)",
+     "midi": {
+      "ch": 7,
+      "kind": "note",
+      "id": 32
+     },
+     "shift_midi": {
+      "ch": 7,
+      "kind": "note",
+      "id": 33
+     }
+    },
+    "key_shift": {
+     "label": "KEY SHIFT PAD 2",
+     "does": "Inspect KEY SHIFT pad 2 (deck 2)",
+     "midi": {
+      "ch": 7,
+      "kind": "note",
+      "id": 34
+     },
+     "shift_midi": {
+      "ch": 7,
+      "kind": "note",
+      "id": 35
+     }
+    },
+    "beat_jump2": {
+     "label": "BEAT JUMP2 PAD 2",
+     "does": "Inspect BEAT JUMP2 pad 2 (deck 2)",
+     "midi": {
+      "ch": 7,
+      "kind": "note",
+      "id": 36
+     },
+     "shift_midi": {
+      "ch": 7,
+      "kind": "note",
+      "id": 37
+     }
+    }
    }
   },
   {
@@ -1583,6 +3274,157 @@
     "ch": 7,
     "kind": "note",
     "id": 39
+   },
+   "pad_layer_group": "d2",
+   "pad_layers": {
+    "hot_cue": {
+     "label": "HOT CUE PAD 3",
+     "does": "Inspect HOT CUE pad 3 (deck 2)",
+     "midi": {
+      "ch": 7,
+      "kind": "note",
+      "id": 38
+     },
+     "shift_midi": {
+      "ch": 7,
+      "kind": "note",
+      "id": 39
+     }
+    },
+    "beat_loop": {
+     "label": "BEAT LOOP PAD 3",
+     "does": "Inspect BEAT LOOP pad 3 (deck 2)",
+     "midi": {
+      "ch": 7,
+      "kind": "note",
+      "id": 40
+     },
+     "shift_midi": {
+      "ch": 7,
+      "kind": "note",
+      "id": 41
+     }
+    },
+    "pad_fx1_page1": {
+     "label": "PAD FX1 PAGE1 PAD 3",
+     "does": "Inspect PAD FX1 PAGE1 pad 3 (deck 2)",
+     "midi": {
+      "ch": 7,
+      "kind": "note",
+      "id": 42
+     },
+     "shift_midi": null
+    },
+    "pad_fx1_page2": {
+     "label": "PAD FX1 PAGE2 PAD 3",
+     "does": "Inspect PAD FX1 PAGE2 pad 3 (deck 2)",
+     "midi": {
+      "ch": 7,
+      "kind": "note",
+      "id": 43
+     },
+     "shift_midi": null
+    },
+    "pad_fx2_page1": {
+     "label": "PAD FX2 PAGE1 PAD 3",
+     "does": "Inspect PAD FX2 PAGE1 pad 3 (deck 2)",
+     "midi": {
+      "ch": 7,
+      "kind": "note",
+      "id": 44
+     },
+     "shift_midi": null
+    },
+    "pad_fx2_page2": {
+     "label": "PAD FX2 PAGE2 PAD 3",
+     "does": "Inspect PAD FX2 PAGE2 pad 3 (deck 2)",
+     "midi": {
+      "ch": 7,
+      "kind": "note",
+      "id": 45
+     },
+     "shift_midi": null
+    },
+    "slip_loop": {
+     "label": "SLIP LOOP PAD 3",
+     "does": "Inspect SLIP LOOP pad 3 (deck 2)",
+     "midi": null,
+     "shift_midi": {
+      "ch": 7,
+      "kind": "note",
+      "id": 46
+     }
+    },
+    "beat_jump": {
+     "label": "BEAT JUMP PAD 3",
+     "does": "Inspect BEAT JUMP pad 3 (deck 2)",
+     "midi": {
+      "ch": 7,
+      "kind": "note",
+      "id": 47
+     },
+     "shift_midi": {
+      "ch": 7,
+      "kind": "note",
+      "id": 48
+     }
+    },
+    "gate_cue": {
+     "label": "GATE CUE PAD 3",
+     "does": "Inspect GATE CUE pad 3 (deck 2)",
+     "midi": {
+      "ch": 7,
+      "kind": "note",
+      "id": 49
+     },
+     "shift_midi": {
+      "ch": 7,
+      "kind": "note",
+      "id": 50
+     }
+    },
+    "beat_loop2": {
+     "label": "BEAT LOOP2 PAD 3",
+     "does": "Inspect BEAT LOOP2 pad 3 (deck 2)",
+     "midi": {
+      "ch": 7,
+      "kind": "note",
+      "id": 51
+     },
+     "shift_midi": {
+      "ch": 7,
+      "kind": "note",
+      "id": 52
+     }
+    },
+    "key_shift": {
+     "label": "KEY SHIFT PAD 3",
+     "does": "Inspect KEY SHIFT pad 3 (deck 2)",
+     "midi": {
+      "ch": 7,
+      "kind": "note",
+      "id": 53
+     },
+     "shift_midi": {
+      "ch": 7,
+      "kind": "note",
+      "id": 54
+     }
+    },
+    "beat_jump2": {
+     "label": "BEAT JUMP2 PAD 3",
+     "does": "Inspect BEAT JUMP2 pad 3 (deck 2)",
+     "midi": {
+      "ch": 7,
+      "kind": "note",
+      "id": 55
+     },
+     "shift_midi": {
+      "ch": 7,
+      "kind": "note",
+      "id": 56
+     }
+    }
    }
   },
   {
@@ -1605,6 +3447,157 @@
     "ch": 7,
     "kind": "note",
     "id": 58
+   },
+   "pad_layer_group": "d2",
+   "pad_layers": {
+    "hot_cue": {
+     "label": "HOT CUE PAD 4",
+     "does": "Inspect HOT CUE pad 4 (deck 2)",
+     "midi": {
+      "ch": 7,
+      "kind": "note",
+      "id": 57
+     },
+     "shift_midi": {
+      "ch": 7,
+      "kind": "note",
+      "id": 58
+     }
+    },
+    "beat_loop": {
+     "label": "BEAT LOOP PAD 4",
+     "does": "Inspect BEAT LOOP pad 4 (deck 2)",
+     "midi": {
+      "ch": 7,
+      "kind": "note",
+      "id": 59
+     },
+     "shift_midi": {
+      "ch": 7,
+      "kind": "note",
+      "id": 60
+     }
+    },
+    "pad_fx1_page1": {
+     "label": "PAD FX1 PAGE1 PAD 4",
+     "does": "Inspect PAD FX1 PAGE1 pad 4 (deck 2)",
+     "midi": {
+      "ch": 7,
+      "kind": "note",
+      "id": 61
+     },
+     "shift_midi": null
+    },
+    "pad_fx1_page2": {
+     "label": "PAD FX1 PAGE2 PAD 4",
+     "does": "Inspect PAD FX1 PAGE2 pad 4 (deck 2)",
+     "midi": {
+      "ch": 7,
+      "kind": "note",
+      "id": 62
+     },
+     "shift_midi": null
+    },
+    "pad_fx2_page1": {
+     "label": "PAD FX2 PAGE1 PAD 4",
+     "does": "Inspect PAD FX2 PAGE1 pad 4 (deck 2)",
+     "midi": {
+      "ch": 7,
+      "kind": "note",
+      "id": 63
+     },
+     "shift_midi": null
+    },
+    "pad_fx2_page2": {
+     "label": "PAD FX2 PAGE2 PAD 4",
+     "does": "Inspect PAD FX2 PAGE2 pad 4 (deck 2)",
+     "midi": {
+      "ch": 7,
+      "kind": "note",
+      "id": 64
+     },
+     "shift_midi": null
+    },
+    "slip_loop": {
+     "label": "SLIP LOOP PAD 4",
+     "does": "Inspect SLIP LOOP pad 4 (deck 2)",
+     "midi": null,
+     "shift_midi": {
+      "ch": 7,
+      "kind": "note",
+      "id": 65
+     }
+    },
+    "beat_jump": {
+     "label": "BEAT JUMP PAD 4",
+     "does": "Inspect BEAT JUMP pad 4 (deck 2)",
+     "midi": {
+      "ch": 7,
+      "kind": "note",
+      "id": 66
+     },
+     "shift_midi": {
+      "ch": 7,
+      "kind": "note",
+      "id": 67
+     }
+    },
+    "gate_cue": {
+     "label": "GATE CUE PAD 4",
+     "does": "Inspect GATE CUE pad 4 (deck 2)",
+     "midi": {
+      "ch": 7,
+      "kind": "note",
+      "id": 68
+     },
+     "shift_midi": {
+      "ch": 7,
+      "kind": "note",
+      "id": 69
+     }
+    },
+    "beat_loop2": {
+     "label": "BEAT LOOP2 PAD 4",
+     "does": "Inspect BEAT LOOP2 pad 4 (deck 2)",
+     "midi": {
+      "ch": 7,
+      "kind": "note",
+      "id": 70
+     },
+     "shift_midi": {
+      "ch": 7,
+      "kind": "note",
+      "id": 71
+     }
+    },
+    "key_shift": {
+     "label": "KEY SHIFT PAD 4",
+     "does": "Inspect KEY SHIFT pad 4 (deck 2)",
+     "midi": {
+      "ch": 7,
+      "kind": "note",
+      "id": 72
+     },
+     "shift_midi": {
+      "ch": 7,
+      "kind": "note",
+      "id": 73
+     }
+    },
+    "beat_jump2": {
+     "label": "BEAT JUMP2 PAD 4",
+     "does": "Inspect BEAT JUMP2 pad 4 (deck 2)",
+     "midi": {
+      "ch": 7,
+      "kind": "note",
+      "id": 74
+     },
+     "shift_midi": {
+      "ch": 7,
+      "kind": "note",
+      "id": 75
+     }
+    }
    }
   },
   {
@@ -1627,6 +3620,157 @@
     "ch": 11,
     "kind": "note",
     "id": 1
+   },
+   "pad_layer_group": "d2",
+   "pad_layers": {
+    "hot_cue": {
+     "label": "HOT CUE PAD 5",
+     "does": "Inspect HOT CUE pad 5 (deck 2)",
+     "midi": {
+      "ch": 11,
+      "kind": "note",
+      "id": 0
+     },
+     "shift_midi": {
+      "ch": 11,
+      "kind": "note",
+      "id": 1
+     }
+    },
+    "beat_loop": {
+     "label": "BEAT LOOP PAD 5",
+     "does": "Inspect BEAT LOOP pad 5 (deck 2)",
+     "midi": {
+      "ch": 11,
+      "kind": "note",
+      "id": 2
+     },
+     "shift_midi": {
+      "ch": 11,
+      "kind": "note",
+      "id": 3
+     }
+    },
+    "pad_fx1_page1": {
+     "label": "PAD FX1 PAGE1 PAD 5",
+     "does": "Inspect PAD FX1 PAGE1 pad 5 (deck 2)",
+     "midi": {
+      "ch": 11,
+      "kind": "note",
+      "id": 4
+     },
+     "shift_midi": null
+    },
+    "pad_fx1_page2": {
+     "label": "PAD FX1 PAGE2 PAD 5",
+     "does": "Inspect PAD FX1 PAGE2 pad 5 (deck 2)",
+     "midi": {
+      "ch": 11,
+      "kind": "note",
+      "id": 5
+     },
+     "shift_midi": null
+    },
+    "pad_fx2_page1": {
+     "label": "PAD FX2 PAGE1 PAD 5",
+     "does": "Inspect PAD FX2 PAGE1 pad 5 (deck 2)",
+     "midi": {
+      "ch": 11,
+      "kind": "note",
+      "id": 6
+     },
+     "shift_midi": null
+    },
+    "pad_fx2_page2": {
+     "label": "PAD FX2 PAGE2 PAD 5",
+     "does": "Inspect PAD FX2 PAGE2 pad 5 (deck 2)",
+     "midi": {
+      "ch": 11,
+      "kind": "note",
+      "id": 7
+     },
+     "shift_midi": null
+    },
+    "slip_loop": {
+     "label": "SLIP LOOP PAD 5",
+     "does": "Inspect SLIP LOOP pad 5 (deck 2)",
+     "midi": null,
+     "shift_midi": {
+      "ch": 11,
+      "kind": "note",
+      "id": 8
+     }
+    },
+    "beat_jump": {
+     "label": "BEAT JUMP PAD 5",
+     "does": "Inspect BEAT JUMP pad 5 (deck 2)",
+     "midi": {
+      "ch": 11,
+      "kind": "note",
+      "id": 9
+     },
+     "shift_midi": {
+      "ch": 11,
+      "kind": "note",
+      "id": 10
+     }
+    },
+    "gate_cue": {
+     "label": "GATE CUE PAD 5",
+     "does": "Inspect GATE CUE pad 5 (deck 2)",
+     "midi": {
+      "ch": 11,
+      "kind": "note",
+      "id": 11
+     },
+     "shift_midi": {
+      "ch": 11,
+      "kind": "note",
+      "id": 12
+     }
+    },
+    "beat_loop2": {
+     "label": "BEAT LOOP2 PAD 5",
+     "does": "Inspect BEAT LOOP2 pad 5 (deck 2)",
+     "midi": {
+      "ch": 11,
+      "kind": "note",
+      "id": 13
+     },
+     "shift_midi": {
+      "ch": 11,
+      "kind": "note",
+      "id": 14
+     }
+    },
+    "key_shift": {
+     "label": "KEY SHIFT PAD 5",
+     "does": "Inspect KEY SHIFT pad 5 (deck 2)",
+     "midi": {
+      "ch": 11,
+      "kind": "note",
+      "id": 15
+     },
+     "shift_midi": {
+      "ch": 11,
+      "kind": "note",
+      "id": 16
+     }
+    },
+    "beat_jump2": {
+     "label": "BEAT JUMP2 PAD 5",
+     "does": "Inspect BEAT JUMP2 pad 5 (deck 2)",
+     "midi": {
+      "ch": 11,
+      "kind": "note",
+      "id": 17
+     },
+     "shift_midi": {
+      "ch": 11,
+      "kind": "note",
+      "id": 18
+     }
+    }
    }
   },
   {
@@ -1649,6 +3793,157 @@
     "ch": 11,
     "kind": "note",
     "id": 20
+   },
+   "pad_layer_group": "d2",
+   "pad_layers": {
+    "hot_cue": {
+     "label": "HOT CUE PAD 6",
+     "does": "Inspect HOT CUE pad 6 (deck 2)",
+     "midi": {
+      "ch": 11,
+      "kind": "note",
+      "id": 19
+     },
+     "shift_midi": {
+      "ch": 11,
+      "kind": "note",
+      "id": 20
+     }
+    },
+    "beat_loop": {
+     "label": "BEAT LOOP PAD 6",
+     "does": "Inspect BEAT LOOP pad 6 (deck 2)",
+     "midi": {
+      "ch": 11,
+      "kind": "note",
+      "id": 21
+     },
+     "shift_midi": {
+      "ch": 11,
+      "kind": "note",
+      "id": 22
+     }
+    },
+    "pad_fx1_page1": {
+     "label": "PAD FX1 PAGE1 PAD 6",
+     "does": "Inspect PAD FX1 PAGE1 pad 6 (deck 2)",
+     "midi": {
+      "ch": 11,
+      "kind": "note",
+      "id": 23
+     },
+     "shift_midi": null
+    },
+    "pad_fx1_page2": {
+     "label": "PAD FX1 PAGE2 PAD 6",
+     "does": "Inspect PAD FX1 PAGE2 pad 6 (deck 2)",
+     "midi": {
+      "ch": 11,
+      "kind": "note",
+      "id": 24
+     },
+     "shift_midi": null
+    },
+    "pad_fx2_page1": {
+     "label": "PAD FX2 PAGE1 PAD 6",
+     "does": "Inspect PAD FX2 PAGE1 pad 6 (deck 2)",
+     "midi": {
+      "ch": 11,
+      "kind": "note",
+      "id": 25
+     },
+     "shift_midi": null
+    },
+    "pad_fx2_page2": {
+     "label": "PAD FX2 PAGE2 PAD 6",
+     "does": "Inspect PAD FX2 PAGE2 pad 6 (deck 2)",
+     "midi": {
+      "ch": 11,
+      "kind": "note",
+      "id": 26
+     },
+     "shift_midi": null
+    },
+    "slip_loop": {
+     "label": "SLIP LOOP PAD 6",
+     "does": "Inspect SLIP LOOP pad 6 (deck 2)",
+     "midi": null,
+     "shift_midi": {
+      "ch": 11,
+      "kind": "note",
+      "id": 27
+     }
+    },
+    "beat_jump": {
+     "label": "BEAT JUMP PAD 6",
+     "does": "Inspect BEAT JUMP pad 6 (deck 2)",
+     "midi": {
+      "ch": 11,
+      "kind": "note",
+      "id": 28
+     },
+     "shift_midi": {
+      "ch": 11,
+      "kind": "note",
+      "id": 29
+     }
+    },
+    "gate_cue": {
+     "label": "GATE CUE PAD 6",
+     "does": "Inspect GATE CUE pad 6 (deck 2)",
+     "midi": {
+      "ch": 11,
+      "kind": "note",
+      "id": 30
+     },
+     "shift_midi": {
+      "ch": 11,
+      "kind": "note",
+      "id": 31
+     }
+    },
+    "beat_loop2": {
+     "label": "BEAT LOOP2 PAD 6",
+     "does": "Inspect BEAT LOOP2 pad 6 (deck 2)",
+     "midi": {
+      "ch": 11,
+      "kind": "note",
+      "id": 32
+     },
+     "shift_midi": {
+      "ch": 11,
+      "kind": "note",
+      "id": 33
+     }
+    },
+    "key_shift": {
+     "label": "KEY SHIFT PAD 6",
+     "does": "Inspect KEY SHIFT pad 6 (deck 2)",
+     "midi": {
+      "ch": 11,
+      "kind": "note",
+      "id": 34
+     },
+     "shift_midi": {
+      "ch": 11,
+      "kind": "note",
+      "id": 35
+     }
+    },
+    "beat_jump2": {
+     "label": "BEAT JUMP2 PAD 6",
+     "does": "Inspect BEAT JUMP2 pad 6 (deck 2)",
+     "midi": {
+      "ch": 11,
+      "kind": "note",
+      "id": 36
+     },
+     "shift_midi": {
+      "ch": 11,
+      "kind": "note",
+      "id": 37
+     }
+    }
    }
   },
   {
@@ -1671,6 +3966,157 @@
     "ch": 11,
     "kind": "note",
     "id": 39
+   },
+   "pad_layer_group": "d2",
+   "pad_layers": {
+    "hot_cue": {
+     "label": "HOT CUE PAD 7",
+     "does": "Inspect HOT CUE pad 7 (deck 2)",
+     "midi": {
+      "ch": 11,
+      "kind": "note",
+      "id": 38
+     },
+     "shift_midi": {
+      "ch": 11,
+      "kind": "note",
+      "id": 39
+     }
+    },
+    "beat_loop": {
+     "label": "BEAT LOOP PAD 7",
+     "does": "Inspect BEAT LOOP pad 7 (deck 2)",
+     "midi": {
+      "ch": 11,
+      "kind": "note",
+      "id": 40
+     },
+     "shift_midi": {
+      "ch": 11,
+      "kind": "note",
+      "id": 41
+     }
+    },
+    "pad_fx1_page1": {
+     "label": "PAD FX1 PAGE1 PAD 7",
+     "does": "Inspect PAD FX1 PAGE1 pad 7 (deck 2)",
+     "midi": {
+      "ch": 11,
+      "kind": "note",
+      "id": 42
+     },
+     "shift_midi": null
+    },
+    "pad_fx1_page2": {
+     "label": "PAD FX1 PAGE2 PAD 7",
+     "does": "Inspect PAD FX1 PAGE2 pad 7 (deck 2)",
+     "midi": {
+      "ch": 11,
+      "kind": "note",
+      "id": 43
+     },
+     "shift_midi": null
+    },
+    "pad_fx2_page1": {
+     "label": "PAD FX2 PAGE1 PAD 7",
+     "does": "Inspect PAD FX2 PAGE1 pad 7 (deck 2)",
+     "midi": {
+      "ch": 11,
+      "kind": "note",
+      "id": 44
+     },
+     "shift_midi": null
+    },
+    "pad_fx2_page2": {
+     "label": "PAD FX2 PAGE2 PAD 7",
+     "does": "Inspect PAD FX2 PAGE2 pad 7 (deck 2)",
+     "midi": {
+      "ch": 11,
+      "kind": "note",
+      "id": 45
+     },
+     "shift_midi": null
+    },
+    "slip_loop": {
+     "label": "SLIP LOOP PAD 7",
+     "does": "Inspect SLIP LOOP pad 7 (deck 2)",
+     "midi": null,
+     "shift_midi": {
+      "ch": 11,
+      "kind": "note",
+      "id": 46
+     }
+    },
+    "beat_jump": {
+     "label": "BEAT JUMP PAD 7",
+     "does": "Inspect BEAT JUMP pad 7 (deck 2)",
+     "midi": {
+      "ch": 11,
+      "kind": "note",
+      "id": 47
+     },
+     "shift_midi": {
+      "ch": 11,
+      "kind": "note",
+      "id": 48
+     }
+    },
+    "gate_cue": {
+     "label": "GATE CUE PAD 7",
+     "does": "Inspect GATE CUE pad 7 (deck 2)",
+     "midi": {
+      "ch": 11,
+      "kind": "note",
+      "id": 49
+     },
+     "shift_midi": {
+      "ch": 11,
+      "kind": "note",
+      "id": 50
+     }
+    },
+    "beat_loop2": {
+     "label": "BEAT LOOP2 PAD 7",
+     "does": "Inspect BEAT LOOP2 pad 7 (deck 2)",
+     "midi": {
+      "ch": 11,
+      "kind": "note",
+      "id": 51
+     },
+     "shift_midi": {
+      "ch": 11,
+      "kind": "note",
+      "id": 52
+     }
+    },
+    "key_shift": {
+     "label": "KEY SHIFT PAD 7",
+     "does": "Inspect KEY SHIFT pad 7 (deck 2)",
+     "midi": {
+      "ch": 11,
+      "kind": "note",
+      "id": 53
+     },
+     "shift_midi": {
+      "ch": 11,
+      "kind": "note",
+      "id": 54
+     }
+    },
+    "beat_jump2": {
+     "label": "BEAT JUMP2 PAD 7",
+     "does": "Inspect BEAT JUMP2 pad 7 (deck 2)",
+     "midi": {
+      "ch": 11,
+      "kind": "note",
+      "id": 55
+     },
+     "shift_midi": {
+      "ch": 11,
+      "kind": "note",
+      "id": 56
+     }
+    }
    }
   },
   {
@@ -1693,6 +4139,157 @@
     "ch": 11,
     "kind": "note",
     "id": 58
+   },
+   "pad_layer_group": "d2",
+   "pad_layers": {
+    "hot_cue": {
+     "label": "HOT CUE PAD 8",
+     "does": "Inspect HOT CUE pad 8 (deck 2)",
+     "midi": {
+      "ch": 11,
+      "kind": "note",
+      "id": 57
+     },
+     "shift_midi": {
+      "ch": 11,
+      "kind": "note",
+      "id": 58
+     }
+    },
+    "beat_loop": {
+     "label": "BEAT LOOP PAD 8",
+     "does": "Inspect BEAT LOOP pad 8 (deck 2)",
+     "midi": {
+      "ch": 11,
+      "kind": "note",
+      "id": 59
+     },
+     "shift_midi": {
+      "ch": 11,
+      "kind": "note",
+      "id": 60
+     }
+    },
+    "pad_fx1_page1": {
+     "label": "PAD FX1 PAGE1 PAD 8",
+     "does": "Inspect PAD FX1 PAGE1 pad 8 (deck 2)",
+     "midi": {
+      "ch": 11,
+      "kind": "note",
+      "id": 61
+     },
+     "shift_midi": null
+    },
+    "pad_fx1_page2": {
+     "label": "PAD FX1 PAGE2 PAD 8",
+     "does": "Inspect PAD FX1 PAGE2 pad 8 (deck 2)",
+     "midi": {
+      "ch": 11,
+      "kind": "note",
+      "id": 62
+     },
+     "shift_midi": null
+    },
+    "pad_fx2_page1": {
+     "label": "PAD FX2 PAGE1 PAD 8",
+     "does": "Inspect PAD FX2 PAGE1 pad 8 (deck 2)",
+     "midi": {
+      "ch": 11,
+      "kind": "note",
+      "id": 63
+     },
+     "shift_midi": null
+    },
+    "pad_fx2_page2": {
+     "label": "PAD FX2 PAGE2 PAD 8",
+     "does": "Inspect PAD FX2 PAGE2 pad 8 (deck 2)",
+     "midi": {
+      "ch": 11,
+      "kind": "note",
+      "id": 64
+     },
+     "shift_midi": null
+    },
+    "slip_loop": {
+     "label": "SLIP LOOP PAD 8",
+     "does": "Inspect SLIP LOOP pad 8 (deck 2)",
+     "midi": null,
+     "shift_midi": {
+      "ch": 11,
+      "kind": "note",
+      "id": 65
+     }
+    },
+    "beat_jump": {
+     "label": "BEAT JUMP PAD 8",
+     "does": "Inspect BEAT JUMP pad 8 (deck 2)",
+     "midi": {
+      "ch": 11,
+      "kind": "note",
+      "id": 66
+     },
+     "shift_midi": {
+      "ch": 11,
+      "kind": "note",
+      "id": 67
+     }
+    },
+    "gate_cue": {
+     "label": "GATE CUE PAD 8",
+     "does": "Inspect GATE CUE pad 8 (deck 2)",
+     "midi": {
+      "ch": 11,
+      "kind": "note",
+      "id": 68
+     },
+     "shift_midi": {
+      "ch": 11,
+      "kind": "note",
+      "id": 69
+     }
+    },
+    "beat_loop2": {
+     "label": "BEAT LOOP2 PAD 8",
+     "does": "Inspect BEAT LOOP2 pad 8 (deck 2)",
+     "midi": {
+      "ch": 11,
+      "kind": "note",
+      "id": 70
+     },
+     "shift_midi": {
+      "ch": 11,
+      "kind": "note",
+      "id": 71
+     }
+    },
+    "key_shift": {
+     "label": "KEY SHIFT PAD 8",
+     "does": "Inspect KEY SHIFT pad 8 (deck 2)",
+     "midi": {
+      "ch": 11,
+      "kind": "note",
+      "id": 72
+     },
+     "shift_midi": {
+      "ch": 11,
+      "kind": "note",
+      "id": 73
+     }
+    },
+    "beat_jump2": {
+     "label": "BEAT JUMP2 PAD 8",
+     "does": "Inspect BEAT JUMP2 pad 8 (deck 2)",
+     "midi": {
+      "ch": 11,
+      "kind": "note",
+      "id": 74
+     },
+     "shift_midi": {
+      "ch": 11,
+      "kind": "note",
+      "id": 75
+     }
+    }
    }
   },
   {

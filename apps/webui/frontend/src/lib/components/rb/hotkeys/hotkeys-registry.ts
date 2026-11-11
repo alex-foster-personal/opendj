@@ -31,8 +31,12 @@
  *       plus pointer-edge hover, routed through performance IPC.
  *     - playlist-history-hotkeys.ts (Cmd+Z / Cmd+Shift+Z) -- shift-gated undo
  *       vs redo on one key, dispatched through performance IPC.
+ *     - browser-keyboard.ts (Shift+Left/Right load, Cmd+Shift+Left/Right
+ *       instant double, Cmd+L locate) -- library deck chords (KEYB-11643).
  *     - set-notes/hotkey/right-cmd-tap.ts (Right Cmd / Right Ctrl tap) -- a
  *       press-release detector keyed on KeyboardEvent.code, not a chord.
+ *     - commanded-keys.ts / knob-control.svelte.ts (1-9 glide, Cmd+1-9 jump) -- digit
+ *       keys when a dial or fader is shift-selected.
  *
  * This array is the single list the overlay renders. Do not hand-write a
  * second disconnected hotkey list in the Svelte component.
@@ -120,6 +124,20 @@ export const HOTKEY_REGISTRY: readonly HotkeyEntry[] = [
 		group: 'Layout'
 	},
 	{
+		id: 'dial-position',
+		chord: '1-9',
+		description:
+			'With a dial or fader selected: glide it to that position over 4 beats (1 = 0, 5 = centre, 9 = full)',
+		group: 'Mixer'
+	},
+	{
+		id: 'dial-jump',
+		chord: 'Cmd+1-9',
+		description:
+			'With a dial or fader selected: jump it to that position now (otherwise Cmd+2 / Cmd+4 change the deck layout)',
+		group: 'Mixer'
+	},
+	{
 		id: 'performance-space',
 		chord: 'Space',
 		description:
@@ -147,14 +165,22 @@ export const HOTKEY_REGISTRY: readonly HotkeyEntry[] = [
 	{
 		id: 'performance-wave-zoom-out',
 		chord: '[',
-		description: 'Zoom the main waveform out one step (more bars, up to the whole track)',
+		description:
+			'With edge sampler off: zoom the main waveform out one step. With edge sampler on: page the last-used edge set backward.',
 		group: 'Performance'
 	},
 	{
 		id: 'performance-wave-zoom-in',
 		chord: ']',
-		description: 'Zoom the main waveform in one step (fewer bars, down to 4)',
+		description:
+			'With edge sampler off: zoom the main waveform in one step. With edge sampler on: page the last-used edge set forward.',
 		group: 'Performance'
+	},
+	{
+		id: 'edge-sampler-tab',
+		chord: '1 .. 0',
+		description: 'Fire tabs 1 through 10 on the last edge you used (Electron, sampler on)',
+		group: 'Edge sampler'
 	},
 	{
 		id: 'performance-tempo-fine',
@@ -216,6 +242,24 @@ export const HOTKEY_REGISTRY: readonly HotkeyEntry[] = [
 		chord: 'Cmd+E',
 		description: 'Toggle the floating EQ panel (technically-working overlay mode)',
 		group: 'Technically-working'
+	},
+	{
+		id: 'library-load-deck',
+		chord: 'Shift+Left / Shift+Right',
+		description: 'Load the selected track to deck 1 / deck 2',
+		group: 'Library'
+	},
+	{
+		id: 'library-instant-double',
+		chord: 'Cmd+Shift+Left / Cmd+Shift+Right',
+		description: 'Instant double: copy deck 2 onto deck 1 / deck 1 onto deck 2 (library focused)',
+		group: 'Library'
+	},
+	{
+		id: 'library-locate',
+		chord: 'Cmd+L',
+		description: "Select and scroll to the most recent deck's track in the library",
+		group: 'Library'
 	}
 ];
 

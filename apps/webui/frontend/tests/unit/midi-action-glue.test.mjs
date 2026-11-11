@@ -296,3 +296,27 @@ test('source guard: _handleMixerChannel wires noteKnobHandInput midi', () => {
 	assert.match(body, /noteKnobHandInput\(/);
 	assert.match(body, /'midi'/);
 });
+
+test('color_fx press on a loaded deck 1 / filter dispatches; release does not', async () => {
+	const deck = audioEngine.deckStates[1];
+	deck.stable_id = 'a'.repeat(40);
+	try {
+		await performanceIpc.dispatchPerformanceCommand({ type: 'color_fx', deck: 1, effect: 'space' });
+		assert.equal(performanceIpc.queryPerformanceState().color_fx[1].effect, 'space');
+		glue.handleMidiAction(
+			{ type: 'color_fx', deck: 1, effect: 'filter' },
+			{ kind: 'button', pressed: true, velocity: 127 }
+		);
+		await new Promise((resolve) => setImmediate(resolve));
+		assert.equal(performanceIpc.queryPerformanceState().color_fx[1].effect, 'filter');
+		await performanceIpc.dispatchPerformanceCommand({ type: 'color_fx', deck: 1, effect: 'space' });
+		glue.handleMidiAction(
+			{ type: 'color_fx', deck: 1, effect: 'filter' },
+			{ kind: 'button', pressed: false, velocity: 0 }
+		);
+		await new Promise((resolve) => setImmediate(resolve));
+		assert.equal(performanceIpc.queryPerformanceState().color_fx[1].effect, 'space');
+	} finally {
+		deck.stable_id = null;
+	}
+});

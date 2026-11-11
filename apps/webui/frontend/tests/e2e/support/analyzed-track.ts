@@ -23,10 +23,11 @@ export interface BeatWire {
 	bpm: number;
 	t: number;
 	extrapolated?: boolean;
+	bar_phase_untrusted?: boolean;
 }
 
 export interface AnlzWire {
-	beatgrid: { beats: BeatWire[] };
+	beatgrid: { beats: BeatWire[]; bar_phase_untrusted?: boolean };
 }
 
 export async function beatgridFor(

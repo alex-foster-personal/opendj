@@ -14,6 +14,7 @@
  * moment the tag is cleared.
  */
 
+/** `graph-rebuild-failed` is set by `createGraphRebuildRetryController` while retries are pending. */
 export type EngineRecoveryStopReason = 'graph-rebuild' | 'graph-rebuild-failed';
 
 let _reason: EngineRecoveryStopReason | null = null;

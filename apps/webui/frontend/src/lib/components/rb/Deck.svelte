@@ -279,18 +279,24 @@
 
 	let cueFlexEl: HTMLDivElement | null = $state(null);
 	let cueFlexHeightPx = $state(0);
-	const deckLyricRows = $derived(deckLyricRowBudget(cueFlexHeightPx));
+	let padBankHeightPx = $state(0);
+	const deckLyricRows = $derived(deckLyricRowBudget(cueFlexHeightPx, padBankHeightPx));
 	const deckLyricStripHeight = $derived(deckLyricStripPx(deckLyricRows));
 
 	$effect(() => {
 		const el = cueFlexEl;
 		if (el === null || typeof ResizeObserver === 'undefined') return;
+		const padBank = el.querySelector('.cue-area');
 		const ro = new ResizeObserver((entries) => {
 			for (const entry of entries) {
-				cueFlexHeightPx = entry.contentRect.height;
+				if (entry.target === el) cueFlexHeightPx = entry.contentRect.height;
+				else if (padBank !== null && entry.target === padBank) {
+					padBankHeightPx = entry.contentRect.height;
+				}
 			}
 		});
 		ro.observe(el);
+		if (padBank instanceof HTMLElement) ro.observe(padBank);
 		return () => ro.disconnect();
 	});
 

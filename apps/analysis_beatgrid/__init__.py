@@ -1,6 +1,6 @@
 """Own beat-grid analysis: BPM, tempo-change tags and the uncertainty flags.
 
-Lane `nav1-beatgrid` of specs/native-analysis-v1.md. This package holds the
+Lane `nav1-beatgrid` of (private path). This package holds the
 BACKFILL PRODUCER LOGIC and nothing else: it turns beat times (from
 `beat_this_runner.py`, or from any other source that emits beat times) into the
 numbers the record will eventually carry. Writing `AnalysisRecord` rows is the
@@ -27,6 +27,13 @@ from apps.analysis_beatgrid.bpm import (
     least_squares_bpm,
 )
 from apps.analysis_beatgrid.flags import PulseFlag, evaluate_pulse
+from apps.analysis_beatgrid.meter import (
+    DEFAULT_BEATS_PER_BAR,
+    STATUS_MEASURED,
+    STATUS_UNMEASURED,
+    MeterEstimate,
+    estimate_beats_per_bar,
+)
 from apps.analysis_beatgrid.tempo_change import (
     MIN_SEGMENT_BARS,
     TempoAnalysis,
@@ -36,16 +43,21 @@ from apps.analysis_beatgrid.tempo_change import (
 
 __all__ = [
     "BAR_BEATS",
+    "DEFAULT_BEATS_PER_BAR",
     "MIN_SEGMENT_BARS",
     "OCTAVE_RANGE_MAX_BPM",
     "OCTAVE_RANGE_MIN_BPM",
     "BarPhase",
     "BpmEstimate",
+    "MeterEstimate",
     "PulseFlag",
+    "STATUS_MEASURED",
+    "STATUS_UNMEASURED",
     "TempoAnalysis",
     "TempoMarker",
     "assign_bar_phase",
     "detect_tempo_changes",
+    "estimate_beats_per_bar",
     "estimate_bpm",
     "evaluate_pulse",
     "least_squares_bpm",

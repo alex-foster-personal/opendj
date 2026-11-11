@@ -20,11 +20,14 @@
 # after shard overhead (the max prices at 10.84 runner-min), so the cap cuts at most 6 of the 59
 # (the count above 9.25 was not re-measured; p90 bounds it). The whole import reach exceeds it
 # on 25 of 59.
+# Raised to 13 (Wed 11 Nov 2026): #12392 made every ci/pr-always-run.txt entry must-keep and
+# refreshed timings (#12667) price always-run at 11.77 runner-min, so a 10 cap left wide
+# selections nothing beyond always-run. 13 leaves about 1.2 runner-min for the change itself.
 version: 2
 
 runner_minutes:
-  pr_head: 10
-  queue_draft: 10
+  pr_head: 13
+  queue_draft: 13
 
 # `hard`: rank every selected module by distance from the change (0 the changed module itself
 # and `CI-Tests:` declarations, 1 its direct importers and test-area data, 2 the whole-tree

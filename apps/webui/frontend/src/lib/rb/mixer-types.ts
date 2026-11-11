@@ -93,10 +93,9 @@ export type CueAlignStep =
 	| 'applied'
 	| 'failed';
 
-/** One production calibration probe.  The historic implementation only has a
- * chirp train; `alternate_probe` makes that absence visible instead of
- * offering a no-op selector. */
-export type CueCalibrationProbe = 'chirp';
+/** Calibration stimulus in use. `chirp` is the exponential sweep default;
+ * `click_train` is the retained Hann-windowed click train. */
+export type CueCalibrationProbe = 'chirp' | 'click_train';
 export type CueCalibrationFailure =
 	| 'no_input_signal'
 	| 'weak_correlation'
@@ -109,7 +108,7 @@ export type CueCalibrationFailure =
  * speaker or headphone. */
 export interface HeadphoneCalibrationDiagnostics {
 	probe: CueCalibrationProbe;
-	alternate_probe: 'unavailable';
+	alternate_probe: CueCalibrationProbe;
 	failure: CueCalibrationFailure | null;
 	master_measurements_ms: number[];
 	cue_measurements_ms: number[];

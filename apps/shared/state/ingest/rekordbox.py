@@ -46,7 +46,11 @@ from apps.shared.state.ingest.path_collisions import (
     assert_no_path_collisions,
     path_collision_key,
 )
-from apps.shared.state.ingest.path_identity import live_inferred_by_path_key
+from apps.shared.state.ingest.path_identity import (
+    live_inferred_by_path_key,
+    live_rekordbox_stable_ids_by_vendor,
+    resolve_rb_existing_stable_id,
+)
 from apps.shared.state.writer import StateWriter, compute_playlist_id
 
 _log = logging.getLogger(__name__)
@@ -235,6 +239,7 @@ class _RbIngestRun:
     seen_sids: set[str] = dataclasses.field(default_factory=set)
     deleted_sids: set[str] = dataclasses.field(default_factory=set)
     existing_inferred: dict[str, str] = dataclasses.field(default_factory=dict)
+    existing_rb_vendors: dict[str, tuple[str, str]] = dataclasses.field(default_factory=dict)
 
 
 def _open_rb_db(rb_db_path: Path) -> Any:
@@ -274,22 +279,34 @@ def _resolve_rb_track_identity(run: _RbIngestRun, track: dict[str, Any]) -> tupl
     # See (private path) (2/3).
     path_str = track["folder_path"]
     mtime = _rb_track_mtime(path_str, track["is_streaming"])
-    try:
-        sid, tier = state_ids.stable_id(
-            isrc=track["isrc"],
-            fingerprint=None,
-            duration_ms=track["duration_ms"],
-            size_bytes=track["file_size"],
-            abs_path=path_str,
-            mtime=mtime,
-        )
-    except ValueError:
-        run.report.tracks_skipped += 1
-        return None
+    content_hash = _content_hash_for(path_str, track["is_streaming"])
+    audio_hash = _audio_hash_for(path_str, track["is_streaming"])
+    reused = resolve_rb_existing_stable_id(
+        run.conn,
+        track["id"],
+        content_hash,
+        audio_hash,
+        rb_vendor_index=run.existing_rb_vendors,
+    )
+    if reused is not None:
+        sid, tier = reused
+    else:
+        try:
+            sid, tier = state_ids.stable_id(
+                isrc=track["isrc"],
+                fingerprint=None,
+                duration_ms=track["duration_ms"],
+                size_bytes=track["file_size"],
+                abs_path=path_str,
+                mtime=mtime,
+            )
+        except ValueError:
+            run.report.tracks_skipped += 1
+            return None
     if tier == "inferred" and path_str:
-        reused = run.existing_inferred.get(path_collision_key(path_str))
-        if reused is not None:
-            sid = reused
+        path_reused = run.existing_inferred.get(path_collision_key(path_str))
+        if path_reused is not None:
+            sid = path_reused
         else:
             run.existing_inferred[path_collision_key(path_str)] = sid
 
@@ -482,6 +499,7 @@ def ingest_rb(
                 report=report,
                 cues_by_content=cues_by_content,
                 existing_inferred=live_inferred_by_path_key(writer.raw_conn),
+                existing_rb_vendors=live_rekordbox_stable_ids_by_vendor(writer.raw_conn),
             )
             for i, track in enumerate(all_rows):
                 if limit is not None and i >= limit:

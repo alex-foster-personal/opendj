@@ -502,7 +502,18 @@ mod tests {
     #[cfg(unix)]
     fn pid_can_act_rejects_a_zombie_child() {
         let (child_pid, raw_pid) = spawn_zombie_child();
-        thread::sleep(Duration::from_millis(50));
+        // Wait for the child to actually exit and become a zombie. A fixed
+        // 50 ms sleep raced on a loaded CI runner: the child was still R/S,
+        // so pid_can_act correctly said it could act and the assertion failed.
+        let deadline = std::time::Instant::now() + Duration::from_secs(10);
+        while !matches!(process_state(child_pid), Some('Z') | Some('z')) {
+            assert!(
+                std::time::Instant::now() < deadline,
+                "child never became a zombie, state {:?}",
+                process_state(child_pid)
+            );
+            thread::sleep(Duration::from_millis(10));
+        }
         assert!(pid_alive(child_pid), "zombie should answer kill -0");
         assert!(!pid_can_act(child_pid), "zombie must not count as acting");
         let mut status = 0;

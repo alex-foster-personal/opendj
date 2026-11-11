@@ -112,7 +112,11 @@ const _scheduleWhenIdle: IdleScheduler = (task: () => void): void => {
 /** What ended a deferral episode. Recorded as a ring label. */
 export type GateResume = 'playback-stopped' | 'user-interaction' | 'pressure-cleared';
 
-/** Ordered non-P0 jobs shed under pressure while a deck is playing (lowest priority first). */
+/**
+ * Ordered non-P0 jobs shed under pressure while a deck is playing (lowest
+ * priority first). When Q28 adds `live-generation`, it belongs at index 0
+ * (shed first among listed jobs), per (private path).
+ */
 export const BACKGROUND_SHED_JOBS = [
 	'library-poll-cadence',
 	'background-workers',

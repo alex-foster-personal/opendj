@@ -52,8 +52,9 @@ from .migrations_v28 import _V28
 from .migrations_v29 import _V29
 from .migrations_v30 import _V30
 from .migrations_v31 import _V31, seed_library_completeness_config
+from .migrations_v32 import _V32
 
-SCHEMA_VERSION: int = 31
+SCHEMA_VERSION: int = 32
 
 
 # Each element is the set of SQL statements that take schema from N to N+1.
@@ -90,6 +91,7 @@ MIGRATIONS: list[list[str]] = [
     _V29,
     _V30,
     _V31,
+    _V32,
 ]
 
 
@@ -239,6 +241,10 @@ TABLES: tuple[str, ...] = (
     "track_edit",
     # v31 (#11219). Library HQ stems + lyric-match completeness expectation.
     "library_completeness_config",
+    # v32 (issue #363 / #11192). Machine-local labelling and karma ledger.
+    "label_task",
+    "label_response",
+    "contribution_ledger",
 )
 """Domain tables created by :data:`MIGRATIONS`. ``schema_meta`` is
 intentionally excluded -- it is infrastructure, not domain data. Four of
@@ -338,6 +344,8 @@ FOREIGN_AUTHORITY_TABLES: tuple[str, ...] = (
     "genre_search_cache",
     "genre_config",
     "genre_tag_writes",
+    # apps/genre_infer/findings.py :: enrichment_claims (ENRICH-11245)
+    "enrichment_claims",
     # apps/launcher/scripts/bootstrap_db.py
     "tracks_fts",
     "tracks_fts_config",

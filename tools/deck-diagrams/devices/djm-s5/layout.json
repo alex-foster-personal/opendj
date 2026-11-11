@@ -1,0 +1,661 @@
+{
+  "device": "DJM-S5",
+  "vendor": "Pioneer DJ / AlphaTheta",
+  "plate": {
+    "image": "source/plate-top.png",
+    "width": 505,
+    "height": 745
+  },
+  "layers": [
+    "base",
+    "shift",
+    "mode",
+    "shift_mode"
+  ],
+  "out_of_scope": [
+    "M13 MIC LEVEL: hardware control",
+    "M15 CROSSFADER FEELING ADJUST: hardware control",
+    "VU and non-addressed LEDs: no wire identity in this list",
+    "M14 AUX LEVEL: front panel, retained in MIDI; not in top crop",
+    "Mirrored right-side controls share vendor figs; representative top targets only",
+    "MODE and pad banks retain all valid MIDI rows; HTML joins one representative per fig",
+    "Eight PAD7/8 variants have invalid printed statuses; see midi.json unavailable"
+  ],
+  "controls": [
+    {
+      "id": "djm-s5-b1",
+      "fig": "B1",
+      "label": "BROWSE",
+      "kind": "encoder",
+      "x": 46.3366,
+      "y": 23.0872,
+      "w": 7.5248,
+      "h": 5.1007,
+      "layer": "both",
+      "section": "browser",
+      "midi": {
+        "name": "browse_rotate",
+        "type": "cc",
+        "ch": 7,
+        "code": 64,
+        "shift_name": "browse_rotate_shift"
+      },
+      "notes": "[B1] Relative rotation: clockwise 1-30, counterclockwise 127-98, up to 30 clicks/40 ms. PDF p2."
+    },
+    {
+      "id": "djm-s5-b2",
+      "fig": "B2",
+      "label": "LOAD",
+      "kind": "button",
+      "x": 39.0099,
+      "y": 19.1946,
+      "w": 5.5446,
+      "h": 3.0872,
+      "layer": "both",
+      "section": "browser",
+      "midi": {
+        "name": "load",
+        "type": "note",
+        "ch": 1,
+        "code": 70,
+        "shift_name": "load_shift"
+      },
+      "notes": "[B2] LOAD, PDF p2. Data2 OFF=0, ON=127 unless otherwise stated. Representative ch1; expand identically to channels 1/2."
+    },
+    {
+      "id": "djm-s5-m1",
+      "fig": "M1",
+      "label": "TRIM",
+      "kind": "knob",
+      "x": 10.6931,
+      "y": 12.4832,
+      "w": 6.7327,
+      "h": 4.5638,
+      "layer": "base",
+      "section": "mixer",
+      "midi": {
+        "name": "trim_msb",
+        "type": "cc",
+        "ch": 1,
+        "code": 4
+      },
+      "notes": "[M1] MSB of 14-bit pair; value=(MSB << 7) | LSB, range 0-16383. PDF p2.  Representative ch1; expand identically to channels 1/2."
+    },
+    {
+      "id": "djm-s5-m2",
+      "fig": "M2",
+      "label": "HI",
+      "kind": "knob",
+      "x": 25.5446,
+      "y": 4.8322,
+      "w": 6.7327,
+      "h": 4.698,
+      "layer": "base",
+      "section": "mixer",
+      "midi": {
+        "name": "eq_hi_msb",
+        "type": "cc",
+        "ch": 1,
+        "code": 7
+      },
+      "notes": "[M2] MSB of 14-bit pair; value=(MSB << 7) | LSB, range 0-16383. PDF p2.  Representative ch1; expand identically to channels 1/2."
+    },
+    {
+      "id": "djm-s5-m3",
+      "fig": "M3",
+      "label": "MID",
+      "kind": "knob",
+      "x": 25.7426,
+      "y": 12.4832,
+      "w": 6.7327,
+      "h": 4.698,
+      "layer": "base",
+      "section": "mixer",
+      "midi": {
+        "name": "eq_mid_msb",
+        "type": "cc",
+        "ch": 1,
+        "code": 11
+      },
+      "notes": "[M3] MSB of 14-bit pair; value=(MSB << 7) | LSB, range 0-16383. PDF p2.  Representative ch1; expand identically to channels 1/2."
+    },
+    {
+      "id": "djm-s5-m4",
+      "fig": "M4",
+      "label": "LOW",
+      "kind": "knob",
+      "x": 25.7426,
+      "y": 20.4027,
+      "w": 6.7327,
+      "h": 4.698,
+      "layer": "base",
+      "section": "mixer",
+      "midi": {
+        "name": "eq_low_msb",
+        "type": "cc",
+        "ch": 1,
+        "code": 15
+      },
+      "notes": "[M4] MSB of 14-bit pair; value=(MSB << 7) | LSB, range 0-16383. PDF p2.  Representative ch1; expand identically to channels 1/2."
+    },
+    {
+      "id": "djm-s5-m5",
+      "fig": "M5",
+      "label": "FILTER",
+      "kind": "knob",
+      "x": 9.901,
+      "y": 20.1342,
+      "w": 7.9208,
+      "h": 5.3691,
+      "layer": "base",
+      "section": "mixer",
+      "midi": {
+        "name": "filter_msb",
+        "type": "cc",
+        "ch": 1,
+        "code": 1
+      },
+      "notes": "[M5] MSB of 14-bit pair; value=(MSB << 7) | LSB, range 0-16383. PDF p2.  Representative ch1; expand identically to channels 1/2."
+    },
+    {
+      "id": "djm-s5-m6",
+      "fig": "M6",
+      "label": "BOOTH LEVEL",
+      "kind": "knob",
+      "x": 46.5347,
+      "y": 12.6174,
+      "w": 7.1287,
+      "h": 4.8322,
+      "layer": "base",
+      "section": "mixer",
+      "midi": {
+        "name": "booth_level_msb",
+        "type": "cc",
+        "ch": 7,
+        "code": 9
+      },
+      "notes": "[M6] MSB of 14-bit pair; value=(MSB << 7) | LSB, range 0-16383. PDF p2. Plate callouts M6/M7 are swapped relative to the table and printed MASTER/BOOTH legends; target uses the table function and actual panel legend. "
+    },
+    {
+      "id": "djm-s5-m7",
+      "fig": "M7",
+      "label": "MASTER LEVEL",
+      "kind": "knob",
+      "x": 46.5347,
+      "y": 4.698,
+      "w": 7.1287,
+      "h": 4.8322,
+      "layer": "base",
+      "section": "mixer",
+      "midi": {
+        "name": "master_level_msb",
+        "type": "cc",
+        "ch": 7,
+        "code": 8
+      },
+      "notes": "[M7] MSB of 14-bit pair; value=(MSB << 7) | LSB, range 0-16383. PDF p2. Plate callouts M6/M7 are swapped relative to the table and printed MASTER/BOOTH legends; target uses the table function and actual panel legend. "
+    },
+    {
+      "id": "djm-s5-m8",
+      "fig": "M8",
+      "label": "CH FADER",
+      "kind": "fader",
+      "x": 29.1089,
+      "y": 64.2953,
+      "w": 8.5149,
+      "h": 14.4966,
+      "layer": "both",
+      "section": "mixer",
+      "midi": {
+        "name": "channel_fader_msb",
+        "type": "cc",
+        "ch": 1,
+        "code": 19,
+        "shift_name": "channel_fader_sync_shift"
+      },
+      "notes": "[M8] MSB of 14-bit pair; value=(MSB << 7) | LSB, range 0-16383. PDF p2. Minimum at bottom; maximum at top.  Representative ch1; expand identically to channels 1/2."
+    },
+    {
+      "id": "djm-s5-m9",
+      "fig": "M9",
+      "label": "CROSSFADER",
+      "kind": "fader",
+      "x": 38.8119,
+      "y": 86.5772,
+      "w": 22.3762,
+      "h": 5.5034,
+      "layer": "both",
+      "section": "mixer",
+      "midi": {
+        "name": "crossfader_msb",
+        "type": "cc",
+        "ch": 7,
+        "code": 31,
+        "shift_name": "crossfader_right_sync_shift"
+      },
+      "notes": "[M9] MSB of 14-bit pair; value=(MSB << 7) | LSB, range 0-16383. PDF p2. Reverse OFF: minimum at left; reverse ON: minimum at right. "
+    },
+    {
+      "id": "djm-s5-m10",
+      "fig": "M10",
+      "label": "HEADPHONES VOL",
+      "kind": "knob",
+      "x": 80.198,
+      "y": 57.4497,
+      "w": 6.5347,
+      "h": 4.5638,
+      "layer": "base",
+      "section": "mixer",
+      "midi": {
+        "name": "headphones_vol_msb",
+        "type": "cc",
+        "ch": 7,
+        "code": 13
+      },
+      "notes": "[M10] MSB of 14-bit pair; value=(MSB << 7) | LSB, range 0-16383. PDF p2. "
+    },
+    {
+      "id": "djm-s5-m11",
+      "fig": "M11",
+      "label": "HEADPHONES MIX",
+      "kind": "knob",
+      "x": 90.297,
+      "y": 57.4497,
+      "w": 6.5347,
+      "h": 4.5638,
+      "layer": "base",
+      "section": "mixer",
+      "midi": {
+        "name": "headphones_mix_msb",
+        "type": "cc",
+        "ch": 7,
+        "code": 12
+      },
+      "notes": "[M11] MSB of 14-bit pair; value=(MSB << 7) | LSB, range 0-16383. PDF p2. "
+    },
+    {
+      "id": "djm-s5-m12",
+      "fig": "M12",
+      "label": "HEADPHONES CUE",
+      "kind": "fader",
+      "x": 83.1683,
+      "y": 63.4899,
+      "w": 10.099,
+      "h": 2.953,
+      "layer": "base",
+      "section": "mixer",
+      "midi": {
+        "name": "headphones_cue_fader_msb",
+        "type": "cc",
+        "ch": 7,
+        "code": 14
+      },
+      "notes": "[M12] MSB of 14-bit pair; value=(MSB << 7) | LSB, range 0-16383. PDF p2. "
+    },
+    {
+      "id": "djm-s5-e7",
+      "fig": "E7",
+      "label": "BEAT LEFT",
+      "kind": "button",
+      "x": 38.8119,
+      "y": 29.9329,
+      "w": 5.9406,
+      "h": 2.953,
+      "layer": "both",
+      "section": "effect",
+      "midi": {
+        "name": "beat_left_fx1",
+        "type": "note",
+        "ch": 5,
+        "code": 6,
+        "shift_name": "beat_left_shift"
+      },
+      "notes": "[E7] PDF p2; FX/CUT group 1-3 selected. Data2 OFF=0, ON=127 unless otherwise stated."
+    },
+    {
+      "id": "djm-s5-e8",
+      "fig": "E8",
+      "label": "BEAT RIGHT",
+      "kind": "button",
+      "x": 55.6436,
+      "y": 29.9329,
+      "w": 5.9406,
+      "h": 2.953,
+      "layer": "both",
+      "section": "effect",
+      "midi": {
+        "name": "beat_right_fx1",
+        "type": "note",
+        "ch": 5,
+        "code": 7,
+        "shift_name": "beat_right_shift"
+      },
+      "notes": "[E8] PDF p3; FX/CUT group 1-3 selected. Data2 OFF=0, ON=127 unless otherwise stated."
+    },
+    {
+      "id": "djm-s5-e9",
+      "fig": "E9",
+      "label": "CH1 EFFECT LEVER",
+      "kind": "switch",
+      "x": 25.1485,
+      "y": 34.094,
+      "w": 11.6832,
+      "h": 7.2483,
+      "layer": "both",
+      "section": "effect",
+      "midi": {
+        "name": "effect_lever_ch1",
+        "type": "note",
+        "ch": 5,
+        "code": 80,
+        "shift_name": "effect_lever_ch1_shift"
+      },
+      "notes": "[E9] PDF p3, unconditioned lever press. Data2 OFF=0, ON=127 unless otherwise stated."
+    },
+    {
+      "id": "djm-s5-e10",
+      "fig": "E10",
+      "label": "CH2 EFFECT LEVER",
+      "kind": "switch",
+      "x": 62.9703,
+      "y": 34.094,
+      "w": 11.6832,
+      "h": 7.2483,
+      "layer": "both",
+      "section": "effect",
+      "midi": {
+        "name": "effect_lever_ch2",
+        "type": "note",
+        "ch": 6,
+        "code": 80,
+        "shift_name": "effect_lever_ch2_shift"
+      },
+      "notes": "[E10] PDF p3, unconditioned lever press. Data2 OFF=0, ON=127 unless otherwise stated."
+    },
+    {
+      "id": "djm-s5-e11",
+      "fig": "E11",
+      "label": "LEVEL/DEPTH",
+      "kind": "knob",
+      "x": 46.3366,
+      "y": 35.7047,
+      "w": 7.3267,
+      "h": 4.9664,
+      "layer": "base",
+      "section": "effect",
+      "midi": {
+        "name": "level_depth_cut1_msb",
+        "type": "cc",
+        "ch": 5,
+        "code": 2
+      },
+      "notes": "[E11] MSB of 14-bit pair; value=(MSB << 7) | LSB, range 0-16383. PDF p3, FX1/CUT1 selected. Vendor decimal reference 4/36 conflicts with hex 02/22; represented codes 2/34 follow hex. Hardware verification required."
+    },
+    {
+      "id": "djm-s5-p5",
+      "fig": "P5",
+      "label": "5-8",
+      "kind": "button",
+      "x": 9.3069,
+      "y": 41.8792,
+      "w": 4.3564,
+      "h": 2.4161,
+      "layer": "both",
+      "section": "pads",
+      "midi": {
+        "name": "pad_bank",
+        "type": "note",
+        "ch": 1,
+        "code": 26,
+        "shift_name": "pad_bank_shift"
+      },
+      "notes": "[P5] PDF p6, 5-8 bank button. Data2 OFF=0, ON=127 unless otherwise stated. Representative ch1; expand identically to channels 1/2."
+    },
+    {
+      "id": "djm-s5-p6",
+      "fig": "P6",
+      "label": "SHIFT",
+      "kind": "button",
+      "x": 47.3267,
+      "y": 44.8322,
+      "w": 5.1485,
+      "h": 2.4161,
+      "layer": "base",
+      "section": "pads",
+      "midi": {
+        "name": "shift",
+        "type": "note",
+        "ch": 7,
+        "code": 63
+      },
+      "notes": "[P6] PDF p6, physical SHIFT. Data2 not specified by the vendor for this row."
+    },
+    {
+      "id": "djm-s5-p7",
+      "fig": "P7",
+      "label": "MODE",
+      "kind": "button",
+      "x": 47.3267,
+      "y": 50.0671,
+      "w": 5.1485,
+      "h": 2.4161,
+      "layer": "base",
+      "section": "pads",
+      "midi": {
+        "name": "mode",
+        "type": "note",
+        "ch": 7,
+        "code": 64
+      },
+      "notes": "[P7] PDF p6, physical MODE. Data2 not specified by the vendor for this row."
+    },
+    {
+      "id": "djm-s5-e1",
+      "fig": "E1",
+      "label": "FX1/CUT1",
+      "kind": "button",
+      "x": 4.3564,
+      "y": 27.7852,
+      "w": 4.9505,
+      "h": 3.3557,
+      "layer": "both",
+      "section": "effect",
+      "midi": {
+        "name": "fx_cut1",
+        "type": "note",
+        "ch": 5,
+        "code": 112,
+        "shift_name": "fx_cut1_shift"
+      },
+      "notes": "[E1] PDF p2. ON=127; release not specified for this selector."
+    },
+    {
+      "id": "djm-s5-e2",
+      "fig": "E2",
+      "label": "FX2/CUT2",
+      "kind": "button",
+      "x": 11.2871,
+      "y": 27.7852,
+      "w": 4.9505,
+      "h": 3.3557,
+      "layer": "both",
+      "section": "effect",
+      "midi": {
+        "name": "fx_cut2",
+        "type": "note",
+        "ch": 5,
+        "code": 113,
+        "shift_name": "fx_cut2_shift"
+      },
+      "notes": "[E2] PDF p2. ON=127; release not specified for this selector."
+    },
+    {
+      "id": "djm-s5-e3",
+      "fig": "E3",
+      "label": "FX3/CUT3",
+      "kind": "button",
+      "x": 18.4158,
+      "y": 27.7852,
+      "w": 4.9505,
+      "h": 3.3557,
+      "layer": "both",
+      "section": "effect",
+      "midi": {
+        "name": "fx_cut3",
+        "type": "note",
+        "ch": 5,
+        "code": 114,
+        "shift_name": "fx_cut3_shift"
+      },
+      "notes": "[E3] PDF p2. ON=127; release not specified for this selector."
+    },
+    {
+      "id": "djm-s5-e4",
+      "fig": "E4",
+      "label": "FX1/CUT4",
+      "kind": "button",
+      "x": 76.6337,
+      "y": 27.7852,
+      "w": 4.9505,
+      "h": 3.3557,
+      "layer": "both",
+      "section": "effect",
+      "midi": {
+        "name": "fx_cut4",
+        "type": "note",
+        "ch": 6,
+        "code": 112,
+        "shift_name": "fx_cut4_shift"
+      },
+      "notes": "[E4] PDF p2. ON=127; release not specified for this selector."
+    },
+    {
+      "id": "djm-s5-e5",
+      "fig": "E5",
+      "label": "FX2/CUT5",
+      "kind": "button",
+      "x": 83.7624,
+      "y": 27.7852,
+      "w": 4.9505,
+      "h": 3.3557,
+      "layer": "both",
+      "section": "effect",
+      "midi": {
+        "name": "fx_cut5",
+        "type": "note",
+        "ch": 6,
+        "code": 113,
+        "shift_name": "fx_cut5_shift"
+      },
+      "notes": "[E5] PDF p2. ON=127; release not specified for this selector."
+    },
+    {
+      "id": "djm-s5-e6",
+      "fig": "E6",
+      "label": "FX3/CUT6",
+      "kind": "button",
+      "x": 90.6931,
+      "y": 27.7852,
+      "w": 4.9505,
+      "h": 3.3557,
+      "layer": "both",
+      "section": "effect",
+      "midi": {
+        "name": "fx_cut6",
+        "type": "note",
+        "ch": 7,
+        "code": 114,
+        "shift_name": "fx_cut6_shift"
+      },
+      "notes": "[E6] PDF p2. ON=127; release not specified for this selector. Vendor conflict: channel reference 6 but status 96; represented ch7 follows status, hardware verification required."
+    },
+    {
+      "id": "djm-s5-p1",
+      "fig": "P1",
+      "label": "PAD 1 / 5",
+      "kind": "pad",
+      "x": 4.1584,
+      "y": 47.9195,
+      "w": 9.1089,
+      "h": 6.1745,
+      "layer": "both",
+      "section": "pads",
+      "midi": {
+        "name": "pad1_ch8_bank1",
+        "type": "note",
+        "ch": 8,
+        "code": 0,
+        "shift_name": "pad1_ch8_bank1_shift",
+        "mode_name": "pad1_mode_single",
+        "shift_mode_name": "pad1_mode_single_shift"
+      },
+      "notes": "[P1] PDF p3, PAD1, physical bank 1-4, enumerated message bank 1. Data2 OFF=0, ON=127 unless otherwise stated. Representative ch8; expand identically to channels 8/9."
+    },
+    {
+      "id": "djm-s5-p2",
+      "fig": "P2",
+      "label": "PAD 2 / 6",
+      "kind": "pad",
+      "x": 14.4554,
+      "y": 47.9195,
+      "w": 9.1089,
+      "h": 6.1745,
+      "layer": "both",
+      "section": "pads",
+      "midi": {
+        "name": "pad2_ch8_bank1",
+        "type": "note",
+        "ch": 8,
+        "code": 1,
+        "shift_name": "pad2_ch8_bank1_shift",
+        "mode_name": "pad2_mode_single",
+        "shift_mode_name": "pad2_mode_single_shift"
+      },
+      "notes": "[P2] PDF p3, PAD2, physical bank 1-4, enumerated message bank 1. Data2 OFF=0, ON=127 unless otherwise stated. Representative ch8; expand identically to channels 8/9."
+    },
+    {
+      "id": "djm-s5-p3",
+      "fig": "P3",
+      "label": "PAD 3 / 7",
+      "kind": "pad",
+      "x": 24.9505,
+      "y": 47.9195,
+      "w": 9.1089,
+      "h": 6.1745,
+      "layer": "both",
+      "section": "pads",
+      "midi": {
+        "name": "pad3_ch8_bank1",
+        "type": "note",
+        "ch": 8,
+        "code": 2,
+        "shift_name": "pad3_ch8_bank1_shift",
+        "mode_name": "pad3_mode_single",
+        "shift_mode_name": "pad3_mode_single_shift"
+      },
+      "notes": "[P3] PDF p4, PAD3, physical bank 1-4, enumerated message bank 1. Data2 OFF=0, ON=127 unless otherwise stated. Representative ch8; expand identically to channels 8/9."
+    },
+    {
+      "id": "djm-s5-p4",
+      "fig": "P4",
+      "label": "PAD 4 / 8",
+      "kind": "pad",
+      "x": 35.4455,
+      "y": 47.9195,
+      "w": 9.1089,
+      "h": 6.1745,
+      "layer": "both",
+      "section": "pads",
+      "midi": {
+        "name": "pad4_ch8_bank1",
+        "type": "note",
+        "ch": 8,
+        "code": 3,
+        "shift_name": "pad4_ch8_bank1_shift",
+        "mode_name": "pad4_mode_single",
+        "shift_mode_name": "pad4_mode_single_shift"
+      },
+      "notes": "[P4] PDF p4, PAD4, physical bank 1-4, enumerated message bank 1. Data2 OFF=0, ON=127 unless otherwise stated. Representative ch8; expand identically to channels 8/9."
+    }
+  ]
+}

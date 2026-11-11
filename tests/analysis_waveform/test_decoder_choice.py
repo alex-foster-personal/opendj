@@ -95,17 +95,15 @@ def test_the_engine_matches_ffmpeg_to_one_step_on_a_stereo_file(tmp_path: Path, 
     assert engine.shape == ffmpeg.shape
     # Positive control: every band carries real signal, so agreement is not
     # two decoders agreeing on silence.
-    assert (ffmpeg.max(axis=0) > 30).all(), ffmpeg.max(axis=0)
+    assert (ffmpeg.max(axis=0) > 15).all(), ffmpeg.max(axis=0)
     worst = np.abs(engine - ffmpeg).max(axis=0)
     assert (worst <= 1).all(), f"per-band worst |engine - ffmpeg|: {worst}"
 
 
-def test_the_engine_reads_a_mono_full_scale_sine_at_full_scale(
+def test_the_engine_reads_a_mono_full_scale_sine_at_zero_dbfs_not_pinned(
     tmp_path: Path, engine_bin: Path
 ) -> None:
-    """Issue #6281: a 6 dB headroom encode maps a digital full-scale sine to
-    ~128 (~41 after PWV6 scaling). The engine mono path (duplicate channel,
-    downmix_gain) must read near 255 on the low band, not half-scale."""
+    """[if] a 0 dBFS sine still pins the low band at 255 [then] fail, [else stop]."""
     _engine_or_skip()
     if not os.environ.get(BIN_ENV, "").strip():
         assert decode.resolve_engine() == str(engine_bin), (
@@ -117,12 +115,42 @@ def test_the_engine_reads_a_mono_full_scale_sine_at_full_scale(
     peaks = decode.decode_peaks_from("engine", source).astype(int)
     steady = peaks[len(peaks) // 4 : -len(peaks) // 4]
     got = int(steady[:, 0].max())
-    assert got > 200, (
-        f"mono full-scale 60 Hz low band read {got}, expected near 255 not "
-        f"half-scale (~128); see issue #6281"
+    assert 110 <= got <= 145, (
+        f"mono full-scale 60 Hz low band read {got}, expected ~128 for 0 dBFS "
+        f"with +6 dBFS headroom, not pinned at 255"
     )
     assert int(steady[:, 1].max()) < 20
     assert int(steady[:, 2].max()) < 20
+
+
+def test_ffmpeg_stdout_is_float_pcm_not_s16le() -> None:
+    """[if] ffmpeg still emits s16le for band peaks [then] fail, [else stop]."""
+    from unittest.mock import patch
+
+    captured: list[list[str]] = []
+
+    def _record(cmd: list[str], **_kwargs: object) -> object:
+        captured.append(cmd)
+        raise OSError("stop after argv capture")
+
+    with (
+        patch("apps.analysis_waveform.decode.resolve_ffmpeg", return_value="ffmpeg"),
+        patch("apps.analysis_waveform.decode.subprocess.Popen", side_effect=_record),
+    ):
+        with pytest.raises(decode.LocalDecodeUnavailable):
+            decode._decode_peaks_ffmpeg(Path("x.wav"), decode.PROFILE)
+    assert captured, "ffmpeg argv was never built"
+    argv = " ".join(captured[0])
+    assert "f32le" in argv and "pcm_f32le" in argv
+    assert "s16le" not in argv and "pcm_s16le" not in argv
+
+
+def test_column_reduction_reads_float_not_int16_shift() -> None:
+    """[if] _column_peaks still uses int16 >> 7 [then] fail, [else stop]."""
+    one = struct.pack("<fff", 1.0, 0.0, 0.0) * decode.SAMPLES_PER_COLUMN
+    got = int(decode._peak_columns(one)[0, 0])
+    assert got == 128, f"0 dBFS must read 128 with headroom, got {got}"
+    assert got != 255
 
 
 def test_the_engine_reports_the_rate_it_filtered_at(tmp_path: Path) -> None:

@@ -27,13 +27,15 @@ import json
 import math
 import re
 import sqlite3
+import uuid
 from collections.abc import Iterable, Mapping, Sequence
-from dataclasses import asdict, dataclass, field
+from dataclasses import asdict, dataclass, field, replace
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
 from . import taxonomy
+from .claim_envelope import ENVELOPE_VERSION, ClaimEnvelopeError, EnrichmentClaim
 from .probability import unit_probability
 
 # ----------------------------------------------------------------- providers
@@ -127,8 +129,26 @@ _SCHEMA: tuple[str, ...] = (
         undone_at TEXT,
         post_sha256 TEXT
     )""",
+    """CREATE TABLE IF NOT EXISTS enrichment_claims (
+        claim_id TEXT PRIMARY KEY,
+        stable_id TEXT NOT NULL,
+        dimension TEXT NOT NULL,
+        kind TEXT NOT NULL,
+        source TEXT NOT NULL,
+        envelope_json TEXT NOT NULL,
+        created_at TEXT NOT NULL
+    )""",
+    "CREATE INDEX IF NOT EXISTS enrichment_claims_track ON enrichment_claims(stable_id)",
+    "CREATE INDEX IF NOT EXISTS enrichment_claims_dimension ON enrichment_claims(stable_id, dimension)",
 )
-TABLES: tuple[str, ...] = ("genre_findings", "genre_vectors", "genre_search_cache", "genre_config", "genre_tag_writes")
+TABLES: tuple[str, ...] = (
+    "genre_findings",
+    "genre_vectors",
+    "genre_search_cache",
+    "genre_config",
+    "genre_tag_writes",
+    "enrichment_claims",
+)
 
 
 def ensure_schema(conn: sqlite3.Connection) -> None:
@@ -450,6 +470,67 @@ def update_config(conn: sqlite3.Connection, patch: Mapping[str, Any]) -> GenreCo
     return cfg
 
 
+# ---------------------------------------------------------- enrichment claims
+_CLAIM_COLUMNS = "claim_id, stable_id, dimension, kind, source, envelope_json, created_at"
+
+
+def put_claim(conn: sqlite3.Connection, claim: EnrichmentClaim) -> EnrichmentClaim:
+    """Insert or replace a versioned enrichment claim envelope."""
+    try:
+        claim.validate()
+    except ClaimEnvelopeError as exc:
+        raise GenreInputError(str(exc)) from exc
+    claim_id = claim.claim_id or uuid.uuid4().hex
+    stored = replace(claim, claim_id=claim_id)
+    envelope_json = stored.to_json()
+    created_at = stored.generated_at or _now()
+    conn.execute(
+        f"INSERT OR REPLACE INTO enrichment_claims ({_CLAIM_COLUMNS}) VALUES (?,?,?,?,?,?,?)",
+        (
+            claim_id,
+            stored.stable_id,
+            stored.dimension,
+            stored.kind,
+            stored.source,
+            envelope_json,
+            created_at,
+        ),
+    )
+    return stored
+
+
+def claims_for(conn: sqlite3.Connection, stable_id: str) -> list[EnrichmentClaim]:
+    rows = conn.execute(
+        f"SELECT envelope_json FROM enrichment_claims WHERE stable_id = ? ORDER BY created_at DESC",
+        (stable_id,),
+    ).fetchall()
+    out: list[EnrichmentClaim] = []
+    for (envelope_json,) in rows:
+        claim = EnrichmentClaim.from_json(envelope_json)
+        out.append(claim)
+    return out
+
+
+def finding_to_semantic_claim(finding: Finding, *, input_fingerprint: str) -> EnrichmentClaim:
+    """Attach a GENRE-03 finding as a semantic genre claim when status is ok."""
+    from .claim_envelope import vendor_observation
+
+    value = finding.genre if finding.status == STATUS_OK else finding.reason or finding.status
+    ptr = f"state://genre_findings/{finding.stable_id}/{finding.provider}"
+    return vendor_observation(
+        stable_id=finding.stable_id,
+        dimension="genre",
+        value=value,
+        source=finding.provider,
+        provider_model=finding.model or finding.provider,
+        schema_version=finding.version or taxonomy.TAXONOMY_VERSION,
+        input_fingerprint=input_fingerprint,
+        raw_evidence_ptr=ptr,
+        confidence=finding.confidence,
+        generated_at=finding.created_at or _now(),
+    )
+
+
 __all__ = [
     "COMPUTED_PROVIDERS",
     "DEFAULT_PRECEDENCE",
@@ -467,13 +548,18 @@ __all__ = [
     "GenreConfig",
     "GenreInputError",
     "cached_search",
+    "claims_for",
     "choose",
+    "ENVELOPE_VERSION",
     "delete_finding",
     "ensure_schema",
+    "EnrichmentClaim",
+    "finding_to_semantic_claim",
     "findings_for",
     "has_schema",
     "import_search_cache",
     "nearest",
+    "put_claim",
     "put_finding",
     "put_search",
     "put_vector",

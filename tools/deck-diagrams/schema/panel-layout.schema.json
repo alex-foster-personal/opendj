@@ -39,6 +39,10 @@
       "type": "object",
       "additionalProperties": true
     },
+    "pad_layer_groups": {
+      "type": "object",
+      "additionalProperties": { "$ref": "#/$defs/padLayerGroup" }
+    },
     "controls": {
       "type": "array",
       "minItems": 1,
@@ -63,6 +67,88 @@
         "ch": { "type": "integer", "minimum": 1, "maximum": 16 },
         "kind": { "type": "string", "enum": ["note", "cc"] },
         "id": { "type": "integer", "minimum": 0, "maximum": 127 }
+      }
+    },
+    "padLayerGroup": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "label",
+        "default_mode",
+        "modes"
+      ],
+      "properties": {
+        "label": {
+          "type": "string",
+          "minLength": 1
+        },
+        "default_mode": {
+          "type": "string",
+          "minLength": 1
+        },
+        "modes": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "id",
+              "label"
+            ],
+            "properties": {
+              "id": {
+                "type": "string",
+                "minLength": 1
+              },
+              "label": {
+                "type": "string",
+                "minLength": 1
+              }
+            }
+          }
+        }
+      }
+    },
+    "padLayer": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "label",
+        "does",
+        "midi",
+        "shift_midi"
+      ],
+      "properties": {
+        "label": {
+          "type": "string",
+          "minLength": 1
+        },
+        "does": {
+          "type": "string",
+          "minLength": 1
+        },
+        "midi": {
+          "description": "null: the maker publishes no wire identity for this control; it renders unwired and inert",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/wire"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "shift_midi": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/wire"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
       }
     },
     "control": {
@@ -109,6 +195,35 @@
         "section": {
           "type": "string",
           "enum": ["deck", "mixer", "performance", "effect", "browse"]
+        },
+        "pad_layer_group": {
+          "type": "string",
+          "minLength": 1
+        },
+        "pad_layers": {
+          "type": "object",
+          "minProperties": 1,
+          "additionalProperties": {
+            "$ref": "#/$defs/padLayer"
+          }
+        },
+        "pad_layer_select": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "base",
+            "shift"
+          ],
+          "properties": {
+            "base": {
+              "type": "string",
+              "minLength": 1
+            },
+            "shift": {
+              "type": "string",
+              "minLength": 1
+            }
+          }
         },
         "midi": {
           "description": "null: the maker publishes no wire identity for this control; it renders unwired and inert",

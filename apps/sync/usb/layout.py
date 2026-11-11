@@ -14,6 +14,17 @@ from pathlib import Path, PurePosixPath
 _FORBIDDEN_RE = re.compile(r'[\\:*?"<>|]')
 
 
+def path_segment_is_deck_safe(segment: str) -> bool:
+    """True when ``segment`` needs no sanitisation for FAT/exFAT deck paths."""
+    if not segment:
+        return False
+    if _FORBIDDEN_RE.search(segment):
+        return False
+    if "/" in segment or "\\" in segment:
+        return False
+    return segment == sanitise_segment(segment)
+
+
 def sanitise_segment(segment: str) -> str:
     """Return ``segment`` with filesystem-hostile chars replaced by ``_``."""
     cleaned = _FORBIDDEN_RE.sub("_", segment)
@@ -69,4 +80,4 @@ def dst_relpath(
     raise ValueError(f"unknown layout: {layout!r}")
 
 
-__all__ = ["sanitise_segment", "extension_for", "dst_relpath"]
+__all__ = ["dst_relpath", "extension_for", "path_segment_is_deck_safe", "sanitise_segment"]

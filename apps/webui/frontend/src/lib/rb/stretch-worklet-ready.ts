@@ -17,13 +17,15 @@ let stretchImportAttempt = 0;
 let addModuleMemos = new WeakMap<AudioContext, Promise<void>>();
 let stretchReadyByContext = new WeakMap<AudioContext, Promise<CreateSignalsmithStretch>>();
 
-/** Bug #58: a graph rebuild retry may allow addModule longer than the normal 15 s under load. */
+/** Bug #58: a graph rebuild retry may allow addModule longer than the normal 15 s under load.
+ * Wired through `createGraphRebuildRetryController` ports and re-exported from deck-channel-graph. */
 let addModuleTimeoutMs = STRETCH_CREATE_TIMEOUT_MS;
 /** Bug #58 fault drill: the next N addModule calls fail as if the module never arrived. */
 let injectedAddModuleFailures = 0;
 
 export function setStretchAddModuleTimeoutMs(ms: number): void {
-	if (!Number.isFinite(ms) || ms <= 0) throw new Error(`addModule timeout must be a positive number, got ${ms}`);
+	if (!Number.isFinite(ms) || ms <= 0)
+		throw new Error(`addModule timeout must be a positive number, got ${ms}`);
 	addModuleTimeoutMs = ms;
 }
 
@@ -32,7 +34,8 @@ export function resetStretchAddModuleTimeoutMs(): void {
 }
 
 export function injectStretchAddModuleFailures(count: number): void {
-	if (!Number.isInteger(count) || count < 0) throw new Error(`injected addModule failures must be an integer >= 0, got ${count}`);
+	if (!Number.isInteger(count) || count < 0)
+		throw new Error(`injected addModule failures must be an integer >= 0, got ${count}`);
 	injectedAddModuleFailures = count;
 }
 
@@ -112,9 +115,7 @@ async function withStretchAddModuleTimeout(
 				timer = setTimeout(
 					() =>
 						reject(
-							new StretchProcessorError(
-								`Signalsmith addModule timed out after ${timeoutMs}ms`
-							)
+							new StretchProcessorError(`Signalsmith addModule timed out after ${timeoutMs}ms`)
 						),
 					timeoutMs
 				);
@@ -142,7 +143,10 @@ export async function ensureStretchContextRunnable(context: AudioContext): Promi
 	}
 }
 
-export async function addStretchWorkletModule(context: AudioContext, moduleUrl: string): Promise<void> {
+export async function addStretchWorkletModule(
+	context: AudioContext,
+	moduleUrl: string
+): Promise<void> {
 	await _awaitAddModule(context, moduleUrl);
 }
 

@@ -1,0 +1,9 @@
+{
+  "bytes": 1024,
+  "measured_main": 496685,
+  "measured_with_pr": 496933,
+  "sha": "ef69d9f27b",
+  "date": "Tue 10 Nov 2026",
+  "reason": "PR #10672 (issue #10085) adds the settings catalogue Mixer group (`catalog-types.ts`, `catalog.ts`). The delta lands on other-lazy because settings modules load with the shared shell. Measured: CI bundle check, +248 B gzip; ceiled to KiB.",
+  "payback": "none planned; the growth is the feature's own code on this surface"
+}

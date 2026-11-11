@@ -54,6 +54,37 @@ function fakeClock() {
 	};
 }
 
+test('relaunch or quit is in flight: the first status is working before the outcome', async () => {
+	const status = recorder();
+	const clock = fakeClock();
+	let sawWorking = false;
+	await relaunchEngine({
+		healthPort: HEALTH_PORT,
+		engineOrigin: ENGINE_ORIGIN,
+		setStatus: (tone, message) => {
+			if (!sawWorking && tone === 'working') sawWorking = true;
+			status.setStatus(tone, message);
+		},
+		fetchImpl: async () => {
+			assert.ok(
+				sawWorking,
+				'if relaunch is in flight the screen must show working before the POST returns'
+			);
+			return { type: 'opaque' };
+		},
+		probe: async () => ({
+			reachable: false,
+			url: `${ENGINE_ORIGIN}/api/v1/health`,
+			detail: 'no response'
+		}),
+		sleep: clock.sleep,
+		now: clock.now,
+		timeoutMs: 1000,
+		pollIntervalMs: 500
+	});
+	assert.ok(sawWorking);
+});
+
 test('no health port: says it cannot relaunch, and why', async () => {
 	const status = recorder();
 	const result = await relaunchEngine({

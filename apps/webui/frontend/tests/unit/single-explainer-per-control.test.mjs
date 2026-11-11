@@ -49,6 +49,7 @@ const CARD_HOSTS = new Set([
 	'lib/components/rb/browser/AutoPlayExplainer.svelte#ap-explain-wrap',
 	'lib/components/rb/browser/CompatibleFilterPopover.svelte#compat-filter-pop',
 	'lib/components/rb/browser/AnalysisDotsPopover.svelte#wrap',
+	'lib/components/rb/ConnDotsStrip.svelte#conn-dot',
 	'lib/components/rb/browser/LyricColumn.svelte#c-lyrics',
 	// KEYSHIFT-04: the Key column's lettered/Camelot hover card (KeyHoverCard).
 	'lib/components/rb/browser/TrackTable.svelte#c-key',
@@ -68,7 +69,8 @@ const CARD_BODIES = new Set([
 	'lib/components/rb/browser/CompatibleFilterPanel.svelte#compat-filter-panel',
 	'lib/components/rb/browser/LyricColumn.svelte#onpointerenter={_cancelClose}',
 	'lib/components/rb/browser/LyricTip.svelte#lyric-tip',
-	'lib/components/rb/BpmDisputeCard.svelte#bpm-dispute-card'
+	'lib/components/rb/BpmDisputeCard.svelte#bpm-dispute-card',
+	'lib/components/rb/ConnDotsStrip.svelte#conn-panel'
 ]);
 
 /**

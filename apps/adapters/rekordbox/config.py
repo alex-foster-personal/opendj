@@ -116,6 +116,21 @@ _FILE_EXISTS_LOCK = threading.Lock()
 _FILE_EXISTS_CACHE: dict[str, tuple[float, int | None, str | None, str, int | None]] = {}
 
 
+def rebind_data_dir(data_dir: Path) -> None:
+    """Point rekordbox path constants at another library root in-process."""
+    global DATA_DIR, MASTER_PLAIN_DB, ANLZ_CACHE_DIR  # noqa: PLW0603
+    global BEATGRID_ISSUE_CACHE_DIR, LOCAL_WAVEFORM_CACHE_DIR, STATE_DB, VOCAL_CACHE_DIR
+
+    resolved = data_dir.expanduser().resolve(strict=False)
+    DATA_DIR = resolved
+    MASTER_PLAIN_DB = resolved / "master.plain.db"
+    ANLZ_CACHE_DIR = resolved / "state" / "anlz-cache"
+    BEATGRID_ISSUE_CACHE_DIR = resolved / "state" / "beatgrid-issue-cache"
+    LOCAL_WAVEFORM_CACHE_DIR = resolved / "state" / "local-waveform-cache"
+    VOCAL_CACHE_DIR = vocal_cache.cache_dir(resolved)
+    STATE_DB = resolved / "state" / "state.db"
+
+
 __all__ = [
     "ANLZ_CACHE_DIR",
     "ANLZ_CACHE_SCHEMA",
@@ -128,6 +143,7 @@ __all__ = [
     "LOCAL_WAVEFORM_CACHE_DIR",
     "LOCAL_WAVEFORM_CACHE_SCHEMA",
     "MASTER_PLAIN_DB",
+    "rebind_data_dir",
     "STATE_DB",
     "STREAMING_PREFIXES",
     "VOCAL_CACHE_DIR",

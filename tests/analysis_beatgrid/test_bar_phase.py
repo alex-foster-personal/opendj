@@ -3,7 +3,7 @@
 THE DEFECT THESE TESTS PIN. Beat This!'s `infer_beat_numbers` counts upward
 between consecutive downbeats without wrapping, so a bar whose downbeat the
 model missed is numbered 1,2,3,4,5,6,7,8 rather than 1,2,3,4,1,2,3,4. Measured
-on the committed round-1 artifact `ops/beatbench/round-1/raw-beatgrid_lane_t050.json`
+on the committed round-1 artifact `(private path)`
 (90 tracks): 24 tracks carried a number above 4 and one reached 20. A consumer
 that reads `n` as a bar position, which is what rekordbox's PQTZ grid means by
 it, would place bar-1 markers on beats that are not bar 1.
@@ -22,6 +22,8 @@ from apps.analysis_beatgrid.bar_phase import (
     REASON_NO_BEATS,
     REASON_NO_DOWNBEAT_ANCHOR,
     assign_bar_phase,
+    closed_bar_beat_lengths,
+    downbeat_anchor_indices,
 )
 
 
@@ -93,6 +95,25 @@ def test_no_beat_number_exceeds_the_bar_length_however_many_downbeats_are_missed
     # is 20 beats long and so is over-length for a reason the excerpt boundary
     # cannot explain away.
     assert phase.n_bars_over_length == 2
+
+
+def test_three_four_grid_numbers_one_to_three_when_bar_beats_is_three():
+    """[if] bar_beats is 3 on a 3/4 grid [then] numbering stays 1..3, [else stop]."""
+    beats = _grid(12)
+    downbeats = [beats[i] for i in (0, 3, 6, 9)]
+
+    phase = assign_bar_phase(beats, downbeats, bar_beats=3)
+
+    assert phase.beat_numbers == [1, 2, 3] * 4
+    assert phase.n_bars_under_length == 0
+    assert phase.bar_phase_unestablished is False
+
+
+def test_downbeat_anchor_helpers_match_assign_bar_phase_spacing():
+    beats = _grid(16)
+    downbeats = [beats[i] for i in (0, 4, 8, 12)]
+    anchors = downbeat_anchor_indices(beats, downbeats)
+    assert closed_bar_beat_lengths(anchors, len(beats)) == [4, 4, 4]
 
 
 def test_a_short_bar_restarts_at_one_and_is_counted_separately_from_a_long_one():

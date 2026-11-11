@@ -1,0 +1,9 @@
+{
+  "bytes": 1024,
+  "measured_main": 424698,
+  "measured_with_pr": 425264,
+  "sha": "236159fb93",
+  "date": "Tue 10 Nov 2026",
+  "reason": "Issue #10250 (WAVEQS-11733) adds wave_height half-mode painters, prefs hydration and IPC on the performance surface. Measured vs merge base 9048756a88, +566 B gzip; ceiled to KiB",
+  "payback": "none planned; the growth is the feature's own code on this surface"
+}

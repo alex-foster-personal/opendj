@@ -17,13 +17,14 @@ import { visibleBeatLines } from '$lib/components/rb/wave/wave-math';
 import type { WaveGridLines } from '$lib/rb/wave-grid-lines';
 import { PREVIEW_SAMPLE_BEATS, PREVIEW_SAMPLE_SECONDS } from './waveform-preview-beats';
 import type { AnlzWaveform } from '$lib/rb/anlz-types';
+import type { WaveHeight } from '$lib/rb/wave-height';
 import type { WaveformDesign } from '$lib/rb/waveform-design';
 
 /** The dark fill every preview is painted on (the colors are its dark-face hues). */
 export const PREVIEW_BACKGROUND = '#0a0c10';
 /** The preview's beat grid color (line alphas come from the geometry). */
 export const PREVIEW_GRID_COLOR = '#ffffff';
-const _DESIGNS: ReadonlySet<string> = new Set<WaveformDesign>(['tri-band', 'mono', 'line', 'blocks']);
+const _DESIGNS: ReadonlySet<string> = new Set<WaveformDesign>(['tri-band', 'mono', 'line', 'blocks', 'rgb']);
 
 export function paintWaveformPreview(
 	ctx: CanvasRenderingContext2D,
@@ -32,7 +33,8 @@ export function paintWaveformPreview(
 	design: WaveformDesign,
 	c: BandPalette,
 	sample: AnlzWaveform | null,
-	gridLines: WaveGridLines
+	waveHeight: WaveHeight = 'full',
+	gridLines: WaveGridLines = 'off'
 ): void {
 	if (!_DESIGNS.has(design)) {
 		throw new Error(`waveform preview has no painter for design ${String(design)}`);
@@ -44,7 +46,7 @@ export function paintWaveformPreview(
 	// chunk so the library route's first load stays in its gzip budget):
 	// background only, never an invented waveform.
 	if (sample === null) return;
-	drawWaveBands(ctx, sample, w, h, c, design, 0);
+	drawWaveBands(ctx, sample, w, h, c, design, 0, waveHeight);
 	// issue #10244: the deck's own grid geometry and painter over real beats.
 	const lines = visibleBeatLines(
 		PREVIEW_SAMPLE_BEATS,

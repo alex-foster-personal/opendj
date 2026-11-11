@@ -22,10 +22,10 @@ import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
-from apps.sets.api import router
 from apps.sets.recorder_service import RecorderService
 from apps.sets.sources.opendj_source import ADVISORY_DWELL_S
 from apps.sets.state import SetsState
+from tests.sets.conftest import mount_sets_router
 
 SESSION_ID = "2026-08-31T20-00-00"
 T0 = datetime(2026, 8, 31, 20, 0, 0, tzinfo=UTC)
@@ -50,7 +50,7 @@ def observer_client(tmp_path: Path):
     )
     app = FastAPI()
     app.state.sets_recorder_service = service
-    app.include_router(router)
+    mount_sets_router(app)
     with TestClient(app) as client:
         yield client, service
 

@@ -23,12 +23,20 @@ from scripts.perf.capture_kpi_ledger import (
     S12_REQUIRED,
     S12_UNIT,
     CaptureMeta,
+    S12Denominator,
+    attach_s12_denominator_to_reason,
     build_row,
     error_row,
+    format_s12_note,
+    probe_s12_denominator,
 )
 
 
-def _s12_error(meta: CaptureMeta, reason: str) -> list[dict[str, Any]]:
+def _s12_error(
+    meta: CaptureMeta, reason: str, denom: S12Denominator | None = None
+) -> list[dict[str, Any]]:
+    if denom is not None:
+        reason = attach_s12_denominator_to_reason(reason, denom, meta.sha)
     return [
         error_row(kpi=kpi, unit=S12_UNIT, method=S12_METHOD, meta=meta, reason=reason)
         for kpi in S12_REQUIRED
@@ -84,9 +92,9 @@ def _noop_ok(result: Any) -> bool:
     )
 
 
-def _phase_rows(meta: CaptureMeta, first: Any, track_count: int) -> list[dict[str, Any]]:
+def _phase_rows(meta: CaptureMeta, first: Any, denom: S12Denominator) -> list[dict[str, Any]]:
     timings = first.timings
-    note = f"kind=first; denominator={track_count} tracks; sha={meta.sha}"
+    note = format_s12_note(kind="first", denom=denom, sha=meta.sha)
     return [
         build_row(
             kpi=name,
@@ -107,9 +115,8 @@ def _phase_rows(meta: CaptureMeta, first: Any, track_count: int) -> list[dict[st
 
 
 def _success_rows(
-    meta: CaptureMeta, first: Any, noop: Any, track_count: int
+    meta: CaptureMeta, first: Any, noop: Any, denom: S12Denominator
 ) -> list[dict[str, Any]]:
-    denom = f"kind={{kind}}; denominator={track_count} tracks; sha={meta.sha}"
     rows = [
         build_row(
             kpi="cloudsync_first_sync_s",
@@ -117,7 +124,7 @@ def _success_rows(
             unit=S12_UNIT,
             method=S12_METHOD,
             meta=meta,
-            note=denom.format(kind="first"),
+            note=format_s12_note(kind="first", denom=denom, sha=meta.sha),
         ),
         build_row(
             kpi="cloudsync_noop_sync_s",
@@ -125,30 +132,34 @@ def _success_rows(
             unit=S12_UNIT,
             method=S12_METHOD,
             meta=meta,
-            note=denom.format(kind="noop"),
+            note=format_s12_note(kind="noop", denom=denom, sha=meta.sha),
         ),
     ]
-    rows.extend(_phase_rows(meta, first, track_count))
+    rows.extend(_phase_rows(meta, first, denom))
     return rows
 
 
 def _sync_pair(
-    tmp_path: Path, hub_url: str, meta: CaptureMeta, track_count: int
+    tmp_path: Path, hub_url: str, meta: CaptureMeta, denom: S12Denominator
 ) -> list[dict[str, Any]]:
     spoke_name = f"perf-capture-{meta.capture_id}"
     try:
         first = run_sync(tmp_path, hub_url, name=spoke_name)
     except Exception as exc:
-        return _s12_error(meta, f"run_sync first raised {type(exc).__name__}: {exc}")
+        return _s12_error(
+            meta, f"run_sync first raised {type(exc).__name__}: {exc}", denom
+        )
     if not _first_ok(first):
-        return _s12_error(meta, _kind_reason("first", first))
+        return _s12_error(meta, _kind_reason("first", first), denom)
     try:
         noop = run_sync(tmp_path, hub_url, name=spoke_name)
     except Exception as exc:
-        return _s12_error(meta, f"run_sync noop raised {type(exc).__name__}: {exc}")
+        return _s12_error(
+            meta, f"run_sync noop raised {type(exc).__name__}: {exc}", denom
+        )
     if not _noop_ok(noop):
-        return _s12_error(meta, _kind_reason("noop", noop))
-    return _success_rows(meta, first, noop, track_count)
+        return _s12_error(meta, _kind_reason("noop", noop), denom)
+    return _success_rows(meta, first, noop, denom)
 
 
 def _preflight(hub_url: str | None, data_dir: Path | None, track_count: int | None) -> str | None:
@@ -179,12 +190,17 @@ def capture(
             copied = _prepare_spoke(data_dir, tmp_path)
         except (OSError, sqlite3.Error) as exc:
             return _s12_error(meta, f"failed to copy engine library: {exc}")
+        spoke_db = state_db_path(tmp_path)
+        denom = probe_s12_denominator(spoke_db)
+        if denom is None:
+            return _s12_error(meta, "failed to read spoke library denominator")
         if copied != track_count:
             return _s12_error(
                 meta,
                 f"spoke copy track count {copied} disagrees with "
                 f"health.state_db.tracks {track_count}",
+                denom,
             )
-        return _sync_pair(tmp_path, hub_url, meta, track_count)
+        return _sync_pair(tmp_path, hub_url, meta, denom)
     finally:
         shutil.rmtree(tmp, ignore_errors=True)

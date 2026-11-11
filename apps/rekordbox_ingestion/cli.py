@@ -48,9 +48,13 @@ def _db_path(args: argparse.Namespace) -> Path:
     return Path(args.db).expanduser() if args.db else platform_paths.REKORDBOX_LIVE_DB
 
 
+def _utc_stamp(fmt: str) -> str:
+    return dt.datetime.now(dt.UTC).strftime(fmt)
+
+
 def _write_report(kind: str, batch_dir: Path, payload: dict) -> Path:
     CFG.REPORT_ROOT.mkdir(parents=True, exist_ok=True)
-    stamp = dt.datetime.now(dt.UTC).strftime("%Y%m%dT%H%M%SZ")
+    stamp = _utc_stamp("%Y%m%dT%H%M%SZ")
     out = CFG.REPORT_ROOT / f"{batch_dir.name}-{kind}-{stamp}.json"
     out.write_text(json.dumps(payload, indent=2, default=str), encoding="utf-8")
     return out
@@ -60,15 +64,19 @@ def _summary_line(st: status.BatchStatus) -> str:
     c = st.counts
     return (
         f"denominator={st.denominator} audio files in {st.batch_dir} | "
-        f"in rekordbox={c['IMPORTED'] + c['ANALYZED']} | analyzed={c['ANALYZED']} | "
+        f"in rekordbox={st.in_rekordbox_count} | analyzed={c['ANALYZED']} | "
         f"missing={c['MISSING']} | in {CFG.PLAYLIST_FOLDER} playlists={st.in_playlist_count} | "
         f"playlist sizes={st.playlists}"
     )
 
 
+def _desktop_idle() -> tuple[str, float]:
+    return desktop.frontmost_app_name(), desktop.hid_idle_seconds()
+
+
 def _print_status(st: status.BatchStatus, *, verbose: bool) -> None:
     print(_summary_line(st))
-    in_rb = st.counts["IMPORTED"] + st.counts["ANALYZED"]
+    in_rb = st.in_rekordbox_count
     if in_rb > st.in_playlist_count:
         print(f"[WARN] {in_rb - st.in_playlist_count} imported file(s) are in no {CFG.PLAYLIST_FOLDER} "
               "playlist (dropped on Collection instead of the playlist?)")
@@ -180,7 +188,7 @@ def cmd_watch(args: argparse.Namespace) -> int:
         if st is None:
             return 1
         _print_status(st, verbose=False)
-        front, idle = desktop.frontmost_app_name(), desktop.hid_idle_seconds()
+        front, idle = _desktop_idle()
         print(f"[dry-run] frontmost={front!r} input idle={idle:.0f}s; "
               f"would poll every {args.interval}s for up to {args.timeout_min} min")
         print(f"[dry-run] complete now={st.complete}; on completion would "
@@ -192,7 +200,7 @@ def cmd_watch(args: argparse.Namespace) -> int:
     last_counts: dict[str, int] | None = None
     while True:
         now = time.time()
-        front, idle = desktop.frontmost_app_name(), desktop.hid_idle_seconds()
+        front, idle = _desktop_idle()
         tracker.observe(now, front, idle, args.interval)
         st = _poll(batch_dir, db_path, args.folder)
         if st is None:
@@ -202,7 +210,7 @@ def cmd_watch(args: argparse.Namespace) -> int:
                 return 1
         else:
             unreadable = 0
-            stamp = dt.datetime.now(dt.UTC).strftime("%H:%M:%SZ")
+            stamp = _utc_stamp("%H:%M:%SZ")
             print(f"{stamp} {_summary_line(st)}", flush=True)
             stable = stable + 1 if st.complete and st.counts == last_counts else (1 if st.complete else 0)
             last_counts = st.counts
@@ -225,7 +233,7 @@ def _finish(args, batch_dir: Path, db_path: Path, st: status.BatchStatus, tracke
         else:
             while True:
                 now = time.time()
-                front, idle = desktop.frontmost_app_name(), desktop.hid_idle_seconds()
+                front, idle = _desktop_idle()
                 tracker.observe(now, front, idle, args.interval)
                 ok, reason = tracker.may_quit(now, front, idle)
                 if ok:

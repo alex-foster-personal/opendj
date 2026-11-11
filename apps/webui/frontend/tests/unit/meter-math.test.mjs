@@ -216,7 +216,7 @@ test('the channel clip pip holds after a post-crossfader clip, and lets go after
 		'the pip cursor is no longer seeded when playback activates'
 	);
 	assert.doesNotMatch(src, /isClipping\(heardDb\)/, 'the pip judges the decaying level again');
-	assert.match(src, /const heardDb = reading\.heardDb;/);
+	assert.doesNotMatch(src, /segmentsLitFromDbfs\(reading\.heardDb/);
 });
 
 // The ChannelLevelMeter pip's cursor: the production createClipPipCursor,
@@ -377,27 +377,22 @@ test('the group-limit hint paints above the raised EQ overlay', () => {
 
 // requirement: METERCAL-02, METERCAL-03
 test('R arms the level the channel meter shows; M keeps the channel tap level', () => {
-	// A -3 dBFS passage on an A channel at a centered crossfader is heard at
-	// about -6 dBFS; that heard level is what the bar draws (reading.heardDb).
-	// Pressing R there must light the first red on THAT passage.
+	// The bar draws post-channel-fader `db` (pin 3dc62dbb909c); R must arm that
+	// value even when heardDb differs after the crossfader.
 	const tap = -3;
 	const shown = tap + 20 * Math.log10(Math.SQRT1_2);
 	const reading = { db: tap, heardDb: shown };
 	const red = meter.calibrationCaptureDb('red', reading);
-	assert.equal(red, shown);
+	assert.equal(red, tap);
 	const thresholds = meter.segmentThresholdsForRed(red);
 	assert.equal(
-		meter.segmentBand(meter.segmentsLitFromDbfs(shown, thresholds)),
+		meter.segmentBand(meter.segmentsLitFromDbfs(tap, thresholds)),
 		'red',
 		'the passage R was pressed on does not light the first red segment'
 	);
-	// Control (the overshoot): M is a master gain ceiling and keeps the tap.
 	assert.equal(meter.calibrationCaptureDb('ceiling', reading), tap);
-	// Codex P2, PR #6829: the bar and the tap decay on separate ballistics, so
-	// after a crossfader move mid-decay the heard reading is NOT the tap pushed
-	// through the current crossfader. R must take the heard value the bar draws.
 	const decayed = { db: -4.18, heardDb: -7.19 };
-	assert.equal(meter.calibrationCaptureDb('red', decayed), -7.19);
+	assert.equal(meter.calibrationCaptureDb('red', decayed), -4.18);
 	assert.equal(meter.calibrationCaptureDb('ceiling', decayed), -4.18);
 	// The ChannelStrip press uses this capture on the deck's live meter reading.
 	const strip = readFileSync(
@@ -502,29 +497,24 @@ test('a low enough calibration clamps multiple thresholds to the same floor valu
 	);
 });
 
-// requirement: MIXGRP-08
-test('the channel bar renders the post-crossfader heard peak through its own ballistics', async () => {
-	// Sol P1, PR #6829: the bar applied the crossfader position at READ time to
-	// the decaying pre-crossfader level, so moving the crossfader during decay
-	// rewrote the bar. The tap now runs ballistics on the worklet's `heard`.
+// requirement: MIXGRP-08, METERCAL-05
+test('the channel bar renders post-fader db; heard ballistics stay separate', async () => {
 	const tapMod = await loadTypeScriptModule('src/lib/rb/meter-tap.ts');
 	const tap = tapMod.createMeterTap();
-	// Crossfader hard to the other side: loud on the fader, silent on the master.
+	// Crossfader hard to the other side: loud on the fader tap, silent heard.
 	tapMod.noteMeterObservation(tap, { seq: 1, peak: 1, heard: 0 });
 	const first = tapMod.readMeterTap(tap, 1000);
-	assert.equal(first.db, 0, 'control: the pre-crossfader level is unchanged');
-	assert.equal(first.heardDb, meter.METER_FLOOR_DBFS, 'the bar shows a level the master never heard');
-	// Fader swung back mid-decay: the samples already measured stay as heard.
+	assert.equal(first.db, 0, 'the post-fader bar follows the channel fader tap');
+	assert.equal(first.heardDb, meter.METER_FLOOR_DBFS, 'heard stays on its own ballistics');
 	const decaying = tapMod.readMeterTap(tap, 1100);
-	assert.equal(decaying.heardDb, meter.METER_FLOOR_DBFS, 'a decay re-lit from the pre-crossfader level');
-	assert.ok(decaying.db < 0 && decaying.db > meter.METER_FLOOR_DBFS, 'control: the tap level decays');
-	// Heard attacks and decays on its own ballistics.
-	tapMod.noteMeterObservation(tap, { seq: 2, peak: 1, heard: 0.5 });
-	const heard = tapMod.readMeterTap(tap, 1200);
-	assert.ok(Math.abs(heard.heardDb - meter.dbfsFromAmplitude(0.5)) < 1e-9, 'heard did not attack to its own peak');
-	const later = tapMod.readMeterTap(tap, 1400);
-	assert.ok(later.heardDb < heard.heardDb, 'heard never decays');
-	// A tap with no heard source (the master) mirrors its own level.
+	assert.ok(decaying.db < 0 && decaying.db > meter.METER_FLOOR_DBFS, 'the fader tap decays');
+	assert.equal(decaying.heardDb, meter.METER_FLOOR_DBFS, 'heard does not re-light from a moved crossfader');
+	tapMod.noteMeterObservation(tap, { seq: 2, peak: 0.5, heard: 0.25 });
+	const mid = tapMod.readMeterTap(tap, 5000);
+	assert.ok(Math.abs(mid.db - meter.dbfsFromAmplitude(0.5)) < 1e-9, 'db attacks with the fader peak');
+	const later = tapMod.readMeterTap(tap, 5200);
+	assert.ok(later.heardDb < mid.heardDb, 'heard decays on its own ballistics');
+	assert.ok(Math.abs(mid.heardDb - meter.dbfsFromAmplitude(0.25)) < 1e-9, 'heard attacks separately');
 	const master = tapMod.createMeterTap();
 	tapMod.noteMeterObservation(master, { seq: 1, peak: 0.5 });
 	const m = tapMod.readMeterTap(master, 1000);
@@ -534,5 +524,5 @@ test('the channel bar renders the post-crossfader heard peak through its own bal
 		'utf8'
 	);
 	assert.doesNotMatch(src, /channelDbHeardOnMaster\(/, 'the bar re-scales the pre-crossfader reading again');
-	assert.match(src, /lit = segmentsLitFromDbfs\(heardDb, thresholds\);\s*db = heardDb;/);
+	assert.match(src, /lit = segmentsLitFromDbfs\(channelDb, thresholds\);\s*db = channelDb;/);
 });

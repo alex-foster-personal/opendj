@@ -15,7 +15,7 @@ relative line must resolve to a file classified OK.
 CLI usage::
 
     python -m apps.sync.usb.verify --profile usb-profiles/example.yaml
-    python -m apps.sync.usb.verify --profile ... --json data/usb/verify.json
+    python -m apps.sync.usb.verify --profile ... --json (private path)
     python -m apps.sync.usb.verify --profile ... --only-drift
     python -m apps.sync.usb.verify --profile ... --skip-playlists
     python -m apps.sync.usb.verify --pioneer-export /Volumes/STICK
@@ -46,9 +46,10 @@ import enum
 import json
 import sys
 import time
-from collections.abc import Iterable
+from collections.abc import Callable, Iterable
 from dataclasses import dataclass, field
 from pathlib import Path, PurePosixPath
+from typing import TYPE_CHECKING
 
 from rich.console import Console
 from rich.table import Table
@@ -69,6 +70,10 @@ from apps.sync.usb.state import (
     group_by_playlist,
     load_canonical_tracks,
 )
+
+if TYPE_CHECKING:
+    from apps.sync.usb.apply import ParallelApplyResult
+    from apps.sync.usb.plan import ParallelCopyPlan
 
 console = Console(width=120)
 
@@ -96,7 +101,7 @@ class FileReport:
 class VerifyReport:
     profile_name: str
     drive_root: Path
-    drive_uuid: str | None
+    drive_uuid: str | None  # Not bound yet: verify_drive always leaves this None. See #12742.
     files: list[FileReport] = field(default_factory=list)
     ok: int = 0
     missing: int = 0
@@ -197,7 +202,12 @@ def verify_drive(
     detect_renames: bool = True,
     max_workers: int | None = None,
 ) -> VerifyReport:
-    """Build a :class:`VerifyReport` against the drive at ``drive_root``."""
+    """Build a :class:`VerifyReport` against the drive at ``drive_root``.
+
+    ``drive_uuid`` is always ``None`` today, so the report is not a check that
+    the same stick is still mounted. Volume UUID binding is tracked in
+    issue #12742 and ``(private path)``.
+    """
     t0 = time.monotonic()
 
     expected = _expected_paths(profile=profile, canonical=canonical)
@@ -221,7 +231,7 @@ def verify_drive(
     report = VerifyReport(
         profile_name=profile.name,
         drive_root=drive_root,
-        drive_uuid=None,
+        drive_uuid=None,  # not bound yet; see issue #12742
     )
 
     expected_rels = set(expected.keys())
@@ -484,6 +494,169 @@ def plan_from_verify(
     )
 
 
+# ------------------------------------------------------ eject after verify
+
+_DRIFT_KEYS = ("missing", "extra", "corrupted", "renamed")
+_STATUS_VALUES = frozenset(s.value for s in FileStatus)
+
+
+class EjectRefused(RuntimeError):
+    """Eject-after-verify refused before the eject operation ran.
+
+    ``code`` is stable for callers: ``verification_absent``,
+    ``verification_malformed``, ``verification_failed``,
+    ``verification_wrong_volume`` or ``volume_identity_missing``.
+    """
+
+    def __init__(self, code: str, message: str) -> None:
+        super().__init__(message)
+        self.code = code
+        self.message = message
+
+
+@dataclass(slots=True, frozen=True)
+class EjectReceipt:
+    """Proof that a verified volume was ejected; names the volume it ejected."""
+
+    volume_root: str
+    volume_identity: str
+    verified_files: int
+    ejected: bool
+
+    def __post_init__(self) -> None:
+        if not self.volume_identity or not self.volume_root:
+            raise ValueError("an eject receipt must name the verified volume's root and identity")
+
+
+@dataclass(slots=True, frozen=True)
+class _Receipt:
+    drive_root: object
+    drive_uuid: object
+    counts: object
+    statuses: list[object]
+    playlists_broken: object
+
+
+def _malformed(message: str) -> EjectRefused:
+    return EjectRefused("verification_malformed", message)
+
+
+def _normalise_receipt(receipt: object) -> _Receipt:
+    """Read a :class:`VerifyReport` or its :func:`report_to_jsonable` mapping; anything else is malformed."""
+    if isinstance(receipt, VerifyReport):
+        return _Receipt(
+            drive_root=str(receipt.drive_root),
+            drive_uuid=receipt.drive_uuid,
+            counts={"ok": receipt.ok, **{k: getattr(receipt, k) for k in _DRIFT_KEYS}},
+            statuses=[f.status.value if isinstance(f, FileReport) else None for f in receipt.files],
+            playlists_broken=receipt.playlists_broken,
+        )
+    if not isinstance(receipt, dict):
+        raise _malformed(f"a verification receipt is a verify report, not a {type(receipt).__name__}")
+    files = receipt.get("files")
+    if not isinstance(files, list):
+        raise _malformed("the verification receipt has no file list")
+    return _Receipt(
+        drive_root=receipt.get("drive_root"),
+        drive_uuid=receipt.get("drive_uuid"),
+        counts=receipt.get("counts"),
+        statuses=[f.get("status") if isinstance(f, dict) else None for f in files],
+        playlists_broken=receipt.get("playlists_broken"),
+    )
+
+
+def _checked_counts(parsed: _Receipt) -> dict[str, int]:
+    """Counts that are non-negative integers and agree with the file list, or refuse."""
+    if not isinstance(parsed.counts, dict):
+        raise _malformed("the verification receipt has no counts")
+    tallies: dict[str, int] = {}
+    for key in ("ok", *_DRIFT_KEYS):
+        value = parsed.counts.get(key)
+        if type(value) is not int or value < 0:
+            raise _malformed(f"the receipt's {key} count is {value!r}")
+        tallies[key] = value
+    unknown = [s for s in parsed.statuses if not isinstance(s, str) or s not in _STATUS_VALUES]
+    if unknown:
+        raise _malformed(f"the receipt has unknown file statuses {unknown[:3]!r}")
+    if any(parsed.statuses.count(key) != tallies[key] for key in tallies):
+        raise _malformed("the receipt's counts disagree with its file list")
+    if not isinstance(parsed.playlists_broken, list):
+        raise _malformed("the receipt has no broken-playlist list")
+    return tallies
+
+
+def _check_volume(parsed: _Receipt, volume_root: Path, volume_identity: str | None) -> None:
+    """Refuse a receipt that verified another volume (path, or UUID when it carries one).
+
+    When ``drive_uuid`` is ``None``, as ``verify_drive`` currently produces, the
+    UUID comparison is skipped and only the mount path is checked. That is not
+    a same-stick check. See issue #12742.
+    """
+    if parsed.drive_uuid is not None and not isinstance(parsed.drive_uuid, str):
+        raise _malformed(f"the receipt's drive_uuid is {parsed.drive_uuid!r}")
+    root = parsed.drive_root if isinstance(parsed.drive_root, str) else ""
+    if not root or Path(root).resolve() != volume_root.resolve():
+        raise EjectRefused(
+            "verification_wrong_volume", f"the receipt verified {root or 'no volume'}, not {volume_root}"
+        )
+    if parsed.drive_uuid is None or volume_identity is None:
+        return
+    if parsed.drive_uuid.removeprefix("vol:") != volume_identity.removeprefix("vol:"):
+        raise EjectRefused(
+            "verification_wrong_volume", f"the receipt verified volume {parsed.drive_uuid}, not {volume_identity}"
+        )
+
+
+def require_successful_verification(receipt: object, *, volume_root: Path, volume_identity: str | None = None) -> int:
+    """Return how many files ``receipt`` verified on ``volume_root``, or raise :class:`EjectRefused`.
+
+    Fail closed: an absent receipt, a malformed one (wrong type, a missing or
+    non-integer count, counts that disagree with the file list, an unknown
+    status), a receipt for another volume, any missing, extra, corrupted or
+    renamed file, a broken playlist, or a receipt that verified no file at all
+    is refused. Nothing here reads or writes the volume.
+    """
+    if receipt is None:
+        raise EjectRefused("verification_absent", "no verification receipt, so the copy is not verified")
+    parsed = _normalise_receipt(receipt)
+    tallies = _checked_counts(parsed)
+    _check_volume(parsed, volume_root, volume_identity)
+    drift = sum(tallies[k] for k in _DRIFT_KEYS)
+    broken = len(parsed.playlists_broken) if isinstance(parsed.playlists_broken, list) else 0
+    if drift or broken:
+        raise EjectRefused(
+            "verification_failed", f"verification found {drift} file problem(s) and {broken} broken playlist(s)"
+        )
+    if tallies["ok"] == 0:
+        raise EjectRefused("verification_absent", "the receipt verified no file, so it proves no copy")
+    return tallies["ok"]
+
+
+def eject_after_verify(
+    receipt: object,
+    *,
+    volume_root: Path,
+    volume_identity: str,
+    eject: Callable[[Path], object],
+) -> EjectReceipt:
+    """Eject ``volume_root`` only after a successful verification receipt for it.
+
+    Every refusal raises :class:`EjectRefused` before ``eject`` is called, so
+    a failed, absent or malformed verification never touches the volume. The
+    returned receipt always names the volume root and identity it ejected.
+    """
+    if not isinstance(volume_identity, str) or not volume_identity.strip():
+        raise EjectRefused("volume_identity_missing", "no volume identity, so the eject receipt could not name it")
+    verified = require_successful_verification(receipt, volume_root=volume_root, volume_identity=volume_identity)
+    eject(volume_root)
+    return EjectReceipt(
+        volume_root=str(volume_root),
+        volume_identity=volume_identity,
+        verified_files=verified,
+        ejected=True,
+    )
+
+
 # ----------------------------------------------------------------------- CLI
 
 
@@ -516,6 +689,78 @@ def report_to_jsonable(report: VerifyReport) -> dict:
             for f in report.files
         ],
     }
+
+
+# ------------------------------------------------- parallel playlist copy
+
+
+@dataclass(slots=True)
+class StickReceipt:
+    """Verification of one stick's job. ``ok`` only when every planned file checks out."""
+
+    stick: str
+    checked: int = 0
+    problems: list[str] = field(default_factory=list)
+
+    @property
+    def ok(self) -> bool:
+        return not self.problems
+
+
+@dataclass(slots=True)
+class JoinedReceipt:
+    playlist: str
+    sticks: dict[str, StickReceipt]
+    omitted: tuple[str, ...] = ()
+
+    @property
+    def ok(self) -> bool:
+        return bool(self.sticks) and not self.omitted and all(r.ok for r in self.sticks.values())
+
+
+def verify_parallel_copy(
+    plan: ParallelCopyPlan,
+    applied: ParallelApplyResult | None = None,
+    *,
+    hasher=sha256_file,
+) -> JoinedReceipt:
+    """Re-read every planned file on every stick and join the verdicts.
+
+    Fail closed: a stick is OK only when its job ran (when ``applied`` is
+    given), every planned file exists and its bytes hash to the library hash.
+    A missing file, a mismatch, an op with no expected hash, an unreadable file
+    or a refused or failed job each mark that stick not OK, and any stick not
+    OK makes the joined receipt not OK.
+    """
+    sticks: dict[str, StickReceipt] = {}
+    for job in plan.jobs:
+        receipt = StickReceipt(stick=job.stick)
+        sticks[job.stick] = receipt
+        if applied is not None:
+            ran = applied.sticks.get(job.stick)
+            if ran is None:
+                receipt.problems.append("no apply result for this stick")
+            elif ran.refused is not None:
+                receipt.problems.append(f"refused: {ran.refused}")
+            elif not ran.ok:
+                receipt.problems.append("copy job reported a failure")
+        for op in job.ops:
+            receipt.checked += 1
+            rel = op.dst_rel.as_posix()
+            if not op.expected_hash:
+                receipt.problems.append(f"no expected hash: {rel}")
+                continue
+            try:
+                if not op.dst.is_file():
+                    receipt.problems.append(f"missing: {rel}")
+                    continue
+                actual = hasher(op.dst)
+            except OSError as exc:
+                receipt.problems.append(f"unreadable: {rel}: {type(exc).__name__}")
+                continue
+            if actual != op.expected_hash:
+                receipt.problems.append(f"mismatch: {rel}")
+    return JoinedReceipt(playlist=plan.playlist, sticks=sticks, omitted=tuple(plan.omitted))
 
 
 def _build_parser() -> argparse.ArgumentParser:

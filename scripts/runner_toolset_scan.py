@@ -137,24 +137,82 @@ def scan_shell(
     text: str, source: str, base_line: int, ctx: _Ctx, functions: frozenset[str] = frozenset()
 ) -> None:
     """Record every executable at command position in `text`."""
-    clean, heredocs = lex.strip_comments_and_heredocs(GH_EXPR_RE.sub(lex.PLACEHOLDER, text))
+    text = GH_EXPR_RE.sub(lex.PLACEHOLDER, text)
+    clean, heredocs = lex.strip_comments_and_heredocs(text)
     for doc in heredocs:
         if re.search(r"\bpython3?\b", doc.feeder):
             scan_python_source(doc.body, source, base_line + doc.first_line, ctx)
         elif re.search(r"\b(ba)?sh\b", doc.feeder.split("<<")[0]):
             scan_shell(doc.body, source, base_line + doc.first_line, ctx)
     subs = lex.command_substitutions(clean)
-    toks = lex.tokens(lex.mask_substitutions(clean, subs))
-    functions = functions | _defined_functions(toks)
+    masked = lex.mask_parameter_expansions(lex.mask_substitutions(clean, subs))
+    toks = lex.tokens(masked)
+    functions = functions | _defined_functions(toks) | _preset_sourced_functions(source)
     for start, _end, body in subs:
         scan_shell(body, source, base_line + clean.count("\n", 0, start), ctx, functions)
-    _Walker(toks, source, base_line, ctx, functions).walk()
+    _Walker(toks, source, base_line, ctx, set(functions)).walk()
 
 
 def _defined_functions(toks: list[tuple[str, int]]) -> frozenset[str]:
     names = {toks[k][0] for k in range(len(toks) - 1) if toks[k + 1][0] in {"()", "(){"}}
     names |= {toks[k + 1][0] for k in range(len(toks) - 1) if toks[k][0] == "function"}
     return frozenset(names)
+
+
+SOURCE_COMMANDS = frozenset({"source", "."})
+
+
+def _preset_sourced_functions(source: str) -> frozenset[str]:
+    """Function names from a script's shellcheck `source=` hints and its `source` of lib.sh."""
+    rel = source.split(":", 1)[0]
+    if not rel.endswith(".sh") or rel.startswith("probe"):
+        return frozenset()
+    path = REPO_ROOT / rel
+    if not path.is_file():
+        return frozenset()
+    body = path.read_text(encoding="utf-8", errors="replace")
+    hints = re.findall(r"shellcheck source=(\S+)", body)
+    names: set[str] = set()
+    seen: set[str] = set()
+    for hint in hints:
+        if (REPO_ROOT / hint).is_file():
+            names |= _functions_in_sourced_script(hint, seen)
+    lib = path.parent / "lib.sh"
+    if lib.is_file() and re.search(r"^\s*(?:source|\.)\s+.*\blib\.sh\b", body, re.M):
+        names |= _functions_in_sourced_script(_rel(lib), seen)
+    return frozenset(names)
+
+
+def _functions_in_sourced_script(rel: str, seen: set[str]) -> frozenset[str]:
+    """Names defined in a sourced file, including its own nested sources."""
+    rel = rel.removeprefix("./")
+    if rel in seen:
+        return frozenset()
+    seen.add(rel)
+    path = REPO_ROOT / rel
+    if not path.is_file():
+        return frozenset()
+    toks = lex.tokens(lex.prepare_shell_text(path.read_text(encoding="utf-8", errors="replace")))
+    names = set(_defined_functions(toks))
+    for idx, (tok, _line) in enumerate(toks[:-1]):
+        if tok not in SOURCE_COMMANDS:
+            continue
+        arg = toks[idx + 1][0]
+        nested = _resolve_source_script(arg, rel)
+        if nested:
+            names |= _functions_in_sourced_script(nested, seen)
+    return frozenset(names)
+
+
+def _resolve_source_script(arg: str, caller: str) -> str | None:
+    """Repo path a `source` operand names; a `GHEXPR/lib.sh` beside the caller counts."""
+    resolved = sources.repo_script_for(arg, caller, "", REPO_ROOT)
+    if resolved:
+        return resolved
+    tail = arg.rsplit("/", 1)[-1]
+    if tail.endswith(".sh") and (REPO_ROOT / Path(caller).parent / tail).is_file():
+        return str(Path(caller).parent / tail)
+    return None
 
 
 @dataclass
@@ -165,7 +223,8 @@ class _Walker:
     source: str
     base_line: int
     ctx: _Ctx
-    functions: frozenset[str]
+    functions: set[str]
+    sourced_seen: set[str] = field(default_factory=set)
     k: int = 0
     at_command: bool = True
     skip_until: str | None = None
@@ -236,9 +295,9 @@ class _Walker:
         return True
 
     def _is_array_assignment(self, tok: str) -> bool:
-        """`NAME=(a b c)`: the lexer splits off `(`, and its words are values, not commands."""
+        """`NAME=(...)`, `NAME+=(...)`: words inside the parens are values, not commands."""
         following = self.toks[self.k + 1][0] if self.k + 1 < len(self.toks) else ""
-        return tok.endswith("=") and bool(ASSIGNMENT_RE.match(tok)) and following == "("
+        return ("+=" in tok or tok.endswith("=")) and bool(ASSIGNMENT_RE.match(tok)) and following == "("
 
     def _skip_array_literal(self) -> None:
         """Step past `NAME=( ... )`; command position is unchanged, as for a scalar assignment."""
@@ -280,6 +339,14 @@ class _Walker:
             _queue_repo_file(repo_script, self.ctx)
             self.k = _scan_arguments(base, self.toks, self.k + 1, where, self.ctx)
             self._after_reaper(base)
+        elif base in SOURCE_COMMANDS:
+            if WORD_RE.match(base) and not base.isdigit():
+                self.ctx.usage.executables[base].add(where)
+            arg = self.toks[self.k + 1][0] if self.k + 1 < len(self.toks) else ""
+            self.k = _scan_arguments(base, self.toks, self.k + 1, where, self.ctx)
+            nested = _resolve_source_script(arg, self.source.split(":", 1)[0])
+            if nested:
+                self.functions |= _functions_in_sourced_script(nested, self.sourced_seen)
         elif tok in lex.FIND_ACTIONS:  # find's next action, after an escaped `\;` separator
             self.k = _scan_arguments("find", self.toks, self.k, where, self.ctx)
         elif WORD_RE.match(base) and not base.isdigit():

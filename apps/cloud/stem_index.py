@@ -74,7 +74,7 @@ from apps.cloud.asset_store import AssetStoreError, validate_content_hash
 from apps.cloud.config import CloudConfig
 from apps.cloud.lock import S3Client
 from apps.cloud.r2_keys import R2KeyError, parse_legacy_stem_key
-from apps.stems.artifacts import ROFORMER_PARTS, STEM_PARTS
+from apps.stems.artifacts import PRODUCTION_ROFORMER_STEMS_DIR, ROFORMER_PARTS, STEM_PARTS
 
 #: A fixed, mutable pointer key. NOT content-addressed: unlike every other
 #: object under ``assets/``, this one is replaced in place as new bundles
@@ -340,7 +340,7 @@ def save_cached_index(data_dir: Path, index: StemAssetIndex) -> Path:
 # --- building from on-disk manifests -----------------------------------------
 
 _HASH_CHUNK_BYTES: int = 4 * 1024 * 1024
-LOCAL_STEM_ROOT_NAMES: tuple[str, ...] = ("stems", "stems-roformer-spike")
+LOCAL_STEM_ROOT_NAMES: tuple[str, ...] = ("stems", PRODUCTION_ROFORMER_STEMS_DIR.name)
 _SKIP_DIR_MARKERS: tuple[str, ...] = (".tmp-hydrate-", ".evicting-")
 
 

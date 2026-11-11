@@ -48,6 +48,21 @@ GENRE_COLUMN_DOCS: dict[str, dict[str, str]] = {
         "value_json": ("The setting's value as JSON."),
         "updated_at": ("UTC RFC 3339 time the setting was last written."),
     },
+    "enrichment_claims": {
+        "claim_id": ("Primary key: uuid for this versioned enrichment claim."),
+        "stable_id": ("Track the claim is about."),
+        "dimension": ("What the claim describes: genre, mood, bpm, key, meter, description, and similar."),
+        "kind": (
+            "semantic_tag, generated_description, or deterministic_fact; "
+            "deterministic facts are never mixed into semantic tags."
+        ),
+        "source": ("Who produced the value: open-dj analysis, a vendor id, or an agent provider."),
+        "envelope_json": (
+            "Full claim envelope JSON: scope, provider model, schema version, value, "
+            "confidence, generated time, input fingerprint, raw evidence pointer."
+        ),
+        "created_at": ("UTC RFC 3339 time the claim was stored."),
+    },
     "genre_tag_writes": {
         "id": ("Primary key: the write id undo takes."),
         "stable_id": ("Track whose file was written."),

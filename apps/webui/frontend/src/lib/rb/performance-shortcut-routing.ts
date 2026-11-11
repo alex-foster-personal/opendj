@@ -32,6 +32,9 @@ export interface PerformanceShortcutContext {
 	/** The last pointer press landed on a deck or mixer channel, so Cmd+A
 	 * means "jump back" there instead of the library's Select all. */
 	deckFocus?: boolean;
+	/** The key's target is inside the library root; Cmd/Ctrl+Shift+arrow there
+	 * is the library's instant double (KEYB-11643), so the 8-bar grid jump yields. */
+	libraryFocus?: boolean;
 }
 
 export interface PerformanceShortcutKeydownEvent extends PerformanceShortcutKeyEvent {
@@ -81,7 +84,7 @@ export function resolvePerformanceShortcutAction(
 			: null;
 	}
 	if (context.gridJump === true) {
-		const bars = gridJumpBars(e, context.deckFocus === true);
+		const bars = gridJumpBars(e, context.deckFocus === true, context.libraryFocus === true);
 		if (bars !== null) return { kind: 'grid-jump', bars, repeat: e.repeat === true };
 	}
 	if (isTextEntryTarget(e.target) || e.metaKey || e.ctrlKey || e.altKey) return null;
@@ -117,10 +120,16 @@ export function resolvePerformanceShortcutAction(
  * unless the last press was on a deck or mixer channel. Alt is reserved for
  * shadow decks, so an Alt chord is left alone.
  */
-function gridJumpBars(e: PerformanceShortcutKeyEvent, deckFocus: boolean): number | null {
+function gridJumpBars(
+	e: PerformanceShortcutKeyEvent,
+	deckFocus: boolean,
+	libraryFocus: boolean
+): number | null {
 	if (!(e.metaKey || e.ctrlKey) || e.altKey) return null;
 	if (isTextEntryTarget(e.target)) return null;
 	const key = e.key.length === 1 ? e.key.toLowerCase() : e.key;
+	if (e.shiftKey === true && libraryFocus && (key === 'ArrowLeft' || key === 'ArrowRight'))
+		return null;
 	let direction: 1 | -1;
 	if (key === 'ArrowRight' || key === 'd') direction = 1;
 	else if (key === 'ArrowLeft' || (key === 'a' && deckFocus)) direction = -1;

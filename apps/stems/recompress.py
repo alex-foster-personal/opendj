@@ -20,8 +20,9 @@ under the source bitrate, through the same encoder and ladder
 WHAT IT TOUCHES. Bundle directories under this machine's stem roots
 (``<data>/state/stems`` and the RoFormer root), and only those whose parts are
 FLAC or WAV while their source is MP3/M4A. A lossless source keeps FLAC; a
-bundle that is already MP3 is left alone. R2 copies and the hydration index are
-NOT touched: re-publishing is a separate, deliberate step. An R2 hydrate
+bundle that is already MP3 is left alone. R2 copies are not touched by this pass: re-publishing is a separate,
+deliberate step. A live swap updates the local download index through
+:func:`apps.cloud.stem_index_sync.record_converted_bundle`. An R2 hydrate
 also calls reencode_staged_bundle on its private verify copy before
 publishing (#9665).
 
@@ -114,6 +115,7 @@ from apps.stems.bundle_lock import (
 from apps.stems.bundle_lock import (
     fsync_tree as _fsync_tree,
 )
+from apps.cloud.stem_index_sync import record_converted_bundle
 from apps.stems.stem_encode import encode_part, require_mp3_encoder
 
 LOSSLESS_MEDIA_TYPES: frozenset[str] = frozenset({"audio/flac", "audio/wav"})
@@ -193,8 +195,10 @@ class Outcome:
 
 def stem_roots_for(data_dir: Path) -> tuple[Path, ...]:
     """The directory-form stem stores of one data dir, in reader precedence."""
+    from apps.stems.artifacts import PRODUCTION_ROFORMER_STEMS_DIR
+
     state = data_dir / "state"
-    return (state / "stems", state / "stems-roformer-spike")
+    return (state / "stems", state / PRODUCTION_ROFORMER_STEMS_DIR.name)
 
 
 def readonly_sqlite_uri(db_path: PurePath) -> str:
@@ -1254,6 +1258,7 @@ def recompress_bundle(
             source_bytes_unchanged=source_bytes_unchanged,
             source_path=source_path,
         )
+        record_converted_bundle(data_dir_of_bundle(bundle_dir), bundle_dir)
         return Outcome(
             stable_id=stable_id,
             before_bytes=before,

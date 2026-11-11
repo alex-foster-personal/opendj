@@ -20,11 +20,13 @@ export function genreSourceLabel(source: string): string {
 export function genreCellTitle(
 	genre: string,
 	source: string | null | undefined,
-	reason: string | null | undefined
+	reason: string | null | undefined,
+	family?: string | null
 ): string | undefined {
 	if (!genre) return reason || undefined;
-	if (!source) return genre;
-	return `${genre} (from ${genreSourceLabel(source)})`;
+	const familyBit = family ? `; family ${family}` : '';
+	if (!source) return `${genre}${familyBit}`;
+	return `${genre} (from ${genreSourceLabel(source)})${familyBit}`;
 }
 
 /**

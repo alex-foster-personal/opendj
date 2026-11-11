@@ -21,6 +21,7 @@ from apps.engine_core.jobs.runner import (
     worker_argv,
 )
 from apps.engine_core.jobs.store import (
+    ActiveIdOverlap,
     ActiveJob,
     DuplicateRule,
     JobConflict,
@@ -32,6 +33,7 @@ from apps.shared.engine_app_state import (
     jobs_runner_from_engine_request,
     jobs_store_from_engine_request,
 )
+from apps.webui.server.routes import ingest as ingest_routes
 
 router = APIRouter(prefix="/jobs", tags=["jobs"])
 
@@ -44,6 +46,7 @@ MAX_LIST_LIMIT: int = 1000
 # 409 code when a stems.separate request duplicates an active job; the
 # detail carries that job as "job" so the caller adopts it.
 STEMS_JOB_ACTIVE: str = "stems_job_active"
+ANLZ_JOB_ACTIVE: str = "anlz_job_active"
 
 
 class JobIn(BaseModel):
@@ -71,6 +74,20 @@ class JobOut(BaseModel):
     worker_argv: list[str] | None = None
     worker_started_at: float | None = None
     external_ref: str | None = None
+    stderr_tail: list[str] | None = Field(
+        default=None,
+        description=(
+            "the last lines the worker wrote to stderr, kept on every ending, "
+            "success included (STEM-60)"
+        ),
+    )
+    outcome: dict[str, Any] | None = Field(
+        default=None,
+        description=(
+            "what the kind measured after its worker exited, e.g. stems "
+            "bundles expected vs present (STEM-59); null for kinds without a check"
+        ),
+    )
 
 
 class StemsJobActiveDetail(BaseModel):
@@ -85,6 +102,20 @@ class StemsJobActiveOut(BaseModel):
     """409 body of `POST /api/v1/jobs` when an active stems.separate already does the work."""
 
     detail: StemsJobActiveDetail
+
+
+class AnlzJobActiveDetail(BaseModel):
+    """The detail of a 409 refusing a duplicate anlz.cache_rebuild."""
+
+    code: Literal["anlz_job_active"]
+    message: str
+    job: JobOut
+
+
+class AnlzJobActiveOut(BaseModel):
+    """409 body when an active anlz.cache_rebuild already does this work."""
+
+    detail: AnlzJobActiveDetail
 
 
 class JobReenqueueConflictOut(BaseModel):
@@ -114,6 +145,77 @@ def list_kinds() -> JobKindsOut:
     return JobKindsOut(kinds=list(known_kinds()))
 
 
+def _resolved_stems_payload(request: Request, payload: dict[str, Any]) -> dict[str, Any]:
+    """``scope: pending`` becomes the enrich card's own "not yet" songs (STEM-58).
+
+    Resolved HERE, at enqueue, through ``app.state.stems_scope_fn``, so the row
+    records exactly which songs it was asked for and its outcome check can
+    measure each one. A worker that resolved the scope itself used a second
+    definition (rows, raw paths, one root) and could finish "done" without
+    touching a single song the card counted.
+    """
+    from apps.stems.job import canonical_payload as canonical_stems_payload
+
+    try:
+        payload = canonical_stems_payload(payload)
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+    if "scope" not in payload:
+        try:
+            worker_argv("stems.separate", payload)
+        except (UnknownJobKind, ValueError) as exc:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+        return payload
+    if "data_dir" in payload:
+        engine_dir = Path(ingest_routes.COVERAGE_DATA_DIR).resolve()
+        requested = Path(payload["data_dir"]).resolve()
+        if requested != engine_dir:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=(
+                    f"scope pending is resolved against this engine's library ({engine_dir}); "
+                    f"for data_dir {requested} pass explicit stable_ids instead"
+                ),
+            )
+    scope_fn = getattr(request.app.state, "stems_scope_fn", None)
+    if scope_fn is None:
+        raise RuntimeError("engine stems scope is not mounted on app.state.stems_scope_fn")
+    scope = scope_fn()
+    if not scope.pending:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=(
+                f"no songs need stems: of {scope.songs} songs with audio on this Mac, "
+                f"{scope.done} have stems, {scope.terminal} cannot be made here and "
+                f"{scope.failed} failed"
+            ),
+        )
+    resolved = {key: value for key, value in payload.items() if key != "scope"}
+    resolved["stable_ids"] = scope.pending_ids()
+    resolved["resolved_from"] = {
+        "scope": payload["scope"],
+        "unit": "songs",
+        "denominator": "present",
+        "songs": scope.songs,
+        "pending": len(scope.pending),
+        "done": scope.done,
+    }
+    try:
+        worker_argv("stems.separate", resolved)
+    except (UnknownJobKind, ValueError) as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+    return resolved
+
+
+def _active_stems_overlap_detail(job_id: str) -> str:
+    """409 body for a pending scope that still names songs an active job owns (STEM-61)."""
+    return (
+        "a stems job is already queued or running for some of these songs "
+        f"(job {job_id}); wait and submit scope: pending again "
+        "(the next snapshot omits songs that now have bundles)"
+    )
+
+
 @router.post(
     "",
     response_model=JobOut,
@@ -122,46 +224,68 @@ def list_kinds() -> JobKindsOut:
         status.HTTP_409_CONFLICT: {
             "model": StemsJobActiveOut,
             "description": "an active stems.separate job already does this work",
-        }
+        },
     },
 )
 def enqueue_job(request: Request, body: JobIn) -> dict[str, Any]:
-    # ValueError alongside UnknownJobKind: a registered builder rejecting its
-    # payload is the same class of caller error as naming a kind that does
-    # not exist, and letting it out as a 500 told an agent to retry a request
-    # that will never succeed.
     payload = body.payload
-    try:
-        worker_argv(body.kind, payload)
-    except (UnknownJobKind, ValueError) as exc:
-        # The kind knows the shape of its own payload and this one is wrong.
-        # That is the caller's mistake, so it is a 400 carrying the kind's own
-        # sentence -- not a 500, which reads as "the engine broke" and sends
-        # the caller looking in entirely the wrong place. The refusal lands
-        # BEFORE the insert, so a bad payload never becomes a queued row.
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)
-        ) from exc
+    block_active_ids: list[str] | None = None
     if body.kind == "stems.separate":
         from apps.engine_core.jobs.stems_dedup import covering_job
-        from apps.stems.job import canonical_payload as canonical_stems_payload
 
-        payload = canonical_stems_payload(payload)
-        # A separation is paid GPU time and the worker does not dedupe, so a
-        # second request for work an active job already does is refused
-        # atomically with the insert, and the caller gets that job to adopt.
+        had_scope = "scope" in payload
+        payload = _resolved_stems_payload(request, payload)
+        if had_scope:
+            raw_ids = payload.get("stable_ids")
+            if not isinstance(raw_ids, list) or not raw_ids:
+                raise RuntimeError(
+                    "resolved stems scope did not name stable_ids; refusing to enqueue"
+                )
+            block_active_ids = [item for item in raw_ids if isinstance(item, str) and item]
+            if len(block_active_ids) != len(raw_ids):
+                raise RuntimeError(
+                    "resolved stems scope stable_ids are not strings; refusing to enqueue"
+                )
         requested = payload
         default_data_dir = data_dir_from_engine_request(request)
+        try:
+            job, created = jobs_store_from_engine_request(
+                request
+            ).enqueue_unless_active(
+                body.kind,
+                payload,
+                conflicts=lambda active: covering_job(
+                    active, requested, default_data_dir=default_data_dir
+                ),
+                external_ref=body.external_ref,
+                block_active_ids=block_active_ids,
+            )
+        except ActiveIdOverlap as exc:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail=_active_stems_overlap_detail(exc.job_id),
+            ) from exc
+        if not created:
+            raise _stems_job_active(job, "not enqueued again")
+        return job
+    if body.kind == "anlz.cache_rebuild":
+        from apps.analysis import anlz_cache_job
+        from apps.engine_core.jobs.anlz_cache_dedup import covering_job as anlz_covering
+
+        default_data_dir = data_dir_from_engine_request(request)
+        payload = anlz_cache_job.canonical_payload(
+            payload, default_data_dir=default_data_dir
+        )
         job, created = jobs_store_from_engine_request(request).enqueue_unless_active(
             body.kind,
             payload,
-            conflicts=lambda active: covering_job(
-                active, requested, default_data_dir=default_data_dir
+            conflicts=lambda active: anlz_covering(
+                active, payload, default_data_dir=default_data_dir
             ),
             external_ref=body.external_ref,
         )
         if not created:
-            raise _stems_job_active(job, "not enqueued again")
+            raise _anlz_job_active(job, "not enqueued again")
         return job
     return jobs_store_from_engine_request(request).enqueue(
         body.kind, payload, external_ref=body.external_ref
@@ -190,6 +314,20 @@ async def cancel_job(request: Request, job_id: str) -> dict[str, Any]:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT, detail=str(exc)
         ) from exc
+
+
+def _anlz_job_active(job: dict[str, Any], outcome: str) -> HTTPException:
+    return HTTPException(
+        status_code=status.HTTP_409_CONFLICT,
+        detail={
+            "code": ANLZ_JOB_ACTIVE,
+            "message": (
+                f"anlz.cache_rebuild job {job['id']} is already "
+                f"{job['status']} for this work; {outcome}"
+            ),
+            "job": job,
+        },
+    )
 
 
 def _stems_job_active(job: dict[str, Any], outcome: str) -> HTTPException:
@@ -273,6 +411,8 @@ __all__ = [
     "DEFAULT_LIST_LIMIT",
     "MAX_LIST_LIMIT",
     "JobIn",
+    "AnlzJobActiveDetail",
+    "AnlzJobActiveOut",
     "JobKindsOut",
     "JobOut",
     "JobReenqueueConflictOut",

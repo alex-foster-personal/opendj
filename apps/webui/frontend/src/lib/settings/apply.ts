@@ -2,6 +2,7 @@
  * Allowlisted setting mutators. Used by the overlay controls and AI apply.
  * Unknown keys throw (fail-loud).
  */
+import { parseWaveHeight } from '$lib/rb/wave-height';
 import { parseWaveformDesignPref } from '$lib/rb/waveform-design';
 import { reportSettingSaveError } from '$lib/settings/setting-save-errors';
 import { artThumbnailsAvailable, setSidebarArt, sidebarArt } from '$lib/rb/library-sidebar-art.svelte';
@@ -46,6 +47,7 @@ import {
 	setWaveEqReflect,
 	setMixerStems,
 	setDeckHoverLink,
+	setCompactDecks,
 	setShowSections,
 	setAutoAnalyzeGrid,
 	setAutoAnalyzeKey,
@@ -56,8 +58,10 @@ import {
 	setSpeakerAutoRecover,
 	setShowTempoLane,
 	setTempoLaneScale,
+	setShowVocalLane,
 	setWaveGridLines,
 	setWaveformDesign,
+	setWaveHeight,
 	setWavePalette,
 	setLayoutOverride,
 	setUiSkin,
@@ -192,6 +196,7 @@ export const ALLOWED_SETTING_KEYS = [
 	'jog_radial_waveform',
 	'show_stems',
 	'deck_hover_link',
+	'compact_decks',
 	'show_sections',
 	'auto_analyze_grid',
 	'auto_analyze_key',
@@ -201,6 +206,8 @@ export const ALLOWED_SETTING_KEYS = [
 	'speaker_auto_recover',
 	'show_tempo_lane',
 	'tempo_lane_scale',
+	'show_vocal_lane',
+	'wave_height',
 	'wave_grid_lines',
 	'waveform_design',
 	'wave_eq_reflect',
@@ -392,11 +399,14 @@ const _APPEARANCE_AND_DECK_UI_PREF_KEYS = [
 	'jog_radial_waveform',
 	'show_stems',
 	'deck_hover_link',
+	'compact_decks',
 	'show_sections',
 	'deck_number_art',
 	'speaker_auto_recover',
 	'show_tempo_lane',
 	'tempo_lane_scale',
+	'show_vocal_lane',
+	'wave_height',
 	'wave_grid_lines',
 	'waveform_design',
 	'wave_eq_reflect',
@@ -436,6 +446,8 @@ function _readAppearanceAndDeckUiPref(key: _AppearanceAndDeckUiPrefKey): Setting
 			return uiPrefs.show_stems;
 		case 'deck_hover_link':
 			return uiPrefs.deck_hover_link;
+		case 'compact_decks':
+			return uiPrefs.compact_decks;
 		case 'show_sections':
 			return uiPrefs.show_sections;
 		case 'deck_number_art':
@@ -444,8 +456,12 @@ function _readAppearanceAndDeckUiPref(key: _AppearanceAndDeckUiPrefKey): Setting
 			return uiPrefs.speaker_auto_recover;
 		case 'show_tempo_lane':
 			return uiPrefs.show_tempo_lane;
+		case 'show_vocal_lane':
+			return uiPrefs.show_vocal_lane;
 		case 'tempo_lane_scale':
 			return uiPrefs.tempo_lane_scale;
+		case 'wave_height':
+			return uiPrefs.wave_height;
 		case 'wave_grid_lines':
 			return uiPrefs.wave_grid_lines;
 		case 'waveform_design':
@@ -715,6 +731,9 @@ export function applySettingChange(key: string, value: SettingValue): void {
 		case 'deck_hover_link':
 			setDeckHoverLink(_asBool(value, key));
 			return;
+		case 'compact_decks':
+			setCompactDecks(_asBool(value, key));
+			return;
 		case 'show_sections':
 			setShowSections(_asBool(value, key));
 			return;
@@ -744,10 +763,19 @@ export function applySettingChange(key: string, value: SettingValue): void {
 		case 'show_tempo_lane':
 			setShowTempoLane(_asBool(value, key));
 			return;
+		case 'show_vocal_lane':
+			setShowVocalLane(_asBool(value, key));
+			return;
 		case 'tempo_lane_scale': {
 			const scale = parseTempoLaneScale(value);
 			if (scale === undefined) throw new Error(`tempo_lane_scale must be fixed_10|relative, got ${String(value)}`);
 			setTempoLaneScale(scale);
+			return;
+		}
+		case 'wave_height': {
+			const height = parseWaveHeight(value);
+			if (height === undefined) throw new Error(`wave_height must be full|half, got ${String(value)}`);
+			setWaveHeight(height);
 			return;
 		}
 		case 'wave_grid_lines':
@@ -756,7 +784,7 @@ export function applySettingChange(key: string, value: SettingValue): void {
 		case 'waveform_design': {
 			const design = parseWaveformDesignPref(value);
 			if (design === undefined) {
-				throw new Error(`waveform_design must be auto|tri-band|mono|line|blocks, got ${String(value)}`);
+				throw new Error(`waveform_design must be auto|tri-band|mono|line|blocks|rgb, got ${String(value)}`);
 			}
 			setWaveformDesign(design);
 			return;
@@ -764,7 +792,7 @@ export function applySettingChange(key: string, value: SettingValue): void {
 		case 'wave_palette': {
 			const choice = parseWavePalettePref(value);
 			if (choice === undefined) {
-				throw new Error(`wave_palette must be auto|rekordbox|legacy|mono, got ${String(value)}`);
+				throw new Error(`wave_palette must be auto|rekordbox|legacy|mono|blue, got ${String(value)}`);
 			}
 			setWavePalette(choice);
 			return;

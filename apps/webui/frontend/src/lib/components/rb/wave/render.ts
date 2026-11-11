@@ -15,6 +15,7 @@ import { vocalsOf } from '$lib/rb/vocals';
 import { shouldPaintBeatGrid } from '$lib/player/grid-features';
 import type { AnlzBeat, AnlzData, AnlzTempoChange, AnlzWaveform } from '$lib/rb/anlz-types';
 import type { LoopState } from '$lib/rb/deck-state-types';
+import type { WaveHeight } from '$lib/rb/wave-height';
 import type { WaveGridLines } from '$lib/rb/wave-grid-lines';
 import type { WaveformDesign } from '$lib/rb/waveform-design';
 import type { BandGains } from '$lib/rb/wave-eq-gains.svelte';
@@ -27,6 +28,7 @@ import {
 	MID_BAND_SCALE,
 	mirrorRect,
 	normsFor,
+	upRect,
 	type BandNorms
 } from './wave-amp';
 import {
@@ -35,7 +37,8 @@ import {
 	cachedBandLayers,
 	drawBandLayer,
 	newBandCanvas,
-	resetBandLayerCache
+	resetBandLayerCache,
+	rgbColumnColor
 } from './wave-band-layers';
 import {
 	beatLineStrideForWindow,
@@ -330,6 +333,8 @@ export interface WaveRowFrame {
 	sectionLabels?: boolean;
 	/** DECKUX-20: user-selected paint style; default tri-band. */
 	waveformDesign?: WaveformDesign;
+	/** WAVEQS-11733: 'full' (default) mirrored about the centre line; 'half' single-sided from the bottom baseline. */
+	waveHeight?: WaveHeight;
 	/** 'blocks' height model; default BLOCKS_CFG.VARIANT_DEFAULT. */
 	blocksVariant?: BlocksVariant;
 	/** 'blocks' geometry: true (default) = mirrored about the centerline,
@@ -369,6 +374,8 @@ export interface WaveRowFrame {
 	tempoScale?: TempoLaneScale;
 	/** `show_tempo_lane` off: no tempo marks at all on this row. */
 	hideTempo?: boolean;
+	/** issue #10238 `show_vocal_lane` off: no vocal bars on this row. */
+	hideVocals?: boolean;
 	/** issue #10244 `wave_grid_lines`; default beats_bars. */
 	gridLines?: WaveGridLines;
 }
@@ -401,6 +408,7 @@ export function drawWaveRow(ctx: CanvasRenderingContext2D, frame: WaveRowFrame):
 	const pxPerS = w / trackWindowS;
 
 	const design = frame.waveformDesign ?? 'tri-band';
+	const waveHeight = frame.waveHeight ?? 'full';
 	// DECKUX-42: snapped Gothic blocks blit at a whole pixel, and the grid
 	// rounds through the same offset, so a block edge and its beat line share
 	// a pixel while the row scrolls.
@@ -421,7 +429,7 @@ export function drawWaveRow(ctx: CanvasRenderingContext2D, frame: WaveRowFrame):
 			curve,
 			variant: frame.blocksVariant ?? _defaultVariant(curve),
 			beatPeriodS: beatPeriodS(frame.anlz.beatgrid?.beats),
-			mirrored: frame.blocksMirrored ?? true,
+			mirrored: (frame.blocksMirrored ?? true) && waveHeight === 'full',
 			snap: frame.blocksSnap ?? BLOCKS_CFG.SNAP_DEFAULT,
 			// Only a grid the row paints: block edges then sit on its lines.
 			beats: shouldPaintBeatGrid(frame.anlz) ? frame.anlz.beatgrid.beats : null,
@@ -443,7 +451,8 @@ export function drawWaveRow(ctx: CanvasRenderingContext2D, frame: WaveRowFrame):
 			blocks,
 			frame.bandGains ?? null,
 			cachePxPerS,
-			originPx
+			originPx,
+			waveHeight
 		);
 	}
 	// Derived only from the trusted MASTER grid plus this deck's own position
@@ -499,7 +508,9 @@ export function drawWaveRow(ctx: CanvasRenderingContext2D, frame: WaveRowFrame):
 		}
 		drawPhraseMarkers(ctx, frame.anlz.phrases, tLeft, pxPerS, w, palette);
 		drawPointCueMarkers(ctx, frame.anlz.cues, tLeft, pxPerS, w, palette);
-		_drawVocals(ctx, frame.anlz, tLeft, pxPerS, w, frame.palette.vocal);
+		if (frame.hideVocals !== true) {
+			_drawVocals(ctx, frame.anlz, tLeft, pxPerS, w, frame.palette.vocal);
+		}
 	}
 	if (frame.planCurves !== undefined && frame.planCurves !== null) {
 		drawPlanCurves(ctx, frame.planCurves, palette, tLeft, pxPerS, w, h);
@@ -635,15 +646,16 @@ function _drawCachedBands(
 	blocks: BlocksSpec,
 	gains: BandGains | null,
 	cachePxPerS: number = pxPerS,
-	originPx?: number
+	originPx?: number,
+	waveHeight: WaveHeight = 'full'
 ): void {
 	// Separable bands: a tri-band payload in a bar design. A 'mono' payload has
-	// heights only, so no band to scale; the line and blocks designs combine
+	// heights only, so no band to scale; the line, blocks and rgb designs combine
 	// the three bands per column, so their gains are baked into the build.
 	// Unity gains (every knob centred, the common case) take the single
 	// combined image, so a flat deck costs exactly what it did before.
 	const scaled = gains !== null && !isUnityGains(gains) && waveform.kind !== 'mono';
-	const layered = scaled && design !== 'line' && design !== 'blocks';
+	const layered = scaled && design !== 'line' && design !== 'blocks' && design !== 'rgb';
 	const bakedGains = scaled && !layered ? gains : null;
 
 	const snapApi = blockSnapApiFor(design === 'blocks' && blocks.snap);
@@ -657,7 +669,7 @@ function _drawCachedBands(
 	if (typeof document === 'undefined') {
 		if (layered) {
 			for (const band of BAND_ORDER) {
-				drawBandLayer(ctx, waveform, w, h, palette, design, band, gains![band]);
+				drawBandLayer(ctx, waveform, w, h, palette, design, band, gains![band], 0, w, waveHeight);
 			}
 			return;
 		}
@@ -670,14 +682,37 @@ function _drawCachedBands(
 			design === 'blocks'
 				? _blockColumns(gainedWf, pxPerS, w, design, blocks, _edgesFor(snapApi, waveform, pxPerS, durS, w, blocks, snapStride), waveform)
 				: null;
-		_drawBands(ctx, waveform, pxPerS, durS, w, h, palette, design, blocks, MARKER_BAND_PX, { x0: 0, x1: w, blockColumns: cols }, bakedGains);
+		_drawBands(
+			ctx,
+			waveform,
+			pxPerS,
+			durS,
+			w,
+			h,
+			palette,
+			design,
+			blocks,
+			MARKER_BAND_PX,
+			{ x0: 0, x1: w, blockColumns: cols },
+			bakedGains,
+			waveHeight
+		);
 		return;
 	}
 
 	if (layered) {
 		const sectionKey = sections === null ? '' : _sectionPaletteKey(palette.sections);
 		const snapKey = snapApi === null ? 'u' : snapApi.beatsVersion(blocks.beats, blocks.barPhaseUntrusted);
-		const key = `${design}:${blocks.curve}:${blocks.variant}:${blocks.beatPeriodS}:${blocks.mirrored}:${snapKey}:${w}:${h}:${palette.low}:${palette.mid}:${palette.high}:${palette.mono}:${sectionKey}`;
+		const key = waveBandCacheKey({
+			design,
+			blocks,
+			snapKey,
+			w,
+			h,
+			palette,
+			sectionKey,
+			waveHeight
+		});
 		const layers = cachedBandLayers(
 			waveform,
 			key,
@@ -687,7 +722,8 @@ function _drawCachedBands(
 			palette,
 			design,
 			bandImageScaleReusable,
-			BAND_CACHE_CFG.TILE_PX
+			BAND_CACHE_CFG.TILE_PX,
+			waveHeight
 		);
 		blitBandLayers(ctx, layers, gains!, tLeft, pxPerS, w, h, design);
 		return;
@@ -703,7 +739,17 @@ function _drawCachedBands(
 				? snapApi.beatsVersion(blocks.beats, blocks.barPhaseUntrusted)
 				: `${snapApi.beatsVersion(blocks.beats, blocks.barPhaseUntrusted)}:st${snapStride}`;
 	const bakedKey = bakedGains === null ? '' : `:${_bakedGainsKey(bakedGains, h)}`;
-	const key = `${design}:${blocks.curve}:${blocks.variant}:${blocks.beatPeriodS}:${blocks.mirrored}:${snapKey}:${w}:${h}:${palette.low}:${palette.mid}:${palette.high}:${palette.mono}:${sectionKey}${bakedKey}`;
+	const key = waveBandCacheKey({
+		design,
+		blocks,
+		snapKey,
+		w,
+		h,
+		palette,
+		sectionKey,
+		waveHeight,
+		bakedKey
+	});
 	let image = _bandImages.get(waveform);
 	if (
 		image === undefined ||
@@ -759,7 +805,8 @@ function _drawCachedBands(
 				blocks,
 				snapApi,
 				bakedGains,
-				snapStride
+				snapStride,
+				waveHeight
 			);
 			image.tiles.set(i, canvas);
 		}
@@ -818,7 +865,8 @@ function _buildBandTile(
 	blocks: BlocksSpec,
 	snapApi: BlockSnapApi | null,
 	bakedGains: BandGains | null,
-	snapStride?: number
+	snapStride?: number,
+	waveHeight: WaveHeight = 'full'
 ): HTMLCanvasElement {
 	if (typeof document === 'undefined') {
 		throw new Error('wave band cache requires a browser canvas');
@@ -852,8 +900,24 @@ function _buildBandTile(
 		x0,
 		x1: x0 + tileW,
 		blockColumns: image.blocks
-	}, bakedGains);
+	}, bakedGains, waveHeight);
 	return canvas;
+}
+
+/** The band image / band layer cache key: everything baked into a tile. WAVEQS-11733 adds the height mode. */
+export function waveBandCacheKey(p: {
+	design: WaveformDesign;
+	blocks: Pick<BlocksSpec, 'curve' | 'variant' | 'beatPeriodS' | 'mirrored'>;
+	snapKey: string;
+	w: number;
+	h: number;
+	palette: BandPalette;
+	sectionKey: string;
+	waveHeight: WaveHeight;
+	bakedKey?: string;
+}): string {
+	const { design, blocks, snapKey, w, h, palette, sectionKey, waveHeight, bakedKey = '' } = p;
+	return `${design}:${blocks.curve}:${blocks.variant}:${blocks.beatPeriodS}:${blocks.mirrored}:${waveHeight}:${snapKey}:${w}:${h}:${palette.low}:${palette.mid}:${palette.high}:${palette.mono}:${sectionKey}${bakedKey}`;
 }
 
 /** The deck row's band shading for a whole waveform across `w` px, with no
@@ -871,9 +935,10 @@ export function drawWaveBands(
 	h: number,
 	palette: BandPalette,
 	design: WaveformDesign,
-	topPx: number = MARKER_BAND_PX
+	topPx: number = MARKER_BAND_PX,
+	waveHeight: WaveHeight = 'full'
 ): void {
-	_drawBands(ctx, waveform, w, 1, w, h, palette, design, undefined, topPx);
+	_drawBands(ctx, waveform, w, 1, w, h, palette, design, undefined, topPx, null, null, waveHeight);
 }
 
 /** The palette entries the band painters read. */
@@ -892,7 +957,8 @@ function _drawBands(
 	blocks: BlocksSpec = _DEFAULT_BLOCKS,
 	topPx: number = MARKER_BAND_PX,
 	span: BandSpan | null = null,
-	bakedGains: BandGains | null = null
+	bakedGains: BandGains | null = null,
+	waveHeight: WaveHeight = 'full'
 ): void {
 	const bands = waveform.detail;
 	const n = bands.length;
@@ -902,8 +968,16 @@ function _drawBands(
 	const x1 = span === null ? w : Math.min(w, span.x1);
 	const centerY = topPx + (h - topPx) / 2;
 	const halfH = (h - topPx) / 2 - 1;
+	const half = waveHeight === 'half';
+	const baseY = h;
+	const fullH = h - topPx - 1;
+	const bar = (path: Path2D, px: number, a: number, style = 1): void => {
+		if (half) upRect(path, px, baseY, a * fullH * style);
+		else _mirrorRect(path, px, centerY, a * halfH * style);
+	};
 	const mono = design === 'mono' || waveform.kind === 'mono';
 	const line = design === 'line';
+	const rgb = design === 'rgb';
 	const norms = bandNormsFor(waveform);
 	// Mono payloads mix all three arrays into one height, so normalize by
 	// the loudest band's p99 rather than any single band's.
@@ -928,7 +1002,8 @@ function _drawBands(
 			e === undefined
 				? { from: Math.floor(x0 / BLOCK_PITCH_PX), to: Math.ceil(x1 / BLOCK_PITCH_PX), offsetPx: x0 }
 				: { from: _blockAt(e, x0), to: _blockAt(e, x1 - 1) + 1, offsetPx: x0 };
-		if (blocks.mirrored) paintStackedBlocks(ctx, cols.heights, cols.shares, centerY, halfH, palette, true, range, e);
+		if (blocks.mirrored && !half)
+			paintStackedBlocks(ctx, cols.heights, cols.shares, centerY, halfH, palette, true, range, e);
 		else paintStackedBlocks(ctx, cols.heights, cols.shares, h, h - topPx - 1, palette, false, range, e);
 		return;
 	}
@@ -937,6 +1012,7 @@ function _drawBands(
 	const midPath = new Path2D();
 	const highPath = new Path2D();
 	const linePath = new Path2D();
+	const rgbPaths = new Map<string, Path2D>();
 	let lineStarted = false;
 	/** The line design's top and bottom y at image column x. */
 	const lineYs = (x: number): [number, number] => {
@@ -950,7 +1026,7 @@ function _drawBands(
 				_amp(_bucketMax(bands.high, p0, p1), monoNorm) * bandHeightScale(bakedGains?.high ?? 1)
 			)
 		);
-		return [centerY - v * halfH, centerY + v * halfH];
+		return half ? [baseY - v * fullH, baseY] : [centerY - v * halfH, centerY + v * halfH];
 	};
 	// A tile's line joins its neighbors: it starts from the previous column's
 	// bottom and (below) runs on into the next column's top, exactly the
@@ -987,15 +1063,29 @@ function _drawBands(
 				),
 				monoNorm
 			);
-			if (v > 0) _mirrorRect(lowPath, px, centerY, v * halfH);
+			if (v > 0) bar(lowPath, px, v);
 			continue;
 		}
 		const lo = Math.min(1, _amp(_bucketMax(bands.low, p0, p1), norms.low) * bandHeightScale(bakedGains?.low ?? 1));
 		const mi = Math.min(1, _amp(_bucketMax(bands.mid, p0, p1), norms.mid) * bandHeightScale(bakedGains?.mid ?? 1));
 		const hi = Math.min(1, _amp(_bucketMax(bands.high, p0, p1), norms.high) * bandHeightScale(bakedGains?.high ?? 1));
-		if (lo > 0) _mirrorRect(lowPath, px, centerY, lo * halfH);
-		if (mi > 0) _mirrorRect(midPath, px, centerY, mi * halfH * MID_BAND_SCALE);
-		if (hi > 0) _mirrorRect(highPath, px, centerY, hi * halfH * HIGH_BAND_SCALE);
+		if (rgb) {
+			// One envelope at the tri-band union height, coloured by band balance.
+			const v = Math.min(1, Math.max(lo, mi * MID_BAND_SCALE, hi * HIGH_BAND_SCALE));
+			const color = rgbColumnColor({ low: lo, mid: mi, high: hi });
+			if (v > 0 && color !== null) {
+				let path = rgbPaths.get(color);
+				if (path === undefined) {
+					path = new Path2D();
+					rgbPaths.set(color, path);
+				}
+				bar(path, px, v);
+			}
+			continue;
+		}
+		if (lo > 0) bar(lowPath, px, lo);
+		if (mi > 0) bar(midPath, px, mi, MID_BAND_SCALE);
+		if (hi > 0) bar(highPath, px, hi, HIGH_BAND_SCALE);
 	}
 
 	if (line) {
@@ -1012,6 +1102,13 @@ function _drawBands(
 		// Single-colour waveform - never synthesised tri-bands.
 		ctx.fillStyle = palette.mono;
 		ctx.fill(lowPath);
+		return;
+	}
+	if (rgb) {
+		for (const [color, path] of rgbPaths) {
+			ctx.fillStyle = color;
+			ctx.fill(path);
+		}
 		return;
 	}
 	ctx.fillStyle = palette.low;

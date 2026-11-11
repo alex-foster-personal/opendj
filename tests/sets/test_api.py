@@ -9,10 +9,10 @@ import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
-from apps.sets import api as api_mod
 from apps.sets import paths as sets_paths_mod
 from apps.sets.manifest import AudioSegment, Manifest, write_manifest
 from apps.sets.share import SetShareConfig, SetShareError
+from apps.shared.state.tracklist_hidden import HIDDEN_LABEL
 from apps.webui.server.app import create_app
 from apps.webui.server.share_gate import (
     ACCESS_EMAIL_HEADER,
@@ -21,20 +21,34 @@ from apps.webui.server.share_gate import (
     AUTH_TOKEN,
     ShareConfig,
 )
+from tests.sets.conftest import hide_track_in_state_db, mount_sets_router
+from tests.sets.test_soundcloud_export import THREE_TRACK_TIMELINE, _seed_session
 
 
 @pytest.fixture
-def api_test_client(sets_root: Path, monkeypatch):
+def api_test_client(sets_root: Path, sets_state_db: Path, monkeypatch):
     """A FastAPI TestClient pointing at a temp SETS_DIR."""
     monkeypatch.setattr(sets_paths_mod, "SETS_DIR", sets_root)
     app = FastAPI()
-    app.include_router(api_mod.router)
+    app.state.state_db_path = str(sets_state_db)
+    mount_sets_router(app)
     with TestClient(app) as client:
         yield client, sets_root
 
 
 @pytest.fixture
-def set_share_client(sets_root: Path):
+def api_dual_prefix_client(sets_root: Path, sets_state_db: Path, monkeypatch):
+    """TestClient with both /api/sets and /api/v1/sets mounts."""
+    monkeypatch.setattr(sets_paths_mod, "SETS_DIR", sets_root)
+    app = FastAPI()
+    app.state.state_db_path = str(sets_state_db)
+    mount_sets_router(app, v1_alias=True)
+    with TestClient(app) as client:
+        yield client, sets_root
+
+
+@pytest.fixture
+def set_share_client(sets_root: Path, sets_state_db: Path):
     """Real application boundary configured for a Cloudflare Access share host."""
     app = create_app(
         mount_frontend=False,
@@ -44,6 +58,7 @@ def set_share_client(sets_root: Path):
         ),
         set_share_config=SetShareConfig("https://sets.example.test"),
         sets_root=sets_root,
+        state_db_path=str(sets_state_db),
     )
     with TestClient(app) as client:
         yield client, sets_root
@@ -167,6 +182,55 @@ def test_api_timeline_streams_ndjson(api_test_client):
     lines = [line for line in resp.text.splitlines() if line.strip()]
     assert len(lines) == 2
     assert json.loads(lines[1])["action"] == "track_loaded"
+
+
+@pytest.mark.requirement("SET-11818")
+def test_api_v1_timeline_matches_legacy_ndjson(api_dual_prefix_client) -> None:
+    """[if] v1 timeline is fetched [then] NDJSON matches /api/sets, [else stop]."""
+    client, sets_root = api_dual_prefix_client
+    _seed_api_session(sets_root)
+    legacy = client.get("/api/sets/s1/timeline")
+    v1 = client.get("/api/v1/sets/s1/timeline")
+    assert legacy.status_code == 200
+    assert v1.status_code == 200
+    assert v1.text == legacy.text
+
+
+@pytest.mark.requirement("SETREC-27")
+def test_api_timeline_422_on_malformed_middle_line(api_test_client) -> None:
+    """[if] a middle timeline row is bad JSON [then] GET timeline is 422, [else stop]."""
+    client, sets_root = api_test_client
+    _seed_api_session(sets_root)
+    timeline_path = sets_root / "s1" / "timeline.jsonl"
+    timeline_path.write_text(
+        '{"action":"session_start"}\n{broken\n{"action":"track_loaded"}\n',
+        encoding="utf-8",
+    )
+    resp = client.get("/api/sets/s1/timeline")
+    assert resp.status_code == 422
+    assert "corruption" in resp.json()["detail"]
+
+
+@pytest.mark.requirement("SETREC-27")
+def test_api_timeline_tolerates_malformed_trailing_line(api_test_client) -> None:
+    """[if] only the final timeline row is bad JSON [then] GET timeline is 200, [else stop]."""
+    client, sets_root = api_test_client
+    _seed_api_session(sets_root)
+    timeline_path = sets_root / "s1" / "timeline.jsonl"
+    original = timeline_path.read_text(encoding="utf-8")
+    timeline_path.write_text(original + '{"action":"tail"\n', encoding="utf-8")
+    resp = client.get("/api/sets/s1/timeline")
+    assert resp.status_code == 200
+    parsed = []
+    for line in resp.text.splitlines():
+        if not line.strip():
+            continue
+        try:
+            parsed.append(json.loads(line))
+        except json.JSONDecodeError:
+            continue
+    assert len(parsed) == 2
+    assert parsed[-1]["action"] == "track_loaded"
 
 
 @pytest.mark.requirement("SET-03")
@@ -295,7 +359,7 @@ def test_api_audio_forbidden_on_non_localhost_when_private(sets_root: Path, monk
     _seed_api_session(sets_root, private=True)
     # Build a standalone app for a clean client override
     app = FastAPI()
-    app.include_router(api_mod.router)
+    mount_sets_router(app)
     with TestClient(app, client=("203.0.113.1", 50000)) as client:
         resp = client.get("/api/sets/s1/audio/audio_2026-04-17T21-30-00.mp3")
     assert resp.status_code == 403
@@ -401,6 +465,44 @@ def test_api_share_audience_can_only_read_published_metadata(set_share_client) -
     assert audio.status_code == 404
 
 
+@pytest.mark.requirement("NOWP-11487")
+def test_share_timeline_and_page_redact_hidden_track(set_share_client, sets_state_db: Path) -> None:
+    """[if] a track is hidden in state.db [then] share stream and page redact it, [else stop]."""
+    client, sets_root = set_share_client
+    hide_track_in_state_db(sets_state_db, "uuid-2")
+    _seed_session(sets_root, timeline=THREE_TRACK_TIMELINE)
+    share_headers = {
+        "host": "sets.example.test",
+        ACCESS_EMAIL_HEADER: "friend@example.test",
+        ACCESS_JWT_HEADER: "signed-access-assertion",
+    }
+    assert client.post("/api/sets/s1/share", json={"confirm_metadata_only": True}).status_code == 200
+
+    local = client.get("/api/sets/s1/timeline")
+    assert local.status_code == 200
+    assert "Second Tune" not in local.text
+    assert "Artist Two" not in local.text
+    assert HIDDEN_LABEL in local.text
+    assert "First Tune" in local.text
+
+    shared = client.get("/api/sets/s1/timeline", headers=share_headers)
+    assert shared.status_code == 200
+    assert "Second Tune" not in shared.text
+    assert "Artist Two" not in shared.text
+    for line in shared.text.splitlines():
+        if not line.strip():
+            continue
+        event = json.loads(line)
+        if event.get("track_stable_id") == "uuid-2":
+            assert event["value"] == {"title": HIDDEN_LABEL, "artist": HIDDEN_LABEL}
+
+    page = client.get("/sets/shared/s1", headers=share_headers)
+    assert page.status_code == 200
+    assert "Second Tune" not in page.text
+    assert "Artist Two" not in page.text
+    assert HIDDEN_LABEL in page.text
+
+
 @pytest.mark.requirement("SET-08")
 def test_api_metadata_share_requires_matching_access_host(set_share_client) -> None:
     """A set link needs the same configured origin as the share gate."""
@@ -476,6 +578,41 @@ def test_api_audio_rejects_non_audio_name(api_test_client):
     # A filename without the audio_ prefix is rejected by resolve_segment_path.
     resp = client.get("/api/sets/s1/audio/manifest.json.mp3")
     assert resp.status_code == 400
+
+
+@pytest.mark.requirement("SET-03")
+@pytest.mark.parametrize(
+    "artifact_name",
+    [
+        "manifest.json",
+        "timeline.jsonl",
+        "transitions.jsonl",
+        "recorder.pid",
+        "ffmpeg.stderr.log",
+        "odj-audio.stderr.log",
+    ],
+)
+def test_api_audio_rejects_recorder_bundle_artifact(api_test_client, artifact_name: str):
+    """[if] name is a recorder bundle artifact [then] the route returns 400, [else stop]."""
+    client, sets_root = api_test_client
+    sess = _seed_api_session(sets_root)
+    artifact = sess / artifact_name
+    if not artifact.exists():
+        artifact.write_text("stub", encoding="utf-8")
+    resp = client.get(f"/api/sets/s1/audio/{artifact_name}")
+    assert resp.status_code == 400
+
+
+@pytest.mark.requirement("SET-03")
+def test_api_audio_serves_wav_when_bundle_artifacts_present(api_test_client):
+    """[if] bundle metadata siblings exist [then] WAV segment still 200, [else stop]."""
+    client, sets_root = api_test_client
+    sess = _seed_api_session(sets_root)
+    (sess / "recorder.pid").write_text("1", encoding="utf-8")
+    (sess / "audio_2026-04-17T21-35-00.wav").write_bytes(b"RIFF" + b"\x00" * 40)
+    resp = client.get("/api/sets/s1/audio/audio_2026-04-17T21-35-00.wav")
+    assert resp.status_code == 200
+    assert resp.headers["content-type"] == "audio/wav"
 
 
 @pytest.mark.requirement("SET-03")

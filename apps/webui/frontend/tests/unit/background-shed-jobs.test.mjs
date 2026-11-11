@@ -14,6 +14,9 @@
  * version) - not a stale worktree artifact. See the PR body / issue #2580
  * report for the full repro. This file exists so the Q28 wiring invariant
  * itself is still genuinely verified despite that infra defect.
+ *
+ * Also guards PERFBATCH-06: when `live-generation` is on BACKGROUND_SHED_JOBS
+ * it must be index 0 (shed first).
  */
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
@@ -41,6 +44,23 @@ function _parseStringArrayLiteral(source, exportName) {
 		`${exportName} parsed to zero entries - the regex is asking the wrong question`
 	);
 	return ids;
+}
+
+/**
+ * PERFBATCH-06 / Q28 shed-list slot: absent is OK; present must be index 0.
+ */
+function _assertLiveGenerationShedFirst(ids) {
+	const index = ids.indexOf('live-generation');
+	if (index === -1) {
+		return;
+	}
+	if (index !== 0) {
+		const precedes = ids[0];
+		throw new Error(
+			`live-generation must be BACKGROUND_SHED_JOBS[0] (shed first), ` +
+				`but '${precedes}' is at index 0 and live-generation is at index ${index}`
+		);
+	}
 }
 
 const BACKGROUND_SHED_JOBS = _parseStringArrayLiteral(GATE_SOURCE, 'BACKGROUND_SHED_JOBS');
@@ -86,6 +106,26 @@ test('every wireable BACKGROUND_SHED_JOBS id has a registered run in production 
 				`\`if (run !== undefined)\` guard)`
 		);
 	}
+});
+
+test('_assertLiveGenerationShedFirst: index 0 when live-generation is present', () => {
+	assert.doesNotThrow(() =>
+		_assertLiveGenerationShedFirst(['live-generation', 'library-poll-cadence'])
+	);
+});
+
+test('_assertLiveGenerationShedFirst: rejects a job before live-generation', () => {
+	assert.throws(() => _assertLiveGenerationShedFirst(['library-poll-cadence', 'live-generation']));
+});
+
+test('_assertLiveGenerationShedFirst: absent live-generation is allowed', () => {
+	assert.doesNotThrow(() =>
+		_assertLiveGenerationShedFirst(['library-poll-cadence', 'cloudsync-scheduler'])
+	);
+});
+
+test('live-generation is shed first whenever it is on BACKGROUND_SHED_JOBS', () => {
+	_assertLiveGenerationShedFirst(BACKGROUND_SHED_JOBS);
 });
 
 test('every documented exemption really has no wireable run (positive control)', () => {

@@ -83,8 +83,9 @@ export {
 	type AutolistSelection
 } from '$lib/smartlists/autolist-rule';
 export { ensureAudioPrefetch } from '$lib/rb/audio-prefetch-cache.svelte';
-export { clearSelection, pruneSelection } from './pane-row-selection';
+export { clearSelection, pruneSelection, selectAllRows } from './pane-row-selection';
 export { fetchAllPages } from './virtual-window';
+// prettier-ignore
 export { libraryAudioLoadRefusal, rowFromIndexWire, rowFromListWire, rowFromPlaylistWire } from './browser-row-wire';
 export { applySettledAvailability } from './browser-row-wire';
 export { isTransientListingBusy, startPendingSettle } from './pending-availability-settle';

@@ -1,0 +1,9 @@
+{
+  "bytes": 1024,
+  "measured_main": 514244,
+  "measured_with_pr": 514425,
+  "sha": "33826060dd",
+  "date": "Wed 11 Nov 2026",
+  "reason": "branch af--cloud-11290--webui-mark-rows-that-cannot-load-on-this grows the other-lazy surface; measured +181 B gzip over main; ceiled to KiB.",
+  "payback": "none planned; the growth is the change's own code on this surface"
+}

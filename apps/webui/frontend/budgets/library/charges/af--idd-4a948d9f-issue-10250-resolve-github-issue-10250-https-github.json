@@ -1,0 +1,9 @@
+{
+  "bytes": 1024,
+  "measured_main": 345648,
+  "measured_with_pr": 345955,
+  "sha": "236159fb93",
+  "date": "Tue 10 Nov 2026",
+  "reason": "Issue #10250 touches shared settings and wave-height modules that attribution routes to the library surface. Measured vs merge base 9048756a88, +307 B gzip; ceiled to KiB",
+  "payback": "none planned; the growth is shared pref plumbing reached from library routes"
+}

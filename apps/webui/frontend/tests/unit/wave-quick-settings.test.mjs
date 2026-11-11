@@ -37,6 +37,7 @@ const OVERLAY_PREF = {
 	lyrics: 'lyrics_waveform_overlay',
 	lyrics_scrub: 'lyrics_hover_scrub',
 	jog_radial: 'jog_radial_waveform',
+	vocal_lane: 'show_vocal_lane',
 	grid_lines: 'wave_grid_lines'
 };
 
@@ -59,7 +60,23 @@ test('WAVEQS-8348b every live row resolves to an implemented boolean or enum cat
 	}
 	// The two rows Settings shows a live preview for carry it here too.
 	const previewed = ids.filter((id) => qs.resolveWaveQsSetting(catalog.SETTINGS_CATALOG, id).preview === 'waveform');
-	assert.deepEqual(previewed.sort(), ['wave_grid_lines', 'wave_palette', 'waveform_design']);
+	assert.deepEqual(previewed.sort(), ['wave_grid_lines', 'wave_height', 'wave_palette', 'waveform_design']);
+});
+
+test('WAVEQS-11733 the half or full height row is live and names opendj set_waveform_design', () => {
+	const look = qs.WAVE_QS_GROUPS.find((g) => g.id === 'look');
+	assert.ok(look);
+	assert.ok(look.rows.some((r) => r.kind === 'setting' && r.id === 'wave_height'));
+	assert.ok(!look.rows.some((r) => r.id === 'wave_height' && r.kind === 'inert'));
+	const def = qs.resolveWaveQsSetting(catalog.SETTINGS_CATALOG, 'wave_height');
+	assert.equal(def.control.kind, 'enum');
+	assert.deepEqual(
+		def.control.options.map((o) => o.value),
+		['full', 'half']
+	);
+	assert.match(qs.waveQsRowTitle(def), /Agents: opendj set_waveform_design$/);
+	const allowed = allowedSettingKeys();
+	assert.ok(allowed.has('wave_height'));
 });
 
 test('WAVEQS-8348b resolve refuses a missing or unimplemented entry (negative controls)', () => {
@@ -151,6 +168,22 @@ test('WAVEQS-8348 the glyph shows only when the daemon declares waveform.quick_s
 	assert.equal(flag.waveQsEnabledIn(full.flags.filter((f) => f.flag_id !== 'waveform.quick_settings')), false);
 	assert.equal(flag.waveQsEnabledIn([{ flag_id: 'waveform.quick_settings', enabled: false }]), false);
 	assert.equal(flag.waveQsEnabledIn([]), false, 'flags still loading show no glyph');
+});
+
+// requirement: WAVEQS-11734
+// [if] show_vocal_lane is inert or missing from overlays [then] this fails, [else stop].
+test('WAVEQS-11734 show_vocal_lane is a live markers row with set_waveform_overlay vocal_lane parity', () => {
+	const markers = qs.WAVE_QS_GROUPS.find((g) => g.id === 'markers');
+	assert.ok(markers);
+	const row = markers.rows.find((r) => r.kind === 'setting' && r.id === 'show_vocal_lane');
+	assert.ok(row, 'show_vocal_lane must be a live setting row in markers');
+	const def = qs.resolveWaveQsSetting(catalog.SETTINGS_CATALOG, 'show_vocal_lane');
+	assert.equal(def.control.kind, 'boolean');
+	assert.equal(def.group, 'performance');
+	assert.equal(def.implemented, true);
+	assert.match(qs.waveQsRowTitle(def), /Agents: opendj set_waveform_overlay$/);
+	const inertVocal = qs.WAVE_QS_GROUPS.flatMap((g) => g.rows).find((r) => r.kind === 'inert' && r.id === 'vocal_lane');
+	assert.equal(inertVocal, undefined, 'vocal_lane must not remain an inert row');
 });
 
 test('WAVEQS-8348/8348d the glyph title is the requirement text verbatim and open focus targets an option, not the header', () => {

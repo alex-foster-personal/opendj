@@ -115,6 +115,7 @@ from scripts.ci_test_selection_rules import (
     FullSuite,
     Policy,
     Selection,
+    always_run_modules,
     capped_full_selection,
     lane_universe,
     select_tests,
@@ -663,6 +664,16 @@ def _changed_paths(root: Path, event: Event, range_record: dict) -> tuple[list[s
     return pr_changed_paths(root, event.head_sha), pr_changed_paths(root, event.head_sha, ADDED_FILTER), None, ""
 
 
+def must_keep_guards(root: Path, pinned: tuple[tuple[str, str], ...]) -> tuple[str, ...]:
+    """Modules the hard cap never drops: the derived-block guards plus every `ci/pr-always-run.txt` entry.
+
+    Gate parity (issue #11103 class): a main push diffs every file since main's last green, so its
+    selection overflowed the cap and dropped the always-run guards a PR head keeps. Main at
+    f6a88de1cf went green on push while PRs went red on (private path).
+    """
+    return tuple(dict.fromkeys([guard for guard, _ in pinned] + always_run_modules(root)))
+
+
 def _derived_block_pins(root: Path, changed: list[str], base: str | None) -> tuple[tuple[str, str], ...]:
     """The derived-block guards this diff can move (scripts/ci_derived_inputs.py, issue #11975),
     read against `base`, or the PR merge commit's merge base when `base` is None."""
@@ -834,6 +845,7 @@ def decide(  # noqa: PLR0913 -- the two TEST-CUT variables are keyword-only, one
             fitted = fit(
                 selection.modules, selection.reasons, durations,
                 budget.for_context(event.queue_draft), budget, selection.distance,
+                must_keep_guards(root, pinned),
             )  # fmt: skip
             selection.modules = fitted.kept
             budget_block = fitted.as_record()

@@ -17,7 +17,9 @@ import os
 import struct
 import subprocess
 import sys
+import threading
 import wave
+from concurrent.futures import ThreadPoolExecutor
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -25,11 +27,13 @@ import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
-from apps.sets import capture, master_mix, rec_cli
+from apps.sets import capture, master_mix, rec_cli, record
 from apps.sets.__main__ import main as sets_main
-from apps.sets.api import router
 from apps.sets.master_tap import MASTER_TAP_CHANNEL_STATE, MasterTapUnavailable
-from apps.sets.recorder_service import RecorderService
+from apps.sets.recorder_service import RecorderConflict, RecorderService
+from apps.sets.state import SetsState
+from tests.sets.conftest import mount_sets_router
+from tests.waits import THREAD_HANG_GUARD_S
 
 pytestmark = pytest.mark.requirement("SET-12")
 
@@ -80,6 +84,43 @@ def test_chunks_become_one_playable_stereo_wav(tmp_path: Path) -> None:
     writer.close()
     assert _wav(segment) == (2, RATE, 72_000)
     assert writer.current_state() == "stopped"
+
+
+# Issue #12407: abrupt MasterMixWriter.close() must leave each segment's RIFF header accurate.
+
+
+def test_abrupt_close_after_one_chunk_retains_accurate_wav_header(tmp_path: Path) -> None:
+    """[if] writer closes after one chunk [then] WAV header frames match, [else stop]."""
+    writer = _writer(tmp_path)
+    frames = 480
+    writer.append(stream="s1", seq=0, sample_rate=RATE, pcm=_tone(frames))
+    writer.close()
+    segments = sorted(tmp_path.glob("audio_*.wav"))
+    assert len(segments) == 1
+    assert _wav(segments[0]) == (2, RATE, frames)
+    assert writer.current_state() == "stopped"
+
+
+def test_abrupt_close_after_segment_roll_retains_each_segment_header(tmp_path: Path) -> None:
+    """[if] writer closes after a roll [then] each segment header matches, [else stop]."""
+    writer = _writer(tmp_path, segment_seconds=1)
+    writer.append(stream="s", seq=0, sample_rate=RATE, pcm=_tone(RATE))
+    writer.append(stream="s", seq=1, sample_rate=RATE, pcm=_tone(7_311))
+    writer.close()
+    assert len(list(tmp_path.glob("audio_*.wav"))) == 2
+    assert _wav_frames_per_segment(tmp_path) == [RATE, 7_311]
+
+
+def test_abrupt_close_after_stream_change_retains_each_segment_header(tmp_path: Path) -> None:
+    """[if] stream changes then writer closes [then] each segment header matches, [else stop]."""
+    writer = _writer(tmp_path)
+    writer.append(stream="a", seq=0, sample_rate=RATE, pcm=_tone(480))
+    writer.append(stream="b", seq=0, sample_rate=RATE, pcm=_tone(441))
+    writer.close()
+    segments = sorted(tmp_path.glob("audio_*.wav"))
+    assert len(segments) == 2
+    assert _wav_frames_per_segment(tmp_path) == [480, 441]
+    assert [_wav(p)[1:] for p in segments] == [(RATE, 480), (RATE, 441)]
 
 
 def test_a_lost_chunk_is_refused_not_written_around(tmp_path: Path) -> None:
@@ -148,6 +189,10 @@ def _wav_frames_total(directory: Path) -> int:
     return sum(_wav(p)[2] for p in sorted(directory.glob("audio_*.wav")))
 
 
+def _wav_frames_per_segment(directory: Path) -> list[int]:
+    return [_wav(p)[2] for p in sorted(directory.glob("audio_*.wav"))]
+
+
 # Irregular sizes on purpose: a pad, a dropped tail or a repeated chunk cannot
 # hide inside whole-second arithmetic.
 _CHUNK_FRAMES = [24_000, 24_000, 17_311, 24_000, 3, 24_000, 9_999, 24_000]
@@ -174,16 +219,21 @@ def test_wav_frames_equal_frames_sent_exactly_across_rolls_and_streams(tmp_path:
     assert _wav_frames_total(tmp_path) == sent
 
 
-def test_stop_closes_with_every_sent_frame_and_nothing_after(master_client, monkeypatch) -> None:
+@pytest.mark.requirement("SETREC-24")
+@pytest.mark.parametrize("amplitude", [0.5, 0.0])
+def test_stop_closes_with_every_sent_frame_and_nothing_after(master_client, monkeypatch, amplitude: float) -> None:
     """[if] REC stops mid-stream [then] disk holds exactly the frames sent, [else stop]."""
     client, service = master_client
     monkeypatch.setattr(master_mix, "SEGMENT_SECONDS", 1)
     client.post("/api/sets/recorder/start", json={"session_id": SESSION, "source": "master", "sources": []})
     sent = 0
     for seq, frames in enumerate(_CHUNK_FRAMES):
-        assert _pcm(client, seq, _tone(frames)).status_code == 204
+        assert _pcm(client, seq, _tone(frames, amplitude=amplitude)).status_code == 204
         sent += frames
-    client.post(f"/api/sets/recorder/{SESSION}/stop")
+    stopped = client.post(f"/api/sets/recorder/{SESSION}/stop")
+    assert stopped.status_code == 200
+    assert stopped.json()["active"] is False
+    assert stopped.json()["capture"] == "none"
     late = _pcm(client, len(_CHUNK_FRAMES), _tone(480))
     # In flight at a clean stop: dropped, and said so without a 4xx (SET-12).
     assert (late.status_code, late.json()) == (200, {"dropped": "recording_stopped", "session_id": SESSION})
@@ -210,12 +260,18 @@ class _FakePage:
         self.attached: list[str] = []
         self.reason: str | None = None
         self.fail_attach: str | None = None
+        self.cancel_attach = False
+        self.attach_error: BaseException | None = None
         self.first_chunk: bytes | None = None
 
     def unavailable_reason(self, request) -> str | None:
         return self.reason
 
     async def attach(self, request, session_id: str) -> None:
+        if self.cancel_attach:
+            raise asyncio.CancelledError()
+        if self.attach_error is not None:
+            raise self.attach_error
         if self.fail_attach is not None:
             raise MasterTapUnavailable(self.fail_attach)
         self.attached.append(session_id)
@@ -238,10 +294,17 @@ def master_client(tmp_path: Path):
     app.state.sets_recorder_service = service
     page = _FakePage(service)
     setattr(app.state, MASTER_TAP_CHANNEL_STATE, page)
-    app.include_router(router)
+    mount_sets_router(app)
     with TestClient(app) as client:
         client.page = page  # type: ignore[attr-defined]
         yield client, service
+
+
+def _session_dirs(service: RecorderService) -> list[Path]:
+    root = service.sets_root
+    if not root.exists():
+        return []
+    return sorted(p for p in root.iterdir() if p.is_dir() and (p / "timeline.jsonl").is_file())
 
 
 def _pcm(client: TestClient, seq: int, pcm: bytes, session: str = SESSION, stream: str = "tab-1"):
@@ -251,6 +314,168 @@ def _pcm(client: TestClient, seq: int, pcm: bytes, session: str = SESSION, strea
         content=pcm,
         headers={"content-type": "application/octet-stream"},
     )
+
+
+def _assert_failed_capture_settled(recorder: record.Recorder) -> None:
+    assert recorder.capture_state() == "failed"
+    assert "before any audio frames were captured" in (recorder.capture_error() or "")
+    assert not (recorder.session_dir / "manifest.json").exists()
+    assert not list(recorder.session_dir.glob("audio_*.wav"))
+    assert not (recorder.session_dir / "recorder.pid").exists()
+    row = recorder.state.get_session(recorder.session_id)
+    assert row is not None and row.ended_at is not None
+    assert recorder._stop_event.is_set()
+    assert all(not thread.is_alive() for thread in recorder._poll_threads)
+    assert recorder._heartbeat_thread is None or not recorder._heartbeat_thread.is_alive()
+    events = list(recorder.timeline.iter_events())
+    [ended] = [event["value"] for event in events if event["action"] == "session_end"]
+    assert ended == {"capture": "failed", "capture_error": recorder.capture_error()}
+    [stored] = recorder.state.fetch_events(recorder.session_id, action="session_end")
+    assert stored.value == ended
+    [closed] = [event["value"] for event in events if event["action"] == "master_mix_closed"]
+    assert closed["frames_accepted"] == closed["chunks_accepted"] == 0
+
+
+@pytest.mark.requirement("SETREC-24")
+@pytest.mark.parametrize("refused_chunk", [False, True])
+def test_empty_master_stop_fails_and_releases_ownership(master_client, refused_chunk: bool) -> None:
+    """[if] master stops unfed [then] capture fails with its reason, [else stop]."""
+    client, service = master_client
+    started = client.post("/api/sets/recorder/start", json={"session_id": SESSION, "source": "master", "sources": []})
+    assert started.status_code == 201
+    assert client.page.attached == [SESSION]
+    recorder = service._recorder
+    assert recorder is not None
+    if refused_chunk:
+        assert _pcm(client, 0, b"malformed").status_code == 409
+    stopped = client.post(f"/api/sets/recorder/{SESSION}/stop")
+    assert stopped.status_code == 409, stopped.text
+    failed = stopped.json()["detail"]
+    assert failed == {
+        "active": False,
+        "session_id": SESSION,
+        "pid": None,
+        "owned": False,
+        "recoverable": False,
+        "capture": "failed",
+        "capture_error": recorder.capture_error(),
+        "capture_source": "master",
+        "recordings_dir": str(service.sets_root),
+        **service._owned_levels(recorder),
+        "elapsed_s": failed["elapsed_s"],
+    }
+    assert failed["elapsed_s"] >= 0
+    assert failed["audio_bytes"] == 0
+    _assert_failed_capture_settled(recorder)
+    assert service._recorder is None and service._source is None
+    assert client.get("/api/sets/recorder").json()["active"] is False
+    assert _pcm(client, 0, _tone(1)).status_code == 409
+    other = "2026-10-06T04-00-00"
+    assert (
+        client.post(
+            "/api/sets/recorder/start", json={"session_id": other, "source": "master", "sources": []}
+        ).status_code
+        == 201
+    )
+    assert _pcm(client, 0, bytes(master_mix.FRAME_BYTES), session=other).status_code == 204
+    assert client.post(f"/api/sets/recorder/{other}/stop").status_code == 200
+    assert _wav_frames_total(service.sets_root / other) == 1
+
+
+@pytest.mark.requirement("SETREC-24")
+@pytest.mark.parametrize("captured_first", [False, True])
+def test_in_flight_chunk_is_quiet_only_after_a_successful_stop(
+    master_client, monkeypatch, captured_first: bool
+) -> None:
+    """[if] PCM races stop [then] only a successful capture drops it quietly, [else stop]."""
+    client, service = master_client
+    assert (
+        client.post(
+            "/api/sets/recorder/start", json={"session_id": SESSION, "source": "master", "sources": []}
+        ).status_code
+        == 201
+    )
+    recorder = service._recorder
+    assert recorder is not None and recorder._master is not None
+    if captured_first:
+        assert _pcm(client, 0, _tone(1)).status_code == 204
+    append = recorder._master.append
+    entered, release = threading.Event(), threading.Event()
+
+    def delayed_append(*, stream: str, seq: int, sample_rate: int, pcm: bytes) -> None:
+        entered.set()
+        if not release.wait(THREAD_HANG_GUARD_S):
+            raise TimeoutError("stop never released the in-flight PCM chunk")
+        append(stream=stream, seq=seq, sample_rate=sample_rate, pcm=pcm)
+
+    monkeypatch.setattr(recorder._master, "append", delayed_append)
+    with ThreadPoolExecutor(max_workers=1) as pool:
+        pending = pool.submit(
+            service.write_master_pcm, SESSION, stream="tab-1", seq=int(captured_first), sample_rate=RATE, pcm=_tone(1)
+        )
+        try:
+            assert entered.wait(THREAD_HANG_GUARD_S)
+            stopped = client.post(f"/api/sets/recorder/{SESSION}/stop")
+            assert stopped.status_code == (200 if captured_first else 409)
+        finally:
+            release.set()
+        expected = master_mix.MasterMixRecordingStopped if captured_first else RecorderConflict
+        with pytest.raises(expected):
+            pending.result(timeout=THREAD_HANG_GUARD_S)
+
+
+@pytest.mark.requirement("SETREC-24")
+def test_empty_master_low_level_stop_settles_without_success_manifest(tmp_path: Path) -> None:
+    """[if] low-level master stops unfed [then] it settles as failed, [else stop]."""
+    recorder = record.start(
+        session_id=SESSION,
+        config=record.RecorderConfig(sources=(), master_mix=True),
+        sets_root=tmp_path / "sets",
+        state=SetsState(db_path=tmp_path / "sets.db"),
+    )
+    recorder.start_threads()
+    assert record.stop(recorder) is None
+    _assert_failed_capture_settled(recorder)
+
+
+@pytest.mark.requirement("SETREC-24")
+def test_empty_master_shutdown_settles_without_success_manifest(master_client) -> None:
+    """[if] daemon shuts down an unfed master [then] cleanup records failure, [else stop]."""
+    client, service = master_client
+    assert (
+        client.post(
+            "/api/sets/recorder/start", json={"session_id": SESSION, "source": "master", "sources": []}
+        ).status_code
+        == 201
+    )
+    recorder = service._recorder
+    assert recorder is not None
+    service.stop_owned_on_shutdown()
+    _assert_failed_capture_settled(recorder)
+    assert service._recorder is None and service._source is None
+    assert _pcm(client, 0, _tone(1)).status_code == 409
+
+
+@pytest.mark.requirement("SETREC-24")
+def test_tracklist_only_stop_still_succeeds_without_audio(master_client) -> None:
+    """[if] tracklist-only stops without PCM [then] a valid manifest is written, [else stop]."""
+    from jsonschema import Draft202012Validator
+
+    client, service = master_client
+    assert (
+        client.post(
+            "/api/sets/recorder/start", json={"session_id": SESSION, "source": "none", "sources": []}
+        ).status_code
+        == 201
+    )
+    stopped = client.post(f"/api/sets/recorder/{SESSION}/stop")
+    assert stopped.status_code == 200
+    assert stopped.json()["capture"] == "none"
+    manifest = json.loads((service.sets_root / SESSION / "manifest.json").read_text(encoding="utf-8"))
+    schema = json.loads((REPO_ROOT / "apps/sets/schemas/session_manifest.schema.json").read_text(encoding="utf-8"))
+    Draft202012Validator(schema).validate(manifest)
+    assert manifest["mp3_segments"] == []
+    assert all(manifest[key] is None for key in ("audio_peak_dbfs", "clipped_samples", "clip_events"))
 
 
 def test_source_master_records_the_streamed_mix_into_the_session(master_client) -> None:
@@ -328,12 +553,63 @@ def test_a_master_start_with_no_page_starts_nothing(master_client) -> None:
 
 def test_a_master_start_whose_tap_fails_is_stopped_and_says_why(master_client) -> None:
     """[if] the page cannot connect its tap [then] 503 and REC is stopped, [else stop]."""
-    client, _ = master_client
+    client, service = master_client
     client.page.fail_attach = "the audio engine will not run (suspended)"
     response = client.post("/api/sets/recorder/start", json={"source": "master", "sources": []})
     assert response.status_code == 503
     assert "will not run (suspended)" in response.json()["detail"]
     assert client.get("/api/sets/recorder").json()["active"] is False
+    assert service._recorder is None and service._source is None
+    [session_dir] = _session_dirs(service)
+    assert not (session_dir / "manifest.json").exists()
+    assert not (session_dir / "recorder.pid").exists()
+    events = [json.loads(line) for line in (session_dir / "timeline.jsonl").read_text().splitlines()]
+    [failed] = [e for e in events if e["action"] == "master_tap_failed"]
+    assert "will not run (suspended)" in failed["value"]["reason"]
+    assert failed["value"]["phase"] == "attach"
+
+
+def test_a_cancelled_master_attach_finalizes_with_a_timeline_reason(master_client) -> None:
+    """[if] attach is cancelled during startup [then] timeline records cancel, [else stop]."""
+    client, service = master_client
+    client.page.cancel_attach = True
+    with TestClient(client.app, raise_server_exceptions=False) as soft:
+        soft.page = client.page  # type: ignore[attr-defined]
+        response = soft.post("/api/sets/recorder/start", json={"source": "master", "sources": []})
+    assert response.status_code in {500, 503}
+    assert service._recorder is None
+    assert client.get("/api/sets/recorder").json()["active"] is False
+    session_dirs = _session_dirs(service)
+    assert len(session_dirs) == 1
+    events = [json.loads(line) for line in (session_dirs[0] / "timeline.jsonl").read_text().splitlines()]
+    [failed] = [e for e in events if e["action"] == "master_tap_failed"]
+    assert "cancelled" in failed["value"]["reason"].lower()
+    assert failed["value"]["phase"] == "attach"
+
+
+def test_a_master_attach_runtime_error_finalizes_with_a_timeline_reason(master_client) -> None:
+    """[if] attach raises outside MasterTapUnavailable [then] session ends with reason, [else stop]."""
+    client, service = master_client
+    client.page.attach_error = RuntimeError("broker down")
+    with TestClient(client.app, raise_server_exceptions=False) as soft:
+        soft.page = client.page  # type: ignore[attr-defined]
+        response = soft.post("/api/sets/recorder/start", json={"source": "master", "sources": []})
+    assert response.status_code == 500
+    assert service._recorder is None
+    session_dirs = _session_dirs(service)
+    assert len(session_dirs) == 1
+    events = [json.loads(line) for line in (session_dirs[0] / "timeline.jsonl").read_text().splitlines()]
+    [failed] = [e for e in events if e["action"] == "master_tap_failed"]
+    assert "broker down" in failed["value"]["reason"]
+
+
+def test_a_successful_master_start_has_no_master_tap_failed_event(master_client) -> None:
+    """[if] attach succeeds and audio lands [then] no master_tap_failed, [else stop]."""
+    client, service = master_client
+    client.post("/api/sets/recorder/start", json={"session_id": SESSION, "source": "master", "sources": []})
+    assert _pcm(client, 0, _tone(480)).status_code == 204
+    events = [json.loads(line) for line in (service.sets_root / SESSION / "timeline.jsonl").read_text().splitlines()]
+    assert [e for e in events if e["action"] == "master_tap_failed"] == []
 
 
 def test_a_server_with_no_page_channel_refuses_master(tmp_path: Path) -> None:
@@ -342,7 +618,7 @@ def test_a_server_with_no_page_channel_refuses_master(tmp_path: Path) -> None:
     app.state.sets_recorder_service = RecorderService(
         sets_root=tmp_path / "sets", db_path=tmp_path / "sets" / "sets.db", capture_enabled=False
     )
-    app.include_router(router)
+    mount_sets_router(app)
     with TestClient(app) as client:
         response = client.post("/api/sets/recorder/start", json={"source": "master", "sources": []})
     assert response.status_code == 503
@@ -413,8 +689,76 @@ def test_the_order_bus_channel_attaches_through_the_leader_page() -> None:
 def test_master_pcm_requires_its_stream_seq_and_rate(master_client) -> None:
     """[if] a chunk omits stream, seq or rate [then] 422, never a guess, [else stop]."""
     client, _ = master_client
-    response = client.post(f"/api/sets/recorder/{SESSION}/master-pcm", params={"seq": 0}, content=_tone(480))
+    response = client.post(
+        f"/api/sets/recorder/{SESSION}/master-pcm",
+        params={"seq": 0},
+        content=_tone(480),
+        headers={"content-type": "application/octet-stream"},
+    )
     assert response.status_code == 422
+
+
+@pytest.mark.requirement("SETREC-22")
+def test_master_pcm_accepts_octet_stream_content_type(master_client) -> None:
+    """[if] octet-stream PCM posts to master-pcm [then] 204, [else stop]."""
+    client, _ = master_client
+    client.post(
+        "/api/sets/recorder/start",
+        json={"session_id": SESSION, "source": "master", "sources": []},
+    )
+    assert _pcm(client, 0, _tone(480)).status_code == 204
+
+
+@pytest.mark.requirement("SETREC-22")
+def test_master_pcm_rejects_json_content_type(master_client, monkeypatch) -> None:
+    """[if] JSON targets master-pcm [then] 415, [else stop]."""
+    client, service = master_client
+    writes: list[object] = []
+    original = service.write_master_pcm
+
+    def tracked(session_id: str, **kwargs: object) -> None:
+        writes.append(session_id)
+        original(session_id, **kwargs)  # type: ignore[arg-type]
+
+    monkeypatch.setattr(service, "write_master_pcm", tracked)
+    client.post(
+        "/api/sets/recorder/start",
+        json={"session_id": SESSION, "source": "master", "sources": []},
+    )
+    response = client.post(
+        f"/api/sets/recorder/{SESSION}/master-pcm",
+        params={"stream": "tab-1", "seq": 0, "sample_rate": RATE},
+        content=b"{}",
+        headers={"content-type": "application/json"},
+    )
+    assert response.status_code == 415
+    assert "application/octet-stream" in response.json()["detail"]
+    assert writes == []
+
+
+@pytest.mark.requirement("SETREC-22")
+def test_master_pcm_rejects_missing_content_type(master_client, monkeypatch) -> None:
+    """[if] Content-Type is omitted [then] 415, [else stop]."""
+    client, service = master_client
+    writes: list[object] = []
+    original = service.write_master_pcm
+
+    def tracked(session_id: str, **kwargs: object) -> None:
+        writes.append(session_id)
+        original(session_id, **kwargs)  # type: ignore[arg-type]
+
+    monkeypatch.setattr(service, "write_master_pcm", tracked)
+    client.post(
+        "/api/sets/recorder/start",
+        json={"session_id": SESSION, "source": "master", "sources": []},
+    )
+    response = client.post(
+        f"/api/sets/recorder/{SESSION}/master-pcm",
+        params={"stream": "tab-1", "seq": 0, "sample_rate": RATE},
+        content=_tone(480),
+    )
+    assert response.status_code == 415
+    assert writes == []
 
 
 @pytest.mark.parametrize(

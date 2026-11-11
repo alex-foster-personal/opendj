@@ -152,3 +152,76 @@ export { mount, unmount, flushSync };
 	_bundles.set(key, promise);
 	return promise;
 }
+
+/** Bundle the real REC rail and effects, isolating unrelated chrome/audio dependencies. */
+export async function bundleRecorderStatusRetryClient() {
+	const dependencies = new Map([
+		[
+			'$lib/stores.svelte',
+			`export const toastCalls = [];
+export function pushToast(...args) { toastCalls.push(args); }`
+		],
+		[
+			'$lib/rb/playlist-history-chrome.svelte',
+			`export function showWholeCollectionFromChrome() {
+throw new Error('unexpected navigation'); }`
+		],
+		[
+			'$lib/rb/usb-export.svelte',
+			`export function openUsbExport() {
+throw new Error('unexpected USB export'); }`
+		],
+		['$lib/sets/recording-flag', 'export function setRecordingEnabled() { return true; }'],
+		[
+			'$lib/sets/master-mix-capture',
+			`export class MasterMixCancelled extends Error {}
+export function ensureMasterMixCapture() { throw new Error('unexpected master capture'); }
+export function stopMasterMixCapture() { throw new Error('unexpected master stop'); }`
+		],
+		['./IconRail.svelte', '<div></div>'],
+		['./RecordInputPicker.svelte', '<div></div>']
+	]);
+	const result = await build({
+		stdin: {
+			contents: `export { mount, unmount, flushSync } from 'svelte';
+export { default as RecorderHarness } from './tests/unit/fixtures/recorder-status-retry-harness.svelte';
+export { toastCalls } from '$lib/stores.svelte';`,
+			resolveDir: FRONTEND_ROOT,
+			loader: 'js'
+		},
+		absWorkingDir: FRONTEND_ROOT,
+		alias: { $lib: LIB_ROOT },
+		bundle: true,
+		define: {
+			'import.meta.env.DEV': 'false',
+			'import.meta.env.VITE_API_BASE': JSON.stringify('https://recorder-retry.example.test')
+		},
+		format: 'esm',
+		logLevel: 'silent',
+		platform: 'browser',
+		conditions: ['browser'],
+		plugins: [
+			{
+				name: 'recorder-unrelated-dependencies',
+				setup(b) {
+					b.onResolve({ filter: /.*/ }, ({ path }) =>
+						dependencies.has(path) ? { path, namespace: 'recorder-dependency' } : undefined
+					);
+					b.onLoad({ filter: /.*/, namespace: 'recorder-dependency' }, ({ path }) => ({
+						contents:
+							path.endsWith('.svelte') && path.startsWith('./')
+								? compile(dependencies.get(path), { generate: 'client' }).js.code
+								: dependencies.get(path),
+						loader: 'js',
+						resolveDir: FRONTEND_ROOT
+					}));
+				}
+			},
+			svelteClientBundlePlugin()
+		],
+		target: 'es2022',
+		write: false
+	});
+	if (!result.outputFiles[0]) throw new Error('recorder retry client: empty bundle');
+	return importBundledSource(result.outputFiles[0].text, 'recorder-status-retry-client');
+}

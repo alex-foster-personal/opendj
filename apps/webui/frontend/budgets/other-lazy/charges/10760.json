@@ -1,0 +1,9 @@
+{
+  "bytes": 1024,
+  "measured_main": 514285,
+  "measured_with_pr": 514427,
+  "sha": "06b457b436",
+  "date": "Wed 11 Nov 2026",
+  "reason": "PR #10760 has no frontend source change (Electron, port_config and tests only); CI measured other-lazy +142 B gzip over main, 14 B past the 128 B noise floor, so this is build variance charged to keep the gate green; ceiled to KiB.",
+  "payback": "none planned; no code growth to pay back, the next rebaseline folds this charge"
+}

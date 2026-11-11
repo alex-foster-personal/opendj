@@ -230,6 +230,12 @@ TABLES: dict[str, str] = {
         "it was undone. Written by apps.genre_infer.tag_write before the file "
         "is replaced. Machine-local."
     ),
+    "enrichment_claims": (
+        "One versioned enrichment claim for a track (ENRICH-11245): vendor tags, "
+        "moods, generated descriptions, or deterministic BPM/key/meter facts from "
+        "own analysis, each with source, schema version, scope, confidence, input "
+        "fingerprint, and a pointer to raw evidence. Machine-local."
+    ),
     "analysis_source_default": (
         "The persisted per-lane source (rbx or own), one row per selection lane, "
         "absent until that lane is promoted. This is what a PROMOTION writes and "
@@ -359,6 +365,10 @@ TABLES: dict[str, str] = {
     "set_events": (
         "One thing that happened during a set (a load, a play, a cue), which "
         "is what play analytics aggregates."
+    ),
+    "control_events": (
+        "One v2 control change on a recorded set, timed to the master output "
+        "sample clock (transport, tempo, and siblings in controls.jsonl)."
     ),
     # ----- settings ------------------------------------------------------
     "settings": (

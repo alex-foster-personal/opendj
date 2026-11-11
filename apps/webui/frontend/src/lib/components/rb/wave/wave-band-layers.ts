@@ -12,6 +12,7 @@
  */
 import type { AnlzWaveform } from '$lib/rb/anlz-types';
 import type { BandGains } from '$lib/rb/wave-eq-gains.svelte';
+import type { WaveHeight } from '$lib/rb/wave-height';
 import type { WaveformDesign } from '$lib/rb/waveform-design';
 import { MARKER_BAND_PX, type WavePalette } from './cues';
 import {
@@ -21,7 +22,8 @@ import {
 	HIGH_BAND_SCALE,
 	MID_BAND_SCALE,
 	mirrorRect,
-	normsFor
+	normsFor,
+	upRect
 } from './wave-amp';
 
 type BandCanvases = readonly [HTMLCanvasElement, HTMLCanvasElement, HTMLCanvasElement];
@@ -37,6 +39,7 @@ export interface BandLayers {
 	palette: WavePalette;
 	design: WaveformDesign;
 	h: number;
+	waveHeight: WaveHeight;
 }
 
 interface WaveBandLayers {
@@ -79,7 +82,8 @@ export function cachedBandLayers(
 	palette: WavePalette,
 	design: WaveformDesign,
 	reusable: (builtPxPerS: number, livePxPerS: number) => boolean,
-	tilePx: number
+	tilePx: number,
+	waveHeight: WaveHeight = 'full'
 ): BandLayers {
 	const hit = _layerCache.get(waveform);
 	if (hit !== undefined && hit.key === key && reusable(hit.layers.pxPerS, pxPerS))
@@ -93,7 +97,8 @@ export function cachedBandLayers(
 		waveform,
 		palette,
 		design,
-		h
+		h,
+		waveHeight
 	};
 	_layerCache.set(waveform, { layers, key });
 	return layers;
@@ -116,7 +121,8 @@ function _bandTiles(layers: BandLayers, index: number): BandCanvases {
 			band,
 			1,
 			x0,
-			x0 + tileW
+			x0 + tileW,
+			layers.waveHeight
 		);
 		return canvas;
 	};
@@ -152,6 +158,8 @@ export function blitBandLayers(
 	const last = Math.ceil(sEnd / layers.tilePx) - 1;
 	const centerY = MARKER_BAND_PX + (h - MARKER_BAND_PX) / 2;
 	const halfH = (h - MARKER_BAND_PX) / 2 - 1;
+	const fullH = h - MARKER_BAND_PX - 1;
+	const anchorY = layers.waveHeight === 'half' ? h : centerY;
 	const sLow = bandHeightScale(gains.low);
 	const sMid = bandHeightScale(gains.mid);
 	const sHigh = bandHeightScale(gains.high);
@@ -159,7 +167,8 @@ export function blitBandLayers(
 	if (boosted) {
 		ctx.save();
 		ctx.beginPath();
-		ctx.rect(0, centerY - halfH, w, halfH * 2);
+		if (layers.waveHeight === 'half') ctx.rect(0, h - fullH, w, fullH);
+		else ctx.rect(0, centerY - halfH, w, halfH * 2);
 		ctx.clip();
 	}
 	// Solid one-pixel bars need no filtered resampling; nearest-neighbour keeps
@@ -178,10 +187,10 @@ export function blitBandLayers(
 		const dx = ((tsx - sx) * w) / sw;
 		const dw = (tsw * w) / sw;
 		ctx.globalAlpha = 1;
-		_blitLayer(ctx, tiles[0], sLow, tsx - x0, tsw, dx, dw, centerY, h);
+		_blitLayer(ctx, tiles[0], sLow, tsx - x0, tsw, dx, dw, anchorY, h);
 		ctx.globalAlpha = alpha;
-		_blitLayer(ctx, tiles[1], sMid, tsx - x0, tsw, dx, dw, centerY, h);
-		_blitLayer(ctx, tiles[2], sHigh, tsx - x0, tsw, dx, dw, centerY, h);
+		_blitLayer(ctx, tiles[1], sMid, tsx - x0, tsw, dx, dw, anchorY, h);
+		_blitLayer(ctx, tiles[2], sHigh, tsx - x0, tsw, dx, dw, anchorY, h);
 	}
 	ctx.globalAlpha = 1;
 	ctx.imageSmoothingEnabled = smoothing;
@@ -196,12 +205,12 @@ function _blitLayer(
 	sw: number,
 	dx: number,
 	dw: number,
-	centerY: number,
+	anchorY: number,
 	h: number
 ): void {
 	if (scale === 0) return;
 	// Source-rect form: name only the visible columns of this tile.
-	ctx.drawImage(layer, sx, 0, sw, h, dx, centerY - centerY * scale, dw, h * scale);
+	ctx.drawImage(layer, sx, 0, sw, h, dx, anchorY - anchorY * scale, dw, h * scale);
 }
 
 /** Paint ONE band's mirrored bars at `gain` (1 for a cached layer). Tri-band
@@ -209,6 +218,21 @@ function _blitLayer(
  * design paints every band in the mono colour against the loudest band's
  * norm, so the three layers' union is the per-point max the combined mono
  * image draws. Columns [x0, x1) of the `w`-wide layer are painted at x - x0. */
+/** RGB design (issue #10253): low -> red, mid -> green, high -> blue, each
+ * channel the band's share of the column's energy. One band alone is that
+ * pure primary; three equal bands are neutral grey. null = silent column. */
+export const RGB_MIX_GAIN = 1.5;
+const _RGB_STEP = 17; // 16 levels per channel, so a build fills few distinct colours
+export function rgbColumnColor(b: { low: number; mid: number; high: number }): string | null {
+	const sum = b.low + b.mid + b.high;
+	if (!(sum > 0)) return null;
+	const ch = (v: number): string => {
+		const c = Math.min(255, Math.round((255 * RGB_MIX_GAIN * v) / sum / _RGB_STEP) * _RGB_STEP);
+		return c.toString(16).padStart(2, '0');
+	};
+	return `#${ch(b.low)}${ch(b.mid)}${ch(b.high)}`;
+}
+
 export function drawBandLayer(
 	ctx: CanvasRenderingContext2D,
 	waveform: AnlzWaveform,
@@ -219,13 +243,18 @@ export function drawBandLayer(
 	band: BandName,
 	gain: number,
 	x0 = 0,
-	x1 = w
+	x1 = w,
+	waveHeight: WaveHeight = 'full'
 ): void {
+	// The rgb design mixes the bands per column, so it bakes gains instead.
+	if (design === 'rgb') throw new Error('wave band layer: design rgb has no per-band layers');
 	const n = waveform.detail.length;
 	if (n === 0) return;
 	const values = waveform.detail[band];
 	const centerY = MARKER_BAND_PX + (h - MARKER_BAND_PX) / 2;
 	const halfH = (h - MARKER_BAND_PX) / 2 - 1;
+	const fullH = h - MARKER_BAND_PX - 1;
+	const half = waveHeight === 'half';
 	const norms = normsFor(waveform);
 	const mono = design === 'mono';
 	const norm = mono ? Math.max(norms.low, norms.mid, norms.high) : norms[band];
@@ -235,7 +264,10 @@ export function drawBandLayer(
 		const p0 = Math.max(0, Math.floor((x / w) * n));
 		const p1 = Math.min(n - 1, Math.max(p0, Math.ceil(((x + 1) / w) * n) - 1));
 		const v = Math.min(1, ampOf(bucketMax(values, p0, p1), norm) * bandHeightScale(gain));
-		if (v > 0) mirrorRect(path, x - x0, centerY, v * halfH * style);
+		if (v > 0) {
+			if (half) upRect(path, x - x0, h, v * fullH * style);
+			else mirrorRect(path, x - x0, centerY, v * halfH * style);
+		}
 	}
 	ctx.fillStyle = mono ? palette.mono : palette[band];
 	ctx.fill(path);

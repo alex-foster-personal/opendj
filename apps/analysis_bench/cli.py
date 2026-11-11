@@ -22,13 +22,12 @@ from __future__ import annotations
 
 import argparse
 import json
-import platform
 import subprocess
 import sys
 from pathlib import Path
 from typing import Any
 
-from apps.analysis_bench import bundles, lanes, rounds, stores
+from apps.analysis_bench import bundles, lanes, parity, rounds, stores
 from apps.analysis_bench.scorers import get_scorer
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -41,7 +40,21 @@ def _bundle_dir(lane: str, version: str, override: str | None) -> Path:
 
 
 def _host() -> str:
-    return f"{platform.node()} ({platform.system().lower()} {platform.machine()})"
+    identity = parity.current_host_identity()
+    return f"{identity.node} ({identity.system} {identity.machine})"
+
+
+def _prepare_report_for_post(report: dict[str, Any], *, host_reports_path: str | None) -> None:
+    """Build the three-host matrix table or refuse before anything hits the log."""
+    report.setdefault("lane_table", report.get("table", ""))
+    if host_reports_path:
+        payload = json.loads(Path(host_reports_path).read_text(encoding="utf-8"))
+        if not isinstance(payload, dict):
+            raise rounds.RoundError(f"{host_reports_path} must hold a JSON object of host reports")
+        report["host_reports"] = payload
+    else:
+        parity.stamp_current_host_report(report)
+    report["table"] = parity.render_host_matrix_table(report)
 
 
 def _cmd_lanes(_args: argparse.Namespace) -> int:
@@ -289,9 +302,18 @@ def _cmd_run(args: argparse.Namespace) -> int:
     report = _score(lane, bundle, arms)
     _emit(report, args.out)
     if args.post:
+        _prepare_report_for_post(report, host_reports_path=args.host_reports)
         log_path = Path(args.log_path or lane.log_path)
         number = rounds.append_round(log_path, lane.name, report, floor=lane.round_floor, host=_host())
         print(f"[bench] appended {lane.name} bench round {number} to {log_path}")
+    return 0
+
+
+def _cmd_promote(args: argparse.Namespace) -> int:
+    lane = lanes.get_lane(args.lane)
+    log_path = Path(args.log_path or lane.log_path)
+    parity.assert_promotion_allowed(log_path, lane.name)
+    print(f"[bench] {lane.name} latest round has three host columns and a parity row in {log_path}")
     return 0
 
 
@@ -319,6 +341,11 @@ def _parser() -> argparse.ArgumentParser:
     fixtures.add_argument("--allow-tiny", action="store_true", help="permit a tiny rekordbox db, tests only")
     fixtures.set_defaults(func=_cmd_fixtures)
 
+    promote = sub.add_parser("promote", help="refuse when the latest round lacks a parity host matrix")
+    promote.add_argument("--lane", required=True)
+    promote.add_argument("--log-path", help="experiment log to read, default the lane's declared one")
+    promote.set_defaults(func=_cmd_promote)
+
     for name, func in (("score", _cmd_score), ("run", _cmd_run)):
         cmd = sub.add_parser(name)
         cmd.add_argument("--lane", required=True)
@@ -341,6 +368,10 @@ def _parser() -> argparse.ArgumentParser:
                 "--log-path",
                 help="post the round to this log instead of the lane's declared "
                 "one, for a dry run before the spec edit is committed",
+            )
+            cmd.add_argument(
+                "--host-reports",
+                help="JSON object with all three host columns for posting a merged round",
             )
     return parser
 

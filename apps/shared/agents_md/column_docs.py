@@ -45,6 +45,7 @@ from __future__ import annotations
 from .column_docs_analysis_retention import ANALYSIS_RETENTION_COLUMN_DOCS
 from .column_docs_crowd_requests import CROWD_REQUEST_COLUMN_DOCS
 from .column_docs_feedback import FEEDBACK_COLUMN_DOCS
+from .column_docs_labelling import LABELLING_COLUMN_DOCS
 from .column_docs_genre import GENRE_COLUMN_DOCS
 from .column_docs_library_org import LIBRARY_ORG_COLUMN_DOCS, PLAYLIST_ORG_COLUMN_DOCS
 from .column_docs_lyrics import LYRICS_COLUMN_DOCS
@@ -691,6 +692,8 @@ COLUMN_DOCS: dict[str, dict[str, str]] = {
     **LYRICS_COLUMN_DOCS,
     # Migration v12 feedback_pins (FBSYNC-01, ADR-0013).
     **FEEDBACK_COLUMN_DOCS,
+    # Migration v31 labelling (issue #363, #11192).
+    **LABELLING_COLUMN_DOCS,
     # Migration v26 (Library Organization PRD s6).
     **LIBRARY_ORG_COLUMN_DOCS,
     **GENRE_COLUMN_DOCS,

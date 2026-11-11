@@ -18,6 +18,7 @@
 		type DragNode,
 		type PanelPos
 	} from '$lib/rb/feedback';
+	import { linkifyAgentNote } from '$lib/rb/feedback';
 	import {
 		chooseTodoOption,
 		feedbackState,
@@ -87,8 +88,7 @@
 		// The close X lives INSIDE this handle. Capturing the pointer here
 		// retargets the derived click to the header, so the button's own
 		// onclick never runs and the X cannot dismiss the panel.
-		if (!startsPanelDrag(e.target as DragNode | null, e.currentTarget as DragNode | null))
-			return;
+		if (!startsPanelDrag(e.target as DragNode | null, e.currentTarget as DragNode | null)) return;
 		dragging = true;
 		dragOffset = { x: e.clientX - panelPos.x, y: e.clientY - panelPos.y };
 		(e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
@@ -172,7 +172,9 @@
 
 		<div class="fb-todos">
 			{#if feedbackState.todos.length === 0}
-				<p class="fb-hint">No review todos queued. Agents POST /api/v1/feedback/todos to add one.</p>
+				<p class="fb-hint">
+					No review todos queued. Agents POST /api/v1/feedback/todos to add one.
+				</p>
 			{/if}
 			{#each feedbackState.todos as todo (todo.id)}
 				<div class="fb-todo" class:done={todo.done}>
@@ -186,7 +188,18 @@
 						<span class="fb-todo-title" title={todo.detail ?? todo.title}>{todo.title}</span>
 					</label>
 					{#if todo.detail}
-						<p class="fb-todo-detail">{todo.detail}</p>
+						<p class="fb-todo-detail">
+							{#each linkifyAgentNote(todo.detail) as segment, i (i)}
+								{#if segment.type === 'link'}
+									<a
+										href={segment.value}
+										target="_blank"
+										rel="noreferrer noopener"
+										onclick={(e) => e.stopPropagation()}>{segment.value}</a
+									>
+								{:else}{segment.value}{/if}
+							{/each}
+						</p>
 					{/if}
 					{#if todo.options.length > 0}
 						<button
@@ -352,6 +365,7 @@
 	.fb-todo-detail {
 		margin: 0;
 		color: var(--rb-text-dim);
+		user-select: text;
 	}
 
 	.fb-hint {

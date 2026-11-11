@@ -31,3 +31,34 @@ export function genreHoverColor(tag: string): string | null {
 	}
 	return null;
 }
+
+/** Slugs in lockstep with ``apps/library_wheel/genre_families.SIMPLE_GENRE_FAMILIES``. */
+const FAMILY_NAMES: readonly string[] = [
+	'drum-and-bass',
+	'breakbeat-garage',
+	'techno',
+	'tech-house',
+	'deep-house',
+	'house',
+	'trance',
+	'hardstyle',
+	'dubstep',
+	'hip-hop',
+	'disco-funk-soul',
+	'ambient-downtempo',
+	'electro-edm',
+	'reggae',
+	'jazz-latin-world',
+	'pop-rock-indie'
+];
+
+/** Mirrors ``apps/library_wheel/genre_families.simple_genre_family`` (LIBUX-06). */
+export function genreFamilyForTag(tag: string): { name: string; color: string } | null {
+	const t = tag.trim();
+	if (t === '') return null;
+	for (let i = 0; i < FAMILY.length; i += 1) {
+		const { match, color } = FAMILY[i];
+		if (match.test(t)) return { name: FAMILY_NAMES[i], color };
+	}
+	return null;
+}

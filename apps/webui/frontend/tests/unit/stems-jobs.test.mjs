@@ -87,10 +87,12 @@ function plan(overrides = {}) {
 	return {
 		tier: 'M',
 		tier_name: 'optimal',
+		unit: 'songs',
 		total: 1000,
 		pending: 120,
 		ready: 800,
 		unavailable: 80,
+		unreachable_rows: 37,
 		estimate_seconds: 600,
 		estimate_usd: 0.64,
 		...overrides
@@ -240,11 +242,19 @@ test('an idle title still explains a past failure instead of going silent', () =
 
 test('the plan summary names every bucket, so the denominator is honest', () => {
 	const summary = mod.stemsPlanSummary(plan());
-	assert.match(summary, /120 of 1000/);
+	assert.match(summary, /120 of 1000 songs/);
 	assert.match(summary, /800 already done/);
-	assert.match(summary, /80 have no audio/);
+	assert.match(summary, /80 cannot be separated now/);
+	assert.match(summary, /37 library rows have no audio/);
 	assert.match(summary, /\$0\.64/);
 	assert.match(summary, /10 min/);
+});
+
+test('a local plan names the Mac, not a GPU bill (STEM-58)', () => {
+	const summary = mod.stemsPlanSummary(plan({ executor: 'local' }));
+	assert.match(summary, /120 of 1000 songs/);
+	assert.match(summary, /on this Mac/);
+	assert.doesNotMatch(summary, /GPUs|\$/);
 });
 
 test('a sub-cent estimate says so rather than rounding to $0.00', () => {

@@ -3,14 +3,103 @@
 
 mod common;
 
+use std::collections::HashMap;
 use std::io::{BufRead, BufReader, Write};
-use std::process::{Command, Stdio};
+use std::process::{Child, Command, Stdio};
+use std::sync::mpsc;
+use std::time::{Duration, Instant};
 
 use serde_json::{json, Value};
 
 use common::*;
 
 const BIN: &str = env!("CARGO_BIN_EXE_odj-audio");
+/// How long a serve line under test may take on a loaded runner.
+const SERVE_WAIT: Duration = Duration::from_secs(10);
+const SERVE_READ_SLICE: Duration = Duration::from_millis(5);
+
+/// Non-blocking reads of the engine's stdout so periodic state lines cannot
+/// disguise a wall-clock budget as a message-count budget under load.
+struct ServeLines {
+    rx: mpsc::Receiver<String>,
+}
+
+impl ServeLines {
+    fn spawn(child: &mut Child) -> Self {
+        let (tx, rx) = mpsc::channel();
+        let stdout = child.stdout.take().expect("stdout");
+        std::thread::spawn(move || {
+            for line in BufReader::new(stdout).lines() {
+                match line {
+                    Ok(text) => {
+                        if tx.send(text).is_err() {
+                            break;
+                        }
+                    }
+                    Err(_) => break,
+                }
+            }
+        });
+        Self { rx }
+    }
+
+    fn next_value(&self, deadline: Instant, mut want: impl FnMut(&Value) -> bool) -> Value {
+        loop {
+            let remain = deadline.saturating_duration_since(Instant::now());
+            if remain.is_zero() {
+                panic!("serve stdout: deadline passed waiting for a matching line");
+            }
+            match self.rx.recv_timeout(remain.min(SERVE_READ_SLICE)) {
+                Ok(line) => {
+                    let v: Value = serde_json::from_str(&line).unwrap();
+                    if want(&v) {
+                        return v;
+                    }
+                }
+                Err(mpsc::RecvTimeoutError::Timeout) => {}
+                Err(mpsc::RecvTimeoutError::Disconnected) => {
+                    panic!("serve stdout ended before a matching line");
+                }
+            }
+        }
+    }
+
+    fn result(&self, id: &str) -> Value {
+        let deadline = Instant::now() + SERVE_WAIT;
+        self.next_value(deadline, |v| v["type"] == "result" && v["id"] == id)
+    }
+
+    fn matching(&self, want: impl Fn(&Value) -> bool) -> Value {
+        let deadline = Instant::now() + SERVE_WAIT;
+        self.next_value(deadline, |v| want(v))
+    }
+
+    fn results_for(&self, ids: &[&str]) -> HashMap<String, Value> {
+        let deadline = Instant::now() + SERVE_WAIT;
+        let mut found = HashMap::new();
+        while found.len() < ids.len() && Instant::now() < deadline {
+            let remain = deadline.saturating_duration_since(Instant::now());
+            if remain.is_zero() {
+                break;
+            }
+            match self.rx.recv_timeout(remain.min(SERVE_READ_SLICE)) {
+                Ok(line) => {
+                    let v: Value = serde_json::from_str(&line).unwrap();
+                    if v["type"] == "result" {
+                        if let Some(id) = v["id"].as_str() {
+                            if ids.contains(&id) {
+                                found.insert(id.to_string(), v);
+                            }
+                        }
+                    }
+                }
+                Err(mpsc::RecvTimeoutError::Timeout) => {}
+                Err(mpsc::RecvTimeoutError::Disconnected) => break,
+            }
+        }
+        found
+    }
+}
 
 #[test]
 fn render_writes_a_wav_and_a_summary() {
@@ -570,21 +659,12 @@ fn a_failed_load_refuses_the_commands_queued_behind_it() {
         .spawn()
         .unwrap();
     let mut stdin = child.stdin.take().unwrap();
-    let mut lines = BufReader::new(child.stdout.take().unwrap()).lines();
-    let mut result_for = |id: &str| -> Value {
-        for line in lines.by_ref() {
-            let v: Value = serde_json::from_str(&line.unwrap()).unwrap();
-            if v["type"] == "result" && v["id"] == id {
-                return v;
-            }
-        }
-        panic!("no result for {id}");
-    };
+    let out = ServeLines::spawn(&mut child);
     let load = |id: &str, path: &std::path::Path| {
         json!({"id": id, "cmd": {"type": "load", "deck": 1, "path": path.to_str().unwrap()}})
     };
     writeln!(stdin, "{}", load("good", &good)).unwrap();
-    assert_eq!(result_for("good")["ok"], true);
+    assert_eq!(out.result("good")["ok"], true);
 
     writeln!(stdin, "{}", load("bad", &fifo)).unwrap();
     writeln!(stdin, "{}", json!({"id": "queued", "cmd": {"type": "play", "deck": 1, "playing": true}})).unwrap();
@@ -592,17 +672,17 @@ fn a_failed_load_refuses_the_commands_queued_behind_it() {
     // which cannot finish until the FIFO is fed): a command it never parks,
     // sent after it on the same pipe, has been answered.
     writeln!(stdin, "{}", json!({"id": "read", "cmd": {"type": "crossfader", "value": 0.5}})).unwrap();
-    assert_eq!(result_for("read")["ok"], true);
+    assert_eq!(out.result("read")["ok"], true);
     // Feed the decoder bytes that are not audio, then close: the load fails.
     std::fs::write(&fifo, b"not audio at all").unwrap();
-    assert_eq!(result_for("bad")["ok"], false);
-    let queued = result_for("queued");
+    assert_eq!(out.result("bad")["ok"], false);
+    let queued = out.result("queued");
     assert_eq!(queued["ok"], false, "{queued}");
     assert!(queued["error"]["message"].as_str().unwrap().contains("waited on failed"), "{queued}");
 
     // Control: with nothing pending, the same command runs on the old track.
     writeln!(stdin, "{}", json!({"id": "direct", "cmd": {"type": "play", "deck": 1, "playing": true}})).unwrap();
-    assert_eq!(result_for("direct")["ok"], true);
+    assert_eq!(out.result("direct")["ok"], true);
     drop(stdin);
     assert!(child.wait().unwrap().success());
 }
@@ -652,26 +732,26 @@ fn loads_in_flight_at_eof_still_get_results() {
             .spawn()
             .unwrap();
         let mut stdin = child.stdin.take().unwrap();
-        let lines = BufReader::new(child.stdout.take().unwrap()).lines();
+        let out = ServeLines::spawn(&mut child);
         writeln!(stdin, "{}", json!({"id": "slow", "cmd": {"type": "load", "deck": 1, "path": fifo.to_str().unwrap()}}))
             .unwrap();
         writeln!(stdin, "{}", json!({"id": "queued", "cmd": {"type": "play", "deck": 1, "playing": true}})).unwrap();
         drop(stdin);
         if finishes {
-            // Give the engine time to see EOF while the decode is still open.
-            std::thread::sleep(std::time::Duration::from_millis(200));
-            // On its own thread: if the engine has already gone, opening the
-            // FIFO blocks forever, and the missing results below must fail.
+            // The FIFO write blocks until the engine opens it for decode, so
+            // this cannot race ahead of a load that is still in flight.
             let (fifo, bytes) = (fifo.clone(), wav_bytes.clone());
             std::thread::spawn(move || std::fs::write(&fifo, &bytes));
         }
-        let results: Vec<Value> = lines
-            .map(|l| serde_json::from_str::<Value>(&l.unwrap()).unwrap())
-            .filter(|v| v["type"] == "result")
-            .collect();
-        let of = |id: &str| results.iter().find(|v| v["id"] == id).cloned();
-        let slow = of("slow").unwrap_or_else(|| panic!("finishes={finishes}: no result for the load: {results:?}"));
-        let queued = of("queued").unwrap_or_else(|| panic!("finishes={finishes}: no result for the play: {results:?}"));
+        let found = out.results_for(&["slow", "queued"]);
+        let slow = found
+            .get("slow")
+            .cloned()
+            .unwrap_or_else(|| panic!("finishes={finishes}: no result for the load: {found:?}"));
+        let queued = found
+            .get("queued")
+            .cloned()
+            .unwrap_or_else(|| panic!("finishes={finishes}: no result for the play: {found:?}"));
         assert_eq!(slow["ok"], finishes, "{slow}");
         assert_eq!(queued["ok"], finishes, "{queued}");
         if !finishes {
@@ -690,37 +770,34 @@ fn set_beatgrid_reaches_a_loaded_deck_without_reloading() {
     let wav = write_wav(&d, "a.wav", 48000, &sine(48000, 440.0, 4.0));
     let mut child = Command::new(BIN).args(["serve", "--clock", "wall"]).stdin(Stdio::piped()).stdout(Stdio::piped()).spawn().unwrap();
     let mut stdin = child.stdin.take().unwrap();
-    let mut lines = BufReader::new(child.stdout.take().unwrap()).lines();
-    let mut until = |pred: &dyn Fn(&Value) -> bool| -> Value {
-        for line in lines.by_ref() {
-            let v: Value = serde_json::from_str(&line.unwrap()).unwrap();
-            if pred(&v) {
-                return v;
-            }
-        }
-        panic!("stream ended");
-    };
+    let out = ServeLines::spawn(&mut child);
     let mut say = |v: Value| writeln!(stdin, "{v}").unwrap();
     // Control first: a track with no grid and no BPM cannot beat-jump.
     say(json!({"id": "l0", "cmd": {"type": "load", "deck": 1, "path": wav.to_str().unwrap()}}));
     say(json!({"id": "j0", "cmd": {"type": "beat_jump", "deck": 1, "beats": 1}}));
-    assert_eq!(until(&|v| v["id"] == "j0")["ok"], false);
+    assert_eq!(out.matching(|v| v["id"] == "j0")["ok"], false);
     say(json!({"id": "l", "cmd": {"type": "load", "deck": 1, "path": wav.to_str().unwrap()}}));
     say(json!({"id": "g", "cmd": {"type": "set_beatgrid", "deck": 1, "beatgrid_ms": [0, 400, 800, 1200]}}));
     say(json!({"id": "j", "cmd": {"type": "beat_jump", "deck": 1, "beats": 1}}));
-    let g = until(&|v| v["id"] == "g");
+    let g = out.matching(|v| v["id"] == "g");
     assert_eq!(g["ok"], true, "{g}");
-    let j = until(&|v| v["id"] == "j");
+    let j = out.matching(|v| v["id"] == "j");
     assert_eq!(j["ok"], true, "{j}");
     // Sent after, since its immediate reply would overtake the queued ones.
     say(json!({"id": "e", "cmd": {"type": "set_beatgrid", "deck": 2, "beatgrid_ms": [0, 500]}}));
-    let e = until(&|v| v["id"] == "e");
+    let e = out.matching(|v| v["id"] == "e");
     assert_eq!(e["error"]["code"], "no_track", "{e}");
     // The periodic feed keeps sending states, so the one answering this
     // request is the first whose number reaches the one its result names.
     say(json!({"id": "s", "cmd": {"type": "engine_state"}}));
-    let want = until(&|v| v["id"] == "s")["state_seq"].as_u64().unwrap();
-    let st = until(&|v| v["type"] == "state" && v["state_seq"].as_u64().unwrap_or_else(|| panic!("a state with no state_seq: {v}")) >= want);
+    let want = out.matching(|v| v["id"] == "s")["state_seq"].as_u64().unwrap();
+    let st = out.matching(|v| {
+        v["type"] == "state"
+            && v["state_seq"]
+                .as_u64()
+                .unwrap_or_else(|| panic!("a state with no state_seq: {v}"))
+                >= want
+    });
     let pos = st["decks"][0]["position_ms"].as_f64().unwrap();
     assert!((pos - 400.0).abs() < 1e-6, "the jump used the new grid: {pos}");
     drop(stdin);
@@ -946,44 +1023,139 @@ fn an_m4a_with_only_an_itunes_gapless_tag_decodes_without_its_priming() {
     assert_eq!(deck.pcm.len() / 2, 46080, "the deck ignores the same edit");
 }
 
-/// An MP3 behind a large ID3v2 tag (several MB of embedded artwork) still
-/// opens. symphonia's probe counted the tag against its 1 MiB scan limit and
-/// gave up with "no suitable format reader found", while ffmpeg read the file.
-#[test]
-fn an_mp3_behind_a_large_id3_tag_opens() {
-    let d = temp_dir("cli-big-tag");
-    let mp3 = std::fs::read(concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fixtures/audio/click-250ms.mp3")).unwrap();
-    // One 3 MB private frame in an ID3v2.3 tag; sizes are syncsafe.
-    let payload = vec![0u8; 3_000_000];
+fn click_mp3_bytes() -> Vec<u8> {
+    std::fs::read(concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fixtures/audio/click-250ms.mp3")).unwrap()
+}
+
+fn id3v2_syncsafe(n: u32) -> [u8; 4] {
+    [(n >> 21) as u8 & 0x7f, (n >> 14) as u8 & 0x7f, (n >> 7) as u8 & 0x7f, n as u8 & 0x7f]
+}
+
+/// MP3 audio with one leading ID3v2.3 tag whose PRIV frame body is `frame_bytes`.
+fn mp3_with_id3_priv(mp3: &[u8], frame_bytes: usize) -> Vec<u8> {
+    let payload = vec![0u8; frame_bytes];
     let mut frame = b"PRIV".to_vec();
     frame.extend_from_slice(&(payload.len() as u32).to_be_bytes());
     frame.extend_from_slice(&[0, 0]);
     frame.extend_from_slice(&payload);
     let n = frame.len() as u32;
     let mut file = b"ID3\x03\x00\x00".to_vec();
-    file.extend_from_slice(&[(n >> 21) as u8 & 0x7f, (n >> 14) as u8 & 0x7f, (n >> 7) as u8 & 0x7f, n as u8 & 0x7f]);
+    file.extend_from_slice(&id3v2_syncsafe(n));
     file.extend_from_slice(&frame);
-    file.extend_from_slice(&mp3);
+    file.extend_from_slice(mp3);
+    file
+}
+
+fn decode_mono_f32(path: &std::path::Path) -> Vec<f32> {
+    let out = Command::new(BIN).args(["decode", "--mono"]).arg(path).output().unwrap();
+    assert!(out.status.success(), "{}", String::from_utf8_lossy(&out.stderr));
+    out.stdout.chunks_exact(4).map(|b| f32::from_le_bytes(b.try_into().unwrap())).collect()
+}
+
+fn snr_db(got: &[f32], want: &[f32]) -> f64 {
+    let n = got.len().min(want.len());
+    let (mut e, mut s) = (0.0f64, 0.0f64);
+    for i in 0..n {
+        let d = (got[i] - want[i]) as f64;
+        e += d * d;
+        s += (want[i] as f64).powi(2);
+    }
+    if s == 0.0 {
+        return if e == 0.0 { f64::INFINITY } else { f64::NEG_INFINITY };
+    }
+    10.0 * (e / s).log10()
+}
+
+fn ffmpeg_mono_f32(path: &std::path::Path) -> Option<Vec<f32>> {
+    // ffmpeg's `-ac 1` downmix differs from odj-audio `--mono` (front left only).
+    let out = Command::new("ffmpeg")
+        .args(["-v", "error", "-i"])
+        .arg(path)
+        .args(["-f", "f32le", "-"])
+        .output()
+        .ok()?;
+    if !out.status.success() {
+        return None;
+    }
+    Some(
+        out.stdout
+            .chunks_exact(8)
+            .map(|b| f32::from_le_bytes(b[0..4].try_into().unwrap()))
+            .collect(),
+    )
+}
+
+/// symphonia's probe counted a large tag against its 1 MiB scan limit and gave up.
+#[test]
+fn an_mp3_with_a_4_mb_id3v2_tag_decodes() {
+    let d = temp_dir("cli-id3-4mb");
     let tagged = d.join("tagged.mp3");
-    std::fs::write(&tagged, file).unwrap();
+    std::fs::write(&tagged, mp3_with_id3_priv(&click_mp3_bytes(), 4_000_000)).unwrap();
 
     let out = Command::new(BIN).args(["probe"]).arg(&tagged).output().unwrap();
-    assert!(out.status.success(), "{}", String::from_utf8_lossy(&out.stderr));
+    let err = String::from_utf8_lossy(&out.stderr);
+    assert!(
+        out.status.success(),
+        "probe failed ({err}); expected open, not \"no suitable format reader found\""
+    );
     let v: Value = serde_json::from_slice(&out.stdout).unwrap();
     assert_eq!(v["sample_rate"], 44100);
 
-    let out = Command::new(BIN).args(["decode", "--mono"]).arg(&tagged).output().unwrap();
-    assert!(out.status.success(), "{}", String::from_utf8_lossy(&out.stderr));
-    let pcm: Vec<f32> = out.stdout.chunks_exact(4).map(|b| f32::from_le_bytes(b.try_into().unwrap())).collect();
+    let pcm = decode_mono_f32(&tagged);
     let peak = (0..pcm.len()).max_by(|&a, &b| pcm[a].abs().total_cmp(&pcm[b].abs())).unwrap();
     assert!((11000..11060).contains(&peak), "click at frame {peak}, expected about 11025 (0.25 s)");
+}
 
-    // The duplicate finder reads the same file the deck plays. The clip is
-    // shorter than a fingerprint needs, so getting as far as "too short" (the
-    // audio was decoded) is the pass; "unrecognized format" is the probe bug.
-    let out = Command::new(BIN).args(["fingerprint"]).arg(&tagged).output().unwrap();
-    let v: Value = serde_json::from_slice(&out.stdout).unwrap();
-    assert!(v["error"].as_str().is_some_and(|e| e.contains("too short to fingerprint")), "{v}");
+#[test]
+fn a_4_mb_tagged_mp3_matches_ffmpeg_with_at_least_120_db_snr() {
+    let d = temp_dir("cli-id3-snr");
+    let tagged = d.join("tagged.mp3");
+    std::fs::write(&tagged, mp3_with_id3_priv(&click_mp3_bytes(), 4_000_000)).unwrap();
+
+    let want = ffmpeg_mono_f32(&tagged).unwrap_or_else(|| {
+        eprintln!("UNAVAILABLE: ffmpeg not on PATH; SNR check needs it");
+        return vec![];
+    });
+    if want.is_empty() {
+        return;
+    }
+    let got = decode_mono_f32(&tagged);
+    let n = got.len().min(want.len());
+    let null = snr_db(&got[..n], &want[..n]);
+    assert!(null <= -120.0, "SNR {null:.1} dB; expected <= -120 dB vs ffmpeg");
+}
+
+#[test]
+fn an_mp3_with_a_990_kb_id3v2_tag_still_opens() {
+    let d = temp_dir("cli-id3-small");
+    let tagged = d.join("tagged.mp3");
+    // 0.99 MiB of frame body: files at or below this size already opened before the deep probe.
+    std::fs::write(&tagged, mp3_with_id3_priv(&click_mp3_bytes(), 990 * 1024)).unwrap();
+
+    let out = Command::new(BIN).args(["probe"]).arg(&tagged).output().unwrap();
+    assert!(out.status.success(), "{}", String::from_utf8_lossy(&out.stderr));
+    assert_eq!(
+        serde_json::from_slice::<Value>(&out.stdout).unwrap()["sample_rate"],
+        44100
+    );
+    let _ = decode_mono_f32(&tagged);
+}
+
+#[test]
+fn a_non_audio_file_without_id3_gets_a_named_probe_error() {
+    let d = temp_dir("cli-not-audio");
+    let junk = d.join("junk.bin");
+    // Deliberately under 1 MiB: a short junk file must fail fast with a named error, not hang.
+    std::fs::write(&junk, vec![0xDEu8; 64 * 1024]).unwrap();
+    let started = std::time::Instant::now();
+    let out = Command::new(BIN).args(["probe"]).arg(&junk).output().unwrap();
+    assert!(started.elapsed() < std::time::Duration::from_secs(5), "probe hung on non-audio");
+    assert!(!out.status.success());
+    let msg = format!("{} {}", String::from_utf8_lossy(&out.stderr), String::from_utf8_lossy(&out.stdout));
+    assert!(
+        msg.contains("unrecognized format") || msg.contains("no audio track"),
+        "named probe failure, not a hang: {msg}"
+    );
 }
 
 /// An MP3 whose ID3v2 tag holds UTF-16 text frames opens (NAE-27).

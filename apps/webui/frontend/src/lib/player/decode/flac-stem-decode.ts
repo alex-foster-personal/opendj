@@ -203,7 +203,7 @@ export async function decodeStemParts<P extends string>(
 					refusal: outcome.refusal,
 					ms: Math.round(now() - started),
 					bytes: byteLength,
-					codec: _partCodec(bytes)
+					codec: _sniffPartCodec(bytes)
 				});
 				return [part, outcome.buffer] as const;
 			}
@@ -234,6 +234,13 @@ export async function decodeStemParts<P extends string>(
 	} finally {
 		if (!claimReleased) releaseLane(claim, false, 0, 0);
 	}
+}
+
+function _sniffPartCodec(bytes: ArrayBuffer | undefined): StemDecodeCodec | null {
+	if (bytes === undefined) return null;
+	if (isFlacContainer(bytes)) return 'flac';
+	if (isMpegContainer(bytes)) return 'mpeg';
+	return null;
 }
 
 function _partCodec(bytes: ArrayBuffer | undefined): StemDecodeCodec | null {
@@ -317,7 +324,7 @@ export function stemDecodeLabels(reports: readonly StemPartDecodeReport[]): Reco
 	const viaWorker = reports.filter((report) => report.viaWorker).length;
 	const refusals = [...new Set(reports.map((r) => r.refusal).filter((r) => r !== null))];
 	const codec = reports.find((r) => r.codec !== null)?.codec ?? null;
-	const lane = settledLane(reports.length, codec ?? 'flac');
+	const lane = codec === null ? null : settledLane(reports.length, codec);
 	return {
 		stem_decode: viaWorker === 0 ? 'main-thread' : viaWorker === reports.length ? 'workers' : 'mixed',
 		stem_decode_workers: `${viaWorker}/${reports.length}`,

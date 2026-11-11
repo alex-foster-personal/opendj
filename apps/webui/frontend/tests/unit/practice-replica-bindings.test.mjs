@@ -263,3 +263,14 @@ test('SHIFT layer does not pick up the supplement', () => {
 	const r = bindings.resolveControl(otherMap, beatSync, false);
 	assert.equal(r.kind, 'inert');
 });
+
+test('legacy null SHIFT keeps the base while shifted-only legacy wires still fail', () => {
+	const play = controlById('d1-play-pause');
+	assert.deepEqual(bindings.resolveControl(FLX4_MAP, play, true).wire, play.midi);
+	const unwired = { ...play, midi: null, shift_midi: null };
+	assert.equal(bindings.resolveControl(FLX4_MAP, unwired, true).kind, 'unwired');
+	assert.throws(
+		() => bindings.resolveControl(FLX4_MAP, { ...unwired, shift_midi: play.midi }, true),
+		/no base wire/
+	);
+});

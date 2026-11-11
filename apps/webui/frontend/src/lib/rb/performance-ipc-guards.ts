@@ -43,6 +43,7 @@ import type { EdgeRegion } from '$lib/rb/technically-working.svelte';
 import type { StemControl } from '$lib/rb/stem-types';
 import { parseSkinSettings } from '$lib/rb/ui-skin';
 import { isValidRelatedBpmPercent, RELATED_CRITERIA_FLAGS } from '$lib/rb/related-criteria-prefs';
+import { parseWaveHeight } from '$lib/rb/wave-height';
 import { parseWaveformDesignPref } from '$lib/rb/waveform-design';
 import { parseWaveformBoolOverlay } from '$lib/rb/waveform-overlay-command';
 import { requireWaveGridLines } from '$lib/rb/wave-grid-lines';
@@ -797,10 +798,20 @@ export function _parseCommand(message: unknown): PerformanceCommand {
 		};
 	}
 	if (type === 'set_waveform_design') {
-		_exactKeys(record, ['type', 'design']);
+		_exactKeys(record, ['type', 'design', 'height']);
 		const design = parseWaveformDesignPref(record.design);
-		if (design === undefined) throw new TypeError('design is required');
-		return { type, design };
+		const height = record.height === undefined ? undefined : parseWaveHeight(record.height);
+		if (record.height !== undefined && height === undefined) {
+			throw new TypeError(`height must be full|half; got ${String(record.height)}`);
+		}
+		if (design === undefined && height === undefined) {
+			throw new TypeError('set_waveform_design needs design or height');
+		}
+		return {
+			type,
+			...(design === undefined ? {} : { design }),
+			...(height === undefined ? {} : { height })
+		};
 	}
 	if (type === 'feedback_mark') {
 		_exactKeys(record, ['type', 'vote']);

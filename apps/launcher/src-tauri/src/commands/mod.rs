@@ -6,7 +6,9 @@
 //! plain Rust fns that do not need the Tauri runtime).
 
 pub mod drag;
+pub mod engine;
 pub mod frecency;
 pub mod hotkey;
 pub mod search;
+pub mod smartlists;
 pub mod window;

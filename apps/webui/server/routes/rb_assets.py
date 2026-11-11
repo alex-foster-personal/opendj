@@ -526,6 +526,8 @@ def measured_anlz_payload(request: Request, stable_id: str, points: int) -> dict
 def _anlz_response(request: Request, payload: dict[str, Any]) -> Response:
     local_waveform = payload.get("local_waveform")
     retryable = isinstance(local_waveform, dict) and local_waveform.get("retryable") is True
+    degraded_anlz = payload.get("unreadable_anlz")
+    partial_parse = isinstance(degraded_anlz, list) and bool(degraded_anlz)
     # Never publicly cacheable for an hour: this response varies with things
     # the URL does not name - the process-local PARITY-02 rbx-vs-own toggle
     # (an agent can flip it over HTTP at any moment) AND whether an own
@@ -537,9 +539,11 @@ def _anlz_response(request: Request, payload: dict[str, Any]) -> Response:
     # it just has to revalidate first, and the ETag below turns that into a
     # 304 for the common unchanged case rather than resending the multi-MB
     # payload on every deck load.
-    if retryable:
+    if retryable or partial_parse:
         # A retryable miss is a statement about this MOMENT, not about the
         # track, so it is not held at all, with or without revalidation.
+        # A partial ANLZ parse is the same: a sibling may be repaired under an
+        # unchanged max mtime, so the body must not be treated as cache truth.
         return JSONResponse(payload, headers={"Cache-Control": _CACHE_ANLZ_RETRYABLE})
     # Hashed over the SERIALIZED body, so every input that can change the
     # answer is covered without enumerating them: the beatgrid source and the

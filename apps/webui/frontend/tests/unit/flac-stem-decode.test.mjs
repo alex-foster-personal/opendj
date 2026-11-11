@@ -235,11 +235,13 @@ test('four FLAC parts decode in four workers, concurrently, and every worker is 
 		result.reports.every((r) => r.bytes > 0),
 		'each report carries its encoded size, so two lanes stay comparable'
 	);
-	assert.deepEqual(decode.stemDecodeLabels(result.reports), {
+	const labels = decode.stemDecodeLabels(result.reports);
+	assert.deepEqual(labels, {
 		stem_decode: 'workers',
 		stem_decode_workers: '4/4',
 		stem_decode_lane: 'workers'
 	});
+	assert.equal('stem_decode_codec' in labels, false, 'FLAC loads must not carry stem_decode_codec');
 });
 
 // REQ: PERF-STEMDEC-01
@@ -1314,6 +1316,10 @@ test('MPEG bytes are not-flac when the mpeg rung is not shipped (default ship ga
 	assert.equal(state.made, 0, 'ship gate off: MPEG must not take a decoder');
 	assert.ok(result.reports.every((r) => r.refusal === 'not-flac'));
 	assert.equal(decode.stemDecodeSession.lane(PARTS.length, 'mpeg'), null);
+	const labels = decode.stemDecodeLabels(result.reports);
+	assert.equal(labels.stem_decode_codec, 'mpeg');
+	assert.equal(labels.stem_decode_refused, 'not-flac');
+	assert.equal(labels.stem_decode_lane, undefined);
 });
 
 test(
@@ -1330,7 +1336,38 @@ test(
 		});
 		assert.equal(state.made, 4);
 		assert.ok(result.reports.every((r) => r.viaWorker && r.refusal === null));
-		assert.equal(decode.stemDecodeLabels(result.reports).stem_decode_codec, 'mpeg');
+		assert.deepEqual(decode.stemDecodeLabels(result.reports), {
+			stem_decode: 'workers',
+			stem_decode_workers: '4/4',
+			stem_decode_lane: 'workers',
+			stem_decode_codec: 'mpeg'
+		});
+	})
+);
+
+test(
+	'MPEG on a settled main-thread lane names mpeg without inventing a FLAC verdict',
+	withMpegRung(async () => {
+		mpegBytes = mpegBytes ?? new Uint8Array(await readFileAsync(MPEG_FIXTURE));
+		decode.stemDecodeSession.resetLane();
+		decode.stemDecodeSession.forceLane('main-thread');
+		const ctx = fakeContext(22050);
+		const { factory, state } = fakeDecoderFactory({ sampleRate: 22050 });
+		const allMpeg = () =>
+			Object.fromEntries(PARTS.map((part) => [part, mpegBytes.buffer.slice(0)]));
+		const result = await decode.decodeStemParts(ctx, allMpeg(), PARTS, {
+			makeDecoder: factory,
+			decodeFallback: countingFallback().fn
+		});
+		assert.equal(state.made, 0);
+		assert.ok(result.reports.every((r) => r.refusal === 'engine-prefers-main'));
+		assert.deepEqual(decode.stemDecodeLabels(result.reports), {
+			stem_decode: 'main-thread',
+			stem_decode_workers: '0/4',
+			stem_decode_lane: 'main-thread',
+			stem_decode_codec: 'mpeg',
+			stem_decode_refused: 'engine-prefers-main'
+		});
 	})
 );
 
@@ -1407,9 +1444,97 @@ test(
 );
 
 test(
+	'MPEG lane verdicts remain isolated by part width',
+	withMpegRung(async () => {
+		mpegBytes = mpegBytes ?? new Uint8Array(await readFileAsync(MPEG_FIXTURE));
+		decode.stemDecodeSession.resetLane();
+		const ctx = fakeContext(22050);
+		const TWO = ['vocals', 'instrumental'];
+		const runTrial = async (parts, wholeLoadMs, lane) => {
+			decode.stemDecodeSession.resetPool();
+			const { factory, state } = fakeDecoderFactory({
+				sampleRate: 22050,
+				concurrent: parts.length
+			});
+			const fallback = countingFallback();
+			// One load-start, two reads per part, then the load-end timestamp.
+			let clockCalls = 0;
+			const result = await decode.decodeStemParts(
+				ctx,
+				Object.fromEntries(parts.map((part) => [part, mpegBytes.buffer.slice(0)])),
+				parts,
+				{
+					makeDecoder: factory,
+					decodeFallback: fallback.fn,
+					now: () => (++clockCalls >= 2 * parts.length + 2 ? wholeLoadMs : 0)
+				}
+			);
+			const workers = lane === 'workers';
+			const message = `MPEG width ${parts.length} must run its own ${lane} trial`;
+			assert.equal(state.made, workers ? parts.length : 0, message);
+			assert.equal(fallback.calls.length, workers ? 0 : parts.length, message);
+			assert.equal(result.reports.length, parts.length, message);
+			assert.ok(
+				result.reports.every(
+					(r) => r.viaWorker === workers && r.refusal === (workers ? null : 'calibrating')
+				),
+				message
+			);
+		};
+
+		assert.equal(
+			decode.stemDecodeSession.lane(TWO.length, 'mpeg'),
+			null,
+			'MPEG width 2 starts unmeasured'
+		);
+		assert.equal(
+			decode.stemDecodeSession.lane(PARTS.length, 'mpeg'),
+			null,
+			'MPEG width 4 starts unmeasured'
+		);
+		await runTrial(TWO, 400, 'main-thread');
+		assert.equal(
+			decode.stemDecodeSession.lane(TWO.length, 'mpeg'),
+			null,
+			'MPEG width 2 needs both trials'
+		);
+		await runTrial(TWO, 100, 'workers');
+		assert.equal(
+			decode.stemDecodeSession.lane(TWO.length, 'mpeg'),
+			'workers',
+			'MPEG width 2 chooses workers'
+		);
+		assert.equal(
+			decode.stemDecodeSession.lane(PARTS.length, 'mpeg'),
+			null,
+			'MPEG width 2 verdict must leave width 4 unmeasured'
+		);
+
+		await runTrial(PARTS, 100, 'main-thread');
+		assert.equal(
+			decode.stemDecodeSession.lane(PARTS.length, 'mpeg'),
+			null,
+			'MPEG width 4 needs both trials'
+		);
+		await runTrial(PARTS, 400, 'workers');
+		assert.equal(
+			decode.stemDecodeSession.lane(TWO.length, 'mpeg'),
+			'workers',
+			'MPEG width 2 retains workers after width 4 settles'
+		);
+		assert.equal(
+			decode.stemDecodeSession.lane(PARTS.length, 'mpeg'),
+			'main-thread',
+			'MPEG width 4 independently retains main-thread'
+		);
+	})
+);
+
+test(
 	'MPEG at the wrong rate is sample-rate-mismatch without taking a decoder',
 	withMpegRung(async () => {
 		mpegBytes = mpegBytes ?? new Uint8Array(await readFileAsync(MPEG_FIXTURE));
+		decode.stemDecodeSession.resetLane();
 		const ctx = fakeContext(44100);
 		const { factory, state } = fakeDecoderFactory({ sampleRate: 22050 });
 		const allMpeg = () =>
@@ -1420,5 +1545,9 @@ test(
 		});
 		assert.equal(state.made, 0);
 		assert.ok(result.reports.every((r) => r.refusal === 'sample-rate-mismatch'));
+		const labels = decode.stemDecodeLabels(result.reports);
+		assert.equal(labels.stem_decode_codec, 'mpeg');
+		assert.equal(labels.stem_decode_refused, 'sample-rate-mismatch');
+		assert.equal(labels.stem_decode_lane, undefined);
 	})
 );

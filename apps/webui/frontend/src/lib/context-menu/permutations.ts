@@ -30,6 +30,7 @@ export const MENU_CONTEXT_SPACE: { [K in MenuTargetKind]: Space<MenuContextByKin
 		source: ['collection', 'playlist', 'usb', 'readonly-import'],
 		audio: ['present', 'missing', 'streaming', 'offloaded', 'temporary'],
 		stems: ['none', 'ready'],
+		tracklistHidden: ['shown', 'hidden'],
 		workspace: ['performance', 'library']
 	},
 	'track-chip': { audio: ['present', 'missing', 'streaming', 'offloaded', 'temporary'] },

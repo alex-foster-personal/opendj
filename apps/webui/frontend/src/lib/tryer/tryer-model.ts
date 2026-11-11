@@ -20,6 +20,69 @@ export const RANK_MEASURED = 'measured';
 export type TryCandidate = components['schemas']['CandidateOut'];
 export type TryJob = components['schemas']['TryJobOut'];
 
+export type TryEnergyNumber = { value: string; title: string };
+export type TryEnergySide = { start_bar: number; levels: number[] };
+export type TryEnergyBoundary = { bar: number; deck: 'out' | 'in' };
+export type TryEnergyBlock = {
+	line: string;
+	numbers: TryEnergyNumber[];
+	unscored: boolean;
+	mik_grid_suspect: boolean;
+	grid_warning: string | null;
+	out: TryEnergySide | null;
+	in: TryEnergySide | null;
+	overlap_out_start_bar: number | null;
+	overlap_out_end_bar: number | null;
+	overlap_in_start_bar: number | null;
+	overlap_in_end_bar: number | null;
+	boundaries: TryEnergyBoundary[];
+};
+
+const UNSCORED_ENERGY: TryEnergyBlock = {
+	line: 'energy unscored (no MIK series)',
+	numbers: [],
+	unscored: true,
+	mik_grid_suspect: false,
+	grid_warning: null,
+	out: null,
+	in: null,
+	overlap_out_start_bar: null,
+	overlap_out_end_bar: null,
+	overlap_in_start_bar: null,
+	overlap_in_end_bar: null,
+	boundaries: []
+};
+
+/** The candidate's MIK energy block from the try route (defaults to unscored when absent on older jobs). */
+export function energyBlock(candidate: TryCandidate): TryEnergyBlock {
+	const block = candidate.energy;
+	if (block === undefined || block === null) return UNSCORED_ENERGY;
+	return block as TryEnergyBlock;
+}
+
+/** Split the energy line so each sourced number is its own titled segment. */
+export function energyLineSegments(
+	block: TryEnergyBlock
+): { text: string; title: string | null }[] {
+	if (block.unscored) return [{ text: block.line, title: null }];
+	let rest = block.line;
+	const segments: { text: string; title: string | null }[] = [];
+	for (const number of block.numbers) {
+		const index = rest.indexOf(number.value);
+		if (index === -1) throw new Error(`energy line missing ${number.value}: ${block.line}`);
+		if (index > 0) segments.push({ text: rest.slice(0, index), title: null });
+		segments.push({ text: number.value, title: number.title });
+		rest = rest.slice(index + number.value.length);
+	}
+	if (rest.length > 0) segments.push({ text: rest, title: null });
+	return segments;
+}
+
+/** Whether the strip can draw (both sides hold MIK levels over their windows). */
+export function energyStripReady(block: TryEnergyBlock): boolean {
+	return !block.unscored && block.out !== null && block.in !== null;
+}
+
 export type TryerAction =
 	| { kind: 'play'; slot: number }
 	| { kind: 'toggle' }

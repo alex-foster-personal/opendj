@@ -1,6 +1,7 @@
 /** Deck and library waveform paint style (DECKUX-20, issue #3991). */
-/** 'blocks': single-color mirrored bars, 2px wide with a 1px gap. */
-export type WaveformDesign = 'tri-band' | 'mono' | 'line' | 'blocks';
+/** 'blocks': single-color mirrored bars, 2px wide with a 1px gap.
+ * 'rgb': one envelope per column colored by band balance (issue #10253). */
+export type WaveformDesign = 'tri-band' | 'mono' | 'line' | 'blocks' | 'rgb';
 
 /** Stored preference: a concrete design, or 'auto' to follow the active
  * skin's declared design (ui-skin.ts SKIN_WAVE_LOOK). */
@@ -12,12 +13,12 @@ export const WAVEFORM_DESIGN_DEFAULT: WaveformDesign = 'tri-band';
 /** First-run stored pref: follow the skin. */
 export const WAVEFORM_DESIGN_PREF_DEFAULT: WaveformDesignPref = 'auto';
 
-const _VALID = new Set<string>(['tri-band', 'mono', 'line', 'blocks']);
+const _VALID = new Set<string>(['tri-band', 'mono', 'line', 'blocks', 'rgb']);
 
 export function parseWaveformDesign(raw: unknown): WaveformDesign | undefined {
 	if (raw === undefined) return undefined;
 	if (typeof raw !== 'string' || !_VALID.has(raw)) {
-		throw new Error(`waveform_design must be tri-band|mono|line|blocks, got ${String(raw)}`);
+		throw new Error(`waveform_design must be tri-band|mono|line|blocks|rgb, got ${String(raw)}`);
 	}
 	return raw as WaveformDesign;
 }
@@ -27,7 +28,9 @@ export function parseWaveformDesignPref(raw: unknown): WaveformDesignPref | unde
 	if (raw === 'auto') return 'auto';
 	if (raw === undefined) return undefined;
 	if (typeof raw !== 'string' || !_VALID.has(raw)) {
-		throw new Error(`waveform_design must be auto|tri-band|mono|line|blocks, got ${String(raw)}`);
+		throw new Error(
+			`waveform_design must be auto|tri-band|mono|line|blocks|rgb, got ${String(raw)}`
+		);
 	}
 	return raw as WaveformDesign;
 }

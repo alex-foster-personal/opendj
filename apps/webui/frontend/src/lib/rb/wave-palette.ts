@@ -9,7 +9,7 @@
  *
  * theme.css is still where the wavestack's CSS custom properties are
  * declared (`--rb-wave-low/mid/high/mono`, plus the
- * `html[data-wave-palette='legacy']` override blocks); this module is the TS
+ * `html[data-wave-palette='legacy']`, `'mono'` and `'blue'` override blocks); this module is the TS
  * mirror the canvas painters that do not read CSS vars (the deck overview
  * strip and the library preview strip) use, and a drift test
  * (wave-palette.test.mjs) asserts both agree with theme.css.
@@ -20,9 +20,9 @@
  * color-contrast.ts) against both light row backgrounds.
  */
 
-export type WavePaletteChoice = 'rekordbox' | 'legacy' | 'mono';
+export type WavePaletteChoice = 'rekordbox' | 'legacy' | 'mono' | 'blue';
 
-const WAVE_PALETTE_CHOICES: readonly WavePaletteChoice[] = ['rekordbox', 'legacy', 'mono'];
+const WAVE_PALETTE_CHOICES: readonly WavePaletteChoice[] = ['rekordbox', 'legacy', 'mono', 'blue'];
 
 export const WAVE_PALETTE_DEFAULT: WavePaletteChoice = 'rekordbox';
 
@@ -37,7 +37,7 @@ export const WAVE_PALETTE_PREF_DEFAULT: WavePalettePref = 'auto';
 export function parseWavePalette(raw: unknown): WavePaletteChoice | undefined {
 	if (raw === undefined) return undefined;
 	if (!WAVE_PALETTE_CHOICES.includes(raw as WavePaletteChoice)) {
-		throw new Error(`wave_palette must be rekordbox|legacy|mono, got ${String(raw)}`);
+		throw new Error(`wave_palette must be rekordbox|legacy|mono|blue, got ${String(raw)}`);
 	}
 	return raw as WavePaletteChoice;
 }
@@ -47,7 +47,7 @@ export function parseWavePalettePref(raw: unknown): WavePalettePref | undefined 
 	if (raw === 'auto') return 'auto';
 	if (raw === undefined) return undefined;
 	if (!WAVE_PALETTE_CHOICES.includes(raw as WavePaletteChoice)) {
-		throw new Error(`wave_palette must be auto|rekordbox|legacy|mono, got ${String(raw)}`);
+		throw new Error(`wave_palette must be auto|rekordbox|legacy|mono|blue, got ${String(raw)}`);
 	}
 	return raw as WavePaletteChoice;
 }
@@ -68,7 +68,7 @@ export interface WaveBandColors {
 }
 
 /** Mirrors theme.css: `.perf-root`, `html[data-theme='light'] .perf-root`, and
- * the two `[data-wave-palette='legacy']` override blocks. */
+ * the `[data-wave-palette]` legacy, mono and blue override blocks. */
 export const WAVE_BAND_COLORS: Readonly<
 	Record<WaveScheme, Readonly<Record<WavePaletteChoice, Readonly<WaveBandColors>>>>
 > = {
@@ -81,7 +81,8 @@ export const WAVE_BAND_COLORS: Readonly<
 			vocal: '#4fb2ff'
 		},
 		legacy: { low: '#e8a13a', mid: '#3d7dd9', high: '#cfe0f2', mono: '#3d7dd9', vocal: '#4fb2ff' },
-		mono: { low: '#6a6a6a', mid: '#b0b0b0', high: '#f4f4f4', mono: '#cfcfcf', vocal: '#cfe6ff' }
+		mono: { low: '#6a6a6a', mid: '#b0b0b0', high: '#f4f4f4', mono: '#cfcfcf', vocal: '#cfe6ff' },
+		blue: { low: '#2a6ee0', mid: '#5aa2f5', high: '#c4e2ff', mono: '#3d8cf0', vocal: '#f0a020' }
 	},
 	light: {
 		rekordbox: {
@@ -92,7 +93,8 @@ export const WAVE_BAND_COLORS: Readonly<
 			vocal: '#2a76c0'
 		},
 		legacy: { low: '#a44b11', mid: '#2166b1', high: '#3a4653', mono: '#2166b1', vocal: '#2a76c0' },
-		mono: { low: '#6a6a6a', mid: '#4a4a4a', high: '#2a2a2a', mono: '#3a3a3a', vocal: '#3f6f9f' }
+		mono: { low: '#6a6a6a', mid: '#4a4a4a', high: '#2a2a2a', mono: '#3a3a3a', vocal: '#3f6f9f' },
+		blue: { low: '#1a3f86', mid: '#1d55a8', high: '#2f6fc4', mono: '#1d55a8', vocal: '#9a5a00' }
 	}
 };
 

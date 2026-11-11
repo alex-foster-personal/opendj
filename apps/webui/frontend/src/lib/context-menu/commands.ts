@@ -78,6 +78,11 @@ export const MENU_COMMANDS = {
 	'track.edit': http('PATCH', '/api/v1/tracks/{stable_id}'),
 	// LIBUX-56: the Comment cell editor saves through the same PATCH.
 	'track.comment': http('PATCH', '/api/v1/tracks/{stable_id}', 'opendj track comment <stable_id> set <text>'),
+	'track.tracklist_hidden': http(
+		'PATCH',
+		'/api/v1/tracks/{stable_id}',
+		'opendj track hide-in-tracklists <stable_id> on|off'
+	),
 	'track.relocate': http('POST', '/api/v1/relocate/{stable_id}/apply'),
 	'track.reveal': http('POST', '/api/v1/tracks/{stable_id}:reveal'),
 	'track.playlists': http('GET', '/api/v1/tracks/{stable_id}/playlists'),

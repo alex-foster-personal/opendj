@@ -32,11 +32,12 @@ from pydantic import BaseModel, Field
 
 from apps.shared.state import machine_identity
 from apps.sync_hub import enrollment, fleet_admin, machine_credentials
-from apps.webui.server.auth import SessionUser
-from apps.webui.server.routes.auth import signed_in_user
+from apps.webui.server.routes.auth import require_signed_in_user
 
 router = APIRouter(prefix="/cloudsync/fleet", tags=["cloudsync"])
 MOUNT_UNDER_API_PREFIX = True
+
+_AUTH_REQUIRED_MESSAGE: str = "fleet administration needs a signed-in user on this hub."
 
 
 class FleetErrorBody(BaseModel):
@@ -140,30 +141,17 @@ def _hub_data_dir(request: Request) -> Path:
     return Path(str(request.app.state.state_db_path)).resolve().parent.parent
 
 
-def _require_user(request: Request) -> SessionUser:
-    user = signed_in_user(request)
-    if user is None:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail={
-                "code": "AUTH_REQUIRED",
-                "message": "fleet administration needs a signed-in user on this hub.",
-            },
-        )
-    return user
-
-
 @router.get("/credentials", response_model=CredentialsOut, responses=_CREDENTIALS_RESPONSES)
 def read_credentials(request: Request) -> CredentialsOut:
     """Twin of ``python -m apps.sync_hub credentials --json``."""
-    _require_user(request)
+    require_signed_in_user(request, message=_AUTH_REQUIRED_MESSAGE)
     return CredentialsOut.model_validate(fleet_admin.credentials(_hub_data_dir(request)))
 
 
 @router.post("/adopt", response_model=AdoptOut, responses=_ADOPT_RESPONSES)
 def adopt_machine(request: Request, body: MachineIdIn) -> AdoptOut:
     """Twin of ``adopt``, always adopting to the signed-in user."""
-    user = _require_user(request)
+    user = require_signed_in_user(request, message=_AUTH_REQUIRED_MESSAGE)
     owner = enrollment.OwnerIdentity(google_sub=user.google_sub, email=user.email)
     try:
         outcome = fleet_admin.adopt(_hub_data_dir(request), machine_id=body.machine_id, owner=owner)
@@ -179,7 +167,7 @@ def adopt_machine(request: Request, body: MachineIdIn) -> AdoptOut:
 @router.post("/revoke", response_model=RevokeOut, responses=_REVOKE_RESPONSES)
 def revoke_machine(request: Request, body: MachineIdIn) -> RevokeOut:
     """Twin of ``revoke``, limited to machines the signed-in user owns."""
-    user = _require_user(request)
+    user = require_signed_in_user(request, message=_AUTH_REQUIRED_MESSAGE)
     try:
         outcome = fleet_admin.revoke(
             _hub_data_dir(request), machine_id=body.machine_id, require_owner_sub=user.google_sub

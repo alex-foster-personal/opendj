@@ -100,13 +100,14 @@ from apps.shared.state.migrations_v28 import _V28 as _LEGACY_V28
 from apps.shared.state.migrations_v29 import _V29 as _LEGACY_V29
 from apps.shared.state.migrations_v30 import _V30 as _LEGACY_V30
 from apps.shared.state.migrations_v31 import _V31 as _LEGACY_V31
+from apps.shared.state.migrations_v32 import _V32 as _LEGACY_V32
 
 _WHITESPACE_RE = re.compile(r"\s+")
 _IF_NOT_EXISTS_RE = re.compile(r"\bIF\s+NOT\s+EXISTS\b", re.IGNORECASE)
 
 # --- version counters -----------------------------------------------------
 
-SCHEMA_VERSION: int = 20
+SCHEMA_VERSION: int = 21
 """Target version of the consolidated ladder (index into :data:`MIGRATIONS`)."""
 
 VERSION_OFFSET: int = 1000
@@ -119,7 +120,7 @@ creating it from scratch. Distinct from the ``VERSION_OFFSET + n`` rows so a
 reader can tell "this file predates consolidation" from "this file was born
 consolidated"."""
 
-LEGACY_SHARED_STATE_VERSION: int = 31
+LEGACY_SHARED_STATE_VERSION: int = 32
 """Terminal version of ``apps/shared/state/schema.py``'s own ladder."""
 
 BUSY_TIMEOUT_MS: int = 5000
@@ -812,6 +813,24 @@ _SETS: tuple[str, ...] = (
     """,
     "CREATE INDEX IF NOT EXISTS idx_set_events_session "
     "ON set_events(session_id, timestamp_s)",
+    """
+    CREATE TABLE IF NOT EXISTS control_events (
+        id              INTEGER PRIMARY KEY AUTOINCREMENT,
+        session_id      TEXT NOT NULL REFERENCES sets(session_id) ON DELETE CASCADE,
+        seq             INTEGER NOT NULL,
+        sample          INTEGER NOT NULL,
+        sample_rate     INTEGER NOT NULL,
+        wall_clock      TEXT NOT NULL,
+        control         TEXT NOT NULL,
+        value_json      TEXT NOT NULL,
+        kind            TEXT NOT NULL CHECK (kind IN ('set', 'trigger')),
+        source          TEXT NOT NULL,
+        deck            INTEGER,
+        UNIQUE(session_id, seq)
+    )
+    """,
+    "CREATE INDEX IF NOT EXISTS idx_control_events_session "
+    "ON control_events(session_id, seq)",
 )
 
 
@@ -1016,6 +1035,7 @@ LEGACY_SOURCES: dict[str, str] = {
     "caches": "apps/shared/fingerprints.py + apps/shared/hashing.py",
     "launcher": "apps/launcher/scripts/bootstrap_db.py",
     "sync_write_tokens": "apps/shared/state/migrations_v21.py",
+    "labelling": "apps/shared/state/migrations_v32.py",
 }
 """Domain -> the legacy file its DDL was lifted from, verbatim.
 
@@ -1080,11 +1100,16 @@ TABLES: dict[str, tuple[str, ...]] = {
         "pending_tracks",
         "spotify_playlist_links",
     ),
-    "sets": ("sets", "set_events"),
+    "sets": ("sets", "set_events", "control_events"),
     "settings": ("settings",),
     "dedup": ("duplicate_clusters", "track_aliases", "tag_provenance"),
     "launcher": ("tracks_fts", "tracks_frecency"),
     "sync_write_tokens": ("sync_write_tokens",),
+    "labelling": (
+        "label_task",
+        "label_response",
+        "contribution_ledger",
+    ),
 }
 """Durable domain -> the tables it owns. ``schema_meta`` is excluded on
 purpose: it is migration infrastructure, created by the runner, not domain
@@ -1260,15 +1285,28 @@ _V19: list[str] = [
 ]
 """18 -> 19: non-destructive virtual edits (legacy ladder v30, LIBEDIT-9179)."""
 
+def _legacy_shared_to_engine_ddl(statement: str) -> str:
+    if "IF NOT EXISTS" in statement.split("\n", 1)[0]:
+        return statement
+    return (
+        statement.replace("CREATE TABLE ", "CREATE TABLE IF NOT EXISTS ", 1)
+        .replace("CREATE INDEX ", "CREATE INDEX IF NOT EXISTS ", 1)
+        .replace("CREATE TRIGGER ", "CREATE TRIGGER IF NOT EXISTS ", 1)
+    )
+
+
 _V20: list[str] = [
     statement.replace("CREATE TABLE ", "CREATE TABLE IF NOT EXISTS ")
     for statement in _LEGACY_V31
 ]
 """19 -> 20: library HQ stems + lyric-match completeness config (legacy v31, #11219)."""
 
+_V21: list[str] = [_legacy_shared_to_engine_ddl(statement) for statement in _LEGACY_V32]
+"""20 -> 21: in-app labelling and karma ledger (legacy ladder v32, issue #11192)."""
+
 MIGRATIONS: list[list[str]] = [
     _V1, _V2, _V3, _V4, _V5, _V6, _V7, _V8, _V9, _V10, _V11, _V12, _V13,
-    _V14, _V15, _V16, _V17, _V18, _V19, _V20,
+    _V14, _V15, _V16, _V17, _V18, _V19, _V20, _V21,
 ]
 
 ALL_DDL: list[str] = [stmt for rung in MIGRATIONS for stmt in rung]

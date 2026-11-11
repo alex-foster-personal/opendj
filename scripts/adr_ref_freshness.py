@@ -9,6 +9,7 @@ from pathlib import Path
 
 STALE_MERGE_REF_MSG = "merge ref is stale, update your branch"
 FRESH_ENOUGH_MSG = "base moved since the merge ref was cut, but not under"
+STALE_LIVE_MAIN_PASS_MSG = "stale merge ref against current base, merge-tree collision check passed"
 DEFAULT_GATED_DIR = "(private path)"
 
 
@@ -16,6 +17,17 @@ DEFAULT_GATED_DIR = "(private path)"
 class RefVerdict:
     code: int
     message: str
+
+
+@dataclass(frozen=True)
+class StaleRefCollision:
+    """Head is behind ``base_ref`` and ``(private path)/`` moved; caller must run
+    merge-tree collision against live ``base_ref``, not fail on staleness alone."""
+
+    base_ref: str
+    head_ref: str
+    base_sha: str
+    head_sha: str
 
 
 def git_rev_parse(ref: str, repo_root: Path) -> str:
@@ -88,26 +100,16 @@ def check_ref_freshness(
     repo_root: Path,
     *,
     gated_dir: str = DEFAULT_GATED_DIR,
-) -> RefVerdict | None:
-    """Return a failing verdict when ``base_ref`` moved past ``head_ref``'s fork point
-    IN ``gated_dir``.
+) -> RefVerdict | StaleRefCollision | None:
+    """Return ``None`` when fresh, ``StaleRefCollision`` when behind live base with
+    gated moves (caller runs merge-tree against current ``base_ref``), or a
+    failing ``RefVerdict`` when git cannot be measured.
 
-    The guard exists for issue #3513: a synthetic PR merge ref cut before a
-    trunk ADR fix would otherwise be scanned for duplicate ids that main has
-    already renumbered. That is the only reason a stale ref matters to this
-    gate, so a base that moved only OUTSIDE the ADR directory is accepted with
-    a note. Measured Mon 21 Sep 2026: with main taking a merge every few
-    minutes (and a `[skip ci]` TECH-DEBT regeneration after each), the bare
-    ancestry check failed PR #3600's adr check twice in 30 min on refs that
-    carried every ADR main had, and each failure cost a branch update and a
-    full CI run on a saturated pool.
-
-    An unnumbered ``ADR-NEW-<slug>.md`` that main ADDED is not counted as moved
-    either, unless the head carries the same file name: it cannot have been
-    renumbered, so it cannot leave stale duplicate ids behind. Measured Thu 15
-    Oct 2026: three direct merges in 20 min each added one ADR-NEW file and
-    failed the adr check of every open PR, which then needed a branch update
-    and a full CI run.
+    Issue #3513 limited stale failures to ``(private path)/`` movement; issue
+    #11339 defers that failure to a live merge-tree collision verdict so an
+    unrelated trunk ADR does not redden in-flight PRs. Movement only outside
+    ``gated_dir`` still accepts with a note, as do unnumbered ``ADR-NEW`` adds
+    when the head does not carry the same name.
     """
     try:
         base_sha = git_rev_parse(base_ref, repo_root)
@@ -161,13 +163,11 @@ def check_ref_freshness(
                 f"{base_ref}={base_sha[:12]} vs fork {fork[0][:12]}; accepting {head_ref}",
             )
             return None
-        return RefVerdict(
-            1,
-            "[adr-check] "
-            f"{STALE_MERGE_REF_MSG} "
-            f"(base {base_ref}={base_sha[:12]} is not an ancestor of "
-            f"{head_ref}={head_sha[:12]} and {gated_dir}/ moved on it: "
-            f"{', '.join(moved[:5])}{', ...' if len(moved) > 5 else ''})",
+        return StaleRefCollision(
+            base_ref=base_ref,
+            head_ref=head_ref,
+            base_sha=base_sha,
+            head_sha=head_sha,
         )
     return RefVerdict(
         2,

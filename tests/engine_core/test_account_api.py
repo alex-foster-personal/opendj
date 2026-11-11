@@ -222,12 +222,19 @@ def test_delete_with_a_wrong_confirm_token_changes_nothing(client: TestClient, s
     assert _rows(state_db_path, "users") == 1
 
 
+@pytest.mark.parametrize("session_token", [None, "unknown-session-token"])
 def test_delete_when_signed_out_is_a_401_not_a_silent_no_op(
     client: TestClient,
+    session_token: str | None,
 ) -> None:
+    if session_token is not None:
+        client.cookies.set(SESSION_COOKIE_NAME, session_token)
     response = client.delete(f"/api/v1/account?confirm={ACCOUNT_DELETE_CONFIRM}")
     assert response.status_code == 401
-    assert response.json()["detail"]["code"] == "AUTH_REQUIRED"
+    assert response.json()["detail"] == {
+        "code": "AUTH_REQUIRED",
+        "message": ("not signed in, so there is no account to act on. Sign in with POST /api/v1/auth/login first."),
+    }
 
 
 def test_a_confirmed_delete_erases_the_user_and_every_session(client: TestClient, state_db_path: Path) -> None:

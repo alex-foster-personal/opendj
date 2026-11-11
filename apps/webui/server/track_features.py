@@ -5,11 +5,25 @@ Shared by Copilot and PLAY IT routes.
 
 from __future__ import annotations
 
+from datetime import UTC, datetime
+
 from apps.shared.harmonic import TrackFeature, key_to_camelot
 
 from .backend import Track
 
 __all__ = ["camelot_or_none", "energy_of", "track_to_feature"]
+
+
+def _last_played_or_none(raw: str | None) -> datetime | None:
+    if raw is None or not str(raw).strip():
+        return None
+    try:
+        dt = datetime.fromisoformat(str(raw).strip())
+    except ValueError:
+        return None
+    if dt.tzinfo is None:
+        return dt.replace(tzinfo=UTC)
+    return dt.astimezone(UTC)
 
 
 def camelot_or_none(key: str | None) -> str | None:
@@ -37,4 +51,6 @@ def track_to_feature(track: Track) -> TrackFeature:
         bpm=track.bpm,
         key_camelot=camelot_or_none(track.key),
         energy=energy_of(track),
+        title=track.title,
+        last_played_at=_last_played_or_none(track.last_played_at),
     )

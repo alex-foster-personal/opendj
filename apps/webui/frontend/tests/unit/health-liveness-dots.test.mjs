@@ -185,6 +185,12 @@ test('a coverage read that times out throws the typed CoverageTimeoutError the p
 	}
 });
 
+// [if] liveness dot is complete [then] connBrightUp is true, [else stop].
+test('connBrightUp is true only for a green liveness row', () => {
+	assert.equal(dots.connBrightUp({ label: 'Backend', state: 'complete', detail: 'ok' }), true);
+	assert.equal(dots.connBrightUp({ label: 'Backend', state: 'error', detail: 'down' }), false);
+});
+
 test('BrowserPanel: a production build shows App UI from the Backend dot and sends no dev-server ping', async () => {
 	const { readFileSync } = await import('node:fs');
 	const src = readFileSync(

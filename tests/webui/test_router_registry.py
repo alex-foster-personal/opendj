@@ -29,9 +29,21 @@ from starlette.convertors import (
 from starlette.routing import Match, Route
 
 from apps.webui.server import app_wiring
+import apps.webui.server.app as webui_app
 from tests.webui.app_fixtures import client_fixture  # noqa: F401  (pytest fixture)
 
 _SNAPSHOT = Path(__file__).with_name("router_table_snapshot.json")
+
+
+@pytest.fixture(autouse=True)
+def _snapshot_matches_production_spa_mount(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """router_table_snapshot.json records the SPA Mount at ``/``, not the no-build placeholder."""
+    build_dir = tmp_path / "frontend-build"
+    build_dir.mkdir()
+    (build_dir / "index.html").write_text("<html><body>router snapshot</body></html>", encoding="utf-8")
+    monkeypatch.setattr(webui_app, "FRONTEND_BUILD_DIR", build_dir)
 _PROBE_UUID = "123e4567-e89b-12d3-a456-426614174000"
 _PATH_PARAM = re.compile(r"\{([^}:]*)(?::[^}]*)?\}")
 _EXCLUDED_DISCOVERY = frozenset(

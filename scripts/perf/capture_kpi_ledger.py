@@ -6,7 +6,9 @@ Append-only: never edit or delete an existing entry. A failed probe writes
 
 from __future__ import annotations
 
+import re
 import socket
+import sqlite3
 import subprocess
 import urllib.error
 import urllib.request
@@ -17,6 +19,11 @@ from pathlib import Path
 from typing import Any
 from urllib.request import Request
 
+from apps.mik.availability import probe
+
+_S12_TRACKS_DENOM_RE = re.compile(r"denominator=(\d+)\s+tracks")
+_S12_PRESENT_DENOM_RE = re.compile(r"denominator=present\s+(\d+)")
+
 SOURCE = "scripts.perf.capture_kpis"
 ROUND = "perf-capture"
 CAPTURE_TAG = "capture=perf-capture"
@@ -26,6 +33,7 @@ S5_REQUIRED = ("packaged_deck_load_total_ms",)
 S12_REQUIRED = ("cloudsync_first_sync_s", "cloudsync_noop_sync_s")
 S5_UNIT = "ms"
 S12_UNIT = "s"
+LIBRARY_SCALE_MIN_TRACKS = 1000
 HEALTH_TIMEOUT_S = 60
 ANLZ_TIMEOUT_S = 60
 AUDIO_TIMEOUT_S = 300
@@ -39,6 +47,70 @@ class CaptureMeta:
     date: str
     machine: str
     sha: str
+
+
+@dataclass(frozen=True)
+class S12Denominator:
+    track_count: int
+    present: int
+    unreachable: int
+
+
+def probe_s12_denominator(state_db: Path) -> S12Denominator | None:
+    if not state_db.is_file():
+        return None
+    conn = sqlite3.connect(f"file:{state_db}?mode=ro", uri=True)
+    try:
+        row = conn.execute("SELECT count(*) FROM tracks WHERE deleted_at IS NULL").fetchone()
+        track_count = 0 if row is None else int(row[0])
+        rows = probe(conn)
+    finally:
+        conn.close()
+    present = sum(1 for item in rows if item.state == "present")
+    unreachable = sum(1 for item in rows if item.state not in ("present", "streaming"))
+    return S12Denominator(track_count=track_count, present=present, unreachable=unreachable)
+
+
+def format_s12_note(
+    *,
+    kind: str | None,
+    denom: S12Denominator,
+    sha: str,
+) -> str:
+    kind_part = f"kind={kind}; " if kind else ""
+    return (
+        f"{kind_part}denominator={denom.track_count} tracks; "
+        f"denominator=present {denom.present}; unreachable {denom.unreachable}; "
+        f"sha={sha}"
+    )
+
+
+def attach_s12_denominator_to_reason(reason: str, denom: S12Denominator, sha: str) -> str:
+    tail = (
+        f"denominator={denom.track_count} tracks; "
+        f"denominator=present {denom.present}; unreachable {denom.unreachable}; "
+        f"sha={sha}"
+    )
+    return f"{reason}; {tail}"
+
+
+def s12_library_scale_rejection(kpi: str, note: str | None) -> str | None:
+    if not kpi.startswith("cloudsync_"):
+        return None
+    haystack = note or ""
+    tracks_match = _S12_TRACKS_DENOM_RE.search(haystack)
+    present_match = _S12_PRESENT_DENOM_RE.search(haystack)
+    if tracks_match is None or present_match is None:
+        return None
+    track_count = int(tracks_match.group(1))
+    present = int(present_match.group(1))
+    if track_count >= LIBRARY_SCALE_MIN_TRACKS and present == 0:
+        return (
+            f"{kpi} records {track_count} tracks with present 0; metadata-only "
+            "sync is not a library-scale cohort and cannot PASS against a "
+            "present ~10k baseline"
+        )
+    return None
 
 
 class _NoRedirect(urllib.request.HTTPRedirectHandler):

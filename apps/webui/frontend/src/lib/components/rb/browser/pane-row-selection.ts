@@ -145,6 +145,41 @@ export function isSelectedRow(row: RowRef, selectedOrders: readonly number[]): b
 	return selectedOrders.includes(row.order);
 }
 
+/** Select every rendered row, keeping the anchor when it is still on screen
+ * so a following shift-click extends from where the user last clicked.
+ * Returns the number of tracks now selected. */
+export function selectAllRows(pane: SelectionPane, rows: readonly RowRef[]): number {
+	if (rows.length === 0) return 0;
+	const orders: number[] = [];
+	const seenOrders = new Set<number>();
+	const ids: string[] = [];
+	const seenIds = new Set<string>();
+	for (const row of rows) {
+		if (!seenOrders.has(row.order)) {
+			seenOrders.add(row.order);
+			orders.push(row.order);
+		}
+		if (!seenIds.has(row.stable_id)) {
+			seenIds.add(row.stable_id);
+			ids.push(row.stable_id);
+		}
+	}
+	const anchorOnScreen =
+		pane.selected_id !== null &&
+		rows.some(
+			(r) =>
+				r.stable_id === pane.selected_id &&
+				(pane.selected_order === null || r.order === pane.selected_order)
+		);
+	if (!anchorOnScreen) {
+		pane.selected_id = rows[0].stable_id;
+		pane.selected_order = rows[0].order;
+	}
+	pane.selected_orders = orders;
+	pane.selected_ids = ids;
+	return ids.length;
+}
+
 export function masterHighlightOrder(
 	rows: readonly RowRef[],
 	masterStableId: string | null

@@ -20,15 +20,18 @@ from __future__ import annotations
 import argparse
 import json
 import sys
+from collections.abc import Mapping, Sequence
+from dataclasses import dataclass
 from pathlib import Path
 
 from rich.console import Console
 from rich.table import Table
 
 from apps.sync.usb import profile as profile_mod
-from apps.sync.usb.diff import Plan, compute_plan, plan_summary
+from apps.sync.usb.diff import Op, Plan, compute_plan, plan_summary
+from apps.sync.usb.layout import dst_relpath
 from apps.sync.usb.preflight import ALL_CHECKS, preflight
-from apps.sync.usb.state import load_canonical_tracks
+from apps.sync.usb.state import CanonicalTrack, load_canonical_tracks
 
 console = Console(width=120)
 
@@ -126,6 +129,122 @@ def plan_to_jsonable(plan: Plan) -> dict:
         ],
         "counts": plan_summary(plan),
     }
+
+
+# ------------------------------------------------- parallel playlist copy
+
+
+@dataclass(slots=True, frozen=True)
+class StickJob:
+    """One independent copy job: the ops that land on a single stick."""
+
+    stick: str
+    root: Path
+    ops: tuple[Op, ...]
+
+    @property
+    def total_bytes(self) -> int:
+        return sum(op.bytes_estimate for op in self.ops)
+
+
+@dataclass(slots=True, frozen=True)
+class ParallelCopyPlan:
+    """One playlist split across several sticks, one :class:`StickJob` per stick."""
+
+    playlist: str
+    jobs: tuple[StickJob, ...]
+    warnings: tuple[str, ...] = ()
+    omitted: tuple[str, ...] = ()
+
+    @property
+    def sticks(self) -> tuple[str, ...]:
+        return tuple(job.stick for job in self.jobs)
+
+    def assignments(self) -> dict[str, str]:
+        """``stable_id -> stick`` for every planned track."""
+        return {op.stable_id: job.stick for job in self.jobs for op in job.ops if op.stable_id}
+
+
+def plan_parallel_playlist_copy(
+    *,
+    playlist: str,
+    tracks: Sequence[CanonicalTrack],
+    sticks: Mapping[str, Path],
+    layout: str,
+    format_: str = "copy-as-is",
+) -> ParallelCopyPlan:
+    """Partition ``playlist``'s tracks across ``sticks`` without touching any disk.
+
+    Each selected track goes to exactly one stick (a repeated ``stable_id`` is
+    planned once). Tracks are placed largest first on the stick holding the
+    fewest bytes so far, so the jobs finish close together. Every stick gets a
+    job, even an empty one, so the joined plan names every target. Only
+    ``copy-as-is`` is supported: the joined verification compares the copied
+    bytes with the library hash, which a transcode would never match.
+
+    Two tracks never share a destination on one stick: paths are compared
+    case-insensitively (FAT/exFAT sticks fold case), a track whose path is
+    already taken goes to the least-loaded stick where it is free, and a track
+    whose path is taken on every stick is left out with a warning (and listed
+    in ``omitted``, which fails the joined receipt) rather than overwriting
+    another track.
+    """
+    if not sticks:
+        raise ValueError("parallel copy needs at least one stick")
+    if format_ != "copy-as-is":
+        raise ValueError(f"parallel copy supports copy-as-is only, not {format_!r}")
+
+    selected: list[tuple[int, CanonicalTrack]] = []
+    seen: set[str] = set()
+    for track in tracks:
+        if track.playlist != playlist or track.stable_id in seen:
+            continue
+        seen.add(track.stable_id)
+        selected.append((len(selected) + 1, track))
+
+    names = list(sticks)
+    loads = {name: 0 for name in names}
+    placed: dict[str, list[Op]] = {name: [] for name in names}
+    taken: dict[str, dict[str, str]] = {name: {} for name in names}
+    warnings: list[str] = []
+    omitted: list[str] = []
+    for index, track in sorted(selected, key=lambda it: (-it[1].size_bytes, it[1].stable_id)):
+        rel = dst_relpath(
+            layout=layout,
+            format_=format_,
+            playlist=playlist,
+            track_index=index,
+            artist=track.artist,
+            album=track.album,
+            title=track.title,
+            src=track.source_path,
+        )
+        key = rel.as_posix().casefold()
+        free = [n for n in names if key not in taken[n]]
+        if not free:
+            warnings.append(
+                f"destination collision: {rel.as_posix()} ({track.stable_id}) is taken on every stick; not planned"
+            )
+            omitted.append(track.stable_id)
+            continue
+        target = min(free, key=lambda n: (loads[n], len(placed[n]), names.index(n)))
+        taken[target][key] = track.stable_id
+        placed[target].append(
+            Op(
+                kind="copy",
+                dst=Path(sticks[target]) / rel,
+                dst_rel=rel,
+                reason=f"parallel copy of {playlist!r} to {target}",
+                bytes_estimate=track.size_bytes,
+                src=track.source_path,
+                stable_id=track.stable_id,
+                expected_hash=track.content_hash,
+            )
+        )
+        loads[target] += track.size_bytes
+
+    jobs = tuple(StickJob(stick=n, root=Path(sticks[n]), ops=tuple(placed[n])) for n in names)
+    return ParallelCopyPlan(playlist=playlist, jobs=jobs, warnings=tuple(warnings), omitted=tuple(omitted))
 
 
 def main(argv: list[str] | None = None) -> int:

@@ -102,6 +102,7 @@
 	import OjTopBarButton from './OjTopBarButton.svelte';
 	import TrackInfoHost from './TrackInfoHost.svelte';
 	import WaveQuickSettingsButton from './WaveQuickSettingsButton.svelte';
+	import EdgeSamplerToggle from './sampler/EdgeSamplerToggle.svelte';
 	import { builtExplainerBullets, builtTitle, plannedExplainerBullets, plannedTitle } from '$lib/rb/planned-explainers';
 	import {
 		FEATURE_ICON_ROWS,
@@ -1185,6 +1186,7 @@
 	</button>
 
 	<WaveQuickSettingsButton />
+	<EdgeSamplerToggle />
 
 	<button
 		type="button"

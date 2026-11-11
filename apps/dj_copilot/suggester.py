@@ -55,6 +55,8 @@ def _rationale_tags(sc: ScoredCandidate) -> list[str]:
             tags.append(f"pair_{src}")
     if r.get("pressure_release"):
         tags.append("release_a_little")
+    if "days_since_played" in r and r.get("history", 1.0) < 1.0:
+        tags.append("played_recently")
     return tags
 
 
@@ -77,12 +79,14 @@ def suggest_next(
     context: SessionContext | None = None,
     top_n: int = 10,
     explain: bool = False,
+    history_weight: float = 0.0,
 ) -> list[RankedSuggestion]:
     """Return the top-N next-track candidates, deterministic order.
 
     ``current_stable_id`` must appear in ``library``; otherwise returns
     an empty list (and logs at WARNING at the stage-1 rank site).
     ``context`` defaults to an empty session when None.
+    ``history_weight`` applies the recency term (0 keeps stage-1 byte-identical).
     """
     # Resolve current from the library.
     current: TrackFeature | None = next((t for t in library if t.stable_id == current_stable_id), None)
@@ -99,7 +103,13 @@ def suggest_next(
         library=library,
         context=context,
     )
-    stage1 = rank_stage1(current_track=current_played, candidates=filtered, top_n=40)
+    stage1 = rank_stage1(
+        current_track=current_played,
+        candidates=filtered,
+        top_n=40,
+        history_weight=history_weight,
+        now=context.captured_at,
+    )
     stage2 = rerank_with_pairings(conn=conn, current_stable_id=current_stable_id, stage1=stage1)
     peak_plays = [
         PeakPlay(

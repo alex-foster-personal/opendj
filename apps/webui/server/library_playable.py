@@ -64,8 +64,12 @@ from fastapi import HTTPException
 from apps.shared import platform_paths, remote_status
 from apps.shared.state import locations as state_locations
 from apps.shared.state import sync_stamp
+from apps.sync_hub import config as sync_config
 from apps.webui.server.rb_vendor_pkg import track_rows
 from apps.webui.soft_deletes import has_soft_deletes
+
+DECK_LOAD_REFUSAL_STREAMING = "streaming"
+DECK_LOAD_REFUSAL_CLOUD_POLICY = "cloud_policy_unconfigured"
 
 BUCKETS: tuple[str, ...] = (
     "present",
@@ -331,4 +335,52 @@ def scan_playability(
     return scan
 
 
-__all__ = ["BUCKETS", "LibraryPlayability", "absent_folder", "scan_playability"]
+def audio_policy_configured(conn: sqlite3.Connection, machine_id: str) -> bool:
+    """True when this machine has a live ``sync_policies`` audio cell."""
+    row = conn.execute(
+        "SELECT 1 FROM sync_policies "
+        "WHERE machine_id = ? AND asset_kind = 'audio' AND deleted_at IS NULL "
+        "LIMIT 1",
+        (machine_id,),
+    ).fetchone()
+    return row is not None
+
+
+def cloudsync_enabled(data_dir: Path) -> bool:
+    """Whether CloudSync is turned on for this data directory."""
+    try:
+        return sync_config.resolve_config(data_dir).enabled
+    except sync_config.CloudSyncConfigError:
+        return False
+
+
+def deck_load_refusal(
+    *,
+    local_present: bool,
+    is_streaming: bool,
+    is_remote: bool,
+    has_remote_copy: bool,
+    cloudsync_on: bool,
+    policy_configured: bool,
+) -> str | None:
+    """Why a listing row must not reach a deck on this host, or None when it can."""
+    if local_present:
+        return None
+    if is_streaming:
+        return DECK_LOAD_REFUSAL_STREAMING
+    if cloudsync_on and not policy_configured and (is_remote or has_remote_copy):
+        return DECK_LOAD_REFUSAL_CLOUD_POLICY
+    return None
+
+
+__all__ = [
+    "BUCKETS",
+    "DECK_LOAD_REFUSAL_CLOUD_POLICY",
+    "DECK_LOAD_REFUSAL_STREAMING",
+    "LibraryPlayability",
+    "absent_folder",
+    "audio_policy_configured",
+    "cloudsync_enabled",
+    "deck_load_refusal",
+    "scan_playability",
+]

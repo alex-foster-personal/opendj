@@ -49,11 +49,7 @@ export const WAVE_QS_GROUPS: readonly WaveQsGroup[] = [
 			{ kind: 'setting', id: 'waveform_design' },
 			{ kind: 'setting', id: 'wave_palette' },
 			{ kind: 'setting', id: 'ui_skin' },
-			_inert(
-				'wave_height',
-				'Half or full height',
-				'The deck waveform is always drawn full height and mirrored.'
-			)
+			{ kind: 'setting', id: 'wave_height' }
 		]
 	},
 	{
@@ -79,11 +75,7 @@ export const WAVE_QS_GROUPS: readonly WaveQsGroup[] = [
 			_inert('hot_cues', 'Hot cues', 'Hot cue markers are always drawn.'),
 			_inert('memory_cues', 'Memory cues', 'Memory cue markers are always drawn.'),
 			_inert('loop_cues', 'Loop cues', 'Saved loop bands are always drawn.'),
-			_inert(
-				'vocal_lane',
-				'Vocal lane',
-				'The vocal lane is always drawn where vocals are analyzed.'
-			),
+			{ kind: 'setting', id: 'show_vocal_lane' },
 			_inert(
 				'tempo_lane',
 				'Tempo-change lane',
@@ -139,6 +131,7 @@ export function resolveWaveQsSetting(catalog: readonly SettingDef[], id: string)
  */
 export const WAVE_QS_VERBS: Readonly<Record<string, string>> = {
 	waveform_design: 'set_waveform_design',
+	wave_height: 'set_waveform_design',
 	wave_palette: 'set_skin',
 	ui_skin: 'set_skin',
 	wave_split_master: 'set_skin',
@@ -147,6 +140,7 @@ export const WAVE_QS_VERBS: Readonly<Record<string, string>> = {
 	wave_zoom_linked: 'set_wave_zoom_options',
 	show_stems: 'show_stems',
 	show_sections: 'set_waveform_overlay',
+	show_vocal_lane: 'set_waveform_overlay',
 	lyrics_waveform_overlay: 'set_waveform_overlay',
 	lyrics_hover_scrub: 'set_waveform_overlay',
 	jog_radial_waveform: 'set_waveform_overlay',

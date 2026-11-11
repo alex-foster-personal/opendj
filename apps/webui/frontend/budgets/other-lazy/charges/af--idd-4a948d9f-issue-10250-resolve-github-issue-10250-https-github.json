@@ -1,0 +1,9 @@
+{
+  "bytes": 1024,
+  "measured_main": 503817,
+  "measured_with_pr": 504104,
+  "sha": "236159fb93",
+  "date": "Tue 10 Nov 2026",
+  "reason": "Issue #10250 adds wave-height-setting catalog entry, apply path and settings preview wiring on deferred chunks. Measured vs merge base 9048756a88, +287 B gzip; ceiled to KiB",
+  "payback": "none planned; the growth is the feature's own code on this surface"
+}

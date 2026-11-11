@@ -136,6 +136,8 @@ test('Bluetooth warning helpers and HeadphoneCluster wiring', async () => {
 	assert.match(clusterSrc, /aria-label="increase head delay"/);
 	assert.match(clusterSrc, /aria-label="decrease head delay"/);
 	assert.match(clusterSrc, /twoOutputsWarning\(/);
+	assert.match(clusterSrc, /data-two-outputs-warning/);
+	assert.match(clusterSrc, /data-io-routing-feedback/);
 	assert.match(clusterSrc, /ondelay/);
 });
 

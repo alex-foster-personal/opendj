@@ -1,0 +1,9 @@
+{
+  "bytes": 1024,
+  "measured_main": 503838,
+  "measured_with_pr": 503968,
+  "sha": "cbe29f6a03",
+  "date": "Tue 10 Nov 2026",
+  "reason": "PR #10691: measured +130 B gzip on other-lazy over main (2 B over the 128 B noise floor) at cbe29f6a03. This branch has no apps/webui/frontend source diff vs origin/main; the growth is build jitter. Ceiled to KiB so CI --own 10691 can apply the allowance.",
+  "payback": "none planned; the growth is the change's own code on this surface"
+}

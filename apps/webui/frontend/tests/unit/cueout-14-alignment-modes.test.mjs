@@ -145,6 +145,7 @@ describe('mixer config persistence (alignment_mode, master_delay_ms, last_calibr
 			head_delay_ms: 77,
 			alignment_mode: 'hybrid',
 			master_delay_ms: 0,
+			calibration_probe: 'chirp',
 			last_calibration: null,
 			saved_outputs: { master: null, cue: null, booth: null }
 		});
@@ -192,6 +193,7 @@ describe('mixer config persistence (alignment_mode, master_delay_ms, last_calibr
 			head_delay_ms: 0,
 			alignment_mode: 'delay_all',
 			master_delay_ms: 700,
+			calibration_probe: 'chirp',
 			last_calibration: record,
 			saved_outputs: { master: null, cue: null, booth: null }
 		});
@@ -210,7 +212,7 @@ describe('mixer config persistence (alignment_mode, master_delay_ms, last_calibr
 			probe: null,
 			diagnostics: {
 				probe: 'chirp',
-				alternate_probe: 'unavailable',
+				alternate_probe: 'click_train',
 				failure: null,
 				master_measurements_ms: [],
 				cue_measurements_ms: [],

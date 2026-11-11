@@ -584,3 +584,97 @@ test('performance: selected library row stays visible when toggling MORE and LES
 		page.locator(`[data-testid="track-row"][data-stable-id="${expandStableId}"]`)
 	).toHaveClass(/rb-row-selected/);
 });
+
+// LIBUX-11716: compact decks yields >= 8 library rows at 1470x956 and >= 6 at 1280x800
+// without shrinking deck-header hit targets below 24px or below their normal size.
+
+async function readCompactDecks(
+	request: import('@playwright/test').APIRequestContext
+): Promise<boolean> {
+	const res = await request.get('/api/v1/ui-prefs');
+	expect(res.ok()).toBe(true);
+	const value = (await res.json()).compact_decks;
+	expect(typeof value).toBe('boolean');
+	return value;
+}
+
+async function setCompactDecks(
+	request: import('@playwright/test').APIRequestContext,
+	on: boolean
+): Promise<void> {
+	const res = await request.put('/api/v1/ui-prefs', {
+		data: { compact_decks: on }
+	});
+	expect(res.ok()).toBe(true);
+	expect((await res.json()).compact_decks).toBe(on);
+}
+
+type ControlBox = { width: number; height: number };
+
+async function deckOneHeaderControlBoxes(
+	page: import('@playwright/test').Page
+): Promise<ControlBox[]> {
+	const deck = page.locator("[data-deck='1']").first();
+	const controls = deck.locator('button, .rb-knob');
+	const count = await controls.count();
+	const boxes: ControlBox[] = [];
+	for (let i = 0; i < count; i++) {
+		const box = await controls.nth(i).boundingBox();
+		if (box) boxes.push({ width: box.width, height: box.height });
+	}
+	return boxes;
+}
+
+const VIEWPORT_1470 = { width: 1470, height: 956 };
+const MIN_TABLE_8_ROWS = 20 + 8 * 22 + 17 - 1;
+const MIN_TABLE_6_ROWS = 20 + 6 * 22 + 17 - 1;
+
+test('performance: compact decks shows >= 8 library rows at 1470x956 and keeps hit targets', async ({
+	page,
+	request
+}) => {
+	const original = await readCompactDecks(request);
+	try {
+		await page.setViewportSize(VIEWPORT_1470);
+		await page.goto('/performance');
+		await expect(page.locator('.perf-root')).not.toHaveClass(/deck-layout-less/);
+		const normalBoxes = await deckOneHeaderControlBoxes(page);
+
+		await setCompactDecks(request, true);
+		await page.reload();
+		await expect(page.locator('.perf-root')).toHaveClass(/rb-compact-decks/);
+
+		const tableWrap = page.locator('.table-wrap');
+		const box1470 = await tableWrap.boundingBox();
+		expect(box1470).not.toBeNull();
+		expect(box1470!.height).toBeGreaterThanOrEqual(MIN_TABLE_8_ROWS);
+
+		await page.setViewportSize(STANDARD_VIEWPORT);
+		const box1280 = await tableWrap.boundingBox();
+		expect(box1280).not.toBeNull();
+		expect(box1280!.height).toBeGreaterThanOrEqual(MIN_TABLE_6_ROWS);
+
+		const compactBoxes = await deckOneHeaderControlBoxes(page);
+		expect(compactBoxes.length).toBe(normalBoxes.length);
+		for (let i = 0; i < compactBoxes.length; i++) {
+			const normal = normalBoxes[i];
+			const compact = compactBoxes[i];
+			expect(compact.width).toBeGreaterThanOrEqual(Math.min(24, normal.width) - 1);
+			expect(compact.height).toBeGreaterThanOrEqual(Math.min(24, normal.height) - 1);
+		}
+
+		const perfRoot = page.locator('.perf-root');
+		const noClip = await perfRoot.evaluate((el) => el.scrollHeight <= el.clientHeight + 1);
+		expect(noClip).toBe(true);
+		const deck1 = page.locator("[data-deck='1']").first();
+		const deckClip = await deck1.evaluate((el) => el.scrollHeight <= el.clientHeight + 1);
+		expect(deckClip).toBe(true);
+		const mixerClip = await page
+			.locator('.rb-mixer')
+			.first()
+			.evaluate((el) => el.scrollHeight <= el.clientHeight + 1);
+		expect(mixerClip).toBe(true);
+	} finally {
+		await setCompactDecks(request, original);
+	}
+});

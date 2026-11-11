@@ -3,8 +3,9 @@ import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { test } from 'node:test';
 
-// LIBUX-01 - "Library panel should be slightly greedier - minimum 5 rows of
-// songs." Four mechanisms have to agree for this to actually hold on screen:
+// LIBUX-01 / LIBUX-11716 - "Library panel should be slightly greedier - minimum
+// 5 rows of songs", and optional compact decks for >= 8 rows at 1470x956.
+// Four mechanisms have to agree for this to actually hold on screen:
 //
 // 1. TrackTable's `.tt-root` carries a min-height floor of thead + 5 rows +
 //    a classic-scrollbar-gutter allowance, so flex-shrink cannot crush it
@@ -486,4 +487,220 @@ test('perf-root has PER-MODE row floors, and LESS reserves less than MORE by at 
 			`chrome floors need >= ${requiredLibraryPx + bottomBarPx}px ` +
 			`(library floor ${requiredLibraryPx} + bottom-bar ${bottomBarPx})`
 	);
+});
+
+// LIBUX-11716 compact decks row arithmetic (default compact density, 22px rows).
+
+function readCompactThemeTokens() {
+	const themeSource = readFileSync(THEME_PATH, 'utf8');
+	const block = firstMatch(
+		themeSource,
+		/:root \.perf-root\.rb-compact-decks:not\(\.deck-layout-less\)\s*\{([^}]*)\}/,
+		'compact decks theme token block'
+	);
+	const waverow = Number(
+		firstMatch(block[1], /--rb-waverow-h:\s*(\d+)px/, 'compact --rb-waverow-h')[1]
+	);
+	const art = Number(firstMatch(block[1], /--rb-deck-art:\s*(\d+)px/, 'compact --rb-deck-art')[1]);
+	const strip = Number(firstMatch(block[1], /--rb-strip-h:\s*(\d+)px/, 'compact --rb-strip-h')[1]);
+	return { waverow, art, strip };
+}
+
+function readTopbarPx() {
+	const themeSource = readFileSync(THEME_PATH, 'utf8');
+	return Number(firstMatch(themeSource, /--rb-topbar-h:\s*(\d+)px/, '--rb-topbar-h')[1]);
+}
+
+function readCompactDeckGrid(pageSource) {
+	const block = firstMatch(
+		pageSource,
+		/\.perf-root\.rb-compact-decks:not\(\.deck-layout-less\)\s*\{([^}]*)\}/,
+		'compact decks perf-root grid block'
+	);
+	const floor = Number(firstMatch(block[1], /minmax\(\s*(\d+)px,/, 'compact deck-area floor')[1]);
+	const reserve = Number(
+		firstMatch(
+			block[1],
+			/100vh - var\(--rb-topbar-h\) -\s*4 \* \(var\(--rb-waverow-h\) \+ var\(--rb-stemwave-stack-extra, 0px\)\) -\s*(\d+)px/,
+			'compact library reserve'
+		)[1]
+	);
+	return { floor, reserve };
+}
+
+function compactLibraryChromePx() {
+	const trackTableSource = readFileSync(TRACK_TABLE_PATH, 'utf8');
+	const browserPanelSource = readFileSync(BROWSER_PANEL_PATH, 'utf8');
+	const suggestNextSource = readFileSync(SUGGEST_NEXT_STRIP_PATH, 'utf8');
+	const bottomBarMatch = firstMatch(
+		browserPanelSource,
+		/grid-template-rows:\s*minmax\(0,\s*1fr\)\s*(\d+)px/,
+		'bottom-bar row height'
+	);
+	const paneHeaderMatch = firstMatch(
+		browserPanelSource,
+		/\.pane-header\s*{[^}]*min-height:\s*(\d+)px/,
+		'pane-header min-height'
+	);
+	const stripFloorMatch = firstMatch(
+		suggestNextSource,
+		/\.strip\s*{[^}]*min-height:\s*(\d+)px/,
+		'SuggestNextStrip min-height'
+	);
+	const theadMatch = firstMatch(
+		trackTableSource,
+		/\.tt-root\s*{[^}]*min-height:\s*calc\((\d+)px/,
+		'thead px in tt-root floor'
+	);
+	const gutterMatch = firstMatch(
+		trackTableSource,
+		/\.tt-root\s*{[^}]*\+\s*(\d+)px\s*\+\s*var\(--tt-truncation-h\)/,
+		'scrollbar gutter px'
+	);
+	const rowH = Number(
+		firstMatch(
+			trackTableSource,
+			/\.tt-root\s*\{[^}]*--tt-row-h:\s*(\d+)px/,
+			'default --tt-row-h'
+		)[1]
+	);
+	return (
+		Number(bottomBarMatch[1]) +
+		Number(paneHeaderMatch[1]) +
+		Number(stripFloorMatch[1]) +
+		Number(theadMatch[1]) +
+		Number(gutterMatch[1])
+	);
+}
+
+function compactLibraryRowsAt(vw, vh, pageSource) {
+	const topbar = readTopbarPx();
+	const { waverow } = readCompactThemeTokens();
+	const { floor, reserve } = readCompactDeckGrid(pageSource);
+	const wavePx = 4 * waverow;
+	const cap = Math.min(floor, vh - topbar - wavePx - reserve);
+	const deckRow = Math.max(floor, Math.min(cap, vh - topbar - wavePx - reserve));
+	const libraryPx = vh - topbar - wavePx - deckRow;
+	const chrome = compactLibraryChromePx();
+	const rowH = Number(
+		firstMatch(
+			readFileSync(TRACK_TABLE_PATH, 'utf8'),
+			/\.tt-root\s*\{[^}]*--tt-row-h:\s*(\d+)px/,
+			'row h'
+		)[1]
+	);
+	return Math.floor((libraryPx - chrome) / rowH);
+}
+
+test('compact decks: the library fits >= 8 rows at 1470x956 and >= 6 at 1280x800', () => {
+	const pageSource = readFileSync(PAGE_PATH, 'utf8');
+	const rows1470 = compactLibraryRowsAt(1470, 956, pageSource);
+	const rows1280 = compactLibraryRowsAt(1280, 800, pageSource);
+	assert.ok(rows1470 >= 8, `compact library at 1470x956 must fit >= 8 rows (got ${rows1470})`);
+	assert.ok(rows1280 >= 6, `compact library at 1280x800 must fit >= 6 rows (got ${rows1280})`);
+	const themeSource = readFileSync(THEME_PATH, 'utf8');
+	const normalWaverow = Number(
+		firstMatch(themeSource, /--rb-waverow-h:\s*(\d+)px/, 'default waverow')[1]
+	);
+	const moreBlock = firstMatch(
+		pageSource,
+		/\.perf-root\s*\{[\s\S]*?minmax\(\s*(\d+)px,/,
+		'MORE deck-area floor'
+	);
+	const moreFloor = Number(moreBlock[1]);
+	const topbar = readTopbarPx();
+	const normalDeckRow = Math.max(
+		moreFloor,
+		Math.min(moreFloor, 956 - topbar - 4 * normalWaverow - 272)
+	);
+	const normalLibrary = 956 - topbar - 4 * normalWaverow - normalDeckRow;
+	const normalChrome = compactLibraryChromePx();
+	const normalRows = Math.floor((normalLibrary - normalChrome) / 22);
+	assert.ok(
+		rows1470 > normalRows,
+		`compact (${rows1470} rows) must beat normal at 1470x956 (${normalRows} rows)`
+	);
+});
+
+test('compact decks: the deck-area floor covers the compact deck column', () => {
+	const pageSource = readFileSync(PAGE_PATH, 'utf8');
+	const { art, strip } = readCompactThemeTokens();
+	const perDeckComment = firstMatch(
+		pageSource,
+		/one compact deck needs (\d+)px/,
+		'one compact deck needs Npx comment'
+	);
+	const columnComment = firstMatch(
+		pageSource,
+		/compact two-deck column needs (\d+)px/,
+		'compact two-deck column needs Npx comment'
+	);
+	const perDeckFromComment = Number(perDeckComment[1]);
+	const columnFromComment = Number(columnComment[1]);
+	const perDeck = art + strip + 113 + 16 + 16;
+	const gapMatch = firstMatch(pageSource, /\.deck-col\s*\{[^}]*gap:\s*(\d+)px/, 'deck-col gap');
+	const column = 2 * perDeck + Number(gapMatch[1]);
+	assert.equal(perDeckFromComment, perDeck, 'per-deck comment must match token arithmetic');
+	assert.equal(columnFromComment, column, 'column comment must match token arithmetic');
+	const { floor } = readCompactDeckGrid(pageSource);
+	assert.ok(floor >= column, `compact floor ${floor}px must cover column ${column}px`);
+});
+
+test('compact decks: hit targets stay >= 24px', () => {
+	const themeSource = readFileSync(THEME_PATH, 'utf8');
+	const block = firstMatch(
+		themeSource,
+		/:root \.perf-root\.rb-compact-decks:not\(\.deck-layout-less\)\s*\{([^}]*)\}/,
+		'compact theme block'
+	);
+	const tokenNames = [...block[1].matchAll(/(--rb-[a-z0-9-]+):/g)].map((m) => m[1]);
+	const allowed = new Set([
+		'--rb-waverow-h',
+		'--rb-deck-art',
+		'--rb-strip-h',
+		'--rb-fs-deck-title',
+		'--rb-deck-bpm-fs'
+	]);
+	for (const name of tokenNames) {
+		assert.ok(allowed.has(name), `unexpected compact token ${name}`);
+	}
+	const art = Number(firstMatch(block[1], /--rb-deck-art:\s*(\d+)px/, 'compact art')[1]);
+	assert.ok(art >= 24, 'compact deck art must be >= 24px hit target');
+	const stripSrc = readFileSync(
+		fileURLToPath(
+			new URL('../../src/lib/components/rb/mixer/ChannelStrip.svelte', import.meta.url)
+		),
+		'utf8'
+	);
+	const compactEq = Number(
+		firstMatch(stripSrc, /const COMPACT_EQ_SIZE = (\d+);/, 'COMPACT_EQ_SIZE')[1]
+	);
+	assert.ok(compactEq >= 24, 'COMPACT_EQ_SIZE must be >= 24');
+	const faderRule = firstMatch(
+		stripSrc,
+		/\.strip\.compact \.fader-slot\s*\{([^}]*)\}/,
+		'compact fader rule'
+	);
+	const faderMin = Number(
+		firstMatch(faderRule[1], /min-height:\s*(\d+)px/, 'compact fader min-height')[1]
+	);
+	assert.ok(faderMin >= 24, 'compact fader min-height must be >= 24');
+});
+
+test('compact decks: the selector beats every skin waverow override', () => {
+	const themeSource = readFileSync(THEME_PATH, 'utf8');
+	const compactSelector = ':root .perf-root.rb-compact-decks:not(.deck-layout-less)';
+	assert.ok(
+		themeSource.includes(compactSelector),
+		'compact selector must start with :root and include :not(.deck-layout-less)'
+	);
+	const waverowOverrides = [...themeSource.matchAll(/([^{\n]+)\{[^}]*--rb-waverow-h:\s*\d+px/g)];
+	for (const m of waverowOverrides) {
+		const sel = m[1].trim();
+		if (sel.includes('rb-compact-decks')) continue;
+		assert.ok(
+			!sel.startsWith(':root .perf-root'),
+			`skin waverow override must not beat compact specificity: ${sel}`
+		);
+	}
 });

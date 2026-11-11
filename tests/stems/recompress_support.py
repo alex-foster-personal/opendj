@@ -22,6 +22,7 @@ except ImportError:
     # tests/conftest.py turns into an UNAVAILABLE report; never a skip here.
     np = sf = None  # type: ignore[assignment]
 
+from apps.cloud.stem_index import MANIFEST_FILENAME
 from apps.stems.stem_encode import encode_mp3
 
 RATE = 44100
@@ -88,6 +89,15 @@ def _flac_bundle(data: Path, stable_id: str, source: Path) -> Path:
 
 def _snapshot(path: Path) -> dict[str, bytes]:
     return {p.name: p.read_bytes() for p in sorted(path.iterdir())}
+
+
+def _stale_flac_index_entry(_stable_id: str) -> dict[str, str]:
+    """Index row naming FLAC parts and a pre-conversion manifest digest."""
+    flac = "b" * 64
+    return {
+        MANIFEST_FILENAME: "a" * 64,
+        **{f"{part}.flac": flac for part in PARTS},
+    }
 
 
 def _fresh_parts(tmp_path: Path, seed: int) -> Path:

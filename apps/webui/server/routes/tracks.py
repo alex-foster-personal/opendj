@@ -265,6 +265,7 @@ def _track_own_fields(track: Track) -> dict[str, Any]:
         "comments": track.comments,
         "last_played_at": track.last_played_at,
         "tempo_pref": track.tempo_pref,
+        "tracklist_hidden": track.tracklist_hidden,
         "file_path": track.file_path,
         "created_at": track.created_at,
         "updated_at": track.updated_at,
@@ -335,6 +336,7 @@ def _listing_row_from_builder(track: Track, row: dict[str, Any]) -> dict[str, An
         "is_streaming": row["is_streaming"],
         "streaming_provider": row["streaming_provider"],
         "has_remote_copy": bool(row["has_remote_copy"]),
+        "deck_load_refusal": row["deck_load_refusal"],
         "cloud_transfer": row["cloud_transfer"],
         "offload": row["offload"],
         "quality": row["quality"],
@@ -376,6 +378,8 @@ def _listing_row_from_builder(track: Track, row: dict[str, Any]) -> dict[str, An
         "is_radio_edit": bool(row["is_radio_edit"]),
         "genre": row["genre"],
         "genre_source": row["genre_source"],
+        "genre_family": row.get("genre_family"),
+        "genre_family_color": row.get("genre_family_color"),
         "genre_reason": row["genre_reason"],
         "genre_guess": row["genre_guess"],
         # CMDK-04: the index carries the comment the library shows. Listing
@@ -1047,6 +1051,8 @@ def patch_track(
         patch_dict["tempo_pref"] = (
             patch.tempo_pref.model_dump() if patch.tempo_pref is not None else None
         )
+    if "tracklist_hidden" in patch.model_fields_set:
+        patch_dict["tracklist_hidden"] = patch.tracklist_hidden
     try:
         updated = backend.update_track(
             stable_id, patch_dict, expected_etag=if_match, source="webui"

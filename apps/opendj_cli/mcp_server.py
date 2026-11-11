@@ -45,8 +45,8 @@ from apps.opendj_cli.mcp_energy_tools import register_energy_tools
 from apps.opendj_cli.mcp_enrichment_tools import register_enrichment_tools
 from apps.opendj_cli.mcp_genre_tools import register_genre_tools
 from apps.opendj_cli.mcp_key_tools import register_key_tools
-from apps.opendj_cli.mcp_offload_tools import register_offload_tools
 from apps.opendj_cli.mcp_list_totals_tools import register_list_totals_tools
+from apps.opendj_cli.mcp_offload_tools import register_offload_tools
 from apps.opendj_cli.mcp_played_length_tools import register_played_length_tools
 from apps.opendj_cli.mcp_rekordbox_analyse_tools import register_rekordbox_analyse_tools
 from apps.opendj_cli.mcp_requests_tools import register_requests_tools
@@ -424,9 +424,9 @@ def create_server(*, command_timeout_s: float = ORDER_TIMEOUT_S) -> MCPServer:
 
     @server.tool(annotations=_READ_ONLY, structured_output=True)
     def app_state(path: str = "/api/v1/setup/status") -> dict[str, Any]:
-        """GET-only proxy to ``/api/v1/*`` on the running engine."""
+        """GET-only proxy to ``/api/v1/*``, ``/api/sets`` and ``/api/sets/*``."""
         try:
-            validate_api_path(path)
+            validate_api_path(path, method="GET")
             origin = _resolve_origin()
         except SafetyRefusal as error:
             raise _tool_error(
@@ -667,6 +667,9 @@ def create_server(*, command_timeout_s: float = ORDER_TIMEOUT_S) -> MCPServer:
             raise _engine_not_running(error) from error
 
     register_key_tools(server, post_order=_dispatch_order, read_mirror=_read_mirror, tool_error=_tool_error)
+    from apps.opendj_cli.mcp_replay_tools import register_replay_tools
+
+    register_replay_tools(server, run_order=_dispatch_order, tool_error=_tool_error)
     register_update_tools(
         server,
         lock_path=lambda: _state.lock_path,

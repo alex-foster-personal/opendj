@@ -1,8 +1,8 @@
 //! SQLite connection + DB-path resolution.
 //!
 //! Decides whether to point at Phase 5's shared-state DB
-//! (`data/state/state.db`, matching `apps/shared/paths.py` `STATE_DB`) or the
-//! Phase 17 bootstrap DB (`data/launcher-bootstrap.sqlite`) built by
+//! (`(private path)`, matching `apps/shared/paths.py` `STATE_DB`) or the
+//! Phase 17 bootstrap DB (`(private path)`) built by
 //! `apps/launcher/scripts/bootstrap_db.py`. Also exposes a `now_unix()` helper
 //! used by the frecency command.
 //!
@@ -13,6 +13,61 @@ use std::path::{Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use rusqlite::Connection;
+
+/// Bundle id shared with the packaged Open DJ desktop app (`engine_data_dir.py`).
+pub const ENGINE_IDENTIFIER: &str = "com.opendj.desktop";
+pub const LOCK_FILE_NAME: &str = ".engine.lock";
+/// Same override as ``apps.shared.engine_origin.LOCK_PATH_ENV``.
+pub const LOCK_PATH_ENV: &str = "OPENDJ_LIVE_LOCK_PATH";
+
+/// The engine lock file this launcher inspects: env override first, else packaged data dir.
+pub fn engine_lock_path() -> Result<PathBuf, String> {
+    if let Ok(override_) = std::env::var(LOCK_PATH_ENV) {
+        let trimmed = override_.trim();
+        if !trimmed.is_empty() {
+            return Ok(PathBuf::from(trimmed));
+        }
+    }
+    let data_dir = packaged_engine_data_dir()?;
+    Ok(data_dir.join(LOCK_FILE_NAME))
+}
+
+/// Packaged engine data dir per OS (mirrors ``apps.shared.engine_data_dir``).
+pub fn packaged_engine_data_dir() -> Result<PathBuf, String> {
+    #[cfg(target_os = "macos")]
+    {
+        let home = std::env::var_os("HOME")
+            .map(PathBuf::from)
+            .ok_or_else(|| "HOME is unset; cannot resolve the packaged engine data dir".to_string())?;
+        return Ok(home
+            .join("Library")
+            .join("Application Support")
+            .join(ENGINE_IDENTIFIER));
+    }
+    #[cfg(target_os = "windows")]
+    {
+        let local = std::env::var("LOCALAPPDATA").map_err(|_| {
+            "LOCALAPPDATA is unset; the Windows engine data dir has no fallback".to_string()
+        })?;
+        let trimmed = local.trim();
+        if trimmed.is_empty() {
+            return Err("LOCALAPPDATA is empty".to_string());
+        }
+        return Ok(PathBuf::from(trimmed).join(ENGINE_IDENTIFIER));
+    }
+    #[cfg(not(any(target_os = "macos", target_os = "windows")))]
+    {
+        let home = std::env::var_os("HOME")
+            .map(PathBuf::from)
+            .ok_or_else(|| "HOME is unset; cannot resolve the packaged engine data dir".to_string())?;
+        let base = std::env::var("XDG_DATA_HOME")
+            .ok()
+            .filter(|v| !v.trim().is_empty())
+            .map(PathBuf::from)
+            .unwrap_or_else(|| home.join(".local").join("share"));
+        Ok(base.join(ENGINE_IDENTIFIER))
+    }
+}
 
 /// Resolve the SQLite path. Preference order (Phase 5 ready):
 ///

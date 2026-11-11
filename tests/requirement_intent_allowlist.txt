@@ -157,7 +157,6 @@ tests/smartlists/test_materializer.py
 tests/smartlists/test_refresh_cli.py
 tests/smartlists/test_repo.py
 tests/smartlists/test_triggers.py
-tests/smartlists/test_writers_phase3.py
 tests/spotify/test_acquisition.py
 tests/spotify/test_cli.py
 tests/spotify/test_client.py
@@ -288,7 +287,6 @@ tests/dj_copilot/test_candidates_zero_bpm.py
 tests/engine_core/test_migrate_on_boot.py
 tests/open_dj/test_adapter_registry.py
 tests/scripts/test_dmg_preflight.py
-(private path)
 (private path)
 (private path)
 (private path)

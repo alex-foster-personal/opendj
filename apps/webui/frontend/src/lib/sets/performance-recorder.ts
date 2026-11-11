@@ -52,7 +52,43 @@ export function recordingTip(status: RecorderStatus): string | null {
 	return parts.join(', ');
 }
 
-export function recordRailState(status: RecorderStatus): RecordRailState {
+/** Session-scoped capture failure the daemon may stop sending on later polls. */
+export interface RetainedCaptureFailure {
+	sessionId: string;
+	reason: string | null;
+}
+
+const STOPPED_CLEAN_TIP =
+	'The audio input stopped recording; click to stop and keep what was recorded';
+
+function failureRailTip(status: RecorderStatus, retained: RetainedCaptureFailure | null): string {
+	const retainedReason = retained?.sessionId === status.session_id ? retained.reason : null;
+	const why = status.capture_error ?? retainedReason;
+	if (why) {
+		return `Set recording failed: ${why}. Press REC to stop and keep what was recorded.`;
+	}
+	return 'Set recording failed: the audio input stopped. Press REC to stop and keep what was recorded.';
+}
+
+/** Merge session-scoped failure retention across recorder status refreshes. */
+export function updateRetainedCaptureFailure(
+	prev: RetainedCaptureFailure | null,
+	status: RecorderStatus
+): RetainedCaptureFailure | null {
+	if (!status.active) return null;
+	const sessionId = status.session_id;
+	if (sessionId === null) return null;
+	if (status.capture === 'failed') {
+		return { sessionId, reason: status.capture_error ?? null };
+	}
+	if (prev !== null && prev.sessionId === sessionId) return prev;
+	return null;
+}
+
+export function recordRailState(
+	status: RecorderStatus,
+	retainedFailure: RetainedCaptureFailure | null = null
+): RecordRailState {
 	if (!status.active) {
 		// SET-12: a recording an agent starts over HTTP (`python -m apps.sets rec
 		// start`) is seen within this, so a master recording gets its tap.
@@ -74,13 +110,23 @@ export function recordRailState(status: RecorderStatus): RecordRailState {
 				poll: 1000
 			};
 		case 'failed':
-		case 'stopped':
 			return {
 				recording: false,
 				waiting: false,
-				tip: 'The audio input stopped recording; click to stop and keep what was recorded',
+				tip: failureRailTip(status, retainedFailure),
 				poll: null
 			};
+		case 'stopped': {
+			const retainedForSession =
+				retainedFailure?.sessionId === status.session_id ? retainedFailure : null;
+			return {
+				recording: false,
+				waiting: false,
+				tip:
+					retainedForSession !== null ? failureRailTip(status, retainedFailure) : STOPPED_CLEAN_TIP,
+				poll: null
+			};
+		}
 		case 'recording':
 			return { recording: true, waiting: false, tip: recordingTip(status), poll: 3000 };
 		default:
@@ -106,6 +152,7 @@ export function recorderHeadline(status: RecorderStatus): string {
 	if (rail.recording) return 'Recording';
 	if (status.capture === 'waiting_permission') return 'Waiting for microphone permission';
 	if (rail.waiting) return 'Starting the audio input';
+	if (status.capture === 'failed') return 'Audio input failed';
 	return 'Audio input stopped';
 }
 

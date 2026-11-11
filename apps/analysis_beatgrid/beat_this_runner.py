@@ -74,8 +74,9 @@ where it is stdlib, unit tested against synthetic grids with deliberately
 missed downbeats, and shared by every consumer. Duplicating it here so the raw
 JSON could keep the field would have put the one thing under test in the one
 environment the test lane cannot import. The producer emits beats and
-downbeats; `assign_bar_phase` turns them into 1..4 or says the phase is
-unestablished.
+downbeats; `apps/analysis_beatgrid/meter.py` estimates beats_per_bar from their
+spacing, and `assign_bar_phase` turns them into deck-legal 1..4 bar phase or
+says the phase is unestablished.
 
 WHY THE PEAK PICKER IS REIMPLEMENTED HERE. Beat This!'s own `Postprocessor`
 hardcodes its keep-threshold at `logit > 0`, i.e. probability > 0.5, with no

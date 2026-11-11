@@ -30,6 +30,7 @@ UNKNOWN = {"vocal_overlap": "no stems"}
 
 CANDIDATE_KEYS = [
     "id",
+    "energy",
     "plan",
     "plan_sha256",
     "style",

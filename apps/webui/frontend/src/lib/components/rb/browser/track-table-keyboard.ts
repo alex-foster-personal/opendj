@@ -19,6 +19,7 @@ export type TrackTableNavKey = 'up' | 'down' | 'home' | 'end' | 'pageup' | 'page
 export type TrackTableKeyAction =
 	| { kind: 'move'; nav: TrackTableNavKey; extend: boolean }
 	| { kind: 'load'; shift: boolean; replace: boolean }
+	| { kind: 'select_all' }
 	| { kind: 'none' };
 
 export interface TrackTableKeyEvent {
@@ -56,6 +57,9 @@ export function trackTableKeyAction(e: TrackTableKeyEvent): TrackTableKeyAction 
 	if (isTextEntryTarget(e.target)) return { kind: 'none' };
 	if (e.target !== e.currentTarget) return { kind: 'none' };
 	if (e.altKey) return { kind: 'none' };
+	if ((e.metaKey || e.ctrlKey) && !e.shiftKey && (e.key === 'a' || e.key === 'A')) {
+		return { kind: 'select_all' };
+	}
 	if (e.key === 'Enter') {
 		return { kind: 'load', shift: e.shiftKey, replace: e.metaKey || e.ctrlKey };
 	}

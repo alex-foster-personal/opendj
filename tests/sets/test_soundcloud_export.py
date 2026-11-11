@@ -129,11 +129,23 @@ def test_timestamp_labels_match_soundcloud_clickable_format() -> None:
     assert format_soundcloud_timestamp(3725) == "1:02:05"
 
 
+@pytest.mark.requirement("NOWP-11487")
+def test_hidden_second_track_renders_as_id_id(sets_root: Path) -> None:
+    """[if] the middle track is hidden [then] its row is ID - ID, [else stop]."""
+    _seed_session(sets_root, timeline=THREE_TRACK_TIMELINE)
+    export = build_soundcloud_export("s1", sets_root=sets_root, hidden_stable_ids=frozenset({"uuid-2"}))
+    assert export.tracklist[1].display_name == "ID - ID"
+    assert export.tracklist[1].track_stable_id == "uuid-2"
+    assert export.tracklist[0].display_name == "Artist One - First Tune"
+    assert export.tracklist[2].display_name == "Artist Three - Third Tune"
+    assert "3:05 ID - ID" in export.comment
+
+
 @pytest.mark.requirement("SET-06a")
 def test_three_track_loaded_rows_become_timestamped_comment(sets_root: Path) -> None:
     """[if] three loaded plays export [then] each row keeps its timestamp, [else stop]."""
     _seed_session(sets_root, timeline=THREE_TRACK_TIMELINE)
-    export = build_soundcloud_export("s1", sets_root=sets_root)
+    export = build_soundcloud_export("s1", sets_root=sets_root, hidden_stable_ids=frozenset())
 
     assert [row.timestamp_label for row in export.tracklist] == ["0:00", "3:05", "1:02:05"]
     assert [row.display_name for row in export.tracklist] == [
@@ -153,7 +165,7 @@ def test_three_track_loaded_rows_become_timestamped_comment(sets_root: Path) -> 
 def test_consecutive_duplicate_stable_id_collapses_to_first_timestamp(sets_root: Path) -> None:
     """[if] one stable id plays twice [then] it keeps its first timestamp, [else stop]."""
     _seed_session(sets_root, timeline=THREE_TRACK_TIMELINE)
-    export = build_soundcloud_export("s1", sets_root=sets_root)
+    export = build_soundcloud_export("s1", sets_root=sets_root, hidden_stable_ids=frozenset())
     assert [row.track_stable_id for row in export.tracklist] == ["uuid-1", "uuid-2", "uuid-3"]
     assert export.tracklist[0].timestamp_s == 0.0
 
@@ -162,7 +174,7 @@ def test_consecutive_duplicate_stable_id_collapses_to_first_timestamp(sets_root:
 def test_heartbeat_track_change_session_start_are_not_rows(sets_root: Path) -> None:
     """[if] heartbeat and session-start events arrive [then] they are not rows, [else stop]."""
     _seed_session(sets_root, timeline=THREE_TRACK_TIMELINE)
-    export = build_soundcloud_export("s1", sets_root=sets_root)
+    export = build_soundcloud_export("s1", sets_root=sets_root, hidden_stable_ids=frozenset())
     assert len(export.tracklist) == 3
     assert all("heartbeat" not in row.display_name for row in export.tracklist)
 
@@ -186,7 +198,7 @@ def test_rekordbox_row_without_title_is_unresolved_not_invented(sets_root: Path)
         )
     ]
     _seed_session(sets_root, timeline=timeline)
-    export = build_soundcloud_export("s1", sets_root=sets_root)
+    export = build_soundcloud_export("s1", sets_root=sets_root, hidden_stable_ids=frozenset())
     assert len(export.tracklist) == 1
     assert export.tracklist[0].title is None
     assert export.tracklist[0].artist is None
@@ -210,7 +222,7 @@ def test_null_id_with_title_is_kept(sets_root: Path) -> None:
         )
     ]
     _seed_session(sets_root, timeline=timeline)
-    export = build_soundcloud_export("s1", sets_root=sets_root)
+    export = build_soundcloud_export("s1", sets_root=sets_root, hidden_stable_ids=frozenset())
     assert len(export.tracklist) == 1
     assert export.tracklist[0].display_name == "Someone - Audible Play"
 
@@ -219,7 +231,7 @@ def test_null_id_with_title_is_kept(sets_root: Path) -> None:
 def test_empty_timeline_is_empty_export(sets_root: Path) -> None:
     """[if] the timeline holds no plays [then] the export is empty, [else stop]."""
     _seed_session(sets_root, timeline=[])
-    export = build_soundcloud_export("s1", sets_root=sets_root)
+    export = build_soundcloud_export("s1", sets_root=sets_root, hidden_stable_ids=frozenset())
     assert export.tracklist == []
     assert export.comment == ""
 
@@ -228,7 +240,7 @@ def test_empty_timeline_is_empty_export(sets_root: Path) -> None:
 def test_missing_timeline_file_is_empty_export(sets_root: Path) -> None:
     """[if] the timeline file is absent [then] the export is empty, [else stop]."""
     _seed_session(sets_root, timeline=None)
-    export = build_soundcloud_export("s1", sets_root=sets_root)
+    export = build_soundcloud_export("s1", sets_root=sets_root, hidden_stable_ids=frozenset())
     assert export.tracklist == []
     assert export.comment == ""
 
@@ -237,21 +249,21 @@ def test_missing_timeline_file_is_empty_export(sets_root: Path) -> None:
 def test_missing_session_raises_named_error(sets_root: Path) -> None:
     """[if] the session does not exist [then] SessionNotFound is raised, [else stop]."""
     with pytest.raises(SessionNotFound):
-        build_soundcloud_export("nope", sets_root=sets_root)
+        build_soundcloud_export("nope", sets_root=sets_root, hidden_stable_ids=frozenset())
 
 
 @pytest.mark.requirement("SET-06a")
 def test_path_traversal_session_id_raises_session_path_error(sets_root: Path) -> None:
     """[if] the session id escapes the sets root [then] SessionPathError is raised, [else stop]."""
     with pytest.raises(SessionPathError):
-        build_soundcloud_export("..\\outside", sets_root=sets_root)
+        build_soundcloud_export("..\\outside", sets_root=sets_root, hidden_stable_ids=frozenset())
 
 
 @pytest.mark.requirement("SET-06a")
 def test_payload_sentinels_lock_the_rights_gate(sets_root: Path) -> None:
     """[if] the export serializes [then] it declares metadata-only and no upload, [else stop]."""
     _seed_session(sets_root, timeline=THREE_TRACK_TIMELINE)
-    export = build_soundcloud_export("s1", sets_root=sets_root)
+    export = build_soundcloud_export("s1", sets_root=sets_root, hidden_stable_ids=frozenset())
     payload = export.to_dict()
     assert payload["kind"] == "metadata_only"
     assert payload["audio_upload"] == "not_offered"

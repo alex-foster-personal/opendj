@@ -1,0 +1,9 @@
+{
+  "bytes": 1024,
+  "measured_main": 350926,
+  "measured_with_pr": 351293,
+  "sha": "1619cc5c12",
+  "date": "Wed 11 Nov 2026",
+  "reason": "IOPIN calibration probe and mixer-config wiring on shared library chunks (367 B gzip over main).",
+  "payback": "none planned; shared player modules load on library routes as well as /performance."
+}

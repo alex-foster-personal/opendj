@@ -42,6 +42,7 @@ from apps.analysis_bench.scorers.beatgrid import (
     window_slice,
 )
 from scripts.beatbench import report as beatgrid_report
+from tests.analysis_bench import parity_fixtures
 
 # ----- Synthetic grid builders -------------------------------------------
 
@@ -442,7 +443,7 @@ def _report(*, candidate_f: float, promotion_figure: float | None) -> dict:
     }
     if promotion_figure is not None:
         payload["promotion_figure"] = promotion_figure
-    return payload
+    return parity_fixtures.attach_synthetic_hosts(payload)
 
 
 @pytest.mark.requirement("NATIVE-01")

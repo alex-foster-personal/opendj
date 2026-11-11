@@ -57,6 +57,7 @@ from apps.shared.engine_origin import EngineOrigin, resolve_origin, unreachable
 from apps.shared.odj_audio_binary import OdjAudioUnavailable, find_binary
 from apps.shared.platform_paths import PROJECT_ROOT
 from apps.transition_score.contract import CORE_FACTORS, SCORER_VERSION, Candidate, Measured, TryResult, rank_key
+from apps.transition_score.energy import build_energy_block
 
 if TYPE_CHECKING:
     from apps.transition_score.scorer import RenderContext
@@ -641,9 +642,12 @@ def _candidate(index: int, plan: TransitionPlan, job: _Job) -> Candidate:
         # Kept only once validated and scored: a refusal before this point leaves no folder behind.
         kept = _keep_render(render, f"c{index + 1}", job)
     recorded, plan_sha256 = _recorded_plan(plan)
+    parsed_intent = None if plan.intent is None else job.autodj.parse_intent(plan.intent)
+    energy = build_energy_block(plan, out_profile, in_profile, intent=parsed_intent).to_json()
     return Candidate(
         id=f"c{index + 1}",
         plan_json=json.dumps(recorded),
+        energy_json=json.dumps(energy),
         plan_sha256=plan_sha256,
         style=plan.style,
         bars=plan.bars,
@@ -669,9 +673,12 @@ def _candidate_or_refusal(index: int, plan: TransitionPlan, job: _Job) -> Candid
         return _candidate(index, plan, job)
     except (TryError, RenderPlanError) as error:
         recorded, plan_sha256 = _recorded_plan(plan)
+        parsed_intent = None if plan.intent is None else job.autodj.parse_intent(plan.intent)
+        energy = build_energy_block(plan, job.out_profile, job.in_profile, intent=parsed_intent).to_json()
         return Candidate(
             id=f"c{index + 1}",
             plan_json=json.dumps(recorded),
+            energy_json=json.dumps(energy),
             plan_sha256=plan_sha256,
             style=plan.style,
             bars=plan.bars,

@@ -35,7 +35,8 @@
  *   RENDERS when the file CALLS (not merely imports) one of the render entry
  *   points: `loadSvelteSsrModule` (load-svelte-ssr.mjs), `renderToHtml` or
  *   `bundleSvelteEntry` (mount-svelte.mjs), or `render`/`mount` bound from
- *   `svelte/server` / `svelte` by a static or dynamic import.
+ *   `svelte/server` / `svelte` by a static or dynamic import, or a client
+ *   bundler from mount-svelte-client.mjs followed by a member `mount` call.
  *
  *   The file is PARSED (TypeScript compiler, JS mode), not regexed, so text
  *   in comments, strings and regex literals is never a call, and relative
@@ -339,6 +340,11 @@ function rendersScanned(scanned) {
       "renderToHtml",
       "bundleSvelteEntry",
     ]) ||
+    (calledFrom(scanned, unitPaths(["mount-svelte-client.mjs"]), [
+      "bundlePreflightCheckRowClient",
+      "bundleStemWaveRowViewClient",
+      "bundleRecorderStatusRetryClient",
+    ]) && scanned.memberCalls.has("mount")) ||
     calledFrom(scanned, ["svelte/server"], ["render"]) ||
     calledFrom(scanned, ["svelte"], ["mount"])
   );
@@ -660,6 +666,31 @@ test("control: the classifier says yes and no on synthetic inputs", () => {
     }).offender,
     true,
     "a helper that itself reads a component must flag its importers",
+  );
+});
+
+test("bundled Svelte client coverage must mount, not merely compile", () => {
+  const reader = `import { readFileSync } from 'node:fs';
+readFileSync('src/lib/Foo.svelte', 'utf8');`;
+  const bundler = `import { bundleRecorderStatusRetryClient } from './mount-svelte-client.mjs';`;
+  const helpers = { readers: new Set(), componentReaders: new Set() };
+  const components = new Set(["Foo"]);
+  const cls = (source) => classify(source, helpers, components);
+  assert.equal(cls(`${reader}\n${bundler}`).offender, true);
+  assert.equal(
+    cls(`${reader}\n${bundler}\nconst client = await bundleRecorderStatusRetryClient();`).offender,
+    true,
+    "compiling without mounting is not rendered coverage",
+  );
+  assert.equal(
+    cls(`${reader}\n${bundler}\nconst client = await bundleRecorderStatusRetryClient();\nclient.mount(C, { target });`).offender,
+    false,
+    "the bundled client runtime mounts the real component",
+  );
+  assert.equal(
+    cls(`${reader}\nconst client = await unrelatedBundler();\nclient.mount(C, { target });`).offender,
+    true,
+    "a mount call without a known Svelte client bundler is insufficient",
   );
 });
 

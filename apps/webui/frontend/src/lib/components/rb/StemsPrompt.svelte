@@ -87,7 +87,10 @@
 		void (async () => {
 			try {
 				const next = await fetchStemsPlan(tier);
-				if (!cancelled) plan = next;
+				if (!cancelled) {
+					plan = next;
+					loadError = null;
+				}
 			} catch (exc) {
 				// The plan is the whole basis for asking. Without it the prompt
 				// says why it cannot ask rather than offering a button whose
@@ -140,7 +143,7 @@
 			<pre data-agent-stems-load-error={loadError}>{loadError}</pre>
 		</details>
 	{:else if plan === null}
-		<p class="stems-note" role="status">Working out how many tracks need stems...</p>
+		<p class="stems-note" role="status">Working out how many songs need stems...</p>
 	{:else if blocked !== null && plan !== null}
 		<!--
 			STEMS CANNOT START ON THIS BUILD. The counts are still shown so the
@@ -153,7 +156,7 @@
 			<pre data-agent-stems-blocked={blocked}>{blocked}</pre>
 		</details>
 		<p class="stems-note">
-			{plan.pending} of {plan.total} tracks would need separating. Nothing is queued
+			{plan.pending} of {plan.total} songs would need separating. Nothing is queued
 			{localExecutor ? '.' : ' and nothing is charged.'}
 		</p>
 		<div class="stems-actions">
@@ -162,7 +165,7 @@
 				disabled
 				title="Stem separation is not available on this machine"
 			>
-				Separate {plan.pending} tracks
+				Separate {plan.pending} songs
 			</button>
 			<button class="stems-skip" onclick={() => onskip?.()}>Continue without stems</button>
 		</div>
@@ -177,7 +180,11 @@
 		</details>
 	{:else if plan.pending === 0}
 		<p class="stems-note">
-			Every track that has audio here already has stems. Nothing to do.
+			{#if plan.unavailable > 0}
+				No song is waiting for stems: {plan.ready} have them and {plan.unavailable} cannot be separated now.
+			{:else}
+				Every song that has audio here already has stems. Nothing to do.
+			{/if}
 		</p>
 	{:else}
 		<p class="stems-summary">{stemsPlanSummary(plan)}</p>
@@ -188,7 +195,7 @@
 		</p>
 		<div class="stems-actions">
 			<button class="stems-go" disabled={busy} onclick={accept}>
-				{busy ? 'Starting...' : `Separate ${plan.pending} tracks`}
+				{busy ? 'Starting...' : `Separate ${plan.pending} songs`}
 			</button>
 			<button class="stems-skip" disabled={busy} onclick={() => onskip?.()}>
 				Not now

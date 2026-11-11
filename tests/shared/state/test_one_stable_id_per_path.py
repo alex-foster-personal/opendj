@@ -20,7 +20,9 @@ from apps.shared.state.events import FakeEventBus
 from apps.shared.state.ingest import folder, folder_rescan
 from apps.shared.state.ingest.path_identity import (
     live_inferred_by_path_key,
+    live_rekordbox_stable_ids_by_vendor,
     resolve_inferred_stable_id,
+    resolve_rb_existing_stable_id,
 )
 from apps.shared.state.writer import StateWriter
 
@@ -144,3 +146,27 @@ def test_path_identity_reuses_the_oldest_live_inferred_id(state_conn, tmp_path: 
     assert tier == "inferred"
     assert resolved == oldest
     assert resolved != "newer-duplicate"
+
+
+@pytest.mark.requirement("LIBM-12770")
+def test_resolve_rb_existing_stable_id_prefers_vendor_link(state_conn, tmp_path: Path) -> None:
+    """[if] vendor V is linked [then] resolve_rb reuses that id, [else stop]."""
+    music, dest = _copy_real_mp3(tmp_path)
+    writer = _writer(state_conn)
+    folder.ingest_folder(writer, [music], dry_run=False)
+    sid = _live_sids(state_conn)[0]
+    writer.set_vendor_id(sid, "rekordbox", "rb-vendor-12770")
+    writer.close()
+    alt = tmp_path / "Music" / "air-library" / FIXTURE.name
+    alt.parent.mkdir(parents=True)
+    by_vendor = live_rekordbox_stable_ids_by_vendor(state_conn)
+    resolved = resolve_rb_existing_stable_id(
+        state_conn,
+        "rb-vendor-12770",
+        None,
+        None,
+        rb_vendor_index=by_vendor,
+    )
+    assert resolved == (sid, "inferred")
+    minted, _tier = resolve_inferred_stable_id(str(alt), 0.0, live_inferred_by_path_key(state_conn))
+    assert minted != sid

@@ -109,14 +109,16 @@ _MEDIA_TYPES: dict[str, str] = {
 _STEM_SUFFIXES = set(_MEDIA_TYPES)
 
 DEFAULT_STEMS_DIR = STATE_DIR / "stems"
-ROFORMER_STEMS_DIR = STATE_DIR / "stems-roformer-spike"
-"""Where the RoFormer farm lands its 2-part bundles.
+PRODUCTION_ROFORMER_STEMS_DIR = STATE_DIR / "stems-roformer-spike"
+"""Production RoFormer 2-part bundles (``roformer2`` layout).
 
-Kept as a SEPARATE root rather than merged into ``stems/`` because the two
-stores are produced by different models at different times and a stable_id can
-legitimately have a bundle in both. Lookup order (see ``stem_roots``) decides
-which one a deck gets, and keeping them apart means re-running either farm
-never overwrites the other's output.
+The on-disk directory name still ends in ``-spike`` from the first farm pass;
+promoting the tree is tracked on parent issue #5814. Kept as a SEPARATE root
+rather than merged into ``stems/`` because the two stores are produced by
+different models at different times and a stable_id can legitimately have a
+bundle in both. Lookup order (see ``stem_roots``) decides which one a deck gets,
+and keeping them apart means re-running either farm never overwrites the
+other's output.
 """
 
 
@@ -127,7 +129,7 @@ def stem_roots(primary: Path | None = None) -> tuple[Path, ...]:
     track has both, the richer bundle wins.
     """
     first = Path(primary) if primary is not None else DEFAULT_STEMS_DIR
-    return (first, ROFORMER_STEMS_DIR) if first != ROFORMER_STEMS_DIR else (first,)
+    return (first, PRODUCTION_ROFORMER_STEMS_DIR) if first != PRODUCTION_ROFORMER_STEMS_DIR else (first,)
 
 
 def stems_accept_v2() -> bool:
@@ -757,7 +759,7 @@ def bulk_stem_summaries(stable_ids: Iterable[str], *, stems_dir: Path = DEFAULT_
 __all__ = [
     "DEFAULT_STEMS_DIR",
     "ROFORMER_PARTS",
-    "ROFORMER_STEMS_DIR",
+    "PRODUCTION_ROFORMER_STEMS_DIR",
     "STEM_LAYOUTS",
     "STEM_PARTS",
     "STEM_SUMMARY_TTL_S",

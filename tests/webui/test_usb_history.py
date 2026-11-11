@@ -10,6 +10,7 @@ from fastapi.testclient import TestClient
 
 from apps.adapters.rekordbox.paths import list_rekordbox_usb_mentions
 from apps.feature_flags import load_flags
+from apps.shared import platform_paths
 from apps.webui.server.app import create_app
 from apps.webui.server.backend import InMemoryBackend
 from apps.webui.server.routes import usb_volumes as usb_mod
@@ -19,11 +20,13 @@ _STICK_UUID = "AAAAAAAA-BBBB-CCCC-DDDD-EEEEEEEEEEEE"
 
 
 @pytest.fixture(autouse=True)
-def _reset_usb_state() -> None:
+def _reset_usb_state(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     usb_mod._reset_state_for_tests()
+    monkeypatch.setattr(platform_paths, "DJAY_LIVE_DB", tmp_path / "missing-djay.db")
 
 
 def _write_rb_master(path: Path, *, device_id: str, label: str, volume_uuid: str) -> None:
+    """Write a synthesized minimal vendor schema for the real SQLite reader."""
     path.parent.mkdir(parents=True, exist_ok=True)
     conn = sqlite3.connect(path)
     conn.execute(
@@ -45,19 +48,20 @@ def _write_rb_master(path: Path, *, device_id: str, label: str, volume_uuid: str
     conn.close()
 
 
-@pytest.fixture
-def data_client(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> TestClient:
+@pytest.fixture(params=["state/state.db", "library.db"], ids=["nested", "flat"])
+def data_client(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, request: pytest.FixtureRequest) -> TestClient:
     monkeypatch.delenv("MDT_BUILD_PROFILE", raising=False)
     monkeypatch.delenv("MDT_FEATURE_FLAGS_FILE", raising=False)
     data_dir = tmp_path / "data"
-    (data_dir / "state").mkdir(parents=True)
+    state_db_path = data_dir / request.param
+    state_db_path.parent.mkdir(parents=True)
     app = create_app(
         backend=InMemoryBackend(),
+        state_db_path=str(state_db_path),
         bind_host="127.0.0.1",
         hostname="test-host",
         mount_frontend=False,
     )
-    app.state.data_dir = data_dir
     app.state.feature_flags = load_flags(data_dir)
     app.state.usb_simulation_enabled = True
     with TestClient(app) as client:
@@ -130,16 +134,22 @@ def test_missing_vendor_db_still_lists_live_mounts(
     assert response.status_code == 200
     body = response.json()
     assert len(body["volumes"]) == 1
-    assert body["volumes"][0]["id"] == f"vol:{_STICK_UUID}"
-    assert body["volumes"][0].get("vendor_name") is None
+    row = body["volumes"][0]
+    assert row["id"] == f"vol:{_STICK_UUID}"
+    assert row["name"] == "LIVE"
+    assert row["mount_path"] == "/Volumes/LIVE"
+    assert row["vendor_name"] is None
+    assert row["vendor_source"] is None
 
 
+@pytest.mark.requirement("USB-11999")
 def test_get_volumes_merge_vendor_name_on_uuid(
     data_client: TestClient,
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """[if] plain db names a UUID [then] GET merges vendor_name onto the row [else stop]."""
+    """[if] configured state DB has vendor history [then] GET names its UUID, [else stop]."""
+    assert not hasattr(data_client.app.state, "data_dir")
     data_dir = tmp_path / "data"
     label = "Rekordbox Gig Stick"
     _write_rb_master(
@@ -168,6 +178,8 @@ def test_get_volumes_merge_vendor_name_on_uuid(
     assert row["name"] == label
     assert row["vendor_name"] == label
     assert row["vendor_source"] == "rekordbox"
+    assert row["id"] == f"vol:{_STICK_UUID}"
+    assert row["mount_path"] == "/Volumes/OTHER"
 
 
 def test_load_vendor_history_swallows_unreadable_master(tmp_path: Path) -> None:

@@ -16,6 +16,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from apps.sync.usb.diff import Plan
+from apps.sync.usb.health import scan_mount_paths
 from apps.sync.usb.profile import Profile
 
 ALL_CHECKS: tuple[str, ...] = (
@@ -197,4 +198,9 @@ def preflight(
     return res
 
 
-__all__ = ["ALL_CHECKS", "PreflightResult", "preflight"]
+def deck_path_probe(drive_root: Path) -> tuple[int, tuple[str, ...]]:
+    """Read-only deck-path scan reused by export health (no write probe)."""
+    return scan_mount_paths(drive_root)
+
+
+__all__ = ["ALL_CHECKS", "PreflightResult", "deck_path_probe", "preflight"]

@@ -18,6 +18,8 @@ import math
 import re
 from dataclasses import dataclass
 
+from scripts.perf.capture_kpi_ledger import s12_library_scale_rejection
+
 SUPERSEDED = "SUPERSEDED"
 
 _PERCENTILE = re.compile(r"p\d{2,3}")
@@ -290,6 +292,9 @@ def _classify_required_reading(
                 "traced back to evidence"
             )
         )
+    s12_reason = s12_library_scale_rejection(name, reading.note)
+    if s12_reason is not None:
+        return _ReadingCheck(rejected_reason=s12_reason)
     effective_req = _resolve_cache_state_band(req, reading.note)
     if effective_req is None:
         states = sorted(req["cache_state_bands"])

@@ -114,6 +114,8 @@ _PREFIXES: tuple[tuple[str, Kind], ...] = (
     (".cursor/", Kind.PYTHON),
     (".codex/", Kind.PYTHON),
     (".design-sync/", Kind.PYTHON),
+    # Agent notes for the public mirror; the OSS tip audit (a pytest module) reads them.
+    ("oss/", Kind.PYTHON),
 )
 
 _ROOT_FILES: Mapping[str, Kind] = {

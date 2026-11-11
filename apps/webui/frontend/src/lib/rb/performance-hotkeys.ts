@@ -8,12 +8,24 @@
 import { DECK_IDS, getDeckState, pitchRanges } from '$lib/rb/audio-engine.svelte';
 import { runPerformanceCommandFromUi, uiPrefs } from '$lib/rb/performance-ipc.svelte';
 import { getRecentDeck, noteRecentDeck } from '$lib/rb/recent-deck';
-import { mostRecentPendingLoadPlay, setPendingLoadPlayIntent, type DeckId } from '$lib/rb/deck-slots';
+import {
+	mostRecentPendingLoadPlay,
+	setPendingLoadPlayIntent,
+	type DeckId
+} from '$lib/rb/deck-slots';
 import { isSettingsOpen } from '$lib/settings/overlay.svelte';
 import { deckHoverUi } from '$lib/rb/deck-hover.svelte';
 import { armPinPlacement } from './feedback-store.svelte';
 import { handlePerformanceShortcutKeydown } from './performance-shortcut-routing';
 import { gridJumpEnabled } from './grid-jump-flag';
+import { isTextEntryTarget } from '$lib/keyboard/text-entry-target';
+import {
+	edgeSamplerUi,
+	fireEdgeTab,
+	flipEdgePage,
+	type EdgeId
+} from '$lib/player/sampler/edge-sampler-ui.svelte';
+import { nativeShellKind } from '$lib/shell/native-shell';
 import { tempoKeyCommand, type TempoKeyAction } from './tempo-keys';
 
 // Re-exported so noteLoopInteraction's callers (e.g. LoopSafetyControls.svelte)
@@ -175,7 +187,9 @@ async function _tempoKey(action: TempoKeyAction): Promise<void> {
  * the library, so Cmd+A means "jump back" instead of Select all. */
 function _isDeckPress(target: EventTarget | null): boolean {
 	if (!(target instanceof Element)) return false;
-	return target.closest('[data-deck-hover]') !== null || target.closest('[data-mixer-channel]') !== null;
+	return (
+		target.closest('[data-deck-hover]') !== null || target.closest('[data-mixer-channel]') !== null
+	);
 }
 
 export function installPerformanceHotkeys(): () => void {
@@ -183,7 +197,31 @@ export function installPerformanceHotkeys(): () => void {
 	const onPointer = (e: PointerEvent): void => {
 		deckFocus = _isDeckPress(e.target);
 	};
+	function tryEdgeSamplerHotkey(e: KeyboardEvent): boolean {
+		if (!uiPrefs.sampler_enabled || nativeShellKind() !== 'electron') return false;
+		if (isTextEntryTarget(e.target) || e.metaKey || e.ctrlKey || e.altKey) return false;
+		const edge = edgeSamplerUi.lastEdge as EdgeId;
+		if (e.key === ']' || e.key === 'PageDown') {
+			flipEdgePage(edge, 1);
+			e.preventDefault();
+			return true;
+		}
+		if (e.key === '[' || e.key === 'PageUp') {
+			flipEdgePage(edge, -1);
+			e.preventDefault();
+			return true;
+		}
+		const digit = '1234567890'.indexOf(e.key);
+		if (digit >= 0) {
+			fireEdgeTab(edge, digit);
+			e.preventDefault();
+			return true;
+		}
+		return false;
+	}
+
 	const onKey = (e: KeyboardEvent): void => {
+		if (tryEdgeSamplerHotkey(e)) return;
 		handlePerformanceShortcutKeydown(
 			e,
 			{
@@ -203,7 +241,9 @@ export function installPerformanceHotkeys(): () => void {
 					const deck = uiPrefs.wave_zoom_linked ? null : deckHoverUi.deckId;
 					if (deck === null && !uiPrefs.wave_zoom_linked) return;
 					void runPerformanceCommandFromUi(
-						deck === null ? { type: 'wave_zoom_step', direction } : { type: 'wave_zoom_step', direction, deck }
+						deck === null
+							? { type: 'wave_zoom_step', direction }
+							: { type: 'wave_zoom_step', direction, deck }
 					);
 				},
 				gridJump: (bars) => {
@@ -213,7 +253,13 @@ export function installPerformanceHotkeys(): () => void {
 					void _tempoKey(action);
 				}
 			},
-			{ settingsOpen: isSettingsOpen(), gridJump: gridJumpEnabled(), deckFocus }
+			{
+				settingsOpen: isSettingsOpen(),
+				gridJump: gridJumpEnabled(),
+				deckFocus,
+				libraryFocus:
+					e.target instanceof Element && e.target.closest('[data-library-root]') !== null
+			}
 		);
 	};
 	window.addEventListener('pointerdown', onPointer, { capture: true });

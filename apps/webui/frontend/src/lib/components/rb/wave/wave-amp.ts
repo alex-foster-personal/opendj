@@ -83,3 +83,8 @@ export function bucketMax(values: number[], p0: number, p1: number): number {
 export function mirrorRect(path: Path2D, x: number, centerY: number, halfHeight: number): void {
 	path.rect(x, centerY - halfHeight, 1, halfHeight * 2);
 }
+
+/** WAVEQS-11733: one-sided bar rising from the bottom baseline. */
+export function upRect(path: Path2D, x: number, baseY: number, height: number): void {
+	path.rect(x, baseY - height, 1, height);
+}

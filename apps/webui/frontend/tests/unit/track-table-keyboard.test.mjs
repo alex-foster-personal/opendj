@@ -63,6 +63,19 @@ test('arrow, Home, End, PageUp and PageDown on a row map to moves', () => {
 	}
 });
 
+test('Cmd/Ctrl+A on a focused row maps to select_all (issue #11319)', () => {
+	assert.deepEqual(kb.trackTableKeyAction(keyOnRow('a', { metaKey: true })), {
+		kind: 'select_all'
+	});
+	assert.deepEqual(kb.trackTableKeyAction(keyOnRow('A', { ctrlKey: true })), {
+		kind: 'select_all'
+	});
+	assert.equal(
+		kb.trackTableKeyAction(keyOnRow('a', { metaKey: true, shiftKey: true })).kind,
+		'none'
+	);
+});
+
 test('Enter on a row maps to the double-click load, carrying Shift and Cmd/Ctrl', () => {
 	assert.deepEqual(kb.trackTableKeyAction(keyOnRow('Enter')), {
 		kind: 'load',
@@ -107,13 +120,21 @@ test('a key bubbling from a control inside the row belongs to that control', () 
 });
 
 test('Alt and Cmd/Ctrl arrow chords and unrelated keys are left alone', () => {
-	assert.deepEqual(kb.trackTableKeyAction(keyOnRow('ArrowDown', { altKey: true })), { kind: 'none' });
-	assert.deepEqual(kb.trackTableKeyAction(keyOnRow('ArrowDown', { metaKey: true })), { kind: 'none' });
-	assert.deepEqual(kb.trackTableKeyAction(keyOnRow('ArrowDown', { ctrlKey: true })), { kind: 'none' });
+	assert.deepEqual(kb.trackTableKeyAction(keyOnRow('ArrowDown', { altKey: true })), {
+		kind: 'none'
+	});
+	assert.deepEqual(kb.trackTableKeyAction(keyOnRow('ArrowDown', { metaKey: true })), {
+		kind: 'none'
+	});
+	assert.deepEqual(kb.trackTableKeyAction(keyOnRow('ArrowDown', { ctrlKey: true })), {
+		kind: 'none'
+	});
 	assert.deepEqual(kb.trackTableKeyAction(keyOnRow('ArrowLeft')), { kind: 'none' });
 	assert.deepEqual(kb.trackTableKeyAction(keyOnRow('a')), { kind: 'none' });
 	assert.deepEqual(kb.trackTableKeyAction(keyOnRow('Delete')), { kind: 'none' });
-	assert.deepEqual(kb.trackTableKeyAction(keyOnRow('Enter', { isComposing: true })), { kind: 'none' });
+	assert.deepEqual(kb.trackTableKeyAction(keyOnRow('Enter', { isComposing: true })), {
+		kind: 'none'
+	});
 });
 
 // ------------------------------------------------------------ index math
@@ -164,10 +185,22 @@ test('page size is the viewport row capacity, never below one', () => {
 });
 
 test('range span runs from the fixed anchor to the target in either direction', () => {
-	assert.deepEqual(kb.trackTableRangeSpan({ anchor: 3, target: 6, rowCount: 10 }), { from: 3, to: 6 });
-	assert.deepEqual(kb.trackTableRangeSpan({ anchor: 6, target: 3, rowCount: 10 }), { from: 3, to: 6 });
-	assert.deepEqual(kb.trackTableRangeSpan({ anchor: -1, target: 3, rowCount: 10 }), { from: 3, to: 3 });
-	assert.deepEqual(kb.trackTableRangeSpan({ anchor: 12, target: 3, rowCount: 10 }), { from: 3, to: 3 });
+	assert.deepEqual(kb.trackTableRangeSpan({ anchor: 3, target: 6, rowCount: 10 }), {
+		from: 3,
+		to: 6
+	});
+	assert.deepEqual(kb.trackTableRangeSpan({ anchor: 6, target: 3, rowCount: 10 }), {
+		from: 3,
+		to: 6
+	});
+	assert.deepEqual(kb.trackTableRangeSpan({ anchor: -1, target: 3, rowCount: 10 }), {
+		from: 3,
+		to: 3
+	});
+	assert.deepEqual(kb.trackTableRangeSpan({ anchor: 12, target: 3, rowCount: 10 }), {
+		from: 3,
+		to: 3
+	});
 });
 
 test('reveal: a visible row does not scroll; rows above/below scroll minimally', () => {
@@ -180,7 +213,10 @@ test('reveal: a visible row does not scroll; rows above/below scroll minimally',
 	// Row 2 above the band at scrollTop 100: its top sits just under the sticky header.
 	assert.equal(kb.scrollTopToRevealRow({ ...base, rowIndex: 2, scrollTop: 100 }), 44);
 	// End of a long list.
-	assert.equal(kb.scrollTopToRevealRow({ ...base, rowIndex: 499, scrollTop: 0 }), 20 + 500 * 22 - 240);
+	assert.equal(
+		kb.scrollTopToRevealRow({ ...base, rowIndex: 499, scrollTop: 0 }),
+		20 + 500 * 22 - 240
+	);
 });
 
 test('active row: the moved/clicked row wins, else the lead selected row', () => {
@@ -202,7 +238,13 @@ test('active row: the moved/clicked row wins, else the lead selected row', () =>
  * Shift-range select of the target). */
 function keyboardShiftDownTwice(reseatAnchor) {
 	const rows = Array.from({ length: 8 }, (_, i) => ({ stable_id: `t${i}`, order: i + 1 }));
-	const pane = { rows, selected_id: null, selected_ids: [], selected_order: null, selected_orders: [] };
+	const pane = {
+		rows,
+		selected_id: null,
+		selected_ids: [],
+		selected_order: null,
+		selected_orders: []
+	};
 	const plain = (i) => sel.applySelect(pane, rows[i].stable_id, false, false, rows, rows[i].order);
 	const shift = (i) => sel.applySelect(pane, rows[i].stable_id, false, true, rows, rows[i].order);
 	plain(2); // arrow onto row 2: anchor = 2
@@ -234,10 +276,19 @@ test('TrackTable routes row keydown through the keyboard helper', async () => {
 
 test('Enter and double-click share one load+play path', async () => {
 	const src = await readFile(TABLE, 'utf8');
-	const dbl = src.slice(src.indexOf('function onRowDblClick'), src.indexOf('function _requestLoadPlay'));
+	const dbl = src.slice(
+		src.indexOf('function onRowDblClick'),
+		src.indexOf('function _requestLoadPlay')
+	);
 	assert.match(dbl, /_requestLoadPlay\(row, \{[\s\S]*fromKeyboard: false/);
-	const key = src.slice(src.indexOf('function onTrackKeydown'), src.indexOf('// ----- keyboard navigation'));
-	assert.match(key, /action\.kind === 'load'[\s\S]*_requestLoadPlay\(row, \{[\s\S]*fromKeyboard: true/);
+	const key = src.slice(
+		src.indexOf('function onTrackKeydown'),
+		src.indexOf('// ----- keyboard navigation')
+	);
+	assert.match(
+		key,
+		/action\.kind === 'load'[\s\S]*_requestLoadPlay\(row, \{[\s\S]*fromKeyboard: true/
+	);
 	const shared = src.slice(src.indexOf('function _requestLoadPlay'), src.indexOf('function hl('));
 	assert.match(shared, /onpickdoubledeck\?\.\(row/);
 	assert.match(shared, /uiPrefs\.confirm\.dblclick_load_play === false/);
@@ -246,7 +297,10 @@ test('Enter and double-click share one load+play path', async () => {
 
 test('keyboard-opened load confirm focuses Yes so a second Enter confirms', async () => {
 	const src = await readFile(TABLE, 'utf8');
-	assert.match(src, /if \(loadConfirm\.fromKeyboard\) \{\s*loadConfirmEl\.querySelector<HTMLButtonElement>\('\.load-confirm-yes'\)\?\.focus\(\);/);
+	assert.match(
+		src,
+		/if \(loadConfirm\.fromKeyboard\) \{\s*loadConfirmEl\.querySelector<HTMLButtonElement>\('\.load-confirm-yes'\)\?\.focus\(\);/
+	);
 });
 
 test('ARIA: grid with multiselect, full rowcount, per-row index/selected, roving tabindex', async () => {
@@ -257,7 +311,10 @@ test('ARIA: grid with multiselect, full rowcount, per-row index/selected, roving
 	assert.match(table, /role="grid"/);
 	assert.match(table, /aria-multiselectable="true"/);
 	assert.match(table, /aria-rowcount=\{slotCount \+ 1\}/);
-	assert.match(src, /<thead bind:clientHeight=\{theadHeightPx\}(?: oncontextmenu=\{[^}]*\})?>\s*<tr aria-rowindex=\{1\}>/);
+	assert.match(
+		src,
+		/<thead bind:clientHeight=\{theadHeightPx\}(?: oncontextmenu=\{[^}]*\})?>\s*<tr aria-rowindex=\{1\}>/
+	);
 	const row = src.match(/data-testid="track-row"[\s\S]*?draggable="true"/)[0];
 	assert.match(row, /data-row-index=\{rowIndex\}/);
 	assert.match(row, /aria-rowindex=\{rowSlot \+ 2\}/);
@@ -269,7 +326,10 @@ test('ARIA: grid with multiselect, full rowcount, per-row index/selected, roving
 
 test('moving the active row scrolls the virtual window, then focuses the mounted row', async () => {
 	const src = await readFile(TABLE, 'utf8');
-	const fn = src.slice(src.indexOf('function _revealAndFocusRow'), src.indexOf('// ----- AUTOPLAY-COL helpers'));
+	const fn = src.slice(
+		src.indexOf('function _revealAndFocusRow'),
+		src.indexOf('// ----- AUTOPLAY-COL helpers')
+	);
 	assert.match(fn, /scrollTopToRevealRow\(/);
 	assert.match(fn, /el\.scrollTop = next;/);
 	assert.match(fn, /onscrollcursor\(next\)/);

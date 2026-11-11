@@ -339,6 +339,8 @@ jobs:
       - name: Setup uv for isolated dependency contracts
         timeout-minutes: 1
         uses: astral-sh/setup-uv@d0cc045d04ccac9d8b7881df0226f9e82c39688e # v6
+        with:
+          version: "0.13.7"
 
       - name: Stale-install guard - the interpreter imports only this checkout
         timeout-minutes: 1

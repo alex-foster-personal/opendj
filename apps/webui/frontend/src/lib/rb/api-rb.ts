@@ -57,13 +57,7 @@ export {
 	pingHealth,
 	timeoutSignal
 } from '$lib/api';
-export type {
-	HealthOut,
-	PlaylistDetail,
-	PlaylistSummary,
-	Track,
-	TracksPage
-} from '$lib/api';
+export type { HealthOut, PlaylistDetail, PlaylistSummary, Track, TracksPage } from '$lib/api';
 
 export const RB_API_BASE: string = API_BASE;
 
@@ -97,9 +91,7 @@ async function _throwRbApiError(r: Response): Promise<never> {
 	}
 
 	const detail =
-		typeof body === 'object' && body !== null && 'detail' in body
-			? body.detail
-			: undefined;
+		typeof body === 'object' && body !== null && 'detail' in body ? body.detail : undefined;
 	if (
 		typeof detail === 'object' &&
 		detail !== null &&
@@ -190,7 +182,8 @@ function _parseTrackLyrics(raw: unknown, stableId: string): TrackLyrics {
 	}
 	let previousStartMs = -1;
 	const lines = lyrics.lines.map((line, index) => {
-		if (typeof line !== 'object' || line === null) throw new Error(`lyrics line ${index} is invalid`);
+		if (typeof line !== 'object' || line === null)
+			throw new Error(`lyrics line ${index} is invalid`);
 		const value = line as { start_ms?: unknown; text?: unknown };
 		if (
 			typeof value.start_ms !== 'number' ||
@@ -354,9 +347,7 @@ export function parseStemSummary(raw: unknown): StemSummary {
 	if (s.status === 'none') return { status: 'none' };
 	if (s.status === 'invalid') {
 		const err = (raw as { error?: unknown }).error;
-		return typeof err === 'string'
-			? { status: 'invalid', error: err }
-			: { status: 'invalid' };
+		return typeof err === 'string' ? { status: 'invalid', error: err } : { status: 'invalid' };
 	}
 	if (s.status !== 'ready') {
 		throw new Error(`stems summary: unknown status ${JSON.stringify(s.status)}`);
@@ -434,6 +425,9 @@ export interface PlaylistTrackRowWire {
 	genre_reason?: string | null;
 	/** GENRE-04: which provider the shown genre came from. */
 	genre_source?: string | null;
+	/** LIBUX-06: canonical family slug for the shown genre, when one matches. */
+	genre_family?: string | null;
+	genre_family_color?: string | null;
 	/** GENRE-02: a JEV genre-family guess, served only while genre is empty. */
 	genre_guess?: GenreGuess | null;
 	comments: string | null;
@@ -449,6 +443,8 @@ export interface PlaylistTrackRowWire {
 	is_remote?: boolean;
 	/** LIBUX-13: a recorded remote copy, including when local audio also exists. */
 	has_remote_copy: boolean;
+	/** Issue #11290: upfront deck-load refusal, or null when loadable on this host. */
+	deck_load_refusal?: 'streaming' | 'cloud_policy_unconfigured' | null;
 	/** LIBUX-13: present only while this engine process is moving real bytes. */
 	cloud_transfer: CloudTransferWire | null;
 	/** OFFLOAD: null when never offloaded here. Optional for older payloads. */
@@ -478,6 +474,8 @@ export interface PlaylistTrackRowWire {
 	tempo_curve?: TempoCurveData | null;
 	is_remix?: boolean | null;
 	is_radio_edit?: boolean | null;
+	/** NOWP-11487: optional on older payloads until every list row carries the flag. */
+	tracklist_hidden?: boolean;
 }
 
 /** `tracks` is Omit-ed off `PlaylistDetail` rather than narrowed, because the
@@ -581,9 +579,7 @@ export async function listPlaylistsHydrated(opts?: {
 		}
 		if (opts?.fast === true) {
 			if (p.available_count !== -1) {
-				throw new Error(
-					`playlist ${p.playlist_id}: fast list must return available_count=-1`
-				);
+				throw new Error(`playlist ${p.playlist_id}: fast list must return available_count=-1`);
 			}
 			continue;
 		}
@@ -646,7 +642,10 @@ export class ReconcileSummaryWarming extends Error {
 }
 
 /** A summary that carries counts: what {@link getReconcileSummary} returns. */
-export type ReconcileSummaryCounts = ReconcileSummary & { total_tracks: number; total_broken: number };
+export type ReconcileSummaryCounts = ReconcileSummary & {
+	total_tracks: number;
+	total_broken: number;
+};
 
 /** Fetch aggregate reconciliation counts without inventing a usable library state.
  *
@@ -716,6 +715,8 @@ export type TrackListItemWire = Track & {
 	genre_reason?: string | null;
 	/** GENRE-04: which provider the shown genre came from. */
 	genre_source?: string | null;
+	genre_family?: string | null;
+	genre_family_color?: string | null;
 	/** GENRE-02: a JEV genre-family guess, served only while genre is empty. */
 	genre_guess?: GenreGuess | null;
 	duration_ms?: number | null;
@@ -751,6 +752,8 @@ export type TrackListItemWire = Track & {
 	streaming_provider?: 'spotify' | 'tidal' | 'soundcloud' | 'unknown' | null;
 	/** LIBUX-13: a recorded remote copy, including when local audio also exists. */
 	has_remote_copy: boolean;
+	/** Issue #11290: upfront deck-load refusal, or null when loadable on this host. */
+	deck_load_refusal?: 'streaming' | 'cloud_policy_unconfigured' | null;
 	/** LIBUX-13: present only while this engine process is moving real bytes. */
 	cloud_transfer: CloudTransferWire | null;
 	/** OFFLOAD: null when never offloaded here. Optional for older payloads. */
@@ -807,12 +810,7 @@ export async function listTracksHydrated(params: {
 /** Fields a library index row leaves out (LIBM-172): per-row disk reads that
  * `POST /library/row-assets` serves for the rows in view. */
 export type TrackIndexDeferredField =
-	| 'preview_b64'
-	| 'preview_max'
-	| 'vocals'
-	| 'artwork_available'
-	| 'artwork_status'
-	| 'stems';
+	'preview_b64' | 'preview_max' | 'vocals' | 'artwork_available' | 'artwork_status' | 'stems';
 /** Fields no library view reads off an index row; `GET /tracks/{sid}` serves them. */
 type TrackIndexOmittedField =
 	| 'provenance'
@@ -825,7 +823,10 @@ type TrackIndexOmittedField =
 	| 'auto_cues_available'
 	| 'stems_available';
 /** Index rows also carry `comments`, which the Cmd K v2 bar searches collection-wide (CMDK-04). */
-export type TrackIndexItemWire = Omit<TrackListItemWire, TrackIndexDeferredField | TrackIndexOmittedField> &
+export type TrackIndexItemWire = Omit<
+	TrackListItemWire,
+	TrackIndexDeferredField | TrackIndexOmittedField
+> &
 	Pick<components['schemas']['TrackIndexItemOut'], 'comments'>;
 
 export interface TrackIndexWire {
@@ -856,9 +857,7 @@ function _assertListingRows(items: TrackIndexItemWire[]): void {
 			);
 		}
 		if (typeof item.file_availability !== 'string') {
-			throw new Error(
-				`track ${String(item.stable_id)}: listing row has no file_availability`
-			);
+			throw new Error(`track ${String(item.stable_id)}: listing row has no file_availability`);
 		}
 		// Loud, not falsy-defaulted: an absent flag would silently read as
 		// 'no rekordbox mapping' and strip artwork off every row.
@@ -895,7 +894,10 @@ export function noteSectionsAnnounced(ids: readonly string[]): void {
 	for (const id of ids) _sectionsAnnounced.set(id, {});
 }
 
-async function _sinceLastSections(stable_id: string, read: () => Promise<AnlzWithVocals>): Promise<AnlzWithVocals> {
+async function _sinceLastSections(
+	stable_id: string,
+	read: () => Promise<AnlzWithVocals>
+): Promise<AnlzWithVocals> {
 	for (;;) {
 		const seen = _sectionsAnnounced.get(stable_id);
 		const data = await read();
@@ -928,9 +930,10 @@ export async function fetchAnlz(
 		if (existing !== undefined) return existing;
 	}
 	const pending = _sinceLastSections(stable_id, () =>
-		_fetchJson<AnlzWithVocals>(trackApiPath(stable_id, `/anlz?${anlzQuery(points, gen)}`), 'no-store').then(
-			(data) => _checkedAnlz(stable_id, data)
-		)
+		_fetchJson<AnlzWithVocals>(
+			trackApiPath(stable_id, `/anlz?${anlzQuery(points, gen)}`),
+			'no-store'
+		).then((data) => _checkedAnlz(stable_id, data))
 	);
 	if (bypassCache) return pending;
 	const tracked = pending.finally(() => {
@@ -1064,7 +1067,9 @@ export async function saveTrackRating(stable_id: string, next: number): Promise<
 		return normalizeRating(next);
 	}
 	const etag = (await getTrack(stable_id)).etag;
-	return normalizeRating((await patchTrack(stable_id, etag, { rating: next })).track.rating ?? null);
+	return normalizeRating(
+		(await patchTrack(stable_id, etag, { rating: next })).track.rating ?? null
+	);
 }
 
 /** CAS-save. The required revision comes from fetchHotCueSlots, and the
@@ -1079,7 +1084,14 @@ export async function saveHotCue(
 ): Promise<HotCueMutation> {
 	// Spec 4b and decision 2: a stick track's cue edit stays in this session and makes no request.
 	if (isUsbTrackId(stable_id)) {
-		return (await loadStickSessionEdits()).saveSessionHotCue(stable_id, slot, in_ms, revision, comment ?? null, out_ms);
+		return (await loadStickSessionEdits()).saveSessionHotCue(
+			stable_id,
+			slot,
+			in_ms,
+			revision,
+			comment ?? null,
+			out_ms
+		);
 	}
 	// out_ms set = a loop hot cue (HOTCUE-LOOP-01); null = a point cue.
 	return _putJson<HotCueMutation>(
@@ -1096,7 +1108,8 @@ export async function clearHotCue(
 	revision: string
 ): Promise<HotCueMutation> {
 	// Spec 4b and decision 2: a stick track's cue edit stays in this session and makes no request.
-	if (isUsbTrackId(stable_id)) return (await loadStickSessionEdits()).clearSessionHotCue(stable_id, slot, revision);
+	if (isUsbTrackId(stable_id))
+		return (await loadStickSessionEdits()).clearSessionHotCue(stable_id, slot, revision);
 	return _deleteRequest<HotCueMutation>(
 		`/api/v1/tracks/${encodeURIComponent(stable_id)}/hot-cues/${slot}`,
 		revision
@@ -1112,7 +1125,12 @@ export async function restoreHotCue(
 ): Promise<HotCueMutation> {
 	// Spec 4b and decision 2: a stick track's cue edit stays in this session and makes no request.
 	if (isUsbTrackId(stable_id)) {
-		return (await loadStickSessionEdits()).restoreSessionHotCue(stable_id, slot, revision, reversal_id);
+		return (await loadStickSessionEdits()).restoreSessionHotCue(
+			stable_id,
+			slot,
+			revision,
+			reversal_id
+		);
 	}
 	return _putJson<HotCueMutation>(
 		`/api/v1/tracks/${encodeURIComponent(stable_id)}/hot-cues/${slot}/restore`,
@@ -1130,11 +1148,17 @@ export type TransitionInCue = { kind: 'transition_in'; in_ms: number };
 export type TransitionInSet = { cue: TransitionInCue; requested_ms: number; bar: number };
 
 /** PUT /tracks/{sid}/transition-in: set (or move) the cue at a track time. */
-export async function setTransitionInCue(stable_id: string, in_ms: number): Promise<TransitionInSet> {
+export async function setTransitionInCue(
+	stable_id: string,
+	in_ms: number
+): Promise<TransitionInSet> {
 	refuseStickWrite(stable_id, 'set transition-in cue');
-	return _putJson<TransitionInSet>(`/api/v1/tracks/${encodeURIComponent(stable_id)}/transition-in`, {
-		in_ms: Math.max(0, Math.round(in_ms))
-	});
+	return _putJson<TransitionInSet>(
+		`/api/v1/tracks/${encodeURIComponent(stable_id)}/transition-in`,
+		{
+			in_ms: Math.max(0, Math.round(in_ms))
+		}
+	);
 }
 
 /** URL for GET /tracks/{sid}/artwork: see artwork-url.ts, its leaf home. */
@@ -1249,18 +1273,25 @@ function _validateStemManifest(raw: unknown, stableId: string): StemArtifactMani
 		throw new TypeError('stem manifest must be an object');
 	}
 	const manifest = raw as Partial<StemArtifactManifest>;
-	if (manifest.schema !== 1) throw new Error(`stem manifest schema must be 1, got ${String(manifest.schema)}`);
+	if (manifest.schema !== 1)
+		throw new Error(`stem manifest schema must be 1, got ${String(manifest.schema)}`);
 	if (manifest.stable_id !== stableId) {
-		throw new Error(`stem manifest stable_id mismatch: expected ${stableId}, got ${String(manifest.stable_id)}`);
+		throw new Error(
+			`stem manifest stable_id mismatch: expected ${stableId}, got ${String(manifest.stable_id)}`
+		);
 	}
 	if (manifest.source !== 'demucs' && manifest.source !== 'roformer') {
-		throw new Error(`stem manifest source must be demucs or roformer, got ${String(manifest.source)}`);
+		throw new Error(
+			`stem manifest source must be demucs or roformer, got ${String(manifest.source)}`
+		);
 	}
 	// Layout is REQUIRED: the part set is read from it, never guessed from the
 	// keys, so a manifest that forgot to declare it is rejected rather than
 	// silently treated as the 4-part default.
 	if (manifest.layout !== 'demucs4' && manifest.layout !== 'roformer2') {
-		throw new Error(`stem manifest layout must be demucs4 or roformer2, got ${String(manifest.layout)}`);
+		throw new Error(
+			`stem manifest layout must be demucs4 or roformer2, got ${String(manifest.layout)}`
+		);
 	}
 	if (typeof manifest.model !== 'string' || manifest.model.trim() === '') {
 		throw new Error('stem manifest model must be a non-empty string');
@@ -1271,7 +1302,11 @@ function _validateStemManifest(raw: unknown, stableId: string): StemArtifactMani
 			throw new Error(`stem manifest ${field} must be a positive integer`);
 		}
 	}
-	if (typeof manifest.parts !== 'object' || manifest.parts === null || Array.isArray(manifest.parts)) {
+	if (
+		typeof manifest.parts !== 'object' ||
+		manifest.parts === null ||
+		Array.isArray(manifest.parts)
+	) {
 		throw new Error('stem manifest parts must be an object');
 	}
 	const partKeys = Object.keys(manifest.parts).sort();
@@ -1300,14 +1335,13 @@ function _validateStemManifest(raw: unknown, stableId: string): StemArtifactMani
  * or broken artifacts still reject. */
 export async function probeStemArtifact(stableId: string): Promise<StemArtifactProbe> {
 	// Spec 4b: stick tracks have no stem bundle and no stems route.
-	if (isUsbTrackId(stableId)) return { status: 'unavailable', error: 'stick tracks have no stem bundle' };
+	if (isUsbTrackId(stableId))
+		return { status: 'unavailable', error: 'stick tracks have no stem bundle' };
 	if (optionalResources(stableId).stems === false) {
 		return { status: 'unavailable', error: 'no stem bundle advertised' };
 	}
 	try {
-		const raw = await _fetchJson<unknown>(
-			`/api/v1/tracks/${encodeURIComponent(stableId)}/stems`
-		);
+		const raw = await _fetchJson<unknown>(`/api/v1/tracks/${encodeURIComponent(stableId)}/stems`);
 		if (
 			typeof raw === 'object' &&
 			raw !== null &&
@@ -1341,8 +1375,7 @@ export function stemAudioUrl(stableId: string, part: StemPartName): string {
 	// Unreachable for a stick id (probeStemArtifact above never reports it ready).
 	refuseStickRead(stableId, `stem ${part}`);
 	return (
-		`${RB_API_BASE}/api/v1/tracks/${encodeURIComponent(stableId)}/stems/` +
-		encodeURIComponent(part)
+		`${RB_API_BASE}/api/v1/tracks/${encodeURIComponent(stableId)}/stems/` + encodeURIComponent(part)
 	);
 }
 

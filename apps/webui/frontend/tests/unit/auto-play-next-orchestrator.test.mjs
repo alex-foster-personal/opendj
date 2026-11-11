@@ -176,9 +176,14 @@ test('outgoing deck unload releases the engaged loop', async () => {
 function _planner(harness, answer) {
 	const calls = { scheduled: [], aborted: [], requests: [], played: [] };
 	const state = { status: { id: 'plan-1', status: 'scheduled' } };
+	const holdSlots = [];
+	const queueHolds = answer.holds === 'queue';
 	const unregister = harness.registerAutoPlayNextPlanRunner({
 		schedule: async (plan) => {
 			calls.scheduled.push(plan);
+			if (queueHolds && plan && typeof plan.id === 'string') {
+				state.status = { id: plan.id, status: 'scheduled' };
+			}
 			return { failed: answer.refuse ?? null };
 		},
 		abort: async (id) => {
@@ -193,10 +198,18 @@ function _planner(harness, answer) {
 			return new Response('{}', { status: 200 });
 		}
 		calls.requests.push(JSON.parse(init.body));
-		if (answer.hold) await answer.hold;
+		if (queueHolds) {
+			await new Promise((resolve) => {
+				holdSlots.push(resolve);
+			});
+		} else if (answer.hold) {
+			await answer.hold;
+		}
+		const reqN = calls.requests.length;
+		const planId = queueHolds ? `plan-${reqN}` : 'plan-1';
 		return new Response(
 			JSON.stringify({
-				order: answer.noOrder ? null : { plan: { id: 'plan-1' } },
+				order: answer.noOrder ? null : { plan: { id: planId } },
 				reason: answer.noOrder ? 'nothing eligible' : 'intent smooth',
 				intent: 'smooth',
 				pick: answer.noOrder
@@ -218,6 +231,14 @@ function _planner(harness, answer) {
 	return {
 		calls,
 		state,
+		/** Release the hold for planner request `index` (0 = first fetch) without releasing earlier holds. */
+		releaseHold: (index) => {
+			const resolve = holdSlots[index];
+			if (typeof resolve === 'function') {
+				holdSlots[index] = null;
+				resolve();
+			}
+		},
 		restore: () => {
 			unregister();
 			globalThis.fetch = realFetch;
@@ -335,6 +356,44 @@ test('cancel while planning drops the late answer: no plan, no loop', async () =
 		assert.equal(entry.autoPlayNextState.armed, false);
 	} finally {
 		planner.restore();
+	}
+});
+
+test('stale planner completion cannot replace a newer handoff plan', async () => {
+	// requirement: AGENT-48
+	// [if] arm1 planner pending then cancel and arm2 plans [then] arm1 resolving last does not replace handoff, [else stop].
+	_setupLoadedDecks(entry);
+	const planner = _planner(entry, { holds: 'queue' });
+	try {
+		const arm1 = entry.armAutoPlayNext({ intent: 'smooth' });
+		await Promise.resolve();
+		assert.equal(entry.autoPlayNextState.phase, 'planning');
+		await entry.cancelAutoPlayNext();
+		assert.equal(entry.autoPlayNextState.armed, false);
+		const arm2 = entry.armAutoPlayNext({ intent: 'energy_up' });
+		assert.equal(planner.calls.requests.length, 2);
+		planner.releaseHold(1);
+		assert.equal(await arm2, true);
+		assert.equal(planner.calls.scheduled.length, 1);
+		assert.equal(entry.autoPlayNextState.phase, 'planned');
+		assert.equal(entry.autoPlayNextState.run.path, 'planner');
+		assert.equal(planner.calls.requests[1].intent, 'energy_up');
+		assert.deepEqual(planner.calls.scheduled[0], { id: 'plan-2' });
+		const livePlanId = 'plan-2';
+		planner.releaseHold(0);
+		assert.equal(await arm1, false);
+		assert.equal(planner.calls.scheduled.length, 1, 'stale arm must not schedule again');
+		assert.equal(entry.autoPlayNextState.armed, true);
+		assert.equal(entry.autoPlayNextState.phase, 'planned');
+		assert.equal(entry.autoPlayNextState.run.style, 'long_blend');
+		assert.equal(
+			planner.calls.aborted.includes(livePlanId),
+			false,
+			'stale completion must not abort the live plan'
+		);
+	} finally {
+		planner.restore();
+		await entry.cancelAutoPlayNext();
 	}
 });
 

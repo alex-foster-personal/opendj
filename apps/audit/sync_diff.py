@@ -89,7 +89,7 @@ def build_analysis_diff(
             # Codex P04-01: per-side timestamps must reach the resolver
             # or ``--prefer newest`` collapses to RB-default.
             res = resolve_conflict(
-                field if field != "manual_bpm" else "manual_bpm",
+                field,
                 rb_v,
                 djay_v,
                 rb_mtime,

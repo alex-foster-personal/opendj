@@ -21,6 +21,8 @@ from apps.analysis_beatgrid.tempo_change import (
     MIN_SEGMENT_BEATS,
     _segment_cost,
     detect_tempo_changes,
+    max_pairwise_interval_jump,
+    score_tempo_boundary,
 )
 
 
@@ -41,6 +43,22 @@ def _jittered(times: list[float], sigma_s: float, seed: int) -> list[float]:
     rng = random.Random(seed)
     out = [t + rng.gauss(0.0, sigma_s) for t in times]
     return sorted(out)
+
+
+def _ramped_beat_times(bpm: float, seconds: float, ramp_at_s: float, ramp_over_s: float, factor: float) -> list[float]:
+    times: list[float] = []
+    t = 0.0
+    while t < seconds:
+        times.append(t)
+        if t < ramp_at_s:
+            current = bpm
+        elif t >= ramp_at_s + ramp_over_s:
+            current = bpm * factor
+        else:
+            progress = (t - ramp_at_s) / ramp_over_s
+            current = bpm * (1.0 + (factor - 1.0) * progress)
+        t += 60.0 / current
+    return times
 
 
 # ----- The control: silence on a fixed tempo ------------------------------
@@ -365,3 +383,58 @@ def test_confidence_is_restated_from_the_final_gain() -> None:
             f"marker at {marker.at_s}s reports confidence {marker.confidence}, "
             f"but its final gain {gain:.2f} over penalty {penalty:.2f} gives {expected}"
         )
+
+
+# ----- SEGMENTS: per-boundary scoring at 1 bar with side BPM (issue #11362) -
+
+
+@pytest.mark.requirement("SEGMENTS-12678")
+def test_a_three_percent_step_scores_within_one_bar_of_the_injected_bar() -> None:
+    """[if] a 3 percent IBI step is at a known bar [then] the marker lands within 1 bar, [else stop]."""
+    bpm_before = 128.0
+    bpm_after = bpm_before * 1.03
+    split_beat = 200
+    times = _two_tempos(bpm_before, split_beat, bpm_after, 200)
+    annotated_at_s = times[split_beat]
+    result = detect_tempo_changes(times)
+    assert len(result.markers) == 1
+    score = score_tempo_boundary(
+        result.markers[0],
+        annotated_at_s,
+        bpm_before,
+        bpm_after,
+        reference_bpm=bpm_before,
+    )
+    assert score.within_one_bar, f"marker at {result.markers[0].at_s}s vs {annotated_at_s}s"
+
+
+@pytest.mark.requirement("SEGMENTS-12678")
+def test_an_accepted_step_marker_matches_bpm_on_each_side() -> None:
+    """[if] the step marker is accepted [then] bpm_before and bpm_after match, [else stop]."""
+    bpm_before = 128.0
+    bpm_after = bpm_before * 1.03
+    times = _two_tempos(bpm_before, 200, bpm_after, 200)
+    result = detect_tempo_changes(times)
+    score = score_tempo_boundary(
+        result.markers[0],
+        times[200],
+        bpm_before,
+        bpm_after,
+        reference_bpm=bpm_before,
+    )
+    assert score.accepted
+
+
+@pytest.mark.requirement("SEGMENTS-12678")
+def test_a_fixed_tempo_ibi_series_scores_no_markers() -> None:
+    """[if] a fixed-tempo IBI series has no step [then] detect_tempo_changes returns none, [else stop]."""
+    assert detect_tempo_changes(_steady(128.0, 400)).markers == ()
+
+
+@pytest.mark.requirement("SEGMENTS-12678")
+def test_a_gradual_ramp_instrument_has_no_stepwise_interval_jump() -> None:
+    """[if] a 3 percent ramp is the instrument [then] max pairwise interval jump stays under 1 percent, [else stop]."""
+    ramp_over_s = MIN_SEGMENT_BARS * 4 * (60.0 / 128.0)
+    times = _ramped_beat_times(128.0, 200.0, ramp_at_s=120.0, ramp_over_s=ramp_over_s, factor=1.03)
+    intervals = [later - earlier for earlier, later in itertools.pairwise(times)]
+    assert max_pairwise_interval_jump(intervals) < 0.01

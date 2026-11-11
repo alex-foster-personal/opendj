@@ -9,6 +9,10 @@ explicit ``--source``, so a script and the button cannot disagree.
     python -m apps.sets rec start --base-url URL --source loopback --device-name "BlackHole 2ch"
     python -m apps.sets rec status --base-url URL
     python -m apps.sets rec stop --base-url URL
+    python -m apps.sets rec list --base-url URL
+    python -m apps.sets rec sessions --base-url URL
+    python -m apps.sets rec timeline --base-url URL --session-id SESSION
+    python -m apps.sets rec recover --base-url URL --session-id SESSION --expected-pid PID
 
 A master start is pushed to the open /performance page, which connects its tap
 before the start answers; `rec start` returns once audio is really written.
@@ -18,6 +22,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import sys
 import time
 import urllib.error
 import urllib.request
@@ -33,7 +38,14 @@ class RecCommandFailed(RuntimeError):
     """The daemon refused or could not be reached; carries its reason."""
 
 
-def _call(base_url: str, method: str, path: str, body: dict[str, Any] | None = None) -> Any:
+def _call(
+    base_url: str,
+    method: str,
+    path: str,
+    body: dict[str, Any] | None = None,
+    *,
+    parse_json: bool = True,
+) -> Any:
     data = None if body is None else json.dumps(body).encode()
     request = urllib.request.Request(
         base_url.rstrip("/") + path,
@@ -43,7 +55,10 @@ def _call(base_url: str, method: str, path: str, body: dict[str, Any] | None = N
     )
     try:
         with urllib.request.urlopen(request, timeout=_TIMEOUT_S) as response:
-            return json.loads(response.read() or b"null")
+            payload = response.read()
+            if not parse_json:
+                return payload
+            return json.loads(payload or b"null")
     except urllib.error.HTTPError as exc:
         raise RecCommandFailed(f"{method} {path}: {exc.code} {exc.read().decode(errors='replace')}") from exc
     except urllib.error.URLError as exc:
@@ -88,24 +103,77 @@ def wait_until_recording(
     return status
 
 
+def _session_id_for_stop(base_url: str, session_id: str | None) -> str:
+    if session_id is not None:
+        return session_id
+    current = _call(base_url, "GET", "/api/sets/recorder")
+    if not current["active"]:
+        raise RecCommandFailed("nothing is recording")
+    return current["session_id"]
+
+
+def _validate_timeline_ndjson(payload: bytes) -> None:
+    """Reject timeline bodies agents cannot replay line-by-line (stricter than HTTP tail tolerance)."""
+    if not payload:
+        return
+    text = payload.decode("utf-8")
+    line_no = 0
+    for raw in text.split("\n"):
+        if not raw.strip():
+            continue
+        line_no += 1
+        try:
+            json.loads(raw)
+        except json.JSONDecodeError as exc:
+            snippet = raw[:80] + ("..." if len(raw) > 80 else "")
+            raise RecCommandFailed(
+                f"malformed timeline NDJSON at line {line_no}: {exc.msg}; snippet: {snippet!r}"
+            ) from exc
+
+
+def _unknown_rec_command(rec_cmd: str) -> None:
+    raise RecCommandFailed(f"unknown rec command {rec_cmd!r}")
+
+
 def dispatch(args: argparse.Namespace) -> int:
-    if args.rec_cmd == "start":
-        status = _call(
-            args.base_url,
-            "POST",
-            "/api/sets/recorder/start",
-            start_body(args.source, args.device_name, args.sources),
-        )
-        status = wait_until_recording(args.base_url, status)
-    elif args.rec_cmd == "status":
-        status = _call(args.base_url, "GET", "/api/sets/recorder")
-    elif args.rec_cmd == "stop":
-        current = _call(args.base_url, "GET", "/api/sets/recorder")
-        if not current["active"]:
-            raise RecCommandFailed("nothing is recording")
-        status = _call(args.base_url, "POST", f"/api/sets/recorder/{current['session_id']}/stop")
-    else:
-        raise RecCommandFailed(f"unknown rec command {args.rec_cmd!r}")
+    try:
+        if args.rec_cmd == "start":
+            status = _call(
+                args.base_url,
+                "POST",
+                "/api/sets/recorder/start",
+                start_body(args.source, args.device_name, args.sources),
+            )
+            status = wait_until_recording(args.base_url, status)
+        elif args.rec_cmd == "status":
+            status = _call(args.base_url, "GET", "/api/sets/recorder")
+        elif args.rec_cmd == "stop":
+            session_id = _session_id_for_stop(args.base_url, args.session_id)
+            status = _call(args.base_url, "POST", f"/api/sets/recorder/{session_id}/stop")
+        elif args.rec_cmd in ("list", "sessions"):
+            status = _call(args.base_url, "GET", "/api/sets")
+        elif args.rec_cmd == "timeline":
+            payload = _call(
+                args.base_url,
+                "GET",
+                f"/api/sets/{args.session_id}/timeline",
+                parse_json=False,
+            )
+            _validate_timeline_ndjson(payload)
+            sys.stdout.buffer.write(payload)
+            return 0
+        elif args.rec_cmd == "recover":
+            status = _call(
+                args.base_url,
+                "POST",
+                f"/api/sets/recorder/{args.session_id}/recover",
+                {"expected_pid": args.expected_pid},
+            )
+        else:
+            _unknown_rec_command(args.rec_cmd)
+    except RecCommandFailed as exc:
+        print(str(exc), file=sys.stderr)
+        return 1
     print(json.dumps(status, indent=2, sort_keys=True))
     return 0
 
@@ -117,6 +185,10 @@ def add_parser(sub: Any) -> None:
         ("start", "start recording"),
         ("status", "print the recorder status"),
         ("stop", "stop the active recording"),
+        ("list", "list recorded sessions"),
+        ("sessions", "list recorded sessions"),
+        ("timeline", "print session timeline NDJSON"),
+        ("recover", "recover a stale external recorder PID"),
     ):
         cmd = rec_sub.add_parser(name, help=text)
         cmd.add_argument("--base-url", required=True, help="the app daemon, e.g. http://127.0.0.1:8702")
@@ -129,6 +201,17 @@ def add_parser(sub: Any) -> None:
                 default=["djay_monitor", "opendj_decks"],
                 help="deck-state sources (the picker's are djay_monitor opendj_decks)",
             )
+        elif name == "stop":
+            cmd.add_argument(
+                "--session-id",
+                default=None,
+                help="stop this session id (skip idle guard; daemon validates ownership)",
+            )
+        elif name == "timeline":
+            cmd.add_argument("--session-id", required=True)
+        elif name == "recover":
+            cmd.add_argument("--session-id", required=True)
+            cmd.add_argument("--expected-pid", type=int, required=True)
     rec.set_defaults(func=dispatch)
 
 

@@ -33,6 +33,7 @@ from scripts.lock_marker_parser import _MarkerParser, tokenize_marker
 from scripts.lock_marker_semantics import (
     _VERSION_RE,
     Unknown,
+    _cmp_versions,
     _release_parts,
     canonical_version,
     release_literal,
@@ -245,3 +246,25 @@ def norm_marker(marker: str | None) -> tuple[str, ...]:
         else:
             raise Unknown(f"unparseable marker clause in {marker!r}")
     return tuple(sorted(out))
+
+
+def release_satisfies_spec(release: str, spec: str) -> bool:
+    """Whether `release` satisfies a comma-joined PEP 440 specifier (AND across clauses).
+
+    Used when `OPENDJ_LOCK_METADATA_UV_VERSION` names the uv CI pins (#12122, issue
+    #12135): `[tool.uv] required-version` gates the uv that runs `uv lock`, which this
+    check does not invoke without that pin.
+    """
+    candidate = trim_release(canonical_version(release_literal(release)))
+    for clause in norm_spec(spec).split(","):
+        piece = clause.strip()
+        if not piece:
+            continue
+        match = CLAUSE_RE.match(piece)
+        if match is None:
+            raise Unknown(f"unparseable required-version clause: {piece!r}")
+        op, version = match.group("op"), match.group("version")
+        bound = trim_release(canonical_version(release_literal(version)))
+        if not _cmp_versions(candidate, op, bound):
+            return False
+    return True

@@ -83,12 +83,24 @@ def signed_in_user(request: Request) -> SessionUser | None:
 
     Signed out is a legitimate state everywhere in this app (sign-in is
     identity, never authorisation), so this returns None rather than raising;
-    a route that needs a user raises its own 401 with its own code.
+    a route that needs a user can use ``require_signed_in_user`` to retain
+    its own 401 refusal wording.
     """
     token = request.cookies.get(SESSION_COOKIE_NAME)
     if not token:
         return None
     return _session_store(request).resolve(token)
+
+
+def require_signed_in_user(request: Request, *, message: str) -> SessionUser:
+    """Resolve the signed-in user or refuse with the caller's message."""
+    user = signed_in_user(request)
+    if user is None:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail={"code": "AUTH_REQUIRED", "message": message},
+        )
+    return user
 
 
 def _oauth_config() -> GoogleOAuthConfig:
@@ -403,4 +415,4 @@ def _set_session_cookie(response: Response, token: str) -> None:
     )
 
 
-__all__ = ["router", "session_store", "signed_in_user"]
+__all__ = ["require_signed_in_user", "router", "session_store", "signed_in_user"]

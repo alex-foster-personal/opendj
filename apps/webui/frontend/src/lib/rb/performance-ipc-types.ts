@@ -34,6 +34,7 @@ import type { TransitionIntent } from '$lib/rb/auto-play-next-plan';
 import type { Verdict } from '$lib/rb/autoplay-why';
 import type { WaveformSeekSnap } from '$lib/rb/plan-waveform-seek';
 import type { WaveformBoolOverlay } from '$lib/rb/waveform-overlay-command';
+import type { WaveHeight } from '$lib/rb/wave-height';
 import type { WaveGridLines } from '$lib/rb/wave-grid-lines';
 import type { WaveformDesign, WaveformDesignPref } from '$lib/rb/waveform-design';
 import type {
@@ -159,7 +160,7 @@ export type PerformanceCommand =
 	| { type: 'memory_cue_call'; deck: DeckId; direction: MemoryCueCallDirection }
 	| { type: 'seek'; deck: DeckId; position_ms: number; exact?: boolean }
 	| { type: 'waveform_seek'; deck: DeckId; position_ms: number; snap: WaveformSeekSnap }
-	| { type: 'set_waveform_design'; design: WaveformDesignPref }
+	| { type: 'set_waveform_design'; design?: WaveformDesignPref; height?: WaveHeight }
 	/** ARTNUM-9649: the deck number drawn over each deck's artwork. */
 	| { type: 'set_deck_number_art'; mode: DeckNumberArt }
 	/** WAVEQS-8348e: the quick-settings popover's overlay switches (waveform-overlay-command.ts). */
@@ -707,6 +708,8 @@ export interface PerformanceState {
 		deck_number_art: DeckNumberArt;
 		/** Stored pref; 'auto' follows the skin. */
 		waveform_design: WaveformDesignPref;
+		/** WAVEQS-11733: mirrored full row or single-sided half. */
+		wave_height: WaveHeight;
 		/** What the waveforms actually paint (auto resolved through the skin). */
 		waveform_design_effective: WaveformDesign;
 		ui_skin: SkinSettings['ui_skin'];

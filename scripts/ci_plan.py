@@ -26,11 +26,13 @@ from __future__ import annotations
 
 import argparse
 import functools
+import os
 import re
 import subprocess
 import sys
 from collections import defaultdict
 from collections.abc import Callable, Iterable, Iterator, Mapping
+from concurrent.futures import ProcessPoolExecutor
 from dataclasses import dataclass
 from enum import StrEnum
 from pathlib import Path
@@ -38,6 +40,7 @@ from pathlib import Path
 import yaml
 
 from scripts.ci_plan_sources import (
+    HelperLoads,
     PlanError,
     _read_source,
     imported_modules,
@@ -555,12 +558,9 @@ def _scan_helper_importers(inputs: dict[str, Path], root: Path) -> dict[str, set
     by_folded: dict[str, list[str]] = defaultdict(list)
     for relative in inputs:
         by_folded[relative.casefold()].append(relative)
-    for relative, file, consumer in sources:
-        text = _read_source(file, relative)
-        loads = loaded_test_helpers(text, relative)
+    for (relative, _file, consumer), (imported, loads) in zip(sources, _read_helper_edges(sources), strict=True):
         unresolved |= loads.unresolved
         path_targets |= loads.path_targets
-        imported = imported_test_helpers(text, relative)
         for target in _helper_files(imported | loads.by_call, importers):
             if target != relative:
                 importers[target].add(consumer)
@@ -574,6 +574,30 @@ def _scan_helper_importers(inputs: dict[str, Path], root: Path) -> dict[str, set
         if unresolved or name in path_targets or name.removesuffix(".py") in path_targets:
             consumers.add(SESSION_LOAD)
     return importers
+
+
+#: Worker processes for the per-file read in `_scan_helper_importers`. Each file is read and parsed
+#: on its own, so the result is the serial one, in input order; only wall time changes (~2,800
+#: inputs on the real tree). Below `_PARALLEL_FROM` inputs (every unit-test tree) it stays in process.
+_SCAN_WORKERS = min(8, os.cpu_count() or 1)
+_PARALLEL_FROM = 200
+
+
+def _read_helper_edges(sources: list[tuple[str, Path, str]]) -> list[tuple[set[str], HelperLoads]]:
+    """`_helper_edges` for every source, in order, in worker processes once the tree is large."""
+    jobs = [(file, relative) for relative, file, _ in sources]
+    if len(jobs) < _PARALLEL_FROM or _SCAN_WORKERS < 2:
+        return [_helper_edges(job) for job in jobs]
+    with ProcessPoolExecutor(_SCAN_WORKERS) as pool:
+        return list(pool.map(_helper_edges, jobs, chunksize=32))
+
+
+def _helper_edges(job: tuple[Path, str]) -> tuple[set[str], HelperLoads]:
+    """What one pytest input imports and loads from `tests`, read and parsed in one place. It raises
+    as the serial reader did on a file it cannot decode or parse."""
+    file, relative = job
+    text = _read_source(file, relative)
+    return imported_test_helpers(text, relative), loaded_test_helpers(text, relative)
 
 
 def _helper_files(names: Iterable[str], importers: dict[str, set[str]]) -> list[str]:

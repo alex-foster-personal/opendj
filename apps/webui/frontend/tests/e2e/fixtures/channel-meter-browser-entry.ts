@@ -7,13 +7,15 @@
  * AudioContext graph actually moves the meter when `fader.gain` changes. That
  * is the same "test the shape, not the code" failure the master-meter harness
  * was added to close (Sol thread 3967976238). This entry bundles the shipped
- * `buildDeckChannelGraph` and `readMeterTap` so the suite can drive a real
+ * `buildDeckChannelMeterHarnessGraph` (same fader tap as production) and
+ * `readMeterTap` so the suite can drive a real
  * oscillator through the production channel chain and assert post-fader metering.
  *
  * One entry, not several imports: meter-tap.ts keeps module-level state, so
  * two bundles would give two unrelated copies (see master-meter-browser-entry.ts).
  */
-import { buildDeckChannelGraph, type DeckChannelNodes } from '$lib/rb/deck-channel-graph';
+import type { DeckChannelNodes } from '$lib/rb/deck-channel-graph';
+import { buildDeckChannelMeterHarnessGraph } from '$lib/rb/deck-channel-meter-harness-graph';
 import type { DeckId } from '$lib/rb/deck-slots';
 import { dbfsFromAmplitude } from '$lib/rb/meter-math';
 import {
@@ -82,7 +84,7 @@ function neutralMixerState(fader: number): MixerState {
 				error: null,
 				diagnostics: {
 					probe: 'chirp',
-					alternate_probe: 'unavailable',
+					alternate_probe: 'click_train',
 					failure: null,
 					master_measurements_ms: [],
 					cue_measurements_ms: [],
@@ -175,7 +177,7 @@ async function readChannelMeterAtFaderGains(faderGains: number[]): Promise<{ rea
 	let capturedNodes: DeckChannelNodes | undefined;
 	let capturedTap: MeterTap | undefined;
 
-	const meterSources = buildDeckChannelGraph({
+	const meterSources = buildDeckChannelMeterHarnessGraph({
 		ctx,
 		mixerState: neutralMixerState(faderGains[0] ?? 1),
 		masterGain,
@@ -192,7 +194,7 @@ async function readChannelMeterAtFaderGains(faderGains: number[]): Promise<{ rea
 	});
 
 	if (capturedNodes === undefined || capturedTap === undefined) {
-		throw new Error('buildDeckChannelGraph did not register the test deck');
+		throw new Error('buildDeckChannelMeterHarnessGraph did not register the test deck');
 	}
 	const deckNodes = capturedNodes;
 	const deckTap = capturedTap;
@@ -240,7 +242,7 @@ async function readChannelMeterFloorsOnNextObservation(): Promise<{
 	let capturedNodes: DeckChannelNodes | undefined;
 	let capturedTap: MeterTap | undefined;
 
-	const meterSources = buildDeckChannelGraph({
+	const meterSources = buildDeckChannelMeterHarnessGraph({
 		ctx,
 		mixerState: neutralMixerState(1),
 		masterGain,
@@ -257,7 +259,7 @@ async function readChannelMeterFloorsOnNextObservation(): Promise<{
 	});
 
 	if (capturedNodes === undefined || capturedTap === undefined) {
-		throw new Error('buildDeckChannelGraph did not register the test deck');
+		throw new Error('buildDeckChannelMeterHarnessGraph did not register the test deck');
 	}
 	const deckNodes = capturedNodes;
 	const deckTap = capturedTap;

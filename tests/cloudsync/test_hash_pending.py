@@ -25,6 +25,7 @@ from fastapi.testclient import TestClient
 
 from apps.shared.state import db as state_db
 from apps.shared.state import sync_stamp
+from apps.shared.state.backfill_content_hash import BackfillReport
 from apps.sync_hub import capabilities, client, engine, maintenance, protocol, sync_set
 from apps.sync_hub.hash_pending import count_hash_pending
 from apps.sync_hub.hash_pending_backfill import build_parser, run_for_hub_backfill
@@ -368,3 +369,41 @@ def test_hash_pending_backfill_cli_rejects_for_hub() -> None:
 def test_hash_pending_backfill_cli_rejects_dry_run_plus_live() -> None:
     with pytest.raises(SystemExit):
         build_parser().parse_args(["--dry-run", "--live"])
+
+
+def test_run_for_hub_backfill_reports_progress_without_blocking(tmp_path: Path, good_wav: Path) -> None:
+    """[if] many hub pending rows hash [then] on_progress fires each step, [else stop]."""
+    hub_dir = tmp_path / "hub"
+    spoke = tmp_path / "spoke"
+    state_db.open_rw(client.state_db_path(hub_dir)).close()
+    transport = _hub_transport(hub_dir)
+    conn = state_db.open_rw(client.state_db_path(spoke))
+    try:
+        _seed_pending_tracks(conn, 30)
+        for index in range(5):
+            conn.execute(
+                "UPDATE tracks SET file_path = ? WHERE stable_id = ?",
+                (str(good_wav), f"trk-pending-{index:05d}"),
+            )
+        conn.commit()
+    finally:
+        conn.close()
+    client.run_sync(spoke, "http://hub.invalid", transport=transport, name="spoke")
+
+    seen: list[int] = []
+
+    def on_progress(report: BackfillReport, processed: int) -> None:
+        seen.append(processed)
+
+    report = run_for_hub_backfill(
+        spoke,
+        live=False,
+        limit=10,
+        transport=transport,
+        hub_endpoint="http://hub.invalid",
+        on_progress=on_progress,
+    )
+    assert report.total == 10
+    assert seen[0] == 0
+    assert seen[-1] == 10
+    assert len(seen) == 11

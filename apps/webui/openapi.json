@@ -1758,6 +1758,95 @@
         "title": "ArchiveOut",
         "type": "object"
       },
+      "ArtNetAddress": {
+        "additionalProperties": false,
+        "description": "Validated selection with its derived 15-bit Port-Address; no delivery claim.",
+        "properties": {
+          "net": {
+            "title": "Net",
+            "type": "integer"
+          },
+          "port_address": {
+            "title": "Port Address",
+            "type": "integer"
+          },
+          "subnet": {
+            "title": "Subnet",
+            "type": "integer"
+          },
+          "universe": {
+            "title": "Universe",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "net",
+          "subnet",
+          "universe",
+          "port_address"
+        ],
+        "title": "ArtNetAddress",
+        "type": "object"
+      },
+      "ArtNetAddressErrorDetail": {
+        "properties": {
+          "code": {
+            "enum": [
+              "lighting_artnet_bad_net",
+              "lighting_artnet_bad_subuni"
+            ],
+            "title": "Code",
+            "type": "string"
+          },
+          "message": {
+            "title": "Message",
+            "type": "string"
+          }
+        },
+        "required": [
+          "code",
+          "message"
+        ],
+        "title": "ArtNetAddressErrorDetail",
+        "type": "object"
+      },
+      "ArtNetAddressErrorResponse": {
+        "properties": {
+          "detail": {
+            "$ref": "#/components/schemas/ArtNetAddressErrorDetail"
+          }
+        },
+        "required": [
+          "detail"
+        ],
+        "title": "ArtNetAddressErrorResponse",
+        "type": "object"
+      },
+      "ArtNetAddressRequest": {
+        "additionalProperties": false,
+        "description": "Required integer address fields; ranges are checked with domain error codes.",
+        "properties": {
+          "net": {
+            "title": "Net",
+            "type": "integer"
+          },
+          "subnet": {
+            "title": "Subnet",
+            "type": "integer"
+          },
+          "universe": {
+            "title": "Universe",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "net",
+          "subnet",
+          "universe"
+        ],
+        "title": "ArtNetAddressRequest",
+        "type": "object"
+      },
       "ArtworkSuggestionDecisionIn": {
         "additionalProperties": false,
         "properties": {
@@ -4808,6 +4897,7 @@
                 "browse_encoder": "#/components/schemas/BrowseEncoder",
                 "browse_load": "#/components/schemas/BrowseLoad",
                 "channel_cue": "#/components/schemas/ChannelCue",
+                "color_fx": "#/components/schemas/ColorFx",
                 "controller_pad": "#/components/schemas/ControllerPad",
                 "controller_pad_mode": "#/components/schemas/ControllerPadMode",
                 "deck_auto_loop_toggle": "#/components/schemas/DeckAutoLoopToggle",
@@ -4904,6 +4994,9 @@
               },
               {
                 "$ref": "#/components/schemas/MasterCue"
+              },
+              {
+                "$ref": "#/components/schemas/ColorFx"
               },
               {
                 "$ref": "#/components/schemas/DeckPitch"
@@ -5760,6 +5853,11 @@
             "title": "Bars",
             "type": "integer"
           },
+          "energy": {
+            "additionalProperties": true,
+            "title": "Energy",
+            "type": "object"
+          },
           "factors": {
             "additionalProperties": {
               "type": "number"
@@ -5865,6 +5963,7 @@
         },
         "required": [
           "id",
+          "energy",
           "plan",
           "plan_sha256",
           "style",
@@ -7804,6 +7903,43 @@
           "store"
         ],
         "title": "CollectIn",
+        "type": "object"
+      },
+      "ColorFx": {
+        "additionalProperties": false,
+        "properties": {
+          "deck": {
+            "enum": [
+              1,
+              2,
+              3,
+              4
+            ],
+            "title": "Deck",
+            "type": "integer"
+          },
+          "effect": {
+            "enum": [
+              "filter",
+              "space",
+              "echo",
+              "next"
+            ],
+            "title": "Effect",
+            "type": "string"
+          },
+          "type": {
+            "const": "color_fx",
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "type",
+          "deck",
+          "effect"
+        ],
+        "title": "ColorFx",
         "type": "object"
       },
       "CommentArchiveOut": {
@@ -10640,6 +10776,34 @@
           "warning"
         ],
         "title": "DescentOut",
+        "type": "object"
+      },
+      "DeviceOut": {
+        "properties": {
+          "device_id": {
+            "title": "Device Id",
+            "type": "string"
+          },
+          "device_name": {
+            "title": "Device Name",
+            "type": "string"
+          },
+          "last_seen": {
+            "title": "Last Seen",
+            "type": "string"
+          },
+          "paired_at": {
+            "title": "Paired At",
+            "type": "string"
+          }
+        },
+        "required": [
+          "device_id",
+          "device_name",
+          "paired_at",
+          "last_seen"
+        ],
+        "title": "DeviceOut",
         "type": "object"
       },
       "DigestDiffSampleOut": {
@@ -13749,6 +13913,124 @@
         "title": "HandoffAppsOut",
         "type": "object"
       },
+      "HashPendingBackfillProgressOut": {
+        "properties": {
+          "hashed": {
+            "default": 0,
+            "title": "Hashed",
+            "type": "integer"
+          },
+          "last_error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Error"
+          },
+          "live": {
+            "default": false,
+            "title": "Live",
+            "type": "boolean"
+          },
+          "processed": {
+            "description": "Rows visited so far.",
+            "title": "Processed",
+            "type": "integer"
+          },
+          "remaining": {
+            "description": "total - processed while running or done.",
+            "title": "Remaining",
+            "type": "integer"
+          },
+          "resolvable": {
+            "default": 0,
+            "title": "Resolvable",
+            "type": "integer"
+          },
+          "resolved_via_location": {
+            "default": 0,
+            "title": "Resolved Via Location",
+            "type": "integer"
+          },
+          "resolved_via_track_path": {
+            "default": 0,
+            "title": "Resolved Via Track Path",
+            "type": "integer"
+          },
+          "state": {
+            "enum": [
+              "idle",
+              "running",
+              "done",
+              "error"
+            ],
+            "title": "State",
+            "type": "string"
+          },
+          "total": {
+            "description": "Hub hash_pending rows in this run.",
+            "title": "Total",
+            "type": "integer"
+          },
+          "unresolvable": {
+            "default": 0,
+            "title": "Unresolvable",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "state",
+          "total",
+          "processed",
+          "remaining"
+        ],
+        "title": "HashPendingBackfillProgressOut",
+        "type": "object"
+      },
+      "HashPendingBackfillStartIn": {
+        "additionalProperties": false,
+        "properties": {
+          "hub_url": {
+            "anyOf": [
+              {
+                "minLength": 1,
+                "pattern": "^https?://",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Override hub URL (CLI --hub-endpoint).",
+            "title": "Hub Url"
+          },
+          "limit": {
+            "anyOf": [
+              {
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Cap hub stable_ids processed this run (CLI --limit).",
+            "title": "Limit"
+          },
+          "live": {
+            "default": true,
+            "description": "When true, persist hashes locally and push to the hub (CLI --live).",
+            "title": "Live",
+            "type": "boolean"
+          }
+        },
+        "title": "HashPendingBackfillStartIn",
+        "type": "object"
+      },
       "HashPendingResponse": {
         "properties": {
           "next_cursor": {
@@ -13791,6 +14073,65 @@
         "title": "HashPendingResponse",
         "type": "object"
       },
+      "HeadphoneCalibrationDiagnosticsOut": {
+        "description": "IOPIN-07 bounded calibration evidence mirrored from the page.",
+        "properties": {
+          "alternate_probe": {
+            "title": "Alternate Probe",
+            "type": "string"
+          },
+          "cue_measurements_ms": {
+            "items": {
+              "type": "number"
+            },
+            "title": "Cue Measurements Ms",
+            "type": "array"
+          },
+          "failure": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Failure"
+          },
+          "master_measurements_ms": {
+            "items": {
+              "type": "number"
+            },
+            "title": "Master Measurements Ms",
+            "type": "array"
+          },
+          "probe": {
+            "title": "Probe",
+            "type": "string"
+          },
+          "spread_ms": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Spread Ms"
+          }
+        },
+        "required": [
+          "probe",
+          "alternate_probe",
+          "failure",
+          "master_measurements_ms",
+          "cue_measurements_ms",
+          "spread_ms"
+        ],
+        "title": "HeadphoneCalibrationDiagnosticsOut",
+        "type": "object"
+      },
       "HeadphoneCalibrationOut": {
         "description": "CUEOUT-14 calibration progress; `step` is the modal's state machine.",
         "properties": {
@@ -13804,6 +14145,16 @@
               }
             ],
             "title": "Cue Latency Ms"
+          },
+          "diagnostics": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/HeadphoneCalibrationDiagnosticsOut"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "error": {
             "anyOf": [
@@ -15050,10 +15401,23 @@
       },
       "IdentityBacklogOut": {
         "properties": {
+          "audio_holder_machine_names": {
+            "description": "Fleet machine display names with local track_locations for hash_pending rows.",
+            "items": {
+              "type": "string"
+            },
+            "title": "Audio Holder Machine Names",
+            "type": "array"
+          },
           "hash_pending": {
             "description": "live 'tracks' rows offered to the hub with hash_pending=true while awaiting content_hash. Run `python -m apps.sync_hub.hash_pending_backfill --live` on a machine that holds the audio.",
             "title": "Hash Pending",
             "type": "integer"
+          },
+          "this_machine_can_hash": {
+            "description": "True when at least one hash_pending row resolves to audio on this machine.",
+            "title": "This Machine Can Hash",
+            "type": "boolean"
           },
           "unsyncable_inferred": {
             "description": "live 'tracks' rows still held for content-identity duplicate losers only. Rows lacking hash and ISRC travel as hash_pending instead.",
@@ -15063,7 +15427,9 @@
         },
         "required": [
           "unsyncable_inferred",
-          "hash_pending"
+          "hash_pending",
+          "this_machine_can_hash",
+          "audio_holder_machine_names"
         ],
         "title": "IdentityBacklogOut",
         "type": "object"
@@ -15421,6 +15787,19 @@
             ],
             "title": "Message"
           },
+          "outcome": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "what the kind measured after its worker exited, e.g. stems bundles expected vs present (STEM-59); null for kinds without a check",
+            "title": "Outcome"
+          },
           "owner_boot_id": {
             "title": "Owner Boot Id",
             "type": "string"
@@ -15459,6 +15838,21 @@
           "status": {
             "title": "Status",
             "type": "string"
+          },
+          "stderr_tail": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "the last lines the worker wrote to stderr, kept on every ending, success included (STEM-60)",
+            "title": "Stderr Tail"
           },
           "worker_argv": {
             "anyOf": [
@@ -17413,6 +17807,43 @@
         "title": "LightingDeckStatus",
         "type": "object"
       },
+      "LightingDisabledDetail": {
+        "properties": {
+          "error": {
+            "const": "flag_disabled",
+            "title": "Error",
+            "type": "string"
+          },
+          "flag": {
+            "const": "lighting.output",
+            "title": "Flag",
+            "type": "string"
+          },
+          "message": {
+            "title": "Message",
+            "type": "string"
+          }
+        },
+        "required": [
+          "error",
+          "flag",
+          "message"
+        ],
+        "title": "LightingDisabledDetail",
+        "type": "object"
+      },
+      "LightingDisabledResponse": {
+        "properties": {
+          "detail": {
+            "$ref": "#/components/schemas/LightingDisabledDetail"
+          }
+        },
+        "required": [
+          "detail"
+        ],
+        "title": "LightingDisabledResponse",
+        "type": "object"
+      },
       "LightingStatus": {
         "properties": {
           "contract": {
@@ -17742,6 +18173,17 @@
       "ListingOut": {
         "description": "Problem first (PLUG-6522k): why you want it, what you can do, how, and the limits.",
         "properties": {
+          "capability_kind": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Capability Kind"
+          },
           "how_it_works": {
             "title": "How It Works",
             "type": "string"
@@ -17767,6 +18209,17 @@
           "status": {
             "title": "Status",
             "type": "string"
+          },
+          "store_surface": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Store Surface"
           },
           "tagline": {
             "title": "Tagline",
@@ -24193,6 +24646,16 @@
             "title": "Plugin Id",
             "type": "string"
           },
+          "provider": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ProviderSurfaceOut"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "publisher": {
             "title": "Publisher",
             "type": "string"
@@ -24247,7 +24710,8 @@
           "load_detail",
           "pending",
           "update_available",
-          "listing"
+          "listing",
+          "provider"
         ],
         "title": "PluginRowOut",
         "type": "object"
@@ -24932,6 +25396,127 @@
           "status"
         ],
         "title": "ProvenanceOut",
+        "type": "object"
+      },
+      "ProviderQuotaOut": {
+        "properties": {
+          "limit": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Limit"
+          },
+          "remaining": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Remaining"
+          },
+          "reset_at": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reset At"
+          },
+          "retry_after_s": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Retry After S"
+          }
+        },
+        "required": [
+          "limit",
+          "remaining",
+          "reset_at",
+          "retry_after_s"
+        ],
+        "title": "ProviderQuotaOut",
+        "type": "object"
+      },
+      "ProviderSurfaceOut": {
+        "properties": {
+          "capability_kind": {
+            "title": "Capability Kind",
+            "type": "string"
+          },
+          "credential_configured": {
+            "title": "Credential Configured",
+            "type": "boolean"
+          },
+          "credential_env": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Credential Env"
+          },
+          "provenance_fields": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Provenance Fields",
+            "type": "array"
+          },
+          "quota": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ProviderQuotaOut"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "store_surface": {
+            "title": "Store Surface",
+            "type": "string"
+          },
+          "terms_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Terms Url"
+          }
+        },
+        "required": [
+          "capability_kind",
+          "store_surface",
+          "credential_env",
+          "credential_configured",
+          "terms_url",
+          "provenance_fields"
+        ],
+        "title": "ProviderSurfaceOut",
         "type": "object"
       },
       "PullResponse": {
@@ -26975,6 +27560,21 @@
             ],
             "title": "Created By"
           },
+          "deck_load_refusal": {
+            "anyOf": [
+              {
+                "enum": [
+                  "streaming",
+                  "cloud_policy_unconfigured"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Deck Load Refusal"
+          },
           "duration_ms": {
             "anyOf": [
               {
@@ -27094,6 +27694,28 @@
               }
             ],
             "title": "Genre"
+          },
+          "genre_family": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Genre Family"
+          },
+          "genre_family_color": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Genre Family Color"
           },
           "genre_guess": {
             "anyOf": [
@@ -27702,6 +28324,101 @@
           "triple_validated"
         ],
         "title": "RelocateCandidateOut",
+        "type": "object"
+      },
+      "RemoteControlStateOut": {
+        "properties": {
+          "address": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Address"
+          },
+          "address_error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Address Error"
+          },
+          "code": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Code"
+          },
+          "devices": {
+            "items": {
+              "$ref": "#/components/schemas/DeviceOut"
+            },
+            "title": "Devices",
+            "type": "array"
+          },
+          "last_error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Error"
+          },
+          "max_wrong_codes": {
+            "default": 5,
+            "title": "Max Wrong Codes",
+            "type": "integer"
+          },
+          "port": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Port"
+          },
+          "reopened_at_boot": {
+            "default": false,
+            "title": "Reopened At Boot",
+            "type": "boolean"
+          },
+          "status": {
+            "enum": [
+              "off",
+              "listening",
+              "locked_out"
+            ],
+            "title": "Status",
+            "type": "string"
+          },
+          "wrong_codes": {
+            "default": 0,
+            "title": "Wrong Codes",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "status"
+        ],
+        "title": "RemoteControlStateOut",
         "type": "object"
       },
       "RequestIn": {
@@ -28736,6 +29453,21 @@
             ],
             "title": "Created By"
           },
+          "deck_load_refusal": {
+            "anyOf": [
+              {
+                "enum": [
+                  "streaming",
+                  "cloud_policy_unconfigured"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Deck Load Refusal"
+          },
           "duration_ms": {
             "anyOf": [
               {
@@ -28855,6 +29587,28 @@
               }
             ],
             "title": "Genre"
+          },
+          "genre_family": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Genre Family"
+          },
+          "genre_family_color": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Genre Family Color"
           },
           "genre_guess": {
             "anyOf": [
@@ -32277,12 +33031,12 @@
             "title": "Local Refusal"
           },
           "pending": {
-            "description": "audio on disk, no bundle yet: the work",
+            "description": "songs with no stems yet: the work, and the job's target set",
             "title": "Pending",
             "type": "integer"
           },
           "ready": {
-            "description": "already has a stem bundle on disk",
+            "description": "songs with a valid bundle here or held in R2",
             "title": "Ready",
             "type": "integer"
           },
@@ -32295,7 +33049,7 @@
             "type": "string"
           },
           "total": {
-            "description": "library rows carrying a file path",
+            "description": "songs with audio on this Mac (the present denominator)",
             "title": "Total",
             "type": "integer"
           },
@@ -32317,8 +33071,18 @@
             "title": "Transport Refusal"
           },
           "unavailable": {
-            "description": "library row exists, its file does not",
+            "description": "songs that cannot be separated now (no stems source, or failed too often)",
             "title": "Unavailable",
+            "type": "integer"
+          },
+          "unit": {
+            "description": "what every count below counts",
+            "title": "Unit",
+            "type": "string"
+          },
+          "unreachable_rows": {
+            "description": "library ROWS with no audio on this Mac, outside the denominator",
+            "title": "Unreachable Rows",
             "type": "integer"
           }
         },
@@ -32326,10 +33090,12 @@
           "tier",
           "tier_name",
           "executor",
+          "unit",
           "total",
           "pending",
           "ready",
           "unavailable",
+          "unreachable_rows",
           "estimate_seconds",
           "estimate_usd",
           "transport"
@@ -35065,6 +35831,21 @@
             ],
             "title": "Created By"
           },
+          "deck_load_refusal": {
+            "anyOf": [
+              {
+                "enum": [
+                  "streaming",
+                  "cloud_policy_unconfigured"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Deck Load Refusal"
+          },
           "duration_ms": {
             "anyOf": [
               {
@@ -35180,6 +35961,28 @@
               }
             ],
             "title": "Genre"
+          },
+          "genre_family": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Genre Family"
+          },
+          "genre_family_color": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Genre Family Color"
           },
           "genre_guess": {
             "anyOf": [
@@ -35483,6 +36286,11 @@
             ],
             "title": "Title"
           },
+          "tracklist_hidden": {
+            "default": false,
+            "title": "Tracklist Hidden",
+            "type": "boolean"
+          },
           "valid": {
             "default": true,
             "title": "Valid",
@@ -35785,6 +36593,21 @@
             ],
             "title": "Created By"
           },
+          "deck_load_refusal": {
+            "anyOf": [
+              {
+                "enum": [
+                  "streaming",
+                  "cloud_policy_unconfigured"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Deck Load Refusal"
+          },
           "duration_ms": {
             "anyOf": [
               {
@@ -35900,6 +36723,28 @@
               }
             ],
             "title": "Genre"
+          },
+          "genre_family": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Genre Family"
+          },
+          "genre_family_color": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Genre Family Color"
           },
           "genre_guess": {
             "anyOf": [
@@ -36274,6 +37119,11 @@
               }
             ],
             "title": "Title"
+          },
+          "tracklist_hidden": {
+            "default": false,
+            "title": "Tracklist Hidden",
+            "type": "boolean"
           },
           "updated_at": {
             "title": "Updated At",
@@ -36731,6 +37581,11 @@
             ],
             "title": "Title"
           },
+          "tracklist_hidden": {
+            "default": false,
+            "title": "Tracklist Hidden",
+            "type": "boolean"
+          },
           "updated_at": {
             "title": "Updated At",
             "type": "string"
@@ -36832,6 +37687,17 @@
                 "type": "null"
               }
             ]
+          },
+          "tracklist_hidden": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Tracklist Hidden"
           }
         },
         "title": "TrackPatch",
@@ -37195,6 +38061,21 @@
             ],
             "title": "Created By"
           },
+          "deck_load_refusal": {
+            "anyOf": [
+              {
+                "enum": [
+                  "streaming",
+                  "cloud_policy_unconfigured"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Deck Load Refusal"
+          },
           "duration_ms": {
             "anyOf": [
               {
@@ -37314,6 +38195,28 @@
               }
             ],
             "title": "Genre"
+          },
+          "genre_family": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Genre Family"
+          },
+          "genre_family_color": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Genre Family Color"
           },
           "genre_guess": {
             "anyOf": [
@@ -38758,6 +39661,11 @@
             "title": "Collapsed Sections",
             "type": "array"
           },
+          "compact_decks": {
+            "default": false,
+            "title": "Compact Decks",
+            "type": "boolean"
+          },
           "compatible_filter": {
             "$ref": "#/components/schemas/CompatibleFilterOut"
           },
@@ -39018,6 +39926,11 @@
             "title": "Show Tempo Lane",
             "type": "boolean"
           },
+          "show_vocal_lane": {
+            "default": true,
+            "title": "Show Vocal Lane",
+            "type": "boolean"
+          },
           "sort_within_sections": {
             "default": false,
             "title": "Sort Within Sections",
@@ -39074,6 +39987,15 @@
               "off"
             ],
             "title": "Wave Grid Lines",
+            "type": "string"
+          },
+          "wave_height": {
+            "default": "full",
+            "enum": [
+              "full",
+              "half"
+            ],
+            "title": "Wave Height",
             "type": "string"
           },
           "wheel_sensitivity": {
@@ -39256,6 +40178,17 @@
               }
             ],
             "title": "Collapsed Sections"
+          },
+          "compact_decks": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Compact Decks"
           },
           "compatible_filter": {
             "anyOf": [
@@ -39745,6 +40678,17 @@
             ],
             "title": "Show Tempo Lane"
           },
+          "show_vocal_lane": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Show Vocal Lane"
+          },
           "sort_within_sections": {
             "anyOf": [
               {
@@ -39850,6 +40794,21 @@
               }
             ],
             "title": "Wave Grid Lines"
+          },
+          "wave_height": {
+            "anyOf": [
+              {
+                "enum": [
+                  "full",
+                  "half"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Wave Height"
           },
           "wheel_sensitivity": {
             "anyOf": [
@@ -40512,6 +41471,37 @@
         "title": "UsbCapabilityErrorOut",
         "type": "object"
       },
+      "UsbDeckClassHealthOut": {
+        "properties": {
+          "deck_class": {
+            "title": "Deck Class",
+            "type": "string"
+          },
+          "failures": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Failures",
+            "type": "array"
+          },
+          "label": {
+            "title": "Label",
+            "type": "string"
+          },
+          "ok": {
+            "title": "Ok",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "deck_class",
+          "label",
+          "ok",
+          "failures"
+        ],
+        "title": "UsbDeckClassHealthOut",
+        "type": "object"
+      },
       "UsbEjectErrorDetail": {
         "properties": {
           "code": {
@@ -41009,6 +41999,73 @@
           "date_added"
         ],
         "title": "UsbStickTrackOut",
+        "type": "object"
+      },
+      "UsbVolumeBusyDetail": {
+        "properties": {
+          "code": {
+            "const": "usb_volume_busy",
+            "title": "Code",
+            "type": "string"
+          },
+          "message": {
+            "title": "Message",
+            "type": "string"
+          }
+        },
+        "required": [
+          "code",
+          "message"
+        ],
+        "title": "UsbVolumeBusyDetail",
+        "type": "object"
+      },
+      "UsbVolumeBusyOut": {
+        "properties": {
+          "detail": {
+            "$ref": "#/components/schemas/UsbVolumeBusyDetail"
+          }
+        },
+        "required": [
+          "detail"
+        ],
+        "title": "UsbVolumeBusyOut",
+        "type": "object"
+      },
+      "UsbVolumeHealthOut": {
+        "properties": {
+          "deck_classes": {
+            "items": {
+              "$ref": "#/components/schemas/UsbDeckClassHealthOut"
+            },
+            "title": "Deck Classes",
+            "type": "array"
+          },
+          "filesystem": {
+            "title": "Filesystem",
+            "type": "string"
+          },
+          "rules_version": {
+            "title": "Rules Version",
+            "type": "string"
+          },
+          "scanned_paths": {
+            "title": "Scanned Paths",
+            "type": "integer"
+          },
+          "volume_id": {
+            "title": "Volume Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "volume_id",
+          "rules_version",
+          "filesystem",
+          "scanned_paths",
+          "deck_classes"
+        ],
+        "title": "UsbVolumeHealthOut",
         "type": "object"
       },
       "UsbVolumeOut": {
@@ -43457,7 +44514,7 @@
     },
     "/api/sets/recorder/{session_id}/master-pcm": {
       "post": {
-        "description": "One chunk of the page's master mix for a ``source: master`` recording (SET-12).\n\nThe body is interleaved little-endian int16 stereo frames. 204 written;\n200 ``{\"dropped\": \"recording_stopped\"}`` when its recording was cleanly\nstopped while the chunk was in flight (the page ends quietly); 409 when no\nowned master recording has this id, or the chunk would leave a hole\n(a lost or out-of-order chunk); the page stops its tap and says so.",
+        "description": "One chunk of the page's master mix for a ``source: master`` recording (SET-12).\n\nThe body is interleaved little-endian int16 stereo frames. 204 written;\n200 ``{\"dropped\": \"recording_stopped\"}`` when its recording was cleanly\nstopped while the chunk was in flight (the page ends quietly); 415 when\n``Content-Type`` is not ``application/octet-stream``; 409 when no owned master\nrecording has this id, or the chunk would leave a hole (a lost or\nout-of-order chunk); the page stops its tap and says so.",
         "operationId": "api_recorder_master_pcm_api_sets_recorder__session_id__master_pcm_post",
         "parameters": [
           {
@@ -47995,6 +49052,94 @@
           }
         },
         "summary": "Revoke Machine",
+        "tags": [
+          "cloudsync"
+        ]
+      }
+    },
+    "/api/v1/cloudsync/hash-pending-backfill": {
+      "get": {
+        "description": "Poll hashed vs remaining for the in-flight or last hub backfill.",
+        "operationId": "get_hash_pending_backfill_progress_api_v1_cloudsync_hash_pending_backfill_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HashPendingBackfillProgressOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OpsErrorResponse"
+                }
+              }
+            },
+            "description": "The caller is not the local operator: a non-loopback peer, a proxy-relayed request, a non-loopback Host or Origin, or a cross-site fetch. code: CLOUDSYNC_OPS_LOCAL_ONLY."
+          }
+        },
+        "summary": "Get Hash Pending Backfill Progress",
+        "tags": [
+          "cloudsync"
+        ]
+      },
+      "post": {
+        "description": "Start ``run_for_hub_backfill`` on a background thread.",
+        "operationId": "start_hash_pending_backfill_api_v1_cloudsync_hash_pending_backfill_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/HashPendingBackfillStartIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HashPendingBackfillProgressOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OpsErrorResponse"
+                }
+              }
+            },
+            "description": "The caller is not the local operator: a non-loopback peer, a proxy-relayed request, a non-loopback Host or Origin, or a cross-site fetch. code: CLOUDSYNC_OPS_LOCAL_ONLY."
+          },
+          "409": {
+            "description": "CLOUDSYNC_HASH_BACKFILL_RUNNING: a backfill is already running. CLOUDSYNC_HASH_BACKFILL_NO_AUDIO: hub pending rows exist but none resolve to audio on this machine."
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          },
+          "502": {
+            "description": "The hub was unreachable or answered with something unusable."
+          }
+        },
+        "summary": "Start Hash Pending Backfill",
         "tags": [
           "cloudsync"
         ]
@@ -53858,6 +55003,106 @@
         ]
       }
     },
+    "/api/v1/lighting/output/artnet/address": {
+      "get": {
+        "description": "Read this daemon's Art-Net address, or null before any selection; no output is sent.",
+        "operationId": "api_get_artnet_address_api_v1_lighting_output_artnet_address_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/components/schemas/ArtNetAddress"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ],
+                  "title": "Response Api Get Artnet Address Api V1 Lighting Output Artnet Address Get"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LightingDisabledResponse"
+                }
+              }
+            },
+            "description": "lighting.output is off"
+          }
+        },
+        "summary": "Api Get Artnet Address",
+        "tags": [
+          "lighting"
+        ]
+      },
+      "put": {
+        "description": "Select net/subnet/universe for this daemon lifetime; no persistence or UDP delivery.\n\nReturns the fields and derived port_address. Invalid net returns 400\nlighting_artnet_bad_net; invalid subnet/universe returns 400 lighting_artnet_bad_subuni.\nRejected requests leave the previous selection intact; a disabled flag returns 409.",
+        "operationId": "api_put_artnet_address_api_v1_lighting_output_artnet_address_put",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ArtNetAddressRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ArtNetAddress"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ArtNetAddressErrorResponse"
+                }
+              }
+            },
+            "description": "Art-Net address field out of range"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LightingDisabledResponse"
+                }
+              }
+            },
+            "description": "lighting.output is off"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Api Put Artnet Address",
+        "tags": [
+          "lighting"
+        ]
+      }
+    },
     "/api/v1/lighting/patch": {
       "get": {
         "operationId": "get_lighting_patch_api_v1_lighting_patch_get",
@@ -56570,6 +57815,165 @@
         "summary": "Post Preview Stop",
         "tags": [
           "performance-headphones"
+        ]
+      }
+    },
+    "/api/v1/performance/remote-control": {
+      "get": {
+        "description": "Status, code, address, paired devices. Never the token or its hash.",
+        "operationId": "get_remote_control_api_v1_performance_remote_control_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RemoteControlStateOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Get Remote Control",
+        "tags": [
+          "performance-remote-control"
+        ]
+      }
+    },
+    "/api/v1/performance/remote-control/devices/{device_id}": {
+      "delete": {
+        "description": "Forget one paired device (404 when unknown).",
+        "operationId": "delete_remote_control_device_api_v1_performance_remote_control_devices__device_id__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "device_id",
+            "required": true,
+            "schema": {
+              "title": "Device Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RemoteControlStateOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Delete Remote Control Device",
+        "tags": [
+          "performance-remote-control"
+        ]
+      }
+    },
+    "/api/v1/performance/remote-control/rotate-code": {
+      "post": {
+        "description": "Issue a new pairing code without stopping.",
+        "operationId": "post_remote_control_rotate_api_v1_performance_remote_control_rotate_code_post",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RemoteControlStateOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Post Remote Control Rotate",
+        "tags": [
+          "performance-remote-control"
+        ]
+      }
+    },
+    "/api/v1/performance/remote-control/start": {
+      "post": {
+        "description": "Open the LAN listener. Idempotent while already listening.",
+        "operationId": "post_remote_control_start_api_v1_performance_remote_control_start_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "anyOf": [
+                  {
+                    "additionalProperties": true,
+                    "type": "object"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "RemoteControlStartBody"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RemoteControlStateOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Post Remote Control Start",
+        "tags": [
+          "performance-remote-control"
+        ]
+      }
+    },
+    "/api/v1/performance/remote-control/stop": {
+      "post": {
+        "description": "Close the listener. Paired devices survive. Idempotent.",
+        "operationId": "post_remote_control_stop_api_v1_performance_remote_control_stop_post",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RemoteControlStateOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Post Remote Control Stop",
+        "tags": [
+          "performance-remote-control"
         ]
       }
     },
@@ -61994,6 +63398,957 @@
         "summary": "Put Set Note",
         "tags": [
           "set-notes"
+        ]
+      }
+    },
+    "/api/v1/sets": {
+      "get": {
+        "operationId": "api_list_sessions_api_v1_sets_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Api List Sessions",
+        "tags": [
+          "sets"
+        ]
+      }
+    },
+    "/api/v1/sets/control-events": {
+      "post": {
+        "description": "Ingest page-owned control moves into controls.jsonl and sets.db.",
+        "operationId": "api_submit_control_events_api_v1_sets_control_events_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ControlEventsRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Api Submit Control Events Api V1 Sets Control Events Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Api Submit Control Events",
+        "tags": [
+          "sets"
+        ]
+      }
+    },
+    "/api/v1/sets/deck-observations": {
+      "get": {
+        "description": "Why a row did or did not appear: per-deck dwell against the threshold.",
+        "operationId": "api_deck_observation_status_api_v1_sets_deck_observations_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Api Deck Observation Status Api V1 Sets Deck Observations Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Api Deck Observation Status",
+        "tags": [
+          "sets"
+        ]
+      },
+      "post": {
+        "description": "Ingest Open DJ deck-state snapshots into the live recording.\n\nThe browser posts here on a timer; any agent can post the same\npayload, which is what keeps this flow drivable without a UI.\nBad snapshots are rejected 422 rather than dropped, because a\nsilently discarded observation is an under-counted set.",
+        "operationId": "api_submit_deck_observations_api_v1_sets_deck_observations_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DeckObservationsRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Api Submit Deck Observations Api V1 Sets Deck Observations Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Api Submit Deck Observations",
+        "tags": [
+          "sets"
+        ]
+      }
+    },
+    "/api/v1/sets/recorder": {
+      "get": {
+        "operationId": "api_recorder_status_api_v1_sets_recorder_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RecorderStatus"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Api Recorder Status",
+        "tags": [
+          "sets"
+        ]
+      }
+    },
+    "/api/v1/sets/recorder/devices": {
+      "get": {
+        "description": "List audio inputs by name for the REC picker; 503 when unmeasurable.\n\nSync on purpose: listing spawns ffmpeg, so it runs in the threadpool\ninstead of stalling the event loop.",
+        "operationId": "api_recorder_devices_api_v1_sets_recorder_devices_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RecorderDevicesResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Api Recorder Devices",
+        "tags": [
+          "sets"
+        ]
+      }
+    },
+    "/api/v1/sets/recorder/remembered-input": {
+      "get": {
+        "description": "The input REC last started on, kept by the daemon (null when unknown).\n\nServer-side because the desktop shell serves the UI from a per-launch\nloopback port, and browser storage forgets across ports (SET-10).",
+        "operationId": "api_recorder_remembered_input_api_v1_sets_recorder_remembered_input_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RecorderRememberedInputResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Api Recorder Remembered Input",
+        "tags": [
+          "sets"
+        ]
+      }
+    },
+    "/api/v1/sets/recorder/start": {
+      "post": {
+        "description": "Start REC. A ``master`` start pushes the attach to the open page and\nanswers only once its tap is connected, so the WAV begins within one\norder round trip of this request (SET-12); with no page to ask, nothing\nstarts and the answer is 503 with the reason.",
+        "operationId": "api_recorder_start_api_v1_sets_recorder_start_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RecorderStartRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RecorderStatus"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Api Recorder Start",
+        "tags": [
+          "sets"
+        ]
+      }
+    },
+    "/api/v1/sets/recorder/stream-encoder": {
+      "get": {
+        "description": "The master-mix stream encoder's status, or null when none was started.",
+        "operationId": "api_stream_encoder_status_api_v1_sets_recorder_stream_encoder_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Api Stream Encoder Status Api V1 Sets Recorder Stream Encoder Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Api Stream Encoder Status",
+        "tags": [
+          "sets"
+        ]
+      }
+    },
+    "/api/v1/sets/recorder/{session_id}/master-pcm": {
+      "post": {
+        "description": "One chunk of the page's master mix for a ``source: master`` recording (SET-12).\n\nThe body is interleaved little-endian int16 stereo frames. 204 written;\n200 ``{\"dropped\": \"recording_stopped\"}`` when its recording was cleanly\nstopped while the chunk was in flight (the page ends quietly); 415 when\n``Content-Type`` is not ``application/octet-stream``; 409 when no owned master\nrecording has this id, or the chunk would leave a hole (a lost or\nout-of-order chunk); the page stops its tap and says so.",
+        "operationId": "api_recorder_master_pcm_api_v1_sets_recorder__session_id__master_pcm_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "session_id",
+            "required": true,
+            "schema": {
+              "title": "Session Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "stream",
+            "required": true,
+            "schema": {
+              "maxLength": 64,
+              "minLength": 1,
+              "title": "Stream",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "seq",
+            "required": true,
+            "schema": {
+              "minimum": 0,
+              "title": "Seq",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "sample_rate",
+            "required": true,
+            "schema": {
+              "maximum": 192000,
+              "minimum": 8000,
+              "title": "Sample Rate",
+              "type": "integer"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/octet-stream": {
+              "schema": {
+                "format": "binary",
+                "type": "string"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "dropped: the recording was cleanly stopped while this chunk was in flight"
+          },
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Api Recorder Master Pcm",
+        "tags": [
+          "sets"
+        ]
+      }
+    },
+    "/api/v1/sets/recorder/{session_id}/recover": {
+      "post": {
+        "operationId": "api_recorder_recover_api_v1_sets_recorder__session_id__recover_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "session_id",
+            "required": true,
+            "schema": {
+              "title": "Session Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RecorderRecoveryRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RecorderStatus"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Api Recorder Recover",
+        "tags": [
+          "sets"
+        ]
+      }
+    },
+    "/api/v1/sets/recorder/{session_id}/stop": {
+      "post": {
+        "operationId": "api_recorder_stop_api_v1_sets_recorder__session_id__stop_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "session_id",
+            "required": true,
+            "schema": {
+              "title": "Session Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RecorderStatus"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Api Recorder Stop",
+        "tags": [
+          "sets"
+        ]
+      }
+    },
+    "/api/v1/sets/recorder/{session_id}/stream-encoder": {
+      "post": {
+        "description": "Tee a ``source: master`` recording into an encoder (STREAM-11486).",
+        "operationId": "api_stream_encoder_start_api_v1_sets_recorder__session_id__stream_encoder_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "session_id",
+            "required": true,
+            "schema": {
+              "title": "Session Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/StreamEncoderStartRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Api Stream Encoder Start Api V1 Sets Recorder  Session Id  Stream Encoder Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Api Stream Encoder Start",
+        "tags": [
+          "sets"
+        ]
+      }
+    },
+    "/api/v1/sets/recorder/{session_id}/stream-encoder/stop": {
+      "post": {
+        "operationId": "api_stream_encoder_stop_api_v1_sets_recorder__session_id__stream_encoder_stop_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "session_id",
+            "required": true,
+            "schema": {
+              "title": "Session Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Api Stream Encoder Stop Api V1 Sets Recorder  Session Id  Stream Encoder Stop Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Api Stream Encoder Stop",
+        "tags": [
+          "sets"
+        ]
+      }
+    },
+    "/api/v1/sets/{session_id}": {
+      "get": {
+        "operationId": "api_get_session_api_v1_sets__session_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "session_id",
+            "required": true,
+            "schema": {
+              "title": "Session Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Api Get Session",
+        "tags": [
+          "sets"
+        ]
+      }
+    },
+    "/api/v1/sets/{session_id}/audio/{segment}": {
+      "get": {
+        "operationId": "api_audio_api_v1_sets__session_id__audio__segment__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "session_id",
+            "required": true,
+            "schema": {
+              "title": "Session Id",
+              "type": "string"
+            }
+          },
+          {
+            "description": "audio_<iso>.wav (odj-audio capture) or audio_<iso>.mp3 (ffmpeg)",
+            "in": "path",
+            "name": "segment",
+            "required": true,
+            "schema": {
+              "description": "audio_<iso>.wav (odj-audio capture) or audio_<iso>.mp3 (ffmpeg)",
+              "title": "Segment",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Api Audio",
+        "tags": [
+          "sets"
+        ]
+      }
+    },
+    "/api/v1/sets/{session_id}/share": {
+      "get": {
+        "description": "Get an existing metadata-only share link for a finalized published set.",
+        "operationId": "api_get_metadata_share_api_v1_sets__session_id__share_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "session_id",
+            "required": true,
+            "schema": {
+              "title": "Session Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MetadataShareResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Api Get Metadata Share",
+        "tags": [
+          "sets"
+        ]
+      },
+      "post": {
+        "description": "Publish timeline metadata after explicit acknowledgement, never MP3 audio.",
+        "operationId": "api_publish_metadata_share_api_v1_sets__session_id__share_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "session_id",
+            "required": true,
+            "schema": {
+              "title": "Session Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MetadataShareRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MetadataShareResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Api Publish Metadata Share",
+        "tags": [
+          "sets"
+        ]
+      }
+    },
+    "/api/v1/sets/{session_id}/soundcloud-export": {
+      "get": {
+        "operationId": "api_get_soundcloud_export_api_v1_sets__session_id__soundcloud_export_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "session_id",
+            "required": true,
+            "schema": {
+              "title": "Session Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SoundcloudExportResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Api Get Soundcloud Export",
+        "tags": [
+          "sets"
+        ]
+      },
+      "post": {
+        "operationId": "api_post_soundcloud_export_api_v1_sets__session_id__soundcloud_export_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "session_id",
+            "required": true,
+            "schema": {
+              "title": "Session Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SoundcloudExportAckRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SoundcloudExportResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Api Post Soundcloud Export",
+        "tags": [
+          "sets"
+        ]
+      }
+    },
+    "/api/v1/sets/{session_id}/timeline": {
+      "get": {
+        "operationId": "api_timeline_stream_api_v1_sets__session_id__timeline_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "session_id",
+            "required": true,
+            "schema": {
+              "title": "Session Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Api Timeline Stream",
+        "tags": [
+          "sets"
+        ]
+      }
+    },
+    "/api/v1/sets/{session_id}/transitions": {
+      "get": {
+        "operationId": "api_transitions_api_v1_sets__session_id__transitions_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "session_id",
+            "required": true,
+            "schema": {
+              "title": "Session Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Api Transitions",
+        "tags": [
+          "sets"
+        ]
+      }
+    },
+    "/api/v1/sets/{session_id}/transitions/{idx}/label": {
+      "post": {
+        "operationId": "api_relabel_api_v1_sets__session_id__transitions__idx__label_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "session_id",
+            "required": true,
+            "schema": {
+              "title": "Session Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "idx",
+            "required": true,
+            "schema": {
+              "title": "Idx",
+              "type": "integer"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LabelRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Api Relabel",
+        "tags": [
+          "sets"
         ]
       }
     },
@@ -71626,6 +73981,69 @@
           }
         },
         "summary": "Usb Volume Events",
+        "tags": [
+          "usb"
+        ]
+      }
+    },
+    "/api/v1/usb/volumes/{volume_id}/health": {
+      "get": {
+        "description": "Structured pass/fail per Pioneer deck class; read-only, gated on volume lock.",
+        "operationId": "get_usb_volume_health_api_v1_usb_volumes__volume_id__health_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "volume_id",
+            "required": true,
+            "schema": {
+              "title": "Volume Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UsbVolumeHealthOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UsbVolumeBusyOut"
+                }
+              }
+            },
+            "description": "usb_volume_busy while eject or usb-export holds the stick"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UsbCapabilityErrorOut"
+                }
+              }
+            },
+            "description": "USB volume discovery is unavailable: either this host cannot provide it, or this build is sandboxed and may not look."
+          }
+        },
+        "summary": "Get Usb Volume Health",
         "tags": [
           "usb"
         ]

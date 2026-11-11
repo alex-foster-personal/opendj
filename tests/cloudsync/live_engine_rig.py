@@ -28,9 +28,14 @@ from fastapi import FastAPI
 from apps.engine_core.app import create_app
 from apps.engine_core.config import EngineConfig
 from apps.engine_core.lock import EngineLock
-from tests.waits import start_uvicorn_in_thread, stop_uvicorn_in_thread
+from tests.waits import (
+    start_uvicorn_in_thread,
+    stop_uvicorn_in_thread,
+    uvicorn_startup_thread_died,
+)
 
 BOOT_ID = "test-boot-cloudsync14"
+ENGINE_BOOT_ATTEMPTS = 3
 
 
 def free_port() -> int:
@@ -214,10 +219,43 @@ def boot_real_engine(
     (data_dir / "state").mkdir(parents=True, exist_ok=True)
     lock = EngineLock(data_dir / ".engine.lock", host="127.0.0.1", port=port)
     lock.acquire()
-    app = create_app(EngineConfig(data_dir=data_dir, port=port), lock=lock)
-    config = uvicorn.Config(app, host="127.0.0.1", port=port, log_level="warning")
-    server, thread = start_uvicorn_in_thread(config, what="the real engine", sockets=[listener])
+    try:
+        app = create_app(EngineConfig(data_dir=data_dir, port=port), lock=lock)
+        config = uvicorn.Config(app, host="127.0.0.1", port=port, log_level="warning")
+        server, thread = start_uvicorn_in_thread(
+            config, what="the real engine", sockets=[listener]
+        )
+    except BaseException:
+        lock.release()
+        raise
     return app, server, thread, lock
+
+
+def boot_real_engine_retrying(
+    data_dir: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    *,
+    attempts: int = ENGINE_BOOT_ATTEMPTS,
+) -> tuple[FastAPI, uvicorn.Server, Any, EngineLock]:
+    """Boot a real engine on a fresh bound socket, retrying startup-thread deaths.
+
+    Each attempt uses `bound_loopback` so a lost bind or a uvicorn thread that
+    exits during startup gets a new socket instead of failing the two-engine probe.
+    """
+    last: BaseException | None = None
+    for attempt in range(attempts):
+        listener: socket.socket | None = None
+        try:
+            listener, _port = bound_loopback()
+            return boot_real_engine(data_dir, monkeypatch, listener=listener)
+        except BaseException as exc:
+            last = exc
+            if listener is not None:
+                listener.close()
+            if not uvicorn_startup_thread_died(exc) or attempt + 1 >= attempts:
+                raise
+    assert last is not None
+    raise last
 
 
 def shutdown_real_engine(

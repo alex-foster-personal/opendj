@@ -14,6 +14,12 @@ def _safe(title: str, artist: str) -> bool:
 
 
 @pytest.mark.requirement("TFIX-05")
+def test_safe_tier_still_auto_applies_mik_prefix_only_rows() -> None:
+    """[if] only a MIK prefix strips on a filled artist [then] safe tier still applies, [else stop]."""
+    assert _safe("8A - 6 - Ember Tide", "Vessel Choir"), "split must not change safe-tier projection"
+
+
+@pytest.mark.requirement("TFIX-05")
 def test_a_padded_artist_or_title_never_reaches_the_safe_tier() -> None:
     """[if] the raw artist or title carries leading or trailing whitespace [then] the row is not safe tier, [else stop]."""
     assert _safe("8A - 6 - Ember Tide", "Vessel Choir"), "control: the same row, unpadded, is safe tier"

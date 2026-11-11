@@ -278,7 +278,7 @@ def _last_stop(document: dict[str, Any] | None, deck_id: str) -> dict[str, Any] 
 #: Expected stops log at INFO; only a stop nobody asked for is a WARNING.
 DECK_STOP_CAUSES = (
     "user-ui", "agent-command", "autoplay-handoff", "app-command",
-    "end-of-track", "engine", "reload", "unattributed",
+    "end-of-track", "engine", "reload", "unattributed", "replay",
 )
 DECK_STOP_WARN_CAUSES = frozenset({"unattributed", "engine", "reload"})
 

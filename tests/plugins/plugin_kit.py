@@ -171,7 +171,13 @@ def png_bytes(width: int = 4, height: int = 3, shade: int = 40) -> bytes:
     )
 
 
-def listing_for(plugin_id: str, *, status: str = "stable", shots: int = 1) -> tuple[dict[str, Any], dict[str, bytes]]:
+def listing_for(
+    plugin_id: str,
+    *,
+    status: str = "stable",
+    shots: int = 1,
+    capability_kind: str | None = None,
+) -> tuple[dict[str, Any], dict[str, bytes]]:
     """A complete problem-first listing plus the screenshots it pins."""
     media: dict[str, bytes] = {}
     screenshots = []
@@ -190,7 +196,7 @@ def listing_for(plugin_id: str, *, status: str = "stable", shots: int = 1) -> tu
                 "theme": "dark" if n % 2 == 0 else "light",
             }
         )
-    listing = {
+    listing: dict[str, Any] = {
         "tagline": "Does one useful thing.",
         "problem": "Without it you cannot do the useful thing.",
         "you_can": ["Do the useful thing"],
@@ -199,6 +205,8 @@ def listing_for(plugin_id: str, *, status: str = "stable", shots: int = 1) -> tu
         "status": status,
         "screenshots": screenshots,
     }
+    if capability_kind is not None:
+        listing["capability_kind"] = capability_kind
     return listing, media
 
 
@@ -305,6 +313,34 @@ def module_plugin(
         manifest["min_app_version"] = min_app_version
     listing, media = listing_for(plugin_id)
     return BuiltPlugin(manifest, files, listing, media)
+
+
+def provider_plugin(
+    plugin_id: str = "opendj.test-provider",
+    *,
+    capability_kind: str = "API",
+    credential_env: str = "OPENDJ_TEST_PROVIDER_KEY",
+    version: str = "1.0.0",
+    enabled_permissions: list[str] | None = None,
+) -> BuiltPlugin:
+    """A first-party music-intelligence provider fixture for store/API tests."""
+    built = module_plugin(
+        plugin_id,
+        version=version,
+        package="plugtest_provider",
+        prefix="/plugtest-provider",
+        permissions=enabled_permissions if enabled_permissions is not None else ["net:internet"],
+    )
+    built.manifest["provider"] = {
+        "capability_kind": capability_kind,
+        "credential_env": credential_env,
+        "terms_url": "https://example.test/terms",
+        "provenance_fields": ["provider", "model_version", "observed_at"],
+    }
+    if capability_kind in ("public browse", "unavailable"):
+        built.manifest["provider"].pop("credential_env", None)
+    built.listing, built.media = listing_for(plugin_id, capability_kind=capability_kind)
+    return built
 
 
 def data_plugin(plugin_id: str = "opendj.test-data") -> BuiltPlugin:

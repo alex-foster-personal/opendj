@@ -128,6 +128,74 @@ def test_validate_api_path_checks_the_decoded_path(path: str) -> None:
     assert error.value.code == "invalid_path"
 
 
+@pytest.mark.requirement("SET-12315")
+@pytest.mark.parametrize("method", ["GET", "HEAD", "get", "head"])
+@pytest.mark.parametrize(
+    ("path", "canonical"),
+    [
+        ("/api/sets", "/api/sets"),
+        ("/api/sets/", "/api/sets/"),
+        ("/api/sets?limit=5", "/api/sets"),
+        ("/api/sets#top", "/api/sets"),
+        ("/api/sets/recorder", "/api/sets/recorder"),
+        ("/api/sets/session/timeline", "/api/sets/session/timeline"),
+        ("/api/sets//%72ecorder", "/api/sets/recorder"),
+    ],
+)
+def test_validate_sets_reads(method: str, path: str, canonical: str) -> None:
+    """[if] sets is read explicitly [then] its canonical path is allowed, [else stop]."""
+    assert validate_api_path(path, method=method) == canonical
+
+
+@pytest.mark.requirement("SET-12315")
+@pytest.mark.parametrize("method", ["GET", "HEAD"])
+@pytest.mark.parametrize(
+    "path",
+    [
+        "/api/sets/../v1/health",
+        "/api/sets/%2e%2e/v1/health",
+        "/api/sets/%2E%2E/v1/health",
+        "/api/sets/.%2e/v1/health",
+        "/api/sets/%2e%2e%2fv1/health",
+        "/api/sets/x/../recorder",
+        "/api/sets/x/%2e%2e/recorder",
+        "/api/sets-other",
+        "/api/setsfoo/recorder",
+        "/api/sets%2Frecorder",
+        "/api/%73ets/recorder",
+        "%2Fapi/sets/recorder",
+        "http://localhost/api/sets/recorder",
+        "/api/health",
+    ],
+)
+def test_validate_sets_refuses_unsafe_paths(method: str, path: str) -> None:
+    """[if] a sets read escapes its namespace [then] invalid_path is raised, [else stop]."""
+    with pytest.raises(SafetyRefusal) as error:
+        validate_api_path(path, method=method)
+    assert error.value.code == "invalid_path"
+    assert error.value.fields["path"] == path
+
+
+@pytest.mark.requirement("SET-12315")
+@pytest.mark.parametrize("method", [None, "POST", "PUT", "PATCH", "DELETE", "OPTIONS"])
+@pytest.mark.parametrize("path", ["/api/sets", "/api/sets/recorder/start"])
+def test_validate_sets_refuses_writes_and_legacy_calls(method: str | None, path: str) -> None:
+    """[if] sets has no read method [then] invalid_path is raised, [else stop]."""
+    with pytest.raises(SafetyRefusal) as error:
+        if method is None:
+            validate_api_path(path)
+        else:
+            validate_api_path(path, method=method)
+    assert error.value.code == "invalid_path"
+
+
+@pytest.mark.requirement("SET-12315")
+@pytest.mark.parametrize("method", [None, "GET", "HEAD", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"])
+def test_validate_v1_permissions_are_unchanged(method: str | None) -> None:
+    """[if] a v1 path is validated [then] every existing method stays allowed, [else stop]."""
+    assert validate_api_path("/api/v1/tracks", method=method) == "/api/v1/tracks"
+
+
 def test_guard_library_writeback() -> None:
     with pytest.raises(SafetyRefusal) as error:
         guard_library_request("POST", "/api/v1/playlists/x/writeback/apply")

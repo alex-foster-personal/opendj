@@ -2,6 +2,10 @@
 	"_comment": "Unit tests allowed to read a .svelte component as text without rendering one. Checked by tests/unit/source-regex-test-ratchet.test.mjs (GUARD-15). This list may only shrink: convert a test to a rendered one (see setup-overlay-render.test.mjs) and delete its entry. A new entry needs a specific reason.",
 	"entries": [
 		{
+			"file": "vocals-filter-explainer.test.mjs",
+			"reason": "Issue #12369 tests BrowserPanel's actual extracted empty-state selector and shared filter helpers; source assertions trace pre-filter counts into its checkbox and TrackTable prop. These wiring checks do not claim rendered or live UI acceptance."
+		},
+		{
 			"file": "add-to-playlist-menu.test.mjs",
 			"reason": "pre-existing (ratchet seed 2026-10-07)"
 		},
@@ -276,6 +280,10 @@
 		{
 			"file": "control-explainer-phase-lock.test.mjs",
 			"reason": "pre-existing (ratchet seed 2026-10-07)"
+		},
+		{
+			"file": "conn-dot-tips.test.mjs",
+			"reason": "Issue #11172: ConnDotsStrip wiring and testid contract are static; SSR would need live LibraryHealthDot props from BrowserPanel."
 		},
 		{
 			"file": "crossfade-curve-select.test.mjs",

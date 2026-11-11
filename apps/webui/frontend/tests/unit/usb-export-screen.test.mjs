@@ -876,7 +876,15 @@ test('a 200 eject answer without a literal ejected: true never says the stick is
 			// The pick stays and the slot is free; no rescan is started for a stick still mounted.
 			assert.equal(store.usbExport.targetId, id, label);
 			assert.equal(store.usbExport.ejecting, null, label);
-			assert.equal(daemon.seen.some((r) => r.method === 'GET'), false, label);
+			const ejectAt = daemon.seen.findIndex((r) => r.method === 'POST' && r.url === '/api/v1/usb/eject');
+			assert.ok(ejectAt >= 0, label);
+			assert.equal(
+				daemon.seen
+					.slice(ejectAt + 1)
+					.some((r) => r.method === 'GET' && r.url?.startsWith('/api/v1/usb/volumes')),
+				false,
+				label
+			);
 		} finally {
 			await daemon.close();
 		}

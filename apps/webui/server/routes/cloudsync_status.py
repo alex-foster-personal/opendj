@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import sqlite3
 import threading
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -10,9 +11,9 @@ from typing import Any, Literal, NamedTuple
 from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel, ConfigDict, Field
 
+from apps.shared.platform_paths import load_path_map
 from apps.shared.state import db as state_db
-from apps.sync_hub import status as sync_status
-from apps.sync_hub import sync_set
+from apps.sync_hub import hash_pending_backfill, status as sync_status, sync_set
 
 router = APIRouter(prefix="/cloudsync", tags=["cloudsync"])
 MOUNT_UNDER_API_PREFIX = True
@@ -131,6 +132,12 @@ class IdentityBacklogOut(BaseModel):
             "`python -m apps.sync_hub.hash_pending_backfill --live` "
             "on a machine that holds the audio."
         )
+    )
+    this_machine_can_hash: bool = Field(
+        description="True when at least one hash_pending row resolves to audio on this machine."
+    )
+    audio_holder_machine_names: list[str] = Field(
+        description="Fleet machine display names with local track_locations for hash_pending rows."
     )
 
 
@@ -260,14 +267,28 @@ def get_identity_backlog(request: Request) -> IdentityBacklogOut:
     the maintainer's admin panel could say 'inconclusive' forever with no way to tell a
     structural backlog from a transient hiccup). One indexed-ish table scan,
     no file I/O, no digest walk."""
-    db_path = data_dir_for_request(request) / "state" / "state.db"
+    data_dir = data_dir_for_request(request)
+    db_path = data_dir / "state" / "state.db"
+    path_map = load_path_map(data_dir)
     conn = state_db.open_ro(db_path)
+    conn.row_factory = sqlite3.Row
     try:
         dup_only = sync_set.count_unsyncable_inferred(conn)
         pending = sync_set.count_hash_pending(conn)
+        can_hash = (
+            hash_pending_backfill.local_hash_pending_can_hash(conn, path_map) if pending else False
+        )
+        holder_names = (
+            hash_pending_backfill.hash_pending_audio_holder_names(conn) if pending else []
+        )
     finally:
         conn.close()
-    return IdentityBacklogOut(unsyncable_inferred=dup_only, hash_pending=pending)
+    return IdentityBacklogOut(
+        unsyncable_inferred=dup_only,
+        hash_pending=pending,
+        this_machine_can_hash=can_hash,
+        audio_holder_machine_names=holder_names,
+    )
 
 
 __all__ = [

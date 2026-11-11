@@ -600,8 +600,12 @@ fn reap_child(guard: &mut RuntimeState) {
     engine::append_shell_log("INFO", "engine child reaped");
 }
 
-fn attempt_restart(app: &AppHandle, supervisor: &EngineSupervisor, _user_requested: bool) -> bool {
+fn attempt_restart(app: &AppHandle, supervisor: &EngineSupervisor, user_requested: bool) -> bool {
     let mut guard = supervisor.inner.lock().expect("supervisor mutex");
+    if user_requested {
+        guard.phase = SupervisorPhase::Restarting;
+        update_surfaces(app, supervisor, &guard);
+    }
     let reason = death_reason(&guard);
     let payload = guard.paths.payload.clone();
     let data_dir = guard.paths.data_dir.clone();

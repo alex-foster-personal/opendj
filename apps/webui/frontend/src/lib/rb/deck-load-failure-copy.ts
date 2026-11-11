@@ -4,17 +4,35 @@
  * The raw code, row id and path stay in the toast message and copy detail.
  */
 
+/** Wire codes from ``deck_load_refusal`` (issue #11290). */
+export type DeckLoadRefusalWire = 'streaming' | 'cloud_policy_unconfigured';
+
 /** Plain words for a library load refusal, keyed on the backend's detail.code. */
 export const LIBRARY_LOAD_FAILURE_WORDS: ReadonlyMap<string, string> = new Map([
 	['TRACK_NOT_FOUND', 'this track is no longer in the library'],
 	['AUDIO_FILE_MISSING', "this track's audio file is missing on this machine"],
 	['CLOUD_ASSET_UNAVAILABLE', "this track's audio is not on this machine and could not be fetched"],
-	['CLOUD_POLICY_UNCONFIGURED', 'cloud audio is not set up on this machine, so this track cannot be fetched'],
-	['AUDIO_ACCESS_BLOCKED', "this track's file did not open in time - its drive or folder is not answering"]
+	[
+		'CLOUD_POLICY_UNCONFIGURED',
+		'cloud audio is not set up on this machine, so this track cannot be fetched'
+	],
+	[
+		'AUDIO_ACCESS_BLOCKED',
+		"this track's file did not open in time - its drive or folder is not answering"
+	]
 ]);
 
 function sentenceFor(code: string, words: string): string {
 	return `${words.charAt(0).toUpperCase()}${words.slice(1)}.`;
+}
+
+/** Up-front library refusal for ``CLOUD_POLICY_UNCONFIGURED`` (issue #11290). */
+export function cloudPolicyUpfrontRefusal(): string {
+	const words = LIBRARY_LOAD_FAILURE_WORDS.get('CLOUD_POLICY_UNCONFIGURED');
+	if (words === undefined) {
+		throw new Error('CLOUD_POLICY_UNCONFIGURED missing from LIBRARY_LOAD_FAILURE_WORDS');
+	}
+	return sentenceFor('CLOUD_POLICY_UNCONFIGURED', words);
 }
 
 /**

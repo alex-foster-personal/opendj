@@ -121,6 +121,18 @@ describe('trackify session teardown vs a concurrent Gig mount (PERFMODE-15)', { 
 		assert.equal(entry.effectiveAnlzEntryCap(), tierCap);
 	});
 
+	it('stamps uiPrefs app_mode to music-player for the session mount', () => {
+		installFakeEngine();
+		const prior = entry.uiPrefs.app_mode;
+		const uninstall = entry.installTrackifySession();
+		try {
+			assert.equal(entry.uiPrefs.app_mode, 'music-player');
+		} finally {
+			void uninstall();
+			entry.uiPrefs.app_mode = prior;
+		}
+	});
+
 	it('control: disposes the engine normally when nothing else mounted during teardown', async () => {
 		const { disposeCalls } = installFakeEngine();
 

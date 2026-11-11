@@ -558,6 +558,10 @@ fn start_engine(app: &AppHandle, payload: &Path) -> Result<Supervised, engine::E
         }
         LaunchPlan::StopOrQuit { pid, detail } => {
             if show_stop_or_quit_dialog(pid, &detail, &lock_path) {
+                engine::append_shell_log(
+                    "INFO",
+                    &format!("user chose to stop engine pid {pid} and start a new one"),
+                );
                 launch::stop_holder_pid(pid);
                 spawn_fresh_engine(payload, &data_dir, &log_path)
             } else {
@@ -602,6 +606,10 @@ fn spawn_fresh_engine(
                 LaunchPlan::StopOrQuit { pid, detail } => {
                     running.shutdown();
                     if show_stop_or_quit_dialog(pid, &detail, &lock_path) {
+                        engine::append_shell_log(
+                            "INFO",
+                            &format!("user chose to stop engine pid {pid} and start a new one"),
+                        );
                         launch::stop_holder_pid(pid);
                         return spawn_fresh_engine(payload, data_dir, log_path);
                     }
@@ -905,6 +913,12 @@ fn main() {
                 // it to WebKit, so with it on, dragging a track onto a deck did
                 // nothing. Nothing listens for Tauri's native drop events.
                 .disable_drag_drop_handler()
+                // MIXUX-10355: a DJ reaches for a knob without first focusing the
+                // window, so the first press must turn it, not only activate the
+                // window (AppKit's first-mouse default eats that mousedown). The
+                // first click into an inactive window now also acts on what is
+                // under it, a play button included, as a performance surface should.
+                .accept_first_mouse(true)
                 .initialization_script(script)
                 .on_page_load(|_window, payload| {
                     let url = payload.url().to_string();

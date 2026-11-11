@@ -12,6 +12,9 @@
 
 use std::sync::Arc;
 
+use rtrb::Producer;
+
+use crate::control_capture::{self, ControlSource, ControlStamp};
 use crate::deck::{Beat, Deck, Track};
 use crate::dsp::Smoothed;
 use crate::mixer::{self, Assign};
@@ -646,6 +649,8 @@ pub struct Engine {
     mute_gain: f64,
     frame: u64,
     meter: MasterMeter,
+    control_source: ControlSource,
+    control_tx: Option<Producer<ControlStamp>>,
     mixer_capture: MixerCapture,
 }
 
@@ -662,6 +667,8 @@ impl Engine {
             mute_gain: 1.0,
             frame: 0,
             meter: MasterMeter::new(),
+            control_source: ControlSource::User,
+            control_tx: None,
             mixer_capture: MixerCapture::new(sample_rate),
         };
         // The page's default assign matrix (`_defaultChannel`): odd decks on
@@ -681,6 +688,20 @@ impl Engine {
 
     pub fn frame(&self) -> u64 {
         self.frame
+    }
+
+    pub fn set_control_capture(&mut self, tx: Producer<ControlStamp>, source: ControlSource) {
+        self.control_tx = Some(tx);
+        self.control_source = source;
+    }
+
+    fn capture_source_from_event(source: EventSource) -> ControlSource {
+        match source {
+            EventSource::User => ControlSource::User,
+            EventSource::Controller => ControlSource::Controller,
+            EventSource::Agent => ControlSource::Agent,
+            EventSource::Replay => ControlSource::Replay,
+        }
     }
 
     pub fn deck(&self, deck: DeckId) -> Option<&Deck> {
@@ -743,6 +764,12 @@ impl Engine {
         cmd: EngineCmd,
         source: EventSource,
     ) -> Result<Retired, Rejected> {
+        let cap_source = if self.control_tx.is_some() {
+            Self::capture_source_from_event(source)
+        } else {
+            self.control_source
+        };
+        let record = control_capture::stamp_from_cmd(&cmd, self.frame, self.sr, cap_source);
         use EngineCmd::*;
         match cmd {
             // A refused load gives its track back rather than dropping it here.
@@ -881,6 +908,9 @@ impl Engine {
                     source,
                 );
             }
+        }
+        if let (Some(stamp), Some(tx)) = (record, self.control_tx.as_mut()) {
+            let _ = tx.push(stamp);
         }
         Ok(None)
     }
@@ -1985,6 +2015,24 @@ mod tests {
         // Control: built from the track the deck now holds, it is accepted.
         let ok = e.regridded(1, grid(400.0, 2.0), None).unwrap();
         assert!(e.apply(EngineCmd::Regrid { deck: 1, track: ok }).is_ok());
+    }
+
+    #[test]
+    fn applied_transport_command_pushes_a_control_stamp() {
+        use rtrb::RingBuffer;
+
+        use crate::control_capture::{ControlKind, ControlValue};
+
+        let (tx, mut rx) = RingBuffer::new(8);
+        let mut e = Engine::new(48_000);
+        e.set_control_capture(tx, ControlSource::Controller);
+        e.apply(EngineCmd::Load { deck: 1, track: Arc::new(tone(48_000, 440.0, 2.0)) }).unwrap();
+        e.apply(EngineCmd::Play { deck: 1, playing: true }).unwrap();
+        let stamp = rx.pop().unwrap();
+        assert_eq!(stamp.control, "deck.1.play");
+        assert_eq!(stamp.kind, ControlKind::Set);
+        assert!(matches!(stamp.value, ControlValue::Bool(true)));
+        assert_eq!(stamp.sample_rate, 48_000);
     }
 
     #[test]

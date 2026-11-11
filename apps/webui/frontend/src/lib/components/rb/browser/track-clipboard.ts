@@ -14,48 +14,16 @@
  */
 
 import type { RowRef, SelectionPane } from './pane-row-selection';
+import { selectAllRows } from './pane-row-selection';
 import { scrollTopForRowIndex, TRACK_TABLE_THEAD_PX } from './virtual-window';
+
+export { selectAllRows };
 
 // The key-to-action rule loads with the library page; everything below loads
 // on the first shortcut press (BrowserPanel imports this module lazily so the
 // /performance bundle budget does not pay for it).
 export { libraryEditShortcut } from './library-edit-shortcut';
 export type { LibraryEditShortcut, ShortcutKeyEvent } from './library-edit-shortcut';
-
-/** Select every rendered row, keeping the anchor when it is still on screen
- * so a following shift-click extends from where the user last clicked.
- * Returns the number of tracks now selected. */
-export function selectAllRows(pane: SelectionPane, rows: readonly RowRef[]): number {
-	if (rows.length === 0) return 0;
-	const orders: number[] = [];
-	const seenOrders = new Set<number>();
-	const ids: string[] = [];
-	const seenIds = new Set<string>();
-	for (const row of rows) {
-		if (!seenOrders.has(row.order)) {
-			seenOrders.add(row.order);
-			orders.push(row.order);
-		}
-		if (!seenIds.has(row.stable_id)) {
-			seenIds.add(row.stable_id);
-			ids.push(row.stable_id);
-		}
-	}
-	const anchorOnScreen =
-		pane.selected_id !== null &&
-		rows.some(
-			(r) =>
-				r.stable_id === pane.selected_id &&
-				(pane.selected_order === null || r.order === pane.selected_order)
-		);
-	if (!anchorOnScreen) {
-		pane.selected_id = rows[0].stable_id;
-		pane.selected_order = rows[0].order;
-	}
-	pane.selected_orders = orders;
-	pane.selected_ids = ids;
-	return ids.length;
-}
 
 /** Selected track ids in the order they appear on screen, so a paste keeps
  * the visible running order rather than the click order. Falls back to

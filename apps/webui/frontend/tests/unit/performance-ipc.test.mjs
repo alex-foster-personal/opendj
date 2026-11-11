@@ -1666,7 +1666,7 @@ test('continuous mixer controls execute through IPC immediately and round-trip i
 					error: null,
 					diagnostics: {
 						probe: 'chirp',
-						alternate_probe: 'unavailable',
+						alternate_probe: 'click_train',
 						failure: null,
 						master_measurements_ms: [],
 						cue_measurements_ms: [],
@@ -2129,6 +2129,32 @@ test('master mute and browser playlist selection are bus commands with queryable
 		assert.deepEqual(seen, ['playlist-42']);
 		assert.equal(selected.browser.active_playlist, 'playlist-42');
 		assert.equal(selected.history.length, before + 3);
+	} finally {
+		unregister();
+		uninstall();
+		delete globalThis.window;
+	}
+});
+
+test('failed browser_select_playlist does not claim an alternate active_playlist', async () => {
+	globalThis.window = {};
+	const uninstall = ipc.installPerformanceBrowserIpc();
+	const unregister = ipc.registerPerformanceBrowserAdapter({
+		selectPlaylist: async () => {
+			throw new Error('playlist load failed');
+		},
+		readSnapshot: () => ({ search: null, sort: null, selected_row: null, load: null })
+	});
+	try {
+		await assert.rejects(
+			() =>
+				ipc.dispatchPerformanceCommand({
+					type: 'browser_select_playlist',
+					playlist_id: 'missing-playlist'
+				}),
+			/playlist load failed/
+		);
+		assert.equal(ipc.queryPerformanceState().browser.active_playlist, null);
 	} finally {
 		unregister();
 		uninstall();

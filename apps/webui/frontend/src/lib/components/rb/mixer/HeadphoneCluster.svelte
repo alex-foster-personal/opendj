@@ -12,7 +12,13 @@
 	} from '$lib/rb/headphone-mix-step';
 	import { headphoneLivenessAlertForState, headphoneMixAccent, inputLooksLikeHandsfree, MIC_DECLINED_NOTICE, monitorLabelIsBluetooth, nativeCueSinkAvailable, twoOutputsWarning } from '$lib/player/headphones';
 	import { ioMeterFill, ioTestDeviceId, ioTestEnvelope, ioTestRefusal, passiveInputMeterBlockedReason, type IoTestBus } from '$lib/player/io-device-test';
+	import {
+		assertCalibrationProbe,
+		calibrationProbeDiagnostics,
+		type CalibrationProbeKind
+	} from '$lib/player/cue-latency';
 	import { calibrateButtonEnabled } from '$lib/player/cue-align-policy';
+	import { loadMixerConfig, persistMixerConfig } from '$lib/player/mixer-config';
 	import { recordPerfEvent } from '$lib/rb/perf-event-log';
 	import { plannedTitle } from '$lib/rb/planned-explainers';
 	import { remoteSpeakerBuildFlag } from '$lib/player/remote-speaker-flag';
@@ -39,6 +45,8 @@
 	import Knob from './Knob.svelte';
 	import MidiStatusGlyph from './MidiStatusGlyph.svelte';
 	import type { HeadphoneAlignmentMode, HeadphoneOutputMode, HeadphoneState } from '$lib/rb/mixer-types';
+	import type { PerformanceUiCommandResult } from '$lib/rb/performance-ipc-types';
+	import { runOutputRefresh } from '$lib/rb/output-refresh-ui';
 
 	/** Whether this engine knows the `:open` pseudo-class (older engines do not). */
 	const OPEN_PSEUDO_SUPPORTED = typeof CSS !== 'undefined' && CSS.supports('selector(:open)');
@@ -49,7 +57,7 @@
 		onlevel: (value: number) => void;
 		onboothlevel: (value: number) => void;
 		ondelay: (value: number) => void;
-		onrefresh: () => void;
+		onrefresh: () => Promise<PerformanceUiCommandResult>;
 		onacquire: () => void;
 		onselect: DevicePick;
 		onmaster: DevicePick;
@@ -102,9 +110,37 @@
 	// Pin 3cfdec80ba0a: the preferred mic is not a choice. Calibration will not
 	// start until the operator picks the mic that can hear the speakers.
 	let calibrationMicId = $state('');
+	let calibrationProbe = $state<CalibrationProbeKind>(loadMixerConfig().calibration_probe);
+
+	function chooseCalibrationStimulus(raw: string): void {
+		assertCalibrationProbe(raw);
+		calibrationProbe = raw;
+		persistMixerConfig({ calibration_probe: raw });
+		const prior = headphoneState.calibration.diagnostics;
+		headphoneState.calibration.diagnostics = {
+			...calibrationProbeDiagnostics(raw),
+			failure: prior.failure,
+			master_measurements_ms: prior.master_measurements_ms,
+			cue_measurements_ms: prior.cue_measurements_ms,
+			spread_ms: prior.spread_ms
+		};
+	}
 	/** Shown in AUDIO IN immediately, before the headphone command lands. */
 	let audioInPendingId = $state<string | null>(null);
 	const audioInValue = $derived(audioInPendingId ?? headphoneState.selected_input_device_id ?? '');
+	let outputRefreshPending = $state(false);
+	let outputRefreshLocalRefusal = $state<string | null>(null);
+
+	function runHeadphoneOutputRefresh(): void {
+		void runOutputRefresh(onrefresh, {
+			setPending: (pending) => {
+				outputRefreshPending = pending;
+			},
+			setLocalRefusal: (message) => {
+				outputRefreshLocalRefusal = message;
+			}
+		});
+	}
 
 	async function chooseCalibrationMic(deviceId: string): Promise<void> {
 		if (deviceId.trim() === '') return;
@@ -696,15 +732,18 @@
 				{/if}
 			</section>
 			<section class="hp-section" aria-label="Audio devices">
-				<div class="hp-section-heading"><h3>Devices</h3><ControlExplainer title="Rescan" bullets={rescanBullets} tooltip={TOOLTIP_INFREQUENT}><button type="button" aria-label="Rescan available headphone output devices" onclick={onrefresh}><svg width="12" height="12" viewBox="0 0 12 12" aria-hidden="true"><path d={RESCAN_PATH} fill="none" stroke="currentColor" stroke-width="1.2" /><path d={RESCAN_ARROW_PATH} fill="currentColor" /></svg> Rescan</button></ControlExplainer></div>
+				<div class="hp-section-heading"><h3>Devices</h3><ControlExplainer title="Rescan" bullets={rescanBullets} tooltip={TOOLTIP_INFREQUENT}><button type="button" aria-label="Rescan available headphone output devices" aria-busy={outputRefreshPending} disabled={outputRefreshPending} onclick={runHeadphoneOutputRefresh}><svg width="12" height="12" viewBox="0 0 12 12" aria-hidden="true"><path d={RESCAN_PATH} fill="none" stroke="currentColor" stroke-width="1.2" /><path d={RESCAN_ARROW_PATH} fill="currentColor" /></svg> Rescan</button></ControlExplainer></div>
 			<button type="button" class="hp-acquire" onclick={onacquire}>Choose output / allow device access</button>
 			<p class="hp-context">Device access can open an output chooser or microphone permission prompt. It may change the CUE route; use it deliberately.</p>
 				<div class="hp-access" data-io-device-access={access.status}>
+					{#if outputRefreshLocalRefusal !== null}
+						<p class="hp-warn" role="status" data-io-output-refresh-refusal title={outputRefreshLocalRefusal}>{outputRefreshLocalRefusal}</p>
+					{/if}
 					{#if access.message !== null}
 						<p class="hp-warn" role="status" data-io-device-access-message title={access.detail ?? access.message}>{access.message}{#if access.detail !== null} <span class="hp-access-detail">({access.detail})</span>{/if}</p>
 					{/if}
 					{#if access.action !== 'none'}
-						<button type="button" class="hp-retry" data-io-device-access-action={access.action} onclick={access.action === 'grant' ? onacquire : onrefresh}>{accessActionLabel}</button>
+						<button type="button" class="hp-retry" data-io-device-access-action={access.action} aria-busy={outputRefreshPending && access.action === 'retry'} disabled={outputRefreshPending} onclick={access.action === 'grant' ? onacquire : runHeadphoneOutputRefresh}>{accessActionLabel}</button>
 					{/if}
 					{#each access.notices as notice (notice)}
 						<p class="hp-context" role="status" data-io-device-notice>{notice}</p>
@@ -722,7 +761,7 @@
 			</section>
 			<SpeakerLinkSection />
 			{#if headphoneState.output_mode === 'two_outputs'}
-				<section class="hp-section" aria-label="Cue alignment">
+				<section class="hp-section" aria-label="Cue alignment" data-io-cue-alignment-section>
 					<h3>Cue alignment</h3>
 					<p class="hp-context">Headphones can lead or lag MASTER, especially over Bluetooth. Delay the early path to align them.</p>
 					<div class="hp-delay-visual" aria-hidden="true"><span>MASTER ━━━━━<svg viewBox="0 0 16 16" width="7" height="7"><path d={PLAY_TRIANGLE_PATH} fill="currentColor" /></svg></span><span>CUE ━━━━━<svg viewBox="0 0 16 16" width="7" height="7"><path d={PLAY_TRIANGLE_PATH} fill="currentColor" /></svg></span></div>
@@ -733,40 +772,6 @@
 					{#if headphoneState.master_delay_ms > 0}<p class="hp-room" data-performance-control="room-delay">ROOM +{headphoneState.master_delay_ms} ms. {roomBullets[0]}</p>{/if}
 				</section>
 			{/if}
-			<section class="hp-section hp-calibration-section" aria-label="Calibration">
-				<label class="hp-cal-mic">
-					<span>Microphone for calibration</span>
-					<select
-						aria-label="calibration microphone"
-						value={calibrationMicId}
-						onchange={(event) => chooseCalibrationMic(selectValue(event))}
-					>
-						<option value="" disabled={calibrationMicId !== ''}>Choose a microphone</option>
-						{#each headphoneState.inputs as input (input.id)}
-							<option value={input.id}>{input.label || input.id}</option>
-						{/each}
-					</select>
-				</label>
-				{#if headphoneState.inputs.length === 0}
-					<p class="hp-warn" role="status">No microphones are listed. Allow microphone access, then choose the mic that can hear the speakers. A loud room on the wrong mic still reads as silence.</p>
-					<button type="button" onclick={onacquire}>Allow microphone access</button>
-				{:else if calibrationMicId === ''}
-					<p class="hp-context">Choose a microphone before starting. Calibration will not run until you do.</p>
-				{:else}
-					<p class="hp-context">Calibration listens on this microphone only.</p>
-				{/if}
-				<button type="button" class="hp-calibrate-button" aria-label="CALIBRATE CUE ALIGNMENT" data-performance-control="cue-calibrate" disabled={!calibrateEnabled} onclick={oncalibrate}>CALIBRATE</button>
-				<p class="hp-context">{calibrateBullets[0]}</p>
-				{#if cueAlignModal.open}
-					<CueAlignModal
-						headphones={headphoneState}
-						onmode={onAlignmentMode}
-						embedded={true}
-						calibrationMicId={calibrationMicId}
-						onPickMic={chooseCalibrationMic}
-					/>
-				{/if}
-			</section>
 		</div>
 	</div>
 {/if}
@@ -811,6 +816,11 @@
 				</span>
 			</span>
 		</ControlExplainer>
+		{#if warningText !== null}
+			<p class="hp-warn hp-routing-toast" role="status" data-two-outputs-warning data-io-routing-feedback>
+				{warningText}
+			</p>
+		{/if}
 		{#if !showBoothPicker}
 			<button type="button" class="hp-acquire" data-add-booth onclick={() => (boothPickerRevealed = true)}>Add booth / monitor</button>
 		{:else}
@@ -873,6 +883,43 @@
 		{#if inputMeterNote !== null}<p class="hp-context" role="status" data-input-meter-note>{inputMeterNote}</p>{/if}
 		{#if inputMeterError !== null}<p class="hp-context" role="status" data-input-meter-error>Live input meter unavailable: {inputMeterError}</p>{/if}
 		<!-- CHROME-07: the tray's "Open audio I/O and MIDI" lands here, so MIDI connect lives inside this view. -->
+		{#if headphoneState.output_mode === 'two_outputs'}
+			<div class="hp-io-calibrate" data-io-calibration-block>
+				<label class="hp-cal-stimulus">
+					<span>Calibration stimulus</span>
+					<select
+						aria-label="calibration stimulus"
+						value={calibrationProbe}
+						onchange={(event) => chooseCalibrationStimulus(selectValue(event))}
+					>
+						<option value="chirp">Sweep (chirp)</option>
+						<option value="click_train">Click train</option>
+					</select>
+				</label>
+				{#if calibrationMicId === ''}
+					<p class="hp-context">Choose AUDIO IN above before starting calibration.</p>
+				{:else}
+					<p class="hp-context">{calibrateBullets[0]}</p>
+				{/if}
+				<button
+					type="button"
+					class="hp-calibrate-button"
+					aria-label="CALIBRATE CUE ALIGNMENT"
+					data-performance-control="cue-calibrate"
+					disabled={!calibrateEnabled}
+					onclick={oncalibrate}>CALIBRATE</button
+				>
+				{#if cueAlignModal.open}
+					<CueAlignModal
+						headphones={headphoneState}
+						onmode={onAlignmentMode}
+						embedded={true}
+						calibrationMicId={calibrationMicId}
+						onPickMic={chooseCalibrationMic}
+					/>
+				{/if}
+			</div>
+		{/if}
 		<ControlExplainer title="MIDI" tooltip={TOOLTIP_HEADPHONE_STACK} placement="right"
 			bullets={[midiTitle, 'Open the MIDI panel to connect controllers and view the learn log.']}>
 			<button

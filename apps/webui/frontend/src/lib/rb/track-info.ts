@@ -173,6 +173,11 @@ export const TRACK_INFO_FIELD_ROWS: { [K in keyof TrackInfoRecord]-?: RowBuilder
 	lyrics_available: (t) => ({ label: 'Lyrics', value: _yesNo(t.lyrics_available), provenance: null }),
 	auto_cues_available: (t) => ({ label: 'Auto cues', value: _yesNo(t.auto_cues_available), provenance: null }),
 	stems_available: (t) => ({ label: 'Stems', value: _yesNo(t.stems_available), provenance: null }),
+	tracklist_hidden: (t, _p, prov) => ({
+		label: 'Hide in tracklists',
+		value: _yesNo(t.tracklist_hidden),
+		provenance: prov('tracklist_hidden')
+	}),
 	// AGENT-31: integrated loudness, or why it is unknown (the reason the agent's trim match names), never a made-up value.
 	loudness: (t) => ({
 		label: 'Loudness',

@@ -22,8 +22,9 @@ from fastapi.testclient import TestClient
 
 from apps.feature_flags import FLAGS, load_flags
 from apps.sets import rec_cli
-from apps.sets.api import RECORDING_DISABLED, RECORDING_FLAG_ID, router
+from apps.sets.api import RECORDING_DISABLED, RECORDING_FLAG_ID
 from apps.sets.recorder_service import RecorderService
+from tests.sets.conftest import mount_sets_router
 
 pytestmark = pytest.mark.requirement("SET-12")
 
@@ -39,7 +40,7 @@ def _client(tmp_path: Path, overrides: dict[str, bool] | None) -> tuple[TestClie
     app = FastAPI()
     app.state.sets_recorder_service = service
     app.state.feature_flags = load_flags(flag_dir)
-    app.include_router(router)
+    mount_sets_router(app)
     return TestClient(app), service
 
 

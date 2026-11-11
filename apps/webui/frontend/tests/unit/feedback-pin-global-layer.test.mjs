@@ -34,6 +34,16 @@ test('FeedbackPinLayer owns placement overlay and resolvePinAnchorAt', () => {
 	assert.match(LAYER, /onpointerdowncapture=\{handlePlacementPointerDown\}/);
 });
 
+// REQ: FEED-12632
+// [if] placement runs after toast copy [then] draft text comes from takeToastCommentPinDraftText, [else stop].
+test('FeedbackPinLayer prefills placement from toast copy context', () => {
+	const handlerAt = LAYER.indexOf('function handlePlacementPointerDown');
+	assert.ok(handlerAt > 0);
+	const handler = LAYER.slice(handlerAt, LAYER.indexOf('function handleEscape', handlerAt));
+	assert.match(handler, /takeToastCommentPinDraftText\(\)/);
+	assert.match(handler, /text: toastReport \?\? ''/);
+});
+
 test('FeedbackPinLayer keeps pathname in sync after client navigations', () => {
 	assert.match(LAYER, /afterNavigate/);
 });

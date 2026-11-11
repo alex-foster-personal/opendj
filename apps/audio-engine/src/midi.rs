@@ -154,6 +154,7 @@ const PAGE_ACTIONS: &[&str] = &[
     "deck_stem_eq_toggle",
     "controller_pad_mode",
     "controller_pad",
+    "color_fx",
 ];
 
 #[derive(Clone, Debug)]
@@ -328,8 +329,11 @@ impl DeviceMap {
                 action,
                 raw,
             };
-            if action == Action::Shift && source.kind != Kind::Note {
-                return err(&ctx, "shift_modifier must be bound to a note (button) source");
+            if action == Action::Shift
+                && source.kind != Kind::Note
+                && !(source.kind == Kind::Cc && binding.cc_button)
+            {
+                return err(&ctx, "shift_modifier must be bound to a note or ccButton source");
             }
             if map.index.insert((binding.shift, source), i).is_some() {
                 return err(&ctx, format!("duplicate binding for {source:?} (shift {})", binding.shift));
@@ -653,7 +657,7 @@ impl Router {
         };
         let cmd = match b.action {
             Action::Shift => {
-                // Validated at load: a shift binding is always a note.
+                // Validated at load: a shift binding is a note or ccButton.
                 self.shift_held = press == Some(true);
                 return;
             }
@@ -1061,7 +1065,7 @@ mod tests {
             (json!({"vendor": "X", "nameMatch": "X", "bindings": [
                 {"source": {"ch": 1, "kind": "note", "id": 1}, "action": {"type": "deck_scratch", "deck": 1}}]}), "unknown action type"),
             (json!({"vendor": "X", "nameMatch": "X", "bindings": [
-                {"source": {"ch": 1, "kind": "cc", "id": 1}, "action": {"type": "shift_modifier"}}]}), "shift_modifier must be bound to a note"),
+                {"source": {"ch": 1, "kind": "cc", "id": 1}, "action": {"type": "shift_modifier"}}]}), "shift_modifier must be bound to a note or ccButton"),
         ];
         for (map, want) in bad {
             let e = DeviceMap::from_json(&map).unwrap_err();
@@ -1072,7 +1076,8 @@ mod tests {
             {"source": {"ch": 1, "kind": "note", "id": 1}, "action": {"type": "deck_cue", "deck": 1}},
             {"source": {"ch": 1, "kind": "note", "id": 1}, "shift": true, "action": {"type": "deck_cue", "deck": 2}},
             {"source": {"ch": 1, "kind": "cc", "id": 0}, "action": {"type": "deck_pitch", "deck": 1, "lsbOffset": 32}},
-            {"source": {"ch": 1, "kind": "cc", "id": 1}, "action": {"type": "mixer_channel", "deck": 4, "target": "eq", "band": "mid"}}]});
+            {"source": {"ch": 1, "kind": "cc", "id": 1}, "action": {"type": "mixer_channel", "deck": 4, "target": "eq", "band": "mid"}},
+            {"source": {"ch": 1, "kind": "cc", "id": 0x73}, "action": {"type": "shift_modifier"}, "ccButton": true}]});
         assert!(DeviceMap::from_json(&ok).is_ok());
         // Two installed maps for one controller is a wiring bug, as on the page.
         let mut m = MapSet::builtin().unwrap();
@@ -1104,6 +1109,21 @@ mod tests {
             feed(&mut r, FLX4, &[0xb4, 70, 0x00]),
             vec![Routed::Page { action, value: Input::Button { pressed: false, velocity: 0x00 } }],
         );
+    }
+
+    #[test]
+    fn cc_button_shift_modifier_toggles_shift_held() {
+        let mut r = custom(json!([
+            {"source": {"ch": 1, "kind": "cc", "id": 0x73}, "action": {"type": "shift_modifier"}, "ccButton": true},
+            {"source": {"ch": 1, "kind": "note", "id": 0x10}, "action": {"type": "deck_beat_jump", "deck": 1, "beats": 4}},
+            {"source": {"ch": 1, "kind": "note", "id": 0x10}, "shift": true, "action": {"type": "deck_beat_jump", "deck": 1, "beats": -4}}
+        ]));
+        let jump = |beats| engine(EngineCmd::BeatJump { deck: 1, beats });
+        same(feed(&mut r, FLX4, &[0x90, 0x10, 0x7f]), jump(4.0));
+        same(feed(&mut r, FLX4, &[0xb0, 0x73, 0x7f]), vec![]);
+        same(feed(&mut r, FLX4, &[0x90, 0x10, 0x7f]), jump(-4.0));
+        same(feed(&mut r, FLX4, &[0xb0, 0x73, 0x00]), vec![]);
+        same(feed(&mut r, FLX4, &[0x90, 0x10, 0x7f]), jump(4.0));
     }
 
     #[test]

@@ -208,9 +208,10 @@ export interface paths {
          *
          *     The body is interleaved little-endian int16 stereo frames. 204 written;
          *     200 ``{"dropped": "recording_stopped"}`` when its recording was cleanly
-         *     stopped while the chunk was in flight (the page ends quietly); 409 when no
-         *     owned master recording has this id, or the chunk would leave a hole
-         *     (a lost or out-of-order chunk); the page stops its tap and says so.
+         *     stopped while the chunk was in flight (the page ends quietly); 415 when
+         *     ``Content-Type`` is not ``application/octet-stream``; 409 when no owned master
+         *     recording has this id, or the chunk would leave a hole (a lost or
+         *     out-of-order chunk); the page stops its tap and says so.
          */
         post: operations["api_recorder_master_pcm_api_sets_recorder__session_id__master_pcm_post"];
         delete?: never;
@@ -2083,6 +2084,30 @@ export interface paths {
          * @description Twin of ``revoke``, limited to machines the signed-in user owns.
          */
         post: operations["revoke_machine_api_v1_cloudsync_fleet_revoke_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/cloudsync/hash-pending-backfill": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Hash Pending Backfill Progress
+         * @description Poll hashed vs remaining for the in-flight or last hub backfill.
+         */
+        get: operations["get_hash_pending_backfill_progress_api_v1_cloudsync_hash_pending_backfill_get"];
+        put?: never;
+        /**
+         * Start Hash Pending Backfill
+         * @description Start ``run_for_hub_backfill`` on a background thread.
+         */
+        post: operations["start_hash_pending_backfill_api_v1_cloudsync_hash_pending_backfill_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -4437,6 +4462,34 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/lighting/output/artnet/address": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Api Get Artnet Address
+         * @description Read this daemon's Art-Net address, or null before any selection; no output is sent.
+         */
+        get: operations["api_get_artnet_address_api_v1_lighting_output_artnet_address_get"];
+        /**
+         * Api Put Artnet Address
+         * @description Select net/subnet/universe for this daemon lifetime; no persistence or UDP delivery.
+         *
+         *     Returns the fields and derived port_address. Invalid net returns 400
+         *     lighting_artnet_bad_net; invalid subnet/universe returns 400 lighting_artnet_bad_subuni.
+         *     Rejected requests leave the previous selection intact; a disabled flag returns 409.
+         */
+        put: operations["api_put_artnet_address_api_v1_lighting_output_artnet_address_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/lighting/patch": {
         parameters: {
             query?: never;
@@ -5445,6 +5498,106 @@ export interface paths {
          *     the caller's intent (nothing playing on the preview voice) is satisfied.
          */
         post: operations["post_preview_stop_api_v1_performance_headphones_preview_stop_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/performance/remote-control": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Remote Control
+         * @description Status, code, address, paired devices. Never the token or its hash.
+         */
+        get: operations["get_remote_control_api_v1_performance_remote_control_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/performance/remote-control/devices/{device_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /**
+         * Delete Remote Control Device
+         * @description Forget one paired device (404 when unknown).
+         */
+        delete: operations["delete_remote_control_device_api_v1_performance_remote_control_devices__device_id__delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/performance/remote-control/rotate-code": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Post Remote Control Rotate
+         * @description Issue a new pairing code without stopping.
+         */
+        post: operations["post_remote_control_rotate_api_v1_performance_remote_control_rotate_code_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/performance/remote-control/start": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Post Remote Control Start
+         * @description Open the LAN listener. Idempotent while already listening.
+         */
+        post: operations["post_remote_control_start_api_v1_performance_remote_control_start_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/performance/remote-control/stop": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Post Remote Control Stop
+         * @description Close the listener. Paired devices survive. Idempotent.
+         */
+        post: operations["post_remote_control_stop_api_v1_performance_remote_control_stop_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -7393,6 +7546,403 @@ export interface paths {
         /** Put Set Note */
         put: operations["put_set_note"];
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/sets": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Api List Sessions */
+        get: operations["api_list_sessions_api_v1_sets_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/sets/control-events": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Api Submit Control Events
+         * @description Ingest page-owned control moves into controls.jsonl and sets.db.
+         */
+        post: operations["api_submit_control_events_api_v1_sets_control_events_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/sets/deck-observations": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Api Deck Observation Status
+         * @description Why a row did or did not appear: per-deck dwell against the threshold.
+         */
+        get: operations["api_deck_observation_status_api_v1_sets_deck_observations_get"];
+        put?: never;
+        /**
+         * Api Submit Deck Observations
+         * @description Ingest Open DJ deck-state snapshots into the live recording.
+         *
+         *     The browser posts here on a timer; any agent can post the same
+         *     payload, which is what keeps this flow drivable without a UI.
+         *     Bad snapshots are rejected 422 rather than dropped, because a
+         *     silently discarded observation is an under-counted set.
+         */
+        post: operations["api_submit_deck_observations_api_v1_sets_deck_observations_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/sets/recorder": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Api Recorder Status */
+        get: operations["api_recorder_status_api_v1_sets_recorder_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/sets/recorder/devices": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Api Recorder Devices
+         * @description List audio inputs by name for the REC picker; 503 when unmeasurable.
+         *
+         *     Sync on purpose: listing spawns ffmpeg, so it runs in the threadpool
+         *     instead of stalling the event loop.
+         */
+        get: operations["api_recorder_devices_api_v1_sets_recorder_devices_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/sets/recorder/remembered-input": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Api Recorder Remembered Input
+         * @description The input REC last started on, kept by the daemon (null when unknown).
+         *
+         *     Server-side because the desktop shell serves the UI from a per-launch
+         *     loopback port, and browser storage forgets across ports (SET-10).
+         */
+        get: operations["api_recorder_remembered_input_api_v1_sets_recorder_remembered_input_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/sets/recorder/start": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Api Recorder Start
+         * @description Start REC. A ``master`` start pushes the attach to the open page and
+         *     answers only once its tap is connected, so the WAV begins within one
+         *     order round trip of this request (SET-12); with no page to ask, nothing
+         *     starts and the answer is 503 with the reason.
+         */
+        post: operations["api_recorder_start_api_v1_sets_recorder_start_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/sets/recorder/stream-encoder": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Api Stream Encoder Status
+         * @description The master-mix stream encoder's status, or null when none was started.
+         */
+        get: operations["api_stream_encoder_status_api_v1_sets_recorder_stream_encoder_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/sets/recorder/{session_id}/master-pcm": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Api Recorder Master Pcm
+         * @description One chunk of the page's master mix for a ``source: master`` recording (SET-12).
+         *
+         *     The body is interleaved little-endian int16 stereo frames. 204 written;
+         *     200 ``{"dropped": "recording_stopped"}`` when its recording was cleanly
+         *     stopped while the chunk was in flight (the page ends quietly); 415 when
+         *     ``Content-Type`` is not ``application/octet-stream``; 409 when no owned master
+         *     recording has this id, or the chunk would leave a hole (a lost or
+         *     out-of-order chunk); the page stops its tap and says so.
+         */
+        post: operations["api_recorder_master_pcm_api_v1_sets_recorder__session_id__master_pcm_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/sets/recorder/{session_id}/recover": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Api Recorder Recover */
+        post: operations["api_recorder_recover_api_v1_sets_recorder__session_id__recover_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/sets/recorder/{session_id}/stop": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Api Recorder Stop */
+        post: operations["api_recorder_stop_api_v1_sets_recorder__session_id__stop_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/sets/recorder/{session_id}/stream-encoder": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Api Stream Encoder Start
+         * @description Tee a ``source: master`` recording into an encoder (STREAM-11486).
+         */
+        post: operations["api_stream_encoder_start_api_v1_sets_recorder__session_id__stream_encoder_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/sets/recorder/{session_id}/stream-encoder/stop": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Api Stream Encoder Stop */
+        post: operations["api_stream_encoder_stop_api_v1_sets_recorder__session_id__stream_encoder_stop_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/sets/{session_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Api Get Session */
+        get: operations["api_get_session_api_v1_sets__session_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/sets/{session_id}/audio/{segment}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Api Audio */
+        get: operations["api_audio_api_v1_sets__session_id__audio__segment__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/sets/{session_id}/share": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Api Get Metadata Share
+         * @description Get an existing metadata-only share link for a finalized published set.
+         */
+        get: operations["api_get_metadata_share_api_v1_sets__session_id__share_get"];
+        put?: never;
+        /**
+         * Api Publish Metadata Share
+         * @description Publish timeline metadata after explicit acknowledgement, never MP3 audio.
+         */
+        post: operations["api_publish_metadata_share_api_v1_sets__session_id__share_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/sets/{session_id}/soundcloud-export": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Api Get Soundcloud Export */
+        get: operations["api_get_soundcloud_export_api_v1_sets__session_id__soundcloud_export_get"];
+        put?: never;
+        /** Api Post Soundcloud Export */
+        post: operations["api_post_soundcloud_export_api_v1_sets__session_id__soundcloud_export_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/sets/{session_id}/timeline": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Api Timeline Stream */
+        get: operations["api_timeline_stream_api_v1_sets__session_id__timeline_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/sets/{session_id}/transitions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Api Transitions */
+        get: operations["api_transitions_api_v1_sets__session_id__transitions_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/sets/{session_id}/transitions/{idx}/label": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Api Relabel */
+        post: operations["api_relabel_api_v1_sets__session_id__transitions__idx__label_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -10653,6 +11203,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/usb/volumes/{volume_id}/health": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Usb Volume Health
+         * @description Structured pass/fail per Pioneer deck class; read-only, gated on volume lock.
+         */
+        get: operations["get_usb_volume_health_api_v1_usb_volumes__volume_id__health_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/usb/volumes/{volume_id}/library": {
         parameters: {
             query?: never;
@@ -11578,6 +12148,46 @@ export interface components {
             todo_feedback_archived: number;
             /** Todos Archived */
             todos_archived: number;
+        };
+        /**
+         * ArtNetAddress
+         * @description Validated selection with its derived 15-bit Port-Address; no delivery claim.
+         */
+        ArtNetAddress: {
+            /** Net */
+            net: number;
+            /** Port Address */
+            port_address: number;
+            /** Subnet */
+            subnet: number;
+            /** Universe */
+            universe: number;
+        };
+        /** ArtNetAddressErrorDetail */
+        ArtNetAddressErrorDetail: {
+            /**
+             * Code
+             * @enum {string}
+             */
+            code: "lighting_artnet_bad_net" | "lighting_artnet_bad_subuni";
+            /** Message */
+            message: string;
+        };
+        /** ArtNetAddressErrorResponse */
+        ArtNetAddressErrorResponse: {
+            detail: components["schemas"]["ArtNetAddressErrorDetail"];
+        };
+        /**
+         * ArtNetAddressRequest
+         * @description Required integer address fields; ranges are checked with domain error codes.
+         */
+        ArtNetAddressRequest: {
+            /** Net */
+            net: number;
+            /** Subnet */
+            subnet: number;
+            /** Universe */
+            universe: number;
         };
         /** ArtworkSuggestionDecisionIn */
         ArtworkSuggestionDecisionIn: {
@@ -12726,7 +13336,7 @@ export interface components {
         /** Binding */
         Binding: {
             /** Action */
-            action: components["schemas"]["DeckPlayToggle"] | components["schemas"]["DeckCue"] | components["schemas"]["DeckHotCue"] | components["schemas"]["DeckBeatLoop"] | components["schemas"]["DeckBeatJump"] | components["schemas"]["DeckAutoLoopToggle"] | components["schemas"]["DeckLoopExit"] | components["schemas"]["DeckSyncToggle"] | components["schemas"]["DeckKeySyncToggle"] | components["schemas"]["DeckManualLoopCycle"] | components["schemas"]["DeckLoopScale"] | components["schemas"]["DeckKeyNudge"] | components["schemas"]["DeckTempoNudge"] | components["schemas"]["DeckJog"] | components["schemas"]["DeckStemEqToggle"] | components["schemas"]["ControllerPadMode"] | components["schemas"]["ControllerPad"] | components["schemas"]["MixerChannel"] | components["schemas"]["MixerGlobal"] | components["schemas"]["ChannelCue"] | components["schemas"]["HeadphoneMix"] | components["schemas"]["HeadphoneLevel"] | components["schemas"]["MasterCue"] | components["schemas"]["DeckPitch"] | components["schemas"]["BrowseEncoder"] | components["schemas"]["BrowseLoad"] | components["schemas"]["ShiftModifier"];
+            action: components["schemas"]["DeckPlayToggle"] | components["schemas"]["DeckCue"] | components["schemas"]["DeckHotCue"] | components["schemas"]["DeckBeatLoop"] | components["schemas"]["DeckBeatJump"] | components["schemas"]["DeckAutoLoopToggle"] | components["schemas"]["DeckLoopExit"] | components["schemas"]["DeckSyncToggle"] | components["schemas"]["DeckKeySyncToggle"] | components["schemas"]["DeckManualLoopCycle"] | components["schemas"]["DeckLoopScale"] | components["schemas"]["DeckKeyNudge"] | components["schemas"]["DeckTempoNudge"] | components["schemas"]["DeckJog"] | components["schemas"]["DeckStemEqToggle"] | components["schemas"]["ControllerPadMode"] | components["schemas"]["ControllerPad"] | components["schemas"]["MixerChannel"] | components["schemas"]["MixerGlobal"] | components["schemas"]["ChannelCue"] | components["schemas"]["HeadphoneMix"] | components["schemas"]["HeadphoneLevel"] | components["schemas"]["MasterCue"] | components["schemas"]["ColorFx"] | components["schemas"]["DeckPitch"] | components["schemas"]["BrowseEncoder"] | components["schemas"]["BrowseLoad"] | components["schemas"]["ShiftModifier"];
             /**
              * Ccbutton
              * @default false
@@ -13042,6 +13652,10 @@ export interface components {
         CandidateOut: {
             /** Bars */
             bars: number;
+            /** Energy */
+            energy: {
+                [key: string]: unknown;
+            };
             /** Factors */
             factors: {
                 [key: string]: number;
@@ -13708,6 +14322,24 @@ export interface components {
              * @description A COPY of the MIK store, or MIK's own file with copy_store_first.
              */
             store: string;
+        };
+        /** ColorFx */
+        ColorFx: {
+            /**
+             * Deck
+             * @enum {integer}
+             */
+            deck: 1 | 2 | 3 | 4;
+            /**
+             * Effect
+             * @enum {string}
+             */
+            effect: "filter" | "space" | "echo" | "next";
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            type: "color_fx";
         };
         /** CommentArchiveOut */
         CommentArchiveOut: {
@@ -14810,6 +15442,17 @@ export interface components {
             verdict: "descended" | "not-descended" | "unverified" | "unknown";
             /** Warning */
             warning: string | null;
+        };
+        /** DeviceOut */
+        DeviceOut: {
+            /** Device Id */
+            device_id: string;
+            /** Device Name */
+            device_name: string;
+            /** Last Seen */
+            last_seen: string;
+            /** Paired At */
+            paired_at: string;
         };
         /** DigestDiffSampleOut */
         DigestDiffSampleOut: {
@@ -15999,6 +16642,80 @@ export interface components {
             /** Apps */
             apps: components["schemas"]["HandoffAppOut"][];
         };
+        /** HashPendingBackfillProgressOut */
+        HashPendingBackfillProgressOut: {
+            /**
+             * Hashed
+             * @default 0
+             */
+            hashed: number;
+            /** Last Error */
+            last_error?: string | null;
+            /**
+             * Live
+             * @default false
+             */
+            live: boolean;
+            /**
+             * Processed
+             * @description Rows visited so far.
+             */
+            processed: number;
+            /**
+             * Remaining
+             * @description total - processed while running or done.
+             */
+            remaining: number;
+            /**
+             * Resolvable
+             * @default 0
+             */
+            resolvable: number;
+            /**
+             * Resolved Via Location
+             * @default 0
+             */
+            resolved_via_location: number;
+            /**
+             * Resolved Via Track Path
+             * @default 0
+             */
+            resolved_via_track_path: number;
+            /**
+             * State
+             * @enum {string}
+             */
+            state: "idle" | "running" | "done" | "error";
+            /**
+             * Total
+             * @description Hub hash_pending rows in this run.
+             */
+            total: number;
+            /**
+             * Unresolvable
+             * @default 0
+             */
+            unresolvable: number;
+        };
+        /** HashPendingBackfillStartIn */
+        HashPendingBackfillStartIn: {
+            /**
+             * Hub Url
+             * @description Override hub URL (CLI --hub-endpoint).
+             */
+            hub_url?: string | null;
+            /**
+             * Limit
+             * @description Cap hub stable_ids processed this run (CLI --limit).
+             */
+            limit?: number | null;
+            /**
+             * Live
+             * @description When true, persist hashes locally and push to the hub (CLI --live).
+             * @default true
+             */
+            live: boolean;
+        };
         /** HashPendingResponse */
         HashPendingResponse: {
             /** Next Cursor */
@@ -16013,12 +16730,31 @@ export interface components {
             wire_version: number;
         };
         /**
+         * HeadphoneCalibrationDiagnosticsOut
+         * @description IOPIN-07 bounded calibration evidence mirrored from the page.
+         */
+        HeadphoneCalibrationDiagnosticsOut: {
+            /** Alternate Probe */
+            alternate_probe: string;
+            /** Cue Measurements Ms */
+            cue_measurements_ms: number[];
+            /** Failure */
+            failure: string | null;
+            /** Master Measurements Ms */
+            master_measurements_ms: number[];
+            /** Probe */
+            probe: string;
+            /** Spread Ms */
+            spread_ms: number | null;
+        };
+        /**
          * HeadphoneCalibrationOut
          * @description CUEOUT-14 calibration progress; `step` is the modal's state machine.
          */
         HeadphoneCalibrationOut: {
             /** Cue Latency Ms */
             cue_latency_ms: number | null;
+            diagnostics?: components["schemas"]["HeadphoneCalibrationDiagnosticsOut"] | null;
             /** Error */
             error: string | null;
             /** Master Latency Ms */
@@ -16447,10 +17183,20 @@ export interface components {
         /** IdentityBacklogOut */
         IdentityBacklogOut: {
             /**
+             * Audio Holder Machine Names
+             * @description Fleet machine display names with local track_locations for hash_pending rows.
+             */
+            audio_holder_machine_names: string[];
+            /**
              * Hash Pending
              * @description live 'tracks' rows offered to the hub with hash_pending=true while awaiting content_hash. Run `python -m apps.sync_hub.hash_pending_backfill --live` on a machine that holds the audio.
              */
             hash_pending: number;
+            /**
+             * This Machine Can Hash
+             * @description True when at least one hash_pending row resolves to audio on this machine.
+             */
+            this_machine_can_hash: boolean;
             /**
              * Unsyncable Inferred
              * @description live 'tracks' rows still held for content-identity duplicate losers only. Rows lacking hash and ISRC travel as hash_pending instead.
@@ -16592,6 +17338,13 @@ export interface components {
             kind: string;
             /** Message */
             message?: string | null;
+            /**
+             * Outcome
+             * @description what the kind measured after its worker exited, e.g. stems bundles expected vs present (STEM-59); null for kinds without a check
+             */
+            outcome?: {
+                [key: string]: unknown;
+            } | null;
             /** Owner Boot Id */
             owner_boot_id: string;
             /** Owner Pid */
@@ -16606,6 +17359,11 @@ export interface components {
             started_at?: string | null;
             /** Status */
             status: string;
+            /**
+             * Stderr Tail
+             * @description the last lines the worker wrote to stderr, kept on every ending, success included (STEM-60)
+             */
+            stderr_tail?: string[] | null;
             /** Worker Argv */
             worker_argv?: string[] | null;
             /** Worker Pgid */
@@ -17437,6 +18195,25 @@ export interface components {
             /** Section */
             section?: string | null;
         };
+        /** LightingDisabledDetail */
+        LightingDisabledDetail: {
+            /**
+             * Error
+             * @constant
+             */
+            error: "flag_disabled";
+            /**
+             * Flag
+             * @constant
+             */
+            flag: "lighting.output";
+            /** Message */
+            message: string;
+        };
+        /** LightingDisabledResponse */
+        LightingDisabledResponse: {
+            detail: components["schemas"]["LightingDisabledDetail"];
+        };
         /** LightingStatus */
         LightingStatus: {
             /**
@@ -17567,6 +18344,8 @@ export interface components {
          * @description Problem first (PLUG-6522k): why you want it, what you can do, how, and the limits.
          */
         ListingOut: {
+            /** Capability Kind */
+            capability_kind?: string | null;
             /** How It Works */
             how_it_works: string;
             /** Limits */
@@ -17577,6 +18356,8 @@ export interface components {
             screenshots: components["schemas"]["ScreenshotOut"][];
             /** Status */
             status: string;
+            /** Store Surface */
+            store_surface?: string | null;
             /** Tagline */
             tagline: string;
             /** You Can */
@@ -19983,6 +20764,7 @@ export interface components {
             permissions: string[];
             /** Plugin Id */
             plugin_id: string;
+            provider: components["schemas"]["ProviderSurfaceOut"] | null;
             /** Publisher */
             publisher: string;
             /** Source */
@@ -20301,6 +21083,33 @@ export interface components {
             status: "ok" | "failed" | "missing" | "available-not-selected" | "too_short" | "no_pulse";
             /** Value */
             value: unknown;
+        };
+        /** ProviderQuotaOut */
+        ProviderQuotaOut: {
+            /** Limit */
+            limit: number | null;
+            /** Remaining */
+            remaining: number | null;
+            /** Reset At */
+            reset_at: number | null;
+            /** Retry After S */
+            retry_after_s: number | null;
+        };
+        /** ProviderSurfaceOut */
+        ProviderSurfaceOut: {
+            /** Capability Kind */
+            capability_kind: string;
+            /** Credential Configured */
+            credential_configured: boolean;
+            /** Credential Env */
+            credential_env: string | null;
+            /** Provenance Fields */
+            provenance_fields: string[];
+            quota?: components["schemas"]["ProviderQuotaOut"] | null;
+            /** Store Surface */
+            store_surface: string;
+            /** Terms Url */
+            terms_url: string | null;
         };
         /** PullResponse */
         PullResponse: {
@@ -21030,6 +21839,8 @@ export interface components {
             comments: string | null;
             /** Created By */
             created_by?: string | null;
+            /** Deck Load Refusal */
+            deck_load_refusal?: ("streaming" | "cloud_policy_unconfigured") | null;
             /** Duration Ms */
             duration_ms: number | null;
             /** Edit Id */
@@ -21059,6 +21870,10 @@ export interface components {
             } | null;
             /** Genre */
             genre: string | null;
+            /** Genre Family */
+            genre_family?: string | null;
+            /** Genre Family Color */
+            genre_family_color?: string | null;
             genre_guess?: components["schemas"]["GenreGuessOut"] | null;
             /** Genre Reason */
             genre_reason?: string | null;
@@ -21250,6 +22065,41 @@ export interface components {
             signals: string[];
             /** Triple Validated */
             triple_validated: boolean;
+        };
+        /** RemoteControlStateOut */
+        RemoteControlStateOut: {
+            /** Address */
+            address?: string | null;
+            /** Address Error */
+            address_error?: string | null;
+            /** Code */
+            code?: string | null;
+            /** Devices */
+            devices?: components["schemas"]["DeviceOut"][];
+            /** Last Error */
+            last_error?: string | null;
+            /**
+             * Max Wrong Codes
+             * @default 5
+             */
+            max_wrong_codes: number;
+            /** Port */
+            port?: number | null;
+            /**
+             * Reopened At Boot
+             * @default false
+             */
+            reopened_at_boot: boolean;
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "off" | "listening" | "locked_out";
+            /**
+             * Wrong Codes
+             * @default 0
+             */
+            wrong_codes: number;
         };
         /** RequestIn */
         RequestIn: {
@@ -21585,6 +22435,8 @@ export interface components {
             comments: string | null;
             /** Created By */
             created_by?: string | null;
+            /** Deck Load Refusal */
+            deck_load_refusal?: ("streaming" | "cloud_policy_unconfigured") | null;
             /** Duration Ms */
             duration_ms: number | null;
             /** Edit Id */
@@ -21614,6 +22466,10 @@ export interface components {
             } | null;
             /** Genre */
             genre: string | null;
+            /** Genre Family */
+            genre_family?: string | null;
+            /** Genre Family Color */
+            genre_family_color?: string | null;
             genre_guess?: components["schemas"]["GenreGuessOut"] | null;
             /** Genre Reason */
             genre_reason?: string | null;
@@ -22937,12 +23793,12 @@ export interface components {
             local_refusal?: string | null;
             /**
              * Pending
-             * @description audio on disk, no bundle yet: the work
+             * @description songs with no stems yet: the work, and the job's target set
              */
             pending: number;
             /**
              * Ready
-             * @description already has a stem bundle on disk
+             * @description songs with a valid bundle here or held in R2
              */
             ready: number;
             /** Tier */
@@ -22951,7 +23807,7 @@ export interface components {
             tier_name: string;
             /**
              * Total
-             * @description library rows carrying a file path
+             * @description songs with audio on this Mac (the present denominator)
              */
             total: number;
             /**
@@ -22966,9 +23822,19 @@ export interface components {
             transport_refusal?: string | null;
             /**
              * Unavailable
-             * @description library row exists, its file does not
+             * @description songs that cannot be separated now (no stems source, or failed too often)
              */
             unavailable: number;
+            /**
+             * Unit
+             * @description what every count below counts
+             */
+            unit: string;
+            /**
+             * Unreachable Rows
+             * @description library ROWS with no audio on this Mac, outside the denominator
+             */
+            unreachable_rows: number;
         };
         /**
          * StemsSetupOut
@@ -23938,6 +24804,8 @@ export interface components {
             comments?: string | null;
             /** Created By */
             created_by?: string | null;
+            /** Deck Load Refusal */
+            deck_load_refusal?: ("streaming" | "cloud_policy_unconfigured") | null;
             /** Duration Ms */
             duration_ms?: number | null;
             /** Edit Id */
@@ -23965,6 +24833,10 @@ export interface components {
             } | null;
             /** Genre */
             genre?: string | null;
+            /** Genre Family */
+            genre_family?: string | null;
+            /** Genre Family Color */
+            genre_family_color?: string | null;
             genre_guess?: components["schemas"]["GenreGuessOut"] | null;
             /** Genre Reason */
             genre_reason?: string | null;
@@ -24038,6 +24910,11 @@ export interface components {
             streaming_provider?: ("spotify" | "tidal" | "soundcloud" | "unknown") | null;
             /** Title */
             title?: string | null;
+            /**
+             * Tracklist Hidden
+             * @default false
+             */
+            tracklist_hidden: boolean;
             /**
              * Valid
              * @default true
@@ -24138,6 +25015,8 @@ export interface components {
             created_at: string;
             /** Created By */
             created_by?: string | null;
+            /** Deck Load Refusal */
+            deck_load_refusal?: ("streaming" | "cloud_policy_unconfigured") | null;
             /** Duration Ms */
             duration_ms?: number | null;
             /** Edit Id */
@@ -24165,6 +25044,10 @@ export interface components {
             } | null;
             /** Genre */
             genre?: string | null;
+            /** Genre Family */
+            genre_family?: string | null;
+            /** Genre Family Color */
+            genre_family_color?: string | null;
             genre_guess?: components["schemas"]["GenreGuessOut"] | null;
             /** Genre Reason */
             genre_reason?: string | null;
@@ -24265,6 +25148,11 @@ export interface components {
             tempo_pref?: components["schemas"]["TempoPrefOut"] | null;
             /** Title */
             title?: string | null;
+            /**
+             * Tracklist Hidden
+             * @default false
+             */
+            tracklist_hidden: boolean;
             /** Updated At */
             updated_at: string;
             /**
@@ -24409,6 +25297,11 @@ export interface components {
             tempo_pref?: components["schemas"]["TempoPrefOut"] | null;
             /** Title */
             title?: string | null;
+            /**
+             * Tracklist Hidden
+             * @default false
+             */
+            tracklist_hidden: boolean;
             /** Updated At */
             updated_at: string;
         };
@@ -24427,6 +25320,8 @@ export interface components {
             /** Tags Remove */
             tags_remove?: string[] | null;
             tempo_pref?: components["schemas"]["TempoPrefPatch"] | null;
+            /** Tracklist Hidden */
+            tracklist_hidden?: boolean | null;
         };
         /** TrackPlayIn */
         TrackPlayIn: {
@@ -24544,6 +25439,8 @@ export interface components {
             comments: string | null;
             /** Created By */
             created_by?: string | null;
+            /** Deck Load Refusal */
+            deck_load_refusal?: ("streaming" | "cloud_policy_unconfigured") | null;
             /** Duration Ms */
             duration_ms: number | null;
             /** Edit Id */
@@ -24573,6 +25470,10 @@ export interface components {
             } | null;
             /** Genre */
             genre: string | null;
+            /** Genre Family */
+            genre_family?: string | null;
+            /** Genre Family Color */
+            genre_family_color?: string | null;
             genre_guess?: components["schemas"]["GenreGuessOut"] | null;
             /** Genre Reason */
             genre_reason?: string | null;
@@ -25070,6 +25971,11 @@ export interface components {
             beat_sync_max: boolean;
             /** Collapsed Sections */
             collapsed_sections?: string[];
+            /**
+             * Compact Decks
+             * @default false
+             */
+            compact_decks: boolean;
             compatible_filter?: components["schemas"]["CompatibleFilterOut"];
             /** Confirm */
             confirm?: {
@@ -25249,6 +26155,11 @@ export interface components {
              */
             show_tempo_lane: boolean;
             /**
+             * Show Vocal Lane
+             * @default true
+             */
+            show_vocal_lane: boolean;
+            /**
              * Sort Within Sections
              * @default false
              */
@@ -25292,6 +26203,12 @@ export interface components {
              * @enum {string}
              */
             wave_grid_lines: "beats_bars" | "bars" | "off";
+            /**
+             * Wave Height
+             * @default full
+             * @enum {string}
+             */
+            wave_height: "full" | "half";
             wheel_sensitivity?: components["schemas"]["WheelSensitivityOut"];
         };
         /** UiPrefsPatch */
@@ -25324,6 +26241,8 @@ export interface components {
             beat_sync_max?: boolean | null;
             /** Collapsed Sections */
             collapsed_sections?: string[] | null;
+            /** Compact Decks */
+            compact_decks?: boolean | null;
             compatible_filter?: components["schemas"]["CompatibleFilterOut"] | null;
             /** Confirm */
             confirm?: {
@@ -25405,6 +26324,8 @@ export interface components {
             show_stems?: boolean | null;
             /** Show Tempo Lane */
             show_tempo_lane?: boolean | null;
+            /** Show Vocal Lane */
+            show_vocal_lane?: boolean | null;
             /** Sort Within Sections */
             sort_within_sections?: boolean | null;
             /** Speaker Auto Recover */
@@ -25421,6 +26342,8 @@ export interface components {
             vocals_filter?: boolean | null;
             /** Wave Grid Lines */
             wave_grid_lines?: ("beats_bars" | "bars" | "off") | null;
+            /** Wave Height */
+            wave_height?: ("full" | "half") | null;
             wheel_sensitivity?: components["schemas"]["WheelSensitivityOut"] | null;
         };
         /** UiSlotOut */
@@ -25658,6 +26581,17 @@ export interface components {
         UsbCapabilityErrorOut: {
             detail: components["schemas"]["UsbCapabilityDetail"];
         };
+        /** UsbDeckClassHealthOut */
+        UsbDeckClassHealthOut: {
+            /** Deck Class */
+            deck_class: string;
+            /** Failures */
+            failures: string[];
+            /** Label */
+            label: string;
+            /** Ok */
+            ok: boolean;
+        };
         /** UsbEjectErrorDetail */
         UsbEjectErrorDetail: {
             /** Code */
@@ -25811,6 +26745,33 @@ export interface components {
             rating: number;
             /** Title */
             title: string;
+        };
+        /** UsbVolumeBusyDetail */
+        UsbVolumeBusyDetail: {
+            /**
+             * Code
+             * @constant
+             */
+            code: "usb_volume_busy";
+            /** Message */
+            message: string;
+        };
+        /** UsbVolumeBusyOut */
+        UsbVolumeBusyOut: {
+            detail: components["schemas"]["UsbVolumeBusyDetail"];
+        };
+        /** UsbVolumeHealthOut */
+        UsbVolumeHealthOut: {
+            /** Deck Classes */
+            deck_classes: components["schemas"]["UsbDeckClassHealthOut"][];
+            /** Filesystem */
+            filesystem: string;
+            /** Rules Version */
+            rules_version: string;
+            /** Scanned Paths */
+            scanned_paths: number;
+            /** Volume Id */
+            volume_id: string;
         };
         /** UsbVolumeOut */
         UsbVolumeOut: {
@@ -30279,6 +31240,91 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
                 };
+            };
+        };
+    };
+    get_hash_pending_backfill_progress_api_v1_cloudsync_hash_pending_backfill_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HashPendingBackfillProgressOut"];
+                };
+            };
+            /** @description The caller is not the local operator: a non-loopback peer, a proxy-relayed request, a non-loopback Host or Origin, or a cross-site fetch. code: CLOUDSYNC_OPS_LOCAL_ONLY. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OpsErrorResponse"];
+                };
+            };
+        };
+    };
+    start_hash_pending_backfill_api_v1_cloudsync_hash_pending_backfill_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["HashPendingBackfillStartIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HashPendingBackfillProgressOut"];
+                };
+            };
+            /** @description The caller is not the local operator: a non-loopback peer, a proxy-relayed request, a non-loopback Host or Origin, or a cross-site fetch. code: CLOUDSYNC_OPS_LOCAL_ONLY. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OpsErrorResponse"];
+                };
+            };
+            /** @description CLOUDSYNC_HASH_BACKFILL_RUNNING: a backfill is already running. CLOUDSYNC_HASH_BACKFILL_NO_AUDIO: hub pending rows exist but none resolve to audio on this machine. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+            /** @description The hub was unreachable or answered with something unusable. */
+            502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
         };
     };
@@ -34758,6 +35804,86 @@ export interface operations {
             };
         };
     };
+    api_get_artnet_address_api_v1_lighting_output_artnet_address_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ArtNetAddress"] | null;
+                };
+            };
+            /** @description lighting.output is off */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LightingDisabledResponse"];
+                };
+            };
+        };
+    };
+    api_put_artnet_address_api_v1_lighting_output_artnet_address_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ArtNetAddressRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ArtNetAddress"];
+                };
+            };
+            /** @description Art-Net address field out of range */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ArtNetAddressErrorResponse"];
+                };
+            };
+            /** @description lighting.output is off */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LightingDisabledResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     get_lighting_patch_api_v1_lighting_patch_get: {
         parameters: {
             query?: never;
@@ -36298,6 +37424,132 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_remote_control_api_v1_performance_remote_control_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RemoteControlStateOut"];
+                };
+            };
+        };
+    };
+    delete_remote_control_device_api_v1_performance_remote_control_devices__device_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                device_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RemoteControlStateOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    post_remote_control_rotate_api_v1_performance_remote_control_rotate_code_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RemoteControlStateOut"];
+                };
+            };
+        };
+    };
+    post_remote_control_start_api_v1_performance_remote_control_start_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": {
+                    [key: string]: unknown;
+                } | null;
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RemoteControlStateOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    post_remote_control_stop_api_v1_performance_remote_control_stop_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RemoteControlStateOut"];
                 };
             };
         };
@@ -40165,6 +41417,707 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    api_list_sessions_api_v1_sets_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+        };
+    };
+    api_submit_control_events_api_v1_sets_control_events_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ControlEventsRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    api_deck_observation_status_api_v1_sets_deck_observations_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+        };
+    };
+    api_submit_deck_observations_api_v1_sets_deck_observations_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DeckObservationsRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    api_recorder_status_api_v1_sets_recorder_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RecorderStatus"];
+                };
+            };
+        };
+    };
+    api_recorder_devices_api_v1_sets_recorder_devices_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RecorderDevicesResponse"];
+                };
+            };
+        };
+    };
+    api_recorder_remembered_input_api_v1_sets_recorder_remembered_input_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RecorderRememberedInputResponse"];
+                };
+            };
+        };
+    };
+    api_recorder_start_api_v1_sets_recorder_start_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RecorderStartRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RecorderStatus"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    api_stream_encoder_status_api_v1_sets_recorder_stream_encoder_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+        };
+    };
+    api_recorder_master_pcm_api_v1_sets_recorder__session_id__master_pcm_post: {
+        parameters: {
+            query: {
+                stream: string;
+                seq: number;
+                sample_rate: number;
+            };
+            header?: never;
+            path: {
+                session_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/octet-stream": string;
+            };
+        };
+        responses: {
+            /** @description dropped: the recording was cleanly stopped while this chunk was in flight */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    api_recorder_recover_api_v1_sets_recorder__session_id__recover_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                session_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RecorderRecoveryRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RecorderStatus"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    api_recorder_stop_api_v1_sets_recorder__session_id__stop_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                session_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RecorderStatus"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    api_stream_encoder_start_api_v1_sets_recorder__session_id__stream_encoder_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                session_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["StreamEncoderStartRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    api_stream_encoder_stop_api_v1_sets_recorder__session_id__stream_encoder_stop_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                session_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    api_get_session_api_v1_sets__session_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                session_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    api_audio_api_v1_sets__session_id__audio__segment__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                session_id: string;
+                /** @description audio_<iso>.wav (odj-audio capture) or audio_<iso>.mp3 (ffmpeg) */
+                segment: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    api_get_metadata_share_api_v1_sets__session_id__share_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                session_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MetadataShareResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    api_publish_metadata_share_api_v1_sets__session_id__share_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                session_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["MetadataShareRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MetadataShareResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    api_get_soundcloud_export_api_v1_sets__session_id__soundcloud_export_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                session_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SoundcloudExportResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    api_post_soundcloud_export_api_v1_sets__session_id__soundcloud_export_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                session_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SoundcloudExportAckRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SoundcloudExportResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    api_timeline_stream_api_v1_sets__session_id__timeline_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                session_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    api_transitions_api_v1_sets__session_id__transitions_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                session_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    api_relabel_api_v1_sets__session_id__transitions__idx__label_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                session_id: string;
+                idx: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["LabelRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
             };
             /** @description Validation Error */
             422: {
@@ -46953,6 +48906,55 @@ export interface operations {
                 };
                 content: {
                     "text/event-stream": string;
+                };
+            };
+            /** @description USB volume discovery is unavailable: either this host cannot provide it, or this build is sandboxed and may not look. */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["UsbCapabilityErrorOut"];
+                };
+            };
+        };
+    };
+    get_usb_volume_health_api_v1_usb_volumes__volume_id__health_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                volume_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["UsbVolumeHealthOut"];
+                };
+            };
+            /** @description usb_volume_busy while eject or usb-export holds the stick */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["UsbVolumeBusyOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
             /** @description USB volume discovery is unavailable: either this host cannot provide it, or this build is sandboxed and may not look. */

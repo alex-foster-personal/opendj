@@ -211,22 +211,32 @@ def enqueue(
         raise _bad(providers.ProviderUnavailable(missing[0]))
     data_dir = get_library_data_dir(request)
     with _write(request) as conn:
-        ids = body.stable_ids or pipeline.missing_fused_ids(conn, pipeline.eligible_ids(conn))
+        if body.stable_ids:
+            ids = pipeline.attention_infer_ids(conn, body.stable_ids)
+        else:
+            ids = pipeline.missing_fused_ids(conn, pipeline.eligible_ids(conn))
         queued = 0
+        touched: list[str] = []
         try:
             for start in range(0, len(ids), MAX_ENQUEUE_IDS):
+                chunk = ids[start : start + MAX_ENQUEUE_IDS]
+                if not chunk:
+                    continue
                 result = queue_user.enqueue_next(
                     conn,
                     lane="genre",
-                    stable_ids=ids[start : start + MAX_ENQUEUE_IDS],
+                    stable_ids=chunk,
                     placement="tail",
                     stems_root=data_dir / "state" / "stems",
                     data_dir=data_dir,
                 )
                 queued += len(result.items)
+                touched.extend(chunk)
         except QueueError as exc:
             raise HTTPException(422, {"code": "queue_refused", "message": str(exc)}) from exc
-    return {"lane": "genre", "queued": queued}
+    if touched:
+        publish("library.changed", {"kind": "library_jobs", "ids": touched})
+    return {"lane": "genre", "queued": queued, "requested": len(body.stable_ids or []), "eligible": len(ids)}
 
 
 @router.get("/{stable_id}/similar")

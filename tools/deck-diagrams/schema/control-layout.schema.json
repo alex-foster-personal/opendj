@@ -23,6 +23,14 @@
       "default": ["base", "shift"],
       "description": "Every layer listed here must resolve through the matching *_name twin on each control that has it"
     },
+    "risk_banner": {
+      "type": "object",
+      "required": ["fig", "text"],
+      "properties": {
+        "fig": { "type": "string", "description": "Fig code of the control(s) outlined in dashed yellow" },
+        "text": { "type": "string", "description": "Banner text shown above the stage in overlay.html and deck.html" }
+      }
+    },
     "out_of_scope": {
       "type": "array",
       "items": { "type": "string" }

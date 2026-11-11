@@ -399,9 +399,14 @@ export async function startRealEngine(bundleText, { tracks }) {
 		for (let i = 0; i < turns; i += 1) await new Promise((resolve) => setImmediate(resolve));
 	}
 
+	/** Wall-clock floor for waitFor: a loaded CI runner can spend 400 turns in under 100 ms (STEM-4806, #10508). */
+	const WAIT_FOR_MIN_MS = 5000;
+
+	/** Turn the loop until `predicate` holds: at least 400 turns AND at least WAIT_FOR_MIN_MS of wall time. */
 	async function waitFor(predicate, what) {
-		for (let i = 0; i < 400 && !predicate(); i += 1) await settle(1);
-		assert.ok(predicate(), `timed out waiting for ${what}`);
+		const deadline = performance.now() + WAIT_FOR_MIN_MS;
+		for (let i = 0; !predicate() && (i < 400 || performance.now() < deadline); i += 1) await settle(1);
+		assert.ok(predicate(), `timed out waiting for ${what} (400 turns and ${WAIT_FOR_MIN_MS} ms)`);
 	}
 
 	/** Advance the render clock one display frame and run the frame the engine queued. */

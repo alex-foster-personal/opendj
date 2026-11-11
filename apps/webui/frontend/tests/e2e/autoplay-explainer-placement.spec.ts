@@ -8,7 +8,7 @@ test('AutoPlay explainer portals, remains interactive through its pointer corrid
 	const pageErrors: string[] = [];
 	page.on('pageerror', (error) => pageErrors.push(error.message));
 
-	// No injected prefs: the shipped defaults (hide_broken_links false, auto_play_enabled true)
+	// No injected prefs: the shipped defaults (hide_broken_links false, auto_play_enabled off, PLAY-5907)
 	// are what this scenario needs, and state must reach the page through the production path.
 	await page.goto('/performance');
 	await page.getByText('All Tracks', { exact: true }).first().click();

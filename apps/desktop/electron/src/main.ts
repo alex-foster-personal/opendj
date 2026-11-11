@@ -17,6 +17,7 @@ import { pathToFileURL } from 'node:url';
 import {
 	BrowserWindow,
 	Menu,
+	MenuItem,
 	app,
 	dialog,
 	ipcMain,
@@ -69,6 +70,17 @@ import {
 import { ShellHealthServer } from './shell-health';
 import { SidePlayer } from './side-player';
 import { sideCollapsedArg, sideOpenArgs } from './side-player-layout';
+import {
+	SECOND_SCREEN_ACCELERATOR,
+	SECOND_SCREEN_MENU_LABEL,
+	SECOND_SCREEN_WINDOW_LABEL,
+	SecondScreenController,
+	WINDOW_LABELS_STATE_FILE,
+	parseWindowIpcArgs,
+	parseWindowLabelsState,
+	serializeWindowLabelsState,
+	type SavedGeometry
+} from './second-screen';
 import { EngineError, appendShellLog, installShellLogging } from './shell-log';
 import {
 	EngineSupervisor,
@@ -246,6 +258,101 @@ function main(): void {
 		return;
 	}
 	const engineChoiceFile = path.join(dataDir, AUDIO_ENGINE_CHOICE_FILE);
+	const windowLabelsFile = path.join(dataDir, WINDOW_LABELS_STATE_FILE);
+	const saveGeometry = (label: string, geometry: SavedGeometry): void => {
+		let labels: Record<string, SavedGeometry> = {};
+		try {
+			labels = parseWindowLabelsState(fs.readFileSync(windowLabelsFile, 'utf8'));
+		} catch {
+			labels = {};
+		}
+		labels[label] = geometry;
+		try {
+			fs.writeFileSync(windowLabelsFile, serializeWindowLabelsState(labels));
+		} catch (error) {
+			appendShellLog('WARN', `second-screen geometry not saved: ${String(error)}`);
+		}
+	};
+	const secondScreen = new SecondScreenController({
+		origin: () => page.engineOrigin,
+		mainBounds: () => window?.getBounds() ?? { x: 0, y: 0, width: 1280, height: 800 },
+		displays: () => ({
+			items: screen.getAllDisplays().map((entry) => ({
+				id: entry.id,
+				bounds: entry.bounds,
+				workArea: entry.workArea
+			})),
+			primaryId: screen.getPrimaryDisplay().id
+		}),
+		createWindow: ({ bounds, url, onClosed }) => {
+			const extra = new BrowserWindow({
+				x: bounds.x,
+				y: bounds.y,
+				width: bounds.width,
+				height: bounds.height,
+				title: 'Open DJ - Library (second screen)',
+				icon: shellIconPath(),
+				backgroundColor: '#000000',
+				webPreferences: {
+					preload: path.join(__dirname, 'preload.js'),
+					contextIsolation: true,
+					sandbox: true,
+					nodeIntegration: false,
+					webSecurity: true,
+					spellcheck: false,
+					backgroundThrottling: false
+				}
+			});
+			extra.on('page-title-updated', (event) => event.preventDefault());
+			// The extra window has no quit gate: closing it must leave the main window and audio running.
+			const persist = (): void => {
+				if (extra.isDestroyed()) return;
+				saveGeometry(SECOND_SCREEN_WINDOW_LABEL, extra.getBounds());
+			};
+			extra.on('moved', persist);
+			extra.on('resized', persist);
+			extra.on('close', persist);
+			extra.on('closed', onClosed);
+			const contents = extra.webContents;
+			installEditContextMenu(contents);
+			const guardNavigation = (event: { preventDefault: () => void }, next: string): void => {
+				const action = classifyMainFrameNavigation(next);
+				if (action === 'allow') return;
+				event.preventDefault();
+				appendShellLog('WARN', `refused second-screen navigation to ${next}`);
+				if (action === 'open-external') void shell.openExternal(next);
+			};
+			contents.on('will-navigate', (event, next) => guardNavigation(event, next));
+			contents.on('will-redirect', (event, next) => guardNavigation(event, next));
+			contents.setWindowOpenHandler(({ url: next }) => {
+				if (classifyMainFrameNavigation(next) === 'open-external') void shell.openExternal(next);
+				return { action: 'deny' };
+			});
+			extra.loadURL(url).catch((error: unknown) => {
+				appendShellLog('webview', `second-screen load settled early: ${String(error)}`);
+			});
+			return {
+				focus: () => {
+					if (!extra.isDestroyed()) {
+						extra.show();
+						extra.focus();
+					}
+				},
+				close: () => {
+					if (!extra.isDestroyed()) extra.close();
+				},
+				isDestroyed: () => extra.isDestroyed()
+			};
+		},
+		loadGeometry: (label) => {
+			try {
+				return parseWindowLabelsState(fs.readFileSync(windowLabelsFile, 'utf8'))[label] ?? null;
+			} catch {
+				return null;
+			}
+		},
+		saveGeometry
+	});
 	let savedEngineChoice: PageInit['audioEngineChoice'] = null;
 	try {
 		savedEngineChoice = readAudioEngineChoice(engineChoiceFile);
@@ -430,6 +537,11 @@ function main(): void {
 		if (!trusted(event)) return refuse();
 		return side().importBrowserLogins();
 	});
+	ipcMain.handle('opendj:window', (event, action: unknown, label: unknown) => {
+		if (!trusted(event)) return refuse();
+		const parsed = parseWindowIpcArgs(action, label);
+		secondScreen.control(parsed.action, parsed.label);
+	});
 
 	void app.whenReady().then(async () => {
 		installSignalHandlers();
@@ -446,6 +558,27 @@ function main(): void {
 			Menu.setApplicationMenu(
 				Menu.buildFromTemplate(macMenuTemplate(productName, app.isPackaged) as MenuItemConstructorOptions[])
 			);
+			const menu = Menu.getApplicationMenu();
+			const windowItem = menu?.items.find((item) => {
+				const role = (item.role ?? '').toLowerCase();
+				return role === 'window' || role === 'windowmenu';
+			});
+			if (windowItem?.submenu !== undefined) {
+				windowItem.submenu.append(new MenuItem({ type: 'separator' }));
+				windowItem.submenu.append(
+					new MenuItem({
+						label: SECOND_SCREEN_MENU_LABEL,
+						accelerator: SECOND_SCREEN_ACCELERATOR,
+						click: () => {
+							try {
+								secondScreen.control('open', SECOND_SCREEN_WINDOW_LABEL);
+							} catch (error) {
+								appendShellLog('WARN', `second-screen menu: ${String(error)}`);
+							}
+						}
+					})
+				);
+			}
 		}
 
 		// The bootstrap page, served like tauri://localhost was.
@@ -494,6 +627,12 @@ function main(): void {
 						defaultId: 0,
 						cancelId: 1
 					});
+					if (choice.response === 0) {
+						appendShellLog(
+							'INFO',
+							`user chose to stop engine pid ${pid} and start a new one`
+						);
+					}
 					return choice.response === 0;
 				});
 				bootEngine = await startEngine(payload, dataDir, logPath, bootDeps);

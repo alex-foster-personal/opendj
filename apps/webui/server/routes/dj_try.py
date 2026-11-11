@@ -75,6 +75,7 @@ _log = logging.getLogger(__name__)
 #: The candidate fields the try-er contract ((private path) section 2) promises.
 CANDIDATE_FIELDS: tuple[str, ...] = (
     "id",
+    "energy",
     "plan",
     "plan_sha256",
     "style",
@@ -126,6 +127,7 @@ class CandidateOut(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     id: str
+    energy: dict[str, Any]
     plan: dict[str, Any]
     plan_sha256: str
     style: str

@@ -175,8 +175,8 @@
 		void runPerformanceCommandFromUi({ type: 'headphone_alignment_mode', value });
 	}
 
-	function refreshHeadphoneOutputs(): void {
-		void runPerformanceCommandFromUi({ type: 'headphone_outputs_refresh' });
+	function refreshHeadphoneOutputs(): ReturnType<typeof runPerformanceCommandFromUi> {
+		return runPerformanceCommandFromUi({ type: 'headphone_outputs_refresh' });
 	}
 
 	function acquireHeadphoneOutput(): void {

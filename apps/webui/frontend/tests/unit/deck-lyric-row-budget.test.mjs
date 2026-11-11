@@ -17,6 +17,17 @@ test('deckLyricRowBudget gives two lyric rows only when the pads keep their mini
 	assert.equal(deckLyricRowBudget(400), 2);
 });
 
+test('[if] spare height below a tall pad bank cannot fit 34px [then] budget stays one row', async () => {
+	const { deckLyricRowBudget, LYRIC_TWO_ROW_PX } = await loadTypeScriptModule(MOD);
+	assert.equal(deckLyricRowBudget(100, 80), 1, 'only 20px spare, not a two-row strip');
+	assert.equal(deckLyricRowBudget(80 + LYRIC_TWO_ROW_PX, 80), 2, '34px spare under measured pads');
+});
+
+test('[if] cue-flex height can spare 34px under 60px pads [then] budget is two rows', async () => {
+	const { deckLyricRowBudget, PAD_BANK_MIN_PX, LYRIC_TWO_ROW_PX } = await loadTypeScriptModule(MOD);
+	assert.equal(deckLyricRowBudget(PAD_BANK_MIN_PX + LYRIC_TWO_ROW_PX), 2);
+});
+
 test('deckLyricStripPx sizes the strip for one or two rows', async () => {
 	const { deckLyricStripPx, LYRIC_ONE_ROW_PX, LYRIC_TWO_ROW_PX } = await loadTypeScriptModule(MOD);
 	assert.equal(deckLyricStripPx(2), LYRIC_TWO_ROW_PX);

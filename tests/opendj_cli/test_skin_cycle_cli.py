@@ -110,3 +110,8 @@ def test_layout_preset_values_match_typescript_catalog() -> None:
     perf = tuple(re.findall(r"'([^']+)'", perf_m.group(1)))
     lib = tuple(re.findall(r"'([^']+)'", lib_m.group(1)))
     assert ("auto", *perf, *lib) == LAYOUT_PRESET_VALUES
+
+
+def test_set_skin_accepts_the_blue_palette() -> None:
+    """[if] set_skin rejects the classic blue palette (issue #10253) [then] broken."""
+    assert parse_invocation(["set_skin", "default", "blue", "auto"]).command["wave_palette"] == "blue"

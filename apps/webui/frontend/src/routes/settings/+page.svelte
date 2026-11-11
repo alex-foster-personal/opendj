@@ -11,10 +11,21 @@
 	import { catalogLinkSettings } from '$lib/settings/catalog';
 	import ConfiguredMusicFolders from '$lib/components/settings/ConfiguredMusicFolders.svelte';
 	import { openSettings } from '$lib/settings/hotkeys';
-	import { pushToast } from '$lib/stores.svelte';
 	import OpenInBrowserAction from '$lib/components/settings/OpenInBrowserAction.svelte';
+	import {
+		isRunButtonActionPending,
+		runButtonAction,
+		runButtonActionGate
+	} from '$lib/ui/run-button-action';
 
 	let settings = $state<SettingsOut | null>(null);
+	let setupReopenAction = $state<string | null>(null);
+	const setupReopenGate = runButtonActionGate(
+		() => setupReopenAction,
+		(value) => {
+			setupReopenAction = value;
+		}
+	);
 	const cloudsyncLinks = catalogLinkSettings('cloudsync');
 
 	/** Why the setup wizard is unreachable from here, or null when it is not.
@@ -25,16 +36,26 @@
 	/** One shared entry point with the Cmd+, overlay and the /admin Setup tab
 	 * ($lib/setup/run-setup), so three doors into the wizard cannot drift. */
 	async function reopenSetup(): Promise<void> {
-		const failure = await runSetup(goto);
-		if (failure !== null) pushToast(`Could not reopen setup: ${failure}`, 'error');
+		await runButtonAction(
+			setupReopenGate,
+			'reopen-setup',
+			async () => {
+				const failure = await runSetup(goto);
+				if (failure !== null) throw new Error(failure);
+			},
+			{ toastMessage: (exc) => `Could not reopen setup: ${exc}` }
+		);
 	}
 
 	async function load(): Promise<void> {
-		try {
-			settings = await getSettings();
-		} catch (exc) {
-			pushToast(`Failed to load settings: ${exc}`, 'error');
-		}
+		await runButtonAction(
+			setupReopenGate,
+			'load-settings',
+			async () => {
+				settings = await getSettings();
+			},
+			{ toastMessage: (exc) => `Failed to load settings: ${exc}` }
+		);
 	}
 
 	function displayValue(value: unknown): string {
@@ -68,8 +89,9 @@
 	</p>
 	<button
 		type="button"
-		onclick={reopenSetup}
-		disabled={setupBlocked !== null}
+		onclick={() => void reopenSetup()}
+		disabled={setupBlocked !== null || isRunButtonActionPending(setupReopenGate)}
+		aria-busy={isRunButtonActionPending(setupReopenGate, 'reopen-setup')}
 		title={setupBlocked ?? RUN_SETUP_TITLE}
 	>
 		{RUN_SETUP_LABEL}

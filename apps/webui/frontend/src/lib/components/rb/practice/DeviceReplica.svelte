@@ -4,17 +4,25 @@
 	 * no vendor marks, never a photo. Every control dispatches through the same action switch
 	 * the real controller's MIDI drives (handleMidiAction), resolved from the same DeviceMap.
 	 */
+	import {
+		initialPadLayers,
+		selectPadLayer,
+		queryPadLayers,
+		type PadLayerCommand
+	} from './practice-pad-layers';
 	import type { DeviceMap } from '$lib/rb/midi/midi-types';
 	import { onDestroy } from 'svelte';
 	import { handleMidiAction } from '$lib/rb/midi/action-glue.svelte';
 	import { midiState, setDeviceShiftHeld } from '$lib/rb/midi/midi-state.svelte';
 	import {
 		controlTitle,
+		createPracticeHolds,
 		dispatchPractice,
 		resolveControl,
 		resolveLayout,
 		type PracticeSinks,
 		type PanelLayout,
+		type PadLayerSelection,
 		type ResolvedControl
 	} from './practice-bindings';
 
@@ -30,7 +38,44 @@
 
 	let { layout, map, target = null, onHit, disablePointerEvents = false }: Props = $props();
 
-	const resolved = $derived(resolveLayout(map, layout));
+	let selection = $state<PadLayerSelection>({});
+	$effect.pre(() => {
+		selection = initialPadLayers(layout);
+	});
+	const resolved = $derived(resolveLayout(map, layout, midiState.shiftHeld, selection));
+
+	export function queryLayers() {
+		return queryPadLayers(layout, map, selection, midiState.shiftHeld);
+	}
+
+	export function dispatchLayer(cmd: PadLayerCommand) {
+		if (disablePointerEvents) throw new Error('Pad layer selection is disabled for this replica');
+		const next = selectPadLayer(layout, selection, cmd);
+		// Resolve first so an unknown map wire fails before the state is changed.
+		resolveLayout(map, layout, midiState.shiftHeld, next);
+		selection = next;
+		return queryLayers();
+	}
+
+	function _select(r: ResolvedControl): void {
+		const c = r.control;
+		if (c.pad_layer_group === undefined || c.pad_layer_select === undefined)
+			throw new Error(`missing pad selector metadata on ${c.id}`);
+		dispatchLayer({
+			type: 'select',
+			group: c.pad_layer_group,
+			mode: midiState.shiftHeld ? c.pad_layer_select.shift : c.pad_layer_select.base
+		});
+		_reach(r);
+	}
+
+	function _selectorTitle(r: ResolvedControl): string {
+		const select = r.control.pad_layer_select;
+		const group = layout.pad_layer_groups?.[r.control.pad_layer_group ?? ''];
+		const mode = midiState.shiftHeld ? select?.shift : select?.base;
+		const label = group?.modes.find((m) => m.id === mode)?.label;
+		return `${controlTitle(r)}. Inspect ${label} pad wires; inspection only`;
+	}
 
 	function _box(r: ResolvedControl): string {
 		const c = r.control;
@@ -61,33 +106,36 @@
 		r: ResolvedControl,
 		input: { pressed: boolean } | { value01: number } | { delta: number }
 	): void {
+		if (disablePointerEvents) return;
 		// Resolve at press time: a held SHIFT changes what the control sends, as on hardware.
-		dispatchPractice(resolveControl(map, r.control, midiState.shiftHeld), input, SINKS);
+		dispatchPractice(
+			resolveControl(map, r.control, midiState.shiftHeld, selection, layout),
+			input,
+			SINKS
+		);
 	}
 
 	// Buttons held right now, by control id, with the layer each was pressed on, so the release
 	// goes to the same action even if SHIFT changed in between, and fires exactly once.
-	const _held = new Map<string, ResolvedControl>();
+	const _held = createPracticeHolds(SINKS);
 
 	function _press(r: ResolvedControl, e: PointerEvent): void {
+		if (disablePointerEvents) return;
+		const live = resolveControl(map, r.control, midiState.shiftHeld, selection, layout);
+		if (live.kind !== 'bound') return;
 		(e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
 		_reach(r);
-		const live = resolveControl(map, r.control, midiState.shiftHeld);
-		_held.set(r.control.id, live);
-		dispatchPractice(live, { pressed: true }, SINKS);
+		_held.press(live);
 	}
 
 	/** pointerup, pointercancel and lostpointercapture all land here; only the first releases. */
 	function _release(r: ResolvedControl): void {
-		const live = _held.get(r.control.id);
-		if (live === undefined) return;
-		_held.delete(r.control.id);
-		dispatchPractice(live, { pressed: false }, SINKS);
+		_held.release(r.control.id);
 	}
 
 	// Leaving the page must not strand a held SHIFT in the global modifier state WebMIDI reads.
 	onDestroy(() => {
-		for (const live of [..._held.values()]) _release(live);
+		_held.releaseAll();
 	});
 
 	function _isContinuous(r: ResolvedControl): boolean {
@@ -99,6 +147,27 @@
 	}
 </script>
 
+{#if layout.pad_layer_groups !== undefined}
+	<div class="pad-layers" hidden={disablePointerEvents}>
+		{#each Object.entries(layout.pad_layer_groups) as [id, group] (id)}
+			<label>
+				{group.label}
+				<select
+					aria-label={group.label}
+					value={selection[id]}
+					disabled={disablePointerEvents}
+					onchange={(e) =>
+						dispatchLayer({ type: 'select', group: id, mode: e.currentTarget.value })}
+				>
+					{#each group.modes as mode (mode.id)}
+						<option value={mode.id}>{mode.label}</option>
+					{/each}
+				</select>
+			</label>
+		{/each}
+		<span>Inspect pad wires. Unsupported actions remain unavailable.</span>
+	</div>
+{/if}
 <div
 	class="replica"
 	class:replica-no-input={disablePointerEvents}
@@ -114,8 +183,24 @@
 			style={_box(r)}
 			title={controlTitle(r)}
 			data-control-id={r.control.id}
+			data-pad-layer={r.control.pad_layer_group ? selection[r.control.pad_layer_group] : undefined}
+			data-wire={r.wire ? `ch ${r.wire.ch} ${r.wire.kind} ${r.wire.id}` : 'unavailable'}
+			data-status={r.kind}
 		>
-			{#if r.kind !== 'bound'}
+			{#if r.control.pad_layer_select !== undefined}
+				<button
+					type="button"
+					class="press"
+					disabled={disablePointerEvents}
+					title={_selectorTitle(r)}
+					aria-label={_selectorTitle(r)}
+					aria-pressed={selection[r.control.pad_layer_group ?? ''] ===
+						(midiState.shiftHeld
+							? r.control.pad_layer_select.shift
+							: r.control.pad_layer_select.base)}
+					onclick={() => _select(r)}>{r.control.label}</button
+				>
+			{:else if r.kind !== 'bound' && r.control.pad_layers === undefined}
 				<span class="lbl" aria-disabled="true">{r.control.label}</span>
 			{:else if _isContinuous(r)}
 				<input
@@ -151,10 +236,13 @@
 				>
 				<span class="lbl">{r.control.label}</span>
 			{:else}
+				<!-- Keep pad capture targets mounted across layer changes so held bindings can release. -->
 				<button
 					type="button"
 					class="press"
 					title={controlTitle(r)}
+					aria-disabled={r.kind !== 'bound'}
+					tabindex={r.kind === 'bound' ? 0 : -1}
 					onpointerdown={(e) => _press(r, e)}
 					onpointerup={() => _release(r)}
 					onpointercancel={() => _release(r)}
@@ -166,6 +254,31 @@
 </div>
 
 <style>
+	.pad-layers {
+		display: flex;
+		flex-wrap: wrap;
+		align-items: center;
+		gap: 12px;
+		margin-bottom: 12px;
+		font-size: 12px;
+	}
+	.pad-layers[hidden] {
+		display: none;
+	}
+	.pad-layers label {
+		display: flex;
+		align-items: center;
+		gap: 8px;
+	}
+	.pad-layers select {
+		color: #e8ebf0;
+		background: #2b2f36;
+		padding: 6px;
+		border: 1px solid #7a8291;
+	}
+	.pad-layers span {
+		color: #a9b0bc;
+	}
 	.replica-no-input,
 	.replica-no-input * {
 		pointer-events: none;

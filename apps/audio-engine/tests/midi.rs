@@ -227,6 +227,7 @@ const PAGE_ONLY_TYPES: &[&str] = &[
     "headphone_mix",
     "headphone_level",
     "master_cue",
+    "color_fx",
 ];
 
 #[test]
@@ -236,7 +237,7 @@ fn a_map_with_every_page_action_type_installs_and_page_only_ones_are_forwarded()
     let bindings = fixture["bindings"].as_array().unwrap();
     let types: std::collections::BTreeSet<&str> =
         bindings.iter().map(|b| b["action"]["type"].as_str().unwrap()).collect();
-    assert_eq!(types.len(), 27, "the fixture carries every page action type once: {types:?}");
+    assert_eq!(types.len(), 28, "the fixture carries every page action type once: {types:?}");
     for t in PAGE_ONLY_TYPES {
         assert!(types.contains(t), "fixture is missing page-only type {t}");
     }

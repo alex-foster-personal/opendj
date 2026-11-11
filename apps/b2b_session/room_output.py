@@ -21,11 +21,11 @@ them, and two laptops with speakers off give a silent room.
 from __future__ import annotations
 
 import json
-import os
-import tempfile
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, Literal
+
+from .state_json import write_json_atomic
 
 SPEAKERS_FILENAME = "b2b-speakers.json"
 #: With no stored choice the laptop plays to its speakers, as it always did before the switch.
@@ -70,17 +70,7 @@ def write_speakers(path: Path, speakers_on: bool) -> None:
     if not isinstance(speakers_on, bool):
         raise TypeError("speakers_on must be a bool")
     record = {"speakers_on": speakers_on, "saved_at": datetime.now(UTC).isoformat()}
-    path.parent.mkdir(parents=True, exist_ok=True)
-    fd, temp_name = tempfile.mkstemp(prefix=f".{path.name}.", suffix=".tmp", dir=path.parent)
-    try:
-        with os.fdopen(fd, "w", encoding="utf-8") as handle:
-            json.dump(record, handle)
-            handle.flush()
-            os.fsync(handle.fileno())
-        os.replace(temp_name, path)
-    except BaseException:
-        Path(temp_name).unlink(missing_ok=True)
-        raise
+    write_json_atomic(path, record)
 
 
 def clear_speakers(path: Path) -> bool:

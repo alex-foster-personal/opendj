@@ -185,16 +185,25 @@ class InternetService:
             self.pairing = pairing
             self._start_channel(relay_url())
 
-    def forget(self) -> dict[str, Any]:
+    def _detach_channel_and_invite(self) -> tuple[DoorChannel | None, InternetInvite | None]:
         with self._lock:
             channel, self._channel = self._channel, None
             invite, self._invite = self._invite, None
-            self.pairing = None
-            self.path.unlink(missing_ok=True)
+        return channel, invite
+
+    @staticmethod
+    def _stop_channel_and_invite(channel: DoorChannel | None, invite: InternetInvite | None) -> None:
         if channel is not None:
             channel.stop()
         if invite is not None:
             invite.cancel()
+
+    def forget(self) -> dict[str, Any]:
+        channel, invite = self._detach_channel_and_invite()
+        with self._lock:
+            self.pairing = None
+            self.path.unlink(missing_ok=True)
+        self._stop_channel_and_invite(channel, invite)
         return self.status()
 
     # ------------------------------------------------------------ the channel
@@ -259,10 +268,5 @@ class InternetService:
                 self.restore_error = f"{exc.code}: {exc}"
 
     def shutdown(self) -> None:
-        with self._lock:
-            channel, self._channel = self._channel, None
-            invite, self._invite = self._invite, None
-        if channel is not None:
-            channel.stop()
-        if invite is not None:
-            invite.cancel()
+        channel, invite = self._detach_channel_and_invite()
+        self._stop_channel_and_invite(channel, invite)

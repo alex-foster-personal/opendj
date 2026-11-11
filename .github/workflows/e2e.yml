@@ -1063,6 +1063,7 @@ jobs:
       - name: Setup uv
         uses: astral-sh/setup-uv@d0cc045d04ccac9d8b7881df0226f9e82c39688e # v6
         with:
+          version: "0.13.7"
           # Hosted-only, like the pnpm cache (tests/scripts/test_ci_pnpm_cache_self_hosted.py).
           # On a self-hosted host the persistent ~/.cache/uv IS the cache, and with the
           # action's cache on, its post step runs `uv cache prune --ci` against that
@@ -1994,6 +1995,7 @@ jobs:
       - name: Setup uv
         uses: astral-sh/setup-uv@d0d8abe699bfb85fec6de9f7adb5ae17292296ff # v6
         with:
+          version: "0.13.7"
           # Hosted-only, like the pnpm cache (tests/scripts/test_ci_pnpm_cache_self_hosted.py).
           # On a self-hosted host the persistent ~/.cache/uv IS the cache, and with the
           # action's cache on, its post step runs `uv cache prune --ci` against that
@@ -2307,6 +2309,7 @@ jobs:
       - name: Setup uv
         uses: astral-sh/setup-uv@d0cc045d04ccac9d8b7881df0226f9e82c39688e # v6
         with:
+          version: "0.13.7"
           # Hosted-only, like the pnpm cache (tests/scripts/test_ci_pnpm_cache_self_hosted.py).
           # On a self-hosted host the persistent ~/.cache/uv IS the cache, and with the
           # action's cache on, its post step runs `uv cache prune --ci` against that

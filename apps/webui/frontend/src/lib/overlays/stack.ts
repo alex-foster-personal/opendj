@@ -15,5 +15,6 @@ export const OVERLAY_Z = {
 	signIn: 390,
 	settings: 400,
 	hotkeys: 410,
+	edgeSampler: 345,
 	brandLaunch: 1200
 } as const;

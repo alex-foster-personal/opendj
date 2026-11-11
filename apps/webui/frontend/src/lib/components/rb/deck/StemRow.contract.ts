@@ -219,6 +219,186 @@ export const contracts = {
 			await expect(args.onLoad).not.toHaveBeenCalled();
 		}
 	},
+	/** Probing for stem availability: busy status, chips disabled, no load action. */
+	Probing: {
+		args: {
+			deck: deck(1, {
+				status: 'loading',
+				available_controls: [],
+				load: { phase: 'probing', progress: null, reason: null }
+			}),
+			pending: true,
+			onMute: fn(),
+			onSolo: fn(),
+			onLoad: fn()
+		} satisfies Args,
+		play: async ({ canvasElement, args }: Ctx) => {
+			const canvas = within(canvasElement);
+			const tip = 'Checking whether this track has stems. The deck already plays; the stem buttons switch on when this finishes.';
+			const group = canvas.getByRole('group', { name: 'stem controls deck 1' });
+			await expect(group).toHaveAttribute('data-stems-status', 'loading');
+			await expect(group).toHaveAttribute('data-stems-state', 'probing');
+			await expect(group).toHaveAttribute('title', tip);
+			const status = canvas.getByRole('status');
+			await expect(status).toHaveClass('status', 'busy');
+			await expect(status).toHaveTextContent('CHECKING STEMS');
+			await expect(status).toHaveAttribute('data-stems-state', 'probing');
+			await expect(status).toHaveAttribute('title', tip);
+			await expect(status).not.toHaveAttribute('data-stems-action');
+			for (const chip of chips(canvasElement)) {
+				await expect(chip).toBeDisabled();
+				await expect(chip).toHaveAttribute('aria-busy', 'true');
+			}
+			await expect(args.onLoad).not.toHaveBeenCalled();
+			await expect(canvasElement.querySelector('button[data-performance-control="stem-load"]')).toBeNull();
+		}
+	},
+	/** Local stem files downloading: busy status, chips disabled, no load action. */
+	Downloading: {
+		args: {
+			deck: deck(2, {
+				status: 'loading',
+				available_controls: [],
+				load: { phase: 'downloading', progress: null, reason: null }
+			}),
+			pending: true,
+			onMute: fn(),
+			onSolo: fn(),
+			onLoad: fn()
+		} satisfies Args,
+		play: async ({ canvasElement, args }: Ctx) => {
+			const canvas = within(canvasElement);
+			const tip = 'Reading the stem files from this machine. The deck already plays; the stem buttons switch on when this finishes.';
+			const group = canvas.getByRole('group', { name: 'stem controls deck 2' });
+			await expect(group).toHaveAttribute('data-stems-status', 'loading');
+			await expect(group).toHaveAttribute('data-stems-state', 'downloading');
+			await expect(group).toHaveAttribute('title', tip);
+			const status = canvas.getByRole('status');
+			await expect(status).toHaveClass('status', 'busy');
+			await expect(status).toHaveTextContent('LOADING STEMS');
+			await expect(status).toHaveAttribute('data-stems-state', 'downloading');
+			await expect(status).toHaveAttribute('title', tip);
+			await expect(status).not.toHaveAttribute('data-stems-action');
+			for (const chip of chips(canvasElement)) {
+				await expect(chip).toBeDisabled();
+				await expect(chip).toHaveAttribute('aria-busy', 'true');
+			}
+			await expect(args.onLoad).not.toHaveBeenCalled();
+			await expect(canvasElement.querySelector('button[data-performance-control="stem-load"]')).toBeNull();
+		}
+	},
+	/** Stem audio decoding: busy status, chips disabled, no load action. */
+	Decoding: {
+		args: {
+			deck: deck(3, {
+				status: 'loading',
+				available_controls: [],
+				load: { phase: 'decoding', progress: null, reason: null }
+			}),
+			pending: true,
+			onMute: fn(),
+			onSolo: fn(),
+			onLoad: fn()
+		} satisfies Args,
+		play: async ({ canvasElement, args }: Ctx) => {
+			const canvas = within(canvasElement);
+			const tip = 'Decoding the stem audio. The deck already plays; the stem buttons switch on when this finishes.';
+			const group = canvas.getByRole('group', { name: 'stem controls deck 3' });
+			await expect(group).toHaveAttribute('data-stems-status', 'loading');
+			await expect(group).toHaveAttribute('data-stems-state', 'decoding');
+			await expect(group).toHaveAttribute('title', tip);
+			const status = canvas.getByRole('status');
+			await expect(status).toHaveClass('status', 'busy');
+			await expect(status).toHaveTextContent('DECODING STEMS');
+			await expect(status).toHaveAttribute('data-stems-state', 'decoding');
+			await expect(status).toHaveAttribute('title', tip);
+			await expect(status).not.toHaveAttribute('data-stems-action');
+			for (const chip of chips(canvasElement)) {
+				await expect(chip).toBeDisabled();
+				await expect(chip).toHaveAttribute('aria-busy', 'true');
+			}
+			await expect(args.onLoad).not.toHaveBeenCalled();
+			await expect(canvasElement.querySelector('button[data-performance-control="stem-load"]')).toBeNull();
+		}
+	},
+	/** Load held back until the user opts in: load_now action, chips idle but disabled. */
+	Waiting: {
+		args: {
+			deck: deck(4, {
+				status: 'loading',
+				available_controls: [],
+				load: {
+					phase: 'waiting',
+					progress: null,
+					reason: 'this machine is under memory pressure while a deck is playing'
+				}
+			}),
+			pending: false,
+			onMute: fn(),
+			onSolo: fn(),
+			onLoad: fn()
+		} satisfies Args,
+		play: async ({ canvasElement, args }: Ctx) => {
+			const canvas = within(canvasElement);
+			const tip =
+				'Stems are held back: this machine is under memory pressure while a deck is playing. Click to load them now.';
+			const group = canvas.getByRole('group', { name: 'stem controls deck 4' });
+			await expect(group).toHaveAttribute('data-stems-status', 'loading');
+			await expect(group).toHaveAttribute('data-stems-state', 'waiting');
+			await expect(group).toHaveAttribute('title', tip);
+			const loadNow = canvas.getByRole('button', { name: `${tip} Deck 4.` });
+			await expect(loadNow).toHaveClass('status', 'action');
+			await expect(loadNow).not.toHaveClass('busy', 'failed');
+			await expect(loadNow).toHaveTextContent('STEMS WAITING - LOAD NOW');
+			await expect(loadNow).toHaveAttribute('data-stems-state', 'waiting');
+			await expect(loadNow).toHaveAttribute('data-stems-action', 'load_now');
+			await expect(loadNow).toHaveAttribute('data-performance-control', 'stem-load');
+			await expect(loadNow).toHaveAttribute('data-testid', 'stem-status-deck-4');
+			await expect(loadNow).toHaveAttribute('title', tip);
+			await expect(loadNow).toHaveAttribute('aria-label', `${tip} Deck 4.`);
+			await expect(loadNow).toBeEnabled();
+			await userEvent.click(loadNow);
+			await expect(args.onLoad).toHaveBeenCalledTimes(1);
+			for (const chip of chips(canvasElement)) {
+				await expect(chip).toBeDisabled();
+				await expect(chip).toHaveAttribute('aria-busy', 'false');
+			}
+		}
+	},
+	/** Decoded stems taking over playback: busy status, chips disabled, no load action. */
+	Switching: {
+		args: {
+			deck: deck(1, {
+				status: 'loading',
+				available_controls: [],
+				load: { phase: 'switching', progress: null, reason: null }
+			}),
+			pending: true,
+			onMute: fn(),
+			onSolo: fn(),
+			onLoad: fn()
+		} satisfies Args,
+		play: async ({ canvasElement, args }: Ctx) => {
+			const canvas = within(canvasElement);
+			const tip = 'The stems are decoded and are taking over the playing deck without stopping it.';
+			const group = canvas.getByRole('group', { name: 'stem controls deck 1' });
+			await expect(group).toHaveAttribute('data-stems-status', 'loading');
+			await expect(group).toHaveAttribute('data-stems-state', 'switching');
+			await expect(group).toHaveAttribute('title', tip);
+			const status = canvas.getByRole('status');
+			await expect(status).toHaveClass('status', 'busy');
+			await expect(status).toHaveTextContent('SWITCHING TO STEMS');
+			await expect(status).toHaveAttribute('data-stems-state', 'switching');
+			await expect(status).toHaveAttribute('title', tip);
+			await expect(status).not.toHaveAttribute('data-stems-action');
+			for (const chip of chips(canvasElement)) {
+				await expect(chip).toBeDisabled();
+				await expect(chip).toHaveAttribute('aria-busy', 'true');
+			}
+			await expect(args.onLoad).not.toHaveBeenCalled();
+			await expect(canvasElement.querySelector('button[data-performance-control="stem-load"]')).toBeNull();
+		}
+	},
 	/** NO STEMS with no separate action wired: the status label only, no button (what the mixer strip shows). */
 	NoStemsNoAction: {
 		args: { deck: noStems(1), pending: false, onMute: fn(), onSolo: fn(), onLoad: fn(), separate: null, onSeparate: fn() } satisfies Args,

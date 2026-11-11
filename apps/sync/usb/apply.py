@@ -30,7 +30,12 @@ Exit codes
 from __future__ import annotations
 
 import argparse
+import concurrent.futures as _cf
+import os
 import sys
+import time
+from collections.abc import Callable
+from dataclasses import dataclass, field
 from pathlib import Path
 
 from rich.console import Console
@@ -44,6 +49,7 @@ from rich.progress import (
 from rich.table import Table
 
 from apps.shared import paths as _paths
+from apps.shared.hashing import sha256_file
 from apps.shared.rekordbox_writeback import require_writeback_enabled
 from apps.sync.usb import profile as profile_mod
 from apps.sync.usb.copy import (
@@ -61,6 +67,7 @@ from apps.sync.usb.diff import (
     plan_summary,
 )
 from apps.sync.usb.marker import read_marker, resolve_drive_uuid, write_marker
+from apps.sync.usb.plan import ParallelCopyPlan, StickJob
 from apps.sync.usb.playlist_writer import write_m3u8s
 from apps.sync.usb.preflight import ALL_CHECKS, preflight
 from apps.sync.usb.reversal import ReversalLog, verify_syntax
@@ -227,6 +234,128 @@ def _run_plan(
             bar.advance(t)
     reversal.close(summary=f"{ok} ok / {fail} failed")
     return ok, fail, reversal, touched_stable_ids
+
+
+# ------------------------------------------------- parallel playlist copy
+
+
+@dataclass(slots=True)
+class StickApplyResult:
+    """What one stick's copy job did. ``refused`` is set when it never started."""
+
+    stick: str
+    started: bool = False
+    refused: str | None = None
+    results: list[CopyResult] = field(default_factory=list)
+    seconds: float = 0.0
+
+    @property
+    def ok(self) -> bool:
+        return self.started and self.refused is None and all(r.ok for r in self.results)
+
+
+@dataclass(slots=True)
+class ParallelApplyResult:
+    playlist: str
+    sticks: dict[str, StickApplyResult]
+    wall_seconds: float
+
+    @property
+    def ok(self) -> bool:
+        return bool(self.sticks) and all(s.ok for s in self.sticks.values())
+
+
+def target_unwritable_reason(root: Path) -> str | None:
+    """Return why ``root`` cannot take a copy, or None when it can.
+
+    A target that cannot even be inspected (for example under a directory the
+    user cannot traverse) is refused rather than raising, so it never aborts
+    the other sticks.
+    """
+    try:
+        if not root.exists():
+            return "target does not exist"
+        if not root.is_dir():
+            return "target is not a directory"
+        if not os.access(root, os.W_OK | os.X_OK):
+            return "target is not writable"
+    except OSError as exc:
+        return f"target cannot be inspected: {type(exc).__name__}"
+    return None
+
+
+def _skip_existing(op, profile) -> CopyResult | None:
+    """Honour ``conflict_policy=skip``: never overwrite a file already on the stick.
+
+    Returns None when the copy should go ahead. An existing destination that
+    already holds the library bytes counts as copied; any other existing file
+    is left untouched and fails its op, so the stick is not marked OK.
+    """
+    if getattr(profile, "conflict_policy", None) != "skip" or not os.path.lexists(op.dst):
+        return None
+    try:
+        actual = sha256_file(op.dst) if op.dst.is_file() else ""
+        size = op.dst.stat().st_size if actual else 0
+    except OSError as exc:
+        return CopyResult(op=op, ok=False, actual_hash="", dst_size=0, error=f"skip check failed: {type(exc).__name__}")
+    if actual and op.expected_hash and actual == op.expected_hash:
+        return CopyResult(op=op, ok=True, actual_hash=actual, dst_size=size)
+    return CopyResult(
+        op=op,
+        ok=False,
+        actual_hash=actual,
+        dst_size=size,
+        error="destination exists; not overwritten (conflict_policy=skip)",
+    )
+
+
+def _run_stick_job(job: StickJob, profile, copy: Callable[..., CopyResult]) -> StickApplyResult:
+    out = StickApplyResult(stick=job.stick, started=True)
+    started = time.monotonic()
+    for op in job.ops:
+        try:
+            skipped = _skip_existing(op, profile)
+            out.results.append(skipped if skipped is not None else copy(op, profile))
+        except Exception as exc:  # noqa: BLE001 - one bad op fails its stick, never the others
+            out.results.append(
+                CopyResult(op=op, ok=False, actual_hash="", dst_size=0, error=f"{type(exc).__name__}: {exc}")
+            )
+    out.seconds = time.monotonic() - started
+    return out
+
+
+def apply_parallel_copy(
+    plan: ParallelCopyPlan,
+    profile,
+    *,
+    copy: Callable[..., CopyResult] = copy_one,
+    unwritable: Callable[[Path], str | None] = target_unwritable_reason,
+    max_workers: int | None = None,
+) -> ParallelApplyResult:
+    """Run each stick's job on its own thread and join them.
+
+    Every target is checked before any job starts; an unwritable target is
+    refused and its job never starts, while the other sticks still copy.
+    The jobs share nothing, so one slow or failing stick does not hold or
+    fail another. ``copy`` is the single-file seam (:func:`copy_one` by default).
+    """
+    started = time.monotonic()
+    results: dict[str, StickApplyResult] = {}
+    runnable: list[StickJob] = []
+    for job in plan.jobs:
+        reason = unwritable(job.root)
+        if reason is not None:
+            results[job.stick] = StickApplyResult(stick=job.stick, refused=reason)
+        else:
+            runnable.append(job)
+    if runnable:
+        workers = max_workers or len(runnable)
+        with _cf.ThreadPoolExecutor(max_workers=workers, thread_name_prefix="usb-stick") as pool:
+            futures = {job.stick: pool.submit(_run_stick_job, job, profile, copy) for job in runnable}
+            for stick, fut in futures.items():
+                results[stick] = fut.result()
+    ordered = {job.stick: results[job.stick] for job in plan.jobs}
+    return ParallelApplyResult(playlist=plan.playlist, sticks=ordered, wall_seconds=time.monotonic() - started)
 
 
 def main(argv: list[str] | None = None) -> int:

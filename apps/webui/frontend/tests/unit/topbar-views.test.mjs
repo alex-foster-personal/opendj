@@ -665,6 +665,7 @@ describe('TOPVIEW-05: focused deck and the track record', () => {
 			lyrics_available: true,
 			auto_cues_available: false,
 			stems_available: true,
+			tracklist_hidden: false,
 			loudness: { lufs: -9.2, status: 'ok', reason: null },
 			provenance: {}
 		};
@@ -679,6 +680,7 @@ describe('TOPVIEW-05: focused deck and the track record', () => {
 		assert.equal(by.Loudness, '-9.2 LUFS', 'AGENT-31: integrated loudness');
 		assert.equal(by.Stems, 'yes');
 		assert.equal(by.Artwork, 'no', 'false is a value, not "not set"');
+		assert.equal(by['Hide in tracklists'], 'no', 'NOWP-11487: tracklist_hidden');
 	});
 
 	it('a USB stick track reads its grid provenance off the deck ANLZ, never the library route', () => {

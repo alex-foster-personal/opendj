@@ -6,6 +6,7 @@
     opendj eq 2 low 0.2 --over 4beats
     opendj do "load 1 <stable-id>" then "play 1" and "play 2"
     opendj api GET /api/v1/smartlists
+    opendj [--json] [--lock PATH] density [compact|cosy]
     opendj api POST /api/v1/smartlists --json '{"name":"...","rule":{...}}'
     opendj --list-verbs [--json]
     opendj install-cli [--target ~/.local/bin/opendj]
@@ -42,6 +43,7 @@ from apps.opendj_cli import (
     EXIT_NO_PAGE,
     EXIT_TIMEOUT,
     EXIT_UNCONFIRMED,
+    api_cli,
     status_cli,
 )
 from apps.opendj_cli.animate import ANIMATE_COMMAND, parse_animate_tokens
@@ -110,12 +112,16 @@ _LIGHTING_COMMAND = "lighting"
 _MIDI_COMMAND = "midi"
 _SESSION_COMMAND = "session"
 _REQUESTS_COMMAND = "requests"
+_INGEST_COMMAND = "ingest"
 _WINDOW_COMMAND = "window"
+_REMOTE_COMMAND = "remote"
 _PRACTICE_COMMAND = "practice"
 _PLAYLIST_COMMAND = "playlist"
 _OFFLOAD_COMMAND = "offload"
 _SET_COMMAND = "set"
+_REPLAY_COMMAND = "replay"
 _API_COMMAND = "api"
+_DENSITY_COMMAND = "density"
 _INSTALL_COMMAND = "install-cli"
 _MCP_COMMAND = "mcp"
 _UPDATE_COMMAND = "update"
@@ -744,9 +750,11 @@ _STANDALONE_COMMANDS = frozenset(
         _ARTWORK_COMMAND,
         _SESSION_COMMAND,
         _WINDOW_COMMAND,
+        _REMOTE_COMMAND,
         _PLAYLIST_COMMAND,
         _OFFLOAD_COMMAND,
         _SET_COMMAND,
+        _REPLAY_COMMAND,
         _AUDIO_OUTPUT_HEALTH_COMMAND,
         _AUDIO_SWITCH_OUTPUT_COMMAND,
         _AUDIO_RECONNECT_SPEAKER_COMMAND,
@@ -796,10 +804,18 @@ def _run_standalone(head: str, rest: list[str], args: argparse.Namespace) -> int
         return window_cli.run(
             rest, as_json=args.json, lock=args.lock, timeout_s=args.timeout, settle_s=args.settle
         )
+    if head == _REMOTE_COMMAND:
+        from apps.opendj_cli import remote_cli
+
+        return remote_cli.run(rest, as_json=args.json, lock=args.lock)
     if head == _SET_COMMAND:
         from apps.opendj_cli import set_cli
 
         return set_cli.run(rest, as_json=args.json, lock=args.lock)
+    if head == _REPLAY_COMMAND:
+        from apps.opendj_cli import replay_cli
+
+        return replay_cli.run(rest, as_json=args.json, lock=args.lock)
     if head == _PLAYLIST_COMMAND:
         from apps.opendj_cli import playlist_cli
 
@@ -845,18 +861,33 @@ def _run_practice(tokens: Sequence[str]) -> int | None:
 def _run_early(tokens: Sequence[str]) -> int | None:
     """Subcommands that parse their own flags, tried before the global parser; None = not one of them."""
     for runner in (
+        _run_density,
         _run_client_errors,
         _run_practice,
         _run_lighting,
         _run_midi,
         _run_library,
         _run_requests,
+        _run_ingest,
         _run_now_playing,
     ):
         code = runner(tokens)
         if code is not None:
             return code
     return None
+
+
+def _run_density(tokens: Sequence[str]) -> int | None:
+    """Only dispatch density when it is the command, before parsing its arguments."""
+    position = _command_position(tokens)
+    if position is None or tokens[position] != _DENSITY_COMMAND:
+        return None
+    global_tokens = list(tokens[:position])
+    args = _parser(as_json="--json" in global_tokens).parse_args([*global_tokens, _DENSITY_COMMAND])
+    if args.list_verbs:
+        print_verbs(args.json)
+        return EXIT_CONFIRMED
+    return api_cli.run_density(tokens[position + 1 :], as_json=args.json, lock=args.lock)
 
 
 
@@ -870,6 +901,18 @@ def _run_requests(tokens: Sequence[str]) -> int | None:
     from apps.opendj_cli import requests_cli
 
     return requests_cli.run(rest, as_json=args.json, lock=args.lock)
+
+
+def _run_ingest(tokens: Sequence[str]) -> int | None:
+    """``ingest stage`` carries path flags, so it parses its own argv."""
+    position = _command_position(tokens)
+    if position is None or tokens[position] != _INGEST_COMMAND:
+        return None
+    global_tokens, rest = list(tokens[:position]), list(tokens[position + 1 :])
+    args = _parser(as_json="--json" in global_tokens).parse_args([*global_tokens, _INGEST_COMMAND])
+    from apps.opendj_cli import ingest_cli
+
+    return ingest_cli.run(rest, as_json=args.json, lock=args.lock)
 
 
 def _run_client_errors(tokens: Sequence[str]) -> int | None:

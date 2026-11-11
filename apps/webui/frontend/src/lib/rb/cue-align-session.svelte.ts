@@ -25,7 +25,9 @@ import type {
 	CueAlignProbe
 } from '$lib/player/cue-align.svelte';
 import type { HeadphoneCalibrationProbe } from '$lib/rb/mixer-types';
+import { calibrationProbeDiagnostics } from '$lib/player/cue-latency';
 import { recordHeadphoneFailureDiagnostic } from '$lib/player/headphones';
+import { loadMixerConfig } from '$lib/player/mixer-config';
 import { deckStates, mixerState } from '$lib/player/state.svelte';
 import { engine } from '$lib/rb/audio-engine.svelte';
 
@@ -141,8 +143,7 @@ export async function startCueAlignment(opts: { interactive: boolean }): Promise
 		// evidence. Publish a fresh precondition diagnosis, never measurements
 		// or a failure reason retained from the previous run.
 		calibration.diagnostics = {
-			probe: 'chirp',
-			alternate_probe: 'unavailable',
+			...calibrationProbeDiagnostics(loadMixerConfig().calibration_probe),
 			failure: 'route_or_operation',
 			master_measurements_ms: [],
 			cue_measurements_ms: [],

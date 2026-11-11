@@ -780,7 +780,9 @@ def _synced_grid_view(plan: TransitionPlan) -> TransitionPlan:
 def _incoming_grid_bars(plan: TransitionPlan, base: float, scale: float = 1.0, clock_pitch: float = 1.0) -> float:
     """Incoming grid bars the plan consumes: the playing span from any pre-roll to the end, at the bounded rate."""
     rate = _incoming_rate(plan, base, scale, clock_pitch)
-    return rate * _incoming_playing_bars(plan, min(0.0, _incoming_start(plan) or 0.0), plan.bars)
+    authored = _incoming_play_authored(plan)
+    begin = min(0.0, authored) if authored is not None else min(0.0, _incoming_start(plan) or 0.0)
+    return rate * _incoming_playing_bars(plan, begin, plan.bars)
 
 
 def simulate(
@@ -956,8 +958,9 @@ def _in_bars(
         e.at_bar for e in plan.events if e.kind in ("set", "ramp") and e.deck == plan.in_.deck and e.name == "tempo"
     ]
     first_tempo = min(tempo_bars, default=math.inf)
+    shift = _launch_grid_shift(plan)
     consumed = 0.0
-    bars = [plan.in_.start_bar]
+    bars = [plan.in_.start_bar + shift]
     for sample in range(last_bar * _BAR_SAMPLES):
         at = (sample + 0.5) / _BAR_SAMPLES
         if replay.playing(plan.in_.deck, at, False):
@@ -965,7 +968,7 @@ def _in_bars(
             clock = replay.value(plan.out.deck, "tempo", at, clock_pitch) / clock_pitch
             consumed += rate / clock / _BAR_SAMPLES
         if (sample + 1) % _BAR_SAMPLES == 0:
-            bars.append(plan.in_.start_bar + int(consumed))
+            bars.append(plan.in_.start_bar + shift + int(consumed))
     return bars
 
 
@@ -1100,6 +1103,22 @@ def _incoming_channel_start(plan: TransitionPlan, mixer: Mapping[str, Any]) -> C
     if plan.in_.trim_db is None or plan.in_.trim_db > TRIM_MAX_DB + 1e-9:
         return start
     return start._replace(trim=trim_knob(plan.in_.trim_db))
+
+
+def _incoming_play_authored(plan: TransitionPlan) -> float | None:
+    """The authored bar of the incoming deck's first play, when the plan has one."""
+    plays = [
+        e.at_bar for e in plan.events if e.kind == "do" and e.name == "play" and e.deck == plan.in_.deck
+    ]
+    return min(plays) if plays else None
+
+
+def _launch_grid_shift(plan: TransitionPlan) -> int:
+    """Extra incoming grid bars credited from a negative authored launch lead (PR #5822 follow-up)."""
+    authored = _incoming_play_authored(plan)
+    if authored is None or authored >= 0:
+        return 0
+    return -round(authored)
 
 
 def _incoming_start(plan: TransitionPlan) -> float | None:
@@ -1588,6 +1607,10 @@ def _report_clashes(
         result.warnings.append(f"two vocals overlap for {vocal_overlap} bars")
     if not vocals_known:
         result.warnings.append("vocals are not analyzed on one side: vocal clashes were not checked")
+    if in_profile.bar_bass is None:
+        result.warnings.append(
+            "the incoming track has no bar_bass series; the bass hit was not placed from the music"
+        )
     if bass_known and bass_overlap > 1:
         result.warnings.append(f"two basslines play together for {bass_overlap} bars")
     if silent_bars:
@@ -1611,6 +1634,14 @@ def live_child(parent: Mapping[str, Any], key: str, where: str = "live mirror va
     return live_mapping(parent[key], where)
 
 
+def _loop_engaged(state: Mapping[str, Any]) -> bool:
+    """Whether the HTTP UI mirror reports an engaged loop (``loop.engaged`` or a legacy top-level flag)."""
+    if state.get("loop_engaged") is True:
+        return True
+    loop = state.get("loop")
+    return isinstance(loop, Mapping) and loop.get("engaged") is True
+
+
 def _validate_live(
     plan: TransitionPlan, profiles: tuple[TrackProfile, TrackProfile], live: Mapping[str, Any], result: Validation
 ) -> None:
@@ -1632,10 +1663,10 @@ def _validate_live(
     if isinstance(in_state, Mapping) and in_state.get("quantized_launch_armed") is not None:
         # Schedule and the page's runner refuse an armed deck as busy, so validation must refuse it too.
         result.errors.append(f"deck {plan.in_.deck} is armed to launch; pick an idle deck")
-    if out_state.get("loop_engaged") is True:
+    if _loop_engaged(out_state):
         # An engaged loop wraps the playhead, so the outgoing window is never reached and the plan would wait forever.
         result.errors.append(f"deck {plan.out.deck} has an engaged loop; release it so the plan can reach its window")
-    if isinstance(in_state, Mapping) and in_state.get("loop_engaged") is True:
+    if isinstance(in_state, Mapping) and _loop_engaged(in_state):
         # The seek lands inside the loop; quantized launch keeps it, so the deck repeats loop bars instead of the plan window.
         result.errors.append(f"deck {plan.in_.deck} has an engaged loop; release it so the plan can play its window")
     _check_out_position(plan, out_profile, out_state, result)

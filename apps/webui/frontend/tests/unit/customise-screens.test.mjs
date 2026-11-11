@@ -29,6 +29,7 @@ const DECKS_IDS_ORDER = [
 	'deck_left_mirror',
 	'deck_right_mirror',
 	'deck_hover_link',
+	'compact_decks',
 	'lyrics_deck_line',
 	'deck_default_quantize',
 	'beat_sync_max',

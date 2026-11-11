@@ -181,6 +181,13 @@
 	});
 	const takeoverGhost = $derived(takeoverFunction === null ? null : midiTakeoverGhost(takeoverFunction));
 	const ghostAngleDeg = $derived(takeoverGhost === null ? 0 : (takeoverGhost.value - 0.5) * SWEEP_DEG);
+	// MIXUX-10355: a pickup-armed dial shows only the yellow ghost; the hardware hint
+	// is hover text (the OS tooltip delay, mimicked) plus the screen-reader span.
+	const takeoverHint = $derived(
+		takeoverGhost === null
+			? ''
+			: ` - hardware at ${(takeoverGhost.value * 100).toFixed(0)}%; move it to ${(takeoverGhost.target * 100).toFixed(0)}% to pick up`
+	);
 
 	const displayValue = $derived(dragShown ?? value);
 	const angleDeg = $derived((displayValue - 0.5) * SWEEP_DEG);
@@ -410,7 +417,7 @@
 	}}
 	title={inert
 		? `${label}: ${plannedTitle('mixer-knob')}`
-		: `${label}${selected ? ' - selected: the scroll wheel nudges every selected dial from anywhere; Esc clears' : ''}${linked ? ' - linked: turning this dial moves its partner the other way' : ''}`}
+		: `${label}${takeoverHint}${selected ? ' - selected: the scroll wheel nudges every selected dial from anywhere; Esc clears' : ''}${linked ? ' - linked: turning this dial moves its partner the other way' : ''}`}
 >
 	<svg
 		width={size}
@@ -448,6 +455,19 @@
 </div>
 
 <style>
+	/* Visually hidden, still read by screen readers: the pickup hint must not
+	   render inside the knob's flex column and change its box. */
+	.sr-only {
+		position: absolute;
+		width: 1px;
+		height: 1px;
+		padding: 0;
+		margin: -1px;
+		overflow: hidden;
+		clip: rect(0 0 0 0);
+		white-space: nowrap;
+		border: 0;
+	}
 	.knob {
 		position: relative;
 		display: flex;

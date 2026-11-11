@@ -354,6 +354,7 @@ pub fn decode_progressive_metered(
             }
             Ok(())
         },
+        true,
     )?;
     if let Some(c) = conv {
         c.finish(&mut pcm).map_err(resample_err)?;
@@ -378,7 +379,29 @@ pub fn decode_stream(
     path: &Path,
     sink: impl FnMut(u32, usize, &[f32]) -> Result<(), ProtoError>,
 ) -> Result<(u32, Option<SourceId>), ProtoError> {
-    decode_stream_with(file, path, |_| {}, sink)
+    decode_stream_with(file, path, |_| {}, sink, true)
+}
+
+/// Whole-file decode with the MP4 edit list and iTunSMPB gapless trim disabled.
+/// Hidden: integration tests call this to assert trim behaviour. Production callers
+/// always apply the trim ffmpeg applies.
+#[doc(hidden)]
+pub fn decode_file_without_mp4_edit(path: &Path) -> Result<Decoded, ProtoError> {
+    let mut pcm: Vec<f32> = Vec::new();
+    let (sample_rate, source) = decode_stream_with(
+        open(path)?,
+        path,
+        |_| {},
+        |_, _, block| {
+            pcm.extend_from_slice(block);
+            Ok(())
+        },
+        false,
+    )?;
+    if pcm.is_empty() {
+        return Err(ProtoError::new(ErrorCode::Decode, format!("no audio decoded from {}", path.display())));
+    }
+    Ok(Decoded { sample_rate, pcm, source })
 }
 
 /// `decode_stream`, telling `on_track` the track's length in frames at its
@@ -389,11 +412,13 @@ fn decode_stream_with(
     path: &Path,
     on_track: impl FnOnce(Option<u64>),
     mut sink: impl FnMut(u32, usize, &[f32]) -> Result<(), ProtoError>,
+    apply_mp4_edit: bool,
 ) -> Result<(u32, Option<SourceId>), ProtoError> {
     let Opened { mut format, mut decoder, track_id, time_base, codec_rate, frames, source, edit, .. } = open_decoder(file, path)?;
     let dec_err = |what: &str, e: &dyn std::fmt::Display| {
         ProtoError::new(ErrorCode::Decode, format!("{what} {}: {e}", path.display()))
     };
+    let edit = edit.filter(|_| apply_mp4_edit);
     // The stated length is the playable one: the edit's, when it states it.
     let stated = match edit.zip(codec_rate).and_then(|(e, r)| e.at(r)) {
         Some(e) => e.keep.filter(|&k| k > 0).or(frames.map(|n| n.saturating_sub(e.skip))),

@@ -98,8 +98,13 @@ test('MIXUX-03 ChannelStrip TRIM is 20% smaller than EQ dials in MORE mode', asy
 		assert.match(knobLine[0], new RegExp(`oneq\\('${band}', value\\)`), `${label} must write the ${band} EQ band`);
 		assert.match(knobLine[0], /size=\{eqSize\}/, `${label} must pass size={eqSize} (pin 246b0f5) so LESS mode can shrink it`);
 	}
-	const eqSizeDerived = src.match(/const eqSize = \$derived\(less \? LESS_EQ_SIZE : EQ_SIZE\);/);
-	assert.ok(eqSizeDerived, 'eqSize must fall back to EQ_SIZE whenever less is false');
+	const eqSizeDerived = src.match(
+		/const eqSize = \$derived\(less \? LESS_EQ_SIZE : compact \? COMPACT_EQ_SIZE : EQ_SIZE\);/
+	);
+	assert.ok(eqSizeDerived, 'eqSize must fall back to EQ_SIZE in MORE unless compact decks is on');
+	const compactEqMatch = src.match(/const COMPACT_EQ_SIZE = (\d+(?:\.\d+)?);/);
+	assert.ok(compactEqMatch, 'expected COMPACT_EQ_SIZE for LIBUX-11716 compact MORE mode');
+	assert.equal(Number(compactEqMatch[1]), 24);
 	const eqSizeConstMatch = src.match(/const EQ_SIZE = (\d+(?:\.\d+)?);/);
 	assert.ok(eqSizeConstMatch, 'expected a named EQ_SIZE constant spelling out Knob\'s own default');
 	assert.equal(Number(eqSizeConstMatch[1]), 30);

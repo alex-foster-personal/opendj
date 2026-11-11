@@ -120,6 +120,20 @@ class BoothCore:
     def _local_trace(self, trace: dict[str, int] | None) -> dict[str, int | None]:
         return {} if not trace else {k: self._local(v) for k, v in trace.items()}
 
+    def _require_open(self, out: Out) -> bool:
+        if self.epoch is None:
+            out.refused = "not_open"
+            return False
+        return True
+
+    def _count_refusal(self, out: Out, reason: RefusalReason) -> None:
+        self.counters.refused += 1
+        out.refused = reason
+
+    def _relay_peer_us(self, peer_us: int) -> tuple[int, bool]:
+        at = self._local(peer_us)
+        return (peer_us if at is None else at, at is None)
+
     # ------------------------------------------------------------ applying
 
     def units_event(self) -> dict[str, Any]:
@@ -190,12 +204,10 @@ class BoothCore:
         if self.arbiter is not None:
             decision = self.arbiter.propose(self.state, self.side, op, None, now_us)
             if decision.refused is not None:
-                self.counters.refused += 1
-                out.refused = decision.refused
+                self._count_refusal(out, decision.refused)
             self._commit(decision.commit, now_us, out, trace)
             return out
-        if self.epoch is None:
-            out.refused = "not_open"
+        if not self._require_open(out):
             return out
         if self.state.ended:
             out.refused = "ended"
@@ -206,8 +218,7 @@ class BoothCore:
         if (unit is not None and op["op"] != "load" and not self.holds(unit) and unit not in self._asking) or (
             op["op"] == "release" and not self.holds(op["unit"])
         ):
-            self.counters.refused += 1
-            out.refused = "not_holder"
+            self._count_refusal(out, "not_holder")
             return out
         if (op["op"] == "load" and unit is not None and not self.holds(unit)) or op["op"] == "grab":
             self._asking.add(unit if unit is not None else op["unit"])
@@ -222,12 +233,10 @@ class BoothCore:
     def intent_control(self, unit: str, ctl: str, value: float, now_us: int, trace: dict[str, int] | None = None) -> Out:
         """A local continuous input on a unit this laptop holds; refused ``not_holder`` otherwise."""
         out = Out()
-        if self.epoch is None:
-            out.refused = "not_open"
+        if not self._require_open(out):
             return out
         if not self.holds(unit):
-            self.counters.refused += 1
-            out.refused = "not_holder"
+            self._count_refusal(out, "not_holder")
             return out
         key = f"{unit}|{ctl}"
         cseq = self._cseq.get(key, 0) + 1
@@ -243,8 +252,7 @@ class BoothCore:
     def intent_position(self, sample: dict[str, Any]) -> Out:
         """The audio laptop page's position sample (its clock is this engine's): relayed newest-wins per deck."""
         out = Out()
-        if self.epoch is None:
-            out.refused = "not_open"
+        if not self._require_open(out):
             return out
         self.positions[sample["deck"]] = dict(sample)
         out.ctl.append((f"pos:{sample['deck']}", {"kind": "pos", "epoch": self.epoch, **sample}))
@@ -347,10 +355,10 @@ class BoothCore:
             out.ops.append({"kind": "resend", "epoch": self.epoch, "from": result.resend_from})
 
     def _receive_position(self, message: dict[str, Any], out: Out) -> None:
-        at = self._local(message["at_link_us"])
+        at_us, clock_unknown = self._relay_peer_us(message["at_link_us"])
         position = {"deck": message["deck"], "pos_frames": message["pos_frames"], "rate": message["rate"],
-                    "at_link_us": at if at is not None else message["at_link_us"]}
-        if at is None:
+                    "at_link_us": at_us}
+        if clock_unknown:
             position["clock"] = "unknown"
         self.positions[message["deck"]] = position
         out.events.append({"type": "position", "position": position})
@@ -396,10 +404,10 @@ class BoothCore:
         if kept is not None and kept["side"] == message["side"] and kept["cseq"] >= message["cseq"]:
             self.counters.ctl_stale += 1
             return
-        at = self._local(message["at_link_us"])
+        at_us, clock_unknown = self._relay_peer_us(message["at_link_us"])
         control = {"side": message["side"], "unit": message["unit"], "ctl": message["ctl"], "value": message["value"],
-                   "cseq": message["cseq"], "at_link_us": at if at is not None else message["at_link_us"]}
-        if at is None:
+                   "cseq": message["cseq"], "at_link_us": at_us}
+        if clock_unknown:
             control["clock"] = "unknown"
         self.controls[key] = control
         event: dict[str, Any] = {"type": "control", "control": control}

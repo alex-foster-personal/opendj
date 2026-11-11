@@ -11,7 +11,7 @@ import pytest
 from apps.autodj.contract.models import MikBoundary
 from apps.autodj.profile import ProfileError, _camelot, _sections, profile_from_payloads
 from apps.autodj.sections import own_label, phrase_label, pssi_label
-from apps.autodj.windows import mix_windows, window_at
+from apps.autodj.windows import USER_CUE_SCORE, mix_windows, window_at
 from tests.autodj.fixtures import CHORUS, DOWN, INTRO, OUTRO, UP, anlz_payload, profile, track_row
 
 
@@ -83,6 +83,15 @@ def test_profile_bar_clock_round_trips() -> None:
     assert section is not None and section.label == "build"
 
 
+@pytest.mark.requirement("AUTODJ-12873")
+def test_profile_bpm_prefers_the_analyzed_beatgrid_over_the_library_row() -> None:
+    """[if] library BPM disagrees with the beatgrid [then] profile.bpm follows the grid, [else stop]."""
+    row = track_row("trk-grid", bpm=132.0)
+    track = profile_from_payloads(anlz_payload("trk-grid", bpm=128.0), row)
+    assert track.bpm == 128.0
+    assert any("planner uses the grid" in note for note in track.notes)
+
+
 def test_profile_without_vocal_analysis_says_so() -> None:
     track = profile("trk-a", vocals_analyzed=False)
     assert track.bar_vocals is None
@@ -94,6 +103,28 @@ def test_profile_refuses_a_track_with_no_grid() -> None:
     anlz["beatgrid"]["beats"] = anlz["beatgrid"]["beats"][:3]
     with pytest.raises(ProfileError, match="downbeats"):
         profile_from_payloads(anlz, track_row("trk-a"))
+
+
+_AUTODJ_11837 = "AUTODJ-11837"
+
+
+@pytest.mark.requirement(_AUTODJ_11837)
+def test_profile_carries_measured_true_peak_from_provenance() -> None:
+    """[if] provenance loudness_dbtp is ok [then] TrackProfile.dbtp is that float, [else stop]."""
+    row = track_row("trk-a")
+    row["provenance"] = {
+        "loudness_dbtp": {
+            "value": -0.35,
+            "status": "ok",
+            "reason": None,
+            "source": "own-analysis",
+            "confidence": 0.9,
+            "modified_at": "",
+        }
+    }
+    track = profile_from_payloads(anlz_payload("trk-a"), row)
+    assert track.dbtp == pytest.approx(-0.35)
+    assert track.summary()["loudness"]["dbtp"] == pytest.approx(-0.35)
 
 
 def test_summary_never_carries_a_full_grid() -> None:
@@ -110,7 +141,7 @@ _GOLDEN_WITHOUT_MID_HIGH: dict[str, str] = {
     "mono": "451851e330bd511dd61ec4a1459c9339c202e28433025eec8d1c9a32914d253b",
     "absent": "36eae0f865f7b795bc6234258154cd4909dcdc5b236226c6ca6f302d07961dd9",
 }
-_TRK_A_SUMMARY_DIGEST = "c454f0fa90d8f3b3bae5e76a15be55e05b8fb4beaa1b81321a5f06efea1eed62"
+_TRK_A_SUMMARY_DIGEST = "4364c044b3f99574c3f5566daed1250b4d2dbf6cc48fa58b087ca8915b01c4c4"
 _TRANSAI_REQ = "TRANSAI-10505"
 
 
@@ -119,6 +150,8 @@ def _profile_digest_without_new_bands(p) -> str:
     for key in (
         "bar_mid",
         "bar_high",
+        "dbtp",
+        "dbtp_reason",
         "mik_bar_level",
         "mik_level",
         "mik_boundaries",
@@ -272,6 +305,51 @@ def test_in_windows_prefer_the_intro_and_stop_before_the_first_vocal() -> None:
     assert (windows[0].label, windows[0].start_bar) == ("intro", 1)
     assert windows[0].max_bars == 32  # bar 33 is the drop and the first vocal
     assert windows[0].peak_bar == 33
+
+
+@pytest.mark.requirement("AUTODJ-11851")
+@pytest.mark.parametrize("bars", [8, 15, 16])
+@pytest.mark.parametrize("stop", ["peak", "vocal", "end"])
+def test_incoming_forward_mixability_boundary(bars: int, stop: str) -> None:
+    """[if] an unpinned in-window has under 16 bars [then] it scores zero, [else stop]."""
+    # Invented profiles isolate each of the three usable-window boundaries.
+    track = profile("trk-forward", arrangement=((INTRO, bars, 0.4, 1.0, False),))
+    if stop != "end":
+        track = profile(
+            "trk-forward",
+            arrangement=((INTRO, bars, 0.4, 1.0, False), (CHORUS, 32, 1.0, 1.0, True)),
+        )
+        if stop == "peak":
+            track = dataclasses.replace(track, bar_vocals=None)
+        elif stop == "vocal":
+            track = dataclasses.replace(track, sections=track.sections[:1])
+    (window,) = mix_windows(track, "in")
+    explicit = window_at(track, "in", 1)
+    assert window.max_bars == explicit.max_bars == bars
+    assert window.score == explicit.score
+    if bars < 16:
+        assert window.score == 0.0
+        for candidate in (window, explicit):
+            assert "forward mixability short" in candidate.reason
+            assert f"max_bars={bars}" in candidate.reason
+            assert "16 bars (64 beats)" in candidate.reason
+    else:
+        assert window.score > 0.0
+        assert "forward mixability short" not in window.reason
+    outgoing = window_at(track, "out", max(1, track.bars - 8))
+    assert outgoing.max_bars == min(8, track.bars - 1) and outgoing.score > 0.0
+    assert "forward mixability" not in outgoing.reason
+
+
+@pytest.mark.requirement("AUTODJ-11851")
+def test_four_bar_user_cue_is_exempt_from_forward_mixability() -> None:
+    """[if] a user cue leaves four bars [then] its only in-window stays pinned and scored, [else stop]."""
+    track = profile("trk-cued", arrangement=((INTRO, 16, 0.4, 1.0, False), (CHORUS, 32, 1.0, 1.0, True)))
+    (window,) = mix_windows(dataclasses.replace(track, transition_in_bar=13), "in")
+    assert window.pinned and window.start_bar == 13 and window.max_bars == 4
+    assert window.score == USER_CUE_SCORE
+    assert "your transition-in cue" in window.reason and "mid-intro" in window.reason
+    assert "forward mixability short" not in window.reason
 
 
 def test_mix_windows_without_phrases_fall_back() -> None:

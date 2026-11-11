@@ -80,11 +80,14 @@ def _hello(http: TestClient, data_dir: Path, name: str) -> str:
     return str(machine["machine_id"])
 
 
+@pytest.mark.parametrize("session_token", [None, "unknown-session-token"])
 def test_every_fleet_route_needs_a_signed_in_user(
-    admin: TestClient, enroll_hub_dir: Path, enroll_spoke_dir: Path
+    admin: TestClient, enroll_hub_dir: Path, enroll_spoke_dir: Path, session_token: str | None
 ) -> None:
     """if a fleet route serves a caller with no session then broken"""
     machine_id = _hello(admin, enroll_spoke_dir, "spoke-a")
+    if session_token is not None:
+        admin.cookies.set(SESSION_COOKIE_NAME, session_token)
     for method, path, body in (
         ("GET", f"{FLEET}/credentials", None),
         ("POST", f"{FLEET}/adopt", {"machine_id": machine_id}),
@@ -92,7 +95,10 @@ def test_every_fleet_route_needs_a_signed_in_user(
     ):
         response = admin.request(method, path, json=body)
         assert response.status_code == 401, f"{method} {path}: {response.text}"
-        assert response.json()["detail"]["code"] == "AUTH_REQUIRED"
+        assert response.json()["detail"] == {
+            "code": "AUTH_REQUIRED",
+            "message": "fleet administration needs a signed-in user on this hub.",
+        }
     assert owner_rows(enroll_hub_dir) == [], "a refused adopt must write nothing"
 
     _sign_in(admin, enroll_hub_dir, sub=ENROLL_OWNER_SUB, email=ENROLL_OWNER_EMAIL)

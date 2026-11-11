@@ -55,12 +55,42 @@ RECONCILE_RESULTS: frozenset[str] = frozenset(
     {"succeeded", "failed", "cancelled", "unknown"}
 )
 
+
+@dataclass(frozen=True)
+class Outcome:
+    """What a kind MEASURED once its worker exited (STEM-59).
+
+    ``status`` is 'succeeded' or 'failed'. ``message`` is the one line the UI
+    shows; ``error`` is set on failure; ``detail`` is stored as the row's
+    ``outcome`` JSON for agents (expected vs present, and what is missing).
+    """
+
+    status: str
+    message: str
+    error: str | None
+    detail: dict[str, Any]
+
+    def __post_init__(self) -> None:
+        if self.status not in ("succeeded", "failed"):
+            raise ValueError(f"an outcome is succeeded or failed, not {self.status!r}")
+        if (self.status == "failed") != (self.error is not None):
+            raise ValueError("a failed outcome carries an error and a succeeded one does not")
+
+
+# (job row, worker exit code, worker stderr tail) -> Outcome.
+OutcomeCheck = Callable[[dict[str, Any], int, Sequence[str]], Outcome]
+
 _WORKERS: dict[str, WorkerArgv] = {}
 _RECONCILERS: dict[str, ReconcileHook] = {}
 _OBSERVERS: dict[str, ProgressObserver] = {}
+_OUTCOME_CHECKS: dict[str, OutcomeCheck] = {}
 _FINISH_OBSERVERS: dict[str, FinishObserver] = {}
 
 _TAIL_LINES: int = 20
+# Lines of worker stderr kept ON THE ROW, on every ending (STEM-60). Larger than
+# the error blob's tail because a success has no blob at all, and a run that
+# "succeeded" while doing nothing is only explained by what it printed.
+STDERR_KEEP_LINES: int = 200
 
 # At most one progress write per job per this interval, and never on the event
 # loop (#3964). The contract is a line per unit of work -- the folder import
@@ -131,7 +161,28 @@ def unregister_worker(kind: str) -> None:
     _WORKERS.pop(kind, None)
     _RECONCILERS.pop(kind, None)
     _OBSERVERS.pop(kind, None)
+    _OUTCOME_CHECKS.pop(kind, None)
     _FINISH_OBSERVERS.pop(kind, None)
+
+
+def register_outcome_check(kind: str, check: OutcomeCheck) -> None:
+    """Let a kind decide 'succeeded' by measuring its deliverable (STEM-59).
+
+    Without one, exit 0 is success: the chassis cannot know what a kind was
+    for. With one, exit 0 is only the worker's claim, and the check measures
+    the artifacts the job was asked for. It can turn an exit 0 into a failure
+    and NEVER the reverse: a nonzero exit stays failed whatever the check
+    says, and the check only adds what it measured to the message.
+
+    It runs in a worker thread (it may stat or decode files), once per job.
+    A check that raises fails the job with the exception: an outcome nobody
+    could measure is not a success.
+
+    An unbound runner reads this registry at the moment the worker exits. A
+    runner that has called ``bind_outcome_check`` for the kind uses that
+    check instead, so a later registration here cannot retarget it.
+    """
+    _OUTCOME_CHECKS[kind] = check
 
 
 def register_progress_observer(kind: str, hook: ProgressObserver) -> None:
@@ -292,8 +343,11 @@ class _Worker:
     identity: WorkerIdentity
     cancelled: bool = False
     stderr_tail: deque[str] = field(
-        default_factory=lambda: deque(maxlen=_TAIL_LINES)
+        default_factory=lambda: deque(maxlen=STDERR_KEEP_LINES)
     )
+
+    def stderr_for_error(self) -> deque[str]:
+        return deque(self.stderr_tail, maxlen=_TAIL_LINES)
 
 
 class JobRunner:
@@ -318,6 +372,19 @@ class JobRunner:
         # until it is, and stop() must outlast it (see _observe).
         self._observers: set[asyncio.Task[None]] = set()
         self._supervisor: asyncio.Task[None] | None = None
+        # Per-runner outcome checks. The process registry is shared, so a
+        # second engine must not replace what this runner measures.
+        self._outcome_checks: dict[str, OutcomeCheck] = {}
+
+    def bind_outcome_check(self, kind: str, check: OutcomeCheck) -> None:
+        """Measure ``kind`` with this runner's check, not a later global one."""
+        self._outcome_checks[kind] = check
+
+    def _outcome_check_for(self, kind: str) -> OutcomeCheck | None:
+        bound = self._outcome_checks.get(kind)
+        if bound is not None:
+            return bound
+        return _OUTCOME_CHECKS.get(kind)
 
     async def start(self) -> None:
         if self._supervisor is not None:
@@ -714,6 +781,8 @@ class JobRunner:
         stdout_tail: deque[str] = deque(maxlen=_TAIL_LINES)
         malformed = await self._pump(job_id, proc, stdout_tail)
         await stderr_task
+        # Before any terminal write and on every path, success included.
+        self.store.record_stderr_tail(job_id, worker.stderr_tail)
 
         if malformed is not None:
             outcome = await asyncio.to_thread(reap, identity)
@@ -723,27 +792,85 @@ class JobRunner:
             return self.store.finish(
                 job_id,
                 "failed",
-                error=_error_blob(malformed, stdout_tail, worker.stderr_tail)
+                error=_error_blob(malformed, stdout_tail, worker.stderr_for_error())
                 + f" {outcome}",
             )
 
         returncode = await proc.wait()
         if worker.cancelled:
             # cancel() owns the terminal write; it is still confirming the
-            # group is dead and must not race us to a status.
+            # group is dead and must not race us to a status. None tells
+            # _guarded_run not to hand a cancel to the finish observer.
             return None
-        if returncode != 0:
-            return self.store.finish(
-                job_id,
-                "failed",
-                error=_error_blob(
-                    f"worker exited {returncode}",
-                    stdout_tail,
-                    worker.stderr_tail,
-                ),
+        exit_blob = _error_blob(
+            f"worker exited {returncode}", stdout_tail, worker.stderr_for_error()
+        )
+        check = self._outcome_check_for(self.store.get(job_id)["kind"])
+        if check is not None:
+            # Return the row the check wrote. stems.separate measures its
+            # deliverable AND has a finish observer; dropping the row here
+            # would leave the coverage ledger deaf to that job.
+            return await self._finish_measured(
+                job_id, check, returncode, worker, exit_blob
             )
+        if returncode != 0:
+            return self.store.finish(job_id, "failed", error=exit_blob)
         self.store.set_progress(job_id, 1.0, "done")
         return self.store.finish(job_id, "succeeded")
+
+    async def _finish_measured(
+        self,
+        job_id: str,
+        check: OutcomeCheck,
+        returncode: int,
+        worker: _Worker,
+        exit_blob: str,
+    ) -> dict[str, Any] | None:
+        """The terminal write for a kind that measures its own deliverable.
+
+        The check runs off the loop. cancel() can mark the worker and move
+        the row to ``cancelling`` or ``cancelled`` during that await. The
+        flag is read again after it, and the measured progress and ending
+        are written only while the row is still ``running``, so they cannot
+        replace a cancelled row or take the terminal write away from cancel.
+
+        Returns the row written, or None when cancel owns the verdict, so
+        the finish observer hears a measured ending and never a cancel.
+        """
+        job = self.store.get(job_id)
+        try:
+            measured = await asyncio.to_thread(
+                check, job, returncode, list(worker.stderr_tail)
+            )
+        except Exception as exc:  # noqa: BLE001 - ANY raise must end the row failed, not leave it running
+            if worker.cancelled:
+                return None
+            return self.store.finish_while_running(
+                job_id,
+                "failed",
+                error=f"outcome check raised {type(exc).__name__}: {exc}. {exit_blob}",
+            )
+        if worker.cancelled:
+            return None
+        if returncode != 0 or measured.status == "failed":
+            error = measured.error if measured.error is not None else measured.message
+            if returncode != 0:
+                error = f"{error}. {exit_blob}"
+            return self.store.finish_while_running(
+                job_id,
+                "failed",
+                progress=job["progress"],
+                message=measured.message,
+                error=error,
+                outcome=measured.detail,
+            )
+        return self.store.finish_while_running(
+            job_id,
+            "succeeded",
+            progress=1.0,
+            message=measured.message,
+            outcome=measured.detail,
+        )
 
     async def _pump(
         self,
@@ -975,6 +1102,8 @@ __all__ = [
     "RECONCILE_RESULTS",
     "FinishObserver",
     "JobRunner",
+    "Outcome",
+    "OutcomeCheck",
     "ProgressObserver",
     "ReconcileHook",
     "UnknownJobKind",
@@ -985,6 +1114,7 @@ __all__ = [
     "observe_progress",
     "reconcile",
     "register_finish_observer",
+    "register_outcome_check",
     "register_progress_observer",
     "register_reconcile",
     "register_worker",

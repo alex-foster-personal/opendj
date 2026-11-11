@@ -18,6 +18,9 @@ library (opendj api, LIBM-11; library daemon, not the performance bus):
   opendj api DELETE /api/v1/smartlists/{id}
   opendj api GET /api/v1/tracks/{stable_id}
   opendj track key-segments <stable_id>
+  opendj density                                         # read persisted library density
+  opendj density compact                                 # compact library rows
+  opendj density cosy                                    # cosy library rows
 
 play history delete (PLAYS-10523; Open DJ play log only, not rekordbox DJPlayCount):
   opendj history delete-play <stable_id> <play_id>
@@ -27,6 +30,9 @@ audio output health (AUDIO-DEVICE-01, issue #923):
   opendj audio_output_health
   opendj audio_switch_output --confirm
   opendj audio_reconnect_speaker --confirm
+
+ingest drop staging (sync export):
+  opendj ingest stage PATH [PATH ...] [--batch B] [--force] [--no-refresh]
 
 ingest enrichment (ENRICH-09):
   opendj enrichment status [--batch B]
@@ -57,6 +63,9 @@ now playing for streamers and overlays (NOWP-11489; the track the room hears, 3 
 desktop window geometry (WINSTATE-01; per monitor, survives updates) and extra windows:
   opendj window state | reset
   opendj window open|close|focus second-screen
+
+phone remote LAN listener (REMOTE-CTL; pairing code and paired devices):
+  opendj remote start [--port N] | stop | status | rotate | forget <device-id>
 
 playlist art thumbnail (ARTTHUMB-8728b) and tab-separated text track list (LIBORG-10314):
   opendj playlist thumbnail <playlist-id> [--size 64|232] [--out FILE]

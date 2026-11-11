@@ -5,8 +5,9 @@ separate`` writes flat ``<key>-vocals/<key>-instrumental`` files into the
 lyrics-eval corpora with no ``manifest.json``, so the app's strict loader
 (``apps/stems/artifacts.py``) cannot see them - stems on disk,
 lost to the product. Registration here = write a schema-v3 ``roformer2``
-bundle under ``(private path)/<stable_id>/`` (the canonical
-RoFormer root ``stem_roots()`` already searches) and then RE-LOAD it with the
+bundle under the production RoFormer root (``PRODUCTION_ROFORMER_STEMS_DIR``,
+on disk ``(private path)/<stable_id>/`` today) that
+``stem_roots()`` already searches, and then RE-LOAD it with the
 strict loader as a self-check. Nothing is registered that the app cannot
 actually read back.
 
@@ -46,7 +47,7 @@ from apps.shared.hashing import sha256_file_hex
 from apps.shared.paths import STATE_DB, STATE_DIR
 from apps.shared.state import db as state_db_mod
 from apps.shared.state import sync_stamp
-from apps.stems.artifacts import ROFORMER_STEMS_DIR, load_stem_bundle
+from apps.stems.artifacts import PRODUCTION_ROFORMER_STEMS_DIR, load_stem_bundle
 from apps.stems.bundle_lock import readers_held_off, remove_staging, store_writer_lock
 
 if TYPE_CHECKING:
@@ -145,7 +146,7 @@ def _push_bundle_parts(
 
 @dataclass(frozen=True)
 class RegisterPairStorage:
-    root: Path = ROFORMER_STEMS_DIR
+    root: Path = PRODUCTION_ROFORMER_STEMS_DIR
     s3: AssetS3Client | None = None
     cfg: CloudConfig | None = None
     conn: sqlite3.Connection | None = None
@@ -160,7 +161,7 @@ def _storage_for_register_pair(
         raise TypeError("register_pair accepts storage= or root=, not both")
     if storage is not None:
         return storage
-    return RegisterPairStorage(root=root or ROFORMER_STEMS_DIR)
+    return RegisterPairStorage(root=root or PRODUCTION_ROFORMER_STEMS_DIR)
 
 
 def _publish_staged(tmp_dir: Path, out_dir: Path) -> None:
@@ -202,7 +203,7 @@ def _resolve_register_pair_storage(
                 "register_pair accepts storage= or legacy storage keywords, not both"
             )
         return RegisterPairStorage(
-            root=root or ROFORMER_STEMS_DIR, s3=s3, cfg=cfg, conn=conn
+            root=root or PRODUCTION_ROFORMER_STEMS_DIR, s3=s3, cfg=cfg, conn=conn
         )
     return _storage_for_register_pair(storage, root)
 
@@ -411,7 +412,7 @@ def _meta_model(stems_dir: Path, key: str) -> tuple[str, str, str]:
     )
 
 
-def sweep_corpus(corpus: str, *, write: bool, root: Path = ROFORMER_STEMS_DIR) -> SweepReport:
+def sweep_corpus(corpus: str, *, write: bool, root: Path = PRODUCTION_ROFORMER_STEMS_DIR) -> SweepReport:
     if corpus not in REGISTRABLE_CORPORA:
         raise SystemExit(
             f"[ERROR] corpus {corpus!r} not registrable (novox is bench-only); "

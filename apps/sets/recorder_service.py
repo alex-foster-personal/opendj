@@ -3,6 +3,7 @@
 HTTP start/stop must retain the exact :class:`Recorder` instance because only
 that object can settle its poll threads and ffmpeg process safely.
 """
+
 from __future__ import annotations
 
 import contextlib
@@ -20,6 +21,7 @@ from apps.stream.encoder import MasterMixEncoder, require_master_source
 from . import capture as capture_mod
 from . import paths as sets_paths
 from . import record as record_mod
+from .control_events import RawControlStamp
 from .master_mix import FRAME_BYTES, MASTER_MIX_DEVICE_LABEL, MasterMixRecordingStopped
 from .state import SetsState
 
@@ -174,22 +176,17 @@ class RecorderService:
         """
         # Resolved BEFORE the lock: listing spawns ffmpeg (up to 10 s), and
         # status() shares the lock. A missing input or ffmpeg starts nothing.
-        device_idx, device_label, backend = self._resolve_input(
-            source, ffmpeg_device_idx, device_name
-        )
+        device_idx, device_label, backend = self._resolve_input(source, ffmpeg_device_idx, device_name)
         with self._lock:
             if self._recorder is not None:
-                raise RecorderConflict(
-                    f"session {self._recorder.session_id} is already recording"
-                )
+                raise RecorderConflict(f"session {self._recorder.session_id} is already recording")
             external = record_mod.status(
                 sets_root=self.sets_root,
                 state=SetsState(db_path=self.db_path),
             )
             if external["active"]:
                 raise RecorderConflict(
-                    f"session {external['session_id']} is owned by recorder "
-                    f"process {external['pid']}"
+                    f"session {external['session_id']} is owned by recorder process {external['pid']}"
                 )
 
             state = SetsState(db_path=self.db_path)
@@ -249,8 +246,7 @@ class RecorderService:
             raise RecorderRequestInvalid(f"source {source!r} is not one of {RECORD_SOURCES}")
         if source in _DEVICE_SOURCES and named != 1:
             raise RecorderRequestInvalid(
-                f"source {source!r} records one input: name exactly one of "
-                "ffmpeg_device_idx or device_name"
+                f"source {source!r} records one input: name exactly one of ffmpeg_device_idx or device_name"
             )
         if source not in _DEVICE_SOURCES and named != 0:
             raise RecorderRequestInvalid(f"source {source!r} records no input, so names none")
@@ -285,9 +281,7 @@ class RecorderService:
         except FileNotFoundError:
             return None
         except (OSError, ValueError) as exc:
-            raise RememberedInputUnreadable(
-                f"{self.remembered_input_path} could not be read: {exc}"
-            ) from exc
+            raise RememberedInputUnreadable(f"{self.remembered_input_path} could not be read: {exc}") from exc
         if parsed in ({"kind": "none"}, {"kind": "master"}):
             return dict(parsed)
         if (
@@ -298,9 +292,7 @@ class RecorderService:
             and parsed["name"]
         ):
             return {"kind": "device", "name": parsed["name"]}
-        raise RememberedInputUnreadable(
-            f"{self.remembered_input_path} does not hold an input choice: {parsed!r}"
-        )
+        raise RememberedInputUnreadable(f"{self.remembered_input_path} does not hold an input choice: {parsed!r}")
 
     def _remember_input(self, choice: dict[str, str]) -> None:
         """Record the started source.
@@ -337,12 +329,33 @@ class RecorderService:
             )
         return matches[0].index
 
+    def drain_control_stamps(
+        self,
+        session_id: str,
+        stamps: list[RawControlStamp],
+    ) -> dict[str, Any]:
+        """Drain engine control stamps into ``controls.jsonl`` for a live session."""
+        with self._lock:
+            recorder = self._recorder
+            if recorder is None or recorder.session_id != session_id:
+                active = "nothing" if recorder is None else recorder.session_id
+                raise RecorderConflict(f"{active} is recording here, not {session_id}")
+        written = recorder.drain_control_stamps(stamps)
+        return {"session_id": session_id, "controls_written": written}
+
     def mark_master_tap_attached(self, session_id: str) -> None:
         """Record when the page reported its tap connected (SET-12 timing)."""
         with self._lock:
             recorder = self._recorder
             if recorder is not None and recorder.session_id == session_id and recorder._master is not None:
                 recorder._master.mark_tap_attached()
+
+    def note_master_attach_failure(self, session_id: str, reason: str) -> None:
+        """Store why master tap attach failed before stop finalizes the session (SETREC-23)."""
+        with self._lock:
+            recorder = self._recorder
+            if recorder is not None and recorder.session_id == session_id:
+                recorder.note_master_attach_failure(reason)
 
     def _count_late_chunk(self, session_id: str) -> None:
         """Count a chunk dropped for a stopped recording; log at INFO once the
@@ -357,9 +370,7 @@ class RecorderService:
                 session_id,
             )
 
-    def write_master_pcm(
-        self, session_id: str, *, stream: str, seq: int, sample_rate: int, pcm: bytes
-    ) -> None:
+    def write_master_pcm(self, session_id: str, *, stream: str, seq: int, sample_rate: int, pcm: bytes) -> None:
         """Append one master-mix chunk to the live recording (SET-12).
 
         Raises :class:`MasterMixRecordingStopped` for a chunk that was in
@@ -371,9 +382,7 @@ class RecorderService:
         """
         with self._lock:
             recorder = self._recorder
-            if (recorder is None or recorder.session_id != session_id) and (
-                session_id in self._cleanly_stopped
-            ):
+            if (recorder is None or recorder.session_id != session_id) and (session_id in self._cleanly_stopped):
                 self._count_late_chunk(session_id)
                 raise MasterMixRecordingStopped(f"recording {session_id} was stopped")
             if recorder is None or recorder.session_id != session_id:
@@ -381,10 +390,14 @@ class RecorderService:
                 raise RecorderConflict(f"{active} is recording here, not {session_id}")
             writer = recorder._master
             if writer is None:
-                raise RecorderConflict(
-                    f"session {session_id} records {self._source!r}, not the master mix"
-                )
-        writer.append(stream=stream, seq=seq, sample_rate=sample_rate, pcm=pcm)
+                raise RecorderConflict(f"session {session_id} records {self._source!r}, not the master mix")
+        try:
+            writer.append(stream=stream, seq=seq, sample_rate=sample_rate, pcm=pcm)
+        except MasterMixRecordingStopped as exc:
+            with self._lock:
+                if session_id in self._cleanly_stopped:
+                    raise
+            raise RecorderConflict(recorder.capture_error() or str(exc)) from exc
 
     def start_stream_encoder(self, session_id: str, *, fmt: str, bitrate_kbps: int) -> dict[str, Any]:
         """Tee the live master recording into an encoder subprocess (STREAM-11486)."""
@@ -473,13 +486,22 @@ class RecorderService:
                 )
             if self._encoder is not None:
                 self._stop_encoder_locked()
-            record_mod.stop(self._recorder)
-            if self._source == "master":
+            recorder = self._recorder
+            manifest = record_mod.stop(recorder)
+            status = self._idle_status()
+            if manifest is None and recorder.capture_state() == "failed":
+                status = {
+                    **self._owned_status(recorder),
+                    "active": False,
+                    "pid": None,
+                    "owned": False,
+                }
+            elif self._source == "master":
                 self._cleanly_stopped = [*self._cleanly_stopped[-7:], self._recorder.session_id]
                 self._late_chunks = {k: v for k, v in self._late_chunks.items() if k in self._cleanly_stopped}
             self._recorder = None
             self._source = None
-        return self._idle_status()
+        return status
 
     def recover_stale(self, session_id: str, expected_pid: int) -> dict[str, Any]:
         """Finalize a crashed recorder only after proving its PID is not live."""
@@ -495,9 +517,7 @@ class RecorderService:
             if external["session_id"] != session_id or external["pid"] != expected_pid:
                 raise RecorderConflict("recorder ownership changed; refresh before recovery")
             if _pid_is_running(expected_pid):
-                raise RecorderConflict(
-                    f"recorder process {expected_pid} is still running"
-                )
+                raise RecorderConflict(f"recorder process {expected_pid} is still running")
             record_mod.finalize(
                 session_id,
                 sets_root=self.sets_root,

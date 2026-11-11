@@ -5,6 +5,7 @@
 
 import type { ClientErrorContext } from '$lib/client-error-reporting';
 import { isPerformanceRoutePath } from '$lib/rb/performance-preset';
+import { TOAST_COPIED_NOTE_MS } from './toast-tray-policy';
 
 export interface ToastCopyDeckSnapshot {
 	id: number;
@@ -65,4 +66,53 @@ export function gatherToastCopyExtras(input: {
 		if (last !== null) extras.last_perf_error = `${last.kind}: ${last.message}`;
 	}
 	return extras;
+}
+
+// ----- toast comment pin (pin 30de7a76291f, issue #11318) ------------------
+
+export interface ToastCommentPinArm {
+	logId: string;
+	reportText: string;
+	expiresAtMs: number;
+}
+
+let toastCommentPinArm: ToastCommentPinArm | null = null;
+
+function _pruneToastCommentPinArm(nowMs: number = Date.now()): void {
+	if (toastCommentPinArm !== null && nowMs > toastCommentPinArm.expiresAtMs) {
+		toastCommentPinArm = null;
+	}
+}
+
+/** Arms the next comment pin with the copied toast report (same window as the hint). */
+export function armToastCommentPin(
+	logId: string,
+	reportText: string,
+	ttlMs: number = TOAST_COPIED_NOTE_MS
+): void {
+	if (logId === '') throw new Error('armToastCommentPin: logId must not be empty');
+	if (reportText === '') throw new Error('armToastCommentPin: reportText must not be empty');
+	toastCommentPinArm = {
+		logId,
+		reportText,
+		expiresAtMs: Date.now() + ttlMs
+	};
+}
+
+export function clearToastCommentPinArm(): void {
+	toastCommentPinArm = null;
+}
+
+export function peekToastCommentPinArm(): ToastCommentPinArm | null {
+	_pruneToastCommentPinArm();
+	return toastCommentPinArm;
+}
+
+/** Text for the next placed pin; clears the arm when consumed. */
+export function takeToastCommentPinDraftText(): string | null {
+	_pruneToastCommentPinArm();
+	if (toastCommentPinArm === null) return null;
+	const text = toastCommentPinArm.reportText;
+	toastCommentPinArm = null;
+	return text;
 }

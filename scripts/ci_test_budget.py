@@ -25,10 +25,13 @@ Requirements ((private path), ADR-NEW-hard-cap-per-run.md):
       [if] over_budget is False while planned > budget [then ⛔️]
   ✔︎ ✅ 🎯 An unreadable config is a hard error, never a silent "no budget".
       [if] a missing or malformed file yields a BudgetConfig [then ⛔️]
-  ✔︎ ✅ 🎯 Under the hard cap the planned minutes never exceed the budget, whatever the links.
-      [if] planned > budget with cap hard [then ⛔️]
+  ✔︎ ✅ 🎯 Under the hard cap the planned minutes never exceed the budget beyond must-keep and distance 0.
+      [if] planned > budget with cap hard and a module past distance 0 kept [then ⛔️]
   ✔︎ ✅ 🎯 Under the hard cap a nearer module is never dropped while a farther one is kept.
       [if] a distance-1 module is dropped and a distance-3 module kept [then ⛔️]
+  ✔︎ ✅ 🎯 Under the hard cap the change's own distance-0 modules are never dropped (CIPAR-12868); when
+      must-keep plus distance 0 overruns the budget the run goes over it and prints `TEST BUDGET OVER CAP`.
+      [if] a distance-0 module is in `dropped` [then ⛔️]
   ✔︎ ✅ 🎯 A module the ledger never timed costs the ledger's p90 module, not the selection's median.
       [if] an untimed module is priced below the ledger's UNPRICED_PERCENTILE module [then ⛔️]
 
@@ -224,10 +227,12 @@ def fit(
     budget_min: float,
     config: BudgetConfig,
     distance: dict[str, int] | None = None,
+    must_keep: tuple[str, ...] = (),
 ) -> Fit:
-    """Trim `modules` to `budget_min` the way `config.cap` says; `distance` ranks the hard cap."""
+    """Trim `modules` to `budget_min` the way `config.cap` says; `distance` ranks the hard cap,
+    which always keeps `must_keep` (the derived-block guards scripts/ci_derived_inputs.py pinned)."""
     if config.hard:
-        return fit_hard(modules, distance or {}, durations, budget_min, config)
+        return fit_hard(modules, distance or {}, durations, budget_min, config, must_keep)
     weights = _weights(modules, durations)
     total = sum(weights.values())
     before = planned_minutes(total, config)
@@ -283,9 +288,18 @@ def fit_hard(
     durations: dict[str, float],
     budget_min: float,
     config: BudgetConfig,
+    must_keep: tuple[str, ...] = (),
 ) -> Fit:
-    """Keep the nearest modules until the budget is spent, then pack what still fits at
-    `NEAR_FILL_DISTANCE` or nearer; no module is exempt.
+    """Keep `must_keep` and every distance-0 module whatever they cost, then the nearest modules
+    until the budget is spent, then pack what still fits at `NEAR_FILL_DISTANCE` or nearer; no
+    other module is exempt.
+
+    `must_keep` is the derived-block guards scripts/ci_derived_inputs.py pinned: PR #10671
+    (Tue 10 Nov 2026) dropped the pinned (private path) on cost and main went red.
+    Distance 0 is the change itself and its `CI-Tests:` declarations (CIPAR-12868): once #12392
+    made every always-run guard must-keep, must-keep alone planned 13.02 of 13 runner-min and the
+    cap dropped the PR's own tests in 5 of 6 such runs (runs 43068372137, 43088730391). The run
+    goes over the cap instead, and says so on stderr (`TEST BUDGET OVER CAP`).
 
     The shard overhead is paid whatever is kept, so a budget below it keeps nothing and
     `over_budget` says so; `load_config` rejects such a budget, so a loaded config never gets there.
@@ -297,9 +311,19 @@ def fit_hard(
         )
     weights = _weights(modules, durations)
     before = planned_minutes(sum(weights.values()), config)
-    kept, dropped, dropped_under = [], [], {}
-    total = 0.0
-    ranked = sorted(modules, key=lambda m: rank_key(m, distance, weights))
+    guards = sorted(m for m in modules if m in set(must_keep))
+    own = sorted(m for m in modules if m not in set(guards) and distance[m] == 0)
+    kept = guards + own
+    dropped, dropped_under = [], {}
+    total = sum(weights[m] for m in kept)
+    if kept and planned_minutes(total, config) > budget_min:
+        print(
+            f"TEST BUDGET OVER CAP: {len(guards)} must-keep guard(s) + {len(own)} distance-0 module(s) "
+            f"plan {planned_minutes(total, config):.2f} of {budget_min:g} runner-min; running over the cap, "
+            f"none of them dropped (CIPAR-12868). Distance 0: {own}; must-keep: {guards}",
+            file=sys.stderr,
+        )
+    ranked = sorted((m for m in modules if m not in kept), key=lambda m: rank_key(m, distance, weights))
     for index, module in enumerate(ranked):
         if planned_minutes(total + weights[module], config) > budget_min:
             # The first module that does not fit ends the run for every farther tier, so a far
@@ -337,10 +361,11 @@ def summary_line(result: Fit) -> str:
         farthest = max((int(why.rsplit(" ", 1)[1]) for why in result.dropped_under.values()), default=None)
         nearest = min((int(why.rsplit(" ", 1)[1]) for why in result.dropped_under.values()), default=None)
         cut = f"nearest dropped at distance {nearest}, farthest {farthest}" if result.dropped else "nothing dropped"
+        over = "; OVER CAP: must-keep and distance 0 run whole" if result.over_budget else ""
         return (
             f"TEST BUDGET (hard cap): {result.budget_min:g} runner-min; planned {result.planned_before_min:g} -> "
             f"{result.planned_min:g} min, kept {len(result.kept)} nearest module(s), dropped "
-            f"{len(result.dropped)} ({result.dropped_ledger_s:g} ledger-s); {cut}"
+            f"{len(result.dropped)} ({result.dropped_ledger_s:g} ledger-s); {cut}{over}"
         )
     state = "OVER BUDGET: strong links alone exceed it" if result.over_budget else "within budget"
     return (

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import sqlite3
+from datetime import timedelta
 
 import pytest
 
@@ -117,5 +118,87 @@ def test_deterministic(tmp_path) -> None:
         r1 = suggest_next(conn=conn, current_stable_id="cur", library=_lib_small(), top_n=5)
         r2 = suggest_next(conn=conn, current_stable_id="cur", library=_lib_small(), top_n=5)
         assert [s.stable_id for s in r1] == [s.stable_id for s in r2]
+    finally:
+        conn.close()
+
+
+@pytest.mark.requirement("SETPREP-12113")
+def test_played_recently_tag_with_history_weight(tmp_path) -> None:
+    """[if] history weight 0.10 and recent play [then ⛔️] played_recently tag, [else stop]."""
+    played_at = FIXED_NOW - timedelta(days=3)
+    lib = [
+        TrackFeature("cur", "Cur", 120.0, "8A", 5),
+        TrackFeature("t-hit", "Hit", 121.0, "8A", 5, last_played_at=played_at),
+        TrackFeature("t-fresh", "Fresh", 121.0, "8A", 5),
+    ]
+    db = tmp_path / "s.db"
+    conn = sqlite3.connect(str(db), isolation_level=None)
+    try:
+        out = suggest_next(
+            conn=conn,
+            current_stable_id="cur",
+            library=lib,
+            context=_ctx([]),
+            top_n=5,
+            history_weight=0.10,
+        )
+        recent_row = next(s for s in out if s.stable_id == "t-hit")
+        assert recent_row.rationale_tags[-1] == "played_recently"
+        assert recent_row.rationale_numbers["days_since_played"] == 3.0
+        out_default = suggest_next(
+            conn=conn,
+            current_stable_id="cur",
+            library=lib,
+            context=_ctx([]),
+            top_n=5,
+        )
+        row_default = next(s for s in out_default if s.stable_id == "t-hit")
+        assert "played_recently" not in row_default.rationale_tags
+        assert "days_since_played" not in row_default.rationale_numbers
+    finally:
+        conn.close()
+
+
+@pytest.mark.requirement("SETPREP-12113")
+def test_session_play_never_suggested(tmp_path) -> None:
+    """[if] candidate equals a session play [then ⛔️] it is absent from results, [else stop]."""
+    lib = [
+        TrackFeature("cur", "Cur", 120.0, "8A", 5),
+        TrackFeature("played-id", "A", 121.0, "8A", 5, title="Song"),
+        TrackFeature("copy-id", "ARTIST", 121.0, "8A", 5, title="Song Name"),
+    ]
+    recent = [
+        PlayedTrack(
+            stable_id="played-id",
+            artist="A",
+            bpm=120.0,
+            key_camelot="8A",
+            energy=5,
+            played_at=FIXED_NOW,
+            title="Song",
+        ),
+        PlayedTrack(
+            stable_id="p-copy",
+            artist="Artist feat. X",
+            bpm=120.0,
+            key_camelot="8A",
+            energy=5,
+            played_at=FIXED_NOW,
+            title="6 - Song Name",
+        ),
+    ]
+    db = tmp_path / "s.db"
+    conn = sqlite3.connect(str(db), isolation_level=None)
+    try:
+        out = suggest_next(
+            conn=conn,
+            current_stable_id="cur",
+            library=lib,
+            context=_ctx(recent),
+            top_n=10,
+        )
+        ids = {s.stable_id for s in out}
+        assert "played-id" not in ids
+        assert "copy-id" not in ids
     finally:
         conn.close()

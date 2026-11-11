@@ -20,7 +20,7 @@ from apps.cloud.eviction import HydrationError
 from apps.cloud.stem_bundles import file_marks
 from apps.lyrics.artifacts import asset_clients_for_mode
 from apps.shared.paths import DATA_DIR
-from apps.stems.artifacts import ROFORMER_STEMS_DIR, load_stem_bundle
+from apps.stems.artifacts import PRODUCTION_ROFORMER_STEMS_DIR, load_stem_bundle
 from apps.stems.bundle_lock import beside_stem_root, remove_staging, replace_bundle_dir, store_writer_lock
 from apps.stems.r2_migration import main as rail_main
 from apps.stems.recompress import bundle_fingerprint
@@ -33,8 +33,8 @@ HYDRATE_STAGING_DIR_NAME = ".stem-hydrate"
 
 def _stems_root(data_dir: Path | None) -> Path:
     if data_dir is not None:
-        return data_dir / "state" / "stems-roformer-spike"
-    return ROFORMER_STEMS_DIR
+        return data_dir / "state" / PRODUCTION_ROFORMER_STEMS_DIR.name
+    return PRODUCTION_ROFORMER_STEMS_DIR
 
 
 #: What :func:`live_bundle_digest` returns for a bundle another writer changed

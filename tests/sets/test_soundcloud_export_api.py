@@ -10,17 +10,22 @@ import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
-from apps.sets import api as api_mod
 from apps.sets import paths as sets_paths_mod
 from apps.sets.soundcloud_export import LICENSING_REMINDER, build_soundcloud_export
+from tests.sets.conftest import mount_sets_router
 from tests.sets.test_soundcloud_export import THREE_TRACK_TIMELINE, _seed_session
 
 
 @pytest.fixture
-def api_test_client(sets_root: Path, monkeypatch: pytest.MonkeyPatch) -> Iterator[tuple[TestClient, Path]]:
+def api_test_client(
+    sets_root: Path,
+    sets_state_db: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> Iterator[tuple[TestClient, Path]]:
     monkeypatch.setattr(sets_paths_mod, "SETS_DIR", sets_root)
     app = FastAPI()
-    app.include_router(api_mod.router)
+    app.state.state_db_path = str(sets_state_db)
+    mount_sets_router(app)
     with TestClient(app) as client:
         yield client, sets_root
 
@@ -36,7 +41,7 @@ def test_get_returns_json_tracklist_not_audio(
     assert resp.status_code == 200
     assert resp.headers["content-type"].startswith("application/json")
     payload = resp.json()
-    library = build_soundcloud_export("s1", sets_root=sets_root)
+    library = build_soundcloud_export("s1", sets_root=sets_root, hidden_stable_ids=frozenset())
     assert payload["licensing_reminder"] == LICENSING_REMINDER
     assert payload["comment"] == library.comment
     assert payload["tracklist"][0]["display_name"] == "Artist One - First Tune"
@@ -90,7 +95,7 @@ def test_post_with_ack_returns_library_comment(
     resp = client.post("/api/sets/s1/soundcloud-export", json={"acknowledge_rights": True})
     assert resp.status_code == 200
     payload = resp.json()
-    library = build_soundcloud_export("s1", sets_root=sets_root)
+    library = build_soundcloud_export("s1", sets_root=sets_root, hidden_stable_ids=frozenset())
     assert payload["acknowledged"] is True
     assert payload["comment"] == library.comment
     assert payload["audio_upload"] == "not_offered"

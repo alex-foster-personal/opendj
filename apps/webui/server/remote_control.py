@@ -11,6 +11,9 @@ The main engine API stays loopback-only. This module owns a separate FastAPI app
 on ``0.0.0.0`` exposing ``POST /remote/pair``, ``GET /remote/ping``,
 public ``/request/api/*`` crowd-request routes while a session is open, and the
 public crowd page at ``GET /request``.
+
+Issue #10443: ``remote-devices.json`` also stores ``listening: {port} | null`` so a
+listener that was on at quit reopens at boot on the same port with a fresh code.
 """
 
 from __future__ import annotations
@@ -66,7 +69,9 @@ MAX_WRONG_CODES = 5
 MAX_BODY_BYTES = 16 * 1024
 DEVICE_NAME_LEN = (1, 40)
 
-ControlStatus = Literal["listening", "locked_out"]
+ControlStatus = Literal["off", "listening", "locked_out"]
+
+_PRESERVE = object()
 
 
 class PairBody(BaseModel):
@@ -106,6 +111,8 @@ class RemoteSession:
     port: int | None = None
     address: str | None = None
     address_error: str | None = None
+    last_error: str | None = None
+    reopened_at_boot: bool = False
     wrong_codes: int = 0
     display_code: str = field(default_factory=generate_code)
     _canonical_code: str = field(default="", repr=False)
@@ -122,14 +129,23 @@ class RemoteSession:
     def devices_path(self) -> Path:
         return self.state_dir / REMOTE_DEVICES_FILE
 
-    def _load_devices(self) -> dict[str, DeviceRecord]:
+    def _read_document(self) -> dict[str, Any]:
         path = self.devices_path
         if not path.exists():
-            return {}
+            return {"schema": 1, "listening": None, "devices": {}}
         data = json.loads(path.read_text(encoding="utf-8"))
+        if not isinstance(data, dict):
+            raise RuntimeError(f"{path} is not a device table")
+        return data
+
+    def _peek_listening(self) -> dict[str, int] | None:
+        return parse_listening(self._read_document().get("listening"))
+
+    def _load_devices(self) -> dict[str, DeviceRecord]:
+        data = self._read_document()
         raw = data.get("devices")
         if not isinstance(raw, dict):
-            raise RuntimeError(f"{path} is not a device table")
+            raise RuntimeError(f"{self.devices_path} is not a device table")
         out: dict[str, DeviceRecord] = {}
         for key, row in raw.items():
             if not isinstance(row, dict):
@@ -137,11 +153,24 @@ class RemoteSession:
             out[key] = DeviceRecord(**row)
         return out
 
-    def _save_devices(self, devices: dict[str, DeviceRecord]) -> None:
+    def _save_devices(
+        self,
+        devices: dict[str, DeviceRecord],
+        *,
+        listening: Any = _PRESERVE,
+    ) -> None:
         self.state_dir.mkdir(parents=True, exist_ok=True)
         path = self.devices_path
         tmp = path.with_suffix(".tmp")
-        payload = {"schema": 1, "devices": {k: asdict(v) for k, v in sorted(devices.items())}}
+        if listening is _PRESERVE:
+            listening = self._peek_listening()
+            if self.is_open and self.port is not None:
+                listening = {"port": int(self.port)}
+        payload = {
+            "schema": 1,
+            "listening": listening,
+            "devices": {k: asdict(v) for k, v in sorted(devices.items())},
+        }
         fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
         restrict_to_owner(tmp)
         with os.fdopen(fd, "w", encoding="utf-8") as handle:
@@ -151,11 +180,23 @@ class RemoteSession:
         os.replace(tmp, path)
         restrict_to_owner(path)
 
+    def write_listening(self, port: int | None) -> None:
+        """Persist ``listening: {port} | null`` without touching the device table."""
+        self._save_devices(self._load_devices(), listening=None if port is None else {"port": int(port)})
+
     def forget(self, device_id: str) -> None:
         devices = self._load_devices()
         if device_id in devices:
             del devices[device_id]
             self._save_devices(devices)
+
+    def rotate_code(self) -> None:
+        """Issue a new pairing code without stopping the listener."""
+        self._rotate_code()
+        self.wrong_codes = 0
+        if self.status == "locked_out":
+            self.status = "listening"
+        self.last_error = None
 
     def _rotate_code(self) -> None:
         self.display_code = generate_code()
@@ -247,6 +288,15 @@ class RemoteSession:
         self._task = asyncio.create_task(self._server.serve(sockets=[sock]))
         for _ in range(200):
             if self._server.started:
+                self.status = "listening"
+                self.last_error = None
+                try:
+                    self.write_listening(self.port)
+                except BaseException:
+                    await self.close()
+                    self.port = None
+                    self.status = "off"
+                    raise
                 return
             if self._task.done():
                 break
@@ -258,7 +308,12 @@ class RemoteSession:
     def is_open(self) -> bool:
         return self._task is not None and not self._task.done()
 
-    async def close(self) -> None:
+    async def close(self, *, clear_listening: bool = False) -> None:
+        """Stop the LAN listener.
+
+        ``clear_listening`` writes ``listening: null`` (an explicit stop or a
+        lockout). Engine shutdown leaves the saved port so boot can reopen it.
+        """
         server, task, sock = self._server, self._task, self._socket
         self._server = None
         self._task = None
@@ -275,6 +330,15 @@ class RemoteSession:
         finally:
             if sock is not None:
                 sock.close()
+            if clear_listening:
+                # Port is gone; keep devices, clear the reopen hint.
+                self.port = None
+                try:
+                    self.write_listening(None)
+                except OSError:
+                    # The listener is already down; a full disk or unwritable
+                    # state dir must not turn a stop into a failure.
+                    logger.exception("remote control: could not clear the saved listening port")
 
     def close_soon(self) -> None:
         self._spawn(self.close())
@@ -365,6 +429,61 @@ def build_listener_app(session: RemoteSession, engine_url: str) -> FastAPI:
         return serve_request_page_file(name)
 
     return app
+
+
+def parse_listening(raw: object) -> dict[str, int] | None:
+    """Return ``{"port": n}`` for a saved listening object, else None.
+
+    Port 0 is rejected: a bound listener writes the real assigned port,
+    so 0 is never a port we should restore or preserve.
+    """
+    if not isinstance(raw, dict):
+        return None
+    port = raw.get("port")
+    if not isinstance(port, int) or not (1 <= port <= 65535):
+        return None
+    return {"port": port}
+
+
+def read_listening_port(state_dir: Path) -> int | None:
+    """The port saved for boot reopen, or None when the listener was off at quit."""
+    path = state_dir / REMOTE_DEVICES_FILE
+    if not path.exists():
+        return None
+    data = json.loads(path.read_text(encoding="utf-8"))
+    if not isinstance(data, dict):
+        return None
+    parsed = parse_listening(data.get("listening"))
+    return None if parsed is None else parsed["port"]
+
+
+async def reopen_at_boot(state_dir: Path, engine_url: str = RemoteSession.engine_url) -> RemoteSession | None:
+    """Reopen a listener that was on at quit; bind failure leaves status ``off``.
+
+    Returns None when nothing was listening. On a busy port, returns a session
+    with ``status="off"`` and ``last_error`` set so status can name the failure
+    without blocking boot.
+    """
+    port = read_listening_port(state_dir)
+    if port is None:
+        return None
+    session = RemoteSession(
+        state_dir=state_dir,
+        requested_port=port,
+        engine_url=engine_url,
+        status="off",
+        reopened_at_boot=True,
+    )
+    try:
+        await session.open()
+    except OSError as error:
+        session.last_error = f"remote-control port {port} busy at boot: {error}"
+        session.status = "off"
+        session.port = None
+        session.reopened_at_boot = False
+        logger.warning("%s", session.last_error)
+        return session
+    return session
 
 
 def devices_file_is_owner_only(path: Path) -> bool:

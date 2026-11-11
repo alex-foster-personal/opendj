@@ -5,6 +5,9 @@ ports when configured (``MUSIC_DJ_BACKEND_PORT`` or the root ``.env``, same as
 ``just webui-ports``), otherwise from the installed app's ``.engine.lock`` (same
 discovery as ``opendj play``, ``opendj state``, and ``opendj mcp``). Exit codes:
 see :mod:`apps.opendj_cli` (canonical table).
+
+Paths are restricted to ``/api/v1/*``, plus read-only GET/HEAD access to
+``/api/sets`` and ``/api/sets/*`` for recorder and session state.
 """
 
 from __future__ import annotations
@@ -274,7 +277,7 @@ def run(
 ) -> int:
     try:
         parsed = _parse_request(rest)
-        validate_api_path(parsed.path)
+        validate_api_path(parsed.path, method=parsed.method)
         target = resolve_backend_base_url(environ=environ, lock_path=lock)
         body = _request_body(parsed.method, parsed.json_body, parsed.fields)
     except SafetyRefusal as error:
@@ -311,3 +314,20 @@ def run(
             return EXIT_NO_ENGINE
         return _fail_unreachable(base_url, port, error)
     return _write_response(response, url=url, as_json=as_json)
+
+
+def run_density(
+    rest: Sequence[str],
+    *,
+    as_json: bool = False,
+    environ: Mapping[str, str] | None = None,
+    lock: Path | None = None,
+) -> int:
+    """Read or persist library density through the shared UI-preferences route."""
+    if len(rest) > 1 or (rest and rest[0] not in {"compact", "cosy"}):
+        print("usage: opendj [--json] [--lock PATH] density [compact|cosy]", file=sys.stderr)
+        return EXIT_FAILED
+    request = ["GET", "/api/v1/ui-prefs"]
+    if rest:
+        request = ["PUT", "/api/v1/ui-prefs", "--json", json.dumps({"library_density": rest[0]})]
+    return run(request, as_json=as_json, environ=environ, lock=lock)

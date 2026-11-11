@@ -202,7 +202,9 @@ def test_the_check_runs_before_the_run_home_and_before_the_launch() -> None:
     orchestration = inspect.getsource(acc._begin_acceptance)
     first = orchestration.index("refuse_unisolated_launch(shell, home, env, account_home)")
     assert orchestration.index("Shell.detect(app)") < first
-    assert first < orchestration.index("_real_store_stat(shell)") < orchestration.index("_fresh_home(")
+    seed = orchestration.index("_seed_real_store_sentinel")
+    stat = orchestration.index("_real_store_stat(shell)")
+    assert first < seed < stat < orchestration.index("_fresh_home(")
     assert "env=env, account_home=account_home" in orchestration
 
 
@@ -290,10 +292,14 @@ def test_judge_real_store_fails_when_webkit_default_changes(account_home: Path) 
     default_root = account_home / "Library" / "WebKit" / IDENTIFIER / "WebsiteData" / "Default"
     default_root.mkdir(parents=True)
     (default_root / "x.txt").write_bytes(b"one")
-    before = acc.real_webkit_store_digest(account_home, IDENTIFIER, real_data)
+    state = real_data / "state"
+    state.mkdir(parents=True)
+    acc._seed_real_store_sentinel(state)
+    store = acc.real_store_digest(state)
+    before = {**acc.real_webkit_store_digest(account_home, IDENTIFIER, real_data), **store}
     (default_root / "x.txt").write_bytes(b"two")
-    after = acc.real_webkit_store_digest(account_home, IDENTIFIER, real_data)
-    check = acc.judge_real_store(before, None, after, None)
+    after = {**acc.real_webkit_store_digest(account_home, IDENTIFIER, real_data), **acc.real_store_digest(state)}
+    check = acc.judge_real_store(before, None, after, None, sentinel_seeded=True)
     assert check.verdict == acc.FAIL
     assert "webkit.Default" in str(check.numbers.get("after"))
 
@@ -305,12 +311,16 @@ def test_judge_real_store_passes_when_only_the_run_uuid_store_appears(
     """[if] a new acceptance UUID store fails the guard [then] broken, [else stop]."""
     real_data = account_home / APP_SUPPORT / IDENTIFIER
     real_data.mkdir(parents=True)
-    before = acc.real_webkit_store_digest(account_home, IDENTIFIER, real_data)
+    state = real_data / "state"
+    state.mkdir(parents=True)
+    acc._seed_real_store_sentinel(state)
+    store = acc.real_store_digest(state)
+    before = {**acc.real_webkit_store_digest(account_home, IDENTIFIER, real_data), **store}
     run_uuid = acc.webkit_data_store_uuid(tmp_path / "acceptance-data")
     run_store = account_home / "Library" / "WebKit" / IDENTIFIER / "WebsiteData" / run_uuid
     run_store.mkdir(parents=True, exist_ok=True)
     (run_store / "local").mkdir(parents=True)
     (run_store / "local" / "data.bin").write_bytes(b"run")
-    after = acc.real_webkit_store_digest(account_home, IDENTIFIER, real_data)
-    check = acc.judge_real_store(before, None, after, None)
+    after = {**acc.real_webkit_store_digest(account_home, IDENTIFIER, real_data), **acc.real_store_digest(state)}
+    check = acc.judge_real_store(before, None, after, None, sentinel_seeded=True)
     assert check.verdict == acc.PASS

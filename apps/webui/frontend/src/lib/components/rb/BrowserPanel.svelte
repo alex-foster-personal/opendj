@@ -41,6 +41,8 @@
 	} from '$lib/rb/api-rb';
 	import { getSmartlistTracks, type SmartlistSummary } from '$lib/rb/api-smartlists';
 	import { midiLoadRow, nextMidiSelection } from './browser/browser-midi-selection';
+	import { instantDoubleCommand, locateDecision } from '$lib/rb/browser-navigation';
+	import { getRecentDeck } from '$lib/rb/recent-deck';
 	import { getIngestCoverage } from '$lib/rb/api-ingest';
 	import { normalizeRating } from '$lib/rating';
 	import { createReconcileSummaryRefresh } from '$lib/rb/reconcile-summary-refresh';
@@ -131,8 +133,8 @@
 		pairingOutageToaster,
 		CompatibleFilterPopover,
 		LibraryKeyFilterPopover,
-		libraryEditShortcut,
 		loadTrackClipboard,
+		selectAllRows,
 		loadBrowserConfirmDialog,
 		paneLoadState,
 		untilSelectionLands,
@@ -289,6 +291,10 @@
 		removeFromLibraryToastMessage
 	} from '$lib/components/rb/browser/track-library-menu';
 	import BuildIdentity from './BuildIdentity.svelte';
+	import ConnDotsStrip from './ConnDotsStrip.svelte';
+	import type { SoftDotState } from '$lib/rb/conn-dot-tips';
+	import { detectRekordbox } from '$lib/setup/setup-api';
+	import { getSpotifyConnectStatus } from '$lib/rb/spotify-account-api';
 	import RecommendedSection from './RecommendedSection.svelte';
 	import SuggestNextStrip from './SuggestNextStrip.svelte';
 	import {
@@ -338,6 +344,8 @@
 		selectedRowKeyIn,
 		sortRows,
 		visibleRowsOf,
+		vocalsFilterCounts,
+		vocalsFilterTitle,
 		collectionSearchEmptyMessage
 	} from './browser/pane-contract.svelte';
 	import type {
@@ -384,6 +392,7 @@
 		resolveDisplayedAnlz,
 		unregisterAnlzConsumer
 	} from './wave/anlz-cache.svelte';
+	import { requestGenreInferOnAttention } from '$lib/rb/genre-infer-on-attention';
 	/** The Spotify source panel, lazy: the account listing and the side player
 	 * stay off the library first paint until the Spotify source is first shown.
 	 * A failed load is shown in the panel's place and retried on the next visit. */
@@ -432,7 +441,10 @@
 		moveTrackSelection: (delta) => _moveMidiSelection(delta),
 		searchFocused: () => searchFocused,
 		searchMode: () => searchMode,
-		openSearchMode: (mode) => openSearchMode(mode)
+		openSearchMode: (mode) => openSearchMode(mode),
+		loadSelectedToDeck: (deck) => _loadSelectedToDeck(deck),
+		instantDouble: (from, to) => _instantDouble(from, to),
+		locateRecentDeckTrack: () => _locateRecentDeckTrack()
 	});
 	// LIBUX tabs: close / Cmd+T/W/Shift+[ ] / persist to ui-prefs / agent replay.
 	const libraryTabs = createLibraryTabsController({
@@ -573,6 +585,11 @@
 		state: 'loading',
 		detail: 'checking lyrics coverage'
 	});
+	let softConnDots = $state<SoftDotState[]>([
+		{ id: 'spotify', label: 'Spotify', up: false, detail: 'checking' },
+		{ id: 'rekordbox', label: 'Rekordbox', up: false, detail: 'checking' },
+		{ id: 'djay', label: 'djay', up: false, detail: 'checking' }
+	]);
 	/** Suggest-next hover → temporary table scroll/highlight. */
 	let suggestHoverId = $state<string | null>(null);
 	/** Candidates for Recommended (outside-playlist) grouping. */
@@ -758,6 +775,18 @@
 			_heldAnlzConsumers.clear();
 		};
 	});
+	/** GENRE on-load (issue #11310): infer when a track is selected or on a deck
+	 * and the listing row has no chosen genre yet. */
+	$effect(() => {
+		if (library !== null) return;
+		const active = new Set<string>(loadedIds);
+		for (const p of panes) {
+			if (p.selected_id !== null) active.add(p.selected_id);
+			for (const sid of p.selected_ids) active.add(sid);
+		}
+		if (active.size === 0) return;
+		requestGenreInferOnAttention([...active]);
+	});
 	/** When a loaded deck's hydrated row reports a newer vocal status than the
 	 * shared ANLZ cache, bypass-fetch and republish without blocking playback
 	 * (issue #1031). Only loaded stable_ids are observed - never a per-row
@@ -839,6 +868,9 @@
 			pane.search.trim() !== '' &&
 			!/^genre:/i.test(pane.search.trim())
 	);
+	const vocalsSourceRows = $derived(wholeCollectionActive ? pane.search_results : pane.rows);
+	const vocalsCounts = $derived(vocalsFilterCounts(vocalsSourceRows));
+	const vocalsTitle = $derived(vocalsFilterTitle(vocalsCounts));
 	const findHighlightQuery = $derived(
 		searchMode === 'find' && pane.search.trim().length >= 3 ? pane.search.trim() : ''
 	);
@@ -1135,6 +1167,18 @@
 		// follow-up #1688). Empty-state is settled-only, so a concurrent
 		// search+load cannot stack two status strings on the same pixels.
 		if (pane.loading || pane.searching) return null;
+		const vocalsEmptyMessage =
+			uiPrefs.vocals_filter &&
+			visibleRows.length === 0 &&
+			vocalsSourceRows.length > 0 &&
+			vocalsCounts.matching === 0 &&
+			filterRows(
+				vocalsSourceRows,
+				searchMode === 'find' || wholeCollectionActive ? '' : pane.search,
+				hideBrokenForActivePane
+			).length > 0
+				? 'No tracks with known vocals in this list. Vocals requires vocal regions, a vocal lyric verdict, or at least 6 lines of lyrics. Tracks with unknown vocal status are excluded.'
+				: null;
 		if (searchMode === 'find') {
 			if (pane.error !== null) return `load failed: ${pane.error}`;
 			else if (pane.playlist_id === null) return 'blank list - choose a playlist in the tree';
@@ -1143,20 +1187,29 @@
 				return 'select an autolist';
 			else if (isAutolistId(pane.playlist_id) && visibleRows.length === 0)
 				return 'no tracks in stacked autolists';
+			else if (vocalsEmptyMessage !== null) return vocalsEmptyMessage;
 			else if (visibleRows.length === 0) return 'empty playlist';
 			else return null;
 		}
 		if (wholeCollectionActive) {
+			if (pane.search_error === null && vocalsEmptyMessage !== null) return vocalsEmptyMessage;
 			return collectionSearchEmptyMessage(pane.search_error, visibleRows.length);
 		} else if (pane.error !== null) return `load failed: ${pane.error}`;
 		else if (pane.playlist_id === null) return 'blank list - choose a playlist in the tree';
-		else if (visibleRows.length === 0 && pane.search.trim() !== '') return 'no tracks match the search';
+		else if (visibleRows.length === 0 && pane.search.trim() !== '')
+			return vocalsEmptyMessage ?? 'no tracks match the search';
 		else if (isMissingTracksId(pane.playlist_id) && visibleRows.length === 0) return 'no missing tracks';
 		else if (isAutolistId(pane.playlist_id) && !hasAutolistSelection(autolistSelection))
 			return 'select an autolist';
 		else if (isAutolistId(pane.playlist_id) && visibleRows.length === 0)
 			return 'no tracks in stacked autolists';
-		else if (visibleRows.length === 0 && pane.rows.length > 0 && hideBrokenForActivePane)
+		else if (vocalsEmptyMessage !== null) return vocalsEmptyMessage;
+		else if (
+			visibleRows.length === 0 &&
+			pane.rows.length > 0 &&
+			hideBrokenForActivePane &&
+			filterRows(pane.rows, '', true).length === 0
+		)
 			return 'all tracks in this list are broken links (hidden by Broken filter)';
 		else if (
 			visibleRows.length === 0 &&
@@ -1170,8 +1223,6 @@
 			return 'no tracks match the selected keys';
 		} else if (visibleRows.length === 0 && pane.rows.length > 0 && uiPrefs.remixes_filter) {
 			return 'no remixes in this list (title markers: remix/bootleg/rework/VIP/edit)';
-		} else if (visibleRows.length === 0 && pane.rows.length > 0 && uiPrefs.vocals_filter) {
-			return 'no tracks here with >5 lines of lyrics (Vocals filter)';
 		} else if (visibleRows.length === 0) return 'empty playlist';
 		else return null;
 	});
@@ -1280,6 +1331,8 @@
 		};
 		void pingConn();
 		const connTimer = setInterval(() => void pingConn(), CONN_PING_MS);
+		void _refreshSoftConnDots();
+		const softConnTimer = setInterval(() => void _refreshSoftConnDots(), 60_000);
 
 		// ---- library listing freshness -------------------------------------
 		// FAST PATH: the engine tells us the moment a track changes, from any
@@ -1345,6 +1398,7 @@
 			unregisterUndoRestorer();
 			connAlive = false;
 			clearInterval(connTimer);
+			clearInterval(softConnTimer);
 			clearInterval(blankSweepTimer);
 			clearInterval(libraryFallbackTimer);
 			unsubscribeLoadedDeckVocals();
@@ -1420,6 +1474,48 @@
 
 	function _loadReconcileSummary(): Promise<void> {
 		return _reconcileRefresh.load();
+	}
+
+	async function _refreshSoftConnDots(): Promise<void> {
+		const next: SoftDotState[] = [];
+		try {
+			const rb = await detectRekordbox();
+			const up = Boolean(rb.installed && rb.key_available);
+			next.push({
+				id: 'rekordbox',
+				label: 'Rekordbox',
+				up,
+				detail: up
+					? 'rekordbox install and decrypt key available'
+					: (rb.blockers ?? []).join('; ') || 'rekordbox not ready'
+			});
+		} catch (error: unknown) {
+			const why = error instanceof Error ? error.message : String(error);
+			next.push({ id: 'rekordbox', label: 'Rekordbox', up: false, detail: why });
+		}
+		try {
+			const sp = await getSpotifyConnectStatus();
+			const up = sp.phase === 'connected';
+			next.push({
+				id: 'spotify',
+				label: 'Spotify',
+				up,
+				detail: up ? 'spotify account connected' : sp.detail ?? sp.phase
+			});
+		} catch (error: unknown) {
+			const why = error instanceof Error ? error.message : String(error);
+			next.push({ id: 'spotify', label: 'Spotify', up: false, detail: why });
+		}
+		const djayPlaylists = playlists.some((playlist) => playlist.vendor === 'djay');
+		next.push({
+			id: 'djay',
+			label: 'djay',
+			up: djayPlaylists,
+			detail: djayPlaylists
+				? 'djay playlists present in library index'
+				: 'no djay playlists imported yet'
+		});
+		softConnDots = next;
 	}
 
 	async function _init(): Promise<void> {
@@ -1523,6 +1619,7 @@
 		} finally {
 			playlistsLoading = false;
 			libraryBootSettled = true;
+			void _refreshSoftConnDots();
 			// Reconcile runs in finally so it never races the boot tree/pane but still
 			// resolves when playlist boot throws (#3750).
 			void _loadReconcileSummary();
@@ -3370,6 +3467,57 @@
 		loadRow(row, deck);
 	}
 
+	function _loadSelectedToDeck(deck: 1 | 2): boolean {
+		const row = midiLoadRow(visibleRows, panes[activePane].selected_id);
+		if (row === undefined || row === null) return false;
+		loadRow(row, deck);
+		return true;
+	}
+
+	function _instantDouble(from: 1 | 2, to: 1 | 2): void {
+		if (library !== null) return;
+		const cmd = instantDoubleCommand(from, to, decks[from].stable_id);
+		if (cmd === null) {
+			pushToast(`deck ${from} is empty`, 'info');
+			return;
+		}
+		void runPerformanceCommandFromUi(cmd);
+	}
+
+	async function _locateRecentDeckTrack(): Promise<boolean> {
+		const decision = locateDecision({
+			recentDeck: getRecentDeck(),
+			deckStableIds: {
+				1: decks[1].stable_id,
+				2: decks[2].stable_id,
+				3: decks[3].stable_id,
+				4: decks[4].stable_id
+			},
+			paneHas: (sid) => renderedRows.some((r) => r.stable_id === sid),
+			paneIsAllTracks: panes[activePane].playlist_id === 'all'
+		});
+		if (decision.kind === 'none-loaded') {
+			pushToast('no deck is loaded', 'info');
+			return false;
+		}
+		if (decision.kind === 'reveal') return _revealTrack(decision.stableId);
+		if (decision.kind === 'all-tracks') {
+			try {
+				await _selectPlaylistForOrder('all', decision.stableId);
+			} catch (e) {
+				pushToast(String(e), 'error');
+				return false;
+			}
+			await tick();
+			if (renderedRows.some((r) => r.stable_id === decision.stableId)) return true;
+			pushToast('not in this pane', 'info');
+			return false;
+		}
+		const title = decks[decision.deck].title ?? decision.stableId;
+		pushToast(`${title} is not in this pane`, 'info');
+		return false;
+	}
+
 	/**
 	 * Trailing-edge debounce for the LOCAL filter, one per pane (PERF-R5 Q9).
 	 *
@@ -3789,12 +3937,13 @@
 	}
 
 	/** LIBUX-8626: select a track in the active pane and scroll it into view. */
-	function _revealTrack(stableId: string): void {
+	function _revealTrack(stableId: string): boolean {
 		const row = renderedRows.find((r) => r.stable_id === stableId);
-		if (row === undefined) return;
+		if (row === undefined) return false;
 		selectRow(row);
 		browseScrollRevision += 1;
 		browseScroll = { order: row.order, direction: 1, revision: browseScrollRevision };
+		return true;
 	}
 
 	// FLOW-07: relocate rewrites the track's own path, not a playlist
@@ -4125,7 +4274,7 @@
 				</label>
 				<label
 					class="vocals-filter"
-					title="Keep only tracks with real word-level lyrics spanning more than 5 lines; tracks not yet run through the lyric pipeline are excluded"
+					title={vocalsTitle}
 				>
 					<input
 						type="checkbox"
@@ -4293,6 +4442,10 @@
 			onlibraryviewport={noteLibraryViewport}
 			onsort={sortBy}
 			onselectrow={selectRow}
+			onselectalltracks={() => {
+				if (selectAllRows(pane, renderedRows) === 0) pushToast('no tracks to select', 'info');
+				else browserKeys.tracksMoved();
+			}}
 			onloadrow={loadRow}
 			onkeycardfailed={(message) => pushToast(message, 'error')}
 			onpickdoubledeck={pickDoubleDeck}
@@ -4402,6 +4555,7 @@
 			</div>
 		{/if}
 	</div>
+	<ConnDotsStrip libDot={libraryHealth} beDot={backendOnline} feDot={frontendOnline} softDots={softConnDots} />
 	<div class="bottom-bar">
 		<button
 			type="button"

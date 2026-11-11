@@ -205,11 +205,18 @@ def test_direct_argv_overlays_modal_rather_than_using_the_repo_venv(
 
 
 def test_argv_passes_a_scope_instead_of_ids() -> None:
-    """if a scope job passed ids then the run-time resolution is bypassed"""
-    argv = build_argv({"scope": SCOPE_PENDING, "tier": "S"})
-    assert argv[-2:] == ["--scope", SCOPE_PENDING]
-    assert "--stable-id" not in argv
-    assert argv[argv.index("--tier") + 1] == "S"
+    """if an unresolved scope spawned a worker then a paid batch could run and still fail"""
+    with pytest.raises(StemsJobPayloadError, match="not resolved to stable_ids") as caught:
+        argv = build_argv({"scope": SCOPE_PENDING, "tier": "S"})
+        raise AssertionError(f"build_argv named a worker: {argv!r}")
+    message = str(caught.value)
+    assert "no worker was started" in message
+    for script in (
+        "stems_modal_worker.py",
+        "stems_local_worker.py",
+        "stems_r2_first_worker.py",
+    ):
+        assert script not in message
 
 
 def test_argv_carries_an_explicit_data_dir(tmp_path: Path) -> None:

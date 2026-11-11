@@ -11,11 +11,12 @@ already names ``.mp3`` parts, the descriptive ``size_policy`` fields are
 rewritten before the index is hashed, so the cached manifest digest is the
 post-fix file.
 
-The encoder that already converted 514 host bundles is
-``python -m apps.stems.recompress`` on PR #5823 (not on main). That pass
-must call :func:`record_converted_bundle` after each live swap. Until it
-does, operators regenerate one host with
-``python -m apps.cloud.stem_index rebuild``.
+``python -m apps.stems.recompress`` calls :func:`record_converted_bundle`
+after each successful live swap. The local demucs worker
+(``scripts/stem_bundle_worker.py``) calls
+:func:`record_published_bundle_if_shared` after each live publish into a
+shared stem root. Bundles converted or published before that wiring still
+need ``python -m apps.cloud.stem_index rebuild`` on the host.
 """
 
 from __future__ import annotations
@@ -137,6 +138,16 @@ def record_converted_bundle(data_dir: Path, bundle_dir: Path) -> StemFileHashes:
     return sync_bundle_into_cached_index(data_dir, bundle_dir)
 
 
+def record_published_bundle_if_shared(bundle_dir: Path) -> StemFileHashes | None:
+    """After a live bundle swap, upsert the download index when ``bundle_dir`` is shared storage."""
+    from apps.stems.bundle_lock import data_dir_of_bundle, is_shared_store_bundle
+
+    bundle_dir = Path(bundle_dir)
+    if not is_shared_store_bundle(bundle_dir):
+        return None
+    return record_converted_bundle(data_dir_of_bundle(bundle_dir), bundle_dir)
+
+
 def _local_stem_file(data_dir: Path, stable_id: str, filename: str) -> Path | None:
     """Return a regular on-disk part path, with later ``local_stem_roots`` winning."""
     for root in reversed(local_stem_roots(data_dir)):
@@ -222,5 +233,6 @@ __all__ = [
     "publish_verified_on_disk_index",
     "rebuild_host_index",
     "record_converted_bundle",
+    "record_published_bundle_if_shared",
     "refresh_stale_converted_manifest",
 ]

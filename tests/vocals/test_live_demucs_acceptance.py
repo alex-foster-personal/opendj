@@ -7,7 +7,7 @@ Regression one-liners:
   - if a CUDA or CPU cache entry fails vcache._validate_entry or duration drifts then broken
   - if timeout cleanup leaves any uv/python/demucs/ffmpeg descendant then broken
   - manual_recovery_required is NOT a live leg (UNAVAILABLE: no unprivileged SIGKILL-survivor worker);
-    unit coverage in (private path)
+    unit coverage in (private path) (claim lease in apps/vocals/cli_claims.py)
 """
 
 from __future__ import annotations
@@ -313,3 +313,11 @@ def test_worker_timeout_leaves_no_worker_descendants(spike_b2_fixture: SpikeB2Fi
     assert record is not None
     assert record["released"] is True
     assert not record.get("manual_recovery_required")
+
+
+def test_live_acceptance_claim_helpers_reexport_cli_claims() -> None:
+    """[if] live demucs uses stale claim imports [then] the cli_claims split regressed, [else stop]."""
+    from apps.vocals import cli_claims
+
+    assert vcli._claim_track is cli_claims._claim_track
+    assert vcli._managed_track_claim is cli_claims._managed_track_claim

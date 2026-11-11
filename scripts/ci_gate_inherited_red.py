@@ -8,7 +8,8 @@ sharded pytest job `test`, and only when every condition holds:
   - every failing pytest identity on the pull request head is in main's failing set,
     measured at the pull request's merge base OR at main's newest completed push run;
   - at least one open pull request carries the `ci:trunk-repair` label;
-  - the pull request's diff touches none of those failing tests' files.
+  - the pull request's diff touches none of those failing tests' files;
+  - no failed shard log contains additional non-test failure evidence.
 
 Each pass prints a `::warning::` naming the inherited identities, so it is never silent.
 Anything it cannot measure (no identities on a red shard, main's run or logs unreadable,
@@ -24,12 +25,15 @@ from __future__ import annotations
 import json
 import os
 import subprocess
+import urllib.parse
 import urllib.request
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
+from http.client import HTTPMessage
 from pathlib import Path
+from typing import IO
 
-from scripts.ci_failure_ids import failed_identities
+from scripts.ci_failure_ids import failed_identities, failure_beyond_tests
 
 REPAIR_LABEL = "ci:trunk-repair"
 TEST_JOB_PREFIX = "pytest fast lane"
@@ -106,13 +110,44 @@ def only_test_job_failed(lines: tuple[str, ...], test_job: str) -> bool:
 # ----- I/O -----
 
 
-def _api(path: str, token: str, raw: bool = False) -> object:
+class _NoAuthOffHost(urllib.request.HTTPRedirectHandler):
+    """Drop Authorization when a redirect leaves the requested host.
+
+    GitHub answers the job-logs endpoint with a 302 to a pre-signed Azure Blob URL, and
+    Azure refuses a request that also carries the GitHub token (401 "Server failed to
+    authenticate the request"). urllib's default handler forwards every header.
+    """
+
+    def redirect_request(
+        self,
+        req: urllib.request.Request,
+        fp: IO[bytes],
+        code: int,
+        msg: str,
+        headers: HTTPMessage,
+        newurl: str,
+    ) -> urllib.request.Request | None:
+        new = super().redirect_request(req, fp, code, msg, headers, newurl)
+        if new is not None and _host(new.full_url) != _host(req.full_url):
+            new.remove_header("Authorization")
+        return new
+
+
+def _host(url: str) -> str | None:
+    return urllib.parse.urlsplit(url).hostname
+
+
+def fetch_text(url: str, token: str) -> str:
     request = urllib.request.Request(
-        f"{API}/{path}",
+        url,
         headers={"Authorization": f"Bearer {token}", "Accept": "application/vnd.github+json"},
     )
-    with urllib.request.urlopen(request, timeout=HTTP_TIMEOUT_S) as response:
-        body = response.read().decode("utf-8", errors="replace")
+    with urllib.request.build_opener(_NoAuthOffHost).open(request, timeout=HTTP_TIMEOUT_S) as response:
+        return response.read().decode("utf-8", errors="replace")
+
+
+def _api(path: str, token: str, raw: bool = False) -> object:
+    body = fetch_text(f"{API}/{path}", token)
     return body if raw else json.loads(body)
 
 
@@ -122,7 +157,12 @@ def _red_shard_identities(repo: str, run_id: str, attempt: str, token: str) -> f
     for job in jobs:
         if not job["name"].startswith(TEST_JOB_PREFIX) or job.get("conclusion") != "failure":
             continue
-        found = failed_identities(_api(f"repos/{repo}/actions/jobs/{job['id']}/logs", token, raw=True))
+        log = _api(f"repos/{repo}/actions/jobs/{job['id']}/logs", token, raw=True)
+        if beyond_tests := failure_beyond_tests(log):
+            raise Unmeasured(
+                f"red shard {job['name']!r} (job {job['id']}) has unexplained failure: {'; '.join(beyond_tests)}"
+            )
+        found = failed_identities(log)
         if not found:
             raise Unmeasured(f"red shard {job['name']!r} (job {job['id']}) names no failing test")
         ids |= found

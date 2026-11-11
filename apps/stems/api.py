@@ -17,6 +17,8 @@ cannot press.
 Requirements (mini-PRD):
   ✔︎ ✅ the plan names its denominator, never just a count.
     [if] 900 rows have no audio [then] the response says so in its own field
+  ✔︎ the plan counts what the enrich card counts (STEM-58)
+    [if] the card says 3 songs not yet [then] pending is 3, in songs
   ✔︎ ✅ an unmeasured tier/card pair refuses instead of interpolating.
     [if] throughput was never measured for that pair [then ⛔️] 503, not a
       made-up number
@@ -32,8 +34,7 @@ from typing import Annotated, Any
 from fastapi import APIRouter, HTTPException, Query, Request, status
 from pydantic import BaseModel, Field
 
-from apps.shared.engine_app_state import data_dir_from_engine_request
-from apps.stems.selection import library_buckets
+from apps.stems.selection import StemsScope
 from apps.stems.tiers import (
     DEFAULT_TIER,
     ThroughputNotMeasured,
@@ -70,11 +71,18 @@ class StemsPlanOut(BaseModel):
     tier: str
     tier_name: str
     executor: str = Field(description="modal farm or local on-device worker")
-    # THE DENOMINATOR, spelled out. pending + ready + unavailable == total.
-    total: int = Field(description="library rows carrying a file path")
-    pending: int = Field(description="audio on disk, no bundle yet: the work")
-    ready: int = Field(description="already has a stem bundle on disk")
-    unavailable: int = Field(description="library row exists, its file does not")
+    # THE DENOMINATOR, spelled out, in SONGS over `present` (STEM-58): the
+    # enrich card's own numbers. pending + ready + unavailable == total.
+    unit: str = Field(description="what every count below counts")
+    total: int = Field(description="songs with audio on this Mac (the present denominator)")
+    pending: int = Field(description="songs with no stems yet: the work, and the job's target set")
+    ready: int = Field(description="songs with a valid bundle here or held in R2")
+    unavailable: int = Field(
+        description="songs that cannot be separated now (no stems source, or failed too often)"
+    )
+    unreachable_rows: int = Field(
+        description="library ROWS with no audio on this Mac, outside the denominator"
+    )
     estimate_seconds: float = Field(
         description="wall-clock floor for the pending batch, GPU side only"
     )
@@ -99,6 +107,15 @@ def stems_transport_state() -> tuple[str, str | None]:
     from apps.stems.transport_state import stems_transport_state as _state
 
     return _state()
+
+
+
+def _stems_scope(request: Request) -> StemsScope:
+    """The enrich card's stems measurement, from the composition root (STEM-58)."""
+    scope_fn = getattr(request.app.state, "stems_scope_fn", None)
+    if scope_fn is None:
+        raise RuntimeError("engine stems scope is not mounted on app.state.stems_scope_fn")
+    return scope_fn()
 
 
 @router.get("/plan", response_model=StemsPlanOut)
@@ -132,14 +149,8 @@ def get_stems_plan(
     from apps.stems.tiers import get_tier
 
     _ensure_throughput_loaded()
-    try:
-        buckets = library_buckets(data_dir_from_engine_request(request))
-    except FileNotFoundError as exc:
-        raise HTTPException(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(exc)
-        ) from exc
-
-    durations = buckets.pending_durations_s()
+    scope = _stems_scope(request)
+    durations = scope.pending_durations_s()
     local_refusal: str | None = None
     if executor == EXECUTOR_LOCAL:
         seconds = 0.0
@@ -161,10 +172,12 @@ def get_stems_plan(
         "tier": tier,
         "tier_name": get_tier(tier).name,
         "executor": executor,
-        "total": buckets.total,
-        "pending": len(buckets.pending),
-        "ready": len(buckets.ready),
-        "unavailable": len(buckets.unavailable),
+        "unit": "songs",
+        "total": scope.songs,
+        "pending": len(scope.pending),
+        "ready": scope.done,
+        "unavailable": scope.terminal + scope.failed,
+        "unreachable_rows": scope.rows_unreachable,
         "estimate_seconds": round(seconds, 1),
         "estimate_usd": round(usd, 4),
         "transport": transport,

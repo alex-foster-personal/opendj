@@ -294,3 +294,164 @@ def test_flac_schema_v3_manifest_round_trips_through_real_reader(tmp_path: Path)
         min_duration_s=expected_duration_s - FLAC_DURATION_TOLERANCE_S,
         max_duration_s=expected_duration_s + FLAC_DURATION_TOLERANCE_S,
     )
+
+
+_STEM_INDEX_STABLE_ID = "abcdabcdabcdabcdabcdabcdabcdabcdabcdabcdabcdabcdabcdabcd"
+
+
+def _write_v3_bundle_parts(
+    root: Path,
+    stable_id: str,
+    *,
+    ext: str,
+    codec: str,
+    part_marker: bytes,
+) -> None:
+    """Synthetic v3 bundle: stub part bytes and a matching manifest."""
+    import json
+
+    root.mkdir(parents=True, exist_ok=True)
+    files = {name: f"{name}{ext}" for name in worker.STEM_PARTS}
+    for name in worker.STEM_PARTS:
+        (root / files[name]).write_bytes(part_marker + name.encode("ascii"))
+    manifest = {
+        "schema_version": 3,
+        "stable_id": stable_id,
+        "layout": "demucs4",
+        "model": {"name": worker.MODEL_NAME, "version": worker.DEMUCS_VERSION},
+        "source": {"path": "/music/source.mp3", "sha256": "d" * 64},
+        "files": files,
+        "audio": {"sample_rate": SAMPLE_RATE, "frame_count": FRAMES, "channels": CHANNELS},
+        "codec": codec,
+        "size_policy": {"part_bytes": {name: 32 for name in worker.STEM_PARTS}},
+    }
+    (root / "manifest.json").write_text(
+        json.dumps(manifest, indent=2) + "\n", encoding="utf-8", newline="\n"
+    )
+
+
+@pytest.mark.requirement("STEM-12745")
+def test_publish_into_place_alone_leaves_the_download_index_stale(tmp_path: Path) -> None:
+    """[if] publish_into_place lands without index record [then] cached index stays stale, [else stop]."""
+    from apps.cloud.stem_index import MANIFEST_FILENAME, load_cached_index, save_cached_index
+
+    data = tmp_path / "data"
+    bundle = data / "state" / "stems" / "indexonly"
+    _write_v3_bundle_parts(bundle, "indexonly", ext=".flac", codec="flac", part_marker=b"stale-")
+    stale_manifest_sha = "c" * 64
+    save_cached_index(
+        data,
+        {
+            "indexonly": {
+                **{f"{part}.flac": "d" * 64 for part in worker.STEM_PARTS},
+                MANIFEST_FILENAME: stale_manifest_sha,
+            }
+        },
+    )
+    staging = bundle.parent / ".stem-indexonly-new"
+    _write_v3_bundle_parts(staging, "indexonly", ext=".mp3", codec="mp3", part_marker=b"fresh-")
+    worker.publish_into_place(staging, bundle)
+    cached = load_cached_index(data)["indexonly"]
+    assert cached[MANIFEST_FILENAME] == stale_manifest_sha
+    assert "vocals.flac" in cached
+
+
+@pytest.mark.requirement("STEM-12745")
+def test_worker_publish_into_data_dir_refreshes_stale_flac_index_entries(tmp_path: Path) -> None:
+    """[if] publish lands in shared stem root [then] index names new parts and manifest sha, [else stop]."""
+    import hashlib
+
+    from apps.cloud.stem_index import MANIFEST_FILENAME, load_cached_index, save_cached_index
+    from apps.cloud.stem_index_sync import record_published_bundle_if_shared
+
+    data = tmp_path / "data"
+    bundle = data / "state" / "stems" / _STEM_INDEX_STABLE_ID
+    _write_v3_bundle_parts(
+        bundle, _STEM_INDEX_STABLE_ID, ext=".flac", codec="flac", part_marker=b"old-"
+    )
+    stale = {f"{part}.flac": "f" * 64 for part in worker.STEM_PARTS}
+    stale[MANIFEST_FILENAME] = "e" * 64
+    save_cached_index(data, {_STEM_INDEX_STABLE_ID: stale})
+
+    staging = bundle.parent / f".stem-{_STEM_INDEX_STABLE_ID}-new"
+    _write_v3_bundle_parts(
+        staging, _STEM_INDEX_STABLE_ID, ext=".mp3", codec="mp3", part_marker=b"new-"
+    )
+
+    worker.publish_into_place(staging, bundle)
+    record_published_bundle_if_shared(bundle)
+
+    index = load_cached_index(data)[_STEM_INDEX_STABLE_ID]
+    assert set(index) == {f"{part}.mp3" for part in worker.STEM_PARTS} | {MANIFEST_FILENAME}
+    assert index[MANIFEST_FILENAME] == hashlib.sha256(
+        (bundle / MANIFEST_FILENAME).read_bytes()
+    ).hexdigest()
+    assert index[MANIFEST_FILENAME] != stale[MANIFEST_FILENAME]
+
+
+@pytest.mark.requirement("STEM-12745")
+def test_worker_publish_outside_data_dir_writes_no_download_index(tmp_path: Path) -> None:
+    """[if] --out-dir is outside a data dir [then] no stem-bundle-index.json write, [else stop]."""
+    from apps.cloud.stem_index_sync import record_published_bundle_if_shared
+
+    out = tmp_path / "scratch" / "bundle"
+    out.parent.mkdir(parents=True)
+    staging = tmp_path / "staging"
+    _write_v3_bundle_parts(
+        staging, "outside-id", ext=".mp3", codec="mp3", part_marker=b"x-"
+    )
+    worker.publish_into_place(staging, out)
+    assert record_published_bundle_if_shared(out) is None
+    assert list(tmp_path.rglob("stem-bundle-index.json")) == []
+
+
+@pytest.mark.requirement("STEM-12745")
+def test_failed_publish_into_place_leaves_download_index_unchanged(tmp_path: Path) -> None:
+    """[if] publish_into_place fails [then] the download index is not upserted, [else stop]."""
+    import shutil
+
+    from apps.cloud.stem_index import load_cached_index, save_cached_index
+    from apps.cloud.stem_index_sync import record_published_bundle_if_shared
+    from apps.stems.bundle_lock import SwapBackupStuckError, swap_backup_path
+
+    data = tmp_path / "data"
+    bundle = data / "state" / "stems" / _STEM_INDEX_STABLE_ID
+    _write_v3_bundle_parts(
+        bundle, _STEM_INDEX_STABLE_ID, ext=".flac", codec="flac", part_marker=b"old-"
+    )
+    before_index = {"stale": {"vocals.flac": "a" * 64}}
+    save_cached_index(data, before_index)
+
+    new_dir = tmp_path / "new"
+    shutil.copytree(bundle, new_dir)
+    backup = swap_backup_path(bundle)
+    backup.parent.mkdir(parents=True)
+    shutil.copytree(bundle, backup)
+    backup.chmod(0o500)
+    backup.parent.chmod(0o500)
+    try:
+        with pytest.raises(SwapBackupStuckError):
+            worker.publish_into_place(new_dir, bundle)
+    finally:
+        backup.parent.chmod(0o700)
+        backup.chmod(0o700)
+
+    assert load_cached_index(data) == before_index
+
+
+@pytest.mark.requirement("STEM-12745")
+def test_write_bundle_records_the_download_index_after_publish() -> None:
+    """[if] write_bundle publishes [then] record_published_bundle_if_shared runs after publish_into_place, [else stop]."""
+    import ast
+    import inspect
+    import textwrap
+
+    tree = ast.parse(textwrap.dedent(inspect.getsource(worker.write_bundle)))
+    named = sorted(
+        (n.func for n in ast.walk(tree) if isinstance(n, ast.Call) and isinstance(n.func, ast.Name)),
+        key=lambda f: (f.lineno, f.col_offset),
+    )
+    calls = [func.id for func in named if isinstance(func, ast.Name)]
+    publish_at = calls.index("publish_into_place")
+    record_at = calls.index("record_published_bundle_if_shared")
+    assert publish_at < record_at

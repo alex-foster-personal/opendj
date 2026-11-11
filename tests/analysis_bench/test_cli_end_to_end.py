@@ -16,7 +16,7 @@ from pathlib import Path
 import pytest
 
 from apps.analysis_bench import bundles, cli, lanes
-from tests.analysis_bench import synthetic
+from tests.analysis_bench import parity_fixtures, synthetic
 
 
 @pytest.fixture()
@@ -74,23 +74,35 @@ def test_seal_push_pull_run_and_post(bundle: Path, tmp_path: Path) -> None:
     log = tmp_path / "spec.md"
     log.write_text("# spec\n\n## Experiment log\n")
     report_path = tmp_path / "report.json"
+    host_reports_path = tmp_path / "host-reports.json"
+    run_argv = [
+        "run",
+        "--lane",
+        "beatgrid",
+        "--candidate",
+        "constant_128",
+        "--bundle-dir",
+        str(pulled),
+        "--workdir",
+        str(tmp_path / "arms"),
+        "--out",
+        str(report_path),
+    ]
+    assert cli.main(run_argv) == 0
+    report = json.loads(report_path.read_text())
+    host_reports_path.write_text(
+        json.dumps(parity_fixtures.synthetic_host_reports(report)),
+        encoding="utf-8",
+    )
     assert (
         cli.main(
             [
-                "run",
-                "--lane",
-                "beatgrid",
-                "--candidate",
-                "constant_128",
-                "--bundle-dir",
-                str(pulled),
-                "--workdir",
-                str(tmp_path / "arms"),
-                "--out",
-                str(report_path),
+                *run_argv,
                 "--post",
                 "--log-path",
                 str(log),
+                "--host-reports",
+                str(host_reports_path),
             ]
         )
         == 0
@@ -120,6 +132,7 @@ def test_seal_push_pull_run_and_post(bundle: Path, tmp_path: Path) -> None:
     assert "### beatgrid bench round 2" in text
     assert "scorer 1.1.0" in text
     assert "constant_128 (negative_control)" in text
+    assert "**parity**" in text
 
 
 def test_run_without_controls_cannot_post(bundle: Path, tmp_path: Path, capsys) -> None:

@@ -3,6 +3,7 @@ name = "odj-output-probe"
 version = "0.1.0"
 description = "Open DJ macOS CoreAudio output-health probe and cue sink, shared by the Tauri and Electron desktop shells"
 edition = "2021"
+license = "Apache-2.0"
 # Matches apps/desktop/src-tauri, which links this crate: cargo's MSRV-aware
 # resolver picks dependency versions against this number.
 rust-version = "1.82"

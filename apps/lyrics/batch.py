@@ -60,7 +60,7 @@ from apps.shared.paths import PROJECT_ROOT, STATE_DB, STATE_DIR
 from apps.shared.state import db as state_db_mod
 from apps.shared.state import locations as state_locations
 from apps.shared.state import sync_stamp
-from apps.stems.artifacts import ROFORMER_STEMS_DIR
+from apps.stems.artifacts import PRODUCTION_ROFORMER_STEMS_DIR
 
 REPO_ROOT: Path = PROJECT_ROOT
 LYRICS_EVAL_DIR: Path = STATE_DIR / "lyrics-eval"
@@ -128,7 +128,7 @@ def _subprocess_runner_for(paths: BatchPaths) -> Runner:
 class BatchPaths:
     eval_dir: Path = LYRICS_EVAL_DIR
     state_db: Path = STATE_DB
-    stems_root: Path = ROFORMER_STEMS_DIR
+    stems_root: Path = PRODUCTION_ROFORMER_STEMS_DIR
     bench_dir: Path = BENCH_DIR
 
     @property
@@ -141,7 +141,7 @@ def batch_paths_for(state_dir: Path) -> BatchPaths:
     return BatchPaths(
         eval_dir=state_dir / "lyrics-eval",
         state_db=state_dir / "state.db",
-        stems_root=state_dir / "stems-roformer-spike",
+        stems_root=state_dir / PRODUCTION_ROFORMER_STEMS_DIR.name,
         bench_dir=REPO_ROOT / "scripts" / "bench",
     )
 

@@ -1,0 +1,9 @@
+{
+  "bytes": 4096,
+  "measured_main": 431827,
+  "measured_with_pr": 435333,
+  "sha": "35e3b986ff",
+  "date": "Wed 11 Nov 2026",
+  "reason": "Edge sampler overlay, edge-wave motion, hotkeys, and performance page gutter on /performance; measured +3506 B gzip over main; ceiled to KiB.",
+  "payback": "none planned; the growth is the change's own code on this surface"
+}

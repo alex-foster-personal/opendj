@@ -164,6 +164,18 @@ test('AnalysisDotsPopover.svelte is keyboard/focus reachable, not hover-only', (
 	);
 });
 
+test('ConnDotsStrip follows the same Escape-close pattern as AnalysisDotsPopover', () => {
+	const strip = readFileSync(
+		path.join(componentsDir, '..', 'ConnDotsStrip.svelte'),
+		'utf8'
+	);
+	const pop = readFileSync(path.join(componentsDir, 'AnalysisDotsPopover.svelte'), 'utf8');
+	assert.match(strip, /e\.key === 'Escape'/);
+	assert.match(pop, /e\.key === 'Escape'/);
+	assert.match(strip, /onfocus=\{\(\) => onFocusDot/);
+	assert.match(pop, /onfocusin=\{onFocusIn\}/);
+});
+
 test('AnalysisDotsPopover.svelte caches the ingest config across instances rather than refetching per row', () => {
 	const src = readFileSync(path.join(componentsDir, 'AnalysisDotsPopover.svelte'), 'utf8');
 	assert.ok(src.includes('<script module lang="ts">'), 'the shared cache must live at module scope, not per-instance');

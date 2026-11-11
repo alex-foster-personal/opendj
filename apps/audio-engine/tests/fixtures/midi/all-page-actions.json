@@ -31,6 +31,7 @@
   {"source": {"ch": 1, "kind": "cc", "id": 26}, "action": {"type": "headphone_mix"}},
   {"source": {"ch": 1, "kind": "cc", "id": 27}, "action": {"type": "headphone_level"}},
   {"source": {"ch": 1, "kind": "note", "id": 28}, "action": {"type": "master_cue", "mode": "hold"}},
+  {"source": {"ch": 1, "kind": "note", "id": 29}, "action": {"type": "color_fx", "deck": 1, "effect": "filter"}},
   {"source": {"ch": 1, "kind": "note", "id": 24}, "action": {"type": "shift_modifier"}}
  ]
 }

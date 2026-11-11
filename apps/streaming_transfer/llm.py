@@ -12,6 +12,7 @@ from typing import TYPE_CHECKING, Any
 import httpx
 
 from .config import CFG
+from .params import is_strict_positive_int
 
 if TYPE_CHECKING:
     from .service import Escalation
@@ -69,11 +70,7 @@ class LlmDecision:
             raise LlmMatchError("LLM decision requires HTTP evidence URLs")
         if len(self.web_search_batch_id) != _WEB_SEARCH_BATCH_ID_HEX_LEN:
             raise LlmMatchError("LLM decision requires a SHA-256 web-search batch id")
-        if (
-            not isinstance(self.web_search_requests, int)
-            or isinstance(self.web_search_requests, bool)
-            or self.web_search_requests < 1
-        ):
+        if not is_strict_positive_int(self.web_search_requests):
             raise LlmMatchError("LLM decision requires a positive web-search request count")
 
 
@@ -160,7 +157,7 @@ def parse_batch_response(payload: object, *, expected_batch_id: str) -> tuple[Ll
         rows = decoded["decisions"]
     except (IndexError, KeyError, TypeError, json.JSONDecodeError) as exc:
         raise LlmMatchError("OpenRouter response lacks decisions, citations, or web_search_requests") from exc
-    if not isinstance(web_search_requests, int) or isinstance(web_search_requests, bool) or web_search_requests < 1:
+    if not is_strict_positive_int(web_search_requests):
         raise LlmMatchError("OpenRouter web_search_requests must be positive")
     if response_batch_id != expected_batch_id:
         raise LlmMatchError("OpenRouter response batch_id does not match the request")

@@ -59,7 +59,7 @@ from typing import Any
 from apps.shared.state import locations as state_locations
 from apps.shared.state.db import connect_ro
 from apps.stems import job as stems_job
-from apps.stems.selection import has_bundle
+from apps.shared.platform_paths import DATA_DIR
 from apps.webui.server import coverage_outcomes as outcomes_mod
 
 STEP: str = "stems"
@@ -126,22 +126,25 @@ def unbundled_targets(job: dict[str, Any]) -> tuple[Path, list[str]] | None:
     """
     payload = job.get("payload") or {}
     raw_dir = payload.get("data_dir")
-    if raw_dir is not None and not isinstance(raw_dir, str):
-        return None
-    root = stems_job.stems_root(Path(raw_dir) if raw_dir else None)
-    data_dir = root.parent.parent
+    if raw_dir is not None:
+        if not isinstance(raw_dir, str):
+            return None
+        data_dir = Path(raw_dir)
+    else:
+        data_dir = DATA_DIR
+    measure_roots = stems_job.stems_measure_roots(data_dir)
     raw_ids = payload.get("stable_ids")
     if raw_ids is None and payload.get("scope") == stems_job.SCOPE_PENDING:
         try:
             named = reported_failures(job, _library_ids(data_dir))
         except (FileNotFoundError, sqlite3.Error):
             return None
-        return data_dir, [stable_id for stable_id in named if not has_bundle(stable_id, root)]
+        return data_dir, stems_job.count_bundles(named, measure_roots).missing
     if not isinstance(raw_ids, list) or not raw_ids:
         return None
     if not all(isinstance(entry, str) and entry for entry in raw_ids):
         return None
-    return data_dir, [stable_id for stable_id in raw_ids if not has_bundle(stable_id, root)]
+    return data_dir, stems_job.count_bundles([str(sid) for sid in raw_ids], measure_roots).missing
 
 
 def _reason(job: dict[str, Any]) -> str:

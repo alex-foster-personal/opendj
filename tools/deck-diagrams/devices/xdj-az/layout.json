@@ -1,0 +1,3005 @@
+{
+  "device": "XDJ-AZ",
+  "vendor": "AlphaTheta / Pioneer DJ",
+  "plate": {
+    "image": "source/plate-top.png",
+    "width": 1740,
+    "height": 940
+  },
+  "layers": [
+    "base",
+    "shift"
+  ],
+  "out_of_scope": [
+    "jog_display_midi_out_7-1_7-2",
+    "hardware_only_controls",
+    "msb_lsb_pairs",
+    "touch_screen_ui"
+  ],
+  "risk_banner": {
+    "fig": "3-2",
+    "text": "RISK, CH FADER (fig 3-2, CC 17-20 ch 5): the XDJ-AZ MIDI list prints \"Upper Side=0, Lower Side=127\"; the app map assumes lower = 0. Before the set, pull one channel fader fully DOWN and confirm that channel goes silent in the app. Hover any box for its MIDI wire; labels read [deck 1/3] left, [deck 2/4] right."
+  },
+  "controls": [
+    {
+      "id": "xdj-az-1-1-L-0",
+      "fig": "1-1",
+      "label": "JOG wheel side (CC33) / platter touch N32 [deck 1/3] | CC 33 ch1/3 | SHIFT CC 38 ch1/3",
+      "kind": "jog",
+      "x": 8.91,
+      "y": 36.17,
+      "w": 21.84,
+      "h": 40.43,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "jog_wheel_side_rotate",
+        "type": "cc",
+        "ch": 1,
+        "code": 33,
+        "shift_name": "jog_wheel_side_rotate_shift"
+      },
+      "notes": "[1-1] JOG wheel side (CC33) / platter touch N32 [deck 1/3]"
+    },
+    {
+      "id": "xdj-az-1-1-L-1",
+      "fig": "1-1",
+      "label": "JOG platter [deck 1/3] | CC 34 ch1/3 | SHIFT CC 41 ch1/3",
+      "kind": "jog",
+      "x": 14.08,
+      "y": 45.74,
+      "w": 11.49,
+      "h": 21.28,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "jog_platter_rotate",
+        "type": "cc",
+        "ch": 1,
+        "code": 34,
+        "shift_name": "jog_platter_rotate_shift"
+      },
+      "notes": "[1-1] JOG platter [deck 1/3]"
+    },
+    {
+      "id": "xdj-az-1-2-L-2",
+      "fig": "1-2",
+      "label": "TEMPO (MSB CC0 / LSB CC32) [deck 1/3] | CC 0 ch1/3",
+      "kind": "fader",
+      "x": 32.64,
+      "y": 70.69,
+      "w": 1.95,
+      "h": 22.87,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "tempo_msb",
+        "type": "cc",
+        "ch": 1,
+        "code": 0,
+        "shift_name": null
+      },
+      "notes": "[1-2] TEMPO (MSB CC0 / LSB CC32) [deck 1/3]"
+    },
+    {
+      "id": "xdj-az-1-3-L-3",
+      "fig": "1-3",
+      "label": "TEMPO RESET [deck 1/3] | Note 19 ch1/3",
+      "kind": "button",
+      "x": 29.14,
+      "y": 80.32,
+      "w": 1.49,
+      "h": 2.77,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "tempo_reset",
+        "type": "note",
+        "ch": 1,
+        "code": 19,
+        "shift_name": null
+      },
+      "notes": "[1-3] TEMPO RESET [deck 1/3]"
+    },
+    {
+      "id": "xdj-az-1-4-L-4",
+      "fig": "1-4",
+      "label": "MASTER TEMPO [deck 1/3] | Note 17 ch1/3",
+      "kind": "button",
+      "x": 32.7,
+      "y": 66.06,
+      "w": 1.49,
+      "h": 2.34,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "master_tempo",
+        "type": "note",
+        "ch": 1,
+        "code": 17,
+        "shift_name": null
+      },
+      "notes": "[1-4] MASTER TEMPO [deck 1/3]"
+    },
+    {
+      "id": "xdj-az-1-5-L-5",
+      "fig": "1-5",
+      "label": "TEMPO RANGE [deck 1/3] | Note 16 ch1/3",
+      "kind": "button",
+      "x": 32.7,
+      "y": 62.34,
+      "w": 1.49,
+      "h": 2.34,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "tempo_range",
+        "type": "note",
+        "ch": 1,
+        "code": 16,
+        "shift_name": null
+      },
+      "notes": "[1-5] TEMPO RANGE [deck 1/3]"
+    },
+    {
+      "id": "xdj-az-1-6-L-6",
+      "fig": "1-6",
+      "label": "KEY SYNC [deck 1/3] | Note 20 ch1/3",
+      "kind": "button",
+      "x": 32.53,
+      "y": 49.79,
+      "w": 1.61,
+      "h": 2.34,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "key_sync",
+        "type": "note",
+        "ch": 1,
+        "code": 20,
+        "shift_name": null
+      },
+      "notes": "[1-6] KEY SYNC [deck 1/3]"
+    },
+    {
+      "id": "xdj-az-1-7-L-7",
+      "fig": "1-7",
+      "label": "SYNC (long N71) / MASTER N30 [deck 1/3] | Note 31 ch1/3",
+      "kind": "button",
+      "x": 32.01,
+      "y": 45.64,
+      "w": 2.87,
+      "h": 2.55,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "beat_sync",
+        "type": "note",
+        "ch": 1,
+        "code": 31,
+        "shift_name": null
+      },
+      "notes": "[1-7] SYNC (long N71) / MASTER N30 [deck 1/3]"
+    },
+    {
+      "id": "xdj-az-1-9-L-8",
+      "fig": "1-9",
+      "label": "JOG MODE [deck 1/3] | Note 18 ch1/3",
+      "kind": "button",
+      "x": 33.05,
+      "y": 40.53,
+      "w": 1.72,
+      "h": 2.34,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "jog_mode",
+        "type": "note",
+        "ch": 1,
+        "code": 18,
+        "shift_name": null
+      },
+      "notes": "[1-9] JOG MODE [deck 1/3]"
+    },
+    {
+      "id": "xdj-az-1-10-L-9",
+      "fig": "1-10",
+      "label": "DECK SELECT [deck 1/3] | Note 21 ch1/3",
+      "kind": "button",
+      "x": 16.95,
+      "y": 30.11,
+      "w": 5.75,
+      "h": 2.98,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "deck_select",
+        "type": "note",
+        "ch": 1,
+        "code": 21,
+        "shift_name": null
+      },
+      "notes": "[1-10] DECK SELECT [deck 1/3]"
+    },
+    {
+      "id": "xdj-az-1-11-L-10",
+      "fig": "1-11",
+      "label": "VINYL SPEED ADJ [deck 1/3] | Note 42 ch1/3",
+      "kind": "button",
+      "x": 32.87,
+      "y": 35.53,
+      "w": 1.49,
+      "h": 2.34,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "vinyl_speed_adjust",
+        "type": "note",
+        "ch": 1,
+        "code": 42,
+        "shift_name": null
+      },
+      "notes": "[1-11] VINYL SPEED ADJ [deck 1/3]"
+    },
+    {
+      "id": "xdj-az-1-12-L-11",
+      "fig": "1-12",
+      "label": "SEARCH REV N3 / FWD [deck 1/3] | Note 2 ch1/3",
+      "kind": "button",
+      "x": 5.29,
+      "y": 74.26,
+      "w": 4.02,
+      "h": 2.98,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "search_fwd",
+        "type": "note",
+        "ch": 1,
+        "code": 2,
+        "shift_name": null
+      },
+      "notes": "[1-12] SEARCH REV N3 / FWD [deck 1/3]"
+    },
+    {
+      "id": "xdj-az-1-13-L-12",
+      "fig": "1-13",
+      "label": "TRACK SEARCH REV N5 / FWD [deck 1/3] | Note 4 ch1/3",
+      "kind": "button",
+      "x": 5.29,
+      "y": 69.47,
+      "w": 4.02,
+      "h": 2.98,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "track_search_fwd",
+        "type": "note",
+        "ch": 1,
+        "code": 4,
+        "shift_name": null
+      },
+      "notes": "[1-13] TRACK SEARCH REV N5 / FWD [deck 1/3]"
+    },
+    {
+      "id": "xdj-az-1-14-L-13",
+      "fig": "1-14",
+      "label": "SHIFT [deck 1/3] | Note 63 ch1/3",
+      "kind": "button",
+      "x": 5.92,
+      "y": 64.36,
+      "w": 2.53,
+      "h": 2.77,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "shift",
+        "type": "note",
+        "ch": 1,
+        "code": 63,
+        "shift_name": null
+      },
+      "notes": "[1-14] SHIFT [deck 1/3]"
+    },
+    {
+      "id": "xdj-az-1-15-L-14",
+      "fig": "1-15",
+      "label": "SLIP REVERSE [deck 1/3] | Note 33 ch1/3 | SHIFT Note 82 ch1/3",
+      "kind": "button",
+      "x": 4.89,
+      "y": 54.47,
+      "w": 2.3,
+      "h": 2.77,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "slip_reverse",
+        "type": "note",
+        "ch": 1,
+        "code": 33,
+        "shift_name": "slip_reverse_shift"
+      },
+      "notes": "[1-15] SLIP REVERSE [deck 1/3]"
+    },
+    {
+      "id": "xdj-az-1-16-L-15",
+      "fig": "1-16",
+      "label": "SLIP [deck 1/3] | Note 44 ch1/3",
+      "kind": "button",
+      "x": 4.77,
+      "y": 47.77,
+      "w": 1.72,
+      "h": 2.77,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "slip",
+        "type": "note",
+        "ch": 1,
+        "code": 44,
+        "shift_name": null
+      },
+      "notes": "[1-16] SLIP [deck 1/3]"
+    },
+    {
+      "id": "xdj-az-1-17-L-16",
+      "fig": "1-17",
+      "label": "BEAT JUMP FWD (REV N24) [deck 1/3] | Note 22 ch1/3 | SHIFT Note 23 ch1/3",
+      "kind": "button",
+      "x": 5.0,
+      "y": 40.74,
+      "w": 4.37,
+      "h": 2.55,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "beat_jump_fwd",
+        "type": "note",
+        "ch": 1,
+        "code": 22,
+        "shift_name": "beat_jump_fwd_shift"
+      },
+      "notes": "[1-17] BEAT JUMP FWD (REV N24) [deck 1/3]"
+    },
+    {
+      "id": "xdj-az-1-18-L-17",
+      "fig": "1-18",
+      "label": "4 BEAT (8 BEAT N68) [deck 1/3] | Note 67 ch1/3",
+      "kind": "button",
+      "x": 5.0,
+      "y": 35.11,
+      "w": 4.37,
+      "h": 3.19,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "beat_loop_4",
+        "type": "note",
+        "ch": 1,
+        "code": 67,
+        "shift_name": null
+      },
+      "notes": "[1-18] 4 BEAT (8 BEAT N68) [deck 1/3]"
+    },
+    {
+      "id": "xdj-az-1-19-L-18",
+      "fig": "1-19",
+      "label": "LOOP IN (OUT N7) [deck 1/3] | Note 6 ch1/3",
+      "kind": "button",
+      "x": 4.6,
+      "y": 29.36,
+      "w": 5.17,
+      "h": 4.26,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "loop_in",
+        "type": "note",
+        "ch": 1,
+        "code": 6,
+        "shift_name": null
+      },
+      "notes": "[1-19] LOOP IN (OUT N7) [deck 1/3]"
+    },
+    {
+      "id": "xdj-az-1-20-L-19",
+      "fig": "1-20",
+      "label": "RELOOP/EXIT [deck 1/3] | Note 8 ch1/3",
+      "kind": "button",
+      "x": 10.8,
+      "y": 29.68,
+      "w": 1.95,
+      "h": 3.62,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "reloop_exit",
+        "type": "note",
+        "ch": 1,
+        "code": 8,
+        "shift_name": null
+      },
+      "notes": "[1-20] RELOOP/EXIT [deck 1/3]"
+    },
+    {
+      "id": "xdj-az-1-21-L-20",
+      "fig": "1-21",
+      "label": "CUE/LOOP CALL NEXT (PREV N12) [deck 1/3] | Note 11 ch1/3",
+      "kind": "button",
+      "x": 25.98,
+      "y": 30.21,
+      "w": 3.45,
+      "h": 2.77,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "cue_loop_call_next",
+        "type": "note",
+        "ch": 1,
+        "code": 11,
+        "shift_name": null
+      },
+      "notes": "[1-21] CUE/LOOP CALL NEXT (PREV N12) [deck 1/3]"
+    },
+    {
+      "id": "xdj-az-1-22-L-21",
+      "fig": "1-22",
+      "label": "CUE/LOOP DELETE [deck 1/3] | Note 13 ch1/3",
+      "kind": "button",
+      "x": 30.52,
+      "y": 30.0,
+      "w": 1.61,
+      "h": 2.98,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "cue_loop_delete",
+        "type": "note",
+        "ch": 1,
+        "code": 13,
+        "shift_name": null
+      },
+      "notes": "[1-22] CUE/LOOP DELETE [deck 1/3]"
+    },
+    {
+      "id": "xdj-az-1-23-L-22",
+      "fig": "1-23",
+      "label": "CUE/LOOP MEMORY [deck 1/3] | Note 10 ch1/3",
+      "kind": "button",
+      "x": 32.7,
+      "y": 30.11,
+      "w": 1.49,
+      "h": 2.77,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "cue_loop_memory",
+        "type": "note",
+        "ch": 1,
+        "code": 10,
+        "shift_name": null
+      },
+      "notes": "[1-23] CUE/LOOP MEMORY [deck 1/3]"
+    },
+    {
+      "id": "xdj-az-1-24-L-23",
+      "fig": "1-24",
+      "label": "PLAY/PAUSE [deck 1/3] | Note 0 ch1/3",
+      "kind": "button",
+      "x": 5.4,
+      "y": 88.19,
+      "w": 3.56,
+      "h": 6.6,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "play_pause",
+        "type": "note",
+        "ch": 1,
+        "code": 0,
+        "shift_name": null
+      },
+      "notes": "[1-24] PLAY/PAUSE [deck 1/3]"
+    },
+    {
+      "id": "xdj-az-1-25-L-24",
+      "fig": "1-25",
+      "label": "CUE [deck 1/3] | Note 1 ch1/3",
+      "kind": "button",
+      "x": 5.4,
+      "y": 79.15,
+      "w": 3.56,
+      "h": 6.6,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "cue",
+        "type": "note",
+        "ch": 1,
+        "code": 1,
+        "shift_name": null
+      },
+      "notes": "[1-25] CUE [deck 1/3]"
+    },
+    {
+      "id": "xdj-az-5-1-L-25",
+      "fig": "5-1",
+      "label": "PAD MODE HOT_CUE [deck 1/3] | Note 34 ch1/3 | SHIFT Note 38 ch1/3",
+      "kind": "button",
+      "x": 13.16,
+      "y": 78.51,
+      "w": 2.99,
+      "h": 2.13,
+      "layer": "base",
+      "section": "pads",
+      "midi": {
+        "name": "pad_mode_hot_cue",
+        "type": "note",
+        "ch": 1,
+        "code": 34,
+        "shift_name": "pad_mode_hot_cue_shift"
+      },
+      "notes": "[5-1] PAD MODE HOT_CUE [deck 1/3]"
+    },
+    {
+      "id": "xdj-az-5-2-L-26",
+      "fig": "5-2",
+      "label": "PAD MODE BEAT_LOOP [deck 1/3] | Note 35 ch1/3 | SHIFT Note 39 ch1/3",
+      "kind": "button",
+      "x": 16.61,
+      "y": 78.51,
+      "w": 2.99,
+      "h": 2.13,
+      "layer": "base",
+      "section": "pads",
+      "midi": {
+        "name": "pad_mode_beat_loop",
+        "type": "note",
+        "ch": 1,
+        "code": 35,
+        "shift_name": "pad_mode_beat_loop_shift"
+      },
+      "notes": "[5-2] PAD MODE BEAT_LOOP [deck 1/3]"
+    },
+    {
+      "id": "xdj-az-5-3-L-27",
+      "fig": "5-3",
+      "label": "PAD MODE SLIP_LOOP [deck 1/3] | Note 36 ch1/3 | SHIFT Note 40 ch1/3",
+      "kind": "button",
+      "x": 19.89,
+      "y": 78.51,
+      "w": 2.99,
+      "h": 2.13,
+      "layer": "base",
+      "section": "pads",
+      "midi": {
+        "name": "pad_mode_slip_loop",
+        "type": "note",
+        "ch": 1,
+        "code": 36,
+        "shift_name": "pad_mode_slip_loop_shift"
+      },
+      "notes": "[5-3] PAD MODE SLIP_LOOP [deck 1/3]"
+    },
+    {
+      "id": "xdj-az-5-4-L-28",
+      "fig": "5-4",
+      "label": "PAD MODE BEAT_JUMP [deck 1/3] | Note 37 ch1/3 | SHIFT Note 41 ch1/3",
+      "kind": "button",
+      "x": 23.22,
+      "y": 78.51,
+      "w": 2.99,
+      "h": 2.13,
+      "layer": "base",
+      "section": "pads",
+      "midi": {
+        "name": "pad_mode_beat_jump",
+        "type": "note",
+        "ch": 1,
+        "code": 37,
+        "shift_name": "pad_mode_beat_jump_shift"
+      },
+      "notes": "[5-4] PAD MODE BEAT_JUMP [deck 1/3]"
+    },
+    {
+      "id": "xdj-az-5-5-L-29",
+      "fig": "5-5",
+      "label": "PAD 1 hot cue (beat loop N2) [deck 1/3] | Note 0 ch6/8 | SHIFT Note 1 ch6/8",
+      "kind": "pad",
+      "x": 13.1,
+      "y": 82.87,
+      "w": 3.1,
+      "h": 5.11,
+      "layer": "base",
+      "section": "pads",
+      "midi": {
+        "name": "pad1_hot_cue",
+        "type": "note",
+        "ch": 6,
+        "code": 0,
+        "shift_name": "pad1_hot_cue_shift"
+      },
+      "notes": "[5-5] PAD 1 hot cue (beat loop N2) [deck 1/3]"
+    },
+    {
+      "id": "xdj-az-5-6-L-30",
+      "fig": "5-6",
+      "label": "PAD 2 hot cue (beat loop N21) [deck 1/3] | Note 19 ch6/8 | SHIFT Note 20 ch6/8",
+      "kind": "pad",
+      "x": 16.55,
+      "y": 82.87,
+      "w": 3.1,
+      "h": 5.11,
+      "layer": "base",
+      "section": "pads",
+      "midi": {
+        "name": "pad2_hot_cue",
+        "type": "note",
+        "ch": 6,
+        "code": 19,
+        "shift_name": "pad2_hot_cue_shift"
+      },
+      "notes": "[5-6] PAD 2 hot cue (beat loop N21) [deck 1/3]"
+    },
+    {
+      "id": "xdj-az-5-7-L-31",
+      "fig": "5-7",
+      "label": "PAD 3 hot cue (beat loop N40) [deck 1/3] | Note 38 ch6/8 | SHIFT Note 39 ch6/8",
+      "kind": "pad",
+      "x": 19.83,
+      "y": 82.87,
+      "w": 3.1,
+      "h": 5.11,
+      "layer": "base",
+      "section": "pads",
+      "midi": {
+        "name": "pad3_hot_cue",
+        "type": "note",
+        "ch": 6,
+        "code": 38,
+        "shift_name": "pad3_hot_cue_shift"
+      },
+      "notes": "[5-7] PAD 3 hot cue (beat loop N40) [deck 1/3]"
+    },
+    {
+      "id": "xdj-az-5-8-L-32",
+      "fig": "5-8",
+      "label": "PAD 4 hot cue (beat loop N59) [deck 1/3] | Note 57 ch6/8 | SHIFT Note 58 ch6/8",
+      "kind": "pad",
+      "x": 23.16,
+      "y": 82.87,
+      "w": 3.1,
+      "h": 5.11,
+      "layer": "base",
+      "section": "pads",
+      "midi": {
+        "name": "pad4_hot_cue",
+        "type": "note",
+        "ch": 6,
+        "code": 57,
+        "shift_name": "pad4_hot_cue_shift"
+      },
+      "notes": "[5-8] PAD 4 hot cue (beat loop N59) [deck 1/3]"
+    },
+    {
+      "id": "xdj-az-5-9-L-33",
+      "fig": "5-9",
+      "label": "PAD 5 hot cue (beat loop N2) [deck 1/3] | Note 0 ch10/12 | SHIFT Note 1 ch10/12",
+      "kind": "pad",
+      "x": 13.1,
+      "y": 88.94,
+      "w": 3.1,
+      "h": 5.11,
+      "layer": "base",
+      "section": "pads",
+      "midi": {
+        "name": "pad5_hot_cue",
+        "type": "note",
+        "ch": 10,
+        "code": 0,
+        "shift_name": "pad5_hot_cue_shift"
+      },
+      "notes": "[5-9] PAD 5 hot cue (beat loop N2) [deck 1/3]"
+    },
+    {
+      "id": "xdj-az-5-10-L-34",
+      "fig": "5-10",
+      "label": "PAD 6 hot cue (beat loop N21) [deck 1/3] | Note 19 ch10/12 | SHIFT Note 20 ch10/12",
+      "kind": "pad",
+      "x": 16.55,
+      "y": 88.94,
+      "w": 3.1,
+      "h": 5.11,
+      "layer": "base",
+      "section": "pads",
+      "midi": {
+        "name": "pad6_hot_cue",
+        "type": "note",
+        "ch": 10,
+        "code": 19,
+        "shift_name": "pad6_hot_cue_shift"
+      },
+      "notes": "[5-10] PAD 6 hot cue (beat loop N21) [deck 1/3]"
+    },
+    {
+      "id": "xdj-az-5-11-L-35",
+      "fig": "5-11",
+      "label": "PAD 7 hot cue (beat loop N40) [deck 1/3] | Note 38 ch10/12 | SHIFT Note 39 ch10/12",
+      "kind": "pad",
+      "x": 19.83,
+      "y": 88.94,
+      "w": 3.1,
+      "h": 5.11,
+      "layer": "base",
+      "section": "pads",
+      "midi": {
+        "name": "pad7_hot_cue",
+        "type": "note",
+        "ch": 10,
+        "code": 38,
+        "shift_name": "pad7_hot_cue_shift"
+      },
+      "notes": "[5-11] PAD 7 hot cue (beat loop N40) [deck 1/3]"
+    },
+    {
+      "id": "xdj-az-5-12-L-36",
+      "fig": "5-12",
+      "label": "PAD 8 hot cue (beat loop N59) [deck 1/3] | Note 57 ch10/12 | SHIFT Note 58 ch10/12",
+      "kind": "pad",
+      "x": 23.16,
+      "y": 88.94,
+      "w": 3.1,
+      "h": 5.11,
+      "layer": "base",
+      "section": "pads",
+      "midi": {
+        "name": "pad8_hot_cue",
+        "type": "note",
+        "ch": 10,
+        "code": 57,
+        "shift_name": "pad8_hot_cue_shift"
+      },
+      "notes": "[5-12] PAD 8 hot cue (beat loop N59) [deck 1/3]"
+    },
+    {
+      "id": "xdj-az-1-1-R-37",
+      "fig": "1-1",
+      "label": "JOG wheel side (CC33) / platter touch N32 [deck 2/4] | CC 33 ch2/4 | SHIFT CC 38 ch2/4",
+      "kind": "jog",
+      "x": 71.84,
+      "y": 36.17,
+      "w": 21.84,
+      "h": 40.43,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "jog_wheel_side_rotate",
+        "type": "cc",
+        "ch": 2,
+        "code": 33,
+        "shift_name": "jog_wheel_side_rotate_shift"
+      },
+      "notes": "[1-1] JOG wheel side (CC33) / platter touch N32 [deck 2/4]"
+    },
+    {
+      "id": "xdj-az-1-1-R-38",
+      "fig": "1-1",
+      "label": "JOG platter [deck 2/4] | CC 34 ch2/4 | SHIFT CC 41 ch2/4",
+      "kind": "jog",
+      "x": 77.01,
+      "y": 45.74,
+      "w": 11.49,
+      "h": 21.28,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "jog_platter_rotate",
+        "type": "cc",
+        "ch": 2,
+        "code": 34,
+        "shift_name": "jog_platter_rotate_shift"
+      },
+      "notes": "[1-1] JOG platter [deck 2/4]"
+    },
+    {
+      "id": "xdj-az-1-2-R-39",
+      "fig": "1-2",
+      "label": "TEMPO (MSB CC0 / LSB CC32) [deck 2/4] | CC 0 ch2/4",
+      "kind": "fader",
+      "x": 95.57,
+      "y": 70.69,
+      "w": 1.95,
+      "h": 22.87,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "tempo_msb",
+        "type": "cc",
+        "ch": 2,
+        "code": 0,
+        "shift_name": null
+      },
+      "notes": "[1-2] TEMPO (MSB CC0 / LSB CC32) [deck 2/4]"
+    },
+    {
+      "id": "xdj-az-1-3-R-40",
+      "fig": "1-3",
+      "label": "TEMPO RESET [deck 2/4] | Note 19 ch2/4",
+      "kind": "button",
+      "x": 92.07,
+      "y": 80.32,
+      "w": 1.49,
+      "h": 2.77,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "tempo_reset",
+        "type": "note",
+        "ch": 2,
+        "code": 19,
+        "shift_name": null
+      },
+      "notes": "[1-3] TEMPO RESET [deck 2/4]"
+    },
+    {
+      "id": "xdj-az-1-4-R-41",
+      "fig": "1-4",
+      "label": "MASTER TEMPO [deck 2/4] | Note 17 ch2/4",
+      "kind": "button",
+      "x": 95.63,
+      "y": 66.06,
+      "w": 1.49,
+      "h": 2.34,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "master_tempo",
+        "type": "note",
+        "ch": 2,
+        "code": 17,
+        "shift_name": null
+      },
+      "notes": "[1-4] MASTER TEMPO [deck 2/4]"
+    },
+    {
+      "id": "xdj-az-1-5-R-42",
+      "fig": "1-5",
+      "label": "TEMPO RANGE [deck 2/4] | Note 16 ch2/4",
+      "kind": "button",
+      "x": 95.63,
+      "y": 62.34,
+      "w": 1.49,
+      "h": 2.34,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "tempo_range",
+        "type": "note",
+        "ch": 2,
+        "code": 16,
+        "shift_name": null
+      },
+      "notes": "[1-5] TEMPO RANGE [deck 2/4]"
+    },
+    {
+      "id": "xdj-az-1-6-R-43",
+      "fig": "1-6",
+      "label": "KEY SYNC [deck 2/4] | Note 20 ch2/4",
+      "kind": "button",
+      "x": 95.46,
+      "y": 49.79,
+      "w": 1.61,
+      "h": 2.34,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "key_sync",
+        "type": "note",
+        "ch": 2,
+        "code": 20,
+        "shift_name": null
+      },
+      "notes": "[1-6] KEY SYNC [deck 2/4]"
+    },
+    {
+      "id": "xdj-az-1-7-R-44",
+      "fig": "1-7",
+      "label": "SYNC (long N71) / MASTER N30 [deck 2/4] | Note 31 ch2/4",
+      "kind": "button",
+      "x": 94.94,
+      "y": 45.64,
+      "w": 2.87,
+      "h": 2.55,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "beat_sync",
+        "type": "note",
+        "ch": 2,
+        "code": 31,
+        "shift_name": null
+      },
+      "notes": "[1-7] SYNC (long N71) / MASTER N30 [deck 2/4]"
+    },
+    {
+      "id": "xdj-az-1-9-R-45",
+      "fig": "1-9",
+      "label": "JOG MODE [deck 2/4] | Note 18 ch2/4",
+      "kind": "button",
+      "x": 95.98,
+      "y": 40.53,
+      "w": 1.72,
+      "h": 2.34,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "jog_mode",
+        "type": "note",
+        "ch": 2,
+        "code": 18,
+        "shift_name": null
+      },
+      "notes": "[1-9] JOG MODE [deck 2/4]"
+    },
+    {
+      "id": "xdj-az-1-10-R-46",
+      "fig": "1-10",
+      "label": "DECK SELECT [deck 2/4] | Note 21 ch2/4",
+      "kind": "button",
+      "x": 79.89,
+      "y": 30.11,
+      "w": 5.75,
+      "h": 2.98,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "deck_select",
+        "type": "note",
+        "ch": 2,
+        "code": 21,
+        "shift_name": null
+      },
+      "notes": "[1-10] DECK SELECT [deck 2/4]"
+    },
+    {
+      "id": "xdj-az-1-11-R-47",
+      "fig": "1-11",
+      "label": "VINYL SPEED ADJ [deck 2/4] | Note 42 ch2/4",
+      "kind": "button",
+      "x": 95.8,
+      "y": 35.53,
+      "w": 1.49,
+      "h": 2.34,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "vinyl_speed_adjust",
+        "type": "note",
+        "ch": 2,
+        "code": 42,
+        "shift_name": null
+      },
+      "notes": "[1-11] VINYL SPEED ADJ [deck 2/4]"
+    },
+    {
+      "id": "xdj-az-1-12-R-48",
+      "fig": "1-12",
+      "label": "SEARCH REV N3 / FWD [deck 2/4] | Note 2 ch2/4",
+      "kind": "button",
+      "x": 68.22,
+      "y": 74.26,
+      "w": 4.02,
+      "h": 2.98,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "search_fwd",
+        "type": "note",
+        "ch": 2,
+        "code": 2,
+        "shift_name": null
+      },
+      "notes": "[1-12] SEARCH REV N3 / FWD [deck 2/4]"
+    },
+    {
+      "id": "xdj-az-1-13-R-49",
+      "fig": "1-13",
+      "label": "TRACK SEARCH REV N5 / FWD [deck 2/4] | Note 4 ch2/4",
+      "kind": "button",
+      "x": 68.22,
+      "y": 69.47,
+      "w": 4.02,
+      "h": 2.98,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "track_search_fwd",
+        "type": "note",
+        "ch": 2,
+        "code": 4,
+        "shift_name": null
+      },
+      "notes": "[1-13] TRACK SEARCH REV N5 / FWD [deck 2/4]"
+    },
+    {
+      "id": "xdj-az-1-14-R-50",
+      "fig": "1-14",
+      "label": "SHIFT [deck 2/4] | Note 63 ch2/4",
+      "kind": "button",
+      "x": 68.85,
+      "y": 64.36,
+      "w": 2.53,
+      "h": 2.77,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "shift",
+        "type": "note",
+        "ch": 2,
+        "code": 63,
+        "shift_name": null
+      },
+      "notes": "[1-14] SHIFT [deck 2/4]"
+    },
+    {
+      "id": "xdj-az-1-15-R-51",
+      "fig": "1-15",
+      "label": "SLIP REVERSE [deck 2/4] | Note 33 ch2/4 | SHIFT Note 82 ch2/4",
+      "kind": "button",
+      "x": 67.82,
+      "y": 54.47,
+      "w": 2.3,
+      "h": 2.77,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "slip_reverse",
+        "type": "note",
+        "ch": 2,
+        "code": 33,
+        "shift_name": "slip_reverse_shift"
+      },
+      "notes": "[1-15] SLIP REVERSE [deck 2/4]"
+    },
+    {
+      "id": "xdj-az-1-16-R-52",
+      "fig": "1-16",
+      "label": "SLIP [deck 2/4] | Note 44 ch2/4",
+      "kind": "button",
+      "x": 67.7,
+      "y": 47.77,
+      "w": 1.72,
+      "h": 2.77,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "slip",
+        "type": "note",
+        "ch": 2,
+        "code": 44,
+        "shift_name": null
+      },
+      "notes": "[1-16] SLIP [deck 2/4]"
+    },
+    {
+      "id": "xdj-az-1-17-R-53",
+      "fig": "1-17",
+      "label": "BEAT JUMP FWD (REV N24) [deck 2/4] | Note 22 ch2/4 | SHIFT Note 23 ch2/4",
+      "kind": "button",
+      "x": 67.93,
+      "y": 40.74,
+      "w": 4.37,
+      "h": 2.55,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "beat_jump_fwd",
+        "type": "note",
+        "ch": 2,
+        "code": 22,
+        "shift_name": "beat_jump_fwd_shift"
+      },
+      "notes": "[1-17] BEAT JUMP FWD (REV N24) [deck 2/4]"
+    },
+    {
+      "id": "xdj-az-1-18-R-54",
+      "fig": "1-18",
+      "label": "4 BEAT (8 BEAT N68) [deck 2/4] | Note 67 ch2/4",
+      "kind": "button",
+      "x": 67.93,
+      "y": 35.11,
+      "w": 4.37,
+      "h": 3.19,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "beat_loop_4",
+        "type": "note",
+        "ch": 2,
+        "code": 67,
+        "shift_name": null
+      },
+      "notes": "[1-18] 4 BEAT (8 BEAT N68) [deck 2/4]"
+    },
+    {
+      "id": "xdj-az-1-19-R-55",
+      "fig": "1-19",
+      "label": "LOOP IN (OUT N7) [deck 2/4] | Note 6 ch2/4",
+      "kind": "button",
+      "x": 67.53,
+      "y": 29.36,
+      "w": 5.17,
+      "h": 4.26,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "loop_in",
+        "type": "note",
+        "ch": 2,
+        "code": 6,
+        "shift_name": null
+      },
+      "notes": "[1-19] LOOP IN (OUT N7) [deck 2/4]"
+    },
+    {
+      "id": "xdj-az-1-20-R-56",
+      "fig": "1-20",
+      "label": "RELOOP/EXIT [deck 2/4] | Note 8 ch2/4",
+      "kind": "button",
+      "x": 73.74,
+      "y": 29.68,
+      "w": 1.95,
+      "h": 3.62,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "reloop_exit",
+        "type": "note",
+        "ch": 2,
+        "code": 8,
+        "shift_name": null
+      },
+      "notes": "[1-20] RELOOP/EXIT [deck 2/4]"
+    },
+    {
+      "id": "xdj-az-1-21-R-57",
+      "fig": "1-21",
+      "label": "CUE/LOOP CALL NEXT (PREV N12) [deck 2/4] | Note 11 ch2/4",
+      "kind": "button",
+      "x": 88.91,
+      "y": 30.21,
+      "w": 3.45,
+      "h": 2.77,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "cue_loop_call_next",
+        "type": "note",
+        "ch": 2,
+        "code": 11,
+        "shift_name": null
+      },
+      "notes": "[1-21] CUE/LOOP CALL NEXT (PREV N12) [deck 2/4]"
+    },
+    {
+      "id": "xdj-az-1-22-R-58",
+      "fig": "1-22",
+      "label": "CUE/LOOP DELETE [deck 2/4] | Note 13 ch2/4",
+      "kind": "button",
+      "x": 93.45,
+      "y": 30.0,
+      "w": 1.61,
+      "h": 2.98,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "cue_loop_delete",
+        "type": "note",
+        "ch": 2,
+        "code": 13,
+        "shift_name": null
+      },
+      "notes": "[1-22] CUE/LOOP DELETE [deck 2/4]"
+    },
+    {
+      "id": "xdj-az-1-23-R-59",
+      "fig": "1-23",
+      "label": "CUE/LOOP MEMORY [deck 2/4] | Note 10 ch2/4",
+      "kind": "button",
+      "x": 95.63,
+      "y": 30.11,
+      "w": 1.49,
+      "h": 2.77,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "cue_loop_memory",
+        "type": "note",
+        "ch": 2,
+        "code": 10,
+        "shift_name": null
+      },
+      "notes": "[1-23] CUE/LOOP MEMORY [deck 2/4]"
+    },
+    {
+      "id": "xdj-az-1-24-R-60",
+      "fig": "1-24",
+      "label": "PLAY/PAUSE [deck 2/4] | Note 0 ch2/4",
+      "kind": "button",
+      "x": 68.33,
+      "y": 88.19,
+      "w": 3.56,
+      "h": 6.6,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "play_pause",
+        "type": "note",
+        "ch": 2,
+        "code": 0,
+        "shift_name": null
+      },
+      "notes": "[1-24] PLAY/PAUSE [deck 2/4]"
+    },
+    {
+      "id": "xdj-az-1-25-R-61",
+      "fig": "1-25",
+      "label": "CUE [deck 2/4] | Note 1 ch2/4",
+      "kind": "button",
+      "x": 68.33,
+      "y": 79.15,
+      "w": 3.56,
+      "h": 6.6,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "cue",
+        "type": "note",
+        "ch": 2,
+        "code": 1,
+        "shift_name": null
+      },
+      "notes": "[1-25] CUE [deck 2/4]"
+    },
+    {
+      "id": "xdj-az-5-1-R-62",
+      "fig": "5-1",
+      "label": "PAD MODE HOT_CUE [deck 2/4] | Note 34 ch2/4 | SHIFT Note 38 ch2/4",
+      "kind": "button",
+      "x": 76.38,
+      "y": 78.51,
+      "w": 2.99,
+      "h": 2.13,
+      "layer": "base",
+      "section": "pads",
+      "midi": {
+        "name": "pad_mode_hot_cue",
+        "type": "note",
+        "ch": 2,
+        "code": 34,
+        "shift_name": "pad_mode_hot_cue_shift"
+      },
+      "notes": "[5-1] PAD MODE HOT_CUE [deck 2/4]"
+    },
+    {
+      "id": "xdj-az-5-2-R-63",
+      "fig": "5-2",
+      "label": "PAD MODE BEAT_LOOP [deck 2/4] | Note 35 ch2/4 | SHIFT Note 39 ch2/4",
+      "kind": "button",
+      "x": 79.83,
+      "y": 78.51,
+      "w": 2.99,
+      "h": 2.13,
+      "layer": "base",
+      "section": "pads",
+      "midi": {
+        "name": "pad_mode_beat_loop",
+        "type": "note",
+        "ch": 2,
+        "code": 35,
+        "shift_name": "pad_mode_beat_loop_shift"
+      },
+      "notes": "[5-2] PAD MODE BEAT_LOOP [deck 2/4]"
+    },
+    {
+      "id": "xdj-az-5-3-R-64",
+      "fig": "5-3",
+      "label": "PAD MODE SLIP_LOOP [deck 2/4] | Note 36 ch2/4 | SHIFT Note 40 ch2/4",
+      "kind": "button",
+      "x": 83.1,
+      "y": 78.51,
+      "w": 2.99,
+      "h": 2.13,
+      "layer": "base",
+      "section": "pads",
+      "midi": {
+        "name": "pad_mode_slip_loop",
+        "type": "note",
+        "ch": 2,
+        "code": 36,
+        "shift_name": "pad_mode_slip_loop_shift"
+      },
+      "notes": "[5-3] PAD MODE SLIP_LOOP [deck 2/4]"
+    },
+    {
+      "id": "xdj-az-5-4-R-65",
+      "fig": "5-4",
+      "label": "PAD MODE BEAT_JUMP [deck 2/4] | Note 37 ch2/4 | SHIFT Note 41 ch2/4",
+      "kind": "button",
+      "x": 86.44,
+      "y": 78.51,
+      "w": 2.99,
+      "h": 2.13,
+      "layer": "base",
+      "section": "pads",
+      "midi": {
+        "name": "pad_mode_beat_jump",
+        "type": "note",
+        "ch": 2,
+        "code": 37,
+        "shift_name": "pad_mode_beat_jump_shift"
+      },
+      "notes": "[5-4] PAD MODE BEAT_JUMP [deck 2/4]"
+    },
+    {
+      "id": "xdj-az-5-5-R-66",
+      "fig": "5-5",
+      "label": "PAD 1 hot cue (beat loop N2) [deck 2/4] | Note 0 ch7/9 | SHIFT Note 1 ch7/9",
+      "kind": "pad",
+      "x": 76.32,
+      "y": 82.87,
+      "w": 3.1,
+      "h": 5.11,
+      "layer": "base",
+      "section": "pads",
+      "midi": {
+        "name": "pad1_hot_cue",
+        "type": "note",
+        "ch": 7,
+        "code": 0,
+        "shift_name": "pad1_hot_cue_shift"
+      },
+      "notes": "[5-5] PAD 1 hot cue (beat loop N2) [deck 2/4]"
+    },
+    {
+      "id": "xdj-az-5-6-R-67",
+      "fig": "5-6",
+      "label": "PAD 2 hot cue (beat loop N21) [deck 2/4] | Note 19 ch7/9 | SHIFT Note 20 ch7/9",
+      "kind": "pad",
+      "x": 79.77,
+      "y": 82.87,
+      "w": 3.1,
+      "h": 5.11,
+      "layer": "base",
+      "section": "pads",
+      "midi": {
+        "name": "pad2_hot_cue",
+        "type": "note",
+        "ch": 7,
+        "code": 19,
+        "shift_name": "pad2_hot_cue_shift"
+      },
+      "notes": "[5-6] PAD 2 hot cue (beat loop N21) [deck 2/4]"
+    },
+    {
+      "id": "xdj-az-5-7-R-68",
+      "fig": "5-7",
+      "label": "PAD 3 hot cue (beat loop N40) [deck 2/4] | Note 38 ch7/9 | SHIFT Note 39 ch7/9",
+      "kind": "pad",
+      "x": 83.05,
+      "y": 82.87,
+      "w": 3.1,
+      "h": 5.11,
+      "layer": "base",
+      "section": "pads",
+      "midi": {
+        "name": "pad3_hot_cue",
+        "type": "note",
+        "ch": 7,
+        "code": 38,
+        "shift_name": "pad3_hot_cue_shift"
+      },
+      "notes": "[5-7] PAD 3 hot cue (beat loop N40) [deck 2/4]"
+    },
+    {
+      "id": "xdj-az-5-8-R-69",
+      "fig": "5-8",
+      "label": "PAD 4 hot cue (beat loop N59) [deck 2/4] | Note 57 ch7/9 | SHIFT Note 58 ch7/9",
+      "kind": "pad",
+      "x": 86.38,
+      "y": 82.87,
+      "w": 3.1,
+      "h": 5.11,
+      "layer": "base",
+      "section": "pads",
+      "midi": {
+        "name": "pad4_hot_cue",
+        "type": "note",
+        "ch": 7,
+        "code": 57,
+        "shift_name": "pad4_hot_cue_shift"
+      },
+      "notes": "[5-8] PAD 4 hot cue (beat loop N59) [deck 2/4]"
+    },
+    {
+      "id": "xdj-az-5-9-R-70",
+      "fig": "5-9",
+      "label": "PAD 5 hot cue (beat loop N2) [deck 2/4] | Note 0 ch11/13 | SHIFT Note 1 ch11/13",
+      "kind": "pad",
+      "x": 76.32,
+      "y": 88.94,
+      "w": 3.1,
+      "h": 5.11,
+      "layer": "base",
+      "section": "pads",
+      "midi": {
+        "name": "pad5_hot_cue",
+        "type": "note",
+        "ch": 11,
+        "code": 0,
+        "shift_name": "pad5_hot_cue_shift"
+      },
+      "notes": "[5-9] PAD 5 hot cue (beat loop N2) [deck 2/4]"
+    },
+    {
+      "id": "xdj-az-5-10-R-71",
+      "fig": "5-10",
+      "label": "PAD 6 hot cue (beat loop N21) [deck 2/4] | Note 19 ch11/13 | SHIFT Note 20 ch11/13",
+      "kind": "pad",
+      "x": 79.77,
+      "y": 88.94,
+      "w": 3.1,
+      "h": 5.11,
+      "layer": "base",
+      "section": "pads",
+      "midi": {
+        "name": "pad6_hot_cue",
+        "type": "note",
+        "ch": 11,
+        "code": 19,
+        "shift_name": "pad6_hot_cue_shift"
+      },
+      "notes": "[5-10] PAD 6 hot cue (beat loop N21) [deck 2/4]"
+    },
+    {
+      "id": "xdj-az-5-11-R-72",
+      "fig": "5-11",
+      "label": "PAD 7 hot cue (beat loop N40) [deck 2/4] | Note 38 ch11/13 | SHIFT Note 39 ch11/13",
+      "kind": "pad",
+      "x": 83.05,
+      "y": 88.94,
+      "w": 3.1,
+      "h": 5.11,
+      "layer": "base",
+      "section": "pads",
+      "midi": {
+        "name": "pad7_hot_cue",
+        "type": "note",
+        "ch": 11,
+        "code": 38,
+        "shift_name": "pad7_hot_cue_shift"
+      },
+      "notes": "[5-11] PAD 7 hot cue (beat loop N40) [deck 2/4]"
+    },
+    {
+      "id": "xdj-az-5-12-R-73",
+      "fig": "5-12",
+      "label": "PAD 8 hot cue (beat loop N59) [deck 2/4] | Note 57 ch11/13 | SHIFT Note 58 ch11/13",
+      "kind": "pad",
+      "x": 86.38,
+      "y": 88.94,
+      "w": 3.1,
+      "h": 5.11,
+      "layer": "base",
+      "section": "pads",
+      "midi": {
+        "name": "pad8_hot_cue",
+        "type": "note",
+        "ch": 11,
+        "code": 57,
+        "shift_name": "pad8_hot_cue_shift"
+      },
+      "notes": "[5-12] PAD 8 hot cue (beat loop N59) [deck 2/4]"
+    },
+    {
+      "id": "xdj-az-1-27-L-74",
+      "fig": "1-27",
+      "label": "DECK QUANTIZE [deck 1/3; right-side twin not drawn on plate] | Note 26 ch1-4",
+      "kind": "button",
+      "x": 32.47,
+      "y": 19.36,
+      "w": 1.72,
+      "h": 2.34,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "deck_quantize",
+        "type": "note",
+        "ch": 1,
+        "code": 26,
+        "shift_name": null
+      },
+      "notes": "[1-27] DECK QUANTIZE [deck 1/3; right-side twin not drawn on plate]"
+    },
+    {
+      "id": "xdj-az-1-28-C-75",
+      "fig": "1-28",
+      "label": "LOAD x4 (one button per deck, ch = target deck) | Note 81 ch1-4",
+      "kind": "button",
+      "x": 63.1,
+      "y": 28.51,
+      "w": 3.68,
+      "h": 5.96,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "load",
+        "type": "note",
+        "ch": 1,
+        "code": 81,
+        "shift_name": null
+      },
+      "notes": "[1-28] LOAD x4 (one button per deck, ch = target deck)"
+    },
+    {
+      "id": "xdj-az-1-29-L-76",
+      "fig": "1-29",
+      "label": "NEEDLE (left waveform) [deck 1/3] | CC 28 ch1/3",
+      "kind": "button",
+      "x": 38.79,
+      "y": 32.02,
+      "w": 10.34,
+      "h": 2.34,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "needle_position",
+        "type": "cc",
+        "ch": 1,
+        "code": 28,
+        "shift_name": null
+      },
+      "notes": "[1-29] NEEDLE (left waveform) [deck 1/3]"
+    },
+    {
+      "id": "xdj-az-1-29-R-77",
+      "fig": "1-29",
+      "label": "NEEDLE (right waveform) [deck 2/4] | CC 28 ch2/4",
+      "kind": "button",
+      "x": 50.29,
+      "y": 32.02,
+      "w": 10.34,
+      "h": 2.34,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "needle_position",
+        "type": "cc",
+        "ch": 2,
+        "code": 28,
+        "shift_name": null
+      },
+      "notes": "[1-29] NEEDLE (right waveform) [deck 2/4]"
+    },
+    {
+      "id": "xdj-az-3-5-C-78",
+      "fig": "3-5",
+      "label": "TRIM CH3 | CC 12 ch5",
+      "kind": "knob",
+      "x": 41.95,
+      "y": 39.57,
+      "w": 2.07,
+      "h": 3.83,
+      "layer": "base",
+      "section": "mixer",
+      "midi": {
+        "name": "trim_ch3",
+        "type": "cc",
+        "ch": 5,
+        "code": 12,
+        "shift_name": null
+      },
+      "notes": "[3-5] TRIM CH3"
+    },
+    {
+      "id": "xdj-az-3-6-C-79",
+      "fig": "3-6",
+      "label": "EQ HI CH3 | CC 14 ch5",
+      "kind": "knob",
+      "x": 41.95,
+      "y": 45.0,
+      "w": 2.07,
+      "h": 3.83,
+      "layer": "base",
+      "section": "mixer",
+      "midi": {
+        "name": "eq_hi_ch3",
+        "type": "cc",
+        "ch": 5,
+        "code": 14,
+        "shift_name": null
+      },
+      "notes": "[3-6] EQ HI CH3"
+    },
+    {
+      "id": "xdj-az-3-7-C-80",
+      "fig": "3-7",
+      "label": "EQ MID CH3 | CC 15 ch5",
+      "kind": "knob",
+      "x": 41.95,
+      "y": 50.96,
+      "w": 2.07,
+      "h": 3.83,
+      "layer": "base",
+      "section": "mixer",
+      "midi": {
+        "name": "eq_mid_ch3",
+        "type": "cc",
+        "ch": 5,
+        "code": 15,
+        "shift_name": null
+      },
+      "notes": "[3-7] EQ MID CH3"
+    },
+    {
+      "id": "xdj-az-3-8-C-81",
+      "fig": "3-8",
+      "label": "EQ LOW CH3 | CC 21 ch5",
+      "kind": "knob",
+      "x": 41.95,
+      "y": 56.7,
+      "w": 2.07,
+      "h": 3.83,
+      "layer": "base",
+      "section": "mixer",
+      "midi": {
+        "name": "eq_low_ch3",
+        "type": "cc",
+        "ch": 5,
+        "code": 21,
+        "shift_name": null
+      },
+      "notes": "[3-8] EQ LOW CH3"
+    },
+    {
+      "id": "xdj-az-2-14-C-82",
+      "fig": "2-14",
+      "label": "COLOR CH3 | CC 22 ch5",
+      "kind": "knob",
+      "x": 41.84,
+      "y": 64.04,
+      "w": 2.3,
+      "h": 4.26,
+      "layer": "base",
+      "section": "mixer",
+      "midi": {
+        "name": "color_ch3",
+        "type": "cc",
+        "ch": 5,
+        "code": 22,
+        "shift_name": null
+      },
+      "notes": "[2-14] COLOR CH3"
+    },
+    {
+      "id": "xdj-az-3-11-C-83",
+      "fig": "3-11",
+      "label": "CH CUE CH3 | CC 72 ch5",
+      "kind": "button",
+      "x": 42.01,
+      "y": 69.89,
+      "w": 1.95,
+      "h": 2.13,
+      "layer": "base",
+      "section": "mixer",
+      "midi": {
+        "name": "ch_cue_ch3",
+        "type": "cc",
+        "ch": 5,
+        "code": 72,
+        "shift_name": null
+      },
+      "notes": "[3-11] CH CUE CH3"
+    },
+    {
+      "id": "xdj-az-3-2-C-84",
+      "fig": "3-2",
+      "label": "CH FADER CH3 (!) PDF: upper=0 | CC 19 ch5",
+      "kind": "fader",
+      "x": 42.01,
+      "y": 76.06,
+      "w": 1.95,
+      "h": 18.09,
+      "layer": "base",
+      "section": "mixer",
+      "midi": {
+        "name": "ch_fader_ch3",
+        "type": "cc",
+        "ch": 5,
+        "code": 19,
+        "shift_name": null
+      },
+      "notes": "[3-2] CH FADER CH3 (!) PDF: upper=0"
+    },
+    {
+      "id": "xdj-az-3-5-C-85",
+      "fig": "3-5",
+      "label": "TRIM CH1 | CC 1 ch5",
+      "kind": "knob",
+      "x": 46.55,
+      "y": 39.57,
+      "w": 2.07,
+      "h": 3.83,
+      "layer": "base",
+      "section": "mixer",
+      "midi": {
+        "name": "trim_ch1",
+        "type": "cc",
+        "ch": 5,
+        "code": 1,
+        "shift_name": null
+      },
+      "notes": "[3-5] TRIM CH1"
+    },
+    {
+      "id": "xdj-az-3-6-C-86",
+      "fig": "3-6",
+      "label": "EQ HI CH1 | CC 2 ch5",
+      "kind": "knob",
+      "x": 46.55,
+      "y": 45.0,
+      "w": 2.07,
+      "h": 3.83,
+      "layer": "base",
+      "section": "mixer",
+      "midi": {
+        "name": "eq_hi_ch1",
+        "type": "cc",
+        "ch": 5,
+        "code": 2,
+        "shift_name": null
+      },
+      "notes": "[3-6] EQ HI CH1"
+    },
+    {
+      "id": "xdj-az-3-7-C-87",
+      "fig": "3-7",
+      "label": "EQ MID CH1 | CC 3 ch5",
+      "kind": "knob",
+      "x": 46.55,
+      "y": 50.96,
+      "w": 2.07,
+      "h": 3.83,
+      "layer": "base",
+      "section": "mixer",
+      "midi": {
+        "name": "eq_mid_ch1",
+        "type": "cc",
+        "ch": 5,
+        "code": 3,
+        "shift_name": null
+      },
+      "notes": "[3-7] EQ MID CH1"
+    },
+    {
+      "id": "xdj-az-3-8-C-88",
+      "fig": "3-8",
+      "label": "EQ LOW CH1 | CC 4 ch5",
+      "kind": "knob",
+      "x": 46.55,
+      "y": 56.7,
+      "w": 2.07,
+      "h": 3.83,
+      "layer": "base",
+      "section": "mixer",
+      "midi": {
+        "name": "eq_low_ch1",
+        "type": "cc",
+        "ch": 5,
+        "code": 4,
+        "shift_name": null
+      },
+      "notes": "[3-8] EQ LOW CH1"
+    },
+    {
+      "id": "xdj-az-2-14-C-89",
+      "fig": "2-14",
+      "label": "COLOR CH1 | CC 5 ch5",
+      "kind": "knob",
+      "x": 46.44,
+      "y": 64.04,
+      "w": 2.3,
+      "h": 4.26,
+      "layer": "base",
+      "section": "mixer",
+      "midi": {
+        "name": "color_ch1",
+        "type": "cc",
+        "ch": 5,
+        "code": 5,
+        "shift_name": null
+      },
+      "notes": "[2-14] COLOR CH1"
+    },
+    {
+      "id": "xdj-az-3-11-C-90",
+      "fig": "3-11",
+      "label": "CH CUE CH1 | CC 70 ch5",
+      "kind": "button",
+      "x": 46.61,
+      "y": 69.89,
+      "w": 1.95,
+      "h": 2.13,
+      "layer": "base",
+      "section": "mixer",
+      "midi": {
+        "name": "ch_cue_ch1",
+        "type": "cc",
+        "ch": 5,
+        "code": 70,
+        "shift_name": null
+      },
+      "notes": "[3-11] CH CUE CH1"
+    },
+    {
+      "id": "xdj-az-3-2-C-91",
+      "fig": "3-2",
+      "label": "CH FADER CH1 (!) PDF: upper=0 | CC 17 ch5",
+      "kind": "fader",
+      "x": 46.61,
+      "y": 76.06,
+      "w": 1.95,
+      "h": 18.09,
+      "layer": "base",
+      "section": "mixer",
+      "midi": {
+        "name": "ch_fader_ch1",
+        "type": "cc",
+        "ch": 5,
+        "code": 17,
+        "shift_name": null
+      },
+      "notes": "[3-2] CH FADER CH1 (!) PDF: upper=0"
+    },
+    {
+      "id": "xdj-az-3-5-C-92",
+      "fig": "3-5",
+      "label": "TRIM CH2 | CC 6 ch5",
+      "kind": "knob",
+      "x": 51.15,
+      "y": 39.57,
+      "w": 2.07,
+      "h": 3.83,
+      "layer": "base",
+      "section": "mixer",
+      "midi": {
+        "name": "trim_ch2",
+        "type": "cc",
+        "ch": 5,
+        "code": 6,
+        "shift_name": null
+      },
+      "notes": "[3-5] TRIM CH2"
+    },
+    {
+      "id": "xdj-az-3-6-C-93",
+      "fig": "3-6",
+      "label": "EQ HI CH2 | CC 7 ch5",
+      "kind": "knob",
+      "x": 51.15,
+      "y": 45.0,
+      "w": 2.07,
+      "h": 3.83,
+      "layer": "base",
+      "section": "mixer",
+      "midi": {
+        "name": "eq_hi_ch2",
+        "type": "cc",
+        "ch": 5,
+        "code": 7,
+        "shift_name": null
+      },
+      "notes": "[3-6] EQ HI CH2"
+    },
+    {
+      "id": "xdj-az-3-7-C-94",
+      "fig": "3-7",
+      "label": "EQ MID CH2 | CC 8 ch5",
+      "kind": "knob",
+      "x": 51.15,
+      "y": 50.96,
+      "w": 2.07,
+      "h": 3.83,
+      "layer": "base",
+      "section": "mixer",
+      "midi": {
+        "name": "eq_mid_ch2",
+        "type": "cc",
+        "ch": 5,
+        "code": 8,
+        "shift_name": null
+      },
+      "notes": "[3-7] EQ MID CH2"
+    },
+    {
+      "id": "xdj-az-3-8-C-95",
+      "fig": "3-8",
+      "label": "EQ LOW CH2 | CC 9 ch5",
+      "kind": "knob",
+      "x": 51.15,
+      "y": 56.7,
+      "w": 2.07,
+      "h": 3.83,
+      "layer": "base",
+      "section": "mixer",
+      "midi": {
+        "name": "eq_low_ch2",
+        "type": "cc",
+        "ch": 5,
+        "code": 9,
+        "shift_name": null
+      },
+      "notes": "[3-8] EQ LOW CH2"
+    },
+    {
+      "id": "xdj-az-2-14-C-96",
+      "fig": "2-14",
+      "label": "COLOR CH2 | CC 10 ch5",
+      "kind": "knob",
+      "x": 51.03,
+      "y": 64.04,
+      "w": 2.3,
+      "h": 4.26,
+      "layer": "base",
+      "section": "mixer",
+      "midi": {
+        "name": "color_ch2",
+        "type": "cc",
+        "ch": 5,
+        "code": 10,
+        "shift_name": null
+      },
+      "notes": "[2-14] COLOR CH2"
+    },
+    {
+      "id": "xdj-az-3-11-C-97",
+      "fig": "3-11",
+      "label": "CH CUE CH2 | CC 71 ch5",
+      "kind": "button",
+      "x": 51.21,
+      "y": 69.89,
+      "w": 1.95,
+      "h": 2.13,
+      "layer": "base",
+      "section": "mixer",
+      "midi": {
+        "name": "ch_cue_ch2",
+        "type": "cc",
+        "ch": 5,
+        "code": 71,
+        "shift_name": null
+      },
+      "notes": "[3-11] CH CUE CH2"
+    },
+    {
+      "id": "xdj-az-3-2-C-98",
+      "fig": "3-2",
+      "label": "CH FADER CH2 (!) PDF: upper=0 | CC 18 ch5",
+      "kind": "fader",
+      "x": 51.21,
+      "y": 76.06,
+      "w": 1.95,
+      "h": 18.09,
+      "layer": "base",
+      "section": "mixer",
+      "midi": {
+        "name": "ch_fader_ch2",
+        "type": "cc",
+        "ch": 5,
+        "code": 18,
+        "shift_name": null
+      },
+      "notes": "[3-2] CH FADER CH2 (!) PDF: upper=0"
+    },
+    {
+      "id": "xdj-az-3-5-C-99",
+      "fig": "3-5",
+      "label": "TRIM CH4 | CC 80 ch5",
+      "kind": "knob",
+      "x": 55.75,
+      "y": 39.57,
+      "w": 2.07,
+      "h": 3.83,
+      "layer": "base",
+      "section": "mixer",
+      "midi": {
+        "name": "trim_ch4",
+        "type": "cc",
+        "ch": 5,
+        "code": 80,
+        "shift_name": null
+      },
+      "notes": "[3-5] TRIM CH4"
+    },
+    {
+      "id": "xdj-az-3-6-C-100",
+      "fig": "3-6",
+      "label": "EQ HI CH4 | CC 81 ch5",
+      "kind": "knob",
+      "x": 55.75,
+      "y": 45.0,
+      "w": 2.07,
+      "h": 3.83,
+      "layer": "base",
+      "section": "mixer",
+      "midi": {
+        "name": "eq_hi_ch4",
+        "type": "cc",
+        "ch": 5,
+        "code": 81,
+        "shift_name": null
+      },
+      "notes": "[3-6] EQ HI CH4"
+    },
+    {
+      "id": "xdj-az-3-7-C-101",
+      "fig": "3-7",
+      "label": "EQ MID CH4 | CC 92 ch5",
+      "kind": "knob",
+      "x": 55.75,
+      "y": 50.96,
+      "w": 2.07,
+      "h": 3.83,
+      "layer": "base",
+      "section": "mixer",
+      "midi": {
+        "name": "eq_mid_ch4",
+        "type": "cc",
+        "ch": 5,
+        "code": 92,
+        "shift_name": null
+      },
+      "notes": "[3-7] EQ MID CH4"
+    },
+    {
+      "id": "xdj-az-3-8-C-102",
+      "fig": "3-8",
+      "label": "EQ LOW CH4 | CC 82 ch5",
+      "kind": "knob",
+      "x": 55.75,
+      "y": 56.7,
+      "w": 2.07,
+      "h": 3.83,
+      "layer": "base",
+      "section": "mixer",
+      "midi": {
+        "name": "eq_low_ch4",
+        "type": "cc",
+        "ch": 5,
+        "code": 82,
+        "shift_name": null
+      },
+      "notes": "[3-8] EQ LOW CH4"
+    },
+    {
+      "id": "xdj-az-2-14-C-103",
+      "fig": "2-14",
+      "label": "COLOR CH4 | CC 83 ch5",
+      "kind": "knob",
+      "x": 55.63,
+      "y": 64.04,
+      "w": 2.3,
+      "h": 4.26,
+      "layer": "base",
+      "section": "mixer",
+      "midi": {
+        "name": "color_ch4",
+        "type": "cc",
+        "ch": 5,
+        "code": 83,
+        "shift_name": null
+      },
+      "notes": "[2-14] COLOR CH4"
+    },
+    {
+      "id": "xdj-az-3-11-C-104",
+      "fig": "3-11",
+      "label": "CH CUE CH4 | CC 73 ch5",
+      "kind": "button",
+      "x": 55.8,
+      "y": 69.89,
+      "w": 1.95,
+      "h": 2.13,
+      "layer": "base",
+      "section": "mixer",
+      "midi": {
+        "name": "ch_cue_ch4",
+        "type": "cc",
+        "ch": 5,
+        "code": 73,
+        "shift_name": null
+      },
+      "notes": "[3-11] CH CUE CH4"
+    },
+    {
+      "id": "xdj-az-3-2-C-105",
+      "fig": "3-2",
+      "label": "CH FADER CH4 (!) PDF: upper=0 | CC 20 ch5",
+      "kind": "fader",
+      "x": 55.8,
+      "y": 76.06,
+      "w": 1.95,
+      "h": 18.09,
+      "layer": "base",
+      "section": "mixer",
+      "midi": {
+        "name": "ch_fader_ch4",
+        "type": "cc",
+        "ch": 5,
+        "code": 20,
+        "shift_name": null
+      },
+      "notes": "[3-2] CH FADER CH4 (!) PDF: upper=0"
+    },
+    {
+      "id": "xdj-az-3-1-C-106",
+      "fig": "3-1",
+      "label": "CROSSFADER (left 0, right 127) | CC 11 ch5",
+      "kind": "fader",
+      "x": 46.72,
+      "y": 90.53,
+      "w": 6.32,
+      "h": 3.62,
+      "layer": "base",
+      "section": "mixer",
+      "midi": {
+        "name": "crossfader",
+        "type": "cc",
+        "ch": 5,
+        "code": 11,
+        "shift_name": null
+      },
+      "notes": "[3-1] CROSSFADER (left 0, right 127)"
+    },
+    {
+      "id": "xdj-az-3-12-C-107",
+      "fig": "3-12",
+      "label": "LINK CUE | CC 84 ch5",
+      "kind": "button",
+      "x": 37.07,
+      "y": 71.91,
+      "w": 1.72,
+      "h": 1.91,
+      "layer": "base",
+      "section": "mixer",
+      "midi": {
+        "name": "link_cue",
+        "type": "cc",
+        "ch": 5,
+        "code": 84,
+        "shift_name": null
+      },
+      "notes": "[3-12] LINK CUE"
+    },
+    {
+      "id": "xdj-az-3-9-C-108",
+      "fig": "3-9",
+      "label": "HEADPHONES MIX | CC 27 ch5",
+      "kind": "knob",
+      "x": 37.07,
+      "y": 75.64,
+      "w": 1.95,
+      "h": 3.62,
+      "layer": "base",
+      "section": "mixer",
+      "midi": {
+        "name": "hp_mix",
+        "type": "cc",
+        "ch": 5,
+        "code": 27,
+        "shift_name": null
+      },
+      "notes": "[3-9] HEADPHONES MIX"
+    },
+    {
+      "id": "xdj-az-3-10-C-109",
+      "fig": "3-10",
+      "label": "HEADPHONES LEVEL | CC 26 ch5",
+      "kind": "knob",
+      "x": 37.07,
+      "y": 82.23,
+      "w": 1.95,
+      "h": 3.62,
+      "layer": "base",
+      "section": "mixer",
+      "midi": {
+        "name": "hp_level",
+        "type": "cc",
+        "ch": 5,
+        "code": 26,
+        "shift_name": null
+      },
+      "notes": "[3-10] HEADPHONES LEVEL"
+    },
+    {
+      "id": "xdj-az-3-13-C-110",
+      "fig": "3-13",
+      "label": "MASTER CUE | CC 74 ch5",
+      "kind": "button",
+      "x": 72.82,
+      "y": 22.23,
+      "w": 2.07,
+      "h": 1.91,
+      "layer": "base",
+      "section": "mixer",
+      "midi": {
+        "name": "master_cue",
+        "type": "cc",
+        "ch": 5,
+        "code": 74,
+        "shift_name": null
+      },
+      "notes": "[3-13] MASTER CUE"
+    },
+    {
+      "id": "xdj-az-3-14-C-111",
+      "fig": "3-14",
+      "label": "MASTER LEVEL | CC 24 ch5",
+      "kind": "knob",
+      "x": 72.76,
+      "y": 15.74,
+      "w": 1.95,
+      "h": 3.62,
+      "layer": "base",
+      "section": "mixer",
+      "midi": {
+        "name": "master_level",
+        "type": "cc",
+        "ch": 5,
+        "code": 24,
+        "shift_name": null
+      },
+      "notes": "[3-14] MASTER LEVEL"
+    },
+    {
+      "id": "xdj-az-3-15-C-112",
+      "fig": "3-15",
+      "label": "MASTER EQ LOW | CC 49 ch5",
+      "kind": "knob",
+      "x": 76.15,
+      "y": 21.06,
+      "w": 1.95,
+      "h": 3.62,
+      "layer": "base",
+      "section": "mixer",
+      "midi": {
+        "name": "master_eq_low",
+        "type": "cc",
+        "ch": 5,
+        "code": 49,
+        "shift_name": null
+      },
+      "notes": "[3-15] MASTER EQ LOW"
+    },
+    {
+      "id": "xdj-az-3-16-C-113",
+      "fig": "3-16",
+      "label": "MASTER EQ MID | CC 48 ch5",
+      "kind": "knob",
+      "x": 79.37,
+      "y": 21.06,
+      "w": 1.95,
+      "h": 3.62,
+      "layer": "base",
+      "section": "mixer",
+      "midi": {
+        "name": "master_eq_mid",
+        "type": "cc",
+        "ch": 5,
+        "code": 48,
+        "shift_name": null
+      },
+      "notes": "[3-16] MASTER EQ MID"
+    },
+    {
+      "id": "xdj-az-3-17-C-114",
+      "fig": "3-17",
+      "label": "MASTER EQ HI | CC 47 ch5",
+      "kind": "knob",
+      "x": 82.64,
+      "y": 21.06,
+      "w": 1.95,
+      "h": 3.62,
+      "layer": "base",
+      "section": "mixer",
+      "midi": {
+        "name": "master_eq_hi",
+        "type": "cc",
+        "ch": 5,
+        "code": 47,
+        "shift_name": null
+      },
+      "notes": "[3-17] MASTER EQ HI"
+    },
+    {
+      "id": "xdj-az-3-18-C-115",
+      "fig": "3-18",
+      "label": "BOOTH LEVEL | CC 25 ch5",
+      "kind": "knob",
+      "x": 86.21,
+      "y": 21.06,
+      "w": 1.95,
+      "h": 3.62,
+      "layer": "base",
+      "section": "mixer",
+      "midi": {
+        "name": "booth_level",
+        "type": "cc",
+        "ch": 5,
+        "code": 25,
+        "shift_name": null
+      },
+      "notes": "[3-18] BOOTH LEVEL"
+    },
+    {
+      "id": "xdj-az-3-19-C-116",
+      "fig": "3-19",
+      "label": "MIC 1 SWITCH | CC 75 ch5",
+      "kind": "button",
+      "x": 11.15,
+      "y": 16.38,
+      "w": 1.26,
+      "h": 2.34,
+      "layer": "base",
+      "section": "mixer",
+      "midi": {
+        "name": "mic1_switch",
+        "type": "cc",
+        "ch": 5,
+        "code": 75,
+        "shift_name": null
+      },
+      "notes": "[3-19] MIC 1 SWITCH"
+    },
+    {
+      "id": "xdj-az-3-19-C-117",
+      "fig": "3-19",
+      "label": "MIC 2 SWITCH | CC 79 ch5",
+      "kind": "button",
+      "x": 11.15,
+      "y": 21.7,
+      "w": 1.26,
+      "h": 2.34,
+      "layer": "base",
+      "section": "mixer",
+      "midi": {
+        "name": "mic2_switch",
+        "type": "cc",
+        "ch": 5,
+        "code": 79,
+        "shift_name": null
+      },
+      "notes": "[3-19] MIC 2 SWITCH"
+    },
+    {
+      "id": "xdj-az-3-20-C-118",
+      "fig": "3-20",
+      "label": "TALKOVER | CC 89 ch5",
+      "kind": "button",
+      "x": 14.14,
+      "y": 19.26,
+      "w": 1.26,
+      "h": 2.34,
+      "layer": "base",
+      "section": "mixer",
+      "midi": {
+        "name": "talkover",
+        "type": "cc",
+        "ch": 5,
+        "code": 89,
+        "shift_name": null
+      },
+      "notes": "[3-20] TALKOVER"
+    },
+    {
+      "id": "xdj-az-3-22-C-119",
+      "fig": "3-22",
+      "label": "MIC 1 EQ LOW | CC 31 ch5",
+      "kind": "knob",
+      "x": 21.26,
+      "y": 15.96,
+      "w": 1.72,
+      "h": 3.19,
+      "layer": "base",
+      "section": "mixer",
+      "midi": {
+        "name": "mic1_eq_low",
+        "type": "cc",
+        "ch": 5,
+        "code": 31,
+        "shift_name": null
+      },
+      "notes": "[3-22] MIC 1 EQ LOW"
+    },
+    {
+      "id": "xdj-az-3-22-C-120",
+      "fig": "3-22",
+      "label": "MIC 2 EQ LOW | CC 97 ch5",
+      "kind": "knob",
+      "x": 21.26,
+      "y": 21.28,
+      "w": 1.72,
+      "h": 3.19,
+      "layer": "base",
+      "section": "mixer",
+      "midi": {
+        "name": "mic2_eq_low",
+        "type": "cc",
+        "ch": 5,
+        "code": 97,
+        "shift_name": null
+      },
+      "notes": "[3-22] MIC 2 EQ LOW"
+    },
+    {
+      "id": "xdj-az-3-23-C-121",
+      "fig": "3-23",
+      "label": "MIC 1 EQ MID | CC 98 ch5",
+      "kind": "knob",
+      "x": 24.71,
+      "y": 15.96,
+      "w": 1.72,
+      "h": 3.19,
+      "layer": "base",
+      "section": "mixer",
+      "midi": {
+        "name": "mic1_eq_mid",
+        "type": "cc",
+        "ch": 5,
+        "code": 98,
+        "shift_name": null
+      },
+      "notes": "[3-23] MIC 1 EQ MID"
+    },
+    {
+      "id": "xdj-az-3-23-C-122",
+      "fig": "3-23",
+      "label": "MIC 2 EQ MID | CC 99 ch5",
+      "kind": "knob",
+      "x": 24.71,
+      "y": 21.28,
+      "w": 1.72,
+      "h": 3.19,
+      "layer": "base",
+      "section": "mixer",
+      "midi": {
+        "name": "mic2_eq_mid",
+        "type": "cc",
+        "ch": 5,
+        "code": 99,
+        "shift_name": null
+      },
+      "notes": "[3-23] MIC 2 EQ MID"
+    },
+    {
+      "id": "xdj-az-3-24-C-123",
+      "fig": "3-24",
+      "label": "MIC 1 EQ HI | CC 30 ch5",
+      "kind": "knob",
+      "x": 27.99,
+      "y": 15.96,
+      "w": 1.72,
+      "h": 3.19,
+      "layer": "base",
+      "section": "mixer",
+      "midi": {
+        "name": "mic1_eq_hi",
+        "type": "cc",
+        "ch": 5,
+        "code": 30,
+        "shift_name": null
+      },
+      "notes": "[3-24] MIC 1 EQ HI"
+    },
+    {
+      "id": "xdj-az-3-24-C-124",
+      "fig": "3-24",
+      "label": "MIC 2 EQ HI | CC 96 ch5",
+      "kind": "knob",
+      "x": 27.99,
+      "y": 21.28,
+      "w": 1.72,
+      "h": 3.19,
+      "layer": "base",
+      "section": "mixer",
+      "midi": {
+        "name": "mic2_eq_hi",
+        "type": "cc",
+        "ch": 5,
+        "code": 96,
+        "shift_name": null
+      },
+      "notes": "[3-24] MIC 2 EQ HI"
+    },
+    {
+      "id": "xdj-az-2-1-C-125",
+      "fig": "2-1",
+      "label": "X-PAD slide (press CC114 = FX ON) | CC 116 ch5",
+      "kind": "fader",
+      "x": 59.77,
+      "y": 41.81,
+      "w": 6.9,
+      "h": 2.13,
+      "layer": "base",
+      "section": "fx",
+      "midi": {
+        "name": "xpad_slide",
+        "type": "cc",
+        "ch": 5,
+        "code": 116,
+        "shift_name": null
+      },
+      "notes": "[2-1] X-PAD slide (press CC114 = FX ON)"
+    },
+    {
+      "id": "xdj-az-2-2-C-126",
+      "fig": "2-2",
+      "label": "BEAT LEFT (RIGHT CC77) | CC 76 ch5",
+      "kind": "button",
+      "x": 60.34,
+      "y": 46.6,
+      "w": 5.52,
+      "h": 1.91,
+      "layer": "base",
+      "section": "fx",
+      "midi": {
+        "name": "beat_left",
+        "type": "cc",
+        "ch": 5,
+        "code": 76,
+        "shift_name": null
+      },
+      "notes": "[2-2] BEAT LEFT (RIGHT CC77)"
+    },
+    {
+      "id": "xdj-az-2-3-C-127",
+      "fig": "2-3",
+      "label": "AUTO/TAP | CC 69 ch5",
+      "kind": "button",
+      "x": 60.11,
+      "y": 50.43,
+      "w": 1.61,
+      "h": 2.13,
+      "layer": "base",
+      "section": "fx",
+      "midi": {
+        "name": "auto_tap",
+        "type": "cc",
+        "ch": 5,
+        "code": 69,
+        "shift_name": null
+      },
+      "notes": "[2-3] AUTO/TAP"
+    },
+    {
+      "id": "xdj-az-2-4-C-128",
+      "fig": "2-4",
+      "label": "TAP | CC 78 ch5",
+      "kind": "button",
+      "x": 62.07,
+      "y": 50.43,
+      "w": 1.61,
+      "h": 2.13,
+      "layer": "base",
+      "section": "fx",
+      "midi": {
+        "name": "tap",
+        "type": "cc",
+        "ch": 5,
+        "code": 78,
+        "shift_name": null
+      },
+      "notes": "[2-4] TAP"
+    },
+    {
+      "id": "xdj-az-2-5-C-129",
+      "fig": "2-5",
+      "label": "FX QUANTIZE | Note 118 ch5",
+      "kind": "button",
+      "x": 63.97,
+      "y": 50.43,
+      "w": 1.61,
+      "h": 2.13,
+      "layer": "base",
+      "section": "fx",
+      "midi": {
+        "name": "fx_quantize",
+        "type": "note",
+        "ch": 5,
+        "code": 118,
+        "shift_name": null
+      },
+      "notes": "[2-5] FX QUANTIZE"
+    },
+    {
+      "id": "xdj-az-2-6-C-130",
+      "fig": "2-6",
+      "label": "FREQ HI | CC 102 ch5",
+      "kind": "button",
+      "x": 60.11,
+      "y": 54.26,
+      "w": 1.61,
+      "h": 2.13,
+      "layer": "base",
+      "section": "fx",
+      "midi": {
+        "name": "fx_freq_hi",
+        "type": "cc",
+        "ch": 5,
+        "code": 102,
+        "shift_name": null
+      },
+      "notes": "[2-6] FREQ HI"
+    },
+    {
+      "id": "xdj-az-2-7-C-131",
+      "fig": "2-7",
+      "label": "FREQ MID | CC 103 ch5",
+      "kind": "button",
+      "x": 62.24,
+      "y": 54.26,
+      "w": 1.61,
+      "h": 2.13,
+      "layer": "base",
+      "section": "fx",
+      "midi": {
+        "name": "fx_freq_mid",
+        "type": "cc",
+        "ch": 5,
+        "code": 103,
+        "shift_name": null
+      },
+      "notes": "[2-7] FREQ MID"
+    },
+    {
+      "id": "xdj-az-2-8-C-132",
+      "fig": "2-8",
+      "label": "FREQ LOW | CC 104 ch5",
+      "kind": "button",
+      "x": 64.31,
+      "y": 54.26,
+      "w": 1.61,
+      "h": 2.13,
+      "layer": "base",
+      "section": "fx",
+      "midi": {
+        "name": "fx_freq_low",
+        "type": "cc",
+        "ch": 5,
+        "code": 104,
+        "shift_name": null
+      },
+      "notes": "[2-8] FREQ LOW"
+    },
+    {
+      "id": "xdj-az-2-9-C-133",
+      "fig": "2-9",
+      "label": "BEAT FX SELECT (one CC per FX, 42..63) | CC 42 ch5",
+      "kind": "knob",
+      "x": 61.67,
+      "y": 60.21,
+      "w": 2.53,
+      "h": 4.68,
+      "layer": "base",
+      "section": "fx",
+      "midi": {
+        "name": "fx_select_delay",
+        "type": "cc",
+        "ch": 5,
+        "code": 42,
+        "shift_name": null
+      },
+      "notes": "[2-9] BEAT FX SELECT (one CC per FX, 42..63)"
+    },
+    {
+      "id": "xdj-az-2-10-C-134",
+      "fig": "2-10",
+      "label": "BEAT FX CH SELECT (CH1 35 CH2 36 CH3 34 CH4 37 MIC 28 A 39 B 40 MST 41) | CC 35 ch5",
+      "kind": "button",
+      "x": 59.94,
+      "y": 68.94,
+      "w": 6.32,
+      "h": 3.62,
+      "layer": "base",
+      "section": "fx",
+      "midi": {
+        "name": "fx_ch_select_ch1",
+        "type": "cc",
+        "ch": 5,
+        "code": 35,
+        "shift_name": null
+      },
+      "notes": "[2-10] BEAT FX CH SELECT (CH1 35 CH2 36 CH3 34 CH4 37 MIC 28 A 39 B 40 MST 41)"
+    },
+    {
+      "id": "xdj-az-2-11-C-135",
+      "fig": "2-11",
+      "label": "TIME (relative) | CC 45 ch5",
+      "kind": "knob",
+      "x": 62.07,
+      "y": 75.53,
+      "w": 1.95,
+      "h": 3.62,
+      "layer": "base",
+      "section": "fx",
+      "midi": {
+        "name": "fx_time",
+        "type": "cc",
+        "ch": 5,
+        "code": 45,
+        "shift_name": null
+      },
+      "notes": "[2-11] TIME (relative)"
+    },
+    {
+      "id": "xdj-az-2-12-C-136",
+      "fig": "2-12",
+      "label": "LEVEL/DEPTH | CC 91 ch5",
+      "kind": "knob",
+      "x": 62.07,
+      "y": 82.23,
+      "w": 1.95,
+      "h": 3.62,
+      "layer": "base",
+      "section": "fx",
+      "midi": {
+        "name": "fx_level_depth",
+        "type": "cc",
+        "ch": 5,
+        "code": 91,
+        "shift_name": null
+      },
+      "notes": "[2-12] LEVEL/DEPTH"
+    },
+    {
+      "id": "xdj-az-2-13-C-137",
+      "fig": "2-13",
+      "label": "BEAT FX ON/OFF | CC 114 ch5",
+      "kind": "button",
+      "x": 62.07,
+      "y": 89.36,
+      "w": 2.3,
+      "h": 4.26,
+      "layer": "base",
+      "section": "fx",
+      "midi": {
+        "name": "beat_fx_on",
+        "type": "cc",
+        "ch": 5,
+        "code": 114,
+        "shift_name": null
+      },
+      "notes": "[2-13] BEAT FX ON/OFF"
+    },
+    {
+      "id": "xdj-az-2-15-C-138",
+      "fig": "2-15",
+      "label": "COLOR FX PARAMETER | CC 108 ch5",
+      "kind": "knob",
+      "x": 36.95,
+      "y": 64.15,
+      "w": 1.95,
+      "h": 3.62,
+      "layer": "base",
+      "section": "fx",
+      "midi": {
+        "name": "color_parameter",
+        "type": "cc",
+        "ch": 5,
+        "code": 108,
+        "shift_name": null
+      },
+      "notes": "[2-15] COLOR FX PARAMETER"
+    },
+    {
+      "id": "xdj-az-2-16-C-139",
+      "fig": "2-16",
+      "label": "COLOR FX SPACE | CC 105 ch5",
+      "kind": "button",
+      "x": 36.49,
+      "y": 51.81,
+      "w": 1.72,
+      "h": 2.13,
+      "layer": "base",
+      "section": "fx",
+      "midi": {
+        "name": "color_fx_space",
+        "type": "cc",
+        "ch": 5,
+        "code": 105,
+        "shift_name": null
+      },
+      "notes": "[2-16] COLOR FX SPACE"
+    },
+    {
+      "id": "xdj-az-2-17-C-140",
+      "fig": "2-17",
+      "label": "COLOR FX DUB_ECHO | CC 107 ch5",
+      "kind": "button",
+      "x": 38.68,
+      "y": 51.81,
+      "w": 1.72,
+      "h": 2.13,
+      "layer": "base",
+      "section": "fx",
+      "midi": {
+        "name": "color_fx_dub_echo",
+        "type": "cc",
+        "ch": 5,
+        "code": 107,
+        "shift_name": null
+      },
+      "notes": "[2-17] COLOR FX DUB_ECHO"
+    },
+    {
+      "id": "xdj-az-2-18-C-141",
+      "fig": "2-18",
+      "label": "COLOR FX CRUSH | CC 86 ch5",
+      "kind": "button",
+      "x": 36.49,
+      "y": 55.64,
+      "w": 1.72,
+      "h": 2.13,
+      "layer": "base",
+      "section": "fx",
+      "midi": {
+        "name": "color_fx_crush",
+        "type": "cc",
+        "ch": 5,
+        "code": 86,
+        "shift_name": null
+      },
+      "notes": "[2-18] COLOR FX CRUSH"
+    },
+    {
+      "id": "xdj-az-2-19-C-142",
+      "fig": "2-19",
+      "label": "COLOR FX SWEEP | CC 106 ch5",
+      "kind": "button",
+      "x": 38.68,
+      "y": 55.64,
+      "w": 1.72,
+      "h": 2.13,
+      "layer": "base",
+      "section": "fx",
+      "midi": {
+        "name": "color_fx_sweep",
+        "type": "cc",
+        "ch": 5,
+        "code": 106,
+        "shift_name": null
+      },
+      "notes": "[2-19] COLOR FX SWEEP"
+    },
+    {
+      "id": "xdj-az-2-20-C-143",
+      "fig": "2-20",
+      "label": "COLOR FX NOISE | CC 85 ch5",
+      "kind": "button",
+      "x": 36.49,
+      "y": 59.47,
+      "w": 1.72,
+      "h": 2.13,
+      "layer": "base",
+      "section": "fx",
+      "midi": {
+        "name": "color_fx_noise",
+        "type": "cc",
+        "ch": 5,
+        "code": 85,
+        "shift_name": null
+      },
+      "notes": "[2-20] COLOR FX NOISE"
+    },
+    {
+      "id": "xdj-az-2-21-C-144",
+      "fig": "2-21",
+      "label": "COLOR FX FILTER | CC 87 ch5",
+      "kind": "button",
+      "x": 38.68,
+      "y": 59.47,
+      "w": 1.72,
+      "h": 2.13,
+      "layer": "base",
+      "section": "fx",
+      "midi": {
+        "name": "color_fx_filter",
+        "type": "cc",
+        "ch": 5,
+        "code": 87,
+        "shift_name": null
+      },
+      "notes": "[2-21] COLOR FX FILTER"
+    },
+    {
+      "id": "xdj-az-4-1-C-145",
+      "fig": "4-1",
+      "label": "BROWSE rotate (press N51) | CC 79 ch1 | SHIFT CC 96 ch1",
+      "kind": "encoder",
+      "x": 63.33,
+      "y": 14.79,
+      "w": 2.99,
+      "h": 5.53,
+      "layer": "base",
+      "section": "browser",
+      "midi": {
+        "name": "browse_rotate",
+        "type": "cc",
+        "ch": 1,
+        "code": 79,
+        "shift_name": "browse_rotate_shift"
+      },
+      "notes": "[4-1] BROWSE rotate (press N51)"
+    },
+    {
+      "id": "xdj-az-4-2-C-146",
+      "fig": "4-2",
+      "label": "BACK | Note 50 ch1 | SHIFT Note 95 ch1",
+      "kind": "button",
+      "x": 63.05,
+      "y": 10.11,
+      "w": 1.26,
+      "h": 1.91,
+      "layer": "base",
+      "section": "browser",
+      "midi": {
+        "name": "back",
+        "type": "note",
+        "ch": 1,
+        "code": 50,
+        "shift_name": "back_shift"
+      },
+      "notes": "[4-2] BACK"
+    },
+    {
+      "id": "xdj-az-4-3-C-147",
+      "fig": "4-3",
+      "label": "TAG TRACK/REMOVE | Note 48 ch1 | SHIFT Note 98 ch1",
+      "kind": "button",
+      "x": 65.34,
+      "y": 10.11,
+      "w": 1.26,
+      "h": 1.91,
+      "layer": "base",
+      "section": "browser",
+      "midi": {
+        "name": "tag_track",
+        "type": "note",
+        "ch": 1,
+        "code": 48,
+        "shift_name": "tag_track_shift"
+      },
+      "notes": "[4-3] TAG TRACK/REMOVE"
+    },
+    {
+      "id": "xdj-az-4-4-C-148",
+      "fig": "4-4",
+      "label": "TRACK FILTER | Note 49 ch1 | SHIFT Note 93 ch1",
+      "kind": "button",
+      "x": 63.05,
+      "y": 22.55,
+      "w": 1.26,
+      "h": 1.91,
+      "layer": "base",
+      "section": "browser",
+      "midi": {
+        "name": "track_filter",
+        "type": "note",
+        "ch": 1,
+        "code": 49,
+        "shift_name": "track_filter_shift"
+      },
+      "notes": "[4-4] TRACK FILTER"
+    }
+  ]
+}

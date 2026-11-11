@@ -101,3 +101,182 @@ test('shifted jogs stay bound as deck_jog at scale 4', () => {
 		assert.deepEqual(jog.binding.action, { type: 'deck_jog', deck, scale: 4 });
 	}
 });
+
+const offsets = {
+	hot_cue: [0, 1],
+	beat_loop: [2, 3],
+	pad_fx1_page1: [4, null],
+	pad_fx1_page2: [5, null],
+	pad_fx2_page1: [6, null],
+	pad_fx2_page2: [7, null],
+	slip_loop: [null, 8],
+	beat_jump: [9, 10],
+	gate_cue: [11, 12],
+	beat_loop2: [13, 14],
+	key_shift: [15, 16],
+	beat_jump2: [17, 18]
+};
+
+test('all named layers resolve their exact wires, titles and existing actions', () => {
+	for (const deck of [1, 2])
+		for (let pad = 0; pad < 8; pad++) {
+			const control = layout.controls.find((c) => c.id === `d${deck}-pad-${pad + 1}`);
+			for (const [mode, rows] of Object.entries(offsets))
+				for (const shift of [false, true]) {
+					const r = bindings.resolveControl(
+						XDJ_AZ_MAP,
+						control,
+						shift,
+						{ [`d${deck}`]: mode },
+						layout
+					);
+					const offset = rows[Number(shift)];
+					assert.match(bindings.controlTitle(r), new RegExp(control.pad_layers[mode].label));
+					if (offset === null) {
+						assert.equal(r.kind, 'unwired');
+						assert.equal(r.wire, null);
+					} else {
+						assert.deepEqual(r.wire, {
+							ch: (pad < 4 ? 5 : 9) + deck,
+							kind: 'note',
+							id: 19 * (pad % 4) + offset
+						});
+						assert.match(bindings.controlTitle(r), new RegExp(`ch ${r.wire.ch} note ${r.wire.id}`));
+						if (offset === 0 || offset === 2) {
+							assert.equal(r.binding.action.type, offset === 0 ? 'deck_hot_cue' : 'deck_beat_loop');
+						} else {
+							assert.equal(r.kind, 'inert');
+							assert.equal(
+								bindings.dispatchPractice(
+									r,
+									{ pressed: true },
+									{
+										action() {
+											assert.fail('unsupported action');
+										}
+									}
+								),
+								'inert'
+							);
+						}
+					}
+				}
+		}
+});
+
+test('layer commands validate before mutation and agent query uses the real resolver', async () => {
+	const layers = await vite.ssrLoadModule('/src/lib/components/rb/practice/practice-pad-layers.ts');
+	let selection = layers.initialPadLayers(layout);
+	selection = layers.selectPadLayer(layout, selection, {
+		type: 'select',
+		group: 'd1',
+		mode: 'beat_jump'
+	});
+	assert.deepEqual(selection, { d1: 'beat_jump', d2: 'hot_cue' });
+	for (const cmd of [
+		null,
+		{},
+		{ type: 'select', group: 'absent', mode: 'hot_cue' },
+		{ type: 'select', group: 'd1', mode: 'oops' }
+	]) {
+		assert.throws(() => layers.selectPadLayer(layout, selection, cmd));
+	}
+	const q = layers.queryPadLayers(layout, XDJ_AZ_MAP, selection, true);
+	assert.equal(q.device, 'xdj-az');
+	assert.equal(q.shift, true);
+	assert.deepEqual(q.pads.find((p) => p.id === 'd1-pad-1').wire, { ch: 6, kind: 'note', id: 10 });
+	assert.deepEqual(JSON.parse(JSON.stringify(q)), q);
+	const broken = structuredClone(layout);
+	broken.pad_layer_groups.d1.default_mode = 'missing';
+	assert.throws(() => layers.initialPadLayers(broken));
+	broken.pad_layer_groups.d1.default_mode = 'hot_cue';
+	broken.controls.find((c) => c.id === 'd1-pad-1').pad_layers.beat_jump.midi.id = 127;
+	assert.throws(
+		() => bindings.resolveLayout(XDJ_AZ_MAP, broken, false, selection),
+		/neither binds nor hints/
+	);
+	const incomplete = structuredClone(layout);
+	delete incomplete.controls.find((c) => c.id === 'd1-pad-1').pad_layers.hot_cue.shift_midi;
+	assert.throws(() => layers.initialPadLayers(incomplete));
+});
+
+test('IPC validates input, serializes state and cleans up only its own installation', async () => {
+	const layers = await vite.ssrLoadModule('/src/lib/components/rb/practice/practice-pad-layers.ts');
+	const ipcModule = await vite.ssrLoadModule(
+		'/src/lib/components/rb/practice/practice-pad-layers-ipc.ts'
+	);
+	let selection = layers.initialPadLayers(layout);
+	const query = () => layers.queryPadLayers(layout, XDJ_AZ_MAP, selection, false);
+	const ipc = ipcModule.createPracticeLayersIpc({
+		query,
+		dispatch(cmd) {
+			selection = layers.selectPadLayer(layout, selection, cmd);
+			return query();
+		}
+	});
+	assert.throws(() => ipc.dispatch({ type: 'select', group: 1, mode: 'beat_jump' }));
+	assert.equal(
+		ipc.dispatch({ type: 'select', group: 'd2', mode: 'beat_jump' }).groups.d2.selected_mode,
+		'beat_jump'
+	);
+	globalThis.window = {};
+	try {
+		const cleanup = ipcModule.installPracticeLayersIpc(ipc);
+		assert.equal(window.musicDjToolsPracticeLayers, ipc);
+		assert.throws(() => ipcModule.installPracticeLayersIpc(ipc), /already installed/);
+		cleanup();
+		assert.equal(window.musicDjToolsPracticeLayers, undefined);
+	} finally {
+		delete globalThis.window;
+	}
+});
+
+test('held pads release the original action exactly once across mode and SHIFT changes', () => {
+	const control = layout.controls.find((c) => c.id === 'd1-pad-1');
+	const calls = [];
+	const holds = bindings.createPracticeHolds({
+		action: (action, value) => calls.push({ action, value })
+	});
+	const hotCue = bindings.resolveControl(XDJ_AZ_MAP, control, false, { d1: 'hot_cue' }, layout);
+	holds.press(hotCue);
+	const unavailable = bindings.resolveControl(
+		XDJ_AZ_MAP,
+		control,
+		true,
+		{ d1: 'pad_fx1_page1' },
+		layout
+	);
+	assert.equal(unavailable.kind, 'unwired');
+	holds.press(unavailable); // repeated pointerdown cannot replace a held snapshot
+	holds.release(control.id); // pointerup
+	holds.release(control.id); // lost capture
+	holds.releaseAll(); // unmount
+	assert.equal(calls.length, 2);
+	assert.deepEqual(
+		calls.map((c) => c.action),
+		[hotCue.binding.action, hotCue.binding.action]
+	);
+	assert.deepEqual(
+		calls.map((c) => c.value.pressed),
+		[true, false]
+	);
+	holds.press(hotCue);
+	holds.releaseAll(); // cancellation/unmount without pointerup
+	holds.release(control.id);
+	assert.deepEqual(
+		calls.map((c) => c.value.pressed),
+		[true, false, true, false]
+	);
+});
+
+test('direct selected resolution requires group metadata instead of silently using HOT CUE', () => {
+	const pad = layout.controls.find((c) => c.id === 'd1-pad-1');
+	assert.throws(
+		() => bindings.resolveControl(XDJ_AZ_MAP, pad, false, { d1: 'beat_jump' }),
+		/requires its panel layout/
+	);
+	assert.throws(
+		() => bindings.resolveControl(XDJ_AZ_MAP, pad, false, { d1: 'missing' }, layout),
+		/unknown pad layer/
+	);
+});

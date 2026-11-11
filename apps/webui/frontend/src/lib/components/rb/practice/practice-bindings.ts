@@ -37,6 +37,21 @@ export interface PanelWire {
 export type PanelControlType =
 	'jog' | 'fader' | 'knob' | 'pad' | 'button' | 'crossfader' | 'encoder';
 
+export interface PadLayer {
+	label: string;
+	does: string;
+	midi: PanelWire | null;
+	shift_midi: PanelWire | null;
+}
+
+export interface PadLayerGroup {
+	label: string;
+	default_mode: string;
+	modes: { id: string; label: string }[];
+}
+
+export type PadLayerSelection = Readonly<Record<string, string>>;
+
 export interface PanelControl {
 	id: string;
 	fig: string;
@@ -52,6 +67,9 @@ export interface PanelControl {
 	midi: PanelWire | null;
 	/** What the control sends while SHIFT is held; null = no documented shifted row. */
 	shift_midi: PanelWire | null;
+	pad_layer_group?: string;
+	pad_layers?: Record<string, PadLayer>;
+	pad_layer_select?: { base: string; shift: string };
 }
 
 export interface PanelLayout {
@@ -62,6 +80,7 @@ export interface PanelLayout {
 	panel: { w: number; d: number };
 	device_map: string;
 	controls: PanelControl[];
+	pad_layer_groups?: Record<string, PadLayerGroup>;
 }
 
 /** Must match `FLX4_MAP.nameMatch` in `apps/webui/frontend/src/lib/rb/midi/maps/ddj-flx4.ts`. */
@@ -111,14 +130,34 @@ function _practiceSupplementBinding(map: DeviceMap, wire: PanelWire): MidiBindin
 export function resolveControl(
 	map: DeviceMap,
 	control: PanelControl,
-	shiftHeld = false
+	shiftHeld = false,
+	selection: PadLayerSelection = {},
+	layout?: PanelLayout
 ): ResolvedControl {
-	if (control.midi === null) {
+	if (layout === undefined && Object.keys(selection).length > 0)
+		throw new Error('pad layer selection requires its panel layout');
+	let namedLayer = false;
+	if (control.pad_layers !== undefined && layout !== undefined) {
+		const groupId = control.pad_layer_group;
+		const group = groupId === undefined ? undefined : layout.pad_layer_groups?.[groupId];
+		if (group === undefined || groupId === undefined)
+			throw new Error(`unknown pad layer group on ${control.id}`);
+		const mode = selection[groupId] ?? group.default_mode;
+		const layer = control.pad_layers[mode];
+		if (layer === undefined || !group.modes.some((m) => m.id === mode))
+			throw new Error(`unknown pad layer ${mode} on ${control.id}`);
+		control = { ...control, ...layer, label: `${layer.label}${shiftHeld ? ' +SHIFT' : ''}` };
+		namedLayer = true;
+	}
+	if (namedLayer && (shiftHeld ? control.shift_midi : control.midi) === null)
+		return { kind: 'unwired', control, wire: null };
+	if (!namedLayer && control.midi === null) {
 		if (control.shift_midi !== null)
 			throw new Error(`practice layout ${control.id} has a shifted row but no base wire`);
 		return { kind: 'unwired', control, wire: null };
 	}
 	const wire = shiftHeld && control.shift_midi !== null ? control.shift_midi : control.midi;
+	if (wire === null) throw new Error(`practice layout ${control.id} has no selected wire`);
 	const onWire = map.bindings.filter((b) => _sameSource(wire, b.source));
 	const binding =
 		(shiftHeld ? onWire.find((b) => b.shift === true) : undefined) ??
@@ -134,11 +173,73 @@ export function resolveControl(
 	);
 }
 
-export function resolveLayout(map: DeviceMap, layout: PanelLayout): ResolvedControl[] {
+/** Validate cross-references before any inspection command changes state. */
+export function validatePadLayers(layout: PanelLayout, selection: PadLayerSelection = {}): void {
+	const groups = layout.pad_layer_groups ?? {};
+	for (const [id, group] of Object.entries(groups)) {
+		if (
+			!group.label ||
+			!Array.isArray(group.modes) ||
+			group.modes.length === 0 ||
+			group.modes.some((m) => !m.id || !m.label) ||
+			new Set(group.modes.map((m) => m.id)).size !== group.modes.length ||
+			!group.modes.some((m) => m.id === group.default_mode)
+		)
+			throw new Error(`invalid pad layer group ${id}`);
+	}
+	for (const [id, mode] of Object.entries(selection)) {
+		if (!Object.hasOwn(groups, id) || !groups[id].modes.some((m) => m.id === mode))
+			throw new Error(`unknown pad layer selection ${id}: ${mode}`);
+	}
+	for (const c of layout.controls) {
+		if (
+			c.pad_layer_group === undefined &&
+			c.pad_layers === undefined &&
+			c.pad_layer_select === undefined
+		)
+			continue;
+		const group = c.pad_layer_group === undefined ? undefined : groups[c.pad_layer_group];
+		if (group === undefined || (c.pad_layers === undefined) === (c.pad_layer_select === undefined))
+			throw new Error(`invalid pad layer metadata on ${c.id}`);
+		if (c.pad_layers !== undefined) {
+			if (c.type !== 'pad' || Object.keys(c.pad_layers).length !== group.modes.length)
+				throw new Error(`incomplete pad layers on ${c.id}`);
+			for (const mode of group.modes) {
+				const layer = c.pad_layers[mode.id];
+				if (
+					!layer ||
+					!layer.label ||
+					!layer.does ||
+					!Object.hasOwn(layer, 'midi') ||
+					!Object.hasOwn(layer, 'shift_midi') ||
+					layer.midi === undefined ||
+					layer.shift_midi === undefined ||
+					Object.keys(layer).some((k) => !['label', 'does', 'midi', 'shift_midi'].includes(k))
+				)
+					throw new Error(`invalid pad layer ${mode.id} on ${c.id}`);
+			}
+		} else if (c.pad_layer_select !== undefined) {
+			if (
+				c.type !== 'button' ||
+				!group.modes.some((m) => m.id === c.pad_layer_select?.base) ||
+				!group.modes.some((m) => m.id === c.pad_layer_select?.shift)
+			)
+				throw new Error(`invalid pad layer selector on ${c.id}`);
+		}
+	}
+}
+
+export function resolveLayout(
+	map: DeviceMap,
+	layout: PanelLayout,
+	shiftHeld = false,
+	selection: PadLayerSelection = {}
+): ResolvedControl[] {
 	if (layout.format !== 'opendj-panel-layout/1') {
 		throw new Error(`unsupported panel layout format: ${String(layout.format)}`);
 	}
-	return layout.controls.map((c) => resolveControl(map, c));
+	validatePadLayers(layout, selection);
+	return layout.controls.map((c) => resolveControl(map, c, shiftHeld, selection, layout));
 }
 
 /** The value a hardware message of this control would carry, from a 0..1 position or press. */
@@ -158,9 +259,13 @@ export function inputValueFor(
 
 /** Plain-words hover text: what the control does, and what it fires in Open DJ. */
 export function controlTitle(resolved: ResolvedControl): string {
-	const base = `${resolved.control.label}: ${resolved.control.does}`;
+	const identity =
+		resolved.wire === null
+			? 'wire unavailable'
+			: `ch ${resolved.wire.ch} ${resolved.wire.kind} ${resolved.wire.id}`;
+	const base = `${resolved.control.label}: ${resolved.control.does} (${identity})`;
 	if (resolved.kind === 'unwired')
-		return `${base}. not implemented - see PARITY-TODO (no MIDI identity published for this control)`;
+		return `${base}. not implemented - see PARITY-TODO (selected wire unavailable: no MIDI identity published)`;
 	if (resolved.kind === 'inert')
 		return `${base}. not implemented - see PARITY-TODO (${resolved.hint})`;
 	return `${base}. Fires ${describeAction(resolved.binding.action)}`;
@@ -203,4 +308,26 @@ export function dispatchPractice(
 	);
 	sinks.action(resolved.binding.action, value, resolved.control.id);
 	return 'action';
+}
+
+/** Own press snapshots so layer changes, cancel, lost capture and teardown release once. */
+export function createPracticeHolds(sinks: PracticeSinks) {
+	const held = new Map<string, ResolvedControl>();
+	const release = (id: string): void => {
+		const resolved = held.get(id);
+		if (resolved === undefined) return;
+		held.delete(id);
+		dispatchPractice(resolved, { pressed: false }, sinks);
+	};
+	return {
+		press(resolved: ResolvedControl): void {
+			if (held.has(resolved.control.id)) return;
+			held.set(resolved.control.id, resolved);
+			dispatchPractice(resolved, { pressed: true }, sinks);
+		},
+		release,
+		releaseAll(): void {
+			for (const id of [...held.keys()]) release(id);
+		}
+	};
 }

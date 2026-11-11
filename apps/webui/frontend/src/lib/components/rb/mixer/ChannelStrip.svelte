@@ -256,8 +256,8 @@
 		// severe master attenuation. `playing` is the only signal that says the
 		// level means something right now.
 		if (!playing) return;
-		// R is captured from the value the channel meter draws (its post-crossfader
-		// heard ballistics), M from the tap (Sol P1 and Codex P2, PR #6829).
+		// R and M capture the post-channel-fader level the bar draws (`db`, pin
+		// 3dc62dbb909c); the clip pip alone uses post-crossfader heard peaks.
 		const db = calibrationCaptureDb(kind, peekDeckMeterReading(deckId));
 		// Belt and braces: a playing deck can still sit at the floor (silence in
 		// the track, or a graph not yet producing), and a -60 dBFS ceiling is a
@@ -319,8 +319,10 @@
 	 * explicit `size={undefined}` as distinct from the prop being absent, so
 	 * `eqSize` must always resolve to a concrete number, same as `trimSize`. */
 	const EQ_SIZE = 30;
+	const COMPACT_EQ_SIZE = 24;
+	const compact = $derived(uiPrefs.compact_decks && !less);
 	const trimSize = $derived(less ? LESS_TRIM_SIZE : TRIM_SIZE);
-	const eqSize = $derived(less ? LESS_EQ_SIZE : EQ_SIZE);
+	const eqSize = $derived(less ? LESS_EQ_SIZE : compact ? COMPACT_EQ_SIZE : EQ_SIZE);
 	/** MIXUX-12 (the maintainer, Tue 6 Oct 2026: "let's make the filter/color knob the
 	 * same size as trim"): FILTER is TRIM's size in both views, which supersedes
 	 * MIXUX-03's 120% FILTER. channel-strip-less-floor.test.mjs reads this line
@@ -339,6 +341,7 @@
 	class="strip"
 	class:secondary
 	class:less
+	class:compact={compact}
 	class:deck-focus={focused}
 	class:selected={selected}
 	data-mixer-channel={deckId}
@@ -886,6 +889,9 @@
 		grid-area: fader;
 		align-self: stretch;
 		margin-bottom: 4px;
+	}
+	.strip.compact .fader-slot {
+		min-height: 32px;
 	}
 	.stem-label {
 		font-size: 8px;

@@ -536,9 +536,10 @@ def test_an_unreadable_lock_is_unknown(tmp_path: Path) -> None:
     assert "cannot read" in message
 
 
-def test_the_real_tree_matches(tmp_path: Path) -> None:
+def test_the_real_tree_matches(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """The committed pair is the positive control: a repo whose own lock reads stale here
     would make every PR red, and a script that cannot parse the real file is no guard."""
+    monkeypatch.setenv("OPENDJ_LOCK_METADATA_UV_VERSION", "0.13.7")
     root = Path(__file__).resolve().parents[2]
     code, message = check(root / "pyproject.toml", root / "uv.lock")
     assert code == EXIT_OK, message

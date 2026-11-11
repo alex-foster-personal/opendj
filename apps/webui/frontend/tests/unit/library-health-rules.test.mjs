@@ -454,3 +454,10 @@ test('a refresh keeps one read in flight: overlapping loads book one trailing re
 	// One read plus exactly one trailing read for the loads that arrived mid-flight.
 	assert.equal(reads, 2);
 });
+
+// [if] dot state is error or unavailable [then] connDotNeedsAskPrompt, [else stop].
+test('connDotNeedsAskPrompt gates ask-agent copy on red and gray library rows', () => {
+	assert.equal(dots.connDotNeedsAskPrompt('error'), true);
+	assert.equal(dots.connDotNeedsAskPrompt('unavailable'), true);
+	assert.equal(dots.connDotNeedsAskPrompt('waiting'), false);
+});

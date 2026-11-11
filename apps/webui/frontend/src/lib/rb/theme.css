@@ -227,6 +227,22 @@ html[data-theme='light'][data-wave-palette='mono'] .perf-root {
 	--rb-wave-mono: #3a3a3a;
 	--rb-wave-vocal: #3f6f9f;
 }
+/* Classic Blue waveform palette (issue #10253): one blue envelope, paler at
+ * the peaks. TS mirror in wave-palette.ts. */
+html[data-wave-palette='blue'] .perf-root {
+	--rb-wave-low: #2a6ee0;
+	--rb-wave-mid: #5aa2f5;
+	--rb-wave-high: #c4e2ff;
+	--rb-wave-mono: #3d8cf0;
+	--rb-wave-vocal: #f0a020;
+}
+html[data-theme='light'][data-wave-palette='blue'] .perf-root {
+	--rb-wave-low: #1a3f86;
+	--rb-wave-mid: #1d55a8;
+	--rb-wave-high: #2f6fc4;
+	--rb-wave-mono: #1d55a8;
+	--rb-wave-vocal: #9a5a00;
+}
 
 /* -------- skin: mono-dev (preview) --------
  * Near-black grayscale chrome. Declared after the theme blocks so it wins at
@@ -540,6 +556,13 @@ html[data-skin='light'][data-wave-palette='legacy'] .perf-root {
 	--rb-wave-mid: #2166b1;
 	--rb-wave-high: #3a4653;
 }
+html[data-skin='light'][data-wave-palette='blue'] .perf-root {
+	--rb-wave-low: #1a3f86;
+	--rb-wave-mid: #1d55a8;
+	--rb-wave-high: #2f6fc4;
+	--rb-wave-mono: #1d55a8;
+	--rb-wave-vocal: #9a5a00;
+}
 /* Gothic's section 2 shape overrides apply here too (see the mono-dev
  * section 2 above). Only the BPM ink differs: Gothic's #bdbdbd mirrored,
  * declared later so it wins at equal specificity. */
@@ -674,6 +697,13 @@ html[data-skin='green-room'][data-wave-palette='legacy'] .perf-root {
 	--rb-wave-low: #e8a13a;
 	--rb-wave-mid: #3d7dd9;
 	--rb-wave-high: #cfe0f2;
+}
+html[data-skin='green-room'][data-wave-palette='blue'] .perf-root {
+	--rb-wave-low: #2a6ee0;
+	--rb-wave-mid: #5aa2f5;
+	--rb-wave-high: #c4e2ff;
+	--rb-wave-mono: #3d8cf0;
+	--rb-wave-vocal: #f0a020;
 }
 /* Green Room section 2: shape overrides with no token yet (each one is a
  * finding in (private path)). */
@@ -1072,4 +1102,13 @@ html[data-skin='practice-ddj-flx4'] .perf-root {
 	overflow: hidden;
 	text-overflow: ellipsis;
 	cursor: pointer;
+}
+
+/* LIBUX-11716 Compact decks (4-deck view only). :root + two classes + :not() = (0,4,0), which beats
+ * the skins' (0,2,1) waverow overrides and the short-window media rule's (0,3,0) at any order. */
+:root .perf-root.rb-compact-decks:not(.deck-layout-less) {
+	--rb-waverow-h: 20px;
+	--rb-deck-art: 56px;
+	--rb-strip-h: 22px;
+	--rb-fs-deck-title: 12px;
 }

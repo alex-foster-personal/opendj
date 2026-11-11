@@ -32,7 +32,7 @@ from apps.feature_flags.http import flags_router
 from apps.lighting.http import router as lighting_router
 from apps.play_analytics.http import router as play_analytics_router
 from apps.set_notes.http import create_router as create_set_notes_router
-from apps.sets.api import router as sets_router
+from apps.sets.api import SETS_API_PREFIX, SETS_V1_API_PREFIX, router as sets_router
 from apps.sets.master_tap import MASTER_TAP_CHANNEL_STATE
 from apps.shared.rekordbox_writeback import RekordboxWritebackDisabled
 from apps.shared.shutdown_bound import StopStep, run_stop_steps, stop_window_deadline
@@ -87,6 +87,7 @@ from .routes import client_events as client_events_routes
 from .routes import ingest_cli_procs
 from .routes import library_edits as library_edits_routes
 from .routes import performance_remote_speaker as performance_remote_speaker_routes
+from .routes import performance_remote_control as performance_remote_control_routes
 from .routes import playlist_write as playlist_write_routes
 from .routes import sync_billing_proxy as sync_billing_proxy_routes
 from .routes import telemetry as telemetry_routes
@@ -97,6 +98,7 @@ from .server_timing import ServerTimingMiddleware
 from .sets_master_tap import OrderBusMasterTap
 from .share_gate import ShareConfig
 from .stem_cache_enforcer import StemCacheEnforcer
+from .stems_scope import pending_stems_scope
 from .usage_telemetry import UsageStore
 
 log = logging.getLogger(__name__)
@@ -318,6 +320,8 @@ async def _lifespan_context(app: FastAPI) -> AsyncIterator[None]:
         from . import state_maintenance
 
         state_maintenance.start_for_state_db(Path(app.state.state_db_path))
+        # REMOTE-CTL restart: reopen the phone-remote listener when it was on at quit.
+        await performance_remote_control_routes.restore_remote_control(app)
         yield
     finally:
         # A step still running would outlive the engine with its pool
@@ -366,6 +370,8 @@ async def _lifespan_context(app: FastAPI) -> AsyncIterator[None]:
         # I18: the remote speaker's LAN listener is the engine's to close, so
         # its port is released with the engine rather than left to task teardown.
         await performance_remote_speaker_routes.close_remote_speaker(app)
+        # Phone remote: release the LAN port; keep listening.port on disk for boot reopen.
+        await performance_remote_control_routes.close_remote_control(app)
         # The hub's idle WAL keepers live on app.state for the app's life;
         # release them so a stopped app holds no handle on the hub database
         # (exclusive maintenance, Windows file replacement). LIBM-120 L6.
@@ -443,6 +449,9 @@ def _bind_stem_and_usage(
     # question about now, so a restart honestly resets it to "nobody has
     # checked in yet". Tests inject a store with a fake clock.
     app.state.usage_store = usage_store if usage_store is not None else UsageStore()
+    # STEM-58: the enrich card's stems "not yet" songs, read by the stems
+    # plan and by POST /jobs to resolve scope pending (apps.engine_core).
+    app.state.stems_scope_fn = lambda: pending_stems_scope(app)
 
 
 def _startup_stem_index_refresh(source, data_dir: Path) -> None:
@@ -606,6 +615,9 @@ def _routers_under(package: ModuleType) -> list[APIRouter]:
 
 
 def _mount_api_routers(app: FastAPI) -> None:
+    # Register before /api/v1/{stable_id} so GET /api/v1/sets lists sessions, not a track.
+    app.include_router(sets_router, prefix=SETS_API_PREFIX)
+    app.include_router(sets_router, prefix=SETS_V1_API_PREFIX)
     api_prefix = "/api/v1"
     for router in (
         *_routers_under(routes_package),
@@ -630,7 +642,6 @@ def _mount_api_routers(app: FastAPI) -> None:
         app.include_router(router, prefix=api_prefix)
     if not getattr(app.state, sync_hub_hosted_config.HOSTED_FLAG_ATTR, False):
         _drop_routes_shadowed_by(app, sync_billing_proxy_routes.router)
-    app.include_router(sets_router)
     # SET-12: a master REC start pushes the attach to the open page.
     setattr(app.state, MASTER_TAP_CHANNEL_STATE, OrderBusMasterTap())
     app.include_router(play_analytics_router)

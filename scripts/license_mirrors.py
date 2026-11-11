@@ -121,6 +121,7 @@ def _each(
 _OBJC2_MIT = (
     ("block2", "0.6.2"),
     ("objc2", "0.6.4"),
+    ("objc2", "0.6.5"),
     ("objc2-encode", "4.1.0"),
     ("objc2-foundation", "0.3.2"),
 )
@@ -169,7 +170,7 @@ _UNIC = (
 
 _OBJC2_REASON = (
     "the crates.io package at this lock version ships no LICENSE file; madsmtm/objc2 LICENSE.md "
-    "(identical at git SHAs 8852b424, 7b1abfd7, 8d214f54, b4167b58), workspace authors from "
+    "(identical at git SHAs 8852b424, 7b1abfd7, 8d214f54, b4167b58, d7d2fa23), workspace authors from "
     "Cargo.toml at 8852b424, and the MIT, Apache-2.0 and Zlib texts LICENSE.md cites are staged "
     "as one combined file (SPDX MIT template copyright line omitted; authors field is the "
     "locked-revision attribution)"

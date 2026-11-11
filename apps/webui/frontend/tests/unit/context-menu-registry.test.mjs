@@ -137,7 +137,9 @@ test('every menu command id names an existing IPC command or HTTP route', () => 
 	const missing = [];
 	for (const [id, command] of Object.entries(commands.MENU_COMMANDS)) {
 		const ok =
-			command.via === 'ipc' ? types.has(command.type) : routes.has(`${command.method} ${command.path}`);
+			command.via === 'ipc'
+				? types.has(command.type)
+				: routes.has(`${command.method} ${command.path}`);
 		if (!ok) missing.push(`${id} -> ${JSON.stringify(command)}`);
 	}
 	assert.deepEqual(missing, []);
@@ -146,7 +148,10 @@ test('every menu command id names an existing IPC command or HTTP route', () => 
 test('every contribution names a command in the catalog', () => {
 	for (const [kind, contributions] of Object.entries(registry.MENU_CONTRIBUTIONS)) {
 		for (const c of contributions) {
-			assert.ok(c.command in commands.MENU_COMMANDS, `${kind}/${c.id} -> unknown command ${c.command}`);
+			assert.ok(
+				c.command in commands.MENU_COMMANDS,
+				`${kind}/${c.id} -> unknown command ${c.command}`
+			);
 		}
 	}
 });
@@ -170,10 +175,17 @@ test('every resolved item is well formed across the pairwise contexts', () => {
 				assert.ok(item.label.trim() !== '', `${where}/${item.id}: empty label`);
 				assert.ok(item.title.trim() !== '', `${where}/${item.id}: empty title`);
 				if (!item.enabled) {
-					assert.ok((item.disabledReason ?? '').trim() !== '', `${where}/${item.id}: disabled with no reason`);
+					assert.ok(
+						(item.disabledReason ?? '').trim() !== '',
+						`${where}/${item.id}: disabled with no reason`
+					);
 					assert.equal(item.title, item.disabledReason);
 				} else {
-					assert.equal(item.disabledReason, undefined, `${where}/${item.id}: enabled but carries a reason`);
+					assert.equal(
+						item.disabledReason,
+						undefined,
+						`${where}/${item.id}: enabled but carries a reason`
+					);
 				}
 			}
 		}
@@ -214,7 +226,13 @@ test('USB and read-only rows offer deck loads only (inventory row 3)', () => {
 	// Control: a collection row has more than the loads.
 	const collection = registry.menuFor(
 		{ kind: 'track', count: 1 },
-		{ selection: 'one', source: 'collection', audio: 'present', stems: 'none', workspace: 'performance' }
+		{
+			selection: 'one',
+			source: 'collection',
+			audio: 'present',
+			stems: 'none',
+			workspace: 'performance'
+		}
 	);
 	assert.ok(collection.length > 4);
 });
@@ -222,7 +240,13 @@ test('USB and read-only rows offer deck loads only (inventory row 3)', () => {
 test('a missing file disables loads and audio jobs with a reason (row 4)', () => {
 	const items = registry.menuFor(
 		{ kind: 'track', count: 1 },
-		{ selection: 'one', source: 'collection', audio: 'missing', stems: 'none', workspace: 'performance' }
+		{
+			selection: 'one',
+			source: 'collection',
+			audio: 'missing',
+			stems: 'none',
+			workspace: 'performance'
+		}
 	);
 	const byId = Object.fromEntries(items.map((i) => [i.id, i]));
 	for (const id of ['load-1', 'analyze', 'stems-generate', 'lyrics', 'finder']) {
@@ -235,7 +259,13 @@ test('a missing file disables loads and audio jobs with a reason (row 4)', () =>
 test('multi-select disables the one-row items and counts the batch ones (row 2)', () => {
 	const items = registry.menuFor(
 		{ kind: 'track', count: 3 },
-		{ selection: 'many', source: 'playlist', audio: 'present', stems: 'none', workspace: 'performance' }
+		{
+			selection: 'many',
+			source: 'playlist',
+			audio: 'present',
+			stems: 'none',
+			workspace: 'performance'
+		}
 	);
 	const byId = Object.fromEntries(items.map((i) => [i.id, i]));
 	assert.equal(byId.relocate.enabled, false);
@@ -249,7 +279,13 @@ test('Remove from playlist exists only inside a playlist', () => {
 	const ids = registry
 		.menuFor(
 			{ kind: 'track', count: 1 },
-			{ selection: 'one', source: 'collection', audio: 'present', stems: 'none', workspace: 'performance' }
+			{
+				selection: 'one',
+				source: 'collection',
+				audio: 'present',
+				stems: 'none',
+				workspace: 'performance'
+			}
 		)
 		.map((i) => i.id);
 	assert.ok(!ids.includes('remove-playlist'));
@@ -294,7 +330,7 @@ test('every target kind contributes at least one menu item somewhere (#9451)', (
 		return bad;
 	}
 	assert.deepEqual(kindsWithZeroItems(registry.MENU_CONTRIBUTIONS), []);
-	const sparse = { ...registry.MENU_CONTRIBUTIONS, 'deck': [] };
+	const sparse = { ...registry.MENU_CONTRIBUTIONS, deck: [] };
 	assert.deepEqual(kindsWithZeroItems(sparse), ['deck']);
 	for (const kind of permutations.MENU_TARGET_KINDS) {
 		const { rows } = permutations.resolveMatrix(kind);
@@ -322,12 +358,22 @@ test('Library mode keeps deck loads (LIBWS-06) and drops worker starters (LIBWS-
 			const items = menu(workspace);
 			const loads = items.filter((i) => i.id === id);
 			assert.equal(loads.length, 1, `${id} appears once in ${workspace}`);
-			assert.equal(loads[0].enabled, true, `${id} stays enabled in ${workspace} when audio is present`);
+			assert.equal(
+				loads[0].enabled,
+				true,
+				`${id} stays enabled in ${workspace} when audio is present`
+			);
 		}
 	}
 	const missing = registry.menuFor(
 		{ kind: 'track', count: 1 },
-		{ selection: 'one', source: 'collection', audio: 'missing', stems: 'none', workspace: 'library' }
+		{
+			selection: 'one',
+			source: 'collection',
+			audio: 'missing',
+			stems: 'none',
+			workspace: 'library'
+		}
 	);
 	for (const deck of [1, 2, 3, 4]) {
 		const item = missing.find((i) => i.id === `load-${deck}`);
@@ -427,7 +473,9 @@ test('perf-empty: load selection, layout checks and settings (#9451)', () => {
 test('Move is disabled with a reason when it would drop a loop or a color (Codex P1 on #5677)', () => {
 	const target = { kind: 'hot-cue', deck: 1, slot: 'A' };
 	const move = (moveLoses) =>
-		registry.menuFor(target, { loaded: true, filled: true, moveLoses }).find((i) => i.id === 'cue-save');
+		registry
+			.menuFor(target, { loaded: true, filled: true, moveLoses })
+			.find((i) => i.id === 'cue-save');
 	assert.equal(move('nothing').enabled, true, 'a plain or named cue still moves');
 	assert.equal(move('loop').enabled, false);
 	assert.match(move('loop').disabledReason, /loop - moving it would turn it into a point cue/);
@@ -438,7 +486,10 @@ test('Move is disabled with a reason when it would drop a loop or a color (Codex
 });
 
 test('hot cue and mixer targets get their own items, not deck items (rows 13, 15)', () => {
-	const cue = registry.menuFor({ kind: 'hot-cue', deck: 2, slot: 'C' }, { loaded: true, filled: true, moveLoses: 'nothing' });
+	const cue = registry.menuFor(
+		{ kind: 'hot-cue', deck: 2, slot: 'C' },
+		{ loaded: true, filled: true, moveLoses: 'nothing' }
+	);
 	assert.deepEqual(
 		cue.map((i) => i.label),
 		['Jump to cue C', 'Move cue C to playhead', 'Delete cue C']
@@ -470,7 +521,17 @@ const EPIC_MIXER_REF = {
 		}
 	],
 	'mixer-control': [
-		{ feature: 'Reset to default', ids: ['reset-eq', 'reset-trim', 'reset-filter', 'reset-fader', 'reset-crossfader', 'reset-stem'] },
+		{
+			feature: 'Reset to default',
+			ids: [
+				'reset-eq',
+				'reset-trim',
+				'reset-filter',
+				'reset-fader',
+				'reset-crossfader',
+				'reset-stem'
+			]
+		},
 		{ feature: 'Kill band', id: 'eq-kill' },
 		{ feature: 'Auto gain', id: 'trim-auto-gain' },
 		{
@@ -549,8 +610,16 @@ test('reset on an EQ dial sends the default value', () => {
 	});
 	assert.equal(mixerActions.controlDefault('fader'), 1);
 	assert.equal(mixerActions.controlDefault('crossfader'), 0.5);
-	assert.deepEqual(mixerActions.controlResetCommand('crossfader', null), { type: 'crossfader', value: 0.5 });
-	assert.deepEqual(mixerActions.controlKillCommand('eq_high', 3), { type: 'eq', deck: 3, band: 'high', value: 0 });
+	assert.deepEqual(mixerActions.controlResetCommand('crossfader', null), {
+		type: 'crossfader',
+		value: 0.5
+	});
+	assert.deepEqual(mixerActions.controlKillCommand('eq_high', 3), {
+		type: 'eq',
+		deck: 3,
+		band: 'high',
+		value: 0
+	});
 	assert.throws(() => mixerActions.controlKillCommand('trim', 1));
 	const items = registry.menuFor(
 		{ kind: 'mixer-control', label: 'EQ LOW' },
@@ -575,15 +644,33 @@ test('trim auto gain commands and registry reasons', () => {
 		{ type: 'auto_gain_offset', deck: 1, offset_db: null, stable_id: 'sid' }
 	]);
 	assert.deepEqual(mixerActions.trimAutoGainCommands(1, 'auto', true), []);
-	const trimItem = registry.menuFor(
-		{ kind: 'mixer-channel', deck: 1 },
-		{ eqFlat: false, filterFlat: false, cue: false, assign: 'A', trimUnity: true, autoGain: 'auto' }
-	).find((i) => i.id === 'trim-auto-gain');
+	const trimItem = registry
+		.menuFor(
+			{ kind: 'mixer-channel', deck: 1 },
+			{
+				eqFlat: false,
+				filterFlat: false,
+				cue: false,
+				assign: 'A',
+				trimUnity: true,
+				autoGain: 'auto'
+			}
+		)
+		.find((i) => i.id === 'trim-auto-gain');
 	assert.match(trimItem.disabledReason, /trim already follows auto gain/);
-	const noneItem = registry.menuFor(
-		{ kind: 'mixer-channel', deck: 1 },
-		{ eqFlat: false, filterFlat: false, cue: false, assign: 'A', trimUnity: false, autoGain: 'none' }
-	).find((i) => i.id === 'trim-auto-gain');
+	const noneItem = registry
+		.menuFor(
+			{ kind: 'mixer-channel', deck: 1 },
+			{
+				eqFlat: false,
+				filterFlat: false,
+				cue: false,
+				assign: 'A',
+				trimUnity: false,
+				autoGain: 'none'
+			}
+		)
+		.find((i) => i.id === 'trim-auto-gain');
 	assert.match(noneItem.disabledReason, /no auto gain on this deck/);
 	assert.equal(mixerActions.autoGainFactOf({ state: 'empty' }), 'none');
 });
@@ -644,12 +731,19 @@ test('mixer and stem epic coverage at least 80 percent (path A stand-in)', () =>
 });
 
 test('trackAudioOf buckets listing availability', () => {
-	assert.equal(registry.trackAudioOf({ file_availability: 'present', file_exists: true }), 'present');
+	assert.equal(
+		registry.trackAudioOf({ file_availability: 'present', file_exists: true }),
+		'present'
+	);
 	assert.equal(registry.trackAudioOf({ file_availability: 'absent' }), 'missing');
 	assert.equal(registry.trackAudioOf({ file_exists: false }), 'missing');
 	assert.equal(registry.trackAudioOf({ file_availability: 'spotify-streaming' }), 'streaming');
 	assert.equal(registry.trackAudioOf({ is_streaming: true, file_exists: false }), 'streaming');
 	assert.equal(registry.trackAudioOf({ file_availability: 'AVAILABILITY_PENDING' }), 'present');
+	assert.equal(
+		registry.trackAudioOf({ deck_load_refusal: 'cloud_policy_unconfigured', file_exists: false }),
+		'cloud_unconfigured'
+	);
 });
 
 test('golden matrices match (private path)/<kind>.md', () => {
@@ -690,7 +784,9 @@ test('USBEXP-04: a stick tree gets status, sync (disabled, says why) and eject; 
 
 test('USBEXP-04: every playlist offers Export to USB, wired to the USB export plan route', () => {
 	for (const forbidDuplicates of [false, true]) {
-		const item = registry.menuFor({ kind: 'playlist' }, { forbidDuplicates }).find((i) => i.id === 'export-usb');
+		const item = registry
+			.menuFor({ kind: 'playlist' }, { forbidDuplicates })
+			.find((i) => i.id === 'export-usb');
 		assert.ok(item, 'Export to USB present');
 		assert.equal(item.enabled, true);
 		assert.equal(item.command, 'usb.export.plan');
@@ -784,7 +880,9 @@ test('#9448: every new enabled deck item names a catalog command that resolves',
 			if (!item.enabled) continue;
 			const command = commands.MENU_COMMANDS[item.command];
 			const ok =
-				command.via === 'ipc' ? types.has(command.type) : routes.has(`${command.method} ${command.path}`);
+				command.via === 'ipc'
+					? types.has(command.type)
+					: routes.has(`${command.method} ${command.path}`);
 			if (!ok) missing.push(`${row} ${item.id} -> ${item.command}`);
 		}
 	}

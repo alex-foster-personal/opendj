@@ -340,6 +340,10 @@ def _plan_one(
         return "running"
     if lane == "lyrics":
         skip_reason = lyrics_skip_reason(sid, data_dir=data_dir)
+    elif lane == "genre":
+        from apps.genre_infer import pipeline as genre_pipeline
+
+        skip_reason = genre_pipeline.genre_attention_skip_reason(conn, sid)
     elif artifact_is_fresh(lane, sid, stems_root=stems_root, data_dir=data_dir):
         skip_reason = SKIP_UP_TO_DATE
     else:

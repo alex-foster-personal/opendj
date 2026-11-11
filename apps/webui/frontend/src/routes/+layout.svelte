@@ -71,6 +71,11 @@
 	import { installShellNavigationPoll } from '$lib/rb/shell-navigation';
 	import { backstageEnabled } from '$lib/shell/backstage-flag';
 	import { installSettingsHotkeys } from '$lib/settings/hotkeys';
+	import {
+		isRunButtonActionPending,
+		runButtonAction,
+		runButtonActionGate
+	} from '$lib/ui/run-button-action';
 	import { connect as connectEventsBus } from '$lib/api/events-bus';
 	import { capabilities, progressRefusal } from '$lib/api/capabilities.svelte';
 	import { entitlements } from '$lib/api/entitlements.svelte';
@@ -174,8 +179,18 @@
 	// Sep 2026: the second import() put no request on the wire). /setup is the
 	// door that reopens the wizard in the new document, and in the stale-deploy
 	// case the new document also carries the new chunk URLs.
+	let setupRetryAction = $state<string | null>(null);
+	const setupRetryGate = runButtonActionGate(
+		() => setupRetryAction,
+		(value) => {
+			setupRetryAction = value;
+		}
+	);
+
 	function retrySetupOverlay(): void {
-		window.location.assign(SETUP_ROUTE);
+		void runButtonAction(setupRetryGate, 'setup-retry', () => {
+			window.location.assign(SETUP_ROUTE);
+		});
 	}
 	// The hotkeys cheatsheet, the stage view and Set notes are lazy chunks with one
 	// failure shape: an error toast naming the overlay, raised again on every
@@ -545,7 +560,15 @@
 				<p class="setup-load-failed-reason">
 					Setup failed to load: {error instanceof Error ? error.message : String(error)}
 				</p>
-				<button type="button" class="setup-load-retry" onclick={retrySetupOverlay}>Reload and retry</button>
+				<button
+					type="button"
+					class="setup-load-retry"
+					onclick={retrySetupOverlay}
+					disabled={isRunButtonActionPending(setupRetryGate)}
+					aria-busy={isRunButtonActionPending(setupRetryGate, 'setup-retry')}
+				>
+					Reload and retry
+				</button>
 			</div>
 		</div>
 	{/await}

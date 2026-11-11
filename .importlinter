@@ -189,6 +189,10 @@ composition_roots =
 ; images import it as a top-level module with only the standard library on hand (#9250).
 ; apps.webui.server.app_wiring discovers the route modules that set
 ; MOUNT_UNDER_API_PREFIX, so a new route needs no hand list (#9493).
+; scripts.arch_contract_schema was split under #10948; the dynamic loads
+; (importlib.import_module of a contract package, sys.modules lookups) now
+; live in arch_contract_schema_kinds, _tooling and _values. The facade only
+; re-exports, so it is not listed.
 ; The gate also refuses an entry that no
 ; longer loads that way, so this list only shrinks; add to it only in a PR that says why
 ; the target cannot be named in source.
@@ -204,7 +208,9 @@ dynamic_loaders =
     apps.sets.classify.model
     apps.vocals.from_stems
     apps.webui.server.app_wiring
-    scripts.arch_contract_schema
+    scripts.arch_contract_schema_kinds
+    scripts.arch_contract_schema_tooling
+    scripts.arch_contract_schema_values
     scripts.bench.four_stem_common
     scripts.build_engine_payload
     scripts.ci_plan_sources

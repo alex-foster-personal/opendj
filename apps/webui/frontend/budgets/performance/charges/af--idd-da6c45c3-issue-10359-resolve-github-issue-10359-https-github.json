@@ -1,0 +1,9 @@
+{
+  "bytes": 1024,
+  "measured_main": 423575,
+  "measured_with_pr": 424349,
+  "sha": "c3d0fc2ed9",
+  "date": "Tue 10 Nov 2026",
+  "reason": "Issue #10359 (KEYB-11643) adds library Shift+arrow load, Cmd+Shift+arrow instant double, and Cmd+L locate chords in browser-navigation, browser-keyboard, BrowserPanel, and performance shortcut routing. Measured: local build vs merge-base 10c9ddaea, +774 B gzip on performance; ceiled to KiB",
+  "payback": "none planned; the growth is the feature's own code"
+}

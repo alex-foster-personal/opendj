@@ -43,7 +43,8 @@
 		runPairTracks,
 		runReanalyze,
 		runRevealTracks,
-		runSetRating
+		runSetRating,
+		runSetTracklistHidden
 	} from './track-context-menu';
 	import { runPerformanceCommandFromUi } from '$lib/rb/performance-ipc.svelte';
 	import type { TrackEditModalKind } from './track-edit-menu';
@@ -181,6 +182,7 @@
 							: 'collection',
 				audio: trackAudioOf(row),
 				stems: row.stems?.status === 'ready' ? 'ready' : 'none',
+				tracklistHidden: row.tracklist_hidden ? 'hidden' : 'shown',
 				// LIBWS-03/06: Library mode hides worker starters; deck loads hand the track to Gig.
 				workspace: libraryWorkspace.active ? 'library' : 'performance'
 			}
@@ -211,6 +213,7 @@
 			'add-tag': () => openTagEditor({ stableIds: targetIds, typeId: null, x: menuX, y: menuY }),
 			mytag: editModal('mytag'),
 			'edit-comment': oneditcomment ? () => oneditcomment(row) : undefined,
+			'tracklist-hidden': () => runSetTracklistHidden(targetIds, !row.tracklist_hidden),
 			relocate: () => onrelocate(row, menuX, menuY),
 			finder: () => runRevealTracks(targetIds),
 			'show-in-playlists': () => onshowinplaylists(row, menuX, menuY),

@@ -18,11 +18,13 @@ for the body. Silence is the only thing that fails when a gated path
 moved. An unknown id fails even if a ``none, because`` line is also
 present, so a typo cannot hide behind the escape hatch.
 
-Before any duplicate-id scan the CLI proves ``base`` is an ancestor of
-``HEAD`` (or ``--merge-head`` in ``--merge-base`` mode); stale synthetic
-PR merge refs fail with ``merge ref is stale, update your branch`` instead
-of historical duplicate-id noise. The workflow ``edited`` trigger re-runs
-body declarations; :mod:`scripts.adr_ref_freshness` handles merge refs.
+When the synthetic PR merge ref is stale relative to live ``base`` (normally
+``origin/main``), numeric ADR collision is judged from ``git merge-tree``
+between current ``base`` and ``HEAD`` (issue #11339). Stale ref alone is not
+a failure; a real numeric collision or an unmeasurable git read still fails
+(UNKNOWN exit 2 never passes). Fresh refs keep the prior ancestry and scan
+behavior. The workflow ``edited`` trigger re-runs body declarations;
+:mod:`scripts.adr_ref_freshness` classifies stale vs fresh refs.
 A Trunk Merge Queue batch PR (head ``trunk-merge/pr-<N>/...``) carries only Trunk's
 banner, so its body is the union of its member PRs' bodies; a batch whose members
 cannot be read is UNKNOWN (exit 2).
@@ -61,6 +63,9 @@ from scripts.adr_pr_lookup import (
 )
 from scripts.adr_ref_freshness import (
     DEFAULT_GATED_DIR,
+    STALE_LIVE_MAIN_PASS_MSG,
+    RefVerdict,
+    StaleRefCollision,
     check_ref_freshness,
     emit_gate_result,
     git_rev_parse,
@@ -156,6 +161,31 @@ def existing_adr_ids(adr_dir: Path) -> set[str]:
     return ids
 
 
+def existing_adr_ids_on_git_ref(ref: str, repo_root: Path) -> set[str]:
+    """Numeric ADR ids present on a resolved git ref (live ``origin/main``)."""
+    tree_sha = git_rev_parse(ref, repo_root)
+    prefix = "(private path)/"
+    proc = subprocess.run(
+        ["git", "ls-tree", "-r", "--name-only", tree_sha, "--", prefix],
+        cwd=repo_root,
+        capture_output=True,
+        text=True,
+        timeout=60,
+        check=False,
+    )
+    if proc.returncode != 0:
+        raise RuntimeError(
+            f"git ls-tree {tree_sha[:12]} failed rc={proc.returncode}: {proc.stderr.strip()}"
+        )
+    ids: set[str] = set()
+    for line in proc.stdout.splitlines():
+        name = Path(line.strip()).name
+        match = _ADR_NUMERIC_FILENAME_RE.match(name)
+        if match:
+            ids.add(match.group(1))
+    return ids
+
+
 def pending_new_adr_paths(changed: list[str]) -> list[str]:
     return sorted(
         posix_path(p)
@@ -236,20 +266,24 @@ def evaluate(
     changed: list[str],
     body: str,
     adr_dir: Path,
+    *,
+    known_ids: set[str] | None = None,
+    skip_local_duplicate_scan: bool = False,
 ) -> Verdict:
     """Pure verdict over changed paths, a PR/commit body, and the ADR dir."""
-    dupes = duplicate_adr_ids(adr_dir)
-    if dupes:
-        detail = "; ".join(
-            f"ADR-{adr_id}: {', '.join(names)}" for adr_id, names in sorted(dupes.items())
-        )
-        return Verdict(1, f"[adr-check] duplicate ADR id(s) -- {detail}")
+    if not skip_local_duplicate_scan:
+        dupes = duplicate_adr_ids(adr_dir)
+        if dupes:
+            detail = "; ".join(
+                f"ADR-{adr_id}: {', '.join(names)}" for adr_id, names in sorted(dupes.items())
+            )
+            return Verdict(1, f"[adr-check] duplicate ADR id(s) -- {detail}")
 
     hit = gated_paths(changed)
     if not hit:
         return Verdict(0, "[adr-check] OK -- no gated paths")
 
-    known = existing_adr_ids(adr_dir)
+    known = known_ids if known_ids is not None else existing_adr_ids(adr_dir)
     mentioned = ids_in_body(body)
     unknown = sorted({adr_id for adr_id in mentioned if adr_id not in known})
     if unknown:
@@ -518,11 +552,21 @@ def main(
     freshness = check_ref_freshness(
         args.base, "HEAD", repo_root, gated_dir=_gated_dir(decisions, repo_root)
     )
-    if freshness is not None:
-        return emit_gate_result(freshness.code, freshness.message)
+    fatal, stale_live_main = _stale_live_main_collision(freshness, repo_root)
+    if fatal is not None:
+        return emit_gate_result(fatal.code, fatal.message)
+
+    eval_kwargs: dict[str, object] = {}
+    if stale_live_main:
+        try:
+            eval_kwargs["known_ids"] = _known_ids_for_stale_base(args.base, repo_root, decisions)
+        except Exception as exc:
+            print(f"[adr-check] UNKNOWN: could not list ADR ids on live base ({exc})", file=sys.stderr)
+            return 2
+        eval_kwargs["skip_local_duplicate_scan"] = True
 
     if members is None:
-        verdict = evaluate(paths, text, decisions)
+        verdict = evaluate(paths, text, decisions, **eval_kwargs)
         return emit_gate_result(verdict.code, verdict.message)
     try:
         verdict = evaluate_batch(
@@ -546,12 +590,51 @@ def _gated_dir(decisions: Path, repo_root: Path) -> str:
         return DEFAULT_GATED_DIR
 
 
+def _known_ids_for_stale_base(base_ref: str, repo_root: Path, adr_dir: Path) -> set[str]:
+    """Union ids on live base, head, and the checkout tree for stale merge refs."""
+    known = existing_adr_ids(adr_dir)
+    known |= existing_adr_ids_on_git_ref(base_ref, repo_root)
+    known |= existing_adr_ids_on_git_ref("HEAD", repo_root)
+    return known
+
+
+def _stale_live_main_collision(
+    freshness: RefVerdict | StaleRefCollision | None,
+    repo_root: Path,
+) -> tuple[RefVerdict | None, bool]:
+    """Run merge-tree against live base when ``freshness`` is stale. Returns a fatal
+    verdict or ``(None, used_stale_live_main)``."""
+    if isinstance(freshness, RefVerdict):
+        return freshness, False
+    if not isinstance(freshness, StaleRefCollision):
+        return None, False
+    try:
+        verdict = evaluate_merged_tree(freshness.base_sha, freshness.head_sha, repo_root)
+    except Exception as exc:
+        return (
+            RefVerdict(2, f"[adr-check] UNKNOWN: merge-tree evaluation failed ({exc})"),
+            False,
+        )
+    if verdict.code != 0:
+        return RefVerdict(verdict.code, verdict.message), False
+    print(
+        f"[adr-check] {STALE_LIVE_MAIN_PASS_MSG} "
+        f"({freshness.base_ref}={freshness.base_sha[:12]} vs "
+        f"{freshness.head_ref}={freshness.head_sha[:12]})",
+        file=sys.stdout,
+    )
+    return None, True
+
+
 def _run_merge_base_mode(args: argparse.Namespace, repo_root: Path, decisions: Path) -> int:
     freshness = check_ref_freshness(
         args.merge_base, args.merge_head, repo_root, gated_dir=_gated_dir(decisions, repo_root)
     )
-    if freshness is not None:
-        return emit_gate_result(freshness.code, freshness.message)
+    fatal, stale_live_main = _stale_live_main_collision(freshness, repo_root)
+    if fatal is not None:
+        return emit_gate_result(fatal.code, fatal.message)
+    if stale_live_main:
+        return emit_gate_result(0, "[adr-check] OK -- merged tree ADR ids unique")
     try:
         base_sha = git_rev_parse(args.merge_base, repo_root)
         head_sha = git_rev_parse(args.merge_head, repo_root)

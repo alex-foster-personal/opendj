@@ -289,6 +289,12 @@ class MasterCue(_Strict):
     mode: Literal["hold", "latch"]
 
 
+class ColorFx(_Strict):
+    type: Literal["color_fx"]
+    deck: DeckId
+    effect: Literal["filter", "space", "echo", "next"]
+
+
 MidiActionModel = Annotated[
     DeckPlayToggle
     | DeckCue
@@ -313,6 +319,7 @@ MidiActionModel = Annotated[
     | HeadphoneMix
     | HeadphoneLevel
     | MasterCue
+    | ColorFx
     | DeckPitch
     | BrowseEncoder
     | BrowseLoad
@@ -329,7 +336,7 @@ _BUTTON_ACTIONS = frozenset(
      "channel_cue", "browse_load", "shift_modifier", "deck_stem_eq_toggle",
      "deck_auto_loop_toggle", "deck_sync_toggle", "deck_key_sync_toggle",
      "deck_manual_loop_cycle", "deck_loop_scale", "deck_key_nudge", "deck_tempo_nudge",
-     "controller_pad_mode", "controller_pad", "master_cue"}
+     "controller_pad_mode", "controller_pad", "master_cue", "color_fx"}
 )
 
 # A cc source with relative=true produces kind:'relative' (_valueFor), the

@@ -1,0 +1,9 @@
+{
+  "bytes": 1024,
+  "measured_main": 512964,
+  "measured_with_pr": 513480,
+  "sha": "feedfd97f2",
+  "date": "Tue 10 Nov 2026",
+  "reason": "PR #12109 adds run-button-action helper and wires lazy-route retry/reload handlers (setup, settings, plugins, queues, reconcile, layout); measured +516 B gzip on other-lazy in CI; ceiled to KiB.",
+  "payback": "none planned; shared helper replaces duplicated async button handlers on these routes"
+}

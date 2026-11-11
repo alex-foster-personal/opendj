@@ -83,6 +83,7 @@ from apps.plugins.installer import (
 )
 from apps.plugins.listing import Listing
 from apps.plugins.manifest import CHANNELS, UI_DIR, PluginManifest, semver_key
+from apps.plugins.providers import ProviderSurface
 from apps.plugins.state import (
     STATE_LOCK,
     InstalledPlugin,
@@ -322,6 +323,27 @@ class ListingOut(BaseModel):
     limits: list[str]
     status: str
     screenshots: list[ScreenshotOut]
+    capability_kind: str | None = None
+    store_surface: str | None = None
+
+
+class ProviderQuotaOut(BaseModel):
+    model_config = ConfigDict(frozen=True)
+    limit: int | None
+    remaining: int | None
+    reset_at: int | None
+    retry_after_s: int | None
+
+
+class ProviderSurfaceOut(BaseModel):
+    model_config = ConfigDict(frozen=True)
+    capability_kind: str
+    store_surface: str
+    credential_env: str | None
+    credential_configured: bool
+    terms_url: str | None
+    provenance_fields: list[str]
+    quota: ProviderQuotaOut | None = None
 
 
 class PluginRowOut(BaseModel):
@@ -353,6 +375,7 @@ class PluginRowOut(BaseModel):
     update_available: bool
     #: The signed store listing; None for an installed plugin no catalog lists.
     listing: ListingOut | None
+    provider: ProviderSurfaceOut | None
 
 
 class PluginsOut(BaseModel):
@@ -471,6 +494,21 @@ def _rebuilt(available: CatalogEntry, installed: InstalledPlugin, runtime: Plugi
     )
 
 
+def _provider_out(surface: ProviderSurface | None) -> ProviderSurfaceOut | None:
+    if surface is None:
+        return None
+    quota = surface.quota
+    return ProviderSurfaceOut(
+        capability_kind=surface.capability_kind,
+        store_surface=surface.store_surface,
+        credential_env=surface.credential_env,
+        credential_configured=surface.credential_configured,
+        terms_url=surface.terms_url,
+        provenance_fields=list(surface.provenance_fields),
+        quota=ProviderQuotaOut(**quota.to_wire()) if quota is not None else None,
+    )
+
+
 def _row(
     manifest: PluginManifest,
     available: CatalogEntry | None,
@@ -479,6 +517,7 @@ def _row(
 ) -> PluginRowOut:
     outcome = runtime.outcomes.get(manifest.plugin_id)
     update = available is not None and installed is not None and _offers_update(available, installed, runtime)
+    provider_surface = runtime.providers.surface(manifest.plugin_id, manifest.provider)
     return PluginRowOut(
         plugin_id=manifest.plugin_id,
         name=manifest.name,
@@ -504,6 +543,7 @@ def _row(
         listing=_listing_out(manifest.plugin_id, available.listing)
         if available is not None and _describes(available, manifest)
         else None,
+        provider=_provider_out(provider_surface),
     )
 
 
@@ -547,6 +587,8 @@ def _listing_out(plugin_id: str, listing: Listing) -> ListingOut:
             )
             for shot in listing.screenshots
         ],
+        capability_kind=listing.capability_kind,
+        store_surface=listing.store_surface,
     )
 
 
@@ -652,6 +694,7 @@ def _unreadable_row(installed: InstalledPlugin, runtime: PluginRuntime) -> Plugi
         pending=_pending(installed, runtime, plugin_id),
         update_available=False,
         listing=None,
+        provider=None,
     )
 
 

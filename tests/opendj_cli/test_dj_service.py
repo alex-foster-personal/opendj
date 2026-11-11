@@ -1065,6 +1065,7 @@ def test_cli_state_and_styles(requests: list[str], capsys: pytest.CaptureFixture
     assert code == EXIT_CONFIRMED and state["decks"]["1"]["section"]["label"] == "drop"
     code, styles = _cli(FakePage(), requests, capsys, "styles")
     assert code == EXIT_CONFIRMED and {row["name"] for row in styles["styles"]} >= {"cut", "long_blend"}
+    assert any((row.get("params") or {}).get("fade_shape") == "smooth" for row in styles["styles"])
 
 
 def test_cli_propose_then_schedule_from_a_file(

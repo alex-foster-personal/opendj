@@ -306,19 +306,43 @@ function _azDeckHints(deck: DeckId): ControlHint[] {
 		[34, 'PAD MODE HOT CUE'],
 		[35, 'PAD MODE BEAT LOOP'],
 		[36, 'PAD MODE SLIP LOOP'],
-		[37, 'PAD MODE BEAT JUMP']
+		[37, 'PAD MODE BEAT JUMP'],
+		[38, 'PAD MODE GATE CUE +SHIFT'],
+		[39, 'PAD MODE BEAT LOOP2 +SHIFT'],
+		[40, 'PAD MODE KEY SHIFT +SHIFT'],
+		[41, 'PAD MODE BEAT JUMP2 +SHIFT']
 	];
 	return [
 		...rows.map(([note, name]): ControlHint => ({
 			source: pioneerNote(ch, note),
 			label: label(name)
 		})),
-		...HOT_CUE_SLOTS.map((slot, pad): ControlHint => {
+		...HOT_CUE_SLOTS.flatMap((_, pad): ControlHint[] => {
 			const wire = azPadWire(deck, pad);
-			return {
-				source: pioneerNote(wire.ch, wire.hotCueNote + 1),
-				label: label(`PAD ${pad + 1} +SHIFT (gate cue ${slot})`)
-			};
+			// All remaining documented rows are inspection hints, never invented actions.
+			const modes: [number, string][] = [
+				[1, 'HOT CUE +SHIFT'],
+				[3, 'BEAT LOOP +SHIFT'],
+				[4, 'PAD FX1 PAGE1'],
+				[5, 'PAD FX1 PAGE2'],
+				[6, 'PAD FX2 PAGE1'],
+				[7, 'PAD FX2 PAGE2'],
+				[8, 'SLIP LOOP +SHIFT'],
+				[9, 'BEAT JUMP'],
+				[10, 'BEAT JUMP +SHIFT'],
+				[11, 'GATE CUE'],
+				[12, 'GATE CUE +SHIFT'],
+				[13, 'BEAT LOOP2'],
+				[14, 'BEAT LOOP2 +SHIFT'],
+				[15, 'KEY SHIFT'],
+				[16, 'KEY SHIFT +SHIFT'],
+				[17, 'BEAT JUMP2'],
+				[18, 'BEAT JUMP2 +SHIFT']
+			];
+			return modes.map(([offset, mode]) => ({
+				source: pioneerNote(wire.ch, wire.hotCueNote + offset),
+				label: label(`${mode} PAD ${pad + 1}`)
+			}));
 		})
 	];
 }

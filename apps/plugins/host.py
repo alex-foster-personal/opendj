@@ -58,6 +58,7 @@ from apps.plugins.installer import (
     verify_receipt,
 )
 from apps.plugins.manifest import PluginManifest, PythonEntry
+from apps.plugins.providers import ProviderRegistry
 from apps.plugins.state import InstalledPlugin, PluginState
 from apps.shared.app_version import APP_VERSION
 
@@ -175,6 +176,7 @@ class PluginRuntime:
     outcomes: dict[str, LoadOutcome] = field(default_factory=dict)
     hosts: dict[str, PluginHost] = field(default_factory=dict)
     manifests: dict[str, PluginManifest] = field(default_factory=dict)
+    providers: ProviderRegistry = field(default_factory=ProviderRegistry)
     #: The install id each record carried at boot, so a later reinstall of the
     #: same version still reads as waiting for a restart.
     install_ids: dict[str, str] = field(default_factory=dict)
@@ -600,6 +602,7 @@ def load_enabled(  # noqa: PLR0913 - each keyword is one independent boot input.
         try:
             manifest = _verified_manifest(plugins_dir, installed, trusted, app_version, state.labs_opt_in)
             runtime.manifests[plugin_id] = manifest
+            runtime.providers.register(manifest)
             host = _load_one(plugins_dir, data_dir, manifest, claimed)
         except InstallError as exc:
             _record(exc.code, str(exc))

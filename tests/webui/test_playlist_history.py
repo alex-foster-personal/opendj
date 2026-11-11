@@ -255,6 +255,23 @@ def test_inverse_of_each_op_restores_before_snapshot(db_path: Path) -> None:
         assert source.items == ["t-002", "t-001"]
 
 
+@pytest.mark.requirement("LIBM-12649")
+def test_undo_redo_of_add_items_touches_only_inserted_rows(db_path: Path) -> None:
+    """[if] an add_items edit is undone [then] only its inserted rows are removed, [else stop]."""
+    with PlaylistStore(db_path, bus=FakeEventBus()) as store:
+        row = store.create_playlist("Warmup")
+        row = store.replace_memberships(row.playlist_id, ["t-001", "t-002"], expected_etag=row.etag)
+        result = store.add_memberships(row.playlist_id, ["t-003", "t-004"])
+        with_add = list(row.items) + [m.stable_id for m in result.added]
+        assert store.get_playlist_row(row.playlist_id).items == with_add
+        store.undo()
+        after_undo = store.get_playlist_row(row.playlist_id)
+        assert after_undo.items == ["t-001", "t-002"]
+        store.redo()
+        after_redo = store.get_playlist_row(row.playlist_id)
+        assert after_redo.items == with_add
+
+
 def test_undo_then_undo_then_redo_walks_two_edits(db_path: Path) -> None:
     with PlaylistStore(db_path, bus=FakeEventBus()) as store:
         row = store.create_playlist("Warmup")

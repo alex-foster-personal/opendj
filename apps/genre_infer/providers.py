@@ -52,6 +52,11 @@ DEFAULT_SERPER_URL = "https://google.serper.dev/search"
 JEV_MODEL = "~typesafe/jev-latest"
 DEEPSEEK_MODEL = "deepseek/deepseek-v4.1-flash"
 PROMPT_VERSION = "v3-baseline/1"
+# Vendor enrichment schema bindings (ENRICH-11245). Importers must stamp claims with
+# the schema they actually parsed, not the marketing explorer alone.
+CYANITE_EXPLORER_SCHEMA = "cyanite-taxonomy-explorer/2026-09-13"
+CYANITE_BPM_EXPLORER_SCHEMA = "cyanite-bpm-explorer/60-280"
+CYANITE_BPM_V2_SCHEMA = "cyanite-bpm-v2/60-200"
 # FROZEN (owner, Mon 12 Oct 2026): the search sent per track must not change
 # unless the owner says so. A change needs a new QUERY_VERSION and the owner's
 # go-ahead; the assertion refuses a silent edit.
@@ -116,6 +121,29 @@ def require_key(env: str, environ: Mapping[str, str] | None = None) -> str:
 
 def missing_keys(environ: Mapping[str, str] | None = None) -> list[str]:
     return [k for k in KEY_NAMES if not keystore.resolve(k, environ)]
+
+
+def vendor_schema_versions() -> dict[str, str]:
+    """Named supplier output schemas the claim envelope may bind to."""
+    return {
+        "cyanite_bpm_explorer": CYANITE_BPM_EXPLORER_SCHEMA,
+        "cyanite_bpm_v2": CYANITE_BPM_V2_SCHEMA,
+        "cyanite_taxonomy_explorer": CYANITE_EXPLORER_SCHEMA,
+        "genre_prompt": PROMPT_VERSION,
+        "genre_query": QUERY_VERSION,
+        "genre_taxonomy": taxonomy.TAXONOMY_VERSION,
+    }
+
+
+def enrichment_layers_available() -> bool:
+    """True when the taxonomy map loads; paid keys are optional for this check."""
+    from . import tag_map
+
+    try:
+        tag_map.load_taxonomy_map()
+    except tag_map.TagMapError:
+        return False
+    return True
 
 
 # ------------------------------------------------------------------- http
@@ -347,8 +375,12 @@ def fuse(jev: Answer, deepseek: Answer) -> Fused:
 
 
 __all__ = [
+    "CYANITE_BPM_EXPLORER_SCHEMA",
+    "CYANITE_BPM_V2_SCHEMA",
+    "CYANITE_EXPLORER_SCHEMA",
     "DEEPSEEK_MODEL",
     "DEEPSEEK_SURE",
+    "enrichment_layers_available",
     "JEV_MODEL",
     "KEY_NAMES",
     "OPENROUTER_KEY_ENV",
@@ -370,5 +402,6 @@ __all__ = [
     "require_key",
     "search_query",
     "serper_usd_per_search",
+    "vendor_schema_versions",
     "web_search",
 ]

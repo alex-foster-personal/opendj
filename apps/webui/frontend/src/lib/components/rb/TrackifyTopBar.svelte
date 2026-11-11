@@ -3,6 +3,7 @@
 	import { APP_MODES } from '$lib/rb/app-mode';
 	import { modeIconClass } from '$lib/rb/app-mode-icons';
 	import { appModeForPath } from '$lib/rb/app-mode';
+	import { markLibraryModeExit } from '$lib/rb/library-mode-runtime';
 	import { setAppMode } from '$lib/rb/prefs.svelte';
 
 	let modePickerEl: HTMLDetailsElement | undefined = $state();
@@ -11,6 +12,7 @@
 	const activeMode = $derived(appModeForPath($page.url.pathname));
 
 	function _selectAppMode(id: typeof activeMode.id): void {
+		if (id === 'library') markLibraryModeExit();
 		setAppMode(id);
 	}
 

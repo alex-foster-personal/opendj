@@ -99,8 +99,23 @@ describe('the routes use these outcomes', () => {
 		const src = read('src/routes/queues/+page.svelte');
 		assert.match(src, /catch \(exc\)[\s\S]{0,120}loadError = describeLoadError\(exc\)/);
 		assert.match(src, /Could not load this queue: \{loadError\}/);
-		assert.match(src, /onclick=\{\(\) => void load\(\)\}>Retry</);
+		assert.match(src, /onclick=\{retryLoad\}/);
+		assert.match(src, /runButtonAction/);
+		assert.match(src, /throw exc;/);
 		assert.match(src, /This queue is empty/);
+	});
+
+	it('/reconcile Retry uses runButtonAction when load rejects', () => {
+		const src = read('src/routes/reconcile/+page.svelte');
+		assert.match(src, /runButtonAction/);
+		assert.match(src, /retryLoad/);
+		assert.match(src, /throw exc;/);
+	});
+
+	it('/plugins act surfaces failures through runButtonAction', () => {
+		const src = read('src/routes/plugins/+page.svelte');
+		assert.match(src, /runButtonAction\(pluginActionGate/);
+		assert.match(src, /async function act/);
 	});
 
 	it('/pairings catches its load, shows the reason with a retry, and has empty states', () => {

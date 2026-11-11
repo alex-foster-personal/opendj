@@ -43,7 +43,8 @@ export function paintWaveformPreview(
 	ctx: PreviewPaintContext,
 	w: number,
 	h: number,
-	design: WaveformDesign,
+	// Frozen pre-W15 snapshot: it predates the rgb design (issue #10253).
+	design: Exclude<WaveformDesign, 'rgb'>,
 	c: WaveBandColors
 ): void {
 	ctx.clearRect(0, 0, w, h);

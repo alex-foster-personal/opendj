@@ -20,6 +20,7 @@
 	// row's own colors (the theme.css mirror), since it paints through the
 	// deck row's shading code (W15).
 	const colors = $derived(resolveWaveBandColors('dark', palette));
+	const waveHeight = $derived(uiPrefs.wave_height);
 
 	/** The real-track sample, a lazy chunk: only the waveform DATA loads late
 	 * (the component itself stays a static import, CHROME-16). A failed load
@@ -37,7 +38,16 @@
 	});
 </script>
 
-<WaveformDesignPreviewView paint={paintWaveformPreview} {active} {palette} {colors} {sample} gridLines={uiPrefs.wave_grid_lines} {label} />
+<WaveformDesignPreviewView
+	paint={paintWaveformPreview}
+	{active}
+	{palette}
+	{colors}
+	{sample}
+	{waveHeight}
+	gridLines={uiPrefs.wave_grid_lines}
+	{label}
+/>
 {#if active === 'blocks' && blockSnapLoadError() !== null}
 	<!-- DECKUX-42: say why deck rows paint the fixed pitch rather than look snapped-but-wrong.
 	     Reload, not a promise to retry: the browser can keep a failed module

@@ -18,6 +18,7 @@
 import { PALETTE_REGISTRY, type PaletteBarRun, type PaletteContext, type PaletteDeck } from '$lib/palette/commands';
 import type { SettingDef } from '$lib/settings/catalog-types';
 import { settingsQueryTokens } from '$lib/settings/search';
+import type { PerformanceCommandId } from '$lib/keyboard/command-registry';
 import type { DeckId } from './deck-id';
 
 /** Rows the "Commands and settings" group draws at most. */
@@ -52,6 +53,7 @@ export interface CommandAction {
 	command:
 		| { type: 'eject'; deck: DeckId }
 		| { type: 'open_settings'; query: string }
+		| { type: 'performance'; id: PerformanceCommandId }
 		| { type: 'palette'; run: PaletteBarRun };
 	/** Registry keywords for ranking and `actionRows` token matching. */
 	keywords?: readonly string[];
@@ -231,6 +233,24 @@ export function commandCandidates(decks: readonly ActionDeck[], query: string): 
 		command: { type: 'open_settings', query: q }
 	});
 	return out;
+}
+
+function keyHint(defaultKey: string | undefined): string {
+	if (defaultKey === undefined || defaultKey === '') return '';
+	return defaultKey.startsWith('Mod+') ? `Cmd ${defaultKey.slice('Mod+'.length)}` : defaultKey;
+}
+
+/** CMDK rows for the command registry's dial/fader commands: offered only while a dial or fader is selected (#9453). */
+export function registryCommandCandidates(
+	defs: readonly { id: PerformanceCommandId; label: string; defaultKeys: readonly string[] }[]
+): CommandAction[] {
+	return defs.map((def) => ({
+		kind: 'command',
+		id: def.id,
+		label: def.label,
+		hint: keyHint(def.defaultKeys[0]),
+		command: { type: 'performance', id: def.id }
+	}));
 }
 
 function paletteTargetDeck(ctx: PaletteContext): PaletteDeck | undefined {

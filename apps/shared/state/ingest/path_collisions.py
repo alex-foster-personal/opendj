@@ -57,6 +57,13 @@ def _file_identity(path_str: str) -> tuple[int, int] | None:
     return stat.st_dev, stat.st_ino
 
 
+def paths_are_same_physical_file(paths: Sequence[str]) -> bool:
+    """True when every path resolves to the same device and inode."""
+    if len(paths) < 2:
+        return len(paths) == 1
+    return _all_same_physical_file(paths)
+
+
 def _all_same_physical_file(paths: Sequence[str]) -> bool:
     identities = [_file_identity(path) for path in paths]
     if any(identity is None for identity in identities):
@@ -70,4 +77,5 @@ __all__ = [
     "assert_no_path_collisions",
     "is_streaming_path",
     "path_collision_key",
+    "paths_are_same_physical_file",
 ]

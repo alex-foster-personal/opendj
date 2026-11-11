@@ -13,7 +13,8 @@ A window is a phrase start plus the most bars a blend can use from there:
   run through the outro into the tail.
 * ``in``: from the window start to the incoming track's next peak (drop or
   chorus) or first vocal bar, whichever comes first, so the incoming energy
-  can land when the blend ends.
+  can land when the blend ends. Unpinned windows under 16 bars (64 beats)
+  score zero but remain available for cut/drop-swap transitions.
 
 A user's transition-in cue (AGENT-51, ADR-0128) overrides the rules for
 ``in``: when the track has one, it is the only in window offered. That is
@@ -50,6 +51,8 @@ MAX_WINDOW_BARS = 64
 FALLBACK_BARS = 32
 #: Fewer bars than this on an outro out window is flagged for later refusal (#11180).
 MIN_BLEND_BARS = 4
+#: Incoming forward mixability for blends: four beats per bar, 64 beats (#11851).
+MIN_INCOMING_MIXABLE_BARS = 16
 
 _OUT_LABEL_WEIGHT = {OUTRO: 1.0, BREAKDOWN: 0.8, BRIDGE: 0.7, INSTRUMENTAL: 0.7}
 _IN_LABEL_WEIGHT = {INTRO: 1.0, BUILD: 0.8, INSTRUMENTAL: 0.7}
@@ -89,6 +92,16 @@ class MixWindow:
             "reason": self.reason,
             "too_short": self.too_short,
         }
+
+
+def incoming_mixability_reason(window: MixWindow) -> str | None:
+    """Why an incoming window lacks blend capacity; pinned cues bypass this floor."""
+    if window.pinned or window.max_bars >= MIN_INCOMING_MIXABLE_BARS:
+        return None
+    return (
+        f"in-window forward mixability short: max_bars={window.max_bars}, "
+        f"requires {MIN_INCOMING_MIXABLE_BARS} bars (64 beats)"
+    )
 
 
 def _first_vocal_bar(profile: TrackProfile, start_bar: int) -> int | None:
@@ -148,7 +161,7 @@ def _out_window(profile: TrackProfile, start_bar: int, label: str, why: str) -> 
     )
 
 
-def _in_window(profile: TrackProfile, start_bar: int, label: str, why: str) -> MixWindow:
+def _in_window(profile: TrackProfile, start_bar: int, label: str, why: str, *, pinned: bool = False) -> MixWindow:
     peak = _next_peak_bar(profile, start_bar)
     first_vocal = _first_vocal_bar(profile, start_bar)
     limit = profile.bars - start_bar + 1
@@ -168,7 +181,7 @@ def _in_window(profile: TrackProfile, start_bar: int, label: str, why: str) -> M
         reasons.append(f"lands on a peak at bar {peak}")
     if first_vocal is not None and first_vocal >= start_bar:
         reasons.append(f"first vocal at bar {first_vocal}")
-    return MixWindow(
+    window = MixWindow(
         role="in",
         start_bar=start_bar,
         max_bars=max_bars,
@@ -176,9 +189,14 @@ def _in_window(profile: TrackProfile, start_bar: int, label: str, why: str) -> M
         energy=profile.mean_between(profile.bar_energy, start_bar, max_bars),
         vocal_free_bars=vocal_free,
         peak_bar=peak,
-        score=score,
+        score=USER_CUE_SCORE if pinned else score,
         reason="; ".join(reasons),
+        pinned=pinned,
     )
+    refusal = incoming_mixability_reason(window)
+    if refusal is not None:
+        return replace(window, score=0.0, reason=f"{window.reason}; {refusal}")
+    return window
 
 
 def _offer_out_windows(
@@ -233,7 +251,7 @@ def _transition_in_window(profile: TrackProfile, bar: int) -> MixWindow:
     label = section.label if section is not None else "unknown"
     on_phrase = section is not None and section.start_bar == bar
     why = "your transition-in cue" + ("" if on_phrase or section is None else f" (mid-{label}, not a phrase start)")
-    return replace(_in_window(profile, bar, label, why), score=USER_CUE_SCORE, pinned=True)
+    return _in_window(profile, bar, label, why, pinned=True)
 
 
 def mix_windows(
@@ -242,6 +260,7 @@ def mix_windows(
     """Ranked windows for ``role``, best first, at most ``limit``.
 
     For ``in``, a track with a transition-in cue returns that one window.
+    Other in-windows under 16 bars score zero, retained for cut/drop-swap use.
     When ``min_start_bar`` is set, windows with ``start_bar <= min_start_bar`` are dropped before the cap.
     """
     if role not in ROLES:

@@ -40,6 +40,8 @@ from pydantic import BaseModel, ConfigDict
 
 from apps.shared import macos_diskutil
 from apps.shared.sandbox import STORE_BUILD_REFUSAL_TITLE, is_sandboxed
+from apps.sync.usb.health import VolumeExportHealth, evaluate_volume_health
+from apps.webui.server.deps import get_library_data_dir
 from apps.webui.server.routes.usb_classify import (
     VolumeKind,
     VolumeRole,
@@ -49,16 +51,17 @@ from apps.webui.server.routes.usb_classify import (
     root_has_dj_export,
 )
 from apps.webui.server.routes.usb_gate import UsbExportGate, usb_export_gate
+from apps.webui.server.routes.usb_history import load_vendor_usb_history, lookup_vendor_name
 from apps.webui.server.routes.usb_root_access import (
     RootAccess,
     await_root_listing,
     root_listing_deadline,
     start_root_listing,
 )
-from apps.webui.server.routes.usb_history import load_vendor_usb_history, lookup_vendor_name
 from apps.webui.server.routes.usb_root_access import (
     _reset_for_tests as _reset_root_listings_for_tests,
 )
+from apps.webui.server.routes.usb_volume_lock import volume_busy
 
 log = logging.getLogger(__name__)
 
@@ -492,6 +495,38 @@ class UsbVolumesOut(BaseModel):
     watching: bool
 
 
+class UsbDeckClassHealthOut(BaseModel):
+    model_config = ConfigDict(frozen=True)
+
+    deck_class: str
+    label: str
+    ok: bool
+    failures: list[str]
+
+
+class UsbVolumeHealthOut(BaseModel):
+    model_config = ConfigDict(frozen=True)
+
+    volume_id: str
+    rules_version: str
+    filesystem: str
+    scanned_paths: int
+    deck_classes: list[UsbDeckClassHealthOut]
+
+
+class UsbVolumeBusyDetail(BaseModel):
+    model_config = ConfigDict(frozen=True)
+
+    code: Literal["usb_volume_busy"]
+    message: str
+
+
+class UsbVolumeBusyOut(BaseModel):
+    model_config = ConfigDict(frozen=True)
+
+    detail: UsbVolumeBusyDetail
+
+
 class UsbCapabilityDetail(BaseModel):
     model_config = ConfigDict(frozen=True)
 
@@ -624,9 +659,7 @@ def get_usb_volumes(request: Request) -> UsbVolumesOut | JSONResponse:
             discovery=discovery,
             include_simulated=request.app.state.usb_simulation_enabled,
         )
-        data_dir = getattr(request.app.state, "data_dir", None)
-        if data_dir is not None:
-            vols = _apply_vendor_history(vols, data_dir=Path(data_dir))
+        vols = _apply_vendor_history(vols, data_dir=get_library_data_dir(request))
     except UsbDiscoveryUnavailable as exc:
         return _capability_response(exc)
     return UsbVolumesOut(
@@ -634,6 +667,80 @@ def get_usb_volumes(request: Request) -> UsbVolumesOut | JSONResponse:
         scanned_at=time.time(),
         watching=_someone_watching(),
     )
+
+
+def _find_present_volume(volume_id: str, vols: list[UsbVolume]) -> UsbVolume:
+    for volume in vols:
+        if volume.id == volume_id:
+            if not volume.present:
+                raise UsbDiscoveryUnavailable(f"volume_not_present:{volume_id}")
+            if volume.mount_path is None:
+                raise UsbDiscoveryUnavailable(f"volume_not_mounted:{volume_id}")
+            return volume
+    raise UsbDiscoveryUnavailable(f"volume_not_found:{volume_id}")
+
+
+def _health_to_out(result: VolumeExportHealth) -> UsbVolumeHealthOut:
+    return UsbVolumeHealthOut(
+        volume_id=result.volume_id,
+        rules_version=result.rules_version,
+        filesystem=result.filesystem,
+        scanned_paths=result.scanned_paths,
+        deck_classes=[
+            UsbDeckClassHealthOut(
+                deck_class=item.deck_class,
+                label=item.label,
+                ok=item.ok,
+                failures=list(item.failures),
+            )
+            for item in result.deck_classes
+        ],
+    )
+
+
+@router.get(
+    "/volumes/{volume_id}/health",
+    response_model=UsbVolumeHealthOut,
+    responses={
+        409: {
+            "model": UsbVolumeBusyOut,
+            "description": "usb_volume_busy while eject or usb-export holds the stick",
+        },
+        **_CAPABILITY_RESPONSES,
+    },
+)
+def get_usb_volume_health(volume_id: str, request: Request) -> UsbVolumeHealthOut | JSONResponse:
+    """Structured pass/fail per Pioneer deck class; read-only, gated on volume lock."""
+    try:
+        discovery = _system_discovery(usb_export_gate=usb_export_gate(request))
+        vols = _scan_volumes(
+            discovery=discovery,
+            include_simulated=request.app.state.usb_simulation_enabled,
+            force=True,
+        )
+        volume = _find_present_volume(volume_id, vols)
+    except UsbDiscoveryUnavailable as exc:
+        return _capability_response(exc)
+    mount = Path(volume.mount_path)
+    if volume_busy(mount):
+        return JSONResponse(
+            status_code=409,
+            content={
+                "detail": {
+                    "code": "usb_volume_busy",
+                    "message": (
+                        "export health refused while this stick is being ejected or "
+                        "written by usb-export"
+                    ),
+                }
+            },
+        )
+    health = evaluate_volume_health(
+        volume_id=volume_id,
+        mount_root=mount,
+        diskutil_command=discovery.diskutil_command,
+    )
+    return _health_to_out(health)
 
 
 @router.get(

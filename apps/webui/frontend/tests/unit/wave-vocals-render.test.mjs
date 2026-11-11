@@ -59,6 +59,7 @@ function recordingCtx() {
 		fillRect(x, y, w, h) {
 			calls.push({ x, y, w, h, fillStyle: ctx.fillStyle, alpha: ctx.globalAlpha });
 		},
+		clearRect() {},
 		fill() {},
 		beginPath() {},
 		moveTo() {},
@@ -98,7 +99,7 @@ const POSITION_MS = 20_000;
 const WINDOW_LEFT_S = 8;
 const PX_PER_S = 10;
 
-function paint(vocals, positionMs = POSITION_MS) {
+function paint(vocals, positionMs = POSITION_MS, extraFrame = {}) {
 	const { ctx, calls } = recordingCtx();
 	render.drawWaveRow(ctx, {
 		windowS: 24,
@@ -110,7 +111,8 @@ function paint(vocals, positionMs = POSITION_MS) {
 		anlz: anlzWith(vocals),
 		palette: PALETTE,
 		pitch: 1,
-		loop: null
+		loop: null,
+		...extraFrame
 	});
 	return calls.filter((c) => c.fillStyle === PALETTE.vocal);
 }
@@ -296,6 +298,60 @@ test('vocalAlpha ramps 0.5..1.0 over intensity 1..4 and clamps outside it', () =
 		const a = render.vocalAlpha(i);
 		assert.ok(a >= 0.5 && a <= 1, `alpha ${a} for intensity ${i} left the 0.5..1 ramp`);
 	}
+});
+
+// requirement: WAVEQS-11734
+// [if] hideVocals off still paints bars or hideVocals on paints any [then] this fails, [else stop].
+test('WAVEQS-11734 hideVocals true paints no vocal rects; false or omitted matches the baseline', () => {
+	const vocals = {
+		status: 'rekordbox',
+		fps: 150,
+		regions: [{ start_s: 10, end_s: 13, intensity: 3 }]
+	};
+	const baseline = paint(vocals);
+	assert.ok(baseline.length > 0, 'baseline must paint vocal bars');
+	assert.deepEqual(paint(vocals, POSITION_MS, { hideVocals: true }), []);
+	assert.deepEqual(paint(vocals, POSITION_MS, { hideVocals: false }), baseline);
+	assert.deepEqual(paint(vocals), baseline);
+});
+
+test('WAVEQS-11734 drawStripWaveform respects hideVocals on the overview strip', async () => {
+	const strip = await loadTypeScriptModule('src/lib/components/rb/deck/strip-waveform-render.ts');
+	const VOCAL = '#vocal-test';
+	const vocals = {
+		status: 'rekordbox',
+		fps: 150,
+		regions: [{ start_s: 0.1, end_s: 0.9, intensity: 3 }]
+	};
+	const bands = { length: 8, low: [0.5], mid: [0.5], high: [0.5] };
+	const baseFrame = {
+		widthPx: 200,
+		heightPx: 40,
+		durationMs: 60_000,
+		waveform: { kind: 'tri', preview: bands, detail: bands },
+		vocals,
+		loop: null,
+		loopCues: [],
+		bandColors: {
+			bg: '#000',
+			low: '#a',
+			mid: '#b',
+			high: '#c',
+			tick: '#d',
+			vocal: VOCAL
+		}
+	};
+	function vocalRects(hideVocals) {
+		const { ctx, calls } = recordingCtx();
+		strip.drawStripWaveform(ctx, { ...baseFrame, hideVocals });
+		return calls.filter((c) => c.fillStyle === VOCAL);
+	}
+	const on = vocalRects(false);
+	const off = vocalRects(true);
+	const omitted = vocalRects(undefined);
+	assert.ok(on.length > 0, 'strip must paint vocal bars when the lane is on');
+	assert.deepEqual(off, []);
+	assert.deepEqual(omitted, on);
 });
 
 test('vocalsOf memoises per payload and still refuses a breach on the memo path', () => {

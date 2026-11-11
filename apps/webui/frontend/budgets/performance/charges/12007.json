@@ -1,0 +1,9 @@
+{
+  "bytes": 5120,
+  "measured_main": 431832,
+  "measured_with_pr": 436050,
+  "sha": "c1283d9b08",
+  "date": "Wed 11 Nov 2026",
+  "reason": "PR #12007 adds ConnDotsStrip, conn-dot-tips, and BrowserPanel wiring on the performance surface; measured +4218 B gzip over merge-base main; ceiled to KiB.",
+  "payback": "none planned; strip and tips belong on /performance"
+}

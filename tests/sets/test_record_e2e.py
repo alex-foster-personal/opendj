@@ -147,6 +147,7 @@ def test_stop_writes_manifest_and_ends_session(
     )
     recorder.run_poll_iteration()
     manifest = record_mod.stop(recorder)
+    assert manifest is not None
     assert manifest.session_id == recorder.session_id
     assert manifest.ended_at is not None
     assert manifest.share_state == "private"
@@ -206,6 +207,20 @@ def test_timeline_jsonl_tolerates_malformed_trailing_line(
     tl = TimelineJsonl(path)
     events = list(tl.iter_events())
     assert events == [{"action": "ok"}]
+
+
+@pytest.mark.requirement("SETREC-27")
+def test_timeline_jsonl_rejects_malformed_middle_line(tmp_path: Path) -> None:
+    """[if] a middle timeline row is bad JSON [then] iter_events raises, [else stop]."""
+    from apps.sets.record import TimelineCorruptionError, TimelineJsonl
+
+    path = tmp_path / "timeline.jsonl"
+    path.write_text('{"action":"ok"}\n{broken\n{"action":"later"}\n')
+    tl = TimelineJsonl(path)
+    with pytest.raises(TimelineCorruptionError, match="line 2"):
+        tl.validate()
+    with pytest.raises(TimelineCorruptionError, match="line 2"):
+        list(tl.iter_events())
 
 
 @pytest.mark.requirement("SET-01")

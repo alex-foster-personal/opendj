@@ -111,6 +111,15 @@ class Target:
         return json.loads(out.stdout)
 
 
+@dataclass(frozen=True)
+class ProbeOutcome:
+    """One candidate base URL and whether it answered /api/v1/feedback/todos."""
+
+    target: Target
+    reachable: bool
+    quiet: bool
+
+
 # Ad hoc audition servers: agents spin these up on arbitrary local ports to
 # put a build in front of the maintainer, and that is exactly where he leaves review
 # feedback. Discovery previously covered only the .env port, 8585 and the
@@ -180,9 +189,12 @@ def _serves_feedback(target: Target, quiet: bool = False) -> bool:
         return True
 
 
-def _discover(extra_urls: list[str], skip_silver: bool) -> list[Target]:
+def _discover_candidates(
+    extra_urls: list[str], skip_silver: bool
+) -> list[tuple[Target, bool]]:
+    """(target, quiet_probe) for every URL harvest will try."""
     local = socket.gethostname().split(".")[0]
-    candidates: list[Target] = []
+    candidates: list[tuple[Target, bool]] = []
 
     seen_ports: set[int] = set()
     for raw in [*_env_ports(), DEFAULT_DEV_PORT]:
@@ -190,16 +202,27 @@ def _discover(extra_urls: list[str], skip_silver: bool) -> list[Target]:
             continue
         seen_ports.add(raw)
         candidates.append(
-            Target(machine=f"{local}-dev", base=f"http://127.0.0.1:{raw}", ssh_host=None)
+            (
+                Target(
+                    machine=f"{local}-dev",
+                    base=f"http://127.0.0.1:{raw}",
+                    ssh_host=None,
+                ),
+                False,
+            )
         )
 
     installed = _probe_installed_port(None)
     if installed is not None and installed not in seen_ports:
+        seen_ports.add(installed)
         candidates.append(
-            Target(
-                machine=f"{local}-app",
-                base=f"http://127.0.0.1:{installed}",
-                ssh_host=None,
+            (
+                Target(
+                    machine=f"{local}-app",
+                    base=f"http://127.0.0.1:{installed}",
+                    ssh_host=None,
+                ),
+                False,
             )
         )
 
@@ -207,18 +230,26 @@ def _discover(extra_urls: list[str], skip_silver: bool) -> list[Target]:
         if port in seen_ports:
             continue
         seen_ports.add(port)
-        scanned = Target(
-            machine=f"{local}-audition",
-            base=f"http://127.0.0.1:{port}",
-            ssh_host=None,
+        candidates.append(
+            (
+                Target(
+                    machine=f"{local}-audition",
+                    base=f"http://127.0.0.1:{port}",
+                    ssh_host=None,
+                ),
+                True,
+            )
         )
-        if _serves_feedback(scanned, quiet=True):
-            candidates.append(scanned)
 
-    candidates.extend(
-        Target(machine=f"{local}-url", base=url.rstrip("/"), ssh_host=None)
-        for url in extra_urls
-    )
+    for url in extra_urls:
+        candidates.append(
+            (
+                Target(
+                    machine=f"{local}-url", base=url.rstrip("/"), ssh_host=None
+                ),
+                False,
+            )
+        )
 
     if not skip_silver:
         silver_port = _probe_installed_port(SILVER_HOST)
@@ -229,14 +260,45 @@ def _discover(extra_urls: list[str], skip_silver: bool) -> list[Target]:
             )
         else:
             candidates.append(
-                Target(
-                    machine="silver-app",
-                    base=f"http://127.0.0.1:{silver_port}",
-                    ssh_host=SILVER_HOST,
+                (
+                    Target(
+                        machine="silver-app",
+                        base=f"http://127.0.0.1:{silver_port}",
+                        ssh_host=SILVER_HOST,
+                    ),
+                    False,
                 )
             )
 
-    return [t for t in candidates if _serves_feedback(t)]
+    return candidates
+
+
+def _probe_targets(candidates: list[tuple[Target, bool]]) -> list[ProbeOutcome]:
+    outcomes: list[ProbeOutcome] = []
+    for target, quiet in candidates:
+        reachable = _serves_feedback(target, quiet=quiet)
+        outcomes.append(ProbeOutcome(target=target, reachable=reachable, quiet=quiet))
+    return outcomes
+
+
+def _print_probe_report(outcomes: list[ProbeOutcome]) -> None:
+    print("Feedback endpoint probe:")
+    for outcome in outcomes:
+        status = "ok" if outcome.reachable else "no /api/v1/feedback"
+        print(f"  {outcome.target.base} [{outcome.target.machine}] {status}")
+
+
+def _discover(extra_urls: list[str], skip_silver: bool) -> list[Target]:
+    outcomes = _probe_targets(_discover_candidates(extra_urls, skip_silver))
+    return [o.target for o in outcomes if o.reachable]
+
+
+def _discover_with_probes(
+    extra_urls: list[str], skip_silver: bool
+) -> tuple[list[Target], list[ProbeOutcome]]:
+    outcomes = _probe_targets(_discover_candidates(extra_urls, skip_silver))
+    reachable = [o.target for o in outcomes if o.reachable]
+    return reachable, outcomes
 
 
 def _env_ports() -> list[int]:
@@ -389,10 +451,20 @@ def main(argv: list[str] | None = None) -> int:
     )
     args = parser.parse_args(argv)
 
-    targets = _discover(args.url, args.skip_silver)
+    targets, probes = _discover_with_probes(args.url, args.skip_silver)
+    _print_probe_report(probes)
     if not targets:
         print("[ERROR] no reachable feedback API on any target; nothing harvested")
         return 1
+    default_base = f"http://127.0.0.1:{DEFAULT_DEV_PORT}"
+    default_reachable = any(t.base == default_base for t in targets)
+    audition_reachable = any("-audition" in t.machine for t in targets)
+    if not default_reachable and audition_reachable:
+        print(
+            f"[WARN] {default_base} has no feedback API; feedback was found on "
+            "another local listener (see probe list above). For a known audition "
+            "engine, pass --url http://127.0.0.1:<port>"
+        )
 
     all_lines: list[str] = []
     for target in targets:

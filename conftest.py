@@ -48,6 +48,13 @@ os.environ.setdefault("MDT_LIBRARY_MODE", "local")
 # (apps.webui.server.analysis_autostart.build(enabled=True)).
 os.environ["MUSIC_DJ_AUTO_ANALYZE"] = "off"
 
+# `git bisect run`, `git rebase --exec` and git hooks export GIT_DIR to their child, so a test that
+# builds a temp repo with `git -C <tmp> ...` would commit into the CALLER's repo: on Wed 11 Nov 2026
+# a bisect probe moved a worktree's local `main` onto a fixture commit and created a branch `pr`.
+# (private path) pins this.
+for _git_repo_var in ("GIT_DIR", "GIT_WORK_TREE", "GIT_INDEX_FILE", "GIT_COMMON_DIR", "GIT_PREFIX", "GIT_OBJECT_DIRECTORY"):
+    os.environ.pop(_git_repo_var, None)
+
 import pytest
 
 # Register the reqs plugin (coverage-matrix.md writer + --live-db gate), and the

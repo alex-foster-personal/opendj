@@ -307,6 +307,10 @@ def test_udp_blocked_both_ways_keeps_the_door_lane_and_controls_still_arrive(
     seen = _partner_values(inviter, "strip:3")
     joiner.intent({"kind": "control", "unit": "strip:3", "ctl": "fader", "value": 0.7})
     _until(lambda: seen == [0.7], what="the control over the door")
+    # A ping goes out only once the partner's socket advert crossed the door: on a loaded host that can
+    # take longer than the sleep above, so wait for the first ping instead of assuming it (main red
+    # Wed 11 Nov 2026, run 42953028669: pings == 0 at the assert).
+    _until(lambda: all(_lanes(b)["datagram"]["pings"] > 0 for b in (inviter, joiner)), what="a probe ping each way")
     for b in (inviter, joiner):
         dgram = _lanes(b)["datagram"]
         assert _lanes(b)["ctl_active"] == "door" and dgram["pongs"] == 0 and dgram["pings"] > 0

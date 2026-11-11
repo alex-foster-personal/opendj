@@ -607,6 +607,10 @@ def write_bundle(
         )
         publish_into_place(tmp, out_dir)
 
+    from apps.cloud.stem_index_sync import record_published_bundle_if_shared
+
+    record_published_bundle_if_shared(out_dir)
+
     wall_s = time.time() - t0
     result = {
         "stable_id": stable_id,

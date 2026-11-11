@@ -99,11 +99,19 @@ test('TopBar imports every setter and the four keys exist on the HTTP prefs rout
 		assert.match(TOPBAR, new RegExp(`\\b${setter}\\b`), `TopBar must call ${setter}`);
 		assert.match(UI_PREFS_PY, new RegExp(`"${key}"`), `ui_prefs.py must serve ${key}`);
 		assert.match(PREFS_HYDRATE, new RegExp(`\\b${key}\\b`), `DiskPrefsPatch must include ${key}`);
-		assert.match(
-			PREFS_SVELTE,
-			new RegExp(`setTopbarDiskPref\\([^)]*'${key}'`),
-			`${setter} must sync ${key} to disk`
-		);
+		if (key === 'auto_play_enabled') {
+			assert.match(
+				PREFS_SVELTE,
+				/_syncDiskPrefs\(\{ auto_play_enabled: next \}, putDiskPrefsVerified\)/,
+				`${setter} must verify AutoPlay disk sync (#10717)`
+			);
+		} else {
+			assert.match(
+				PREFS_SVELTE,
+				new RegExp(`setTopbarDiskPref\\([^)]*'${key}'`),
+				`${setter} must sync ${key} to disk`
+			);
+		}
 		assert.match(PREFS_HYDRATE, /setTopbarDiskPref/, 'disk sync helper must live in prefs-hydrate');
 	}
 });

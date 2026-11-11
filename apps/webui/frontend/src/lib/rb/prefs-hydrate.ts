@@ -21,6 +21,7 @@ import { applyAllCaps } from '$lib/rb/cache-caps-registry';
 import { setResolvedPosture } from './app-posture';
 import { PERF_TIER_PREFS, type PerfTierPref } from './perf-tier-prefs';
 import { parseSpeakerAutoRecover, type SpeakerAutoRecoverPref } from './speaker-link-prefs';
+import { parseWaveHeight, type WaveHeight } from '$lib/rb/wave-height';
 import { parseTempoLaneScale, type TempoLaneScale } from './tempo-lane-prefs';
 import { parseWaveGridLines, type WaveGridLines } from './wave-grid-lines';
 import { parseAutoSync, parseLevelCalibration } from './prefs-fields';
@@ -103,6 +104,7 @@ export type DiskPrefsPatch = {
 	show_agent_pins?: boolean;
 	show_stems?: boolean;
 	deck_hover_link?: boolean;
+	compact_decks?: boolean;
 	show_sections?: boolean;
 	auto_analyze_grid?: boolean;
 	auto_analyze_key?: boolean;
@@ -111,6 +113,8 @@ export type DiskPrefsPatch = {
 	speaker_auto_recover?: SpeakerAutoRecoverPref;
 	show_tempo_lane?: boolean;
 	tempo_lane_scale?: TempoLaneScale;
+	show_vocal_lane?: boolean;
+	wave_height?: WaveHeight;
 	wave_grid_lines?: WaveGridLines;
 	jog_radial_waveform?: boolean;
 	deck_layout?: DeckLayoutMode;
@@ -214,6 +218,7 @@ export interface PrefsHydrateTarget {
 	show_agent_pins: boolean;
 	show_stems: boolean;
 	deck_hover_link: boolean;
+	compact_decks: boolean;
 	show_sections: boolean;
 	auto_analyze_grid: boolean;
 	auto_analyze_key: boolean;
@@ -222,6 +227,8 @@ export interface PrefsHydrateTarget {
 	speaker_auto_recover: SpeakerAutoRecoverPref;
 	show_tempo_lane: boolean;
 	tempo_lane_scale: TempoLaneScale;
+	show_vocal_lane: boolean;
+	wave_height: WaveHeight;
 	wave_grid_lines: WaveGridLines;
 	jog_radial_waveform: boolean;
 	deck_layout: DeckLayoutMode;
@@ -300,6 +307,9 @@ export interface PrefsHydrateDeps {
 	 * has since picked over. */
 	onSupersededDiskValue: (key: string, diskValue: unknown) => void;
 	isLibraryKeyFilterUnsaved?: () => boolean;
+	/** A counter the owner bumps on every local write of `key`; a key written while the GET was in
+	 * flight keeps its local value (#10717). */
+	localWriteRev?: (key: string) => number;
 }
 
 /** Issue #7599: re-read only `library_key_filter` from disk, so a filter set
@@ -415,6 +425,7 @@ export function makePrefsHydrator(deps: PrefsHydrateDeps): () => Promise<void> {
 		);
 	}
 	const isLibraryKeyFilterUnsaved = deps.isLibraryKeyFilterUnsaved ?? (() => false);
+	const localWriteRev = deps.localWriteRev ?? (() => 0);
 	return async function hydrateConfirmPrefsFromDisk(): Promise<void> {
 		// This PR's confirm and compatible-filter hydration loads with the GET, not
 		// at first paint (library bundle budget, PR #4014).
@@ -427,6 +438,8 @@ export function makePrefsHydrator(deps: PrefsHydrateDeps): () => Promise<void> {
 		// answered before the claim's own write landed (Codex P1, PR #6829).
 		const radialClaimedAtRequest = isDiskValueSuperseded('jog_radial_waveform');
 		const jogRadialAtRequest = uiPrefs.jog_radial_waveform;
+		const autoPlayClaimedAtRequest = isDiskValueSuperseded('auto_play_enabled');
+		const autoPlayRevAtRequest = localWriteRev('auto_play_enabled');
 		const body = (await unwrap(api.GET('/api/v1/ui-prefs'))) as DiskPrefsPatch;
 		const {
 			hydrateConfirmFromDisk,
@@ -459,6 +472,9 @@ export function makePrefsHydrator(deps: PrefsHydrateDeps): () => Promise<void> {
 		if (typeof body.deck_hover_link === 'boolean') {
 			uiPrefs.deck_hover_link = body.deck_hover_link;
 		}
+		if (typeof body.compact_decks === 'boolean') {
+			uiPrefs.compact_decks = body.compact_decks;
+		}
 		if (typeof body.show_sections === 'boolean') {
 			uiPrefs.show_sections = body.show_sections;
 		}
@@ -481,9 +497,16 @@ export function makePrefsHydrator(deps: PrefsHydrateDeps): () => Promise<void> {
 		if (typeof body.show_tempo_lane === 'boolean') {
 			uiPrefs.show_tempo_lane = body.show_tempo_lane;
 		}
+		if (typeof body.show_vocal_lane === 'boolean') {
+			uiPrefs.show_vocal_lane = body.show_vocal_lane;
+		}
 		const tempoLaneScale = parseTempoLaneScale(body.tempo_lane_scale);
 		if (tempoLaneScale !== undefined) {
 			uiPrefs.tempo_lane_scale = tempoLaneScale;
+		}
+		const waveHeight = parseWaveHeight(body.wave_height);
+		if (waveHeight !== undefined) {
+			uiPrefs.wave_height = waveHeight;
 		}
 		const waveGridLines = parseWaveGridLines(body.wave_grid_lines);
 		if (waveGridLines !== undefined) {
@@ -571,10 +594,18 @@ export function makePrefsHydrator(deps: PrefsHydrateDeps): () => Promise<void> {
 				shrink_main_for_player: body.spotify_shrink_main_for_player
 			};
 		}
+		// A local AutoPlay write disk has not acknowledged, or one made while this
+		// GET was in flight (Trackify's on-mount override), outranks the body
+		// (#10717, review on PR #5907).
+		const autoPlayWrittenDuringGet = localWriteRev('auto_play_enabled') !== autoPlayRevAtRequest;
+		if (autoPlayClaimedAtRequest || autoPlayWrittenDuringGet || isDiskValueSuperseded('auto_play_enabled')) {
+			if (!autoPlayWrittenDuringGet) onSupersededDiskValue('auto_play_enabled', body.auto_play_enabled);
+		} else if (typeof body.auto_play_enabled === 'boolean') {
+			uiPrefs.auto_play_enabled = body.auto_play_enabled;
+		}
 		for (const key of [
 			'beat_sync_max',
 			'deck_autocue',
-			'auto_play_enabled',
 			'auto_play_enforce_order',
 			'auto_play_maximize_reach',
 			'hide_broken_links',

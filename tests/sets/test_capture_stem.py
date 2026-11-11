@@ -23,9 +23,10 @@ def recorder_client(tmp_path: Path):
     from fastapi.testclient import TestClient
 
     from apps.sets import api as sets_api
+    from tests.sets.conftest import mount_sets_router
 
     app = FastAPI()
-    app.include_router(sets_api.router)
+    mount_sets_router(app)
     app.state.sets_root = tmp_path
     service = RecorderService(sets_root=tmp_path, db_path=tmp_path / "sets.db", capture_enabled=False)
     app.state.sets_recorder_service = service

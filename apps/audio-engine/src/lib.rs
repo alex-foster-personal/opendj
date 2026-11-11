@@ -7,6 +7,7 @@
 
 #[cfg(feature = "device")]
 pub mod capture;
+pub mod control_capture;
 pub mod deck;
 pub mod decode;
 pub mod edit_list;

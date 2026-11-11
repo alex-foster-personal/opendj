@@ -739,12 +739,13 @@ _EVERY_PAGE_ACTION: list[dict[str, Any]] = [
     {"source": {"ch": 1, "kind": "cc", "id": 24}, "action": {"type": "headphone_level"}},
     {"source": {"ch": 1, "kind": "cc", "id": 25}, "ccButton": True, "action": {"type": "master_cue", "mode": "hold"}},
     {"source": {"ch": 1, "kind": "note", "id": 26}, "action": {"type": "shift_modifier"}},
+    {"source": {"ch": 1, "kind": "note", "id": 28}, "action": {"type": "color_fx", "deck": 1, "effect": "filter"}},
 ]
 
 
 def test_every_page_action_type_installs_and_reads_back(midi_client: TestClient) -> None:
     bindings = [{**b, "provenance": _cite()} for b in _EVERY_PAGE_ACTION]
-    assert len({b["action"]["type"] for b in bindings}) == 27
+    assert len({b["action"]["type"] for b in bindings}) == 28
     r = midi_client.put("/api/v1/midi/maps/test-device", json=_doc(bindings=bindings))
     assert r.status_code == 200, r.text
     back = midi_client.get("/api/v1/midi/maps/test-device").json()["bindings"]

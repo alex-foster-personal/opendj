@@ -59,6 +59,23 @@ test('Cmd/Ctrl+Right and Left jump 4 bars, Shift 8', () => {
 	});
 });
 
+// if the library's instant double fires an 8-bar grid jump too then broken
+test('library focus: Cmd+Shift+arrows yield to instant double; grid jump unchanged elsewhere', () => {
+	assert.equal(
+		resolve(key('ArrowLeft', { shiftKey: true }), { gridJump: true, libraryFocus: true }),
+		null
+	);
+	assert.deepEqual(resolve(key('ArrowLeft')), { kind: 'grid-jump', bars: -4, repeat: false });
+	assert.deepEqual(
+		resolve(key('ArrowLeft', { shiftKey: true }), { gridJump: true, libraryFocus: false }),
+		{
+			kind: 'grid-jump',
+			bars: -8,
+			repeat: false
+		}
+	);
+});
+
 test('WASD: Cmd+D mirrors Right; Cmd+A mirrors Left only after a deck press', () => {
 	assert.equal(resolve(key('d')).bars, 4);
 	assert.equal(resolve(key('D', { shiftKey: true })).bars, 8);

@@ -519,30 +519,16 @@ fn a_hard_link_is_the_file_it_links_to() {
         let before = offline(&spec("copy.wav"), u64::MAX).unwrap();
         // The loader distinguishes a kept-mtime rewrite by change time; two
         // writes in one volume-clock tick still look alike (`FileKey` docs).
-        // Wait until this file's change time is past the session-cached stamp,
-        // then rewrite.
+        // Wait on a deadline until the volume clock is past the session-cached
+        // stamp, then rewrite once (retrying the rewrite itself hid the bug).
         #[cfg(unix)]
-        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
-        let meta = loop {
-            write_wav(&d, "copy.wav", 48000, &sine(48000, 440.0, 0.5));
-            std::fs::File::options().write(true).open(d.join("copy.wav")).unwrap().set_modified(kept).unwrap();
-            let meta = std::fs::metadata(d.join("copy.wav")).unwrap();
-            assert_eq!((meta.len(), meta.modified().unwrap()), (old.len(), kept), "the rewrite is not the case under test");
-            #[cfg(unix)]
-            {
-                use std::os::unix::fs::MetadataExt;
-                let observed = (meta.ctime(), meta.ctime_nsec());
-                if observed == cached_changed {
-                    assert!(
-                        std::time::Instant::now() < deadline,
-                        "copy.wav's change time stayed at the session-cached stamp {cached_changed:?} for 5 s (just observed {observed:?})"
-                    );
-                    std::thread::sleep(std::time::Duration::from_millis(1));
-                    continue;
-                }
-            }
-            break meta;
-        };
+        {
+            let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
+            wait_volume_clock_past(cached_changed, &d.join("volume-clock.probe"), deadline);
+        }
+        write_wav(&d, "copy.wav", 48000, &sine(48000, 440.0, 0.5));
+        std::fs::File::options().write(true).open(d.join("copy.wav")).unwrap().set_modified(kept).unwrap();
+        let meta = std::fs::metadata(d.join("copy.wav")).unwrap();
         assert_eq!((meta.len(), meta.modified().unwrap()), (old.len(), kept), "the rewrite is not the case under test");
         #[cfg(unix)]
         {

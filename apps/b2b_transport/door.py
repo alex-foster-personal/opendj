@@ -73,10 +73,11 @@ def serve_door_request(host: PairingHost, engine_url: str, token: str, request: 
     The internet session itself proves the pairing (its Noise PSK is the token), so the
     bearer header the LAN door expects is supplied here rather than carried on the wire.
     """
+    bearer = f"Bearer {token}"
     if request.method == "GET":
-        status, body, content_type = answer_get(host, engine_url, request.path, request.query, f"Bearer {token}")
+        status, body, content_type = answer_get(host, engine_url, request.path, request.query, bearer)
     elif request.path.startswith(BOOTH_PREFIX):
-        status, body, content_type = answer_booth(host, request.path, request.body, f"Bearer {token}")
+        status, body, content_type = answer_booth(host, request.path, request.body, bearer)
     elif request.path.startswith(RELAY_PREFIX):
         status, body, content_type = answer_relay(host, request.path, request.body)
     else:

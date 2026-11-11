@@ -4031,9 +4031,8 @@ class RbAudioEngine implements AudioEngine {
 	async engageBeatLoop(deck: DeckId, beats: number, startMs?: number): Promise<void> {
 		const { st } = _requireLoaded(deck, 'engageBeatLoop');
 		const grid = requirePhaseCapableBeatGrid(st, 'engageBeatLoop');
-		const currentMs = st.playing ? _currentPosSec(deck) * 1000 : st.position_ms;
-		const anchorMs =
-			beats === 4 && startMs === undefined ? freshFourBeatAnchorMs(grid, currentMs) : startMs;
+		const currentMs = st.position_ms;
+		const anchorMs = beats === 4 && startMs === undefined ? freshFourBeatAnchorMs(grid, currentMs, st.anlz?.beatgrid?.bar_phase_untrusted === true) : startMs;
 		const range = exactBeatLoopRangeMs(grid, currentMs, beats, anchorMs);
 		const isRestart =
 			st.loop !== null &&

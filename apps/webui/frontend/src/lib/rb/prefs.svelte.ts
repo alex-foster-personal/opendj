@@ -51,6 +51,13 @@ import {
 import type { PreviewBeatSync } from '$lib/player/preview-beat-sync';
 import { DECIDE_AFTER_MAX_S, DECIDE_AFTER_MIN_S, DEFAULT_DECIDE_AFTER_S } from '$lib/rb/auto-play-early';
 import {
+	parseWaveHeight,
+	validateWaveHeightPrefFields,
+	WAVE_HEIGHT_DEFAULT,
+	WAVE_HEIGHT_PREF_DEFAULTS,
+	type WaveHeight
+} from '$lib/rb/wave-height';
+import {
 	parseWaveformDesignPref,
 	WAVEFORM_DESIGN_PREF_DEFAULT,
 	type WaveformDesignPref
@@ -111,6 +118,12 @@ import {
 	validateTempoLanePrefFields,
 	type TempoLanePrefsState
 } from './tempo-lane-prefs';
+import {
+	VOCAL_LANE_PREF_DEFAULTS,
+	makeVocalLaneSetters,
+	validateVocalLanePrefFields,
+	type VocalLanePrefsState
+} from './vocal-lane-prefs';
 import {
 	WAVE_GRID_LINES_PREF_DEFAULTS,
 	makeWaveGridLinesSetter,
@@ -290,6 +303,7 @@ export interface RbUiPrefs
 		DeckNumberArtPrefsState,
 		SpeakerLinkPrefsState,
 		TempoLanePrefsState,
+		VocalLanePrefsState,
 		WaveGridLinesPrefsState,
 		WaveZoomPrefsState {
 	/** Width, in CSS pixels, of the resizable playlist tree (220 through 520). */
@@ -302,6 +316,8 @@ export interface RbUiPrefs
 	library_density: LibraryDensity;
 	/** Sort inside each playlist section instead of hiding the sections (D7). */
 	sort_within_sections: boolean;
+	/** Edge sampler on/off (spec edge-sampler 7.4); off = edges never wake, no gutter. */
+	sampler_enabled: boolean;
 	/** Section ids shown collapsed on this machine. */
 	collapsed_sections: string[];
 	/** How every key cell is written (keys are stored as canonical Camelot). */
@@ -403,6 +419,8 @@ export interface RbUiPrefs
 	mixer_stems: boolean;
 	/** DECKUX-5917b: hovering a deck, wavestack row or mixer strip highlights its linked panels. Default on. */
 	deck_hover_link: boolean;
+	/** LIBUX-11716: shrink 4-deck view so the library shows more rows. Default off. */
+	compact_decks: boolean;
 	/** Compatible-filter range knobs (LIBUX-32). */
 	compatible_filter: CompatibleFilterPrefs;
 	/** Related Tracks criteria (LIBUX-10046). */
@@ -412,6 +430,8 @@ export interface RbUiPrefs
 	/** DECKUX-20: tri-band, mono envelope, line outline or blocks, or 'auto'
 	 * (default) to follow the skin (ui-skin.ts SKIN_WAVE_LOOK). */
 	waveform_design: WaveformDesignPref;
+	/** WAVEQS-11733: 'full' mirrors about the centre line; 'half' is single-sided from the bottom baseline. */
+	wave_height: WaveHeight;
 	/** WAVE-EQ-5230: deck waveforms follow each deck's live EQ and filter, as the
 	 * audio engine reports them. Default on. */
 	wave_eq_reflect: boolean;
@@ -431,6 +451,9 @@ export interface RbUiPrefs
 	/** Migration 2's false is not yet acknowledged by the daemon copy: until it
 	 * is, the disk value cannot hydrate over it and every boot resends it. */
 	radial_off_pending: boolean;
+	/** A local AutoPlay choice the daemon has not acknowledged: until it does, the disk value
+	 * cannot hydrate over it and every boot resends it (#10717). */
+	auto_play_unsaved: boolean;
 	/**
 	 * Destructive / move confirms: false = skip the prompt forever.
 	 * Missing keys mean "ask". Persisted under the same blob.
@@ -498,6 +521,7 @@ const DEFAULTS: RbUiPrefs = {
 	hide_broken_links: false,
 	library_density: 'compact',
 	sort_within_sections: false,
+	sampler_enabled: true,
 	collapsed_sections: [],
 	key_notation: DEFAULT_KEY_NOTATION,
 	library_hidden_columns: [],
@@ -527,11 +551,13 @@ const DEFAULTS: RbUiPrefs = {
 	show_stems: false,
 	mixer_stems: false,
 	deck_hover_link: true,
+	compact_decks: false,
 	compatible_filter: { ...COMPATIBLE_FILTER_DEFAULTS },
 	library_related_criteria: { ...RELATED_CRITERIA_DEFAULTS },
 	library_key_filter: [],
 	library_watcher_folders: [],
 	waveform_design: WAVEFORM_DESIGN_PREF_DEFAULT,
+	wave_height: WAVE_HEIGHT_DEFAULT,
 	wave_eq_reflect: true,
 	wave_palette: WAVE_PALETTE_PREF_DEFAULT,
 	ui_skin: UI_SKIN_DEFAULT,
@@ -539,6 +565,7 @@ const DEFAULTS: RbUiPrefs = {
 	wave_split_master: WAVE_SPLIT_MASTER_DEFAULT,
 	defaults_migration: PREFS_DEFAULTS_MIGRATION,
 	radial_off_pending: false,
+	auto_play_unsaved: false,
 	confirm: {},
 	last_playlist: null,
 	spotify_library: { pinned_ids: [], recent_ids: [], shrink_main_for_player: true },
@@ -558,6 +585,7 @@ const DEFAULTS: RbUiPrefs = {
 	...DECK_NUMBER_ART_PREF_DEFAULTS,
 	...SPEAKER_LINK_PREF_DEFAULTS,
 	...TEMPO_LANE_PREF_DEFAULTS,
+	...VOCAL_LANE_PREF_DEFAULTS,
 	...WAVE_GRID_LINES_PREF_DEFAULTS,
 	...WAVE_ZOOM_PREF_DEFAULTS,
 	...LYRICS_PREF_DEFAULTS,
@@ -594,7 +622,7 @@ function _applyThemeDom(theme: UiTheme): void {
 function _applyWavePaletteDom(choice: WavePaletteChoice): void {
 	if (typeof document === 'undefined') return;
 	if (choice === 'rekordbox') delete document.documentElement.dataset.wavePalette;
-	else if (choice === 'legacy' || choice === 'mono') document.documentElement.dataset.wavePalette = choice;
+	else if (choice === 'legacy' || choice === 'mono' || choice === 'blue') document.documentElement.dataset.wavePalette = choice;
 }
 
 /** True when _load migrated a stored blob, so boot persists the new version. */
@@ -767,6 +795,12 @@ function _validateAutomationPrefs(parsed: Partial<RbUiPrefs>): void {
 				'clear the localStorage key to recover'
 		);
 	}
+	if (parsed.auto_play_unsaved !== undefined && typeof parsed.auto_play_unsaved !== 'boolean') {
+		throw new Error(
+			`${STORAGE_KEY}: malformed prefs blob (auto_play_unsaved is not a boolean) - ` +
+				'clear the localStorage key to recover'
+		);
+	}
 	if (parsed.auto_play_early_planning !== undefined && typeof parsed.auto_play_early_planning !== 'boolean') {
 		throw new Error(
 			`${STORAGE_KEY}: malformed prefs blob (auto_play_early_planning is not a boolean) - ` +
@@ -913,6 +947,12 @@ function _validatePerformanceTogglePrefs(parsed: Partial<RbUiPrefs>): void {
 				'clear the localStorage key to recover'
 		);
 	}
+	if (parsed.compact_decks !== undefined && typeof parsed.compact_decks !== 'boolean') {
+		throw new Error(
+			`${STORAGE_KEY}: malformed prefs blob (compact_decks is not a boolean) - ` +
+				'clear the localStorage key to recover'
+		);
+	}
 }
 
 function _parseSkinMixerAndDeckPrefs(parsed: Partial<RbUiPrefs>): SkinMixerDeckPrefsParsed {
@@ -1055,6 +1095,7 @@ function _assembleLoadedPrefs(
 		hide_broken_links: library.hide_broken_links,
 		library_density: library.library_density ?? DEFAULTS.library_density,
 		sort_within_sections: parsed.sort_within_sections === true,
+		sampler_enabled: parsed.sampler_enabled !== false,
 		collapsed_sections: Array.isArray(parsed.collapsed_sections)
 			? parsed.collapsed_sections
 			: DEFAULTS.collapsed_sections,
@@ -1066,6 +1107,7 @@ function _assembleLoadedPrefs(
 		recommended_panel_collapsed:
 			parsed.recommended_panel_collapsed ?? DEFAULTS.recommended_panel_collapsed,
 		auto_play_enabled: parsed.auto_play_enabled ?? DEFAULTS.auto_play_enabled,
+		auto_play_unsaved: parsed.auto_play_unsaved ?? DEFAULTS.auto_play_unsaved,
 		auto_play_enforce_order:
 			parsed.auto_play_enforce_order ?? DEFAULTS.auto_play_enforce_order,
 		auto_play_maximize_reach:
@@ -1090,6 +1132,7 @@ function _assembleLoadedPrefs(
 		show_stems: parsed.show_stems ?? DEFAULTS.show_stems,
 		mixer_stems: parsed.mixer_stems ?? DEFAULTS.mixer_stems,
 		deck_hover_link: parsed.deck_hover_link ?? DEFAULTS.deck_hover_link,
+		compact_decks: parsed.compact_decks ?? DEFAULTS.compact_decks,
 		...skinLook,
 		layout_override: { ...layoutOverride },
 		wave_eq_reflect: parsed.wave_eq_reflect ?? DEFAULTS.wave_eq_reflect,
@@ -1122,6 +1165,10 @@ function _assembleLoadedPrefs(
 		...validateSpeakerLinkPrefFields(parsed, STORAGE_KEY),
 		...TEMPO_LANE_PREF_DEFAULTS,
 		...validateTempoLanePrefFields(parsed, STORAGE_KEY),
+		...VOCAL_LANE_PREF_DEFAULTS,
+		...validateVocalLanePrefFields(parsed, STORAGE_KEY),
+		...WAVE_HEIGHT_PREF_DEFAULTS,
+		...validateWaveHeightPrefFields(parsed, STORAGE_KEY),
 		...WAVE_GRID_LINES_PREF_DEFAULTS,
 		...validateWaveGridLinesPrefFields(parsed as Record<string, unknown>, STORAGE_KEY),
 		...WAVE_ZOOM_PREF_DEFAULTS,
@@ -1210,6 +1257,9 @@ applyDragSensitivity(uiPrefs.drag_sensitivity);
 /** The DJ picked the radial waveform this session, so no disk read may undo it. */
 let _radialPicked = false;
 
+/** Bumped on every local AutoPlay write; the hydrator skips a body read before it. */
+let _autoPlayRev = 0;
+
 /** Migration 2's claim on the radial value is over: disk agrees or the DJ picked. */
 function _clearRadialOffPending(): void {
 	if (!uiPrefs.radial_off_pending) return;
@@ -1276,6 +1326,12 @@ export const { toggleSpotifyPinned, rememberSpotifyRecent, setSpotifyShrinkMain 
 );
 export function setSortWithinSections(next: boolean): void {
 	setLibraryBrowserDiskPref(uiPrefs, _persist, _syncDiskPrefs, 'sort_within_sections', next);
+}
+
+/** Edge sampler on/off (spec edge-sampler 7.4). */
+export function setSamplerEnabledPref(next: boolean): void {
+	uiPrefs.sampler_enabled = next;
+	_persist();
 }
 
 export function setSectionCollapsed(sectionId: string, collapsed: boolean): void {
@@ -1374,9 +1430,31 @@ export async function setAutoCue(next: boolean): Promise<void> {
 	}
 }
 
-export function setAutoPlayEnabled(next: boolean): void {
-	setTopbarDiskPref(uiPrefs, _persist, _syncDiskPrefs, 'auto_play_enabled', next);
+/** Save AutoPlay to disk; the unsaved marker clears only when the daemon
+ * acknowledges the latest write, and a failure is reported (#10717). */
+function _saveAutoPlay(next: boolean, rev: number): void {
+	_syncDiskPrefs({ auto_play_enabled: next }, putDiskPrefsVerified)
+		.then(() => {
+			if (rev !== _autoPlayRev || !uiPrefs.auto_play_unsaved) return;
+			uiPrefs.auto_play_unsaved = false;
+			_persist();
+		})
+		.catch((cause) =>
+			reportSettingSaveError(
+				'Could not save AutoPlay to disk; this browser keeps it and retries next launch',
+				cause
+			)
+		);
 }
+
+export function setAutoPlayEnabled(next: boolean): void {
+	uiPrefs.auto_play_enabled = next;
+	uiPrefs.auto_play_unsaved = true;
+	_persist();
+	_saveAutoPlay(next, ++_autoPlayRev);
+}
+
+if (uiPrefs.auto_play_unsaved) _saveAutoPlay(uiPrefs.auto_play_enabled, _autoPlayRev);
 
 export function setAutoPlayEnforceOrder(next: boolean): void {
 	setTopbarDiskPref(uiPrefs, _persist, _syncDiskPrefs, 'auto_play_enforce_order', next);
@@ -1473,6 +1551,13 @@ export const { setShowTempoLane, setTempoLaneScale } = makeTempoLaneSetters(
 	(patch) => void _syncDiskPrefs(patch)
 );
 
+/** Vocal lane visibility (issue #10238): blue vocal bars on deck rows and overview strip (default on). */
+export const { setShowVocalLane } = makeVocalLaneSetters(
+	uiPrefs,
+	_persist,
+	(patch) => void _syncDiskPrefs(patch)
+);
+
 /** Beat grid lines (issue #10244): beats_bars (default), bars, off. */
 export const { setWaveGridLines } = makeWaveGridLinesSetter(
 	uiPrefs,
@@ -1524,13 +1609,29 @@ export function setDeckHoverLink(next: boolean): void {
 	void _syncDiskPrefs({ deck_hover_link: next });
 }
 
+export function setCompactDecks(next: boolean): void {
+	if (typeof next !== 'boolean') throw new TypeError(`compact_decks must be boolean, got ${String(next)}`);
+	uiPrefs.compact_decks = next;
+	_persist();
+	void _syncDiskPrefs({ compact_decks: next });
+}
+
 /** 'auto' follows the active skin; a concrete design overrides it. */
 export function setWaveformDesign(next: WaveformDesignPref): void {
 	if (parseWaveformDesignPref(next) === undefined) {
-		throw new Error('waveform_design must be auto|tri-band|mono|line|blocks, got undefined');
+		throw new Error('waveform_design must be auto|tri-band|mono|line|blocks|rgb, got undefined');
 	}
 	uiPrefs.waveform_design = next;
 	_persist();
+}
+
+export function setWaveHeight(next: WaveHeight): void {
+	if (parseWaveHeight(next) === undefined) {
+		throw new Error(`wave_height must be full|half, got ${String(next)}`);
+	}
+	uiPrefs.wave_height = next;
+	_persist();
+	void _syncDiskPrefs({ wave_height: next });
 }
 
 export function setWaveEqReflect(next: boolean): void {
@@ -1542,7 +1643,7 @@ export function setWaveEqReflect(next: boolean): void {
 /** 'auto' follows the active skin; a concrete palette overrides it. */
 export function setWavePalette(next: WavePalettePref): void {
 	if (parseWavePalettePref(next) === undefined) {
-		throw new Error('wave_palette must be auto|rekordbox|legacy|mono, got undefined');
+		throw new Error('wave_palette must be auto|rekordbox|legacy|mono|blue, got undefined');
 	}
 	uiPrefs.wave_palette = next;
 	_applyWavePaletteDom(effectiveWavePalette(next, uiPrefs.ui_skin));
@@ -1802,10 +1903,13 @@ export const hydrateConfirmPrefsFromDisk = makePrefsHydrator({
 	storageKey: STORAGE_KEY,
 	defaults: DEFAULTS,
 	isConfirmUnsaved: (key) => _unsavedConfirm.has(key),
-	isDiskValueSuperseded: (key) => uiPrefs.radial_off_pending && key === 'jog_radial_waveform',
+	isDiskValueSuperseded: (key) =>
+		(key === 'jog_radial_waveform' && uiPrefs.radial_off_pending) ||
+		(key === 'auto_play_enabled' && uiPrefs.auto_play_unsaved),
 	// Only a boolean or absence is a real answer: anything else is a broken
 	// daemon response, reported, and the migration keeps its claim (Sol P1, #6829).
-	onSupersededDiskValue: (_key, diskValue) => {
+	onSupersededDiskValue: (key, diskValue) => {
+		if (key === 'auto_play_enabled') return; // the queued save carries the local value
 		// The DJ picked while the GET was in flight: their value stands.
 		if (_radialPicked) return;
 		if (diskValue === true && uiPrefs.jog_radial_waveform === true) return;
@@ -1817,7 +1921,8 @@ export const hydrateConfirmPrefsFromDisk = makePrefsHydrator({
 				new TypeError(`jog_radial_waveform must be a boolean, got ${typeof diskValue}`)
 			);
 	},
-	isLibraryKeyFilterUnsaved: () => _libraryKeyFilterUnsaved.rev !== 0
+	isLibraryKeyFilterUnsaved: () => _libraryKeyFilterUnsaved.rev !== 0,
+	localWriteRev: (key) => (key === 'auto_play_enabled' ? _autoPlayRev : 0)
 });
 
 export function setUiSkin(next: UiSkin): void {

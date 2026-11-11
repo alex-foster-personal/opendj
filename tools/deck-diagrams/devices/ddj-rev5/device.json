@@ -1,0 +1,9 @@
+{
+ "map_name": "DDJ-REV5",
+ "map_const": "REV5_MAP",
+ "map_ts": "apps/webui/frontend/src/lib/rb/midi/maps/ddj-rev5.ts",
+ "panel_w": 736.0,
+ "panel_d": 377.2,
+ "panel_size_source": "DDJ-REV5 product specifications, pioneerdj.com (736.0 x 377.2 mm, width x depth)",
+ "display_name": "2-deck scratch-style controller"
+}

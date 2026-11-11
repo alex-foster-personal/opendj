@@ -19,7 +19,8 @@ const OVERLAY_PREF = {
 	sections: 'show_sections',
 	lyrics: 'lyrics_waveform_overlay',
 	lyrics_scrub: 'lyrics_hover_scrub',
-	jog_radial: 'jog_radial_waveform'
+	jog_radial: 'jog_radial_waveform',
+	vocal_lane: 'show_vocal_lane'
 };
 
 before(async () => {

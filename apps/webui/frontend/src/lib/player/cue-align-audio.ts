@@ -29,7 +29,7 @@ import {
 	type HeadphoneNodes
 } from '$lib/player/headphones';
 import { assertMicOpenAllowedNow } from '$lib/player/io-device-test-audio';
-import { persistMixerConfig } from '$lib/player/mixer-config';
+import { loadMixerConfig, persistMixerConfig } from '$lib/player/mixer-config';
 import { mixerState } from '$lib/player/state.svelte';
 
 export { disposeHeadphoneMonitor, selectMasterOutput } from '$lib/player/headphones';
@@ -274,6 +274,7 @@ export function cueAlignAudioEffects(): Pick<
 	| 'setDelays'
 	| 'alignmentMode'
 	| 'deviceIds'
+	| 'calibrationProbe'
 > {
 	const { ctx, nodes } = liveCalibrationGraph();
 	const cueId = mixerState.headphones.selected_output_device_id;
@@ -371,6 +372,7 @@ export function cueAlignAudioEffects(): Pick<
 		deviceIds: () => ({
 			cue: cueId,
 			master: mixerState.headphones.selected_master_output_device_id
-		})
+		}),
+		calibrationProbe: () => loadMixerConfig().calibration_probe
 	};
 }

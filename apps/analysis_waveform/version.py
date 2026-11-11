@@ -14,7 +14,7 @@ columns/s detail, 1200-column preview. Model-free: no third-party weights, so
 
 WHAT 1.2.0 IS. The same peaks; the 1200-column preview is now encoded on
 rekordbox PWV6's per-band scale (`bands.pwv6_scale`), so it draws with the
-balance JIK approved (specs/ui-contracts/library-preview-waveform). MINOR,
+balance JIK approved ((private path)). MINOR,
 because emitted preview values change. The detail lane is unchanged.
 
 WHAT 1.3.0 IS. Both: the 1.2.0 PWV6-scaled preview, produced by the engine's
@@ -31,13 +31,19 @@ drew own rows with no blue lows at all. MINOR: emitted preview values change.
 1.3.0 is the engine decoder ported from main-electron-rust (#5013); this
 number sits above it whichever of the two lands first.
 
+WHAT 1.5.0 IS. FFmpeg and the engine take band peaks from float with +6 dBFS
+headroom (255 = +6 dBFS linear) instead of quantizing through signed 16-bit
+first, so filter overshoot on loud masters is not clipped in the column.
+MINOR: emitted detail and preview peak bytes change; ``DecodeProfile`` carries
+``peak_headroom_db`` and ``PEAKS_GENERATION`` is ``tri-2``.
+
 -Cursor
 """
 from __future__ import annotations
 
 from typing import Literal
 
-PRODUCER_VERSION = "1.4.0"
+PRODUCER_VERSION = "1.5.0"
 
 #: The producer half of the `own_<lane>.<producer>` backend name.
 PRODUCER: Literal["backfill"] = "backfill"

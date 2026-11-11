@@ -6,6 +6,10 @@
 	 * Agent parity: `opendj practice <device>` opens this route; the layout it renders is
 	 * GET /api/v1/practice/devices/<device>.
 	 */
+	import {
+		createPracticeLayersIpc,
+		installPracticeLayersIpc
+	} from '$lib/components/rb/practice/practice-pad-layers-ipc';
 	import { page } from '$app/state';
 	import DeviceReplica from '$lib/components/rb/practice/DeviceReplica.svelte';
 	import { fetchPanelLayout, practiceMapFor } from '$lib/components/rb/practice/practice-devices';
@@ -17,6 +21,7 @@
 	const device = $derived(page.params.device ?? '');
 	const target = $derived(page.url.searchParams.get('target'));
 
+	let replica = $state<ReturnType<typeof DeviceReplica> | undefined>(undefined);
 	let layout = $state<PanelLayout | null>(null);
 	let loadError = $state<string | null>(null);
 	let startedMs = $state(0);
@@ -49,6 +54,17 @@
 		return () => {
 			live = false;
 		};
+	});
+
+	$effect(() => {
+		const owner = replica;
+		if (owner === undefined) return;
+		return installPracticeLayersIpc(
+			createPracticeLayersIpc({
+				dispatch: (cmd) => owner.dispatchLayer(cmd),
+				query: () => owner.queryLayers()
+			})
+		);
 	});
 
 	// Replica controls dispatch performance commands, which need a live command session.
@@ -88,7 +104,7 @@
 				</p>
 			{/if}
 		</header>
-		<DeviceReplica {layout} map={practiceMapFor(layout)} {target} {onHit} />
+		<DeviceReplica bind:this={replica} {layout} map={practiceMapFor(layout)} {target} {onHit} />
 	{/if}
 </main>
 

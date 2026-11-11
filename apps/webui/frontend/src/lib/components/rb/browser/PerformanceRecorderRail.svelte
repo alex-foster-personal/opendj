@@ -1,7 +1,13 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
 	import { getRecorderStatus, type RecorderStatus } from '../../../../routes/sets/sets-api';
-	import { captureFailureMessage, recordRailState, stopPerformanceRecorder } from '$lib/sets/performance-recorder';
+	import {
+		captureFailureMessage,
+		recordRailState,
+		stopPerformanceRecorder,
+		updateRetainedCaptureFailure,
+		type RetainedCaptureFailure
+	} from '$lib/sets/performance-recorder';
 	import { pushToast } from '$lib/stores.svelte';
 	import {
 		REC_STATUS_UNREACHABLE_GROUP,
@@ -46,7 +52,8 @@
 		recoverable: false,
 		capture: 'none'
 	});
-	let rail = $derived(recordRailState(recorder));
+	let retainedFailure = $state<RetainedCaptureFailure | null>(null);
+	let rail = $derived(recordRailState(recorder, retainedFailure));
 	let recorderBusy = $state(false);
 	// Lazy: the picker renders only after a REC click, so it stays out of the
 	// /performance bundle budget (charged to other-lazy instead). Non-null
@@ -130,6 +137,7 @@
 	}
 
 	function setRecorder(status: RecorderStatus): void {
+		retainedFailure = updateRetainedCaptureFailure(retainedFailure, status);
 		recorder = status;
 		if (status.active) syncMasterTap(status);
 		else void stopMasterTap();

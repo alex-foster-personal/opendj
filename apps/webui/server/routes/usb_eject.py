@@ -27,6 +27,7 @@ from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 
+from apps.sync.usb.verify import EjectReceipt, eject_after_verify
 from apps.webui.server.routes import usb_volumes
 from apps.webui.server.routes.usb_classify import classify_role, root_has_dj_export
 from apps.webui.server.routes.usb_gate import usb_export_gate
@@ -340,6 +341,23 @@ def _eject_device(command: str, root: Path, volume_id: str) -> str:
             f"diskutil reported success but {root} is still mounted",
         )
     return stdout
+
+
+def eject_after_verified_copy(command: str, root: Path, volume_id: str, verification: object) -> EjectReceipt:
+    """Eject the validated stick at ``root`` only after its copy verified clean.
+
+    The verification receipt is checked first (``apps.sync.usb.verify.eject_after_verify``):
+    an absent, malformed, failed or other-volume receipt raises
+    ``EjectRefused`` before the volume lock, the diskutil probe or the eject
+    run. A clean receipt then goes through the same lock, probe and proven
+    unmount as ``POST /usb/eject``, and the returned receipt names the volume.
+    """
+
+    def _locked_eject(target: Path) -> str:
+        with eject_operation(target):
+            return _eject_device(command, target, volume_id)
+
+    return eject_after_verify(verification, volume_root=root, volume_identity=volume_id, eject=_locked_eject)
 
 
 @router.post("/eject", response_model=UsbEjectOut, responses=_ERROR_RESPONSES)

@@ -9,7 +9,8 @@ as "nothing installed" and lose a user's modules.
 Enabling is a DECISION THE USER MAKES, and it takes effect at the next
 engine start; nothing here loads code. Labs is opt-in per user
 (``labs_opt_in``), and a tier-2 module also records that its notice was
-acknowledged (PLUG-6522d).
+acknowledged (PLUG-6522d). Music-intelligence provider credentials never live
+here: they stay process-scoped in :mod:`apps.plugins.providers`.
 """
 
 from __future__ import annotations

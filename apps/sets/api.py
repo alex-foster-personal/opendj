@@ -4,7 +4,9 @@ Plan 12-03 Step 3. Mountable router (:data:`router`) that exposes the
 session + transition data model to Phase 11's SvelteKit app. Bind your
 uvicorn app to ``127.0.0.1`` (CAT-05b).
 
-Endpoints::
+:mod:`apps.webui.server.app_wiring` mounts this router at
+:data:`SETS_API_PREFIX` and :data:`SETS_V1_API_PREFIX` (one router, two
+prefixes). Example paths (each also exists under ``/api/v1/sets``)::
 
     GET    /api/sets                                -> list of SessionSummary
     GET    /api/sets/{session_id}                   -> Session JSON
@@ -27,6 +29,7 @@ Endpoints::
 
 from __future__ import annotations
 
+import asyncio
 import json
 import threading
 from collections.abc import AsyncIterator, Iterable
@@ -41,6 +44,7 @@ from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
 from pydantic import BaseModel, Field, model_validator
 from starlette.concurrency import run_in_threadpool
 
+from apps.shared.state.tracklist_hidden import HIDDEN_LABEL, hidden_stable_ids_at
 from apps.stream.encoder import (
     DEFAULT_BITRATE_KBPS,
     MAX_BITRATE_KBPS,
@@ -61,6 +65,7 @@ from .classify import CLASS_LIST, read_transitions
 from .label import append_label
 from .master_mix import MasterMixChunkRefused, MasterMixRecordingStopped
 from .master_tap import MasterTapUnavailable, master_tap_channel
+from .record import TimelineCorruptionError, TimelineJsonl
 from .recorder_service import (
     RecorderConflict,
     RecorderRequestInvalid,
@@ -89,7 +94,20 @@ from .state import SetsState
 _SHARE_TRACK_VALUE_FIELDS = ("title", "artist", "album")
 
 
-def _share_timeline_event(event: object) -> dict[str, object] | None:
+def _hidden_stable_ids_for_request(request: Request) -> frozenset[str]:
+    raw = getattr(request.app.state, "state_db_path", None)
+    if raw is None:
+        raise HTTPException(status_code=500, detail="state database not configured")
+    try:
+        return hidden_stable_ids_at(Path(raw))
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=500, detail="state database not found") from exc
+
+
+def _share_timeline_event(
+    event: object,
+    hidden_stable_ids: frozenset[str],
+) -> dict[str, object] | None:
     """Return the public projection of one track-load event, never diagnostics."""
     if not isinstance(event, dict) or event.get("action") != "track_loaded":
         return None
@@ -99,6 +117,9 @@ def _share_timeline_event(event: object) -> dict[str, object] | None:
         for field in _SHARE_TRACK_VALUE_FIELDS
         if isinstance(value, dict) and isinstance(value.get(field), str)
     }
+    stable_id = event.get("track_stable_id")
+    if isinstance(stable_id, str) and stable_id in hidden_stable_ids:
+        public_value = {"title": HIDDEN_LABEL, "artist": HIDDEN_LABEL}
     return {
         field: event.get(field)
         for field in (
@@ -113,6 +134,32 @@ def _share_timeline_event(event: object) -> dict[str, object] | None:
     } | {"value": public_value}
 
 
+def _redact_timeline_line(line: str, hidden_stable_ids: frozenset[str]) -> str:
+    """Re-encode one timeline.jsonl line when any loaded track is hidden."""
+    if not hidden_stable_ids or not line.strip():
+        return line
+    try:
+        event = json.loads(line)
+    except json.JSONDecodeError:
+        return line
+    stable_id = event.get("track_stable_id")
+    value = event.get("value")
+    if (
+        isinstance(stable_id, str)
+        and stable_id in hidden_stable_ids
+        and isinstance(value, dict)
+    ):
+        redacted = dict(event)
+        public_value = {**value, "title": HIDDEN_LABEL, "artist": HIDDEN_LABEL}
+        public_value.pop("album", None)
+        redacted["value"] = public_value
+        return json.dumps(redacted, separators=(",", ":"))
+    public = _share_timeline_event(event, hidden_stable_ids)
+    if public is None:
+        return line
+    return json.dumps(public, separators=(",", ":"))
+
+
 @asynccontextmanager
 async def _router_lifespan(app: Any) -> AsyncIterator[None]:
     if getattr(app.state, "sets_recorder_service", None) is None:
@@ -123,8 +170,10 @@ async def _router_lifespan(app: Any) -> AsyncIterator[None]:
         service.stop_owned_on_shutdown()
 
 
+SETS_API_PREFIX = "/api/sets"
+SETS_V1_API_PREFIX = "/api/v1/sets"
+
 router = APIRouter(
-    prefix="/api/sets",
     tags=["sets"],
     lifespan=_router_lifespan,
 )
@@ -457,7 +506,11 @@ def _sets_root(request: Request) -> Path | None:
 
 def _soundcloud_export_or_error(request: Request, session_id: str) -> SoundcloudExport:
     try:
-        return build_soundcloud_export(session_id, sets_root=_sets_root(request))
+        return build_soundcloud_export(
+            session_id,
+            sets_root=_sets_root(request),
+            hidden_stable_ids=_hidden_stable_ids_for_request(request),
+        )
     except sets_paths.SessionPathError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     except SessionNotFound as exc:
@@ -549,6 +602,16 @@ def recording_refusal(request: Request) -> str | None:
     return RECORDING_DISABLED
 
 
+async def _finalize_master_attach_failure(
+    service: Any,
+    session_id: str,
+    reason: str,
+) -> None:
+    """Note attach failure and stop so the session dir holds an inspectable reason (SETREC-23)."""
+    service.note_master_attach_failure(session_id, reason)
+    await run_in_threadpool(service.stop, session_id)
+
+
 @router.post(
     "/recorder/start",
     response_model=RecorderStatus,
@@ -594,14 +657,21 @@ async def api_recorder_start(
         raise HTTPException(status_code=503, detail=str(exc)) from exc
     if channel is None:
         return status
+    session_id = status["session_id"]
     try:
-        await channel.attach(request, status["session_id"])
-        service.mark_master_tap_attached(status["session_id"])
+        await channel.attach(request, session_id)
+        service.mark_master_tap_attached(session_id)
     except MasterTapUnavailable as exc:
-        # Nothing is feeding it: stop rather than leave a recording that
-        # can only fail after its 10 s attach timeout.
-        await run_in_threadpool(service.stop, status["session_id"])
+        reason = str(exc)
+        await _finalize_master_attach_failure(service, session_id, reason)
         raise HTTPException(status_code=503, detail=f"the master mix could not be tapped: {exc}") from exc
+    except BaseException as exc:
+        if isinstance(exc, asyncio.CancelledError):
+            reason = "master tap attach was cancelled before it connected"
+        else:
+            reason = f"master tap attach failed: {type(exc).__name__}: {exc}"
+        await _finalize_master_attach_failure(service, session_id, reason)
+        raise
     return await run_in_threadpool(service.status)
 
 
@@ -628,11 +698,18 @@ async def api_recorder_master_pcm(
 
     The body is interleaved little-endian int16 stereo frames. 204 written;
     200 ``{"dropped": "recording_stopped"}`` when its recording was cleanly
-    stopped while the chunk was in flight (the page ends quietly); 409 when no
-    owned master recording has this id, or the chunk would leave a hole
-    (a lost or out-of-order chunk); the page stops its tap and says so.
+    stopped while the chunk was in flight (the page ends quietly); 415 when
+    ``Content-Type`` is not ``application/octet-stream``; 409 when no owned master
+    recording has this id, or the chunk would leave a hole (a lost or
+    out-of-order chunk); the page stops its tap and says so.
     """
     service = _recorder_service(request)
+    content_type = request.headers.get("content-type", "").split(";")[0].strip().lower()
+    if content_type != "application/octet-stream":
+        raise HTTPException(
+            status_code=415,
+            detail="master PCM chunks must use application/octet-stream",
+        )
     _validated_recorder_session_id(service, session_id)
     pcm = await request.body()
     try:
@@ -701,9 +778,12 @@ async def api_recorder_stop(request: Request, session_id: str) -> dict[str, Any]
     service = _recorder_service(request)
     _validated_recorder_session_id(service, session_id)
     try:
-        return service.stop(session_id)
+        status = service.stop(session_id)
     except RecorderConflict as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
+    if status["capture"] == "failed":
+        raise HTTPException(status_code=409, detail=status)
+    return status
 
 
 @router.post("/recorder/{session_id}/recover", response_model=RecorderStatus)
@@ -820,25 +900,44 @@ async def api_timeline_stream(request: Request, session_id: str) -> StreamingRes
 
         return StreamingResponse(_empty(), media_type="application/x-ndjson")
 
-    def _stream() -> Iterable[bytes]:
-        with jsonl.open("rb") as fh:
-            yield from fh
+    try:
+        TimelineJsonl(jsonl).validate()
+    except TimelineCorruptionError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
 
-    if getattr(request.state, "share_audience", "local") != "share":
+    hidden = _hidden_stable_ids_for_request(request)
+    audience = getattr(request.state, "share_audience", "local")
+
+    if audience != "share" and not hidden:
+        def _stream() -> Iterable[bytes]:
+            with jsonl.open("rb") as fh:
+                yield from fh
+
         return StreamingResponse(_stream(), media_type="application/x-ndjson")
 
-    def _share_stream() -> Iterable[bytes]:
-        for line in jsonl.read_text(encoding="utf-8").splitlines():
-            if not line.strip():
-                continue
+    def _filtered_stream() -> Iterable[bytes]:
+        """Share and local overlays both redact hidden tracks (NOWP-11487)."""
+        nonblank = [
+            line
+            for line in jsonl.read_text(encoding="utf-8").splitlines()
+            if line.strip()
+        ]
+        last_index = len(nonblank) - 1
+        for index, line in enumerate(nonblank):
             try:
-                event = _share_timeline_event(json.loads(line))
+                parsed = json.loads(line)
             except json.JSONDecodeError:
+                if index < last_index:
+                    raise
                 continue
-            if event is not None:
-                yield json.dumps(event, separators=(",", ":")).encode() + b"\n"
+            if audience == "share":
+                event = _share_timeline_event(parsed, hidden)
+                if event is not None:
+                    yield json.dumps(event, separators=(",", ":")).encode() + b"\n"
+            else:
+                yield _redact_timeline_line(line, hidden).encode() + b"\n"
 
-    return StreamingResponse(_share_stream(), media_type="application/x-ndjson")
+    return StreamingResponse(_filtered_stream(), media_type="application/x-ndjson")
 
 
 @router.get(

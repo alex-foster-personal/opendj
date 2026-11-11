@@ -531,6 +531,25 @@ def test_a_required_uv_version_is_unknown_not_clean(tmp_path: Path, value: str, 
     assert "required-version" in message, message
 
 
+def test_required_uv_version_with_ci_pin_satisfies(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """When OPENDJ_LOCK_METADATA_UV_VERSION matches the CI pin, a satisfiable specifier
+    is not UNKNOWN (issue #12135)."""
+    monkeypatch.setenv("OPENDJ_LOCK_METADATA_UV_VERSION", "0.13.7")
+    pyproject = UNMARKED_PYPROJECT + '[tool.uv]\nrequired-version = ">=0.5.0"\n'
+    code, message = _run(tmp_path, pyproject, UNMARKED_LOCK)
+    assert code == EXIT_OK, message
+
+
+def test_required_uv_version_with_ci_pin_refuses_unsatisfiable(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("OPENDJ_LOCK_METADATA_UV_VERSION", "0.13.7")
+    pyproject = UNMARKED_PYPROJECT + '[tool.uv]\nrequired-version = ">=999"\n'
+    code, message = _run(tmp_path, pyproject, UNMARKED_LOCK)
+    assert code == EXIT_UNKNOWN, message
+    assert "does not satisfy" in message
+
+
 def test_an_empty_required_uv_version_keeps_the_verdict(tmp_path: Path) -> None:
     """CONTROL: `required-version = ""` is read as any version (uv 0.8.17 exit 0,
     measured round 57), so the verdict is the pair's own."""

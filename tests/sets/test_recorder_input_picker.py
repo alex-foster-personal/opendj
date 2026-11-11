@@ -16,9 +16,9 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from apps.sets import capture
-from apps.sets.api import router
 from apps.sets.recorder_service import NO_AUDIO_DEVICE_LABEL, RecorderService
 from apps.shared import ffmpeg as shared_ffmpeg
+from tests.sets.conftest import mount_sets_router
 
 pytestmark = pytest.mark.requirement("SET-10")
 
@@ -160,7 +160,7 @@ def picker_client(tmp_path: Path):
     )
     app = FastAPI()
     app.state.sets_recorder_service = service
-    app.include_router(router)
+    mount_sets_router(app)
     with TestClient(app) as client:
         yield client, service
 
@@ -193,7 +193,7 @@ def test_devices_route_is_503_with_the_reason_when_it_cannot_list(tmp_path: Path
     app.state.sets_recorder_service = RecorderService(
         sets_root=tmp_path, db_path=tmp_path / "sets.db", list_devices=broken
     )
-    app.include_router(router)
+    mount_sets_router(app)
     with TestClient(app) as client:
         response = client.get("/api/sets/recorder/devices")
     assert response.status_code == 503
@@ -345,7 +345,7 @@ def test_start_by_a_name_two_inputs_share_is_refused(tmp_path: Path):
         capture_enabled=False,
         list_devices=lambda: twins,
     )
-    app.include_router(router)
+    mount_sets_router(app)
     with TestClient(app) as client:
         response = client.post(
             "/api/sets/recorder/start", json={"source": "external", "device_name": "USB Audio", "sources": []}

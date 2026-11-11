@@ -440,14 +440,17 @@ export function precedingDownbeatMs(beats: readonly AnlzBeat[], positionMs: numb
 
 /** Anchor for a fresh four-beat loop.
  *
- * An untrusted bar phase has no downbeat to trust, so this returns
- * undefined and the caller keeps the ordinary nearest-beat anchor.
+ * Grid-level bar phase untrust (NATIVE-34) has no downbeat to trust, so this
+ * returns undefined and the caller keeps the ordinary nearest-beat anchor.
+ * Per-beat `bar_phase_untrusted` flags are skipped inside
+ * `findPrecedingDownbeatMs` rather than disabling the whole grid.
  */
 export function freshFourBeatAnchorMs(
 	beats: readonly AnlzBeat[],
-	positionMs: number
+	positionMs: number,
+	barPhaseUntrusted = false
 ): number | undefined {
-	if (beats.some((beat) => beat.bar_phase_untrusted === true)) return undefined;
+	if (barPhaseUntrusted) return undefined;
 	return findPrecedingDownbeatMs(beats, positionMs) ?? undefined;
 }
 

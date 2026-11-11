@@ -11,9 +11,9 @@ import { loadTypeScriptModule } from './load-typescript.mjs';
 
 const W = 160;
 const H = 36;
-const DESIGNS = ['tri-band', 'mono', 'line', 'blocks'];
+const DESIGNS = ['tri-band', 'mono', 'line', 'blocks', 'rgb'];
 /** The Settings palette options: three concrete choices plus Auto, which resolves per skin. */
-const PALETTE_PREFS = ['rekordbox', 'legacy', 'mono', 'auto'];
+const PALETTE_PREFS = ['rekordbox', 'legacy', 'mono', 'blue', 'auto'];
 
 let paint;
 let sampleMod;
@@ -95,7 +95,7 @@ function recordingContext() {
 function previewColors(painter, design, c) {
 	const { ctx, colors } = recordingContext();
 	// Grid off: the parity is a bands-only check against the pre-W15 painter.
-	painter.paintWaveformPreview(ctx, W, H, design, c, sampleMod.previewSampleWaveform(), 'off');
+	painter.paintWaveformPreview(ctx, W, H, design, c, sampleMod.previewSampleWaveform(), 'full', 'off');
 	colors.delete(painter.PREVIEW_BACKGROUND);
 	return colors;
 }
@@ -155,8 +155,8 @@ function deckColors(design, c) {
 	return full.colors;
 }
 
-function* everyPair() {
-	for (const design of DESIGNS) {
+function* everyPair(designs = DESIGNS) {
+	for (const design of designs) {
 		for (const pref of PALETTE_PREFS) {
 			// Auto resolves per skin; a concrete choice is the same under every skin.
 			const skins = pref === 'auto' ? skin.UI_SKIN_CHOICES : ['default'];
@@ -169,9 +169,9 @@ function* everyPair() {
 }
 
 /** Mismatches between a preview painter and the deck row, one line per pair. */
-function parityMismatches(painter) {
+function parityMismatches(painter, designs = DESIGNS) {
 	const out = [];
-	for (const { design, pref, skinId, choice, c } of everyPair()) {
+	for (const { design, pref, skinId, choice, c } of everyPair(designs)) {
 		const preview = [...previewColors(painter, design, c)].sort();
 		const deck = [...deckColors(design, c)].sort();
 		if (preview.join() !== deck.join()) {
@@ -183,10 +183,16 @@ function parityMismatches(painter) {
 
 test('CHROME-18 if the Settings preview uses different band colors than the deck row for any design x palette pair then they have drifted', () => {
 	const pairs = [...everyPair()];
-	// Control: 4 designs x (3 concrete palettes + Auto under 4 skins). A zero would mean the loop never ran.
-	assert.equal(pairs.length, 4 * (3 + 4) + 4);
+	// Control: 5 designs x (4 concrete palettes + Auto under 5 skins). A zero would mean the loop never ran.
+	assert.equal(pairs.length, 5 * (4 + 5));
 	for (const { design, pref, skinId, choice, c } of pairs) {
 		const deck = deckColors(design, c);
+		if (design === 'rgb') {
+			// rgb colours are data (band balance), never palette tokens.
+			assert.ok(deck.size >= 2, `rgb x ${pref}@${skinId}: several mix colours, saw [${[...deck]}]`);
+			for (const ink of deck) assert.ok(!Object.values(c).includes(ink), `rgb x ${pref}: ${ink} is a palette token`);
+			continue;
+		}
 		const expected = design === 'tri-band' || design === 'blocks' ? [c.low, c.mid, c.high] : [c.mono];
 		// Positive control on the deck side: it paints exactly the palette's band entries for this design.
 		assert.deepEqual([...deck].sort(), [...new Set(expected)].sort(), `${design} x ${pref}@${skinId} (${choice}): deck row control`);
@@ -206,9 +212,10 @@ test('CHROME-18 if blocks in the mono palette paints one flat color then the Got
 });
 
 test('CHROME-18 mutation check: the pre-W15 painter (blocks in one color) fails the parity check', () => {
-	const mismatches = parityMismatches(prePaint);
+	// The pre-W15 fixture predates the rgb design (issue #10253).
+	const mismatches = parityMismatches(prePaint, DESIGNS.filter((d) => d !== 'rgb'));
 	const blocks = mismatches.filter((m) => m.startsWith('blocks x '));
-	assert.equal(blocks.length, 8, `every blocks pair must be caught on the pre-fix source, got:\n${mismatches.join('\n')}`);
+	assert.equal(blocks.length, 9, `every blocks pair must be caught on the pre-fix source, got:\n${mismatches.join('\n')}`);
 	assert.ok(
 		blocks.some((m) => m.startsWith('blocks x auto@mono-dev')),
 		'the reported case (Gothic: blocks + Mono) is among them'
@@ -218,7 +225,7 @@ test('CHROME-18 mutation check: the pre-W15 painter (blocks in one color) fails 
 test('CHROME-18 if the preview stops painting through the deck renderer or with the deck palette then parity is by luck', () => {
 	const painterSrc = readFileSync('src/lib/settings/waveform-preview-paint.ts', 'utf8');
 	assert.match(painterSrc, /import \{ drawBeatGridLines, drawWaveBands, type BandPalette \} from '\$lib\/components\/rb\/wave\/render';/);
-	assert.match(painterSrc, /drawWaveBands\(ctx, sample, w, h, c, design, 0\);/);
+	assert.match(painterSrc, /drawWaveBands\(ctx, sample, w, h, c, design, 0, waveHeight\);/);
 	assert.doesNotMatch(painterSrc, /switch \(design\)/, 'no per-design painter of its own');
 	const componentSrc = readFileSync('src/lib/components/settings/WaveformDesignPreview.svelte', 'utf8');
 	assert.match(componentSrc, /resolveWaveBandColors\('dark', palette\)/);
@@ -228,7 +235,7 @@ test('CHROME-18 if the preview stops painting through the deck renderer or with 
 test('CHROME-18 if the sample chunk has not loaded then the preview paints its background only, never an invented waveform', () => {
 	const c = palette.resolveWaveBandColors('dark', 'mono');
 	const { ctx, colors } = recordingContext();
-	paint.paintWaveformPreview(ctx, W, H, 'blocks', c, null, 'off');
+	paint.paintWaveformPreview(ctx, W, H, 'blocks', c, null, 'full', 'off');
 	assert.deepEqual([...colors], [paint.PREVIEW_BACKGROUND]);
 	// Control: the same call with the sample paints bands.
 	assert.ok(previewColors(paint, 'blocks', c).size >= 2);

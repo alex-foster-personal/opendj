@@ -1,0 +1,9 @@
+{
+  "bytes": 1024,
+  "measured_main": 515784,
+  "measured_with_pr": 516027,
+  "sha": "e1d7cf2f97",
+  "date": "Wed 11 Nov 2026",
+  "reason": "IOPIN headphone calibration and mixer-config helpers land in shared lazy chunks (243 B gzip over main after merge).",
+  "payback": "none planned; code is shared across non-performance routes deferred to other-lazy."
+}

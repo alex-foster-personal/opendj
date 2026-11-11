@@ -123,10 +123,21 @@ RUNTIME_LOAD_ALLOWLIST: dict[str, str] = {
         "the generated probe runs; the literal line is never executed during import "
         "on darwin."
     ),
-    "pylib/filelock/_identity.py:162": (
+    # filelock 4.2.1 (uv.lock). Keyed by LINE like the torch sites below: a
+    # filelock bump moves them and the build fails until each is re-read.
+    "pylib/filelock/_identity.py:283": (
         "CDLL(None) is dlopen(NULL): it binds sysctl symbols out of the process "
         "image already loaded on macOS (libSystem), inside filelock's "
         "sys.platform == 'darwin' branch; no filesystem search."
+    ),
+    "pylib/filelock/_util.py:312": (
+        "CDLL(None) for renameat2, inside _rename_call's sys.platform in "
+        "{'linux', 'android'} branch; darwin never enters it."
+    ),
+    "pylib/filelock/_util.py:316": (
+        "CDLL(None) is dlopen(NULL): binds renamex_np out of the already-loaded "
+        "libSystem inside _rename_call's sys.platform == 'darwin' branch; no "
+        "filesystem search."
     ),
     # pylib's torch is the `vocals` extra's pin (pyproject.toml), used only by
     # the Demucs vocal worker. Dynamic sites are keyed by LINE, so any torch

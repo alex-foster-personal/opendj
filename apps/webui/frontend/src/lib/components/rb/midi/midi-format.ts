@@ -190,6 +190,8 @@ export function friendlyLabel(action: MidiAction): string {
 			return 'Headphones level';
 		case 'master_cue':
 			return 'Master cue';
+		case 'color_fx':
+			return `Colour FX ${action.effect} (deck ${action.deck})`;
 		default: {
 			const _exhaustive: never = action;
 			throw new Error(`Unhandled MidiAction: ${JSON.stringify(_exhaustive)}`);

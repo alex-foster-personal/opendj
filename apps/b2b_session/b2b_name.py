@@ -16,11 +16,12 @@ from __future__ import annotations
 import json
 import os
 import socket
-import tempfile
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Literal
+
+from .state_json import write_json_atomic
 
 MACHINE_LABEL_ENV = "MDT_B2B_MACHINE_LABEL"
 NAME_FILENAME = "b2b-name.json"
@@ -62,17 +63,7 @@ def read_stored(path: Path) -> tuple[str, NameSource] | None:
 
 def write_stored(path: Path, name: str, source: NameSource) -> None:
     record = {"name": validate_name(name), "source": source, "saved_at": datetime.now(UTC).isoformat()}
-    path.parent.mkdir(parents=True, exist_ok=True)
-    fd, temp_name = tempfile.mkstemp(prefix=f".{path.name}.", suffix=".tmp", dir=path.parent)
-    try:
-        with os.fdopen(fd, "w", encoding="utf-8") as handle:
-            json.dump(record, handle)
-            handle.flush()
-            os.fsync(handle.fileno())
-        os.replace(temp_name, path)
-    except BaseException:
-        Path(temp_name).unlink(missing_ok=True)
-        raise
+    write_json_atomic(path, record)
 
 
 def clear_stored(path: Path) -> None:

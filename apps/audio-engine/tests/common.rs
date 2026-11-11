@@ -99,3 +99,53 @@ pub fn grid_120_json(beats: usize) -> serde_json::Value {
             .collect(),
     )
 }
+
+#[cfg(unix)]
+fn changed_stamp_ns(stamp: (i64, i64)) -> u128 {
+    stamp.0 as u128 * 1_000_000_000 + stamp.1.max(0) as u128
+}
+
+#[cfg(unix)]
+fn changed_stamp_after(observed: (i64, i64), floor: (i64, i64)) -> bool {
+    changed_stamp_ns(observed) > changed_stamp_ns(floor)
+}
+
+/// Return once the volume's change-time clock is strictly after `floor`.
+///
+/// Waits on wall clock and a sibling probe write so the case-under-test file
+/// is not rewritten while the jiffy still matches the session-cached stamp.
+#[cfg(unix)]
+pub fn wait_volume_clock_past(
+    floor: (i64, i64),
+    probe: &Path,
+    deadline: std::time::Instant,
+) {
+    let floor_ns = changed_stamp_ns(floor);
+    let margin_ns = 20_000_000u128;
+    while std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .expect("clock")
+        .as_nanos()
+        <= floor_ns + margin_ns
+    {
+        assert!(
+            std::time::Instant::now() < deadline,
+            "the wall clock stayed within the session-cached change-time stamp {floor:?} for 5 s"
+        );
+        std::thread::sleep(std::time::Duration::from_millis(5));
+    }
+    loop {
+        std::fs::write(probe, b"x").unwrap();
+        let m = std::fs::metadata(probe).unwrap();
+        use std::os::unix::fs::MetadataExt;
+        let observed = (m.ctime(), m.ctime_nsec());
+        if changed_stamp_after(observed, floor) {
+            return;
+        }
+        assert!(
+            std::time::Instant::now() < deadline,
+            "the volume change-time clock stayed at or before {floor:?} for 5 s (probe observed {observed:?})"
+        );
+        std::thread::sleep(std::time::Duration::from_millis(5));
+    }
+}

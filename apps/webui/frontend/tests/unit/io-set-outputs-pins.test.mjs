@@ -54,6 +54,28 @@ function markupOutsidePanel() {
 	return markup.replace(ioPanel(), '');
 }
 
+function outputMenu() {
+	const start = CLUSTER.indexOf('{#snippet outputMenu()}');
+	assert.ok(start > 0, '{#snippet outputMenu()} must exist');
+	let depth = 0;
+	let i = start + '{#snippet outputMenu()}'.length;
+	while (i < CLUSTER.length) {
+		if (CLUSTER.startsWith('{#snippet ', i)) {
+			depth += 1;
+			i += '{#snippet '.length;
+			continue;
+		}
+		if (CLUSTER.startsWith('{/snippet}', i)) {
+			if (depth === 0) return CLUSTER.slice(start, i + '{/snippet}'.length);
+			depth -= 1;
+			i += '{/snippet}'.length;
+			continue;
+		}
+		i += 1;
+	}
+	assert.fail('unclosed {#snippet outputMenu()}');
+}
+
 // ---- explainer dismiss categories ----
 
 test('explicit dismiss mode wins; omitted resolves by content (action stays, info is instant)', () => {
@@ -92,7 +114,10 @@ test('the I/O hover is the compact instant-dismiss summary; the click opens the 
 	assert.match(tag, /disabled=\{ioSurface\.open\}/);
 	assert.match(tag, /bullets=\{ioBullets\}/);
 	assert.doesNotMatch(tag, /pinOnClick/);
-	assert.match(CLUSTER, /const ioBullets = \$derived\(\[ioSummary\.sentence, \.\.\.ioSummary\.devices, ioSummary\.cta\]\)/);
+	assert.match(
+		CLUSTER,
+		/const ioBullets = \$derived\(\[ioSummary\.sentence, \.\.\.ioSummary\.devices, ioSummary\.cta\]\)/
+	);
 });
 
 // ---- compact hover content ----
@@ -123,19 +148,33 @@ test('hover summary is one sentence, a compact device list, and the call to acti
 			selected_input_device_id: 'mic'
 		})
 	);
-	assert.equal(s.sentence.split(/[.!?](\s|$)/).filter((x) => x && x.trim()).length, 1, 'exactly one sentence');
-	assert.deepEqual(s.devices, ['MAIN: MacBook Pro Speakers', 'CUE: AirPods Pro', 'IN: MacBook Pro Microphone']);
+	assert.equal(
+		s.sentence.split(/[.!?](\s|$)/).filter((x) => x && x.trim()).length,
+		1,
+		'exactly one sentence'
+	);
+	assert.deepEqual(s.devices, [
+		'MAIN: MacBook Pro Speakers',
+		'CUE: AirPods Pro',
+		'IN: MacBook Pro Microphone'
+	]);
 	assert.equal(s.cta, 'Click I/O to set audio outputs');
 });
 
 test('hover summary names the routing it knows when no device is chosen', () => {
-	assert.deepEqual(io.ioHoverSummary(hp()).devices, ['MAIN: OS default output', 'CUE: blended into MAIN (practice)']);
+	assert.deepEqual(io.ioHoverSummary(hp()).devices, [
+		'MAIN: OS default output',
+		'CUE: blended into MAIN (practice)'
+	]);
 	assert.deepEqual(io.ioHoverSummary(hp({ output_mode: 'split_cable' })).devices, [
 		'MAIN: OS default output',
 		'CUE: right leg of MAIN (split cable)'
 	]);
 	// a pinned id whose label is not enumerated yet is still a choice, not the OS default
-	assert.deepEqual(io.ioHoverSummary(hp({ outputs: [], selected_master_output_device_id: 'x' })).devices[0], 'MAIN: chosen device (name not loaded yet)');
+	assert.deepEqual(
+		io.ioHoverSummary(hp({ outputs: [], selected_master_output_device_id: 'x' })).devices[0],
+		'MAIN: chosen device (name not loaded yet)'
+	);
 });
 
 // ---- SET OUTPUTS alert ----
@@ -155,7 +194,10 @@ test('the alert fires only while unset AND not yet clicked this session', () => 
 
 test('the session click flag round-trips through sessionStorage and survives a throwing store', () => {
 	const map = new Map();
-	const store = { getItem: (k) => (map.has(k) ? map.get(k) : null), setItem: (k, v) => map.set(k, v) };
+	const store = {
+		getItem: (k) => (map.has(k) ? map.get(k) : null),
+		setItem: (k, v) => map.set(k, v)
+	};
 	assert.equal(io.readIoClickedThisSession(store), false);
 	io.markIoClickedThisSession(store);
 	assert.equal(map.get(io.IO_OUTPUTS_CLICKED_SESSION_KEY), '1');
@@ -176,10 +218,19 @@ test('the session click flag round-trips through sessionStorage and survives a t
 test('SET OUTPUTS is a double-height button bound to the alert, marking the click before opening the panel', () => {
 	assert.match(CLUSTER, /aria-label="SHOW AUDIO I\/O"/);
 	assert.match(CLUSTER, /class="hp-btn hp-io-trigger hp-btn-io"\s*class:io-alert=\{ioAlert\}/);
-	assert.match(CLUSTER, /const ioAlert = \$derived\(ioShouldAlert\(outputsUnset\(headphoneState\), ioOutputsSession\.clicked\)\)/);
-	assert.match(CLUSTER, /onclick=\{handleSetOutputs\}><span>SET<\/span><span>OUTPUTS<\/span><\/button/);
+	assert.match(
+		CLUSTER,
+		/const ioAlert = \$derived\(ioShouldAlert\(outputsUnset\(headphoneState\), ioOutputsSession\.clicked\)\)/
+	);
+	assert.match(
+		CLUSTER,
+		/onclick=\{handleSetOutputs\}><span>SET<\/span><span>OUTPUTS<\/span><\/button/
+	);
 	// opening the panel stays side-effect free: no device acquire on this click
-	assert.match(CLUSTER, /function handleSetOutputs\(\): void \{\s*noteSetOutputsClicked\(\);\s*openIo\(\);\s*\}/);
+	assert.match(
+		CLUSTER,
+		/function handleSetOutputs\(\): void \{\s*noteSetOutputsClicked\(\);\s*openIo\(\);\s*\}/
+	);
 	assert.match(CLUSTER, /\.hp-btn-io \{[^}]*flex-direction: column;[^}]*min-height: 23px;/);
 	const session = source('../../src/lib/rb/io-outputs-session.svelte.ts');
 	assert.match(session, /\$state\(\{ clicked: readIoClickedThisSession\(\) \}\)/);
@@ -203,7 +254,10 @@ test('the alert glows red and pulses, and reduced motion keeps the glow without 
 	assert.doesNotMatch(frames[1], /box-shadow|filter|width|height/);
 	const reduced = CLUSTER.match(/@media \(prefers-reduced-motion: reduce\) \{([\s\S]*?)\n\t\}/);
 	assert.ok(reduced, 'reduced-motion block must exist');
-	assert.match(reduced[1], /\.hp-btn-io\.io-alert::after \{\s*animation: none;\s*opacity: 0\.5;\s*\}/);
+	assert.match(
+		reduced[1],
+		/\.hp-btn-io\.io-alert::after \{\s*animation: none;\s*opacity: 0\.5;\s*\}/
+	);
 	assert.doesNotMatch(reduced[1], /box-shadow: none/, 'reduced motion keeps the glow');
 });
 
@@ -226,14 +280,53 @@ test('ONE OUTPUT comes before SPLIT L/R in the panel routing choices; practice m
 test('the rescan button and its explainer are inside the Audio I/O panel', () => {
 	assert.match(
 		ioPanel(),
-		/<ControlExplainer title="Rescan" bullets=\{rescanBullets\}[^>]*>\s*<button[\s\S]*?aria-label="Rescan available headphone output devices"[\s\S]*?onclick=\{onrefresh\}/
+		/<ControlExplainer title="Rescan" bullets=\{rescanBullets\}[^>]*>\s*<button[\s\S]*?aria-label="Rescan available headphone output devices"[\s\S]*?onclick=\{runHeadphoneOutputRefresh\}/
 	);
 });
 
 test('the .hp row outside the panel no longer carries the rescan button or its explainer', () => {
 	const outside = markupOutsidePanel();
 	assert.ok(outside.includes('class="hp"'), 'control: the slice must contain the .hp row');
-	assert.ok(outside.includes('title="Audio I/O quick settings"'), 'control: the slice must contain the I/O explainer');
+	assert.ok(
+		outside.includes('title="Audio I/O quick settings"'),
+		'control: the slice must contain the I/O explainer'
+	);
 	assert.doesNotMatch(outside, /title="Rescan"/);
 	assert.doesNotMatch(outside, /Rescan available headphone output devices/);
+});
+
+// ---- issue #11323 acceptance (pins 894af5672c3b, d529a7e80a4e) ----
+
+test('IOPIN-11323: pointer leave closes the I/O hover instantly without a stay popover', () => {
+	const tag = ioExplainerTag();
+	assert.match(tag, /dismiss="instant"/);
+	assert.doesNotMatch(tag, /pinOnClick/);
+	assert.match(EXPLAINER, /event instanceof PointerEvent && dismissMode === 'stay'/);
+});
+
+test('IOPIN-11323: hover shows compact routing copy only', () => {
+	const tag = ioExplainerTag();
+	assert.match(
+		CLUSTER,
+		/const ioBullets = \$derived\(\[ioSummary\.sentence, \.\.\.ioSummary\.devices, ioSummary\.cta\]\)/
+	);
+	assert.match(tag, /compact=\{true\}/);
+	assert.doesNotMatch(tag, /\baction=/);
+});
+
+test('IOPIN-11323: unset outputs wire io-alert on SET OUTPUTS', () => {
+	assert.match(CLUSTER, /class:io-alert=\{ioAlert\}/);
+	assert.match(CLUSTER, /data-io-alert=\{ioAlert \? 'unset' : undefined\}/);
+});
+
+test('IOPIN-11323: device pickers stack MAIN above CUE in the open panel', () => {
+	const menu = outputMenu();
+	const master = menu.indexOf('aria-label="master output device"');
+	const cue = menu.indexOf('aria-label="headphone output device"');
+	assert.ok(master > 0 && cue > master, 'MASTER / MAIN must precede HEADPHONE CUE in the stack');
+});
+
+test('IOPIN-11323: rescan stays off the closed performance chrome', () => {
+	const outside = markupOutsidePanel();
+	assert.doesNotMatch(outside, /aria-label="Rescan available headphone output devices"/);
 });

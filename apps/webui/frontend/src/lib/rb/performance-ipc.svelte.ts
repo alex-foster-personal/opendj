@@ -162,6 +162,7 @@ import {
 	withDeckCommandSource,
 	type CommandSource
 } from './deck-stop-log';
+import { replayDispatchGate, replayDispatchTakenOver } from './set-replay-takeover.svelte';
 import { captureStemCommand } from '$lib/sets/control-event-recorder';
 import {
 	assertLoopGridBase,
@@ -196,8 +197,10 @@ import {
 	setPerfView,
 	setShowPads,
 	setWaveformDesign,
+	setWaveHeight,
 	setDeckNumberArt,
 	setShowSections,
+	setShowVocalLane,
 	setLyricsWaveformOverlay,
 	setWaveGridLines,
 	setLyricsHoverScrub,
@@ -287,6 +290,7 @@ import {
 import { reloadResume, rescueRestoreStatus } from '$lib/rb/performance-rescue-restore.svelte';
 import { deckLoadErrors } from '$lib/player/state.svelte';
 import { onDeckLoadStart } from '$lib/rb/mixer-selection.svelte';
+import { requestGenreInferOnAttention } from '$lib/rb/genre-infer-on-attention';
 import {
 	closeTrackInfo,
 	openTrackInfoForDeck,
@@ -1403,6 +1407,7 @@ export function queryPerformanceState(): PerformanceState {
 			key_nudge_step: readKeyNudgeStep(),
 			deck_number_art: uiPrefs.deck_number_art,
 			waveform_design: uiPrefs.waveform_design,
+			wave_height: uiPrefs.wave_height,
 			waveform_design_effective: effectiveWaveformDesign(uiPrefs.waveform_design, uiPrefs.ui_skin),
 			ui_skin: uiPrefs.ui_skin,
 			wave_palette: uiPrefs.wave_palette,
@@ -1427,7 +1432,8 @@ export function queryPerformanceState(): PerformanceState {
 				sections: uiPrefs.show_sections,
 				lyrics: uiPrefs.lyrics_waveform_overlay,
 				lyrics_scrub: uiPrefs.lyrics_hover_scrub,
-				jog_radial: uiPrefs.jog_radial_waveform
+				jog_radial: uiPrefs.jog_radial_waveform,
+				vocal_lane: uiPrefs.show_vocal_lane
 			},
 			wave_grid_lines: uiPrefs.wave_grid_lines
 		}
@@ -1914,6 +1920,7 @@ async function _execute(command: PerformanceCommand, pressT0Ms?: number): Promis
 		noteRecentDeck(command.deck);
 		await _quantizeOnForNewTrack(command.deck);
 		_autoCueNewTrack(command.deck);
+		requestGenreInferOnAttention([command.stable_id]);
 	} else if (command.type === 'load_play_intent') {
 		// Q1: the stamp rides WITH the intent, so the play this eventually
 		// becomes can time from the operator's keydown and not from the load.
@@ -2175,7 +2182,12 @@ async function _execute(command: PerformanceCommand, pressT0Ms?: number): Promis
 	} else if (command.type === 'browser_select_playlist') {
 		if (_browserAdapter === null)
 			throw new Error('browser_select_playlist requires a mounted browser panel');
-		await _browserAdapter.selectPlaylist(command.playlist_id, command.stable_id);
+		try {
+			await _browserAdapter.selectPlaylist(command.playlist_id, command.stable_id);
+		} catch (error) {
+			_activeBrowserPlaylist = null;
+			throw error;
+		}
 		_activeBrowserPlaylist = command.playlist_id;
 	} else if (command.type === 'preview_cue') {
 		// The UI path gets the refusal as a toast. An agent gets it as a failed
@@ -2261,12 +2273,14 @@ async function _execute(command: PerformanceCommand, pressT0Ms?: number): Promis
 				sections: setShowSections,
 				lyrics: setLyricsWaveformOverlay,
 				lyrics_scrub: setLyricsHoverScrub,
-				jog_radial: setJogRadialWaveform
+				jog_radial: setJogRadialWaveform,
+				vocal_lane: setShowVocalLane
 			}[command.overlay];
 			setOverlay(command.enabled);
 		}
 	} else if (command.type === 'set_waveform_design') {
-		setWaveformDesign(command.design);
+		if (command.design !== undefined) setWaveformDesign(command.design);
+		if (command.height !== undefined) setWaveHeight(command.height);
 	} else if (command.type === 'set_wave_zoom') {
 		setWaveZoom(command.zoom, command.deck);
 	} else if (command.type === 'wave_zoom_step') {
@@ -3190,6 +3204,7 @@ function _executeAs(
 	pressT0Ms: number | undefined,
 	source: CommandSource
 ): Promise<void> {
+	if (replayDispatchTakenOver(command, source)) return Promise.resolve();
 	const deck = _commandDeck(command);
 	const decks =
 		deck !== null
@@ -3425,7 +3440,9 @@ async function _dispatchUnknown(
  * `source` (PLAY-18) says who is asking, so a stop this command causes is
  * logged with its cause: AutoPlay passes `autoplay-handoff`, the agent order
  * executor `agent-command`, the UI boundary `user-ui`. Anything else is an
- * `app-command`.
+ * `app-command`. `replay` (SETREC-12067) is the replay player; a replay command for a
+ * control someone has taken over is dropped here, and any other source touching a
+ * control marks it live.
  */
 export async function dispatchPerformanceCommand(
 	command: PerformanceCommand,
@@ -3433,6 +3450,7 @@ export async function dispatchPerformanceCommand(
 	source: CommandSource = 'app-command',
 	hold?: CoordinatedHold
 ): Promise<PerformanceState> {
+	if (replayDispatchGate(command, source) === 'drop') return queryPerformanceState();
 	return _dispatchUnknown(
 		command,
 		_currentCommandSession(),

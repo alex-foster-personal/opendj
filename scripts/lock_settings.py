@@ -19,6 +19,7 @@ UNKNOWN here, not a compare against the defaults.
 
 from __future__ import annotations
 
+import os
 import re
 from collections import Counter
 from collections.abc import Callable, Iterable
@@ -28,7 +29,7 @@ from pathlib import Path
 from scripts.lock_marker_parser import Unknown
 from scripts.lock_metadata_toml import norm_name, toml_list, toml_strings
 from scripts.lock_requirement_keys import Key, fmt_key, pair_by_meaning, same_requirement
-from scripts.lock_specifier_semantics import norm_spec
+from scripts.lock_specifier_semantics import norm_spec, release_satisfies_spec
 
 # (pyproject key, lock key under [options], uv's default, the values uv reads)
 OPTIONS: tuple[tuple[str, str, str | None, tuple[str, ...] | None], ...] = (
@@ -290,9 +291,20 @@ def _refuse_required_version(tool: dict[str, object]) -> None:
         norm_spec(value)
     except Unknown as exc:
         raise Unknown(f"[tool.uv] required-version = {value!r}: {exc}; {IGNORED}") from exc
+    pinned = os.environ.get("OPENDJ_LOCK_METADATA_UV_VERSION", "").strip()
+    if not pinned:
+        raise Unknown(
+            f"[tool.uv] required-version = {value!r}: this check does not run uv and cannot"
+            " tell whether the uv that locks satisfies it; uv refuses to lock when it does not"
+        )
+    try:
+        if release_satisfies_spec(pinned, value):
+            return
+    except Unknown as exc:
+        raise Unknown(f"[tool.uv] required-version = {value!r}: {exc}; {IGNORED}") from exc
     raise Unknown(
-        f"[tool.uv] required-version = {value!r}: this check does not run uv and cannot"
-        " tell whether the uv that locks satisfies it; uv refuses to lock when it does not"
+        f"[tool.uv] required-version = {value!r}: OPENDJ_LOCK_METADATA_UV_VERSION"
+        f" {pinned!r} does not satisfy it"
     )
 
 

@@ -39,7 +39,8 @@ BAND_TONES_HZ: tuple[float, float, float] = (60.0, 1_000.0, 12_000.0)
 # 1.58 octaves up) sits near -38 dB = 0.013 of full scale. 0.10 is a wide,
 # deliberately un-tuned bar: it is far above the predicted leak and far below
 # the >= 0.5 an in-band tone reaches, so a swapped channel cannot squeak past.
-IN_BAND_MIN = 0.5
+# With +6 dBFS headroom, a near-full-scale tone reads ~0.45 of 255, not ~1.0.
+IN_BAND_MIN = 0.4
 OUT_OF_BAND_MAX = 0.10
 
 
@@ -181,25 +182,26 @@ def test_peak_columns_follow_the_interleaved_pcm_they_reduce() -> None:
     Column 0 full scale, column 1 silent, column 2 half scale in EVERY frame, so
     a reduction that mixed the channels could not produce this answer.
     """
-    frames = struct.pack("<hhh", 32767, 0, 16384) * decode.SAMPLES_PER_COLUMN * 2
+    frame = struct.pack("<fff", 1.0, 0.0, 0.5)
+    frames = frame * decode.SAMPLES_PER_COLUMN * 2
     peaks = decode._peak_columns(frames)
     assert peaks.shape == (2, decode.BAND_COUNT)
-    assert peaks[:, 0].tolist() == [255, 255]
+    assert peaks[:, 0].tolist() == [128, 128]
     assert peaks[:, 1].tolist() == [0, 0]
-    assert peaks[:, 2].tolist() == [128, 128]
+    assert peaks[:, 2].tolist() == [64, 64]
 
 
-def test_int16_floor_sample_does_not_wrap_a_column_to_silence() -> None:
-    """-32768 has no positive int16 twin; an unclamped abs() would wrap it."""
-    frames = struct.pack("<hhh", -32768, -32768, -32768) * 4000
+def test_overshoot_clips_at_255_not_by_wrapping() -> None:
+    """[if] float overshoot past headroom wraps to a low byte [then] fail, [else stop]."""
+    frames = struct.pack("<fff", 4.0, -4.0, 4.0) * 4000
     assert decode._peak_columns(frames).max() == 255
 
 
 def test_a_short_tail_becomes_one_real_column_never_a_padded_one() -> None:
-    whole = struct.pack("<hhh", 32767, 0, 0) * decode.SAMPLES_PER_COLUMN
-    tail = struct.pack("<hhh", 0, 32767, 0) * 10
+    whole = struct.pack("<fff", 1.0, 0.0, 0.0) * decode.SAMPLES_PER_COLUMN
+    tail = struct.pack("<fff", 0.0, 1.0, 0.0) * 10
     peaks = decode._peak_columns(whole + tail)
     assert peaks.shape == (2, decode.BAND_COUNT)
-    assert peaks[1].tolist() == [0, 255, 0], (
+    assert peaks[1].tolist() == [0, 128, 0], (
         "the tail column must carry the tail's own samples, not a pad"
     )

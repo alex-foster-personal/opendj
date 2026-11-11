@@ -556,6 +556,30 @@ test('a shell-health relaunch while the engine is healthy is consumed and ignore
 	}
 });
 
+test('a user relaunch from fatal shows restarting before the new engine is ready', { skip: POSIX_LAUNCHER }, async () => {
+	const { supervisor, engine, health, seen } = await running('exit', { bootTimeoutMs: 60_000 });
+	try {
+		process.kill(engine.pid, 'SIGKILL');
+		await engine.waitReap();
+		await supervisor.tick();
+		await supervisor.tick();
+		assert.equal(supervisor.phase, 'fatal');
+		const payloadRoot = path.dirname(supervisor.paths.payload);
+		fs.rmSync(supervisor.paths.payload, { recursive: true });
+		fakePayload(payloadRoot, 'never-ready');
+		const restart = supervisor.requestRelaunch();
+		assert.ok(
+			await waitFor(() => seen.titles.some((title) => title.includes('engine restarting'))),
+			'if relaunch is in flight the window title must say restarting, not stay on engine dead'
+		);
+		assert.equal(supervisor.phase, 'restarting');
+		await supervisor.shutdown();
+		await restart;
+	} finally {
+		await health.close();
+	}
+});
+
 test('a shell-health relaunch after fatal starts a fresh engine', { skip: POSIX_LAUNCHER }, async () => {
 	const { supervisor, engine, health, seen } = await running('exit', { bootTimeoutMs: 1_000 });
 	const originalPid = engine.pid;

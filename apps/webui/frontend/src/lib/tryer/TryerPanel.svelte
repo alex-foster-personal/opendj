@@ -30,6 +30,7 @@
 		type TryJob
 	} from './tryer-model';
 	import TryerLanes from './TryerLanes.svelte';
+	import TryerEnergyCard from './TryerEnergyCard.svelte';
 	import { LANE_KNOBS } from './tryer-lanes';
 
 	let {
@@ -379,6 +380,7 @@
 									? `not rendered: ${chip.refused}`
 									: `${chip.render_ms.toFixed(0)} ms render`}, {chip.score_ms.toFixed(0)} ms score
 							</span>
+							<TryerEnergyCard {chip} styleVisible={blindOrder === null} />
 						{/if}
 						<button
 							onclick={() => pick(chip.id)}

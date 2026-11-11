@@ -20,6 +20,7 @@ NL Tests:
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import datetime
 
 # ---------------------------------------------------------------------------
 # Module-level constants (Phase 13)
@@ -595,6 +596,9 @@ class TrackFeature:
     key_camelot: Camelot notation ("8A", "12B"). Use ``key_to_camelot`` to
                parse other notations before constructing.
     energy:    MIK / Phase 6 energy rating on the 1-10 scale.
+    title:     Track title; used for recording-identity drops in suggest-next.
+    last_played_at: Imported last-played timestamp for recency scoring.
+    never_played: When True, history term treats the track as never played.
     """
 
     stable_id: str
@@ -602,3 +606,6 @@ class TrackFeature:
     bpm: float | None
     key_camelot: str | None
     energy: int | None
+    title: str | None = None
+    last_played_at: datetime | None = None
+    never_played: bool = False

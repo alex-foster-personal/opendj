@@ -112,6 +112,7 @@ export function _defaultChannel(deck_id: DeckId): MixerChannelState {
 	};
 }
 
+import { calibrationProbeDiagnostics } from '$lib/player/cue-latency';
 import { loadMixerConfig } from '$lib/player/mixer-config';
 import { ioDeviceAccessNotChecked } from '$lib/player/io-device-access';
 
@@ -143,8 +144,7 @@ export function _defaultHeadphones(): HeadphoneState {
 			probe: null,
 			error: null,
 			diagnostics: {
-				probe: 'chirp',
-				alternate_probe: 'unavailable',
+				...calibrationProbeDiagnostics(persisted.calibration_probe),
 				failure: null,
 				master_measurements_ms: [],
 				cue_measurements_ms: [],

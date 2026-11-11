@@ -17,6 +17,8 @@ Regression one-liners:
   - [if] a held run lock or a digest mismatch is not a declared 409 [then] broken
   - [if] Sync now runs while a scheduler round holds the data dir [then] broken, [else stop]
   - [if] a refused PUT /cloudsync/config writes the config file [then] broken, [else stop]
+  - [if] loopback POST starts hash backfill [then] GET reports progress via run_for_hub_backfill, [else stop]
+  - [if] no local audio for hub pending [then] POST is refused not success, [else stop]
 """
 
 from __future__ import annotations
@@ -24,6 +26,7 @@ from __future__ import annotations
 import json
 import logging
 import threading
+import time
 from collections.abc import Iterator
 from contextlib import contextmanager
 from pathlib import Path
@@ -57,6 +60,7 @@ from tests.cloudsync.enrollment_helpers import (
     read_hub,
 )
 from tests.cloudsync.enrollment_transport import TestClientTransport
+from tests.cloudsync.test_hash_pending import _seed_pending_tracks
 from tests.cloudsync.test_hub_sync import _DEV_A, _T0, _insert_track, _open
 
 pytestmark = pytest.mark.requirement("CAT-04")
@@ -553,6 +557,85 @@ def test_the_grant_token_is_never_logged(
     assert token not in caplog.text
 
 
+def test_post_hash_pending_backfill_runs_and_get_reports_progress(
+    enroll_live_hub: str,
+    enroll_hub_dir: Path,
+    enroll_spoke_dir: Path,
+    enroll_hub: TestClientTransport,
+    tmp_path: Path,
+) -> None:
+    """[if] loopback POST starts backfill [then] GET progress tracks run_for_hub_backfill, [else stop]."""
+    conn = state_db.open_rw(client.state_db_path(enroll_spoke_dir), apply_schema=True)
+    try:
+        _seed_pending_tracks(conn, 20)
+        conn.commit()
+    finally:
+        conn.close()
+    client.run_sync(enroll_spoke_dir, enroll_live_hub, transport=enroll_hub, name="spoke")
+
+    import wave
+
+    wav_path = tmp_path / "one.wav"
+    with wave.open(str(wav_path), "wb") as fh:
+        fh.setnchannels(1)
+        fh.setsampwidth(2)
+        fh.setframerate(44100)
+        fh.writeframes(b"\x00\x00" * 4410)
+    conn = _open(enroll_spoke_dir)
+    try:
+        conn.execute(
+            "UPDATE tracks SET file_path = ? WHERE stable_id = ?",
+            (str(wav_path), "trk-pending-00000"),
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+    with ops_client(enroll_spoke_dir) as http:
+        start = http.post(
+            "/api/v1/cloudsync/hash-pending-backfill",
+            json={"live": True, "hub_url": enroll_live_hub, "limit": 5},
+        )
+        assert start.status_code == 200, start.text
+        assert start.json()["state"] in {"running", "done"}
+        last = start.json()
+        for _ in range(50):
+            poll = http.get("/api/v1/cloudsync/hash-pending-backfill")
+            assert poll.status_code == 200, poll.text
+            last = poll.json()
+            if last["state"] in {"done", "error"}:
+                break
+            time.sleep(0.05)
+
+    assert last["state"] == "done"
+    assert last["hashed"] >= 1
+    assert last["processed"] == last["total"]
+
+
+def test_post_hash_pending_backfill_refuses_when_no_local_audio(
+    enroll_live_hub: str,
+    enroll_spoke_dir: Path,
+    enroll_hub: TestClientTransport,
+) -> None:
+    """[if] no pending audio resolves locally [then] POST refuses not fake success, [else stop]."""
+    conn = state_db.open_rw(client.state_db_path(enroll_spoke_dir), apply_schema=True)
+    try:
+        _seed_pending_tracks(conn, 10)
+        conn.commit()
+    finally:
+        conn.close()
+    client.run_sync(enroll_spoke_dir, enroll_live_hub, transport=enroll_hub, name="spoke")
+
+    with ops_client(enroll_spoke_dir) as http:
+        response = http.post(
+            "/api/v1/cloudsync/hash-pending-backfill",
+            json={"live": False, "hub_url": enroll_live_hub},
+        )
+
+    assert response.status_code == 409, response.text
+    assert response.json()["detail"]["code"] == "CLOUDSYNC_HASH_BACKFILL_NO_AUDIO"
+
+
 @pytest.mark.requirement("CLOUDSYNC-09")
 def test_post_scheduler_resume_owed_creates_marker(enroll_spoke_dir: Path) -> None:
     """if POST /scheduler/resume-owed does not mark owed [then] broken."""
@@ -567,6 +650,12 @@ def test_post_scheduler_resume_owed_creates_marker(enroll_spoke_dir: Path) -> No
 
 OPS_CALLS: list[tuple[str, str, dict[str, Any] | None]] = [
     ("POST", "/api/v1/cloudsync/scheduler/resume-owed", None),
+    (
+        "POST",
+        "/api/v1/cloudsync/hash-pending-backfill",
+        {"live": False, "hub_url": "http://127.0.0.1:9"},
+    ),
+    ("GET", "/api/v1/cloudsync/hash-pending-backfill", None),
     ("POST", "/api/v1/cloudsync/sync", {"hub_url": "http://127.0.0.1:9"}),
     ("GET", "/api/v1/cloudsync/fleet", None),
     ("POST", "/api/v1/cloudsync/enrollment-grants", {"owner_email": ENROLL_OWNER_EMAIL}),

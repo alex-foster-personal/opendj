@@ -25,8 +25,19 @@ from pathlib import Path
 
 import pytest
 
+from scripts import ci_plan
 from scripts.ci_derived_inputs import CARRY_PATHS
-from scripts.ci_plan import Change, Config, Scope, Verdict, plan, read_config
+from scripts.ci_plan import (
+    SESSION_LOAD,
+    Change,
+    Config,
+    PlanError,
+    Scope,
+    Verdict,
+    _scan_helper_importers,
+    plan,
+    read_config,
+)
 from scripts.ci_plan_carry import _is_plain_component, helper_carried_paths
 
 pytestmark = pytest.mark.requirement("OPS-16")
@@ -552,6 +563,37 @@ def test_a_scope_outside_helper_carried_gets_no_entry(tmp_path: Path) -> None:
         carried=("a",),
     )
     assert helper_carried_paths(config, tmp_path) == frozenset({"apps/a/used.py"})
+
+
+def _parallel_tree(tmp_path: Path) -> dict[str, Path]:
+    tests = tmp_path / "tests"
+    tests.mkdir()
+    files = {
+        "conftest.py": "pytest_plugins = ['tests.plugin']\nfrom tests.helper_a import X\n",
+        "helper_a.py": "X = 1\n",
+        "helper_b.py": "import importlib\nM = importlib.import_module('tests.helper_c')\n",
+        "helper_c.py": "Y = 1\n",
+        "plugin.py": "",
+        "test_one.py": "from tests.helper_b import M\n",
+    }
+    for name, text in files.items():
+        (tests / name).write_text(text)
+    return {f"tests/{p.name}": p for p in sorted(tests.glob("*.py"))}
+
+
+def test_the_parallel_importer_scan_equals_the_serial_one(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """[if] reading inputs in worker processes changes any importer edge [then] the carry-path and
+    dependents guards compare against a different derivation, so fail.
+    [if] a file a worker cannot parse is skipped instead of raising [then] fail."""
+    inputs = _parallel_tree(tmp_path)
+    serial = _scan_helper_importers(inputs, tmp_path)
+    monkeypatch.setattr(ci_plan, "_PARALLEL_FROM", 1)
+    monkeypatch.setattr(ci_plan, "_SCAN_WORKERS", 2)
+    assert _scan_helper_importers(inputs, tmp_path) == serial
+    assert serial["tests/helper_c.py"] == {"tests/helper_b.py"} and serial["tests/plugin.py"] == {SESSION_LOAD}, serial
+    (tmp_path / "tests" / "broken.py").write_text("def (:\n")
+    with pytest.raises(PlanError, match=r"cannot parse tests/broken\.py"):
+        _scan_helper_importers({**inputs, "tests/broken.py": tmp_path / "tests" / "broken.py"}, tmp_path)
 
 
 @pytest.mark.timeout(600)  # scans every tests/**/*.py: ~135 s CPU, over 120 s on a loaded runner

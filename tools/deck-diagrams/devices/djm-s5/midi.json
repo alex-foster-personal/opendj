@@ -1,0 +1,3796 @@
+{
+  "source": "https://downloads.support.alphatheta.com/software_info/dj-mixers/DJM-S5/DJM-S5_MIDI_Message_v100_E.pdf",
+  "archived": "(private path)",
+  "fetched": "Wed 11 Nov 2026",
+  "sha256": "dbef5bbafbc3cc433171927b4293bb779373fcd70b5e31ba810206908df55dc0",
+  "device": "DJM-S5",
+  "vendor": "Pioneer DJ / AlphaTheta",
+  "channel_conventions": {
+    "deck": "Representative ch1 expands to 1/2 where stated; n=0/1.",
+    "effect": "Explicit ch5/6 for FX banks, ch7 for global; E6 exception follows printed status.",
+    "pads": "Representative ch8 expands to 8/9; ch14 to 14/15; ch12 to 12/13. SHIFT changes note, not channel. MODE single uses n=0/1 except the conflicting PAD4 decimal reference."
+  },
+  "controls": [
+    {
+      "name": "browse_rotate",
+      "section": "browser",
+      "type": "cc",
+      "ch": 7,
+      "code": 64,
+      "layer": "base",
+      "notes": "[B1] Relative rotation: clockwise 1-30, counterclockwise 127-98, up to 30 clicks/40 ms. PDF p2."
+    },
+    {
+      "name": "browse_rotate_shift",
+      "section": "browser",
+      "type": "cc",
+      "ch": 7,
+      "code": 100,
+      "layer": "shift",
+      "notes": "[B1] Relative rotation: clockwise 1-30, counterclockwise 127-98, up to 30 clicks/40 ms. PDF p2."
+    },
+    {
+      "name": "browse_rotate_cut1",
+      "section": "browser",
+      "type": "cc",
+      "ch": 7,
+      "code": 80,
+      "layer": "base",
+      "notes": "[B1] Rotate while holding FX1/CUT1. Relative rotation: clockwise 1-30, counterclockwise 127-98, up to 30 clicks/40 ms. PDF p2."
+    },
+    {
+      "name": "browse_rotate_cut2",
+      "section": "browser",
+      "type": "cc",
+      "ch": 7,
+      "code": 81,
+      "layer": "base",
+      "notes": "[B1] Rotate while holding FX2/CUT2. Relative rotation: clockwise 1-30, counterclockwise 127-98, up to 30 clicks/40 ms. PDF p2."
+    },
+    {
+      "name": "browse_rotate_cut3",
+      "section": "browser",
+      "type": "cc",
+      "ch": 7,
+      "code": 82,
+      "layer": "base",
+      "notes": "[B1] Rotate while holding FX3/CUT3. Relative rotation: clockwise 1-30, counterclockwise 127-98, up to 30 clicks/40 ms. PDF p2."
+    },
+    {
+      "name": "browse_rotate_cut4",
+      "section": "browser",
+      "type": "cc",
+      "ch": 7,
+      "code": 83,
+      "layer": "base",
+      "notes": "[B1] Rotate while holding FX1/CUT4. Relative rotation: clockwise 1-30, counterclockwise 127-98, up to 30 clicks/40 ms. PDF p2."
+    },
+    {
+      "name": "browse_rotate_cut5",
+      "section": "browser",
+      "type": "cc",
+      "ch": 7,
+      "code": 84,
+      "layer": "base",
+      "notes": "[B1] Rotate while holding FX2/CUT5. Relative rotation: clockwise 1-30, counterclockwise 127-98, up to 30 clicks/40 ms. PDF p2."
+    },
+    {
+      "name": "browse_rotate_cut6",
+      "section": "browser",
+      "type": "cc",
+      "ch": 7,
+      "code": 85,
+      "layer": "base",
+      "notes": "[B1] Rotate while holding FX3/CUT6. Relative rotation: clockwise 1-30, counterclockwise 127-98, up to 30 clicks/40 ms. PDF p2."
+    },
+    {
+      "name": "browse_press",
+      "section": "browser",
+      "type": "note",
+      "ch": 7,
+      "code": 65,
+      "layer": "base",
+      "notes": "[B1] Encoder press, PDF p2. Data2 OFF=0, ON=127 unless otherwise stated."
+    },
+    {
+      "name": "browse_press_shift",
+      "section": "browser",
+      "type": "note",
+      "ch": 7,
+      "code": 66,
+      "layer": "shift",
+      "notes": "[B1] Encoder press, PDF p2. Data2 OFF=0, ON=127 unless otherwise stated."
+    },
+    {
+      "name": "load",
+      "section": "browser",
+      "type": "note",
+      "ch": 1,
+      "code": 70,
+      "layer": "base",
+      "notes": "[B2] LOAD, PDF p2. Data2 OFF=0, ON=127 unless otherwise stated. Representative ch1; expand identically to channels 1/2."
+    },
+    {
+      "name": "load_shift",
+      "section": "browser",
+      "type": "note",
+      "ch": 1,
+      "code": 71,
+      "layer": "shift",
+      "notes": "[B2] LOAD, PDF p2. Data2 OFF=0, ON=127 unless otherwise stated. Representative ch1; expand identically to channels 1/2."
+    },
+    {
+      "name": "trim_msb",
+      "section": "mixer",
+      "type": "cc",
+      "ch": 1,
+      "code": 4,
+      "layer": "base",
+      "notes": "[M1] MSB of 14-bit pair; value=(MSB << 7) | LSB, range 0-16383. PDF p2.  Representative ch1; expand identically to channels 1/2."
+    },
+    {
+      "name": "trim_lsb",
+      "section": "mixer",
+      "type": "cc",
+      "ch": 1,
+      "code": 36,
+      "layer": "base",
+      "notes": "[M1] LSB of 14-bit pair; value=(MSB << 7) | LSB, range 0-16383. PDF p2.  Representative ch1; expand identically to channels 1/2."
+    },
+    {
+      "name": "eq_hi_msb",
+      "section": "mixer",
+      "type": "cc",
+      "ch": 1,
+      "code": 7,
+      "layer": "base",
+      "notes": "[M2] MSB of 14-bit pair; value=(MSB << 7) | LSB, range 0-16383. PDF p2.  Representative ch1; expand identically to channels 1/2."
+    },
+    {
+      "name": "eq_hi_lsb",
+      "section": "mixer",
+      "type": "cc",
+      "ch": 1,
+      "code": 39,
+      "layer": "base",
+      "notes": "[M2] LSB of 14-bit pair; value=(MSB << 7) | LSB, range 0-16383. PDF p2.  Representative ch1; expand identically to channels 1/2."
+    },
+    {
+      "name": "eq_mid_msb",
+      "section": "mixer",
+      "type": "cc",
+      "ch": 1,
+      "code": 11,
+      "layer": "base",
+      "notes": "[M3] MSB of 14-bit pair; value=(MSB << 7) | LSB, range 0-16383. PDF p2.  Representative ch1; expand identically to channels 1/2."
+    },
+    {
+      "name": "eq_mid_lsb",
+      "section": "mixer",
+      "type": "cc",
+      "ch": 1,
+      "code": 43,
+      "layer": "base",
+      "notes": "[M3] LSB of 14-bit pair; value=(MSB << 7) | LSB, range 0-16383. PDF p2.  Representative ch1; expand identically to channels 1/2."
+    },
+    {
+      "name": "eq_low_msb",
+      "section": "mixer",
+      "type": "cc",
+      "ch": 1,
+      "code": 15,
+      "layer": "base",
+      "notes": "[M4] MSB of 14-bit pair; value=(MSB << 7) | LSB, range 0-16383. PDF p2.  Representative ch1; expand identically to channels 1/2."
+    },
+    {
+      "name": "eq_low_lsb",
+      "section": "mixer",
+      "type": "cc",
+      "ch": 1,
+      "code": 47,
+      "layer": "base",
+      "notes": "[M4] LSB of 14-bit pair; value=(MSB << 7) | LSB, range 0-16383. PDF p2.  Representative ch1; expand identically to channels 1/2."
+    },
+    {
+      "name": "filter_msb",
+      "section": "mixer",
+      "type": "cc",
+      "ch": 1,
+      "code": 1,
+      "layer": "base",
+      "notes": "[M5] MSB of 14-bit pair; value=(MSB << 7) | LSB, range 0-16383. PDF p2.  Representative ch1; expand identically to channels 1/2."
+    },
+    {
+      "name": "filter_lsb",
+      "section": "mixer",
+      "type": "cc",
+      "ch": 1,
+      "code": 33,
+      "layer": "base",
+      "notes": "[M5] LSB of 14-bit pair; value=(MSB << 7) | LSB, range 0-16383. PDF p2.  Representative ch1; expand identically to channels 1/2."
+    },
+    {
+      "name": "booth_level_msb",
+      "section": "mixer",
+      "type": "cc",
+      "ch": 7,
+      "code": 9,
+      "layer": "base",
+      "notes": "[M6] MSB of 14-bit pair; value=(MSB << 7) | LSB, range 0-16383. PDF p2. Plate callouts M6/M7 are swapped relative to the table and printed MASTER/BOOTH legends; target uses the table function and actual panel legend. "
+    },
+    {
+      "name": "booth_level_lsb",
+      "section": "mixer",
+      "type": "cc",
+      "ch": 7,
+      "code": 41,
+      "layer": "base",
+      "notes": "[M6] LSB of 14-bit pair; value=(MSB << 7) | LSB, range 0-16383. PDF p2. Plate callouts M6/M7 are swapped relative to the table and printed MASTER/BOOTH legends; target uses the table function and actual panel legend. "
+    },
+    {
+      "name": "master_level_msb",
+      "section": "mixer",
+      "type": "cc",
+      "ch": 7,
+      "code": 8,
+      "layer": "base",
+      "notes": "[M7] MSB of 14-bit pair; value=(MSB << 7) | LSB, range 0-16383. PDF p2. Plate callouts M6/M7 are swapped relative to the table and printed MASTER/BOOTH legends; target uses the table function and actual panel legend. "
+    },
+    {
+      "name": "master_level_lsb",
+      "section": "mixer",
+      "type": "cc",
+      "ch": 7,
+      "code": 40,
+      "layer": "base",
+      "notes": "[M7] LSB of 14-bit pair; value=(MSB << 7) | LSB, range 0-16383. PDF p2. Plate callouts M6/M7 are swapped relative to the table and printed MASTER/BOOTH legends; target uses the table function and actual panel legend. "
+    },
+    {
+      "name": "channel_fader_msb",
+      "section": "mixer",
+      "type": "cc",
+      "ch": 1,
+      "code": 19,
+      "layer": "base",
+      "notes": "[M8] MSB of 14-bit pair; value=(MSB << 7) | LSB, range 0-16383. PDF p2. Minimum at bottom; maximum at top.  Representative ch1; expand identically to channels 1/2."
+    },
+    {
+      "name": "channel_fader_lsb",
+      "section": "mixer",
+      "type": "cc",
+      "ch": 1,
+      "code": 51,
+      "layer": "base",
+      "notes": "[M8] LSB of 14-bit pair; value=(MSB << 7) | LSB, range 0-16383. PDF p2. Minimum at bottom; maximum at top.  Representative ch1; expand identically to channels 1/2."
+    },
+    {
+      "name": "crossfader_msb",
+      "section": "mixer",
+      "type": "cc",
+      "ch": 7,
+      "code": 31,
+      "layer": "base",
+      "notes": "[M9] MSB of 14-bit pair; value=(MSB << 7) | LSB, range 0-16383. PDF p2. Reverse OFF: minimum at left; reverse ON: minimum at right. "
+    },
+    {
+      "name": "crossfader_lsb",
+      "section": "mixer",
+      "type": "cc",
+      "ch": 7,
+      "code": 63,
+      "layer": "base",
+      "notes": "[M9] LSB of 14-bit pair; value=(MSB << 7) | LSB, range 0-16383. PDF p2. Reverse OFF: minimum at left; reverse ON: minimum at right. "
+    },
+    {
+      "name": "headphones_vol_msb",
+      "section": "mixer",
+      "type": "cc",
+      "ch": 7,
+      "code": 13,
+      "layer": "base",
+      "notes": "[M10] MSB of 14-bit pair; value=(MSB << 7) | LSB, range 0-16383. PDF p2. "
+    },
+    {
+      "name": "headphones_vol_lsb",
+      "section": "mixer",
+      "type": "cc",
+      "ch": 7,
+      "code": 45,
+      "layer": "base",
+      "notes": "[M10] LSB of 14-bit pair; value=(MSB << 7) | LSB, range 0-16383. PDF p2. "
+    },
+    {
+      "name": "headphones_mix_msb",
+      "section": "mixer",
+      "type": "cc",
+      "ch": 7,
+      "code": 12,
+      "layer": "base",
+      "notes": "[M11] MSB of 14-bit pair; value=(MSB << 7) | LSB, range 0-16383. PDF p2. "
+    },
+    {
+      "name": "headphones_mix_lsb",
+      "section": "mixer",
+      "type": "cc",
+      "ch": 7,
+      "code": 44,
+      "layer": "base",
+      "notes": "[M11] LSB of 14-bit pair; value=(MSB << 7) | LSB, range 0-16383. PDF p2. "
+    },
+    {
+      "name": "headphones_cue_fader_msb",
+      "section": "mixer",
+      "type": "cc",
+      "ch": 7,
+      "code": 14,
+      "layer": "base",
+      "notes": "[M12] MSB of 14-bit pair; value=(MSB << 7) | LSB, range 0-16383. PDF p2. "
+    },
+    {
+      "name": "headphones_cue_fader_lsb",
+      "section": "mixer",
+      "type": "cc",
+      "ch": 7,
+      "code": 46,
+      "layer": "base",
+      "notes": "[M12] LSB of 14-bit pair; value=(MSB << 7) | LSB, range 0-16383. PDF p2. "
+    },
+    {
+      "name": "aux_level_msb",
+      "section": "mixer",
+      "type": "cc",
+      "ch": 7,
+      "code": 11,
+      "layer": "base",
+      "notes": "[M14] MSB of 14-bit pair; value=(MSB << 7) | LSB, range 0-16383. PDF p2. "
+    },
+    {
+      "name": "aux_level_lsb",
+      "section": "mixer",
+      "type": "cc",
+      "ch": 7,
+      "code": 43,
+      "layer": "base",
+      "notes": "[M14] LSB of 14-bit pair; value=(MSB << 7) | LSB, range 0-16383. PDF p2. "
+    },
+    {
+      "name": "channel_fader_sync_shift",
+      "section": "mixer",
+      "type": "note",
+      "ch": 1,
+      "code": 102,
+      "layer": "shift",
+      "notes": "[M8] PDF p2, +SHIFT fader-start: Zero -> nonzero; Sync start. Return event is reverse endpoint transition. Data2 OFF=0, ON=127 unless otherwise stated. Representative ch1; expand identically to channels 1/2."
+    },
+    {
+      "name": "channel_fader_cue_shift",
+      "section": "mixer",
+      "type": "note",
+      "ch": 1,
+      "code": 81,
+      "layer": "shift",
+      "notes": "[M8] PDF p2, +SHIFT fader-start: Zero -> nonzero; Start from current cue. Return event is reverse endpoint transition. Data2 OFF=0, ON=127 unless otherwise stated. Representative ch1; expand identically to channels 1/2."
+    },
+    {
+      "name": "channel_fader_hotcue1_shift",
+      "section": "mixer",
+      "type": "note",
+      "ch": 1,
+      "code": 83,
+      "layer": "shift",
+      "notes": "[M8] PDF p2, +SHIFT fader-start: Zero -> nonzero; Start from HOT CUE1. Return event is reverse endpoint transition. Data2 OFF=0, ON=127 unless otherwise stated. Representative ch1; expand identically to channels 1/2."
+    },
+    {
+      "name": "channel_fader_return_shift",
+      "section": "mixer",
+      "type": "note",
+      "ch": 1,
+      "code": 82,
+      "layer": "shift",
+      "notes": "[M8] PDF p2, +SHIFT fader-start: Zero -> nonzero; Return to endpoint. Return event is reverse endpoint transition. Data2 OFF=0, ON=127 unless otherwise stated. Representative ch1; expand identically to channels 1/2."
+    },
+    {
+      "name": "crossfader_right_sync_shift",
+      "section": "mixer",
+      "type": "note",
+      "ch": 2,
+      "code": 102,
+      "layer": "shift",
+      "notes": "[M9] PDF p2, +SHIFT fader-start: Min -> non-Min; Sync start. Return event is reverse endpoint transition. Data2 OFF=0, ON=127 unless otherwise stated."
+    },
+    {
+      "name": "crossfader_right_cue_shift",
+      "section": "mixer",
+      "type": "note",
+      "ch": 2,
+      "code": 81,
+      "layer": "shift",
+      "notes": "[M9] PDF p2, +SHIFT fader-start: Min -> non-Min; Start from current cue. Return event is reverse endpoint transition. Data2 OFF=0, ON=127 unless otherwise stated."
+    },
+    {
+      "name": "crossfader_right_hotcue1_shift",
+      "section": "mixer",
+      "type": "note",
+      "ch": 2,
+      "code": 83,
+      "layer": "shift",
+      "notes": "[M9] PDF p2, +SHIFT fader-start: Min -> non-Min; Start from HOT CUE1. Return event is reverse endpoint transition. Data2 OFF=0, ON=127 unless otherwise stated."
+    },
+    {
+      "name": "crossfader_right_return_shift",
+      "section": "mixer",
+      "type": "note",
+      "ch": 2,
+      "code": 82,
+      "layer": "shift",
+      "notes": "[M9] PDF p2, +SHIFT fader-start: Min -> non-Min; Return to endpoint. Return event is reverse endpoint transition. Data2 OFF=0, ON=127 unless otherwise stated."
+    },
+    {
+      "name": "crossfader_left_sync_shift",
+      "section": "mixer",
+      "type": "note",
+      "ch": 1,
+      "code": 102,
+      "layer": "shift",
+      "notes": "[M9] PDF p2, +SHIFT fader-start: Max -> non-Max; Sync start. Return event is reverse endpoint transition. Data2 OFF=0, ON=127 unless otherwise stated."
+    },
+    {
+      "name": "crossfader_left_cue_shift",
+      "section": "mixer",
+      "type": "note",
+      "ch": 1,
+      "code": 81,
+      "layer": "shift",
+      "notes": "[M9] PDF p2, +SHIFT fader-start: Max -> non-Max; Start from current cue. Return event is reverse endpoint transition. Data2 OFF=0, ON=127 unless otherwise stated."
+    },
+    {
+      "name": "crossfader_left_hotcue1_shift",
+      "section": "mixer",
+      "type": "note",
+      "ch": 1,
+      "code": 83,
+      "layer": "shift",
+      "notes": "[M9] PDF p2, +SHIFT fader-start: Max -> non-Max; Start from HOT CUE1. Return event is reverse endpoint transition. Data2 OFF=0, ON=127 unless otherwise stated."
+    },
+    {
+      "name": "crossfader_left_return_shift",
+      "section": "mixer",
+      "type": "note",
+      "ch": 1,
+      "code": 82,
+      "layer": "shift",
+      "notes": "[M9] PDF p2, +SHIFT fader-start: Max -> non-Max; Return to endpoint. Return event is reverse endpoint transition. Data2 OFF=0, ON=127 unless otherwise stated."
+    },
+    {
+      "name": "fx_cut1",
+      "section": "effect",
+      "type": "note",
+      "ch": 5,
+      "code": 112,
+      "layer": "base",
+      "notes": "[E1] PDF p2. ON=127; release not specified for this selector."
+    },
+    {
+      "name": "fx_cut1_shift",
+      "section": "effect",
+      "type": "note",
+      "ch": 7,
+      "code": 12,
+      "layer": "shift",
+      "notes": "[E1] PDF p2. OFF=0, ON=127. Also toggles hardware crossfader reverse."
+    },
+    {
+      "name": "fx_cut2",
+      "section": "effect",
+      "type": "note",
+      "ch": 5,
+      "code": 113,
+      "layer": "base",
+      "notes": "[E2] PDF p2. ON=127; release not specified for this selector."
+    },
+    {
+      "name": "fx_cut2_shift",
+      "section": "effect",
+      "type": "note",
+      "ch": 7,
+      "code": 13,
+      "layer": "shift",
+      "notes": "[E2] PDF p2. ON=127; release not specified. Also selects Utility crossfader curve."
+    },
+    {
+      "name": "fx_cut3",
+      "section": "effect",
+      "type": "note",
+      "ch": 5,
+      "code": 114,
+      "layer": "base",
+      "notes": "[E3] PDF p2. ON=127; release not specified for this selector."
+    },
+    {
+      "name": "fx_cut3_shift",
+      "section": "effect",
+      "type": "note",
+      "ch": 7,
+      "code": 14,
+      "layer": "shift",
+      "notes": "[E3] PDF p2. ON=127; release not specified. Also selects steep crossfader curve."
+    },
+    {
+      "name": "fx_cut4",
+      "section": "effect",
+      "type": "note",
+      "ch": 6,
+      "code": 112,
+      "layer": "base",
+      "notes": "[E4] PDF p2. ON=127; release not specified for this selector."
+    },
+    {
+      "name": "fx_cut4_shift",
+      "section": "effect",
+      "type": "note",
+      "ch": 7,
+      "code": 15,
+      "layer": "shift",
+      "notes": "[E4] PDF p2. OFF=0, ON=127. "
+    },
+    {
+      "name": "fx_cut5",
+      "section": "effect",
+      "type": "note",
+      "ch": 6,
+      "code": 113,
+      "layer": "base",
+      "notes": "[E5] PDF p2. ON=127; release not specified for this selector."
+    },
+    {
+      "name": "fx_cut5_shift",
+      "section": "effect",
+      "type": "note",
+      "ch": 7,
+      "code": 21,
+      "layer": "shift",
+      "notes": "[E5] PDF p2. ON=127; release not specified. "
+    },
+    {
+      "name": "fx_cut6",
+      "section": "effect",
+      "type": "note",
+      "ch": 7,
+      "code": 114,
+      "layer": "base",
+      "notes": "[E6] PDF p2. ON=127; release not specified for this selector. Vendor conflict: channel reference 6 but status 96; represented ch7 follows status, hardware verification required."
+    },
+    {
+      "name": "fx_cut6_shift",
+      "section": "effect",
+      "type": "note",
+      "ch": 7,
+      "code": 23,
+      "layer": "shift",
+      "notes": "[E6] PDF p2. ON=127; release not specified. "
+    },
+    {
+      "name": "beat_left_fx1",
+      "section": "effect",
+      "type": "note",
+      "ch": 5,
+      "code": 6,
+      "layer": "base",
+      "notes": "[E7] PDF p2; FX/CUT group 1-3 selected. Data2 OFF=0, ON=127 unless otherwise stated."
+    },
+    {
+      "name": "beat_left_fx2",
+      "section": "effect",
+      "type": "note",
+      "ch": 6,
+      "code": 6,
+      "layer": "base",
+      "notes": "[E7] PDF p2; FX/CUT group 4-6 selected. Data2 OFF=0, ON=127 unless otherwise stated."
+    },
+    {
+      "name": "beat_left_shift",
+      "section": "effect",
+      "type": "note",
+      "ch": 7,
+      "code": 22,
+      "layer": "shift",
+      "notes": "[E7] PDF p2-3. Data2 OFF=0, ON=127 unless otherwise stated."
+    },
+    {
+      "name": "beat_right_fx1",
+      "section": "effect",
+      "type": "note",
+      "ch": 5,
+      "code": 7,
+      "layer": "base",
+      "notes": "[E8] PDF p3; FX/CUT group 1-3 selected. Data2 OFF=0, ON=127 unless otherwise stated."
+    },
+    {
+      "name": "beat_right_fx2",
+      "section": "effect",
+      "type": "note",
+      "ch": 6,
+      "code": 7,
+      "layer": "base",
+      "notes": "[E8] PDF p3; FX/CUT group 4-6 selected. Data2 OFF=0, ON=127 unless otherwise stated."
+    },
+    {
+      "name": "beat_right_shift",
+      "section": "effect",
+      "type": "note",
+      "ch": 7,
+      "code": 10,
+      "layer": "shift",
+      "notes": "[E8] PDF p2-3. Data2 OFF=0, ON=127 unless otherwise stated."
+    },
+    {
+      "name": "effect_lever_ch1",
+      "section": "effect",
+      "type": "note",
+      "ch": 5,
+      "code": 80,
+      "layer": "base",
+      "notes": "[E9] PDF p3, unconditioned lever press. Data2 OFF=0, ON=127 unless otherwise stated."
+    },
+    {
+      "name": "effect_lever_ch1_cut1",
+      "section": "effect",
+      "type": "note",
+      "ch": 5,
+      "code": 71,
+      "layer": "base",
+      "notes": "[E9] PDF p3, FX1/CUT1 selected; table lists these same condition-dependent addresses for both levers. Data2 OFF=0, ON=127 unless otherwise stated."
+    },
+    {
+      "name": "effect_lever_ch1_cut2",
+      "section": "effect",
+      "type": "note",
+      "ch": 5,
+      "code": 72,
+      "layer": "base",
+      "notes": "[E9] PDF p3, FX2/CUT2 selected; table lists these same condition-dependent addresses for both levers. Data2 OFF=0, ON=127 unless otherwise stated."
+    },
+    {
+      "name": "effect_lever_ch1_cut3",
+      "section": "effect",
+      "type": "note",
+      "ch": 5,
+      "code": 73,
+      "layer": "base",
+      "notes": "[E9] PDF p3, FX3/CUT3 selected; table lists these same condition-dependent addresses for both levers. Data2 OFF=0, ON=127 unless otherwise stated."
+    },
+    {
+      "name": "effect_lever_ch1_cut4",
+      "section": "effect",
+      "type": "note",
+      "ch": 6,
+      "code": 71,
+      "layer": "base",
+      "notes": "[E9] PDF p3, FX1/CUT4 selected; table lists these same condition-dependent addresses for both levers. Data2 OFF=0, ON=127 unless otherwise stated."
+    },
+    {
+      "name": "effect_lever_ch1_cut5",
+      "section": "effect",
+      "type": "note",
+      "ch": 6,
+      "code": 72,
+      "layer": "base",
+      "notes": "[E9] PDF p3, FX2/CUT5 selected; table lists these same condition-dependent addresses for both levers. Data2 OFF=0, ON=127 unless otherwise stated."
+    },
+    {
+      "name": "effect_lever_ch1_cut6",
+      "section": "effect",
+      "type": "note",
+      "ch": 6,
+      "code": 73,
+      "layer": "base",
+      "notes": "[E9] PDF p3, FX3/CUT6 selected; table lists these same condition-dependent addresses for both levers. Data2 OFF=0, ON=127 unless otherwise stated."
+    },
+    {
+      "name": "effect_lever_ch1_shift",
+      "section": "effect",
+      "type": "note",
+      "ch": 5,
+      "code": 102,
+      "layer": "shift",
+      "notes": "[E9] PDF p3. Data2 OFF=0, ON=127 unless otherwise stated."
+    },
+    {
+      "name": "effect_lever_ch2",
+      "section": "effect",
+      "type": "note",
+      "ch": 6,
+      "code": 80,
+      "layer": "base",
+      "notes": "[E10] PDF p3, unconditioned lever press. Data2 OFF=0, ON=127 unless otherwise stated."
+    },
+    {
+      "name": "effect_lever_ch2_cut1",
+      "section": "effect",
+      "type": "note",
+      "ch": 5,
+      "code": 71,
+      "layer": "base",
+      "notes": "[E10] PDF p3, FX1/CUT1 selected; table lists these same condition-dependent addresses for both levers. Data2 OFF=0, ON=127 unless otherwise stated."
+    },
+    {
+      "name": "effect_lever_ch2_cut2",
+      "section": "effect",
+      "type": "note",
+      "ch": 5,
+      "code": 72,
+      "layer": "base",
+      "notes": "[E10] PDF p3, FX2/CUT2 selected; table lists these same condition-dependent addresses for both levers. Data2 OFF=0, ON=127 unless otherwise stated."
+    },
+    {
+      "name": "effect_lever_ch2_cut3",
+      "section": "effect",
+      "type": "note",
+      "ch": 5,
+      "code": 73,
+      "layer": "base",
+      "notes": "[E10] PDF p3, FX3/CUT3 selected; table lists these same condition-dependent addresses for both levers. Data2 OFF=0, ON=127 unless otherwise stated."
+    },
+    {
+      "name": "effect_lever_ch2_cut4",
+      "section": "effect",
+      "type": "note",
+      "ch": 6,
+      "code": 71,
+      "layer": "base",
+      "notes": "[E10] PDF p3, FX1/CUT4 selected; table lists these same condition-dependent addresses for both levers. Data2 OFF=0, ON=127 unless otherwise stated."
+    },
+    {
+      "name": "effect_lever_ch2_cut5",
+      "section": "effect",
+      "type": "note",
+      "ch": 6,
+      "code": 72,
+      "layer": "base",
+      "notes": "[E10] PDF p3, FX2/CUT5 selected; table lists these same condition-dependent addresses for both levers. Data2 OFF=0, ON=127 unless otherwise stated."
+    },
+    {
+      "name": "effect_lever_ch2_cut6",
+      "section": "effect",
+      "type": "note",
+      "ch": 6,
+      "code": 73,
+      "layer": "base",
+      "notes": "[E10] PDF p3, FX3/CUT6 selected; table lists these same condition-dependent addresses for both levers. Data2 OFF=0, ON=127 unless otherwise stated."
+    },
+    {
+      "name": "effect_lever_ch2_shift",
+      "section": "effect",
+      "type": "note",
+      "ch": 6,
+      "code": 102,
+      "layer": "shift",
+      "notes": "[E10] PDF p3. Data2 OFF=0, ON=127 unless otherwise stated."
+    },
+    {
+      "name": "level_depth_cut1_msb",
+      "section": "effect",
+      "type": "cc",
+      "ch": 5,
+      "code": 2,
+      "layer": "base",
+      "notes": "[E11] MSB of 14-bit pair; value=(MSB << 7) | LSB, range 0-16383. PDF p3, FX1/CUT1 selected. Vendor decimal reference 4/36 conflicts with hex 02/22; represented codes 2/34 follow hex. Hardware verification required."
+    },
+    {
+      "name": "level_depth_cut1_lsb",
+      "section": "effect",
+      "type": "cc",
+      "ch": 5,
+      "code": 34,
+      "layer": "base",
+      "notes": "[E11] LSB of 14-bit pair; value=(MSB << 7) | LSB, range 0-16383. PDF p3, FX1/CUT1 selected. Vendor decimal reference 4/36 conflicts with hex 02/22; represented codes 2/34 follow hex. Hardware verification required."
+    },
+    {
+      "name": "level_depth_cut2_msb",
+      "section": "effect",
+      "type": "cc",
+      "ch": 5,
+      "code": 4,
+      "layer": "base",
+      "notes": "[E11] MSB of 14-bit pair; value=(MSB << 7) | LSB, range 0-16383. PDF p3, FX2/CUT2 selected. "
+    },
+    {
+      "name": "level_depth_cut2_lsb",
+      "section": "effect",
+      "type": "cc",
+      "ch": 5,
+      "code": 36,
+      "layer": "base",
+      "notes": "[E11] LSB of 14-bit pair; value=(MSB << 7) | LSB, range 0-16383. PDF p3, FX2/CUT2 selected. "
+    },
+    {
+      "name": "level_depth_cut3_msb",
+      "section": "effect",
+      "type": "cc",
+      "ch": 5,
+      "code": 6,
+      "layer": "base",
+      "notes": "[E11] MSB of 14-bit pair; value=(MSB << 7) | LSB, range 0-16383. PDF p3, FX3/CUT3 selected. "
+    },
+    {
+      "name": "level_depth_cut3_lsb",
+      "section": "effect",
+      "type": "cc",
+      "ch": 5,
+      "code": 38,
+      "layer": "base",
+      "notes": "[E11] LSB of 14-bit pair; value=(MSB << 7) | LSB, range 0-16383. PDF p3, FX3/CUT3 selected. "
+    },
+    {
+      "name": "level_depth_cut4_msb",
+      "section": "effect",
+      "type": "cc",
+      "ch": 6,
+      "code": 2,
+      "layer": "base",
+      "notes": "[E11] MSB of 14-bit pair; value=(MSB << 7) | LSB, range 0-16383. PDF p3, FX1/CUT4 selected. "
+    },
+    {
+      "name": "level_depth_cut4_lsb",
+      "section": "effect",
+      "type": "cc",
+      "ch": 6,
+      "code": 34,
+      "layer": "base",
+      "notes": "[E11] LSB of 14-bit pair; value=(MSB << 7) | LSB, range 0-16383. PDF p3, FX1/CUT4 selected. "
+    },
+    {
+      "name": "level_depth_cut5_msb",
+      "section": "effect",
+      "type": "cc",
+      "ch": 6,
+      "code": 4,
+      "layer": "base",
+      "notes": "[E11] MSB of 14-bit pair; value=(MSB << 7) | LSB, range 0-16383. PDF p3, FX2/CUT5 selected. "
+    },
+    {
+      "name": "level_depth_cut5_lsb",
+      "section": "effect",
+      "type": "cc",
+      "ch": 6,
+      "code": 36,
+      "layer": "base",
+      "notes": "[E11] LSB of 14-bit pair; value=(MSB << 7) | LSB, range 0-16383. PDF p3, FX2/CUT5 selected. "
+    },
+    {
+      "name": "level_depth_cut6_msb",
+      "section": "effect",
+      "type": "cc",
+      "ch": 6,
+      "code": 6,
+      "layer": "base",
+      "notes": "[E11] MSB of 14-bit pair; value=(MSB << 7) | LSB, range 0-16383. PDF p3, FX3/CUT6 selected. "
+    },
+    {
+      "name": "level_depth_cut6_lsb",
+      "section": "effect",
+      "type": "cc",
+      "ch": 6,
+      "code": 38,
+      "layer": "base",
+      "notes": "[E11] LSB of 14-bit pair; value=(MSB << 7) | LSB, range 0-16383. PDF p3, FX3/CUT6 selected. "
+    },
+    {
+      "name": "pad1_ch8_bank1",
+      "section": "pads",
+      "type": "note",
+      "ch": 8,
+      "code": 0,
+      "layer": "base",
+      "notes": "[P1] PDF p3, PAD1, physical bank 1-4, enumerated message bank 1. Data2 OFF=0, ON=127 unless otherwise stated. Representative ch8; expand identically to channels 8/9.",
+      "midi_out": "Same address and 0/127 values for illumination, as documented."
+    },
+    {
+      "name": "pad1_ch8_bank1_shift",
+      "section": "pads",
+      "type": "note",
+      "ch": 8,
+      "code": 8,
+      "layer": "shift",
+      "notes": "[P1] PDF p3, PAD1, physical bank 1-4, enumerated message bank 1. Data2 OFF=0, ON=127 unless otherwise stated. Representative ch8; expand identically to channels 8/9.",
+      "midi_out": "Same address and 0/127 values for illumination, as documented."
+    },
+    {
+      "name": "pad1_ch8_bank2",
+      "section": "pads",
+      "type": "note",
+      "ch": 8,
+      "code": 16,
+      "layer": "base",
+      "notes": "[P1] PDF p3, PAD1, physical bank 1-4, enumerated message bank 2. Data2 OFF=0, ON=127 unless otherwise stated. Representative ch8; expand identically to channels 8/9.",
+      "midi_out": "Same address and 0/127 values for illumination, as documented."
+    },
+    {
+      "name": "pad1_ch8_bank2_shift",
+      "section": "pads",
+      "type": "note",
+      "ch": 8,
+      "code": 24,
+      "layer": "shift",
+      "notes": "[P1] PDF p3, PAD1, physical bank 1-4, enumerated message bank 2. Data2 OFF=0, ON=127 unless otherwise stated. Representative ch8; expand identically to channels 8/9.",
+      "midi_out": "Same address and 0/127 values for illumination, as documented."
+    },
+    {
+      "name": "pad1_ch8_bank3",
+      "section": "pads",
+      "type": "note",
+      "ch": 8,
+      "code": 32,
+      "layer": "base",
+      "notes": "[P1] PDF p3, PAD1, physical bank 1-4, enumerated message bank 3. Data2 OFF=0, ON=127 unless otherwise stated. Representative ch8; expand identically to channels 8/9.",
+      "midi_out": "Same address and 0/127 values for illumination, as documented."
+    },
+    {
+      "name": "pad1_ch8_bank3_shift",
+      "section": "pads",
+      "type": "note",
+      "ch": 8,
+      "code": 40,
+      "layer": "shift",
+      "notes": "[P1] PDF p3, PAD1, physical bank 1-4, enumerated message bank 3. Data2 OFF=0, ON=127 unless otherwise stated. Representative ch8; expand identically to channels 8/9.",
+      "midi_out": "Same address and 0/127 values for illumination, as documented."
+    },
+    {
+      "name": "pad1_ch8_bank4",
+      "section": "pads",
+      "type": "note",
+      "ch": 8,
+      "code": 48,
+      "layer": "base",
+      "notes": "[P1] PDF p3, PAD1, physical bank 1-4, enumerated message bank 4. Data2 OFF=0, ON=127 unless otherwise stated. Representative ch8; expand identically to channels 8/9.",
+      "midi_out": "Same address and 0/127 values for illumination, as documented."
+    },
+    {
+      "name": "pad1_ch8_bank4_shift",
+      "section": "pads",
+      "type": "note",
+      "ch": 8,
+      "code": 56,
+      "layer": "shift",
+      "notes": "[P1] PDF p3, PAD1, physical bank 1-4, enumerated message bank 4. Data2 OFF=0, ON=127 unless otherwise stated. Representative ch8; expand identically to channels 8/9.",
+      "midi_out": "Same address and 0/127 values for illumination, as documented."
+    },
+    {
+      "name": "pad1_ch8_bank5",
+      "section": "pads",
+      "type": "note",
+      "ch": 8,
+      "code": 64,
+      "layer": "base",
+      "notes": "[P1] PDF p3, PAD1, physical bank 1-4, enumerated message bank 5. Data2 OFF=0, ON=127 unless otherwise stated. Representative ch8; expand identically to channels 8/9.",
+      "midi_out": "Same address and 0/127 values for illumination, as documented."
+    },
+    {
+      "name": "pad1_ch8_bank5_shift",
+      "section": "pads",
+      "type": "note",
+      "ch": 8,
+      "code": 72,
+      "layer": "shift",
+      "notes": "[P1] PDF p3, PAD1, physical bank 1-4, enumerated message bank 5. Data2 OFF=0, ON=127 unless otherwise stated. Representative ch8; expand identically to channels 8/9.",
+      "midi_out": "Same address and 0/127 values for illumination, as documented."
+    },
+    {
+      "name": "pad1_ch8_bank6",
+      "section": "pads",
+      "type": "note",
+      "ch": 8,
+      "code": 80,
+      "layer": "base",
+      "notes": "[P1] PDF p3, PAD1, physical bank 1-4, enumerated message bank 6. Data2 OFF=0, ON=127 unless otherwise stated. Representative ch8; expand identically to channels 8/9.",
+      "midi_out": "Same address and 0/127 values for illumination, as documented."
+    },
+    {
+      "name": "pad1_ch8_bank6_shift",
+      "section": "pads",
+      "type": "note",
+      "ch": 8,
+      "code": 88,
+      "layer": "shift",
+      "notes": "[P1] PDF p3, PAD1, physical bank 1-4, enumerated message bank 6. Data2 OFF=0, ON=127 unless otherwise stated. Representative ch8; expand identically to channels 8/9.",
+      "midi_out": "Same address and 0/127 values for illumination, as documented."
+    },
+    {
+      "name": "pad1_ch8_bank7",
+      "section": "pads",
+      "type": "note",
+      "ch": 8,
+      "code": 96,
+      "layer": "base",
+      "notes": "[P1] PDF p3, PAD1, physical bank 1-4, enumerated message bank 7. Data2 OFF=0, ON=127 unless otherwise stated. Representative ch8; expand identically to channels 8/9.",
+      "midi_out": "Same address and 0/127 values for illumination, as documented."
+    },
+    {
+      "name": "pad1_ch8_bank7_shift",
+      "section": "pads",
+      "type": "note",
+      "ch": 8,
+      "code": 104,
+      "layer": "shift",
+      "notes": "[P1] PDF p3, PAD1, physical bank 1-4, enumerated message bank 7. Data2 OFF=0, ON=127 unless otherwise stated. Representative ch8; expand identically to channels 8/9.",
+      "midi_out": "Same address and 0/127 values for illumination, as documented."
+    },
+    {
+      "name": "pad1_ch8_bank8",
+      "section": "pads",
+      "type": "note",
+      "ch": 8,
+      "code": 112,
+      "layer": "base",
+      "notes": "[P1] PDF p3, PAD1, physical bank 1-4, enumerated message bank 8. Data2 OFF=0, ON=127 unless otherwise stated. Representative ch8; expand identically to channels 8/9.",
+      "midi_out": "Same address and 0/127 values for illumination, as documented."
+    },
+    {
+      "name": "pad1_ch8_bank8_shift",
+      "section": "pads",
+      "type": "note",
+      "ch": 8,
+      "code": 120,
+      "layer": "shift",
+      "notes": "[P1] PDF p3, PAD1, physical bank 1-4, enumerated message bank 8. Data2 OFF=0, ON=127 unless otherwise stated. Representative ch8; expand identically to channels 8/9.",
+      "midi_out": "Same address and 0/127 values for illumination, as documented."
+    },
+    {
+      "name": "pad1_ch14_bank1",
+      "section": "pads",
+      "type": "note",
+      "ch": 14,
+      "code": 0,
+      "layer": "base",
+      "notes": "[P1] PDF p3, PAD1, physical bank 1-4, enumerated message bank 1. Data2 OFF=0, ON=127 unless otherwise stated. Representative ch14; expand identically to channels 14/15.",
+      "midi_out": "Same address and 0/127 values for illumination, as documented."
+    },
+    {
+      "name": "pad1_ch14_bank1_shift",
+      "section": "pads",
+      "type": "note",
+      "ch": 14,
+      "code": 8,
+      "layer": "shift",
+      "notes": "[P1] PDF p3, PAD1, physical bank 1-4, enumerated message bank 1. Data2 OFF=0, ON=127 unless otherwise stated. Representative ch14; expand identically to channels 14/15.",
+      "midi_out": "Same address and 0/127 values for illumination, as documented."
+    },
+    {
+      "name": "pad1_ch14_bank2",
+      "section": "pads",
+      "type": "note",
+      "ch": 14,
+      "code": 16,
+      "layer": "base",
+      "notes": "[P1] PDF p3, PAD1, physical bank 1-4, enumerated message bank 2. Data2 OFF=0, ON=127 unless otherwise stated. Representative ch14; expand identically to channels 14/15.",
+      "midi_out": "Same address and 0/127 values for illumination, as documented."
+    },
+    {
+      "name": "pad1_ch14_bank2_shift",
+      "section": "pads",
+      "type": "note",
+      "ch": 14,
+      "code": 24,
+      "layer": "shift",
+      "notes": "[P1] PDF p3, PAD1, physical bank 1-4, enumerated message bank 2. Data2 OFF=0, ON=127 unless otherwise stated. Representative ch14; expand identically to channels 14/15.",
+      "midi_out": "Same address and 0/127 values for illumination, as documented."
+    },
+    {
+      "name": "pad1_ch14_bank3",
+      "section": "pads",
+      "type": "note",
+      "ch": 14,
+      "code": 32,
+      "layer": "base",
+      "notes": "[P1] PDF p3, PAD1, physical bank 1-4, enumerated message bank 3. Data2 OFF=0, ON=127 unless otherwise stated. Representative ch14; expand identically to channels 14/15.",
+      "midi_out": "Same address and 0/127 values for illumination, as documented."
+    },
+    {
+      "name": "pad1_ch14_bank3_shift",
+      "section": "pads",
+      "type": "note",
+      "ch": 14,
+      "code": 40,
+      "layer": "shift",
+      "notes": "[P1] PDF p3, PAD1, physical bank 1-4, enumerated message bank 3. Data2 OFF=0, ON=127 unless otherwise stated. Representative ch14; expand identically to channels 14/15.",
+      "midi_out": "Same address and 0/127 values for illumination, as documented."
+    },
+    {
+      "name": "pad1_ch14_bank4",
+      "section": "pads",
+      "type": "note",
+      "ch": 14,
+      "code": 48,
+      "layer": "base",
+      "notes": "[P1] PDF p3, PAD1, physical bank 1-4, enumerated message bank 4. Data2 OFF=0, ON=127 unless otherwise stated. Representative ch14; expand identically to channels 14/15.",
+      "midi_out": "Same address and 0/127 values for illumination, as documented."
+    },
+    {
+      "name": "pad1_ch14_bank4_shift",
+      "section": "pads",
+      "type": "note",
+      "ch": 14,
+      "code": 56,
+      "layer": "shift",
+      "notes": "[P1] PDF p3, PAD1, physical bank 1-4, enumerated message bank 4. Data2 OFF=0, ON=127 unless otherwise stated. Representative ch14; expand identically to channels 14/15.",
+      "midi_out": "Same address and 0/127 values for illumination, as documented."
+    },
+    {
+      "name": "pad1_ch12_bank1",
+      "section": "pads",
+      "type": "note",
+      "ch": 12,
+      "code": 0,
+      "layer": "base",
+      "notes": "[P1] PDF p3, PAD1, physical bank 1-4, enumerated message bank 1. Data2 OFF=0, ON=127 unless otherwise stated. Representative ch12; expand identically to channels 12/13.",
+      "midi_out": "Same address and 0/127 values for illumination, as documented."
+    },
+    {
+      "name": "pad1_ch12_bank1_shift",
+      "section": "pads",
+      "type": "note",
+      "ch": 12,
+      "code": 8,
+      "layer": "shift",
+      "notes": "[P1] PDF p3, PAD1, physical bank 1-4, enumerated message bank 1. Data2 OFF=0, ON=127 unless otherwise stated. Representative ch12; expand identically to channels 12/13.",
+      "midi_out": "Same address and 0/127 values for illumination, as documented."
+    },
+    {
+      "name": "pad1_ch12_bank2",
+      "section": "pads",
+      "type": "note",
+      "ch": 12,
+      "code": 16,
+      "layer": "base",
+      "notes": "[P1] PDF p3, PAD1, physical bank 1-4, enumerated message bank 2. Data2 OFF=0, ON=127 unless otherwise stated. Representative ch12; expand identically to channels 12/13.",
+      "midi_out": "Same address and 0/127 values for illumination, as documented."
+    },
+    {
+      "name": "pad1_ch12_bank2_shift",
+      "section": "pads",
+      "type": "note",
+      "ch": 12,
+      "code": 24,
+      "layer": "shift",
+      "notes": "[P1] PDF p3, PAD1, physical bank 1-4, enumerated message bank 2. Data2 OFF=0, ON=127 unless otherwise stated. Representative ch12; expand identically to channels 12/13.",
+      "midi_out": "Same address and 0/127 values for illumination, as documented."
+    },
+    {
+      "name": "pad1_ch12_bank3",
+      "section": "pads",
+      "type": "note",
+      "ch": 12,
+      "code": 32,
+      "layer": "base",
+      "notes": "[P1] PDF p3, PAD1, physical bank 1-4, enumerated message bank 3. Data2 OFF=0, ON=127 unless otherwise stated. Representative ch12; expand identically to channels 12/13.",
+      "midi_out": "Same address and 0/127 values for illumination, as documented."
+    },
+    {
+      "name": "pad1_ch12_bank3_shift",
+      "section": "pads",
+      "type": "note",
+      "ch": 12,
+      "code": 40,
+      "layer": "shift",
+      "notes": "[P1] PDF p3, PAD1, physical bank 1-4, enumerated message bank 3. Data2 OFF=0, ON=127 unless otherwise stated. Representative ch12; expand identically to channels 12/13.",
+      "midi_out": "Same address and 0/127 values for illumination, as documented."
+    },
+    {
+      "name": "pad1_ch12_bank4",
+      "section": "pads",
+      "type": "note",
+      "ch": 12,
+      "code": 48,
+      "layer": "base",
+      "notes": "[P1] PDF p3, PAD1, physical bank 1-4, enumerated message bank 4. Data2 OFF=0, ON=127 unless otherwise stated. Representative ch12; expand identically to channels 12/13.",
+      "midi_out": "Same address and 0/127 values for illumination, as documented."
+    },
+    {
+      "name": "pad1_ch12_bank4_shift",
+      "section": "pads",
+      "type": "note",
+      "ch": 12,
+      "code": 56,
+      "layer": "shift",
+      "notes": "[P1] PDF p3, PAD1, physical bank 1-4, enumerated message bank 4. Data2 OFF=0, ON=127 unless otherwise stated. Representative ch12; expand identically to channels 12/13.",
+      "midi_out": "Same address and 0/127 values for illumination, as documented."
+    },
+    {
+      "name": "pad1_mode_single",
+      "section": "pads",
+      "type": "note",
+      "ch": 1,
+      "code": 27,
+      "layer": "mode",
+      "notes": "[P1] PDF p3, MODE single, physical bank 1-4. Data2 OFF=0, ON=127 unless otherwise stated. Representative ch1; expand identically to channels 1/2.",
+      "midi_out": "Same address and 0/127 values for illumination, as documented."
+    },
+    {
+      "name": "pad1_mode_single_shift",
+      "section": "pads",
+      "type": "note",
+      "ch": 1,
+      "code": 105,
+      "layer": "shift_mode",
+      "notes": "[P1] PDF p3, MODE single, physical bank 1-4. Data2 OFF=0, ON=127 unless otherwise stated. Representative ch1; expand identically to channels 1/2.",
+      "midi_out": "Same address and 0/127 values for illumination, as documented."
+    },
+    {
+      "name": "pad1_mode_double",
+      "section": "pads",
+      "type": "note",
+      "ch": 14,
+      "code": 64,
+      "layer": "mode",
+      "notes": "[P1] PDF p3, MODE double, physical bank 1-4. Data2 OFF=0, ON=127 unless otherwise stated. Representative ch14; expand identically to channels 14/15.",
+      "midi_out": "Same address and 0/127 values for illumination, as documented."
+    },
+    {
+      "name": "pad1_mode_double_shift",
+      "section": "pads",
+      "type": "note",
+      "ch": 12,
+      "code": 64,
+      "layer": "shift_mode",
+      "notes": "[P1] PDF p3, MODE double, physical bank 1-4. Data2 OFF=0, ON=127 unless otherwise stated. Representative ch12; expand identically to channels 12/13.",
+      "midi_out": "Same address and 0/127 values for illumination, as documented."
+    },
+    {
+      "name": "pad2_ch8_bank1",
+      "section": "pads",
+      "type": "note",
+      "ch": 8,
+      "code": 1,
+      "layer": "base",
+      "notes": "[P2] PDF p3, PAD2, physical bank 1-4, enumerated message bank 1. Data2 OFF=0, ON=127 unless otherwise stated. Representative ch8; expand identically to channels 8/9.",
+      "midi_out": "Same address and 0/127 values for illumination, as documented."
+    },
+    {
+      "name": "pad2_ch8_bank1_shift",
+      "section": "pads",
+      "type": "note",
+      "ch": 8,
+      "code": 9,
+      "layer": "shift",
+      "notes": "[P2] PDF p3, PAD2, physical bank 1-4, enumerated message bank 1. Data2 OFF=0, ON=127 unless otherwise stated. Representative ch8; expand identically to channels 8/9.",
+      "midi_out": "Same address and 0/127 values for illumination, as documented."
+    },
+    {
+      "name": "pad2_ch8_bank2",
+      "section": "pads",
+      "type": "note",
+      "ch": 8,
+      "code": 17,
+      "layer": "base",
+      "notes": "[P2] PDF p3, PAD2, physical bank 1-4, enumerated message bank 2. Data2 OFF=0, ON=127 unless otherwise stated. Representative ch8; expand identically to channels 8/9.",
+      "midi_out": "Same address and 0/127 values for illumination, as documented."
+    },
+    {
+      "name": "pad2_ch8_bank2_shift",
+      "section": "pads",
+      "type": "note",
+      "ch": 8,
+      "code": 25,
+      "layer": "shift",
+      "notes": "[P2] PDF p3, PAD2, physical bank 1-4, enumerated message bank 2. Data2 OFF=0, ON=127 unless otherwise stated. Representative ch8; expand identically to channels 8/9.",
+      "midi_out": "Same address and 0/127 values for illumination, as documented."
+    },
+    {
+      "name": "pad2_ch8_bank3",
+      "section": "pads",
+      "type": "note",
+      "ch": 8,
+      "code": 33,
+      "layer": "base",
+      "notes": "[P2] PDF p3, PAD2, physical bank 1-4, enumerated message bank 3. Data2 OFF=0, ON=127 unless otherwise stated. Representative ch8; expand identically to channels 8/9.",
+      "midi_out": "Same address and 0/127 values for illumination, as documented."
+    },
+    {
+      "name": "pad2_ch8_bank3_shift",
+      "section": "pads",
+      "type": "note",
+      "ch": 8,
+      "code": 41,
+      "layer": "shift",
+      "notes": "[P2] PDF p3, PAD2, physical bank 1-4, enumerated message bank 3. Data2 OFF=0, ON=127 unless otherwise stated. Representative ch8; expand identically to channels 8/9.",
+      "midi_out": "Same address and 0/127 values for illumination, as documented."
+    },
+    {
+      "name": "pad2_ch8_bank4",
+      "section": "pads",
+      "type": "note",
+      "ch": 8,
+      "code": 49,
+      "layer": "base",
+      "notes": "[P2] PDF p3, PAD2, physical bank 1-4, enumerated message bank 4. Data2 OFF=0, ON=127 unless otherwise stated. Representative ch8; expand identically to channels 8/9.",
+      "midi_out": "Same address and 0/127 values for illumination, as documented."
+    },
+    {
+      "name": "pad2_ch8_bank4_shift",
+      "section": "pads",
+      "type": "note",
+      "ch": 8,
+      "code": 57,
+      "layer": "shift",
+      "notes": "[P2] PDF p3, PAD2, physical bank 1-4, enumerated message bank 4. Data2 OFF=0, ON=127 unless otherwise stated. Representative ch8; expand identically to channels 8/9.",
+      "midi_out": "Same address and 0/127 values for illumination, as documented."
+    },
+    {
+      "name": "pad2_ch8_bank5",
+      "section": "pads",
+      "type": "note",
+      "ch": 8,
+      "code": 65,
+      "layer": "base",
+      "notes": "[P2] PDF p3, PAD2, physical bank 1-4, enumerated message bank 5. Data2 OFF=0, ON=127 unless otherwise stated. Representative ch8; expand identically to channels 8/9.",
+      "midi_out": "Same address and 0/127 values for illumination, as documented."
+    },
+    {
+      "name": "pad2_ch8_bank5_shift",
+      "section": "pads",
+      "type": "note",
+      "ch": 8,
+      "code": 73,
+      "layer": "shift",
+      "notes": "[P2] PDF p3, PAD2, physical bank 1-4, enumerated message bank 5. Data2 OFF=0, ON=127 unless otherwise stated. Representative ch8; expand identically to channels 8/9.",
+      "midi_out": "Same address and 0/127 values for illumination, as documented."
+    },
+    {
+      "name": "pad2_ch8_bank6",
+      "section": "pads",
+      "type": "note",
+      "ch": 8,
+      "code": 81,
+      "layer": "base",
+      "notes": "[P2] PDF p3, PAD2, physical bank 1-4, enumerated message bank 6. Data2 OFF=0, ON=127 unless otherwise stated. Representative ch8; expand identically to channels 8/9.",
+      "midi_out": "Same address and 0/127 values for illumination, as documented."
+    },
+    {
+      "name": "pad2_ch8_bank6_shift",
+      "section": "pads",
+      "type": "note",
+      "ch": 8,
+      "code": 89,
+      "layer": "shift",
+      "notes": "[P2] PDF p3, PAD2, physical bank 1-4, enumerated message bank 6. Data2 OFF=0, ON=127 unless otherwise stated. Representative ch8; expand identically to channels 8/9.",
+      "midi_out": "Same address and 0/127 values for illumination, as documented."
+    },
+    {
+      "name": "pad2_ch8_bank7",
+      "section": "pads",
+      "type": "note",
+      "ch": 8,
+      "code": 97,
+      "layer": "base",
+      "notes": "[P2] PDF p3, PAD2, physical bank 1-4, enumerated message bank 7. Data2 OFF=0, ON=127 unless otherwise stated. Representative ch8; expand identically to channels 8/9.",
+      "midi_out": "Same address and 0/127 values for illumination, as documented."
+    },
+    {
+      "name": "pad2_ch8_bank7_shift",
+      "section": "pads",
+      "type": "note",
+      "ch": 8,
+      "code": 105,
+      "layer": "shift",
+      "notes": "[P2] PDF p3, PAD2, physical bank 1-4, enumerated message bank 7. Data2 OFF=0, ON=127 unless otherwise stated. Representative ch8; expand identically to channels 8/9.",
+      "midi_out": "Same address and 0/127 values for illumination, as documented."
+    },
+    {
+      "name": "pad2_ch8_bank8",
+      "section": "pads",
+      "type": "note",
+      "ch": 8,
+      "code": 113,
+      "layer": "base",
+      "notes": "[P2] PDF p3, PAD2, physical bank 1-4, enumerated message bank 8. Data2 OFF=0, ON=127 unless otherwise stated. Representative ch8; expand identically to channels 8/9.",
+      "midi_out": "Same address and 0/127 values for illumination, as documented."
+    },
+    {
+      "name": "pad2_ch8_bank8_shift",
+      "section": "pads",
+      "type": "note",
+      "ch": 8,
+      "code": 121,
+      "layer": "shift",
+      "notes": "[P2] PDF p3, PAD2, physical bank 1-4, enumerated message bank 8. Data2 OFF=0, ON=127 unless otherwise stated. Representative ch8; expand identically to channels 8/9.",
+      "midi_out": "Same address and 0/127 values for illumination, as documented."
+    },
+    {
+      "name": "pad2_ch14_bank1",
+      "section": "pads",
+      "type": "note",
+      "ch": 14,
+      "code": 1,
+      "layer": "base",
+      "notes": "[P2] PDF p3, PAD2, physical bank 1-4, enumerated message bank 1. Data2 OFF=0, ON=127 unless otherwise stated. Representative ch14; expand identically to channels 14/15.",
+      "midi_out": "Same address and 0/127 values for illumination, as documented."
+    },
+    {
+      "name": "pad2_ch14_bank1_shift",
+      "section": "pads",
+      "type": "note",
+      "ch": 14,
+      "code": 9,
+      "layer": "shift",
+      "notes": "[P2] PDF p3, PAD2, physical bank 1-4, enumerated message bank 1. Data2 OFF=0, ON=127 unless otherwise stated. Representative ch14; expand identically to channels 14/15.",
+      "midi_out": "Same address and 0/127 values for illumination, as documented."
+    },
+    {
+      "name": "pad2_ch14_bank2",
+      "section": "pads",
+      "type": "note",
+      "ch": 14,
+      "code": 17,
+      "layer": "base",
+      "notes": "[P2] PDF p3, PAD2, physical bank 1-4, enumerated message bank 2. Data2 OFF=0, ON=127 unless otherwise stated. Representative ch14; expand identically to channels 14/15.",
+      "midi_out": "Same address and 0/127 values for illumination, as documented."
+    },
+    {
+      "name": "pad2_ch14_bank2_shift",
+      "section": "pads",
+      "type": "note",
+      "ch": 14,
+      "code": 25,
+      "layer": "shift",
+      "notes": "[P2] PDF p3, PAD2, physical bank 1-4, enumerated message bank 2. Data2 OFF=0, ON=127 unless otherwise stated. Representative ch14; expand identically to channels 14/15.",
+      "midi_out": "Same address and 0/127 values for illumination, as documented."
+    },
+    {
+      "name": "pad2_ch14_bank3",
+      "section": "pads",
+      "type": "note",
+      "ch": 14,
+      "code": 33,
+      "layer": "base",
+      "notes": "[P2] PDF p3, PAD2, physical bank 1-4, enumerated message bank 3. Data2 OFF=0, ON=127 unless otherwise stated. Representative ch14; expand identically to channels 14/15.",
+      "midi_out": "Same address and 0/127 values for illumination, as documented."
+    },
+    {
+      "name": "pad2_ch14_bank3_shift",
+      "section": "pads",
+      "type": "note",
+      "ch": 14,
+      "code": 41,
+      "layer": "shift",
+      "notes": "[P2] PDF p3, PAD2, physical bank 1-4, enumerated message bank 3. Data2 OFF=0, ON=127 unless otherwise stated. Representative ch14; expand identically to channels 14/15.",
+      "midi_out": "Same address and 0/127 values for illumination, as documented."
+    },
+    {
+      "name": "pad2_ch14_bank4",
+      "section": "pads",
+      "type": "note",
+      "ch": 14,
+      "code": 49,
+      "layer": "base",
+      "notes": "[P2] PDF p3, PAD2, physical bank 1-4, enumerated message bank 4. Data2 OFF=0, ON=127 unless otherwise stated. Representative ch14; expand identically to channels 14/15.",
+      "midi_out": "Same address and 0/127 values for illumination, as documented."
+    },
+    {
+      "name": "pad2_ch14_bank4_shift",
+      "section": "pads",
+      "type": "note",
+      "ch": 14,
+      "code": 57,
+      "layer": "shift",
+      "notes": "[P2] PDF p3, PAD2, physical bank 1-4, enumerated message bank 4. Data2 OFF=0, ON=127 unless otherwise stated. Representative ch14; expand identically to channels 14/15.",
+      "midi_out": "Same address and 0/127 values for illumination, as documented."
+    },
+    {
+      "name": "pad2_ch12_bank1",
+      "section": "pads",
+      "type": "note",
+      "ch": 12,
+      "code": 1,
+      "layer": "base",
+      "notes": "[P2] PDF p3, PAD2, physical bank 1-4, enumerated message bank 1. Data2 OFF=0, ON=127 unless otherwise stated. Representative ch12; expand identically to channels 12/13.",
+      "midi_out": "Same address and 0/127 values for illumination, as documented."
+    },
+    {
+      "name": "pad2_ch12_bank1_shift",
+      "section": "pads",
+      "type": "note",
+      "ch": 12,
+      "code": 9,
+      "layer": "shift",
+      "notes": "[P2] PDF p3, PAD2, physical bank 1-4, enumerated message bank 1. Data2 OFF=0, ON=127 unless otherwise stated. Representative ch12; expand identically to channels 12/13.",
+      "midi_out": "Same address and 0/127 values for illumination, as documented."
+    },
+    {
+      "name": "pad2_ch12_bank2",
+      "section": "pads",
+      "type": "note",
+      "ch": 12,
+      "code": 17,
+      "layer": "base",
+      "notes": "[P2] PDF p3, PAD2, physical bank 1-4, enumerated message bank 2. Data2 OFF=0, ON=127 unless otherwise stated. Representative ch12; expand identically to channels 12/13.",
+      "midi_out": "Same address and 0/127 values for illumination, as documented."
+    },
+    {
+      "name": "pad2_ch12_bank2_shift",
+      "section": "pads",
+      "type": "note",
+      "ch": 12,
+      "code": 25,
+      "layer": "shift",
+      "notes": "[P2] PDF p3, PAD2, physical bank 1-4, enumerated message bank 2. Data2 OFF=0, ON=127 unless otherwise stated. Representative ch12; expand identically to channels 12/13.",
+      "midi_out": "Same address and 0/127 values for illumination, as documented."
+    },
+    {
+      "name": "pad2_ch12_bank3",
+      "section": "pads",
+      "type": "note",
+      "ch": 12,
+      "code": 33,
+      "layer": "base",
+      "notes": "[P2] PDF p3, PAD2, physical bank 1-4, enumerated message bank 3. Data2 OFF=0, ON=127 unless otherwise stated. Representative ch12; expand identically to channels 12/13.",
+      "midi_out": "Same address and 0/127 values for illumination, as documented."
+    },
+    {
+      "name": "pad2_ch12_bank3_shift",
+      "section": "pads",
+      "type": "note",
+      "ch": 12,
+      "code": 41,
+      "layer": "shift",
+      "notes": "[P2] PDF p3, PAD2, physical bank 1-4, enumerated message bank 3. Data2 OFF=0, ON=127 unless otherwise stated. Representative ch12; expand identically to channels 12/13.",
+      "midi_out": "Same address and 0/127 values for illumination, as documented."
+    },
+    {
+      "name": "pad2_ch12_bank4",
+      "section": "pads",
+      "type": "note",
+      "ch": 12,
+      "code": 49,
+      "layer": "base",
+      "notes": "[P2] PDF p3, PAD2, physical bank 1-4, enumerated message bank 4. Data2 OFF=0, ON=127 unless otherwise stated. Representative ch12; expand identically to channels 12/13.",
+      "midi_out": "Same address and 0/127 values for illumination, as documented."
+    },
+    {
+      "name": "pad2_ch12_bank4_shift",
+      "section": "pads",
+      "type": "note",
+      "ch": 12,
+      "code": 57,
+      "layer": "shift",
+      "notes": "[P2] PDF p3, PAD2, physical bank 1-4, enumerated message bank 4. Data2 OFF=0, ON=127 unless otherwise stated. Representative ch12; expand identically to channels 12/13.",
+      "midi_out": "Same address and 0/127 values for illumination, as documented."
+    },
+    {
+      "name": "pad2_mode_single",
+      "section": "pads",
+      "type": "note",
+      "ch": 1,
+      "code": 30,
+      "layer": "mode",
+      "notes": "[P2] PDF p3, MODE single, physical bank 1-4. Data2 OFF=0, ON=127 unless otherwise stated. Representative ch1; expand identically to channels 1/2.",
+      "midi_out": "Same address and 0/127 values for illumination, as documented."
+    },
+    {
+      "name": "pad2_mode_single_shift",
+      "section": "pads",
+      "type": "note",
+      "ch": 1,
+      "code": 107,
+      "layer": "shift_mode",
+      "notes": "[P2] PDF p3, MODE single, physical bank 1-4. Data2 OFF=0, ON=127 unless otherwise stated. Representative ch1; expand identically to channels 1/2.",
+      "midi_out": "Same address and 0/127 values for illumination, as documented."
+    },
+    {
+      "name": "pad2_mode_double",
+      "section": "pads",
+      "type": "note",
+      "ch": 14,
+      "code": 65,
+      "layer": "mode",
+      "notes": "[P2] PDF p3, MODE double, physical bank 1-4. Data2 OFF=0, ON=127 unless otherwise stated. Representative ch14; expand identically to channels 14/15.",
+      "midi_out": "Same address and 0/127 values for illumination, as documented."
+    },
+    {
+      "name": "pad2_mode_double_shift",
+      "section": "pads",
+      "type": "note",
+      "ch": 12,
+      "code": 65,
+      "layer": "shift_mode",
+      "notes": "[P2] PDF p3, MODE double, physical bank 1-4. Data2 OFF=0, ON=127 unless otherwise stated. Representative ch12; expand identically to channels 12/13.",
+      "midi_out": "Same address and 0/127 values for illumination, as documented."
+    },
+    {
+      "name": "pad3_ch8_bank1",
+      "section": "pads",
+      "type": "note",
+      "ch": 8,
+      "code": 2,
+      "layer": "base",
+      "notes": "[P3] PDF p4, PAD3, physical bank 1-4, enumerated message bank 1. Data2 OFF=0, ON=127 unless otherwise stated. Representative ch8; expand identically to channels 8/9.",
+      "midi_out": "Same address and 0/127 values for illumination, as documented."
+    },
+    {
+      "name": "pad3_ch8_bank1_shift",
+      "section": "pads",
+      "type": "note",
+      "ch": 8,
+      "code": 10,
+      "layer": "shift",
+      "notes": "[P3] PDF p4, PAD3, physical bank 1-4, enumerated message bank 1. Data2 OFF=0, ON=127 unless otherwise stated. Representative ch8; expand identically to channels 8/9.",
+      "midi_out": "Same address and 0/127 values for illumination, as documented."
+    },
+    {
+      "name": "pad3_ch8_bank2",
+      "section": "pads",
+      "type": "note",
+      "ch": 8,
+      "code": 18,
+      "layer": "base",
+      "notes": "[P3] PDF p4, PAD3, physical bank 1-4, enumerated message bank 2. Data2 OFF=0, ON=127 unless otherwise stated. Representative ch8; expand identically to channels 8/9.",
+      "midi_out": "Same address and 0/127 values for illumination, as documented."
+    },
+    {
+      "name": "pad3_ch8_bank2_shift",
+      "section": "pads",
+      "type": "note",
+      "ch": 8,
+      "code": 26,
+      "layer": "shift",
+      "notes": "[P3] PDF p4, PAD3, physical bank 1-4, enumerated message bank 2. Data2 OFF=0, ON=127 unless otherwise stated. Representative ch8; expand identically to channels 8/9.",
+      "midi_out": "Same address and 0/127 values for illumination, as documented."
+    },
+    {
+      "name": "pad3_ch8_bank3",
+      "section": "pads",
+      "type": "note",
+      "ch": 8,
+      "code": 34,
+      "layer": "base",
+      "notes": "[P3] PDF p4, PAD3, physical bank 1-4, enumerated message bank 3. Data2 OFF=0, ON=127 unless otherwise stated. Representative ch8; expand identically to channels 8/9.",
+      "midi_out": "Same address and 0/127 values for illumination, as documented."
+    },
+    {
+      "name": "pad3_ch8_bank3_shift",
+      "section": "pads",
+      "type": "note",
+      "ch": 8,
+      "code": 42,
+      "layer": "shift",
+      "notes": "[P3] PDF p4, PAD3, physical bank 1-4, enumerated message bank 3. Data2 OFF=0, ON=127 unless otherwise stated. Representative ch8; expand identically to channels 8/9.",
+      "midi_out": "Same address and 0/127 values for illumination, as documented."
+    },
+    {
+      "name": "pad3_ch8_bank4",
+      "section": "pads",
+      "type": "note",
+      "ch": 8,
+      "code": 50,
+      "layer": "base",
+      "notes": "[P3] PDF p4, PAD3, physical bank 1-4, enumerated message bank 4. Data2 OFF=0, ON=127 unless otherwise stated. Representative ch8; expand identically to channels 8/9.",
+      "midi_out": "Same address and 0/127 values for illumination, as documented."
+    },
+    {
+      "name": "pad3_ch8_bank4_shift",
+      "section": "pads",
+      "type": "note",
+      "ch": 8,
+      "code": 58,
+      "layer": "shift",
+      "notes": "[P3] PDF p4, PAD3, physical bank 1-4, enumerated message bank 4. Data2 OFF=0, ON=127 unless otherwise stated. Representative ch8; expand identically to channels 8/9.",
+      "midi_out": "Same address and 0/127 values for illumination, as documented."
+    },
+    {
+      "name": "pad3_ch8_bank5",
+      "section": "pads",
+      "type": "note",
+      "ch": 8,
+      "code": 66,
+      "layer": "base",
+      "notes": "[P3] PDF p4, PAD3, physical bank 1-4, enumerated message bank 5. Data2 OFF=0, ON=127 unless otherwise stated. Representative ch8; expand identically to channels 8/9.",
+      "midi_out": "Same address and 0/127 values for illumination, as documented."
+    },
+    {
+      "name": "pad3_ch8_bank5_shift",
+      "section": "pads",
+      "type": "note",
+      "ch": 8,
+      "code": 74,
+      "layer": "shift",
+      "notes": "[P3] PDF p4, PAD3, physical bank 1-4, enumerated message bank 5. Data2 OFF=0, ON=127 unless otherwise stated. Representative ch8; expand identically to channels 8/9.",
+      "midi_out": "Same address and 0/127 values for illumination, as documented."
+    },
+    {
+      "name": "pad3_ch8_bank6",
+      "section": "pads",
+      "type": "note",
+      "ch": 8,
+      "code": 82,
+      "layer": "base",
+      "notes": "[P3] PDF p4, PAD3, physical bank 1-4, enumerated message bank 6. Data2 OFF=0, ON=127 unless otherwise stated. Representative ch8; expand identically to channels 8/9.",
+      "midi_out": "Same address and 0/127 values for illumination, as documented."
+    },
+    {
+      "name": "pad3_ch8_bank6_shift",
+      "section": "pads",
+      "type": "note",
+      "ch": 8,
+      "code": 90,
+      "layer": "shift",
+      "notes": "[P3] PDF p4, PAD3, physical bank 1-4, enumerated message bank 6. Data2 OFF=0, ON=127 unless otherwise stated. Representative ch8; expand identically to channels 8/9.",
+      "midi_out": "Same address and 0/127 values for illumination, as documented."
+    },
+    {
+      "name": "pad3_ch8_bank7",
+      "section": "pads",
+      "type": "note",
+      "ch": 8,
+      "code": 98,
+      "layer": "base",
+      "notes": "[P3] PDF p4, PAD3, physical bank 1-4, enumerated message bank 7. Data2 OFF=0, ON=127 unless otherwise stated. Representative ch8; expand identically to channels 8/9.",
+      "midi_out": "Same address and 0/127 values for illumination, as documented."
+    },
+    {
+      "name": "pad3_ch8_bank7_shift",
+      "section": "pads",
+      "type": "note",
+      "ch": 8,
+      "code": 106,
+      "layer": "shift",
+      "notes": "[P3] PDF p4, PAD3, physical bank 1-4, enumerated message bank 7. Data2 OFF=0, ON=127 unless otherwise stated. Representative ch8; expand identically to channels 8/9.",
+      "midi_out": "Same address and 0/127 values for illumination, as documented."
+    },
+    {
+      "name": "pad3_ch8_bank8",
+      "section": "pads",
+      "type": "note",
+      "ch": 8,
+      "code": 114,
+      "layer": "base",
+      "notes": "[P3] PDF p4, PAD3, physical bank 1-4, enumerated message bank 8. Data2 OFF=0, ON=127 unless otherwise stated. Representative ch8; expand identically to channels 8/9.",
+      "midi_out": "Same address and 0/127 values for illumination, as documented."
+    },
+    {
+      "name": "pad3_ch8_bank8_shift",
+      "section": "pads",
+      "type": "note",
+      "ch": 8,
+      "code": 122,
+      "layer": "shift",
+      "notes": "[P3] PDF p4, PAD3, physical bank 1-4, enumerated message bank 8. Data2 OFF=0, ON=127 unless otherwise stated. Representative ch8; expand identically to channels 8/9.",
+      "midi_out": "Same address and 0/127 values for illumination, as documented."
+    },
+    {
+      "name": "pad3_ch14_bank1",
+      "section": "pads",
+      "type": "note",
+      "ch": 14,
+      "code": 2,
+      "layer": "base",
+      "notes": "[P3] PDF p4, PAD3, physical bank 1-4, enumerated message bank 1. Data2 OFF=0, ON=127 unless otherwise stated. Representative ch14; expand identically to channels 14/15.",
+      "midi_out": "Same address and 0/127 values for illumination, as documented."
+    },
+    {
+      "name": "pad3_ch14_bank1_shift",
+      "section": "pads",
+      "type": "note",
+      "ch": 14,
+      "code": 10,
+      "layer": "shift",
+      "notes": "[P3] PDF p4, PAD3, physical bank 1-4, enumerated message bank 1. Data2 OFF=0, ON=127 unless otherwise stated. Representative ch14; expand identically to channels 14/15.",
+      "midi_out": "Same address and 0/127 values for illumination, as documented."
+    },
+    {
+      "name": "pad3_ch14_bank2",
+      "section": "pads",
+      "type": "note",
+      "ch": 14,
+      "code": 18,
+      "layer": "base",
+      "notes": "[P3] PDF p4, PAD3, physical bank 1-4, enumerated message bank 2. Data2 OFF=0, ON=127 unless otherwise stated. Representative ch14; expand identically to channels 14/15.",
+      "midi_out": "Same address and 0/127 values for illumination, as documented."
+    },
+    {
+      "name": "pad3_ch14_bank2_shift",
+      "section": "pads",
+      "type": "note",
+      "ch": 14,
+      "code": 26,
+      "layer": "shift",
+      "notes": "[P3] PDF p4, PAD3, physical bank 1-4, enumerated message bank 2. Data2 OFF=0, ON=127 unless otherwise stated. Representative ch14; expand identically to channels 14/15.",
+      "midi_out": "Same address and 0/127 values for illumination, as documented."
+    },
+    {
+      "name": "pad3_ch14_bank3",
+      "section": "pads",
+      "type": "note",
+      "ch": 14,
+      "code": 34,
+      "layer": "base",
+      "notes": "[P3] PDF p4, PAD3, physical bank 1-4, enumerated message bank 3. Data2 OFF=0, ON=127 unless otherwise stated. Representative ch14; expand identically to channels 14/15.",
+      "midi_out": "Same address and 0/127 values for illumination, as documented."
+    },
+    {
+      "name": "pad3_ch14_bank3_shift",
+      "section": "pads",
+      "type": "note",
+      "ch": 14,
+      "code": 42,
+      "layer": "shift",
+      "notes": "[P3] PDF p4, PAD3, physical bank 1-4, enumerated message bank 3. Data2 OFF=0, ON=127 unless otherwise stated. Representative ch14; expand identically to channels 14/15.",
+      "midi_out": "Same address and 0/127 values for illumination, as documented."
+    },
+    {
+      "name": "pad3_ch14_bank4",
+      "section": "pads",
+      "type": "note",
+      "ch": 14,
+      "code": 50,
+      "layer": "base",
+      "notes": "[P3] PDF p4, PAD3, physical bank 1-4, enumerated message bank 4. Data2 OFF=0, ON=127 unless otherwise stated. Representative ch14; expand identically to channels 14/15.",
+      "midi_out": "Same address and 0/127 values for illumination, as documented."
+    },
+    {
+      "name": "pad3_ch14_bank4_shift",
+      "section": "pads",
+      "type": "note",
+      "ch": 14,
+      "code": 58,
+      "layer": "shift",
+      "notes": "[P3] PDF p4, PAD3, physical bank 1-4, enumerated message bank 4. Data2 OFF=0, ON=127 unless otherwise stated. Representative ch14; expand identically to channels 14/15.",
+      "midi_out": "Same address and 0/127 values for illumination, as documented."
+    },
+    {
+      "name": "pad3_ch12_bank1",
+      "section": "pads",
+      "type": "note",
+      "ch": 12,
+      "code": 2,
+      "layer": "base",
+      "notes": "[P3] PDF p4, PAD3, physical bank 1-4, enumerated message bank 1. Data2 OFF=0, ON=127 unless otherwise stated. Representative ch12; expand identically to channels 12/13.",
+      "midi_out": "Same address and 0/127 values for illumination, as documented."
+    },
+    {
+      "name": "pad3_ch12_bank1_shift",
+      "section": "pads",
+      "type": "note",
+      "ch": 12,
+      "code": 10,
+      "layer": "shift",
+      "notes": "[P3] PDF p4, PAD3, physical bank 1-4, enumerated message bank 1. Data2 OFF=0, ON=127 unless otherwise stated. Representative ch12; expand identically to channels 12/13.",
+      "midi_out": "Same address and 0/127 values for illumination, as documented."
+    },
+    {
+      "name": "pad3_ch12_bank2",
+      "section": "pads",
+      "type": "note",
+      "ch": 12,
+      "code": 18,
+      "layer": "base",
+      "notes": "[P3] PDF p4, PAD3, physical bank 1-4, enumerated message bank 2. Data2 OFF=0, ON=127 unless otherwise stated. Representative ch12; expand identically to channels 12/13.",
+      "midi_out": "Same address and 0/127 values for illumination, as documented."
+    },
+    {
+      "name": "pad3_ch12_bank2_shift",
+      "section": "pads",
+      "type": "note",
+      "ch": 12,
+      "code": 26,
+      "layer": "shift",
+      "notes": "[P3] PDF p4, PAD3, physical bank 1-4, enumerated message bank 2. Data2 OFF=0, ON=127 unless otherwise stated. Representative ch12; expand identically to channels 12/13.",
+      "midi_out": "Same address and 0/127 values for illumination, as documented."
+    },
+    {
+      "name": "pad3_ch12_bank3",
+      "section": "pads",
+      "type": "note",
+      "ch": 12,
+      "code": 34,
+      "layer": "base",
+      "notes": "[P3] PDF p4, PAD3, physical bank 1-4, enumerated message bank 3. Data2 OFF=0, ON=127 unless otherwise stated. Representative ch12; expand identically to channels 12/13.",
+      "midi_out": "Same address and 0/127 values for illumination, as documented."
+    },
+    {
+      "name": "pad3_ch12_bank3_shift",
+      "section": "pads",
+      "type": "note",
+      "ch": 12,
+      "code": 42,
+      "layer": "shift",
+      "notes": "[P3] PDF p4, PAD3, physical bank 1-4, enumerated message bank 3. Data2 OFF=0, ON=127 unless otherwise stated. Representative ch12; expand identically to channels 12/13.",
+      "midi_out": "Same address and 0/127 values for illumination, as documented."
+    },
+    {
+      "name": "pad3_ch12_bank4",
+      "section": "pads",
+      "type": "note",
+      "ch": 12,
+      "code": 50,
+      "layer": "base",
+      "notes": "[P3] PDF p4, PAD3, physical bank 1-4, enumerated message bank 4. Data2 OFF=0, ON=127 unless otherwise stated. Representative ch12; expand identically to channels 12/13.",
+      "midi_out": "Same address and 0/127 values for illumination, as documented."
+    },
+    {
+      "name": "pad3_ch12_bank4_shift",
+      "section": "pads",
+      "type": "note",
+      "ch": 12,
+      "code": 58,
+      "layer": "shift",
+      "notes": "[P3] PDF p4, PAD3, physical bank 1-4, enumerated message bank 4. Data2 OFF=0, ON=127 unless otherwise stated. Representative ch12; expand identically to channels 12/13.",
+      "midi_out": "Same address and 0/127 values for illumination, as documented."
+    },
+    {
+      "name": "pad3_mode_single",
+      "section": "pads",
+      "type": "note",
+      "ch": 1,
+      "code": 32,
+      "layer": "mode",
+      "notes": "[P3] PDF p4, MODE single, physical bank 1-4. Data2 OFF=0, ON=127 unless otherwise stated. Representative ch1; expand identically to channels 1/2.",
+      "midi_out": "Same address and 0/127 values for illumination, as documented."
+    },
+    {
+      "name": "pad3_mode_single_shift",
+      "section": "pads",
+      "type": "note",
+      "ch": 1,
+      "code": 109,
+      "layer": "shift_mode",
+      "notes": "[P3] PDF p4, MODE single, physical bank 1-4. Data2 OFF=0, ON=127 unless otherwise stated. Representative ch1; expand identically to channels 1/2.",
+      "midi_out": "Same address and 0/127 values for illumination, as documented."
+    },
+    {
+      "name": "pad3_mode_double",
+      "section": "pads",
+      "type": "note",
+      "ch": 14,
+      "code": 66,
+      "layer": "mode",
+      "notes": "[P3] PDF p4, MODE double, physical bank 1-4. Data2 OFF=0, ON=127 unless otherwise stated. Representative ch14; expand identically to channels 14/15.",
+      "midi_out": "Same address and 0/127 values for illumination, as documented."
+    },
+    {
+      "name": "pad3_mode_double_shift",
+      "section": "pads",
+      "type": "note",
+      "ch": 12,
+      "code": 66,
+      "layer": "shift_mode",
+      "notes": "[P3] PDF p4, MODE double, physical bank 1-4. Data2 OFF=0, ON=127 unless otherwise stated. Representative ch12; expand identically to channels 12/13.",
+      "midi_out": "Same address and 0/127 values for illumination, as documented."
+    },
+    {
+      "name": "pad4_ch8_bank1",
+      "section": "pads",
+      "type": "note",
+      "ch": 8,
+      "code": 3,
+      "layer": "base",
+      "notes": "[P4] PDF p4, PAD4, physical bank 1-4, enumerated message bank 1. Data2 OFF=0, ON=127 unless otherwise stated. Representative ch8; expand identically to channels 8/9.",
+      "midi_out": "Same address and 0/127 values for illumination, as documented."
+    },
+    {
+      "name": "pad4_ch8_bank1_shift",
+      "section": "pads",
+      "type": "note",
+      "ch": 8,
+      "code": 11,
+      "layer": "shift",
+      "notes": "[P4] PDF p4, PAD4, physical bank 1-4, enumerated message bank 1. Data2 OFF=0, ON=127 unless otherwise stated. Representative ch8; expand identically to channels 8/9.",
+      "midi_out": "Same address and 0/127 values for illumination, as documented."
+    },
+    {
+      "name": "pad4_ch8_bank2",
+      "section": "pads",
+      "type": "note",
+      "ch": 8,
+      "code": 19,
+      "layer": "base",
+      "notes": "[P4] PDF p4, PAD4, physical bank 1-4, enumerated message bank 2. Data2 OFF=0, ON=127 unless otherwise stated. Representative ch8; expand identically to channels 8/9.",
+      "midi_out": "Same address and 0/127 values for illumination, as documented."
+    },
+    {
+      "name": "pad4_ch8_bank2_shift",
+      "section": "pads",
+      "type": "note",
+      "ch": 8,
+      "code": 27,
+      "layer": "shift",
+      "notes": "[P4] PDF p4, PAD4, physical bank 1-4, enumerated message bank 2. Data2 OFF=0, ON=127 unless otherwise stated. Representative ch8; expand identically to channels 8/9.",
+      "midi_out": "Same address and 0/127 values for illumination, as documented."
+    },
+    {
+      "name": "pad4_ch8_bank3",
+      "section": "pads",
+      "type": "note",
+      "ch": 8,
+      "code": 35,
+      "layer": "base",
+      "notes": "[P4] PDF p4, PAD4, physical bank 1-4, enumerated message bank 3. Data2 OFF=0, ON=127 unless otherwise stated. Representative ch8; expand identically to channels 8/9.",
+      "midi_out": "Same address and 0/127 values for illumination, as documented."
+    },
+    {
+      "name": "pad4_ch8_bank3_shift",
+      "section": "pads",
+      "type": "note",
+      "ch": 8,
+      "code": 43,
+      "layer": "shift",
+      "notes": "[P4] PDF p4, PAD4, physical bank 1-4, enumerated message bank 3. Data2 OFF=0, ON=127 unless otherwise stated. Representative ch8; expand identically to channels 8/9.",
+      "midi_out": "Same address and 0/127 values for illumination, as documented."
+    },
+    {
+      "name": "pad4_ch8_bank4",
+      "section": "pads",
+      "type": "note",
+      "ch": 8,
+      "code": 51,
+      "layer": "base",
+      "notes": "[P4] PDF p4, PAD4, physical bank 1-4, enumerated message bank 4. Data2 OFF=0, ON=127 unless otherwise stated. Representative ch8; expand identically to channels 8/9.",
+      "midi_out": "Same address and 0/127 values for illumination, as documented."
+    },
+    {
+      "name": "pad4_ch8_bank4_shift",
+      "section": "pads",
+      "type": "note",
+      "ch": 8,
+      "code": 59,
+      "layer": "shift",
+      "notes": "[P4] PDF p4, PAD4, physical bank 1-4, enumerated message bank 4. Data2 OFF=0, ON=127 unless otherwise stated. Representative ch8; expand identically to channels 8/9.",
+      "midi_out": "Same address and 0/127 values for illumination, as documented."
+    },
+    {
+      "name": "pad4_ch8_bank5",
+      "section": "pads",
+      "type": "note",
+      "ch": 8,
+      "code": 67,
+      "layer": "base",
+      "notes": "[P4] PDF p4, PAD4, physical bank 1-4, enumerated message bank 5. Data2 OFF=0, ON=127 unless otherwise stated. Representative ch8; expand identically to channels 8/9.",
+      "midi_out": "Same address and 0/127 values for illumination, as documented."
+    },
+    {
+      "name": "pad4_ch8_bank5_shift",
+      "section": "pads",
+      "type": "note",
+      "ch": 8,
+      "code": 75,
+      "layer": "shift",
+      "notes": "[P4] PDF p4, PAD4, physical bank 1-4, enumerated message bank 5. Data2 OFF=0, ON=127 unless otherwise stated. Representative ch8; expand identically to channels 8/9.",
+      "midi_out": "Same address and 0/127 values for illumination, as documented."
+    },
+    {
+      "name": "pad4_ch8_bank6",
+      "section": "pads",
+      "type": "note",
+      "ch": 8,
+      "code": 83,
+      "layer": "base",
+      "notes": "[P4] PDF p4, PAD4, physical bank 1-4, enumerated message bank 6. Data2 OFF=0, ON=127 unless otherwise stated. Representative ch8; expand identically to channels 8/9.",
+      "midi_out": "Same address and 0/127 values for illumination, as documented."
+    },
+    {
+      "name": "pad4_ch8_bank6_shift",
+      "section": "pads",
+      "type": "note",
+      "ch": 8,
+      "code": 91,
+      "layer": "shift",
+      "notes": "[P4] PDF p4, PAD4, physical bank 1-4, enumerated message bank 6. Data2 OFF=0, ON=127 unless otherwise stated. Representative ch8; expand identically to channels 8/9.",
+      "midi_out": "Same address and 0/127 values for illumination, as documented."
+    },
+    {
+      "name": "pad4_ch8_bank7",
+      "section": "pads",
+      "type": "note",
+      "ch": 8,
+      "code": 99,
+      "layer": "base",
+      "notes": "[P4] PDF p4, PAD4, physical bank 1-4, enumerated message bank 7. Data2 OFF=0, ON=127 unless otherwise stated. Representative ch8; expand identically to channels 8/9.",
+      "midi_out": "Same address and 0/127 values for illumination, as documented."
+    },
+    {
+      "name": "pad4_ch8_bank7_shift",
+      "section": "pads",
+      "type": "note",
+      "ch": 8,
+      "code": 107,
+      "layer": "shift",
+      "notes": "[P4] PDF p4, PAD4, physical bank 1-4, enumerated message bank 7. Data2 OFF=0, ON=127 unless otherwise stated. Representative ch8; expand identically to channels 8/9.",
+      "midi_out": "Same address and 0/127 values for illumination, as documented."
+    },
+    {
+      "name": "pad4_ch8_bank8",
+      "section": "pads",
+      "type": "note",
+      "ch": 8,
+      "code": 115,
+      "layer": "base",
+      "notes": "[P4] PDF p4, PAD4, physical bank 1-4, enumerated message bank 8. Data2 OFF=0, ON=127 unless otherwise stated. Representative ch8; expand identically to channels 8/9.",
+      "midi_out": "Same address and 0/127 values for illumination, as documented."
+    },
+    {
+      "name": "pad4_ch8_bank8_shift",
+      "section": "pads",
+      "type": "note",
+      "ch": 8,
+      "code": 123,
+      "layer": "shift",
+      "notes": "[P4] PDF p4, PAD4, physical bank 1-4, enumerated message bank 8. Data2 OFF=0, ON=127 unless otherwise stated. Representative ch8; expand identically to channels 8/9.",
+      "midi_out": "Same address and 0/127 values for illumination, as documented."
+    },
+    {
+      "name": "pad4_ch14_bank1",
+      "section": "pads",
+      "type": "note",
+      "ch": 14,
+      "code": 3,
+      "layer": "base",
+      "notes": "[P4] PDF p4, PAD4, physical bank 1-4, enumerated message bank 1. Data2 OFF=0, ON=127 unless otherwise stated. Representative ch14; expand identically to channels 14/15. Vendor reference channels 8/9 conflict with status 9D/9E; using wire-derived channels 14/15. Hardware verification required.",
+      "midi_out": "Same address and 0/127 values for illumination, as documented."
+    },
+    {
+      "name": "pad4_ch14_bank1_shift",
+      "section": "pads",
+      "type": "note",
+      "ch": 14,
+      "code": 11,
+      "layer": "shift",
+      "notes": "[P4] PDF p4, PAD4, physical bank 1-4, enumerated message bank 1. Data2 OFF=0, ON=127 unless otherwise stated. Representative ch14; expand identically to channels 14/15. Vendor reference channels 8/9 conflict with status 9D/9E; using wire-derived channels 14/15. Hardware verification required.",
+      "midi_out": "Same address and 0/127 values for illumination, as documented."
+    },
+    {
+      "name": "pad4_ch14_bank2",
+      "section": "pads",
+      "type": "note",
+      "ch": 14,
+      "code": 19,
+      "layer": "base",
+      "notes": "[P4] PDF p4, PAD4, physical bank 1-4, enumerated message bank 2. Data2 OFF=0, ON=127 unless otherwise stated. Representative ch14; expand identically to channels 14/15. Vendor reference channels 8/9 conflict with status 9D/9E; using wire-derived channels 14/15. Hardware verification required.",
+      "midi_out": "Same address and 0/127 values for illumination, as documented."
+    },
+    {
+      "name": "pad4_ch14_bank2_shift",
+      "section": "pads",
+      "type": "note",
+      "ch": 14,
+      "code": 27,
+      "layer": "shift",
+      "notes": "[P4] PDF p4, PAD4, physical bank 1-4, enumerated message bank 2. Data2 OFF=0, ON=127 unless otherwise stated. Representative ch14; expand identically to channels 14/15. Vendor reference channels 8/9 conflict with status 9D/9E; using wire-derived channels 14/15. Hardware verification required.",
+      "midi_out": "Same address and 0/127 values for illumination, as documented."
+    },
+    {
+      "name": "pad4_ch14_bank3",
+      "section": "pads",
+      "type": "note",
+      "ch": 14,
+      "code": 35,
+      "layer": "base",
+      "notes": "[P4] PDF p4, PAD4, physical bank 1-4, enumerated message bank 3. Data2 OFF=0, ON=127 unless otherwise stated. Representative ch14; expand identically to channels 14/15. Vendor reference channels 8/9 conflict with status 9D/9E; using wire-derived channels 14/15. Hardware verification required.",
+      "midi_out": "Same address and 0/127 values for illumination, as documented."
+    },
+    {
+      "name": "pad4_ch14_bank3_shift",
+      "section": "pads",
+      "type": "note",
+      "ch": 14,
+      "code": 43,
+      "layer": "shift",
+      "notes": "[P4] PDF p4, PAD4, physical bank 1-4, enumerated message bank 3. Data2 OFF=0, ON=127 unless otherwise stated. Representative ch14; expand identically to channels 14/15. Vendor reference channels 8/9 conflict with status 9D/9E; using wire-derived channels 14/15. Hardware verification required.",
+      "midi_out": "Same address and 0/127 values for illumination, as documented."
+    },
+    {
+      "name": "pad4_ch14_bank4",
+      "section": "pads",
+      "type": "note",
+      "ch": 14,
+      "code": 51,
+      "layer": "base",
+      "notes": "[P4] PDF p4, PAD4, physical bank 1-4, enumerated message bank 4. Data2 OFF=0, ON=127 unless otherwise stated. Representative ch14; expand identically to channels 14/15. Vendor reference channels 8/9 conflict with status 9D/9E; using wire-derived channels 14/15. Hardware verification required.",
+      "midi_out": "Same address and 0/127 values for illumination, as documented."
+    },
+    {
+      "name": "pad4_ch14_bank4_shift",
+      "section": "pads",
+      "type": "note",
+      "ch": 14,
+      "code": 59,
+      "layer": "shift",
+      "notes": "[P4] PDF p4, PAD4, physical bank 1-4, enumerated message bank 4. Data2 OFF=0, ON=127 unless otherwise stated. Representative ch14; expand identically to channels 14/15. Vendor reference channels 8/9 conflict with status 9D/9E; using wire-derived channels 14/15. Hardware verification required.",
+      "midi_out": "Same address and 0/127 values for illumination, as documented."
+    },
+    {
+      "name": "pad4_ch12_bank1",
+      "section": "pads",
+      "type": "note",
+      "ch": 12,
+      "code": 3,
+      "layer": "base",
+      "notes": "[P4] PDF p4, PAD4, physical bank 1-4, enumerated message bank 1. Data2 OFF=0, ON=127 unless otherwise stated. Representative ch12; expand identically to channels 12/13. Vendor reference channels 8/9 conflict with status 9B/9C; using wire-derived channels 12/13. Hardware verification required.",
+      "midi_out": "Same address and 0/127 values for illumination, as documented."
+    },
+    {
+      "name": "pad4_ch12_bank1_shift",
+      "section": "pads",
+      "type": "note",
+      "ch": 12,
+      "code": 11,
+      "layer": "shift",
+      "notes": "[P4] PDF p4, PAD4, physical bank 1-4, enumerated message bank 1. Data2 OFF=0, ON=127 unless otherwise stated. Representative ch12; expand identically to channels 12/13. Vendor reference channels 8/9 conflict with status 9B/9C; using wire-derived channels 12/13. Hardware verification required.",
+      "midi_out": "Same address and 0/127 values for illumination, as documented."
+    },
+    {
+      "name": "pad4_ch12_bank2",
+      "section": "pads",
+      "type": "note",
+      "ch": 12,
+      "code": 19,
+      "layer": "base",
+      "notes": "[P4] PDF p4, PAD4, physical bank 1-4, enumerated message bank 2. Data2 OFF=0, ON=127 unless otherwise stated. Representative ch12; expand identically to channels 12/13. Vendor reference channels 8/9 conflict with status 9B/9C; using wire-derived channels 12/13. Hardware verification required.",
+      "midi_out": "Same address and 0/127 values for illumination, as documented."
+    },
+    {
+      "name": "pad4_ch12_bank2_shift",
+      "section": "pads",
+      "type": "note",
+      "ch": 12,
+      "code": 27,
+      "layer": "shift",
+      "notes": "[P4] PDF p4, PAD4, physical bank 1-4, enumerated message bank 2. Data2 OFF=0, ON=127 unless otherwise stated. Representative ch12; expand identically to channels 12/13. Vendor reference channels 8/9 conflict with status 9B/9C; using wire-derived channels 12/13. Hardware verification required.",
+      "midi_out": "Same address and 0/127 values for illumination, as documented."
+    },
+    {
+      "name": "pad4_ch12_bank3",
+      "section": "pads",
+      "type": "note",
+      "ch": 12,
+      "code": 35,
+      "layer": "base",
+      "notes": "[P4] PDF p4, PAD4, physical bank 1-4, enumerated message bank 3. Data2 OFF=0, ON=127 unless otherwise stated. Representative ch12; expand identically to channels 12/13. Vendor reference channels 8/9 conflict with status 9B/9C; using wire-derived channels 12/13. Hardware verification required.",
+      "midi_out": "Same address and 0/127 values for illumination, as documented."
+    },
+    {
+      "name": "pad4_ch12_bank3_shift",
+      "section": "pads",
+      "type": "note",
+      "ch": 12,
+      "code": 43,
+      "layer": "shift",
+      "notes": "[P4] PDF p4, PAD4, physical bank 1-4, enumerated message bank 3. Data2 OFF=0, ON=127 unless otherwise stated. Representative ch12; expand identically to channels 12/13. Vendor reference channels 8/9 conflict with status 9B/9C; using wire-derived channels 12/13. Hardware verification required.",
+      "midi_out": "Same address and 0/127 values for illumination, as documented."
+    },
+    {
+      "name": "pad4_ch12_bank4",
+      "section": "pads",
+      "type": "note",
+      "ch": 12,
+      "code": 51,
+      "layer": "base",
+      "notes": "[P4] PDF p4, PAD4, physical bank 1-4, enumerated message bank 4. Data2 OFF=0, ON=127 unless otherwise stated. Representative ch12; expand identically to channels 12/13. Vendor reference channels 8/9 conflict with status 9B/9C; using wire-derived channels 12/13. Hardware verification required.",
+      "midi_out": "Same address and 0/127 values for illumination, as documented."
+    },
+    {
+      "name": "pad4_ch12_bank4_shift",
+      "section": "pads",
+      "type": "note",
+      "ch": 12,
+      "code": 59,
+      "layer": "shift",
+      "notes": "[P4] PDF p4, PAD4, physical bank 1-4, enumerated message bank 4. Data2 OFF=0, ON=127 unless otherwise stated. Representative ch12; expand identically to channels 12/13. Vendor reference channels 8/9 conflict with status 9B/9C; using wire-derived channels 12/13. Hardware verification required.",
+      "midi_out": "Same address and 0/127 values for illumination, as documented."
+    },
+    {
+      "name": "pad4_mode_single",
+      "section": "pads",
+      "type": "note",
+      "ch": 1,
+      "code": 34,
+      "layer": "mode",
+      "notes": "[P4] PDF p4, MODE single, physical bank 1-4. Vendor reference channels 8/9 conflict with status 9n; using declared n=0/1 (channels 1/2). Hardware verification required. Data2 OFF=0, ON=127 unless otherwise stated. Representative ch1; expand identically to channels 1/2.",
+      "midi_out": "Same address and 0/127 values for illumination, as documented."
+    },
+    {
+      "name": "pad4_mode_single_shift",
+      "section": "pads",
+      "type": "note",
+      "ch": 1,
+      "code": 111,
+      "layer": "shift_mode",
+      "notes": "[P4] PDF p4, MODE single, physical bank 1-4. Vendor reference channels 8/9 conflict with status 9n; using declared n=0/1 (channels 1/2). Hardware verification required. Data2 OFF=0, ON=127 unless otherwise stated. Representative ch1; expand identically to channels 1/2.",
+      "midi_out": "Same address and 0/127 values for illumination, as documented."
+    },
+    {
+      "name": "pad4_mode_double",
+      "section": "pads",
+      "type": "note",
+      "ch": 14,
+      "code": 67,
+      "layer": "mode",
+      "notes": "[P4] PDF p4, MODE double, physical bank 1-4. Data2 OFF=0, ON=127 unless otherwise stated. Representative ch14; expand identically to channels 14/15. Vendor reference channels 8/9 conflict with status 9D/9E; using wire-derived channels 14/15. Hardware verification required.",
+      "midi_out": "Same address and 0/127 values for illumination, as documented."
+    },
+    {
+      "name": "pad4_mode_double_shift",
+      "section": "pads",
+      "type": "note",
+      "ch": 12,
+      "code": 67,
+      "layer": "shift_mode",
+      "notes": "[P4] PDF p4, MODE double, physical bank 1-4. Data2 OFF=0, ON=127 unless otherwise stated. Representative ch12; expand identically to channels 12/13. Vendor reference channels 8/9 conflict with status 9B/9C; using wire-derived channels 12/13. Hardware verification required.",
+      "midi_out": "Same address and 0/127 values for illumination, as documented."
+    },
+    {
+      "name": "pad5_ch8_bank1",
+      "section": "pads",
+      "type": "note",
+      "ch": 8,
+      "code": 4,
+      "layer": "base",
+      "notes": "[P1] PDF p5, PAD5, physical bank 5-8, enumerated message bank 1. Data2 OFF=0, ON=127 unless otherwise stated. Representative ch8; expand identically to channels 8/9.",
+      "midi_out": "Same address and 0/127 values for illumination, as documented."
+    },
+    {
+      "name": "pad5_ch8_bank1_shift",
+      "section": "pads",
+      "type": "note",
+      "ch": 8,
+      "code": 12,
+      "layer": "shift",
+      "notes": "[P1] PDF p5, PAD5, physical bank 5-8, enumerated message bank 1. Data2 OFF=0, ON=127 unless otherwise stated. Representative ch8; expand identically to channels 8/9.",
+      "midi_out": "Same address and 0/127 values for illumination, as documented."
+    },
+    {
+      "name": "pad5_ch8_bank2",
+      "section": "pads",
+      "type": "note",
+      "ch": 8,
+      "code": 20,
+      "layer": "base",
+      "notes": "[P1] PDF p5, PAD5, physical bank 5-8, enumerated message bank 2. Data2 OFF=0, ON=127 unless otherwise stated. Representative ch8; expand identically to channels 8/9.",
+      "midi_out": "Same address and 0/127 values for illumination, as documented."
+    },
+    {
+      "name": "pad5_ch8_bank2_shift",
+      "section": "pads",
+      "type": "note",
+      "ch": 8,
+      "code": 28,
+      "layer": "shift",
+      "notes": "[P1] PDF p5, PAD5, physical bank 5-8, enumerated message bank 2. Data2 OFF=0, ON=127 unless otherwise stated. Representative ch8; expand identically to channels 8/9.",
+      "midi_out": "Same address and 0/127 values for illumination, as documented."
+    },
+    {
+      "name": "pad5_ch8_bank3",
+      "section": "pads",
+      "type": "note",
+      "ch": 8,
+      "code": 36,
+      "layer": "base",
+      "notes": "[P1] PDF p5, PAD5, physical bank 5-8, enumerated message bank 3. Data2 OFF=0, ON=127 unless otherwise stated. Representative ch8; expand identically to channels 8/9.",
+      "midi_out": "Same address and 0/127 values for illumination, as documented."
+    },
+    {
+      "name": "pad5_ch8_bank3_shift",
+      "section": "pads",
+      "type": "note",
+      "ch": 8,
+      "code": 44,
+      "layer": "shift",
+      "notes": "[P1] PDF p5, PAD5, physical bank 5-8, enumerated message bank 3. Data2 OFF=0, ON=127 unless otherwise stated. Representative ch8; expand identically to channels 8/9.",
+      "midi_out": "Same address and 0/127 values for illumination, as documented."
+    },
+    {
+      "name": "pad5_ch8_bank4",
+      "section": "pads",
+      "type": "note",
+      "ch": 8,
+      "code": 52,
+      "layer": "base",
+      "notes": "[P1] PDF p5, PAD5, physical bank 5-8, enumerated message bank 4. Data2 OFF=0, ON=127 unless otherwise stated. Representative ch8; expand identically to channels 8/9.",
+      "midi_out": "Same address and 0/127 values for illumination, as documented."
+    },
+    {
+      "name": "pad5_ch8_bank4_shift",
+      "section": "pads",
+      "type": "note",
+      "ch": 8,
+      "code": 60,
+      "layer": "shift",
+      "notes": "[P1] PDF p5, PAD5, physical bank 5-8, enumerated message bank 4. Data2 OFF=0, ON=127 unless otherwise stated. Representative ch8; expand identically to channels 8/9.",
+      "midi_out": "Same address and 0/127 values for illumination, as documented."
+    },
+    {
+      "name": "pad5_ch8_bank5",
+      "section": "pads",
+      "type": "note",
+      "ch": 8,
+      "code": 68,
+      "layer": "base",
+      "notes": "[P1] PDF p5, PAD5, physical bank 5-8, enumerated message bank 5. Data2 OFF=0, ON=127 unless otherwise stated. Representative ch8; expand identically to channels 8/9.",
+      "midi_out": "Same address and 0/127 values for illumination, as documented."
+    },
+    {
+      "name": "pad5_ch8_bank5_shift",
+      "section": "pads",
+      "type": "note",
+      "ch": 8,
+      "code": 76,
+      "layer": "shift",
+      "notes": "[P1] PDF p5, PAD5, physical bank 5-8, enumerated message bank 5. Data2 OFF=0, ON=127 unless otherwise stated. Representative ch8; expand identically to channels 8/9.",
+      "midi_out": "Same address and 0/127 values for illumination, as documented."
+    },
+    {
+      "name": "pad5_ch8_bank6",
+      "section": "pads",
+      "type": "note",
+      "ch": 8,
+      "code": 84,
+      "layer": "base",
+      "notes": "[P1] PDF p5, PAD5, physical bank 5-8, enumerated message bank 6. Data2 OFF=0, ON=127 unless otherwise stated. Representative ch8; expand identically to channels 8/9.",
+      "midi_out": "Same address and 0/127 values for illumination, as documented."
+    },
+    {
+      "name": "pad5_ch8_bank6_shift",
+      "section": "pads",
+      "type": "note",
+      "ch": 8,
+      "code": 92,
+      "layer": "shift",
+      "notes": "[P1] PDF p5, PAD5, physical bank 5-8, enumerated message bank 6. Data2 OFF=0, ON=127 unless otherwise stated. Representative ch8; expand identically to channels 8/9.",
+      "midi_out": "Same address and 0/127 values for illumination, as documented."
+    },
+    {
+      "name": "pad5_ch8_bank7",
+      "section": "pads",
+      "type": "note",
+      "ch": 8,
+      "code": 100,
+      "layer": "base",
+      "notes": "[P1] PDF p5, PAD5, physical bank 5-8, enumerated message bank 7. Data2 OFF=0, ON=127 unless otherwise stated. Representative ch8; expand identically to channels 8/9.",
+      "midi_out": "Same address and 0/127 values for illumination, as documented."
+    },
+    {
+      "name": "pad5_ch8_bank7_shift",
+      "section": "pads",
+      "type": "note",
+      "ch": 8,
+      "code": 108,
+      "layer": "shift",
+      "notes": "[P1] PDF p5, PAD5, physical bank 5-8, enumerated message bank 7. Data2 OFF=0, ON=127 unless otherwise stated. Representative ch8; expand identically to channels 8/9.",
+      "midi_out": "Same address and 0/127 values for illumination, as documented."
+    },
+    {
+      "name": "pad5_ch8_bank8",
+      "section": "pads",
+      "type": "note",
+      "ch": 8,
+      "code": 116,
+      "layer": "base",
+      "notes": "[P1] PDF p5, PAD5, physical bank 5-8, enumerated message bank 8. Data2 OFF=0, ON=127 unless otherwise stated. Representative ch8; expand identically to channels 8/9.",
+      "midi_out": "Same address and 0/127 values for illumination, as documented."
+    },
+    {
+      "name": "pad5_ch8_bank8_shift",
+      "section": "pads",
+      "type": "note",
+      "ch": 8,
+      "code": 124,
+      "layer": "shift",
+      "notes": "[P1] PDF p5, PAD5, physical bank 5-8, enumerated message bank 8. Data2 OFF=0, ON=127 unless otherwise stated. Representative ch8; expand identically to channels 8/9.",
+      "midi_out": "Same address and 0/127 values for illumination, as documented."
+    },
+    {
+      "name": "pad5_ch14_bank1",
+      "section": "pads",
+      "type": "note",
+      "ch": 14,
+      "code": 4,
+      "layer": "base",
+      "notes": "[P1] PDF p5, PAD5, physical bank 5-8, enumerated message bank 1. Data2 OFF=0, ON=127 unless otherwise stated. Representative ch14; expand identically to channels 14/15.",
+      "midi_out": "Same address and 0/127 values for illumination, as documented."
+    },
+    {
+      "name": "pad5_ch14_bank1_shift",
+      "section": "pads",
+      "type": "note",
+      "ch": 14,
+      "code": 12,
+      "layer": "shift",
+      "notes": "[P1] PDF p5, PAD5, physical bank 5-8, enumerated message bank 1. Data2 OFF=0, ON=127 unless otherwise stated. Representative ch14; expand identically to channels 14/15.",
+      "midi_out": "Same address and 0/127 values for illumination, as documented."
+    },
+    {
+      "name": "pad5_ch14_bank2",
+      "section": "pads",
+      "type": "note",
+      "ch": 14,
+      "code": 20,
+      "layer": "base",
+      "notes": "[P1] PDF p5, PAD5, physical bank 5-8, enumerated message bank 2. Data2 OFF=0, ON=127 unless otherwise stated. Representative ch14; expand identically to channels 14/15.",
+      "midi_out": "Same address and 0/127 values for illumination, as documented."
+    },
+    {
+      "name": "pad5_ch14_bank2_shift",
+      "section": "pads",
+      "type": "note",
+      "ch": 14,
+      "code": 28,
+      "layer": "shift",
+      "notes": "[P1] PDF p5, PAD5, physical bank 5-8, enumerated message bank 2. Data2 OFF=0, ON=127 unless otherwise stated. Representative ch14; expand identically to channels 14/15.",
+      "midi_out": "Same address and 0/127 values for illumination, as documented."
+    },
+    {
+      "name": "pad5_ch14_bank3",
+      "section": "pads",
+      "type": "note",
+      "ch": 14,
+      "code": 36,
+      "layer": "base",
+      "notes": "[P1] PDF p5, PAD5, physical bank 5-8, enumerated message bank 3. Data2 OFF=0, ON=127 unless otherwise stated. Representative ch14; expand identically to channels 14/15.",
+      "midi_out": "Same address and 0/127 values for illumination, as documented."
+    },
+    {
+      "name": "pad5_ch14_bank3_shift",
+      "section": "pads",
+      "type": "note",
+      "ch": 14,
+      "code": 44,
+      "layer": "shift",
+      "notes": "[P1] PDF p5, PAD5, physical bank 5-8, enumerated message bank 3. Data2 OFF=0, ON=127 unless otherwise stated. Representative ch14; expand identically to channels 14/15.",
+      "midi_out": "Same address and 0/127 values for illumination, as documented."
+    },
+    {
+      "name": "pad5_ch14_bank4",
+      "section": "pads",
+      "type": "note",
+      "ch": 14,
+      "code": 52,
+      "layer": "base",
+      "notes": "[P1] PDF p5, PAD5, physical bank 5-8, enumerated message bank 4. Data2 OFF=0, ON=127 unless otherwise stated. Representative ch14; expand identically to channels 14/15.",
+      "midi_out": "Same address and 0/127 values for illumination, as documented."
+    },
+    {
+      "name": "pad5_ch14_bank4_shift",
+      "section": "pads",
+      "type": "note",
+      "ch": 14,
+      "code": 60,
+      "layer": "shift",
+      "notes": "[P1] PDF p5, PAD5, physical bank 5-8, enumerated message bank 4. Data2 OFF=0, ON=127 unless otherwise stated. Representative ch14; expand identically to channels 14/15.",
+      "midi_out": "Same address and 0/127 values for illumination, as documented."
+    },
+    {
+      "name": "pad5_ch12_bank1",
+      "section": "pads",
+      "type": "note",
+      "ch": 12,
+      "code": 4,
+      "layer": "base",
+      "notes": "[P1] PDF p5, PAD5, physical bank 5-8, enumerated message bank 1. Data2 OFF=0, ON=127 unless otherwise stated. Representative ch12; expand identically to channels 12/13.",
+      "midi_out": "Same address and 0/127 values for illumination, as documented."
+    },
+    {
+      "name": "pad5_ch12_bank1_shift",
+      "section": "pads",
+      "type": "note",
+      "ch": 12,
+      "code": 12,
+      "layer": "shift",
+      "notes": "[P1] PDF p5, PAD5, physical bank 5-8, enumerated message bank 1. Data2 OFF=0, ON=127 unless otherwise stated. Representative ch12; expand identically to channels 12/13.",
+      "midi_out": "Same address and 0/127 values for illumination, as documented."
+    },
+    {
+      "name": "pad5_ch12_bank2",
+      "section": "pads",
+      "type": "note",
+      "ch": 12,
+      "code": 20,
+      "layer": "base",
+      "notes": "[P1] PDF p5, PAD5, physical bank 5-8, enumerated message bank 2. Data2 OFF=0, ON=127 unless otherwise stated. Representative ch12; expand identically to channels 12/13.",
+      "midi_out": "Same address and 0/127 values for illumination, as documented."
+    },
+    {
+      "name": "pad5_ch12_bank2_shift",
+      "section": "pads",
+      "type": "note",
+      "ch": 12,
+      "code": 28,
+      "layer": "shift",
+      "notes": "[P1] PDF p5, PAD5, physical bank 5-8, enumerated message bank 2. Data2 OFF=0, ON=127 unless otherwise stated. Representative ch12; expand identically to channels 12/13.",
+      "midi_out": "Same address and 0/127 values for illumination, as documented."
+    },
+    {
+      "name": "pad5_ch12_bank3",
+      "section": "pads",
+      "type": "note",
+      "ch": 12,
+      "code": 36,
+      "layer": "base",
+      "notes": "[P1] PDF p5, PAD5, physical bank 5-8, enumerated message bank 3. Data2 OFF=0, ON=127 unless otherwise stated. Representative ch12; expand identically to channels 12/13.",
+      "midi_out": "Same address and 0/127 values for illumination, as documented."
+    },
+    {
+      "name": "pad5_ch12_bank3_shift",
+      "section": "pads",
+      "type": "note",
+      "ch": 12,
+      "code": 44,
+      "layer": "shift",
+      "notes": "[P1] PDF p5, PAD5, physical bank 5-8, enumerated message bank 3. Data2 OFF=0, ON=127 unless otherwise stated. Representative ch12; expand identically to channels 12/13.",
+      "midi_out": "Same address and 0/127 values for illumination, as documented."
+    },
+    {
+      "name": "pad5_ch12_bank4",
+      "section": "pads",
+      "type": "note",
+      "ch": 12,
+      "code": 52,
+      "layer": "base",
+      "notes": "[P1] PDF p5, PAD5, physical bank 5-8, enumerated message bank 4. Data2 OFF=0, ON=127 unless otherwise stated. Representative ch12; expand identically to channels 12/13.",
+      "midi_out": "Same address and 0/127 values for illumination, as documented."
+    },
+    {
+      "name": "pad5_ch12_bank4_shift",
+      "section": "pads",
+      "type": "note",
+      "ch": 12,
+      "code": 60,
+      "layer": "shift",
+      "notes": "[P1] PDF p5, PAD5, physical bank 5-8, enumerated message bank 4. Data2 OFF=0, ON=127 unless otherwise stated. Representative ch12; expand identically to channels 12/13.",
+      "midi_out": "Same address and 0/127 values for illumination, as documented."
+    },
+    {
+      "name": "pad5_mode_single",
+      "section": "pads",
+      "type": "note",
+      "ch": 1,
+      "code": 27,
+      "layer": "mode",
+      "notes": "[P1] PDF p5, MODE single, physical bank 5-8. Data2 OFF=0, ON=127 unless otherwise stated. Representative ch1; expand identically to channels 1/2.",
+      "midi_out": "Same address and 0/127 values for illumination, as documented."
+    },
+    {
+      "name": "pad5_mode_single_shift",
+      "section": "pads",
+      "type": "note",
+      "ch": 1,
+      "code": 105,
+      "layer": "shift_mode",
+      "notes": "[P1] PDF p5, MODE single, physical bank 5-8. Data2 OFF=0, ON=127 unless otherwise stated. Representative ch1; expand identically to channels 1/2.",
+      "midi_out": "Same address and 0/127 values for illumination, as documented."
+    },
+    {
+      "name": "pad5_mode_double",
+      "section": "pads",
+      "type": "note",
+      "ch": 14,
+      "code": 64,
+      "layer": "mode",
+      "notes": "[P1] PDF p5, MODE double, physical bank 5-8. Data2 OFF=0, ON=127 unless otherwise stated. Representative ch14; expand identically to channels 14/15.",
+      "midi_out": "Same address and 0/127 values for illumination, as documented."
+    },
+    {
+      "name": "pad5_mode_double_shift",
+      "section": "pads",
+      "type": "note",
+      "ch": 12,
+      "code": 64,
+      "layer": "shift_mode",
+      "notes": "[P1] PDF p5, MODE double, physical bank 5-8. Data2 OFF=0, ON=127 unless otherwise stated. Representative ch12; expand identically to channels 12/13.",
+      "midi_out": "Same address and 0/127 values for illumination, as documented."
+    },
+    {
+      "name": "pad6_ch8_bank1",
+      "section": "pads",
+      "type": "note",
+      "ch": 8,
+      "code": 5,
+      "layer": "base",
+      "notes": "[P2] PDF p5, PAD6, physical bank 5-8, enumerated message bank 1. Data2 OFF=0, ON=127 unless otherwise stated. Representative ch8; expand identically to channels 8/9.",
+      "midi_out": "Same address and 0/127 values for illumination, as documented."
+    },
+    {
+      "name": "pad6_ch8_bank1_shift",
+      "section": "pads",
+      "type": "note",
+      "ch": 8,
+      "code": 13,
+      "layer": "shift",
+      "notes": "[P2] PDF p5, PAD6, physical bank 5-8, enumerated message bank 1. Data2 OFF=0, ON=127 unless otherwise stated. Representative ch8; expand identically to channels 8/9.",
+      "midi_out": "Same address and 0/127 values for illumination, as documented."
+    },
+    {
+      "name": "pad6_ch8_bank2",
+      "section": "pads",
+      "type": "note",
+      "ch": 8,
+      "code": 21,
+      "layer": "base",
+      "notes": "[P2] PDF p5, PAD6, physical bank 5-8, enumerated message bank 2. Data2 OFF=0, ON=127 unless otherwise stated. Representative ch8; expand identically to channels 8/9.",
+      "midi_out": "Same address and 0/127 values for illumination, as documented."
+    },
+    {
+      "name": "pad6_ch8_bank2_shift",
+      "section": "pads",
+      "type": "note",
+      "ch": 8,
+      "code": 29,
+      "layer": "shift",
+      "notes": "[P2] PDF p5, PAD6, physical bank 5-8, enumerated message bank 2. Data2 OFF=0, ON=127 unless otherwise stated. Representative ch8; expand identically to channels 8/9.",
+      "midi_out": "Same address and 0/127 values for illumination, as documented."
+    },
+    {
+      "name": "pad6_ch8_bank3",
+      "section": "pads",
+      "type": "note",
+      "ch": 8,
+      "code": 37,
+      "layer": "base",
+      "notes": "[P2] PDF p5, PAD6, physical bank 5-8, enumerated message bank 3. Data2 OFF=0, ON=127 unless otherwise stated. Representative ch8; expand identically to channels 8/9.",
+      "midi_out": "Same address and 0/127 values for illumination, as documented."
+    },
+    {
+      "name": "pad6_ch8_bank3_shift",
+      "section": "pads",
+      "type": "note",
+      "ch": 8,
+      "code": 45,
+      "layer": "shift",
+      "notes": "[P2] PDF p5, PAD6, physical bank 5-8, enumerated message bank 3. Data2 OFF=0, ON=127 unless otherwise stated. Representative ch8; expand identically to channels 8/9.",
+      "midi_out": "Same address and 0/127 values for illumination, as documented."
+    },
+    {
+      "name": "pad6_ch8_bank4",
+      "section": "pads",
+      "type": "note",
+      "ch": 8,
+      "code": 53,
+      "layer": "base",
+      "notes": "[P2] PDF p5, PAD6, physical bank 5-8, enumerated message bank 4. Data2 OFF=0, ON=127 unless otherwise stated. Representative ch8; expand identically to channels 8/9.",
+      "midi_out": "Same address and 0/127 values for illumination, as documented."
+    },
+    {
+      "name": "pad6_ch8_bank4_shift",
+      "section": "pads",
+      "type": "note",
+      "ch": 8,
+      "code": 61,
+      "layer": "shift",
+      "notes": "[P2] PDF p5, PAD6, physical bank 5-8, enumerated message bank 4. Data2 OFF=0, ON=127 unless otherwise stated. Representative ch8; expand identically to channels 8/9.",
+      "midi_out": "Same address and 0/127 values for illumination, as documented."
+    },
+    {
+      "name": "pad6_ch8_bank5",
+      "section": "pads",
+      "type": "note",
+      "ch": 8,
+      "code": 69,
+      "layer": "base",
+      "notes": "[P2] PDF p5, PAD6, physical bank 5-8, enumerated message bank 5. Data2 OFF=0, ON=127 unless otherwise stated. Representative ch8; expand identically to channels 8/9.",
+      "midi_out": "Same address and 0/127 values for illumination, as documented."
+    },
+    {
+      "name": "pad6_ch8_bank5_shift",
+      "section": "pads",
+      "type": "note",
+      "ch": 8,
+      "code": 77,
+      "layer": "shift",
+      "notes": "[P2] PDF p5, PAD6, physical bank 5-8, enumerated message bank 5. Data2 OFF=0, ON=127 unless otherwise stated. Representative ch8; expand identically to channels 8/9.",
+      "midi_out": "Same address and 0/127 values for illumination, as documented."
+    },
+    {
+      "name": "pad6_ch8_bank6",
+      "section": "pads",
+      "type": "note",
+      "ch": 8,
+      "code": 85,
+      "layer": "base",
+      "notes": "[P2] PDF p5, PAD6, physical bank 5-8, enumerated message bank 6. Data2 OFF=0, ON=127 unless otherwise stated. Representative ch8; expand identically to channels 8/9.",
+      "midi_out": "Same address and 0/127 values for illumination, as documented."
+    },
+    {
+      "name": "pad6_ch8_bank6_shift",
+      "section": "pads",
+      "type": "note",
+      "ch": 8,
+      "code": 93,
+      "layer": "shift",
+      "notes": "[P2] PDF p5, PAD6, physical bank 5-8, enumerated message bank 6. Data2 OFF=0, ON=127 unless otherwise stated. Representative ch8; expand identically to channels 8/9.",
+      "midi_out": "Same address and 0/127 values for illumination, as documented."
+    },
+    {
+      "name": "pad6_ch8_bank7",
+      "section": "pads",
+      "type": "note",
+      "ch": 8,
+      "code": 101,
+      "layer": "base",
+      "notes": "[P2] PDF p5, PAD6, physical bank 5-8, enumerated message bank 7. Data2 OFF=0, ON=127 unless otherwise stated. Representative ch8; expand identically to channels 8/9.",
+      "midi_out": "Same address and 0/127 values for illumination, as documented."
+    },
+    {
+      "name": "pad6_ch8_bank7_shift",
+      "section": "pads",
+      "type": "note",
+      "ch": 8,
+      "code": 109,
+      "layer": "shift",
+      "notes": "[P2] PDF p5, PAD6, physical bank 5-8, enumerated message bank 7. Data2 OFF=0, ON=127 unless otherwise stated. Representative ch8; expand identically to channels 8/9.",
+      "midi_out": "Same address and 0/127 values for illumination, as documented."
+    },
+    {
+      "name": "pad6_ch8_bank8",
+      "section": "pads",
+      "type": "note",
+      "ch": 8,
+      "code": 117,
+      "layer": "base",
+      "notes": "[P2] PDF p5, PAD6, physical bank 5-8, enumerated message bank 8. Data2 OFF=0, ON=127 unless otherwise stated. Representative ch8; expand identically to channels 8/9.",
+      "midi_out": "Same address and 0/127 values for illumination, as documented."
+    },
+    {
+      "name": "pad6_ch8_bank8_shift",
+      "section": "pads",
+      "type": "note",
+      "ch": 8,
+      "code": 125,
+      "layer": "shift",
+      "notes": "[P2] PDF p5, PAD6, physical bank 5-8, enumerated message bank 8. Data2 OFF=0, ON=127 unless otherwise stated. Representative ch8; expand identically to channels 8/9.",
+      "midi_out": "Same address and 0/127 values for illumination, as documented."
+    },
+    {
+      "name": "pad6_ch14_bank1",
+      "section": "pads",
+      "type": "note",
+      "ch": 14,
+      "code": 5,
+      "layer": "base",
+      "notes": "[P2] PDF p5, PAD6, physical bank 5-8, enumerated message bank 1. Data2 OFF=0, ON=127 unless otherwise stated. Representative ch14; expand identically to channels 14/15.",
+      "midi_out": "Same address and 0/127 values for illumination, as documented."
+    },
+    {
+      "name": "pad6_ch14_bank1_shift",
+      "section": "pads",
+      "type": "note",
+      "ch": 14,
+      "code": 13,
+      "layer": "shift",
+      "notes": "[P2] PDF p5, PAD6, physical bank 5-8, enumerated message bank 1. Data2 OFF=0, ON=127 unless otherwise stated. Representative ch14; expand identically to channels 14/15.",
+      "midi_out": "Same address and 0/127 values for illumination, as documented."
+    },
+    {
+      "name": "pad6_ch14_bank2",
+      "section": "pads",
+      "type": "note",
+      "ch": 14,
+      "code": 21,
+      "layer": "base",
+      "notes": "[P2] PDF p5, PAD6, physical bank 5-8, enumerated message bank 2. Data2 OFF=0, ON=127 unless otherwise stated. Representative ch14; expand identically to channels 14/15.",
+      "midi_out": "Same address and 0/127 values for illumination, as documented."
+    },
+    {
+      "name": "pad6_ch14_bank2_shift",
+      "section": "pads",
+      "type": "note",
+      "ch": 14,
+      "code": 29,
+      "layer": "shift",
+      "notes": "[P2] PDF p5, PAD6, physical bank 5-8, enumerated message bank 2. Data2 OFF=0, ON=127 unless otherwise stated. Representative ch14; expand identically to channels 14/15.",
+      "midi_out": "Same address and 0/127 values for illumination, as documented."
+    },
+    {
+      "name": "pad6_ch14_bank3",
+      "section": "pads",
+      "type": "note",
+      "ch": 14,
+      "code": 37,
+      "layer": "base",
+      "notes": "[P2] PDF p5, PAD6, physical bank 5-8, enumerated message bank 3. Data2 OFF=0, ON=127 unless otherwise stated. Representative ch14; expand identically to channels 14/15.",
+      "midi_out": "Same address and 0/127 values for illumination, as documented."
+    },
+    {
+      "name": "pad6_ch14_bank3_shift",
+      "section": "pads",
+      "type": "note",
+      "ch": 14,
+      "code": 45,
+      "layer": "shift",
+      "notes": "[P2] PDF p5, PAD6, physical bank 5-8, enumerated message bank 3. Data2 OFF=0, ON=127 unless otherwise stated. Representative ch14; expand identically to channels 14/15.",
+      "midi_out": "Same address and 0/127 values for illumination, as documented."
+    },
+    {
+      "name": "pad6_ch14_bank4",
+      "section": "pads",
+      "type": "note",
+      "ch": 14,
+      "code": 53,
+      "layer": "base",
+      "notes": "[P2] PDF p5, PAD6, physical bank 5-8, enumerated message bank 4. Data2 OFF=0, ON=127 unless otherwise stated. Representative ch14; expand identically to channels 14/15.",
+      "midi_out": "Same address and 0/127 values for illumination, as documented."
+    },
+    {
+      "name": "pad6_ch14_bank4_shift",
+      "section": "pads",
+      "type": "note",
+      "ch": 14,
+      "code": 61,
+      "layer": "shift",
+      "notes": "[P2] PDF p5, PAD6, physical bank 5-8, enumerated message bank 4. Data2 OFF=0, ON=127 unless otherwise stated. Representative ch14; expand identically to channels 14/15.",
+      "midi_out": "Same address and 0/127 values for illumination, as documented."
+    },
+    {
+      "name": "pad6_ch12_bank1",
+      "section": "pads",
+      "type": "note",
+      "ch": 12,
+      "code": 5,
+      "layer": "base",
+      "notes": "[P2] PDF p5, PAD6, physical bank 5-8, enumerated message bank 1. Data2 OFF=0, ON=127 unless otherwise stated. Representative ch12; expand identically to channels 12/13.",
+      "midi_out": "Same address and 0/127 values for illumination, as documented."
+    },
+    {
+      "name": "pad6_ch12_bank1_shift",
+      "section": "pads",
+      "type": "note",
+      "ch": 12,
+      "code": 13,
+      "layer": "shift",
+      "notes": "[P2] PDF p5, PAD6, physical bank 5-8, enumerated message bank 1. Data2 OFF=0, ON=127 unless otherwise stated. Representative ch12; expand identically to channels 12/13.",
+      "midi_out": "Same address and 0/127 values for illumination, as documented."
+    },
+    {
+      "name": "pad6_ch12_bank2",
+      "section": "pads",
+      "type": "note",
+      "ch": 12,
+      "code": 21,
+      "layer": "base",
+      "notes": "[P2] PDF p5, PAD6, physical bank 5-8, enumerated message bank 2. Data2 OFF=0, ON=127 unless otherwise stated. Representative ch12; expand identically to channels 12/13.",
+      "midi_out": "Same address and 0/127 values for illumination, as documented."
+    },
+    {
+      "name": "pad6_ch12_bank2_shift",
+      "section": "pads",
+      "type": "note",
+      "ch": 12,
+      "code": 29,
+      "layer": "shift",
+      "notes": "[P2] PDF p5, PAD6, physical bank 5-8, enumerated message bank 2. Data2 OFF=0, ON=127 unless otherwise stated. Representative ch12; expand identically to channels 12/13.",
+      "midi_out": "Same address and 0/127 values for illumination, as documented."
+    },
+    {
+      "name": "pad6_ch12_bank3",
+      "section": "pads",
+      "type": "note",
+      "ch": 12,
+      "code": 37,
+      "layer": "base",
+      "notes": "[P2] PDF p5, PAD6, physical bank 5-8, enumerated message bank 3. Data2 OFF=0, ON=127 unless otherwise stated. Representative ch12; expand identically to channels 12/13.",
+      "midi_out": "Same address and 0/127 values for illumination, as documented."
+    },
+    {
+      "name": "pad6_ch12_bank3_shift",
+      "section": "pads",
+      "type": "note",
+      "ch": 12,
+      "code": 45,
+      "layer": "shift",
+      "notes": "[P2] PDF p5, PAD6, physical bank 5-8, enumerated message bank 3. Data2 OFF=0, ON=127 unless otherwise stated. Representative ch12; expand identically to channels 12/13.",
+      "midi_out": "Same address and 0/127 values for illumination, as documented."
+    },
+    {
+      "name": "pad6_ch12_bank4",
+      "section": "pads",
+      "type": "note",
+      "ch": 12,
+      "code": 53,
+      "layer": "base",
+      "notes": "[P2] PDF p5, PAD6, physical bank 5-8, enumerated message bank 4. Data2 OFF=0, ON=127 unless otherwise stated. Representative ch12; expand identically to channels 12/13.",
+      "midi_out": "Same address and 0/127 values for illumination, as documented."
+    },
+    {
+      "name": "pad6_ch12_bank4_shift",
+      "section": "pads",
+      "type": "note",
+      "ch": 12,
+      "code": 61,
+      "layer": "shift",
+      "notes": "[P2] PDF p5, PAD6, physical bank 5-8, enumerated message bank 4. Data2 OFF=0, ON=127 unless otherwise stated. Representative ch12; expand identically to channels 12/13.",
+      "midi_out": "Same address and 0/127 values for illumination, as documented."
+    },
+    {
+      "name": "pad6_mode_single",
+      "section": "pads",
+      "type": "note",
+      "ch": 1,
+      "code": 30,
+      "layer": "mode",
+      "notes": "[P2] PDF p5, MODE single, physical bank 5-8. Data2 OFF=0, ON=127 unless otherwise stated. Representative ch1; expand identically to channels 1/2.",
+      "midi_out": "Same address and 0/127 values for illumination, as documented."
+    },
+    {
+      "name": "pad6_mode_single_shift",
+      "section": "pads",
+      "type": "note",
+      "ch": 1,
+      "code": 107,
+      "layer": "shift_mode",
+      "notes": "[P2] PDF p5, MODE single, physical bank 5-8. Data2 OFF=0, ON=127 unless otherwise stated. Representative ch1; expand identically to channels 1/2.",
+      "midi_out": "Same address and 0/127 values for illumination, as documented."
+    },
+    {
+      "name": "pad6_mode_double",
+      "section": "pads",
+      "type": "note",
+      "ch": 14,
+      "code": 65,
+      "layer": "mode",
+      "notes": "[P2] PDF p5, MODE double, physical bank 5-8. Data2 OFF=0, ON=127 unless otherwise stated. Representative ch14; expand identically to channels 14/15.",
+      "midi_out": "Same address and 0/127 values for illumination, as documented."
+    },
+    {
+      "name": "pad6_mode_double_shift",
+      "section": "pads",
+      "type": "note",
+      "ch": 12,
+      "code": 65,
+      "layer": "shift_mode",
+      "notes": "[P2] PDF p5, MODE double, physical bank 5-8. Data2 OFF=0, ON=127 unless otherwise stated. Representative ch12; expand identically to channels 12/13.",
+      "midi_out": "Same address and 0/127 values for illumination, as documented."
+    },
+    {
+      "name": "pad7_ch8_bank1",
+      "section": "pads",
+      "type": "note",
+      "ch": 8,
+      "code": 6,
+      "layer": "base",
+      "notes": "[P3] PDF p6, PAD7, physical bank 5-8, enumerated message bank 1. Data2 OFF=0, ON=127 unless otherwise stated. Representative ch8; expand identically to channels 8/9.",
+      "midi_out": "Same address and 0/127 values for illumination, as documented."
+    },
+    {
+      "name": "pad7_ch8_bank1_shift",
+      "section": "pads",
+      "type": "note",
+      "ch": 8,
+      "code": 14,
+      "layer": "shift",
+      "notes": "[P3] PDF p6, PAD7, physical bank 5-8, enumerated message bank 1. Data2 OFF=0, ON=127 unless otherwise stated. Representative ch8; expand identically to channels 8/9.",
+      "midi_out": "Same address and 0/127 values for illumination, as documented."
+    },
+    {
+      "name": "pad7_ch8_bank2",
+      "section": "pads",
+      "type": "note",
+      "ch": 8,
+      "code": 22,
+      "layer": "base",
+      "notes": "[P3] PDF p6, PAD7, physical bank 5-8, enumerated message bank 2. Data2 OFF=0, ON=127 unless otherwise stated. Representative ch8; expand identically to channels 8/9.",
+      "midi_out": "Same address and 0/127 values for illumination, as documented."
+    },
+    {
+      "name": "pad7_ch8_bank2_shift",
+      "section": "pads",
+      "type": "note",
+      "ch": 8,
+      "code": 30,
+      "layer": "shift",
+      "notes": "[P3] PDF p6, PAD7, physical bank 5-8, enumerated message bank 2. Data2 OFF=0, ON=127 unless otherwise stated. Representative ch8; expand identically to channels 8/9.",
+      "midi_out": "Same address and 0/127 values for illumination, as documented."
+    },
+    {
+      "name": "pad7_ch8_bank5",
+      "section": "pads",
+      "type": "note",
+      "ch": 8,
+      "code": 70,
+      "layer": "base",
+      "notes": "[P3] PDF p6, PAD7, physical bank 5-8, enumerated message bank 5. Data2 OFF=0, ON=127 unless otherwise stated. Representative ch8; expand identically to channels 8/9.",
+      "midi_out": "Same address and 0/127 values for illumination, as documented."
+    },
+    {
+      "name": "pad7_ch8_bank5_shift",
+      "section": "pads",
+      "type": "note",
+      "ch": 8,
+      "code": 78,
+      "layer": "shift",
+      "notes": "[P3] PDF p6, PAD7, physical bank 5-8, enumerated message bank 5. Data2 OFF=0, ON=127 unless otherwise stated. Representative ch8; expand identically to channels 8/9.",
+      "midi_out": "Same address and 0/127 values for illumination, as documented."
+    },
+    {
+      "name": "pad7_ch8_bank6",
+      "section": "pads",
+      "type": "note",
+      "ch": 8,
+      "code": 86,
+      "layer": "base",
+      "notes": "[P3] PDF p6, PAD7, physical bank 5-8, enumerated message bank 6. Data2 OFF=0, ON=127 unless otherwise stated. Representative ch8; expand identically to channels 8/9.",
+      "midi_out": "Same address and 0/127 values for illumination, as documented."
+    },
+    {
+      "name": "pad7_ch8_bank6_shift",
+      "section": "pads",
+      "type": "note",
+      "ch": 8,
+      "code": 94,
+      "layer": "shift",
+      "notes": "[P3] PDF p6, PAD7, physical bank 5-8, enumerated message bank 6. Data2 OFF=0, ON=127 unless otherwise stated. Representative ch8; expand identically to channels 8/9.",
+      "midi_out": "Same address and 0/127 values for illumination, as documented."
+    },
+    {
+      "name": "pad7_ch8_bank7",
+      "section": "pads",
+      "type": "note",
+      "ch": 8,
+      "code": 102,
+      "layer": "base",
+      "notes": "[P3] PDF p6, PAD7, physical bank 5-8, enumerated message bank 7. Data2 OFF=0, ON=127 unless otherwise stated. Representative ch8; expand identically to channels 8/9.",
+      "midi_out": "Same address and 0/127 values for illumination, as documented."
+    },
+    {
+      "name": "pad7_ch8_bank7_shift",
+      "section": "pads",
+      "type": "note",
+      "ch": 8,
+      "code": 110,
+      "layer": "shift",
+      "notes": "[P3] PDF p6, PAD7, physical bank 5-8, enumerated message bank 7. Data2 OFF=0, ON=127 unless otherwise stated. Representative ch8; expand identically to channels 8/9.",
+      "midi_out": "Same address and 0/127 values for illumination, as documented."
+    },
+    {
+      "name": "pad7_ch8_bank8",
+      "section": "pads",
+      "type": "note",
+      "ch": 8,
+      "code": 118,
+      "layer": "base",
+      "notes": "[P3] PDF p6, PAD7, physical bank 5-8, enumerated message bank 8. Data2 OFF=0, ON=127 unless otherwise stated. Representative ch8; expand identically to channels 8/9.",
+      "midi_out": "Same address and 0/127 values for illumination, as documented."
+    },
+    {
+      "name": "pad7_ch8_bank8_shift",
+      "section": "pads",
+      "type": "note",
+      "ch": 8,
+      "code": 126,
+      "layer": "shift",
+      "notes": "[P3] PDF p6, PAD7, physical bank 5-8, enumerated message bank 8. Data2 OFF=0, ON=127 unless otherwise stated. Representative ch8; expand identically to channels 8/9.",
+      "midi_out": "Same address and 0/127 values for illumination, as documented."
+    },
+    {
+      "name": "pad7_ch14_bank1",
+      "section": "pads",
+      "type": "note",
+      "ch": 14,
+      "code": 6,
+      "layer": "base",
+      "notes": "[P3] PDF p6, PAD7, physical bank 5-8, enumerated message bank 1. Data2 OFF=0, ON=127 unless otherwise stated. Representative ch14; expand identically to channels 14/15.",
+      "midi_out": "Same address and 0/127 values for illumination, as documented."
+    },
+    {
+      "name": "pad7_ch14_bank1_shift",
+      "section": "pads",
+      "type": "note",
+      "ch": 14,
+      "code": 14,
+      "layer": "shift",
+      "notes": "[P3] PDF p6, PAD7, physical bank 5-8, enumerated message bank 1. Data2 OFF=0, ON=127 unless otherwise stated. Representative ch14; expand identically to channels 14/15.",
+      "midi_out": "Same address and 0/127 values for illumination, as documented."
+    },
+    {
+      "name": "pad7_ch14_bank2",
+      "section": "pads",
+      "type": "note",
+      "ch": 14,
+      "code": 22,
+      "layer": "base",
+      "notes": "[P3] PDF p6, PAD7, physical bank 5-8, enumerated message bank 2. Data2 OFF=0, ON=127 unless otherwise stated. Representative ch14; expand identically to channels 14/15.",
+      "midi_out": "Same address and 0/127 values for illumination, as documented."
+    },
+    {
+      "name": "pad7_ch14_bank2_shift",
+      "section": "pads",
+      "type": "note",
+      "ch": 14,
+      "code": 30,
+      "layer": "shift",
+      "notes": "[P3] PDF p6, PAD7, physical bank 5-8, enumerated message bank 2. Data2 OFF=0, ON=127 unless otherwise stated. Representative ch14; expand identically to channels 14/15.",
+      "midi_out": "Same address and 0/127 values for illumination, as documented."
+    },
+    {
+      "name": "pad7_ch14_bank3",
+      "section": "pads",
+      "type": "note",
+      "ch": 14,
+      "code": 38,
+      "layer": "base",
+      "notes": "[P3] PDF p6, PAD7, physical bank 5-8, enumerated message bank 3. Data2 OFF=0, ON=127 unless otherwise stated. Representative ch14; expand identically to channels 14/15.",
+      "midi_out": "Same address and 0/127 values for illumination, as documented."
+    },
+    {
+      "name": "pad7_ch14_bank3_shift",
+      "section": "pads",
+      "type": "note",
+      "ch": 14,
+      "code": 46,
+      "layer": "shift",
+      "notes": "[P3] PDF p6, PAD7, physical bank 5-8, enumerated message bank 3. Data2 OFF=0, ON=127 unless otherwise stated. Representative ch14; expand identically to channels 14/15.",
+      "midi_out": "Same address and 0/127 values for illumination, as documented."
+    },
+    {
+      "name": "pad7_ch14_bank4",
+      "section": "pads",
+      "type": "note",
+      "ch": 14,
+      "code": 54,
+      "layer": "base",
+      "notes": "[P3] PDF p6, PAD7, physical bank 5-8, enumerated message bank 4. Data2 OFF=0, ON=127 unless otherwise stated. Representative ch14; expand identically to channels 14/15.",
+      "midi_out": "Same address and 0/127 values for illumination, as documented."
+    },
+    {
+      "name": "pad7_ch14_bank4_shift",
+      "section": "pads",
+      "type": "note",
+      "ch": 14,
+      "code": 62,
+      "layer": "shift",
+      "notes": "[P3] PDF p6, PAD7, physical bank 5-8, enumerated message bank 4. Data2 OFF=0, ON=127 unless otherwise stated. Representative ch14; expand identically to channels 14/15.",
+      "midi_out": "Same address and 0/127 values for illumination, as documented."
+    },
+    {
+      "name": "pad7_ch12_bank1",
+      "section": "pads",
+      "type": "note",
+      "ch": 12,
+      "code": 6,
+      "layer": "base",
+      "notes": "[P3] PDF p6, PAD7, physical bank 5-8, enumerated message bank 1. Data2 OFF=0, ON=127 unless otherwise stated. Representative ch12; expand identically to channels 12/13.",
+      "midi_out": "Same address and 0/127 values for illumination, as documented."
+    },
+    {
+      "name": "pad7_ch12_bank1_shift",
+      "section": "pads",
+      "type": "note",
+      "ch": 12,
+      "code": 14,
+      "layer": "shift",
+      "notes": "[P3] PDF p6, PAD7, physical bank 5-8, enumerated message bank 1. Data2 OFF=0, ON=127 unless otherwise stated. Representative ch12; expand identically to channels 12/13.",
+      "midi_out": "Same address and 0/127 values for illumination, as documented."
+    },
+    {
+      "name": "pad7_ch12_bank2",
+      "section": "pads",
+      "type": "note",
+      "ch": 12,
+      "code": 22,
+      "layer": "base",
+      "notes": "[P3] PDF p6, PAD7, physical bank 5-8, enumerated message bank 2. Data2 OFF=0, ON=127 unless otherwise stated. Representative ch12; expand identically to channels 12/13.",
+      "midi_out": "Same address and 0/127 values for illumination, as documented."
+    },
+    {
+      "name": "pad7_ch12_bank2_shift",
+      "section": "pads",
+      "type": "note",
+      "ch": 12,
+      "code": 30,
+      "layer": "shift",
+      "notes": "[P3] PDF p6, PAD7, physical bank 5-8, enumerated message bank 2. Data2 OFF=0, ON=127 unless otherwise stated. Representative ch12; expand identically to channels 12/13.",
+      "midi_out": "Same address and 0/127 values for illumination, as documented."
+    },
+    {
+      "name": "pad7_ch12_bank3",
+      "section": "pads",
+      "type": "note",
+      "ch": 12,
+      "code": 38,
+      "layer": "base",
+      "notes": "[P3] PDF p6, PAD7, physical bank 5-8, enumerated message bank 3. Data2 OFF=0, ON=127 unless otherwise stated. Representative ch12; expand identically to channels 12/13.",
+      "midi_out": "Same address and 0/127 values for illumination, as documented."
+    },
+    {
+      "name": "pad7_ch12_bank3_shift",
+      "section": "pads",
+      "type": "note",
+      "ch": 12,
+      "code": 46,
+      "layer": "shift",
+      "notes": "[P3] PDF p6, PAD7, physical bank 5-8, enumerated message bank 3. Data2 OFF=0, ON=127 unless otherwise stated. Representative ch12; expand identically to channels 12/13.",
+      "midi_out": "Same address and 0/127 values for illumination, as documented."
+    },
+    {
+      "name": "pad7_ch12_bank4",
+      "section": "pads",
+      "type": "note",
+      "ch": 12,
+      "code": 54,
+      "layer": "base",
+      "notes": "[P3] PDF p6, PAD7, physical bank 5-8, enumerated message bank 4. Data2 OFF=0, ON=127 unless otherwise stated. Representative ch12; expand identically to channels 12/13.",
+      "midi_out": "Same address and 0/127 values for illumination, as documented."
+    },
+    {
+      "name": "pad7_ch12_bank4_shift",
+      "section": "pads",
+      "type": "note",
+      "ch": 12,
+      "code": 62,
+      "layer": "shift",
+      "notes": "[P3] PDF p6, PAD7, physical bank 5-8, enumerated message bank 4. Data2 OFF=0, ON=127 unless otherwise stated. Representative ch12; expand identically to channels 12/13.",
+      "midi_out": "Same address and 0/127 values for illumination, as documented."
+    },
+    {
+      "name": "pad7_mode_single",
+      "section": "pads",
+      "type": "note",
+      "ch": 1,
+      "code": 32,
+      "layer": "mode",
+      "notes": "[P3] PDF p6, MODE single, physical bank 5-8. Data2 OFF=0, ON=127 unless otherwise stated. Representative ch1; expand identically to channels 1/2.",
+      "midi_out": "Same address and 0/127 values for illumination, as documented."
+    },
+    {
+      "name": "pad7_mode_single_shift",
+      "section": "pads",
+      "type": "note",
+      "ch": 1,
+      "code": 109,
+      "layer": "shift_mode",
+      "notes": "[P3] PDF p6, MODE single, physical bank 5-8. Data2 OFF=0, ON=127 unless otherwise stated. Representative ch1; expand identically to channels 1/2.",
+      "midi_out": "Same address and 0/127 values for illumination, as documented."
+    },
+    {
+      "name": "pad7_mode_double",
+      "section": "pads",
+      "type": "note",
+      "ch": 14,
+      "code": 66,
+      "layer": "mode",
+      "notes": "[P3] PDF p6, MODE double, physical bank 5-8. Data2 OFF=0, ON=127 unless otherwise stated. Representative ch14; expand identically to channels 14/15.",
+      "midi_out": "Same address and 0/127 values for illumination, as documented."
+    },
+    {
+      "name": "pad7_mode_double_shift",
+      "section": "pads",
+      "type": "note",
+      "ch": 12,
+      "code": 66,
+      "layer": "shift_mode",
+      "notes": "[P3] PDF p6, MODE double, physical bank 5-8. Data2 OFF=0, ON=127 unless otherwise stated. Representative ch12; expand identically to channels 12/13.",
+      "midi_out": "Same address and 0/127 values for illumination, as documented."
+    },
+    {
+      "name": "pad8_ch8_bank1",
+      "section": "pads",
+      "type": "note",
+      "ch": 8,
+      "code": 7,
+      "layer": "base",
+      "notes": "[P4] PDF p6, PAD8, physical bank 5-8, enumerated message bank 1. Data2 OFF=0, ON=127 unless otherwise stated. Representative ch8; expand identically to channels 8/9.",
+      "midi_out": "Same address and 0/127 values for illumination, as documented."
+    },
+    {
+      "name": "pad8_ch8_bank1_shift",
+      "section": "pads",
+      "type": "note",
+      "ch": 8,
+      "code": 15,
+      "layer": "shift",
+      "notes": "[P4] PDF p6, PAD8, physical bank 5-8, enumerated message bank 1. Data2 OFF=0, ON=127 unless otherwise stated. Representative ch8; expand identically to channels 8/9.",
+      "midi_out": "Same address and 0/127 values for illumination, as documented."
+    },
+    {
+      "name": "pad8_ch8_bank2",
+      "section": "pads",
+      "type": "note",
+      "ch": 8,
+      "code": 23,
+      "layer": "base",
+      "notes": "[P4] PDF p6, PAD8, physical bank 5-8, enumerated message bank 2. Data2 OFF=0, ON=127 unless otherwise stated. Representative ch8; expand identically to channels 8/9.",
+      "midi_out": "Same address and 0/127 values for illumination, as documented."
+    },
+    {
+      "name": "pad8_ch8_bank2_shift",
+      "section": "pads",
+      "type": "note",
+      "ch": 8,
+      "code": 31,
+      "layer": "shift",
+      "notes": "[P4] PDF p6, PAD8, physical bank 5-8, enumerated message bank 2. Data2 OFF=0, ON=127 unless otherwise stated. Representative ch8; expand identically to channels 8/9.",
+      "midi_out": "Same address and 0/127 values for illumination, as documented."
+    },
+    {
+      "name": "pad8_ch8_bank5",
+      "section": "pads",
+      "type": "note",
+      "ch": 8,
+      "code": 71,
+      "layer": "base",
+      "notes": "[P4] PDF p6, PAD8, physical bank 5-8, enumerated message bank 5. Data2 OFF=0, ON=127 unless otherwise stated. Representative ch8; expand identically to channels 8/9.",
+      "midi_out": "Same address and 0/127 values for illumination, as documented."
+    },
+    {
+      "name": "pad8_ch8_bank5_shift",
+      "section": "pads",
+      "type": "note",
+      "ch": 8,
+      "code": 79,
+      "layer": "shift",
+      "notes": "[P4] PDF p6, PAD8, physical bank 5-8, enumerated message bank 5. Data2 OFF=0, ON=127 unless otherwise stated. Representative ch8; expand identically to channels 8/9.",
+      "midi_out": "Same address and 0/127 values for illumination, as documented."
+    },
+    {
+      "name": "pad8_ch8_bank6",
+      "section": "pads",
+      "type": "note",
+      "ch": 8,
+      "code": 87,
+      "layer": "base",
+      "notes": "[P4] PDF p6, PAD8, physical bank 5-8, enumerated message bank 6. Data2 OFF=0, ON=127 unless otherwise stated. Representative ch8; expand identically to channels 8/9.",
+      "midi_out": "Same address and 0/127 values for illumination, as documented."
+    },
+    {
+      "name": "pad8_ch8_bank6_shift",
+      "section": "pads",
+      "type": "note",
+      "ch": 8,
+      "code": 95,
+      "layer": "shift",
+      "notes": "[P4] PDF p6, PAD8, physical bank 5-8, enumerated message bank 6. Data2 OFF=0, ON=127 unless otherwise stated. Representative ch8; expand identically to channels 8/9.",
+      "midi_out": "Same address and 0/127 values for illumination, as documented."
+    },
+    {
+      "name": "pad8_ch8_bank7",
+      "section": "pads",
+      "type": "note",
+      "ch": 8,
+      "code": 103,
+      "layer": "base",
+      "notes": "[P4] PDF p6, PAD8, physical bank 5-8, enumerated message bank 7. Data2 OFF=0, ON=127 unless otherwise stated. Representative ch8; expand identically to channels 8/9.",
+      "midi_out": "Same address and 0/127 values for illumination, as documented."
+    },
+    {
+      "name": "pad8_ch8_bank7_shift",
+      "section": "pads",
+      "type": "note",
+      "ch": 8,
+      "code": 111,
+      "layer": "shift",
+      "notes": "[P4] PDF p6, PAD8, physical bank 5-8, enumerated message bank 7. Data2 OFF=0, ON=127 unless otherwise stated. Representative ch8; expand identically to channels 8/9.",
+      "midi_out": "Same address and 0/127 values for illumination, as documented."
+    },
+    {
+      "name": "pad8_ch8_bank8",
+      "section": "pads",
+      "type": "note",
+      "ch": 8,
+      "code": 119,
+      "layer": "base",
+      "notes": "[P4] PDF p6, PAD8, physical bank 5-8, enumerated message bank 8. Data2 OFF=0, ON=127 unless otherwise stated. Representative ch8; expand identically to channels 8/9.",
+      "midi_out": "Same address and 0/127 values for illumination, as documented."
+    },
+    {
+      "name": "pad8_ch8_bank8_shift",
+      "section": "pads",
+      "type": "note",
+      "ch": 8,
+      "code": 127,
+      "layer": "shift",
+      "notes": "[P4] PDF p6, PAD8, physical bank 5-8, enumerated message bank 8. Data2 OFF=0, ON=127 unless otherwise stated. Representative ch8; expand identically to channels 8/9.",
+      "midi_out": "Same address and 0/127 values for illumination, as documented."
+    },
+    {
+      "name": "pad8_ch14_bank1",
+      "section": "pads",
+      "type": "note",
+      "ch": 14,
+      "code": 7,
+      "layer": "base",
+      "notes": "[P4] PDF p6, PAD8, physical bank 5-8, enumerated message bank 1. Data2 OFF=0, ON=127 unless otherwise stated. Representative ch14; expand identically to channels 14/15.",
+      "midi_out": "Same address and 0/127 values for illumination, as documented."
+    },
+    {
+      "name": "pad8_ch14_bank1_shift",
+      "section": "pads",
+      "type": "note",
+      "ch": 14,
+      "code": 15,
+      "layer": "shift",
+      "notes": "[P4] PDF p6, PAD8, physical bank 5-8, enumerated message bank 1. Data2 OFF=0, ON=127 unless otherwise stated. Representative ch14; expand identically to channels 14/15.",
+      "midi_out": "Same address and 0/127 values for illumination, as documented."
+    },
+    {
+      "name": "pad8_ch14_bank2",
+      "section": "pads",
+      "type": "note",
+      "ch": 14,
+      "code": 23,
+      "layer": "base",
+      "notes": "[P4] PDF p6, PAD8, physical bank 5-8, enumerated message bank 2. Data2 OFF=0, ON=127 unless otherwise stated. Representative ch14; expand identically to channels 14/15.",
+      "midi_out": "Same address and 0/127 values for illumination, as documented."
+    },
+    {
+      "name": "pad8_ch14_bank2_shift",
+      "section": "pads",
+      "type": "note",
+      "ch": 14,
+      "code": 31,
+      "layer": "shift",
+      "notes": "[P4] PDF p6, PAD8, physical bank 5-8, enumerated message bank 2. Data2 OFF=0, ON=127 unless otherwise stated. Representative ch14; expand identically to channels 14/15.",
+      "midi_out": "Same address and 0/127 values for illumination, as documented."
+    },
+    {
+      "name": "pad8_ch14_bank3",
+      "section": "pads",
+      "type": "note",
+      "ch": 14,
+      "code": 39,
+      "layer": "base",
+      "notes": "[P4] PDF p6, PAD8, physical bank 5-8, enumerated message bank 3. Data2 OFF=0, ON=127 unless otherwise stated. Representative ch14; expand identically to channels 14/15.",
+      "midi_out": "Same address and 0/127 values for illumination, as documented."
+    },
+    {
+      "name": "pad8_ch14_bank3_shift",
+      "section": "pads",
+      "type": "note",
+      "ch": 14,
+      "code": 47,
+      "layer": "shift",
+      "notes": "[P4] PDF p6, PAD8, physical bank 5-8, enumerated message bank 3. Data2 OFF=0, ON=127 unless otherwise stated. Representative ch14; expand identically to channels 14/15.",
+      "midi_out": "Same address and 0/127 values for illumination, as documented."
+    },
+    {
+      "name": "pad8_ch14_bank4",
+      "section": "pads",
+      "type": "note",
+      "ch": 14,
+      "code": 55,
+      "layer": "base",
+      "notes": "[P4] PDF p6, PAD8, physical bank 5-8, enumerated message bank 4. Data2 OFF=0, ON=127 unless otherwise stated. Representative ch14; expand identically to channels 14/15.",
+      "midi_out": "Same address and 0/127 values for illumination, as documented."
+    },
+    {
+      "name": "pad8_ch14_bank4_shift",
+      "section": "pads",
+      "type": "note",
+      "ch": 14,
+      "code": 63,
+      "layer": "shift",
+      "notes": "[P4] PDF p6, PAD8, physical bank 5-8, enumerated message bank 4. Data2 OFF=0, ON=127 unless otherwise stated. Representative ch14; expand identically to channels 14/15.",
+      "midi_out": "Same address and 0/127 values for illumination, as documented."
+    },
+    {
+      "name": "pad8_ch12_bank1",
+      "section": "pads",
+      "type": "note",
+      "ch": 12,
+      "code": 7,
+      "layer": "base",
+      "notes": "[P4] PDF p6, PAD8, physical bank 5-8, enumerated message bank 1. Data2 OFF=0, ON=127 unless otherwise stated. Representative ch12; expand identically to channels 12/13.",
+      "midi_out": "Same address and 0/127 values for illumination, as documented."
+    },
+    {
+      "name": "pad8_ch12_bank1_shift",
+      "section": "pads",
+      "type": "note",
+      "ch": 12,
+      "code": 15,
+      "layer": "shift",
+      "notes": "[P4] PDF p6, PAD8, physical bank 5-8, enumerated message bank 1. Data2 OFF=0, ON=127 unless otherwise stated. Representative ch12; expand identically to channels 12/13.",
+      "midi_out": "Same address and 0/127 values for illumination, as documented."
+    },
+    {
+      "name": "pad8_ch12_bank2",
+      "section": "pads",
+      "type": "note",
+      "ch": 12,
+      "code": 23,
+      "layer": "base",
+      "notes": "[P4] PDF p6, PAD8, physical bank 5-8, enumerated message bank 2. Data2 OFF=0, ON=127 unless otherwise stated. Representative ch12; expand identically to channels 12/13.",
+      "midi_out": "Same address and 0/127 values for illumination, as documented."
+    },
+    {
+      "name": "pad8_ch12_bank2_shift",
+      "section": "pads",
+      "type": "note",
+      "ch": 12,
+      "code": 31,
+      "layer": "shift",
+      "notes": "[P4] PDF p6, PAD8, physical bank 5-8, enumerated message bank 2. Data2 OFF=0, ON=127 unless otherwise stated. Representative ch12; expand identically to channels 12/13.",
+      "midi_out": "Same address and 0/127 values for illumination, as documented."
+    },
+    {
+      "name": "pad8_ch12_bank3",
+      "section": "pads",
+      "type": "note",
+      "ch": 12,
+      "code": 39,
+      "layer": "base",
+      "notes": "[P4] PDF p6, PAD8, physical bank 5-8, enumerated message bank 3. Data2 OFF=0, ON=127 unless otherwise stated. Representative ch12; expand identically to channels 12/13.",
+      "midi_out": "Same address and 0/127 values for illumination, as documented."
+    },
+    {
+      "name": "pad8_ch12_bank3_shift",
+      "section": "pads",
+      "type": "note",
+      "ch": 12,
+      "code": 47,
+      "layer": "shift",
+      "notes": "[P4] PDF p6, PAD8, physical bank 5-8, enumerated message bank 3. Data2 OFF=0, ON=127 unless otherwise stated. Representative ch12; expand identically to channels 12/13.",
+      "midi_out": "Same address and 0/127 values for illumination, as documented."
+    },
+    {
+      "name": "pad8_ch12_bank4",
+      "section": "pads",
+      "type": "note",
+      "ch": 12,
+      "code": 55,
+      "layer": "base",
+      "notes": "[P4] PDF p6, PAD8, physical bank 5-8, enumerated message bank 4. Data2 OFF=0, ON=127 unless otherwise stated. Representative ch12; expand identically to channels 12/13.",
+      "midi_out": "Same address and 0/127 values for illumination, as documented."
+    },
+    {
+      "name": "pad8_ch12_bank4_shift",
+      "section": "pads",
+      "type": "note",
+      "ch": 12,
+      "code": 63,
+      "layer": "shift",
+      "notes": "[P4] PDF p6, PAD8, physical bank 5-8, enumerated message bank 4. Data2 OFF=0, ON=127 unless otherwise stated. Representative ch12; expand identically to channels 12/13.",
+      "midi_out": "Same address and 0/127 values for illumination, as documented."
+    },
+    {
+      "name": "pad8_mode_single",
+      "section": "pads",
+      "type": "note",
+      "ch": 1,
+      "code": 34,
+      "layer": "mode",
+      "notes": "[P4] PDF p6, MODE single, physical bank 5-8. Data2 OFF=0, ON=127 unless otherwise stated. Representative ch1; expand identically to channels 1/2.",
+      "midi_out": "Same address and 0/127 values for illumination, as documented."
+    },
+    {
+      "name": "pad8_mode_single_shift",
+      "section": "pads",
+      "type": "note",
+      "ch": 1,
+      "code": 111,
+      "layer": "shift_mode",
+      "notes": "[P4] PDF p6, MODE single, physical bank 5-8. Data2 OFF=0, ON=127 unless otherwise stated. Representative ch1; expand identically to channels 1/2.",
+      "midi_out": "Same address and 0/127 values for illumination, as documented."
+    },
+    {
+      "name": "pad8_mode_double",
+      "section": "pads",
+      "type": "note",
+      "ch": 14,
+      "code": 67,
+      "layer": "mode",
+      "notes": "[P4] PDF p6, MODE double, physical bank 5-8. Data2 OFF=0, ON=127 unless otherwise stated. Representative ch14; expand identically to channels 14/15.",
+      "midi_out": "Same address and 0/127 values for illumination, as documented."
+    },
+    {
+      "name": "pad8_mode_double_shift",
+      "section": "pads",
+      "type": "note",
+      "ch": 12,
+      "code": 67,
+      "layer": "shift_mode",
+      "notes": "[P4] PDF p6, MODE double, physical bank 5-8. Data2 OFF=0, ON=127 unless otherwise stated. Representative ch12; expand identically to channels 12/13.",
+      "midi_out": "Same address and 0/127 values for illumination, as documented."
+    },
+    {
+      "name": "pad_bank",
+      "section": "pads",
+      "type": "note",
+      "ch": 1,
+      "code": 26,
+      "layer": "base",
+      "notes": "[P5] PDF p6, 5-8 bank button. Data2 OFF=0, ON=127 unless otherwise stated. Representative ch1; expand identically to channels 1/2.",
+      "midi_out": "Same address and 0/127 values for illumination, as documented."
+    },
+    {
+      "name": "pad_bank_shift",
+      "section": "pads",
+      "type": "note",
+      "ch": 1,
+      "code": 20,
+      "layer": "shift",
+      "notes": "[P5] PDF p6, 5-8 bank button. Data2 OFF=0, ON=127 unless otherwise stated. Representative ch1; expand identically to channels 1/2.",
+      "midi_out": "Same address and 0/127 values for illumination, as documented."
+    },
+    {
+      "name": "shift",
+      "section": "pads",
+      "type": "note",
+      "ch": 7,
+      "code": 63,
+      "layer": "base",
+      "notes": "[P6] PDF p6, physical SHIFT. Data2 not specified by the vendor for this row."
+    },
+    {
+      "name": "mode",
+      "section": "pads",
+      "type": "note",
+      "ch": 7,
+      "code": 64,
+      "layer": "base",
+      "notes": "[P7] PDF p6, physical MODE. Data2 not specified by the vendor for this row."
+    }
+  ],
+  "unavailable": [
+    {
+      "name": "pad7_ch8_bank3",
+      "fig": "P3",
+      "page": 6,
+      "channel_reference": "8/9",
+      "data1": 38,
+      "status": "10p",
+      "reason": "Invalid printed MIDI status, no documented unambiguous wire address. Not corrected by symmetry."
+    },
+    {
+      "name": "pad7_ch8_bank3_shift",
+      "fig": "P3",
+      "page": 6,
+      "channel_reference": "8/9",
+      "data1": 46,
+      "status": "11p",
+      "reason": "Invalid printed MIDI status, no documented unambiguous wire address. Not corrected by symmetry."
+    },
+    {
+      "name": "pad7_ch8_bank4",
+      "fig": "P3",
+      "page": 6,
+      "channel_reference": "8/9",
+      "data1": 54,
+      "status": "12p",
+      "reason": "Invalid printed MIDI status, no documented unambiguous wire address. Not corrected by symmetry."
+    },
+    {
+      "name": "pad7_ch8_bank4_shift",
+      "fig": "P3",
+      "page": 6,
+      "channel_reference": "8/9",
+      "data1": 62,
+      "status": "13p",
+      "reason": "Invalid printed MIDI status, no documented unambiguous wire address. Not corrected by symmetry."
+    },
+    {
+      "name": "pad8_ch8_bank3",
+      "fig": "P4",
+      "page": 6,
+      "channel_reference": "8/9",
+      "data1": 39,
+      "status": "10p",
+      "reason": "Invalid printed MIDI status, no documented unambiguous wire address. Not corrected by symmetry."
+    },
+    {
+      "name": "pad8_ch8_bank3_shift",
+      "fig": "P4",
+      "page": 6,
+      "channel_reference": "8/9",
+      "data1": 47,
+      "status": "11p",
+      "reason": "Invalid printed MIDI status, no documented unambiguous wire address. Not corrected by symmetry."
+    },
+    {
+      "name": "pad8_ch8_bank4",
+      "fig": "P4",
+      "page": 6,
+      "channel_reference": "8/9",
+      "data1": 55,
+      "status": "12p",
+      "reason": "Invalid printed MIDI status, no documented unambiguous wire address. Not corrected by symmetry."
+    },
+    {
+      "name": "pad8_ch8_bank4_shift",
+      "fig": "P4",
+      "page": 6,
+      "channel_reference": "8/9",
+      "data1": 63,
+      "status": "13p",
+      "reason": "Invalid printed MIDI status, no documented unambiguous wire address. Not corrected by symmetry."
+    }
+  ],
+  "out_of_scope": [
+    "M13 MIC LEVEL: hardware control",
+    "M15 CROSSFADER FEELING ADJUST: hardware control",
+    "VU and non-addressed LEDs: no wire identity in this list"
+  ]
+}

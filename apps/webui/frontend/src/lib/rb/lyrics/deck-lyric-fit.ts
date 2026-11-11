@@ -69,14 +69,26 @@ function _pageAt(
 	availablePx: number,
 	measure: MeasureLyricText
 ): number[] {
+	if (words.length === 0) return [0];
 	const starts: number[] = [0];
 	let start = 0;
-	for (let end = 1; end < words.length; end += 1) {
-		const candidate = words.slice(start, end + 1).join(' ');
-		if (measure(candidate, fontPx) > availablePx) {
-			starts.push(end);
-			start = end;
+	while (start < words.length) {
+		let end = start;
+		while (
+			end + 1 < words.length &&
+			measure(words.slice(start, end + 2).join(' '), fontPx) <= availablePx
+		) {
+			end += 1;
 		}
+		const page = words.slice(start, end + 1).join(' ');
+		if (end === start && measure(page, fontPx) > availablePx && start + 1 < words.length) {
+			starts.push(start + 1);
+			start = start + 1;
+			continue;
+		}
+		if (end + 1 >= words.length) break;
+		starts.push(end + 1);
+		start = end + 1;
 	}
 	return starts;
 }

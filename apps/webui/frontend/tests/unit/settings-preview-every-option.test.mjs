@@ -14,7 +14,12 @@ import { loadTypeScriptModule } from './load-typescript.mjs';
 /** Rows that rendered a preview on origin/main at 11caf6210e (audited Mon 5 Oct 2026). */
 const PREVIEW_ROWS_ON_MAIN = ['waveform_design', 'wave_palette'];
 /** Which waveform pref each preview row sets; the other one stays on its 'auto' default. */
-const PREF_SET_BY_ROW = { waveform_design: 'design', wave_palette: 'palette', wave_grid_lines: 'grid' };
+const PREF_SET_BY_ROW = {
+	waveform_design: 'design',
+	wave_palette: 'palette',
+	wave_height: 'height',
+	wave_grid_lines: 'grid'
+};
 const W = 160;
 const H = 36;
 /** A preview must cover at least this share of the canvas with non-background marks. */
@@ -117,13 +122,14 @@ test('CHROME-16 if any option value of a preview row paints an empty or invisibl
 			for (const skinId of skin.UI_SKIN_CHOICES) {
 				const designPref = PREF_SET_BY_ROW[def.id] === 'design' ? value : 'auto';
 				const palettePref = PREF_SET_BY_ROW[def.id] === 'palette' ? value : 'auto';
+				const waveHeight = PREF_SET_BY_ROW[def.id] === 'height' ? value : 'full';
 				const design = skin.effectiveWaveformDesign(designPref, skinId);
 				const choice = skin.effectiveWavePalette(palettePref, skinId);
 				const colors = palette.resolveWaveBandColors('dark', choice);
 				// Other rows paint grid-off so the band color counts stay band-only.
 				const gridLines = PREF_SET_BY_ROW[def.id] === 'grid' ? value : 'off';
 				const { ctx, ink } = recordingContext();
-				paint.paintWaveformPreview(ctx, W, H, design, colors, sample, gridLines);
+				paint.paintWaveformPreview(ctx, W, H, design, colors, sample, waveHeight, gridLines);
 				const label = `${def.id}=${value} skin=${skinId} -> ${design}/${choice}`;
 				const visible = ink.area >= MIN_INK_SHARE * W * H || ink.strokeSegments >= 40;
 				assert.ok(visible, `${label}: preview painted no visible marks (ink area ${ink.area}, stroke segments ${ink.strokeSegments})`);
@@ -132,14 +138,14 @@ test('CHROME-16 if any option value of a preview row paints an empty or invisibl
 			}
 		}
 	}
-	// Control: 3 rows x (5 + 4 + 3 options) x 5 skins. A zero here would mean the loop never ran.
-	assert.equal(painted, 60, 'every preview row x option x skin combination was painted');
+	// Control: 4 rows x (6 + 5 + 2 + 3 options) x 5 skins. A zero here would mean the loop never ran.
+	assert.equal(painted, 80, 'every preview row x option x skin combination was painted');
 });
 
 test('CHROME-16 if a design has no painter branch then the preview falls through silently instead of failing', () => {
 	const { ctx } = recordingContext();
 	const colors = palette.resolveWaveBandColors('dark', 'rekordbox');
-	assert.throws(() => paint.paintWaveformPreview(ctx, W, H, 'spiral', colors, sample, 'off'), /no painter for design spiral/);
+	assert.throws(() => paint.paintWaveformPreview(ctx, W, H, 'spiral', colors, sample, 'full', 'off'), /no painter for design spiral/);
 });
 
 test('CHROME-16 if SettingsOverlay lazy-imports the preview again then a pending or failed chunk renders nothing', () => {
@@ -167,7 +173,7 @@ test('WAVEQS-11736 the beat grid lines preview shows the three variants', () => 
 			if (ctx.fillStyle === paint.PREVIEW_GRID_COLOR) count += 1;
 			fillRect(...args);
 		};
-		paint.paintWaveformPreview(ctx, W_WIDE, H, 'tri-band', colors, sample, gridLines);
+		paint.paintWaveformPreview(ctx, W_WIDE, H, 'tri-band', colors, sample, 'full', gridLines);
 		return count;
 	};
 	const beatsBars = gridRects('beats_bars');

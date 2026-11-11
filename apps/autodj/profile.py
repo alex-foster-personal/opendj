@@ -319,9 +319,15 @@ def _grid_trust(beatgrid: Mapping[str, Any]) -> tuple[bool, str | None]:
 def _timing(
     track: Mapping[str, Any], beats: list[Mapping[str, Any]], downbeats: tuple[float, ...], notes: list[str]
 ) -> tuple[float | None, float, float]:
-    """(bpm, duration_s, bar_s): the library row first, the grid when the row has none."""
-    bpm = track.get("bpm")
-    bpm = float(bpm) if isinstance(bpm, (int, float)) and bpm > 0 else _grid_bpm(beats)
+    """(bpm, duration_s, bar_s): the analyzed beatgrid when present, else the library row."""
+    row_bpm = track.get("bpm")
+    row_bpm = float(row_bpm) if isinstance(row_bpm, (int, float)) and row_bpm > 0 else None
+    grid_bpm = _grid_bpm(beats)
+    bpm = grid_bpm if grid_bpm is not None else row_bpm
+    if grid_bpm is not None and row_bpm is not None and abs(grid_bpm - row_bpm) > 0.01:
+        notes.append(
+            f"library BPM {row_bpm:g} differs from the analyzed beatgrid {grid_bpm:g}; the planner uses the grid"
+        )
     duration_ms = track.get("duration_ms")
     if isinstance(duration_ms, (int, float)) and duration_ms > 0:
         duration_s = float(duration_ms) / 1000.0
@@ -558,6 +564,7 @@ def profile_from_payloads(anlz: Mapping[str, Any], track: Mapping[str, Any] | No
         stems_available=stems if isinstance(stems, bool) else None,
         notes=tuple(notes),
         **_loudness(track),
+        **_dbtp(track),
         **mik,
     )
 
@@ -588,6 +595,34 @@ def _loudness(track: Mapping[str, Any]) -> dict[str, Any]:
     raise ProfileError(f"malformed loudness block {dict(block)!r}: unknown status {status!r}")
 
 
+def _dbtp(track: Mapping[str, Any]) -> dict[str, Any]:
+    """Provenance ``loudness_dbtp``: measured true peak, or None with its reason (never a default peak)."""
+    provenance = track.get("provenance")
+    if not isinstance(provenance, Mapping):
+        return {"dbtp": None, "dbtp_reason": "the track read carries no provenance block"}
+    if "loudness_dbtp" not in provenance:
+        return {"dbtp": None, "dbtp_reason": "the track read carries no loudness_dbtp on provenance"}
+    lane = provenance["loudness_dbtp"]
+    if not isinstance(lane, Mapping):
+        raise ProfileError(f"malformed loudness_dbtp provenance {lane!r}")
+    status = lane.get("status")
+    value, reason = lane.get("value"), lane.get("reason")
+    if status == "ok":
+        if not _finite_number(value):
+            raise ProfileError(f"malformed loudness_dbtp provenance {dict(lane)!r}: ok needs a finite value")
+        return {"dbtp": float(value), "dbtp_reason": None}
+    if status in ("failed", "missing"):
+        if value is not None or not isinstance(reason, str) or not reason:
+            raise ProfileError(f"malformed loudness_dbtp provenance {dict(lane)!r}: {status} needs a reason")
+        return {"dbtp": None, "dbtp_reason": reason}
+    if status == "error":
+        raise ProfileError(f"the engine's loudness store is broken: {reason}")
+    raise ProfileError(f"malformed loudness_dbtp provenance {dict(lane)!r}: unknown status {status!r}")
+
+
+#: Incoming true-peak ceiling for loudness-match trim (volume-lane spec ``ceiling_dbtp`` default).
+INCOMING_TRUE_PEAK_CEILING_DBTP = -1.0
+
 #: The TRIM knob's top gain: the engine scales linearly by ``2 * knob`` (``TRIM_MAX_GAIN``, player/constants.ts), so
 #: unity sits at 0.5 and the most a trim can add is 20*log10(2) dB.
 TRIM_MAX_GAIN = 2.0
@@ -605,7 +640,7 @@ def match_trim_db(
     """AGENT-31: the canon's match-the-outgoing trim (canon AutoDJ doc step 7): incoming gain that puts it at the
     outgoing deck's PLAYING level, its integrated LUFS plus live auto-gain offsets plus the outgoing trim
     ``out_trim_db`` (Codex #7594: else consecutive transitions drift by every earlier trim). None, with the reason,
-    when either LUFS is unknown; capped at the knob's +6.02 dB, saying so."""
+    when either LUFS is unknown; capped at ``min(..., ceiling_dbtp - TP_in, +6.02)`` with each cap said."""
     if out_profile.lufs is None or in_profile.lufs is None:
         missing = out_profile if out_profile.lufs is None else in_profile
         return None, f"no trim: {missing.stable_id} loudness unknown ({missing.lufs_reason})"
@@ -617,25 +652,46 @@ def match_trim_db(
         raise ValueError(f"incoming auto gain {in_auto_gain_db} dB is not a number")
     reference = out_profile.lufs + out_auto_gain_db + out_trim_db
     wanted = reference - in_profile.lufs - in_auto_gain_db
+    cap_kw = {"in_profile": in_profile, "in_auto_gain_db": in_auto_gain_db}
     if out_auto_gain_db == 0.0 and in_auto_gain_db == 0.0:
         if out_trim_db != 0.0:
             return _capped(
                 wanted,
                 f"match {in_profile.lufs:.1f} to {out_profile.lufs:.1f} LUFS with the outgoing trim "
                 f"{out_trim_db:+.1f} dB ({reference:.1f} LUFS)",
+                **cap_kw,
             )
-        return _capped(wanted, f"match {in_profile.lufs:.1f} to {out_profile.lufs:.1f} LUFS")
+        return _capped(wanted, f"match {in_profile.lufs:.1f} to {out_profile.lufs:.1f} LUFS", **cap_kw)
     return _capped(
         wanted,
         f"match {in_profile.lufs:.1f} to {out_profile.lufs:.1f} LUFS with the outgoing trim {out_trim_db:+.1f} dB "
         f"and auto gain {out_auto_gain_db:+.1f}/{in_auto_gain_db:+.1f} dB ({reference:.1f} LUFS)",
+        **cap_kw,
     )
 
 
-def _capped(wanted: float, what: str) -> tuple[float, str]:
-    if wanted > TRIM_MAX_DB:
+def _capped(
+    wanted: float,
+    what: str,
+    *,
+    in_profile: TrackProfile,
+    in_auto_gain_db: float = 0.0,
+) -> tuple[float, str]:
+    effective = wanted
+    reason = f"{what}: {wanted:+.1f} dB"
+    if in_profile.dbtp is not None and _finite_number(in_profile.dbtp):
+        peak_cap = INCOMING_TRUE_PEAK_CEILING_DBTP - in_profile.dbtp - in_auto_gain_db
+        if wanted > peak_cap:
+            effective = peak_cap
+            reason = (
+                f"{what} wants {wanted:+.1f} dB; capped at {INCOMING_TRUE_PEAK_CEILING_DBTP:+.1f} dBTP ceiling "
+                f"(incoming TP {in_profile.dbtp:+.1f} dBTP): {effective:+.1f} dB"
+            )
+    if effective > TRIM_MAX_DB:
         return round(TRIM_MAX_DB, 2), f"{what} wants {wanted:+.1f} dB; capped at the trim's {TRIM_MAX_DB:+.2f} dB"
-    return round(wanted, 2), f"{what}: {wanted:+.1f} dB"
+    if in_profile.dbtp is None:
+        reason = f"{reason}; true peak unknown"
+    return round(effective, 2), reason
 
 
 def trim_db_of_knob(knob: float) -> float:

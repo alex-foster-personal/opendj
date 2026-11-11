@@ -11,6 +11,8 @@ from pathlib import Path
 from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import HTMLResponse
 
+from apps.shared.state.tracklist_hidden import HIDDEN_LABEL, hidden_stable_ids_at
+
 from . import paths as sets_paths
 from .sessions import Session, get_session
 
@@ -32,7 +34,11 @@ def _track_event(line: str) -> dict[object, object] | None:
     return event if isinstance(event, dict) and event.get("action") == "track_loaded" else None
 
 
-def _timeline_rows(session_id: str, sets_root: Path | None) -> list[tuple[str, str, str]]:
+def _timeline_rows(
+    session_id: str,
+    sets_root: Path | None,
+    hidden_stable_ids: frozenset[str],
+) -> list[tuple[str, str, str]]:
     path = sets_paths.session_dir(session_id, root=sets_root) / "timeline.jsonl"
     if not path.exists():
         return []
@@ -45,19 +51,36 @@ def _timeline_rows(session_id: str, sets_root: Path | None) -> list[tuple[str, s
             continue
         metadata = event.get("value")
         values = metadata if isinstance(metadata, dict) else {}
-        title = values.get("title") or event.get("track_stable_id") or "Unidentified track"
-        artist = values.get("artist") or event.get("source") or "Recorded source"
+        stable_id = event.get("track_stable_id")
+        hidden = isinstance(stable_id, str) and stable_id in hidden_stable_ids
+        if hidden:
+            title = HIDDEN_LABEL
+            artist = HIDDEN_LABEL
+        else:
+            title = values.get("title") or event.get("track_stable_id") or "Unidentified track"
+            artist = values.get("artist") or event.get("source") or "Recorded source"
         deck = event.get("deck")
         detail = f"{artist} - Deck {deck}" if deck else str(artist)
         rows.append((_elapsed(event.get("timestamp_s")), str(title), detail))
     return rows
 
 
-def _transition_rows(session: Session) -> list[tuple[str, str, str]]:
+def _redact_transition_label(label: str, hidden_stable_ids: frozenset[str]) -> str:
+    if label in hidden_stable_ids:
+        return HIDDEN_LABEL
+    return label
+
+
+def _transition_rows(
+    session: Session,
+    hidden_stable_ids: frozenset[str],
+) -> list[tuple[str, str, str]]:
     rows: list[tuple[str, str, str]] = []
     for transition in session.transitions:
         from_track = transition.get("from_track") or transition.get("from_deck") or "No recorded track"
         to_track = transition.get("to_track") or transition.get("to_deck") or "No recorded track"
+        from_track = _redact_transition_label(str(from_track), hidden_stable_ids)
+        to_track = _redact_transition_label(str(to_track), hidden_stable_ids)
         confidence = transition.get("confidence")
         if not isinstance(confidence, int | float) or not isfinite(confidence):
             raise ValueError("shared transition confidence must be finite")
@@ -80,9 +103,9 @@ def _list(rows: list[tuple[str, str, str]], empty: str) -> str:
     )
 
 
-def _render(session: Session, sets_root: Path | None) -> str:
-    tracks = _timeline_rows(session.summary.session_id, sets_root)
-    transitions = _transition_rows(session)
+def _render(session: Session, sets_root: Path | None, hidden_stable_ids: frozenset[str]) -> str:
+    tracks = _timeline_rows(session.summary.session_id, sets_root, hidden_stable_ids)
+    transitions = _transition_rows(session, hidden_stable_ids)
     duration = "Duration not finalized" if session.summary.duration_s is None else _elapsed(session.summary.duration_s)
     started_at = escape(session.summary.started_at.replace("T", " ").replace("+00:00", " UTC"))
     return f"""<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Shared set - Open DJ</title><style>
@@ -101,7 +124,14 @@ def shared_set_page(request: Request, session_id: str) -> HTMLResponse:
         raise HTTPException(status_code=404, detail="shared set not found") from exc
     if session is None or session.summary.share_state != "shared_cloud":
         raise HTTPException(status_code=404, detail="shared set not found")
-    return HTMLResponse(_render(session, sets_root), headers={"cache-control": "no-cache"})
+    raw_db = getattr(request.app.state, "state_db_path", None)
+    if raw_db is None:
+        raise HTTPException(status_code=500, detail="state database not configured")
+    try:
+        hidden = hidden_stable_ids_at(Path(raw_db))
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=500, detail="state database not found") from exc
+    return HTMLResponse(_render(session, sets_root, hidden), headers={"cache-control": "no-cache"})
 
 
 __all__ = ["router"]

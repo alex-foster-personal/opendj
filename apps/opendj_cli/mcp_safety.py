@@ -179,15 +179,27 @@ def canonical_api_path(path: str) -> str:
     return f"{canonical}/" if decoded.endswith(("/", "/.", "/..")) and canonical != "/" else canonical
 
 
-def validate_api_path(path: str) -> str:
-    """Refuse a path outside /api/v1/, and return its :func:`canonical_api_path` for the caller's own rails."""
+def _is_sets_path(path: str) -> bool:
+    return path == "/api/sets" or path.startswith("/api/sets/")
+
+
+def validate_api_path(path: str, *, method: str | None = None) -> str:
+    """Allow v1 paths and explicit GET/HEAD sets reads; return the canonical path."""
     # Raw AND canonical: the engine decodes %2e%2e to '..' before routing, and
-    # the raw form is appended to an origin, so neither may leave /api/v1/.
+    # the raw form is appended to an origin, so both must stay in one namespace.
     canonical = canonical_api_path(path)
-    if not (path.startswith("/api/v1/") and canonical.startswith("/api/v1/")):
+    raw_route = re.split(r"[?#]", path, maxsplit=1)[0]
+    v1_path = path.startswith("/api/v1/") and canonical.startswith("/api/v1/")
+    sets_read = (
+        method is not None
+        and method.upper() in {"GET", "HEAD"}
+        and _is_sets_path(raw_route)
+        and _is_sets_path(canonical)
+    )
+    if not (v1_path or sets_read):
         raise SafetyRefusal(
             "invalid_path",
-            f"only /api/v1/* paths are allowed, got: {path}",
+            f"only /api/v1/* paths or GET/HEAD /api/sets and /api/sets/* are allowed, got: {path}",
             path=path,
         )
     if ".." in unquote(path):

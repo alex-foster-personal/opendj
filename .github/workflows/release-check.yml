@@ -177,6 +177,7 @@ jobs:
         # No uv cache in a release-triggered workflow: a cache written by a PR run
         # must not feed a tag/release build (zizmor cache-poisoning).
         with:
+          version: "0.13.7"
           enable-cache: false
 
       # Stale-install guard (PR #4251): fail if this job's interpreter can import

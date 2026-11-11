@@ -210,6 +210,8 @@ export async function patchTrack(
 		/** LIBUX-56: the user's comment; an empty string clears what the library shows. */
 		comments?: string;
 		tempo_pref?: TempoPrefPatch | null;
+		/** NOWP-11487: withhold identity in tracklist exports while keeping the slot. */
+		tracklist_hidden?: boolean | null;
 	}
 ): Promise<{ track: Track; etag: string }> {
 	// Spec decision 2: nothing is ever written for a stick track.

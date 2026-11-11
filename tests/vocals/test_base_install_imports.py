@@ -22,7 +22,11 @@ import pytest
 pytestmark = [pytest.mark.requirement("CAT-05")]
 
 # Modules that must survive an import with soundfile unavailable.
-_BASE_IMPORTABLE: tuple[str, ...] = ("apps.vocals.from_stems", "apps.vocals.cli")
+_BASE_IMPORTABLE: tuple[str, ...] = (
+    "apps.vocals.from_stems",
+    "apps.vocals.cli",
+    "apps.vocals.cli_claims",
+)
 
 _BLOCKER = """
 import sys

@@ -16,8 +16,8 @@
  * wins"): transport play/cue, hot cues, auto/beat loops, mixer continuous
  * controls (trim/EQ/fader/crossfader/master), channel cue/PFL, headphone
  * mix/level, master cue (VirtualDJ-style force-master overlay), pitch faders,
- * browse+load, shift-layer modifier. Scratch, jog bitmap, stems, sampler,
- * FX and DVS are explicitly NOT modelled here.
+ * browse+load, shift-layer modifier, jog, beat sync, colour FX pads. Scratch,
+ * jog bitmap, sampler and DVS stay out of this union.
  *
  * Requirements (mini-PRD):
  *   ✔︎ Discriminated MidiAction union covering exactly the P0 scope.
@@ -246,6 +246,14 @@ export interface MasterCueAction {
 	mode: 'hold' | 'latch';
 }
 
+/** Colour FX pad (Pioneer Sound Color FX selector). `next` cycles
+ * FILTER -> SPACE -> ECHO. The pad is a switch, not the colour knob. */
+export interface ColorFxAction {
+	type: 'color_fx';
+	deck: DeckId;
+	effect: 'filter' | 'space' | 'echo' | 'next';
+}
+
 /** Every action the P0 runtime can emit. Adding a case = widening P0
  * scope; do that in a contract change, not ad hoc in a device map. */
 export type MidiAction =
@@ -272,6 +280,7 @@ export type MidiAction =
 	| HeadphoneMixAction
 	| HeadphoneLevelAction
 	| MasterCueAction
+	| ColorFxAction
 	| DeckPitchAction
 	| BrowseEncoderAction
 	| BrowseLoadAction

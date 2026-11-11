@@ -1,0 +1,9 @@
+{
+  "bytes": 2048,
+  "measured_main": 496665,
+  "measured_with_pr": 497916,
+  "sha": "52bb2b1754",
+  "date": "Tue 10 Nov 2026",
+  "reason": "PR #10676 adds the try-er MIK energy line and two-row EnergyStrip on candidate cards (TryerEnergyCard.svelte, tryer-model helpers), lazy on the /tryer route in other-lazy. Measured: merge-base 36e560483e7 vs this branch on the same host, +1251 B gzip; ceiled to KiB plus 1 KiB",
+  "payback": "none planned; the growth is the feature UI on the try-er surface"
+}

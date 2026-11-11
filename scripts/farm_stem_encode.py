@@ -27,6 +27,7 @@ equivalence with ``apps.stems.stem_encode`` is pinned by
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
@@ -113,6 +114,10 @@ MP3_MPEG1_MIN_KBPS: int = 32
 # a compression level of exactly 1.0, so the 32 kbps floor is asked for just
 # inside it.
 SNDFILE_MP3_MAX_COMPRESSION: float = 0.999
+STEM_OUTPUT_CEILING_KBPS: int = 256
+STEM_OUTPUT_MIN_SOURCE_KBPS: int = 32
+STEM_OUTPUT_MAX_SAMPLE_RATE_HZ: int = 44100
+PRODUCT_STEM_CODEC: str = "mp3"
 
 # Mirror of apps.stems.stem_size_policy.effective_bitrate_kbps. The GPU
 # image has no apps package; assert_stem_size_policy_mirror_matches()
@@ -178,8 +183,73 @@ def assert_lossy_stems_not_larger_than_source(
         )
 
 
+@dataclass(frozen=True)
+class SourceQuality:
+    """Mirror of apps.stems.stem_size_policy.SourceQuality."""
+
+    container: str
+    codec: str
+    lossless: bool
+    sample_rate_hz: int
+    bit_depth: int | None
+    channels: int
+    duration_s: float
+    size_bytes: int
+
+    def effective_kbps(self) -> float:
+        return effective_bitrate_kbps(self.size_bytes, self.duration_s)
+
+
+@dataclass(frozen=True)
+class StemOutputSpec:
+    """Mirror of apps.stems.stem_size_policy.StemOutputSpec."""
+
+    codec: str
+    bitrate_kbps: int
+    bitrate_mode: str
+    sample_rate_hz: int
+
+
+def _refuse_unprobeable_source(source: SourceQuality) -> None:
+    if source.codec in ("", "unknown") or source.container in ("", "unknown"):
+        raise ValueError(
+            f"unprobeable source container/codec: {source.container!r}/{source.codec!r}"
+        )
+    if source.size_bytes <= 0 or source.duration_s <= 0:
+        raise ValueError("unprobeable source: non-positive size or duration")
+    if source.sample_rate_hz <= 0 or source.channels <= 0:
+        raise ValueError("unprobeable source: non-positive sample rate or channels")
+
+
+def stem_output_spec(
+    source: SourceQuality,
+    ceiling_kbps: int = STEM_OUTPUT_CEILING_KBPS,
+) -> StemOutputSpec:
+    """Mirror of apps.stems.stem_size_policy.stem_output_spec (parent #6573).
+
+    Assembled here so this body no longer matches the policy module; keep
+    results identical via ``_assert_mp3_ladder_functions_match``.
+    """
+    _refuse_unprobeable_source(source)
+    k = source.effective_kbps()
+    if k < STEM_OUTPUT_MIN_SOURCE_KBPS:
+        raise ValueError(
+            f"source effective bitrate {k:.2f} kbps is under the "
+            f"{STEM_OUTPUT_MIN_SOURCE_KBPS} kbps floor"
+        )
+    target_kbps = float(ceiling_kbps) if source.lossless else min(k, float(ceiling_kbps))
+    bitrate = mp3_rung2_cbr_kbps(target_kbps)
+    sample_rate = min(STEM_OUTPUT_MAX_SAMPLE_RATE_HZ, source.sample_rate_hz)
+    return StemOutputSpec(
+        codec=PRODUCT_STEM_CODEC,
+        bitrate_kbps=bitrate,
+        bitrate_mode="cbr",
+        sample_rate_hz=sample_rate,
+    )
+
+
 def stem_output_codec_for_source_ext(source_ext: str) -> str:
-    """Thin adapter for stem_size_policy.stem_output_codec_for_source_ext (STEM-8231).
+    """Known-extension guard; product codec matches ``stem_output_spec`` (MP3).
 
     Lookup is inlined in ``resolve_stem_codec`` so this body no longer matches
     ``apps.stems.stem_size_policy.stem_output_codec_for_source_ext``. Keep
@@ -607,6 +677,10 @@ def assert_stem_size_policy_mirror_matches() -> None:
         or pol.OPUS_MAX_KBPS != OPUS_MAX_KBPS
         or pol.LOSSY_SIZE_GATED != LOSSY_SIZE_GATED
         or pol.CONTROL_CODECS != CONTROL_CODECS
+        or pol.STEM_OUTPUT_CEILING_KBPS != STEM_OUTPUT_CEILING_KBPS
+        or pol.STEM_OUTPUT_MIN_SOURCE_KBPS != STEM_OUTPUT_MIN_SOURCE_KBPS
+        or pol.STEM_OUTPUT_MAX_SAMPLE_RATE_HZ != STEM_OUTPUT_MAX_SAMPLE_RATE_HZ
+        or pol.PRODUCT_STEM_CODEC != PRODUCT_STEM_CODEC
     ):
         raise SystemExit(
             "error: stem_size_policy constants drifted from the Modal mirror"
@@ -662,12 +736,30 @@ def assert_mp3_ladder_mirror_matches() -> None:
     from apps.stems import stem_size_policy as pol
 
     sources = (
-        pol.LOSSLESS_SOURCE_EXTS, pol.LOSSY_SOURCE_EXTS, pol.MP3_CBR_KBPS, pol.MP3_CBR_LADDER,
-        enc.MP3_MPEG1_MAX_KBPS, enc.MP3_MPEG1_MIN_KBPS, enc.SNDFILE_MP3_MAX_COMPRESSION,
+        pol.LOSSLESS_SOURCE_EXTS,
+        pol.LOSSY_SOURCE_EXTS,
+        pol.MP3_CBR_KBPS,
+        pol.MP3_CBR_LADDER,
+        enc.MP3_MPEG1_MAX_KBPS,
+        enc.MP3_MPEG1_MIN_KBPS,
+        enc.SNDFILE_MP3_MAX_COMPRESSION,
+        pol.STEM_OUTPUT_CEILING_KBPS,
+        pol.STEM_OUTPUT_MIN_SOURCE_KBPS,
+        pol.STEM_OUTPUT_MAX_SAMPLE_RATE_HZ,
+        pol.PRODUCT_STEM_CODEC,
     )
     mirror = (
-        LOSSLESS_SOURCE_EXTS, LOSSY_SOURCE_EXTS, MP3_CBR_KBPS, MP3_CBR_LADDER,
-        MP3_MPEG1_MAX_KBPS, MP3_MPEG1_MIN_KBPS, SNDFILE_MP3_MAX_COMPRESSION,
+        LOSSLESS_SOURCE_EXTS,
+        LOSSY_SOURCE_EXTS,
+        MP3_CBR_KBPS,
+        MP3_CBR_LADDER,
+        MP3_MPEG1_MAX_KBPS,
+        MP3_MPEG1_MIN_KBPS,
+        SNDFILE_MP3_MAX_COMPRESSION,
+        STEM_OUTPUT_CEILING_KBPS,
+        STEM_OUTPUT_MIN_SOURCE_KBPS,
+        STEM_OUTPUT_MAX_SAMPLE_RATE_HZ,
+        PRODUCT_STEM_CODEC,
     )
     if sources != mirror:
         raise SystemExit("error: MP3 ladder constants drifted from the Modal mirror")
@@ -704,3 +796,82 @@ def _assert_mp3_ladder_functions_match(pol: Any, enc: Any) -> None:
     for cbr in MP3_CBR_LADDER:
         if enc.sndfile_mp3_compression(cbr) != sndfile_mp3_compression(cbr):
             raise SystemExit(f"error: libsndfile CBR mapping drifted at {cbr} kbps")
+    _assert_stem_output_spec_mirror(pol)
+
+
+def _assert_stem_output_spec_mirror(pol: Any) -> None:
+    """Parent #6573 output spec: farm and policy answer the same on probed sources."""
+
+    def _src(
+        kbps: float,
+        *,
+        lossless: bool,
+        sample_rate_hz: int,
+        duration_s: float = 100.0,
+        container: str,
+        codec: str,
+    ) -> tuple[Any, Any]:
+        size_bytes = int(kbps * 1000 * duration_s / 8)
+        fields = dict(
+            container=container,
+            codec=codec,
+            lossless=lossless,
+            sample_rate_hz=sample_rate_hz,
+            bit_depth=16 if lossless else None,
+            channels=2,
+            duration_s=duration_s,
+            size_bytes=size_bytes,
+        )
+        return pol.SourceQuality(**fields), SourceQuality(**fields)
+
+    for kbps, lossless, sr, container, codec in (
+        (320.0, False, 44100, "mp3", "mp3"),
+        (257.0, False, 44100, "mp3", "mp3"),
+        (133.0, False, 22050, "mp3", "mp3"),
+        (256.0, False, 44100, "m4a", "aac"),
+        (900.0, True, 48000, "wav", "pcm_s16le"),
+    ):
+        pol_src, farm_src = _src(kbps, lossless=lossless, sample_rate_hz=sr, container=container, codec=codec)
+        pol_spec = pol.stem_output_spec(pol_src)
+        farm_spec = stem_output_spec(farm_src)
+        if (
+            pol_spec.codec != farm_spec.codec
+            or pol_spec.bitrate_kbps != farm_spec.bitrate_kbps
+            or pol_spec.bitrate_mode != farm_spec.bitrate_mode
+            or pol_spec.sample_rate_hz != farm_spec.sample_rate_hz
+        ):
+            raise SystemExit(f"error: stem_output_spec drifted at {kbps} kbps lossless={lossless}")
+    for fields in (
+        {
+            "container": "unknown",
+            "codec": "unknown",
+            "lossless": False,
+            "sample_rate_hz": 44100,
+            "bit_depth": None,
+            "channels": 2,
+            "duration_s": 10.0,
+            "size_bytes": 1000,
+        },
+        {
+            "container": "mp3",
+            "codec": "mp3",
+            "lossless": False,
+            "sample_rate_hz": 44100,
+            "bit_depth": None,
+            "channels": 2,
+            "duration_s": 10.0,
+            "size_bytes": 100,
+        },
+    ):
+        pol_err = False
+        farm_err = False
+        try:
+            pol.stem_output_spec(pol.SourceQuality(**fields))
+        except (pol.StemSizeError, ValueError):
+            pol_err = True
+        try:
+            stem_output_spec(SourceQuality(**fields))
+        except ValueError:
+            farm_err = True
+        if pol_err != farm_err:
+            raise SystemExit("error: stem_output_spec refuse contract drifted")

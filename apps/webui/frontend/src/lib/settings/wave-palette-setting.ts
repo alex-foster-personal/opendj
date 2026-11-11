@@ -37,10 +37,10 @@ export const WAVE_PALETTE_SETTING: SettingDef = {
 	id: 'wave_palette',
 	label: 'Waveform colors',
 	group: 'performance',
-	keywords: ['waveform', 'color', 'colors', 'palette', 'auto', 'skin', 'band', '3band', 'rekordbox', 'cdj', 'legacy', 'blue', 'orange', 'amber'],
+	keywords: ['waveform', 'color', 'colors', 'palette', 'auto', 'skin', 'band', '3band', 'rekordbox', 'cdj', 'legacy', 'blue', 'classic', 'orange', 'amber'],
 	title: 'Waveform frequency-band colors',
 	detail:
-		'Auto (default) follows the skin: Gothic uses Mono grayscale, Default and Light use rekordbox 3Band. rekordbox 3Band matches the CDJ: dark blue lows, amber mids, white highs. Legacy is the earlier Open DJ palette: orange lows, blue mids, near-white highs. Applies to the deck waveforms and the overview and preview strips, in both light and dark themes.',
+		'Auto (default) follows the skin: Gothic uses Mono grayscale, Default and Light use rekordbox 3Band. rekordbox 3Band matches the CDJ: dark blue lows, amber mids, white highs. Legacy is the earlier Open DJ palette: orange lows, blue mids, near-white highs. Blue is the classic single-blue waveform, brighter at the peaks. Applies to the deck waveforms and the overview and preview strips, in both light and dark themes.',
 	implemented: true,
 	preview: 'waveform',
 	control: {
@@ -49,7 +49,8 @@ export const WAVE_PALETTE_SETTING: SettingDef = {
 			{ value: 'auto', label: 'Auto (follows skin)' },
 			{ value: 'rekordbox', label: 'rekordbox 3Band' },
 			{ value: 'legacy', label: 'Legacy (orange lows)' },
-			{ value: 'mono', label: 'Mono grayscale' }
+			{ value: 'mono', label: 'Mono grayscale' },
+			{ value: 'blue', label: 'Blue (classic)' }
 		]
 	}
 };

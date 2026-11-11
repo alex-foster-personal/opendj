@@ -55,6 +55,17 @@ def _busy_locked() -> bool:
     return bool(_EJECTING or _UNSETTLED)
 
 
+def volume_busy(root: str | Path) -> bool:
+    """True when an eject or usb-export write holds this volume (read-only check)."""
+    key = _key(root)
+    with _GUARD:
+        if _busy_locked():
+            return True
+        if key in _WRITING:
+            return True
+    return False
+
+
 def hold_unsettled_eject(root: str | Path, seconds: float) -> None:
     """Keep every volume held for ``seconds`` after an eject whose outcome is not known yet.
 

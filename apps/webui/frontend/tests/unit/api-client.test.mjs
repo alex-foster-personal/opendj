@@ -277,11 +277,20 @@ test('[if] createFetchClient is called outside http-instance.ts [then] fail, [el
 	assert.deepEqual(hits, []);
 });
 
+const DOMAIN_HTTP_EXPORT_LINES = [
+	"export { api } from './http-instance'",
+	"export { unwrap, requireBody } from './unwrap'",
+	"export { API_BASE } from './base'",
+	"export { ApiError, RbApiError, apiErrorFrom, readApiErrorStatus, readApiErrorCode } from './errors'"
+];
+
 test('[if] client.ts is deleted or frontend.max_fan_in drifts [then] fail, [else stop].', () => {
 	assert.ok(existsSync(join(FRONTEND_SRC, 'lib/api/client.ts')));
 	const onMain = execSync('git show origin/main:ops/quality/baseline.json', {
 		encoding: 'utf8',
-		cwd: REPO_ROOT
+		cwd: REPO_ROOT,
+		env: { ...process.env, GIT_TERMINAL_PROMPT: '0' },
+		timeout: 30_000
 	});
 	const local = readFileSync(join(REPO_ROOT, 'ops/quality/baseline.json'), 'utf8');
 	const mainFanIn = JSON.parse(onMain).metrics['frontend.max_fan_in'];
@@ -289,16 +298,13 @@ test('[if] client.ts is deleted or frontend.max_fan_in drifts [then] fail, [else
 	assert.equal(localFanIn, mainFanIn);
 });
 
-test('[if] domain HTTP entry modules are missing exports [then] fail, [else stop].', async () => {
+test('[if] domain HTTP entry modules are missing exports [then] fail, [else stop].', () => {
 	const paths = ['rb-http.ts', 'admin-http.ts', 'app-http.ts'];
 	for (const name of paths) {
-		const mod = await loadTypeScriptModule(`src/lib/api/${name}`);
-		for (const key of ['api', 'unwrap', 'requireBody', 'API_BASE', 'ApiError']) {
-			assert.ok(key in mod, `${name} must export ${key}`);
+		const src = readFrontend(`lib/api/${name}`);
+		for (const line of DOMAIN_HTTP_EXPORT_LINES) {
+			assert.ok(src.includes(line), `${name} must include ${line}`);
 		}
 	}
-	const instance = await loadTypeScriptModule('src/lib/api/http-instance.ts', {
-		viteApiBase: API_BASE
-	});
-	assert.equal(typeof instance.api.GET, 'function');
+	assert.equal(typeof clientModule.api.GET, 'function');
 });

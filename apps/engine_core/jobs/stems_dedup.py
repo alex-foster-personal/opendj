@@ -59,7 +59,8 @@ def covering_job(
     requested_ids = requested.get("stable_ids")
     if not isinstance(requested_ids, list):
         return _pending_scope_job(same_library)
-    return _superset_job(same_library, requested_ids)
+    explicit_request = requested.get("scope") is None and requested.get("resolved_from") is None
+    return _superset_job(same_library, requested_ids, explicit_request=explicit_request)
 
 
 def _pending_scope_job(rows: list[ActiveJob]) -> str | None:
@@ -76,7 +77,17 @@ def _pending_scope_job(rows: list[ActiveJob]) -> str | None:
     )
 
 
-def _superset_job(rows: list[ActiveJob], requested_ids: list[Any]) -> str | None:
+def _is_scope_snapshot(row: ActiveJob) -> bool:
+    block = row.payload.get("resolved_from")
+    return isinstance(block, dict) and block.get("scope") == SCOPE_PENDING
+
+
+def _superset_job(
+    rows: list[ActiveJob],
+    requested_ids: list[Any],
+    *,
+    explicit_request: bool = False,
+) -> str | None:
     """The row whose ids include every one of ``requested_ids``, or None for an empty list."""
     if not requested_ids:
         return None
@@ -85,7 +96,9 @@ def _superset_job(rows: list[ActiveJob], requested_ids: list[Any]) -> str | None
         (
             row.id
             for row in rows
-            if isinstance(row.payload.get("stable_ids"), list) and wanted <= set(row.payload["stable_ids"])
+            if not (explicit_request and _is_scope_snapshot(row))
+            and isinstance(row.payload.get("stable_ids"), list)
+            and wanted <= set(row.payload["stable_ids"])
         ),
         None,
     )

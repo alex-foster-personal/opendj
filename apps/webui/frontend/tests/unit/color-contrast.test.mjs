@@ -321,19 +321,24 @@ test("PAIRINGS covers every colour token theme.css declares, except a named deco
 // (3:1) against BOTH row backgrounds in all four combinations.
 const WAVE_BAND_TOKENS = ["rb-wave-low", "rb-wave-mid", "rb-wave-high", "rb-wave-mono"];
 const SCHEME_SELECTORS = {
-  dark: { base: ".perf-root", legacy: "html[data-wave-palette='legacy'] .perf-root" },
+  dark: {
+    base: ".perf-root",
+    legacy: "html[data-wave-palette='legacy'] .perf-root",
+    blue: "html[data-wave-palette='blue'] .perf-root",
+  },
   light: {
     base: "html[data-theme='light'] .perf-root",
     legacy: "html[data-theme='light'][data-wave-palette='legacy'] .perf-root",
+    blue: "html[data-theme='light'][data-wave-palette='blue'] .perf-root",
   },
 };
 
 for (const [scheme, sel] of Object.entries(SCHEME_SELECTORS)) {
-  for (const choice of ["rekordbox", "legacy"]) {
+  for (const choice of ["rekordbox", "legacy", "blue"]) {
     test(`#4219 every waveform band clears 3:1 on both rows: ${scheme} / ${choice}`, () => {
       const base = cc.parseColorTokens(THEME_CSS, sel.base);
       const tokens =
-        choice === "legacy" ? { ...base, ...cc.parseColorTokens(THEME_CSS, sel.legacy) } : base;
+        choice === "rekordbox" ? base : { ...base, ...cc.parseColorTokens(THEME_CSS, sel[choice]) };
       // Presence first: a pairing set that silently lost its band rows would
       // also report zero violations.
       for (const band of WAVE_BAND_TOKENS) {

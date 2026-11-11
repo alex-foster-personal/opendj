@@ -786,9 +786,24 @@ test('precedingDownbeatMs picks the latest bar-1 beat at or before the position,
 
 test('an untrusted bar phase is not a downbeat for a fresh four-beat loop', () => {
 	const untrusted = DRIFTING_GRID.map((beat) => ({ ...beat, bar_phase_untrusted: true }));
+	assert.equal(loops.freshFourBeatAnchorMs(untrusted, 1000, true), undefined);
 	assert.equal(loops.freshFourBeatAnchorMs(untrusted, 1000), undefined);
 	assert.throws(() => loops.precedingDownbeatMs(untrusted, 1000), /no PQTZ downbeat/i);
 	assertMs(loops.freshFourBeatAnchorMs(DRIFTING_GRID, 1000), 135);
+});
+
+test('[if] only some beats are bar_phase_untrusted [then] fresh four-beat uses a trusted downbeat, [else stop].', () => {
+	const mixed = DRIFTING_GRID.map((beat, index) =>
+		index === 5 ? { ...beat, bar_phase_untrusted: true } : beat
+	);
+	assertMs(loops.freshFourBeatAnchorMs(mixed, 1000), 135);
+	const range = loops.exactBeatLoopRangeMs(
+		mixed,
+		1000,
+		4,
+		loops.freshFourBeatAnchorMs(mixed, 1000)
+	);
+	assertMs(range.in_ms, 135);
 });
 
 test('precedingDownbeatMs refuses a position before every downbeat or a broken grid', () => {
@@ -880,10 +895,14 @@ test('pin 0d0803d33f02 SAFE engages at saved out not file end', async () => {
 
 test('engageBeatLoop anchors a fresh four-beat loop on the preceding downbeat, no other length', async () => {
 	const engineSource = await readFile('src/lib/rb/audio-engine.svelte.ts', 'utf8');
+	const engageBlock = engineSource.match(/async engageBeatLoop[\s\S]{0,900}/)?.[0];
+	assert.ok(engageBlock, 'engageBeatLoop block is present');
 	assert.match(
-		engineSource,
-		/beats === 4 && startMs === undefined \? freshFourBeatAnchorMs\(grid, currentMs\) : startMs/
+		engageBlock,
+		/freshFourBeatAnchorMs\(grid, currentMs, st\.anlz\?\.beatgrid\?\.bar_phase_untrusted === true\)/
 	);
+	assert.match(engageBlock, /const currentMs = st\.position_ms;/);
+	assert.doesNotMatch(engageBlock, /st\.playing \? _currentPosSec/);
 });
 
 test('engageBeatLoop restarts (playhead back to loop-in, loop retained) on an exact re-issue', async () => {

@@ -29,4 +29,9 @@ test('stems errors keep endpoints and refusal codes in agent disclosures', () =>
 		source,
 		/<p class="stems-error"[^>]*>[^<]*GET \/api\/v1\/stems\/plan/
 	);
+	assert.match(
+		source,
+		/if \(!cancelled\) \{\s*plan = next;\s*loadError = null;\s*\}/,
+		'a plan that arrives after the timeout must clear the error, or the error branch hides the controls'
+	);
 });

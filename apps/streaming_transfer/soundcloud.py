@@ -15,6 +15,7 @@ import httpx
 from apps.spotify.client import SpotifyTrack
 
 from .config import CFG
+from .params import is_strict_positive_int
 
 _TRACK_URN_PREFIX = "soundcloud:tracks:"
 
@@ -67,7 +68,7 @@ def parse_tracks_payload(payload: object) -> tuple[SoundCloudTrack, ...]:
         if not isinstance(item, dict) or item.get("kind") != "track":
             raise SoundCloudError("SoundCloud collection item is not a track")
         duration = item.get("duration")
-        if not isinstance(duration, int) or isinstance(duration, bool) or duration <= 0:
+        if not is_strict_positive_int(duration):
             raise SoundCloudError(f"SoundCloud track has invalid duration: {duration!r}")
         isrc = item.get("isrc")
         if isrc is not None and (not isinstance(isrc, str) or not isrc.strip()):

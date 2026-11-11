@@ -17,6 +17,9 @@
 # Doc-path leak control walks tests/fixtures/security/doc-path-leak-control from REPO and runs the CLI with cwd=REPO.
 tests/scripts/test_doc_path_leak.py
 
+# Publish-kept markdown must not name withheld paths the mirror omits (OSSPUB-12792).
+tests/scripts/test_oss_private_refs_kept_markdown.py
+
 # Every marked test in tests/ carries an [if]/[then] intent line (REQHYG).
 # This entry, the ratchet below and (private path) are also pinned at distance 0 on
 # a Python change (TREE_BOOKKEEPING_GUARDS in scripts/ci_test_selection_rules.py, main run 9a7f78f300).
@@ -97,7 +100,7 @@ tests/quality/test_importlinter_contracts.py
 (private path)
 tests/quality/test_module_surface_contract.py
 # FILETREE.md must name every tracked top-level entry; it lists git's whole index (#5829).
-(private path)
+tests/quality/test_filetree.py
 tests/quality/test_gate_generated_dup.py
 tests/scripts/test_ci_lock.py
 tests/open_dj/test_glossary.py
@@ -238,3 +241,8 @@ tests/scripts/test_quality_latency.py
 
 # Whole-tree index readers found by (private path) (Tue 10 Nov 2026).
 (private path)
+# DOCS-12047: calls terminology_scan.build_records / --check (whole-repo harvest), not import-linked.
+(private path)
+
+# Every tracked path against .gitignore (git ls-files -ci): a tracked generated file broke main twice (reqs.json #12116, coverage-matrix.md #12162).
+tests/quality/test_no_tracked_ignored_files.py

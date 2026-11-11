@@ -711,6 +711,7 @@
 		oninsertsection,
 		onmoveentries,
 		onselectrow,
+		onselectalltracks = undefined,
 		onloadrow,
 		onkeycardfailed,
 		onpickdoubledeck,
@@ -827,6 +828,8 @@
 		/** `event` carries the click's (or arrow key's) Shift/Cmd/Ctrl state;
 		 * keyboard moves reuse the same plain / Shift-range gestures. */
 		onselectrow: (row: BrowserRow, event?: MouseEvent | KeyboardEvent) => void;
+		/** Cmd/Ctrl+A on a focused track row (pin 0b1e12cc01d0). */
+		onselectalltracks?: (() => void) | undefined;
 		/** deck null = legacy free-deck load; prefer onpickdoubledeck for dblclick.
 		 * `reservation` must be set only when `deck` came from onpickdoubledeck
 		 * (it reserved that deck, at that generation) - never for an explicit
@@ -1113,9 +1116,9 @@
 	}
 
 
-	function genreTagStyle(tag: string): string | undefined {
-		const color = genreHoverColor(tag);
-		return color === null ? undefined : `--genre-glow:${color}`;
+	function genreTagStyle(row: BrowserRow, tag: string): string | undefined {
+		const color = row.genre_family_color ?? genreHoverColor(tag);
+		return color === null || color === undefined ? undefined : `--genre-glow:${color}`;
 	}
 
 	function onGenreTagClick(event: MouseEvent, tag: string): void {
@@ -1291,6 +1294,12 @@
 			return;
 		}
 		const action = trackTableKeyAction(event);
+		if (action.kind === 'select_all') {
+			event.preventDefault();
+			event.stopPropagation();
+			onselectalltracks?.();
+			return;
+		}
 		if (action.kind === 'move') {
 			event.preventDefault();
 			event.stopPropagation();
@@ -3320,7 +3329,7 @@
 						<!-- GENRE-04: the hover names the provider the shown genre came from. -->
 						<td
 							class="c-genre"
-							title={genreCellTitle(genreText(row), row.genre_source, row.genre_reason)}
+							title={genreCellTitle(genreText(row), row.genre_source, row.genre_reason, row.genre_family)}
 							data-genre-source={row.genre_source ?? undefined}
 						>
 							{#if splitGenreTags(genreText(row)).length > 0}
@@ -3334,7 +3343,7 @@
 												.trim()
 												.replace(/^genre:~?/i, '')
 												.toLowerCase() === tag.toLowerCase()}
-										style={genreTagStyle(tag)}
+										style={genreTagStyle(row, tag)}
 										title="click to filter by this genre (again clears). double = loose. triple = undo. after filter: 20s library double clears, triple undoes"
 										onclick={(e) => onGenreTagClick(e, tag)}
 										ondblclick={(e) => {
@@ -3399,7 +3408,7 @@
 		<WorksModals bind:this={worksModals} />
 		{#if rows.length === 0 && emptyMessage !== null}
 			<div class="empty">
-				{emptyMessage}{#if onemptyretry !== undefined}
+				<span data-testid="track-table-empty-message">{emptyMessage}</span>{#if onemptyretry !== undefined}
 					<button type="button" class="empty-retry" onclick={onemptyretry}>Retry search</button>
 				{/if}
 			</div>

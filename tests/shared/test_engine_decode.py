@@ -3,8 +3,10 @@
 from __future__ import annotations
 
 import os
+import shutil
 import stat
 import struct
+import subprocess
 import sys
 import threading
 import wave
@@ -129,6 +131,31 @@ def test_only_containers_libsndfile_cannot_read_take_the_engine(
     name: str, expected: bool
 ) -> None:
     assert engine_decode.needs_engine_decode(Path(name)) is expected
+
+
+@pytest.mark.requirement("AUDIO-12689")
+def test_an_aac_m4a_decode_matches_ffmpeg_in_time(engine: Path) -> None:
+    """[if] ffmpeg-encoded AAC m4a is decoded [then] odj pcm is 0 lag vs ffmpeg, [else stop]."""
+    ffmpeg = shutil.which("ffmpeg")
+    if ffmpeg is None:
+        pytest.skip("UNAVAILABLE: ffmpeg not on PATH")
+    fixture = (
+        Path(__file__).resolve().parents[2]
+        / "apps/audio-engine/tests/fixtures/audio/click-250ms-aac.m4a"
+    )
+    import numpy as np
+
+    od = engine_decode.decode_f32(fixture, mono=True, exe=engine)
+    ff = subprocess.check_output(
+        [ffmpeg, "-v", "error", "-i", str(fixture), "-ac", "1", "-f", "f32le", "-"]
+    )
+    est = np.frombuffer(od[0], dtype="<f4")
+    ref = np.frombuffer(ff, dtype="<f4")
+    assert len(est) <= len(ref)
+    n = len(est)
+    corr = np.correlate(est[:n].astype(np.float64), ref[:n].astype(np.float64), "full")
+    lag = int(np.argmax(np.abs(corr)) - (n - 1))
+    assert lag == 0
 
 
 def test_an_m4a_decodes_to_its_frames_without_the_priming(engine: Path) -> None:

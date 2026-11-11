@@ -48,11 +48,17 @@ export interface StemsPlan {
 	tier: string;
 	tier_name: string;
 	executor?: string;
-	/** library rows carrying a file path: pending + ready + unavailable */
+	/** What every count below counts: songs over the present denominator (STEM-58), the enrich card's own unit. */
+	unit: string;
+	/** songs with audio on this Mac: pending + ready + unavailable */
 	total: number;
+	/** songs with no stems yet; exactly the set a scope job separates */
 	pending: number;
 	ready: number;
+	/** songs that cannot be separated now (no source, or failed too often) */
 	unavailable: number;
+	/** library rows with no audio on this Mac, outside the denominator */
+	unreachable_rows: number;
 	estimate_seconds: number;
 	estimate_usd: number;
 	/** How this build reaches a GPU, or 'local' for on-device separation. */
@@ -163,13 +169,11 @@ export function isLocalStemsPlan(plan: StemsPlan): boolean {
 
 /** Human summary of a plan, for the install prompt. Every number named. */
 export function stemsPlanSummary(plan: StemsPlan): string {
-	const counts = `${plan.pending} of ${plan.total} tracks still need stems (${plan.ready} already done, ${plan.unavailable} have no audio on this machine).`;
-	// Local work is free and the GPU clock is a farm number. Quoting "1 min"
-	// and "under $0.01" on this machine is the lie the prompt used to tell.
-	if (isLocalStemsPlan(plan)) return `${counts} Runs on this machine.`;
+	const counts = `${plan.pending} of ${plan.total} songs still need stems (${plan.ready} already done, ${plan.unavailable} cannot be separated now; ${plan.unreachable_rows} library rows have no audio on this Mac)`;
+	if (isLocalStemsPlan(plan)) return `${counts}. Runs on this machine.`;
 	const minutes = Math.max(1, Math.round(plan.estimate_seconds / 60));
 	const cost = plan.estimate_usd < 0.01 ? 'under $0.01' : `about $${plan.estimate_usd.toFixed(2)}`;
-	return `${counts} Roughly ${minutes} min on ${plan.tier_name} GPUs, ${cost}.`;
+	return `${counts}. Roughly ${minutes} min on ${plan.tier_name} GPUs, ${cost}.`;
 }
 
 // ----- HTTP ---------------------------------------------------------------

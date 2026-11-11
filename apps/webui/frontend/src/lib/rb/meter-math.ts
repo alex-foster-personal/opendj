@@ -278,16 +278,13 @@ export function createClipPipCursor(): ClipPipCursor {
  * The level an R or M press arms, from one channel meter reading.
  *
  * R anchors the channel meter's first red segment, and that meter draws the
- * post-crossfader `heardDb` through its own ballistics, so R captures that
- * same value: the passage pressed on is the one that lights the first red,
- * and a crossfader move during decay cannot make R and the bar disagree
- * (Codex P2, PR #6829). An ?extroute= deck's heard source is its fader, so
- * its `heardDb` is already the tap level. M keeps the channel tap level
+ * post-channel-fader `db` through its ballistics (pin 3dc62dbb909c), so R
+ * captures that same value. M keeps the channel tap level
  * (METERCAL-03), because it sets a master gain ceiling, not a display anchor.
  */
 export function calibrationCaptureDb(
 	kind: 'red' | 'ceiling',
 	reading: { readonly db: number; readonly heardDb: number }
 ): number {
-	return kind === 'red' ? reading.heardDb : reading.db;
+	return reading.db;
 }

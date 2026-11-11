@@ -79,3 +79,44 @@ test('library track list is keyboard navigable and announces its selection', asy
 	await confirm.locator('.load-confirm-no').click();
 	await expect(confirm).toHaveCount(0);
 });
+
+test("library chords load to a named deck and locate the recent deck's track", async ({ page }) => {
+	await page.goto('/performance');
+	const rows = page.locator('[data-testid="track-row"]');
+	await expect(rows.first()).toBeVisible({ timeout: 30_000 });
+	await waitForPerformanceIpc(page);
+
+	const firstId = await rows.nth(0).getAttribute('data-stable-id');
+	const secondId = await rows.nth(1).getAttribute('data-stable-id');
+	if (firstId === null || secondId === null) throw new Error('fixture rows lack data-stable-id');
+
+	await rows.nth(0).click();
+	await page.keyboard.press('Shift+ArrowRight');
+	await expect
+		.poll(() => page.evaluate(() => window.musicDjToolsPerformance!.query().decks[2].stable_id), {
+			timeout: 30_000
+		})
+		.toBe(firstId);
+
+	await page.evaluate(
+		([id]) => window.musicDjToolsPerformance!.dispatch({ type: 'load', deck: 1, stable_id: id }),
+		[secondId]
+	);
+	await expect
+		.poll(() => page.evaluate(() => window.musicDjToolsPerformance!.query().decks[1].stable_id), {
+			timeout: 30_000
+		})
+		.toBe(secondId);
+
+	await rows.nth(0).click();
+	await page.keyboard.press('ControlOrMeta+l');
+	const targetRow = rows.nth(1);
+	await expect(targetRow).toHaveAttribute('aria-selected', 'true');
+	await expect(targetRow).toBeFocused();
+
+	const search = page.locator('.rb-search input').first();
+	await search.focus();
+	await page.keyboard.press('ControlOrMeta+l');
+	await expect(search).toBeFocused();
+	await expect(targetRow).toHaveAttribute('aria-selected', 'true');
+});

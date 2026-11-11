@@ -229,7 +229,7 @@ describe('section bands on the main waveform (drawWaveRow)', () => {
 		assert.equal(bodies(rec).length, 0);
 	});
 
-	for (const design of ['tri-band', 'mono', 'line', 'blocks']) {
+	for (const design of ['tri-band', 'mono', 'line', 'blocks', 'rgb']) {
 		it(`waveform design ${design}: bands paint under a non-empty waveform, and off paints none`, () => {
 			const on = paintRow(true, OWN, undefined, design);
 			assert.deepEqual(

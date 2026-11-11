@@ -101,6 +101,8 @@ class Track:
     tempo_pref: dict[str, float | None] | None = None
     # GRIDFLAG-04: the user hid this track's beatgrid flag. False when never set.
     grid_flag_dismissed: bool = False
+    # NOWP-11487: the user hid this track's identity from tracklist exports.
+    tracklist_hidden: bool = False
     # AUTOGAIN-04: the user's own auto gain offset in dB, beside the analysed
     # one and winning over it. None when never set; re-analysis never writes it.
     auto_gain_user_db: float | None = None
@@ -233,6 +235,13 @@ def resolve_grid_flag_dismissed_write(patch_value: Any) -> bool:
     """Validate a ``grid_flag_dismissed`` patch value (GRIDFLAG-04): a bool."""
     if not isinstance(patch_value, bool):
         raise BackendError("grid_flag_dismissed must be true or false")
+    return patch_value
+
+
+def resolve_tracklist_hidden_write(patch_value: Any) -> bool:
+    """Validate a ``tracklist_hidden`` patch value (NOWP-11487): a bool."""
+    if not isinstance(patch_value, bool):
+        raise BackendError("tracklist_hidden must be true or false")
     return patch_value
 
 
@@ -734,6 +743,13 @@ class InMemoryBackend:
                     )
                     prov["grid_flag_dismissed"] = Provenance(
                         value=updated.grid_flag_dismissed, source=source,
+                        confidence=1.0, modified_at=now, status="ok")
+                if "tracklist_hidden" in update.patch:
+                    updated.tracklist_hidden = resolve_tracklist_hidden_write(
+                        update.patch["tracklist_hidden"]
+                    )
+                    prov["tracklist_hidden"] = Provenance(
+                        value=updated.tracklist_hidden, source=source,
                         confidence=1.0, modified_at=now, status="ok")
                 if "auto_gain_user_db" in update.patch:
                     updated.auto_gain_user_db = resolve_auto_gain_user_db_write(

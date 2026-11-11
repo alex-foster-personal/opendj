@@ -15,6 +15,7 @@ from pathlib import Path
 from typing import cast, get_args
 
 from apps.shared.state.migrations_v10 import ASSET_KIND_CHECK_VALUES
+from apps.stems.artifacts import PRODUCTION_ROFORMER_STEMS_DIR
 from apps.sync_hub.data_classes_types import (
     POLICY_MODES,
     DataClass,
@@ -194,7 +195,7 @@ FILE_CLASSES: tuple[DataClass, ...] = (
         "stem-experiments",
         "Stem separation experiments",
         files(
-            "<data>/state/stems-roformer-spike*/",
+            f"<data>/state/{PRODUCTION_ROFORMER_STEMS_DIR.name}*/",
             "<data>/state/stems-demucs-ab/",
             "<repo>/scripts/bench/clips*/",
         ),

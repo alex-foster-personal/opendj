@@ -32,6 +32,7 @@ from apps.sync.usb.pioneer.fixture_resolver import (
     external_host_available,
     fixture_path,
     verify_fixture_contract,
+    verify_fixture_manifest,
 )
 from tests.fixtures.conftest import resolve_required_fixture
 
@@ -467,6 +468,13 @@ def test_contract_detects_missing_file(tmp_path: Path) -> None:
             verify_fixture_contract(name, root)
     finally:
         contract_path.unlink(missing_ok=True)
+
+
+def test_manifest_verify_exposes_libm130_folder_import_corpus() -> None:
+    """[if] the libm130 manifest is wired through the resolver [then] verify sees all pins, [else stop]."""
+    manifest = verify_fixture_manifest("libm130-folder-import")
+    assert manifest["fixture"] == "libm130-folder-import"
+    assert "app-acceptance/library/01-acceptance-pulse.mp3" in manifest["files"]
 
 
 def test_contract_detects_checksum_mismatch(tmp_path: Path) -> None:

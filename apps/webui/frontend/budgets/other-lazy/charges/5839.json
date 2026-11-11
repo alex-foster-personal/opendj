@@ -1,0 +1,9 @@
+{
+  "bytes": 1024,
+  "measured_main": 516898,
+  "measured_with_pr": 517052,
+  "sha": "ca91315081",
+  "date": "Wed 11 Nov 2026",
+  "reason": "PR #5839 stems job UI grows the other-lazy surface; measured +154 B gzip over main on CI; ceiled to KiB.",
+  "payback": "none planned; the growth is the feature's own code on this surface"
+}

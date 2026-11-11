@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Any, Literal
 
-from pydantic import BaseModel, Field, field_validator, model_serializer, model_validator
+from pydantic import BaseModel, Field, StrictBool, field_validator, model_serializer, model_validator
 from pydantic.json_schema import SkipJsonSchema
 
 from .models_grid_quality import GridQualityRowOut, TempoCurveRowOut, TrackAnalysisHintsOut
@@ -21,6 +21,8 @@ FileAvailabilityStatus = Literal[
     "streaming",
     "awaiting_volume",
 ]
+
+DeckLoadRefusal = Literal["streaming", "cloud_policy_unconfigured"]
 
 
 class BpmAlternative(BaseModel):
@@ -126,6 +128,8 @@ class TrackOut(BaseModel):
     artwork_available: bool | None
     #: AGENT-31: served by the single-track read only (None on listings), for the AutoDJ loudness match.
     loudness: TrackLoudnessOut | None = None
+    # NOWP-11487: hide identity in tracklist exports (shown as ID - ID).
+    tracklist_hidden: bool = False
 
 
 class QualityGradeOut(BaseModel):
@@ -332,6 +336,8 @@ class TrackListItemOut(TrackOut):
     # LIBUX-13: a durable remote object is recorded even when local audio
     # also exists. Unlike is_remote, this does not collapse local+cloud.
     has_remote_copy: bool
+    # Issue #11290: why this row cannot load onto a deck here before load is tried.
+    deck_load_refusal: DeckLoadRefusal | None = None
     # LIBUX-13: only present while this server process is moving real bytes.
     cloud_transfer: CloudTransferOut | None = None
     offload: OffloadOut | None = None
@@ -397,6 +403,8 @@ class TrackListItemOut(TrackOut):
     # GENRE-04: which provider the shown genre came from (user, beatport,
     # odj-fused, library-tag, ...); None when there is no genre.
     genre_source: str | None = None
+    genre_family: str | None = None
+    genre_family_color: str | None = None
     genre_reason: str | None = None
     genre_guess: GenreGuessOut | None = None
     # LIBEDIT-9179: a virtual row reuses its source audio and overlays this window.
@@ -513,12 +521,21 @@ class TrackPatch(BaseModel):
     # PREF-01: send null to clear, omit to leave untouched (model_fields_set
     # distinguishes the two - see routes/tracks.py patch_track).
     tempo_pref: TempoPrefPatch | None = None
+    # NOWP-11487: explicit null is refused (422); omit to leave untouched.
+    tracklist_hidden: StrictBool | None = None
 
     @field_validator("rating")
     @classmethod
     def _rating_range(cls, v: int | None) -> int | None:
         if v is not None and not (0 <= v <= 5):
             raise ValueError("rating must be between 0 and 5")
+        return v
+
+    @field_validator("tracklist_hidden")
+    @classmethod
+    def _tracklist_hidden_not_null(cls, v: bool | None) -> bool | None:
+        if v is None:
+            raise ValueError("tracklist_hidden must be true or false, not null")
         return v
 
 
@@ -584,6 +601,8 @@ class TrackRowOut(BaseModel):
     duration_ms: int | None
     genre: str | None
     genre_source: str | None = None
+    genre_family: str | None = None
+    genre_family_color: str | None = None
     genre_reason: str | None = None
     genre_guess: GenreGuessOut | None = None
     comments: str | None
@@ -604,6 +623,8 @@ class TrackRowOut(BaseModel):
     # LIBUX-13: true whenever track_locations records a live remote object,
     # including the local+cloud state that is_remote deliberately suppresses.
     has_remote_copy: bool
+    # Issue #11290: upfront deck-load refusal code, or null when loadable here.
+    deck_load_refusal: DeckLoadRefusal | None = None
     # LIBUX-13: ephemeral operation state, distinct from durable presence.
     cloud_transfer: CloudTransferOut | None = None
     offload: OffloadOut | None = None

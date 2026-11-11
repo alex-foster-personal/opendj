@@ -198,19 +198,19 @@ describe('usb tracker helpers (#328)', () => {
 			'utf8'
 		);
 		assert.match(panel, /if \(!usbImportView\.open \|\| PlanView !== null \|\| planFailed\) return;/);
-		assert.match(panel, /data-testid="usb-import-plan-retry" onclick=\{\(\) => \(planFailed = false\)\}>Retry</);
+		assert.match(panel, /data-testid="usb-import-plan-retry"/);
+		assert.match(panel, /onclick=\{\(\) => \(planFailed = false\)\}/);
 	});
 
-	it('keeps the USB modal copy for version, one-drive, and the coming-soon bench', () => {
+	it('keeps the USB modal copy for version, one-drive, and deck export health', () => {
 		const panel = readFileSync(
 			new URL('../../src/lib/components/rb/UsbPanel.svelte', import.meta.url),
 			'utf8'
 		);
 		assert.match(panel, /data-testid="usb-format-report"/);
-		assert.match(panel, /data-testid="usb-compat-soon"/);
-		assert.match(panel, /\[Coming soon\]/);
-		assert.match(panel, /read\/write speed benchmarking/);
-		assert.match(panel, /old CDJ/);
-		assert.match(panel, /Fixes to try/);
+		assert.match(panel, /data-testid="usb-deck-health"/);
+		assert.match(panel, /Deck export health \(rules v0\)/);
+		assert.match(panel, /refreshDeckHealthForVolumes/);
+		assert.match(panel, /Read\/write speed benchmarking is still not measured/);
 	});
 });

@@ -93,6 +93,9 @@ fn main() {
             launcher::commands::search::search_tracks,
             launcher::commands::frecency::get_frecent_top,
             launcher::commands::frecency::record_drag,
+            launcher::commands::engine::resolve_engine_origin,
+            launcher::commands::smartlists::list_engine_smartlists,
+            launcher::commands::smartlists::fetch_smartlist_tracks,
         ])
         .run(tauri::generate_context!())
         .expect("error while running Hyper-K launcher");

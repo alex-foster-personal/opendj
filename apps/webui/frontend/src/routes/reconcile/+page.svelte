@@ -27,6 +27,11 @@
 		removeFromLibraryToastMessage
 	} from '$lib/components/rb/browser/track-library-menu';
 	import { pushToast } from '$lib/stores.svelte';
+	import {
+		isRunButtonActionPending,
+		runButtonAction,
+		runButtonActionGate
+	} from '$lib/ui/run-button-action';
 
 	let broken = $state<BrokenTrack[]>([]);
 	let loading = $state(true);
@@ -44,6 +49,13 @@
 	let candidatesLoading = $state(false);
 	let applying = $state<string | null>(null);
 	let removing = $state<string | null>(null);
+	let loadAction = $state<string | null>(null);
+	const loadActionGate = runButtonActionGate(
+		() => loadAction,
+		(value) => {
+			loadAction = value;
+		}
+	);
 
 	// Relocate apply patches djmdContent.FolderPath on the LIVE rekordbox
 	// database, so it is inert whenever the daemon is in one-way import mode.
@@ -68,7 +80,7 @@
 		} catch (exc) {
 			loadError = String(exc);
 			console.error('[reconcile] loading missing tracks failed', exc);
-			pushToast(`Failed to load missing tracks: ${exc}`, 'error');
+			throw exc;
 		} finally {
 			loading = false;
 		}
@@ -166,9 +178,17 @@
 		}
 	}
 
+	function retryLoad(): void {
+		void runButtonAction(loadActionGate, 'retry', () => load(), {
+			toastMessage: (exc) => `Failed to load missing tracks: ${exc}`
+		});
+	}
+
 	onMount(() => {
 		void rekordboxWriteback.probe();
-		void load();
+		void load().catch((exc) => {
+			pushToast(`Failed to load missing tracks: ${exc}`, 'error', undefined, exc);
+		});
 	});
 </script>
 
@@ -185,7 +205,14 @@
 {:else if view === 'error'}
 	<p style="color: var(--danger); margin-top: 1rem;" data-testid="missing-error">
 		Could not load missing tracks, so nothing is known about the library yet: {loadError}
-		<button onclick={() => void load()}>Retry</button>
+		<button
+			type="button"
+			onclick={retryLoad}
+			disabled={loading || isRunButtonActionPending(loadActionGate)}
+			aria-busy={loading || isRunButtonActionPending(loadActionGate)}
+		>
+			Retry
+		</button>
 	</p>
 {:else if view === 'empty'}
 	<p style="color: var(--muted); margin-top: 1rem;" data-testid="missing-empty">
@@ -202,7 +229,14 @@
 			<span style="color: var(--danger);">
 				- the last load failed ({loadError}); the rows below are from before it.
 			</span>
-			<button onclick={() => void load()}>Retry</button>
+			<button
+				type="button"
+				onclick={retryLoad}
+				disabled={loading || isRunButtonActionPending(loadActionGate)}
+				aria-busy={loading || isRunButtonActionPending(loadActionGate)}
+			>
+				Retry
+			</button>
 		{/if}
 	</p>
 	<table class="library" style="margin-top: 1rem;">

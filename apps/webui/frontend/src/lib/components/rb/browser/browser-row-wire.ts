@@ -26,6 +26,10 @@ import { normalizeRating } from '$lib/rating';
 import { playFactsFromUnknown } from './last-played';
 import type { BrowserRow } from './pane-contract.svelte';
 import {
+	cloudPolicyUpfrontRefusal,
+	type DeckLoadRefusalWire
+} from '$lib/rb/deck-load-failure-copy';
+import {
 	isNamedStreamingStatus,
 	isStreamingAvailability,
 	nameStreamingAvailability,
@@ -33,29 +37,41 @@ import {
 	type StreamingRowFacts
 } from './streaming-availability';
 
+type DeckLoadRowFacts = StreamingRowFacts & {
+	deck_load_refusal?: DeckLoadRefusalWire | null;
+	offload?: { state: string } | null | undefined;
+};
+
+function upfrontDeckLoadRefusal(row: DeckLoadRowFacts): string | null {
+	const code = row.deck_load_refusal;
+	if (code === 'streaming') return streamingLoadRefusal(row);
+	if (code === 'cloud_policy_unconfigured') return cloudPolicyUpfrontRefusal();
+	return null;
+}
+
 /**
  * The greyed library row and the Broken checkbox share this predicate.
  * True for no audio Open DJ can play: an absent file, an unchecked row
  * (`AVAILABILITY_PENDING`), or a streaming-service URI. Spotify placeholders,
  * a pulled stick, and awaiting-volume rows stay out.
  */
-export function rowRendersUnavailable(row: {
-	file_exists: boolean | null;
-	file_availability?: string | null;
-	is_streaming?: boolean | null;
-	is_remote?: boolean | null;
-	spotify_pending?: boolean | null;
-	stable_id?: string;
-	file_path?: string | null;
-	rb_meta?: { is_streaming?: boolean | null; folder_path?: string | null } | null;
-	offload?: { state: string } | null | undefined;
-}): boolean {
+export function rowRendersUnavailable(
+	row: DeckLoadRowFacts & {
+		is_remote?: boolean | null;
+		spotify_pending?: boolean | null;
+		stable_id?: string;
+		rb_meta?: { is_streaming?: boolean | null; folder_path?: string | null } | null;
+	}
+): boolean {
 	if (row.spotify_pending === true) return false;
 	// OFFLOAD: in the cloud on purpose, never a broken link (spec e8da14b8 veto 2).
 	if (rowIsOffloaded(row)) return false;
-	if (typeof row.stable_id === 'string' && row.stable_id.startsWith('spotify-pending:')) return false;
+	if (typeof row.stable_id === 'string' && row.stable_id.startsWith('spotify-pending:'))
+		return false;
+	if (upfrontDeckLoadRefusal(row) !== null) return true;
 	if (isStreamingAvailability(row)) return true;
-	if (row.file_availability === 'awaiting_volume' || row.is_remote === true) return false;
+	if (row.file_availability === 'awaiting_volume') return false;
+	if (row.is_remote === true) return false;
 	return row.file_exists === false || row.file_availability === 'AVAILABILITY_PENDING';
 }
 
@@ -64,18 +80,13 @@ export function rowIsOffloaded(row: { offload?: { state: string } | null | undef
 	return row.offload?.state === 'offloaded' || row.offload?.state === 'restoring';
 }
 
-export const OFFLOADED_REFUSAL = 'offloaded to the cloud: load it onto a deck, or Download for 24h first';
+export const OFFLOADED_REFUSAL =
+	'offloaded to the cloud: load it onto a deck, or Download for 24h first';
 
 /** Why this row must not reach a deck, or null when its audio is present. */
-export function libraryAudioLoadRefusal(row: {
-	file_exists: boolean | null;
-	file_availability?: string | null;
-	is_streaming?: boolean | null;
-	file_path?: string | null;
-	streaming_provider?: string | null;
-	rb_meta?: { is_streaming?: boolean | null; folder_path?: string | null } | null;
-	offload?: { state: string } | null | undefined;
-}): string | null {
+export function libraryAudioLoadRefusal(row: DeckLoadRowFacts): string | null {
+	const upfront = upfrontDeckLoadRefusal(row);
+	if (upfront !== null) return upfront;
 	if (isStreamingAvailability(row)) return streamingLoadRefusal(row);
 	if (rowIsOffloaded(row)) return OFFLOADED_REFUSAL;
 	// A row that only says the file is on disk (no typed status yet) is loadable.
@@ -93,12 +104,15 @@ export function libraryAudioLoadRefusal(row: {
 }
 
 /** Row tooltip: the streaming sentence, the missing-file sentence, or pending. */
-export function libraryRowHoverTitle(row: StreamingRowFacts & {
-	file_exists: boolean | null;
-	offload?: { state: string } | null | undefined;
-}): string | undefined {
+export function libraryRowHoverTitle(
+	row: StreamingRowFacts & {
+		file_exists: boolean | null;
+		offload?: { state: string } | null | undefined;
+	}
+): string | undefined {
 	if (isStreamingAvailability(row)) return streamingLoadRefusal(row);
-	if (rowIsOffloaded(row)) return 'Offloaded to the cloud. Loading it onto a deck downloads it first.';
+	if (rowIsOffloaded(row))
+		return 'Offloaded to the cloud. Loading it onto a deck downloads it first.';
 	if (row.file_exists === false) return 'cannot load: audio file missing on disk (broken link)';
 	if (row.file_availability === 'AVAILABILITY_PENDING') {
 		return 'cannot load: audio on this machine has not been confirmed';
@@ -232,9 +246,7 @@ export function rowFromPlaylistWire(wire: PlaylistTrackRowWire, order: number): 
 		availability === null ||
 		typeof wire.has_rb_mapping !== 'boolean'
 	) {
-		throw new Error(
-			`hydrated playlist row ${order} malformed - backend contract point 4 not met`
-		);
+		throw new Error(`hydrated playlist row ${order} malformed - backend contract point 4 not met`);
 	}
 	return {
 		stable_id: wire.stable_id,
@@ -255,6 +267,7 @@ export function rowFromPlaylistWire(wire: PlaylistTrackRowWire, order: number): 
 		rating: normalizeRating(wire.rating),
 		etag: wire.etag,
 		comments: wire.comments,
+		tracklist_hidden: wire.tracklist_hidden === true,
 		duration_ms: wire.duration_ms,
 		genre: wire.genre,
 		genre_reason: wire.genre_reason ?? null,
@@ -278,7 +291,12 @@ export function rowFromPlaylistWire(wire: PlaylistTrackRowWire, order: number): 
 		bpm_alternatives: wire.bpm_alternatives ?? [],
 		bpm_pick: wire.bpm_pick ?? null,
 		loudness_status: listingLaneStatus(wire.loudness_status, null),
-		loudness_reason: listingLaneReason(wire.loudness_status, wire.loudness_reason, 'loudness', null),
+		loudness_reason: listingLaneReason(
+			wire.loudness_status,
+			wire.loudness_reason,
+			'loudness',
+			null
+		),
 		...availability,
 		file_availability: nameStreamingAvailability(
 			availability.file_availability,
@@ -289,10 +307,10 @@ export function rowFromPlaylistWire(wire: PlaylistTrackRowWire, order: number): 
 		is_streaming: wire.is_streaming,
 		is_remote: wire.is_remote === true,
 		has_remote_copy: wire.has_remote_copy === true,
+		deck_load_refusal: wire.deck_load_refusal ?? null,
 		cloud_transfer: wire.cloud_transfer ?? null,
 		offload: wire.offload ?? null,
-		spotify_pending:
-			wire.spotify_pending === true || wire.stable_id.startsWith('spotify-pending:'),
+		spotify_pending: wire.spotify_pending === true || wire.stable_id.startsWith('spotify-pending:'),
 		streaming_provider: wire.streaming_provider ?? null,
 		quality: wire.quality ?? null,
 		play_count: typeof wire.play_count === 'number' ? wire.play_count : 0,
@@ -361,6 +379,7 @@ export function rowFromListWire(track: TrackListItemWire, order: number): Browse
 		// List items carry no ETag; rating edits lazily fetch one.
 		etag: '',
 		comments: track.notes ?? null,
+		tracklist_hidden: track.tracklist_hidden === true,
 		duration_ms: track.duration_ms ?? null,
 		genre: track.genre ?? null,
 		genre_reason: track.genre_reason ?? null,
@@ -387,7 +406,12 @@ export function rowFromListWire(track: TrackListItemWire, order: number): Browse
 		bpm_alternatives: track.bpm_alternatives ?? [],
 		bpm_pick: track.bpm_pick ?? null,
 		loudness_status: listingLaneStatus(track.loudness_status, null),
-		loudness_reason: listingLaneReason(track.loudness_status, track.loudness_reason, 'loudness', null),
+		loudness_reason: listingLaneReason(
+			track.loudness_status,
+			track.loudness_reason,
+			'loudness',
+			null
+		),
 		...availability,
 		file_path: typeof track.file_path === 'string' ? track.file_path : null,
 		file_availability: nameStreamingAvailability(
@@ -404,12 +428,15 @@ export function rowFromListWire(track: TrackListItemWire, order: number): Browse
 					typeof track.file_path === 'string' ? track.file_path : null,
 					track.streaming_provider
 				)
-			) ?? track.is_streaming ?? null,
+			) ??
+			track.is_streaming ??
+			null,
 		streaming_provider: track.streaming_provider ?? null,
 		is_remote: track.is_remote === true,
 		has_remote_copy: track.has_remote_copy === true,
 		cloud_transfer: track.cloud_transfer ?? null,
 		offload: track.offload ?? null,
+		deck_load_refusal: track.deck_load_refusal ?? null,
 		spotify_pending: track.stable_id.startsWith('spotify-pending:'),
 		quality: track.quality ?? null,
 		play_count: typeof track.play_count === 'number' ? track.play_count : 0,
@@ -440,7 +467,10 @@ const INDEX_ROW_DEFERRED = {
 	vocals: { status: 'not_analyzed' },
 	artwork_available: null,
 	artwork_status: 'unresolved'
-} as const satisfies Pick<TrackListItemWire, 'preview_b64' | 'preview_max' | 'vocals' | 'artwork_available' | 'artwork_status'>;
+} as const satisfies Pick<
+	TrackListItemWire,
+	'preview_b64' | 'preview_max' | 'vocals' | 'artwork_available' | 'artwork_status'
+>;
 
 /** The index row's left-out fields that rowFromListWire requires but never copies. */
 const INDEX_ROW_UNREAD: Pick<
@@ -465,7 +495,10 @@ const INDEX_ROW_UNREAD: Pick<
 };
 
 /** A library index row, or a full listing row (the boot first page), as a BrowserRow. */
-export function rowFromIndexWire(item: TrackIndexItemWire | TrackListItemWire, order: number): BrowserRow {
+export function rowFromIndexWire(
+	item: TrackIndexItemWire | TrackListItemWire,
+	order: number
+): BrowserRow {
 	if ('artwork_status' in item) return rowFromListWire(item, order);
 	const row = rowFromListWire({ ...item, ...INDEX_ROW_DEFERRED, ...INDEX_ROW_UNREAD }, order);
 	row.stems = null;

@@ -1102,20 +1102,40 @@ mod tests {
         let cache = TrackCache::default();
         let first = cache.load(&path, &spec).unwrap();
         let kept = std::fs::metadata(&path).unwrap().modified().unwrap();
-        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
-        let next = loop {
-            write(0.5);
-            std::fs::File::options().write(true).open(&path).unwrap().set_modified(kept).unwrap();
-            let next = FileKey::of(&path);
-            if next != key {
-                break next;
-            }
-            assert!(
-                std::time::Instant::now() < deadline,
-                "a.wav's FileKey stayed equal to the cached key for 5 s"
-            );
-            std::thread::sleep(std::time::Duration::from_millis(1));
+        #[cfg(unix)]
+        let cached_changed = {
+            use std::os::unix::fs::MetadataExt;
+            let m = std::fs::metadata(&path).unwrap();
+            (m.ctime(), m.ctime_nsec())
         };
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
+        #[cfg(unix)]
+        {
+            let probe = tmp.path().join("volume-clock.probe");
+            let stamp_ns = |stamp: (i64, i64)| stamp.0 as u128 * 1_000_000_000 + stamp.1.max(0) as u128;
+            let cached_ns = stamp_ns(cached_changed);
+            while std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_nanos()
+                <= cached_ns + 20_000_000
+            {
+                assert!(std::time::Instant::now() < deadline, "wall clock stuck at cached change time for 5 s");
+                std::thread::sleep(std::time::Duration::from_millis(5));
+            }
+            loop {
+                std::fs::write(&probe, b"x").unwrap();
+                use std::os::unix::fs::MetadataExt;
+                let m = std::fs::metadata(&probe).unwrap();
+                let observed = (m.ctime(), m.ctime_nsec());
+                if stamp_ns(observed) > cached_ns {
+                    break;
+                }
+                assert!(std::time::Instant::now() < deadline, "volume clock stuck at cached change time for 5 s");
+                std::thread::sleep(std::time::Duration::from_millis(5));
+            }
+        }
+        write(0.5);
+        std::fs::File::options().write(true).open(&path).unwrap().set_modified(kept).unwrap();
+        let next = FileKey::of(&path);
+        assert_ne!(next, key, "a.wav's FileKey stayed equal to the cached key after the clock wait");
         assert_ne!(next, key);
         assert_eq!(next.id, key.id, "the rewrite is not the same inode");
         assert_eq!(next.len, key.len, "the rewrite is not the case under test");

@@ -22,7 +22,7 @@ export const SETTINGS_SYNONYMS: Readonly<Record<string, readonly string[]>> = {
 	openkey: ['key_notation', 'camelot'],
 	musical: ['key_notation'],
 	remix: ['remixes_filter', 'bootleg', 'vip'],
-	vocals: ['vocals_filter', 'lyrics', 'lines'],
+	vocals: ['vocals_filter', 'show_vocal_lane', 'lyrics', 'lines'],
 	segments: ['show_sections', 'sections', 'phrase'],
 	structure: ['show_sections', 'sections', 'phrase'],
 	bluetooth: ['speaker_auto_recover', 'speaker', 'reconnect'],

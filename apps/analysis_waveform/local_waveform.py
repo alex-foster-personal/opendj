@@ -105,7 +105,7 @@ DECODE_QUEUE_WAIT_S: float = 30.0
 # Generation prefix for changes with no decode constant behind them. The
 # mono -> tri column shape was one: nothing in the numbers below moved, but a
 # cached entry written before it means something different.
-PEAKS_GENERATION: str = "tri-1"
+PEAKS_GENERATION: str = "tri-2"
 
 
 def peaks_version(profile: decode.DecodeProfile = decode.PROFILE) -> str:

@@ -13,8 +13,8 @@
 //! * each band edge is `sections` cascaded 2-pole Butterworth biquads (the
 //!   RBJ cookbook forms with Q = 1/sqrt 2, which is what ffmpeg's
 //!   `lowpass`/`highpass` with `poles=2` compute), so 2 sections is 24 dB/oct;
-//! * a column is the peak |sample| over `rate / columns_per_s` samples, read
-//!   as int16 and shifted right by 7, so a full-scale sine reads 255.
+//! * a column is the peak |sample| over `rate / columns_per_s` samples, mapped
+//!   to u8 with +6 dBFS headroom (255 = +6 dBFS linear; 0 dBFS reads ~128).
 //!
 //! One difference is deliberate: ffmpeg resamples to 44.1 kHz first, this
 //! filters at the file's own rate and spaces columns by exact sample counts
@@ -90,11 +90,13 @@ fn run_chain(chain: &mut [Biquad], mut x: f64) -> f64 {
     x
 }
 
-/// |sample| as ffmpeg's float -> s16 conversion then `>> 7` reads it.
+/// Peak byte from filtered float amplitude; matches `apps/analysis_waveform/decode.py`.
+const PEAK_HEADROOM_DB: f64 = 6.0;
+
 #[inline]
 fn peak_byte(x: f64) -> u8 {
-    let s = (x * 32768.0).round().clamp(-32768.0, 32767.0).abs().min(32767.0) as u32;
-    (s >> 7) as u8
+    let full = 10f64.powf(PEAK_HEADROOM_DB / 20.0);
+    (x.abs() / full * 255.0).round().clamp(0.0, 255.0) as u8
 }
 
 /// Streaming reducer: feed mono samples, collect `[low, mid, high]` columns.
@@ -256,7 +258,7 @@ mod tests {
             for b in 0..3 {
                 let v = mid_band(&cols, b);
                 if b == band {
-                    assert!(v > 200, "{hz} Hz should fill band {b}, got {v}");
+                    assert!(v > 100, "{hz} Hz should fill band {b}, got {v}");
                 } else {
                     assert!(v < 10, "{hz} Hz leaked {v} into band {b}");
                 }
@@ -277,12 +279,13 @@ mod tests {
     }
 
     #[test]
-    fn full_scale_reads_255_and_silence_reads_0() {
-        assert_eq!(peak_byte(1.0), 255);
-        assert_eq!(peak_byte(-1.0), 255);
+    fn zero_dbfs_reads_half_scale_and_plus_six_dbfs_reads_255() {
+        assert_eq!(peak_byte(1.0), 128);
+        assert_eq!(peak_byte(-1.0), 128);
         assert_eq!(peak_byte(0.0), 0);
-        assert_eq!(peak_byte(0.5), 128);
-        // Over full scale clips rather than wrapping to a small value.
+        assert_eq!(peak_byte(0.5), 64);
+        assert_eq!(peak_byte(10f64.powf(PEAK_HEADROOM_DB / 20.0)), 255);
+        // Over headroom clips rather than wrapping to a small value.
         assert_eq!(peak_byte(-4.0), 255);
     }
 

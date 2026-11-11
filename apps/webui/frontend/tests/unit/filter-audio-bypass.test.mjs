@@ -13,7 +13,9 @@ const ENGINE =
 	'\n' +
 	readFrontendSource('src/lib/rb/deck-channel-graph.ts');
 const COLOR =
-	readFrontendSource('src/lib/rb/color-fx.ts') + '\n' + readFrontendSource('src/lib/rb/color-fx-graph.ts');
+	readFrontendSource('src/lib/rb/color-fx.ts') +
+	'\n' +
+	readFrontendSource('src/lib/rb/color-fx-graph.ts');
 
 test('centered FILTER has a real dry route around both BiquadFilterNodes', () => {
 	assert.match(ENGINE, /filterDry: GainNode;/);
@@ -23,9 +25,18 @@ test('centered FILTER has a real dry route around both BiquadFilterNodes', () =>
 	// and the fader, and the knob drive (with its per-effect law) lives in
 	// color-fx.ts / color-fx-graph.ts. FILTER mode is filterParamsFromKnob verbatim
 	// (pinned behaviorally in color-fx.test.mjs).
-	assert.match(ENGINE, /const \{ lpHz, hpHz, dryGain, lpWetGain, hpWetGain \} = colorFilterParamsForBuild\(deck, ch\.filter\);/);
-	assert.match(ENGINE, /for \(const stage of \[filterDry, filterLp, filterHp\]\) high\.connect\(stage\);/);
-	assert.match(ENGINE, /for \(const branch of \[filterDry, filterLpWet, filterHpWet\]\) branch\.connect\(colorBus\);/);
+	assert.match(
+		ENGINE,
+		/const \{ lpHz, hpHz, dryGain, lpWetGain, hpWetGain \} = colorFilterParamsForBuild\(\s*deck,\s*ch\.filter\s*\);/
+	);
+	assert.match(
+		ENGINE,
+		/for \(const stage of \[filterDry, filterLp, filterHp\]\) high\.connect\(stage\);/
+	);
+	assert.match(
+		ENGINE,
+		/for \(const branch of \[filterDry, filterLpWet, filterHpWet\]\) branch\.connect\(colorBus\);/
+	);
 	assert.match(ENGINE, /colorBus\.connect\(cue\);/);
 	assert.match(ENGINE, /colorBus\.connect\(fader\);/);
 	assert.match(COLOR, /filter: filterParamsFromKnob\(value\)/);

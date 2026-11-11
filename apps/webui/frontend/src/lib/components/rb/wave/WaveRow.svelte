@@ -407,6 +407,7 @@
 	);
 	const tempoScale = $derived(uiPrefs.tempo_lane_scale);
 	const hideTempo = $derived(!uiPrefs.show_tempo_lane);
+	const hideVocals = $derived(!uiPrefs.show_vocal_lane);
 	const tempoColors = $derived(TEMPO_LANE_COLORS[effectiveWaveScheme(uiPrefs.theme, uiPrefs.ui_skin)]);
 	const partnerPlanCurves = $derived(splitPartner === null ? null : planDeckOverlay(splitPartner.id));
 
@@ -630,7 +631,8 @@
 			partnerTempoSegments,
 			tempoColors,
 			tempoScale,
-			hideTempo
+			hideTempo,
+			hideVocals
 		] as const;
 		tracePlayhead('wave-clock', deckId, paintPositionMs); // before the sub-pixel skip: the clock itself
 		if (shouldSkipRepaint(_paintScheduleState, force, visualInputs, scrollPx)) return;
@@ -658,6 +660,7 @@
 		}
 		if (splitPartner !== null && partnerState !== null && partnerPaintMs !== null && partnerState.duration_ms !== null) {
 			const half = Math.floor(cssH / 2);
+			// WAVEQS-11733: wave_height applies to the plain row only; split halves stay one-sided.
 			const common = { widthCss: cssW, heightCss: half, palette: paintPalette, showSections: uiPrefs.show_sections, gridLines: uiPrefs.wave_grid_lines, waveformDesign: effectiveWaveformDesign(uiPrefs.waveform_design, uiPrefs.ui_skin), windowS: view.windowS, playheadFrac: view.frac, ...(view.cacheWindowS === undefined ? {} : { cacheWindowS: view.cacheWindowS }) };
 			paintSplitRow(
 				el,
@@ -676,7 +679,8 @@
 					tempo: partnerTempoSegments,
 					tempoColors,
 					tempoScale,
-					hideTempo
+					hideTempo,
+					hideVocals
 				},
 				{
 					...common,
@@ -694,7 +698,8 @@
 					tempo: tempoSegments,
 					tempoColors,
 					tempoScale,
-					hideTempo
+					hideTempo,
+					hideVocals
 				},
 				{ top: splitPartner.label, bottom: `DECK ${deckId}`, color: paintPalette.phrase, line: paintPalette.tick },
 				dpr
@@ -715,6 +720,7 @@
 			showSections: uiPrefs.show_sections,
 			gridLines: uiPrefs.wave_grid_lines,
 			waveformDesign: effectiveWaveformDesign(uiPrefs.waveform_design, uiPrefs.ui_skin),
+			waveHeight: uiPrefs.wave_height,
 			masterDownbeatOverlay,
 			masterBeatGhost,
 			ghostSeekMs: ghost.ghostSeekMs,
@@ -727,7 +733,8 @@
 			tempo: tempoSegments,
 			tempoColors,
 			tempoScale,
-			hideTempo
+			hideTempo,
+			hideVocals
 		});
 	}
 
@@ -817,7 +824,9 @@
 		void tempoColors;
 		void tempoScale;
 		void hideTempo;
+		void hideVocals;
 		void effectiveWaveformDesign(uiPrefs.waveform_design, uiPrefs.ui_skin);
+		void uiPrefs.wave_height;
 		void cssW;
 		void cssH;
 		void backingResizing;

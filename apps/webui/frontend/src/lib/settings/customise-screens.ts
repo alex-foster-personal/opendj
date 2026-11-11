@@ -72,6 +72,7 @@ const DECKS_GROUPS: readonly CustomiseGroup[] = [
 		label: 'Deck chrome',
 		rows: [
 			{ kind: 'setting', id: 'deck_hover_link' },
+			{ kind: 'setting', id: 'compact_decks' },
 			{ kind: 'setting', id: 'lyrics_deck_line' }
 		]
 	},

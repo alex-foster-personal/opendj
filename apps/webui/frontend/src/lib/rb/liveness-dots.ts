@@ -107,6 +107,11 @@ export function appUiDot(backend: LibraryHealthDot): LibraryHealthDot {
 }
 
 /** A coverage read that timed out: amber "still counting", or the painted verdict kept and marked. */
+/** Bright conn-dot "up" matches a settled green health row. */
+export function connBrightUp(dot: LibraryHealthDot): boolean {
+	return dot.state === 'complete';
+}
+
 export function coverageTimeoutDot(
 	previous: LibraryHealthDot,
 	label: LibraryHealthDot['label'],

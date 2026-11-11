@@ -223,7 +223,8 @@ function harness({
 			appliedDelays = { ...delays };
 		},
 		alignmentMode: () => mode,
-		deviceIds: () => ({ cue: 'bt-1', master: 'lg-hdmi' })
+		deviceIds: () => ({ cue: 'bt-1', master: 'lg-hdmi' }),
+		calibrationProbe: () => 'chirp'
 	};
 	return {
 		effects,
@@ -512,7 +513,7 @@ describe('createCueAlignController', () => {
 		);
 		assert.deepEqual(h.calibration.diagnostics, {
 			probe: 'chirp',
-			alternate_probe: 'unavailable',
+			alternate_probe: 'click_train',
 			failure: 'inconsistent_measurements',
 			master_measurements_ms: [200, 200, 200],
 			cue_measurements_ms: [900, 915, 900],

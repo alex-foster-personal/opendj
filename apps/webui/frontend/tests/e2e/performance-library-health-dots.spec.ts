@@ -119,9 +119,7 @@ test('pin be1b8f94f167: browser-sources health dots cover library/vocals/stems/l
 
 	// Every dot must live inside the bottom tray, not float above NEXT/RECC.
 	for (let i = 0; i < EXPECTED_LABELS.length; i++) {
-		expect(
-			await dots.nth(i).evaluate((el) => el.closest('.bottom-bar') !== null)
-		).toBe(true);
+		expect(await dots.nth(i).evaluate((el) => el.closest('.bottom-bar') !== null)).toBe(true);
 	}
 
 	// Horizontal, left-to-right layout.
@@ -166,4 +164,36 @@ test('pin be1b8f94f167: browser-sources health dots cover library/vocals/stems/l
 
 	await page.mouse.move(0, 0);
 	await expect(sharedPopover).toBeHidden();
+});
+
+test('issue 11172: BL conn-dot popover pins, copy-all, and closes from keyboard', async ({
+	page,
+	context
+}) => {
+	await context.grantPermissions(['clipboard-read', 'clipboard-write']);
+	await page.goto('/performance');
+	await page.waitForFunction(() => window.musicDjToolsPerformance?.version === 1);
+
+	const strip = page.locator('[data-testid="conn-dots-strip"]');
+	await expect(strip).toBeVisible();
+
+	const beDot = page.locator('[data-testid="conn-dot-be"]');
+	await beDot.focus();
+	const popover = page.locator('[data-testid="conn-dot-popover"]');
+	await expect(popover).toBeVisible();
+	await expect(page.locator('[data-testid="conn-dot-policy"]')).toContainText(
+		/Nothing leaves this machine until you submit/
+	);
+
+	await page.locator('[data-testid="conn-dot-pin"]').click();
+	await page.mouse.move(0, 0);
+	await expect(popover).toBeVisible();
+
+	await page.locator('[data-testid="conn-dot-copy-all"]').click();
+	const clipboard = await page.evaluate(async () => navigator.clipboard.readText());
+	expect(clipboard).toMatch(/Nothing leaves this machine until you submit/);
+	expect(clipboard).toMatch(/BE \(backend API\)/);
+
+	await page.keyboard.press('Escape');
+	await expect(popover).toBeHidden();
 });

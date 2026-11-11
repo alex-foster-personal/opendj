@@ -84,6 +84,8 @@ __all__ = [
     "BarPhase",
     "PhaseVote",
     "assign_bar_phase",
+    "closed_bar_beat_lengths",
+    "downbeat_anchor_indices",
     "lock_bar_phase",
     "vote_bar_phase",
 ]
@@ -129,6 +131,26 @@ def _bar_lengths(anchors: list[int], n_beats: int) -> tuple[list[int], int]:
     """`(closed bar lengths, length of the final open bar)` in beats."""
     closed = [b - a for a, b in itertools.pairwise(anchors)]
     return closed, n_beats - anchors[-1]
+
+
+def downbeat_anchor_indices(
+    beat_times: Sequence[float],
+    downbeat_times: Sequence[float],
+    *,
+    tolerance_s: float = DOWNBEAT_MATCH_TOLERANCE_S,
+) -> list[int]:
+    """Beat indices of each downbeat, or raise when the grid is malformed."""
+    beats = _ascending_floats(beat_times)
+    downbeats = sorted(float(t) for t in downbeat_times)
+    if not beats:
+        return []
+    return _downbeat_indices(beats, downbeats, tolerance_s)
+
+
+def closed_bar_beat_lengths(anchors: list[int], n_beats: int) -> list[int]:
+    """Closed bar lengths in beats between downbeat anchors."""
+    closed, _open = _bar_lengths(anchors, n_beats)
+    return closed
 
 
 def _ascending_floats(beat_times: Sequence[float]) -> list[float]:

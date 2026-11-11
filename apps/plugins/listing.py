@@ -40,7 +40,8 @@ import zlib
 from dataclasses import dataclass
 from typing import Any
 
-from apps.plugins.manifest import is_sha256
+from apps.plugins.manifest import CAPABILITY_KINDS, is_sha256
+from apps.plugins.providers import store_surface
 
 LISTING_STATUSES: tuple[str, ...] = ("stable", "beta", "experiment", "deprecated")
 SCREENSHOT_THEMES: tuple[str, ...] = ("dark", "light", "any")
@@ -52,7 +53,9 @@ MAX_SCREENSHOTS: int = 8
 MAX_SCREENSHOT_PIXELS: int = 4096 * 4096
 MEDIA_TYPES: dict[str, str] = {"png": "image/png", "webp": "image/webp"}
 
-_LISTING_KEYS = frozenset({"tagline", "problem", "you_can", "how_it_works", "limits", "status", "screenshots"})
+_LISTING_REQUIRED = frozenset({"tagline", "problem", "you_can", "how_it_works", "limits", "status", "screenshots"})
+_LISTING_OPTIONAL = frozenset({"capability_kind"})
+_LISTING_KEYS = _LISTING_REQUIRED | _LISTING_OPTIONAL
 _SHOT_KEYS = frozenset({"path", "sha256", "size", "width", "height", "alt", "theme"})
 
 
@@ -95,9 +98,16 @@ class Listing:
     limits: tuple[str, ...]
     status: str
     screenshots: tuple[Screenshot, ...]
+    capability_kind: str | None = None
+
+    @property
+    def store_surface(self) -> str | None:
+        if self.capability_kind is None:
+            return None
+        return store_surface(self.capability_kind)
 
     def to_wire(self) -> dict[str, Any]:
-        return {
+        out: dict[str, Any] = {
             "tagline": self.tagline,
             "problem": self.problem,
             "you_can": list(self.you_can),
@@ -106,6 +116,10 @@ class Listing:
             "status": self.status,
             "screenshots": [s.to_wire() for s in self.screenshots],
         }
+        if self.capability_kind is not None:
+            out["capability_kind"] = self.capability_kind
+            out["store_surface"] = self.store_surface
+        return out
 
 
 def _text(raw: dict[str, Any], key: str, max_len: int) -> str:
@@ -167,7 +181,7 @@ def listing_from_dict(raw: Any, plugin_id: str) -> Listing:
     """Parse strictly; every refusal names the field."""
     if not isinstance(raw, dict):
         raise ListingError("'listing' must be an object")
-    unknown, missing = set(raw) - _LISTING_KEYS, _LISTING_KEYS - set(raw)
+    unknown, missing = set(raw) - _LISTING_KEYS, _LISTING_REQUIRED - set(raw)
     if unknown or missing:
         raise ListingError(f"listing keys wrong: unknown {sorted(unknown)}, missing {sorted(missing)}")
     status = raw["status"]
@@ -176,6 +190,10 @@ def listing_from_dict(raw: Any, plugin_id: str) -> Listing:
     shots = raw["screenshots"]
     if not isinstance(shots, list) or not 1 <= len(shots) <= MAX_SCREENSHOTS:
         raise ListingError(f"a listing needs 1 to {MAX_SCREENSHOTS} screenshots")
+    capability_kind = raw.get("capability_kind")
+    if capability_kind is not None:
+        if not isinstance(capability_kind, str) or capability_kind not in CAPABILITY_KINDS:
+            raise ListingError(f"listing 'capability_kind' must be one of {list(CAPABILITY_KINDS)}")
     return Listing(
         tagline=_text(raw, "tagline", 80),
         problem=_text(raw, "problem", 1500),
@@ -184,6 +202,7 @@ def listing_from_dict(raw: Any, plugin_id: str) -> Listing:
         limits=_bullets(raw, "limits", least=0, most=10, max_len=240),
         status=status,
         screenshots=tuple(_screenshot(s, plugin_id) for s in shots),
+        capability_kind=capability_kind,
     )
 
 

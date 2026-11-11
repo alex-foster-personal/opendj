@@ -264,3 +264,23 @@ def canonical_decode_fingerprint_and_frames(path: Path) -> tuple[str, int]:
             f"number of {SAMPLE_FORMAT} frames"
         )
     return digest.hexdigest(), decoded_bytes // sample_bytes
+
+
+def claim_input_fingerprint(
+    *,
+    decode_fingerprint: str,
+    stable_id: str,
+    analysis_lane: str,
+    segment_ms: tuple[int, int] | None = None,
+) -> str:
+    """Fingerprint stamped on enrichment claims: decode digest plus claim context.
+
+    Distinct from vendor tag fingerprints. Segment bounds are included when the
+    claim scope is a time range rather than the whole track.
+    """
+    if not decode_fingerprint.strip():
+        raise ValueError("decode_fingerprint is required for claim_input_fingerprint")
+    parts = [f"decode={decode_fingerprint}", f"stable_id={stable_id}", f"lane={analysis_lane}"]
+    if segment_ms is not None:
+        parts.append(f"segment={segment_ms[0]}-{segment_ms[1]}")
+    return hashlib.sha256("|".join(parts).encode()).hexdigest()

@@ -39,7 +39,10 @@ from apps.adapters.rekordbox import config as rb_config
 from apps.shared.non_music import is_non_music
 from apps.shared.state.locations import bulk_local_audio_paths
 
-from . import findings, groups, jev, jev_store, library_tags, providers, taxonomy
+from apps.analysis import queue_store
+from apps.analysis.queue_user_lanes import USER_BATCH_IDS
+
+from . import display, findings, groups, jev, jev_store, library_tags, providers, taxonomy
 
 log = logging.getLogger("apps.genre_infer.pipeline")
 
@@ -54,6 +57,8 @@ OUTCOME_FAILED = "failed"
 OUTCOME_CANCELLED = "cancelled"
 SKIP_NO_ARTIST_TITLE = "no_artist_title"
 SKIP_NOT_A_TRACK = "not_in_library"
+SKIP_HAS_CHOSEN_GENRE = "has_chosen_genre"
+SKIP_GENRE_JOB_ACTIVE = "genre_job_active"
 # The track's title or artists changed while the models were being asked about its old ones.
 FAIL_RETAGGED = "retagged while it was being asked; ask again"
 
@@ -688,6 +693,51 @@ def eligible_ids(conn: sqlite3.Connection, *, master_path: Path | None = None) -
     return [sid for sid in present if not is_non_music(SimpleNamespace(file_path=str(paths[sid]), genre=tagged(sid)))]
 
 
+def _active_genre_jobs(conn: sqlite3.Connection) -> set[str]:
+    batch_id = USER_BATCH_IDS["genre"]
+    return {
+        str(r[0])
+        for r in conn.execute(
+            "SELECT stable_id FROM analysis_queue_item WHERE batch_id = ? AND lane = 'genre' AND state IN (?, ?)",
+            (batch_id, queue_store.ITEM_PENDING, queue_store.ITEM_RUNNING),
+        )
+    }
+
+
+def attention_infer_ids(
+    conn: sqlite3.Connection,
+    stable_ids: Sequence[str],
+    *,
+    master_path: Path | None = None,
+) -> list[str]:
+    """Live ids that need a genre infer job when selected or loaded on /performance."""
+    ids = list(dict.fromkeys(stable_ids))
+    if not ids:
+        return []
+    chosen_map = display.chosen_for_stable_ids(conn, ids, master_path=master_path)
+    searchable = set(searchable_ids(conn, ids))
+    missing = set(missing_fused_ids(conn, ids))
+    active = _active_genre_jobs(conn)
+    return [
+        sid for sid in ids if chosen_map.get(sid) is None and sid in searchable and sid in missing and sid not in active
+    ]
+
+
+def genre_attention_skip_reason(
+    conn: sqlite3.Connection,
+    stable_id: str,
+    *,
+    master_path: Path | None = None,
+) -> str | None:
+    """Why a genre enqueue must not run for attention, or None when it may."""
+    chosen = display.chosen_for_stable_ids(conn, [stable_id], master_path=master_path).get(stable_id)
+    if chosen is not None:
+        return SKIP_HAS_CHOSEN_GENRE
+    if stable_id in _active_genre_jobs(conn):
+        return SKIP_GENRE_JOB_ACTIVE
+    return None
+
+
 def missing_fused_ids(conn: sqlite3.Connection, candidates: Iterable[str]) -> list[str]:
     """Candidates whose duplicate group has no complete ``odj-fused`` finding, one per group.
 
@@ -723,13 +773,17 @@ __all__ = [
     "OUTCOME_FAILED",
     "OUTCOME_SKIPPED",
     "OUTCOME_UP_TO_DATE",
+    "SKIP_GENRE_JOB_ACTIVE",
+    "SKIP_HAS_CHOSEN_GENRE",
     "SKIP_NO_ARTIST_TITLE",
     "InferenceBusy",
     "InferenceLock",
     "RunSummary",
     "TrackResult",
+    "attention_infer_ids",
     "eligible_ids",
     "full_state",
+    "genre_attention_skip_reason",
     "infer_tracks",
     "inference_lock",
     "missing_fused_ids",

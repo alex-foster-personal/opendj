@@ -617,21 +617,20 @@ def _mutate_manifest_model_version(bundle_dir: Path, new_version: str) -> None:
     manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
 
 
-def _rewrite_part_with_new_duration(bundle_dir: Path, part: str, *, duration_s: float, sr: int) -> None:
+def _rewrite_part_same_duration(bundle_dir: Path, part: str, *, duration_s: float, sr: int) -> None:
+    """Same-duration re-render with new PCM; mtime held so only content_fp moves identity."""
     n_frames = int(duration_s * sr)
     path = bundle_dir / f"{part}.wav"
     mtime_before_ns = path.stat().st_mtime_ns
+    # Reprocessed silence is not byte-identical to the fixture silence (marker samples).
+    frame = b"\x01\x00"
     with wave.open(str(path), "wb") as wav_file:
         wav_file.setnchannels(1)
         wav_file.setsampwidth(2)
         wav_file.setframerate(sr)
-        wav_file.writeframes(b"\x00\x00" * n_frames)
-    # A real re-render lands later than the file it replaces. A rewrite inside the
-    # same filesystem timestamp tick keeps the old mtime_ns, and at the same size
-    # the part is byte-for-byte indistinguishable to `bundle_stem_identity` (main
-    # push CI run 37119163338). Stamp the rewrite strictly later, as a repair is.
-    later_ns = max(path.stat().st_mtime_ns, mtime_before_ns + 1_000_000_000)
-    os.utime(path, ns=(later_ns, later_ns))
+        wav_file.writeframes(frame * n_frames)
+    os.utime(path, ns=(mtime_before_ns, mtime_before_ns))
+    assert path.stat().st_mtime_ns == mtime_before_ns
 
 
 def _seed_matching_cache(data_dir: Path, stable_id: str, bundle: StemBundle, *, coverage_pct: float) -> None:
@@ -698,17 +697,20 @@ def test_freshness_recomputes_after_a_model_version_change(conn, data_dir) -> No
     assert store.get_verdict(conn, "sid-fresh-model-001").coverage_pct == 77.0
 
 
+def test_bundle_stem_identity_moves_when_mtime_is_unchanged_after_a_part_rewrite(
+    data_dir,
+) -> None:
+    """[if] a same-size part rewrite keeps mtime_ns fixed [then] bundle_stem_identity differs, [else stop]."""
+    stems_root = _stems_root(data_dir)
+    bundle_dir = _write_wav_bundle(stems_root, "sid-fp-mtime-collision", source_sha256="f" * 64)
+    before = vfrom_stems.bundle_stem_identity(load_stem_bundle("sid-fp-mtime-collision", stems_dir=stems_root))
+    _rewrite_part_same_duration(bundle_dir, "vocals", duration_s=1.0, sr=8000)
+    after = vfrom_stems.bundle_stem_identity(load_stem_bundle("sid-fp-mtime-collision", stems_dir=stems_root))
+    assert before != after
+
+
 def test_freshness_recomputes_after_a_part_file_change(conn, data_dir) -> None:
-    """Same fix, the OTHER named trigger: a repaired/re-rendered part with
-    ``manifest.json`` bytes UNCHANGED must also force a recompute --
-    ``bundle_stem_identity`` hashes each part's own ``(filename, size,
-    mtime_ns)`` too, not only ``manifest.json``. The repair keeps the SAME
-    duration (a plausible "reprocessed, not re-timed" repair) and every OTHER
-    part untouched, so this isolates the single-part-mtime signal on its
-    own -- a same-duration rewrite still changes ``mtime_ns``, and v1's exact
-    per-part frame-count-alignment rule (``stem_artifacts.
-    _validate_v1_part_metadata``) means a differently-timed WAV part would
-    fail to load at all, which is not what this test is exercising."""
+    """[if] a same-duration vocals repair leaves manifest bytes fixed [then] backfill recomputes, [else stop]."""
     seed_track(conn, "sid-fresh-part-001")
     stems_root = _stems_root(data_dir)
     bundle_dir = _write_wav_bundle(stems_root, "sid-fresh-part-001", source_sha256="4" * 64)
@@ -726,7 +728,7 @@ def test_freshness_recomputes_after_a_part_file_change(conn, data_dir) -> None:
 
     # Repair ONE part (re-rendered, SAME duration so v1's exact per-part
     # frame-count alignment still holds); manifest.json bytes untouched.
-    _rewrite_part_with_new_duration(bundle_dir, "vocals", duration_s=1.0, sr=8000)
+    _rewrite_part_same_duration(bundle_dir, "vocals", duration_s=1.0, sr=8000)
     assert (bundle_dir / "manifest.json").read_bytes() == manifest_before
     bundle_v2 = load_stem_bundle("sid-fresh-part-001", stems_dir=stems_root)
     assert vfrom_stems.bundle_stem_identity(bundle_v2) != identity_v1
@@ -741,10 +743,7 @@ def test_freshness_recomputes_after_a_part_file_change(conn, data_dir) -> None:
 
 
 def test_freshness_skips_an_unchanged_bundle(conn, data_dir) -> None:
-    """Opposite-direction control: nothing about the bundle changed between
-    two runs, so the second run must skip it as up-to-date, not recompute --
-    stdlib-only sibling of ``test_backfill_rerun_is_a_no_op`` (which needs
-    the full audio stack), so this direction is covered without it too."""
+    """[if] no bundle part or manifest changes between runs [then] backfill skips up-to-date, [else stop]."""
     seed_track(conn, "sid-fresh-unchanged-001")
     stems_root = _stems_root(data_dir)
     _write_wav_bundle(stems_root, "sid-fresh-unchanged-001", source_sha256="5" * 64)

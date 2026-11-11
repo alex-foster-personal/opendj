@@ -1,0 +1,9 @@
+{
+  "bytes": 1024,
+  "measured_main": 512902,
+  "measured_with_pr": 513100,
+  "sha": "90f06d31dc",
+  "date": "Tue 10 Nov 2026",
+  "reason": "PR #12103: Trackify listening-shell acceptance (e2e + route session wiring); +198 B gzip over main on other-lazy.",
+  "payback": "none planned; growth is the trackify-mode e2e and music-player lazy route strings beside existing shell chunks"
+}

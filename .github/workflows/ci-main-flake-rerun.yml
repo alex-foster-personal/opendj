@@ -1,0 +1,47 @@
+name: ci-main-flake-rerun
+
+# #11377: on Sat 3 Oct 2026 one flaky pytest shard on a docs-only merge held every merge for
+# about six hours, while a failed-jobs rerun of the same SHA went green. When a main `CI` push
+# run fails on attempt 1 and its only failed jobs are exactly one `pytest fast lane` shard plus
+# `ci gate`, rerun its failed jobs once (`gh run rerun --failed` re-evaluates `ci gate`).
+# Attempt 2 is never retried, so a shard that fails twice stays red. Advisory: this adds no
+# gate or hold; it only starts a rerun. No checkout and no Python: gh and jq only.
+on:
+  workflow_run:
+    workflows: [CI]
+    types: [completed]
+    branches: [main]
+
+permissions:
+  actions: write
+
+jobs:
+  rerun:
+    name: rerun one flaky main shard
+    if: >-
+      github.event.workflow_run.conclusion == 'failure'
+      && github.event.workflow_run.event == 'push'
+      && github.event.workflow_run.run_attempt == 1
+    runs-on: ${{ fromJSON(vars.CI_RUNS_ON_LINUX) }}
+    timeout-minutes: 3
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+      RUN_ID: ${{ github.event.workflow_run.id }}
+      # Reads `gh run view --json attempt,jobs`; prints "rerun" only for attempt 1 whose failed
+      # jobs are exactly one pytest fast lane shard plus ci gate. Pinned by
+      # tests/scripts/test_ci_main_flake_rerun.py, which runs this filter with jq.
+      DECIDE_JQ: >-
+        [.jobs[] | select(.conclusion == "failure") | .name] as $failed
+        | ($failed | map(select(startswith("pytest fast lane (shard "))) | length) as $shards
+        | ($failed | map(select(. != "ci gate" and (startswith("pytest fast lane (shard ") | not))) | length) as $others
+        | if .attempt == 1 and $shards == 1 and $others == 0 then "rerun" else "leave" end
+    steps:
+      - name: Rerun the failed shard if it is the only one
+        run: |
+          set -euo pipefail
+          verdict=$(gh run view "$RUN_ID" --json attempt,jobs --jq "$DECIDE_JQ")
+          echo "[main-flake-rerun] run $RUN_ID: $verdict"
+          if [ "$verdict" = "rerun" ]; then
+            gh run rerun "$RUN_ID" --failed
+          fi

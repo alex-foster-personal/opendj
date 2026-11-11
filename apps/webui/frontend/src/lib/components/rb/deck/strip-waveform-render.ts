@@ -19,6 +19,7 @@ import {
 	resolveStripWaveformKind,
 	vocalAlpha
 } from '../wave/render';
+import { rgbColumnColor } from '../wave/wave-band-layers';
 import type { WaveformDesign } from '$lib/rb/waveform-design';
 import type { BandGains } from '$lib/rb/wave-eq-gains.svelte';
 import { resolveStripBandColors, type WaveBandColors } from '$lib/rb/wave-palette';
@@ -111,6 +112,8 @@ export interface StripFrame {
 	waveform: StripWaveformBands | null;
 	/** Validated vocals of the loaded analysis; null when absent. */
 	vocals: StripVocals | null;
+	/** issue #10238 `show_vocal_lane` off: no vocal bars on this strip. */
+	hideVocals?: boolean;
 	/** Engaged loop reported by the engine; null when no loop is running. */
 	loop: LoopBandSource | null;
 	/** Stored loop hot cues. They remain visible when no loop is engaged. */
@@ -182,7 +185,7 @@ export function drawStripWaveform(ctx: CanvasRenderingContext2D, frame: StripFra
 			frame.bandColors ?? DEFAULT_BAND_COLORS,
 			frame.bandGains ?? null
 		);
-		if (frame.vocals !== null && durationMs !== null && durationMs > 0) {
+		if (frame.hideVocals !== true && frame.vocals !== null && durationMs !== null && durationMs > 0) {
 			_drawVocalBars(ctx, frame.vocals, durationMs, w, (frame.bandColors ?? DEFAULT_BAND_COLORS).vocal);
 		}
 	}
@@ -263,7 +266,13 @@ function _drawPreview(
 	}
 	for (let i = 0; i < n; i++) {
 		const x = i * w;
-		if (kind === 'tri') {
+		if (kind === 'tri' && design === 'rgb') {
+			const lo = bands.low[i] * g.low;
+			const mi = bands.mid[i] * g.mid;
+			const hi = bands.high[i] * g.high;
+			const color = rgbColumnColor({ low: lo, mid: mi, high: hi });
+			if (color !== null) _bar(ctx, x, w, Math.max(lo, mi, hi), color, heightPx);
+		} else if (kind === 'tri') {
 			_bar(ctx, x, w, bands.low[i] * g.low, colors.low, heightPx);
 			_bar(ctx, x, w, bands.mid[i] * g.mid, colors.mid, heightPx);
 			_bar(ctx, x, w, bands.high[i] * g.high, colors.high, heightPx);

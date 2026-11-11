@@ -35,6 +35,8 @@ Requirements (statuses per the house docstring convention):
   - [if] the content digest (sha256) of the real state.db or of a WAL sidecar
     differs after the run, or either read fails [then ⛔️]
     `real_store_untouched` FAILs. Identical bytes under a new mtime pass.
+  - [if] the host has no real state.db to protect and no acceptance sentinel was
+    written [then ⛔️] `real_store_untouched` is UNKNOWN, not PASS
   - [if] the real WebKit Default store or the real data-dir UUID store changes during the run
     [then ⛔️] `real_store_untouched` FAILs
 - ✔︎ ✅ OPS-55 checks, each PASS/FAIL/UNKNOWN with numbers. Check ids the
@@ -193,6 +195,9 @@ ACCEPTANCE_SERVICE_ID = "com.af.music-dj-tools.acceptance"
 # system path, so this is the only thing that ties one to the app that owns it.
 LIBSYSTEM = "/usr/lib/libSystem.B.dylib"
 ACCEPTANCE_ROOT = Path.home() / ".opendj-acceptance" / "runs"
+# Written only when the real data dir has no state.db before launch, so the
+# real_store_untouched row can detect a touch without claiming PASS on absence.
+REAL_STORE_SENTINEL_BYTES = b"opendj-app-acceptance-real-store-sentinel/v1\n"
 
 PASS, FAIL, UNKNOWN = "PASS", "FAIL", "UNKNOWN"
 
@@ -769,6 +774,8 @@ class Run:
     our_job_ids: set[str] = field(default_factory=set)
     memory_boot: dict[str, Any] = field(default_factory=dict)
     launched_at: float = 0.0
+    # True when this run wrote REAL_STORE_SENTINEL_BYTES because state.db was absent.
+    real_store_sentinel_seeded: bool = False
 
 
 # ----- helpers --------------------------------------------------------------------
@@ -871,6 +878,16 @@ def real_store_digest(state_dir: Path) -> dict[str, str | None]:
         record = _store_file_record(state_dir / name)
         digests[name] = None if record is None else record[0]
     return digests
+
+
+def _seed_real_store_sentinel(state_dir: Path) -> bool:
+    """Write the acceptance sentinel when state.db is absent. Returns True when written."""
+    db_path = state_dir / "state.db"
+    if db_path.exists():
+        return False
+    state_dir.mkdir(parents=True, exist_ok=True)
+    db_path.write_bytes(REAL_STORE_SENTINEL_BYTES)
+    return True
 
 
 WEBKIT_DATA_STORE_DOMAIN = b"opendj-webkit-data-store-v1\0"
@@ -1468,22 +1485,34 @@ def check_deck_load(run: Run) -> Check:
                            f"duration {duration} ms, waveform present")
 
 
+def classify_pause_control(paused: dict[str, Any]) -> tuple[str, str]:
+    """The 2 s post-pause sample is the negative control, not the silence poll alone."""
+    if paused.get("fresh_samples", 0) <= 0 or paused.get("rms_max") is None:
+        return UNKNOWN, "no fresh meter reading in the paused window"
+    paused_moved = (paused["position_last"] or 0) - (paused["position_first"] or 0)
+    rms = paused["rms_max"]
+    if paused_moved > 0:
+        return FAIL, (f"pause does not silence the output within {PAUSE_SILENCE_MAX_S}s: playhead moved "
+                      f"{paused_moved:.0f} ms and rms {rms:.4f} in the 2s after")
+    if rms >= RMS_AUDIBLE_MIN:
+        return UNKNOWN, (f"paused deck is frozen but the meter still reads a FRESH rms {rms:.4f}: "
+                         "the meter does not read zero when silent")
+    return PASS, ""
+
+
 def audio_verdict(moving: bool, silent: bool, playing: dict[str, Any], paused: dict[str, Any],
                   device_ok: bool) -> tuple[str, str]:
-    """Playback judged by the page's own meter, with the paused deck as the negative control."""
-    if (paused.get("rms_max") is None or playing.get("rms_max") is None
-            or paused.get("fresh_samples", 0) <= 0 or playing.get("fresh_samples", 0) <= 0):
+    """Playback judged by the page's own meter, with the paused deck as the negative control.
+
+    ``silent`` records whether the pre-sample poll saw a fresh quiet reading; the paused
+    window sample is authoritative and a failed poll does not fail a good control.
+    """
+    del silent  # timing evidence lives in check numbers only
+    if playing.get("rms_max") is None or playing.get("fresh_samples", 0) <= 0:
         return UNKNOWN, "no fresh meter reading: the output level is unmeasurable"
-    paused_moved = (paused["position_last"] or 0) - (paused["position_first"] or 0)
-    # The paused sample is judged on its own: an earlier silent reading (`silent`)
-    # never excuses a fresh audible level or a moving playhead seen after it.
-    paused_audible = paused["rms_max"] >= RMS_AUDIBLE_MIN
-    if paused_audible and paused_moved <= 0:
-        return UNKNOWN, (f"paused deck is frozen but the meter still reads a FRESH rms {paused['rms_max']:.4f}: "
-                         "the meter does not read zero when silent")
-    if not silent or paused_audible or paused_moved > 0:
-        return FAIL, (f"pause does not silence the output within {PAUSE_SILENCE_MAX_S}s: playhead moved "
-                      f"{paused_moved:.0f} ms and rms {paused['rms_max']:.4f} in the 2s after")
+    pause_verdict, pause_summary = classify_pause_control(paused)
+    if pause_verdict != PASS:
+        return pause_verdict, pause_summary
     advanced = (playing["position_last"] or 0) - (playing["position_first"] or 0)
     if not playing["playing_seen"] or not moving:
         return FAIL, f"deck never moved within {PLAY_START_MAX_S}s of the play command"
@@ -2561,7 +2590,11 @@ def _begin_acceptance(args: argparse.Namespace, source: Path) -> tuple[dict[str,
         refuse_unisolated_launch(shell, home, env, account_home)
     except Refused as exc:
         raise Refused(str(exc), captured) from exc
+    state_dir = shell.data_dir(Path.home()) / "state"
+    real_store_sentinel_seeded = False
     try:
+        if _store_file_record(state_dir / "state.db") is None:
+            real_store_sentinel_seeded = _seed_real_store_sentinel(state_dir)
         real_before = _real_store_stat(shell)
     except StoreUnreadable as err:
         raise Refused(f"real store could not be read before launch: {err}", captured) from err
@@ -2588,7 +2621,8 @@ def _begin_acceptance(args: argparse.Namespace, source: Path) -> tuple[dict[str,
         record = exc.fixture_record if exc.fixture_record is not None else captured
         raise Refused(str(exc), record) from exc
     run = Run(shell=shell, fixture=fixture, home=home, env=env, account_home=account_home,
-              expect_sha=args.expect_sha, stems_timeout_s=args.stems_timeout, lyrics_timeout_s=args.lyrics_timeout)
+              expect_sha=args.expect_sha, stems_timeout_s=args.stems_timeout, lyrics_timeout_s=args.lyrics_timeout,
+              real_store_sentinel_seeded=real_store_sentinel_seeded)
     try:
         identity = shell.manifest_identity()
     except Refused as exc:
@@ -2704,11 +2738,14 @@ def judge_real_store(
     before_problem: str | None,
     after: dict[str, str | None] | None,
     after_problem: str | None,
+    *,
+    sentinel_seeded: bool = False,
 ) -> Check:
-    """PASS only when both reads succeeded and the digests match.
+    """PASS when a guardable store's digests match; UNKNOWN when nothing to protect.
 
-    A read error is FAIL and names the file. Identical missing-file digests
-    still pass: the store was absent before and after.
+    A read error is FAIL and names the file. Absent state.db before and after,
+    with no acceptance sentinel, is UNKNOWN: it does not prove an existing store
+    survived.
     """
     guard = Check("real_store_untouched")
     guard.numbers = {
@@ -2716,15 +2753,24 @@ def judge_real_store(
         "after": after,
         "before_problem": before_problem,
         "after_problem": after_problem,
+        "sentinel_seeded": sentinel_seeded,
     }
     problems = [item for item in (before_problem, after_problem) if item]
     if problems:
         return guard.set(FAIL, "real store could not be read: " + "; ".join(problems))
     if before is None or after is None:
         return guard.set(FAIL, "real store could not be read: digest missing")
+    guardable = before.get("state.db") is not None or sentinel_seeded
+    if not guardable:
+        return guard.set(
+            UNKNOWN,
+            "no real state.db on this host to protect (acceptance sentinel not written)",
+        )
     if before == after:
         webkit_keys = sorted(name for name in before if name.startswith("webkit."))
-        if before.get("state.db"):
+        if sentinel_seeded and not webkit_keys:
+            summary = "acceptance state.db sentinel and WAL sidecars unchanged"
+        elif before.get("state.db"):
             if webkit_keys:
                 summary = (
                     "real state.db, WAL sidecars, and WebKit Default plus real-store UUID unchanged"
@@ -2734,7 +2780,7 @@ def judge_real_store(
         elif webkit_keys:
             summary = "WebKit Default plus real-store UUID unchanged"
         else:
-            summary = "no real state.db on this host before or after"
+            summary = "real state.db and its WAL sidecars unchanged"
         return guard.set(PASS, summary)
     changed = [name for name in after if before.get(name) != after[name]]
     return guard.set(FAIL, f"the real app data dir CHANGED during the run: {changed}")
@@ -2751,7 +2797,13 @@ def _finish(result: dict[str, Any], checks: list[Check], run: Run,
     except StoreUnreadable as exc:
         real_after = None
         after_problem = str(exc)
-    guard = judge_real_store(real_before, None, real_after, after_problem)
+    guard = judge_real_store(
+        real_before,
+        None,
+        real_after,
+        after_problem,
+        sentinel_seeded=run.real_store_sentinel_seeded,
+    )
     checks.append(guard)
     result["checks"] = [asdict(c) for c in checks]
     result["finished_at"] = _now()

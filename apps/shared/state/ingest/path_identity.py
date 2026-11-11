@@ -1,9 +1,10 @@
-"""Reuse the first live inferred ``stable_id`` for a file path (LIBM-180).
+"""Reuse live ``stable_id`` rows before minting (LIBM-180, LIBM-12770).
 
 Tier-3 ids still hash ``path_collision_key(path)|mtime`` when a path is new.
 A later import or refresh of the same path must not mint a second id just
-because mtime moved. Existing duplicate rows are left in place; this module
-only stops a third (or second) id from being created.
+because mtime moved. Rekordbox ingest also reuses a row already linked by
+vendor id or, when audio is hashable, by content or audio hash, so a library
+path prefix move does not mint a second id.
 """
 
 from __future__ import annotations
@@ -50,8 +51,73 @@ def resolve_inferred_stable_id(
     return state_ids.stable_id(isrc=None, abs_path=abs_path, mtime=mtime)
 
 
+def live_rekordbox_stable_ids_by_vendor(conn: Any) -> dict[str, tuple[str, str]]:
+    """Live rekordbox ``vendor_id`` to ``(stable_id, tier)``, oldest row first."""
+    by_vendor: dict[str, tuple[str, str]] = {}
+    rows = conn.execute(
+        "SELECT t.stable_id, t.stable_id_tier, v.vendor_id FROM tracks t "
+        "INNER JOIN track_vendor_ids v ON v.stable_id = t.stable_id "
+        "WHERE t.deleted_at IS NULL AND v.vendor = 'rekordbox' "
+        "AND v.deleted_at IS NULL "
+        "ORDER BY t.created_at ASC, t.stable_id ASC"
+    ).fetchall()
+    for stable_id, tier, vendor_id in rows:
+        key = str(vendor_id)
+        if key not in by_vendor:
+            by_vendor[key] = (str(stable_id), str(tier))
+    return by_vendor
+
+
+def lookup_live_stable_id_by_hash(
+    conn: Any,
+    content_hash: str | None,
+    audio_hash: str | None,
+) -> tuple[str, str] | None:
+    """Oldest live track with the same content or audio hash, if any."""
+    if content_hash:
+        row = conn.execute(
+            "SELECT stable_id, stable_id_tier FROM tracks "
+            "WHERE deleted_at IS NULL AND content_hash = ? "
+            "ORDER BY created_at ASC, stable_id ASC LIMIT 1",
+            (content_hash,),
+        ).fetchone()
+        if row is not None:
+            return str(row[0]), str(row[1])
+    if audio_hash:
+        row = conn.execute(
+            "SELECT stable_id, stable_id_tier FROM tracks "
+            "WHERE deleted_at IS NULL AND audio_hash = ? "
+            "ORDER BY created_at ASC, stable_id ASC LIMIT 1",
+            (audio_hash,),
+        ).fetchone()
+        if row is not None:
+            return str(row[0]), str(row[1])
+    return None
+
+
+def resolve_rb_existing_stable_id(
+    conn: Any,
+    rb_vendor_id: str,
+    content_hash: str | None,
+    audio_hash: str | None,
+    *,
+    rb_vendor_index: Mapping[str, tuple[str, str]] | None = None,
+) -> tuple[str, str] | None:
+    """Reuse a live row for this rekordbox content id or hashed audio."""
+    if rb_vendor_index is not None:
+        found = rb_vendor_index.get(rb_vendor_id)
+    else:
+        found = live_rekordbox_stable_ids_by_vendor(conn).get(rb_vendor_id)
+    if found is not None:
+        return found
+    return lookup_live_stable_id_by_hash(conn, content_hash, audio_hash)
+
+
 __all__ = [
     "live_inferred_by_path_key",
     "live_inferred_rows",
+    "live_rekordbox_stable_ids_by_vendor",
+    "lookup_live_stable_id_by_hash",
     "resolve_inferred_stable_id",
+    "resolve_rb_existing_stable_id",
 ]

@@ -260,6 +260,50 @@ export async function runSetRating(
 	}
 }
 
+/** NOWP-11487: hide or show one or more library rows in tracklist exports. */
+export async function runSetTracklistHidden(
+	targetIds: readonly string[],
+	hidden: boolean,
+	deps: {
+		getTrack: typeof getTrack;
+		patchTrack: typeof patchTrack;
+		pushToast: ToastFn;
+	} = { getTrack, patchTrack, pushToast }
+): Promise<void> {
+	let ok = 0;
+	let firstError: string | null = null;
+	for (const id of targetIds) {
+		if (isUsbTrackId(id)) {
+			firstError = firstError ?? 'stick tracks are read only: tracklist visibility was not saved';
+			continue;
+		}
+		try {
+			const first = await deps.getTrack(id);
+			await deps.patchTrack(id, first.etag, { tracklist_hidden: hidden });
+			ok += 1;
+		} catch (error) {
+			if (error instanceof ConflictError) {
+				try {
+					await deps.patchTrack(id, error.etag, { tracklist_hidden: hidden });
+					ok += 1;
+				} catch (e2) {
+					if (firstError === null) firstError = e2 instanceof Error ? e2.message : String(e2);
+				}
+			} else if (firstError === null) {
+				firstError = error instanceof Error ? error.message : String(error);
+			}
+		}
+	}
+	if (ok > 0) {
+		invalidateLibraryIndex();
+		const verb = hidden ? 'Hidden in tracklists' : 'Shown in tracklists';
+		deps.pushToast(`${verb} (${ok} track${ok === 1 ? '' : 's'})`, 'info');
+	}
+	if (firstError !== null) {
+		deps.pushToast(firstError, 'error');
+	}
+}
+
 /**
  * PAIR-10: "Pair these 2 tracks" makes a LOOSE pair: no snapshot, so loading
  * either track later loads it like any other. The route publishes

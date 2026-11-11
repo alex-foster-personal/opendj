@@ -15,7 +15,7 @@ function block(selector) {
 
 test('if Green Room does not repeat the dark Legacy and Mono palettes after its skin block then explicit palettes are ignored', () => {
 	const skinAt = THEME.indexOf("html[data-skin='green-room'] .perf-root {");
-	for (const palette of ['legacy', 'mono']) {
+	for (const palette of ['legacy', 'mono', 'blue']) {
 		const selector = `html[data-skin='green-room'][data-wave-palette='${palette}'] .perf-root`;
 		assert.ok(THEME.indexOf(selector) > skinAt, `${selector} must follow the skin block`);
 		assert.deepEqual(block(selector), block(`html[data-wave-palette='${palette}'] .perf-root`));

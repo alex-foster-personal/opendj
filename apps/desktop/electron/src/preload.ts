@@ -75,6 +75,13 @@ if (init !== null) {
 				{ kind: 'imported'; browser: string; cookies: number; sites: string[] } | { kind: 'refused'; reason: string }
 			> => ipcRenderer.invoke('opendj:side-import-logins')
 		},
+		// Extra labeled windows (second screen). Same actions and labels as
+		// the page's window command on the order bus (#10300 / #10298).
+		windows: {
+			open: (label: string): Promise<void> => ipcRenderer.invoke('opendj:window', 'open', label),
+			close: (label: string): Promise<void> => ipcRenderer.invoke('opendj:window', 'close', label),
+			focus: (label: string): Promise<void> => ipcRenderer.invoke('opendj:window', 'focus', label)
+		},
 		setAudioEngineChoice: (choice: string): Promise<void> =>
 			ipcRenderer.invoke('opendj:audio-engine-choice', String(choice)),
 		applyUpdate: async (

@@ -217,6 +217,7 @@ class MasterMixWriter:
         self._next_seq = 0
         self._segment: _Segment | None = None
         self._closed = False
+        self._terminal_attach_error: str | None = None
         self._tees: list[MasterMixTee] = []
         # What the page SENT and this writer accepted, counted from the request
         # bodies, independently of what reached disk: the two must match exactly.
@@ -234,8 +235,19 @@ class MasterMixWriter:
     def error(self) -> str | None:
         return self._state_and_error()[1]
 
+    def mark_attach_failed(self, reason: str) -> None:
+        """Record why master tap attach failed before any audio arrives (SETREC-23)."""
+        with self._lock:
+            self._terminal_attach_error = reason
+
+    def attach_failure_reason(self) -> str | None:
+        with self._lock:
+            return self._terminal_attach_error
+
     def _state_and_error(self) -> tuple[CaptureStateName, str | None]:
         with self._lock:
+            if self._terminal_attach_error is not None:
+                return "failed", self._terminal_attach_error
             if self._closed:
                 return "stopped", None
             now = self._monotonic()

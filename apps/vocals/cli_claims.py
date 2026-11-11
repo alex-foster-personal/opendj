@@ -1,7 +1,8 @@
-"""Track-claim lease locking for vocal worker runs (split from
-``apps.vocals.cli``).
+"""Process-independent track-claim leases for the vocals CLI and HTTP analyze path.
 
--Claude
+Persisted ``.json.lock`` records serialize cross-process contention while a
+demucs worker runs. Heartbeats renew the lease; successors take over only after
+expiry or explicit release.
 """
 
 from __future__ import annotations

@@ -65,6 +65,10 @@ WRAPPED_FIELDS: frozenset[str] = frozenset(
         # flag ("I know, stop telling me"). A bool, set from the Err column or
         # PUT /beatgrid-flags/{id}/dismissed.
         "grid_flag_dismissed",
+        # NOWP-11487: true while the user hides this track's identity from
+        # tracklists and now-playing (shown as ID - ID). A bool, Open DJ only,
+        # never written back to rekordbox.
+        "tracklist_hidden",
         # GRIDEDIT-6235b: the deck's grid adjust / grid shift, one
         # {"offset_ms", "beat_shift"} per grid source, applied when /anlz
         # serves the grid (apps/shared/state/grid_edit.py).

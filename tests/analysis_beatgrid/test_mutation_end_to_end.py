@@ -46,7 +46,12 @@ import pytest
 
 from apps.analysis_beatgrid.bar_phase import BAR_BEATS, lock_bar_phase
 from apps.analysis_beatgrid.bpm import estimate_bpm
-from apps.analysis_beatgrid.tempo_change import MIN_SEGMENT_BARS, detect_tempo_changes
+from apps.analysis_beatgrid.tempo_change import (
+    MIN_SEGMENT_BARS,
+    detect_tempo_changes,
+    max_pairwise_interval_jump,
+    score_tempo_boundary,
+)
 from apps.analysis_beatgrid.tempo_map import fit_tempo_map
 
 REPO_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -356,6 +361,17 @@ def test_a_three_percent_step_is_detected_within_eight_bars(analyzed):
     marker = near[0]
     assert marker.bpm_after > marker.bpm_before
     assert marker.bpm_after / marker.bpm_before == pytest.approx(RAMP_FACTOR, rel=0.02)
+    bpm_before = CLICK_BPM
+    bpm_after = CLICK_BPM * RAMP_FACTOR
+    boundary = score_tempo_boundary(
+        marker,
+        RAMP_AT_S,
+        bpm_before,
+        bpm_after,
+        reference_bpm=CLICK_BPM,
+    )
+    assert boundary.within_one_bar, "step boundary must score within 1 bar at the injected onset"
+    assert boundary.bpm_before_ok and boundary.bpm_after_ok
 
 
 def test_a_three_percent_gradual_ramp_is_detected_within_eight_bars(analyzed):
@@ -399,11 +415,10 @@ def test_the_ramp_fixture_really_ramps_rather_than_stepping(analyzed):
     """
     times = analyzed["ramp_truth"]
     intervals = [b - a for a, b in itertools.pairwise(times)]
-    steps = [abs(b - a) / a for a, b in itertools.pairwise(intervals)]
+    jump = max_pairwise_interval_jump(intervals)
 
-    assert max(steps) < 0.01, (
-        f"largest single interval jump {max(steps):.4%}; a 3 percent change arriving "
-        f"in one interval is a step, not a ramp"
+    assert jump < 0.01, (
+        f"largest single interval jump {jump:.4%}; a 3 percent change arriving in one interval is a step, not a ramp"
     )
     first, last = 60.0 / intervals[0], 60.0 / intervals[-1]
     assert last / first == pytest.approx(RAMP_FACTOR, rel=0.01), (

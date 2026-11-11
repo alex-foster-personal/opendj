@@ -11,6 +11,8 @@ Hybrid Demucs is the documented first swap candidate once Air MPS is measured.
 
 Requirements (mini-PRD):
   ✔︎ fresh bundle -> skipped: up to date
+  ✔︎ a leftover manifest is not fresh: skip only when load_stem_bundle accepts
+    [if] manifest.json remains but a stem file is missing [then] the track is not skipped
   ✔︎ low priority (nice), cancellable, per-session wall budget
   ✔︎ one progress line per completed track with stems_ready
 
@@ -26,6 +28,7 @@ import signal
 import subprocess
 import sys
 import time
+from collections.abc import Sequence
 from pathlib import Path
 from typing import Any
 
@@ -39,6 +42,7 @@ from scripts.stems_modal_worker import (  # noqa: E402
     PROGRESS_CEILING,
     TrackJob,
     _Protocol,
+    _bundle_playable,
     select_tracks,
 )
 
@@ -55,13 +59,27 @@ def _on_term(_signum: int, _frame: object) -> None:
 
 
 def _stems_root(data_dir: Path) -> Path:
-    return data_dir / "state" / "stems"
+    from apps.stems.job import stems_root
+
+    return stems_root(data_dir)
 
 
-def _bundle_fresh(stable_id: str, root: Path) -> bool:
-    from apps.stems.selection import has_bundle
+def _measure_roots(data_dir: Path) -> tuple[Path, ...]:
+    from apps.stems.job import stems_measure_roots
 
-    return has_bundle(stable_id, root)
+    return stems_measure_roots(data_dir)
+
+
+def _bundle_fresh(stable_id: str, roots: Sequence[Path]) -> bool:
+    """True only when ``load_stem_bundle`` accepts ``stable_id`` in ``roots``.
+
+    The same reader the Modal worker uses. A directory that still has
+    ``manifest.json`` after a stem file went missing is not fresh, and
+    skipping it would leave the song unrepairable on every later retry.
+    False only when that reader rejects the bundle. Any other exception
+    propagates.
+    """
+    return _bundle_playable(stable_id, roots)
 
 
 def _bundle_worker_prefix() -> list[str]:
@@ -136,6 +154,7 @@ def run(
         )
 
     root = _stems_root(data_dir)
+    roots = _measure_roots(data_dir)
     total = len(tracks)
     nice_label = str(NICE_LEVEL) if lowered else "UNAVAILABLE"
     protocol.emit(0.0, f"0/{total} local stems (htdemucs, nice={nice_label})")
@@ -157,7 +176,7 @@ def run(
             break
 
         out_dir = root / track.stable_id
-        if _bundle_fresh(track.stable_id, root):
+        if _bundle_fresh(track.stable_id, roots):
             skipped += 1
             protocol.emit(
                 min(PROGRESS_CEILING, (done + skipped + len(failures)) / total),

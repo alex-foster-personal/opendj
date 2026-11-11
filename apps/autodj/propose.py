@@ -43,7 +43,6 @@ from apps.autodj.profile import (
     trim_db_of_knob,
 )
 from apps.autodj.scoring import PairScore, rank_key, score_windows
-from apps.shared.harmonic import LIFT, LONG_BLEND_KEY_CLASH_RELATIONS, key_compat
 from apps.autodj.sections import BREAKDOWN, BRIDGE, PEAK_LABELS
 from apps.autodj.styles import (
     HIT_GATED,
@@ -56,7 +55,8 @@ from apps.autodj.styles import (
     exit_bar,
     hit_bounds,
 )
-from apps.autodj.windows import MixWindow, mix_windows, window_at
+from apps.autodj.windows import MixWindow, incoming_mixability_reason, mix_windows, window_at
+from apps.shared.harmonic import LIFT, LONG_BLEND_KEY_CLASH_RELATIONS, key_compat
 
 SMOOTH = "smooth"
 ENERGY_UP = "energy_up"
@@ -75,7 +75,7 @@ _KEYWORDS: tuple[tuple[str, tuple[str, ...]], ...] = (
 
 #: The parameter styles (AGENT-34): every intent offers all four, after its older styles so the preference bonus of
 #: those does not move; score_pair weights are untouched.
-PARAM_STYLES: tuple[str, ...] = ("crossfade", "rise", "wave", "melt", "lull_then_drop")
+PARAM_STYLES: tuple[str, ...] = ("crossfade", "rise", "wave", "melt", "lull_then_drop", "bass_phrase_swap")
 
 #: D13: the shape a style's plans carry, from the plan module's own map.
 SHAPE_OF_STYLE: dict[str, str] = {style_name: shape for shape, style_name in SHAPE_STYLES.items()}
@@ -88,10 +88,12 @@ _PREFERENCES: dict[str, tuple[tuple[str, int], ...]] = {
         ("bass_swap_blend", 16),
         ("filter_sweep", 8),
         ("crossfade", 16),
+        ("three_band_fade", 16),
         ("wave", 16),
         ("melt", 16),
         ("rise", 16),
         ("lull_then_drop", 16),
+        ("bass_phrase_swap", 32),
     ),
     ENERGY_UP: (
         ("bass_swap_blend", 16),
@@ -103,6 +105,7 @@ _PREFERENCES: dict[str, tuple[tuple[str, int], ...]] = {
         ("crossfade", 8),
         ("melt", 8),
         ("lull_then_drop", 16),
+        ("bass_phrase_swap", 16),
     ),
     WIND_DOWN: (
         ("long_blend", 64),
@@ -113,6 +116,7 @@ _PREFERENCES: dict[str, tuple[tuple[str, int], ...]] = {
         ("wave", 16),
         ("rise", 16),
         ("lull_then_drop", 16),
+        ("bass_phrase_swap", 16),
     ),
     SHOWY: (
         ("drop_swap", 1),
@@ -124,6 +128,7 @@ _PREFERENCES: dict[str, tuple[tuple[str, int], ...]] = {
         ("melt", 8),
         ("crossfade", 8),
         ("lull_then_drop", 16),
+        ("bass_phrase_swap", 16),
     ),
     VOCALS_CLEAN: (
         ("bass_swap_blend", 16),
@@ -135,6 +140,7 @@ _PREFERENCES: dict[str, tuple[tuple[str, int], ...]] = {
         ("wave", 16),
         ("rise", 16),
         ("lull_then_drop", 16),
+        ("bass_phrase_swap", 16),
     ),
 }
 
@@ -249,13 +255,22 @@ def _style_fit(style: Style, pair: PairScore, intent: str) -> float:
     return fit
 
 
+def _incoming_skip_reason(style: Style, in_window: MixWindow) -> str | None:
+    """Only cut, drop-swap and pinned cues bypass incoming forward mixability."""
+    if style.name in {"cut", "drop_swap"}:
+        return None
+    return incoming_mixability_reason(in_window)
+
+
 def _overlap_bars(
     style: Style, wanted_bars: int, out_window: MixWindow, in_window: MixWindow, grid_bars: int
 ) -> int | None:
     """The overlap a style gets in these windows, or None when the pair is not proposed: a window shorter than the style's
     minimum (clamping up to it would blend past the window the scoring and validation see), or a blend that runs past the
-    last bar of the grid."""
+    last bar of the grid. Non-exempt incoming windows also need 16 bars of forward capacity."""
     if out_window.max_bars < style.min_bars or (style.max_bars > 1 and in_window.max_bars < style.min_bars):
+        return None
+    if _incoming_skip_reason(style, in_window) is not None:
         return None
     bars = style.clamp_bars(min(wanted_bars, out_window.max_bars))
     if style.max_bars > 1:
@@ -273,6 +288,9 @@ def _overlap_skip_reason(
         return f"out-window max_bars={out_window.max_bars} < {style.name} min_bars={style.min_bars}"
     if style.max_bars > 1 and in_window.max_bars < style.min_bars:
         return f"in-window max_bars={in_window.max_bars} < {style.name} min_bars={style.min_bars} ({in_window.reason})"
+    refusal = _incoming_skip_reason(style, in_window)
+    if refusal is not None:
+        return refusal
     bars = style.clamp_bars(min(wanted_bars, out_window.max_bars))
     if style.max_bars > 1:
         bars = style.clamp_bars(min(bars, in_window.max_bars))
@@ -322,6 +340,15 @@ def incoming_bass_entry(profile: TrackProfile, from_bar: int) -> int | None:
 
 
 _ENTRY_RULE = f"first bar with bar_bass >= {BASS_ENTRY_FRACTION} x the track's p90 for {BASS_ENTRY_HOLD_BARS} bars"
+
+
+def phrase_snap_bar(entry: int) -> int:
+    """Next 4-bar boundary on the incoming track grid (bars 4, 8, 12, ...)."""
+    return ((entry + 3) // 4) * 4
+
+
+def _phrase_swap(style: Style) -> bool:
+    return style.params is not None and style.params.swap_position == "phrase"
 
 
 @dataclass(frozen=True)
@@ -394,14 +421,21 @@ def _start_and_hit(
         return _drop_on_handover(in_profile, entry, in_start, bars, fold)
     if style.hit == HIT_GATED:
         low, high = hit_bounds(bars, style.min_body_fade_bars)
-        start = in_start if _plan_bar(entry, in_start, fold) <= high else entry - math.floor(high * fold)
-        hit = max(default_hit_bar(style.volume_lane, bars, style.min_body_fade_bars), _plan_bar(entry, start, fold))
+        phrase = _phrase_swap(style)
+        land = phrase_snap_bar(entry) if phrase else entry
+        start = in_start if _plan_bar(land, in_start, fold) <= high else land - math.floor(high * fold)
+        entry_hit = _plan_bar(entry, start, fold)
+        hit = (
+            _plan_bar(land, start, fold)
+            if phrase
+            else max(default_hit_bar(style.volume_lane, bars, style.min_body_fade_bars), entry_hit)
+        )
         if not low <= hit <= high:
             return f"the incoming bass (its bar {entry}) cannot land between plan bars {low:g} and {high:g}"
         # A hit held past the entry must still find the bass playing there (Codex #7818: a short early run that has
         # ended would open the incoming lows into a bass-light stretch, the very hole the gate prevents).
         at_hit = start + math.floor(hit * fold)
-        if hit > _plan_bar(entry, start, fold) and incoming_bass_entry(in_profile, at_hit) != at_hit:
+        if hit > entry_hit and incoming_bass_entry(in_profile, at_hit) != at_hit:
             later = incoming_bass_entry(in_profile, at_hit)
             if later is None:
                 return f"the incoming bass from its bar {entry} is gone by the hit (its bar {at_hit}) and never returns"
@@ -412,6 +446,14 @@ def _start_and_hit(
 
 def _unknown_entry(style: Style, in_start: int, bars: int) -> HitPlacement:
     """No bar_bass series: the style's own hit bar, said in the plan; a lull's drop cannot be found at all."""
+    if _phrase_swap(style):
+        return HitPlacement(
+            in_start,
+            0.0,
+            None,
+            "",
+            "the incoming track has no bar_bass series; phrase swap cannot be placed",
+        )
     if style.hit == HIT_ON_HANDOVER:
         return HitPlacement(
             in_start, 0.0, None, "", "the incoming track has no bar_bass series, so its drop cannot be found"
@@ -452,6 +494,14 @@ def place_hit(
         reason = f"the outgoing window at bar {out_window.start_bar} ({out_window.label}) is not a lull"
         return HitPlacement(in_start, 0.0, None, "", reason)
     if not in_profile.bar_bass:
+        if _phrase_swap(style):
+            return HitPlacement(
+                in_start,
+                0.0,
+                None,
+                "",
+                "the incoming track has no bar_bass series; phrase swap cannot be placed",
+            )
         return _unknown_entry(style, in_start, bars)
     entry = incoming_bass_entry(in_profile, in_start)
     if entry is None:
@@ -463,7 +513,13 @@ def place_hit(
     if start + math.ceil(bars * fold) > in_profile.bars + 1:
         reason = f"moving the in-window to bar {start} for its bass runs past the incoming track's end"
         return HitPlacement(in_start, 0.0, None, "", reason)
-    if start != in_start:
+    phrase_snapped = _phrase_swap(style) and phrase_snap_bar(entry) != entry
+    if phrase_snapped:
+        note = (
+            f"; bass enters at incoming bar {entry}, phrase lands on the 4-bar boundary at incoming bar"
+            f" {phrase_snap_bar(entry)} (plan bar {hit:g})"
+        )
+    elif start != in_start:
         note = f"; in-window moved from bar {in_start} to {start} so its bass (bar {entry}) lands on plan bar {hit:g}"
     elif _plan_bar(entry, start, fold) < hit:
         note = f"; incoming lows held out until plan bar {hit:g} (its bass runs from its bar {entry})"
@@ -588,7 +644,7 @@ def match_live_trim_db(
     out_deck: int,
     in_deck: int,
 ) -> tuple[float | None, str]:
-    """AGENT-31 loudness match using live outgoing trim and both decks' auto-gain offsets."""
+    """AGENT-31 loudness match using live outgoing trim, both decks' auto-gain offsets, and the incoming TP ceiling."""
     out_trim_db, out_trim_note = _outgoing_trim_db(live, out_deck)
     out_ag, out_ag_note = _deck_auto_gain_db(live, out_deck, out_profile.stable_id)
     in_ag, in_ag_note = _deck_auto_gain_db(live, in_deck, in_profile.stable_id)
@@ -744,6 +800,18 @@ def propose_transition(  # noqa: C901, PLR0913 - keyword-only options of one ent
         entered = (
             in_window if hit.in_start_bar == in_window.start_bar else window_at(in_profile, "in", hit.in_start_bar)
         )
+        refusal = _incoming_skip_reason(style, entered)
+        if refusal is not None:
+            not_offered.append(
+                {
+                    "style": style_name,
+                    "bars": bars,
+                    "out_bar": out_window.start_bar,
+                    "in_bar": entered.start_bar,
+                    "reason": refusal,
+                }
+            )
+            return
         pair = score_windows(out_profile, in_profile, out_window, entered, overlap_bars=bars)
         rationale = (
             _rationale(style_name, style, bars, out_window, entered)

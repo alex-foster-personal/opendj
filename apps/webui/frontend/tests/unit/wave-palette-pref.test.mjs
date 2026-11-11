@@ -95,12 +95,18 @@ test('the setting is an implemented enum in the catalog and is applyable', async
 	assert.equal(def.implemented, true);
 	assert.deepEqual(
 		def.control.options.map((o) => o.value),
-		['auto', 'rekordbox', 'legacy', 'mono']
+		['auto', 'rekordbox', 'legacy', 'mono', 'blue']
 	);
 	const apply = await loadTypeScriptModule('src/lib/settings/apply.ts', { viteApiBase: API_BASE });
 	assert.ok(apply.ALLOWED_SETTING_KEYS.includes('wave_palette'));
 	apply.applySettingChange('wave_palette', 'legacy');
 	assert.equal(apply.readSettingValue('wave_palette'), 'legacy');
+	apply.applySettingChange('wave_palette', 'blue');
+	assert.equal(
+		apply.readSettingValue('wave_palette'),
+		'blue',
+		'[if] the blue palette does not round-trip [then] broken'
+	);
 	assert.throws(() => apply.applySettingChange('wave_palette', 'rainbow'), /rekordbox\|legacy/);
 });
 

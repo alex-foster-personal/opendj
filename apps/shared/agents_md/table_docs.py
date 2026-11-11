@@ -148,6 +148,12 @@ TABLE_DOCS: dict[str, str] = {
         "it was undone. Written by apps.genre_infer.tag_write before the file "
         "is replaced. Machine-local."
     ),
+    "enrichment_claims": (
+        "One versioned enrichment claim for a track (ENRICH-11245): semantic tags, "
+        "generated prose, or deterministic musical facts, each carrying provider "
+        "model, schema version, scope, confidence, input fingerprint, and raw "
+        "evidence pointer. Machine-local."
+    ),
     "analysis_field_verification": (
         "How each field was verified, stored next to the values it "
         "produced: cross-source agreement, a one-sided single-source "
@@ -171,6 +177,18 @@ TABLE_DOCS: dict[str, str] = {
         "Singleton machine-local row holding whether the library expects every "
         "eligible track to have HQ stems and a lyric match. Sync attachment "
         "is a follow-up to issue #759."
+    ),
+    "label_task": (
+        "One subjective labelling micro-task (stems A/B/C, lyrics sync, etc.) with "
+        "rewards and batch metadata for agent gates. Machine-local."
+    ),
+    "label_response": (
+        "One answer to a label_task. At most one row per (task_id, anon_session); "
+        "user_id is optional. Inserts grant karma via contribution_ledger."
+    ),
+    "contribution_ledger": (
+        "Immediate karma grant for a stored label_response. One row per response; "
+        "impact reporting fields come in a later migration."
     ),
     "feedback_pins": (
         "One row per Open DJ feedback comment pin, carrying the whole pin "

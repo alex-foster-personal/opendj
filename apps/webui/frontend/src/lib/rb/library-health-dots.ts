@@ -57,6 +57,11 @@ export type LibraryHealthDot = {
 	detail: string;
 };
 
+/** Red/gray BL conn dots carry ask-agent prompts (conn-dot-tips.ts). */
+export function connDotNeedsAskPrompt(state: LibraryHealthDot['state']): boolean {
+	return state === 'error' || state === 'unavailable';
+}
+
 /** Where every live row's audio stands on this machine (reconcile summary). */
 export type LibraryAvailability = {
 	total: number;

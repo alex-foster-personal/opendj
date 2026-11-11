@@ -179,9 +179,10 @@
 		const el = measureEl;
 		if (el === null) return 0;
 		el.style.fontSize = `${fontPx}px`;
+		el.style.lineHeight = '1.3';
 		el.textContent = approxPrefix + text;
 		if (el.scrollWidth > el.clientWidth + 0.5) return Number.POSITIVE_INFINITY;
-		return el.getBoundingClientRect().height;
+		return el.scrollHeight;
 	}
 
 	const lineFit: DeckLyricFit = $derived.by(() => {
@@ -458,7 +459,8 @@
 		visibility: hidden;
 		pointer-events: none;
 		overflow: hidden;
-		overflow-wrap: normal;
+		line-height: 1.3;
+		overflow-wrap: anywhere;
 	}
 	.dkl-compact .dkl-msg {
 		height: 14px;

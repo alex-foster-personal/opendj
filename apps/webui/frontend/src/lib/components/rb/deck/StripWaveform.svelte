@@ -245,6 +245,7 @@
 			durationMs: deck.duration_ms,
 			waveform: stripPreview.waveform,
 			vocals,
+			hideVocals: !uiPrefs.show_vocal_lane,
 			loop: deck.loop,
 			loopCues,
 			sections:

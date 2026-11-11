@@ -290,7 +290,8 @@ test('the cause vocabulary is stable: exported list, and only unattributed/engin
 			'end-of-track',
 			'engine',
 			'reload',
-			'unattributed'
+			'unattributed',
+			'replay'
 		]
 	);
 	const warns = m.stopLog.DECK_STOP_CAUSES.filter(

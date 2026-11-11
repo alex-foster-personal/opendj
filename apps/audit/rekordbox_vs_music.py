@@ -6,9 +6,9 @@ Run from the project root with the venv active:
 
 Outputs:
   * Rich summary table
-  * ``data/rb_missing_files.csv``  — RB rows whose FolderPath file is gone
-  * ``data/fs_files_not_in_rb.csv`` — files on disk not referenced by RB
-  * ``data/rb_all_tracks.csv``     — every RB row with its classification
+  * ``(private path)``  — RB rows whose FolderPath file is gone
+  * ``(private path)`` — files on disk not referenced by RB
+  * ``(private path)``     — every RB row with its classification
 """
 from __future__ import annotations
 
@@ -62,6 +62,14 @@ def _classify(tracks: list[rekordbox_db.RBTrack]) -> Buckets:
         file_linked_ok=ok,
         file_linked_missing=missing,
     )
+
+
+def _resolved_path(path: Path) -> Path:
+    """Return ``path.resolve()`` when the OS allows it; otherwise ``path``."""
+    try:
+        return path.resolve()
+    except OSError:
+        return path
 
 
 def _category(t: rekordbox_db.RBTrack) -> str:
@@ -136,10 +144,7 @@ def _rb_linked_paths(buckets: Buckets) -> set[Path]:
         p = t.file_path
         if p is None:
             continue
-        try:
-            rb_linked.add(p.resolve())
-        except OSError:
-            rb_linked.add(p)
+        rb_linked.add(_resolved_path(p))
     for t in buckets.file_linked_missing:
         if t.file_path is not None:
             rb_linked.add(t.file_path)
@@ -150,10 +155,7 @@ def _fs_by_resolved(fs_files: list[audio_files.AudioFile]) -> dict[Path, audio_f
     """Map resolved filesystem paths to AudioFile records."""
     fs_by_resolved: dict[Path, audio_files.AudioFile] = {}
     for f in fs_files:
-        try:
-            fs_by_resolved[f.path.resolve()] = f
-        except OSError:
-            fs_by_resolved[f.path] = f
+        fs_by_resolved[_resolved_path(f.path)] = f
     return fs_by_resolved
 
 

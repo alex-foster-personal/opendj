@@ -103,6 +103,10 @@ class CoverageSnapshot:
     stem_cloud: coverage_cloud.StemCloud = coverage_cloud.OFF
     #: ENRICH-03: the coverage over unique songs (``enrich_songs``); None in hand-built snapshots.
     songs: dict[str, Any] | None = None
+    #: STEM-58: one (stable_id, path) per song the card counts as stems "not
+    #: yet", in present order. The stems job's ``scope: pending`` is exactly
+    #: this list, so the card and the job cannot count different things.
+    stems_pending_songs: list[Target] = field(default_factory=list)
     generated_at: float = field(default_factory=time.time)
 
     @property
@@ -330,6 +334,16 @@ def compute_snapshot(
             for step in STEPS
         },
     }
+    present_order = [sid for sid, _path in present]
+    stems_pending_ids = enrich_songs.pending_song_targets(
+        index, present_order, done["stems"], terminal["stems"], failed["stems"]
+    )
+    if len(stems_pending_ids) != songs["steps"]["stems"]["pending"]:
+        raise RuntimeError(
+            f"stems pending songs disagree: {len(stems_pending_ids)} targets against "
+            f"{songs['steps']['stems']['pending']} counted"
+        )
+    present_path = dict(present)
     vocals_ready, vocals_cloud_ready = _by_bundle_place(
         pending["vocals"], stems_local, stems_in_cloud
     )
@@ -349,6 +363,7 @@ def compute_snapshot(
         vocals_cloud_ready=vocals_cloud_ready,
         stem_cloud=stem_cloud,
         songs=songs,
+        stems_pending_songs=[(sid, present_path[sid]) for sid in stems_pending_ids],
     )
 
 

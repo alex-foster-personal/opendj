@@ -355,27 +355,26 @@ describe('ChannelLevelMeter discrete live channel display', () => {
 		// knows the uncalibrated default scale (meter-tap stays deck-agnostic
 		// and policy-free by design - see meter-tap.ts's module doc).
 		assert.doesNotMatch(meter, /reading\.segments/);
-		// Heard level, not the raw pre-crossfader tap: center crossfade is
-		// -3 dB, which is the red line, so the raw tap paints red while the
-		// master meter stays amber. Pin 4cdff93a094c. The heard level is the
-		// worklet's post-crossfader peak through its own ballistics, never the
-		// pre-crossfader reading scaled by the crossfader at read time, which
-		// rewrote a decaying bar when the crossfader moved (Sol P1, PR #6829).
-		assert.match(meter, /const heardDb = reading\.heardDb;/);
+		// Orange/red segments follow the post-channel-fader tap (`reading.db`) so
+		// the volume slider moves the bar (pin 3dc62dbb909c, issue #11321). The
+		// post-crossfader heard level is for the clip pip only (Sol P1, #6829):
+		// it must not drive `lit`, or a crossfader move rewrites a decaying bar.
+		assert.match(meter, /const channelDb = reading\.db;/);
 		assert.doesNotMatch(meter, /channelDbHeardOnMaster\(/);
-		assert.match(meter, /segmentsLitFromDbfs\(heardDb, thresholds\)/);
+		assert.match(meter, /segmentsLitFromDbfs\(channelDb, thresholds\)/);
+		assert.doesNotMatch(meter, /segmentsLitFromDbfs\(heardDb/);
 		// The clip pip judges the tap's post-crossfader clips, measured on the
-		// audio thread, not the decaying ballistic heardDb (Sol P1, PR #6829).
+		// audio thread, not the decaying post-fader level (Sol P1, PR #6829).
 		assert.match(meter, /pipCursor\.frame\(reading\.heardClipSeq\)/);
 		assert.doesNotMatch(meter, /isClipping\(heardDb\)/);
 		assert.doesNotMatch(meter, /clipped = reading\.clipped/);
-		assert.doesNotMatch(meter, /reading\.db\b/);
+		assert.doesNotMatch(meter, /segmentsLitFromDbfs\(reading\.heardDb/);
 	});
 
 	it('labels the tap position honestly and does not claim speaker risk', () => {
 		// The old label said "post-deck, pre-channel-fader" while the underlying
 		// tap sat BEFORE trim and EQ, so no mixer control moved it.
-		assert.match(meter, /post-EQ post-fader/);
+		assert.match(meter, /post-EQ post-channel-fader/);
 		assert.match(meter, /channel volume fader/);
 		assert.match(meter, /not speaker risk/);
 		assert.doesNotMatch(meter, /speaker damage|damage risk/i);
@@ -407,7 +406,7 @@ describe('ChannelLevelMeter discrete live channel display', () => {
 			),
 			'utf8'
 		);
-		assert.match(artifact, /buildDeckChannelGraph/);
+		assert.match(artifact, /buildDeckChannelMeterHarnessGraph/);
 		assert.match(artifact, /readChannelMeterAtFaderGains/);
 		assert.match(artifact, /readChannelMeterFloorsOnNextObservation/);
 		assert.match(artifact, /issue #3529/);

@@ -212,3 +212,34 @@ export async function measureCueLatencyMs(opts: {
 	const { lagMs, peakNormalized } = crossCorrelateLagMs(reference, captured, opts.sampleRate);
 	return resolveCalibratedHeadDelayMs(lagMs, peakNormalized);
 }
+
+/** Production calibration stimuli. `chirp` is the exponential sweep; `click_train` is the
+ * historic Hann-windowed click train retained for operators who prefer it. */
+export const CALIBRATION_PROBE_KINDS = ['chirp', 'click_train'] as const;
+export type CalibrationProbeKind = (typeof CALIBRATION_PROBE_KINDS)[number];
+
+export function assertCalibrationProbe(value: unknown): asserts value is CalibrationProbeKind {
+	if (value !== 'chirp' && value !== 'click_train') {
+		throw new TypeError(`calibration probe must be chirp or click_train, got ${String(value)}`);
+	}
+}
+
+export function alternateCalibrationProbe(probe: CalibrationProbeKind): CalibrationProbeKind {
+	return probe === 'chirp' ? 'click_train' : 'chirp';
+}
+
+export function buildCalibrationReference(
+	sampleRate: number,
+	probe: CalibrationProbeKind
+): Float32Array {
+	assertCalibrationProbe(probe);
+	return probe === 'chirp' ? cueLatencySweep({ sampleRate }) : cueLatencyClickTrain({ sampleRate });
+}
+
+/** Read-model fields for the configured probe and its alternate. */
+export function calibrationProbeDiagnostics(probe: CalibrationProbeKind): {
+	probe: CalibrationProbeKind;
+	alternate_probe: CalibrationProbeKind;
+} {
+	return { probe, alternate_probe: alternateCalibrationProbe(probe) };
+}

@@ -1,0 +1,9 @@
+{
+  "bytes": 256,
+  "measured_main": 514803,
+  "measured_with_pr": 514932,
+  "sha": "7049b6690f",
+  "date": "Wed 11 Nov 2026",
+  "reason": "Issue #10717 AutoPlay hydration guard in shared prefs modules; CI measured +129 B gzip on other-lazy over main; ceiled to 256 B allowance.",
+  "payback": "none planned; shared prefs code also ships in lazy route chunks"
+}

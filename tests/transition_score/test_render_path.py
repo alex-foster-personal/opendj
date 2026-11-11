@@ -17,17 +17,24 @@ from functools import partial
 from pathlib import Path
 from typing import Any
 
+import httpx
 import numpy as np
 import pytest
 import soundfile as sf
 
+from apps.autodj.contract.models import MikBoundary, TrackProfile
 from apps.autodj.http import build_service
 from apps.autodj.plan import BassEntry, parse_plan
 from apps.autodj.profile import heard_profile
 from apps.autodj.propose import propose_transition
 from apps.autodj.render_plan import RenderPlanError, compile_render_plan, layout_of
+from apps.autodj.styles import STYLES
+from apps.mik.serve_energy import merge_mik_energy
+from apps.shared.engine_origin import EngineOrigin
+from apps.shared.state import db as state_db
 from apps.transition_score import tryer
 from apps.transition_score.contract import SCORER_VERSION
+from apps.transition_score.energy import UNSCORED_LINE, build_energy_block
 from apps.transition_score.scorer import score_render
 from apps.transition_score.tryer import (
     TryError,
@@ -42,7 +49,7 @@ from apps.transition_score.tryer import (
     worker_count,
     write_pcm16_set,
 )
-from tests.autodj.fixtures import CHORUS, INTRO, OUTRO, profile
+from tests.autodj.fixtures import CHORUS, INTRO, OUTRO, anlz_payload, profile, track_row
 from tests.transition_score.synth import track_audio
 
 ARRANGEMENT = ((INTRO, 16, 0.4, 0.3, False), (CHORUS, 16, 1.0, 1.0, True), (OUTRO, 16, 0.4, 0.8, False))
@@ -291,6 +298,79 @@ def tracks(tmp_path_factory: pytest.TempPathFactory) -> tuple[Path, Path]:
     sf.write(out_path, track_audio(OUT_BPM, 48, 50.0, 41.2, 1), 48000, subtype="PCM_16")
     sf.write(in_path, track_audio(IN_BPM, 48, 62.0, 55.0, 2), 48000, subtype="PCM_16")
     return out_path, in_path
+
+
+def _probe_amplitude(audio: np.ndarray, at_s: float, frequency: float, sample_rate: int) -> float:
+    """Measure one synthesized tone in a 100 ms window, well below one 124 BPM beat."""
+    half = round(sample_rate * 0.05)
+    center = round(at_s * sample_rate)
+    samples = audio[center - half : center + half].mean(axis=1)
+    assert len(samples) == 2 * half, "the audio measurement must stay inside the rendered output"
+    window = np.hanning(len(samples))
+    carrier = np.exp(-2j * np.pi * frequency * np.arange(len(samples)) / sample_rate)
+    return float(2 * abs(np.sum(samples * window * carrier)) / window.sum())
+
+
+@pytest.mark.requirement("TRANSAI-12185")
+def test_three_band_fade_renders_downbeat_crossings_and_a_deep_one_bar_low_cut(engine: Path, tmp_path: Path) -> None:
+    """[if] three bands fade at 124 BPM [then] rendered crossings and low cut meet timing, [else stop]."""
+    bpm, sample_rate, context_bars = 124.0, 48000, 2
+    bar_s, beat_s = 4 * 60 / bpm, 60 / bpm
+    # Synthesized acceptance probes, not recorded fixtures: steady tones isolate the actual three EQ bands.
+    frequencies = (60.0, 1200.0, 12000.0)
+    arrangement = ((CHORUS, 32, 1.0, 1.0, False),)
+    out_profile = profile("three-band-out", bpm=bpm, arrangement=arrangement)
+    in_profile = profile("three-band-in", bpm=bpm, arrangement=arrangement)
+    times = np.arange(round(32 * bar_s * sample_rate)) / sample_rate
+    mono = sum(0.12 * np.sin(2 * np.pi * hz * times) for hz in frequencies).astype(np.float32)
+    paths = (tmp_path / "out.wav", tmp_path / "in.wav")
+    for path in paths:
+        sf.write(path, np.column_stack((mono, mono)), sample_rate, subtype="PCM_16")
+    plan = parse_plan(
+        {
+            "out": {"deck": 1, "track": out_profile.stable_id, "window": {"start_bar": 5, "bars": 16}},
+            "in": {"deck": 2, "track": in_profile.stable_id, "window": {"start_bar": 1, "bars": 16}},
+            "style": "three_band_fade",
+            "events": STYLES["three_band_fade"].build(16, 1, 2),
+        }
+    )
+    layout = layout_of(plan, out_profile, in_profile, context_bars)
+    document = compile_render_plan(plan, out_profile, in_profile, context_bars, out_audio=paths[0], in_audio=paths[1])
+    render = render_plan_json(document, tmp_path / "three-band-render", engine)
+    out_audio, in_audio = (read_render(render.deck_path(deck), render.summary) for deck in (1, 2))
+    assert render.summary["sample_rate"] == sample_rate
+
+    def at(plan_bar: float) -> float:
+        return (out_profile.time_of_bar(plan.out.start_bar + plan_bar) - layout.start_out_s) / layout.out_ratio
+
+    def level(audio: np.ndarray, plan_bar: float, hz: float, solo_bar: float) -> float:
+        reference = _probe_amplitude(audio, at(solo_bar), hz, sample_rate)
+        assert reference > 0.01, "a silent solo cannot normalize an EQ acceptance measurement"
+        return _probe_amplitude(audio, at(plan_bar), hz, sample_rate) / reference
+
+    offsets = {}
+    for band, hz, target in zip(("low", "mid", "high"), frequencies, (10.0, 12.0, 14.0), strict=True):
+        # Read audio on both sides of the crossing, then interpolate its measured sign change.
+        bars = np.arange(target - 1, target + 1 + 1 / 64, 1 / 64)
+        differences = [level(out_audio, bar, hz, -1) - level(in_audio, bar, hz, 17) for bar in bars]
+        changes = [index for index in range(len(bars) - 1) if differences[index] >= 0 > differences[index + 1]]
+        assert len(changes) == 1, (band, changes, differences)
+        index = changes[0]
+        fraction = differences[index] / (differences[index] - differences[index + 1])
+        crossing = float(bars[index] + fraction * (bars[index + 1] - bars[index]))
+        offsets[band] = (crossing - target) * bar_s
+        assert abs(offsets[band]) <= beat_s, (band, crossing, target, offsets[band])
+
+    # The low shelf has a real corner, so probe far below 250 Hz, before any terminal fader/stop.
+    assert 20 * np.log10(level(out_audio, 9.5, frequencies[0], -1)) >= -1.0
+    assert 20 * np.log10(level(out_audio, 10.5, frequencies[0], -1)) <= -8.0
+    low_cut_db = 20 * np.log10(level(out_audio, 11.5, frequencies[0], -1))
+    assert low_cut_db <= -20.0, low_cut_db
+    # Keep measured scorer diagnostics as evidence; these are not newly calibrated score thresholds.
+    mix = read_render(render.mix_path, render.summary)
+    scored = score_render(mix, out_audio, in_audio, render_context(plan, out_profile, layout, render.summary))
+    diagnostics = {key: value for key, value in scored.metrics.items() if key.startswith(("bass_overlap", "low_hole"))}
+    print(f"three_band_fade rendered offsets_s={offsets}, low_cut_db={low_cut_db:.2f}, diagnostics={diagnostics}")
 
 
 def _assert_ranked_measured_first(candidates: Sequence[Any]) -> None:
@@ -968,6 +1048,117 @@ def test_engine_profiles_read_the_same_payloads_as_opendj_dj_without_importing_t
     with pytest.raises(tryer.TryError, match="404"):
         reader.profile("a b")
     assert seen == ["http://127.0.0.1:1/api/v1/tracks/a%20b"]
+
+
+def _engine_profiles_with_persisted_mik(
+    tmp_path: Path, *, missing_mik: str | None = None
+) -> tuple[TrackProfile, TrackProfile]:
+    """Synthesized SQLite MIK inputs; only the engine HTTP transport is doubled."""
+    state_path = tmp_path / "state.db"
+    connection = state_db.open_rw(state_path)
+    levels = {"fixture-out": 6, "fixture-in": 7}
+    timestamp = "2026-01-01T00:00:00Z"
+    try:
+        for stable_id, level in levels.items():
+            connection.execute(
+                "INSERT INTO tracks(stable_id, stable_id_tier, created_at, updated_at) VALUES (?, 'isrc', ?, ?)",
+                (stable_id, timestamp, timestamp),
+            )
+            if stable_id == missing_mik:
+                continue
+            connection.execute(
+                "INSERT INTO track_fields(stable_id, field_name, value_json, source, modified_at) "
+                "VALUES (?, 'energy', ?, 'mik', ?)",
+                (stable_id, json.dumps(level), timestamp),
+            )
+            for seq, segment_level in enumerate((level - 1, level)):
+                connection.execute(
+                    "INSERT INTO track_energy_segments(stable_id, seq, start_ms, length_ms, "
+                    "energy, source, modified_at, start_clamped) VALUES (?, ?, ?, ?, ?, 'mik', ?, 0)",
+                    (stable_id, seq, seq * 48000, 48000, segment_level, timestamp),
+                )
+        connection.commit()
+    finally:
+        connection.close()
+
+    origin = EngineOrigin(
+        host="127.0.0.1", port=1, lock_path=tmp_path / "engine.lock", pid=None, role=None, boot_id=None
+    )
+    seen: list[str] = []
+
+    def answer(request: httpx.Request) -> httpx.Response:
+        url = str(request.url)
+        seen.append(url)
+        assert request.method == "GET"
+        for stable_id in levels:
+            track_url = f"{origin.base_url}/api/v1/tracks/{stable_id}"
+            if url == track_url:
+                return httpx.Response(200, json=track_row(stable_id, bpm=120.0, bars=48))
+            if url == f"{track_url}/anlz?points={tryer.PROFILE_POINTS}":
+                payload = anlz_payload(stable_id, bpm=120.0, arrangement=ARRANGEMENT)
+                return httpx.Response(200, json=merge_mik_energy(payload, stable_id, state_path))
+        raise AssertionError(f"unexpected engine request: {url}")
+
+    reader = tryer.EngineProfiles(origin, _AUTODJ, transport=httpx.MockTransport(answer))
+    outgoing, incoming = reader.profile("fixture-out"), reader.profile("fixture-in")
+    assert seen == [
+        url
+        for stable_id in levels
+        for url in (
+            f"{origin.base_url}/api/v1/tracks/{stable_id}",
+            f"{origin.base_url}/api/v1/tracks/{stable_id}/anlz?points={tryer.PROFILE_POINTS}",
+        )
+    ]
+    return outgoing, incoming
+
+
+@pytest.mark.requirement("TRANSAI-10676")
+def test_engine_profiles_preserve_persisted_mik_energy(tmp_path: Path) -> None:
+    """[if] MIK is persisted [then] engine profiles score the energy line and strip, [else stop]."""
+    outgoing, incoming = _engine_profiles_with_persisted_mik(tmp_path)
+    for track, scalar in ((outgoing, 6), (incoming, 7)):
+        assert track.mik_level == scalar
+        assert track.mik_bar_level == (scalar - 1,) * 24 + (scalar,) * 24
+        assert track.mik_boundaries == (
+            MikBoundary(bar=25.0, snapped_bar=25, level_before=scalar - 1, level_after=scalar),
+        )
+
+    proposed = propose_transition(outgoing, incoming, out_deck=1, in_deck=2, top=6)
+    assert proposed["proposals"]
+    plan = parse_plan(proposed["proposals"][0]["plan"])
+    block = build_energy_block(plan, outgoing, incoming, intent="energy_up")
+    assert not block.unscored
+    assert "energy 6 -> 7 (MIK track levels)" in block.line
+    assert block.out is not None and block.in_ is not None
+    assert outgoing.mik_bar_level is not None and incoming.mik_bar_level is not None
+    assert block.out.start_bar == plan.out.start_bar
+    assert block.in_.start_bar == plan.in_.start_bar
+    assert block.out.levels == outgoing.mik_bar_level[plan.out.start_bar - 1 : plan.out.start_bar - 1 + plan.out.bars]
+    assert block.in_.levels == incoming.mik_bar_level[plan.in_.start_bar - 1 : plan.in_.start_bar - 1 + plan.in_.bars]
+    assert block.out.levels and block.in_.levels
+    assert block.overlap_out_start_bar == plan.out.start_bar
+    assert block.overlap_out_end_bar == plan.out.start_bar + plan.bars - 1
+    assert block.overlap_in_start_bar == plan.in_.start_bar
+    assert block.overlap_in_end_bar == plan.in_.start_bar + plan.bars
+    document = json.loads(json.dumps(block.to_json()))
+    for key, side in (("out", block.out), ("in", block.in_)):
+        assert document[key] == {"start_bar": side.start_bar, "levels": list(side.levels)}
+
+
+@pytest.mark.requirement("TRANSAI-10676")
+@pytest.mark.parametrize("missing_mik", ["fixture-out", "fixture-in"])
+def test_engine_profiles_without_mik_keep_energy_unscored(tmp_path: Path, missing_mik: str) -> None:
+    """[if] either track lacks stored MIK [then] waveform energy stays unscored, [else stop]."""
+    outgoing, incoming = _engine_profiles_with_persisted_mik(tmp_path, missing_mik=missing_mik)
+    missing = outgoing if missing_mik == outgoing.stable_id else incoming
+    assert missing.mik_level is None and missing.mik_bar_level is None
+    assert missing.bar_energy and max(missing.bar_energy) > min(missing.bar_energy)
+    proposed = propose_transition(outgoing, incoming, out_deck=1, in_deck=2, top=6)
+    assert proposed["proposals"]
+    plan = parse_plan(proposed["proposals"][0]["plan"])
+    block = build_energy_block(plan, outgoing, incoming, intent="energy_up")
+    assert block.unscored and block.line == UNSCORED_LINE
+    assert block.out is None and block.in_ is None
 
 
 def test_one_unrenderable_proposal_does_not_sink_the_pair(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -1714,3 +1905,123 @@ def test_an_unmatched_incoming_deck_loads_at_the_shared_headroom_default() -> No
     assert trims == [{"at": {"ms": 0}, "cmd": {"type": "trim", "deck": 2, "value": 0.250594}}]
     first_play = next(i for i, e in enumerate(events) if e.get("cmd", {}).get("type") == "play")
     assert events.index(trims[0]) < first_play
+
+
+# ----- issue #10132: MIK energy line on try candidates --------------------------------
+
+
+def _mik_levels(profile: Any, per_bar: dict[int, int]) -> Any:
+    from apps.autodj.contract.models import TrackProfile
+
+    assert isinstance(profile, TrackProfile)
+    levels = tuple(per_bar.get(bar, 5) for bar in range(1, profile.bars + 1))
+    return dataclasses.replace(profile, mik_bar_level=levels, mik_level=per_bar.get(1, 5))
+
+
+def _energy_plan() -> Any:
+    plan = _plans()[0]
+    return dataclasses.replace(plan, intent="keep the energy up")
+
+
+@pytest.mark.requirement("TRANSAI-10676")
+def test_energy_line_lists_mik_scalars_seam_and_intent_with_hover_sources() -> None:
+    """[if] both tracks have MIK bar series [then] energy line names scalars, seam and intent fit, [else stop]."""
+    from apps.transition_score.energy import build_energy_block
+
+    out_profile, in_profile = _profiles()
+    plan = _energy_plan()
+    out_seam = plan.out.start_bar + plan.bars - 1
+    in_seam = plan.in_.start_bar + plan.bars
+    out_profile = _mik_levels(out_profile, {i: 6 for i in range(1, out_profile.bars + 1)} | {out_seam: 5})
+    in_profile = _mik_levels(in_profile, {i: 5 for i in range(1, in_profile.bars + 1)} | {in_seam: 7})
+    out_profile = dataclasses.replace(out_profile, mik_level=6)
+    in_profile = dataclasses.replace(in_profile, mik_level=7)
+    block = build_energy_block(plan, out_profile, in_profile, intent="energy_up")
+    assert not block.unscored
+    assert "energy 6 -> 7 (MIK track levels)" in block.line
+    assert f"seam 5 -> 7 at in bar {in_seam}" in block.line
+    assert "intent energy_up wants +1..+2: fits" in block.line
+    assert len(block.numbers) >= 5
+    assert all(number.title for number in block.numbers)
+
+
+@pytest.mark.requirement("TRANSAI-10676")
+def test_energy_strip_carries_both_windows_overlap_and_boundaries() -> None:
+    """[if] MIK series is present [then] strip has two rows, overlap bars and boundary ticks, [else stop]."""
+    from apps.autodj.contract.models import MikBoundary
+    from apps.transition_score.energy import build_energy_block
+
+    out_profile, in_profile = _profiles()
+    plan = _energy_plan()
+    out_profile = dataclasses.replace(
+        _mik_levels(out_profile, {i: 6 for i in range(1, out_profile.bars + 1)}),
+        mik_level=6,
+        mik_boundaries=(
+            MikBoundary(bar=plan.out.start_bar + 2, snapped_bar=plan.out.start_bar + 2, level_before=6, level_after=5),
+        ),
+    )
+    in_profile = dataclasses.replace(
+        _mik_levels(in_profile, {i: 7 for i in range(1, in_profile.bars + 1)}),
+        mik_level=7,
+    )
+    block = build_energy_block(plan, out_profile, in_profile, intent="energy_up")
+    assert block.out is not None and block.in_ is not None
+    assert len(block.out.levels) == plan.out.bars
+    assert len(block.in_.levels) == plan.in_.bars
+    assert block.overlap_out_start_bar == plan.out.start_bar
+    assert block.overlap_in_end_bar == plan.in_.start_bar + plan.bars
+    assert block.boundaries
+
+
+@pytest.mark.requirement("TRANSAI-10676")
+def test_energy_is_unscored_without_mik_series() -> None:
+    """[if] either side has no MIK series [then] line is unscored, [else stop]."""
+    from apps.transition_score.energy import UNSCORED_LINE, build_energy_block
+
+    out_profile, in_profile = _profiles()
+    block = build_energy_block(_energy_plan(), out_profile, in_profile, intent="energy_up")
+    assert block.unscored and block.line == UNSCORED_LINE
+
+
+@pytest.mark.requirement("TRANSAI-10676")
+def test_energy_strip_warns_when_mik_grid_is_suspect() -> None:
+    """[if] mik_grid_suspect is set [then] grid warning is present, [else stop]."""
+    from apps.transition_score.energy import GRID_WARNING, build_energy_block
+
+    out_profile, in_profile = _profiles()
+    plan = _energy_plan()
+    out_profile = dataclasses.replace(
+        _mik_levels(out_profile, {i: 6 for i in range(1, out_profile.bars + 1)}),
+        mik_level=6,
+        mik_grid_suspect=True,
+    )
+    in_profile = dataclasses.replace(
+        _mik_levels(in_profile, {i: 7 for i in range(1, in_profile.bars + 1)}),
+        mik_level=7,
+    )
+    block = build_energy_block(plan, out_profile, in_profile, intent="energy_up")
+    assert block.mik_grid_suspect and block.grid_warning == GRID_WARNING
+
+
+@pytest.mark.requirement("TRANSAI-10676")
+def test_try_plans_candidates_carry_energy_from_the_plan(
+    engine: Path,
+    tracks: tuple[Path, Path],
+) -> None:
+    """[if] try_plans scores a pair with MIK levels [then] each candidate JSON has an energy block, [else stop]."""
+    from apps.transition_score.energy import build_energy_block
+
+    out_profile, in_profile = _profiles()
+    plan = _energy_plan()
+    seam_out = plan.out.start_bar + plan.bars - 1
+    seam_in = plan.in_.start_bar + plan.bars
+    out_profile = dataclasses.replace(
+        _mik_levels(out_profile, {i: 6 for i in range(1, out_profile.bars + 1)} | {seam_out: 5}),
+        mik_level=6,
+    )
+    in_profile = dataclasses.replace(
+        _mik_levels(in_profile, {i: 5 for i in range(1, in_profile.bars + 1)} | {seam_in: 7}),
+        mik_level=7,
+    )
+    ranked = try_plans([plan], out_profile, in_profile, tracks, context_bars=4, binary=engine)
+    assert ranked[0].energy == build_energy_block(plan, out_profile, in_profile, intent="energy_up").to_json()

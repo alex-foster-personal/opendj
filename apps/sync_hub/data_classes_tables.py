@@ -190,6 +190,16 @@ LOCAL_TABLE_CLASSES: tuple[DataClass, ...] = (
         (),
     ),
     fixed(
+        "in-app-labelling",
+        "Subjective labelling tasks and karma ledger",
+        state_tables("label_task", "label_response", "contribution_ledger"),
+        "machine_local",
+        "Micro-tasks, responses and immediate karma grants for agent gates "
+        "(migrations_v32.py, issue #363). Not synced until a deliberate wire "
+        "decision; anon_session may later link to accounts.",
+        (fk("sign-in-identity"),),
+    ),
+    fixed(
         "schema-bookkeeping",
         "Migration bookkeeping",
         state_tables(
@@ -335,19 +345,21 @@ LOCAL_TABLE_CLASSES: tuple[DataClass, ...] = (
     ),
     fixed(
         "genre-findings-store",
-        "Genre findings, vectors, search cache, settings and tag-write journal",
+        "Genre findings, vectors, search cache, settings, tag-write journal and enrichment claims",
         state_tables(
             "genre_findings",
             "genre_vectors",
             "genre_search_cache",
             "genre_config",
             "genre_tag_writes",
+            "enrichment_claims",
         ),
         "machine_local",
         "Per-machine by decision (the genre findings ADR, GENRE-03): findings are "
         "recomputable from paid calls this machine made, the tag-write journal "
         "names file paths and backups on this disk, and the settings name local "
-        "write roots. Another machine infers its own.",
+        "write roots. The enrichment claims (ENRICH-11245) are envelopes over those "
+        "same findings, in the same store. Another machine infers its own.",
         (logical("library-tracks"),),
     ),
     fixed(
@@ -502,7 +514,7 @@ UNBUILT_TABLE_CLASSES: tuple[DataClass, ...] = (
     fixed(
         "recorded-sets",
         "Recorded DJ sets",
-        (*state_tables("sets", "set_events"), Location("file", "<data>/sets/**")),
+        (*state_tables("sets", "set_events", "control_events"), Location("file", "<data>/sets/**")),
         "not_yet_built",
         f"A performance record the user would expect everywhere. {_OUTSIDE_SYNC_SET}",
         (logical("library-tracks"),),

@@ -18,6 +18,8 @@ from itertools import takewhile
 PUNCT = set(";&|()<>")
 HEREDOC_RE = re.compile(r"<<-?\s*(['\"]?)([A-Za-z_][\w-]*)\1")
 PLACEHOLDER = "GHEXPR"
+# A whole argv position the JS/Python static readers cannot resolve to a literal.
+UNKNOWN = PLACEHOLDER
 
 
 @dataclass
@@ -193,6 +195,89 @@ def mask_substitutions(text: str, subs: list[tuple[int, int, str]]) -> str:
     return text
 
 
+# ----- parameter and arithmetic expansions --------------------------------------
+
+
+def parameter_expansions(text: str) -> list[tuple[int, int, str]]:
+    """(start, end, body) of each `${...}` and `$((...))` outside single quotes."""
+    spans: list[tuple[int, int, str]] = []
+    quote = ""
+    i = 0
+    while i < len(text):
+        ch = text[i]
+        end = None
+        if quote == "'":
+            quote = "" if ch == "'" else quote
+        elif ch == "\\" and quote != "'":
+            i += 1
+        elif ch in "'\"":
+            quote = _toggle_quote(quote, ch)
+        elif not quote and text.startswith("${", i):
+            end = _matching_brace(text, i + 2)
+            spans.append((i, end, text[i + 2 : end - 1]))
+        elif not quote and text.startswith("$((", i):
+            end = _matching_arithmetic(text, i + 3)
+            spans.append((i, end, text[i + 3 : end - 2]))
+        i = end if end is not None else i + 1
+    return spans
+
+
+def _matching_brace(text: str, j: int) -> int:
+    """Index just past the `}` closing a `${` whose body starts at `j`."""
+    depth, quote = 1, ""
+    while j < len(text) and depth:
+        ch = text[j]
+        if ch == "\\" and quote != "'":
+            j += 1
+        elif quote:
+            quote = "" if ch == quote else quote
+        elif ch in "'\"":
+            quote = ch
+        elif ch == "{":
+            depth += 1
+        elif ch == "}":
+            depth -= 1
+        j += 1
+    return j
+
+
+def _matching_arithmetic(text: str, j: int) -> int:
+    """Index just past the closing `))` of a `$((` whose body starts at `j`."""
+    depth, quote = 1, ""
+    while j < len(text) and depth:
+        ch = text[j]
+        if ch == "\\" and quote != "'":
+            j += 1
+        elif quote:
+            quote = "" if ch == quote else quote
+        elif ch in "'\"":
+            quote = ch
+        elif text.startswith("((", j):
+            depth += 1
+            j += 1
+        elif text.startswith("))", j):
+            depth -= 1
+            j += 1
+        j += 1
+    return j + 1 if j < len(text) and text[j - 1] == ")" else j
+
+
+def mask_parameter_expansions(text: str, spans: list[tuple[int, int, str]] | None = None) -> str:
+    """Replace each `${...}` / `$((...))` by a placeholder, keeping newlines."""
+    spans = spans if spans is not None else parameter_expansions(text)
+    for start, end, body in reversed(spans):
+        text = text[:start] + PLACEHOLDER + "\n" * body.count("\n") + text[end:]
+    return text
+
+
+def prepare_shell_text(text: str) -> str:
+    """Comments stripped; command and parameter expansions masked for shlex."""
+    clean, _ = strip_comments_and_heredocs(text)
+    subs = command_substitutions(clean)
+    masked = mask_substitutions(clean, subs)
+    return mask_parameter_expansions(masked)
+
+
 # ----- tokens -------------------------------------------------------------------
 
 
@@ -242,6 +327,11 @@ APT_VALUE_OPTIONS = frozenset(
 APT_OPERAND_RE = re.compile(r"([a-z0-9][a-z0-9.+-]+?)(?::[a-z0-9-]+)?(?:[=/].+)?")
 PLAYWRIGHT_BROWSER_RE = re.compile(r"[a-z][a-z0-9-]*")
 UNREADABLE = "unreadable: "
+
+
+def join_literal_argv(argv: list[str]) -> str:
+    """Return a shell line for a literal argv. UNKNOWN marks an unresolved word."""
+    return shlex.join(argv)
 
 
 def operand_words(args: list[str], value_options: frozenset[str] = frozenset()) -> list[str]:

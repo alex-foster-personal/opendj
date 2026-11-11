@@ -6,15 +6,18 @@ Regression one-liners:
   - if the configured endpoint has completed attempts then GET status exposes the newest five
   - if live tracks are held for missing identity then GET identity-backlog counts them
   - if no tracks are held for missing identity then GET identity-backlog reads zero
+  - if hash_pending rows exist then identity-backlog names can-hash and holder machines
 """
 from __future__ import annotations
 
 import json
 from pathlib import Path
 
+import pytest
 from fastapi.testclient import TestClient
 
 from apps.shared.state import db as state_db
+from apps.shared.state import sync_stamp
 from apps.webui.server.app import create_app
 from apps.webui.server.sqlite_backend import SqliteBackend
 from tests.cloudsync.test_hub_sync import _DEV_A, _T0
@@ -158,7 +161,12 @@ def test_identity_backlog_counts_held_inferred_tracks(tmp_path: Path) -> None:
         response = client.get("/api/v1/cloudsync/identity-backlog")
 
     assert response.status_code == 200
-    assert response.json() == {"unsyncable_inferred": 0, "hash_pending": 2}
+    assert response.json() == {
+        "unsyncable_inferred": 0,
+        "hash_pending": 2,
+        "this_machine_can_hash": False,
+        "audio_holder_machine_names": [],
+    }
 
 
 def test_status_reports_hash_pending_and_quarantined_counts(tmp_path: Path) -> None:
@@ -200,4 +208,65 @@ def test_identity_backlog_is_zero_on_a_fully_identified_library(tmp_path: Path) 
         response = client.get("/api/v1/cloudsync/identity-backlog")
 
     assert response.status_code == 200
-    assert response.json() == {"unsyncable_inferred": 0, "hash_pending": 0}
+    assert response.json() == {
+        "unsyncable_inferred": 0,
+        "hash_pending": 0,
+        "this_machine_can_hash": False,
+        "audio_holder_machine_names": [],
+    }
+
+
+@pytest.fixture
+def good_wav(tmp_path: Path) -> Path:
+    import wave
+
+    wav_path = tmp_path / "good.wav"
+    with wave.open(str(wav_path), "wb") as fh:
+        fh.setnchannels(1)
+        fh.setsampwidth(2)
+        fh.setframerate(44100)
+        fh.writeframes(b"\x00\x00" * 4410)
+    return wav_path
+
+
+def test_identity_backlog_reports_can_hash_and_holder_names(tmp_path: Path, good_wav: Path) -> None:
+    """[if] identity-backlog has pending rows [then] body names can-hash and holders, [else stop]."""
+    db_path = tmp_path / "state" / "state.db"
+    conn = state_db.open_rw(db_path, apply_schema=True)
+    try:
+        _insert_identified_track(
+            conn,
+            "trk-hash-me",
+            title="hash-me",
+            file_path=str(good_wav),
+            updated_at=_T0,
+            origin=_DEV_A,
+        )
+        _insert_identified_track(conn, "trk-remote", title="remote", updated_at=_T0, origin=_DEV_A)
+        now = _T0
+        conn.execute(
+            "INSERT INTO machines(machine_id, name, platform, is_hub, first_seen, last_seen) "
+            "VALUES ('machine-remote', 'nucbox', 'linux', 0, ?, ?)",
+            (now, now),
+        )
+        conn.execute(
+            """
+            INSERT INTO track_locations(
+                location_id, stable_id, machine_id, kind, role, file_path,
+                created_at, updated_at, origin_device_id
+            ) VALUES ('loc-remote', 'trk-remote', 'machine-remote', 'local', 'primary', ?, ?, ?, ?)
+            """,
+            ("/music/remote.wav", now, now, _DEV_A),
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+    with _client(tmp_path) as client:
+        response = client.get("/api/v1/cloudsync/identity-backlog")
+
+    body = response.json()
+    assert response.status_code == 200
+    assert body["hash_pending"] == 2
+    assert body["this_machine_can_hash"] is True
+    assert "nucbox" in body["audio_holder_machine_names"]

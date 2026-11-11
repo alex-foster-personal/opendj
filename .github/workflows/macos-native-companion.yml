@@ -123,6 +123,7 @@ jobs:
         # No uv cache in a release-triggered workflow: a cache written by a PR run
         # must not feed a tag/release build (zizmor cache-poisoning).
         with:
+          version: "0.13.7"
           enable-cache: false
 
       # Self-hosted: uv-managed interpreters only. A login user's own python3.11 on the

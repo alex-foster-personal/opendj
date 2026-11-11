@@ -595,6 +595,23 @@ function _handleBrowseLoad(action: Extract<MidiAction, { type: 'browse_load' }>,
 	_requireBrowseAdapter('browse_load')?.loadSelected(action.deck);
 }
 
+function _handleColorFx(
+	action: Extract<MidiAction, { type: 'color_fx' }>,
+	value: MidiInputValue
+): void {
+	_ifPressedOnLoadedDeck(
+		value,
+		action.deck,
+		'colour FX',
+		() =>
+			void dispatchPerformanceCommand({
+				type: 'color_fx',
+				deck: action.deck,
+				effect: action.effect
+			})
+	);
+}
+
 function _routeMidiAction(
 	action: MidiAction,
 	value: MidiInputValue,
@@ -660,6 +677,9 @@ function _routeMidiAction(
 			return;
 		case 'browse_load':
 			_handleBrowseLoad(action, value);
+			return;
+		case 'color_fx':
+			_handleColorFx(action, value);
 			return;
 		case 'shift_modifier':
 			// Consumed inside webmidi.svelte.ts; reaching the glue is a bug.

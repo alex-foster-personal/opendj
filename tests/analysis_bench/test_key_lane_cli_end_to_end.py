@@ -19,7 +19,7 @@ from pathlib import Path
 import pytest
 
 from apps.analysis_bench import bundles, cli
-from tests.analysis_bench import synthetic_key
+from tests.analysis_bench import parity_fixtures, synthetic_key
 
 
 @pytest.fixture()
@@ -60,26 +60,38 @@ def test_seal_push_pull_run_and_post(bundle: Path, tmp_path: Path) -> None:
     log = tmp_path / "spec.md"
     log.write_text("# spec\n\n## Experiment log\n")
     report_path = tmp_path / "report.json"
+    host_reports_path = tmp_path / "host-reports.json"
     # truth_echo stands in for the missing candidate role (see module docstring):
     # its own arm role stays positive_control, and the other three declared
     # controls (constant_key, most_common_key, truth_echo_mik) come along too.
+    run_argv = [
+        "run",
+        "--lane",
+        "key",
+        "--candidate",
+        "truth_echo",
+        "--bundle-dir",
+        str(pulled),
+        "--workdir",
+        str(tmp_path / "arms"),
+        "--out",
+        str(report_path),
+    ]
+    assert cli.main(run_argv) == 0
+    report = json.loads(report_path.read_text())
+    host_reports_path.write_text(
+        json.dumps(parity_fixtures.synthetic_host_reports(report)),
+        encoding="utf-8",
+    )
     assert (
         cli.main(
             [
-                "run",
-                "--lane",
-                "key",
-                "--candidate",
-                "truth_echo",
-                "--bundle-dir",
-                str(pulled),
-                "--workdir",
-                str(tmp_path / "arms"),
-                "--out",
-                str(report_path),
+                *run_argv,
                 "--post",
                 "--log-path",
                 str(log),
+                "--host-reports",
+                str(host_reports_path),
             ]
         )
         == 0

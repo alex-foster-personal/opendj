@@ -11,10 +11,17 @@ export const LYRIC_TWO_ROW_PX = 34;
 /** Strip height for the current line alone, compact. */
 export const LYRIC_ONE_ROW_PX = 16;
 
-/** Map the measured cue-column height to how many lyric lines fit under the pads. */
-export function deckLyricRowBudget(cueFlexHeightPx: number): 1 | 2 {
+/** Map the measured cue-column height to how many lyric lines fit under the pads.
+ *  `padBankHeightPx`, when measured, is the bank's laid-out height; otherwise the
+ *  pad minimum is used so the first frame does not over-budget before observe. */
+export function deckLyricRowBudget(cueFlexHeightPx: number, padBankHeightPx: number = 0): 1 | 2 {
 	if (!Number.isFinite(cueFlexHeightPx) || cueFlexHeightPx <= 0) return 1;
-	return cueFlexHeightPx >= PAD_BANK_MIN_PX + LYRIC_TWO_ROW_PX ? 2 : 1;
+	const pads =
+		Number.isFinite(padBankHeightPx) && padBankHeightPx > 0
+			? Math.max(padBankHeightPx, PAD_BANK_MIN_PX)
+			: PAD_BANK_MIN_PX;
+	const spare = cueFlexHeightPx - pads;
+	return spare >= LYRIC_TWO_ROW_PX ? 2 : 1;
 }
 
 /** Height the lyric strip takes under the pads for a row budget. */

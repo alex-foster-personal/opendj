@@ -36,7 +36,6 @@ from fastapi.testclient import TestClient
 from apps.sets import audio as sets_audio
 from apps.sets import capture, retention
 from apps.sets import paths as sets_paths
-from apps.sets.api import router
 from apps.sets.capture_odj_audio import (
     _parse_odj_audio_devices,
     follow_record_output,
@@ -48,6 +47,7 @@ from apps.sets.recorder_service import RecorderService
 from apps.shared import platform_paths
 from apps.shared.odj_audio_binary import EXE_NAME, REPO_TARGET
 from tests.rust_build_env import build_audio_engine
+from tests.sets.conftest import mount_sets_router
 
 pytestmark = pytest.mark.requirement("SET-11")
 
@@ -331,7 +331,7 @@ def test_rec_by_ffmpeg_index_is_refused_when_odj_audio_records(tmp_path: Path, c
     )
     app = FastAPI()
     app.state.sets_recorder_service = service
-    app.include_router(router)
+    mount_sets_router(app)
     with TestClient(app) as client:
         response = client.post("/api/sets/recorder/start", json={"session_id": None, "source": "external", "ffmpeg_device_idx": 1})
         assert response.status_code == 503, response.text

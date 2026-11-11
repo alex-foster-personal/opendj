@@ -49,3 +49,21 @@ def test_mcp_tool_runs_one_single_order_with_an_8_beat_default() -> None:
 def test_force_only_sent_when_set() -> None:
     assert "force" not in deck_move_command(1, 2, 8.0, "move", False)
     assert deck_move_command(1, 2, 0.0, "copy", True)["force"] is True
+
+
+def test_cli_instant_double_is_a_zero_beat_copy() -> None:
+    assert parse_invocation(["deck_move", "2", "1", "0", "copy"]).command == {
+        "type": "deck_move",
+        "from": 2,
+        "to": 1,
+        "crossfade_beats": 0.0,
+        "mode": "copy",
+    }
+
+
+def test_cli_browser_select_playlist_all_with_stable_id() -> None:
+    assert parse_invocation(["browser_select_playlist", "all", "fixture:1"]).command == {
+        "type": "browser_select_playlist",
+        "playlist_id": "all",
+        "stable_id": "fixture:1",
+    }

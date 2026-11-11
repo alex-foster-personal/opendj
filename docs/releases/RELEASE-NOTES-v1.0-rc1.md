@@ -48,7 +48,7 @@ This is the rc1 candidate. CI is green on 1834 tests. Expect rc2 once the Phase 
 
 ## Safety
 
-Every write in this release follows the same six rails: typed confirmation, `pgrep` abort if the target app is running, timestamped backup, dry-run default, atomic write (temp + rename), and post-write readback with an emitted reversal script. See `apps/sync/safety.py` and any phase UAT under `(private path)/*/` for the exact invocations.
+Every write in this release follows the same six rails: typed confirmation, `pgrep` abort if the target app is running, timestamped backup, dry-run default, atomic write (temp + rename), and post-write readback with an emitted reversal script. See `apps/sync/safety.py` and any phase UAT under `private planning notes (not in the public mirror)` for the exact invocations.
 
 ## What is not in v1
 

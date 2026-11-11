@@ -66,6 +66,8 @@ def _utc_day() -> str:
 
 def render_round(lane: str, number: int, report: dict[str, Any], *, host: str) -> str:
     """The markdown block for one round, or a refusal when it cannot be read."""
+    from apps.analysis_bench import parity
+
     arms = report.get("arms") or {}
     roles = {arm.get("role") for arm in arms.values()}
     missing = [role for role in REQUIRED_CONTROL_ROLES if role not in roles]
@@ -77,18 +79,25 @@ def render_round(lane: str, number: int, report: dict[str, Any], *, host: str) -
             "the lane's controls, or do not post the round."
         )
 
+    table = report.get("table", "").rstrip()
+    host_reports = report.get("host_reports")
+    if host_reports:
+        parity.validate_host_reports(host_reports, report=report)
+    parity.validate_posted_table(table)
+
     bundle = report.get("bundle") or {}
     named = ", ".join(f"{name} ({arm.get('role', 'candidate')})" for name, arm in sorted(arms.items()))
+    host_columns = ", ".join(parity.COLUMN_TITLES[key] for key in parity.REQUIRED_HOST_COLUMNS)
     lines = [
         HEADING.format(lane=lane, number=number),
         "",
-        f"Measured {_utc_day()} on host `{host}` with "
+        f"Measured {_utc_day()} on hosts {host_columns} (posted from `{host}`) with "
         f"scorer {report['scorer_version']}, bundle {bundle.get('lane')}/{bundle.get('version')} "
         f"(bundle_id `{bundle.get('bundle_id')}`).",
         "",
         f"Arms: {named}.",
         "",
-        report.get("table", "").rstrip(),
+        table,
         "",
     ]
     return "\n".join(lines)

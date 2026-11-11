@@ -1,0 +1,9 @@
+{
+  "bytes": 1024,
+  "measured_main": 514121,
+  "measured_with_pr": 514417,
+  "sha": "33397b088a",
+  "date": "Wed 11 Nov 2026",
+  "reason": "branch af--cloud-11310--genre-run-inference-on-load-and-show-fam grows the other-lazy surface; measured +296 B gzip over main; ceiled to KiB.",
+  "payback": "none planned; the growth is the change's own code on this surface"
+}

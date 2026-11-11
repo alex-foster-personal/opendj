@@ -81,13 +81,17 @@ class LanChannel:
     def _headers(self) -> dict[str, str]:
         return {"Authorization": f"Bearer {self.token}"} if self.token else {}
 
+    def _absolute(self, path: str) -> str:
+        return f"{self.url}{path}"
+
     def get(self, path: str, timeout: Timeout) -> httpx.Response:
+        url, headers = self._absolute(path), self._headers()
         try:
-            return self.client.get(f"{self.url}{path}", headers=self._headers(), timeout=timeout)
+            return self.client.get(url, headers=headers, timeout=timeout)
         except httpx.RemoteProtocolError:
             # The door closed the kept connection as this read went out on it (its idle limit, a
             # restart): that is not an unreachable partner. Once more, on a new connection.
-            return self.client.get(f"{self.url}{path}", headers=self._headers(), timeout=timeout)
+            return self.client.get(url, headers=headers, timeout=timeout)
 
     def post(self, path: str, body: bytes, timeout: Timeout) -> httpx.Response:
         return self._post(path, body, timeout, {**self._headers(), "content-type": "application/json"})
@@ -96,7 +100,7 @@ class LanChannel:
         return self._post(path, body, timeout, {"content-type": "application/json"})
 
     def _post(self, path: str, body: bytes, timeout: Timeout, headers: dict[str, str]) -> httpx.Response:
-        return self.client.post(f"{self.url}{path}", content=body, headers=headers, timeout=timeout)
+        return self.client.post(self._absolute(path), content=body, headers=headers, timeout=timeout)
 
     def bind(self, client: httpx.Client) -> LanChannel:
         return replace(self, client=client)
@@ -119,7 +123,7 @@ class InternetChannel:
         return self._ask(DoorRequest("POST", path, "", body), timeout)
 
     def post_sealed(self, path: str, body: bytes, timeout: Timeout) -> httpx.Response:
-        return self._ask(DoorRequest("POST", path, "", body), timeout)
+        return self.post(path, body, timeout)
 
     def bind(self, client: httpx.Client) -> InternetChannel:  # noqa: ARG002 - the Protocol's signature
         return self  # the relay room is the connection; there is no client to bind

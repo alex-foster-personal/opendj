@@ -6,7 +6,7 @@ from pathlib import Path
 
 from apps.cloud import stem_hydration, stem_index
 from apps.cloud.stem_source import StemSourceError, resolve_stem_hydration_source
-from apps.stems.job import PROGRESS_TRACK_KEY
+from apps.stems.job import PROGRESS_TRACK_KEY, stems_root
 
 
 class HydrateRunnerError(RuntimeError):
@@ -36,7 +36,7 @@ def hydrate_stable_ids(
     if refresh_index:
         source.refresh_index(data_dir, force=True)
     index = stem_index.load_cached_index(data_dir)
-    stems_dir = data_dir / "state" / "stems"
+    stems_dir = stems_root(data_dir)
     failures: list[str] = []
     total = len(stable_ids)
     for offset, stable_id in enumerate(stable_ids, start=1):

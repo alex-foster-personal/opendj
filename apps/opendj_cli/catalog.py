@@ -83,10 +83,18 @@ ANALYSIS_SOURCE_VALUES: tuple[str, ...] = ("rekordbox", "own")
 WAVEFORM_SEEK_SNAP_VALUES: tuple[str, ...] = ("downbeat", "beat", "exact")
 COLOR_FX_EFFECT_VALUES: tuple[str, ...] = ("filter", "space", "echo", "next")
 COLOR_FX_ECHO_BEAT_VALUES: tuple[float, ...] = (0.25, 0.5, 0.75, 1.0)
-WAVEFORM_DESIGN_VALUES: tuple[str, ...] = ("auto", "tri-band", "mono", "line", "blocks")
+WAVEFORM_DESIGN_VALUES: tuple[str, ...] = ("auto", "tri-band", "mono", "line", "blocks", "rgb")
+WAVE_HEIGHT_VALUES: tuple[str, ...] = ("full", "half")
 DECK_NUMBER_ART_VALUES: tuple[str, ...] = ("off", "halo", "glow", "tinted")
 #: WAVEQS-8348e: mirrors WAVEFORM_OVERLAYS in src/lib/rb/waveform-overlay-command.ts.
-WAVEFORM_OVERLAY_VALUES: tuple[str, ...] = ("sections", "lyrics", "lyrics_scrub", "jog_radial", "grid_lines")
+WAVEFORM_OVERLAY_VALUES: tuple[str, ...] = (
+    "sections",
+    "lyrics",
+    "lyrics_scrub",
+    "jog_radial",
+    "vocal_lane",
+    "grid_lines",
+)
 #: issue #10244: mirrors WAVE_GRID_LINES_VALUES in src/lib/rb/wave-grid-lines.ts.
 WAVE_GRID_LINES_VALUES: tuple[str, ...] = ("beats_bars", "bars", "off")
 WAVE_ZOOM_VALUES: tuple[str, ...] = ("4", "8", "16", "32", "64", "whole")
@@ -101,7 +109,7 @@ AUTOPLAY_VERDICT_VALUES: tuple[str, ...] = (
 TRANSITION_INTENT_VALUES: tuple[str, ...] = ("smooth", "energy_up", "wind_down", "showy", "vocals_clean")
 PERF_VIEW_VALUES: tuple[str, ...] = ("waveform", "list", "phase-scope", "phase-meter")
 UI_SKIN_VALUES: tuple[str, ...] = ("default", "mono-dev", "light", "green-room", "practice-ddj-flx4")
-WAVE_PALETTE_VALUES: tuple[str, ...] = ("auto", "rekordbox", "legacy", "mono")
+WAVE_PALETTE_VALUES: tuple[str, ...] = ("auto", "rekordbox", "legacy", "mono", "blue")
 WAVE_SPLIT_MASTER_VALUES: tuple[str, ...] = ("auto", "on", "off")
 # Issue #10199: mirrors LAYOUT_SURFACES / PERFORMANCE_LAYOUTS / LIBRARY_LAYOUTS in skin-layout.ts.
 LAYOUT_SURFACE_VALUES: tuple[str, ...] = ("performance", "library")
@@ -529,6 +537,8 @@ _VERBS: tuple[Verb, ...] = (
             arg("playlist_id", "text", text_value),
             arg("stable_id", "text", text_value, "also select and scroll to this track", optional=True),
         ),
+        observes=(Observe(("browser", "playlist"), "playlist_id"),),
+        note="LIBUX/PLAYLIST: selected pane; confirmed against mirror browser.playlist.",
     ),
     Verb(
         "browser_related",
@@ -797,7 +807,18 @@ _VERBS: tuple[Verb, ...] = (
     Verb(
         "set_waveform_design",
         "set_waveform_design",
-        (arg("design", "enum", enum_value(WAVEFORM_DESIGN_VALUES), "auto|tri-band|mono|line|blocks"),),
+        (
+            arg(
+                "design",
+                "enum",
+                enum_value(WAVEFORM_DESIGN_VALUES),
+                "auto|tri-band|mono|line|blocks|rgb",
+                optional=True,
+            ),
+            arg("height", "enum", enum_value(WAVE_HEIGHT_VALUES), "full|half", optional=True),
+        ),
+        note="WAVEQS-11733: height full mirrors the deck waveform, half draws it single-sided from the bottom "
+        "baseline (CDJ style); name it alone as height=half. The page refuses a call with neither.",
     ),
     Verb(
         "set_waveform_overlay",
@@ -807,7 +828,7 @@ _VERBS: tuple[Verb, ...] = (
                 "overlay",
                 "enum",
                 enum_value(WAVEFORM_OVERLAY_VALUES),
-                "sections|lyrics|lyrics_scrub|jog_radial|grid_lines",
+                "sections|lyrics|lyrics_scrub|jog_radial|vocal_lane|grid_lines",
             ),
             arg("enabled", "bool", bool_value, "true|false (the switch overlays)", optional=True),
             arg(
@@ -820,6 +841,7 @@ _VERBS: tuple[Verb, ...] = (
         ),
         note="WAVEQS-8348e: the waveform quick-settings popover's switches: sections, lyrics on the waveform, "
         "lyrics while hover-scrubbing, the radial jog waveform. "
+        "WAVEQS-11734: vocal_lane shows or hides the blue vocal bars. "
         "WAVEQS-11736: grid_lines takes value=beats_bars|bars|off (beat and bar lines, bar lines only, none), "
         "as in: set_waveform_overlay grid_lines value=bars.",
     ),
@@ -855,7 +877,7 @@ _VERBS: tuple[Verb, ...] = (
         "set_skin",
         (
             arg("ui_skin", "enum", enum_value(UI_SKIN_VALUES), "default|mono-dev|light|green-room|practice-ddj-flx4"),
-            arg("wave_palette", "enum", enum_value(WAVE_PALETTE_VALUES), "auto|rekordbox|legacy|mono"),
+            arg("wave_palette", "enum", enum_value(WAVE_PALETTE_VALUES), "auto|rekordbox|legacy|mono|blue"),
             arg("wave_split_master", "enum", enum_value(WAVE_SPLIT_MASTER_VALUES), "auto|on|off"),
         ),
         note="Skin preview: chrome skin, waveform palette and split master waveform in one call. "

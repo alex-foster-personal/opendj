@@ -259,6 +259,11 @@ async function bundleMeterHarnessEntry(relativeEntry: string): Promise<string> {
 		logLevel: 'silent',
 		platform: 'browser',
 		target: 'chrome120',
+		// deck-channel-graph pulls modules that read import.meta.env at load time.
+		define: {
+			'import.meta.env.VITE_API_BASE': 'undefined',
+			'import.meta.env.DEV': 'false'
+		},
 		plugins: [viteUrlSuffixPlugin],
 		write: false
 	});
@@ -542,6 +547,28 @@ test('halving the production channel fader drops the reading by about 6 dB', asy
 	const delta = readings[0] - readings[1];
 	expect(delta, `half fader should be ~6 dB below unity (${readings})`).toBeGreaterThan(5);
 	expect(delta, `half fader overshot the -6 dB target (${readings})`).toBeLessThan(7);
+});
+
+test('returning the production channel fader to unity restores the post-fader reading', async ({
+	page
+}) => {
+	await pageWithChannelMeterModule(page);
+	const floor = await page.evaluate(() => window.__channelMeterHarness!.SILENT_METER_READING.db);
+	const { readings } = await page.evaluate(async () => {
+		const harness = window.__channelMeterHarness!;
+		return harness.readChannelMeterAtFaderGains([1, 0, 1]);
+	});
+	expect(readings[0], 'unity fader must establish a non-floor reading first').toBeGreaterThan(
+		floor + 1
+	);
+	expect(readings[1], 'a closed fader must floor').toBeLessThanOrEqual(floor + 0.5);
+	expect(readings[2], 'unity fader must rise again on the post-fader tap').toBeGreaterThan(
+		floor + 1
+	);
+	expect(readings[2], 'restored unity should match the first unity pass').toBeCloseTo(
+		readings[0],
+		0
+	);
 });
 
 // ---------------------------------------------------------------------------

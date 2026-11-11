@@ -35,6 +35,7 @@ class PlayedTrack:
     energy: int | None
     played_at: datetime
     tags: tuple[str, ...] = ()
+    title: str | None = None
 
 
 Source = Literal[

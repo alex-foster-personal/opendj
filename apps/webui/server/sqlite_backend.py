@@ -93,6 +93,7 @@ from .backend import (
     resolve_auto_gain_user_db_write,
     resolve_grid_flag_dismissed_write,
     resolve_tempo_pref_write,
+    resolve_tracklist_hidden_write,
     tag_cas_conflicts,
 )
 from .etag import compute_etag, strip_quotes
@@ -236,7 +237,7 @@ def _reset_warnings_for_tests() -> None:
 # name listed here is JSON-decoded on the way out.
 _EAV_FIELDS: tuple[str, ...] = (
     "bpm", "key", "rating", "tags", "notes", "last_played_at", "genre", "comments",
-    "energy", "tempo_pref", "grid_flag_dismissed", "auto_gain_user_db",
+    "energy", "tempo_pref", "grid_flag_dismissed", "tracklist_hidden", "auto_gain_user_db",
 )
 
 _TRACKS_PROJECTION = (
@@ -509,6 +510,7 @@ def _row_to_track(
         last_played_at=last_played_at,
         tempo_pref=tempo_pref,
         grid_flag_dismissed=_val("grid_flag_dismissed") is True,
+        tracklist_hidden=_val("tracklist_hidden") is True,
         auto_gain_user_db=_auto_gain_user_db(_val("auto_gain_user_db")),
         file_path=row["file_path"],
         created_at=row["created_at"],
@@ -627,6 +629,10 @@ def _field_writes(current: Track, patch: dict[str, Any]) -> dict[str, Any]:
     if "grid_flag_dismissed" in patch:
         writes["grid_flag_dismissed"] = resolve_grid_flag_dismissed_write(
             patch["grid_flag_dismissed"]
+        )
+    if "tracklist_hidden" in patch:
+        writes["tracklist_hidden"] = resolve_tracklist_hidden_write(
+            patch["tracklist_hidden"]
         )
     if "auto_gain_user_db" in patch:
         writes["auto_gain_user_db"] = resolve_auto_gain_user_db_write(

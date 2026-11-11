@@ -46,9 +46,10 @@ EASED_HIGHS = 0.35
 CURVE_SEGMENTS = 8
 
 # ----- style parameters (AGENT-34) -------------------------------------------
-#: Fade laws. Equal power is the default, mimicked from Spotify's Smooth crossfade and Mixxx's constant-power
-#: crossfader curve (each deck at -3 dB, 0.707, mid-fade); linear (-6 dB, 0.5, mid-fade) stays available.
-FADE_SHAPES = ("equal_power", "linear")
+#: Fade laws. Equal power is the default, mimicked from Mixxx's constant-power crossfader curve (each deck at -3 dB,
+#: 0.707, mid-fade); ``smooth`` is equal power on cubic ease ``s = 3t^2 - 2t^3`` (Spotify Smooth); linear (-6 dB, 0.5,
+#: mid-fade) stays available.
+FADE_SHAPES = ("equal_power", "linear", "smooth")
 #: The fade every built-in blend uses (AGENT-34 round 4): the old hand-built blends too, not only parameter points.
 DEFAULT_FADE_SHAPE = "equal_power"
 #: Volume lanes, named as docs/glossary.md "Transitions and mixing" (Spotify's Volume options). Under D11 a lane only
@@ -57,7 +58,7 @@ DEFAULT_FADE_SHAPE = "equal_power"
 VOLUME_LANES = ("crossfade", "overlap", "fade_in_fade_out")
 #: Where the incoming bass lands: "center" gates it inside the blend (D11), "end" lands it ON the handover with the
 #: outgoing deck held in its lull until then (lull_then_drop, D13).
-SWAP_POSITIONS = ("center", "end")
+SWAP_POSITIONS = ("center", "end", "phrase")
 #: Filter primitives: which deck is swept and which way (glossary: low-pass in, high-pass out, ...). ``hp_out``
 #: sweeps only the outgoing deck (filter_sweep).
 FILTER_MOVES = ("lp_in_hp_out", "lp_both", "hp_both", "hp_out")
@@ -352,12 +353,21 @@ class StyleParams:
         }
 
 
+def _smooth_ease(t: float) -> float:
+    """Cubic S-curve progress 0..1: s = 3t^2 - 2t^3."""
+    t = min(1.0, max(0.0, t))
+    return t * t * (3.0 - 2.0 * t)
+
+
 def _gain(shape: str, t: float, rising: bool) -> float:
     """Fader gain at fade progress ``t`` (0..1): equal power is sin/cos of a quarter turn, linear is ``t``."""
     if shape == "equal_power":
         return math.sin(t * math.pi / 2) if rising else math.cos(t * math.pi / 2)
     if shape == "linear":
         return t if rising else 1.0 - t
+    if shape == "smooth":
+        s = _smooth_ease(t)
+        return math.sin(s * math.pi / 2) if rising else math.cos(s * math.pi / 2)
     raise ValueError(f"unknown fade shape {shape!r}")
 
 
@@ -381,6 +391,11 @@ def _body_fade(shape: str, pre: float) -> list[tuple[float, float]]:
             points.append((math.cos(theta), math.sin(theta)))
         elif shape == "linear":
             points.append((1.0 - t, pre + (1.0 - pre) * t))
+        elif shape == "smooth":
+            s = _smooth_ease(t)
+            theta0 = math.asin(pre)
+            theta = theta0 + s * (math.pi / 2 - theta0)
+            points.append((math.cos(theta), math.sin(theta)))
         else:
             raise ValueError(f"unknown fade shape {shape!r}")
     return points
@@ -431,7 +446,13 @@ def _out_fader_at(bar: float, span: float, edge: float, pre: float, shape: str) 
     if shape == "equal_power":
         theta0 = math.asin(pre)
         return math.cos(theta0 + t * (math.pi / 2 - theta0))
-    return 1.0 - t
+    if shape == "smooth":
+        s = _smooth_ease(t)
+        theta0 = math.asin(pre)
+        return math.cos(theta0 + s * (math.pi / 2 - theta0))
+    if shape == "linear":
+        return 1.0 - t
+    raise ValueError(f"unknown fade shape {shape!r}")
 
 
 def _after_hit(
@@ -528,7 +549,7 @@ def crossover_bars(span: float) -> float:
 
 def body_start(shape: str, pre: float) -> float:
     """The outgoing fader on the hit: equal power puts it where outgoing^2 + pre^2 = one deck; linear leaves it full."""
-    if shape == "equal_power":
+    if shape in {"equal_power", "smooth"}:
         return math.sqrt(1.0 - pre * pre)
     if shape == "linear":
         return 1.0
@@ -657,8 +678,116 @@ def parametric_builder(params: StyleParams) -> Builder:
     )
 
 
+def _three_band_builder(params: StyleParams) -> Builder:
+    """Blend's lows-first choreography, on downbeats of the post-hit body (#10164).
+
+    Effective band amplitudes include the fader. Factoring the high fade between
+    its EQ and fader leaves room for the mid fade without asking either EQ to boost.
+    The issue's low/mid/high order takes precedence over research spec 02's order.
+    """
+
+    def build(bars: int, out_deck: int, in_deck: int, hit_bar: float | None = None, /) -> list[Event]:
+        hit = default_hit_bar(params.volume, bars, params.min_body_fade_bars) if hit_bar is None else hit_bar
+        body = bars - hit
+        low_center, mid_center, high_center = (math.floor(hit + body * f + 0.5) for f in (0.25, 0.5, 0.75))
+        low_start, low_end = low_center - 0.5, low_center + 0.5
+        mid_start, mid_end = mid_center - body / 4, mid_center + body / 4
+        high_start = 2 * high_center - bars
+        low_deadline = low_end + 1.0
+        windows = ((low_start, low_end), (mid_start, mid_end), (high_start, float(bars)))
+        # A shared grid includes every boundary and center. Knobs interpolate in dB,
+        # so dense segments preserve effective power between the analytic samples.
+        grid = {hit, low_deadline, float(bars)}
+        for start, end in (*windows, (low_end, low_deadline)):
+            grid.update(start + (end - start) * k / (2 * CURVE_SEGMENTS) for k in range(2 * CURVE_SEGMENTS + 1))
+        times = sorted(grid)
+        pre = 10.0 ** (params.pre_hit_db / 20.0)
+        park, floor = knob_amp(PRE_HIT_LOW), knob_amp(KILL)
+        equal = math.sqrt(0.5)
+
+        def band_pair(bar: float, start: float, end: float) -> tuple[float, float]:
+            u = min(1.0, max(0.0, (bar - start) / (end - start)))
+            return math.cos(u * math.pi / 2), math.sin(u * math.pi / 2)
+
+        def values(bar: float) -> tuple[float, ...]:
+            in_fader = _lerp(pre, 1.0, (bar - low_start) / (low_center - low_start))
+            high_out, high_in = band_pair(bar, high_start, bars)
+            out_high_amp = max(floor, math.sqrt(high_out))
+            out_fader = high_out / out_high_amp if bar < bars else 0.0
+            if bar <= low_center:
+                u = (bar - low_start) / (low_center - low_start)
+                low_out, low_in = _lerp(1.0, equal, u), _lerp(pre * park, equal, u)
+            elif bar <= low_end:
+                u = (bar - low_center) / (low_end - low_center)
+                low_out, low_in = _lerp(equal, park, u), _lerp(equal, 1.0, u)
+            else:
+                low_out, low_in = 0.0, 1.0
+            out_low_knob = (
+                amp_knob(low_out)
+                if bar <= low_end
+                else _lerp(PRE_HIT_LOW, KILL, (bar - low_end) / (low_deadline - low_end))
+            )
+            mid_out, mid_in = band_pair(bar, mid_start, mid_end)
+            # Once killed, hold the raw knob rather than lifting it to repair a
+            # falling fader. Handle the terminal zero explicitly.
+            out_mid_knob = amp_knob(mid_out / out_fader) if bar < mid_end else KILL
+            return (
+                out_fader,
+                in_fader,
+                out_low_knob,
+                amp_knob(low_in / in_fader),
+                out_mid_knob,
+                amp_knob(mid_in / in_fader),
+                amp_knob(out_high_amp),
+                amp_knob(high_in / in_fader),
+            )
+
+        lanes = (
+            (out_deck, "fader"),
+            (in_deck, "fader"),
+            (out_deck, "eq_low"),
+            (in_deck, "eq_low"),
+            (out_deck, "eq_mid"),
+            (in_deck, "eq_mid"),
+            (out_deck, "eq_high"),
+            (in_deck, "eq_high"),
+        )
+        events = [
+            _set(0, in_deck, "fader", KILL),
+            _set(0, in_deck, "eq_low", PRE_HIT_LOW),
+            _set(0, in_deck, "eq_mid", KILL),
+            _set(0, in_deck, "eq_high", KILL),
+            _do(0, in_deck, "play"),
+        ]
+        events += _chain(
+            in_deck,
+            "fader",
+            0.0,
+            hit,
+            [pre * _gain(params.fade_shape, k / CURVE_SEGMENTS, True) for k in range(1, CURVE_SEGMENTS + 1)],
+        )
+        samples = [values(bar) for bar in times]
+        for lane, (deck, control) in enumerate(lanes):
+            events.append(_set(hit, deck, control, round(samples[0][lane], 6)))
+            events.extend(
+                _ramp(start, deck, control, round(sample[lane], 6), end - start)
+                for start, end, sample in zip(times[:-1], times[1:], samples[1:], strict=True)
+            )
+        return events + _handover(bars, out_deck, in_deck)
+
+    return build
+
+
 def _parametric(
-    name: str, summary: str, when: str, params: StyleParams, spotify: str | None, bars: tuple[int, int, int]
+    name: str,
+    summary: str,
+    when: str,
+    params: StyleParams,
+    spotify: str | None,
+    bars: tuple[int, int, int],
+    *,
+    builder: Builder | None = None,
+    extra_controls: tuple[str, ...] = (),
 ) -> Style:
     controls = ["fader", "play", "master", "eq_low"]
     if params.filter is not None:
@@ -671,11 +800,11 @@ def _parametric(
         max_bars=bars[1],
         default_bars=bars[2],
         needs_beatmatch=True,
-        controls=tuple(controls) + (("stem_gain",) if params.stems else ()),
+        controls=tuple(controls) + (("stem_gain",) if params.stems else ()) + extra_controls,
         when=when,
         available=unavailable is None,
         unavailable_reason=unavailable,
-        builder=parametric_builder(params),
+        builder=parametric_builder(params) if builder is None else builder,
         params=params,
         spotify=spotify,
         hit=HIT_ON_HANDOVER if params.swap_position == "end" else HIT_GATED,
@@ -757,7 +886,7 @@ _STYLES: tuple[Style, ...] = (
         "crossfade",
         "Equal-power crossfade of the outgoing body from the incoming bass hit (Spotify Fade).",
         "Compatible tracks when you want the smoothest possible handover.",
-        StyleParams(volume="crossfade"),
+        StyleParams(volume="crossfade", fade_shape="smooth"),
         "Fade",
         (_MIN_BLEND_BARS, 32, 16),
     ),
@@ -795,6 +924,14 @@ _STYLES: tuple[Style, ...] = (
         StyleParams(volume="overlap", swap_position="end", pre_hit_db=LULL_PRE_HIT_DB),
         None,
         (8, 32, 16),
+    ),
+    _parametric(
+        "bass_phrase_swap",
+        "Equal-power overlap with the bass hit on the incoming 4-bar boundary at phrase entry (spec 02 phrase).",
+        "When the incoming bass should land on a phrase downbeat, not the blend center.",
+        StyleParams(volume="overlap", swap_position="phrase"),
+        None,
+        (_MIN_BLEND_BARS, 32, 16),
     ),
     Style(
         name="echo_out",
@@ -848,6 +985,16 @@ _STYLES: tuple[Style, ...] = (
         when="The outgoing outro is too short for the blend you want.",
         available=False,
         unavailable_reason="amend_plan hold is not built yet; use extend before the plan starts",
+    ),
+    _parametric(
+        "three_band_fade",
+        "Overlap with lows, mids and highs crossing on successive body downbeats (Spotify Blend).",
+        "Compatible beatmatched tracks with room for a gradual three-band handover.",
+        StyleParams(volume="overlap"),
+        "Blend",
+        (12, 32, 16),
+        builder=_three_band_builder(StyleParams(volume="overlap")),
+        extra_controls=("eq_mid", "eq_high"),
     ),
 )
 

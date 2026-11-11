@@ -425,6 +425,7 @@ def suggest_next_route(
                     energy=energy_of(t),
                     played_at=now,
                     tags=tuple(t.tags or ()),
+                    title=t.title,
                 )
                 for t in session_tracks
             ],

@@ -33,6 +33,8 @@ def _load_tracks_from_json(path: Path) -> list[TrackFeature]:
             bpm=(None if row.get("bpm") is None else float(row["bpm"])),
             key_camelot=row.get("key_camelot") or row.get("key"),
             energy=(None if row.get("energy") is None else int(row["energy"])),
+            title=row.get("title"),
+            never_played=bool(row.get("never_played")),
         )
         for row in raw
     ]
@@ -172,6 +174,7 @@ def _cmd_suggest_next(args: argparse.Namespace) -> int:
                 key_camelot=row.get("key_camelot") or row.get("key"),
                 energy=row.get("energy"),
                 played_at=now,
+                title=row.get("title"),
             )
             for row in raw
         ]

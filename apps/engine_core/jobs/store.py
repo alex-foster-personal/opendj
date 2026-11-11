@@ -17,7 +17,8 @@ import logging
 import sqlite3
 import threading
 import uuid
-from collections.abc import Callable, Iterable
+from collections.abc import Callable, Iterable, Sequence
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, NamedTuple
 
@@ -81,25 +82,18 @@ CANCEL_BEFORE_SPAWN: str = "cancelled while queued; no worker was ever spawned"
 
 JOBS_TOPIC: str = "jobs.updated"
 
+ADDED_COLUMNS: tuple[str, ...] = ("stderr_tail", "outcome")
+
+
 class ActiveJob(NamedTuple):
     """One active row as a duplicate rule sees it."""
 
     id: str
-    # queued, running or cancelling: a rule may need it, because a running
-    # worker can have fixed its work list at startup (a queued one has not).
     status: str
     payload: dict[str, Any]
-    # What a started row's worker was spawned with (``record_worker``), or
-    # None while queued or before the spawn is recorded: the runner re-parses
-    # the payload at launch, so this, not the payload, is what it runs.
     worker_argv: tuple[str, ...] | None = None
 
 
-# A kind's duplicate rule: given every OTHER active row of the kind, newest
-# first, the id of the row that already does the requested work, or None. It
-# sees the whole active set at once because "already done" can need several
-# rows together (two per-track jobs whose tracks, between them, cover the
-# request).
 DuplicateRule = Callable[[list[ActiveJob]], str | None]
 
 _SCHEMA: str = f"""
@@ -122,7 +116,9 @@ CREATE TABLE IF NOT EXISTS jobs (
   worker_pgid       INTEGER,
   worker_argv       TEXT,
   worker_started_at REAL,
-  external_ref      TEXT
+  external_ref      TEXT,
+  stderr_tail       TEXT,
+  outcome           TEXT
 );
 CREATE INDEX IF NOT EXISTS jobs_status_created
   ON jobs (status, created_at);
@@ -144,16 +140,26 @@ class JobConflict(RuntimeError):
     """The row is not in a state that permits the requested transition."""
 
 
-class JobDuplicate(JobConflict):
-    """An ACTIVE row already does the work; ``existing`` is that row.
+class ActiveIdOverlap(JobConflict):
+    """A non-terminal row of this kind already owns one of the blocked ids."""
 
-    Raised by a re-enqueue whose ``conflicts`` rule named an active row, after the
-    transaction rolled back, so nothing about the re-enqueued row changed.
-    """
+    def __init__(self, job_id: str) -> None:
+        self.job_id = job_id
+        super().__init__(
+            f"an active job already owns some of these ids (job {job_id})"
+        )
+
+
+class JobDuplicate(JobConflict):
+    """An ACTIVE row already does the work; ``existing`` is that row."""
 
     def __init__(self, message: str, existing: dict[str, Any]) -> None:
         super().__init__(message)
         self.existing = existing
+
+
+def _now() -> str:
+    return datetime.now(UTC).isoformat(timespec="milliseconds")
 
 
 class JobStore:
@@ -174,6 +180,19 @@ class JobStore:
         self._conn.execute("PRAGMA foreign_keys=ON")
         with self._lock:
             self._conn.executescript(_SCHEMA)
+            self._add_missing_columns()
+
+    def _add_missing_columns(self) -> None:
+        """Columns added after a jobs.db was first created (STEM-60).
+
+        ``CREATE TABLE IF NOT EXISTS`` leaves an existing table alone, so an
+        installed app's jobs.db gains new columns only here. Additive and
+        nullable, so an older engine reading the same file is unaffected.
+        """
+        have = {row["name"] for row in self._conn.execute("PRAGMA table_info(jobs)")}
+        for name in ADDED_COLUMNS:
+            if name not in have:
+                self._conn.execute(f"ALTER TABLE jobs ADD COLUMN {name} TEXT")
 
     def close(self) -> None:
         with self._lock:
@@ -334,9 +353,22 @@ class JobStore:
         payload: dict[str, Any],
         *,
         external_ref: str | None = None,
+        block_active_ids: Sequence[str] | None = None,
     ) -> dict[str, Any]:
         with self._lock:
-            job_id = self._insert(kind, payload, external_ref)
+            if block_active_ids is None:
+                job_id = self._insert(kind, payload, external_ref)
+            else:
+                self._conn.execute("BEGIN IMMEDIATE")
+                try:
+                    self._assert_no_active_id_overlap(
+                        kind, set(block_active_ids)
+                    )
+                    job_id = self._insert(kind, payload, external_ref)
+                    self._conn.execute("COMMIT")
+                except BaseException:
+                    self._conn.execute("ROLLBACK")
+                    raise
         return self._emit(job_id)
 
     def enqueue_unless_active(
@@ -346,6 +378,7 @@ class JobStore:
         *,
         conflicts: DuplicateRule,
         external_ref: str | None = None,
+        block_active_ids: Sequence[str] | None = None,
     ) -> tuple[dict[str, Any], bool]:
         """Insert unless an ACTIVE row of ``kind`` already does this work.
 
@@ -364,6 +397,8 @@ class JobStore:
         with self._lock:
             self._conn.execute("BEGIN IMMEDIATE")
             try:
+                if block_active_ids:
+                    self._assert_no_active_id_overlap(kind, set(block_active_ids))
                 existing = self._active_duplicate(kind, conflicts, exclude=None)
                 job_id = (
                     self._insert(kind, payload, external_ref)
@@ -475,8 +510,25 @@ class JobStore:
             )
         return self._emit(job_id)
 
+    def record_stderr_tail(self, job_id: str, lines: Iterable[str]) -> None:
+        """Keep what the worker said on stderr, whatever the ending (STEM-60).
+
+        Not a status write and not gated: cancel() can own the terminal status
+        and the worker's own account of itself still belongs on the row.
+        """
+        text = "\n".join(lines)
+        with self._lock:
+            self._conn.execute(
+                "UPDATE jobs SET stderr_tail=? WHERE id=?", (text or None, job_id)
+            )
+
     def finish(
-        self, job_id: str, status: str, *, error: str | None = None
+        self,
+        job_id: str,
+        status: str,
+        *,
+        error: str | None = None,
+        outcome: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
         """Terminal write, gated on the SOURCE status being a legal one.
 
@@ -492,14 +544,84 @@ class JobStore:
             try:
                 self._assert_finishable(job_id, status)
                 self._conn.execute(
-                    "UPDATE jobs SET status=?, error=?, finished_at=? "
-                    "WHERE id=?",
-                    (status, error, utc_iso_ms(), job_id),
+                    "UPDATE jobs SET status=?, error=?, finished_at=?, "
+                    "outcome=COALESCE(?, outcome) WHERE id=?",
+                    (
+                        status,
+                        error,
+                        _now(),
+                        None if outcome is None else json.dumps(outcome, sort_keys=True),
+                        job_id,
+                    ),
                 )
                 self._conn.execute("COMMIT")
             except BaseException:
                 self._conn.execute("ROLLBACK")
                 raise
+        return self._emit(job_id)
+
+    def finish_while_running(
+        self,
+        job_id: str,
+        status: str,
+        *,
+        progress: float | None = None,
+        message: str | None = None,
+        error: str | None = None,
+        outcome: dict[str, Any] | None = None,
+    ) -> dict[str, Any] | None:
+        """Measured progress and ending, only while the row is still running.
+
+        Returns None without writing when the row has left ``running``
+        (cancel moves it to ``cancelling``, then ``cancelled``). The status
+        read and the update are one BEGIN IMMEDIATE, so a measured
+        succeeded or failed ending cannot land on that row, and cannot
+        take the terminal write cancel is about to make.
+        """
+        if status not in ("succeeded", "failed"):
+            raise ValueError(
+                f"{status!r} is not a measured ending; finish_while_running "
+                "writes succeeded or failed only"
+            )
+        outcome_json = (
+            None if outcome is None else json.dumps(outcome, sort_keys=True)
+        )
+        wrote = False
+        with self._lock:
+            self._conn.execute("BEGIN IMMEDIATE")
+            try:
+                current = str(self._row_state(job_id)["status"])
+                if current == "running":
+                    if progress is None:
+                        updated = self._conn.execute(
+                            "UPDATE jobs SET status=?, error=?, finished_at=?, "
+                            "outcome=COALESCE(?, outcome) "
+                            "WHERE id=? AND status='running'",
+                            (status, error, _now(), outcome_json, job_id),
+                        )
+                    else:
+                        updated = self._conn.execute(
+                            "UPDATE jobs SET status=?, error=?, finished_at=?, "
+                            "outcome=COALESCE(?, outcome), progress=?, message=? "
+                            "WHERE id=? AND status='running'",
+                            (
+                                status,
+                                error,
+                                _now(),
+                                outcome_json,
+                                float(progress),
+                                message,
+                                job_id,
+                            ),
+                        )
+                    self._require_measured_update(updated, job_id)
+                    wrote = True
+                self._conn.execute("COMMIT")
+            except BaseException:
+                self._conn.execute("ROLLBACK")
+                raise
+        if not wrote:
+            return None
         return self._emit(job_id)
 
     def cancel_queued(self, job_id: str) -> dict[str, Any] | None:
@@ -706,6 +828,62 @@ class JobStore:
                 "by someone else first"
             )
 
+    def _require_measured_update(self, updated: sqlite3.Cursor, job_id: str) -> None:
+        """The measured UPDATE must change the running row it just read."""
+        if updated.rowcount != 1:
+            raise RuntimeError(
+                f"job {job_id} was running and the measured update matched no row"
+            )
+
+    def _insert_queued(
+        self,
+        job_id: str,
+        kind: str,
+        encoded_payload: str,
+        created_at: str,
+        external_ref: str | None,
+    ) -> None:
+        """The queued INSERT. Callers own the surrounding transaction, if any."""
+        self._conn.execute(
+            "INSERT INTO jobs (id, kind, payload, status, created_at, "
+            "owner_pid, owner_boot_id, external_ref) "
+            "VALUES (?, ?, ?, 'queued', ?, ?, ?, ?)",
+            (
+                job_id,
+                kind,
+                encoded_payload,
+                created_at,
+                self.owner_pid,
+                self.boot_id,
+                external_ref,
+            ),
+        )
+
+    def _assert_no_active_id_overlap(self, kind: str, wanted: set[str]) -> None:
+        """Raise ActiveIdOverlap when a non-terminal row of ``kind`` owns an id.
+
+        Caller holds the write transaction. Every non-terminal row is read:
+        a capped listing would miss an older active job and insert anyway.
+        """
+        if not wanted:
+            return
+        terminal = tuple(sorted(TERMINAL_STATUSES))
+        marks = ",".join("?" * len(terminal))
+        rows = self._conn.execute(
+            "SELECT id, payload FROM jobs WHERE kind=? "
+            f"AND status NOT IN ({marks}) ORDER BY created_at DESC",
+            (kind, *terminal),
+        ).fetchall()
+        for row in rows:
+            payload = json.loads(row["payload"])
+            if not isinstance(payload, dict):
+                continue
+            existing = payload.get("stable_ids")
+            if not isinstance(existing, list):
+                continue
+            if wanted.intersection(existing):
+                raise ActiveIdOverlap(str(row["id"]))
+
     def _requeue(self, job_id: str) -> None:
         """The queued-reset UPDATE. Callers own the surrounding transaction."""
         self._conn.execute(
@@ -713,7 +891,7 @@ class JobStore:
             "error=NULL, attempt=attempt+1, started_at=NULL, "
             "finished_at=NULL, owner_pid=?, owner_boot_id=?, "
             "worker_pid=NULL, worker_pgid=NULL, worker_argv=NULL, "
-            "worker_started_at=NULL WHERE id=?",
+            "worker_started_at=NULL, stderr_tail=NULL, outcome=NULL WHERE id=?",
             (self.owner_pid, self.boot_id, job_id),
         )
 
@@ -807,6 +985,10 @@ def _decode(row: sqlite3.Row) -> dict[str, Any]:
     job["payload"] = json.loads(job["payload"])
     argv = job.get("worker_argv")
     job["worker_argv"] = json.loads(argv) if argv else None
+    outcome = job.get("outcome")
+    job["outcome"] = json.loads(outcome) if outcome else None
+    stderr_tail = job.get("stderr_tail")
+    job["stderr_tail"] = stderr_tail.split("\n") if stderr_tail else None
     return job
 
 
@@ -831,6 +1013,7 @@ __all__ = [
     "SPAWN_WINDOW_ERROR",
     "STATUSES",
     "TERMINAL_STATUSES",
+    "ActiveIdOverlap",
     "ActiveJob",
     "DuplicateRule",
     "JobConflict",

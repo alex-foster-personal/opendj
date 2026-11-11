@@ -31,7 +31,7 @@ class StyleParamsWire(_Wire):
     """AGENT-34: a parametric style's settings, as ``list_styles`` reports them."""
 
     volume: str
-    fade_shape: str
+    fade_shape: str  # legal values: ``FADE_SHAPES`` in ``apps.autodj.styles`` (equal_power, linear, smooth).
     swap_position: str | None
     filter: str | None
     stems: str | None
@@ -193,6 +193,8 @@ class TrackProfile:
     notes: tuple[str, ...] = ()
     lufs: float | None = None
     lufs_reason: str | None = None
+    dbtp: float | None = None
+    dbtp_reason: str | None = None
     transition_in_bar: int | None = None
     heard_bpm: float | None = None
     deck_pitch_range_pct: float | None = None
@@ -288,7 +290,12 @@ class TrackProfile:
             "key_segments": [segment.to_json() for segment in self.key_segments],
             "hot_cues": [cue.to_json() for cue in self.hot_cues],
             "stems_available": self.stems_available,
-            "loudness": {"lufs": self.lufs, "reason": self.lufs_reason},
+            "loudness": {
+                "lufs": self.lufs,
+                "reason": self.lufs_reason,
+                "dbtp": self.dbtp,
+                **({"dbtp_reason": self.dbtp_reason} if self.dbtp_reason is not None else {}),
+            },
             "transition_in_bar": self.transition_in_bar,
             "notes": list(self.notes),
         }

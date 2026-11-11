@@ -132,7 +132,13 @@ function install({ clipboard = 'ok', secure = true } = {}) {
 			return new Response(
 				JSON.stringify({
 					groups: [
-						{ group: 'network', items: [{ key: 'bind_host', value: '127.0.0.1' }, { key: 'hostname', value: HOSTNAME }] }
+						{
+							group: 'network',
+							items: [
+								{ key: 'bind_host', value: '127.0.0.1' },
+								{ key: 'hostname', value: HOSTNAME }
+							]
+						}
 					]
 				}),
 				{ status: 200, headers: { 'content-type': 'application/json' } }
@@ -263,8 +269,11 @@ test('the markup gives every toast a dismiss control, a copy target and hover ha
 	// no component mount infra, the same reason capability-gating-markup.test.mjs
 	// pins its facts this way. Everything testable by execution is above.
 	assert.match(TOAST_STACK, /data-toast-dismiss=\{toast\.logId\}/, 'the x needs an agent hook');
-	assert.match(TOAST_STACK, /onclick=\{\(event\) => \{\s*event\.stopPropagation\(\);\s*dismissToast\(toast\.logId\)/,
-		'the x is nested inside the copy target, so without stopPropagation dismissing also copies');
+	assert.match(
+		TOAST_STACK,
+		/onclick=\{\(event\) => \{\s*event\.stopPropagation\(\);\s*dismissToast\(toast\.logId\)/,
+		'the x is nested inside the copy target, so without stopPropagation dismissing also copies'
+	);
 	assert.match(TOAST_STACK, /onmouseenter=\{\(\) => holdToast\(toast\.logId\)\}/);
 	assert.match(TOAST_STACK, /onmouseleave=\{\(\) => releaseToast\(toast\.logId\)\}/);
 	assert.match(TOAST_STACK, /data-toast-copy=\{toast\.logId\}/);
@@ -295,6 +304,11 @@ test('a copy carries the message, the timestamp, the id and the environment', as
 	await sleep(30); // let the prefetched hostname land
 
 	const text = await stores.copyToast(toast.logId);
+	const armed = stores.peekToastCommentPinArm();
+	assert.ok(armed !== null, 'a successful copy arms the comment pin with the report');
+	assert.equal(armed.logId, toast.logId);
+	assert.equal(armed.reportText, text);
+	stores.clearToastCommentPinArm();
 
 	assert.deepEqual(clipboardWrites, [text], 'the clipboard gets exactly what was returned');
 	assert.match(text, new RegExp(`^id: ${toast.logId}$`, 'm'));
@@ -311,7 +325,11 @@ test('the copied page drops the query string it was reached with', async () => {
 	await sleep(30);
 	const text = await stores.copyToast(stores.toasts[0].logId);
 	assert.match(text, /^page: http:\/\/127\.0\.0\.1:8585\/performance$/m);
-	assert.equal(/deck=2/.test(text), false, 'a query can carry ids a report has no business republishing');
+	assert.equal(
+		/deck=2/.test(text),
+		false,
+		'a query can carry ids a report has no business republishing'
+	);
 });
 
 test('copying a toast that is gone says so rather than copying nothing', async () => {
@@ -340,10 +358,7 @@ test('a clipboard that refuses the write surfaces the refusal', async () => {
 	const stores = await loadStores();
 	stores.pushToast('refused', 'error', 5000);
 	await sleep(30);
-	await assert.rejects(
-		() => stores.copyToast(stores.toasts[0].logId),
-		/no user gesture/
-	);
+	await assert.rejects(() => stores.copyToast(stores.toasts[0].logId), /no user gesture/);
 });
 
 //-----------------------------------------------------------------------------

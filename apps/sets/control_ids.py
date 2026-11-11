@@ -1,14 +1,96 @@
-"""Stable control ids for set recording v2 (spec: (private path) via PR #10726).
+"""Stable control-event ids shared by engine, page and replay (SETREC-03/05).
 
-The engine (`apps/audio-engine/src/engine.rs`) and page each log v2 rows for
-controls they own. Mixer ids captured on the engine path are listed in
-`ENGINE_MIXER_CONTROL_IDS`; the page must not emit v2 rows for those ids when
-the command reaches the engine (SETREC-05).
+Regenerate the page module with ``uv run python -m apps.sets.control_ids --write``.
 """
 
 from __future__ import annotations
 
-from typing import Final
+import argparse
+import json
+from dataclasses import dataclass
+from pathlib import Path
+from typing import Final, Literal
+
+ControlKind = Literal["set", "trigger"]
+ControlSource = Literal["user", "controller", "agent", "replay"]
+
+_REPO_ROOT: Final[Path] = Path(__file__).resolve().parents[2]
+GENERATED_TS_REL: Final[str] = "apps/webui/frontend/src/lib/sets/control-ids.generated.ts"
+
+# 10 ms at 48 kHz; coalescing window for continuous controls (spec section 4).
+COALESCE_QUANTUM_MS: Final[float] = 10.0
+
+
+@dataclass(frozen=True, slots=True)
+class ControlSpec:
+    id: str
+    kind: ControlKind
+    continuous: bool
+    deck: int | None = None
+
+
+# Transport + tempo slice (SETREC-04); mixer/FX/loops/stems land in sibling issues.
+TRANSPORT_TEMPO_CONTROLS: Final[tuple[ControlSpec, ...]] = (
+    ControlSpec("deck.{deck}.play", "set", False),
+    ControlSpec("deck.{deck}.cue", "trigger", False),
+    ControlSpec("deck.{deck}.seek_ms", "set", False),
+    ControlSpec("deck.{deck}.tempo", "set", True),
+    ControlSpec("deck.{deck}.tempo_fader", "set", True),
+    ControlSpec("deck.{deck}.pitch_range", "set", False),
+    ControlSpec("deck.{deck}.master_tempo", "set", False),
+    ControlSpec("deck.{deck}.key_nudge", "trigger", False),
+)
+
+KNOWN_CONTROLS: Final[tuple[ControlSpec, ...]] = TRANSPORT_TEMPO_CONTROLS
+
+
+def control_id(template: str, *, deck: int) -> str:
+    return template.replace("{deck}", str(deck))
+
+
+def is_known_control(control: str) -> bool:
+    for spec in KNOWN_CONTROLS:
+        if "{deck}" in spec.id:
+            prefix = spec.id.split(".")[0] + "."
+            suffix = "." + ".".join(spec.id.split(".")[2:])
+            if control.startswith(prefix) and control.endswith(suffix):
+                mid = control[len(prefix) : -len(suffix)]
+                if mid.isdigit() and 1 <= int(mid) <= 4:
+                    return True
+        elif control == spec.id:
+            return True
+    return False
+
+
+def spec_for_control(control: str) -> ControlSpec | None:
+    for spec in KNOWN_CONTROLS:
+        if "{deck}" not in spec.id:
+            if control == spec.id:
+                return spec
+            continue
+        parts = spec.id.split(".")
+        if len(parts) < 3:
+            continue
+        prefix = f"{parts[0]}."
+        suffix = "." + ".".join(parts[2:])
+        if control.startswith(prefix) and control.endswith(suffix):
+            mid = control[len(prefix) : -len(suffix)]
+            if mid.isdigit() and 1 <= int(mid) <= 4:
+                return spec
+    return None
+
+
+def deck_from_control(control: str) -> int | None:
+    if not control.startswith("deck."):
+        return None
+    rest = control[5:]
+    deck_s, _, _ = rest.partition(".")
+    if deck_s.isdigit():
+        d = int(deck_s)
+        if 1 <= d <= 4:
+            return d
+    return None
+
 
 #: All mixer control ids the rust engine records (SETREC-05).
 ENGINE_MIXER_CONTROL_IDS: Final[frozenset[str]] = frozenset(
@@ -105,3 +187,46 @@ SCRIPTED_STEM_CONTROL_IDS: Final[tuple[str, ...]] = tuple(
     stem_mute_id(2, "vocal"),
     stem_gain_id(2, "instrumental"),
 )
+
+
+def render_typescript() -> str:
+    lines = [
+        "// GENERATED from apps/sets/control_ids.py by `uv run python -m apps.sets.control_ids --write`.",
+        "// Do not edit: change the Python registry and regenerate.",
+        "",
+        "export const CONTROL_EVENT_VERSION = 2 as const;",
+        f"export const CONTROL_COALESCE_QUANTUM_MS = {COALESCE_QUANTUM_MS};",
+        "",
+        "export type ControlKind = 'set' | 'trigger';",
+        "export type ControlSource = 'user' | 'controller' | 'agent' | 'replay';",
+        "",
+        "export const TRANSPORT_TEMPO_CONTROL_TEMPLATES = [",
+    ]
+    for index, spec in enumerate(TRANSPORT_TEMPO_CONTROLS):
+        comma = "," if index < len(TRANSPORT_TEMPO_CONTROLS) - 1 else ""
+        lines.append(f"\t'{spec.id}'{comma}")
+    lines.append("] as const;")
+    lines.append("")
+    return "\n".join(lines)
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser(description="Regenerate control id TS constants.")
+    parser.add_argument("--write", action="store_true")
+    args = parser.parse_args()
+    target = _REPO_ROOT / GENERATED_TS_REL
+    rendered = render_typescript()
+    if args.write:
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_text(rendered, encoding="utf-8")
+        print(f"[OK] wrote {GENERATED_TS_REL}")
+        return 0
+    if not target.exists() or target.read_text(encoding="utf-8") != rendered:
+        print(f"[ERROR] {GENERATED_TS_REL} is stale: run with --write", flush=True)
+        return 1
+    print(f"[OK] {GENERATED_TS_REL} matches the registry")
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

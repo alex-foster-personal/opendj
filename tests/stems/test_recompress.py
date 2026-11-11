@@ -62,6 +62,7 @@ except ImportError:
 from apps.stems import recompress as rc
 from apps.stems.artifacts import load_stem_bundle
 from apps.stems.stem_encode import encode_mp3
+from apps.cloud.stem_index import MANIFEST_FILENAME, entry_from_bundle_dir, load_cached_index, save_cached_index
 from tests.stems.recompress_support import (
     FRAMES,
     PARTS,
@@ -74,6 +75,7 @@ from tests.stems.recompress_support import (
     _publish_result,
     _snapshot,
     _source,
+    _stale_flac_index_entry,
     _the_two_flac_publishers,
 )
 
@@ -832,6 +834,62 @@ def test_the_snapshot_waits_for_a_writer_holding_the_lock(tmp_path: Path) -> Non
         )
     worker.join(timeout=60)
     assert [o.stable_id for o in outcomes] == ["snap"], "control: once released, the pass completes"
+
+
+@pytest.mark.requirement("STEM-12745")
+def test_publish_into_place_alone_does_not_refresh_the_download_index(tmp_path: Path) -> None:
+    """[if] publish_into_place lands without index record [then] cached index stays stale, [else stop]."""
+    import json
+
+    from apps.cloud.stem_index import MANIFEST_FILENAME, load_cached_index, save_cached_index
+    from scripts.stem_bundle_worker import publish_into_place
+
+    data = _data_dir(tmp_path)
+    bundle = data / "state" / "stems" / "index"
+    bundle.mkdir()
+    for part in PARTS:
+        (bundle / f"{part}.flac").write_bytes(b"stale")
+    (bundle / "manifest.json").write_text(
+        json.dumps(
+            {
+                "schema_version": 3,
+                "stable_id": "index",
+                "layout": "demucs4",
+                "files": {part: f"{part}.flac" for part in PARTS},
+                "codec": "flac",
+            }
+        )
+    )
+    stale_manifest_sha = "c" * 64
+    save_cached_index(
+        data,
+        {
+            "index": {
+                **{f"{part}.flac": "d" * 64 for part in PARTS},
+                MANIFEST_FILENAME: stale_manifest_sha,
+            }
+        },
+    )
+    tmp = data / "state" / "stems" / ".stem-index-new"
+    tmp.mkdir()
+    for part in PARTS:
+        (tmp / f"{part}.mp3").write_bytes(b"fresh")
+    (tmp / "manifest.json").write_text(
+        json.dumps(
+            {
+                "schema_version": 3,
+                "stable_id": "index",
+                "layout": "demucs4",
+                "files": {part: f"{part}.mp3" for part in PARTS},
+                "codec": "mp3",
+            }
+        )
+    )
+
+    publish_into_place(tmp, bundle)
+    cached = load_cached_index(data)["index"]
+    assert cached[MANIFEST_FILENAME] == stale_manifest_sha
+    assert all(name.endswith(".flac") for name in cached if name != MANIFEST_FILENAME)
 
 
 def test_the_local_worker_publish_waits_for_the_bundle_lock(tmp_path: Path) -> None:
@@ -2155,6 +2213,95 @@ def test_the_source_is_hashed_after_the_bundle_so_a_rewrite_during_the_bundle_ha
     with pytest.raises(rc.BundleChangedError, match="while this pass verified it"):
         rc._swap_in(new_dir, bundle, tmp_path / "backup" / "sid", fingerprint, None, lambda: None, source_bytes_unchanged=source_check)
     assert part.read_bytes() == b"odd" and not (bundle / "vocals.mp3").exists()
+
+
+# ----- STEMS-12744: live swap records the stem download index (#11411) -----
+
+
+@pytest.mark.requirement("STEMS-12744")
+def test_live_recompress_swap_updates_the_download_index(tmp_path: Path) -> None:
+    """[if] recompress_bundle swaps an MP3 bundle [then] the index matches on-disk names and manifest sha256, [else stop]."""
+    data = _data_dir(tmp_path)
+    stable_id = "mp3src"
+    bundle = _flac_bundle(data, stable_id, _source(tmp_path, "a"))
+    save_cached_index(data, {stable_id: _stale_flac_index_entry(stable_id)})
+    before_index = load_cached_index(data)
+
+    rc.recompress_bundle((rc.plan(data))[0], tmp_path / "backup")
+
+    cached = load_cached_index(data)
+    on_disk = entry_from_bundle_dir(bundle)
+    assert cached[stable_id] == on_disk
+    assert ".flac" not in "".join(cached[stable_id])
+    assert cached[stable_id][MANIFEST_FILENAME] != before_index[stable_id][MANIFEST_FILENAME]
+
+
+@pytest.mark.requirement("STEMS-12744")
+def test_stale_flac_names_in_the_cached_index_are_replaced_after_swap(tmp_path: Path) -> None:
+    """[if] the cached index lists .flac names [then] a live swap rewrites them to match disk, [else stop]."""
+    data = _data_dir(tmp_path)
+    stable_id = "flac-names"
+    _flac_bundle(data, stable_id, _source(tmp_path, "b"))
+    save_cached_index(data, {stable_id: _stale_flac_index_entry(stable_id)})
+
+    rc.recompress_bundle((rc.plan(data))[0], tmp_path / "backup")
+
+    cached = load_cached_index(data)
+    assert all(name.endswith(".mp3") for name in cached[stable_id] if name != MANIFEST_FILENAME)
+
+
+@pytest.mark.requirement("STEMS-12744")
+def test_a_failed_swap_leaves_the_stem_download_index_unchanged(tmp_path: Path) -> None:
+    """[if] before_swap raises [then] stem-bundle-index.json is not rewritten, [else stop]."""
+    data = _data_dir(tmp_path)
+    stable_id = "no-index-touch"
+    _flac_bundle(data, stable_id, _source(tmp_path, "c"))
+    stale = _stale_flac_index_entry(stable_id)
+    save_cached_index(data, {stable_id: stale})
+    (candidate,) = rc.plan(data)
+
+    def refuse() -> None:
+        raise rc.StemsJobLiveError("blocked")
+
+    with pytest.raises(rc.StemsJobLiveError):
+        rc.recompress_bundle(candidate, tmp_path / "backup", before_swap=refuse)
+
+    assert load_cached_index(data)[stable_id] == stale
+
+
+@pytest.mark.requirement("STEMS-12744")
+def test_bundle_changed_before_swap_leaves_the_download_index_unchanged(tmp_path: Path) -> None:
+    """[if] BundleChangedError stops the swap [then] the cached index stays on the pre-swap digests, [else stop]."""
+    import threading
+
+    from apps.stems import bundle_publish
+
+    data = _data_dir(tmp_path)
+    stable_id = "racing-index"
+    bundle = _long_flac_bundle(data, stable_id, tmp_path)
+    stale = _stale_flac_index_entry(stable_id)
+    save_cached_index(data, {stable_id: stale})
+    (candidate,) = rc.plan(data)
+    fresh = _publish_result(_fresh_parts(tmp_path, 8))
+
+    def publish_mid_encode() -> None:
+        _wait_for(
+            lambda: any(rc.work_parent(data / "state" / "stems").glob(f".recompress-{stable_id}-*/{stable_id}")),
+            what="the re-compress work directory",
+        )
+        bundle_publish.publish_stems_local(
+            stable_id, Path("/music/a.mp3"), fresh, bundle_publish.PRESETS["hdemucs_mmi-ov0.25"], data, requested_codec="flac"
+        )
+
+    publisher = threading.Thread(target=publish_mid_encode)
+    publisher.start()
+    try:
+        with pytest.raises(rc.BundleChangedError):
+            rc.recompress_bundle(candidate, tmp_path / "backup")
+    finally:
+        publisher.join(timeout=60)
+
+    assert load_cached_index(data)[stable_id] == stale
 
 
 def test_the_bundle_hash_reads_its_parts_through_the_shared_read_seam(tmp_path: Path) -> None:

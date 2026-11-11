@@ -79,6 +79,17 @@ class HeadphoneCalibrationProbeOut(BaseModel):
     threshold: float
 
 
+class HeadphoneCalibrationDiagnosticsOut(BaseModel):
+    """IOPIN-07 bounded calibration evidence mirrored from the page."""
+
+    probe: str
+    alternate_probe: str
+    failure: str | None
+    master_measurements_ms: list[float]
+    cue_measurements_ms: list[float]
+    spread_ms: float | None
+
+
 class HeadphoneCalibrationOut(BaseModel):
     """CUEOUT-14 calibration progress; `step` is the modal's state machine."""
 
@@ -89,6 +100,7 @@ class HeadphoneCalibrationOut(BaseModel):
     verify_residual_ms: float | None
     probe: HeadphoneCalibrationProbeOut | None
     error: str | None
+    diagnostics: HeadphoneCalibrationDiagnosticsOut | None = None
 
 
 class IoDeviceAccessOut(BaseModel):

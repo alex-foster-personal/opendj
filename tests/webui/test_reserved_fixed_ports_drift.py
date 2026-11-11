@@ -256,6 +256,7 @@ KNOWN_FIXED_PORTS: tuple[tuple[str, str, int], ...] = (
         8697,
     ),
     ("apps/desktop/mcp/smoke.ts", "const ENGINE_PORT = 8698;", 8698),
+    ("apps/desktop/electron/test/second-screen.test.ts", "'http://127.0.0.1:4723'", 4723),
     (
         "apps/webui/frontend/tests/e2e/vite.autoplay-stall-gate.config.ts",
         "export const AUTOPLAY_STALL_GATE_API_PORT = 8699;",

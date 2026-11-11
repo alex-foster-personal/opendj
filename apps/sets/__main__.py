@@ -241,7 +241,14 @@ def _build_parser() -> argparse.ArgumentParser:
 
 def _dispatch_soundcloud_export(args: argparse.Namespace) -> int:
     try:
-        export = build_soundcloud_export(args.session_id)
+        from apps.shared.state.phase08_open import default_state_db_path
+        from apps.shared.state.tracklist_hidden import hidden_stable_ids_at
+
+        hidden = hidden_stable_ids_at(default_state_db_path())
+        export = build_soundcloud_export(args.session_id, hidden_stable_ids=hidden)
+    except FileNotFoundError as exc:
+        print(str(exc), file=sys.stderr)
+        return 2
     except SessionPathError as exc:
         print(str(exc), file=sys.stderr)
         return 2

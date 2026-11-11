@@ -1,0 +1,9 @@
+{
+  "bytes": 1024,
+  "measured_main": 347188,
+  "measured_with_pr": 347400,
+  "sha": "7049b6690f",
+  "date": "Tue 10 Nov 2026",
+  "reason": "branch af--idd-e4e9ad51-issue-10717-resolve-github-issue-10717-https-github grows the library surface; measured +212 B gzip over main; ceiled to KiB.",
+  "payback": "none planned; the growth is the change's own code on this surface"
+}

@@ -435,6 +435,82 @@ test('the mixer MORE floor (+page.svelte) covers the real ChannelStrip MORE-mode
 	);
 });
 
+// LIBUX-11716
+test('the mixer compact MORE floor (+page.svelte) covers the real compact ChannelStrip MORE-mode content height', () => {
+	const { stripSrc, knobBoxPx, eqGapPx, stripFlexGapPx, stripPaddingPx } = readSharedStripNumbers();
+	const pageSrc = readFileSync(PAGE_PATH, 'utf8');
+	const mixerChromePx = readMixerChromePx();
+
+	const trimSizeMatch = firstMatch(stripSrc, /const TRIM_SIZE = (\d+(?:\.\d+)?);/, 'TRIM_SIZE');
+	const eqSizeMatch = firstMatch(stripSrc, /const COMPACT_EQ_SIZE = (\d+(?:\.\d+)?);/, 'COMPACT_EQ_SIZE');
+	firstMatch(stripSrc, /const filterSize = \$derived\(trimSize\);/, 'filterSize derived from trimSize');
+	const trimSize = Number(trimSizeMatch[1]);
+	const eqSize = Number(eqSizeMatch[1]);
+	const filterSize = trimSize;
+
+	function baseMarginPx(selector, label, side) {
+		const rule = firstMatch(
+			stripSrc,
+			new RegExp(`^\\t\\.${selector}\\s*\\{([^}]*)\\}`, 'm'),
+			`a .${selector} rule`
+		);
+		const marginMatch = firstMatch(rule[1], new RegExp(`margin-${side}:\\s*(\\d+)px`), `${label}'s MORE margin`);
+		return Number(marginMatch[1]);
+	}
+
+	const trimMarginPx = baseMarginPx('trim-slot', 'trim-slot', 'bottom');
+	const cueMarginPx = baseMarginPx('cue-btn', 'cue-btn', 'bottom');
+	const faderMarginPx = baseMarginPx('fader-slot', 'fader-slot', 'bottom');
+	const stemLabelMarginPx = baseMarginPx('stem-label', 'stem-label', 'top');
+
+	const filterSlotRule = firstMatch(stripSrc, /^\t\.filter-slot\s*\{([^}]*)\}/m, 'a .filter-slot rule');
+	const filterMarginTopMatch = firstMatch(filterSlotRule[1], /margin-top:\s*(\d+)px/, "filter-slot's margin-top");
+	const filterMarginBottomMatch = firstMatch(
+		filterSlotRule[1],
+		/margin-bottom:\s*(\d+)px/,
+		"filter-slot's margin-bottom"
+	);
+	const filterMarginPx = Number(filterMarginTopMatch[1]) + Number(filterMarginBottomMatch[1]);
+
+	const compactFaderRule = firstMatch(
+		stripSrc,
+		/\.strip\.compact \.fader-slot\s*\{([^}]*)\}/,
+		'compact fader min-height rule'
+	);
+	const faderMinPx = Number(firstMatch(compactFaderRule[1], /min-height:\s*(\d+)px/, 'compact fader min-height')[1]);
+
+	const CHILD_COUNT_MORE = 8;
+	const flexGapsTotalPx = (CHILD_COUNT_MORE - 1) * stripFlexGapPx;
+
+	const stripContentPx =
+		Math.max(CH_NUM_PX, CAL_CONTROLS_PX) +
+		(knobBoxPx(trimSize) + trimMarginPx) +
+		(3 * knobBoxPx(eqSize) + 2 * eqGapPx) +
+		(knobBoxPx(filterSize) + filterMarginPx) +
+		(CUE_BTN_PX + cueMarginPx) +
+		(faderMinPx + faderMarginPx) +
+		(STEM_LABEL_PX + stemLabelMarginPx) +
+		STEM_SLOT_PX +
+		flexGapsTotalPx +
+		stripPaddingPx;
+
+	const requiredMixerPx = TOGGLE_PX + stripContentPx + LOWER_PX + mixerChromePx;
+
+	const compactFloorMatch = firstMatch(
+		pageSrc,
+		/\.perf-root\.rb-compact-decks:not\(\.deck-layout-less\)\s*\{[\s\S]*?minmax\(\s*(\d+)px,/,
+		'compact deck-area minmax floor'
+	);
+	const compactFloorPx = Number(compactFloorMatch[1]);
+
+	assert.ok(
+		compactFloorPx >= requiredMixerPx,
+		`+page.svelte's compact MORE deck-area floor (${compactFloorPx}px) must be >= the mixer's compact ` +
+			`MORE-mode content requirement (${requiredMixerPx}px = toggle ${TOGGLE_PX} + strip ${stripContentPx} ` +
+			`+ lower ${LOWER_PX} + chrome ${mixerChromePx}), or EQ/FILTER/fader controls clip`
+	);
+});
+
 test('the MORE/LESS toggle is compact (pin 246b0f5: "toggle is too big ... pushing EQs down")', () => {
 	const src = readFileSync(MIXER_PATH, 'utf8');
 	// The S button joined MORE/LESS on one row (Mon 2 Nov 2026); that row carries the padding.

@@ -23,6 +23,8 @@ import { loadTypeScriptModule } from './load-typescript.mjs';
 
 const STREAMING_REFUSAL = "Streaming track: Open DJ can't play streaming services";
 const BROKEN_REFUSAL = 'cannot load: audio file missing on disk (broken link)';
+const CLOUD_POLICY_REFUSAL =
+	'Cloud audio is not set up on this machine, so this track cannot be fetched.';
 
 let wire;
 let contract;
@@ -97,6 +99,45 @@ describe('listRowIsStreaming', () => {
 		]) {
 			assert.equal(wire.listRowIsStreaming(status), null, String(status));
 		}
+	});
+});
+
+describe('deck_load_refusal from the listing wire', () => {
+	it('marks a streaming wire row unavailable before load', () => {
+		const row = listRow({
+			file_availability: 'streaming',
+			file_exists: false,
+			deck_load_refusal: 'streaming'
+		});
+		assert.equal(wire.rowRendersUnavailable(row), true);
+		assert.equal(wire.libraryAudioLoadRefusal(row), STREAMING_REFUSAL);
+		assert.equal(refusal.trackDragRefusal(row), STREAMING_REFUSAL);
+	});
+
+	it('refuses remote-only rows when cloud audio policy is missing', () => {
+		const row = listRow({
+			file_availability: 'absent',
+			file_exists: false,
+			is_remote: true,
+			has_remote_copy: true,
+			deck_load_refusal: 'cloud_policy_unconfigured'
+		});
+		assert.equal(wire.rowRendersUnavailable(row), true);
+		assert.equal(wire.libraryAudioLoadRefusal(row), CLOUD_POLICY_REFUSAL);
+		assert.equal(refusal.trackDragRefusal(row), CLOUD_POLICY_REFUSAL);
+		assert.deepEqual(contract.filterRows([row], '', true), []);
+	});
+
+	it('a selectable remote row stays visible when deck_load_refusal is null', () => {
+		const row = listRow({
+			file_availability: 'absent',
+			file_exists: false,
+			is_remote: true,
+			has_remote_copy: true,
+			deck_load_refusal: null
+		});
+		assert.equal(wire.rowRendersUnavailable(row), false);
+		assert.equal(wire.libraryAudioLoadRefusal(row), BROKEN_REFUSAL);
 	});
 });
 

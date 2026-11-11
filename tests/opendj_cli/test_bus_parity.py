@@ -24,6 +24,7 @@ import re
 import pytest
 
 from apps.opendj_cli.catalog import RAMPABLE_TYPES, VERBS, Expectation
+from apps.opendj_cli.confirm import checks_for, verdict
 from apps.opendj_cli.orders import parse_script
 from apps.opendj_cli.verbs import (
     DURATION_ANCHORS,
@@ -41,7 +42,7 @@ _SAMPLE_TOKENS = (
     "1", "8", "true", "false", "0.5", "sample", "0 1000", "1:5000",
     "A", "bad", "beat", "low", "next", "top", "vocal",
     "beatgrid", "own", "practice", "hybrid", "pickup", "tri-band", "mono-dev", "mono", "auto", "ai",
-    "phase-meter", "smooth", "in", "elastic", "tone", "sections", "space", "stems", "exact", "move", "halo",
+    "phase-meter", "smooth", "in", "elastic", "tone", "sections", "space", "stems", "exact", "move", "halo", "half",
     "performance", "browser.tree", "300", "open", "second-screen", "bars", "beats_bars", "grid_lines", "off",
 )
 
@@ -98,6 +99,38 @@ def test_set_waveform_overlay_rejects_an_unknown_grid_value_and_keeps_the_switch
     assert parse_invocation(["set_waveform_overlay", "sections", "true"]).command == {
         "type": "set_waveform_overlay", "overlay": "sections", "enabled": True,
     }
+
+
+@pytest.mark.requirement("PLAYLIST-12709")
+@pytest.mark.parametrize(
+    ("tokens", "expected"),
+    [
+        (["browser_select_playlist", "inbox"], {"type": "browser_select_playlist", "playlist_id": "inbox"}),
+        (
+            ["browser_select_playlist", "all", "fixture:1"],
+            {"type": "browser_select_playlist", "playlist_id": "all", "stable_id": "fixture:1"},
+        ),
+    ],
+)
+def test_browser_select_playlist_builds_the_bus_command(
+    tokens: list[str], expected: dict[str, str],
+) -> None:
+    """[if] a valid playlist id is given [then] the bus command carries that id, [else stop]."""
+    assert parse_invocation(tokens).command == expected
+
+
+@pytest.mark.requirement("PLAYLIST-12709")
+def test_catalog_observe_and_verdict_against_browser_playlist_mirror() -> None:
+    """[if] selection succeeds [then] mirror playlist confirms, [else stop]."""
+    verb = VERBS["browser_select_playlist"]
+    command = parse_invocation(["browser_select_playlist", "inbox"]).command
+    checks = checks_for(verb, command)
+    assert len(checks) == 1
+    assert checks[0].path == ("browser", "playlist")
+    assert checks[0].expected == "inbox"
+    assert verdict(checks, {"browser": {"playlist": "inbox"}})[0] == "confirmed"
+    assert verdict(checks, {"browser": {"playlist": "other"}})[0] == "unconfirmed"
+    assert verdict(checks, {})[0] == "unconfirmed"
 
 
 @pytest.mark.parametrize("verb", ["loop_in", "loop_out", "reloop"])
@@ -234,8 +267,39 @@ def test_set_waveform_design_builds_the_bus_command() -> None:
         "type": "set_waveform_design",
         "design": "tri-band",
     }
-    with pytest.raises(InvocationError, match="tri-band\\|mono\\|line\\|blocks"):
+    assert parse_invocation(["set_waveform_design", "height=half"]).command == {
+        "type": "set_waveform_design",
+        "height": "half",
+    }
+    assert parse_invocation(["set_waveform_design", "tri-band", "half"]).command == {
+        "type": "set_waveform_design",
+        "design": "tri-band",
+        "height": "half",
+    }
+    assert parse_invocation(["set_waveform_design", "rgb"]).command == {
+        "type": "set_waveform_design",
+        "design": "rgb",
+    }
+    with pytest.raises(InvocationError, match="tri-band\\|mono\\|line\\|blocks\\|rgb"):
         parse_invocation(["set_waveform_design", "rainbow"])
+    with pytest.raises(InvocationError, match="full\\|half"):
+        parse_invocation(["set_waveform_design", "height=quarter"])
+
+
+def test_set_waveform_overlay_vocal_lane_builds_the_bus_command() -> None:
+    """[if] set_waveform_overlay vocal_lane is missing [then] agents cannot hide vocal bars, [else stop]."""
+    assert parse_invocation(["set_waveform_overlay", "vocal_lane", "off"]).command == {
+        "type": "set_waveform_overlay",
+        "overlay": "vocal_lane",
+        "enabled": False,
+    }
+    assert parse_invocation(["set_waveform_overlay", "vocal_lane", "on"]).command == {
+        "type": "set_waveform_overlay",
+        "overlay": "vocal_lane",
+        "enabled": True,
+    }
+    with pytest.raises(InvocationError):
+        parse_invocation(["set_waveform_overlay", "vocal", "off"])
 
 
 def test_wave_eq_reflect_builds_the_bus_command() -> None:
@@ -372,6 +436,30 @@ def test_a_deck_field_the_mirror_withholds_is_reported_absent() -> None:
     published = ts_contract.mirror_deck_keys()
     assert "stable_id" in published, "the reader cannot see a key that is there"
     assert "is_master" not in published, "the reader cannot say a key is absent"
+
+
+def test_the_mirror_publishes_every_browser_key_a_verb_observes() -> None:
+    """An observation of a browser path the mirror omits can never affirm anything."""
+    published = ts_contract.mirror_browser_keys()
+    observed = {
+        observe.path[1]
+        for verb in VERBS.values()
+        for observe in verb.observes
+        if len(observe.path) >= 2 and observe.path[0] == "browser"
+    }
+    assert observed, "no browser observations found; this check would pass vacuously"
+    missing = sorted(observed - published)
+    assert not missing, (
+        f"verbs observe browser keys buildUiMirror does not publish: {missing}. "
+        "Publish them in ui-mirror.ts or stop observing them."
+    )
+
+
+def test_a_browser_field_the_mirror_withholds_is_reported_absent() -> None:
+    """The negative control for the browser mirror reader."""
+    published = ts_contract.mirror_browser_keys()
+    assert "playlist" in published, "the reader cannot see a key that is there"
+    assert "active_playlist" not in published, "the reader cannot say a key is absent"
 
 
 def test_the_mirror_publishes_the_clock_the_cli_sizes_a_ramp_from() -> None:

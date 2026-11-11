@@ -46,7 +46,8 @@ export type TrackSource = 'collection' | 'playlist' | 'usb' | 'readonly-import';
 /** Local audio as the listing reports it (FileAvailabilityStatus, bucketed). */
 /** OFFLOAD: `offloaded` is in the cloud on purpose (a deck load downloads it first);
  * `temporary` is back for 24 h and goes to the cloud again after (spec e8da14b8). */
-export type TrackAudio = 'present' | 'missing' | 'streaming' | 'offloaded' | 'temporary';
+export type TrackAudio =
+	'present' | 'missing' | 'streaming' | 'offloaded' | 'temporary' | 'cloud_unconfigured';
 
 /** The context each target kind is resolved against. Every field is a finite
  * domain, so the permutation harness can enumerate it. */
@@ -57,6 +58,8 @@ export interface MenuContextByKind {
 		source: TrackSource;
 		audio: TrackAudio;
 		stems: 'none' | 'ready';
+		/** NOWP-11487: whether the right-clicked row is hidden from tracklists. */
+		tracklistHidden: 'shown' | 'hidden';
 		/** LIBWS-03: Library mode has no decks and starts no workers. */
 		workspace: 'performance' | 'library';
 	};
@@ -220,13 +223,16 @@ const NO_LOCAL_AUDIO: Record<TrackAudio, string | null> = {
 	missing: 'the audio file is missing - use Relocate first',
 	streaming: 'streaming track - there is no local audio file',
 	offloaded: 'offloaded to the cloud - use Download for 24h first',
-	temporary: null
+	temporary: null,
+	cloud_unconfigured: 'Cloud audio is not set up on this machine, so this track cannot be fetched.'
 };
 
 /** OFFLOAD menu rules: Spotify / Apple Music "Download / Remove download", mimicked. */
 function offloadDisabled(ctx: { audio: TrackAudio; selection: 'one' | 'many' }): string | null {
 	if (ctx.audio === 'streaming' || ctx.audio === 'missing') return NO_LOCAL_AUDIO[ctx.audio];
-	return ctx.audio === 'offloaded' && ctx.selection === 'one' ? 'already offloaded to the cloud' : null;
+	return ctx.audio === 'offloaded' && ctx.selection === 'one'
+		? 'already offloaded to the cloud'
+		: null;
 }
 
 function restoreDisabled(ctx: { audio: TrackAudio; selection: 'one' | 'many' }): string | null {
@@ -244,18 +250,24 @@ function plural(count: number): string {
 	return count === 1 ? '1 track' : `${count} tracks`;
 }
 
+/** Deck load is refused only when audio cannot be resolved here (issue #11290). */
+function loadDeckDisabled(ctx: { audio: TrackAudio }): string | null {
+	if (ctx.audio === 'missing' || ctx.audio === 'streaming' || ctx.audio === 'cloud_unconfigured') {
+		return NO_LOCAL_AUDIO[ctx.audio];
+	}
+	return null;
+}
+
 const TRACK_MENU: MenuContribution<'track'>[] = [
-	...DECKS.map(
-		(deck): MenuContribution<'track'> => ({
-			id: `load-${deck}`,
-			label: `Load to deck ${deck}`,
-			command: 'deck.load',
-			// LIBWS-06: in Library mode the load opens Gig with the track on that deck.
-			disabledWhen: (ctx) => (ctx.audio === 'missing' ? NO_LOCAL_AUDIO.missing : null),
-			title: () => `opendj load ${deck} {stable_id}`,
-			testId: () => `context-menu-load-deck-${deck}`
-		})
-	),
+	...DECKS.map((deck): MenuContribution<'track'> => ({
+		id: `load-${deck}`,
+		label: `Load to deck ${deck}`,
+		command: 'deck.load',
+		// LIBWS-06: in Library mode the load opens Gig with the track on that deck.
+		disabledWhen: loadDeckDisabled,
+		title: () => `opendj load ${deck} {stable_id}`,
+		testId: () => `context-menu-load-deck-${deck}`
+	})),
 	{
 		id: 'track-info',
 		label: 'Track info',
@@ -280,21 +292,14 @@ const TRACK_MENU: MenuContribution<'track'>[] = [
 	{ id: 'find-replace', label: 'Find/replace', command: 'track.edit', when: writable },
 	{ id: 'add-tag', label: 'Add tag...', command: 'track.edit', when: writable },
 	{ id: 'mytag', label: 'My Tag editor', command: 'track.edit', when: writable },
-	...[0, 1, 2, 3, 4, 5].map(
-		(n): MenuContribution<'track'> => ({
-			id: `rate-${n}`,
-			label:
-				n === 0
-					? 'Rating: none'
-					: n === 1
-						? 'Rating: 1 star'
-						: `Rating: ${n} stars`,
-			command: 'track.edit',
-			when: writable,
-			title: () => `PATCH /api/v1/tracks/{stable_id} {"rating": ${n}}`,
-			testId: () => `context-menu-rate-${n}`
-		})
-	),
+	...[0, 1, 2, 3, 4, 5].map((n): MenuContribution<'track'> => ({
+		id: `rate-${n}`,
+		label: n === 0 ? 'Rating: none' : n === 1 ? 'Rating: 1 star' : `Rating: ${n} stars`,
+		command: 'track.edit',
+		when: writable,
+		title: () => `PATCH /api/v1/tracks/{stable_id} {"rating": ${n}}`,
+		testId: () => `context-menu-rate-${n}`
+	})),
 	{
 		id: 'colour',
 		label: 'Colour',
@@ -312,6 +317,15 @@ const TRACK_MENU: MenuContribution<'track'>[] = [
 		disabledWhen: oneTrackOnly,
 		title: () => 'opendj track comment {stable_id} set <text>',
 		testId: () => 'context-menu-edit-comment'
+	},
+	{
+		id: 'tracklist-hidden',
+		label: (_t, ctx) =>
+			ctx.tracklistHidden === 'hidden' ? 'Show in tracklists' : 'Hide in tracklists',
+		command: 'track.tracklist_hidden',
+		when: writable,
+		title: () => 'opendj track hide-in-tracklists {stable_id} on|off',
+		testId: () => 'context-menu-tracklist-hidden'
 	},
 	{
 		id: 'relocate',
@@ -340,7 +354,8 @@ const TRACK_MENU: MenuContribution<'track'>[] = [
 		command: 'track.related',
 		when: writable,
 		disabledWhen: (ctx) =>
-			oneTrackOnly(ctx) ?? 'no related-tracks list yet - the similar-tracks route has no view to show it in',
+			oneTrackOnly(ctx) ??
+			'no related-tracks list yet - the similar-tracks route has no view to show it in',
 		testId: () => 'context-menu-related-tracks'
 	},
 	{
@@ -352,7 +367,8 @@ const TRACK_MENU: MenuContribution<'track'>[] = [
 	},
 	{
 		id: 'offload',
-		label: (target) => (target.count > 1 ? `Offload ${plural(target.count)} to cloud` : 'Offload to cloud'),
+		label: (target) =>
+			target.count > 1 ? `Offload ${plural(target.count)} to cloud` : 'Offload to cloud',
 		command: 'track.offload',
 		when: writable,
 		disabledWhen: offloadDisabled,
@@ -387,7 +403,9 @@ const TRACK_MENU: MenuContribution<'track'>[] = [
 	{
 		id: 'stems-generate',
 		label: (_target, ctx) =>
-			ctx.stems === 'ready' && ctx.selection === 'one' ? 'Stems: regenerate next' : 'Stems: do next',
+			ctx.stems === 'ready' && ctx.selection === 'one'
+				? 'Stems: regenerate next'
+				: 'Stems: do next',
 		command: 'track.library_job',
 		when: startsWorker,
 		disabledWhen: (ctx) => NO_LOCAL_AUDIO[ctx.audio]
@@ -405,13 +423,16 @@ const TRACK_MENU: MenuContribution<'track'>[] = [
 		// alignment; aligned pairs come from the top-bar Create pairing sheet,
 		// which captures them from two loaded decks.
 		id: 'pair',
-		label: (target) => (target.rows === 2 && target.count === 2 ? 'Pair these 2 tracks' : 'Pair tracks'),
+		label: (target) =>
+			target.rows === 2 && target.count === 2 ? 'Pair these 2 tracks' : 'Pair tracks',
 		command: 'track.pair',
 		when: (ctx) => writable(ctx) && ctx.selection === 'many',
 		disabledWhen: (_ctx, target) => {
 			if (target.rows !== 2) return 'pairs exactly 2 tracks - select two rows';
 			// Two rows of one track cannot pair: runPairTracks needs two distinct ids.
-			return target.count === 2 ? null : 'pairs 2 different tracks - the selected rows are duplicates';
+			return target.count === 2
+				? null
+				: 'pairs 2 different tracks - the selected rows are duplicates';
 		},
 		testId: () => 'context-menu-pair'
 	},
@@ -451,7 +472,9 @@ const TRACK_MENU: MenuContribution<'track'>[] = [
 ];
 
 /** The two "New ..." items apply to every tree target; they ignore the context. */
-function newItems<K extends 'playlists-root' | 'playlist' | 'playlist-folder' | 'smartlist'>(): MenuContribution<K>[] {
+function newItems<
+	K extends 'playlists-root' | 'playlist' | 'playlist-folder' | 'smartlist'
+>(): MenuContribution<K>[] {
 	return [
 		{ id: 'new-playlist', label: 'New playlist', command: 'playlist.create' },
 		{ id: 'new-smartlist', label: 'New smartlist', command: 'smartlist.create' }
@@ -477,15 +500,13 @@ const emptyDeck = (ctx: MenuContextByKind['deck'], target: TargetOf<'deck'>): st
 export const MENU_CONTRIBUTIONS: { [K in MenuTargetKind]: MenuContribution<K>[] } = {
 	track: TRACK_MENU,
 	'track-chip': [
-		...DECKS.map(
-			(deck): MenuContribution<'track-chip'> => ({
-				id: `load-${deck}`,
-				label: `Load to CH${deck}`,
-				command: 'deck.load',
-				disabledWhen: (ctx) => (ctx.audio === 'missing' ? NO_LOCAL_AUDIO.missing : null),
-				testId: () => `quick-draw-load-ch${deck}`
-			})
-		),
+		...DECKS.map((deck): MenuContribution<'track-chip'> => ({
+			id: `load-${deck}`,
+			label: `Load to CH${deck}`,
+			command: 'deck.load',
+			disabledWhen: (ctx) => NO_LOCAL_AUDIO[ctx.audio],
+			testId: () => `quick-draw-load-ch${deck}`
+		})),
 		{
 			// Expanded by the host into one item per stem tier (INSTALL-32).
 			id: 'stems-tiers',
@@ -556,7 +577,12 @@ export const MENU_CONTRIBUTIONS: { [K in MenuTargetKind]: MenuContribution<K>[] 
 			command: 'section.add',
 			when: (ctx) => ctx.editable
 		},
-		{ id: 'remove-divider', label: 'Remove divider', command: 'section.delete', when: (ctx) => ctx.editable }
+		{
+			id: 'remove-divider',
+			label: 'Remove divider',
+			command: 'section.delete',
+			when: (ctx) => ctx.editable
+		}
 	],
 	smartlist: [
 		...newItems<'smartlist'>(),
@@ -660,28 +686,24 @@ export const MENU_CONTRIBUTIONS: { [K in MenuTargetKind]: MenuContribution<K>[] 
 			command: 'deck.slip',
 			checked: (ctx) => ctx.slip
 		},
-		...DECKS.map(
-			(n): MenuContribution<'deck'> => ({
-				id: `move-to-${n}`,
-				label: `Move track to deck ${n}`,
-				command: 'deck.move',
-				when: (_ctx, target) => target.deck !== n,
-				disabledWhen: emptyDeck
-			})
-		),
-		...DECKS.map(
-			(n): MenuContribution<'deck'> => ({
-				id: `double-from-${n}`,
-				label: `Instant double from deck ${n}`,
-				command: 'deck.instant_double',
-				when: (_ctx, target) => target.deck !== n,
-				disabledWhen: (ctx, target) => {
-					if (!ctx.otherLoaded.includes(n)) return `CH${n} is empty`;
-					if (ctx.playing) return `CH${target.deck} is playing - pause it before doubling onto it`;
-					return null;
-				}
-			})
-		),
+		...DECKS.map((n): MenuContribution<'deck'> => ({
+			id: `move-to-${n}`,
+			label: `Move track to deck ${n}`,
+			command: 'deck.move',
+			when: (_ctx, target) => target.deck !== n,
+			disabledWhen: emptyDeck
+		})),
+		...DECKS.map((n): MenuContribution<'deck'> => ({
+			id: `double-from-${n}`,
+			label: `Instant double from deck ${n}`,
+			command: 'deck.instant_double',
+			when: (_ctx, target) => target.deck !== n,
+			disabledWhen: (ctx, target) => {
+				if (!ctx.otherLoaded.includes(n)) return `CH${n} is empty`;
+				if (ctx.playing) return `CH${target.deck} is playing - pause it before doubling onto it`;
+				return null;
+			}
+		})),
 		{
 			id: 'find-in-library',
 			label: 'Find in library',
@@ -724,7 +746,8 @@ export const MENU_CONTRIBUTIONS: { [K in MenuTargetKind]: MenuContribution<K>[] 
 			command: 'hot_cue.save',
 			disabledWhen: (ctx, target) => {
 				if (!ctx.loaded) return `CH${target.deck} is empty`;
-				if (ctx.moveLoses === 'loop') return `cue ${target.slot} is a loop - moving it would turn it into a point cue`;
+				if (ctx.moveLoses === 'loop')
+					return `cue ${target.slot} is a loop - moving it would turn it into a point cue`;
 				if (ctx.moveLoses === 'color') return `moving cue ${target.slot} would drop its color`;
 				return null;
 			}
@@ -760,17 +783,15 @@ export const MENU_CONTRIBUTIONS: { [K in MenuTargetKind]: MenuContribution<K>[] 
 			},
 			testId: () => 'quick-draw-transition-in'
 		},
-		...DECKS.map(
-			(deck): MenuContribution<'waveform'> => ({
-				// AGENT-50: plan a transition leaving this track near the click, into the named deck.
-				id: `transition-out-${deck}`,
-				label: `Transition out around here to CH${deck}`,
-				command: 'deck.transition_out_here',
-				when: (ctx, target) => ctx.loaded && target.deck !== deck && ctx.outTargets.includes(deck),
-				disabledWhen: (ctx) => (ctx.cueAt === 'position' ? null : 'no track time under the pointer'),
-				testId: () => `quick-draw-transition-out-${deck}`
-			})
-		),
+		...DECKS.map((deck): MenuContribution<'waveform'> => ({
+			// AGENT-50: plan a transition leaving this track near the click, into the named deck.
+			id: `transition-out-${deck}`,
+			label: `Transition out around here to CH${deck}`,
+			command: 'deck.transition_out_here',
+			when: (ctx, target) => ctx.loaded && target.deck !== deck && ctx.outTargets.includes(deck),
+			disabledWhen: (ctx) => (ctx.cueAt === 'position' ? null : 'no track time under the pointer'),
+			testId: () => `quick-draw-transition-out-${deck}`
+		})),
 		DECK_UNLOAD as MenuContribution<'waveform'>,
 		DECK_EXIT_LOOP as MenuContribution<'waveform'>
 	],
@@ -799,14 +820,12 @@ export const MENU_CONTRIBUTIONS: { [K in MenuTargetKind]: MenuContribution<K>[] 
 			command: 'mixer.auto_gain',
 			disabledWhen: (ctx) => autoGainResetReason(ctx.autoGain, ctx.trimUnity)
 		},
-		...(['A', 'B', 'THRU'] as const).map(
-			(assign): MenuContribution<'mixer-channel'> => ({
-				id: `assign-${assign.toLowerCase()}`,
-				label: assign === 'THRU' ? 'Crossfader: thru' : `Crossfader: ${assign}`,
-				command: 'mixer.assign',
-				checked: (ctx) => ctx.assign === assign
-			})
-		)
+		...(['A', 'B', 'THRU'] as const).map((assign): MenuContribution<'mixer-channel'> => ({
+			id: `assign-${assign.toLowerCase()}`,
+			label: assign === 'THRU' ? 'Crossfader: thru' : `Crossfader: ${assign}`,
+			command: 'mixer.assign',
+			checked: (ctx) => ctx.assign === assign
+		}))
 	],
 	'mixer-control': [
 		{
@@ -832,23 +851,22 @@ export const MENU_CONTRIBUTIONS: { [K in MenuTargetKind]: MenuContribution<K>[] 
 				{ control: 'crossfader', id: 'reset-crossfader', command: 'mixer.crossfader' },
 				{ control: 'stem', id: 'reset-stem', command: 'stem.gain' }
 			] as const
-		).map(
-			({ control, id, command }): MenuContribution<'mixer-control'> => ({
-				id,
-				label: (target) => `Reset ${target.label} to default`,
-				command,
-				when: (ctx) => ctx.control === control,
-				disabledWhen: (ctx, target) =>
-					ctx.value === 'default' ? `${target.label} is already at its default` : null,
-				testId: () => 'quick-draw-control-reset'
-			})
-		),
+		).map(({ control, id, command }): MenuContribution<'mixer-control'> => ({
+			id,
+			label: (target) => `Reset ${target.label} to default`,
+			command,
+			when: (ctx) => ctx.control === control,
+			disabledWhen: (ctx, target) =>
+				ctx.value === 'default' ? `${target.label} is already at its default` : null,
+			testId: () => 'quick-draw-control-reset'
+		})),
 		{
 			id: 'eq-kill',
 			label: (target) => `Kill ${target.label}`,
 			command: 'mixer.eq',
 			when: (ctx) => ctx.control === 'eq',
-			disabledWhen: (ctx, target) => (ctx.value === 'cut' ? `${target.label} is already cut` : null),
+			disabledWhen: (ctx, target) =>
+				ctx.value === 'cut' ? `${target.label} is already cut` : null,
 			testId: () => 'quick-draw-eq-kill'
 		},
 		{
@@ -866,7 +884,8 @@ export const MENU_CONTRIBUTIONS: { [K in MenuTargetKind]: MenuContribution<K>[] 
 			label: (target) => `Mute ${STEM_NAMES[target.stem]}`,
 			command: 'stem.mute',
 			checked: (ctx) => ctx.muted,
-			disabledWhen: (ctx, target) => stemLaneActionReason(ctx.loaded, ctx.stems, ctx.available, target.deck, target.stem),
+			disabledWhen: (ctx, target) =>
+				stemLaneActionReason(ctx.loaded, ctx.stems, ctx.available, target.deck, target.stem),
 			testId: () => 'quick-draw-stem-mute'
 		},
 		{
@@ -874,7 +893,8 @@ export const MENU_CONTRIBUTIONS: { [K in MenuTargetKind]: MenuContribution<K>[] 
 			label: (target) => `Solo ${STEM_NAMES[target.stem]}`,
 			command: 'stem.solo',
 			checked: (ctx) => ctx.solo,
-			disabledWhen: (ctx, target) => stemLaneActionReason(ctx.loaded, ctx.stems, ctx.available, target.deck, target.stem),
+			disabledWhen: (ctx, target) =>
+				stemLaneActionReason(ctx.loaded, ctx.stems, ctx.available, target.deck, target.stem),
 			testId: () => 'quick-draw-stem-solo'
 		},
 		{
@@ -912,16 +932,14 @@ export const MENU_CONTRIBUTIONS: { [K in MenuTargetKind]: MenuContribution<K>[] 
 		}
 	],
 	'perf-empty': [
-		...DECKS.map(
-			(deck): MenuContribution<'perf-empty'> => ({
-				id: `load-selected-${deck}`,
-				label: `Load selection to CH${deck}`,
-				command: 'deck.load',
-				disabledWhen: (ctx) =>
-					ctx.browser ? null : 'the track browser is not open - there is no selection to load',
-				testId: () => `quick-draw-load-selected-ch${deck}`
-			})
-		),
+		...DECKS.map((deck): MenuContribution<'perf-empty'> => ({
+			id: `load-selected-${deck}`,
+			label: `Load selection to CH${deck}`,
+			command: 'deck.load',
+			disabledWhen: (ctx) =>
+				ctx.browser ? null : 'the track browser is not open - there is no selection to load',
+			testId: () => `quick-draw-load-selected-ch${deck}`
+		})),
 		...(['waveform', 'list', 'phase-scope', 'phase-meter'] as const).map(
 			(view): MenuContribution<'perf-empty'> => ({
 				id: `view-${view}`,
@@ -973,13 +991,20 @@ export function trackAudioOf(row: {
 	file_availability?: string | null;
 	file_exists?: boolean | null;
 	is_streaming?: boolean | null;
+	deck_load_refusal?: 'streaming' | 'cloud_policy_unconfigured' | null;
 	offload?: { state: string } | null | undefined;
 }): TrackAudio {
 	const offload = row.offload?.state;
 	if (offload === 'offloaded' || offload === 'restoring') return 'offloaded';
 	if (offload === 'temporary') return 'temporary';
+	if (row.deck_load_refusal === 'cloud_policy_unconfigured') return 'cloud_unconfigured';
+	if (row.deck_load_refusal === 'streaming') return 'streaming';
 	const availability = row.file_availability ?? '';
-	if (row.is_streaming === true || availability === 'streaming' || availability.endsWith('-streaming')) {
+	if (
+		row.is_streaming === true ||
+		availability === 'streaming' ||
+		availability.endsWith('-streaming')
+	) {
 		return 'streaming';
 	}
 	if (availability === 'absent' || row.file_exists === false) return 'missing';

@@ -13,6 +13,7 @@ from typing import Any
 import pytest
 
 from apps.database import regenerate_agents_md_if_writable
+from apps.shared.agents_md import generator as agents_md_generator
 from apps.database.generate_agents_md import (
     GENERATOR_VERSION,
     ForeignAgentsMdError,
@@ -115,18 +116,10 @@ def test_regenerate_raises_on_undocumented_table(tmp_path: Path) -> None:
         conn.close()
 
 
+@pytest.mark.requirement("LIBM-12644")
 def test_open_rw_propagates_missing_column_docs_error_on_reopen(tmp_path: Path) -> None:
-    """if reopen hits a docs gap on an owned table then open_rw raises - broken
-
-    Doubles as the cache-vs-drift-guard regression test for issue #4015: the
-    ALTER TABLE below never touches ``schema.SCHEMA_VERSION`` or
-    ``owned_tables``, so if the AGENTS.md cache marker were keyed on the
-    app's own schema version instead of sqlite's ``PRAGMA schema_version``,
-    this reopen would hit the marker cache, skip regeneration entirely, and
-    this test would go from "raises" to "silently reuses the stale file" --
-    which is exactly the regression the first draft of this fix introduced
-    and this test caught.
-    """
+    """[if] an owned column lacks docs [then] open_rw raises MissingColumnDocsError, [else stop]."""
+    # Cache marker uses PRAGMA schema_version, not app SCHEMA_VERSION (#4015).
     db_path = tmp_path / "state.db"
     conn = open_rw(db_path)
     conn.execute("ALTER TABLE tracks ADD COLUMN totally_fake_injected_column TEXT")
@@ -251,8 +244,9 @@ def test_open_rw_replaces_generated_agents_md_sidecar(tmp_path: Path) -> None:
     assert "## `tracks`" in text
 
 
+@pytest.mark.requirement("LIBM-12644")
 def test_open_rw_keeps_foreign_authority_tables_in_agents_md(tmp_path: Path) -> None:
-    """if launcher_meta exists then open_rw documents it instead of dropping it - broken"""
+    """[if] sqlite schema changes between opens [then] open_rw regenerates AGENTS.md, [else stop]."""
     db_path = tmp_path / "state.db"
     conn = open_rw(db_path)
     conn.execute(
@@ -575,8 +569,9 @@ def test_open_rw_survives_eio_on_agents_md_replace(
         check.close()
 
 
+@pytest.mark.requirement("LIBM-12644")
 def test_open_rw_reopen_on_unchanged_schema_skips_regeneration(tmp_path: Path) -> None:
-    """if schema and owned tables are unchanged then a reopen does not rewrite AGENTS.md - broken"""
+    """[if] open_rw reruns on unchanged schema [then] AGENTS.md is not rewritten, [else stop]."""
     db_path = tmp_path / "state.db"
     open_rw(db_path).close()
     agents_md = tmp_path / "AGENTS.md"
@@ -594,6 +589,27 @@ def test_open_rw_reopen_on_unchanged_schema_skips_regeneration(tmp_path: Path) -
     before = agents_md.stat().st_ino
     open_rw(db_path).close()
     assert agents_md.stat().st_ino == before
+
+
+@pytest.mark.requirement("LIBM-12644")
+def test_open_rw_unchanged_schema_does_not_yaml_dump_on_reopen(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """[if] open_rw reruns on unchanged schema [then] no table YAML is rendered, [else stop]."""
+    table_blocks: list[str] = []
+    real_table_block = agents_md_generator._table_block
+
+    def counting_table_block(table: agents_md_generator.TableInfo) -> str:
+        table_blocks.append(table.name)
+        return real_table_block(table)
+
+    monkeypatch.setattr(agents_md_generator, "_table_block", counting_table_block)
+    db_path = tmp_path / "state.db"
+    open_rw(db_path).close()
+    assert table_blocks, "first open must regenerate AGENTS.md"
+    table_blocks.clear()
+    open_rw(db_path).close()
+    assert table_blocks == []
 
 
 def test_regenerate_reruns_when_owned_tables_input_changes(tmp_path: Path) -> None:

@@ -17,7 +17,7 @@ import {
 	transferPlaylistTracks
 } from '$lib/rb/playlist-write';
 import type { PaneStore } from './pane-contract.svelte';
-import type { RowRef } from './pane-row-selection';
+import { selectAllRows, type RowRef } from './pane-row-selection';
 import { libraryEditShortcut } from './library-edit-shortcut';
 import { scrollTopForRowIndex, TRACK_TABLE_THEAD_PX } from './virtual-window';
 
@@ -52,6 +52,12 @@ export function createLibraryEditKeys(deps: LibraryEditKeyDeps): (e: KeyboardEve
 			const sel = window.getSelection();
 			if (sel !== null && !sel.isCollapsed && sel.toString().trim() !== '') return;
 		}
+		if (action === 'select_all') {
+			e.preventDefault();
+			const p = deps.pane();
+			if (selectAllRows(p, deps.renderedRows()) === 0) pushToast('no tracks to select', 'info');
+			return;
+		}
 		e.preventDefault();
 		void _runLibraryEdit(action, deps.pane());
 	}
@@ -60,12 +66,8 @@ export function createLibraryEditKeys(deps: LibraryEditKeyDeps): (e: KeyboardEve
 		action: 'select_all' | 'copy' | 'cut' | 'paste',
 		p: PaneStore
 	): Promise<void> {
-		const { clipboardToastMessage, selectAllRows, selectedIdsInViewOrder, setTrackClipboard } =
+		const { clipboardToastMessage, selectedIdsInViewOrder, setTrackClipboard } =
 			await import('./track-clipboard');
-		if (action === 'select_all') {
-			if (selectAllRows(p, deps.renderedRows()) === 0) pushToast('no tracks to select', 'info');
-			return;
-		}
 		if (action === 'copy' || action === 'cut') {
 			const ids = selectedIdsInViewOrder(deps.renderedRows(), p.selected_orders, p.selected_ids);
 			if (ids.length === 0) {

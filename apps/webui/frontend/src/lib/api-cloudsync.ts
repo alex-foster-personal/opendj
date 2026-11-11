@@ -229,6 +229,8 @@ export interface CloudSyncStatus {
 export interface CloudSyncIdentityBacklog {
 	unsyncable_inferred: number;
 	hash_pending: number;
+	this_machine_can_hash: boolean;
+	audio_holder_machine_names: string[];
 }
 
 /** The policy gate's verdict on a change set (generated from the daemon's OpenAPI). */
