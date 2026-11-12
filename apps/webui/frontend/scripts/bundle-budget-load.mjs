@@ -26,6 +26,11 @@ export const BUDGETS_DIR = fileURLToPath(new URL('../budgets/', import.meta.url)
 export const KIB = 1024;
 export const GRAPH_SURFACES = ['library', 'performance', 'other'];
 
+/** Git branches may use `/`; charge files allow only letters, digits, `.`, `_`, and `-`. */
+export function chargeBranchId(branch) {
+	return branch.replaceAll('/', '--');
+}
+
 const BASE_KEYS = [
 	'note',
 	'order',
@@ -45,6 +50,8 @@ const CHARGE_KEYS = [
 	'payback'
 ];
 const SURFACE_ENTRIES = new Set(['base.json', 'charges', 'HISTORY.md']);
+// Ratchets that live under budgets/ but are not gzip bundle surfaces; each has its own script.
+const NON_BUNDLE_DIRS = new Set(['story-coverage']); // scripts/story-coverage.mjs
 const CHARGE_NAME = /^[a-z0-9][a-z0-9._-]*\.json$/;
 const SHA = /^[0-9a-f]{7,40}$/;
 const DATE =
@@ -226,6 +233,7 @@ export function loadBudgets(dir = BUDGETS_DIR) {
 	}
 	const budgets = [];
 	for (const name of entries) {
+		if (NON_BUNDLE_DIRS.has(name)) continue;
 		const surfaceDir = join(dir, name);
 		if (!statSync(surfaceDir).isDirectory()) {
 			if (name === 'README.md' || name === 'HISTORY.md') continue;

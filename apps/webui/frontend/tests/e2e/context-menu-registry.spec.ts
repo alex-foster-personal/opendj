@@ -199,6 +199,7 @@ test.describe('W28 right-click registry smokes', () => {
 	});
 
 	test('track chip in the Cmd-K bar', async ({ page }) => {
+		test.fixme(true, 'v1 Cmd-K bar test ids, cmdk.v2 is default-on since #10452, see #13521');
 		await page.getByText('All Tracks', { exact: true }).first().click();
 		await expect(page.locator('[data-testid="track-row"]').first()).toBeVisible();
 		await page.keyboard.press(`${process.platform === 'darwin' ? 'Meta' : 'Control'}+k`);

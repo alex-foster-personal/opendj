@@ -7,3 +7,9 @@ export async function goto(route) {
 	globalThis.__shellNavGotoCalls.push(route);
 	if (globalThis.window?.location) globalThis.window.location.pathname = route;
 }
+
+/** No-op stubs for the other `$app/navigation` hooks the root layout's import graph pulls in
+ * (FeedbackPinLayer's afterNavigate, beforeNavigate, replaceState); SSR never navigates. */
+export function afterNavigate() {}
+export function beforeNavigate() {}
+export function replaceState() {}

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import ctypes
 import importlib
 import json
 import os
@@ -11,6 +12,7 @@ import subprocess
 import sys
 from pathlib import Path
 from types import SimpleNamespace
+from typing import Any
 
 import pytest
 
@@ -93,6 +95,129 @@ def test_native_metric_copies_convert_mach_ticks(module_name: str) -> None:
     )
 
     assert record["cpu_seconds_total"] == 0.125
+
+
+def _fake_darwin_ctypes(
+    monkeypatch: pytest.MonkeyPatch,
+    native_metrics: Any,
+    *,
+    return_code: int = 0,
+    numer: int = 125,
+    denom: int = 3,
+) -> tuple[list[tuple[str, bool]], SimpleNamespace]:
+    cdll_calls: list[tuple[str, bool]] = []
+
+    def mach_timebase_info(ref: Any) -> int:
+        ref._obj.numer = numer
+        ref._obj.denom = denom
+        return return_code
+
+    def proc_pid_rusage(*_args: Any, **_kwargs: Any) -> int:
+        return 0
+
+    def fake_cdll(path: str, *, use_errno: bool) -> SimpleNamespace:
+        cdll_calls.append((path, use_errno))
+        if path.endswith("libproc.dylib"):
+            return SimpleNamespace(proc_pid_rusage=proc_pid_rusage)
+        return SimpleNamespace(mach_timebase_info=mach_timebase_info)
+
+    monkeypatch.setattr(native_metrics.platform, "system", lambda: "Darwin")
+    monkeypatch.setattr(native_metrics.ctypes, "CDLL", fake_cdll)
+    ns = SimpleNamespace(
+        proc_pid_rusage=proc_pid_rusage,
+        mach_timebase_info=mach_timebase_info,
+    )
+    return cdll_calls, ns
+
+
+@pytest.mark.parametrize(
+    "module_name",
+    [
+        "apps.diagnostics.probe_native_metrics",
+        "scripts.diagnostics.probe_native_metrics",
+    ],
+)
+def test_native_metric_copies_refuse_non_darwin(
+    module_name: str, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """[if] platform is not Darwin [then] DarwinProcessMetrics refuses before CDLL, [else stop]."""
+
+    native_metrics = importlib.import_module(module_name)
+    cdll_calls: list[Any] = []
+
+    def track_cdll(*_args: Any, **_kwargs: Any) -> Any:
+        cdll_calls.append(True)
+        return SimpleNamespace()
+
+    monkeypatch.setattr(native_metrics.platform, "system", lambda: "Linux")
+    monkeypatch.setattr(native_metrics.ctypes, "CDLL", track_cdll)
+    with pytest.raises(native_metrics.ProbeUnavailable, match="only available on macOS"):
+        native_metrics.DarwinProcessMetrics()
+    assert cdll_calls == []
+
+
+@pytest.mark.parametrize(
+    "module_name",
+    [
+        "apps.diagnostics.probe_native_metrics",
+        "scripts.diagnostics.probe_native_metrics",
+    ],
+)
+def test_native_metric_copies_bind_libproc_and_timebase(
+    module_name: str, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """[if] Darwin ctypes bind succeeds [then] paths, argtypes and timebase match, [else stop]."""
+
+    native_metrics = importlib.import_module(module_name)
+    cdll_calls, ns = _fake_darwin_ctypes(monkeypatch, native_metrics)
+    reader = native_metrics.DarwinProcessMetrics()
+
+    assert cdll_calls == [
+        ("/usr/lib/libproc.dylib", True),
+        ("/usr/lib/libSystem.B.dylib", True),
+    ]
+    assert ns.proc_pid_rusage.argtypes == [
+        ctypes.c_int,
+        ctypes.c_int,
+        ctypes.c_void_p,
+    ]
+    assert ns.proc_pid_rusage.restype is ctypes.c_int
+    assert ns.mach_timebase_info.argtypes == [
+        ctypes.POINTER(native_metrics.MachTimebaseInfo)
+    ]
+    assert ns.mach_timebase_info.restype is ctypes.c_int
+    assert reader.nanoseconds_per_tick == 125 / 3
+
+
+@pytest.mark.parametrize(
+    "return_code,denom",
+    [(1, 3), (0, 0)],
+)
+@pytest.mark.parametrize(
+    "module_name",
+    [
+        "apps.diagnostics.probe_native_metrics",
+        "scripts.diagnostics.probe_native_metrics",
+    ],
+)
+def test_native_metric_copies_reject_bad_timebase(
+    module_name: str,
+    return_code: int,
+    denom: int,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """[if] mach_timebase_info fails [then] ProbeUnavailable is raised, [else stop]."""
+
+    native_metrics = importlib.import_module(module_name)
+    _fake_darwin_ctypes(
+        monkeypatch,
+        native_metrics,
+        return_code=return_code,
+        numer=125,
+        denom=denom,
+    )
+    with pytest.raises(native_metrics.ProbeUnavailable, match="mach_timebase_info failed"):
+        native_metrics.DarwinProcessMetrics()
 
 
 @pytest.mark.parametrize(

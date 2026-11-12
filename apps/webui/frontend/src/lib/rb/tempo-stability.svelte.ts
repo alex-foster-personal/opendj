@@ -10,7 +10,7 @@
  *     [if] a persistent server error refetches in a loop [then ⛔️] broken
  */
 
-import { api } from '../api/client';
+import { api } from '../api/rb-http';
 import { tempoStabilityNeedsFetch, type TempoStabilityView } from './tempo-stability';
 
 const _entries = $state<Record<string, TempoStabilityView & { at?: number }>>({});

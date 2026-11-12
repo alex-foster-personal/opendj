@@ -314,6 +314,101 @@ def grid_quality_message(quality: GridQuality, *, thresholds: GridQualityThresho
     raise ValueError(f"unhandled grid class: {quality.grid_class!r}")
 
 
+# ------------------------------------------------- low-confidence regions
+
+#: Intervals on each side of an interval that form its local median, so a smooth
+#: tempo ramp is judged against its own neighborhood, not the whole track.
+LOCAL_MEDIAN_HALF_WINDOW: int = 4
+#: Uneven intervals at most this many intervals apart merge into one region.
+REGION_MERGE_GAP_INTERVALS: int = 4
+#: Beats per block when measuring the share of a grid that is flagged.
+FLAG_SHARE_BLOCK_BEATS: int = 16
+
+GridConfidenceStatus = Literal["clean", "low_confidence", "invalid"]
+
+
+@dataclass(frozen=True)
+class LowConfidenceRegion:
+    """A bounded span whose beat intervals stray from their local median.
+
+    `score` is the region's confidence in [0, 1]: 1 minus the worst deviation
+    as a share of a quarter of the local beat period (a quarter-beat miss is 0).
+    """
+
+    start_s: float
+    end_s: float
+    score: float
+
+
+@dataclass(frozen=True)
+class GridConfidence:
+    """Low-confidence regions of one grid, or why the grid could not be judged."""
+
+    status: GridConfidenceStatus
+    reason: str | None
+    regions: tuple[LowConfidenceRegion, ...]
+
+    def to_json(self) -> dict[str, object]:
+        return {
+            "status": self.status,
+            "reason": self.reason,
+            "regions": [asdict(region) for region in self.regions],
+        }
+
+
+def _invalid_beat_times_reason(beat_times_s: Sequence[float]) -> str | None:
+    if len(beat_times_s) < 2:
+        return "too_few_beats"
+    if any(isinstance(t, bool) or not isinstance(t, int | float) or not math.isfinite(t) for t in beat_times_s):
+        return "non_finite_beat_time"
+    if any(later <= earlier for earlier, later in zip(beat_times_s, beat_times_s[1:], strict=False)):
+        return "beat_times_not_increasing"
+    return None
+
+
+def low_confidence_regions(
+    beat_times_s: Sequence[float], *, thresholds: GridQualityThresholds = THRESHOLDS
+) -> GridConfidence:
+    """Report every span whose intervals stray more than the uneven tolerance from
+    their local median. Invalid or incomplete beat times are `invalid`, never clean."""
+    reason = _invalid_beat_times_reason(beat_times_s)
+    if reason is not None:
+        return GridConfidence("invalid", reason, ())
+    intervals = [later - earlier for earlier, later in zip(beat_times_s, beat_times_s[1:], strict=False)]
+    deviations: list[tuple[int, float, float]] = []
+    for index, interval in enumerate(intervals):
+        window = intervals[max(0, index - LOCAL_MEDIAN_HALF_WINDOW) : index + LOCAL_MEDIAN_HALF_WINDOW + 1]
+        local_median = _median(window)
+        deviation = abs(interval - local_median)
+        if deviation > thresholds.uneven_interval_tolerance_s:
+            deviations.append((index, deviation, local_median))
+    groups: list[list[tuple[int, float, float]]] = []
+    for item in deviations:
+        if groups and item[0] - groups[-1][-1][0] <= REGION_MERGE_GAP_INTERVALS:
+            groups[-1].append(item)
+        else:
+            groups.append([item])
+    regions = tuple(
+        LowConfidenceRegion(
+            start_s=float(beat_times_s[group[0][0]]),
+            end_s=float(beat_times_s[group[-1][0] + 1]),
+            score=round(max(0.0, 1.0 - max(dev / (median / 4.0) for _, dev, median in group)), 3),
+        )
+        for group in groups
+    )
+    return GridConfidence("low_confidence" if regions else "clean", None, regions)
+
+
+def flagged_block_share(beat_times_s: Sequence[float], confidence: GridConfidence) -> float:
+    """Share of the grid's `FLAG_SHARE_BLOCK_BEATS`-beat blocks that overlap a region."""
+    if confidence.status == "invalid":
+        raise ValueError(f"an invalid grid has no flagged share: {confidence.reason}")
+    starts = range(0, len(beat_times_s) - 1, FLAG_SHARE_BLOCK_BEATS)
+    blocks = [(beat_times_s[i], beat_times_s[min(i + FLAG_SHARE_BLOCK_BEATS, len(beat_times_s) - 1)]) for i in starts]
+    flagged = sum(1 for start, end in blocks if any(r.start_s < end and r.end_s > start for r in confidence.regions))
+    return flagged / len(blocks)
+
+
 __all__ = [
     "FLAGGED_GRID_CLASSES",
     "FLAG_CONSEQUENCE",
@@ -326,11 +421,15 @@ __all__ = [
     "THRESHOLDS",
     "UNKNOWN_REASON_TEXT",
     "GridClass",
+    "GridConfidence",
     "GridQuality",
     "GridQualityThresholds",
+    "LowConfidenceRegion",
     "classify_grid",
+    "flagged_block_share",
     "grid_flag_clause",
     "grid_quality_message",
+    "low_confidence_regions",
     "round_half_up",
     "rule_version",
     "uneven_intervals_phrase",

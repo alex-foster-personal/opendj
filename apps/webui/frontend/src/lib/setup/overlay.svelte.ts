@@ -33,6 +33,9 @@
  *     on screen for one poll, and reopening on it bounces Skip and Start
  *     playing (issue #3422).
  *     [if] closeSetupOverlay() leaves holdEmptyReopen false [then ⛔️] broken
+ *   ✔︎ 🎯 closing after Start playing does not, by itself, route away from the
+ *     host surface; navigation policy lives in `run-setup.ts` (#11423).
+ *     [if] the overlay store triggers host goto on close [then ⛔️] broken
  */
 
 let open = $state(false);

@@ -990,7 +990,6 @@ mod tests {
             json!({"type": "stem_mute", "deck": 1, "stem": "vocal"}),
             json!({"type": "stem_gain", "deck": 1, "stem": "drums", "value": 1.5}),
             json!({"type": "key_nudge", "deck": 1, "semitones": 13}),
-            json!({"type": "key_sync", "deck": 5, "enabled": true}),
             json!({"type": "slip", "deck": 1, "enabled": "yes"}),
             json!({"type": "sync_mode", "deck": 1, "mode": "phase"}),
             json!({"type": "master", "deck": 1, "lock": 1}),
@@ -1038,7 +1037,11 @@ mod tests {
             cmd(json!({"type": "play", "deck": 1, "playing": true, "quantize": false})),
             Ok(Command::Apply(EngineCmd::Play { playing: true, .. }))
         ));
-        let e = cmd(json!({"type": "play", "deck": 5, "playing": true})).unwrap_err();
+        assert!(matches!(
+            cmd(json!({"type": "play", "deck": 8, "playing": true})),
+            Ok(Command::Apply(EngineCmd::Play { deck: 8, playing: true, .. }))
+        ));
+        let e = cmd(json!({"type": "play", "deck": 9, "playing": true})).unwrap_err();
         assert_eq!(e.code, ErrorCode::Invalid);
         let e = cmd(json!({"type": "load", "deck": 1, "stable_id": "abc"})).unwrap_err();
         assert!(e.message.contains("stable_id"), "{}", e.message);
@@ -1575,7 +1578,7 @@ mod tests {
         let full = cmd(json!({"type": "echo_out", "deck": 2, "beats": 2, "division": 0.5, "at": 97})).unwrap_err();
         assert_eq!(full.code, ErrorCode::NotImplemented);
         for bad in [
-            json!({"type": "echo_out", "deck": 5}),
+            json!({"type": "echo_out", "deck": 9}),
             json!({"type": "deck_brake"}),
             json!({"type": "deck_backspin", "deck": 1, "speed": 3}),
         ] {

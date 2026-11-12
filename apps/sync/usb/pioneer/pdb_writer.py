@@ -187,8 +187,7 @@ def _table_rows(export: PdbExport) -> list[tuple[int, list[bytes]]]:
         for list_id, track_id, entry_index in export.playlist_entries
     ]
     history_entry = [
-        struct.pack("<III", track_id, list_id, entry_index)
-        for list_id, track_id, entry_index in export.history_entries
+        struct.pack("<III", track_id, list_id, entry_index) for list_id, track_id, entry_index in export.history_entries
     ]
     return [
         (_PT.tracks, [_track_row(track) for track in export.tracks]),

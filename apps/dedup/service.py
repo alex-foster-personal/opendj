@@ -15,5 +15,11 @@ class LocalDedupService:
         # library_scan.JOB is read at call time so a swapped-in job is honored.
         return ScanStatus.model_validate(library_scan.JOB.status())
 
-    def start_scan(self, *, state_db: Path | None, db_path: Path) -> bool:
-        return library_scan.JOB.start(state_db=state_db, db_path=db_path)
+    def start_scan(
+        self,
+        *,
+        state_db: Path | None,
+        db_path: Path,
+        basis: library_scan.ScanBasis = library_scan.DEFAULT_SCAN_BASIS,
+    ) -> bool:
+        return library_scan.JOB.start(state_db=state_db, db_path=db_path, basis=basis)

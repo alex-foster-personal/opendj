@@ -534,6 +534,23 @@ export function clearKnobLink(): void {
 	knobUi.linkPendingId = null;
 }
 
+/**
+ * MIXUX-9832: drop every selection, link, pending link, hover and group hint
+ * held by a control on one of these decks. LESS keeps decks 3/4 mounted (so
+ * their knobs never unregister) but hides them, and a hidden dial must not
+ * keep answering the page wheel or a linked partner.
+ */
+export function releaseDeckControls(deckIds: readonly number[]): void {
+	const groups = new Set(deckIds.map(String));
+	const onDeck = (id: string | null): boolean => id !== null && groups.has(knobGroupOf(id));
+	const kept = knobUi.selectedIds.filter((id) => !onDeck(id));
+	if (kept.length !== knobUi.selectedIds.length) knobUi.selectedIds = kept;
+	if (knobUi.link !== null && (onDeck(knobUi.link.a) || onDeck(knobUi.link.b))) knobUi.link = null;
+	if (onDeck(knobUi.linkPendingId)) knobUi.linkPendingId = null;
+	if (onDeck(knobUi.hoveredId)) knobUi.hoveredId = null;
+	if (knobUi.groupHint !== null && onDeck(knobUi.groupHint.id)) knobUi.groupHint = null;
+}
+
 /** Apply a delta to a knob; if linked, move the partner inversely with stagger. */
 export function nudgeKnob(id: string, delta: number): void {
 	if (!Number.isFinite(delta) || delta === 0) return;
@@ -797,7 +814,6 @@ function _onWindowWheel(e: WheelEvent): void {
 	// R3: the lead is the control under the pointer, else the first-selected.
 	nudgeSelection(dir * step, { leadId: knobUi.hoveredId, flip: e.altKey });
 }
-
 
 function _onWindowKeyDown(e: KeyboardEvent): void {
 	if (e.key === 'Escape') clearKnobSelection();

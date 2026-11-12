@@ -1,5 +1,6 @@
 /**
  * Pure logic for the in-app review/feedback widget (FB-01, FB-03).
+ * Pin placement helpers are also consumed by `<comment-pins>` (issue #11295).
  *
  * Everything here is dependency-free on purpose: the panel drag math, the
  * localStorage position codec, the debounced auto-save and the pin placement
@@ -39,6 +40,8 @@
  *     fixed/merged pin offers Archive and Follow-on.
  *     [if] a pre-#858 pin (status null) stops being drawn [then ⛔️] broken
  *     [if] an open pin offers Archive [then ⛔️] broken
+ *   ✔︎ 🎯 panel size/default placement (feedback-panel-layout.ts, split out to
+ *     stay under the file-size gate): issue #11208 half-width default and resize.
  *   ✔︎ 🎯 isPartialNote/pinVisualState (feedback-pin-partial.ts, split out to
  *     stay under the file-size gate): a HALF-FIXED pin (pin 58a16ac781db,
  *     follow-on to #907) is a reply convention, not a new persisted status.
@@ -63,55 +66,35 @@
  *       text exactly [then ⛔️] broken
  */
 
-import { clampToViewport } from '$lib/ui/clamp-to-viewport';
 import type { AnchorishElement } from './feedback-anchorish';
 import type { PinPlacement } from './feedback-pin-position';
+import { clampPanelPos, type PanelPos } from './feedback-panel-layout';
 
-export interface PanelPos {
-	x: number;
-	y: number;
-}
-
-export const PANEL_POS_KEY = 'odj-feedback-panel-pos';
+export type { PanelOpenAnchor, PanelPos, PanelSize } from './feedback-panel-layout';
+export {
+	clampPanelPos,
+	clampPanelSize,
+	defaultPanelPos,
+	defaultPanelSize,
+	PANEL_DEFAULT_GAP_PX,
+	PANEL_DEFAULT_TOP_PX,
+	PANEL_DEFAULT_WIDTH_RATIO,
+	PANEL_LEGACY_FIXED_W,
+	PANEL_MAX_HEIGHT_RATIO,
+	PANEL_MAX_WIDTH_RATIO,
+	PANEL_MIN_H,
+	PANEL_MIN_W,
+	PANEL_POS_KEY,
+	PANEL_SIZE_KEY,
+	panelOpensLeftOfThumbs,
+	parsePanelPos,
+	parsePanelSize,
+	serializePanelPos,
+	serializePanelSize
+} from './feedback-panel-layout';
 
 /** Where an UNSENT pin draft is parked so a refresh cannot eat it. */
 export const PIN_DRAFT_KEY = 'odj-feedback-pin-draft';
-
-/** Keep at least this many px of the panel header reachable on both axes. */
-// ----- panel position ----------------------------------------------------
-/** Keep the whole panel on-viewport with the shared 8 px margin. */
-export function clampPanelPos(
-	pos: PanelPos,
-	panel: { w: number; h: number },
-	viewport: { w: number; h: number }
-): PanelPos {
-	const box = clampToViewport(
-		pos.x,
-		pos.y,
-		{ width: panel.w, height: panel.h },
-		{ width: viewport.w, height: viewport.h }
-	);
-	return { x: box.x, y: box.y };
-}
-
-export function parsePanelPos(raw: string | null): PanelPos | null {
-	if (raw === null) return null;
-	let parsed: unknown;
-	try {
-		parsed = JSON.parse(raw);
-	} catch {
-		return null;
-	}
-	if (typeof parsed !== 'object' || parsed === null) return null;
-	const { x, y } = parsed as Record<string, unknown>;
-	if (typeof x !== 'number' || typeof y !== 'number') return null;
-	if (!Number.isFinite(x) || !Number.isFinite(y)) return null;
-	return { x, y };
-}
-
-export function serializePanelPos(pos: PanelPos): string {
-	return JSON.stringify({ x: Math.round(pos.x), y: Math.round(pos.y) });
-}
 
 // ----- panel drag suppression --------------------------------------------
 /** Tags inside the drag handle that own their own click and must keep it. */

@@ -1,0 +1,9 @@
+{
+  "bytes": 1024,
+  "measured_main": 16821,
+  "measured_with_pr": 17571,
+  "sha": "9df83b6820",
+  "date": "Sun 8 Nov 2026",
+  "reason": "PR #9662 makes the practice replica show engine values, pickup ghosts and LED state: practice-live-values.ts plus the LED snapshot and engine scalar imports load with the replica route. Measured: local vite build of origin/main 5bee06f870 files and of 9df83b6820, +750 B gzip; ceiled to KiB",
+  "payback": "none planned; this replaces a fixed 0.5 with real state, which the replica needs"
+}

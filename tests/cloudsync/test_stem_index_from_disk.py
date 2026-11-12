@@ -244,3 +244,139 @@ def test_publish_uploads_missing_objects_then_direct_r2_fetches_them(
     )
     for filename in entries[stable_id]:
         assert (hydrated / filename).read_bytes() == (bundle / filename).read_bytes()
+
+
+@pytest.mark.requirement("STEM-12746")
+def test_stem12746_rebuild_indexes_on_disk_mp3_bundle(tmp_path: Path) -> None:
+    """[if] rebuild runs on an MP3 bundle [then] cache names and sha256 match disk, [else stop]."""
+    data_dir = tmp_path / "data"
+    stems = data_dir / "state" / "stems"
+    stable_id = "6666666666666666666666666666666666666666"
+    _write_mp3_bundle(stems, stable_id)
+    args = build_parser().parse_args(["rebuild", "--data-dir", str(data_dir)])
+    assert int(args.func(args)) == 0
+    cached = load_cached_index(data_dir)
+    expected = entry_from_bundle_dir(stems / stable_id)
+    assert cached[stable_id] == expected
+    assert ".flac" not in "".join(cached[stable_id])
+
+
+@pytest.mark.requirement("STEM-12746")
+def test_stem12746_rebuild_replaces_stale_flac_cache_entry(tmp_path: Path) -> None:
+    """[if] cache still lists flac names [then] rebuild replaces them with mp3 digests, [else stop]."""
+    data_dir = tmp_path / "data"
+    stems = data_dir / "state" / "stems"
+    stable_id = "7777777777777777777777777777777777777777"
+    save_cached_index(data_dir, {stable_id: _stale_flac_entry()})
+    _write_mp3_bundle(stems, stable_id)
+    args = build_parser().parse_args(["rebuild", "--data-dir", str(data_dir)])
+    assert int(args.func(args)) == 0
+    cached = load_cached_index(data_dir)
+    assert ".flac" not in "".join(cached[stable_id])
+    assert cached[stable_id][MANIFEST_FILENAME] == _sha256(stems / stable_id / MANIFEST_FILENAME)
+
+
+@pytest.mark.requirement("STEM-12746")
+def test_stem12746_publish_refuses_when_index_digest_mismatches_disk(
+    tmp_path: Path, cfg: CloudConfig
+) -> None:
+    """[if] index digest mismatches on-disk bytes [then] publish refuses the pointer, [else stop]."""
+    from apps.cloud.lock import FakeS3Client
+    from apps.cloud.stem_index import StemIndexError, fetch_index, publish_index
+    from apps.cloud.stem_index_sync import publish_verified_on_disk_index
+    from tests.cloudsync.conftest import InMemoryAssetS3
+
+    data_dir = tmp_path / "data"
+    stems = data_dir / "state" / "stems"
+    stable_id = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+    bundle = _write_mp3_bundle(stems, stable_id)
+    on_disk = entry_from_bundle_dir(bundle)
+    wrong_manifest = "1" * 64
+    assert wrong_manifest != on_disk[MANIFEST_FILENAME]
+    assets = InMemoryAssetS3()
+    index_s3 = FakeS3Client()
+    before = {"keeper": {MANIFEST_FILENAME: "b" * 64}}
+    publish_index(cfg, index_s3, before)
+    entries = {stable_id: {**on_disk, MANIFEST_FILENAME: wrong_manifest}}
+    with pytest.raises(StemIndexError, match="shared pointer was not updated"):
+        publish_verified_on_disk_index(cfg, assets, index_s3, data_dir, entries)
+    assert fetch_index(cfg, index_s3) == before
+
+
+@pytest.mark.requirement("STEM-12746")
+def test_stem12746_publish_raises_when_digest_absent_everywhere(
+    tmp_path: Path, cfg: CloudConfig
+) -> None:
+    """[if] a digest is absent from R2 and disk [then] publish raises, [else stop]."""
+    from apps.cloud.lock import FakeS3Client
+    from apps.cloud.stem_index import StemIndexError, fetch_index, publish_index
+    from apps.cloud.stem_index_sync import publish_verified_on_disk_index
+    from tests.cloudsync.conftest import InMemoryAssetS3
+
+    data_dir = tmp_path / "data"
+    missing = "fedcba9876543210" * 4
+    stable_id = "8888888888888888888888888888888888888888"
+    assets = InMemoryAssetS3()
+    index_s3 = FakeS3Client()
+    publish_index(cfg, index_s3, {"keeper": {MANIFEST_FILENAME: "a" * 64}})
+    entries = {stable_id: {MANIFEST_FILENAME: missing}}
+    with pytest.raises(StemIndexError, match="shared pointer was not updated"):
+        publish_verified_on_disk_index(cfg, assets, index_s3, data_dir, entries)
+    assert fetch_index(cfg, index_s3) == {"keeper": {MANIFEST_FILENAME: "a" * 64}}
+
+
+@pytest.mark.requirement("STEM-12746")
+def test_stem12746_publish_refusal_leaves_r2_pointer_unchanged(
+    tmp_path: Path, cfg: CloudConfig
+) -> None:
+    """[if] publication is refused [then] the R2 pointer stays as before, [else stop]."""
+    from apps.cloud.lock import FakeS3Client
+    from apps.cloud.stem_index import StemIndexError, fetch_index, publish_index
+    from apps.cloud.stem_index_sync import publish_verified_on_disk_index
+    from tests.cloudsync.conftest import InMemoryAssetS3
+
+    data_dir = tmp_path / "data"
+    assets = InMemoryAssetS3()
+    index_s3 = FakeS3Client()
+    before = {"prior": {MANIFEST_FILENAME: "c" * 64, "vocals.mp3": "d" * 64}}
+    publish_index(cfg, index_s3, before)
+    entries = {"new": {MANIFEST_FILENAME: "0" * 64}}
+    with pytest.raises(StemIndexError):
+        publish_verified_on_disk_index(cfg, assets, index_s3, data_dir, entries)
+    assert fetch_index(cfg, index_s3) == before
+
+
+@pytest.mark.requirement("STEM-12746")
+def test_stem12746_rebuild_publish_cli_uploads_then_merges_pointer(
+    tmp_path: Path, cfg: CloudConfig, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """[if] rebuild --publish succeeds [then] R2 holds every referenced object, [else stop]."""
+    from apps.cloud.asset_store import asset_object_key
+    from apps.cloud.lock import FakeS3Client
+    from apps.cloud.stem_index import INDEX_OBJECT_KEY, fetch_index, publish_index
+    from tests.cloudsync.conftest import InMemoryAssetS3
+
+    data_dir = tmp_path / "data"
+    stems = data_dir / "state" / "stems"
+    stable_id = "9999999999999999999999999999999999999999"
+    _write_mp3_bundle(stems, stable_id)
+    assets = InMemoryAssetS3()
+    index_s3 = FakeS3Client()
+    publish_index(cfg, index_s3, {"legacy": {MANIFEST_FILENAME: "e" * 64}})
+
+    monkeypatch.setattr("apps.cloud.config.CloudConfig.from_env", lambda: cfg)
+    monkeypatch.setattr("apps.cloud.asset_store.boto3_asset_client", lambda _cfg: assets)
+    monkeypatch.setattr("apps.cloud.replicate.boto3_s3_client", lambda _cfg: index_s3)
+
+    args = build_parser().parse_args(
+        ["rebuild", "--data-dir", str(data_dir), "--publish"]
+    )
+    assert int(args.func(args)) == 0
+
+    published = fetch_index(cfg, index_s3)
+    expected = entry_from_bundle_dir(stems / stable_id)
+    assert published["legacy"] == {MANIFEST_FILENAME: "e" * 64}
+    assert published[stable_id] == expected
+    for digest in expected.values():
+        assert assets.head_object(cfg.audio_bucket, asset_object_key(digest)) is not None
+    assert index_s3.get_object(cfg.audio_bucket, INDEX_OBJECT_KEY) is not None

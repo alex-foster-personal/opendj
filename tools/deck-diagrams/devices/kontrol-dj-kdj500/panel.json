@@ -1,0 +1,703 @@
+{
+ "format": "opendj-panel-layout/1",
+ "device": "kontrol-dj-kdj500",
+ "display_name": "2-channel MIDI rack controller",
+ "units": "mm",
+ "panel": {
+  "w": 400.0,
+  "d": 170.0
+ },
+ "device_map": "KONTROL_DJ_KDJ500_MAP",
+ "sources": {
+  "panel_size": "KDJ500 user manual (c) 2006 Kontrol Dj, Part III: Compact size 400 mm. (W) x 170 mm. (D) x 45 mm. (H)",
+  "wire": "apps/webui/frontend/src/lib/rb/midi/maps/kontrol-dj-kdj500.ts",
+  "positions": "measured trace of kdj_traktor3_template.pdf; reference: devices/kontrol-dj-kdj500/panel.reference.json (ADR-0137)"
+ },
+ "out_of_scope": [
+  "SELECT bank buttons, JOG MODE lever, FX BUT 1-4 bank-1 layers, browse encoder turn",
+  "shift_midi encodes Konverter bank-2 or SHIFT where the map binds a single wire",
+  "trim and filter share PH. VOL. / FX KNOB 1 (filter on shift_midi CC 0x0E / 0x12)",
+  "hints are not separate controls",
+  "logo and wordmark areas"
+ ],
+ "controls": [
+  {
+   "id": "d1-play-toggle",
+   "fig": "PLAY",
+   "type": "button",
+   "label": "PLAY/PAUSE",
+   "does": "Start or pause deck 1",
+   "x": 66.0,
+   "y": 22.0,
+   "w": 10.0,
+   "h": 10.0,
+   "section": "deck",
+   "midi": {
+    "ch": 1,
+    "kind": "note",
+    "id": 16
+   },
+   "shift_midi": {
+    "ch": 1,
+    "kind": "note",
+    "id": 17
+   }
+  },
+  {
+   "id": "d1-cue",
+   "fig": "CUE",
+   "type": "button",
+   "label": "CUE",
+   "does": "Cue deck 1",
+   "x": 40.5,
+   "y": 22.0,
+   "w": 10.0,
+   "h": 10.0,
+   "section": "deck",
+   "midi": {
+    "ch": 1,
+    "kind": "note",
+    "id": 14
+   },
+   "shift_midi": {
+    "ch": 1,
+    "kind": "note",
+    "id": 15
+   }
+  },
+  {
+   "id": "d1-sync-toggle",
+   "fig": "SYNC",
+   "type": "button",
+   "label": "SYNC",
+   "does": "Beat sync deck 1 (chart CUE area)",
+   "x": 165.0,
+   "y": 5.0,
+   "w": 5.0,
+   "h": 10.0,
+   "section": "deck",
+   "midi": {
+    "ch": 1,
+    "kind": "note",
+    "id": 45
+   },
+   "shift_midi": null
+  },
+  {
+   "id": "d1-beat-loop-1",
+   "fig": "1",
+   "type": "button",
+   "label": "LOOP 1",
+   "does": "1-beat loop (SHIFT layer on FX BUT. 1)",
+   "x": 25.5,
+   "y": 5.0,
+   "w": 10.0,
+   "h": 10.0,
+   "section": "deck",
+   "midi": {
+    "ch": 1,
+    "kind": "note",
+    "id": 9
+   },
+   "shift_midi": null
+  },
+  {
+   "id": "d1-beat-loop-4",
+   "fig": "4",
+   "type": "button",
+   "label": "LOOP 4",
+   "does": "4-beat loop",
+   "x": 40.5,
+   "y": 5.0,
+   "w": 10.0,
+   "h": 10.0,
+   "section": "deck",
+   "midi": {
+    "ch": 1,
+    "kind": "note",
+    "id": 10
+   },
+   "shift_midi": null
+  },
+  {
+   "id": "d1-beat-loop-8",
+   "fig": "8",
+   "type": "button",
+   "label": "LOOP 8",
+   "does": "8-beat loop",
+   "x": 55.0,
+   "y": 5.0,
+   "w": 10.0,
+   "h": 10.0,
+   "section": "deck",
+   "midi": {
+    "ch": 1,
+    "kind": "note",
+    "id": 11
+   },
+   "shift_midi": null
+  },
+  {
+   "id": "d1-beat-loop-16",
+   "fig": "16",
+   "type": "button",
+   "label": "LOOP 16",
+   "does": "16-beat loop",
+   "x": 71.0,
+   "y": 5.0,
+   "w": 10.0,
+   "h": 10.0,
+   "section": "deck",
+   "midi": {
+    "ch": 1,
+    "kind": "note",
+    "id": 12
+   },
+   "shift_midi": null
+  },
+  {
+   "id": "d1-pitch",
+   "fig": "PITCH",
+   "type": "fader",
+   "label": "TEMPO",
+   "does": "Pitch fader deck 1",
+   "x": 110.5,
+   "y": 26.0,
+   "w": 9.0,
+   "h": 89.0,
+   "section": "deck",
+   "midi": {
+    "ch": 1,
+    "kind": "cc",
+    "id": 9
+   },
+   "shift_midi": {
+    "ch": 1,
+    "kind": "cc",
+    "id": 35
+   }
+  },
+  {
+   "id": "d1-jog",
+   "fig": "JOG",
+   "type": "jog",
+   "label": "JOG",
+   "does": "Jog wheel deck 1 (VINYL CC)",
+   "x": 30.5,
+   "y": 56.5,
+   "w": 59.0,
+   "h": 59.0,
+   "section": "deck",
+   "midi": {
+    "ch": 1,
+    "kind": "cc",
+    "id": 40
+   },
+   "shift_midi": {
+    "ch": 1,
+    "kind": "cc",
+    "id": 41
+   }
+  },
+  {
+   "id": "d1-load-1",
+   "fig": "LOAD",
+   "type": "button",
+   "label": "LOAD",
+   "does": "Load to deck 1 (track encoder push)",
+   "x": 94.0,
+   "y": 22.0,
+   "w": 10.0,
+   "h": 10.0,
+   "section": "browse",
+   "midi": {
+    "ch": 1,
+    "kind": "note",
+    "id": 20
+   },
+   "shift_midi": {
+    "ch": 1,
+    "kind": "note",
+    "id": 21
+   }
+  },
+  {
+   "id": "d2-play-toggle",
+   "fig": "PLAY",
+   "type": "button",
+   "label": "PLAY/PAUSE",
+   "does": "Start or pause deck 2",
+   "x": 324.0,
+   "y": 22.0,
+   "w": 10.0,
+   "h": 10.0,
+   "section": "deck",
+   "midi": {
+    "ch": 1,
+    "kind": "note",
+    "id": 38
+   },
+   "shift_midi": {
+    "ch": 1,
+    "kind": "note",
+    "id": 39
+   }
+  },
+  {
+   "id": "d2-cue",
+   "fig": "CUE",
+   "type": "button",
+   "label": "CUE",
+   "does": "Cue deck 2",
+   "x": 349.5,
+   "y": 22.0,
+   "w": 10.0,
+   "h": 10.0,
+   "section": "deck",
+   "midi": {
+    "ch": 1,
+    "kind": "note",
+    "id": 36
+   },
+   "shift_midi": {
+    "ch": 1,
+    "kind": "note",
+    "id": 37
+   }
+  },
+  {
+   "id": "d2-sync-toggle",
+   "fig": "SYNC",
+   "type": "button",
+   "label": "SYNC",
+   "does": "Beat sync deck 2 (chart CUE area)",
+   "x": 230.0,
+   "y": 5.0,
+   "w": 5.0,
+   "h": 10.0,
+   "section": "deck",
+   "midi": {
+    "ch": 1,
+    "kind": "note",
+    "id": 47
+   },
+   "shift_midi": null
+  },
+  {
+   "id": "d2-beat-loop-1",
+   "fig": "1",
+   "type": "button",
+   "label": "LOOP 1",
+   "does": "1-beat loop (SHIFT layer on FX BUT. 1)",
+   "x": 364.5,
+   "y": 5.0,
+   "w": 10.0,
+   "h": 10.0,
+   "section": "deck",
+   "midi": {
+    "ch": 1,
+    "kind": "note",
+    "id": 31
+   },
+   "shift_midi": null
+  },
+  {
+   "id": "d2-beat-loop-4",
+   "fig": "4",
+   "type": "button",
+   "label": "LOOP 4",
+   "does": "4-beat loop",
+   "x": 349.5,
+   "y": 5.0,
+   "w": 10.0,
+   "h": 10.0,
+   "section": "deck",
+   "midi": {
+    "ch": 1,
+    "kind": "note",
+    "id": 32
+   },
+   "shift_midi": null
+  },
+  {
+   "id": "d2-beat-loop-8",
+   "fig": "8",
+   "type": "button",
+   "label": "LOOP 8",
+   "does": "8-beat loop",
+   "x": 335.0,
+   "y": 5.0,
+   "w": 10.0,
+   "h": 10.0,
+   "section": "deck",
+   "midi": {
+    "ch": 1,
+    "kind": "note",
+    "id": 33
+   },
+   "shift_midi": null
+  },
+  {
+   "id": "d2-beat-loop-16",
+   "fig": "16",
+   "type": "button",
+   "label": "LOOP 16",
+   "does": "16-beat loop",
+   "x": 319.0,
+   "y": 5.0,
+   "w": 10.0,
+   "h": 10.0,
+   "section": "deck",
+   "midi": {
+    "ch": 1,
+    "kind": "note",
+    "id": 34
+   },
+   "shift_midi": null
+  },
+  {
+   "id": "d2-pitch",
+   "fig": "PITCH",
+   "type": "fader",
+   "label": "TEMPO",
+   "does": "Pitch fader deck 2",
+   "x": 280.5,
+   "y": 26.0,
+   "w": 9.0,
+   "h": 89.0,
+   "section": "deck",
+   "midi": {
+    "ch": 1,
+    "kind": "cc",
+    "id": 10
+   },
+   "shift_midi": {
+    "ch": 1,
+    "kind": "cc",
+    "id": 36
+   }
+  },
+  {
+   "id": "d2-jog",
+   "fig": "JOG",
+   "type": "jog",
+   "label": "JOG",
+   "does": "Jog wheel deck 2 (VINYL CC)",
+   "x": 310.5,
+   "y": 56.5,
+   "w": 59.0,
+   "h": 59.0,
+   "section": "deck",
+   "midi": {
+    "ch": 1,
+    "kind": "cc",
+    "id": 44
+   },
+   "shift_midi": {
+    "ch": 1,
+    "kind": "cc",
+    "id": 45
+   }
+  },
+  {
+   "id": "d2-load-2",
+   "fig": "LOAD",
+   "type": "button",
+   "label": "LOAD",
+   "does": "Load to deck 2 (track encoder push)",
+   "x": 296.0,
+   "y": 22.0,
+   "w": 10.0,
+   "h": 10.0,
+   "section": "browse",
+   "midi": {
+    "ch": 1,
+    "kind": "note",
+    "id": 40
+   },
+   "shift_midi": {
+    "ch": 1,
+    "kind": "note",
+    "id": 41
+   }
+  },
+  {
+   "id": "ch1-ch-cue",
+   "fig": "CUE",
+   "type": "button",
+   "label": "CH CUE",
+   "does": "Headphone cue channel 1 (round CUE)",
+   "x": 155.0,
+   "y": 4.0,
+   "w": 9.0,
+   "h": 12.0,
+   "section": "mixer",
+   "midi": {
+    "ch": 1,
+    "kind": "note",
+    "id": 44
+   },
+   "shift_midi": null
+  },
+  {
+   "id": "ch1-trim",
+   "fig": "PH-VOL",
+   "type": "knob",
+   "label": "TRIM",
+   "does": "Trim / PH. VOL.; bank 2 is FX KNOB 1 (filter)",
+   "x": 136.0,
+   "y": 28.0,
+   "w": 10.0,
+   "h": 10.0,
+   "section": "mixer",
+   "midi": {
+    "ch": 1,
+    "kind": "cc",
+    "id": 1
+   },
+   "shift_midi": {
+    "ch": 1,
+    "kind": "cc",
+    "id": 14
+   }
+  },
+  {
+   "id": "ch1-eq-high",
+   "fig": "HIGH",
+   "type": "knob",
+   "label": "HIGH",
+   "does": "EQ high band channel 1",
+   "x": 136.0,
+   "y": 43.0,
+   "w": 10.0,
+   "h": 10.0,
+   "section": "mixer",
+   "midi": {
+    "ch": 1,
+    "kind": "cc",
+    "id": 2
+   },
+   "shift_midi": {
+    "ch": 1,
+    "kind": "cc",
+    "id": 28
+   }
+  },
+  {
+   "id": "ch1-eq-mid",
+   "fig": "MID",
+   "type": "knob",
+   "label": "MID",
+   "does": "EQ mid channel 1",
+   "x": 136.0,
+   "y": 58.5,
+   "w": 10.0,
+   "h": 10.0,
+   "section": "mixer",
+   "midi": {
+    "ch": 1,
+    "kind": "cc",
+    "id": 3
+   },
+   "shift_midi": {
+    "ch": 1,
+    "kind": "cc",
+    "id": 29
+   }
+  },
+  {
+   "id": "ch1-eq-low",
+   "fig": "LOW",
+   "type": "knob",
+   "label": "LOW",
+   "does": "EQ low channel 1",
+   "x": 136.0,
+   "y": 73.5,
+   "w": 10.0,
+   "h": 10.0,
+   "section": "mixer",
+   "midi": {
+    "ch": 1,
+    "kind": "cc",
+    "id": 4
+   },
+   "shift_midi": {
+    "ch": 1,
+    "kind": "cc",
+    "id": 30
+   }
+  },
+  {
+   "id": "ch1-fader",
+   "fig": "VOL",
+   "type": "fader",
+   "label": "CH FADER",
+   "does": "Channel fader 1",
+   "x": 163.5,
+   "y": 27.5,
+   "w": 8.0,
+   "h": 86.0,
+   "section": "mixer",
+   "midi": {
+    "ch": 1,
+    "kind": "cc",
+    "id": 11
+   },
+   "shift_midi": {
+    "ch": 1,
+    "kind": "cc",
+    "id": 37
+   }
+  },
+  {
+   "id": "ch2-ch-cue",
+   "fig": "CUE",
+   "type": "button",
+   "label": "CH CUE",
+   "does": "Headphone cue channel 2 (round CUE)",
+   "x": 236.0,
+   "y": 4.0,
+   "w": 9.0,
+   "h": 12.0,
+   "section": "mixer",
+   "midi": {
+    "ch": 1,
+    "kind": "note",
+    "id": 46
+   },
+   "shift_midi": null
+  },
+  {
+   "id": "ch2-trim",
+   "fig": "PH-VOL",
+   "type": "knob",
+   "label": "TRIM",
+   "does": "Trim / PH. VOL.; bank 2 is FX KNOB 1 (filter)",
+   "x": 254.0,
+   "y": 28.0,
+   "w": 10.0,
+   "h": 10.0,
+   "section": "mixer",
+   "midi": {
+    "ch": 1,
+    "kind": "cc",
+    "id": 5
+   },
+   "shift_midi": {
+    "ch": 1,
+    "kind": "cc",
+    "id": 18
+   }
+  },
+  {
+   "id": "ch2-eq-high",
+   "fig": "HIGH",
+   "type": "knob",
+   "label": "HIGH",
+   "does": "EQ high band channel 2",
+   "x": 254.0,
+   "y": 43.0,
+   "w": 10.0,
+   "h": 10.0,
+   "section": "mixer",
+   "midi": {
+    "ch": 1,
+    "kind": "cc",
+    "id": 6
+   },
+   "shift_midi": {
+    "ch": 1,
+    "kind": "cc",
+    "id": 32
+   }
+  },
+  {
+   "id": "ch2-eq-mid",
+   "fig": "MID",
+   "type": "knob",
+   "label": "MID",
+   "does": "EQ mid channel 2",
+   "x": 254.0,
+   "y": 58.5,
+   "w": 10.0,
+   "h": 10.0,
+   "section": "mixer",
+   "midi": {
+    "ch": 1,
+    "kind": "cc",
+    "id": 7
+   },
+   "shift_midi": {
+    "ch": 1,
+    "kind": "cc",
+    "id": 33
+   }
+  },
+  {
+   "id": "ch2-eq-low",
+   "fig": "LOW",
+   "type": "knob",
+   "label": "LOW",
+   "does": "EQ low channel 2",
+   "x": 254.0,
+   "y": 73.5,
+   "w": 10.0,
+   "h": 10.0,
+   "section": "mixer",
+   "midi": {
+    "ch": 1,
+    "kind": "cc",
+    "id": 8
+   },
+   "shift_midi": {
+    "ch": 1,
+    "kind": "cc",
+    "id": 34
+   }
+  },
+  {
+   "id": "ch2-fader",
+   "fig": "VOL",
+   "type": "fader",
+   "label": "CH FADER",
+   "does": "Channel fader 1",
+   "x": 228.5,
+   "y": 27.5,
+   "w": 8.0,
+   "h": 86.0,
+   "section": "mixer",
+   "midi": {
+    "ch": 1,
+    "kind": "cc",
+    "id": 12
+   },
+   "shift_midi": {
+    "ch": 1,
+    "kind": "cc",
+    "id": 38
+   }
+  },
+  {
+   "id": "crossfader",
+   "fig": "X-FADER",
+   "type": "crossfader",
+   "label": "CROSSFADER",
+   "does": "Crossfader",
+   "x": 169.5,
+   "y": 155.0,
+   "w": 61.0,
+   "h": 9.0,
+   "section": "mixer",
+   "midi": {
+    "ch": 1,
+    "kind": "cc",
+    "id": 13
+   },
+   "shift_midi": {
+    "ch": 1,
+    "kind": "cc",
+    "id": 39
+   }
+  }
+ ]
+}

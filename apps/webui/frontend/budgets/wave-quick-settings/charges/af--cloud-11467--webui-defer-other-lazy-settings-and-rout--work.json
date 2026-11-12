@@ -1,0 +1,9 @@
+{
+  "bytes": 5120,
+  "measured_main": 7970,
+  "measured_with_pr": 12502,
+  "sha": "fe2f340293",
+  "date": "Wed 11 Nov 2026",
+  "reason": "branch af--cloud-11467--webui-defer-other-lazy-settings-and-rout--work grows the wave-quick-settings surface; measured +4532 B gzip over main; ceiled to KiB.",
+  "payback": "none planned; the growth is the change's own code on this surface"
+}

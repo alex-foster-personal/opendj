@@ -2,6 +2,7 @@
  * #8629: runtime export surface of the performance IPC barrel must stay stable
  * when types and parsers move to sibling modules (Object.keys only; type-only
  * re-exports are invisible here).
+ * Issue #10580: `registerMidiLearnIpc` is an intentional barrel re-export.
  */
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
@@ -13,6 +14,7 @@ const EXPECTED = [
 	'PERFORMANCE_RESCUE_COMMAND_SCOPES',
 	'abortPreparedPerformancePreset',
 	'activePerformanceCommandSession',
+	'applyShellWindowLabelsForTest',
 	'claimPerformanceMount',
 	'commitPerformanceLaunches',
 	'currentPerformanceMount',
@@ -48,6 +50,7 @@ const EXPECTED = [
 	'recordDeckLoadRefusal',
 	'registerAutoPlayNextController',
 	'registerCmdkAdapter',
+	'registerMidiLearnIpc',
 	'registerPerformanceBrowserAdapter',
 	'registerPlaylistHistoryAdapter',
 	'rescueRestoreLocksControls',

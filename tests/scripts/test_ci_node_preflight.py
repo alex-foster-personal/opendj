@@ -9,6 +9,8 @@ Regression lines:
     gate fails 84 times and `pnpm build` dies `vite: not found`
   - if repair keeps .pnpm-workspace-state-v1.json then pnpm short-circuits
     and the tree stays poisoned
+  - if a missing typescript sentinel alone skips repair then the typing gate
+    dies while public symlinks look fine (issue #13238)
 """
 
 from __future__ import annotations
@@ -278,6 +280,28 @@ def test_healthy_tree_does_not_call_pnpm_or_drop_workspace_state(tmp_path: Path)
     assert "probe-runner: corepack and node present" in result.stdout
     assert not log.exists()
     assert (nm / STATE).exists()
+
+
+def test_missing_typescript_sentinel_triggers_repair(tmp_path: Path) -> None:
+    """[if] typescript sentinel missing alone [then] frozen install runs, [else stop]."""
+    frontend = tmp_path / "frontend"
+    frontend.mkdir()
+    nm = _plant_healthy_tree(frontend)
+    marker = nm / ".pnpm" / "keep-me"
+    marker.write_text("stay\n", encoding="utf-8")
+    (nm / "typescript").unlink()
+    env, log = _fake_env(tmp_path, pnpm_mode="repair")
+    result = _run_preflight(frontend, env)
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert "missing resolvable node_modules/typescript" in result.stderr
+    assert "repaired frontend node_modules" in result.stdout
+    assert log.exists()
+    recorded = log.read_text(encoding="utf-8")
+    assert "install --frozen-lockfile" in recorded
+    assert "STATE_PRESENT" not in recorded
+    assert not (nm / STATE).exists()
+    assert marker.exists()
+    assert (nm / "typescript").exists()
 
 
 def test_dangling_public_link_triggers_repair(tmp_path: Path) -> None:

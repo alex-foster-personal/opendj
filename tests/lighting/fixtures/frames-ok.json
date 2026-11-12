@@ -1,0 +1,21 @@
+{
+  "interval_ms": 33,
+  "frames": [
+    {
+      "t_ns": 0,
+      "patch_version": 1,
+      "fixtures": [
+        {"id": "par-left", "rgb": [0, 128, 255], "intensity": 1},
+        {"id": "par-right", "rgb": [255, 0, 64], "intensity": 0.5}
+      ]
+    },
+    {
+      "t_ns": 33000000,
+      "patch_version": 1,
+      "fixtures": [
+        {"id": "par-left", "rgb": [255, 32, 0], "intensity": 0.75},
+        {"id": "par-right", "rgb": [0, 255, 128], "intensity": 0}
+      ]
+    }
+  ]
+}

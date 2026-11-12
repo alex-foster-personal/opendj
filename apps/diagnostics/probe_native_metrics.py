@@ -77,6 +77,27 @@ class MachTimebaseInfo(ctypes.Structure):
     _fields_ = [("numer", ctypes.c_uint32), ("denom", ctypes.c_uint32)]
 
 
+def _bind_dylib_function(
+    path: str, name: str, argtypes: list[Any], restype: Any
+) -> tuple[ctypes.CDLL, Any]:
+    """Open a system dylib with errno capture and type one exported C function."""
+
+    library = ctypes.CDLL(path, use_errno=True)
+    function = getattr(library, name)
+    function.argtypes = argtypes
+    function.restype = restype
+    return library, function
+
+
+def _mach_nanoseconds_per_tick(mach_timebase: Any) -> float:
+    """Nanoseconds per mach tick from a bound ``mach_timebase_info``."""
+
+    timebase = MachTimebaseInfo()
+    if mach_timebase(ctypes.byref(timebase)) != 0 or timebase.denom == 0:
+        raise ProbeUnavailable("mach_timebase_info failed")
+    return timebase.numer / timebase.denom
+
+
 class DarwinProcessMetrics:
     """Read cheap per-process counters without spawning profiler processes."""
 
@@ -85,19 +106,19 @@ class DarwinProcessMetrics:
     def __init__(self) -> None:
         if platform.system() != "Darwin":
             raise ProbeUnavailable("proc_pid_rusage is only available on macOS")
-        self._libproc = ctypes.CDLL("/usr/lib/libproc.dylib", use_errno=True)
-        self._rusage = self._libproc.proc_pid_rusage
-        self._rusage.argtypes = [ctypes.c_int, ctypes.c_int, ctypes.c_void_p]
-        self._rusage.restype = ctypes.c_int
-
-        self._libsystem = ctypes.CDLL("/usr/lib/libSystem.B.dylib", use_errno=True)
-        self._mach_timebase = self._libsystem.mach_timebase_info
-        self._mach_timebase.argtypes = [ctypes.POINTER(MachTimebaseInfo)]
-        self._mach_timebase.restype = ctypes.c_int
-        timebase = MachTimebaseInfo()
-        if self._mach_timebase(ctypes.byref(timebase)) != 0 or timebase.denom == 0:
-            raise ProbeUnavailable("mach_timebase_info failed")
-        self._nanoseconds_per_tick = timebase.numer / timebase.denom
+        self._libproc, self._rusage = _bind_dylib_function(
+            "/usr/lib/libproc.dylib",
+            "proc_pid_rusage",
+            [ctypes.c_int, ctypes.c_int, ctypes.c_void_p],
+            ctypes.c_int,
+        )
+        self._libsystem, self._mach_timebase = _bind_dylib_function(
+            "/usr/lib/libSystem.B.dylib",
+            "mach_timebase_info",
+            [ctypes.POINTER(MachTimebaseInfo)],
+            ctypes.c_int,
+        )
+        self._nanoseconds_per_tick = _mach_nanoseconds_per_tick(self._mach_timebase)
 
     @property
     def nanoseconds_per_tick(self) -> float:

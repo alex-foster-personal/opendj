@@ -447,5 +447,13 @@ fn midi_page_lines_reach_every_client_and_the_result_only_its_sender() {
         "a saw b's crossfader result during drain: {a_tail:?}"
     );
     drop(e.stdin.take());
-    let _ = e.child.wait();
+    let deadline = Instant::now() + Duration::from_secs(10);
+    loop {
+        if let Some(status) = e.child.try_wait().unwrap() {
+            assert!(status.success());
+            break;
+        }
+        assert!(Instant::now() < deadline, "engine outlived its supervisor");
+        std::thread::sleep(Duration::from_millis(20));
+    }
 }

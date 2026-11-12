@@ -280,13 +280,12 @@ export async function loadRustDeck(
 	clearRustKeySyncBaseline(deck);
 	clearRustDeck(st);
 	st.stable_id = stable_id;
-	publishDeckAutoGain(deck, autoGain);
 	st.edit_id = edit.edit_id ?? null;
 	st.edit_in_ms = edit.in_ms ?? null;
 	st.edit_out_ms = edit.out_ms ?? null;
-	// The load is not done until the engine took the gain (or refused it, which
-	// shows as AG ERR at 0 dB).
-	await deckAutoGainApplied(deck);
+	// OPEN-DJ-BE-E2: publish the track's metadata in the same synchronous step
+	// as stable_id. The auto-gain wait below yields to Svelte, and anything
+	// that reads a deck with a stable_id (WaveTrackSummary) expects its title.
 	st.source_path =
 		typeof track.file_path === 'string' && track.file_path.length > 0 ? track.file_path : null;
 	st.title = track.title ?? null;
@@ -303,6 +302,10 @@ export async function loadRustDeck(
 	st.has_rb_mapping = track.has_rb_mapping;
 	st.loop = displayLoopFrom(anlz.cues, anlz.beatgrid.beats);
 	displayLoops[deck] = st.loop;
+	publishDeckAutoGain(deck, autoGain);
+	// The load is not done until the engine took the gain (or refused it, which
+	// shows as AG ERR at 0 dB).
+	await deckAutoGainApplied(deck);
 	const loadedPath =
 		typeof loaded === 'object' && loaded !== null && 'path' in loaded && typeof loaded.path === 'string'
 			? loaded.path

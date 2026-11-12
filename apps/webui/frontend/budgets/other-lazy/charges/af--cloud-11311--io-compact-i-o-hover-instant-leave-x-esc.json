@@ -1,0 +1,9 @@
+{
+  "bytes": 1024,
+  "measured_main": 496550,
+  "measured_with_pr": 496790,
+  "sha": "4c6b3c57da",
+  "date": "Wed 11 Nov 2026",
+  "reason": "PR #12624 / IOPIN-03: HeadphoneCluster I/O panel and css grew other-lazy gzip by 240 B over main at the fleet bundle measure (+476 B performance stayed within noise).",
+  "payback": "none planned; the bytes track the shipped I/O panel markup and styles on this surface"
+}

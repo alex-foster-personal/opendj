@@ -1,16 +1,18 @@
 #!/usr/bin/env bash
 # Refuse a push that would update a branch whose open PR carries another fleet's
-# reviewer:* lease (issue #272).
+# reviewer:* lease or inherits a human hold from its parent PR (issues #272 and
+# #671).
 #
 # Install with:
 #   ln -sf ../../scripts/githooks/pre-push-reviewer-lease.sh .git/hooks/pre-push
 #
 # Chain with pre-push-master-guard.sh by calling both from one dispatcher hook,
-# or install this hook alone when reviewer-lease enforcement is enough.
+# or install this hook alone when combined branch-safety enforcement is enough.
 #
 # Emergency bypass (rare): set MDT_REVIEWER_LEASE_EMERGENCY=1 before push.
-# The hook posts explicit commit slices to the PR and allows the push only after
-# the comment succeeds. See scripts/review_lease.py and FANOUT-CONVENTIONS.md.
+# The hook posts explicit commit slices only for reviewer ownership. It never
+# bypasses an inherited parent hold. See scripts/review_lease.py and
+# FANOUT-CONVENTIONS.md.
 
 set -euo pipefail
 

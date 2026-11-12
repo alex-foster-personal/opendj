@@ -137,6 +137,7 @@ _PULL_FIELDS = {
     "headRefOid": lambda pull: pull["head"]["sha"],
     "headRefName": lambda pull: pull["head"]["ref"],
     "baseRefOid": lambda pull: pull["base"]["sha"],
+    "baseRefName": lambda pull: pull["base"]["ref"],
     "labels": lambda pull: [{"name": label["name"]} for label in pull.get("labels") or []],
 }
 

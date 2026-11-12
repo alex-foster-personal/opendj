@@ -84,6 +84,7 @@ STEM_KINDS = _plm.STEM_KINDS
 PerfLogUnreadable = _plm.PerfLogUnreadable
 amdahl_speedup = _plm.amdahl_speedup
 deck_load_phase_model = _plm.deck_load_phase_model
+deck_load_stage_maps = _plm.deck_load_stage_maps
 event_kind_family = _plm.event_kind_family
 load_sid = _plm.load_sid
 read_json_perf_log = _plm.read_json_perf_log
@@ -233,9 +234,10 @@ def _ingest_deck_load_row(join: _Join, row: dict[str, Any], key: tuple[str | Non
     clears whatever was already waiting under `key`."""
 
     notes = join.notes
-    stages = row.get("stages")
-    if not isinstance(stages, dict):
+    stages_raw = row.get("stages")
+    if not isinstance(stages_raw, dict):
         return
+    stages, _facts = deck_load_stage_maps(row)
     notes["deck_load_rows"] += 1
     load_unclassified = unclassified_deck_stages(stages, is_load=True)
     notes["unclassified_stages"] |= load_unclassified
@@ -274,9 +276,9 @@ def _ingest_stem_row(join: _Join, row: dict[str, Any], key: tuple[str | None, An
     either popped-and-marked or untouched, never half-resolved."""
 
     notes = join.notes
-    stages = row.get("stages")
+    stages_raw = row.get("stages")
     no_stems = family == "deck-stems-none"
-    if family != "deck-stems" and not (no_stems and isinstance(stages, dict)):
+    if family != "deck-stems" and not (no_stems and isinstance(stages_raw, dict)):
         # No usable stage map (legacy row) stays clean mix-only,
         # unlike a real failure (deck-stems-fail).
         notes["stem_rows_no_stems" if no_stems else "stem_rows_failed_excluded"] += 1
@@ -284,7 +286,8 @@ def _ingest_stem_row(join: _Join, row: dict[str, Any], key: tuple[str | None, An
         if target is not None and not no_stems:
             target.anomalous = True
         return
-    assert isinstance(stages, dict)  # guaranteed by the guard above
+    assert isinstance(stages_raw, dict)  # guaranteed by the guard above
+    stages, _facts = deck_load_stage_maps(row)
     if no_stems:
         # SETTLED but not stageless: probeStem cost real time,
         # modeled as the serial settled tail (Codex P2, #705, :267).

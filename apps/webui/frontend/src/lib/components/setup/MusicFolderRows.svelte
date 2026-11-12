@@ -13,6 +13,7 @@
 		candidates = [],
 		onPick,
 		onCheck,
+		onCommit,
 		onRemove,
 		onAdd,
 		onSuggestion
@@ -24,10 +25,18 @@
 		candidates?: FolderCandidate[];
 		onPick: (id: string) => void;
 		onCheck: (id: string) => void;
+		onCommit: (id: string) => void;
 		onRemove: (id: string) => void;
 		onAdd: () => void;
 		onSuggestion: (path: string) => void;
 	} = $props();
+
+	function onPathKeydown(event: KeyboardEvent, id: string): void {
+		if (event.key !== 'Enter' || event.isComposing) return;
+		event.preventDefault();
+		event.stopPropagation();
+		onCheck(id);
+	}
 </script>
 
 {#if candidates.length > 0}
@@ -56,7 +65,14 @@
 	{#each rows as row (row.id)}
 		<div class="folder-row">
 			<div class="folder-path-row">
-				<input type="text" placeholder="/Users/you/Music" bind:value={row.path} aria-label="Folder to import" />
+				<input
+					type="text"
+					placeholder="/Users/you/Music"
+					bind:value={row.path}
+					aria-label="Folder to import"
+					onchange={() => onCommit(row.id)}
+					onkeydown={(event) => onPathKeydown(event, row.id)}
+				/>
 				<button
 					type="button"
 					class="folder-pick"

@@ -13,7 +13,7 @@
 	 *   ✔︎ 🎯 Devices section: MidiDeviceList (name, map matched, binding
 	 *     count, LED test per device).
 	 *   ✔︎ 🎯 Learn-log section: MidiLearnLog console (last 50, unmapped red).
- *   ✔︎ 🎯 MidiLearnStatus shows ambiguous learn with reason + Retry.
+	 *   ✔︎ 🎯 MidiLearnStatus shows ambiguous learn with reason + Retry.
 	 *   ✔︎ 🎯 Esc / backdrop / close button all dismiss the drawer.
 	 *     [if] Esc while open doesn't close [then] broken
 	 */
@@ -134,7 +134,8 @@
 				<span
 					class="perm-state"
 					class:perm-granted={midiState.permission === 'granted'}
-					class:perm-bad={midiState.permission === 'denied' || midiState.permission === 'unsupported'}
+					class:perm-bad={midiState.permission === 'denied' ||
+						midiState.permission === 'unsupported'}
 				>
 					{PERMISSION_LABEL[midiState.permission]}
 				</span>
@@ -168,7 +169,8 @@
 		<section class="drawer-section" aria-label="absolute MIDI takeover">
 			<h3 class="section-title">Absolute controls</h3>
 			<p class="takeover-copy">
-				Preview: Pickup holds a knob/fader after software changes until hardware reaches or crosses it.
+				Pickup holds a knob or fader after software changes until hardware reaches or crosses it.
+				Relative encoders (library browse, jog) stay immediate in every mode.
 			</p>
 			<label class="takeover-choice">
 				<input

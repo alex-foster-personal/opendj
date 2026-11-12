@@ -372,9 +372,11 @@ def similar_tracks(
 ) -> list[tuple[str, float]]:
     """The duplicate groups whose genre vector is closest (cosine) to ``stable_id``'s group's.
 
-    Each neighbor is one group, named by the copy that holds its vector; the
-    track's own duplicates are never neighbors. Raises KeyError when the group
-    has no vector, so "no neighbors" is never confused with "never measured".
+    Generic find-similar-tracks (issue #11188) and ``GET /api/v1/genres/{sid}/similar``
+    both read through here. Each neighbor is one group, named by the copy that
+    holds its vector; the track's own duplicates are never neighbors. Raises
+    KeyError when the group has no vector, so "no neighbors" is never confused
+    with "never measured".
     """
     by_key = vectors(conn, groups, provider)
     target = by_key.get(groups.key(stable_id)) or by_key.get(_own_key(stable_id))

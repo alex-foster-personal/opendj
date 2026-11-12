@@ -1,0 +1,9 @@
+{
+  "bytes": 1024,
+  "measured_main": 442187,
+  "measured_with_pr": 442346,
+  "sha": "6ae01aa20a",
+  "date": "Wed 11 Nov 2026",
+  "reason": "branch af--idd-f1b65f2f-issue-12401-resolve-github-issue-12401-https-github grows the performance surface; measured +159 B gzip over main; ceiled to KiB.",
+  "payback": "none planned; the growth is the change's own code on this surface"
+}

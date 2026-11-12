@@ -65,11 +65,11 @@ PREDATES_ADR = frozenset(
 # Packages that landed after the ADR WITHOUT a contract, each named with the tech-debt issue that
 # owes it. This is not PREDATES_ADR (never add there). A name here must leave in the PR that adds it
 # to `enforced`; test_owed_contracts_are_not_enforced_yet refuses the overlap. apps/autodj and
-# apps/transition_score (#7708) are now enforced.
+# apps/transition_score (#7708) and apps/now_playing (#10336, contract in #10341) are now
+# enforced.
 # apps/plugins came in with #6522 (plugin store) and owes its contract, a Protocol over frozen
 # models for the engine and webui importers, before it can be enforced.
 OWED_CONTRACT = {
-    "now_playing": "#10336",
     "ableton_link": "#7949",
     "b2b_booth": "#7949",
     "b2b_pairing": "#7949",
@@ -141,7 +141,9 @@ def _top_level_modules(container: Path) -> set[str]:
 # from `research/` by #5829) and `conftest.py` as a module, so either could deep-import an
 # enforced package unseen by the graph; the scan below reads them from source instead. A new
 # production directory gets an __init__.py and joins `root_packages`.
-ROOT_NOT_PACKAGES = frozenset({"docs"})  # one-off probes run by path
+ROOT_NOT_PACKAGES = frozenset(
+    {"docs", "spikes"}
+)  # (private path): probes and throwaway research; (private path)/*.py sits under test-cull (not identifier) so specs is not a namespace root here
 # A compiled root module (the native waveform extension a local build drops here) is no entry:
 # git ignores it, and one the tree ships is read by `unread_root_modules` (Sol, PR #6182).
 ROOT_MODULES = frozenset({"conftest"})  # pytest's root hooks

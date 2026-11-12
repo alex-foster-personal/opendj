@@ -7,6 +7,7 @@
  * synced decks stay in phase on screen whichever element's frame ran first.
  * The arithmetic, thresholds and reasoning are in `playhead-clock.ts`.
  */
+import { noteSeekPresentedPosition } from '$lib/player/transport/seek-presented';
 import type { PresentedTransportObservation } from '$lib/player/transport/presentation';
 import type { DeckId } from '$lib/rb/deck-id';
 import { initPlayheadClock, notePlayheadSample, playheadDisplayMs, projectionCapped, type PlayheadClockState } from '$lib/rb/playhead-clock';
@@ -57,6 +58,7 @@ export function presentedSampleAtMs(
 
 /** One authoritative position for `deck`, true at `sampledAtMs`. */
 export function notePositionSample(deck: DeckId, view: PlayheadDeckView, sampledAtMs: number, nowMs: number = _frameNowMs()): void {
+	noteSeekPresentedPosition(deck, view.position_ms);
 	const sample = {
 		positionMs: view.position_ms,
 		sampledAtMs,

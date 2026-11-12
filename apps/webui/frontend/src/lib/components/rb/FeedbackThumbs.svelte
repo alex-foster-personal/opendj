@@ -14,7 +14,7 @@
 	}
 </script>
 
-<div class="feedback-thumbs" data-topbar-priority="low">
+<div class="feedback-thumbs" data-topbar-priority="low" data-feedback-thumbs-anchor>
 	<button
 		type="button"
 		class="vibe-thumb down"

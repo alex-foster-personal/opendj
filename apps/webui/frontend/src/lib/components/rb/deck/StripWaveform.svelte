@@ -28,6 +28,7 @@
 	import { playheadMs } from '$lib/rb/playhead-display.svelte';
 	import { tracePlayhead } from '$lib/rb/playhead-trace';
 	import { uiPrefs } from '$lib/rb/prefs.svelte';
+	import { cueMarkerVisibility } from '$lib/rb/cue-marker-prefs';
 	import { needleLockRefusal } from '$lib/rb/needle-lock';
 	import { pushToast } from '$lib/stores.svelte';
 	import { effectiveWaveformDesign, effectiveWavePalette, effectiveWaveScheme } from '$lib/rb/ui-skin';
@@ -62,7 +63,7 @@
 	}: {
 		deck: DeckState;
 		pending: boolean;
-		onSeek: (ms: number) => Promise<void>;
+		onSeek: (ms: number, pressT0Ms?: number) => Promise<void>;
 		/** Q1: carries the originating click's own `event.timeStamp`. */
 		onPlay: (pressT0Ms?: number, quantize?: boolean) => Promise<void>;
 	} = $props();
@@ -127,8 +128,9 @@
 		[vocalsTitle, tempoView === null ? null : tempoStabilityTitle(tempoView)].filter((t) => t !== null).join('\n') || null
 	);
 
+	const cueMarkers = $derived(cueMarkerVisibility(uiPrefs));
 	const memoryCuesMs: number[] = $derived(
-		deck.anlz === null
+		!cueMarkers.memory || deck.anlz === null
 			? []
 			: deck.anlz.cues.filter((c) => c.kind === 'memory').map((c) => c.in_ms)
 	);
@@ -261,7 +263,8 @@
 			// CSS stretches the backing store; icons are drawn narrower by this much.
 			// stripBoxW is bound state, so this repaints once layout has measured the
 			// strip (a read of c.clientWidth alone ran before layout and stayed at 0).
-			tempoXStretch: stripBoxW > 0 && c.clientHeight > 0 ? (stripBoxW / W) / (c.clientHeight / H) : 1
+			tempoXStretch: stripBoxW > 0 && c.clientHeight > 0 ? (stripBoxW / W) / (c.clientHeight / H) : 1,
+			cueMarkers
 		});
 	});
 
@@ -318,7 +321,7 @@
 			state.kind === 'inside' &&
 			state.focusStartS !== null
 		) {
-			await onSeek(state.focusStartS * 1000);
+			await onSeek(state.focusStartS * 1000, e.timeStamp);
 			if (!deck.playing) playHintPct = (state.focusStartS * 1000 / deck.duration_ms) * 100;
 			return;
 		}
@@ -331,7 +334,7 @@
 			beats: deck.anlz?.beatgrid.beats ?? null,
 			mode: waveSnapModeFromModifiers(e, effectiveQuantize(deck))
 		});
-		await onSeek(targetMs);
+		await onSeek(targetMs, e.timeStamp);
 		if (!deck.playing) playHintPct = (targetMs / deck.duration_ms) * 100;
 	}
 
@@ -411,12 +414,12 @@
 		{/each}
 
 		{#each deck.hot_cues as hc (hc.slot)}
-			{#if !(hc.is_loop && hc.out_ms !== null)}
+			{#if !(hc.is_loop && hc.out_ms !== null) && cueMarkers.hot}
 				<span class="cue-letter" data-testid={`deck-cue-letter-${deck.deck_id}`} data-cue-slot={hc.slot} style={`left:${_pctOf(hc.in_ms)}%`}>{hc.slot}</span>
 			{/if}
 		{/each}
 
-		{#if loopCue !== null}
+		{#if loopCue !== null && cueMarkers.loop}
 			<span class="loop-chip in" style={`left:${_pctOf(loopCue.in_ms)}%`} title={`Loop in at ${_fmtMmSs(loopCue.in_ms)} (hot cue ${loopCue.slot})`}>
 				{loopCue.slot} {_fmtMmSs(loopCue.in_ms)}
 			</span>

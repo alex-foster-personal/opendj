@@ -1,0 +1,9 @@
+{
+  "bytes": 1024,
+  "measured_main": 519283,
+  "measured_with_pr": 519489,
+  "sha": "a120e8c963",
+  "date": "Thu 12 Nov 2026",
+  "reason": "branch af--cloud-11212--webui-retarget-rb-and-rb-component-impor grows the other-lazy surface; measured +206 B gzip over main; ceiled to KiB.",
+  "payback": "none planned; the growth is the change's own code on this surface"
+}

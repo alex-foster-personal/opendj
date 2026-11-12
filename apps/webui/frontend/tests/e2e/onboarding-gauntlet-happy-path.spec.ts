@@ -138,7 +138,7 @@ test.describe('onboarding gauntlet: happy path', () => {
 		await expect(done.getByText(`${TRACKS} tracks`, { exact: true })).toBeVisible();
 	});
 
-	test('"Start playing" on the Done screen closes the wizard and leaves it closed', async ({
+	test('"Start playing" on the Done screen closes the wizard without a reload-resume banner', async ({
 		page
 	}) => {
 		const music = `${engine.musicRoot}/My Music`;
@@ -157,6 +157,7 @@ test.describe('onboarding gauntlet: happy path', () => {
 		// Closed means closed: still closed across two preflight polls (3 s each).
 		await page.waitForTimeout(7_000);
 		await expect(setupDialog(page)).toHaveCount(0);
+		await expect(page.getByTestId('reload-resume-banner')).toHaveCount(0);
 		await allTracksRowCount(page, TRACKS);
 	});
 

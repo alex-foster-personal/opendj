@@ -125,7 +125,9 @@ function roomContext() {
 	ctx.createDelay = () => node('delay');
 	ctx.createChannelSplitter = () => node('splitter');
 	ctx.createChannelMerger = () => node('merger');
-	ctx.createAnalyser = () => node('analyser');
+	// A silent analyser with the real AnalyserNode read: the headphone diagnostic
+	// takes one on-demand meter sample (IOPIN-08), so an error path reads it.
+	ctx.createAnalyser = () => ({ ...node('analyser'), getFloatTimeDomainData(buffer) { buffer.fill(0); } });
 	return ctx;
 }
 

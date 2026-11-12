@@ -254,15 +254,12 @@ def _check_not_parity_list(
     for row_num, row in by_number.items():
         if row.status in ("PARTIAL", "MISSING") and row_num not in not_parity_rows:
             problems.append(
-                f"row {row_num}: matrix says {row.status}, "
-                "the Summary's 'Not PARITY yet' table does not list it"
+                f"row {row_num}: matrix says {row.status}, the Summary's 'Not PARITY yet' table does not list it"
             )
     for row_num in not_parity_rows:
         matrix_status = status_by_row.get(row_num)
         if matrix_status is None:
-            problems.append(
-                f"row {row_num}: the Summary's 'Not PARITY yet' table lists it, matrix has no such row"
-            )
+            problems.append(f"row {row_num}: the Summary's 'Not PARITY yet' table lists it, matrix has no such row")
         elif matrix_status in ("PARITY", "NOT-NEEDED"):
             problems.append(
                 f"row {row_num}: the Summary's 'Not PARITY yet' table lists it, matrix says {matrix_status}"

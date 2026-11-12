@@ -2,12 +2,14 @@
 
 from __future__ import annotations
 
+from .clusters_write import HashDuplicateRecorder, open_hash_duplicate_recorder
 from .contract import (
     CONTRACT_VERSION,
     DEFAULT_DURATION_DELTA_S,
     DEFAULT_MAX_CLUSTER,
 )
 from .contract.models import DedupService, ScanStatus
+from .db_paths import resolve_dedup_db
 from .service import LocalDedupService
 
 
@@ -21,6 +23,9 @@ __all__ = [
     "DEFAULT_DURATION_DELTA_S",
     "DEFAULT_MAX_CLUSTER",
     "DedupService",
+    "HashDuplicateRecorder",
     "ScanStatus",
     "build_service",
+    "open_hash_duplicate_recorder",
+    "resolve_dedup_db",
 ]

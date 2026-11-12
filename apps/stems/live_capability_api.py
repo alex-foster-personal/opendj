@@ -1,4 +1,4 @@
-"""Agent-visible live-stems install capability route."""
+"""Agent-visible capability route sharing reason_code and the human reason."""
 
 from __future__ import annotations
 

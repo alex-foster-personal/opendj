@@ -8,15 +8,20 @@
 	 */
 	import type { SettingPreview } from '$lib/settings/catalog-types';
 	import WaveformDesignPreview from './WaveformDesignPreview.svelte';
+	import SectionDisplayPreview from './SectionDisplayPreview.svelte';
 
 	/** `label` names the preview for screen readers: two previewed rows must not share one name. */
 	let { kind, label }: { kind: SettingPreview; label: string } = $props();
 
 	$effect(() => {
-		if (kind !== 'waveform') throw new Error(`settings preview: no renderer for ${String(kind)}`);
+		if (kind !== 'waveform' && kind !== 'sections') {
+			throw new Error(`settings preview: no renderer for ${String(kind)}`);
+		}
 	});
 </script>
 
 {#if kind === 'waveform'}
 	<WaveformDesignPreview {label} />
+{:else if kind === 'sections'}
+	<SectionDisplayPreview {label} />
 {/if}

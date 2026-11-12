@@ -16,6 +16,7 @@
 	 * /performance, never under prefers-reduced-motion.
 	 */
 	import { untrack } from 'svelte';
+	import { prefersReducedMotion } from '$lib/motion/reduced-motion';
 	import { anyDeckPlaying } from '$lib/rb/playing-gate';
 	import { ojSidebar, setOjSidebarOpen, toggleOjSidebar } from '$lib/assistant/oj-sidebar.svelte';
 	import { ojSidebarAnimates } from '$lib/assistant/oj-sidebar-toggle';
@@ -59,12 +60,6 @@
 
 	function onPerformanceRoute(): boolean {
 		return typeof location !== 'undefined' && location.pathname.startsWith('/performance');
-	}
-
-	function prefersReducedMotion(): boolean {
-		return (
-			typeof matchMedia === 'function' && matchMedia('(prefers-reduced-motion: reduce)').matches
-		);
 	}
 
 	/** Read once per open, so the decision is the one in force when the panel appears. */
@@ -185,5 +180,14 @@
 	}
 	.assistant-dock[hidden] {
 		display: none;
+	}
+
+	@media (prefers-reduced-motion: reduce) {
+		.assistant-dock.oj-animate {
+			animation: none;
+		}
+	}
+	:global(html[data-reduce-motion]) .assistant-dock.oj-animate {
+		animation: none;
 	}
 </style>

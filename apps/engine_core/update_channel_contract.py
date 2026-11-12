@@ -88,6 +88,8 @@ UpdateStatus = Literal[
     "manifest-malformed",
     "platform-unsupported",
     "identity-unavailable",
+    "shell-broker-unavailable",
+    "shell-broker-invalid",
 ]
 
 #: The statuses that mean "the question was answered". Anything else is a

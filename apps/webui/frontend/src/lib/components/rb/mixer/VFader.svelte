@@ -23,6 +23,7 @@
 	import { WHEEL_STEP, wheelAdjust } from '$lib/rb/wheel-adjust';
 	import type { DeckId } from '$lib/rb/deck-slots';
 	import { midiTakeoverGhost } from '$lib/rb/midi/takeover-ui.svelte';
+	import { valueText } from '$lib/a11y/value-text';
 	import {
 		KNOB_CFG,
 		beginSelectionDrag,
@@ -256,6 +257,7 @@
 	aria-valuemin={0}
 	aria-valuemax={1}
 	aria-valuenow={value}
+	aria-valuetext={valueText('fader', value)}
 	tabindex="0"
 	onclick={handleClick}
 	onpointerdown={handlePointerDown}

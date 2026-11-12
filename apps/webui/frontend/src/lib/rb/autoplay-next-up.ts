@@ -34,7 +34,7 @@
  *
  * CLI twin: `python -m apps.webui.ahead_analysis_cli next-up`.
  */
-import { api, unwrap } from '$lib/api/client';
+import { api, unwrap } from '$lib/api/rb-http';
 import type { TabLeadership } from '$lib/rb/tab-leadership';
 
 /** How many charted tracks ahead get analyzed while playing (the engine keeps at most 4). */

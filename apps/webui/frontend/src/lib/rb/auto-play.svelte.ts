@@ -43,9 +43,11 @@ import {
 	remainingMs,
 	shouldTriggerAutoPlay,
 	tempoBoundsFromPitchRange,
+	nextFollowerUnloadStreak,
 	type AutoPlayDeckSnap,
 	type AutoPlayHandoffPhase,
-	type AutoPlayMasterPromotion
+	type AutoPlayMasterPromotion,
+	type FollowerUnloadStreak
 } from '$lib/rb/auto-play';
 import {
 	clearChartedAutoPlayOrder,
@@ -138,8 +140,8 @@ let _unplayableIds = new Set<string>();
  * failures and is told its own candidates failed to load (r3974580407).
  */
 let _attemptsFor: { source: string; failed_ids: string[] } = { source: '', failed_ids: [] };
-/** Consecutive handoffs whose follower would not clear (Sol P1, #5648). */
-let _followerUnloadFailures = 0;
+/** Consecutive follower-unload failures for one source/follower pair (Sol P2, #5691). */
+let _followerUnloadStreak: FollowerUnloadStreak | null = null;
 /** Toast-once while waiting for a free follower (does not pin _triggeredFor). */
 let _waitingFollowerFor: string | null = null;
 /** Empty-feed toast epoch during playlist hydration, without consuming the source arm. */
@@ -160,6 +162,11 @@ export function readAutoPlayHandoffInFlight(): boolean {
 	return _inFlight;
 }
 
+/** Same predicate the UI-mirror feeds as `handoff_pending` before classify (AGENT-20). */
+export function readAutoPlayHandoffPending(): boolean {
+	return _inFlight || _pendingMaster !== null;
+}
+
 // AGENT-29: a plan accepted while a handoff or a master promotion is loading, starting or moving a deck would share it, so the plan runner asks here.
 registerAutoPlayHandoffInFlight(() => _inFlight || _promoting || autoPlayDecisionLoading());
 
@@ -177,7 +184,7 @@ export function readAutoPlayMirrorStatus(): AutoPlayMirrorStatus {
 		installed: _stopArmWatcher !== null,
 		stall_reason: readAutoPlayStall()?.reason ?? null,
 		has_source: source !== null && source.stable_id !== null,
-		handoff_pending: _inFlight || _pendingMaster !== null,
+		handoff_pending: readAutoPlayHandoffPending(),
 		any_playing: snaps.some((deck) => deck.playing)
 	});
 }
@@ -230,7 +237,7 @@ function _syncPlayedSet(): void {
 		_playedIds = new Set();
 		_unplayableIds = new Set();
 		_attemptsFor = { source: '', failed_ids: [] };
-		_followerUnloadFailures = 0;
+		_followerUnloadStreak = null;
 		_playedFeedEpoch = epoch;
 		if (_exhaustedFeedEpoch !== null) {
 			_triggeredFor = null;
@@ -661,7 +668,7 @@ async function _runHandoff(
 	try {
 		await _handoff(source, follower, nextId, generation);
 		_attemptsFor = { source: '', failed_ids: [] };
-		_followerUnloadFailures = 0;
+		_followerUnloadStreak = null;
 	} catch (error: unknown) {
 		const message = error instanceof Error ? error.message : String(error);
 		// NOTHING from a dead arming may report or mutate (Codex r3974734066,
@@ -681,6 +688,11 @@ async function _runHandoff(
 		// which is the live bug. A wrong 'commit' guess only forgoes a retry.
 		const phase: AutoPlayHandoffPhase =
 			error instanceof AutoPlayHandoffError ? error.phase : 'commit';
+		_followerUnloadStreak = nextFollowerUnloadStreak(_followerUnloadStreak, {
+			phase,
+			source: source.id,
+			follower
+		});
 		if (!handoffFailureIsRetryable(phase)) {
 			// Row 17: nextId IS on the follower. Do not quarantine it, do not
 			// re-arm - _triggeredFor stays pinned to this source track.
@@ -702,8 +714,8 @@ async function _runHandoff(
 			// fine, so it is NOT quarantined and stays pickable; only the deck is.
 			_claimedIds.delete(nextId);
 			_playedIds.delete(nextId);
-			_followerUnloadFailures += 1;
-			if (_followerUnloadFailures < MAX_HANDOFF_ATTEMPTS) {
+			const count = _followerUnloadStreak?.count ?? 0;
+			if (count < MAX_HANDOFF_ATTEMPTS) {
 				_triggeredFor = null;
 				pushToast(
 					`auto-play: could not clear deck ${follower} for the next track: ${message}`,
@@ -869,6 +881,7 @@ export function installAutoPlay(): () => void {
 	const unregisterRankProvider = registerAutoPlayRankProvider(() => autoPlayOrder.rankOf);
 	_stopArmWatcher = $effect.root(() => {
 		$effect(() => {
+			_followerUnloadStreak = null;
 			_generation += 1;
 			if (uiPrefs.auto_play_enabled) {
 				// PLAY-05: activation creates the inspectable queue before the
@@ -920,7 +933,7 @@ export function installAutoPlay(): () => void {
 		_playedIds = new Set();
 		_unplayableIds = new Set();
 		_attemptsFor = { source: '', failed_ids: [] };
-		_followerUnloadFailures = 0;
+		_followerUnloadStreak = null;
 		_playedFeedEpoch = -1;
 		_clearChartedOrder();
 		clearAutoPlayQueue();

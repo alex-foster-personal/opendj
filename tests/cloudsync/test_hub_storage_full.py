@@ -15,7 +15,6 @@ import pytest
 
 from apps.shared.state import db as state_db
 from apps.sync_hub import client, engine, generation, hub_wal_keeper, protocol, service_storage
-from apps.sync_hub import service as sync_service
 from tests.cloudsync.enrollment_transport import TestClientTransport
 from tests.cloudsync.test_hub_sync import (
     _DEV_A,
@@ -144,7 +143,7 @@ def _cap_hub_pages(monkeypatch: pytest.MonkeyPatch, hub_dir: Path, hub: TestClie
             conn.execute(f"PRAGMA max_page_count = {page_count}")
         return conn
 
-    monkeypatch.setattr(sync_service.state_db, "open_rw", wrapper)
+    monkeypatch.setattr(state_db, "open_rw", wrapper)
     return page_count
 
 

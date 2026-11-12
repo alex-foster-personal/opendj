@@ -88,6 +88,8 @@ test('the stacked trigger wraps HOT over CUE without changing its text', async (
 	const stacked = _rule(style, '\t.dropdown.stacked');
 	assert.match(stacked, /width: min-content;/, 'min-content wraps the label at its space');
 	assert.match(stacked, /height: auto;/, 'two lines need more than the 18px single-line height');
-	// The label text is unchanged, so the accessible name and the caret test hold.
-	assert.match(menu, />\s*HOT CUE\s*<\/button>/);
+	// The label text is unchanged by stacking: the trigger prints the current pad mode's
+	// label upper-cased (PR #9956), HOT CUE by default, so the accessible name and the caret test hold.
+	assert.match(menu, />\s*\{triggerLabel\}\s*<\/button>/);
+	assert.match(menu, /\?\? 'Hot Cue'\)\.toUpperCase\(\)/, 'with no mode picked the trigger reads HOT CUE');
 });

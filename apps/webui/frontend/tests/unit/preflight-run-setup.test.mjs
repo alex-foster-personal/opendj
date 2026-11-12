@@ -127,24 +127,15 @@ after(() => {
 });
 
 test('shouldShowPreflightStrip stays true after a dismissed-empty pass clears the gate (#2653)', () => {
-	assert.equal(
-		bootCopy.shouldShowPreflightStrip(false, true, [dismissedEmptyLibraryRow()]),
-		true
-	);
+	assert.equal(bootCopy.shouldShowPreflightStrip(false, true, [dismissedEmptyLibraryRow()]), true);
 });
 
 test('shouldShowPreflightStrip is false once library-attached passes', () => {
-	assert.equal(
-		bootCopy.shouldShowPreflightStrip(false, true, [attachedLibraryRow()]),
-		false
-	);
+	assert.equal(bootCopy.shouldShowPreflightStrip(false, true, [attachedLibraryRow()]), false);
 });
 
 test('shouldShowPreflightStrip stays true while the gate is not cleared', () => {
-	assert.equal(
-		bootCopy.shouldShowPreflightStrip(false, false, [dismissedEmptyLibraryRow()]),
-		true
-	);
+	assert.equal(bootCopy.shouldShowPreflightStrip(false, false, [dismissedEmptyLibraryRow()]), true);
 });
 
 test('shouldShowPreflightStrip is false when the blocking gate shows', () => {
@@ -294,7 +285,8 @@ test('a failed dismiss write does not navigate and surfaces setupError', async (
 		}
 
 		assert.deepEqual(navigated, []);
-		const err = findByTestId(target, 'preflight-setup-error') ?? target.querySelector?.('.preflight-error');
+		const err =
+			findByTestId(target, 'preflight-setup-error') ?? target.querySelector?.('.preflight-error');
 		const errText = err?.textContent ?? '';
 		assert.match(errText, /dismiss write failed|Something went wrong/);
 	} finally {

@@ -8,10 +8,9 @@ monitor and stage live-mode names are re-exported here (same pattern as ``apps.a
 from __future__ import annotations
 
 import asyncio
-import contextlib
 import json
 from collections.abc import AsyncIterator
-from contextlib import asynccontextmanager
+from contextlib import asynccontextmanager, suppress
 from typing import Any
 
 from fastapi import APIRouter, HTTPException, Request, WebSocket, WebSocketDisconnect
@@ -37,6 +36,7 @@ from apps.lighting.runtime import (
     LightingRuntime,
     ReplayFeed,
 )
+from apps.lighting.show_map import list_scene_catalog
 from apps.lighting.stage_feed import FrameFeed, parse_frame, parse_frame_message, stage_patch_body
 from apps.lighting.stage_replay import replay_query
 
@@ -84,6 +84,16 @@ class LightingStatus(BaseModel):
     decks: list[LightingDeckStatus] = Field(default_factory=list)
     weights: dict[str, float] = Field(default_factory=dict)
     subscribers: int = 0
+
+
+class LightingSceneRef(BaseModel):
+    id: str
+    name: str
+
+
+class LightingLook(BaseModel):
+    scene_id: str | None = None
+    phrase_label: str | None = None
 
 
 @asynccontextmanager
@@ -149,6 +159,30 @@ def api_lighting_status(request: Request) -> dict[str, Any]:
     return bind_lighting_runtime(request.app).status()
 
 
+@router.get(
+    "/scenes",
+    response_model=list[LightingSceneRef],
+    responses={409: {"description": "lighting.output is off"}},
+)
+def api_lighting_scenes(request: Request) -> list[dict[str, str]]:
+    refusal = lighting_refusal(request.app)
+    if refusal is not None:
+        raise HTTPException(status_code=409, detail=refusal)
+    return list_scene_catalog()
+
+
+@router.get(
+    "/look",
+    response_model=LightingLook,
+    responses={409: {"description": "lighting.output is off"}},
+)
+def api_lighting_look(request: Request) -> dict[str, str | None]:
+    refusal = lighting_refusal(request.app)
+    if refusal is not None:
+        raise HTTPException(status_code=409, detail=refusal)
+    return bind_lighting_runtime(request.app).current_look()
+
+
 async def _events_pump(websocket: WebSocket, sub: Any) -> None:
     try:
         while not sub.overflow.is_set():
@@ -183,7 +217,7 @@ async def api_lighting_events(websocket: WebSocket) -> None:
     finally:
         if pump is not None:
             pump.cancel()
-            with contextlib.suppress(asyncio.CancelledError):
+            with suppress(asyncio.CancelledError):
                 await pump
         runtime.hub.detach(sub)
 

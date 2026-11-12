@@ -338,8 +338,10 @@ def similar_tracks(
 ) -> list[tuple[str, float]]:
     """Tracks whose genre probability vector is closest (cosine) to ``stable_id``'s.
 
-    Raises KeyError when the track has no vector, so "no neighbors" is never
-    confused with "never measured".
+    This vector is the Generic find-similar-tracks ranker (issue #345 / #11188); an
+    empty list means no other measured tracks, not "never measured". Raises
+    KeyError when the track has no vector, so "no neighbors" is never confused
+    with "never measured".
     """
     all_vectors = vectors(conn, provider)
     if stable_id not in all_vectors:

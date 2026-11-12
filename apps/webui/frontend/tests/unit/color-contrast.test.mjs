@@ -173,6 +173,22 @@ for (const [skin, sel] of Object.entries(SKIN_SELECTORS)) {
   });
 }
 
+// KEYB-11383: the keyboard-deck marker is rb-accent on the deck header's rb-panel.
+test("KEYB-11383 keyboard deck marker clears 3:1 on the panel in Default, Gothic and Light", () => {
+  assert.ok(
+    cc.PAIRINGS.some((p) => p.fg === "rb-accent" && p.bg === "rb-panel" && p.level === "non-text"),
+    "no non-text pairing pins rb-accent on rb-panel",
+  );
+  const base = cc.parseColorTokens(THEME_CSS, ".perf-root");
+  for (const [skin, tokens] of [
+    ["Default", base],
+    ...Object.entries(SKIN_SELECTORS).map(([s, sel]) => [s, { ...base, ...cc.parseColorTokens(THEME_CSS, sel) }]),
+  ]) {
+    const ratio = cc.contrastRatio(tokens["rb-accent"], tokens["rb-panel"]);
+    assert.ok(ratio >= 3, `${skin}: rb-accent on rb-panel is ${ratio.toFixed(2)}:1`);
+  }
+});
+
 test("PAIR-08 mutation: white text on Gothic's pale accent is reported", () => {
   const tokens = {
     ...cc.parseColorTokens(THEME_CSS, ".perf-root"),

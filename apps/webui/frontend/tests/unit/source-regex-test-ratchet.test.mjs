@@ -89,7 +89,11 @@ const RENDERED_EXAMPLE = "setup-overlay-render.test.mjs";
 /** A seeded offender the detector must find (positive control). */
 const KNOWN_OFFENDER = "head-delay-stepper.test.mjs";
 /** Helpers that read `.svelte` only to COMPILE and render it. */
-const RENDER_HELPERS = new Set(["load-svelte-ssr.mjs", "mount-svelte.mjs"]);
+const RENDER_HELPERS = new Set([
+  "load-svelte-ssr.mjs",
+  "mount-svelte.mjs",
+  "mount-svelte-client.mjs",
+]);
 
 const SRC_DIR = fileURLToPath(new URL("../../src", import.meta.url));
 const FS_READERS = ["readFile", "readFileSync"];

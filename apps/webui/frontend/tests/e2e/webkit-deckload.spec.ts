@@ -212,22 +212,30 @@ const PERF_LOG_STORAGE_KEY = 'mdt.perfEventLog';
 interface PerfConsoleLine {
 	readonly text: string;
 	readonly stages: Record<string, number>;
+	readonly facts: Record<string, number>;
 }
 
 let perfLines: PerfConsoleLine[] = [];
 let pageErrors: string[] = [];
 
-/** Parse `[perf] deck-load ... stretchCreate=45 decodeMix=12` into stages. */
+/** Parse `[perf] deck-load ... stretchCreate=45 facts.audioBytes=5059178`. */
 function _parsePerfLine(text: string): PerfConsoleLine | null {
 	if (!text.startsWith('[perf] ')) return null;
 	const stages: Record<string, number> = {};
+	const facts: Record<string, number> = {};
 	for (const token of text.split(/\s+/)) {
 		const eq = token.indexOf('=');
 		if (eq <= 0) continue;
 		const value = Number(token.slice(eq + 1));
-		if (Number.isFinite(value)) stages[token.slice(0, eq)] = value;
+		if (!Number.isFinite(value)) continue;
+		const key = token.slice(0, eq);
+		if (key.startsWith('facts.')) {
+			facts[key.slice('facts.'.length)] = value;
+		} else {
+			stages[key] = value;
+		}
 	}
-	return { text, stages };
+	return { text, stages, facts };
 }
 
 function _onConsole(message: ConsoleMessage): void {

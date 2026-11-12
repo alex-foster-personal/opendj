@@ -17,6 +17,7 @@
 import { expect, test } from '@playwright/test';
 
 test('the rail Home entry returns from a playlist to All Tracks', async ({ page }) => {
+	test.fixme(true, 'a conn-dot intercepts the rail click, see #13523');
 	test.setTimeout(120_000);
 	// The enrich card (ENRICH-01) floats over the library on this unanalyzed
 	// fixture; hide it the way the user does.

@@ -27,7 +27,7 @@ test('if an artist cell lets text spill past its column (overflow visible) then 
 	for (const m of TABLE.matchAll(/\n\s*[^\n{}]*\.c-artist[^\n{]*\{([^}]*)\}/g)) {
 		assert.doesNotMatch(m[1], /overflow:\s*visible/);
 	}
-	assert.match(TABLE, /<td class="c-artist"/);
+	assert.match(TABLE, /<td\s+class="c-artist"/);
 	const td = ruleBodies(TABLE, ':where(tbody > tr) > :global(td)')[0];
 	assert.match(td, /overflow:\s*hidden/);
 	assert.match(td, /text-overflow:\s*ellipsis/);

@@ -25,7 +25,9 @@ from pathlib import Path
 from typing import Any
 
 from fastapi import APIRouter, HTTPException, Request
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict
+
+from apps.opendj_pins.http import CommentArchiveOut, CommentUpdateIn, append_agent_note_to_replies
 
 from .feedback import (
     _COMMENTS_FILE,
@@ -39,28 +41,13 @@ from .feedback import (
     keep_unknown_fields,
     write_atomic,
 )
-from .feedback_replies import append_agent_note_to_replies
 
 router = APIRouter(prefix="/feedback", tags=["feedback"])
 MOUNT_UNDER_API_PREFIX = True
 
-# `archived` is only ever reached through POST /comments/{id}/archive, which
-# performs the archive-file transaction alongside the removal. Allowing it
-# here would let a plain PATCH make a pin vanish from the board with no
-# corresponding archive-file entry.
-_PATCHABLE_STATUSES = "^(open|issued|blocked|fixed|merged)$"
 _BLOCKED_REQUEST = re.compile(
     r"^(auth|destructive-action|product-fork): the maintainer must .+[.!?](?:\s|$)"
 )
-
-
-# ----- models -------------------------------------------------------------
-class CommentUpdateIn(BaseModel):
-    text: str = Field(default=None, min_length=1)
-    status: str | None = Field(default=None, pattern=_PATCHABLE_STATUSES)
-    issue_url: str | None = None
-    agent_note: str | None = None
-    fixed_in_sha: str | None = Field(default=None, min_length=7, max_length=40)
 
 
 class CommentFollowOnIn(BaseModel):
@@ -69,13 +56,6 @@ class CommentFollowOnIn(BaseModel):
     model_config = ConfigDict(frozen=True)
 
     text: str | None = None
-
-
-class CommentArchiveOut(BaseModel):
-    model_config = ConfigDict(frozen=True)
-
-    archived_to: str
-    comment: CommentOut
 
 
 # ----- storage ------------------------------------------------------------

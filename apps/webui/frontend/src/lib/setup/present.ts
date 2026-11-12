@@ -258,6 +258,17 @@ export function humanAdvanceRefusal(
 	return 'This step is not available yet.';
 }
 
+/** Operator-safe copy for the same gate as backRefusal(). Raw refusal still
+ * gates the control and rides on data-agent-refusal / errorDiagnostic. */
+export function humanBackRefusalSentence(raw: string | null): string | null {
+	if (raw === null) return null;
+	if (raw === 'this is the first step') return 'This is the first step.';
+	if (raw.startsWith('the import is running (')) {
+		return 'The import is still running. You cannot go back until it finishes.';
+	}
+	return 'You cannot go back from here right now.';
+}
+
 /**
  * Sentences this client writes itself, mapped to the copy an operator sees.
  */

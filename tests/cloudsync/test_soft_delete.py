@@ -447,6 +447,12 @@ _ALLOWED_HARD_DELETES: frozenset[tuple[str, str]] = frozenset({
     # itself count against the owner's month. The table is the hub's own
     # quota ledger and is not a protocol.SYNC_TABLES member.
     ("apps/sync_hub/stem_meter.py", "dynamic:USAGE_TABLE"),
+    # apps.sync_hub.hub_answered.forget_hub (issue #10304): after a hub
+    # restore the spoke drops its cache of rows that hub answered as not
+    # newer. sync_hub_answered is spoke-local bookkeeping, not a
+    # protocol.SYNC_TABLES member, and carries no deleted_at column; a stale
+    # answer must vanish, not be tombstoned.
+    ("apps/sync_hub/hub_answered.py", "dynamic:ANSWERED_TABLE"),
     # apps.sync_hub.engine_retention.prune_changelog's own DELETE, against
     # whichever changelog table the caller named -- the retention mechanism
     # itself (round 2 finding N6), not a synced-row delete. Round 3's

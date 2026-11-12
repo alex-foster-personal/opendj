@@ -109,6 +109,9 @@ class LiveAnswer:
     unscored_plan: dict[str, Any] | None = None
     #: AGENT-49: this is the pair's saved plan, replayed rather than chosen.
     saved: bool = False
+    planner_confidence: float | None = None
+    planner_weakest_factor: str | None = None
+    planner_confidence_title: str | None = None
 
 
 @dataclass(frozen=True)
@@ -558,6 +561,9 @@ def plan_live(
             rendered=len(scored),
             scored=True,
             plan_ms=ms,
+            planner_confidence=chosen.planner_confidence,
+            planner_weakest_factor=chosen.planner_weakest_factor,
+            planner_confidence_title=chosen.planner_confidence_title,
         )
     return _plan_unscored(
         autodj, base, request, read, (out_profile, in_profile), (min_out_bar, around), started, dropped
@@ -644,6 +650,17 @@ def _plan_unscored(
     plan = by_id[pick.cid]
     order = autodj.compile_plan(plan, in_profile, plan_id=f"plan-{uuid.uuid4().hex[:12]}", live=read)
     reason = _reason(plan.style, plan.bars, None, base.intent, request.recent_styles)
+    chosen_row = next(
+        (
+            row
+            for row in proposed["proposals"]
+            if autodj.parse_plan(row["plan"]).out.start_bar == plan.out.start_bar
+            and autodj.parse_plan(row["plan"]).in_.start_bar == plan.in_.start_bar
+            and autodj.parse_plan(row["plan"]).style == plan.style
+            and autodj.parse_plan(row["plan"]).bars == plan.bars
+        ),
+        None,
+    )
     return replace(
         base,
         order=order,
@@ -651,4 +668,7 @@ def _plan_unscored(
         considered=considered,
         unscored_plan=plan.to_json(),
         plan_ms=round((time.perf_counter() - started) * 1000.0, 1),
+        planner_confidence=None if chosen_row is None else chosen_row.get("confidence"),
+        planner_weakest_factor=None if chosen_row is None else chosen_row.get("weakest_factor"),
+        planner_confidence_title=None if chosen_row is None else chosen_row.get("confidence_title"),
     )

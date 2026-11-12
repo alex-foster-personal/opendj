@@ -16,6 +16,7 @@ from __future__ import annotations
 from collections.abc import Iterable
 from pathlib import Path
 
+from apps.shared.m3u8 import M3u8Entry, m3u8_lines
 from apps.sync.usb.layout import dst_relpath, sanitise_segment
 from apps.sync.usb.profile import Profile
 from apps.sync.usb.state import CanonicalTrack
@@ -33,14 +34,13 @@ def _m3u8_lines_for(
     tracks: Iterable[CanonicalTrack],
     profile: Profile,
 ) -> list[str]:
-    lines: list[str] = ["#EXTM3U"]
+    entries: list[M3u8Entry] = []
     for idx, t in enumerate(tracks, start=1):
         duration_secs = 0
         if t.duration_ms is not None:
             duration_secs = max(0, round(t.duration_ms / 1000))
-        title_display = (t.title or t.source_path.stem).replace("\n", " ").strip()
-        artist_display = (t.artist or "").replace("\n", " ").strip()
-        extinf = f"#EXTINF:{duration_secs},{artist_display} - {title_display}"
+        title_display = t.title or t.source_path.stem
+        artist_display = t.artist or ""
         rel = dst_relpath(
             layout=profile.layout,
             format_=profile.format,
@@ -51,12 +51,16 @@ def _m3u8_lines_for(
             title=t.title,
             src=t.source_path,
         )
-        # Drive-relative with forward slashes; use a leading "../" hop-free
-        # path because the m3u8 itself lives under /Playlists/.
         rel_from_playlists = f"../{rel.as_posix()}"
-        lines.append(extinf)
-        lines.append(rel_from_playlists)
-    return lines
+        entries.append(
+            M3u8Entry(
+                duration_s=duration_secs,
+                artist=artist_display,
+                title=title_display,
+                location=rel_from_playlists,
+            )
+        )
+    return m3u8_lines(entries)
 
 
 def write_m3u8s(

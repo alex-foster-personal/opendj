@@ -80,8 +80,9 @@ LIBRARY_CHANGED_KINDS: tuple[str, ...] = (
 )
 
 
-# RFC 6455 1008 (policy violation): the shell broke the ack wire contract.
+# RFC 6455 1008 (policy violation): shell ack wire break, link.clock flag-off refusal.
 SHELL_ACK_PROTOCOL_ERROR_CODE: int = 1008
+LINK_CLOCK_POLICY_ERROR_CODE: int = SHELL_ACK_PROTOCOL_ERROR_CODE
 
 
 class ShellAckProtocolError(ValueError):
@@ -392,6 +393,7 @@ async def _pump(
 
 __all__ = [
     "HELLO_TOPIC",
+    "LINK_CLOCK_POLICY_ERROR_CODE",
     "QUEUE_SIZE",
     "SLOW_CONSUMER_CODE",
     "SLOW_CONSUMER_REASON",

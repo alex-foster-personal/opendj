@@ -6,12 +6,16 @@
 		getStemWaveformEntry
 	} from './stem-waveform-cache.svelte';
 	import {
+		readyStemLayout,
+		stemRowAudibility,
+		stemWaveRowAlpha,
 		stemWaveformApiPart,
 		stemWaveRowColorFromElement,
 		stemWaveRowUnavailableTip,
 		stemWaveRowClickCommand,
 		type StemWaveRowCommand,
-		STEM_WAVE_ROW_PX
+		STEM_WAVE_ROW_PX,
+		type StemRowAudibility
 	} from './stem-waveform-ui';
 	import { drawStemWaveRow } from './render';
 	import { uiPrefs } from '$lib/rb/prefs.svelte';
@@ -51,6 +55,16 @@
 	}
 
 	const unavailableTip = $derived(stemWaveRowUnavailableTip(deck, stem));
+	const audibility: StemRowAudibility | null = $derived(
+		deck.stems.status === 'ready'
+			? stemRowAudibility(
+					deck.stems.controls,
+					stem,
+					deck.stems.playback,
+					readyStemLayout(deck)
+				)
+			: null
+	);
 	const apiPart = $derived(
 		deck.stems.status === 'ready' ? stemWaveformApiPart(stem, deck.stems.layout) : null
 	);
@@ -92,6 +106,7 @@
 		if (!shouldFetch || canvasEl === null || stemColor === null || canvasWidth <= 0) return;
 		const envelope = entry?.status === 'ready' ? entry.envelope : null;
 		if (envelope === null) return;
+		const alpha = audibility === null ? 1 : stemWaveRowAlpha(audibility);
 		const dpr = window.devicePixelRatio || 1;
 		const cssH = STEM_WAVE_ROW_PX;
 		const pxW = Math.max(1, Math.round(canvasWidth * dpr));
@@ -112,7 +127,8 @@
 			pitch: deck.pitch,
 			width: canvasWidth,
 			height: cssH,
-			color: stemColor
+			color: stemColor,
+			alpha
 		});
 	});
 </script>
@@ -125,5 +141,6 @@
 	controlState={deck.stems.controls[stem] ?? null}
 	onSolo={solo}
 	onMute={mute}
+	{audibility}
 	bind:canvasEl
 />

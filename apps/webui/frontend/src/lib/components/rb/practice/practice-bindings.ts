@@ -18,6 +18,10 @@
  *     [if] a layout control with a wire number absent from the map resolves silently [then] ⛔️
  *   ✔︎ A control whose midi is null (wire unavailable) resolves to kind 'unwired' and renders inert with the PARITY-TODO title; no number is invented to satisfy the map.
  *     [if] a null-wire control resolves bound, or a present wire the map lacks stops throwing [then] ⛔️
+ *   ✔︎ controlIdForWire maps a wire (base or SHIFT row) back to the panel control that sends it (#10251).
+ *     [if] any FLX4 control's wire does not map back to its own id [then] ⛔️
+ *     [if] a wire the panel does not list maps to a control [then] ⛔️
+ *     [if] two controls claiming one wire resolve silently [then] ⛔️
  */
 
 import type {
@@ -115,7 +119,7 @@ export type ResolvedControl =
 	| { kind: 'inert'; control: PanelControl; wire: PanelWire; hint: string }
 	| { kind: 'unwired'; control: PanelControl; wire: null };
 
-function _sameSource(a: PanelWire, b: MidiBinding['source']): boolean {
+function _sameSource(a: PanelWire, b: PanelWire): boolean {
 	return a.ch === b.ch && a.kind === b.kind && a.id === b.id;
 }
 
@@ -227,6 +231,23 @@ export function validatePadLayers(layout: PanelLayout, selection: PadLayerSelect
 				throw new Error(`invalid pad layer selector on ${c.id}`);
 		}
 	}
+}
+
+/** Inverse of resolveControl's wire pick: which panel control sends this wire (base or SHIFT
+ * row). Throws when two controls claim one wire; null when the panel lists none. */
+export function controlIdForWire(layout: PanelLayout, wire: PanelWire): string | null {
+	const claimed = layout.controls.filter(
+		(c) =>
+			(c.midi !== null && _sameSource(c.midi, wire)) ||
+			(c.shift_midi !== null && _sameSource(c.shift_midi, wire))
+	);
+	if (claimed.length > 1) {
+		const { ch, kind, id } = wire;
+		throw new Error(
+			`practice layout ${layout.device}: wire ch ${ch} ${kind} ${id} is claimed by ${claimed[0].id} and ${claimed[1].id}`
+		);
+	}
+	return claimed.length === 1 ? claimed[0].id : null;
 }
 
 export function resolveLayout(

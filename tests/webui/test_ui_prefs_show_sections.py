@@ -1,4 +1,4 @@
-"""STRUCT-05 show_sections pref over HTTP (agent parity).
+"""STRUCT-05 and STRUCTUI-12787 segment display prefs over HTTP (agent parity).
 
 [if] show_sections is PUT over HTTP [then] it persists and defaults off, [else stop].
 
@@ -103,3 +103,60 @@ def test_show_sections_rejects_non_boolean_on_disk(
     assert r.status_code == 422
     assert r.json()["detail"]["code"] == "UI_PREFS_INVALID"
     assert "show_sections" in r.json()["detail"]["message"]
+
+
+@pytest.mark.requirement("STRUCTUI-12787")
+def test_segment_display_defaults_on_fresh_get(prefs_client: TestClient) -> None:
+    """[if] ui-prefs are fetched fresh [then] structui styles default M1/O1/hide, [else stop]."""
+    body = prefs_client.get("/api/v1/ui-prefs").json()
+    assert body["sections_main_style"] == "m1_tint"
+    assert body["sections_overview_style"] == "o1_strip"
+    assert body["sections_uncertain"] == "hide"
+    assert body["sections_sticky_title"] is True
+    assert body["sections_next_countdown"] is True
+
+
+@pytest.mark.requirement("STRUCTUI-12787")
+def test_put_main_m2_and_overview_o1_persist(
+    prefs_client: TestClient, tmp_path: Path
+) -> None:
+    """[if] a PUT sets main style M2 and overview O1 [then] disk and GET carry both, [else stop]."""
+    r = prefs_client.put(
+        "/api/v1/ui-prefs",
+        json={
+            "sections_main_style": "m2_recolor",
+            "sections_overview_style": "o1_strip",
+        },
+    )
+    assert r.status_code == 200
+    assert r.json()["sections_main_style"] == "m2_recolor"
+    assert r.json()["sections_overview_style"] == "o1_strip"
+    disk = _disk(tmp_path)
+    assert disk["sections_main_style"] == "m2_recolor"
+    assert disk["sections_overview_style"] == "o1_strip"
+    assert prefs_client.get("/api/v1/ui-prefs").json()["sections_uncertain"] == "hide"
+
+
+@pytest.mark.requirement("STRUCTUI-12787")
+def test_show_sections_off_leaves_structui_style_keys_intact(
+    prefs_client: TestClient, tmp_path: Path
+) -> None:
+    """[if] Show segments is off [then] stored style keys remain on GET, [else stop]."""
+    prefs_client.put(
+        "/api/v1/ui-prefs",
+        json={"show_sections": False, "sections_main_style": "m3_lines"},
+    )
+    body = prefs_client.get("/api/v1/ui-prefs").json()
+    assert body["show_sections"] is False
+    assert body["sections_main_style"] == "m3_lines"
+
+
+@pytest.mark.requirement("STRUCTUI-12787")
+def test_uncertain_hide_is_default_and_show_faded_round_trips(
+    prefs_client: TestClient, tmp_path: Path
+) -> None:
+    """[if] uncertain is hide [then] default GET says hide and show_faded round-trips, [else stop]."""
+    assert prefs_client.get("/api/v1/ui-prefs").json()["sections_uncertain"] == "hide"
+    r = prefs_client.put("/api/v1/ui-prefs", json={"sections_uncertain": "show_faded"})
+    assert r.json()["sections_uncertain"] == "show_faded"
+    assert _disk(tmp_path)["sections_uncertain"] == "show_faded"

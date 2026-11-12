@@ -28,6 +28,14 @@ test('library source tabs list Playlists, Taglists, Autolists, USBs in order', (
 	assert.ok(playlists >= 0 && taglists > playlists && autolists > taglists && usbs > autolists);
 });
 
+test('library source tabs add Recordings after USBs when set recording is enabled', () => {
+	const tabs = source('src/lib/components/rb/browser/LibrarySourceTabs.svelte');
+	assert.match(tabs, /library-source-recordings/);
+	const usbs = tabs.indexOf("testid: 'library-source-usbs'");
+	const recordings = tabs.indexOf("testid: 'library-source-recordings'");
+	assert.ok(usbs >= 0 && recordings > usbs);
+});
+
 test('PlaylistTree column mode uses data-testid playlist-column-view without a full-width toggle row', () => {
 	const tree =
 		source('src/lib/components/rb/browser/PlaylistTree.svelte') +

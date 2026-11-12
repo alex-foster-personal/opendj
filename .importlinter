@@ -30,7 +30,7 @@ type = layers
 containers =
     apps
 layers =
-    ableton_link : adapters : agentbox : ai_gateway_admin : analysis : analysis_beatgrid : analysis_bench : analysis_key : analysis_loudness : analysis_structure : analysis_waveform : audit : autodj : b2b_booth : b2b_pairing : b2b_session : b2b_sync : b2b_transport : cloud : database : dedup : diagnostics : dj_copilot : engine_core : entitlements : equivalence : feature_flags : genre_infer : library_wheel : lighting : loudness : lyrics : mik : native_tools : now_playing : open_dj : opendj_cli : pairings : parity : play_analytics : playlist_sets : plugins : reconcile : rekordbox_analyse : rekordbox_ingestion : rescue : set_notes : sets : smartlists : spotify : stems : stream : streaming_transfer : sync : sync_hub : tags : transition_score : vocals : voice : webui
+    ableton_link : adapters : agentbox : ai_gateway_admin : analysis : analysis_beatgrid : analysis_bench : analysis_key : analysis_loudness : analysis_structure : analysis_waveform : audio_devices : audit : autodj : b2b_booth : b2b_pairing : b2b_session : b2b_sync : b2b_transport : cloud : compatint : controllers : database : dedup : diagnostics : dj_copilot : engine_core : entitlements : equivalence : feature_flags : genre_infer : library_wheel : lighting : loudness : lyrics : mik : native_tools : now_playing : onboarding : open_dj : opendj_cli : opendj_pins : osc : pairings : parity : play_analytics : playlist_sets : plugins : reconcile : rekordbox_analyse : rekordbox_ingestion : rescue : scrobble : set_notes : sets : smartlists : spotify : stems : stream : streaming_transfer : sync : sync_hub : tags : transition_score : vocals : voice : webui
     shared
 exhaustive = true
 ; Measured Sun 17 Aug 2026: apps.shared had 17 dependents and 0 dependencies on
@@ -56,7 +56,7 @@ layers =
     engine_core : opendj_cli
     webui
     transition_score
-    ableton_link : adapters : agentbox : ai_gateway_admin : analysis : analysis_beatgrid : analysis_bench : analysis_key : analysis_loudness : analysis_structure : analysis_waveform : audit : autodj : b2b_booth : b2b_pairing : b2b_session : b2b_sync : b2b_transport : cloud : database : dedup : diagnostics : dj_copilot : entitlements : equivalence : feature_flags : genre_infer : library_wheel : lighting : loudness : lyrics : mik : native_tools : now_playing : open_dj : pairings : parity : play_analytics : playlist_sets : plugins : reconcile : rekordbox_analyse : rekordbox_ingestion : rescue : set_notes : sets : smartlists : spotify : stems : stream : streaming_transfer : sync : sync_hub : tags : vocals : voice : shared
+    ableton_link : adapters : agentbox : ai_gateway_admin : analysis : analysis_beatgrid : analysis_bench : analysis_key : analysis_loudness : analysis_structure : analysis_waveform : audio_devices : audit : autodj : b2b_booth : b2b_pairing : b2b_session : b2b_sync : b2b_transport : cloud : compatint : controllers : database : dedup : diagnostics : dj_copilot : entitlements : equivalence : feature_flags : genre_infer : library_wheel : lighting : loudness : lyrics : mik : native_tools : now_playing : onboarding : open_dj : opendj_pins : osc : pairings : parity : play_analytics : playlist_sets : plugins : reconcile : rekordbox_analyse : rekordbox_ingestion : rescue : scrobble : set_notes : sets : smartlists : spotify : stems : stream : streaming_transfer : sync : sync_hub : tags : vocals : voice : shared
 exhaustive = true
 ; apps.webui is the delivery layer: it composes domain packages behind HTTP. When a
 ; domain package imports back into it you get a cycle, and the domain package can
@@ -149,18 +149,26 @@ type = public_surface
 enforced =
     ai_gateway_admin
     analysis_structure
+    audio_devices
     autodj
+    compatint
+    controllers
     dedup
     library_wheel
     lighting
+    now_playing
+    onboarding
+    osc
     pairings
     parity
+    opendj_pins
     play_analytics
     playlist_sets
     reconcile
     rekordbox_analyse
     rekordbox_ingestion
     rescue
+    scrobble
     set_notes
     streaming_transfer
     tags
@@ -185,6 +193,8 @@ composition_roots =
 ; `import_module`, `exec`, `eval` and `compile` as the calls it looks for (Sat 31 Oct 2026). apps.plugins.host is the
 ; plugin store's loader: a plugin's module name comes from its signed catalog entry, so it is data (#6522).
 ; scripts.suite_census_mutation compiles a mutated copy of a module's AST to test the suite against it (#5636).
+; apps.shared.telemetry.scrub reads sys.modules to prove an exception type names a real module-level class
+; before it leaves the machine; it never imports, and the name is the data under test (#6393).
 ; scripts.bench.four_stem_common loads its sibling shootout_spec.py by path, because the Modal bench
 ; images import it as a top-level module with only the standard library on hand (#9250).
 ; apps.webui.server.app_wiring discovers the route modules that set
@@ -206,6 +216,7 @@ dynamic_loaders =
     apps.plugins.host
     apps.sets.classify
     apps.sets.classify.model
+    apps.shared.telemetry.scrub
     apps.vocals.from_stems
     apps.webui.server.app_wiring
     scripts.arch_contract_schema_kinds

@@ -41,6 +41,7 @@ from pydantic import BaseModel, ConfigDict
 from apps.shared import macos_diskutil
 from apps.shared.sandbox import STORE_BUILD_REFUSAL_TITLE, is_sandboxed
 from apps.sync.usb.health import VolumeExportHealth, evaluate_volume_health
+from apps.sync.usb.pioneer.reader import rekordbox_stick_exports
 from apps.webui.server.deps import get_library_data_dir
 from apps.webui.server.routes.usb_classify import (
     VolumeKind,
@@ -125,6 +126,9 @@ class UsbVolume:
     access: RootAccess = "unknown"
     vendor_name: str | None = None
     vendor_source: str | None = None
+    #: Present on rekordbox sticks when the root listed successfully.
+    has_pdb: bool | None = None
+    has_onelibrary: bool | None = None
 
 
 # ----- module state (process-local; cheap) ---------------------------------
@@ -334,6 +338,10 @@ def _read_volumes(resolved_discovery: UsbDiscovery) -> list[UsbVolume]:
             kind: VolumeKind = "unknown"
         else:
             kind = classify_mount(entry, root_names=listing.names)
+        export_flags: tuple[bool | None, bool | None] = (None, None)
+        if kind == "rekordbox" and root_listed:
+            layout = rekordbox_stick_exports(entry)
+            export_flags = (layout.has_pdb, layout.has_onelibrary)
         vol_id = (
             f"vol:{info.volume_uuid}" if info.volume_uuid else f"path:{entry.name}"
         )
@@ -352,6 +360,8 @@ def _read_volumes(resolved_discovery: UsbDiscovery) -> list[UsbVolume]:
                     role, protocol=info.protocol, name=entry.name
                 ),
                 access=listing.access,
+                has_pdb=export_flags[0],
+                has_onelibrary=export_flags[1],
             )
         )
     return found
@@ -485,6 +495,8 @@ class UsbVolumeOut(BaseModel):
     access: RootAccess = "unknown"
     vendor_name: str | None = None
     vendor_source: str | None = None
+    has_pdb: bool | None = None
+    has_onelibrary: bool | None = None
 
 
 class UsbVolumesOut(BaseModel):
@@ -600,6 +612,8 @@ def _apply_vendor_history(volumes: list[UsbVolume], *, data_dir: Path) -> list[U
                 access=volume.access,
                 vendor_name=hit.name,
                 vendor_source=hit.source,
+                has_pdb=volume.has_pdb,
+                has_onelibrary=volume.has_onelibrary,
             )
         )
     return merged
@@ -640,6 +654,8 @@ def _to_out(v: UsbVolume) -> UsbVolumeOut:
         access=v.access,
         vendor_name=v.vendor_name,
         vendor_source=v.vendor_source,
+        has_pdb=v.has_pdb,
+        has_onelibrary=v.has_onelibrary,
     )
 
 

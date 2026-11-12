@@ -6,8 +6,8 @@ Acceptance lines:
        or labels guessed without energy contrast
   [if] the track opens with a 2-bar pickup [then] the phrase grid follows the
        music, not bar 1 ⛔️ every boundary 2 bars early
-  [if] nothing changes across the track [then] it is one section, unlabeled
-       ⛔️ boundaries manufactured from noise
+  [if] nothing changes across the track [then] own-fast abstains with
+       no_energy_contrast ⛔️ a guessed section span
   [if] the grid is too short or the peaks do not cover it [then] status failed
        with the reason ⛔️ sections cut on a partial track
 """
@@ -17,7 +17,8 @@ from __future__ import annotations
 import numpy as np
 import pytest
 
-from apps.analysis_structure.fast_segment import MIN_BARS, band_envelopes, segment
+from apps.analysis_structure.dj_labels import NO_ENERGY_CONTRAST
+from apps.analysis_structure.fast_segment import MIN_BARS, PRODUCER_VERSION, band_envelopes, segment
 
 FPS = 150
 BAR_S = 60.0 / 128.0 * 4.0
@@ -79,13 +80,33 @@ def test_a_two_bar_pickup_moves_the_phrase_grid_with_the_music():
     assert result["phrase_offset"] == 2
 
 
-def test_a_flat_track_is_one_unlabeled_section():
+@pytest.mark.requirement("STRUCT-12785")
+def test_a_flat_track_abstains_with_no_energy_contrast():
+    """[if] flat energy is segmented [then] abstain with no_energy_contrast, [else stop]."""
     peaks = _peaks([(128, 200, 150, 180)])
     result = segment(peaks, _grid(peaks), peaks.shape[0] / FPS)
+    assert result["status"] == "abstain"
+    assert result["abstain_reason"] == NO_ENERGY_CONTRAST
+    assert result["sections"] == [] and result["moments"] == []
+    assert result["producer_version"] == PRODUCER_VERSION
+
+
+@pytest.mark.requirement("STRUCT-12785")
+def test_a_classic_contrasty_track_keeps_phrase_boundaries():
+    """[if] CLASSIC contrasty fixture is segmented [then] phrase starts stay, [else stop]."""
+    peaks = _peaks(CLASSIC)
+    result = segment(peaks, _grid(peaks), peaks.shape[0] / FPS)
     assert result["status"] == "ok"
-    assert _starts(result) == [0]
-    assert result["dj_labels"]["status"] == "unlabeled"
-    assert "dj_label" not in result["sections"][0]
+    assert _starts(result) == [0, 16, 32, 64, 80, 96, 128]
+
+
+@pytest.mark.requirement("STRUCT-12785")
+def test_a_failed_grid_stays_failed_not_abstain():
+    """[if] too few bars [then] status failed not abstain, [else stop]."""
+    peaks = _peaks([(MIN_BARS - 1, 200, 150, 180)])
+    result = segment(peaks, _grid(peaks)[: MIN_BARS - 1], peaks.shape[0] / FPS)
+    assert result["status"] == "failed"
+    assert result.get("abstain_reason") is None
 
 
 def test_too_short_a_grid_fails_with_the_count():
@@ -96,7 +117,8 @@ def test_too_short_a_grid_fails_with_the_count():
 
 def test_a_track_of_exactly_min_bars_is_segmented():
     """MIN_BARS downbeats, the last bar ending at the file end, is MIN_BARS bars: accepted."""
-    peaks = _peaks([(MIN_BARS, 200, 150, 180)])
+    half = MIN_BARS // 2
+    peaks = _peaks([(half, 60, 60, 40), (MIN_BARS - half, 230, 160, 200)])
     grid = _grid(peaks)[:MIN_BARS]
     result = segment(peaks, grid, peaks.shape[0] / FPS)
     assert result["status"] == "ok"
@@ -160,10 +182,10 @@ def test_peaks_cut_short_by_a_bar_or_two_fail(cut_bars: int):
 
 
 def test_unlabeled_own_fast_does_not_fake_niche_suggestions():
-    """[if] own-fast dj_labels unlabeled [then] niche suggestions stay empty, else stop."""
+    """[if] own-fast abstains on flat energy [then] niche suggestions stay empty, else stop."""
     from apps.analysis_structure.dj_labels import structure_niche_suggestions
 
     peaks = _peaks([(128, 200, 150, 180)])
     result = segment(peaks, _grid(peaks), peaks.shape[0] / FPS)
-    assert result["dj_labels"]["status"] == "unlabeled"
+    assert result["status"] == "abstain"
     assert structure_niche_suggestions(result["sections"], result["dj_labels"]) == []

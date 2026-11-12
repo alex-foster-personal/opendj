@@ -4,6 +4,7 @@
 	 * Opens like a command palette, expands for results; RHS rows ARE the settings.
 	 */
 	import { tick, untrack } from 'svelte';
+	import { focusTrap } from '$lib/keyboard/focus-trap';
 	import SettingsAiAskView from './SettingsAiAskView.svelte';
 	import SettingsHeaderView from './SettingsHeaderView.svelte';
 	import SettingPreview from './SettingPreview.svelte';
@@ -11,6 +12,7 @@
 	import { DRAG_DEFAULTS, dragSensitivity } from '$lib/rb/drag-sensitivity.svelte';
 	import { tierOnNowLabel } from '$lib/rb/perf-tier';
 	import { goto } from '$app/navigation';
+	import { page } from '$app/stores';
 	import {
 		RUN_SETUP_LABEL,
 		RUN_SETUP_TITLE,
@@ -425,6 +427,12 @@
 		return watcherFoldersEditor;
 	}
 
+	let keyboardPresetUnbound: Promise<typeof import('./KeyboardPresetUnbound.svelte')> | null = null;
+	function loadKeyboardPresetUnbound(): Promise<typeof import('./KeyboardPresetUnbound.svelte')> {
+		keyboardPresetUnbound ??= import('./KeyboardPresetUnbound.svelte');
+		return keyboardPresetUnbound;
+	}
+
 	// UIURL-03: "Open in browser" loads on demand too, for the same reason: the
 	// overlay rides the library first paint, and a static import put this PR
 	// 431 bytes over the "library" bundle budget (check-bundle-size.sh).
@@ -503,7 +511,7 @@
 		setupBusy = true;
 		setupError = null;
 		try {
-			setupError = await runSetup(goto);
+			setupError = await runSetup(goto, $page.url.pathname);
 			if (setupError === null) closeSettings();
 		} finally {
 			setupBusy = false;
@@ -522,6 +530,7 @@
 			role="dialog"
 			aria-modal="true"
 			aria-label="Settings"
+			use:focusTrap={{ initialFocus: '.so-search' }}
 			onclick={(e) => e.stopPropagation()}
 		>
 			<SettingsHeaderView
@@ -653,6 +662,11 @@
 													</select>
 													{#if def.id === 'perf_tier'}
 														<span data-testid="perf-tier-on-now">{tierOnNowLabel()}</span>
+													{/if}
+													{#if def.id === 'keyboard_preset'}
+														{#await loadKeyboardPresetUnbound() then { default: KeyboardPresetUnbound }}
+															<KeyboardPresetUnbound {def} />
+														{/await}
 													{/if}
 												</div>
 											{:else if def.control.kind === 'multi_bool'}
@@ -1034,4 +1048,19 @@
 			transform: translateY(0);
 		}
 	}
+
+	/* A11Y-11811: reduced motion (OS or Appearance); mirrors app.css. */
+	@media (prefers-reduced-motion: reduce) {
+		:where(*) {
+			animation-duration: 0.01ms;
+			animation-iteration-count: 1;
+			transition-duration: 0.01ms;
+		}
+	}
+	:global(html[data-reduce-motion]) :where(*) {
+		animation-duration: 0.01ms;
+		animation-iteration-count: 1;
+		transition-duration: 0.01ms;
+	}
+
 </style>

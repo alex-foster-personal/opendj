@@ -16,6 +16,8 @@ const ENTRY = [
 ].join('\n');
 
 const FAKE_NAVIGATION = new URL('./fake-app-navigation.mjs', import.meta.url).pathname;
+/** The component reads $page for the setup return path; a static fake page stands in. */
+const FAKE_STORES = new URL('./fake-app-stores.mjs', import.meta.url).pathname;
 
 function cards(body) {
 	return [...body.matchAll(/<li\b[^>]*class="so-row[^"]*"[^>]*>([\s\S]*?)<\/li>/g)].map((m) => ({
@@ -44,7 +46,9 @@ test('overlay imports tierOnNowLabel and gates the On now span to perf_tier', ()
 });
 
 test('SSR Performance tier row shows On now; other enum rows do not', async () => {
-	const mod = await loadSvelteSsrModule(ENTRY, { alias: { '$app/navigation': FAKE_NAVIGATION } });
+	const mod = await loadSvelteSsrModule(ENTRY, {
+		alias: { '$app/navigation': FAKE_NAVIGATION, '$app/stores': FAKE_STORES }
+	});
 	mod.openSettings();
 	const body = mod.render(mod.SettingsOverlay).body;
 	const rows = cards(body);

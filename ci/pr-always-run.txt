@@ -99,6 +99,7 @@ tests/scripts/test_shell_construct_lint.py
 tests/quality/test_importlinter_contracts.py
 (private path)
 tests/quality/test_module_surface_contract.py
+tests/quality/test_autodj_module_contract.py
 # FILETREE.md must name every tracked top-level entry; it lists git's whole index (#5829).
 tests/quality/test_filetree.py
 tests/quality/test_gate_generated_dup.py
@@ -159,6 +160,10 @@ tests/open_dj/test_corpus_roundtrip.py
 # unrelated directory selects neither. 4.5 s and 4.2 s.
 (private path)
 tests/scripts/test_runner_toolset_repo_pins.py
+
+# Bundled demo-track licence manifest (issue #12247): exercises apps/onboarding and
+# scripts/check_demo_track_licences.py; no import-graph edge selects this new tree.
+tests/onboarding/test_demo_track_licences.py
 
 # Also found by the census, Tue 13 Oct 2026: the dataset-register test rglobs the analysis packages
 # (`apps/analysis_*`) for dataset names the register must hold, and the soft-delete read guard walks every
@@ -246,3 +251,7 @@ tests/scripts/test_quality_latency.py
 
 # Every tracked path against .gitignore (git ls-files -ci): a tracked generated file broke main twice (reqs.json #12116, coverage-matrix.md #12162).
 tests/quality/test_no_tracked_ignored_files.py
+
+# The 06:00 play-log rollover lives in one constant: an AST scan of every tracked apps/*.py (git ls-files),
+# so a new module anywhere under apps/ can break it without an import link.
+(private path)

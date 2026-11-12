@@ -126,6 +126,17 @@ export async function exitApp(code = 0, scope: Scope = globalThis): Promise<void
 }
 
 /**
+ * SECONDSCREEN-11715: open or focus the second-screen library window. Only the
+ * Tauri shell has it; Electron and a browser tab refuse.
+ */
+export async function openSecondScreen(scope: Scope = globalThis): Promise<void> {
+	if (electronBridge(scope) !== null || nativeShellKind(scope) !== 'tauri') {
+		throw new Error('the library window needs the desktop app');
+	}
+	return controlShellWindow('open', 'second-screen', scope);
+}
+
+/**
  * Electron's install path; null when this page is not in Electron, so the
  * caller keeps its Tauri or browser path. The shell verifies and installs;
  * nothing parsed here is handed to it.
@@ -195,6 +206,11 @@ export async function controlShellWindow(
 			throw new Error('this Electron shell cannot control extra windows; update the Open DJ app');
 		}
 		await fn(label);
+		return;
+	}
+	if (nativeShellKind(scope) === 'tauri') {
+		const { invoke } = await import('@tauri-apps/api/core');
+		await invoke('control_shell_window', { action, label });
 		return;
 	}
 	throw new Error(

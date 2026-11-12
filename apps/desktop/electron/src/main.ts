@@ -39,7 +39,8 @@ import { PAYLOAD_DIR } from './engine';
 import { makeLockProbe, performancePageUrl } from './launch';
 import { isOpenerUrlAllowed } from './opener';
 import { payloadPython } from './platform';
-import { coreAudioOutputDevices, outputHealthJson, reconnectSpeakerJson } from './output-health';
+import { resolveListCoreAudioOutputs } from './coreaudio-list';
+import { outputHealthJson, reconnectSpeakerJson } from './output-health';
 import {
 	APP_HOST,
 	APP_ORIGIN,
@@ -99,22 +100,24 @@ const ENGINE_LOG = path.join('logs', 'engine.log');
 const DEFAULT_IDENTIFIER = 'com.opendj.desktop';
 
 // ----- P1: diagnostic flags, before anything touches the disk ----------------
-const argv = process.argv.slice(app.isPackaged ? 1 : 2);
-const packagedCdpRefusal = packagedRemoteDebuggingRefusal(
-	app.isPackaged,
-	process.argv,
-	REMOTE_DEBUGGING_SWITCHES.some((name) => app.commandLine.hasSwitch(name))
-);
-const diagnostic = diagnosticOutput(argv, app.getVersion());
-if (packagedCdpRefusal !== null) {
-	for (const name of REMOTE_DEBUGGING_SWITCHES) app.commandLine.removeSwitch(name);
-	process.stderr.write(`${packagedCdpRefusal}\n`);
-	app.exit(1);
-} else if (diagnostic !== null) {
-	process.stdout.write(diagnostic);
-	app.exit(0);
-} else {
-	main();
+if (require.main === module) {
+	const argv = process.argv.slice(app.isPackaged ? 1 : 2);
+	const packagedCdpRefusal = packagedRemoteDebuggingRefusal(
+		app.isPackaged,
+		process.argv,
+		REMOTE_DEBUGGING_SWITCHES.some((name) => app.commandLine.hasSwitch(name))
+	);
+	const diagnostic = diagnosticOutput(argv, app.getVersion());
+	if (packagedCdpRefusal !== null) {
+		for (const name of REMOTE_DEBUGGING_SWITCHES) app.commandLine.removeSwitch(name);
+		process.stderr.write(`${packagedCdpRefusal}\n`);
+		app.exit(1);
+	} else if (diagnostic !== null) {
+		process.stdout.write(diagnostic);
+		app.exit(0);
+	} else {
+		main();
+	}
 }
 
 /** The packed package.json, or null when it cannot be read (the defaults then apply). */
@@ -508,7 +511,7 @@ function main(): void {
 	});
 	ipcMain.handle('opendj:list-coreaudio-outputs', (event) => {
 		if (!trusted(event)) return refuse();
-		return coreAudioOutputDevices(payloadDir());
+		return resolveListCoreAudioOutputs(payloadDir());
 	});
 
 	// ----- the Spotify side player (SPOT-6555b/03), bridge version 2 -------------
@@ -692,6 +695,9 @@ function main(): void {
 				title: productName,
 				icon: shellIconPath(),
 				backgroundColor: '#000000',
+				...(process.platform === 'darwin'
+					? { titleBarStyle: 'hidden', trafficLightPosition: { x: 12, y: 8 } }
+					: {}),
 				webPreferences: {
 					preload: path.join(__dirname, 'preload.js'),
 					contextIsolation: true,

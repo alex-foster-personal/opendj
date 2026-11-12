@@ -1,0 +1,20 @@
+{
+  "caps": { "interval_p95_ms": 60, "blocking_wheel_listeners": 1 },
+  "measured": {
+    "interval_p95_ms": 50,
+    "interval_p50_ms": 16.7,
+    "interval_max_ms": 166.8,
+    "long_tasks_over_50ms": 39,
+    "long_frames": 19,
+    "frames": 402,
+    "rows_mounted": 16,
+    "blocking_wheel_listeners": 1
+  },
+  "headroom": 1.2,
+  "targets": {
+    "interval_p95_ms": "at or under the refresh interval (interval_p50_ms)",
+    "blocking_wheel_listeners": 0
+  },
+  "measured_on": "Mon 9 Nov 2026, agentbox (load average about 35), headless chromium 1280x800, PLAYLIST_SWITCH_BENCH_TRACKS default (1000)",
+  "issue": 10230
+}

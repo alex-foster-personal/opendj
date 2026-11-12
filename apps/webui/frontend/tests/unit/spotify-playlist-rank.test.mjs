@@ -59,6 +59,23 @@ test('name filter ignores playlist_id', () => {
 	assert.equal(ranked(playlists, { query: 'Pleas' }).length, 1);
 });
 
+test('#9685: pins are read through pref_key, not playlist_id', () => {
+	const playlists = [
+		row({
+			playlist_id: 'spotify-account:aaa',
+			pref_key: 'spotify:aaa',
+			name: 'Account row'
+		}),
+		row({ playlist_id: 'b', name: 'Other' })
+	];
+	const pinned = ranked(playlists, { pinnedIds: ['spotify:aaa'] }).map((p) => p.playlist_id);
+	assert.deepEqual(pinned, ['spotify-account:aaa', 'b']);
+	const notPinned = ranked(playlists, { pinnedIds: ['spotify-account:aaa'] }).map(
+		(p) => p.playlist_id
+	);
+	assert.deepEqual(notPinned, ['spotify-account:aaa', 'b']);
+});
+
 test('pinned ids come first in pin-list order; unpinned follow', () => {
 	const playlists = [
 		row({ playlist_id: 'a', name: 'Alpha' }),

@@ -156,5 +156,5 @@ def test_enqueue_all_missing_queues_one_job_per_group(tmp_path: Path, live: Prov
     with _client(state) as client:
         out = client.post("/api/v1/genres/enqueue", json={"all_missing": True})
         assert out.status_code == 201, out.text
-        assert out.json() == {"lane": "genre", "queued": 2}
+        assert out.json() == {"lane": "genre", "queued": 2, "requested": 0, "eligible": 2}
     assert sorted(_items(state)) == [ASKED, OTHER]

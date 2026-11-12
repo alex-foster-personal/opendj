@@ -95,6 +95,9 @@
 		saving = true;
 		try {
 			await oncommit(label);
+		} catch (exc) {
+			// KEY-10229: the server stores the key; its refusal is shown, never swallowed.
+			error = exc instanceof Error ? exc.message : String(exc);
 		} finally {
 			saving = false;
 		}

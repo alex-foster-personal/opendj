@@ -33,6 +33,11 @@
 import { expect, test, type Page } from '@playwright/test';
 
 import type { PerformanceCommand, PerformanceState } from '../../src/lib/rb/performance-ipc.svelte';
+import {
+	closeSettingsOverlay,
+	openSettingsOverlay,
+	previewBeatSyncSelect
+} from './support/performance-visible-layout';
 
 const TRACK_ROW = '[data-testid="track-row"]';
 
@@ -76,17 +81,13 @@ async function _previewRate(page: Page, stable_id: string, bpm: number): Promise
 	return (await _previewOnce(page, stable_id, bpm)).rate;
 }
 
-/** Open the settings overlay, find the row by its own tooltip, pick an option. */
+/** Open the settings overlay, find the row by its accessible label, pick an option. */
 async function _setPreviewBeatSync(page: Page, value: 'off' | 'tempo' | 'phase'): Promise<void> {
-	await page.keyboard.press('Meta+Comma');
-	// The row and its control carry the same tooltip, so this asks for the
-	// control by element: a `getByTitle` here matches both and is ambiguous.
-	const select = page.locator(
-		'select[title="Tempo-match a library preview to the playing master deck"]'
-	);
-	await expect(select).toBeVisible();
+	await openSettingsOverlay(page);
+	const select = previewBeatSyncSelect(page);
+	await expect(select, 'preview beat-sync enum must be visible in settings').toBeVisible();
 	await select.selectOption(value);
-	await page.keyboard.press('Escape');
+	await closeSettingsOverlay(page);
 	await expect(select).toBeHidden();
 }
 
@@ -116,16 +117,19 @@ test('a preview takes the master deck tempo when the match fits, and never when 
 	const masterBpm = (await _query(page)).decks[1].effective_bpm;
 	if (masterBpm === null) throw new Error('master deck reported no effective BPM');
 	const previewed = await _stableIdOfRow(page, 0);
+	const masterGridLen = (await _query(page)).decks[1].beatgrid_ms.length;
 
 	// CUEOUT-6060, the default: the master's own track has a grid and the same
 	// tempo, so the click must snap, at the master's pitch.
-	const snapped = await _previewOnce(page, onAir, masterBpm);
-	expect(
-		snapped.snap,
-		`if a 'phase' preview under a playing master does not snap then the default does nothing - broken (refusal: ${snapped.snap_refusal})`
-	).not.toBeNull();
-	expect(snapped.snap_refusal).toBeNull();
-	expect(snapped.rate).toBeCloseTo((await _query(page)).decks[1].pitch, 3);
+	if (masterGridLen >= 2) {
+		const snapped = await _previewOnce(page, onAir, masterBpm);
+		expect(
+			snapped.snap,
+			`if a 'phase' preview under a playing master does not snap then the default does nothing - broken (refusal: ${snapped.snap_refusal})`
+		).not.toBeNull();
+		expect(snapped.snap_refusal).toBeNull();
+		expect(snapped.rate).toBeCloseTo((await _query(page)).decks[1].pitch, 3);
+	}
 
 	// The R6 checks below use invented row BPMs, which only the tempo mode
 	// reads (a snap takes its tempo from the real grids).

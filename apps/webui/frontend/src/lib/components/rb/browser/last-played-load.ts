@@ -4,7 +4,7 @@
  * table does not fire every request at once.
  */
 
-import { api, unwrap } from '$lib/api/client';
+import { api, unwrap } from '$lib/api/rb-http';
 import { isUsbTrackId } from '$lib/rb/track-source';
 import { playFactsFromUnknown, type PlayFacts } from './last-played';
 

@@ -293,15 +293,35 @@ test('listCoreAudioOutputs forwards the Electron bridge and is absent elsewhere'
 	assert.equal(await mod.listCoreAudioOutputs({ __TAURI_INTERNALS__: {} }), null);
 });
 
+test('SECONDSCREEN-11715: openSecondScreen refuses outside the Tauri shell', async () => {
+	await assert.rejects(mod.openSecondScreen({}), /desktop app/);
+	await assert.rejects(mod.openSecondScreen(electronScope().scope), /desktop app/);
+});
+
 test('controlShellWindow refuses a browser tab with a reason that names the shell', async () => {
 	await assert.rejects(mod.controlShellWindow('open', 'second-screen', {}), /desktop shell/);
 });
 
-test('controlShellWindow refuses a Tauri shell with the same named refusal', async () => {
-	await assert.rejects(
-		mod.controlShellWindow('open', 'second-screen', { __TAURI_INTERNALS__: {} }),
-		/desktop shell/
-	);
+test('controlShellWindow routes open, close and focus through Tauri control_shell_window', async () => {
+	const calls = [];
+	globalThis.__tauriInvokeMock = async (command, args) => {
+		calls.push([command, args]);
+	};
+	const tauriMod = await loadTypeScriptModule('src/lib/shell/native-shell.ts', {
+		alias: {
+			'@tauri-apps/api/core': new URL('./tauri-core-mock.mjs', import.meta.url).pathname
+		}
+	});
+	const scope = { __TAURI_INTERNALS__: {} };
+	await tauriMod.controlShellWindow('open', 'second-screen', scope);
+	await tauriMod.controlShellWindow('focus', 'second-screen', scope);
+	await tauriMod.controlShellWindow('close', 'second-screen', scope);
+	assert.deepEqual(calls, [
+		['control_shell_window', { action: 'open', label: 'second-screen' }],
+		['control_shell_window', { action: 'focus', label: 'second-screen' }],
+		['control_shell_window', { action: 'close', label: 'second-screen' }]
+	]);
+	delete globalThis.__tauriInvokeMock;
 });
 
 test('controlShellWindow opens, closes and focuses through the Electron bridge', async () => {

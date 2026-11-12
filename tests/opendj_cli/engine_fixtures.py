@@ -99,21 +99,25 @@ def _run_engine(tmp_path: Path, backend: InMemoryBackend) -> Iterator[Engine]:
         ),
         encoding="utf-8",
     )
+    engine = Engine(base_url=f"http://127.0.0.1:{port}", port=port, lock_path=lock_path, app=app)
     try:
-        yield Engine(base_url=f"http://127.0.0.1:{port}", port=port, lock_path=lock_path, app=app)
+        yield engine
     finally:
-        # Graceful first, then insist. A test that WEDGES the page leaves the
-        # engine still awaiting a future no page will ever complete, and
-        # uvicorn's graceful shutdown waits out that connection: measured 10s
-        # of teardown per wedged test, four of them, 40s of a 75s suite spent
-        # waiting for a server everyone had finished with. Nothing here asserts
-        # anything about graceful shutdown, so there is nothing to lose by
-        # stopping asking nicely after half a second.
-        server.should_exit = True
-        thread.join(timeout=0.5)
-        if thread.is_alive():
-            server.force_exit = True
-            thread.join(timeout=10)
+        try:
+            engine.stop_clients()
+        finally:
+            # Graceful first, then insist. A test that WEDGES the page leaves the
+            # engine still awaiting a future no page will ever complete, and
+            # uvicorn's graceful shutdown waits out that connection: measured 10s
+            # of teardown per wedged test, four of them, 40s of a 75s suite spent
+            # waiting for a server everyone had finished with. Nothing here asserts
+            # anything about graceful shutdown, so there is nothing to lose by
+            # stopping asking nicely after half a second.
+            server.should_exit = True
+            thread.join(timeout=0.5)
+            if thread.is_alive():
+                server.force_exit = True
+                thread.join(timeout=10)
 
 
 def _seed_large_library(backend: InMemoryBackend, count: int) -> None:

@@ -1,0 +1,9 @@
+{
+  "bytes": 1024,
+  "measured_main": 514259,
+  "measured_with_pr": 514488,
+  "sha": "0cbf3a7bc2",
+  "date": "Wed 11 Nov 2026",
+  "reason": "branch af--cloud-11257--audio-booth-device-and-level-ipc-http-co grows the other-lazy surface; measured +229 B gzip over main; ceiled to KiB.",
+  "payback": "none planned; the growth is the change's own code on this surface"
+}

@@ -9,6 +9,7 @@ from __future__ import annotations
 
 from collections.abc import Collection, Iterable, Mapping, Sequence
 from dataclasses import dataclass
+from itertools import pairwise
 from typing import Any, Literal
 
 TokenKind = Literal["track", "section"]
@@ -94,6 +95,31 @@ def section_positions(tokens: Sequence[Token]) -> dict[str, int]:
 def track_order(tokens: Sequence[Token]) -> list[str]:
     """The track ids of a display list, in order."""
     return [token.id for token in tokens if token.kind == "track"]
+
+
+def regroup_positions(
+    before: Sequence[Member],
+    after: Sequence[Member],
+    sections: Sequence[Mapping[str, Any]],
+) -> dict[str, int] | None:
+    """Section starts for a reorder that kept every section's tracks together.
+
+    "Save this order" over a sort within sections (LIBUX-8678) changes which
+    track opens each section, so following tracks would scatter the dividers.
+    When each section's tracks still sit together, in section order, each
+    divider goes to its group's new start. Otherwise None: follow the tracks.
+    ``sections`` must be top to bottom.
+    """
+    starts = [section["before_position"] for section in sections]
+    group_of = {member.item_id: sum(1 for start in starts if start <= index)
+                for index, member in enumerate(before)}
+    groups = [group_of.get(member.item_id) for member in after]
+    if None in groups or any(a > b for a, b in pairwise(groups)):  # type: ignore[operator]
+        return None
+    return {
+        section["id"]: next((i for i, g in enumerate(groups) if g >= number), len(after))  # type: ignore[operator]
+        for number, section in enumerate(sections, start=1)
+    }
 
 
 def follow_members(

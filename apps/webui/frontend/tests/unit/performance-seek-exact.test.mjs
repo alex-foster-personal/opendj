@@ -25,7 +25,7 @@ test('a seek may carry exact, which the executor forwards as skipGridQuantize', 
 	assert.match(guardsSource, /_exactKeys\(record, \['type', 'deck', 'position_ms', 'exact'\]\);/);
 	assert.match(
 		svelteSource,
-		/await engine\.quantizedSeek\(command\.deck, command\.position_ms, command\.exact === true\);/
+		/await engine\.quantizedSeek\(command\.deck, command\.position_ms, command\.exact === true, pressT0Ms\);/
 	);
 });
 

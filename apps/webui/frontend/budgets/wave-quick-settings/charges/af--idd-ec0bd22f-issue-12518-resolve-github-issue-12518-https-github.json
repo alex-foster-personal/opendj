@@ -1,0 +1,9 @@
+{
+  "bytes": 1024,
+  "measured_main": 7957,
+  "measured_with_pr": 8172,
+  "sha": "2d7d8fc444",
+  "date": "Thu 12 Nov 2026",
+  "reason": "branch af--idd-ec0bd22f-issue-12518-resolve-github-issue-12518-https-github grows the wave-quick-settings surface; measured +215 B gzip over main; ceiled to KiB.",
+  "payback": "none planned; the growth is the change's own code on this surface"
+}

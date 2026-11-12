@@ -14,6 +14,7 @@ from apps.dedup.http import build_service
 
 _IDLE = {
     "state": "idle",
+    "basis": "both",
     "total": 0,
     "done": 0,
     "computed": 0,
@@ -21,6 +22,9 @@ _IDLE = {
     "not_local": 0,
     "errors": 0,
     "clusters": None,
+    "clusters_fingerprint": None,
+    "clusters_tags": None,
+    "tag_precision": None,
     "error": None,
     "started_at": None,
     "finished_at": None,

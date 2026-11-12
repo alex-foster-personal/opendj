@@ -13,11 +13,11 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
 import { createSelectorTree } from '../../src/lib/keyboard/selector-tree.ts';
-import {
-	resolveSelectorNodes,
-	selId,
-	unionRect
-} from '../../src/lib/keyboard/selector-register.ts';
+import { loadTypeScriptModule } from './load-typescript.mjs';
+
+const { resolveSelectorNodes, selId, unionRect } = await loadTypeScriptModule(
+	'src/lib/keyboard/selector-register.ts'
+);
 
 const rec = (id, parentId, x, y, w, h, kind = 'leaf', enabled = true) => ({
 	id,

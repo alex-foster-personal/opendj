@@ -3,7 +3,8 @@
 `routes/feedback.py` reached 608 lines on the loop branch once placement
 fields were added to the pin models. Its JSON storage helpers now live in
 `routes/feedback_storage.py`; the route module re-exports them under the same
-names, because six sibling modules import them from there.
+names, because six sibling modules import them from there. Comment pin wire
+models and the mountable SQLite router live in `apps.opendj_pins`.
 """
 
 from __future__ import annotations

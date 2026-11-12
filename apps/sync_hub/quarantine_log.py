@@ -105,7 +105,12 @@ class QuarantinePass:
 
 
 def record_quarantine(table: str, pk: object, reason: str) -> None:
-    """Record one held-back row for the active pass, or report it at once."""
+    """Record one held-back row for the active pass, or report it at once.
+
+    Rows refused during apply are captured in R2 by
+    :mod:`apps.sync_hub.conflict_trash` with reason ``quarantine-drop``;
+    digest-only quarantine has no row payload to store.
+    """
     active = _active_pass.get()
     if active is not None:
         active.record(table, pk, reason)

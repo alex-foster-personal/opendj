@@ -112,16 +112,18 @@ def run_import(
     started_at = _now()
     was_running = detect.rekordbox_is_running()
 
-    if refresh_decrypt and source is None:
-        # Re-decrypting means going back to the ENCRYPTED snapshot. Left to
-        # detection, an existing plain copy would win the source race and the
-        # refresh would quietly do nothing.
-        snapshot = data_dir / detect.WORKING_COPY_NAME
-        source = snapshot if snapshot.is_file() else None
+    effective_refresh = refresh_decrypt
+    if source is None and not refresh_decrypt:
+        stale_detection = detect.detect_rekordbox(data_dir)
+        if detect.copy_stale_vs_live(copy=stale_detection.plain_copy, live_db=stale_detection.live_db):
+            effective_refresh = True
+
+    if effective_refresh and source is None:
+        source = _refresh_source(data_dir)
 
     chosen, encrypted = _stage_detect(data_dir, emit, source)
     working = _stage_snapshot(data_dir, emit, chosen)
-    plain = _stage_decrypt(data_dir, emit, working, refresh=refresh_decrypt)
+    plain = _stage_decrypt(data_dir, emit, working, refresh=effective_refresh)
     _stage_ingest(data_dir, emit, plain, limit=limit)
     counts, analyses = _stage_analysis(data_dir, emit, plain)
 
@@ -142,6 +144,25 @@ def run_import(
     )
     record.set_last_import(data_dir, outcome.to_dict())
     return outcome
+
+
+def _refresh_source(data_dir: Path) -> Path | None:
+    """The file a refresh re-decrypts from: the snapshot, unless live is newer.
+
+    Re-decrypting means going back to the ENCRYPTED snapshot. Left to
+    detection, an existing plain copy would win the source race and the
+    refresh would quietly do nothing. But a snapshot older than the live
+    database is as stale as the plain copy it would replace, so then the
+    live database is the source and the snapshot stage copies it afresh
+    (Sentry and Codex on #12782).
+    """
+    found = detect.detect_rekordbox(data_dir)
+    snapshot_stale = detect.copy_stale_vs_live(copy=found.working_copy, live_db=found.live_db)
+    if found.working_copy.exists and not snapshot_stale:
+        return Path(found.working_copy.path)
+    if found.live_db.exists:
+        return Path(found.live_db.path)
+    return None
 
 
 def _music_roots_not_read() -> list[str]:
@@ -227,12 +248,17 @@ def run_folder_import(
     emit(detect_at, "detect: preparing folder import")
     emit(detect_at, "detect: loading filesystem access")
     from apps.shared import fs_access
+
     emit(detect_at, "detect: loading state database")
     from apps.shared.state import db as state_db
+
     emit(detect_at, "detect: loading folder ingest")
+    from apps.dedup.http import open_hash_duplicate_recorder, resolve_dedup_db
     from apps.shared.state.ingest import folder as folder_ingest
+
     emit(detect_at, "detect: loading state writer")
     from apps.shared.state.writer import StateWriter
+
     emit(detect_at, f"detect: probing {len(roots)} folder(s)")
     probes = fs_access.probe_all(roots, deadline_s=None)
     emit(detect_at, f"detect: checking {len(probes)} folder(s)")
@@ -240,8 +266,7 @@ def run_folder_import(
     if denied and not any(probe.readable for probe in probes):
         raise SetupImportError(
             detect.CODE_ACCESS_DENIED,
-            f"macOS refused to list {', '.join(denied)}. "
-            f"{fs_access.GRANT_INSTRUCTIONS}",
+            f"macOS refused to list {', '.join(denied)}. {fs_access.GRANT_INSTRUCTIONS}",
         )
     missing = [probe.path for probe in probes if not probe.exists]
     if missing and not any(probe.readable for probe in probes):
@@ -256,8 +281,7 @@ def run_folder_import(
         # still on its dialog through, so this is where its late answer lands.
         raise SetupImportError(
             detect.CODE_REKORDBOX_NOT_FOUND,
-            "none of these folders could be read: "
-            + "; ".join(f"{probe.path} {probe.detail}" for probe in probes),
+            "none of these folders could be read: " + "; ".join(f"{probe.path} {probe.detail}" for probe in probes),
         )
 
     state_path = data_dir / "state" / detect.STATE_DB_NAME
@@ -270,6 +294,7 @@ def run_folder_import(
             dry_run=False,
             limit=limit,
             on_progress=_folder_progress(emit),
+            open_duplicate_recorder=lambda: open_hash_duplicate_recorder(resolve_dedup_db(None)),
         )
     except MassMissingError as exc:
         raise SetupImportError(detect.CODE_INGEST_FAILED, str(exc)) from exc
@@ -300,16 +325,11 @@ def run_folder_import(
             f"ingest: {outcome.tracks_written} of {outcome.files_seen} "
             f"readable files imported, none analysed"
             + (
-                f"; {outcome.files_rejected_unplayable} file(s) skipped as "
-                f"unplayable"
+                f"; {outcome.files_rejected_unplayable} file(s) skipped as unplayable"
                 if outcome.files_rejected_unplayable
                 else ""
             )
-            + (
-                f"; {len(outcome.unreadable_roots)} folder(s) could not be read"
-                if outcome.unreadable_roots
-                else ""
-            )
+            + (f"; {len(outcome.unreadable_roots)} folder(s) could not be read" if outcome.unreadable_roots else "")
         ),
     )
     record.set_last_import(data_dir, outcome.to_dict())
@@ -342,9 +362,7 @@ def _folder_progress(emit: Emit):
 
 
 # ----- stages -------------------------------------------------------------
-def _stage_detect(
-    data_dir: Path, emit: Emit, source: Path | None
-) -> tuple[Path, bool]:
+def _stage_detect(data_dir: Path, emit: Emit, source: Path | None) -> tuple[Path, bool]:
     """Settle which file this run reads, and whether it needs the key."""
     if source is not None:
         chosen = Path(source)
@@ -368,8 +386,7 @@ def _stage_detect(
 
     emit(
         STAGE_PROGRESS["detect"],
-        f"detect: reading {chosen.name}"
-        + (" (encrypted)" if encrypted else " (already plaintext)"),
+        f"detect: reading {chosen.name}" + (" (encrypted)" if encrypted else " (already plaintext)"),
     )
     return chosen, encrypted
 
@@ -404,9 +421,7 @@ def _stage_snapshot(data_dir: Path, emit: Emit, chosen: Path) -> Path:
     return destination
 
 
-def _stage_decrypt(
-    data_dir: Path, emit: Emit, working: Path, *, refresh: bool
-) -> Path:
+def _stage_decrypt(data_dir: Path, emit: Emit, working: Path, *, refresh: bool) -> Path:
     """Hand back a plaintext database, reporting which of the two ways it got one.
 
     Delegates to ``apps.shared.rekordbox_db.ensure_plain_db``, which owns
@@ -431,19 +446,14 @@ def _stage_decrypt(
     if not key_available:
         raise SetupImportError(
             detect.CODE_KEY_UNAVAILABLE,
-            f"{working} is encrypted and no SQLCipher key is available: "
-            f"{key_detail}",
+            f"{working} is encrypted and no SQLCipher key is available: {key_detail}",
         )
 
     plain = data_dir / detect.PLAIN_COPY_NAME
     try:
-        result, decrypted = ensure_plain_db(
-            encrypted=working, plain=plain, refresh=refresh
-        )
+        result, decrypted = ensure_plain_db(encrypted=working, plain=plain, refresh=refresh)
     except FileNotFoundError as exc:
-        raise SetupImportError(
-            detect.CODE_REKORDBOX_NOT_FOUND, str(exc)
-        ) from exc
+        raise SetupImportError(detect.CODE_REKORDBOX_NOT_FOUND, str(exc)) from exc
     except RekordboxDecryptError as exc:
         raise SetupImportError(
             detect.CODE_DECRYPT_FAILED,
@@ -457,8 +467,7 @@ def _stage_decrypt(
     if not detect.is_plain_sqlite(result):
         raise SetupImportError(
             detect.CODE_DECRYPT_FAILED,
-            f"the decrypt step reported success but {result} is still not a "
-            "plaintext SQLite file",
+            f"the decrypt step reported success but {result} is still not a plaintext SQLite file",
         )
     emit(
         STAGE_PROGRESS["decrypt"],
@@ -471,9 +480,7 @@ def _stage_decrypt(
     return result
 
 
-def _stage_ingest(
-    data_dir: Path, emit: Emit, plain: Path, *, limit: int | None
-) -> None:
+def _stage_ingest(data_dir: Path, emit: Emit, plain: Path, *, limit: int | None) -> None:
     """Drive the shared-state CLI: ``init`` then ``ingest-rb --write``.
 
     The CLI is called rather than reimplemented, so the wizard and
@@ -506,15 +513,12 @@ def _stage_ingest(
     if code != 0:
         raise SetupImportError(
             detect.CODE_INGEST_FAILED,
-            f"`apps.shared.state.cli {' '.join(argv)}` exited {code}; its "
-            "output is on the job's stderr",
+            f"`apps.shared.state.cli {' '.join(argv)}` exited {code}; its output is on the job's stderr",
         )
     emit(STAGE_PROGRESS["ingest"], "ingest: finished")
 
 
-def _stage_analysis(
-    data_dir: Path, emit: Emit, plain: Path
-) -> tuple[detect.LibraryCounts, dict[str, int]]:
+def _stage_analysis(data_dir: Path, emit: Emit, plain: Path) -> tuple[detect.LibraryCounts, dict[str, int]]:
     """Check the ANLZ analyses the ingested tracks point at are reachable.
 
     Nothing is copied: waveforms are served straight out of the rekordbox
@@ -569,9 +573,7 @@ def _count_resolvable_analyses(data_dir: Path, plain: Path) -> dict[str, int]:
 
     rb_conn = sqlite3.connect(f"file:{plain}?mode=ro", uri=True)
     try:
-        rows = rb_conn.execute(
-            "SELECT ID, AnalysisDataPath FROM djmdContent"
-        ).fetchall()
+        rows = rb_conn.execute("SELECT ID, AnalysisDataPath FROM djmdContent").fetchall()
     finally:
         rb_conn.close()
 

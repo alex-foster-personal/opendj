@@ -12,6 +12,7 @@ import os
 import shutil
 import subprocess
 from collections.abc import Callable
+from pathlib import Path
 
 import pytest
 
@@ -284,3 +285,36 @@ def test_date_envelope_is_split_into_individual_utc_days() -> None:
     """[if] a commit window spans days [then] query each widened UTC day, [else stop]."""
     days = mod.evidence_days(["2026-10-02T23:30:00+00:00", "2026-10-04T00:30:00+00:00"])
     assert days == ["2026-10-01", "2026-10-02", "2026-10-03", "2026-10-04", "2026-10-05"]
+
+
+def test_live_gh_boundary_launches_resolved_executable() -> None:
+    """[if] gh is on PATH [then] launch it by the resolved path, [else stop]."""
+    gh = shutil.which("gh")
+    if gh is None:
+        pytest.skip("UNAVAILABLE: gh CLI not on PATH")
+    proc = subprocess.run(
+        [gh, "--version"],
+        capture_output=True,
+        timeout=mod.GH_TIMEOUT_SECONDS,
+        check=False,
+    )
+    if proc.returncode != 0:
+        pytest.skip("UNAVAILABLE: gh --version failed")
+    assert proc.args[0] == gh
+
+
+def test_reader_argv0_is_the_resolved_gh(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """[if] gh resolves [then] GitHubEvidenceReader argv0 is that path, [else stop]."""
+    resolved = tmp_path / "gh"
+    monkeypatch.setattr(mod.shutil, "which", lambda _name: str(resolved))
+    captured: list[list[str]] = []
+
+    def runner(argv: list[str], timeout: float) -> subprocess.CompletedProcess[str]:
+        captured.append(argv)
+        return subprocess.CompletedProcess(argv, 0, _page([]), "")
+
+    reader = mod.GitHubEvidenceReader(mod.DEFAULT_REPOSITORY, runner=runner)
+    reader.fetch_drafts_for_day("2026-10-02")
+    assert captured[0][0] == str(resolved)

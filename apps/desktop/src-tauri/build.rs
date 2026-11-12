@@ -28,6 +28,9 @@ fn main() {
                     "native_midi_snapshot",
                     "native_midi_send",
                     "install_local_update",
+                    "open_second_screen",
+                    "control_shell_window",
+                    "query_shell_window_labels",
                 ]),
         ),
     )

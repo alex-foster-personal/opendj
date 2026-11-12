@@ -18,17 +18,22 @@ import {
 	type CommandedCommandId,
 	type CommandedKeyDeps
 } from '$lib/rb/commanded-keys';
+import type { SelectorDirection, SelectorTree } from './selector-tree';
 
 export type CommandScope = 'global' | 'deck' | 'dial' | 'fader' | 'library';
 
 export type PresetCommandId = `preset.run.${TransitionPresetId}`;
 
-export type PerformanceCommandId = PresetCommandId | CommandedCommandId;
+export type SelectorCommandId =
+	`selector.move.${SelectorDirection}` | 'selector.drill-in' | 'selector.drill-out';
+
+export type PerformanceCommandId = PresetCommandId | CommandedCommandId | SelectorCommandId;
 
 export interface CommandRunContext {
 	timeStamp: number;
 	transitionPresets?: TransitionPresetHost;
 	commanded?: CommandedKeyDeps;
+	selector?: Pick<SelectorTree, 'move' | 'drillIn' | 'drillOut'>;
 }
 
 export interface KeyboardCommandDefinition {
@@ -38,8 +43,10 @@ export interface KeyboardCommandDefinition {
 	/** Every scope the command acts in; `scope` is the first. */
 	scopes: readonly CommandScope[];
 	scope: CommandScope;
-	run: (ctx: CommandRunContext) => void;
+	run: (ctx: CommandRunContext) => string | void;
 }
+
+export type CommandMetadata = Omit<KeyboardCommandDefinition, 'run'>;
 
 export function presetCommandId(id: TransitionPresetId): PresetCommandId {
 	return `preset.run.${id}`;
@@ -93,9 +100,42 @@ const COMMANDED_COMMAND_DEFINITIONS: readonly KeyboardCommandDefinition[] =
 		}
 	}));
 
+function _selector(ctx: CommandRunContext): NonNullable<CommandRunContext['selector']> {
+	if (!ctx.selector) throw new Error('Selector command: no selector host; provide ctx.selector');
+	return ctx.selector;
+}
+
+const SELECTOR_COMMAND_DEFINITIONS: readonly KeyboardCommandDefinition[] = [
+	...(['up', 'down', 'left', 'right'] as const).map((direction) => ({
+		id: `selector.move.${direction}` as const,
+		label: `Move selector ${direction}`,
+		defaultKeys: [] as const,
+		scopes: ['global'] as const,
+		scope: 'global' as const,
+		run: (ctx: CommandRunContext) => _selector(ctx).move(direction)
+	})),
+	{
+		id: 'selector.drill-in',
+		label: 'Drill into selector',
+		defaultKeys: [],
+		scopes: ['global'],
+		scope: 'global',
+		run: (ctx) => _selector(ctx).drillIn()
+	},
+	{
+		id: 'selector.drill-out',
+		label: 'Drill out of selector',
+		defaultKeys: [],
+		scopes: ['global'],
+		scope: 'global',
+		run: (ctx) => _selector(ctx).drillOut()
+	}
+];
+
 export const PERFORMANCE_COMMAND_REGISTRY = buildPerformanceCommandRegistry([
 	...PRESET_COMMAND_DEFINITIONS,
-	...COMMANDED_COMMAND_DEFINITIONS
+	...COMMANDED_COMMAND_DEFINITIONS,
+	...SELECTOR_COMMAND_DEFINITIONS
 ]);
 
 export function listPerformanceCommands(): readonly KeyboardCommandDefinition[] {
@@ -109,12 +149,22 @@ export function performanceCommandsInScope(
 	return [...PERFORMANCE_COMMAND_REGISTRY.values()].filter((def) => def.scopes.includes(scope));
 }
 
-export function runCommand(id: PerformanceCommandId, ctx: CommandRunContext): void {
+export function listPerformanceCommandMetadata(): readonly CommandMetadata[] {
+	return listPerformanceCommands().map(({ id, label, scopes, scope, defaultKeys }) => ({
+		id,
+		label,
+		scopes: [...scopes],
+		scope,
+		defaultKeys: [...defaultKeys]
+	}));
+}
+
+export function runCommand(id: PerformanceCommandId, ctx: CommandRunContext): string | void {
 	const def = PERFORMANCE_COMMAND_REGISTRY.get(id);
 	if (!def) {
 		throw new Error(`unknown command: ${id}`);
 	}
-	def.run(ctx);
+	return def.run(ctx);
 }
 
 export { _resetTransitionPresetsForTests } from '$lib/rb/transition-presets';

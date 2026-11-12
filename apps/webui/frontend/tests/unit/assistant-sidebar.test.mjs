@@ -87,6 +87,46 @@ test('the rendered sidebar shows nothing before the status has answered', () => 
 	assert.equal(text, '');
 });
 
+test('chat header mounts OJ at 28px when idle', () => {
+	const html = ssr.render(ssr.AssistantSidebarView, {
+		props: {
+			visible: true,
+			mode: 'chat',
+			status: { configured: true },
+			statusError: null,
+			messages: [],
+			streaming: null,
+			sendError: null,
+			canSend: true,
+			draft: '',
+			send: async () => {},
+			onStop: () => {}
+		}
+	}).body;
+	assert.match(html, /<header[\s\S]*aria-label="OJ"/);
+	assert.match(html, /width="28"/);
+});
+
+test('chat header shows think with bubbles while streaming', () => {
+	const html = ssr.render(ssr.AssistantSidebarView, {
+		props: {
+			visible: true,
+			mode: 'chat',
+			status: { configured: true },
+			statusError: null,
+			messages: [],
+			streaming: 'x',
+			sendError: null,
+			canSend: false,
+			draft: '',
+			send: async () => {},
+			onStop: () => {}
+		}
+	}).body;
+	assert.match(html, /\bthink\b/);
+	assert.match(html, /data-oj-glass-bubble/);
+});
+
 test('no key-setup instruction is spelled anywhere in the component', () => {
 	// The issue's exact leak: "Set OPENROUTER_API_KEY in the engine's
 	// environment and restart it." Agents read GET /api/v1/assistant/status.

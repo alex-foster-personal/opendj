@@ -29,6 +29,7 @@ from typing import Any
 import pytest
 
 from apps.dedup import schema as dedup_schema
+from apps.shared import platform_paths
 from apps.webui.server import dedup_decisions
 from apps.webui.server.backend import InMemoryBackend, Track
 from apps.webui.server.routes import dedup_review
@@ -112,14 +113,15 @@ def _seed_cluster_db(
     alias_path: str,
     similarity: float = 0.97,
     rationale: str = "bitrate=320",
+    basis: str = "fingerprint",
 ) -> None:
     conn = dedup_schema.ensure_schema(db_path)
     try:
         conn.execute(
             "INSERT INTO duplicate_clusters "
-            "(cluster_id, canonical_stable_id, canonical_path, rationale) "
-            "VALUES (?, ?, ?, ?)",
-            (cluster_id, canonical_sid, canonical_path, rationale),
+            "(cluster_id, canonical_stable_id, canonical_path, rationale, basis, flagged_manual_review) "
+            "VALUES (?, ?, ?, ?, ?, ?)",
+            (cluster_id, canonical_sid, canonical_path, rationale, basis, int(basis == "tags")),
         )
         conn.execute(
             "INSERT INTO track_aliases "
@@ -162,7 +164,12 @@ def seeded_backend() -> InMemoryBackend:
 
 @pytest.fixture
 def dedup_db(tmp_path: Path, monkeypatch) -> Path:
-    db_path = tmp_path / "phase7.sqlite"
+    # dedup_db_path() reads MDT_DATA_DIR on every call (PR #10626), so the route only sees this
+    # throwaway DB when the data dir points here; patching DEDUP_FALLBACK_DB alone reached the real one.
+    data_dir = tmp_path / "data"
+    db_path = data_dir / "dedup" / "phase7.sqlite"
+    db_path.parent.mkdir(parents=True)
+    monkeypatch.setenv(platform_paths.DATA_DIR_ENV, str(data_dir))
     decisions_path = tmp_path / "review-decisions.json"
     monkeypatch.setattr(dedup_review.dedup_paths, "DEDUP_FALLBACK_DB", db_path)
     monkeypatch.setattr(dedup_review, "DECISIONS_FILE", decisions_path)
@@ -617,3 +624,24 @@ def test_duplicate_cluster_rows_fail_get(app_client, dedup_db: Path) -> None:
     detail = response.json()["detail"]
     assert detail["error"] == "invalid_cluster_identity"
     assert "sha256:" in detail["message"]
+
+
+@pytest.mark.requirement("SETPREP-10643")
+def test_tag_cluster_is_marked_unproven_on_the_review_route(app_client, monkeypatch, tmp_path: Path) -> None:
+    """[if] a tag cluster is stored [then] GET lists basis tags and manual review, [else stop]."""
+    dedup_db = tmp_path / "dedup.sqlite"
+    _seed_cluster_db(
+        dedup_db,
+        cluster_id=3,
+        canonical_sid="track-canon",
+        canonical_path="/music/canon.flac",
+        alias_sid="track-alias",
+        alias_path="/music/alias.mp3",
+        similarity=0.0,
+        rationale="artist_title_duration",
+        basis="tags",
+    )
+    monkeypatch.setattr(dedup_review, "dedup_db_path", lambda: dedup_db)
+    body = app_client.get("/api/v1/dedup/clusters").json()
+    assert body["clusters"][0]["basis"] == "tags"
+    assert body["clusters"][0]["flagged_manual_review"] is True

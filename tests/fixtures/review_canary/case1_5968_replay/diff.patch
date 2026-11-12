@@ -1,0 +1,651 @@
+diff --git a/apps/webui/frontend/src/lib/components/rb/wave/render.ts b/apps/webui/frontend/src/lib/components/rb/wave/render.ts
+index b39481451d..3ec3846431 100644
+--- a/apps/webui/frontend/src/lib/components/rb/wave/render.ts
++++ b/apps/webui/frontend/src/lib/components/rb/wave/render.ts
+@@ -164,7 +164,7 @@ export const BLOCKS_CFG = {
+ 	/** 'legacy-p99' default and no-grid variant: the pre-B5 values. */
+ 	LEGACY_VARIANT_DEFAULT: 'blend' as BlocksVariant,
+ 	LEGACY_NO_GRID_VARIANT: 'kick' as BlocksVariant,
+-	/** 0.25: whole-track neighbor variance 2.56x max on Strobe (contrast alone was 12x). */
++	/** 0.25: whole-track neighbor variance 2.56x max on the capture fixture (contrast alone was 12x). */
+ 	BLEND_CONTRAST: 0.25,
+ 	KICK_LOW_WEIGHT: 0.8,
+ 	KICK_GAMMA: 1.6,
+diff --git a/apps/webui/frontend/tests/unit/fixtures/blocks-variance-anlz-window.manifest.json b/apps/webui/frontend/tests/unit/fixtures/blocks-variance-anlz-window.manifest.json
+index bf598f9eb0..0eef40e55d 100644
+--- a/apps/webui/frontend/tests/unit/fixtures/blocks-variance-anlz-window.manifest.json
++++ b/apps/webui/frontend/tests/unit/fixtures/blocks-variance-anlz-window.manifest.json
+@@ -5,7 +5,7 @@
+     "source": "/api/v1/tracks/30ab5c48da9d94d4b21526452b22f26dc2fac2dd/anlz (default points) + /api/v1/tracks/30ab5c48da9d94d4b21526452b22f26dc2fac2dd duration_ms",
+     "captured_on": "2026-10-03",
+     "track_stable_id": "30ab5c48da9d94d4b21526452b22f26dc2fac2dd",
+-    "selection": "Strobe (Layton Giordani remix), deadmau5, 128 BPM. detail low/mid/high points 14419..18023 of 32292 (~96-120s of 215s, one 24s deck-row window) plus the PQTZ beats inside it.",
++    "selection": "Lanterns (Kestrel Hale remix), Marlow Quay, 128 BPM. detail low/mid/high points 14419..18023 of 32292 (~96-120s of 215s, one 24s deck-row window) plus the PQTZ beats inside it.",
+     "immutable": "Do not regenerate or rewrite this capture to make a test pass."
+   },
+   "files": {
+diff --git a/apps/webui/frontend/tests/unit/waveform-blocks-design.test.mjs b/apps/webui/frontend/tests/unit/waveform-blocks-design.test.mjs
+index 8862dd100f..a1d3176ef1 100644
+--- a/apps/webui/frontend/tests/unit/waveform-blocks-design.test.mjs
++++ b/apps/webui/frontend/tests/unit/waveform-blocks-design.test.mjs
+@@ -28,8 +28,8 @@ before(async () => {
+ 	};
+ 	render = await loadTypeScriptModule('src/lib/components/rb/wave/render.ts');
+ 	strip = await loadTypeScriptModule('src/lib/components/rb/deck/strip-waveform-render.ts');
+-	// Real capture: Strobe (Layton Giordani remix), 24s deck-row window.
+-	// Provenance in blocks-variance-anlz-window.manifest.json.
++	// Real ANLZ capture: 24s deck-row window (invented sample label in the
++	// companion manifest; byte fixture is unchanged).
+ 	fixture = JSON.parse(
+ 		readFileSync(new URL('./fixtures/blocks-variance-anlz-window.json', import.meta.url), 'utf8')
+ 	);
+diff --git a/tests/fixtures/jev/dnb_with_tag.json b/tests/fixtures/jev/dnb_with_tag.json
+index d5bc74b07a..2995c8ce4c 100644
+--- a/tests/fixtures/jev/dnb_with_tag.json
++++ b/tests/fixtures/jev/dnb_with_tag.json
+@@ -34,7 +34,7 @@
+         "type": "noul"
+       }
+     },
+-    "state": "Artist: Calibre\nTitle: Even If\nBPM: 174"
++    "state": "Artist: Pell Arden\nTitle: Still Harbor\nBPM: 174"
+   },
+   "response": {
+     "answers": {
+diff --git a/tests/fixtures/jev/filename_only.json b/tests/fixtures/jev/filename_only.json
+index 2fe997cdd6..a8de27f67b 100644
+--- a/tests/fixtures/jev/filename_only.json
++++ b/tests/fixtures/jev/filename_only.json
+@@ -30,7 +30,7 @@
+         "type": "choice"
+       }
+     },
+-    "state": "File name: 01 Out Of Context.mp3"
++    "state": "File name: 01 Quiet Rooms.mp3"
+   },
+   "response": {
+     "answers": {
+diff --git a/tests/fixtures/jev/manifest.json b/tests/fixtures/jev/manifest.json
+index e9453c534c..5b60b3bd50 100644
+--- a/tests/fixtures/jev/manifest.json
++++ b/tests/fixtures/jev/manifest.json
+@@ -3,14 +3,16 @@
+   "why": "Real OpenRouter JEV decisions-API replies, captured through the production build_request and _http_post, so the parser and CLI tests run on what the service returned rather than hand-written replies. Codex P1, PR #4962.",
+   "files": {
+     "dnb_with_tag.json": {
+-      "sha256": "bd6e58dc69fd25d3862716b835233708ee0ca4bb894076243683bd0cf8a439ec",
+-      "bytes": 3060,
+-      "captured": "Fri 2 Oct 2026, live OpenRouter decisions API, model ~typesafe/jev-latest"
++      "sha256": "b1f1ef3c978448145cd4079c1f4a7b7de3a7eb7602c71fa9c688a3cee84fce77",
++      "bytes": 3068,
++      "captured": "Fri 2 Oct 2026, live OpenRouter decisions API, model ~typesafe/jev-latest",
++      "scrub": "Wed 8 Oct 2026 issue #5734: request.state artist/title Calibre/Even If -> Pell Arden/Still Harbor; response bytes unchanged"
+     },
+     "filename_only.json": {
+-      "sha256": "141ed541d19229b5c95e28c18eaaf1b783215d4560e065d28d3d4b1c2fae15e1",
+-      "bytes": 2871,
+-      "captured": "Fri 2 Oct 2026, live OpenRouter decisions API, model ~typesafe/jev-latest"
++      "sha256": "938b86e27e358f3d4978a5ec0560c9d469c917b572f5fa627a674495bec78562",
++      "bytes": 2868,
++      "captured": "Fri 2 Oct 2026, live OpenRouter decisions API, model ~typesafe/jev-latest",
++      "scrub": "Wed 8 Oct 2026 issue #5734: request.state file name Out Of Context -> Quiet Rooms; response bytes unchanged"
+     }
+   },
+   "note": "IMMUTABLE: tests verify version, byte count and sha256 here before parsing and mutate only deep copies. Never regenerate a capture to make a test pass; a new capture is a new file with its own entry."
+diff --git a/tests/fixtures/tagged_audio.py b/tests/fixtures/tagged_audio.py
+index 9f4675de94..37847dba6c 100644
+--- a/tests/fixtures/tagged_audio.py
++++ b/tests/fixtures/tagged_audio.py
+@@ -26,7 +26,7 @@ from apps.shared import flac_meta, id3v2
+ #: Tag values every format fixture carries. Unicode on purpose.
+ STANDARD_TAGS: dict[str, str] = {
+     "title": "Nachtfahrt ☾",
+-    "artist": "Kölsch Ensemble",
++    "artist": "Tamsïn Ensemble",
+     "album": "Tags Are Not Optional",
+     "genre": "Deep House",
+     "comment": "ripped from vinyl",
+diff --git a/tests/genre_infer/jev_support.py b/tests/genre_infer/jev_support.py
+index ecc78c4822..6e94c8a12b 100644
+--- a/tests/genre_infer/jev_support.py
++++ b/tests/genre_infer/jev_support.py
+@@ -36,7 +36,7 @@ def library(tmp_path: Path) -> tuple[Path, Path]:
+         tracks=[
+             {"stable_id": "t-tagged", "title": "Tagged", "artists": ["A"], "file_path": "/m/a.mp3"},
+             {"stable_id": "t-unmapped", "title": "Unmapped", "artists": ["C"], "file_path": "/m/c.mp3"},
+-            {"stable_id": "t-bare", "title": "Bare", "artists": ["B"], "file_path": "/m/AVIRA.mp3"},
++            {"stable_id": "t-bare", "title": "Bare", "artists": ["B"], "file_path": "/m/ORLA.mp3"},
+             {"stable_id": "t-win", "title": "Win", "artists": ["W"], "file_path": "C:\\Users\\dev\\Music\\track.mp3"},
+             {"stable_id": "t-blank", "title": "Blank", "artists": ["K"], "file_path": "/m/k.mp3"},
+         ],
+diff --git a/tests/genre_infer/test_jev.py b/tests/genre_infer/test_jev.py
+index 08774dacba..67bd162416 100644
+--- a/tests/genre_infer/test_jev.py
++++ b/tests/genre_infer/test_jev.py
+@@ -42,8 +42,8 @@ def test_every_captured_fixture_is_in_the_manifest() -> None:
+ 
+ 
+ def test_state_lists_known_fields_and_leaves_out_empties_and_genre() -> None:
+-    state = jev.build_state({"artist": "Calibre", "title": "Even If", "album": "", "bpm": 174, "genre": "Drum & Bass"})
+-    assert state.splitlines() == ["Artist: Calibre", "Title: Even If", "BPM: 174"]
++    state = jev.build_state({"artist": "Pell Arden", "title": "Still Harbor", "album": "", "bpm": 174, "genre": "Drum & Bass"})
++    assert state.splitlines() == ["Artist: Pell Arden", "Title: Still Harbor", "BPM: 174"]
+     assert "Drum" not in state
+ 
+ 
+@@ -173,7 +173,7 @@ def test_state_for_an_untitled_file_names_the_file(tmp_path: Path) -> None:
+         "Artist: B",
+         "Title: Bare",
+         "BPM: 128",
+-        "File name: AVIRA.mp3",
++        "File name: ORLA.mp3",
+     ]
+ 
+ 
+@@ -369,7 +369,7 @@ def test_live_jev_answers_a_known_track() -> None:
+     """[if] a key is present [then] the real service answers a known DnB track, [else stop]."""
+     if not os.environ.get(jev.KEY_ENV):
+         pytest.skip(f"UNAVAILABLE: no {jev.KEY_ENV}, so the live JEV call cannot be measured")
+-    out = jev.classify({"a": "Artist: Calibre\nTitle: Even If\nBPM: 174"}, [WARMUP])
++    out = jev.classify({"a": "Artist: Pell Arden\nTitle: Still Harbor\nBPM: 174"}, [WARMUP])
+     assert out["a"]["status"] == "ok", out["a"]
+     assert out["a"]["family"] in jev.FAMILY_CRITERIA
+     assert set(out["a"]["tags"]) == {"warmup"}
+diff --git a/tests/health_lights/test_coverage_breakdown.py b/tests/health_lights/test_coverage_breakdown.py
+index ace56d0000..c4f303d690 100644
+--- a/tests/health_lights/test_coverage_breakdown.py
++++ b/tests/health_lights/test_coverage_breakdown.py
+@@ -223,7 +223,7 @@ def test_a_missing_artist_is_terminal_only_while_it_is_missing(library: Library)
+     before = _coverage(library)
+     assert before["terminal"]["lyrics"] == 1 and before["pending"]["lyrics"] == 1
+ 
+-    conn.execute("UPDATE tracks SET artists_json = '[\"AVIRA\"]' WHERE stable_id = 'blank'")
++    conn.execute("UPDATE tracks SET artists_json = '[\"Orla Finch\"]' WHERE stable_id = 'blank'")
+     conn.commit()
+     conn.close()
+ 
+diff --git a/tests/open_dj/fixtures/invalid_wrapped_title.open-dj.json b/tests/open_dj/fixtures/invalid_wrapped_title.open-dj.json
+index 51235ae10e..9d595079be 100644
+--- a/tests/open_dj/fixtures/invalid_wrapped_title.open-dj.json
++++ b/tests/open_dj/fixtures/invalid_wrapped_title.open-dj.json
+@@ -1 +1 @@
+-{"kind":"library","schema_version":"0.2","tracks":[{"artists":["deadmau5"],"content_hash":"sha256:eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee","duration_ms":634000,"file_path":"music/strobe.flac","title":{"modified_at":"2026-02-02T09:00:00Z","source":"manual","value":"Strobe"},"track_id":"9bbb11637465090ce8135bcc3e66c0f00cf777fa"}]}
+\ No newline at end of file
++{"kind":"library","schema_version":"0.2","tracks":[{"artists":["Marlow Quay"],"content_hash":"sha256:eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee","duration_ms":634000,"file_path":"music/lanterns.flac","title":{"modified_at":"2026-02-02T09:00:00Z","source":"manual","value":"Lanterns"},"track_id":"9bbb11637465090ce8135bcc3e66c0f00cf777fa"}]}
+diff --git a/tests/open_dj/fixtures/x_extension_roundtrip.open-dj.json b/tests/open_dj/fixtures/x_extension_roundtrip.open-dj.json
+index 5df3b002a8..d613b17241 100644
+--- a/tests/open_dj/fixtures/x_extension_roundtrip.open-dj.json
++++ b/tests/open_dj/fixtures/x_extension_roundtrip.open-dj.json
+@@ -1 +1 @@
+-{"kind":"library","schema_version":"0.2","tracks":[{"artists":["deadmau5"],"content_hash":"sha256:eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee","duration_ms":634000,"file_path":"music/deadmau5/strobe.flac","isrc":"GBCEN0900132","title":"Strobe","track_id":"9bbb11637465090ce8135bcc3e66c0f00cf777fa","x_muxlab_preview_waveform":"mock-b64"}],"x_muxlab_test_marker":true}
+\ No newline at end of file
++{"kind":"library","schema_version":"0.2","tracks":[{"artists":["Marlow Quay"],"content_hash":"sha256:eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee","duration_ms":634000,"file_path":"music/Marlow Quay/lanterns.flac","isrc":"GBCEN0900132","title":"Lanterns","track_id":"9bbb11637465090ce8135bcc3e66c0f00cf777fa","x_muxlab_preview_waveform":"mock-b64"}],"x_muxlab_test_marker":true}
+diff --git a/tests/open_dj/test_rekordbox_adapter.py b/tests/open_dj/test_rekordbox_adapter.py
+index c3e2f4f35f..3300c92cbc 100644
+--- a/tests/open_dj/test_rekordbox_adapter.py
++++ b/tests/open_dj/test_rekordbox_adapter.py
+@@ -40,12 +40,12 @@ def _all_modified_at(node: object) -> set[str]:
+ def _rb_track(**overrides) -> RBTrackInput:
+     defaults: dict[str, Any] = dict(
+         rb_id="rb1",
+-        title="Strobe",
+-        artists=["deadmau5"],
+-        album="For Lack Of A Better Name",
++        title="Lanterns",
++        artists=["Marlow Quay"],
++        album="Paper Harbors",
+         isrc="GBCEN0900132",
+         duration_ms=634000,
+-        file_path="music/deadmau5/strobe.flac",
++        file_path="music/Marlow Quay/lanterns.flac",
+         size_bytes=50_000_000,
+         mtime=1700000000.0,
+         bpm=128.0,
+diff --git a/tests/quality/fixtures/MANIFEST.json b/tests/quality/fixtures/MANIFEST.json
+index c30cbebf8e..e58ab81fa6 100644
+--- a/tests/quality/fixtures/MANIFEST.json
++++ b/tests/quality/fixtures/MANIFEST.json
+@@ -11,6 +11,14 @@
+       "change": "title, artists, album and file_path replaced with invented values (go-public sample-data scrub); isrc, track_id, content_hash, bpm, key, duration_ms and vendor_ids unchanged",
+       "original_bytes": "git show a4adf880a4f45470de3eda0c7413521159073184:open-dj/conformance/corpus-0.2/case-01-classic-isrc.open-dj.json",
+       "rubric_check": "tests/quality/test_quality_rubric_a4adf880.py and test_quality_rubric_cli.py pass on both the source bytes (main before PR 4861) and these bytes"
++    },
++    {
++      "file": "open-dj-a4adf880/spec/v0.2/open-dj.md",
++      "date": "Wed 8 Oct 2026",
++      "issue": 5734,
++      "change": "example title/artists/file_path Strobe/deadmau5 replaced with Lanterns/Marlow Quay (finish Mon 5 Oct invented-names sweep); schema examples and seed-blocker text otherwise unchanged",
++      "original_bytes": "git show a4adf880a4f45470de3eda0c7413521159073184:open-dj/spec/v0.2/open-dj.md",
++      "rubric_check": "tests/quality/test_quality_rubric_a4adf880.py and test_quality_rubric_cli.py pass"
+     }
+   ]
+ }
+diff --git a/tests/quality/fixtures/open-dj-a4adf880/spec/v0.2/open-dj.md b/tests/quality/fixtures/open-dj-a4adf880/spec/v0.2/open-dj.md
+index 86eadd082e..5aca268eb7 100644
+--- a/tests/quality/fixtures/open-dj-a4adf880/spec/v0.2/open-dj.md
++++ b/tests/quality/fixtures/open-dj-a4adf880/spec/v0.2/open-dj.md
+@@ -225,12 +225,12 @@ Canonical example:
+ ```json
+ {
+   "track_id": "7d865e959b2466918c9863afca942d0fb89d7c9a",
+-  "title": "Strobe",
+-  "artists": ["deadmau5"],
++  "title": "Lanterns",
++  "artists": ["Marlow Quay"],
+   "album": "For Lack Of A Better Name",
+   "isrc": "GBCEN0900132",
+   "duration_ms": 634000,
+-  "file_path": "music/deadmau5/strobe.flac",
++  "file_path": "music/Marlow Quay/lanterns.flac",
+   "content_hash": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+   "bpm":   { "value": 128.0, "source": "rekordbox", "modified_at": "2026-02-02T09:00:00Z" },
+   "key":   { "value": "8A",  "source": "mik",       "modified_at": "2026-02-02T09:02:00Z" },
+@@ -744,7 +744,7 @@ this document is descriptive and nominative only.
+ A minimal but non-trivial library document that exercises every entity.
+ 
+ ```json
+-{"schema_version":"0.1","kind":"library","pairings":[{"confidence":0.9,"direction":"into","from_track_id":"7d865e959b2466918c9863afca942d0fb89d7c9a","notes":"energy match","source":"manual","to_track_id":"a1b2c3d4e5f60718293a4b5c6d7e8f9012345678"}],"playlists":[{"name":"Late Night","play_orders":[{"entries":[{"key_sync":true,"position":0,"target_tempo":128.0,"track_id":"7d865e959b2466918c9863afca942d0fb89d7c9a"},{"key_sync":true,"position":1,"target_tempo":130.0,"track_id":"a1b2c3d4e5f60718293a4b5c6d7e8f9012345678"}],"name":"peak-time"}],"playlist_id":"pl_001","tracks_ordered":["7d865e959b2466918c9863afca942d0fb89d7c9a","a1b2c3d4e5f60718293a4b5c6d7e8f9012345678"]}],"sessions":[{"events":[{"action":"load","deck":1,"timestamp":"2026-03-20T22:00:00Z","track_id":"7d865e959b2466918c9863afca942d0fb89d7c9a"},{"action":"play","deck":1,"timestamp":"2026-03-20T22:00:05Z"},{"action":"load","deck":2,"timestamp":"2026-03-20T22:07:10Z","track_id":"a1b2c3d4e5f60718293a4b5c6d7e8f9012345678"}],"name":"Demo set","session_id":"s_001","started_at":"2026-03-20T22:00:00Z","transitions":[{"at":"2026-03-20T22:08:00Z","class":"blend","duration_ms":16000,"from_deck":1,"from_track_id":"7d865e959b2466918c9863afca942d0fb89d7c9a","to_deck":2,"to_track_id":"a1b2c3d4e5f60718293a4b5c6d7e8f9012345678"}]}],"tracks":[{"artists":["deadmau5"],"bpm":{"modified_at":"2026-02-02T09:00:00Z","source":"rekordbox","value":128.0},"content_hash":"sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855","cue_points":[{"color":"#ff3366","name":"intro","position_ms":0,"slot":0,"type":"hot"},{"color":"#33ccff","name":"drop","position_ms":128000,"slot":1,"type":"hot"}],"duration_ms":634000,"file_path":"music/deadmau5/strobe.flac","isrc":"GBCEN0900132","key":{"modified_at":"2026-02-02T09:02:00Z","source":"mik","value":"8A"},"rating":{"modified_at":"2026-02-10T20:01:00Z","source":"manual","value":5},"title":"Strobe","track_id":"7d865e959b2466918c9863afca942d0fb89d7c9a"}]}
++{"schema_version":"0.1","kind":"library","pairings":[{"confidence":0.9,"direction":"into","from_track_id":"7d865e959b2466918c9863afca942d0fb89d7c9a","notes":"energy match","source":"manual","to_track_id":"a1b2c3d4e5f60718293a4b5c6d7e8f9012345678"}],"playlists":[{"name":"Late Night","play_orders":[{"entries":[{"key_sync":true,"position":0,"target_tempo":128.0,"track_id":"7d865e959b2466918c9863afca942d0fb89d7c9a"},{"key_sync":true,"position":1,"target_tempo":130.0,"track_id":"a1b2c3d4e5f60718293a4b5c6d7e8f9012345678"}],"name":"peak-time"}],"playlist_id":"pl_001","tracks_ordered":["7d865e959b2466918c9863afca942d0fb89d7c9a","a1b2c3d4e5f60718293a4b5c6d7e8f9012345678"]}],"sessions":[{"events":[{"action":"load","deck":1,"timestamp":"2026-03-20T22:00:00Z","track_id":"7d865e959b2466918c9863afca942d0fb89d7c9a"},{"action":"play","deck":1,"timestamp":"2026-03-20T22:00:05Z"},{"action":"load","deck":2,"timestamp":"2026-03-20T22:07:10Z","track_id":"a1b2c3d4e5f60718293a4b5c6d7e8f9012345678"}],"name":"Demo set","session_id":"s_001","started_at":"2026-03-20T22:00:00Z","transitions":[{"at":"2026-03-20T22:08:00Z","class":"blend","duration_ms":16000,"from_deck":1,"from_track_id":"7d865e959b2466918c9863afca942d0fb89d7c9a","to_deck":2,"to_track_id":"a1b2c3d4e5f60718293a4b5c6d7e8f9012345678"}]}],"tracks":[{"artists":["Marlow Quay"],"bpm":{"modified_at":"2026-02-02T09:00:00Z","source":"rekordbox","value":128.0},"content_hash":"sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855","cue_points":[{"color":"#ff3366","name":"intro","position_ms":0,"slot":0,"type":"hot"},{"color":"#33ccff","name":"drop","position_ms":128000,"slot":1,"type":"hot"}],"duration_ms":634000,"file_path":"music/Marlow Quay/lanterns.flac","isrc":"GBCEN0900132","key":{"modified_at":"2026-02-02T09:02:00Z","source":"mik","value":"8A"},"rating":{"modified_at":"2026-02-10T20:01:00Z","source":"manual","value":5},"title":"Lanterns","track_id":"7d865e959b2466918c9863afca942d0fb89d7c9a"}]}
+ ```
+ 
+ The document above is already in JCS canonical form: a single line, keys
+diff --git a/tests/reconcile/test_link_repair.py b/tests/reconcile/test_link_repair.py
+index f24860b3a5..19ccfcd2e7 100644
+--- a/tests/reconcile/test_link_repair.py
++++ b/tests/reconcile/test_link_repair.py
+@@ -84,7 +84,7 @@ def test_normalisation_strips_tracknos_brackets_and_punctuation() -> None:
+     assert index_disk.normalise_text("6. Quiet  Rooms!") == "quiet rooms"
+     assert index_disk.normalise_text("Quiet Rooms [Extended Mix]") == "quiet rooms"
+     assert index_disk.normalise_text("Tom & Jerry") == "tom and jerry"
+-    assert index_disk.normalise_text("Beyoncé") == "beyonce"
++    assert index_disk.normalise_text("Renée Quell") == "renee quell"
+     assert index_disk.normalise_text(None) == "", (
+         "if normalise_text(None) is not '' then callers cannot test truthiness"
+     )
+diff --git a/tests/scripts/test_missing_by_playcount.py b/tests/scripts/test_missing_by_playcount.py
+index 00fc2a1382..80176f9d9c 100644
+--- a/tests/scripts/test_missing_by_playcount.py
++++ b/tests/scripts/test_missing_by_playcount.py
+@@ -247,6 +247,6 @@ def test_grid_store_columns_come_from_source_templates(tmp_path) -> None:
+ 
+ 
+ def test_store_links_url_encode_the_artist_and_title() -> None:
+-    links = gap_sheet._store_links("Bicep", "Glue (Extended)")
+-    assert all("Bicep+Glue" in url for url in links)
++    links = gap_sheet._store_links("Mira Valen", "Resin (Extended)")
++    assert all("Mira+Valen+Resin" in url for url in links)
+     assert all(" " not in url for url in links)
+diff --git a/tests/scripts/test_spotify_playlist_sweep.py b/tests/scripts/test_spotify_playlist_sweep.py
+index d612464bfe..13c4763a02 100644
+--- a/tests/scripts/test_spotify_playlist_sweep.py
++++ b/tests/scripts/test_spotify_playlist_sweep.py
+@@ -119,13 +119,13 @@ def test_gap_pct_is_rounded_to_one_decimal() -> None:
+ 
+ def test_tracks_without_a_file_are_not_part_of_the_index(tmp_path) -> None:
+     db = _state_db(tmp_path, [
+-        ("s1", "Playable", ["Bicep"], "GBABC1234567", "/music/a.mp3"),
+-        ("s2", "Metadata only", ["Bicep"], "GBXYZ7654321", None),
++        ("s1", "Playable", ["Mira Valen"], "GBABC1234567", "/music/a.mp3"),
++        ("s2", "Metadata only", ["Mira Valen"], "GBXYZ7654321", None),
+     ])
+     isrcs, names = sweep._local_index(db)
+     assert "GBABC1234567" in isrcs
+     assert "GBXYZ7654321" not in isrcs
+-    assert "bicep|metadata only" not in names
++    assert "mira valen|metadata only" not in names
+ 
+ 
+ def test_isrcs_are_upper_cased_for_matching(tmp_path) -> None:
+@@ -135,9 +135,9 @@ def test_isrcs_are_upper_cased_for_matching(tmp_path) -> None:
+ 
+ 
+ def test_artist_title_keys_are_casefolded(tmp_path) -> None:
+-    db = _state_db(tmp_path, [("s1", "Glue", ["Bicep"], None, "/music/a.mp3")])
++    db = _state_db(tmp_path, [("s1", "Resin", ["Mira Valen"], None, "/music/a.mp3")])
+     _isrcs, names = sweep._local_index(db)
+-    assert "bicep|glue" in names
++    assert "mira valen|resin" in names
+ 
+ 
+ def test_only_the_primary_artist_forms_the_key(tmp_path) -> None:
+diff --git a/tests/shared/state/test_tag_refresh.py b/tests/shared/state/test_tag_refresh.py
+index 8c4207e04b..c6ea3fc88f 100644
+--- a/tests/shared/state/test_tag_refresh.py
++++ b/tests/shared/state/test_tag_refresh.py
+@@ -2,7 +2,7 @@
+ 
+ Live on demon-llama, Thu 1 Oct 2026: all 100 rows of the testmac sample read
+ title = filename, no artist, no album, no duration, although every file is
+-tagged (AVIRA / Out Of Context), because they were imported by a build whose
++tagged (Tamsïn Ensemble / Nachtfahrt), because they were imported by a build whose
+ reader was the absent GPL mutagen. A folder rescan never revisits a known row.
+ 
+ Regression one-liners:
+diff --git a/tests/shared/test_artwork_sources.py b/tests/shared/test_artwork_sources.py
+index 0caa9082e4..84628b63f0 100644
+--- a/tests/shared/test_artwork_sources.py
++++ b/tests/shared/test_artwork_sources.py
+@@ -113,13 +113,13 @@ def test_sidecar_memo_sees_a_cover_added_later(tmp_path: Path) -> None:
+ 
+ 
+ def test_matching_requires_title_artist_and_duration() -> None:
+-    query = TrackQuery(artist="Bicep, Clara La San", title="6A - 7 - Glue (Original Mix)",
++    query = TrackQuery(artist="Mira Valen, Cass Delaney", title="6A - 7 - Resin (Original Mix)",
+                        duration_ms=269_000)
+     payload = {"recordings": [
+-        _recording("Glue", "Some Stranger", 269_000, ["stranger"]),
+-        _recording("Glue", "Bicep", 400_000, ["too-long"]),
+-        _recording("Glue", "Bicep", 270_500, ["rg-1", "rg-2"]),
+-        _recording("Glue", "Bicep", None, ["rg-2", "rg-3"]),
++        _recording("Resin", "Some Stranger", 269_000, ["stranger"]),
++        _recording("Resin", "Mira Valen", 400_000, ["too-long"]),
++        _recording("Resin", "Mira Valen", 270_500, ["rg-1", "rg-2"]),
++        _recording("Resin", "Mira Valen", None, ["rg-2", "rg-3"]),
+     ]}
+     assert art.matching_release_groups(payload, query) == ["rg-1", "rg-2", "rg-3"]
+ 
+@@ -134,17 +134,17 @@ def _release(group: str, primary: str | None, secondary: list[str], credit: str,
+ 
+ 
+ def test_own_release_beats_soundtrack_and_compilation() -> None:
+-    """Shape of the real 'Too Close' answer: MusicBrainz lists the film first."""
+-    query = TrackQuery(artist="Alex Clare", title="Too Close", duration_ms=None)
+-    recording = {"title": "Too Close", "length": None, "artist-credit": [{"name": "Alex Clare"}]}
++    """Shape of a soundtrack-first MusicBrainz answer: the film listing comes first."""
++    query = TrackQuery(artist="Orrin Vale", title="Far Latch", duration_ms=None)
++    recording = {"title": "Far Latch", "length": None, "artist-credit": [{"name": "Orrin Vale"}]}
+     payload = {"recordings": [
+         {**recording, "releases": [
+-            _release("taken-2", "Album", ["Soundtrack"], "Nathaniel Mechaly"),
++            _release("taken-2", "Album", ["Soundtrack"], "Harlan Voss"),
+             _release("mega-hits", "Album", ["Compilation"], "Various Artists"),
+         ]},
+         {**recording, "releases": [
+             _release("bravo", None, [], "Various Artists", status=None),
+-            _release("lateness", "Album", [], "Alex Clare"),
++            _release("lateness", "Album", [], "Orrin Vale"),
+         ]},
+     ]}
+     assert art.matching_release_groups(payload, query) == [
+@@ -153,16 +153,16 @@ def test_own_release_beats_soundtrack_and_compilation() -> None:
+ 
+ 
+ def test_query_cleaning() -> None:
+-    assert art.query_title("6A - 7 - Glue") == "Glue"
+-    assert art.query_title("E - Mergency") == "E - Mergency"
+-    assert art.query_artist("Anyma, Chris Avantgarde") == "Anyma"
+-    assert art.query_artist("Apashe feat. Black Prez") == "Apashe"
++    assert art.query_title("6A - 7 - Resin") == "Resin"
++    assert art.query_title("E - Meridian") == "E - Meridian"
++    assert art.query_artist("Pell Arden, Chris Vale") == "Pell Arden"
++    assert art.query_artist("Orla Finch feat. Black Quill") == "Orla Finch"
+ 
+ 
+ # ----- online cover -----------------------------------------------------------
+ 
+-QUERY = TrackQuery(artist="Bicep", title="Glue", duration_ms=269_000)
+-MB_FOUND = json.dumps({"recordings": [_recording("Glue", "Bicep", 269_000, ["rg-1", "rg-2"])]})
++QUERY = TrackQuery(artist="Mira Valen", title="Resin", duration_ms=269_000)
++MB_FOUND = json.dumps({"recordings": [_recording("Resin", "Mira Valen", 269_000, ["rg-1", "rg-2"])]})
+ 
+ 
+ def test_found_cover_is_cached_and_not_fetched_again(tmp_path: Path) -> None:
+diff --git a/tests/shared/test_harmonic.py b/tests/shared/test_harmonic.py
+index 68d716348a..86133d7dec 100644
+--- a/tests/shared/test_harmonic.py
++++ b/tests/shared/test_harmonic.py
+@@ -355,26 +355,26 @@ class TestSuggestNext:
+ 
+ 
+ # ---------------------------------------------------------------------------
+-# Real Track Suggestions (using real data from djay/Rekordbox)
++# Invented library suggestions (keys/BPMs exercise the scorer; names are fake)
+ # ---------------------------------------------------------------------------
+ 
+ 
+ @pytest.mark.requirement("PLAY-02")
+ class TestRealTrackSuggestions:
+-    """Test suggestions using real track metadata from our libraries."""
++    """Test suggestions using invented track metadata with real key/BPM shapes."""
+ 
+-    # Real tracks from REAL_TRACKS_XML fixture
++    # Invented titles/artists; key and BPM values keep the scorer cases honest.
+     REAL_LIBRARY = [
+-        {"title": "Idontknow", "artist": "Jamie xx", "key": "3A", "bpm": 160.18, "rating": 5},
+-        {"title": "Devotion", "artist": "Diskay", "key": "8A", "bpm": 98.0, "rating": 5},
+-        {"title": "Flawless (Club Mix)", "artist": "Red Axes", "key": "4A", "bpm": 120.0, "rating": 5},
+-        {"title": "Madan (King)", "artist": "Bakermat", "key": "5A", "bpm": 126.0, "rating": 5},
+-        {"title": "God Is a DJ", "artist": "P!nk", "key": "6A", "bpm": 111.96, "rating": 5},
+-        {"title": "Call Me Maybe", "artist": "Carly Rae Jepsen", "key": "9B", "bpm": 120.0, "rating": 5},
+-        {"title": "Satisfaction", "artist": "David Guetta,Benny Benassi", "key": "3A", "bpm": 126.0, "rating": 5},
+-        {"title": "Harbor Rain", "artist": "Odo Lind,Sofiya Nzau", "key": "6A", "bpm": 120.01, "rating": 5},
+-        {"title": "R U 4REAL", "artist": "Gordo,Marina Maximilian", "key": "7A", "bpm": 124.0, "rating": 5},
+-        {"title": "Chase Our Shadows", "artist": "Ryan Murgatroyd", "key": "8A", "bpm": 120.0, "rating": 5},
++        {"title": "Oxbow Static", "artist": "Pell Arden", "key": "3A", "bpm": 160.18, "rating": 5},
++        {"title": "Lumen Drift", "artist": "Nina Vale", "key": "8A", "bpm": 98.0, "rating": 5},
++        {"title": "Quiet Rooms (Club Mix)", "artist": "Orla Finch", "key": "4A", "bpm": 120.0, "rating": 5},
++        {"title": "Salt Flats (King)", "artist": "June Calloway", "key": "5A", "bpm": 126.0, "rating": 5},
++        {"title": "Night Is a Wheel", "artist": "Tamsin Quell", "key": "6A", "bpm": 111.96, "rating": 5},
++        {"title": "Tell Me After", "artist": "Sami Rowe", "key": "9B", "bpm": 120.0, "rating": 5},
++        {"title": "Plain Signal", "artist": "Mira Valen,The Lowlands", "key": "3A", "bpm": 126.0, "rating": 5},
++        {"title": "Harbor Rain", "artist": "Odo Lind,Pell Arden", "key": "6A", "bpm": 120.01, "rating": 5},
++        {"title": "U R LOCAL", "artist": "Kestrel Hale,Sami Rowe", "key": "7A", "bpm": 124.0, "rating": 5},
++        {"title": "Chase Our Lanterns", "artist": "Marlow Quay", "key": "8A", "bpm": 120.0, "rating": 5},
+     ]
+ 
+     def test_playing_mwaki_suggests_harmonic_matches(self):
+@@ -387,19 +387,19 @@ class TestRealTrackSuggestions:
+         assert len(results) >= 1
+         # Top result should be harmonically compatible (5A, 6A, 7A, or 6B)
+         top = results[0]
+-        # God Is a DJ (6A, 112 BPM) or R U 4REAL (7A, 124) or Madan (5A, 126) should rank high
++        # Night Is a Wheel (6A, 112 BPM) or U R LOCAL (7A, 124) or Salt Flats (5A, 126)
+         assert top["key"] in ("5A", "6A", "7A", "6B"), f"Expected harmonic match, got {top['key']}"
+ 
+     def test_playing_satisfaction_suggests_same_key(self):
+-        """[if] playing Satisfaction (3A, 126 BPM) [then] Idontknow (3A) ranks high despite BPM gap"""
++        """[if] playing Plain Signal (3A, 126 BPM) [then] Oxbow Static (3A) ranks high despite BPM gap"""
+         results = suggest_next(
+             current_key="3A", current_bpm=126.0, current_rating=5,
+             library=self.REAL_LIBRARY, top_n=5,
+-            exclude_titles=["Satisfaction"],
++            exclude_titles=["Plain Signal"],
+         )
+-        # Idontknow is 3A but 160 BPM - should still appear due to key match
++        # Oxbow Static is 3A but 160 BPM - should still appear due to key match
+         titles = [r["title"] for r in results]
+-        assert "Idontknow" in titles, "Same-key track should appear in suggestions"
++        assert "Oxbow Static" in titles, "Same-key track should appear in suggestions"
+ 
+     def test_suggestions_score_is_float_0_to_1(self):
+         """[if] suggestions generated [then] all scores are 0.0-1.0 floats"""
+diff --git a/tests/streaming_transfer/test_transfer.py b/tests/streaming_transfer/test_transfer.py
+index 13e1625d66..ea175a76fa 100644
+--- a/tests/streaming_transfer/test_transfer.py
++++ b/tests/streaming_transfer/test_transfer.py
+@@ -1,8 +1,10 @@
+ """META-05 acceptance coverage over captured provider metadata.
+ 
+ Spotify search rows and SoundCloud track hydration records were captured from
+-official services on Thu 3 Sep 2026. Production parsers, scoring, LLM response
+-validation, duration checks, and reporting consume them here without API mocks.
++official services on Thu 3 Sep 2026, then artist/title/album strings were
++replaced with invented sample names (issue #5734). Production parsers, scoring,
++LLM response validation, duration checks, and reporting consume them here
++without API mocks.
+ 
+ - if deterministic and escalated matches lose confidence then META-05 is broken
+ - if a below-threshold candidate bypasses the batched LLM pass then META-05 is broken
+@@ -36,7 +38,7 @@ def _spotify_item(
+             "uri": f"spotify:track:{track_id}",
+             "external_ids": {"isrc": isrc},
+             "name": title,
+-            "artists": [{"name": "The Weeknd"}],
++            "artists": [{"name": "Marlow Quay"}],
+             "album": {"name": album},
+             "duration_ms": duration_ms,
+             "is_local": False,
+@@ -52,20 +54,20 @@ SPOTIFY_CAPTURE: dict[str, object] = {
+     "description": "Read-only API capture for META-05",
+     "_items": [
+         _spotify_item(
+-            "0VjIjW4GlUZAMYd2vXMi3b", "USUG11904206", "Blinding Lights", "After Hours", 200040
++            "0VjIjW4GlUZAMYd2vXMi3b", "USUG11904206", "Lanterns", "Paper Harbors", 200040
+         ),
+         _spotify_item(
+-            "6qYkmqFsXbj8CQjAdbYz07", "USUG11904206", "Blinding Lights", "Blinding Lights", 200045
++            "6qYkmqFsXbj8CQjAdbYz07", "USUG11904206", "Lanterns", "Lanterns", 200045
+         ),
+         _spotify_item(
+             "5OGxg1400HmCYVRHuccZWw",
+             "USUG12301431",
+-            "Blinding Lights - Live",
+-            "Live At SoFi Stadium",
++            "Lanterns - Live",
++            "Live At Paper Harbor",
+             253365,
+         ),
+         _spotify_item(
+-            "2D4dV2KXDTszzJ3p3cFqhA", "USUG12106698", "Less Than Zero", "Dawn FM", 211814
++            "2D4dV2KXDTszzJ3p3cFqhA", "USUG12106698", "Less Than North", "Dusk AM", 211814
+         ),
+     ],
+ }
+@@ -73,11 +75,11 @@ SPOTIFY_CAPTURE: dict[str, object] = {
+ SOUNDCLOUD_STUDIO_WITH_ISRC = {
+     "collection": [
+         {
+-            "kind": "track", "title": "Blinding Lights", "duration": 201619,
++            "kind": "track", "title": "Lanterns", "duration": 201619,
+             "urn": "soundcloud:tracks:718846078", "isrc": "USUG11904206",
+-            "metadata_artist": "The Weeknd", "access": "playable", "streamable": True,
+-            "permalink_url": "https://soundcloud.com/theweeknd/blinding-lights",
+-            "user": {"username": "The Weeknd"},
++            "metadata_artist": "Marlow Quay", "access": "playable", "streamable": True,
++            "permalink_url": "https://soundcloud.com/marlow-quay/lanterns",
++            "user": {"username": "Marlow Quay"},
+         }
+     ]
+ }
+@@ -94,11 +96,11 @@ SOUNDCLOUD_STUDIO_WITHOUT_ISRC = {
+ SOUNDCLOUD_LIVE_PREVIEW = {
+     "collection": [
+         {
+-            "kind": "track", "title": "Blinding Lights (Live)", "duration": 30000,
++            "kind": "track", "title": "Lanterns (Live)", "duration": 30000,
+             "urn": "soundcloud:tracks:1455360826", "isrc": None,
+-            "metadata_artist": "The Weeknd", "access": "preview", "streamable": True,
+-            "permalink_url": ("https://soundcloud.com/theweeknd/the-weeknd-blinding-lights-1"),
+-            "user": {"username": "The Weeknd"},
++            "metadata_artist": "Marlow Quay", "access": "preview", "streamable": True,
++            "permalink_url": ("https://soundcloud.com/marlow-quay/marlow-quay-lanterns-1"),
++            "user": {"username": "Marlow Quay"},
+         }
+     ]
+ }
+@@ -171,7 +173,7 @@ def test_captured_spotify_to_soundcloud_transfer_reports_every_bucket() -> None:
+                     "confidence": 0.99,
+                     "evidence_urls": [
+                         "https://open.spotify.com/track/6qYkmqFsXbj8CQjAdbYz07",
+-                        "https://soundcloud.com/theweeknd/blinding-lights",
++                        "https://soundcloud.com/marlow-quay/lanterns",
+                     ],
+                 },
+                 {
+@@ -180,7 +182,7 @@ def test_captured_spotify_to_soundcloud_transfer_reports_every_bucket() -> None:
+                     "confidence": 0.99,
+                     "evidence_urls": [
+                         "https://open.spotify.com/track/5OGxg1400HmCYVRHuccZWw",
+-                        "https://soundcloud.com/theweeknd/the-weeknd-blinding-lights-1",
++                        "https://soundcloud.com/marlow-quay/marlow-quay-lanterns-1",
+                     ],
+                 },
+             ],
+@@ -193,9 +195,9 @@ def test_captured_spotify_to_soundcloud_transfer_reports_every_bucket() -> None:
+         }
+         for url in (
+             "https://open.spotify.com/track/6qYkmqFsXbj8CQjAdbYz07",
+-            "https://soundcloud.com/theweeknd/blinding-lights",
++            "https://soundcloud.com/marlow-quay/lanterns",
+             "https://open.spotify.com/track/5OGxg1400HmCYVRHuccZWw",
+-            "https://soundcloud.com/theweeknd/the-weeknd-blinding-lights-1",
++            "https://soundcloud.com/marlow-quay/marlow-quay-lanterns-1",
+         )
+     ]
+     response = {
+diff --git a/tests/webui/test_search_index.py b/tests/webui/test_search_index.py
+index 4e838c5cae..cb4f258c41 100644
+--- a/tests/webui/test_search_index.py
++++ b/tests/webui/test_search_index.py
+@@ -46,11 +46,11 @@ def fixture_db(tmp_path: Path) -> Path:
+     writer = StateWriter(conn, bus=bus, actor="test")
+     try:
+         tracks = [
+-            ("s1", "Levitating", ["Dua Lipa"], "deep-house", "great opener", ["banger"]),
+-            ("s2", "Blinding Lights", ["The Weeknd"], "synthwave", "peak time", ["retro"]),
+-            ("s3", "Bad Guy", ["Billie Eilish"], "pop", "moody", ["dark-pop"]),
++            ("s1", "Neon Orchard", ["Mira Valen"], "deep-house", "great opener", ["banger"]),
++            ("s2", "Harbor Rain", ["Odo Lind"], "synthwave", "peak time", ["retro"]),
++            ("s3", "Quiet Rooms", ["Cass Delaney"], "pop", "moody", ["dark-pop"]),
+             ("s4", "Weekend Vibes", ["Nobody"], "lofi", "chill background", []),
+-            ("s5", "Strobe", ["deadmau5"], "progressive-house", "closer track", ["classic"]),
++            ("s5", "Lanterns", ["Dorrin Vale"], "progressive-house", "closer track", ["classic"]),
+             ("s6", "House Anthem", ["DJ House"], "trance", "banger opener", []),
+         ]
+         for sid, title, artists, genre, comments, tags in tracks:
+@@ -75,11 +75,11 @@ def test_build_fts_query_empty_is_none() -> None:
+ 
+ 
+ def test_build_fts_query_quotes_and_prefixes_terms() -> None:
+-    assert search_index.build_fts_query("dua lip") == '"dua"* "lip"*'
++    assert search_index.build_fts_query("mira val") == '"mira"* "val"*'
+ 
+ 
+ def test_build_fts_query_strips_embedded_quotes() -> None:
+-    assert search_index.build_fts_query('"dua"') == '"dua"*'
++    assert search_index.build_fts_query('"mira"') == '"mira"*'
+ 
+ 
+ def test_build_fts_query_nul_only_returns_none() -> None:
+@@ -92,13 +92,13 @@ def test_build_fts_query_strips_nul_without_sqlite_error(fixture_db: Path) -> No
+ 
+ 
+ def test_search_matches_title_prefix(fixture_db: Path) -> None:
+-    hits, total = search_index.search(fixture_db, "levi", limit=10)
++    hits, total = search_index.search(fixture_db, "neon", limit=10)
+     assert total == 1
+     assert [sid for sid, _ in hits] == ["s1"]
+ 
+ 
+ def test_search_matches_artist(fixture_db: Path) -> None:
+-    hits, total = search_index.search(fixture_db, "eilish", limit=10)
++    hits, total = search_index.search(fixture_db, "delaney", limit=10)
+     assert total == 1
+     assert hits[0][0] == "s3"
+ 
+@@ -150,10 +150,10 @@ def test_search_title_and_artist_beat_genre_only_in_rank(fixture_db: Path) -> No
+ 
+ 
+ def test_search_returns_match_context_snippet(fixture_db: Path) -> None:
+-    hits, _total = search_index.search(fixture_db, "levitating", limit=10)
++    hits, _total = search_index.search(fixture_db, "orchard", limit=10)
+     assert hits, "expected at least one hit"
+     _sid, context = hits[0]
+-    assert "levitating" in context.lower()
++    assert "orchard" in context.lower()
+ 
+ 
+ def test_search_empty_query_returns_empty(fixture_db: Path) -> None:
+@@ -162,9 +162,9 @@ def test_search_empty_query_returns_empty(fixture_db: Path) -> None:
+ 
+ 
+ def test_search_pagination_limit_and_offset(fixture_db: Path) -> None:
+-    # Prefix "d" matches a token on 4 of the 6 fixture tracks: "dua"
+-    # (s1 artist), "deep" (s1 genre), "dark" (s3 tags), "deadmau5"
+-    # (s5 artist), "dj" (s6 artist) -- s1 twice over, still one hit.
++    # Prefix "d" matches a token on 4 of the 6 fixture tracks: "deep"
++    # (s1 genre), "dark" (s3 tags), "dorrin" (s5 artist), "dj"
++    # (s6 artist) -- s1 is covered by genre alone.
+     hits_all, total = search_index.search(fixture_db, "d", limit=100)
+     assert total == len(hits_all) == 4
+     assert {sid for sid, _ in hits_all} == {"s1", "s3", "s5", "s6"}

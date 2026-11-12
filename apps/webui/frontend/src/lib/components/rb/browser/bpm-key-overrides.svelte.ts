@@ -1,12 +1,15 @@
 /**
- * Session edits for the browser tempo and key cells (pin a720a02ecf92).
- * The track API cannot store a replacement BPM or key, so the cell keeps the
- * edit for this preview session. When that track is on a deck, the same commit
- * sets the deck's playback tempo or nudges its key so the new value is audible.
+ * Edits from the browser tempo and key cells (pin a720a02ecf92).
+ * A key edit is stored with the track (KEY-10229, PUT /tracks/{id}/key-edit);
+ * this store is a thin cache that bridges the commit until the row re-reads
+ * and serves key_source "edit". BPM edits stay session-only until #10112 adds
+ * PUT /grid-edit {bpm}. When that track is on a deck, the same commit sets the
+ * deck's playback tempo or nudges its key so the new value is audible.
  */
 import type { PitchRange } from '$lib/player/constants';
 import { effectiveCamelotKey } from '$lib/player/key/camelot';
 import { playbackBpm } from '$lib/rb/beat-sync-math';
+import { deleteKeyEdit, putKeyEdit } from '$lib/rb/beatgrid-fallback-api';
 import type { DeckId } from '$lib/rb/deck-slots';
 import { runPerformanceCommandFromUi } from '$lib/rb/performance-ipc.svelte';
 import { tempoWritesFromTargetBpm } from '$lib/rb/tempo-edit';
@@ -87,12 +90,16 @@ export async function commitKeyEdit(
 	label: string,
 	decks: CellEditDecks
 ): Promise<void> {
-	keyEdits = { ...keyEdits, [stableId]: label };
+	// A refused store throws to the editor, which shows it; nothing is cached or nudged.
+	const saved = await putKeyEdit(stableId, label);
+	if (saved.key === null) throw new Error(`key edit for ${stableId} stored no key`);
+	const key = saved.key;
+	keyEdits = { ...keyEdits, [stableId]: key };
 	for (const deck of decks.ids) {
 		const state = decks.states[deck];
 		if (state.stable_id !== stableId || state.key === null) continue;
 		const current = effectiveCamelotKey(state.key, state.key_shift_semitones);
-		const delta = semitoneNudgeBetween(current, label);
+		const delta = semitoneNudgeBetween(current, key);
 		if (delta === null || delta === 0) continue;
 		const next = state.key_shift_semitones + delta;
 		if (next < -12 || next > 12) continue;
@@ -105,4 +112,11 @@ export async function commitKeyEdit(
 				break;
 		}
 	}
+}
+
+/** Forget the track's stored key edit (the analysed key shows again). */
+export async function clearKeyEdit(stableId: string): Promise<void> {
+	await deleteKeyEdit(stableId);
+	const { [stableId]: _dropped, ...rest } = keyEdits;
+	keyEdits = rest;
 }

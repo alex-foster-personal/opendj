@@ -29,6 +29,7 @@ from pathlib import Path
 import pytest
 
 from apps.shared.state import schema
+from apps.shared.labelling.stem_abc_ids import stems_ab_clip_ids_for_arms
 from scripts import stem_split_runner as ssr
 
 
@@ -147,6 +148,13 @@ def test_recorded_payload_names_the_experiment_and_its_arm_set(
     assert payload["experiment"] == ssr.EXPERIMENT_ID
     assert payload["arms"] == [a.name for a in ssr.ARMS]
     assert payload["preset"] and payload["codec"]
+
+
+@pytest.mark.requirement("INTEL-13572")
+def test_split_arm_set_covers_three_abc_clip_ids() -> None:
+    """[if] the split arm set has fewer than three arms [then] abc rank tasks refuse, [else stop]."""
+    assert len(ssr.ARMS) >= 3
+    assert stems_ab_clip_ids_for_arms(len(ssr.ARMS)) == ("A", "B", "C")
 
 
 @pytest.mark.requirement("GUARD-03")

@@ -149,7 +149,11 @@ def test_audible_run_posted_over_http_lands_in_the_set(observer_client):
 
     status = client.get("/api/sets/deck-observations")
     assert status.status_code == 200
-    deck_one = status.json()["decks"]["1"]
+    body = status.json()
+    assert body["source"] == "opendj_decks"
+    assert body["last_received_at"] is not None
+    datetime.fromisoformat(body["last_received_at"].replace("Z", "+00:00"))
+    deck_one = body["decks"]["1"]
     assert deck_one["stable_id"] == "trk-a"
     assert deck_one["recorded"] is True
 

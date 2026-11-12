@@ -101,7 +101,9 @@ test('LIBUX-8676: TrackTable wires the press mark and the dragend collapse', () 
 
 test('LIBUX-8676: the 1/2/3/4 load box is hidden while more than one row is selected', () => {
 	const table = read('src/lib/components/rb/browser/TrackTable.svelte');
-	assert.match(table, /class:rb-multi-selected=\{selectedOrderSet\.size > 1\}/);
+	// PR #10679 names the predicate `multiRowSelection`; the table class still reads it.
+	assert.match(table, /const multiRowSelection = \$derived\(selectedOrderSet\.size > 1\);/);
+	assert.match(table, /class:rb-multi-selected=\{multiRowSelection\}/);
 	assert.match(table, /table\.rb-multi-selected \.deck-btns \{\s*visibility: hidden;/);
 });
 

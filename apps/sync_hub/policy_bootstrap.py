@@ -24,6 +24,8 @@ from typing import Literal
 
 from apps.cloud.policy import MACHINE_CLASSES, MachineClass
 from apps.shared.state import db as state_db
+from apps.shared.state import machine_identity as machine_identity_mod
+from apps.shared.state import sync_stamp
 from apps.shared.state.machine_identity import is_hub_from_env, register_machine
 from apps.sync_hub import config as sync_config
 from apps.sync_hub.client_transport_ops import state_db_path
@@ -98,8 +100,9 @@ def ensure_self_class_seeded(
     not raised, so engine boot cannot die on a fleet-completeness error.
     """
     chosen = resolve_seed_class(env) if machine_class is None else machine_class
-    author = author_machine_id(conn)
-    machine_id = author if machine_id is None else machine_id
+    if machine_id is None:
+        machine_id = author_machine_id(conn)
+    author = machine_id
     if self_has_live_policy(conn, machine_id):
         return BootstrapResult("already-seeded", False, chosen, None)
     proposed = seed_proposal(author, machine_id, chosen)
@@ -146,7 +149,21 @@ def ensure_enabled_spoke_policy(
             data_dir=data_dir,
             name=effective.machine_name,
         )
-        return ensure_self_class_seeded(conn, env=source, machine_id=identity.machine_id)
+        machine_id = identity.machine_id
+        if effective.machine_name:
+            row = conn.execute(
+                "SELECT machine_id FROM machines WHERE name = ?",
+                (effective.machine_name,),
+            ).fetchone()
+            if row is not None:
+                machine_id = str(row[0])
+        if machine_id != identity.machine_id:
+            machine_identity_mod._replace_machine_id(
+                machine_identity_mod.machine_id_path(data_dir),
+                machine_id,
+            )
+            sync_stamp.reset_machine_id_cache()
+        return ensure_self_class_seeded(conn, env=source, machine_id=machine_id)
     finally:
         conn.close()
 

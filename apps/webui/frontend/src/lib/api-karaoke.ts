@@ -11,7 +11,7 @@
  *
  * SCOPE: exactly the two calls PR-4a's UI makes. The router also serves the
  * triage listing, the verdict summary, the source-order config, the job queue
- * and the purge, all covered by tests/webui/test_words_lyrics.py and reachable
+ * and the purge, all covered by (private path) and reachable
  * by an agent over HTTP today; their typed wrappers land in PR-4b NEXT TO the
  * panels that call them, because a client function with no caller is dead code
  * the dead-export ratchet is right to count.
@@ -45,10 +45,13 @@ export type LyricVerdictValue = 'vocal' | 'sparse' | 'no-lyrics' | 'unknown';
  * and for "row exists, words artifact unhydratable", and no caller can act
  * differently on those, so both collapse to the honest "nothing to show".
  * Every other status still throws `ApiError`: a 500 or a 422 is a real failure
- * and must never render as an empty track. */
+ * and must never render as an empty track.
+ *
+ * `onMissing` receives the server's 404 detail (which track, or why its words
+ * cannot be produced) for a caller that wants to show the reason. */
 export async function getTrackLyricsWords(
 	stableId: string,
-	opts: { includeLines?: boolean } = {}
+	opts: { includeLines?: boolean; onMissing?: (detail: string) => void } = {}
 ): Promise<KaraokeTrack | null> {
 	// Spec 4b: a stick track has no lyrics route, so it is the no-lyrics state.
 	if (isUsbTrackId(stableId)) return null;
@@ -62,7 +65,10 @@ export async function getTrackLyricsWords(
 			})
 		);
 	} catch (error) {
-		if (error instanceof ApiError && error.status === 404) return null;
+		if (error instanceof ApiError && error.status === 404) {
+			opts.onMissing?.(error.message);
+			return null;
+		}
 		throw error;
 	}
 }

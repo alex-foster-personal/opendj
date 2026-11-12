@@ -16,7 +16,7 @@ let back in:
   so a push carrying an unparseable ``deleted_at`` was accepted, stored
   verbatim, and hashed into the digest -- the one column a tombstone's
   correctness depends on was the one column this boundary never checked.
-- R8 (``/status`` write ordering) -> ``service.status`` ran ``_hub_identity``
+- R8 (``/status`` write ordering) -> ``service_reads.status`` ran ``_hub_identity``
   (which upserts the HUB's own ``machines`` row) in a transaction BEFORE
   checking whether the CALLER was registered, so a refused status call still
   had a write side effect.

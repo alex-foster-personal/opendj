@@ -5,6 +5,9 @@ import { type PerfEvent, setPerfEventEscalator } from './rb/perf-event-log';
 export const EXPECTED_RESOURCE_ERROR_ATTR = 'data-expected-resource-error';
 export const EXPECTED_ARTWORK_404_VALUE = 'artwork-404';
 
+/** Matches ``BUG_REPORT_TEXT_MAX_BYTES`` in ``apps/shared/telemetry/scrub.py``. */
+export const BUG_REPORT_TEXT_MAX_BYTES = 256 * 1024;
+
 const QUEUE_KEY = 'music-dj-tools:client-errors:v1';
 const MAX_QUEUE = 20;
 const DEDUPE_MS = 10_000;
@@ -234,7 +237,8 @@ function consolePassesSample(kind: 'console-error' | 'console-warn'): boolean {
 }
 
 function patchConsole(kind: 'console-error' | 'console-warn'): void {
-	const original = kind === 'console-error' ? console.error.bind(console) : console.warn.bind(console);
+	const original =
+		kind === 'console-error' ? console.error.bind(console) : console.warn.bind(console);
 	const forward = (...args: unknown[]) => {
 		original(...args);
 		if (interceptingConsole) return;
@@ -400,7 +404,10 @@ export function reportClientError(
 		context: Object.fromEntries(
 			Object.entries(context)
 				.slice(0, 32)
-				.map(([key, value]) => [truncate(key, 128), typeof value === 'string' ? truncate(value, 4096) : value])
+				.map(([key, value]) => [
+					truncate(key, 128),
+					typeof value === 'string' ? truncate(value, 4096) : value
+				])
 		)
 	};
 	const queue = readQueue();

@@ -35,6 +35,19 @@
 	padding: 10px 14px;
 	border-bottom: 1px solid var(--rb-border, #333);
 }
+.hp-panel[data-audio-io-panel] .hp-panel-dismiss-hint {
+	display: block;
+	margin-top: 2px;
+	font-weight: 400;
+	color: var(--rb-text-dim, #838990);
+	opacity: 0.72;
+}
+.hp-panel[data-audio-io-panel] .hp-future-stack {
+	display: flex;
+	flex-direction: column;
+	gap: 2px;
+	margin: 6px 0 8px;
+}
 .hp-panel[data-audio-io-panel] .hp-panel-close {
 	background: transparent;
 	border: 0;

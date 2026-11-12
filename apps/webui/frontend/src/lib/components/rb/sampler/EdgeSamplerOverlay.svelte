@@ -3,6 +3,7 @@
 	 * Both edge waves (spec 7.4). One rAF loop only while an edge is awake or easing (EDGESAMP-07).
 	 */
 	import { onMount } from 'svelte';
+	import { prefersReducedMotion } from '$lib/motion/reduced-motion';
 	import { OVERLAY_Z } from '$lib/overlays/stack';
 	import { DEFAULT_WAVE, ZONE_PX } from '$lib/player/sampler/edge-wave';
 	import { edgeSamplerUi } from '$lib/player/sampler/edge-sampler-ui.svelte';
@@ -26,9 +27,7 @@
 	const ptr: Pointer = { x: -1, y: -1, buttons: 0, inWindow: false };
 	let raf = 0;
 	let lastT = 0;
-	const reduceMotion =
-		typeof window !== 'undefined' &&
-		window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
+	const reduceMotion = typeof window !== 'undefined' && prefersReducedMotion();
 
 	function frame(t: number): void {
 		raf = 0;

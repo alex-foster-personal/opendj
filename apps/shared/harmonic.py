@@ -14,11 +14,13 @@ NL Tests:
 - [if] BPM within 3% [then] BPM score >= 0.9
 - [if] BPM differs by >10% [then] BPM score = 0.0
 - [if] both tracks are 5-star [then] energy score = 1.0
+- [if] a key, BPM or energy term cannot be measured [then] it is omitted and weights renormalise (AGENT-33)
 - [if] suggest_next called with real library [then] returns sorted recommendations
 """
 
 from __future__ import annotations
 
+import contextlib
 from dataclasses import dataclass
 from datetime import datetime
 
@@ -463,15 +465,15 @@ def bpm_compatibility(bpm1: float | None, bpm2: float | None, max_diff_pct: floa
     return max(0.0, score - tempo_penalty)
 
 
-def energy_compatibility(rating1: int, rating2: int) -> float:
+def energy_compatibility(rating1: int | None, rating2: int | None) -> float | None:
     """Score energy compatibility via star ratings (0.0-1.0).
 
     - Same rating = 1.0
     - Difference of N stars = linear falloff
-    - Unrated (0) = neutral 0.5
+    - Unrated (0 or None) = unscored, returns None
     """
-    if rating1 == 0 or rating2 == 0:
-        return 0.5
+    if rating1 is None or rating2 is None or rating1 == 0 or rating2 == 0:
+        return None
 
     diff = abs(rating1 - rating2)
     max_diff = 4  # max possible diff between 1-5 star ratings
@@ -487,37 +489,68 @@ WEIGHT_KEY = 0.50
 WEIGHT_BPM = 0.30
 WEIGHT_ENERGY = 0.20
 
+_TRACK_TERM_WEIGHTS = {
+    "key": WEIGHT_KEY,
+    "bpm": WEIGHT_BPM,
+    "energy": WEIGHT_ENERGY,
+}
+TRACK_TERMS = ("key", "bpm", "energy")
+
+
+def _track_weighted_mean(terms: dict[str, float]) -> float:
+    weight = sum(_TRACK_TERM_WEIGHTS[name] for name in terms)
+    if weight == 0.0:
+        return 0.0
+    return sum(_TRACK_TERM_WEIGHTS[name] * value for name, value in terms.items()) / weight
+
+
+def track_compatibility_terms(
+    current_key: str | None,
+    current_bpm: float | None,
+    current_rating: int | None,
+    candidate_key: str | None,
+    candidate_bpm: float | None,
+    candidate_rating: int | None,
+) -> dict[str, float]:
+    """Measured key, BPM and energy scores keyed by term name.
+
+    An unmeasurable term is omitted, never filled with a neutral value (AGENT-33).
+    """
+    terms: dict[str, float] = {}
+    if current_key and candidate_key:
+        with contextlib.suppress(ValueError):
+            terms["key"] = camelot_compatibility(current_key, candidate_key)
+    if current_bpm is not None and candidate_bpm is not None and current_bpm > 0 and candidate_bpm > 0:
+        terms["bpm"] = bpm_compatibility(current_bpm, candidate_bpm)
+    energy_score = energy_compatibility(current_rating, candidate_rating)
+    if energy_score is not None:
+        terms["energy"] = energy_score
+    return terms
+
 
 def track_compatibility(
     current_key: str | None,
-    current_bpm: float,
-    current_rating: int,
+    current_bpm: float | None,
+    current_rating: int | None,
     candidate_key: str | None,
-    candidate_bpm: float,
-    candidate_rating: int,
+    candidate_bpm: float | None,
+    candidate_rating: int | None,
 ) -> float:
     """Combined compatibility score (0.0-1.0) from key, BPM, and energy.
 
-    Key is weighted highest (0.50) since harmonic clashes are the most noticeable.
-    BPM (0.30) matters for beat-matching feasibility.
-    Energy (0.20) keeps the flow consistent.
+    Missing terms are unscored; the score is the weighted mean of measured
+    terms with weights renormalised over those terms (AGENT-33).
     """
-    # Key score
-    if current_key and candidate_key:
-        try:
-            key_score = camelot_compatibility(current_key, candidate_key)
-        except ValueError:
-            key_score = 0.5  # Unknown key format, neutral
-    else:
-        key_score = 0.5  # Missing key data, neutral
-
-    # BPM score
-    bpm_score = bpm_compatibility(current_bpm, candidate_bpm)
-
-    # Energy score
-    eng_score = energy_compatibility(current_rating, candidate_rating)
-
-    return (key_score * WEIGHT_KEY) + (bpm_score * WEIGHT_BPM) + (eng_score * WEIGHT_ENERGY)
+    return _track_weighted_mean(
+        track_compatibility_terms(
+            current_key,
+            current_bpm,
+            current_rating,
+            candidate_key,
+            candidate_bpm,
+            candidate_rating,
+        )
+    )
 
 
 # ---------------------------------------------------------------------------

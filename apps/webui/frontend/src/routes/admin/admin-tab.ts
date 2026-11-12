@@ -1,7 +1,16 @@
-export type AdminTab = 'kpi' | 'diagnostics' | 'playground' | 'spotify' | 'title-fix';
+export type AdminTab =
+	| 'kpi'
+	| 'lyrics'
+	| 'quality'
+	| 'diagnostics'
+	| 'playground'
+	| 'spotify'
+	| 'title-fix';
 
 export function adminTabFromUrl(url: URL): AdminTab {
 	const tab = url.searchParams.get('tab');
+	if (tab === 'lyrics') return 'lyrics';
+	if (tab === 'quality') return 'quality';
 	if (tab === 'diagnostics') return 'diagnostics';
 	if (tab === 'playground') return 'playground';
 	if (tab === 'spotify') return 'spotify';
@@ -18,6 +27,7 @@ export function adminTabFromUrl(url: URL): AdminTab {
  */
 export const ADMIN_PANEL_IDS = [
 	'status',
+	'farm-jobs',
 	'sources',
 	'jobs',
 	'triage',

@@ -21,6 +21,7 @@
 		steppedBeatJumpSize,
 		type BeatJumpSize
 	} from '$lib/rb/beat-jump-size.svelte';
+	import { formatBeatJumpDelta } from '$lib/rb/format-beat-jump';
 
 	let {
 		deck,
@@ -51,11 +52,6 @@
 
 	// ----------------------------------------------------------- _helpers
 
-	function _label(delta: number): string {
-		const magnitude = beatJumpSizeLabel(Math.abs(delta));
-		return delta > 0 ? `+${magnitude}` : `-${magnitude}`;
-	}
-
 	function _canJump(delta: number): boolean {
 		if (blockedReason !== null) return false;
 		// Without a known duration, the engine's own duration clamp
@@ -83,13 +79,13 @@
 				return 'a live loop shifts by whole beats only - pick 1 beat or more';
 			}
 			if (deck.loop !== null && deck.loop.engaged) {
-				return `the live loop cannot shift ${_label(delta)} beats without leaving the real PQTZ grid`;
+				return `the live loop cannot shift ${formatBeatJumpDelta(delta)} beats without leaving the real PQTZ grid`;
 			}
 			return delta < 0
 				? `already within ${beatJumpSizeLabel(-delta)} beats of the first beatgrid beat`
 				: `fewer than ${beatJumpSizeLabel(delta)} beatgrid beats remain ahead`;
 		}
-		return `jump ${_label(delta)} beats along the real PQTZ beatgrid`;
+		return `jump ${formatBeatJumpDelta(delta)} beats along the real PQTZ beatgrid`;
 	}
 
 	async function jump(delta: number): Promise<void> {

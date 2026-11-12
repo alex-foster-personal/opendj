@@ -12,6 +12,7 @@ export type SettingGroupId =
 	| 'confirmations'
 	| 'sync'
 	| 'cloudsync'
+	| 'keyboard'
 	| 'advanced';
 
 export interface SettingGroup {
@@ -46,7 +47,7 @@ export type SettingControl =
 	| { kind: 'path_lines'; notice: string };
 
 /** Kinds of live preview a settings row can carry (rendered by SettingsOverlay). */
-export type SettingPreview = 'waveform';
+export type SettingPreview = 'waveform' | 'sections';
 
 /** Interactive try-it controls rendered under a row (not a per-option preview). */
 export type SettingTester = 'drag';

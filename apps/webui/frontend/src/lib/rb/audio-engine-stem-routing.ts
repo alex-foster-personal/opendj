@@ -21,6 +21,7 @@ import {
 	type StemLandingPort,
 	type StemLandingProcessor
 } from '$lib/rb/stem-hydrate-wait';
+import { forgetStemsAbsence } from '$lib/rb/optional-resource-availability';
 import {
 	AlignedStemDeckProcessor,
 	conformStemBuffersToFrameCount,
@@ -28,7 +29,8 @@ import {
 	type StemBuffers,
 	loadingStemDeckState,
 	readyStemDeckState,
-	unavailableStemDeckState
+	unavailableStemDeckState,
+	connectStemFxSend
 } from '$lib/rb/stem-graph';
 import { truncateAtOutPoint } from '$lib/rb/edit-window-buffer';
 import { deckPlaysOriginalFile, STEM_ENGAGE_CROSSFADE_SEC } from '$lib/rb/stem-neutral-bypass';
@@ -128,6 +130,7 @@ function _adoptStemProcessor(
 	if (rt.nodes === null) throw new Error(`stem upgrade: deck ${deck} audio graph is missing`);
 	const retired = rt.processor;
 	upgrade.processor.connect(rt.nodes.analyser);
+	connectStemFxSend(upgrade.processor, rt.nodes);
 	rt.processor = upgrade.processor;
 	st.stems = upgrade.state;
 	if (retired !== null) _retireProcessor(retired);
@@ -388,6 +391,10 @@ export async function _upgradeDeckStems(
 	// PERFMODE-15: a mode with stems off (Trackify) settles the deck `unavailable` and ends the upgrade, now or mid-probe.
 	const _stemDecodeBlocked = stemBlockCheck(st, () => token === rt.loadToken);
 	if (_stemDecodeBlocked()) return;
+	// A listing or TrackOut that predates an on-disk bundle can cache
+	// `stems: false`; without clearing it, probeStemArtifact skips the manifest GET
+	// (same fix as loaded-deck-stems-refresh, STEM-9654, issue #13529).
+	forgetStemsAbsence(stableId);
 	// prettier-ignore
 	const stale = (): boolean => token !== rt.loadToken || rt.processor !== mixAtStart || ctx !== _ctx || _stemDecodeBlocked(); // a graph rebuild restarts it
 	const phase = (

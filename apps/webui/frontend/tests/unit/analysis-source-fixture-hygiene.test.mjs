@@ -16,6 +16,7 @@ import { existsSync, readdirSync } from 'node:fs';
 import { createInterface } from 'node:readline';
 import { fileURLToPath } from 'node:url';
 
+import { fixtureServerLaunch } from '../../scripts/fixture-server.mjs';
 import { stopFixtureServer } from './fixtures/stop-fixture-server.mjs';
 
 const REPOSITORY_ROOT = fileURLToPath(new URL('../../../../..', import.meta.url));
@@ -30,9 +31,10 @@ test('a real fixture server start/stop leaves tests/unit/fixtures untouched and 
 	const before = listFixtures();
 	assert.ok(before.includes('analysis_source_anlz_server.py'), 'positive control: the listing sees the fixtures dir');
 
-	const serverProcess = spawn('uv', ['run', '--no-sync', 'python', SERVER_SCRIPT], {
-		cwd: REPOSITORY_ROOT,
-		env: { ...process.env, MDT_LIBRARY_MODE: 'local', PYTHONPATH: REPOSITORY_ROOT },
+	const launch = fixtureServerLaunch({ repoRoot: REPOSITORY_ROOT, pythonTarget: SERVER_SCRIPT });
+	const serverProcess = spawn(launch.command, launch.args, {
+		cwd: launch.cwd,
+		env: launch.env,
 		stdio: ['ignore', 'pipe', 'inherit']
 	});
 	const { scratchDir, port } = await new Promise((resolve, reject) => {

@@ -11,9 +11,12 @@ const BROWSER_PANEL = readFileSync(
 );
 
 test('_refreshPlaylists checks isPageGoingAway before logging', () => {
-	const idxCatch = BROWSER_PANEL.indexOf('} catch (exc) {\n\t\t\tif (isPageGoingAway()) return;');
-	assert.ok(idxCatch >= 0, 'expected _refreshPlaylists catch with isPageGoingAway first');
-	const slice = BROWSER_PANEL.slice(idxCatch, idxCatch + 400);
+	const marker = '[playlists] refresh failed';
+	const idx = BROWSER_PANEL.indexOf(marker);
+	assert.ok(idx >= 0, 'expected playlists refresh failed log');
+	const catchStart = BROWSER_PANEL.lastIndexOf('} catch (exc) {', idx);
+	assert.ok(catchStart >= 0);
+	const slice = BROWSER_PANEL.slice(catchStart, idx + marker.length + 40);
 	assert.match(slice, /if \(isPageGoingAway\(\)\) return;/);
 	assert.match(slice, /\[playlists\] refresh failed/);
 });
@@ -24,4 +27,15 @@ test('_pushPaneLoadError returns when isPageGoingAway before pushToast', () => {
 	const fnBody = BROWSER_PANEL.slice(fnStart, fnStart + 500);
 	assert.match(fnBody, /if \(isPageGoingAway\(\)\) return;/);
 	assert.match(fnBody, /pushToast\(/);
+});
+
+test('_init browser init catch returns when isPageGoingAway before pushToast', () => {
+	const marker = 'pushToast(`browser init failed:';
+	const idx = BROWSER_PANEL.indexOf(marker);
+	assert.ok(idx >= 0, 'expected browser init failed toast');
+	const catchStart = BROWSER_PANEL.lastIndexOf('} catch (exc) {', idx);
+	assert.ok(catchStart >= 0);
+	const slice = BROWSER_PANEL.slice(catchStart, idx + marker.length + 80);
+	assert.match(slice, /if \(isPageGoingAway\(\)\) return;/);
+	assert.match(slice, /browser init failed/);
 });

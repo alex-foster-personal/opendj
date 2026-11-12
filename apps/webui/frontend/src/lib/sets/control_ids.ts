@@ -1,6 +1,7 @@
-/** Stem control ids for set-recording v2 (mirror of apps/sets/control_ids.py). */
+/** Stem and loop/cue control ids for set-recording v2 (mirror of apps/sets/control_ids.py). */
 
 import type { DeckId } from '$lib/rb/deck-slots';
+import type { HotCueSlot } from '$lib/rb/hot-cue-types';
 import type { StemControl } from '$lib/rb/stem-types';
 import { STEM_CONTROL_IDS } from '$lib/rb/stem-types';
 
@@ -16,6 +17,10 @@ export function stemMuteId(deck: DeckId, stem: StemControl): string {
 
 export function stemSoloId(deck: DeckId, stem: StemControl): string {
 	return `deck.${deck}.stem.${stem}.solo`;
+}
+
+export function hotCueId(deck: DeckId, slot: HotCueSlot): string {
+	return `deck.${deck}.hot_cue.${slot}`;
 }
 
 /** Scripted stem session: mute and gain on deck 1 for every part, plus solo on vocal. */

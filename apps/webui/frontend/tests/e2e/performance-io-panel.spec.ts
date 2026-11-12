@@ -10,7 +10,7 @@ test('opening I/O is read-only and does not acquire or change audio routes', asy
 			mode: state.mixer.headphones.output_mode,
 			master: state.mixer.headphones.selected_master_output_device_id,
 			cue: state.mixer.headphones.selected_output_device_id,
-			booth: state.mixer.headphones.selected_booth_output_device_id
+			booth: state.mixer.booth.selected_output_device_id
 		};
 	});
 	await page.getByRole('button', { name: 'SHOW AUDIO I/O' }).click();
@@ -23,7 +23,7 @@ test('opening I/O is read-only and does not acquire or change audio routes', asy
 			mode: state.mixer.headphones.output_mode,
 			master: state.mixer.headphones.selected_master_output_device_id,
 			cue: state.mixer.headphones.selected_output_device_id,
-			booth: state.mixer.headphones.selected_booth_output_device_id
+			booth: state.mixer.booth.selected_output_device_id
 		};
 	});
 	expect(after).toEqual(before);
@@ -39,35 +39,53 @@ test('opening I/O is read-only and does not acquire or change audio routes', asy
 		.toBe(true);
 });
 
-test('I/O hover is brief and click opens persistent settings with routing inside', async ({
+test('IOPIN-03: I/O hover waits 100 ms, uses compact copy, and hides on pointer leave', async ({
 	page
 }) => {
 	await page.goto('/performance');
 	await page.waitForFunction(() => window.musicDjToolsPerformance?.version === 1);
 	const trigger = page.getByRole('button', { name: 'SHOW AUDIO I/O' });
+	const hint = page.getByRole('tooltip', { name: 'Audio I/O quick settings' });
+	const compactCopy = 'Routes the room mix and your headphone cue to audio devices.';
 	await page.mouse.move(0, 0);
 	await trigger.hover();
-	const hint = page.getByRole('tooltip', { name: 'Audio I/O quick settings' });
+	await expect(hint).toBeHidden();
+	await page.waitForTimeout(100);
 	await expect(hint).toBeVisible();
+	await expect(hint).toContainText(compactCopy);
 	await page.mouse.move(0, 0);
 	await expect(hint).toBeHidden();
+});
 
+test('IOPIN-03: click opens the persistent panel with X, Esc hint, and WIP outputs above live pickers', async ({
+	page
+}) => {
+	await page.goto('/performance');
+	await page.waitForFunction(() => window.musicDjToolsPerformance?.version === 1);
+	const trigger = page.getByRole('button', { name: 'SHOW AUDIO I/O' });
 	await trigger.click();
 	const panel = page.getByRole('dialog', { name: 'Audio I/O settings' });
 	await expect(panel).toBeVisible();
 	await expect(panel.getByRole('button', { name: 'Close audio I/O settings' })).toBeVisible();
-	await expect(panel.getByText('Two clicks outside, Esc, or X to dismiss')).toBeVisible();
+	await expect(panel.getByText('Esc or X to dismiss')).toBeVisible();
 	await expect(panel.getByRole('button', { name: 'Practice output mode' })).toBeVisible();
 	await expect(panel.getByRole('button', { name: 'Split cable output mode' })).toBeVisible();
-	await expect(panel.getByText('Advanced channel assignment')).toBeVisible();
-	await expect(panel.getByRole('button', { name: 'Advanced channel assignment' })).toBeDisabled();
+	const future = panel.locator('[data-io-wip-output]');
+	await expect(future).toHaveCount(3);
+	await expect(future.first()).toContainText('BOOTH / MONITOR');
+	await expect(future.first()).toContainText('WIP');
+	const boothWipY = await future
+		.first()
+		.boundingBox()
+		.then((b) => b?.y ?? 0);
+	const masterY = await panel
+		.getByLabel('master output device')
+		.boundingBox()
+		.then((b) => b?.y ?? 0);
+	expect(boothWipY).toBeLessThan(masterY);
+	await expect(future.getByRole('button', { name: 'Advanced channel assignment' })).toBeDisabled();
 	await expect(panel.getByLabel('master output device')).toBeVisible();
 	await expect(panel.getByLabel('headphone output device', { exact: true })).toBeVisible();
-	await expect(panel.getByLabel('booth output device')).toHaveCount(0);
-	await panel.getByRole('button', { name: 'Add booth / monitor' }).click();
-	await expect(panel.getByLabel('booth output device')).toBeVisible();
-	await expect(panel.getByLabel('booth gain')).toBeVisible();
-	await panel.getByLabel('booth output device').selectOption('', { force: true });
 	await expect(panel.getByLabel('booth output device')).toHaveCount(0);
 	await expect(panel.getByLabel('audio input device')).toBeVisible();
 	await expect(

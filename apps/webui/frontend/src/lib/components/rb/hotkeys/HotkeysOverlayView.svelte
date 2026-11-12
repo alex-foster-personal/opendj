@@ -1,12 +1,14 @@
 <script lang="ts">
 	/**
 	 * Props-only half of the LIBUX-04 hotkeys overlay. Two views behind a tab
-	 * control (grid default, searchable list). Live type-to-filter with yellow
+	 * control (grid default, searchable list). Header tab order: search, Grid,
+	 * List, close. Live type-to-filter with yellow
 	 * match highlighting in both views. X button always hides; Esc is handled
 	 * globally by installHotkeysOverlayHotkeys. HotkeysOverlay.svelte reads the
 	 * overlay store and passes its state and setters in.
 	 */
 	import { tick } from 'svelte';
+	import { focusTrap } from '$lib/keyboard/focus-trap';
 	import {
 		filterHotkeys,
 		type FilteredHotkey,
@@ -89,9 +91,22 @@
 			aria-modal="true"
 			aria-label="Hotkeys"
 			tabindex="-1"
+			use:focusTrap={{ initialFocus: '.hk-search' }}
 			onclick={(e) => e.stopPropagation()}
 		>
 			<header class="hk-head">
+				<input
+					bind:this={searchEl}
+					class="hk-search"
+					type="search"
+					placeholder="Filter hotkeys..."
+					spellcheck="false"
+					autocomplete="off"
+					data-hotkeys-overlay-search="true"
+					value={query}
+					oninput={onQueryInput}
+					aria-label="Filter hotkeys"
+				/>
 				<div class="hk-tabs" aria-label="Hotkeys view">
 					<button
 						type="button"
@@ -110,18 +125,6 @@
 						List
 					</button>
 				</div>
-				<input
-					bind:this={searchEl}
-					class="hk-search"
-					type="search"
-					placeholder="Filter hotkeys..."
-					spellcheck="false"
-					autocomplete="off"
-					data-hotkeys-overlay-search="true"
-					value={query}
-					oninput={onQueryInput}
-					aria-label="Filter hotkeys"
-				/>
 				<button
 					type="button"
 					class="hk-close"

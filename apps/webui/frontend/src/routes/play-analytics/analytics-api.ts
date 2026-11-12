@@ -1,6 +1,6 @@
 /** Fail-fast route-local client for the read-only play-analytics contract. */
-import { API_BASE, ApiError, api, unwrap } from '$lib/api/client';
-import { readApiErrorStatus } from '$lib/api/errors';
+import { API_BASE, api, unwrap } from '$lib/api/client';
+import { ApiError, readApiErrorStatus } from '$lib/api/errors';
 import {
 	SHARE_STATES,
 	type AnalyticsSession,
@@ -118,6 +118,15 @@ export class NoEventStoreError extends Error {
  *  detail; `tests/play_analytics/test_surfaces.py` holds the server to it. */
 export const NO_EVENT_STORE_DETAIL = 'event store does not exist:';
 
+function _noEventStoreDetail(detail: unknown): string | null {
+	if (typeof detail === 'string') return detail;
+	if (typeof detail === 'object' && detail !== null && !Array.isArray(detail)) {
+		const message = (detail as { message?: unknown }).message;
+		if (typeof message === 'string') return message;
+	}
+	return null;
+}
+
 function apiErrorBodyText(error: unknown): string {
 	if (error instanceof ApiError) return error.bodyText;
 	if (typeof error === 'object' && error !== null && 'bodyText' in error) {
@@ -131,11 +140,18 @@ export function isNoEventStore(status: number, bodyText: string, message = ''): 
 	if (status !== 503) return false;
 	if (message.startsWith(NO_EVENT_STORE_DETAIL)) return true;
 	try {
-		const detail = (JSON.parse(bodyText) as { detail?: unknown }).detail;
-		return typeof detail === 'string' && detail.startsWith(NO_EVENT_STORE_DETAIL);
+		const detail = _noEventStoreDetail((JSON.parse(bodyText) as { detail?: unknown }).detail);
+		return detail !== null && detail.startsWith(NO_EVENT_STORE_DETAIL);
 	} catch {
 		return false;
 	}
+}
+
+export function isNoEventStoreError(error: unknown): error is NoEventStoreError {
+	return (
+		error instanceof NoEventStoreError ||
+		(typeof error === 'object' && error !== null && (error as Error).name === 'NoEventStoreError')
+	);
 }
 
 export async function fetchPlayAnalytics(
@@ -157,8 +173,13 @@ export async function fetchPlayAnalytics(
 		const status = readApiErrorStatus(error);
 		if (status !== null) {
 			const bodyText = apiErrorBodyText(error);
-			const message = error instanceof Error ? error.message : '';
-			if (isNoEventStore(status, bodyText, message)) throw new NoEventStoreError();
+			const message = error instanceof Error ? error.message : String(error);
+			if (
+				isNoEventStore(status, bodyText, message) ||
+				message.includes(NO_EVENT_STORE_DETAIL)
+			) {
+				throw new NoEventStoreError();
+			}
 			throw new Error(`GET /api/play-analytics failed: ${status} ${bodyText.slice(0, 300)}`);
 		}
 		throw new Error(

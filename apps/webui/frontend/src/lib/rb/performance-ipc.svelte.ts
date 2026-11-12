@@ -52,9 +52,11 @@
 import { _parseCommand, _deck, _validatedPressStamp } from './performance-ipc-guards';
 import {
 	controlShellWindow,
+	WINDOW_LABELS,
 	type WindowAction,
 	type WindowLabel
 } from '$lib/shell/native-shell';
+import { installTauriShellWindowReporter } from '$lib/shell/shell-window-report';
 import { postVerdict, type Verdict } from '$lib/rb/autoplay-why';
 import {
 	COMPATIBLE_KEY_SHIFT_MAX,
@@ -79,7 +81,15 @@ import {
 	toastTimerArmed
 } from '$lib/stores.svelte';
 import { pairingBeatAt } from '$lib/rb/pairing-readiness';
-import { clearHotCue, restoreHotCue, saveHotCue, vocalsOf, type Vocals } from '$lib/rb/api-rb';
+import {
+	clearHotCue,
+	fetchMemoryCues,
+	restoreHotCue,
+	saveHotCue,
+	setActiveMemoryLoop,
+	vocalsOf,
+	type Vocals
+} from '$lib/rb/api-rb';
 import {
 	deckCloudDownloads,
 	ensureLocalBeforeLoad,
@@ -136,6 +146,7 @@ import {
 	type DeckTransportClock,
 	type PitchRange
 } from '$lib/rb/audio-engine.svelte';
+import { deckRollQueryFields } from '$lib/rb/deck-roll-commands';
 import { manualLoopIn, manualLoopOut, manualReloop, type ManualLoopPort } from '$lib/rb/manual-loop-commands';
 import {
 	createGridNudgeCoalescer,
@@ -163,7 +174,7 @@ import {
 	type CommandSource
 } from './deck-stop-log';
 import { replayDispatchGate, replayDispatchTakenOver } from './set-replay-takeover.svelte';
-import { captureStemCommand } from '$lib/sets/control-event-recorder';
+import { captureHotCueTrigger, captureStemCommand } from '$lib/sets/control-event-recorder';
 import {
 	assertLoopGridBase,
 	loopIntervalChoices,
@@ -172,6 +183,7 @@ import {
 	setLoopIntervalMode
 } from '$lib/rb/loop-interval-view.svelte';
 import { beatJumpSizes, setBeatJumpSize } from '$lib/rb/beat-jump-size.svelte';
+import { padModeSnapshot, selectPadMode } from '$lib/rb/pad-mode-state.svelte';
 import {
 	ObservedCommandScheduler,
 	ScopedCommandInvalidatedError,
@@ -185,6 +197,7 @@ import {
 	setPendingLoadPlayIntent,
 	type DeckId
 } from '$lib/rb/deck-slots';
+import { markSeekPresentedPress } from '$lib/rb/press-stamp';
 import {
 	setAutoCue,
 	setAutoPlayEnabled,
@@ -192,6 +205,7 @@ import {
 	setShowStems,
 	setWaveEqReflect,
 	setMixerStems,
+	setMixerPlacement,
 	setAutoPlayEarly,
 	setAutoPlayTwoDeck,
 	setPerfView,
@@ -200,6 +214,9 @@ import {
 	setWaveHeight,
 	setDeckNumberArt,
 	setShowSections,
+	setShowHotCueMarkers,
+	setShowMemoryCueMarkers,
+	setShowLoopMarkers,
 	setShowVocalLane,
 	setLyricsWaveformOverlay,
 	setWaveGridLines,
@@ -281,6 +298,7 @@ import {
 	stemLoadRun,
 	stemSeparationSnapshot
 } from '$lib/rb/stem-separation-port';
+import { refreshHeadphoneSignals } from '$lib/player/headphones';
 import { abortCueAlignment, startCueAlignment } from '$lib/rb/cue-align-session.svelte';
 import type { SortKey } from '$lib/components/rb/browser/browser-sort-ipc';
 import {
@@ -343,9 +361,20 @@ import {
 	silencePreviewCue,
 	stopPreviewCue
 } from '$lib/player/preview-cue.svelte';
+import {
+	midiLearnIpc,
+	readMidiLearn,
+	registerMidiLearnIpc
+} from '$lib/rb/midi/learn-ipc';
 import { midiTakeoverUi, setMidiTakeoverMode } from '$lib/rb/midi/takeover-ui.svelte';
 import type { MidiTakeoverMode } from '$lib/rb/midi/takeover-policy';
-import { planColorFxSwitch } from '$lib/rb/color-fx';
+import {
+	COLOR_FX_ALL_DECKS,
+	type ColorFxCommand,
+	planColorFxSwitch
+} from '$lib/rb/color-fx';
+import { colorFxAllCommands } from '$lib/rb/color-fx-all';
+import { applyBeatFx, beatFxView } from '$lib/rb/beat-fx-live.svelte';
 
 import type {
 	AutoPlayNextController,
@@ -399,6 +428,8 @@ export type {
 
 import {
 	applyColorFxSettings,
+	snapshotColorFx,
+	restoreColorFx,
 	colorFx,
 	colorFxView,
 	type ColorFxDeckView
@@ -418,8 +449,7 @@ let _playlistHistoryAdapter: PlaylistHistoryAdapter | null = null;
 let _cmdkAdapter: CmdkAdapter | null = null;
 /** The mounted bar, or the reason a cmdk_* command cannot run without it. */
 function _cmdk(type: string): CmdkAdapter {
-	if (_cmdkAdapter === null)
-		throw new Error(`${type} requires the Cmd K v2 bar (flag cmdk.v2) on /performance`);
+	if (_cmdkAdapter === null) throw new Error(`${type} requires the Cmd K v2 bar (flag cmdk.v2)`);
 	return _cmdkAdapter;
 }
 
@@ -498,6 +528,26 @@ export function installPairingSnapshotForTest(snapshot: PairingSnapshot | null):
 	_pairingSnapshot = snapshot;
 	return () => {
 		_pairingSnapshot = previous;
+	};
+}
+
+function setOpenShellWindowLabels(labels: WindowLabel[]): void {
+	const allowed = new Set<string>(WINDOW_LABELS);
+	const next: WindowLabel[] = [];
+	for (const label of labels) {
+		if (!allowed.has(label)) continue;
+		if (!next.includes(label)) next.push(label);
+	}
+	next.sort();
+	_openShellWindows = next;
+}
+
+/** Test seam: simulate the desktop shell publishing open window labels. */
+export function applyShellWindowLabelsForTest(labels: WindowLabel[]): () => void {
+	const previous = [..._openShellWindows];
+	setOpenShellWindowLabels(labels);
+	return () => {
+		_openShellWindows = previous;
 	};
 }
 
@@ -660,7 +710,10 @@ const _defaultHotCueDriver: PerformanceHotCueDriver = {
 			beats: state.anlz?.beatgrid.beats ?? []
 		};
 	},
-	jump: (deck, positionMs, pressT0Ms) => engine.quantizedSeek(deck, positionMs, undefined, pressT0Ms),
+	jump: (deck, positionMs, pressT0Ms) => {
+		if (pressT0Ms !== undefined) markSeekPresentedPress(deck, pressT0Ms);
+		return engine.quantizedSeek(deck, positionMs, undefined, pressT0Ms);
+	},
 	engageLoop: (deck, loop) => engine.setLoop(deck, loop, false),
 	arm: (deck, positionMs, armAt, pressT0Ms) => engine.armHotCueTrigger(deck, positionMs, armAt, pressT0Ms),
 	contextTimeNowSec: () => engine.contextTimeNowSec()
@@ -1193,6 +1246,7 @@ function _deckSnapshot(deckId: DeckId): PerformanceDeckSnapshot {
 		slip_enabled: deck.slip_enabled,
 		slip_active: deck.slip_active,
 		slip_position_ms: deck.slip_position_ms,
+		...deckRollQueryFields(deckId),
 		is_master: deck.is_master,
 		sync_mode: deck.sync_mode,
 		sync_error: deck.sync_error,
@@ -1222,6 +1276,7 @@ function _deckSnapshot(deckId: DeckId): PerformanceDeckSnapshot {
 			grid_base: loopIntervalView[deckId].gridBase,
 			choices: loopIntervalChoices(loopIntervalView[deckId].gridBase)
 		},
+		pad_mode: padModeSnapshot(deckId),
 		beatgrid: beatgrid.beatgrid,
 		beatgrid_ms: beatgrid.beatgrid_ms,
 		transition_in_ms: deck.anlz?.cues?.find((cue) => cue.kind === 'transition_in')?.in_ms ?? null,
@@ -1258,6 +1313,7 @@ export function queryPerformanceState(): PerformanceState {
 	return {
 		version: 1,
 		midi_takeover: { mode: midiTakeoverUi.mode },
+		midi_learn: readMidiLearn(),
 		master_deck: masterDecks[0] ?? null,
 		master_mode: getMasterMode(),
 		master_reason: getMasterReason(),
@@ -1283,6 +1339,10 @@ export function queryPerformanceState(): PerformanceState {
 		mixer: {
 			crossfader: mixerState.crossfader,
 			master: mixerState.master,
+			booth: {
+				...mixerState.booth,
+				route: { ...mixerState.booth.route }
+			},
 			headphones: {
 				...mixerState.headphones,
 				calibration: {
@@ -1304,8 +1364,7 @@ export function queryPerformanceState(): PerformanceState {
 				},
 				routes: {
 					master: { ...mixerState.headphones.routes.master },
-					cue: { ...mixerState.headphones.routes.cue },
-					booth: { ...mixerState.headphones.routes.booth }
+					cue: { ...mixerState.headphones.routes.cue }
 				},
 				outputs: mixerState.headphones.outputs.map((output) => ({ ...output })),
 				inputs: mixerState.headphones.inputs.map((input) => ({ ...input })),
@@ -1393,10 +1452,12 @@ export function queryPerformanceState(): PerformanceState {
 		analysis_source_decks: { ...analysisSourceState.deckFeatures },
 		feedback_marks: performanceFeedbackSummary(),
 		color_fx: colorFxView(),
+		beat_fx: beatFxView(),
 		layout: layoutView(),
 		ui: {
 			show_stems: uiPrefs.show_stems,
 			mixer_stems: uiPrefs.mixer_stems,
+			mixer_placement: uiPrefs.mixer_placement,
 			library_related_criteria: { ...uiPrefs.library_related_criteria },
 			auto_play_enabled: uiPrefs.auto_play_enabled,
 			deck_autocue: uiPrefs.deck_autocue,
@@ -1433,9 +1494,22 @@ export function queryPerformanceState(): PerformanceState {
 				lyrics: uiPrefs.lyrics_waveform_overlay,
 				lyrics_scrub: uiPrefs.lyrics_hover_scrub,
 				jog_radial: uiPrefs.jog_radial_waveform,
+				hot_cues: uiPrefs.show_hot_cue_markers,
+				memory_cues: uiPrefs.show_memory_cue_markers,
+				loop_cues: uiPrefs.show_loop_markers,
 				vocal_lane: uiPrefs.show_vocal_lane
 			},
-			wave_grid_lines: uiPrefs.wave_grid_lines
+			wave_grid_lines: uiPrefs.wave_grid_lines,
+			segment_display: {
+				show_sections: uiPrefs.show_sections,
+				sections_main_style: uiPrefs.sections_main_style,
+				sections_sticky_title: uiPrefs.sections_sticky_title,
+				sections_next_countdown: uiPrefs.sections_next_countdown,
+				sections_overview_style: uiPrefs.sections_overview_style,
+				sections_library_structure_column: uiPrefs.sections_library_structure_column,
+				sections_preview_cursor_label: uiPrefs.sections_preview_cursor_label,
+				sections_uncertain: uiPrefs.sections_uncertain
+			}
 		}
 	};
 }
@@ -1489,6 +1563,8 @@ async function _resetDeckNow(deck: DeckId, enabled: TrackLoadResetPrefs): Promis
 				commands.push({ type: 'stem_mute', deck, stem: action.stem, muted: action.muted });
 			else if (action.kind === 'stem_gain')
 				commands.push({ type: 'stem_gain', deck, stem: action.stem, value: action.value });
+			else if (action.kind === 'stem_fx_send')
+				commands.push({ type: 'stem_fx_send', deck, stem: action.stem, value: action.value });
 			else {
 				const _exhaustive: never = action;
 				throw new Error(`Unhandled stem reset: ${String(_exhaustive)}`);
@@ -1499,7 +1575,8 @@ async function _resetDeckNow(deck: DeckId, enabled: TrackLoadResetPrefs): Promis
 }
 
 function _commandDeck(command: PerformanceCommand): DeckId | null {
-	return 'deck' in command ? command.deck : null;
+	if (command.type === 'color_fx' && command.deck === COLOR_FX_ALL_DECKS) return null;
+	return 'deck' in command ? (command.deck as DeckId) : null;
 }
 
 function _completeCommand(command: PerformanceCommand): PerformanceState {
@@ -1578,6 +1655,7 @@ export function performanceCommandQueueScopes(
 		command.type === 'headphone_output_select' ||
 		command.type === 'headphone_master_select' ||
 		command.type === 'headphone_booth_select' ||
+		command.type === 'booth_select' ||
 		command.type === 'headphone_input_select' ||
 		command.type === 'output_mode' ||
 		// CUEOUT-14: a calibration owns the monitor graph while it chirps, so the
@@ -1590,6 +1668,7 @@ export function performanceCommandQueueScopes(
 		return ['headphone'];
 	}
 	if (command.type === 'analysis_source') return [...DECK_IDS, 'sync'];
+	if (command.type === 'color_fx' && command.deck === COLOR_FX_ALL_DECKS) return [...DECK_IDS];
 	// DECKMOVE-01: both decks and the master election (the master follows the audio).
 	// The fade wait stays outside this claim (moveDeck returns after scheduleHandover); post-fade retire is runWhenAllIdle([from, to, 'sync'], ...).
 	if (command.type === 'deck_move') return [command.from, command.to, 'sync'];
@@ -1600,6 +1679,11 @@ export function performanceCommandQueueScopes(
 	if (command.type === 'channel_cue' || command.type === 'auto_gain_offset') {
 		if (deck === null) throw new Error(`${command.type} has no deck command queue scope`);
 		return [deck];
+	}
+	// DECKGAP-7691h: dispatches its own deck-scoped mixer and stem commands
+	// below; holding the deck scope here would queue them behind itself.
+	if (command.type === 'reset_deck_now') {
+		return null;
 	}
 	// prettier-ignore
 	if (
@@ -1612,6 +1696,7 @@ export function performanceCommandQueueScopes(
 		// Same drag as EQ: a stem-mode HI/MID/LOW turn must not wait behind
 		// this deck's transport queue or the needle never follows the pointer.
 		command.type === 'stem_gain' ||
+		command.type === 'stem_fx_send' ||
 		command.type === 'stem_eq_mode' ||
 		// STEM-47: landing stems on a playing deck waits for the transport to
 		// be idle; in the deck's queue it would BE the thing keeping it busy.
@@ -1628,9 +1713,13 @@ export function performanceCommandQueueScopes(
 		command.type === 'browser_related_criteria' ||
 		command.type === 'browser_related_criteria_reset' ||
 		command.type === 'midi_takeover_mode' ||
+		command.type === 'midi_learn_retry' ||
+		command.type === 'midi_learn_cancel' ||
 		command.type === 'headphone_mix' ||
 		command.type === 'headphone_level' ||
 		command.type === 'headphone_booth_level' ||
+		command.type === 'booth_level' ||
+		command.type === 'booth_signal_mode' ||
 		// CUEOUT-14: the abort must never queue behind the calibration it stops.
 		command.type === 'headphone_calibrate_abort' ||
 		// CUEOUT-15: the preview owns no deck, so serializing it behind one
@@ -1642,6 +1731,7 @@ export function performanceCommandQueueScopes(
 		command.type === 'show_stems' ||
 		command.type === 'wave_eq_reflect' ||
 		command.type === 'mixer_stems' ||
+		command.type === 'mixer_placement' ||
 		command.type === 'autoplay' ||
 		// TOPVIEW: the two-track AutoPlay toggle is a preference write with no deck.
 		command.type === 'auto_play_two_track' ||
@@ -1667,6 +1757,7 @@ export function performanceCommandQueueScopes(
 		// conflict with anything.
 		command.type === 'loop_interval_mode' ||
 		command.type === 'loop_interval_base' ||
+		command.type === 'pad_mode' ||
 		command.type === 'beat_jump_size' ||
 		// LIBUX-05 overlay chrome: no deck, no engine write, nothing to
 		// serialize against.
@@ -1701,15 +1792,15 @@ export function performanceCommandQueueScopes(
 		|| command.type === 'playlist_history_jump'
 		|| command.type === 'feedback_mark'
 		|| command.type === 'deck_autocue'
-		// DECKGAP-7691h: dispatches its own deck-scoped mixer and stem commands
-		// below; holding the deck scope here would queue them behind itself.
-		|| command.type === 'reset_deck_now'
 	) {
 		return null;
 	}
 	if (deck === null) throw new Error(`${command.type} has no command queue scope`);
 	// prettier-ignore
 	if (command.type === 'hot_cue_save' || command.type === 'hot_cue_clear' || command.type === 'hot_cue_restore') {
+		return [_persistenceScope(deck)];
+	}
+	if (command.type === 'active_memory_loop') {
 		return [_persistenceScope(deck)];
 	}
 	if (command.type === 'grid_edit') return [_persistenceScope(deck)];
@@ -1958,6 +2049,13 @@ async function _execute(command: PerformanceCommand, pressT0Ms?: number): Promis
 			} else {
 				await engine.play(command.deck, pressT0Ms);
 			}
+			void import('$lib/sets/auto-rec')
+				.then(({ maybeStartAutoRecOnFirstPlay }) => {
+					maybeStartAutoRecOnFirstPlay();
+				})
+				.catch((error: unknown) => {
+					console.error('[sets] auto-REC on first play failed to load or run', error);
+				});
 		} else {
 			quantizedLaunchArmed[command.deck] = null;
 			_quantizedLaunchDriver.clear(command.deck);
@@ -1975,7 +2073,8 @@ async function _execute(command: PerformanceCommand, pressT0Ms?: number): Promis
 	} else if (command.type === 'seek') {
 		waveformSeekArmed[command.deck] = null;
 		// exact: the authored position lands as given, not re-snapped to the grid (a plan's prepare cue).
-		await engine.quantizedSeek(command.deck, command.position_ms, command.exact === true);
+		if (pressT0Ms !== undefined) markSeekPresentedPress(command.deck, pressT0Ms);
+		await engine.quantizedSeek(command.deck, command.position_ms, command.exact === true, pressT0Ms);
 	} else if (command.type === 'waveform_seek') {
 		const state = getDeckState(command.deck);
 		const beats = state.anlz?.beatgrid.beats ?? [];
@@ -2048,6 +2147,8 @@ async function _execute(command: PerformanceCommand, pressT0Ms?: number): Promis
 		setBeatJumpSize(command.deck, command.beats);
 	} else if (command.type === 'loop_interval_mode') {
 		setLoopIntervalMode(command.deck, command.enabled);
+	} else if (command.type === 'pad_mode') {
+		selectPadMode(command.deck, command.mode);
 	} else if (command.type === 'loop_interval_base') {
 		setLoopIntervalBase(command.deck, command.base);
 	} else if (command.type === 'tempo') {
@@ -2127,6 +2228,10 @@ async function _execute(command: PerformanceCommand, pressT0Ms?: number): Promis
 			deckCommandSource(command.deck) ?? 'app-command',
 			pressT0Ms ?? performance.now()
 		);
+	} else if (command.type === 'stem_fx_send') {
+		engine.setStemFxSend(command.deck, command.stem, command.value);
+	} else if (command.type === 'roll') {
+		await engine.roll(command.deck, command.beats);
 	} else if (command.type === 'slip') {
 		await engine.setSlip(command.deck, command.enabled);
 	} else if (command.type === 'key_sync') {
@@ -2204,8 +2309,10 @@ async function _execute(command: PerformanceCommand, pressT0Ms?: number): Promis
 		engine.setHeadphoneMix(command.value);
 	} else if (command.type === 'headphone_level') {
 		engine.setHeadphoneLevel(command.value);
-	} else if (command.type === 'headphone_booth_level') {
+	} else if (command.type === 'headphone_booth_level' || command.type === 'booth_level') {
 		engine.setBoothLevel(command.value);
+	} else if (command.type === 'booth_signal_mode') {
+		engine.setBoothSignalMode(command.mode);
 	} else if (command.type === 'head_delay_ms') {
 		engine.setHeadDelayMs(command.value);
 	} else if (command.type === 'headphone_outputs_refresh') {
@@ -2216,7 +2323,7 @@ async function _execute(command: PerformanceCommand, pressT0Ms?: number): Promis
 		await engine.selectHeadphoneOutput(command.device_id);
 	} else if (command.type === 'headphone_master_select') {
 		await engine.selectMasterOutput(command.device_id);
-	} else if (command.type === 'headphone_booth_select') {
+	} else if (command.type === 'headphone_booth_select' || command.type === 'booth_select') {
 		await engine.selectBoothOutput(command.device_id);
 	} else if (command.type === 'headphone_input_select') {
 		await engine.selectAudioInput(command.device_id);
@@ -2242,6 +2349,8 @@ async function _execute(command: PerformanceCommand, pressT0Ms?: number): Promis
 		setWaveEqReflect(command.enabled);
 	} else if (command.type === 'mixer_stems') {
 		setMixerStems(command.enabled);
+	} else if (command.type === 'mixer_placement') {
+		setMixerPlacement(command.placement);
 	} else if (command.type === 'deck_autocue') {
 		await setAutoCue(command.enabled);
 	} else if (command.type === 'color_fx') {
@@ -2249,18 +2358,42 @@ async function _execute(command: PerformanceCommand, pressT0Ms?: number): Promis
 		// the FILTER dial uses, which drives the channel with the new effect.
 		// COLORFX-8341: `next` resolves here, and a real switch returns the knob to
 		// center (12 o'clock) unless the command names a value.
-		const plan = planColorFxSwitch(
-			colorFx[command.deck].effect,
-			mixerState.channels[command.deck].filter,
-			command
-		);
-		applyColorFxSettings({
-			deck: command.deck,
-			effect: plan.effect,
-			echo_beats: command.echo_beats,
-			value: plan.value
-		});
-		engine.setFilter(command.deck, plan.value, pressT0Ms);
+		// COLORFX-13: deck all is rekordbox single mode, each channel on its own switch rule.
+		const targets: (ColorFxCommand & { deck: DeckId })[] =
+			command.deck === COLOR_FX_ALL_DECKS
+				? (Object.values(colorFxAllCommands(command)) as (ColorFxCommand & { deck: DeckId })[])
+				: [command as ColorFxCommand & { deck: DeckId }];
+		for (const one of targets) {
+			const plan = planColorFxSwitch(
+				colorFx[one.deck].effect,
+				mixerState.channels[one.deck].filter,
+				one
+			);
+			const acknowledgedValue = mixerState.channels[one.deck].filter;
+			const acknowledged = snapshotColorFx(one.deck, acknowledgedValue);
+			try {
+				applyColorFxSettings({
+					deck: one.deck,
+					effect: plan.effect,
+					echo_beats: one.echo_beats,
+					value: plan.value
+				});
+				await engine.setFilter(one.deck, plan.value, pressT0Ms);
+			} catch (error) {
+				mixerState.channels[one.deck].filter = acknowledgedValue;
+				try {
+					restoreColorFx(one.deck, acknowledged);
+				} catch (restoreError) {
+					throw new AggregateError(
+						[error, restoreError],
+						`Color FX deck ${one.deck}: ${_errorMessage(error)}; restoration failed: ${_errorMessage(restoreError)}`
+					);
+				}
+				throw new Error(`Color FX deck ${one.deck}: ${_errorMessage(error)}`, { cause: error });
+			}
+		}
+	} else if (command.type === 'beat_fx') {
+		applyBeatFx(command, 0);
 	} else if (command.type === 'autoplay') {
 		setAutoPlayEnabled(command.enabled);
 	} else if (command.type === 'set_deck_number_art') {
@@ -2274,6 +2407,9 @@ async function _execute(command: PerformanceCommand, pressT0Ms?: number): Promis
 				lyrics: setLyricsWaveformOverlay,
 				lyrics_scrub: setLyricsHoverScrub,
 				jog_radial: setJogRadialWaveform,
+				hot_cues: setShowHotCueMarkers,
+				memory_cues: setShowMemoryCueMarkers,
+				loop_cues: setShowLoopMarkers,
 				vocal_lane: setShowVocalLane
 			}[command.overlay];
 			setOverlay(command.enabled);
@@ -2306,6 +2442,20 @@ async function _execute(command: PerformanceCommand, pressT0Ms?: number): Promis
 		engine.setSafetyLoopArmed(command.deck, command.armed);
 	} else if (command.type === 'safety_loop_clear') {
 		engine.clearSafetyLoop(command.deck);
+	} else if (command.type === 'active_memory_loop') {
+		const stableId = _hotCueDriver.stableId(command.deck);
+		if (stableId === null) throw new Error('no track loaded');
+		const { revision } = await fetchMemoryCues(stableId);
+		await setActiveMemoryLoop(stableId, command.in_ms, command.active, revision);
+		await _hotCueDriver.refresh(command.deck);
+		if (command.active) {
+			engine.armActiveLoopFromCues(command.deck);
+		} else {
+			const safety = getDeckState(command.deck).safety_loop;
+			if (safety?.in_ms === command.in_ms && safety.out_ms === command.out_ms) {
+				engine.setSafetyLoopArmed(command.deck, false);
+			}
+		}
 	} else if (command.type === 'hot_cue_save') {
 		const deckAnlz = getDeckState(command.deck).anlz;
 		const stableId = _hotCueDriver.stableId(command.deck);
@@ -2359,6 +2509,12 @@ async function _execute(command: PerformanceCommand, pressT0Ms?: number): Promis
 			command.slot
 		);
 		if (cue === null) throw new Error(`hot cue ${command.slot}: nothing to trigger`);
+		void captureHotCueTrigger(
+			{ deck: command.deck, slot: command.slot },
+			cue.in_ms,
+			deckCommandSource(command.deck) ?? 'app-command',
+			pressT0Ms ?? performance.now()
+		);
 		const anlz = getDeckState(command.deck).anlz ?? {
 			beatgrid: { source: 'rekordbox', beats: [...beats], beat_count: beats.length, status: 'ok' }
 		};
@@ -2498,21 +2654,24 @@ async function _execute(command: PerformanceCommand, pressT0Ms?: number): Promis
 		// snapshot Reload sync replays: the frozen positions, live tempo and master.
 		const live = (deck: typeof from) => {
 			const state = getDeckState(deck.deck_id);
+			const stable_id = state.stable_id ?? '';
 			return {
-				stable_id: deck.stable_id,
+				stable_id,
 				position_ms: deck.position_ms,
 				tempo_ratio: state.pitch,
 				is_master: state.is_master
 			};
 		};
+		const fromLive = live(from);
+		const toLive = live(to);
 		await capturePairing(
 			{
-				from_stable_id: from.stable_id,
-				to_stable_id: to.stable_id,
+				from_stable_id: fromLive.stable_id,
+				to_stable_id: toLive.stable_id,
 				snapshot: { ...frozen, decks: [from, to] }
 			},
-			live(from),
-			live(to),
+			fromLive,
+			toLive,
 			frozen.beat_sync_max
 		);
 	} else if (command.type === 'feedback_mark') {
@@ -2566,6 +2725,10 @@ async function _execute(command: PerformanceCommand, pressT0Ms?: number): Promis
 		_rescueRestoredDecks = [];
 	} else if (command.type === 'midi_takeover_mode') {
 		setMidiTakeoverMode(command.mode);
+	} else if (command.type === 'midi_learn_retry') {
+		await midiLearnIpc(command.type).retry();
+	} else if (command.type === 'midi_learn_cancel') {
+		midiLearnIpc(command.type).cancel();
 	} else {
 		const _exhaustive: never = command;
 		throw new Error(`Unhandled performance command: ${JSON.stringify(_exhaustive)}`);
@@ -3213,7 +3376,9 @@ function _executeAs(
 				? allDecks()
 				: command.type === 'deck_move'
 					? [command.from, command.to]
-					: [];
+					: command.type === 'color_fx' && command.deck === COLOR_FX_ALL_DECKS
+						? allDecks()
+						: [];
 	return withDeckCommandSource(decks, source, () => _execute(command, pressT0Ms));
 }
 
@@ -3544,12 +3709,6 @@ function _captureUnknown(deck: unknown): DeckAudioSnapshot {
 
 async function applyWindowCommand(action: WindowAction, label: WindowLabel): Promise<void> {
 	await controlShellWindow(action, label);
-	// Only a bridge call that resolved changes the set; a refusal throws above.
-	if (action === 'open') {
-		if (!_openShellWindows.includes(label)) _openShellWindows = [..._openShellWindows, label];
-	} else if (action === 'close') {
-		_openShellWindows = _openShellWindows.filter((open) => open !== label);
-	}
 }
 
 /** Test hook: parse one performance command message. */
@@ -3611,6 +3770,13 @@ export function installPerformanceBrowserIpc(): () => void {
 	if (tookOver && _activeCommandSession !== null) {
 		_invalidateCommandSession(_activeCommandSession.generation);
 	}
+	void import('$lib/sets/auto-rec')
+		.then(({ resetSetAutoRecSession }) => {
+			resetSetAutoRecSession();
+		})
+		.catch((error: unknown) => {
+			console.error('[sets] auto-REC session reset failed to load or run', error);
+		});
 	const commandGeneration = _startCommandSession();
 	const ipc: PerformanceBrowserIpc = Object.freeze({
 		version: 1 as const,
@@ -3624,6 +3790,8 @@ export function installPerformanceBrowserIpc(): () => void {
 			),
 		query: () => {
 			_assertCommandSession(commandGeneration);
+			// Headphone signal meters sample on their own only while the I/O panel is open.
+			refreshHeadphoneSignals();
 			return queryPerformanceState();
 		},
 		capture: (deck: unknown) => {
@@ -3681,7 +3849,9 @@ export function installPerformanceBrowserIpc(): () => void {
 		dispatch: (command) => runPerformanceCommandFromUi(command)
 	});
 	_beatSyncMaxEnablerUninstalls.set(ipc, uninstallBeatSyncMaxEnabler);
+	const uninstallShellWindowReporter = installTauriShellWindowReporter(setOpenShellWindowLabels);
 	return () => {
+		uninstallShellWindowReporter();
 		if (_beatSyncMaxEnablerUninstalls.delete(ipc)) uninstallBeatSyncMaxEnabler();
 		for (const host of hosts) {
 			if (host.musicDjToolsPerformance !== ipc) {
@@ -3719,3 +3889,5 @@ function _trackInfoDecks(): TrackInfoDeck[] {
  * consumer needs it ((private path) precedent).
  */
 export { pushToast } from '$lib/stores.svelte';
+/** Issue #10580: tests register on the same bundled learn-ipc singleton as dispatch. */
+export { registerMidiLearnIpc };

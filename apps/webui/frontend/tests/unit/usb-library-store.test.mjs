@@ -96,7 +96,10 @@ function stickLibrary(uuid, name) {
 		],
 		history: [],
 		counts: { tracks: 3, playlists: 1, playlist_entries: 2, history_playlists: 0 },
-		read_ms: 4.2
+		read_ms: 4.2,
+		has_pdb: true,
+		has_onelibrary: false,
+		browse_source: 'export.pdb'
 	};
 }
 

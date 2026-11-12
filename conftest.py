@@ -7,6 +7,9 @@ Fixtures exposed:
     fixture. Each test gets its own throwaway copy so writes don't leak.
   * ``tmp_rb_db`` (function) — Path to a fresh mutable copy (for apply.py
     write-path testing). Never the committed fixture itself.
+  * :func:`hydrate_mdt_data_dir_from_rb_ingest` -- build ``<root>/data`` with
+    ``master.plain.db`` and ``state/state.db`` through production
+    :func:`apps.shared.state.ingest.rekordbox.ingest_rb`.
 
 Tests can trust the copy-per-test contract: no test can mutate the shared
 master fixture even transiently.
@@ -212,6 +215,47 @@ def tmp_rb_db(rb_plain_db_path: Path, tmp_path: Path) -> Path:
     return dst
 
 
+def hydrate_mdt_data_dir_from_rb_ingest(
+    rb_db: Path,
+    scratch: Path,
+    *,
+    ingest_limit: int | None = None,
+) -> tuple[Path, list[str], object]:
+    """Lay out ``MDT_DATA_DIR`` from a rekordbox master and production ingest.
+
+    Copies ``rb_db`` to ``scratch/data/master.plain.db``, creates
+    ``scratch/data/state/state.db``, and ingests with
+    :func:`apps.shared.state.ingest.rekordbox.ingest_rb`. Callers must pass a
+    disposable copy (for example ``tmp_rb_db``), never the canonical fixture path.
+    """
+    from apps.shared.state import db as state_db
+    from apps.shared.state.ingest import rekordbox as rb_ingest
+    from apps.shared.state.writer import StateWriter
+
+    data_dir = scratch / "data"
+    (data_dir / "state").mkdir(parents=True)
+    master = data_dir / "master.plain.db"
+    shutil.copy2(rb_db, master)
+    state_path = data_dir / "state" / "state.db"
+    conn = state_db.open_rw(state_path)
+    writer = StateWriter(conn, actor="test-rb-meta-plan")
+    try:
+        report = rb_ingest.ingest_rb(writer, master, dry_run=False, limit=ingest_limit)
+        stable_ids = [
+            str(row[0])
+            for row in conn.execute(
+                "SELECT stable_id FROM track_vendor_ids "
+                "WHERE vendor = 'rekordbox' AND deleted_at IS NULL "
+                "ORDER BY stable_id"
+            ).fetchall()
+        ]
+        conn.commit()
+    finally:
+        writer.close()
+        conn.close()
+    return data_dir, stable_ids, report
+
+
 # ---------------------------------------------------------------------------
 # External-host fixtures (LaCie). See apps/sync/usb/pioneer/fixture_resolver.py.
 #
@@ -318,6 +362,28 @@ def _rekordbox_writeback_gate(request, monkeypatch):
         monkeypatch.setenv(REKORDBOX_WRITEBACK_ENABLED_ENV, "1")
     else:
         monkeypatch.delenv(REKORDBOX_WRITEBACK_ENABLED_ENV, raising=False)
+
+
+@pytest.fixture(autouse=True, scope="module")
+def _no_busy_thread_outlives_module(request: pytest.FixtureRequest) -> Iterator[None]:
+    """Fail the module that leaves a thread running that still burns CPU.
+
+    A leaked 50 Hz poller shared a core with every later test in its leg
+    (issue #9628). Blocked daemons are not reported. Rules:
+    tests/support/thread_leaks.py.
+    """
+    from tests.support.thread_leaks import busy_leaked_threads
+
+    baseline = set(threading.enumerate())
+    yield
+    busy = busy_leaked_threads(baseline)
+    if busy:
+        pytest.fail(
+            f"{request.node.nodeid} left {len(busy)} CPU-busy thread(s) running after the "
+            "module ended: " + "; ".join(busy) + ". Stop or join what the module started "
+            "in its teardown.",
+            pytrace=False,
+        )
 
 
 @pytest.fixture(autouse=True)

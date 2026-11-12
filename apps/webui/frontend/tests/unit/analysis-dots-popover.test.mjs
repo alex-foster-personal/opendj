@@ -182,3 +182,70 @@ test('AnalysisDotsPopover.svelte caches the ingest config across instances rathe
 	assert.ok(src.includes('_sharedIngestConfig'));
 	assert.ok(src.includes('CONFIG_TTL_MS'));
 });
+
+// ANALYSIS-11723: "Re-analyze grid" writes the track's BPM range, THEN posts
+// the beatgrid order. Real api-rb / api-ingest code; only fetch is stubbed.
+const { loadTypeScriptModule } = await import('./load-typescript.mjs');
+const { reanalyzeGrid } = await loadTypeScriptModule('src/lib/rb/reanalyze-grid.ts');
+const RANGE_SID = 'a'.repeat(40);
+
+async function recordReanalyze(range, rangeStatus = 200) {
+	const calls = [];
+	const toasts = [];
+	const original = globalThis.fetch;
+	globalThis.fetch = async (url, init = {}) => {
+		const method = init.method ?? 'GET';
+		calls.push({ url: String(url), method, body: init.body ?? null });
+		const isRange = String(url).includes('/analysis-range');
+		const status = isRange ? rangeStatus : 202;
+		const payload = isRange
+			? status === 200
+				? { stable_id: RANGE_SID, range, effective: range ?? '70-180', choices: [] }
+				: { detail: { code: 'ANALYSIS_RANGE_INVALID', message: 'bad range' } }
+			: { stable_id: RANGE_SID, kind: 'beatgrid', phase: 'queued' };
+		return new Response(JSON.stringify(payload), {
+			status,
+			headers: { 'Content-Type': 'application/json' }
+		});
+	};
+	try {
+		await reanalyzeGrid(RANGE_SID, range, {
+			upsertJob: () => {},
+			toast: (message, kind) => toasts.push({ message, kind })
+		});
+	} finally {
+		globalThis.fetch = original;
+	}
+	return { calls, toasts };
+}
+
+test('Re-analyze grid PUTs the range, then POSTs the beatgrid order', async () => {
+	const { calls } = await recordReanalyze('93-186');
+	assert.equal(calls.length, 2);
+	assert.equal(calls[0].method, 'PUT');
+	assert.ok(calls[0].url.endsWith(`/api/v1/tracks/${RANGE_SID}/analysis-range`));
+	assert.equal(calls[0].body, JSON.stringify({ range: '93-186' }));
+	assert.equal(calls[1].method, 'POST');
+	assert.ok(calls[1].url.endsWith(`/api/v1/analysis-queue/orders/${RANGE_SID}/beatgrid`));
+});
+
+test('Re-analyze grid with the global band DELETEs the range, then orders', async () => {
+	const { calls } = await recordReanalyze(null);
+	assert.deepEqual(
+		calls.map((c) => c.method),
+		['DELETE', 'POST']
+	);
+});
+
+test('a refused range write orders nothing and toasts the error', async () => {
+	const { calls, toasts } = await recordReanalyze('93-186', 422);
+	assert.equal(calls.length, 1);
+	assert.equal(toasts.length, 1);
+	assert.equal(toasts[0].kind, 'error');
+});
+
+test('AnalysisDotsPopover.svelte renders the Re-analyze grid item', () => {
+	const src = readFileSync(path.join(componentsDir, 'AnalysisDotsPopover.svelte'), 'utf8');
+	assert.ok(src.includes("import ReanalyzeGridItem from './ReanalyzeGridItem.svelte';"));
+	assert.ok(src.includes('<ReanalyzeGridItem'));
+});

@@ -1,0 +1,9 @@
+{
+  "bytes": 2048,
+  "measured_main": 442105,
+  "measured_with_pr": 443406,
+  "sha": "fe2f340293",
+  "date": "Wed 11 Nov 2026",
+  "reason": "branch af--cloud-11467--webui-defer-other-lazy-settings-and-rout--work grows the performance surface; measured +1301 B gzip over main; ceiled to KiB.",
+  "payback": "none planned; the growth is the change's own code on this surface"
+}

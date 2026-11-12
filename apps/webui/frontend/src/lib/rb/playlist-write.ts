@@ -34,7 +34,7 @@
 
 import type { PlaylistDetailHydrated } from '$lib/rb/api-rb';
 
-import { ApiError, api, unwrap } from '../api/client';
+import { ApiError, api, unwrap } from '../api/rb-http';
 
 /** Minimal playlist row shape the write endpoints echo back (PlaylistWriteOut
  * / the 409 conflict body's "current" - apps/webui/server/routes/playlist_write.py). */

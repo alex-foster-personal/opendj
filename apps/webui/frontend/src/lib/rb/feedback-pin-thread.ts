@@ -1,3 +1,4 @@
+/** Thread turns for a pin; reused by `<comment-pins>` and FeedbackPinCard. */
 export interface PinReply {
 	id: string;
 	author: 'operator' | 'agent';

@@ -114,7 +114,8 @@ describe('cell commits stop at the first refused command (LIBPG-7694)', () => {
 	before(async () => {
 		entry = await loadTypeScriptModule('tests/unit/fixtures/bpm-key-overrides-entry.ts', {
 			alias: {
-				'$lib/rb/performance-ipc.svelte': `${FRONTEND_ROOT}/tests/unit/fixtures/bpm-key-overrides-stub-ipc.ts`
+				'$lib/rb/performance-ipc.svelte': `${FRONTEND_ROOT}/tests/unit/fixtures/bpm-key-overrides-stub-ipc.ts`,
+				'$lib/rb/beatgrid-fallback-api': `${FRONTEND_ROOT}/tests/unit/fixtures/bpm-key-overrides-stub-api.ts`
 			}
 		});
 	});
@@ -128,6 +129,7 @@ describe('cell commits stop at the first refused command (LIBPG-7694)', () => {
 	});
 
 	test('a key edit three semitones away sends three nudges when each lands', async () => {
+		entry.apiAnswerWith({ key: '5A' });
 		entry.answerWith([]);
 		// 8A (A minor) to 5A (C minor): C is three semitones above A.
 		await entry.commitKeyEdit('trk', '5A', decks('8A'));
@@ -135,6 +137,7 @@ describe('cell commits stop at the first refused command (LIBPG-7694)', () => {
 	});
 
 	test('a refused nudge stops the rest, and the cell keeps the typed key', async () => {
+		entry.apiAnswerWith({ key: '5A' });
 		entry.answerWith([true, false, true]);
 		await entry.commitKeyEdit('trk2', '5A', {
 			...decks('8A'),
@@ -145,6 +148,7 @@ describe('cell commits stop at the first refused command (LIBPG-7694)', () => {
 	});
 
 	test('every nudge is one semitone, and a step past the shift range is not sent', async () => {
+		entry.apiAnswerWith({ key: '5A' });
 		entry.answerWith([]);
 		await entry.commitKeyEdit('trk3', '5A', {
 			...decks('8A'),
@@ -161,5 +165,51 @@ describe('cell commits stop at the first refused command (LIBPG-7694)', () => {
 		};
 		await entry.commitKeyEdit('trk4', '5A', far);
 		assert.equal(entry.sent.length, 0);
+	});
+
+	// requirement: KEY-10229
+	test('KEY-10229 a key commit stores the key over the route and still nudges the deck', async () => {
+		entry.apiAnswerWith({ key: '5A' });
+		entry.answerWith([]);
+		await entry.commitKeyEdit('trk', '5A', decks('8A'));
+		assert.deepEqual(entry.apiCalls, [
+			{ method: 'PUT', path: '/api/v1/tracks/trk/key-edit', body: { key: '5A' } }
+		]);
+		assert.equal(entry.sent.filter((c) => c.type === 'key_nudge').length, 3);
+	});
+
+	test('KEY-10229 the cached key is the server answer, not the typed text', async () => {
+		entry.apiAnswerWith({ key: '6A' });
+		entry.answerWith([]);
+		await entry.commitKeyEdit('trkG', 'Gm', { ...decks(null) });
+		assert.equal(entry.editedKey('trkG', null), '6A');
+	});
+
+	test('KEY-10229 a refused store throws, caches nothing and nudges no deck', async () => {
+		entry.apiAnswerWith(new Error('KEY_EDIT_INVALID'));
+		entry.answerWith([]);
+		await assert.rejects(entry.commitKeyEdit('trkX', '5A', decks('8A')), /KEY_EDIT_INVALID/);
+		assert.equal(entry.editedKey('trkX', null), null);
+		assert.equal(entry.sent.length, 0);
+	});
+
+	test('KEY-10229 clearKeyEdit deletes the stored key and drops the cache', async () => {
+		entry.apiAnswerWith({ key: '8A' });
+		await entry.commitKeyEdit('trkC', '8A', decks(null));
+		assert.equal(entry.hasKeyEdit('trkC'), true);
+		await entry.clearKeyEdit('trkC');
+		assert.deepEqual(entry.apiCalls.at(-1), {
+			method: 'DELETE',
+			path: '/api/v1/tracks/trkC/key-edit'
+		});
+		assert.equal(entry.hasKeyEdit('trkC'), false);
+	});
+
+	test('KEY-10229b pending: a BPM commit is session-only (no key-edit call) and still sets the deck tempo', async () => {
+		entry.apiAnswerWith({ key: null });
+		entry.answerWith([]);
+		await entry.commitBpmEdit('trk', 126, decks('8A'));
+		assert.deepEqual(entry.apiCalls, []);
+		assert.ok(entry.sent.length > 0, 'the deck playing the track gets the tempo write');
 	});
 });

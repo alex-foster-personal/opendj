@@ -261,6 +261,32 @@ def similar(conn: sqlite3.Connection, stable_id: str, limit: int) -> dict[str, A
     }
 
 
+FIND_SIMILAR_GENERIC = "generic"
+FIND_SIMILAR_SPECIFIC = "specific"
+FIND_SIMILAR_NICHE = "niche"
+FIND_SIMILAR_MODES = frozenset({FIND_SIMILAR_GENERIC, FIND_SIMILAR_SPECIFIC, FIND_SIMILAR_NICHE})
+
+
+def find_similar_tracks(conn: sqlite3.Connection, stable_id: str, *, mode: str, limit: int) -> dict[str, Any]:
+    """find-similar-tracks ranked neighbours for one loaded track (parent #345).
+
+    Generic mode is the broad playlist-neighbour path: cosine distance on JEV
+    genre probability vectors (same ranking as :func:`similar`), never embedding
+    cosine dressed as niche taste. Specific and niche modes are separate issues.
+    """
+    if mode not in FIND_SIMILAR_MODES:
+        raise findings.GenreInputError(f"unknown find-similar mode {mode!r}")
+    if mode != FIND_SIMILAR_GENERIC:
+        raise findings.GenreInputError(f"find-similar mode {mode!r} is not implemented yet")
+    ranked = similar(conn, stable_id, limit)
+    return {
+        "stable_id": ranked["stable_id"],
+        "mode": mode,
+        "provider": ranked["provider"],
+        "candidates": ranked["similar"],
+    }
+
+
 @dataclass(frozen=True)
 class GenreFillTrack:
     stable_id: str
@@ -459,6 +485,10 @@ def write_chosen_tag(
 
 
 __all__ = [
+    "FIND_SIMILAR_GENERIC",
+    "FIND_SIMILAR_MODES",
+    "FIND_SIMILAR_NICHE",
+    "FIND_SIMILAR_SPECIFIC",
     "MAX_IDS",
     "MIN_CONFIDENCE",
     "FillBlankGenresSummary",
@@ -468,6 +498,7 @@ __all__ = [
     "classifier_model_path",
     "fill_blank_genres",
     "fill_providers_available",
+    "find_similar_tracks",
     "genres_for",
     "infer",
     "remove_finding",

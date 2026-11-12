@@ -84,6 +84,7 @@ from apps.adapters.rekordbox.sidecar_schema import (
     VENDOR_SIDECAR_TABLES,
     ensure_vendor_sidecar_tables,
 )
+from apps.analysis.analysis_records_tables_sql import ANALYSIS_RECORDS_TABLES_SQL
 from apps.analysis.native_tables_sql import NATIVE_ANALYSIS_V1_SQL
 from apps.analysis.queue_store import QUEUE_TABLES_SQL
 from apps.shared.pairings.schema_sql import (
@@ -445,44 +446,12 @@ _CREDENTIALS: tuple[str, ...] = (
 
 # ==========================================================================
 # DOMAIN: analysis records + analysis event log
-# Legacy source: apps/analysis/store.py  (_ANALYSIS_TABLES_SQL, run by
-# open_conn() on top of the shared-state migrations)
+# DDL home: apps/analysis/analysis_records_tables_sql.py
+# (ANALYSIS_RECORDS_TABLES_SQL), assembled into apps/analysis/store.py
+# (_ANALYSIS_TABLES_SQL) and mirrored here.
 # ==========================================================================
 
-_ANALYSIS: tuple[str, ...] = (
-    """
-    CREATE TABLE IF NOT EXISTS analysis (
-        stable_id        TEXT NOT NULL,
-        backend          TEXT NOT NULL,
-        backend_version  TEXT NOT NULL,
-        analyzed_at      TEXT NOT NULL,
-        duration_s       REAL NOT NULL,
-        sample_rate      INTEGER NOT NULL,
-        bpm              REAL NOT NULL,
-        bpm_confidence   REAL NOT NULL,
-        key_camelot      TEXT NOT NULL,
-        key_openkey      TEXT NOT NULL,
-        key_confidence   REAL NOT NULL,
-        energy           INTEGER NOT NULL,
-        energy_source    TEXT NOT NULL,
-        record_json      TEXT NOT NULL,
-        PRIMARY KEY (stable_id, backend, backend_version)
-    )
-    """,
-    "CREATE INDEX IF NOT EXISTS idx_analysis_stable_id ON analysis(stable_id)",
-    "CREATE INDEX IF NOT EXISTS idx_analysis_backend   ON analysis(backend)",
-    """
-    CREATE TABLE IF NOT EXISTS analysis_events (
-        id           INTEGER PRIMARY KEY AUTOINCREMENT,
-        ts           TEXT NOT NULL,
-        event_type   TEXT NOT NULL,
-        stable_id    TEXT,
-        payload_json TEXT
-    )
-    """,
-    "CREATE INDEX IF NOT EXISTS idx_analysis_events_type   ON analysis_events(event_type)",
-    "CREATE INDEX IF NOT EXISTS idx_analysis_events_stable ON analysis_events(stable_id)",
-)
+_ANALYSIS: tuple[str, ...] = ANALYSIS_RECORDS_TABLES_SQL
 
 
 # ==========================================================================
@@ -864,6 +833,7 @@ _DEDUP: tuple[str, ...] = (
         canonical_path        TEXT NOT NULL,
         rationale             TEXT,
         flagged_manual_review INTEGER NOT NULL DEFAULT 0,
+        basis                 TEXT NOT NULL DEFAULT 'fingerprint',
         created_at            TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
     )
     """,
@@ -1018,7 +988,7 @@ LEGACY_SOURCES: dict[str, str] = {
     "sync_infra": "apps/shared/state/schema.py",
     "enrollment": "apps/shared/state/migrations_v9.py",
     "credentials": "apps/shared/state/migrations_v11.py",
-    "analysis": "apps/analysis/store.py",
+    "analysis": "apps/analysis/analysis_records_tables_sql.py",
     "native_analysis_v1": "apps/analysis/store.py",
     "analysis_retention": "apps/shared/state/schema.py",
     "lyrics": "apps/shared/state/migrations_v10.py",
@@ -1776,6 +1746,20 @@ def _adopt(conn: sqlite3.Connection) -> tuple[str, ...]:
     return was_missing
 
 
+def _migrate_duplicate_clusters_basis(conn: sqlite3.Connection) -> None:
+    """Add ``basis`` to an existing duplicate_clusters table when missing.
+
+    The dedup contract (``apps/dedup/contract/schema.py``, PR #10643) widened the
+    table with ``basis`` through its own probe-and-ALTER. An engine store created
+    before that keeps the old shape, so the column lands here before the version
+    gate, the same way ``migrate_pairings_snapshot_json`` does for pairings.
+    """
+    columns = {str(row[1]) for row in conn.execute("PRAGMA table_info(duplicate_clusters)")}
+    if not columns or "basis" in columns:
+        return
+    conn.execute("ALTER TABLE duplicate_clusters ADD COLUMN basis TEXT NOT NULL DEFAULT 'fingerprint'")
+
+
 def apply_migrations(conn: sqlite3.Connection) -> int:
     """Bring ``conn`` to :data:`SCHEMA_VERSION`; return the resulting version.
 
@@ -1798,6 +1782,7 @@ def apply_migrations(conn: sqlite3.Connection) -> int:
     # Idempotent (one PRAGMA when the column is present), so it is safe on
     # every open.
     migrate_pairings_snapshot_json(conn)
+    _migrate_duplicate_clusters_basis(conn)
     current = consolidated_version(conn)
     if current >= SCHEMA_VERSION:
         return current

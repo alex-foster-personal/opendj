@@ -14,13 +14,16 @@
 	 * daemon that cannot serve either file renders a banner, not an empty
 	 * grid.
 	 *
-	 * TABS. Six controls share one ARIA tablist: "KPI ledger" is this page's
-	 * default content, "Diagnostics" is an in-page panel at ?tab=diagnostics,
-	 * "Playground" is an in-page panel at ?tab=playground, "Spotify" is an
-	 * in-page panel at ?tab=spotify (connection probe and live listen history),
-	 * "Title fixes" is an in-page panel at ?tab=title-fix, and "Setup" leaves
-	 * for /setup through the shared entry point so the doors into the wizard
-	 * behave identically.
+	 * TABS. Seven in-page tabs share one ARIA tablist: "KPI ledger" (default,
+	 * demucs farm + perf KPIs), "Lyrics generator" at ?tab=lyrics, "Quality
+	 * ratchet" at ?tab=quality, "Diagnostics" at ?tab=diagnostics, "Playground"
+	 * at ?tab=playground, "Spotify" at ?tab=spotify, and "Title fixes" at
+	 * ?tab=title-fix. A Setup header action beside the strip leaves for /setup
+	 * through the shared entry point so the doors into the wizard behave
+	 * identically.
+	 *
+	 * Non-default panels import with import() (#11467) so those
+	 * modules are not in this route node's static closure until the tab opens.
 	 */
 	import { onMount } from 'svelte';
 	import { goto } from '$app/navigation';
@@ -28,19 +31,19 @@
 	import { RUN_SETUP_TITLE, runSetup, runSetupBlocked } from '$lib/setup/run-setup';
 	import PreflightScreen from '$lib/components/preflight/PreflightScreen.svelte';
 	import KpiTile from './KpiTile.svelte';
+	import FarmJobsPanel from './FarmJobsPanel.svelte';
+	import KpiTable from './KpiTable.svelte';
 	import LyricJobs from './LyricJobs.svelte';
 	import LyricSourceOrder from './LyricSourceOrder.svelte';
 	import LyricTriage from './LyricTriage.svelte';
+	import ReviewPanel from './ReviewPanel.svelte';
 	import LyricsKpiPanel from './LyricsKpiPanel.svelte';
 	import EntitlementsInspector from './EntitlementsInspector.svelte';
 	import QualityRatchet from './QualityRatchet.svelte';
 	import RunNotes from './RunNotes.svelte';
 	import TipLayer from './TipLayer.svelte';
-	import DiagnosticsPanel from './DiagnosticsPanel.svelte';
-	import PlaygroundPanel from './PlaygroundPanel.svelte';
-	import SpotifyPanes from './SpotifyPanes.svelte';
+	import StatusOverview from './StatusOverview.svelte';
 	import { backstageEnabled } from '$lib/shell/backstage-flag';
-	import TitleFixPanel from './TitleFixPanel.svelte';
 	import { adminPanelFromUrl, adminTabFromUrl, ADMIN_PANEL_IDS, type AdminTab } from './admin-tab';
 	import {
 		fetchKpiLedger,
@@ -74,7 +77,7 @@
 
 	let setupBusy = $state(false);
 	let setupError = $state<string | null>(null);
-	/** Only a FINAL refusal disables the Setup tab; an unfinished health probe
+	/** Only a FINAL refusal disables the Setup action; an unfinished health probe
 	 * is resolved by the click itself. */
 	const setupBlocked = $derived(runSetupBlocked());
 
@@ -83,7 +86,7 @@
 		setupBusy = true;
 		setupError = null;
 		try {
-			setupError = await runSetup(goto);
+			setupError = await runSetup(goto, $page.url.pathname);
 		} finally {
 			setupBusy = false;
 		}
@@ -111,25 +114,21 @@
 <h2>Backstage</h2>
 <div class="bs-panel" data-panel={panel.id}>
 	{#if panel.id === 'status'}
-		<section class="panel">
-			<h3>Status</h3>
-			<p class="sub" title="Placeholder until the Status overview is built - see PARITY-TODO">
-				The Status overview is a placeholder in this slice: not implemented - see PARITY-TODO. Use the
-				Backstage sidebar to open a panel.
-			</p>
-		</section>
+		<StatusOverview />
+	{:else if panel.id === 'farm-jobs'}
+		<section class="panel"><FarmJobsPanel /></section>
 	{:else if panel.id === 'sources'}
 		<section class="panel"><h3>Lyric sources</h3><LyricSourceOrder /></section>
 	{:else if panel.id === 'jobs'}
 		<section class="panel"><h3>Lyric jobs</h3><LyricJobs /></section>
 	{:else if panel.id === 'triage'}
-		{@render triagePanel()}
+		<ReviewPanel />
 	{:else if panel.id === 'coverage'}
 		<LyricsKpiPanel />
 	{:else if panel.id === 'perf'}
-		{@render perfPanel()}
+		{@render perfTable()}
 	{:else if panel.id === 'farm'}
-		{@render farmPanel()}
+		{@render farmTable()}
 	{:else if panel.id === 'quality'}
 		<QualityRatchet />
 	{:else if panel.id === 'flags'}
@@ -137,9 +136,13 @@
 	{:else if panel.id === 'preflight'}
 		<PreflightScreen mode="admin" navigate={goto} />
 	{:else if panel.id === 'health' || panel.id === 'bus' || panel.id === 'ports'}
-		<DiagnosticsPanel />
+		{#await import('./DiagnosticsPanel.svelte') then { default: DiagnosticsPanel }}
+			<DiagnosticsPanel />
+		{/await}
 	{:else if panel.id === 'api' || panel.id === 'sql'}
-		<PlaygroundPanel />
+		{#await import('./PlaygroundPanel.svelte') then { default: PlaygroundPanel }}
+			<PlaygroundPanel />
+		{/await}
 	{/if}
 	<TipLayer />
 </div>
@@ -153,13 +156,16 @@
 
 <!-- A div, not a nav: a nav is non-interactive and cannot carry role=tablist.
      Same shape as the browser's PaneTabs strip. -->
+<div class="admin-chrome">
 <div class="admin-tabs" role="tablist" aria-label="admin sections">
 	<button
 		type="button"
+		id="admin-tab-kpi"
 		class="admin-tab"
 		class:on={tab === 'kpi'}
 		role="tab"
 		aria-selected={tab === 'kpi'}
+		aria-controls="admin-panel-kpi"
 		title="The demucs farm KPI ledger, served by GET /api/v1/bench/kpi. This tab is the page you are on."
 		onclick={() => selectTab('kpi')}
 	>
@@ -167,10 +173,38 @@
 	</button>
 	<button
 		type="button"
+		id="admin-tab-lyrics"
+		class="admin-tab"
+		class:on={tab === 'lyrics'}
+		role="tab"
+		aria-selected={tab === 'lyrics'}
+		aria-controls="admin-panel-lyrics"
+		title="Lyric source order, generation jobs, triage, and coverage KPIs."
+		onclick={() => selectTab('lyrics')}
+	>
+		Lyrics generator
+	</button>
+	<button
+		type="button"
+		id="admin-tab-quality"
+		class="admin-tab"
+		class:on={tab === 'quality'}
+		role="tab"
+		aria-selected={tab === 'quality'}
+		aria-controls="admin-panel-quality"
+		title="The code-quality ratchet the merge gate enforces on every commit."
+		onclick={() => selectTab('quality')}
+	>
+		Quality ratchet
+	</button>
+	<button
+		type="button"
+		id="admin-tab-diagnostics"
 		class="admin-tab"
 		class:on={tab === 'diagnostics'}
 		role="tab"
 		aria-selected={tab === 'diagnostics'}
+		aria-controls="admin-panel-diagnostics"
 		title="Daemon health, capability probe, event bus, and worktree ports."
 		onclick={() => selectTab('diagnostics')}
 	>
@@ -178,10 +212,12 @@
 	</button>
 	<button
 		type="button"
+		id="admin-tab-playground"
 		class="admin-tab"
 		class:on={tab === 'playground'}
 		role="tab"
 		aria-selected={tab === 'playground'}
+		aria-controls="admin-panel-playground"
 		title="Hit /api/v1/* and run read-only SQL against state.db."
 		onclick={() => selectTab('playground')}
 	>
@@ -189,10 +225,12 @@
 	</button>
 	<button
 		type="button"
+		id="admin-tab-spotify"
 		class="admin-tab"
 		class:on={tab === 'spotify'}
 		role="tab"
 		aria-selected={tab === 'spotify'}
+		aria-controls="admin-panel-spotify"
 		title="Spotify connection probe and live listen history, served by GET /api/v1/spotify/status and GET /api/v1/spotify/recently-played."
 		onclick={() => selectTab('spotify')}
 	>
@@ -200,56 +238,70 @@
 	</button>
 	<button
 		type="button"
+		id="admin-tab-title-fix"
 		class="admin-tab"
 		class:on={tab === 'title-fix'}
 		role="tab"
 		aria-selected={tab === 'title-fix'}
+		aria-controls="admin-panel-title-fix"
 		title="Fix tracks whose artist, key or version is jammed into the title: scan, review, apply, undo."
 		onclick={() => selectTab('title-fix')}
 	>
 		Title fixes
 	</button>
-	<button
-		type="button"
-		class="admin-tab"
-		role="tab"
-		aria-selected="false"
-		onclick={() => void onSetupTab()}
-		disabled={setupBusy || setupBlocked !== null}
-		title={setupBlocked ?? RUN_SETUP_TITLE}
-	>
-		{setupBusy ? 'Opening setup...' : 'Setup'}
-	</button>
-	{#if setupError !== null}
-		<span class="admin-tab-err" title={setupError}>{setupError}</span>
-	{/if}
+</div>
+<button
+	type="button"
+	class="admin-setup-action"
+	onclick={() => void onSetupTab()}
+	disabled={setupBusy || setupBlocked !== null}
+	title={setupBlocked ?? RUN_SETUP_TITLE}
+>
+	{setupBusy ? 'Opening setup...' : 'Setup'}
+</button>
+{#if setupError !== null}
+	<span class="admin-tab-err" title={setupError}>{setupError}</span>
+{/if}
 </div>
 
 {#if tab === 'kpi'}
-<EntitlementsInspector />
-
-{@render lyricsPanel()}
-{@render triagePanel()}
-<LyricsKpiPanel />
-
+<div id="admin-panel-kpi" role="tabpanel" aria-labelledby="admin-tab-kpi">
 {@render farmPanel()}
 {@render perfPanel()}
-<QualityRatchet />
+<EntitlementsInspector />
 
 <!-- PREFLIGHT-01 (#771): read-only, always-live-polling reference. Same
      GET /api/v1/preflight the boot gate reads; no navigation side effect. -->
 <PreflightScreen mode="admin" navigate={goto} />
-
-<TipLayer />
+</div>
+{:else if tab === 'lyrics'}
+<div id="admin-panel-lyrics" role="tabpanel" aria-labelledby="admin-tab-lyrics">
+{@render lyricsPanel()}
+{@render triagePanel()}
+<LyricsKpiPanel />
+</div>
+{:else if tab === 'quality'}
+<div id="admin-panel-quality" role="tabpanel" aria-labelledby="admin-tab-quality">
+<QualityRatchet />
+</div>
 {:else if tab === 'diagnostics'}
-<DiagnosticsPanel />
+	{#await import('./DiagnosticsPanel.svelte') then { default: DiagnosticsPanel }}
+		<DiagnosticsPanel />
+	{/await}
 {:else if tab === 'playground'}
-<PlaygroundPanel />
+	{#await import('./PlaygroundPanel.svelte') then { default: PlaygroundPanel }}
+		<PlaygroundPanel />
+	{/await}
 {:else if tab === 'spotify'}
-<SpotifyPanes />
+	{#await import('./SpotifyPanes.svelte') then { default: SpotifyPanes }}
+		<SpotifyPanes />
+	{/await}
 {:else if tab === 'title-fix'}
-<TitleFixPanel />
+	{#await import('./TitleFixPanel.svelte') then { default: TitleFixPanel }}
+		<TitleFixPanel />
+	{/await}
 {/if}
+<TipLayer />
 {/if}
 
 {#snippet farmPanel()}
@@ -351,6 +403,36 @@
 </section>
 
 {/snippet}
+{#snippet perfTable()}
+{#if perfError}
+	<div class="fatal">LOAD FAILED {perfError} - GET /api/v1/bench/perf-kpi ((private path) + kpi-cards.json)</div>
+{:else if !perf}
+	<p class="sub">Loading perf ledger...</p>
+{:else}
+	<KpiTable
+		name="Performance KPIs"
+		kpis={perf.kpis}
+		snapshots={perf.snapshots}
+		timeAxis
+		source={`Latency and RAM program KPIs since ${perf.sinceLabel}, from (private path) via GET /api/v1/bench/perf-kpi.${perf.undeclared.length > 0 ? ` Undeclared, not shown: ${perf.undeclared.join(', ')}.` : ''}`}
+	/>
+{/if}
+{/snippet}
+{#snippet farmTable()}
+{#if error}
+	<div class="fatal">LOAD FAILED {error} - GET /api/v1/bench/kpi ((private path))</div>
+{:else if !ledger}
+	<p class="sub">Loading ledger...</p>
+{:else}
+	<KpiTable
+		name="Stem farm"
+		kpis={ledger.kpis}
+		snapshots={ledger.snapshots}
+		banner
+		source="Demucs farm KPIs per run, from (private path) via GET /api/v1/bench/kpi. A typed badge is hand-entered; config is a ceiling, not a measurement."
+	/>
+{/if}
+{/snippet}
 {#snippet lyricsPanel()}
 <section class="panel" id="lyrics-generator">
 	<h3>Lyrics generator</h3>
@@ -391,12 +473,40 @@
 		--kpi-ok: var(--success);
 	}
 
+	.admin-chrome {
+		display: flex;
+		align-items: center;
+		flex-wrap: wrap;
+		gap: 8px;
+		margin: 0.5rem 0 1rem;
+		border-bottom: 1px solid var(--border, #1c222c);
+		padding-bottom: 0;
+	}
 	.admin-tabs {
 		display: flex;
 		align-items: center;
+		flex-wrap: wrap;
 		gap: 4px;
-		margin: 0.5rem 0 1rem;
-		border-bottom: 1px solid var(--border, #1c222c);
+		flex: 1 1 auto;
+	}
+	.admin-setup-action {
+		padding: 6px 14px;
+		border: 1px solid var(--border, #1c222c);
+		border-radius: 6px;
+		background: var(--chip-bg);
+		color: var(--fg);
+		font: inherit;
+		font-size: 0.9rem;
+		cursor: pointer;
+		margin-left: auto;
+	}
+	.admin-setup-action:hover:not(:disabled) {
+		border-color: var(--accent);
+		color: var(--accent);
+	}
+	.admin-setup-action:disabled {
+		opacity: 0.45;
+		cursor: default;
 	}
 	.admin-tab {
 		padding: 6px 14px;

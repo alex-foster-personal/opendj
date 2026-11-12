@@ -29,6 +29,8 @@ they agree with the stem envelopes.
 
 WHAT IS NEVER GUESSED. Fewer than ``MIN_BARS`` bars, or peaks that do
 not cover the grid, return ``status: failed`` with the reason, never sections.
+When ``dj_labels`` reports ``no_energy_contrast``, the track abstains: no
+sections and ``abstain_reason`` set, never one unlabeled span.
 
 -Claude
 """
@@ -42,11 +44,11 @@ from typing import Any
 
 import numpy as np
 
-from .dj_labels import label_sections
+from .dj_labels import label_sections, own_fast_abstain_reason
 from .drop_events import mark_drops
 
 PRODUCER = "own-fast"
-PRODUCER_VERSION = "0.2.0"  # bump when the features, kernel, peak picking or proxies change
+PRODUCER_VERSION = "0.3.0"  # bump when the features, kernel, peak picking or proxies change
 
 COLUMNS_PER_S = 150.0
 BEATS_PER_BAR = 4
@@ -255,7 +257,8 @@ def _apply_dj_labels(sections: list[dict[str, Any]], dj: dict[str, Any]) -> list
 def segment(peaks: np.ndarray, downbeats: Sequence[float], duration_s: float) -> dict[str, Any]:
     """Sections for one track, PSSI-shaped like the All-In-One sidecar's.
 
-    Returns ``{"status": "ok", "sections": [...], "dj_labels": {...}, ...}`` or
+    Returns ``{"status": "ok", "sections": [...], "dj_labels": {...}, ...}``,
+    ``{"status": "abstain", "abstain_reason": ..., "sections": []}``, or
     ``{"status": "failed", "reason": ...}``.
     """
     if peaks.ndim != 2 or peaks.shape[1] != 3:
@@ -271,6 +274,17 @@ def segment(peaks: np.ndarray, downbeats: Sequence[float], duration_s: float) ->
     bars, offset = pick_boundaries(curve)
     sections = _sections_from_bars(grid, bars, duration_s)
     dj = label_sections(sections, band_envelopes(peaks))
+    abstain = own_fast_abstain_reason(dj)
+    if abstain is not None:
+        return {
+            "status": "abstain",
+            "abstain_reason": abstain,
+            "producer": PRODUCER,
+            "producer_version": PRODUCER_VERSION,
+            "sections": [],
+            "moments": [],
+            "dj_labels": {k: v for k, v in dj.items() if k != "sections"},
+        }
     moments = _apply_dj_labels(sections, dj)
     return {
         "status": "ok",

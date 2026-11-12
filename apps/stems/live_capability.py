@@ -9,6 +9,7 @@ record: its host is a development environment, not an installed product.
 Requirements:
   ✔︎ Machine capability is measured once per installed data directory.
   ✔︎ Pre-M1 hardware is refused before live stems can start.
+  ✔︎ Refusals share stable reason codes; legacy records gain them in memory.
   ✔︎ M1 and M2 select low quality, while M3 or newer selects high quality.
   ✔︎ Four decks report the eight-bar lookahead required over two decks.
   ✔︎ Each enabled plan reports the locked PERFBATCH-06 live-generation working-set ceiling.
@@ -74,6 +75,15 @@ class LiveStemsQuality(StrEnum):
     HIGH = "high"
 
 
+class LiveStemsReasonCode(StrEnum):
+    """Stable refusal vocabulary shared by persistence, HTTP and CLI."""
+
+    UNSUPPORTED_HARDWARE = "unsupported_hardware"
+    BENCHMARK_FAILED = "benchmark_failed"
+    # Reserved for the envelope's separate performance-tier gate; not emitted here.
+    PERFORMANCE_TIER_REFUSED = "performance_tier_refused"
+
+
 @dataclass(frozen=True)
 class LiveStemsCapability:
     """The persisted decision, including the evidence that made it."""
@@ -85,12 +95,14 @@ class LiveStemsCapability:
     enabled: bool
     quality: LiveStemsQuality
     reason: str
+    reason_code: LiveStemsReasonCode | None
 
     def to_dict(self) -> dict[str, object]:
         """Produce JSON without leaking Enum objects into a stored record."""
         result = asdict(self)
         result["machine_class"] = self.machine_class.value
         result["quality"] = self.quality.value
+        result["reason_code"] = self.reason_code.value if self.reason_code is not None else None
         return result
 
 
@@ -161,6 +173,17 @@ def classify_machine(machine_name: str) -> LiveStemsMachineClass:
     return LiveStemsMachineClass.M3_OR_NEWER
 
 
+def _reason_code(
+    machine_class: LiveStemsMachineClass, benchmark_hashes_per_second: int
+) -> LiveStemsReasonCode | None:
+    """Classify measured evidence in hardware-first refusal order, never prose."""
+    if machine_class in {LiveStemsMachineClass.PRE_M1, LiveStemsMachineClass.UNKNOWN}:
+        return LiveStemsReasonCode.UNSUPPORTED_HARDWARE
+    if benchmark_hashes_per_second < BENCHMARK_MIN_HASHES_PER_SECOND:
+        return LiveStemsReasonCode.BENCHMARK_FAILED
+    return None
+
+
 def assess_machine(
     machine_name: str, benchmark_hashes_per_second: int
 ) -> LiveStemsCapability:
@@ -173,10 +196,8 @@ def assess_machine(
             f"{benchmark_hashes_per_second}"
         )
     machine_class = classify_machine(machine_name)
-    if machine_class in {
-        LiveStemsMachineClass.PRE_M1,
-        LiveStemsMachineClass.UNKNOWN,
-    }:
+    reason_code = _reason_code(machine_class, benchmark_hashes_per_second)
+    if reason_code is LiveStemsReasonCode.UNSUPPORTED_HARDWARE:
         return LiveStemsCapability(
             schema=CAPABILITY_SCHEMA,
             machine_name=machine_name,
@@ -184,12 +205,13 @@ def assess_machine(
             benchmark_hashes_per_second=benchmark_hashes_per_second,
             enabled=False,
             quality=LiveStemsQuality.DISABLED,
+            reason_code=reason_code,
             reason=(
                 f"live stems requires Apple M{MINIMUM_APPLE_SILICON_MAJOR} or newer; "
                 f"detected {machine_name} ({machine_class.value})"
             ),
         )
-    if benchmark_hashes_per_second < BENCHMARK_MIN_HASHES_PER_SECOND:
+    if reason_code is LiveStemsReasonCode.BENCHMARK_FAILED:
         return LiveStemsCapability(
             schema=CAPABILITY_SCHEMA,
             machine_name=machine_name,
@@ -197,6 +219,7 @@ def assess_machine(
             benchmark_hashes_per_second=benchmark_hashes_per_second,
             enabled=False,
             quality=LiveStemsQuality.DISABLED,
+            reason_code=reason_code,
             reason=(
                 "live stems disabled because install benchmark measured "
                 f"{benchmark_hashes_per_second} hashes/s, below "
@@ -215,6 +238,7 @@ def assess_machine(
         benchmark_hashes_per_second=benchmark_hashes_per_second,
         enabled=True,
         quality=quality,
+        reason_code=reason_code,
         reason=(
             f"{machine_name} measured {benchmark_hashes_per_second} hashes/s; "
             f"live stems enabled at {quality.value} quality"
@@ -278,6 +302,27 @@ def persist_capability(data_dir: Path, capability: LiveStemsCapability) -> Path:
     return path
 
 
+def _stored_reason_code(
+    raw: dict[str, object],
+    machine_class: LiveStemsMachineClass,
+    benchmark: int,
+    enabled: bool,
+) -> LiveStemsReasonCode | None:
+    """Validate explicit codes or derive missing schema-1 metadata in memory."""
+    # Schema 1 predates reason_code. Enrich missing metadata only in memory.
+    if "reason_code" not in raw:
+        reason_code = _reason_code(machine_class, benchmark)
+    elif raw["reason_code"] is None:
+        reason_code = None
+    elif isinstance(raw["reason_code"], str):
+        reason_code = LiveStemsReasonCode(raw["reason_code"])
+    else:
+        raise ValueError("reason_code must be a recognized string or null")
+    if enabled != (reason_code is None):
+        raise ValueError("reason_code contradicts enabled state or legacy evidence")
+    return reason_code
+
+
 def load_capability(data_dir: Path) -> LiveStemsCapability:
     """Load and validate the one stored decision. Corruption is a named fault."""
     path = capability_path(data_dir)
@@ -294,14 +339,19 @@ def load_capability(data_dir: Path) -> LiveStemsCapability:
     if not isinstance(raw, dict):
         raise LiveStemsCapabilityError(f"live-stems capability at {path} is not an object")
     try:
+        machine_class = LiveStemsMachineClass(str(raw["machine_class"]))
+        benchmark = int(raw["benchmark_hashes_per_second"])
+        enabled = bool(raw["enabled"])
+        reason_code = _stored_reason_code(raw, machine_class, benchmark, enabled)
         capability = LiveStemsCapability(
             schema=int(raw["schema"]),
             machine_name=str(raw["machine_name"]),
-            machine_class=LiveStemsMachineClass(str(raw["machine_class"])),
-            benchmark_hashes_per_second=int(raw["benchmark_hashes_per_second"]),
-            enabled=bool(raw["enabled"]),
+            machine_class=machine_class,
+            benchmark_hashes_per_second=benchmark,
+            enabled=enabled,
             quality=LiveStemsQuality(str(raw["quality"])),
             reason=str(raw["reason"]),
+            reason_code=reason_code,
         )
     except (KeyError, TypeError, ValueError) as exc:
         raise LiveStemsCapabilityError(

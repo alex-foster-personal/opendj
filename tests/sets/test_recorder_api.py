@@ -9,16 +9,20 @@ from __future__ import annotations
 
 import json
 import os
+import time
 from pathlib import Path
 
 import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
+from apps.sets import capture, master_mix
 from apps.sets import record as record_mod
+from apps.sets.master_tap import MASTER_TAP_CHANNEL_STATE
 from apps.sets.recorder_service import RecorderService
 from apps.sets.state import SetsState
 from tests.sets.conftest import mount_sets_router
+from tests.sets.test_master_mix import SESSION, _FakePage
 
 
 @pytest.fixture
@@ -177,6 +181,9 @@ def test_recover_finalizes_only_a_proven_stale_pid(recorder_client):
         pid=stale_pid,
         recoverable=True,
     )
+    external_raw = service.status()
+    assert external_raw.get("capture_error") is None
+    assert "capture_error" in external_raw
     assert recovered.status_code == 200
     assert recovered.json()["active"] is False
     assert not (session_dir / "recorder.pid").exists()
@@ -207,6 +214,9 @@ def test_recorder_status_reports_live_external_session(recorder_client):
         pid=live_pid,
         recoverable=False,
     )
+    external_raw = service.status()
+    assert external_raw.get("capture_error") is None
+    assert "capture_error" in external_raw
 
 
 def test_recover_rejects_a_live_external_pid(recorder_client):
@@ -226,6 +236,33 @@ def test_recover_rejects_a_live_external_pid(recorder_client):
 
     assert response.status_code == 409
     assert "still running" in response.json()["detail"]
+
+
+@pytest.mark.requirement("SET-12844")
+def test_recover_rejects_changed_owner(recorder_client):
+    """[if] ownership changes after status [then] recovery preserves the new owner, [else stop]."""
+    client, service = recorder_client
+    session_id = "2026-07-22T22-45-00"
+    record_mod.start(
+        session_id=session_id,
+        config=record_mod.RecorderConfig(sources=(), capture_disabled=True),
+        sets_root=service.sets_root,
+        state=SetsState(db_path=service.db_path),
+    )
+    session_dir = service.sets_root / session_id
+    pid_file = session_dir / "recorder.pid"
+    pid_file.write_text("2000000000", encoding="utf-8")
+    status = client.get("/api/sets/recorder").json()
+    assert status["recoverable"] is True
+    pid_file.write_text(str(os.getpid()), encoding="utf-8")
+
+    response = client.post(f"/api/sets/recorder/{status['session_id']}/recover", json={"expected_pid": status["pid"]})
+
+    assert response.status_code == 409
+    assert response.json()["detail"] == "recorder ownership changed; refresh before recovery"
+    assert pid_file.read_text(encoding="utf-8") == str(os.getpid())
+    assert not (session_dir / "manifest.json").exists()
+    assert "session_end" not in (session_dir / "timeline.jsonl").read_text(encoding="utf-8")
 
 
 def test_pid_is_running_short_circuits_non_positive_without_helper(
@@ -294,6 +331,143 @@ def test_recorder_status_route_answers_when_idle(recorder_client):
 
     assert response.status_code == 200
     assert response.json() == _idle_recorder_status_json(service)
+    idle_raw = service.status()
+    assert idle_raw.get("capture_error") is None
+    assert "capture_error" in idle_raw
+
+
+@pytest.mark.requirement("SETREC-12415")
+def test_recorder_status_exposes_capture_error_when_owned_capture_fails(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """[if] owned master capture fails [then] capture_error names why, [else stop]."""
+    monkeypatch.setattr(master_mix, "ATTACH_TIMEOUT_S", 0.05)
+    service = RecorderService(
+        sets_root=tmp_path / "sets",
+        db_path=tmp_path / "sets" / "sets.db",
+        capture_enabled=False,
+        list_devices=lambda: [
+            capture.InputDevice(0, "MacBook Pro Microphone", False),
+            capture.InputDevice(1, "BlackHole 2ch", True),
+        ],
+    )
+    app = FastAPI()
+    app.state.sets_recorder_service = service
+    page = _FakePage(service)
+    setattr(app.state, MASTER_TAP_CHANNEL_STATE, page)
+    mount_sets_router(app)
+    with TestClient(app) as client:
+        started = client.post(
+            "/api/sets/recorder/start",
+            json={"session_id": SESSION, "source": "master", "sources": []},
+        )
+        assert started.status_code == 201
+        time.sleep(0.1)
+        response = client.get("/api/sets/recorder")
+        owned_raw = service.status()
+    body = response.json()
+    assert body["capture"] == "failed"
+    assert owned_raw["capture"] == "failed"
+    assert "capture_error" in owned_raw
+    err = body["capture_error"]
+    assert isinstance(err, str) and err
+    assert "no master-mix audio arrived within" in err
+    assert "open /performance page" in err
+    assert body["capture_error"] == owned_raw["capture_error"]
+
+
+@pytest.mark.requirement("SETREC-12620")
+def test_recorder_start_failure_before_session_row_returns_typed_error(
+    recorder_client,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """[if] start fails before a session row [then] 503 typed error, [else stop]."""
+    client, service = recorder_client
+    session_id = "2026-11-11T09-00-00"
+
+    def _boom(**_kwargs: object) -> record_mod.Recorder:
+        raise RuntimeError("startup before session row")
+
+    monkeypatch.setattr(record_mod, "start", _boom)
+
+    response = client.post(
+        "/api/sets/recorder/start",
+        json={"session_id": session_id, "source": "external", "ffmpeg_device_idx": 0, "sources": []},
+    )
+
+    assert response.status_code == 503
+    assert "startup before session row" in response.json()["detail"]
+    assert client.get("/api/sets/recorder").json()["active"] is False
+    assert SetsState(db_path=service.db_path).get_session(session_id) is None
+    assert not (service.sets_root / session_id / "recorder.pid").exists()
+
+
+@pytest.mark.requirement("SETREC-12620")
+def test_recorder_start_failure_after_session_row_finalizes(
+    recorder_client,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """[if] start fails after a session row [then] 503 and settled session, [else stop]."""
+    client, service = recorder_client
+    session_id = "2026-11-11T09-10-00"
+
+    def _write_pid_then_fail(_session_dir: Path) -> Path:
+        raise RuntimeError("startup after session row")
+
+    monkeypatch.setattr(record_mod, "_write_pid", _write_pid_then_fail)
+
+    response = client.post(
+        "/api/sets/recorder/start",
+        json={"session_id": session_id, "source": "external", "ffmpeg_device_idx": 0, "sources": []},
+    )
+
+    assert response.status_code == 503
+    assert "startup after session row" in response.json()["detail"]
+    assert client.get("/api/sets/recorder").json()["active"] is False
+    session_dir = service.sets_root / session_id
+    assert not (session_dir / "recorder.pid").exists()
+    assert (session_dir / "manifest.json").exists()
+    actions = [
+        json.loads(line)["action"] for line in (session_dir / "timeline.jsonl").read_text(encoding="utf-8").splitlines()
+    ]
+    assert "session_end" in actions
+
+
+@pytest.mark.requirement("SETREC-12620")
+def test_recorder_start_cleanup_failure_returns_typed_error(
+    recorder_client,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """[if] start cleanup fails [then] 503 typed error, [else stop]."""
+    client, _service = recorder_client
+    session_id = "2026-11-11T09-20-00"
+
+    def _write_pid_then_fail(_session_dir: Path) -> Path:
+        raise RuntimeError("startup needs cleanup")
+
+    def _finalize_boom(*_args: object, **_kwargs: object) -> None:
+        raise RuntimeError("finalize blew up")
+
+    monkeypatch.setattr(record_mod, "_write_pid", _write_pid_then_fail)
+    monkeypatch.setattr(record_mod, "finalize", _finalize_boom)
+
+    response = client.post(
+        "/api/sets/recorder/start",
+        json={"session_id": session_id, "source": "external", "ffmpeg_device_idx": 0, "sources": []},
+    )
+
+    assert response.status_code == 503
+    detail = response.json()["detail"]
+    assert "startup needs cleanup" in detail
+    assert "finalize blew up" in detail
+    status = client.get("/api/sets/recorder").json()
+    assert status["owned"] is False
+    retry = client.post(
+        "/api/sets/recorder/start",
+        json={"session_id": session_id + "-retry", "source": "external", "ffmpeg_device_idx": 0, "sources": []},
+    )
+    assert retry.status_code != 500
 
 
 def test_record_status_still_takes_its_public_state_keyword():

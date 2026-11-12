@@ -14,6 +14,7 @@
 	 * verbatim under the row.
 	 */
 	import { jobsRefusal } from '$lib/api/capabilities.svelte';
+	import { jobDisplayLabel } from '$lib/rb/job-labels';
 	import {
 		cancelRefusal,
 		canCancel,
@@ -124,8 +125,12 @@
 				{#each jobsStore.jobs as job (job.id)}
 					<li class="jobs-row">
 						<div class="jobs-line">
-							<span class="jobs-kind" title={`job kind: ${job.kind} (id ${job.id})`}>
-								{job.kind}
+							<span
+								class="jobs-kind"
+								title={`job kind: ${job.kind} (id ${job.id})`}
+								data-agent-kind={job.kind}
+							>
+								{jobDisplayLabel(job)}
 							</span>
 							<span class={`jobs-chip st-${job.status}`} title={statusTitle(job)}>
 								{job.status}
@@ -142,7 +147,7 @@
 								aria-valuenow={progressPct(job.progress)}
 								aria-valuemin="0"
 								aria-valuemax="100"
-								aria-label={`${job.kind} progress`}
+								aria-label={`${jobDisplayLabel(job)} progress`}
 								title={progressTitle(job)}
 							>
 								<div class="jobs-fill" style={`width: ${progressPct(job.progress)}%`}></div>
@@ -162,7 +167,8 @@
 							<button
 								type="button"
 								disabled={!canCancel(job) || jobsStore.busyId === job.id}
-								title={cancelRefusal(job) ?? 'Stop this job: the engine kills the worker group and confirms it is dead'}
+								title={cancelRefusal(job) ??
+									'Stop this job: the engine kills the worker group and confirms it is dead'}
 								onclick={() => jobsStore.cancel(job.id)}
 							>
 								cancel

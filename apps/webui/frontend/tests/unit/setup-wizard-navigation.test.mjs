@@ -73,6 +73,20 @@ test('Back is allowed on progress when no job was ever started', () => {
 	assert.equal(mod.backRefusal('progress', ctx({ job: null })), null);
 });
 
+test('humanBackRefusal maps a running import without embedding wire job status', () => {
+	const gate = ctx({ job: { id: 'j1', status: 'running', progress: 0.4 } });
+	const raw = mod.backRefusal('progress', gate);
+	assert.match(raw, /\(running\)/);
+	const human = mod.humanBackRefusal('progress', gate);
+	assert.equal(human, 'The import is still running. You cannot go back until it finishes.');
+	assert.doesNotMatch(human, /\(running\)/);
+});
+
+test('humanBackRefusal maps the first-step gate for operators', () => {
+	const human = mod.humanBackRefusal('welcome', ctx());
+	assert.equal(human, 'This is the first step.');
+});
+
 // ------------------------------------------------- source-aware sequence
 
 test('the folder branch skips the rekordbox confirm step, forwards and back', () => {

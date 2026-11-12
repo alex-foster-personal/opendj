@@ -56,6 +56,9 @@ WORKING_COPY_NAME: str = REKORDBOX_WORKING_DB.name  # master.db.copy
 PLAIN_COPY_NAME: str = REKORDBOX_PLAIN_DB.name  # master.plain.db
 STATE_DB_NAME: str = "state.db"
 
+#: Same slack ``ingest-rb`` uses before calling a working copy stale vs live.
+PLAIN_COPY_STALE_SLACK_S: float = 60.0
+
 #: A plain SQLite file starts with this. An encrypted (SQLCipher) one does
 #: not, because its first page is ciphertext -- which is exactly how the
 #: importer tells "already decrypted" from "still needs the key" without
@@ -192,7 +195,10 @@ def detect_rekordbox(data_dir: Path) -> RekordboxDetection:
     key_available, key_detail = key_status()
 
     source_path, source_encrypted = choose_import_source(
-        live_db=live_db, working_copy=working_copy, plain_copy=plain_copy
+        live_db=live_db,
+        working_copy=working_copy,
+        plain_copy=plain_copy,
+        prefer_fresh=True,
     )
 
     blockers: list[str] = []
@@ -220,20 +226,41 @@ def detect_rekordbox(data_dir: Path) -> RekordboxDetection:
     )
 
 
+def copy_stale_vs_live(*, copy: FileProbe, live_db: FileProbe) -> bool:
+    """True when ``copy`` exists, ``live_db`` exists, and live is newer by slack."""
+    if not copy.exists or not live_db.exists:
+        return False
+    try:
+        live_mtime = Path(live_db.path).stat().st_mtime
+        copy_mtime = Path(copy.path).stat().st_mtime
+    except OSError:
+        return False
+    return live_mtime - copy_mtime > PLAIN_COPY_STALE_SLACK_S
+
+
 def choose_import_source(
-    *, live_db: FileProbe, working_copy: FileProbe, plain_copy: FileProbe
+    *,
+    live_db: FileProbe,
+    working_copy: FileProbe,
+    plain_copy: FileProbe,
+    prefer_fresh: bool = False,
 ) -> tuple[Path | None, bool | None]:
     """Pick the file the import would read, and say whether it is encrypted.
 
     Order is cheapest-first: an already-decrypted copy needs no key, a
     working copy needs no touch of the live database, and the live database
     is the last resort because using it means taking a fresh snapshot.
+    When ``prefer_fresh`` is set, copies older than the live rekordbox
+    database are skipped so setup auto-import cannot reuse a stale decrypt.
     ``(None, None)`` means there is no rekordbox database anywhere.
     """
     for candidate in (plain_copy, working_copy):
-        if candidate.exists:
-            path = Path(candidate.path)
-            return path, not is_plain_sqlite(path)
+        if not candidate.exists:
+            continue
+        if prefer_fresh and copy_stale_vs_live(copy=candidate, live_db=live_db):
+            continue
+        path = Path(candidate.path)
+        return path, not is_plain_sqlite(path)
     if live_db.exists:
         # The live DB is never read here, so its encryption is asserted from
         # the header of the snapshot, not from this branch. rekordbox 6/7
@@ -311,6 +338,7 @@ __all__ = [
     "CODE_SHARE_MISSING",
     "GRANT_INSTRUCTIONS",
     "PLAIN_COPY_NAME",
+    "PLAIN_COPY_STALE_SLACK_S",
     "SQLITE_MAGIC",
     "WORKING_COPY_NAME",
     "AccessProbe",
@@ -318,6 +346,7 @@ __all__ = [
     "LibraryCounts",
     "RekordboxDetection",
     "choose_import_source",
+    "copy_stale_vs_live",
     "data_dir_from_env",
     "denied_roots",
     "detect_rekordbox",

@@ -1,14 +1,14 @@
 /**
- * Contract tests for library-jobs-store hydrate error handling (issue #6432).
+ * Contract tests for library-jobs-store hydrate error handling (issue #6432, #13530).
  */
 import assert from 'node:assert/strict';
-import { after, before, beforeEach, test } from 'node:test';
+import { after, afterEach, before, beforeEach, test } from 'node:test';
 
 import { loadTypeScriptModule } from './load-typescript.mjs';
 
 const API_BASE = 'https://library-jobs.example.test';
 
-let libraryJobsStore;
+let mod;
 let originalFetch;
 let originalConsoleError;
 let errors;
@@ -16,15 +16,15 @@ let errors;
 function jsonResponse(body, status = 200) {
 	return new Response(JSON.stringify(body), {
 		status,
+		statusText: status === 500 ? 'Internal Server Error' : 'OK',
 		headers: { 'content-type': 'application/json' }
 	});
 }
 
 before(async () => {
-	const mod = await loadTypeScriptModule('src/lib/rb/library-jobs-store.svelte.ts', {
+	mod = await loadTypeScriptModule('tests/unit/fixtures/library-jobs-store-entry.ts', {
 		viteApiBase: API_BASE
 	});
-	libraryJobsStore = mod.libraryJobsStore;
 	originalFetch = globalThis.fetch;
 	originalConsoleError = console.error;
 });
@@ -32,6 +32,10 @@ before(async () => {
 after(() => {
 	globalThis.fetch = originalFetch;
 	console.error = originalConsoleError;
+});
+
+afterEach(() => {
+	mod._resetPageGoingAwayForTests();
 });
 
 beforeEach(() => {
@@ -49,10 +53,16 @@ beforeEach(() => {
 	};
 });
 
-test('refresh resolves and logs when listLibraryJobs fails', async () => {
-	await libraryJobsStore.refresh();
+test('refresh resolves and logs when listLibraryJobs fails on a live page', async () => {
+	await mod.libraryJobsStore.refresh();
 	assert.ok(
 		errors.some((line) => line.includes('[library-jobs-store] hydrate failed')),
 		`expected hydrate failure log, got: ${JSON.stringify(errors)}`
 	);
+});
+
+test('refresh stays quiet on unload when listLibraryJobs fails', async () => {
+	mod.markPageGoingAwayForTests();
+	await mod.libraryJobsStore.refresh();
+	assert.equal(errors.length, 0, `unexpected console on unload: ${JSON.stringify(errors)}`);
 });

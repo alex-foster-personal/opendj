@@ -98,8 +98,7 @@ def fetch_telemetry_body(port: int, timeout_s: float = FETCH_TIMEOUT_S) -> dict[
             raw = response.read()
     except urllib.error.HTTPError as exc:
         raise MeasurementError(
-            f"port {port} answered HTTP {exc.code} for {TELEMETRY_PATH}; "
-            "not an Open DJ backend with process telemetry"
+            f"port {port} answered HTTP {exc.code} for {TELEMETRY_PATH}; not an Open DJ backend with process telemetry"
         ) from exc
     except (urllib.error.URLError, ConnectionError, TimeoutError, OSError) as exc:
         reason = getattr(exc, "reason", exc)
@@ -147,17 +146,14 @@ def discover_family(shell_pid: int | None) -> tuple[int, list[tuple[int, str]]]:
     try:
         native = DarwinProcessMetrics()
     except ProbeUnavailable as exc:
-        raise MeasurementError(
-            f"the ps-side family association is macOS-only ({exc})"
-        ) from exc
+        raise MeasurementError(f"the ps-side family association is macOS-only ({exc})") from exc
     rows = process_table()
     _reject_ambiguous_shell(rows, shell_pid)
     shell = find_shell(rows, shell_pid)
     if shell is None:
         suffix = "" if shell_pid is None else f" with pid {shell_pid}"
         raise MeasurementError(
-            f"no Open DJ desktop shell is running{suffix} "
-            "(looked for .../MacOS/opendj-desktop in ps)"
+            f"no Open DJ desktop shell is running{suffix} (looked for .../MacOS/opendj-desktop in ps)"
         )
     family, _assoc = associate_process_family(rows, shell, native)
     return shell.pid, [(row.pid, role) for row, role in family]
@@ -281,10 +277,7 @@ def _render_text(
         lines.append("family CPU: n/a (one sample; pass --samples 2 or more)")
     elif isinstance(cpu, (int, float)) and isinstance(sample_count, int) and sample_count > 1:
         intervals = sample_count - 1
-        lines.append(
-            f"family CPU: {cpu:.1f} percent of one core, "
-            f"mean of {intervals} intervals of {interval_s:.1f} s"
-        )
+        lines.append(f"family CPU: {cpu:.1f} percent of one core, mean of {intervals} intervals of {interval_s:.1f} s")
     return "\n".join(lines)
 
 
@@ -342,8 +335,7 @@ def main(argv: list[str] | None = None) -> int:
         report = build_report(monitor, family, samples)
     except AppNotRunning as exc:
         print(
-            f"[ERROR] Open DJ is not running: {exc}. "
-            "Start the app, or pass --port for a worktree backend.",
+            f"[ERROR] Open DJ is not running: {exc}. Start the app, or pass --port for a worktree backend.",
             file=sys.stderr,
         )
         return EXIT_UNMEASURABLE

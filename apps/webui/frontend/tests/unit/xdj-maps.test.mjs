@@ -7,6 +7,7 @@
 //   if AZ pads 5-8 leave channels 10-13 then broken
 //   if a CC button stops decoding as press/release then broken
 //   if RX3 binds a SHIFT wire the list does not give it then broken
+//   if LOOP IN (note 6) and LOOP OUT (note 7) share one action then broken
 
 import assert from 'node:assert/strict';
 import { after, before, test } from 'node:test';
@@ -74,6 +75,23 @@ test('shared deck and mixer wires match both lists', () => {
 		const pfl = one(map, (b) => b.action.type === 'channel_cue' && b.action.deck === 2);
 		assert.deepEqual(pfl.source, { ch: 5, kind: 'cc', id: 71 });
 		assert.equal(pfl.ccButton, true);
+	}
+});
+
+test('LOOP IN and LOOP OUT are distinct actions on both maps', () => {
+	for (const map of [maps.XDJ_RX3_MAP, maps.XDJ_AZ_MAP]) {
+		for (const deck of [1, 2, 3, 4]) {
+			const loopIn = one(
+				map,
+				(b) => b.source.kind === 'note' && b.source.id === 6 && b.source.ch === deck
+			);
+			assert.deepEqual(loopIn.action, { type: 'deck_loop_in', deck });
+			const loopOut = one(
+				map,
+				(b) => b.source.kind === 'note' && b.source.id === 7 && b.source.ch === deck
+			);
+			assert.deepEqual(loopOut.action, { type: 'deck_loop_out', deck });
+		}
 	}
 });
 

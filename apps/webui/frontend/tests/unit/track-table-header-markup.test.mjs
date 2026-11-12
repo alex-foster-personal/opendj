@@ -23,6 +23,10 @@
  *   neighbours and the convention has two members instead of three
  * - if it loses its column-tip explanation then the icon means nothing to a reader
  *   who has not seen the column before
+ * - if filename or location lose hide rules or col guards then hidden columns still
+ *   reserve width and misalign the table (#10030)
+ * - if Location loses Alt+click reveal or filePathCellsFor then path columns drift
+ *   from file-path-cells.ts (#10030)
  */
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
@@ -104,16 +108,31 @@ test('the quality column is compact QLT with a full custom explanation', async (
 	assert.equal(COL_DEFAULTS.quality, 34);
 	assert.match(
 		table,
-		/use:columnExplainer=\{\{ text: "QLT - audio quality as a letter: A safe on any system/
+		/use:columnExplainer=\{\{\s*text: ["']QLT - audio quality as a letter: A safe on any system/
 	);
 	assert.match(table, /<span class="th-label"><span>QLT<\/span><\/span>/);
 	// QLTSCAN-05: compact letter, and the full hover loads only for a graded row.
 	assert.match(
 		table,
-		/<QualityBadge\s+quality=\{row\.quality\}\s+trackKey=\{row\.stable_id\}\s+compact\s+showContainer=\{false\}\s+loadHover=\{row\.quality\?\.grade\?\.letter \? \(\) => audioQualityHover\(row\.stable_id, JSON\.stringify\(row\.quality\?\.grade\)\) : undefined\}\s+\/>/
+		/<QualityBadge\s+quality=\{row\.quality\}\s+trackKey=\{row\.stable_id\}\s+compact\s+showContainer=\{false\}\s+loadHover=\{row\.quality\?\.grade\?\.letter\s+\? \(\) => audioQualityHover\(row\.stable_id, JSON\.stringify\(row\.quality\?\.grade\)\)\s+: undefined\}\s+\/>/
 	);
 	assert.match(qualityBadge, /compact \? full\.slice\(0, 1\)\.toUpperCase\(\) : full/);
 	assert.match(qualityBadge, /class:compact/);
+});
+
+test('filename and location path cells dim broken rows (#10030)', () => {
+	assert.match(table, /class:broken=\{rowRendersUnavailable\(row\)\}/);
+	assert.match(table, /class="c-location c-path"/);
+});
+
+test('filename and location columns wire cells, Alt+click reveal, and hide rules (#10030)', () => {
+	assert.match(table, /filePathCellsFor\(row\)/);
+	assert.match(table, /e\.altKey.*revealTrack\(row\.stable_id\)/s);
+	assert.match(table, /table\.hide-filename :is\(th\.h-filename, td\.c-filename\)/);
+	assert.match(table, /table\.hide-location :is\(th\.h-location, td\.c-location\)/);
+	for (const col of ['filename', 'location']) {
+		assert.ok(table.includes(`{#if !hiddenCols.has('${col}')}<col`), `${col} col guard`);
+	}
 });
 
 test('QualityBadge twins share qualityHoverStateKey shape for hover state', () => {

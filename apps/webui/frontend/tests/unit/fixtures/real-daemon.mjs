@@ -11,7 +11,7 @@ import { spawn } from 'node:child_process';
 import { createInterface } from 'node:readline';
 import { fileURLToPath } from 'node:url';
 
-import { resolveExecutable } from './resolve-executable.mjs';
+import { fixtureServerLaunch } from '../../../scripts/fixture-server.mjs';
 import { stopFixtureServer } from './stop-fixture-server.mjs';
 
 const REPOSITORY_ROOT = fileURLToPath(new URL('../../../../../..', import.meta.url));
@@ -27,16 +27,12 @@ const SERVER_SCRIPT = fileURLToPath(new URL('./real_daemon_server.py', import.me
  * }>}
  */
 export async function startRealDaemon() {
-	// The isolated frontend gate needs the locked project plus its test extra.
-	const serverProcess = spawn(
-		resolveExecutable('uv'),
-		['run', '--locked', '--extra', 'dev', 'python', SERVER_SCRIPT],
-		{
-			cwd: REPOSITORY_ROOT,
-			env: { ...process.env, MDT_LIBRARY_MODE: 'local', PYTHONPATH: REPOSITORY_ROOT },
-			stdio: ['ignore', 'pipe', 'inherit']
-		}
-	);
+	const launch = fixtureServerLaunch({ repoRoot: REPOSITORY_ROOT, pythonTarget: SERVER_SCRIPT });
+	const serverProcess = spawn(launch.command, launch.args, {
+		cwd: launch.cwd,
+		env: launch.env,
+		stdio: ['ignore', 'pipe', 'inherit']
+	});
 	const { port, scratchDir, reanalyzeSid, beatgrid } = await new Promise((resolve, reject) => {
 		let announced = null;
 		let track = null;

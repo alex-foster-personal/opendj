@@ -271,3 +271,43 @@ export async function acknowledgeSoundcloudExport(sessionId: string): Promise<So
 		rethrowSetsError(error);
 	}
 }
+
+export type TracklistRow = components['schemas']['TracklistRowModel'];
+export type Tracklist = components['schemas']['TracklistResponse'];
+export type TracklistCopyFormat = 'txt' | 'md' | 'csv' | 'timestamped' | 'soundcloud';
+export type TracklistFileFormat = 'cue' | 'm3u8';
+
+export async function getTracklist(sessionId: string): Promise<Tracklist> {
+	try {
+		return await unwrap(
+			api.GET('/api/sets/{session_id}/tracklist', {
+				params: { path: { session_id: sessionId } }
+			})
+		);
+	} catch (error) {
+		rethrowSetsError(error);
+	}
+}
+
+export async function getTracklistText(
+	sessionId: string,
+	format: TracklistCopyFormat
+): Promise<string> {
+	try {
+		const query = format === 'soundcloud' ? ({ acknowledge_rights: true } as const) : ({} as const);
+		const { data } = await api.GET('/api/sets/{session_id}/tracklist.{fmt}', {
+			params: {
+				path: { session_id: sessionId, fmt: format },
+				query
+			},
+			parseAs: 'text'
+		});
+		return String(data ?? '');
+	} catch (error) {
+		rethrowSetsError(error);
+	}
+}
+
+export function tracklistExportUrl(sessionId: string, format: TracklistFileFormat): string {
+	return `${SETS_API_BASE}${SETS_PATH}/${encodeURIComponent(sessionId)}/tracklist.${format}`;
+}

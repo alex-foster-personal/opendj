@@ -1,7 +1,7 @@
 /**
  * Global Cmd+, (Ctrl+, on non-Mac) to open the settings overlay, plus Escape
- * to close it. Installed from root layout so it works on /performance and
- * the shell.
+ * to close it. Installed from root layout onMount so it works on /performance
+ * and the shell; the overlay body and allowlist stay behind import().
  *
  * review r3549 P2: this file has no bare-single-key branch, so it must NOT
  * gate itself on isTextEntryTarget the way the single-key shortcut modules

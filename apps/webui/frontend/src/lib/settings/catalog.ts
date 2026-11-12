@@ -1,9 +1,14 @@
 /**
  * Warp-style settings catalog: working prefs only (SETSTUB-01).
  * Search filters this list in-place (results ARE the settings).
+ *
+ * Lazy /admin and /settings routes must dynamic-import this module on mount
+ * or first overlay open, not static-import it from their route entries
+ * (issue #11467); the overlay chunk already loads it behind import().
  */
 import { APP_POSTURE_SETTING } from './app-posture-setting';
 import { GIG_HELPER_SETTING } from './gig-helper-setting';
+import { USB_AUTO_OPEN_PANEL_SETTING, USB_TOAST_ENABLED_SETTING } from './usb-detect-setting';
 import { AUDIO_ENGINE_SETTING } from './audio-engine-setting';
 import { PREVIEW_BEAT_SYNC_SETTING } from './preview-beat-sync-setting';
 import {
@@ -33,10 +38,12 @@ import { DEV_UI_SETTING, HIDE_TODO_SETTING } from './dev-ui-setting';
 import { VARIANT_REGISTRY } from './variant-setting';
 import { AUTO_ANALYZE_SETTINGS } from './analysis-settings';
 import { SHOW_SECTIONS_SETTING } from './show-sections-setting';
+import { SEGMENT_DISPLAY_SETTINGS } from './segment-display-settings';
 import { COMPACT_DECKS_SETTING } from './compact-decks-setting';
 import { DECK_NUMBER_ART_SETTING } from './deck-number-art-setting';
 import { SPEAKER_AUTO_RECOVER_SETTING } from './speaker-link-setting';
 import { TEMPO_LANE_SETTINGS } from './tempo-lane-setting';
+import { CUE_MARKER_SETTINGS } from './cue-marker-settings';
 import { VOCAL_LANE_SETTING } from './vocal-lane-setting';
 import {
 	PIN_VISIBLE_DAYS_DEFAULT,
@@ -49,9 +56,21 @@ import {
 	WHEEL_SENSITIVITY_MIN,
 	WHEEL_SENSITIVITY_STEP
 } from '$lib/rb/wheel-adjust';
+import {
+	LIBRARY_LIST_WHEEL_DEFAULTS,
+	LIBRARY_LIST_WHEEL_MAX,
+	LIBRARY_LIST_WHEEL_MIN,
+	LIBRARY_LIST_WHEEL_STEP
+} from '$lib/rb/library-wheel-scroll';
 
 export type { LinkSettingDef, SettingDef, SettingGroupId } from './catalog-types';
-import type { LinkSettingDef, SettingControl, SettingDef, SettingGroup, SettingGroupId } from './catalog-types';
+import type {
+	LinkSettingDef,
+	SettingControl,
+	SettingDef,
+	SettingGroup,
+	SettingGroupId
+} from './catalog-types';
 
 export const SETTING_GROUPS: readonly SettingGroup[] = [
 	{ id: 'appearance', label: 'Appearance' },
@@ -62,6 +81,7 @@ export const SETTING_GROUPS: readonly SettingGroup[] = [
 	{ id: 'confirmations', label: 'Confirmations' },
 	{ id: 'sync', label: 'Sync' },
 	{ id: 'cloudsync', label: 'CloudSync' },
+	{ id: 'keyboard', label: 'Keyboard' },
 	{ id: 'advanced', label: 'Advanced' }
 ];
 
@@ -84,6 +104,27 @@ export const SETTINGS_CATALOG: readonly SettingDef[] = [
 				{ value: 'light', label: 'Light' }
 			]
 		}
+	},
+	{
+		id: 'reduce_motion',
+		label: 'Reduce motion',
+		group: 'appearance',
+		keywords: [
+			'motion',
+			'animation',
+			'animations',
+			'reduce',
+			'reduced',
+			'transition',
+			'accessibility',
+			'a11y',
+			'vestibular'
+		],
+		title: 'Make transitions and animations instant',
+		detail:
+			'On: fades, slides and pulses become instant everywhere; progress bars and meters still move. Also on whenever your OS asks for reduced motion. Saved to ui-prefs. Default off.',
+		implemented: true,
+		control: { kind: 'boolean' }
 	},
 	{
 		id: 'pin_visible_days',
@@ -179,7 +220,8 @@ export const SETTINGS_CATALOG: readonly SettingDef[] = [
 		label: 'Compatible-only library filter',
 		group: 'library',
 		keywords: ['next', 'camelot', 'bpm', 'tab', 'suggest', 'compatible'],
-		title: 'Show only tracks compatible with the reference deck (master, else playing, else any loaded with key and BPM)',
+		title:
+			'Show only tracks compatible with the reference deck (master, else playing, else any loaded with key and BPM)',
 		detail:
 			"Shown as the 'compatible' checkbox in the library header. Filters the library list vs the master, else playing, else any loaded with key and BPM (the mode's key rule with any allowed key shift, the BPM window, half/double folds). Also toggled with Tab on /performance.",
 		implemented: true,
@@ -208,7 +250,8 @@ export const SETTINGS_CATALOG: readonly SettingDef[] = [
 		group: 'library',
 		keywords: ['compatible', 'mashup', 'relative', 'major', 'minor', 'key', 'acapella'],
 		title: 'Mashup mode also matches the relative major/minor (8A with 8B)',
-		detail: 'Off (default): Mashup needs the exact same key, because a mashup layers two parts for minutes rather than bars. On: the relative major/minor counts too.',
+		detail:
+			'Off (default): Mashup needs the exact same key, because a mashup layers two parts for minutes rather than bars. On: the relative major/minor counts too.',
 		implemented: true,
 		control: { kind: 'boolean' }
 	},
@@ -216,7 +259,17 @@ export const SETTINGS_CATALOG: readonly SettingDef[] = [
 		id: 'compatible_filter.key_shift_max',
 		label: 'Allowed key shift',
 		group: 'library',
-		keywords: ['compatible', 'key', 'shift', 'semitone', 'pitch', 'transpose', 'mashup', 'master tempo', 'key lock'],
+		keywords: [
+			'compatible',
+			'key',
+			'shift',
+			'semitone',
+			'pitch',
+			'transpose',
+			'mashup',
+			'master tempo',
+			'key lock'
+		],
 		title: 'How many semitones a track may be shifted to count as compatible',
 		detail:
 			'A track that matches only after a shift shows the shift as a superscript on its key (8A⁻¹) and loads shifted by it. 1 semitone is about a 6% stretch and sounds clean with key lock (Mashup: 3 of 24 keys match, Transition with the default rules: 11 of 24). 2 is about 12%: vocals start to color (Mashup: 5 of 24, Transition with the default rules: 17 of 24). 3 is about 19%: vocals sound chipmunky or muddy and transients smear (Mashup: 7 of 24). Why a semitone: (private path).',
@@ -312,7 +365,7 @@ export const SETTINGS_CATALOG: readonly SettingDef[] = [
 		keywords: ['needle', 'lock', 'overview', 'strip', 'seek', 'search', 'touch'],
 		title: 'A playing deck ignores clicks on its overview strip',
 		detail:
-			'On: a click on a playing deck\'s overview strip does not seek, and a short hint says why; a paused deck still seeks. The main scrolling waveform and keyboard jumps are not affected. Default off.',
+			"On: a click on a playing deck's overview strip does not seek, and a short hint says why; a paused deck still seeks. The main scrolling waveform and keyboard jumps are not affected. Default off.",
 		implemented: true,
 		control: { kind: 'boolean' }
 	},
@@ -339,6 +392,8 @@ export const SETTINGS_CATALOG: readonly SettingDef[] = [
 	},
 	APP_POSTURE_SETTING,
 	GIG_HELPER_SETTING,
+	USB_TOAST_ENABLED_SETTING,
+	USB_AUTO_OPEN_PANEL_SETTING,
 	{
 		id: 'auto_play_enabled',
 		label: 'AutoPlay',
@@ -399,10 +454,41 @@ export const SETTINGS_CATALOG: readonly SettingDef[] = [
 	AUTO_GAIN_TARGET_SETTING,
 	...AUTO_ANALYZE_SETTINGS,
 	SHOW_SECTIONS_SETTING,
+	...SEGMENT_DISPLAY_SETTINGS,
 	DECK_NUMBER_ART_SETTING,
 	COMPACT_DECKS_SETTING,
 	SPEAKER_AUTO_RECOVER_SETTING,
+	{
+		id: 'keyboard_preset',
+		label: 'Keyboard layout',
+		group: 'keyboard',
+		keywords: [
+			'keyboard',
+			'shortcut',
+			'shortcuts',
+			'hotkey',
+			'hotkeys',
+			'keymap',
+			'layout',
+			'preset',
+			'rekordbox',
+			'serato'
+		],
+		title: 'Performance keyboard layout preset',
+		detail:
+			'rekordbox and Serato presets bind deck 1 and deck 2 only; the library selector stays on the arrow keys. Overrides are kept when you switch. Also settable with PUT /api/v1/ui-prefs (keyboard.preset).',
+		implemented: true,
+		control: {
+			kind: 'enum',
+			options: [
+				{ value: 'opendj', label: 'Open DJ' },
+				{ value: 'rekordbox', label: 'rekordbox' },
+				{ value: 'serato', label: 'Serato DJ Pro' }
+			]
+		}
+	},
 	...TEMPO_LANE_SETTINGS,
+	...CUE_MARKER_SETTINGS,
 	VOCAL_LANE_SETTING,
 	{
 		id: 'show_stems',
@@ -429,7 +515,19 @@ export const SETTINGS_CATALOG: readonly SettingDef[] = [
 		id: 'waveform_design',
 		label: 'Waveform design',
 		group: 'performance',
-		keywords: ['waveform', 'design', 'auto', 'skin', 'tri-band', 'mono', 'line', 'blocks', 'rgb', 'wavestack', 'strip'],
+		keywords: [
+			'waveform',
+			'design',
+			'auto',
+			'skin',
+			'tri-band',
+			'mono',
+			'line',
+			'blocks',
+			'rgb',
+			'wavestack',
+			'strip'
+		],
 		title: 'Deck and library waveform paint style',
 		detail:
 			'Auto (default) follows the skin: Gothic paints blocks, Default and Light paint tri-band. Tri-band matches rekordbox-style stacked frequency bands. Mono draws a single envelope. Line draws a stroke outline. Blocks draws bars stacked in the band colors (shades of gray in the Mono palette). RGB draws one envelope colored by frequency balance: red lows, green mids, blue highs, as rekordbox RGB does. The preview shows the effective design for the current skin, painted by the deck renderer itself on a real 12 s track sample.',
@@ -477,7 +575,18 @@ export const SETTINGS_CATALOG: readonly SettingDef[] = [
 		id: 'mixer_stems',
 		label: 'Mixer stem dials (S)',
 		group: 'mixer',
-		keywords: ['stem', 'stems', 'mixer', 'vocal', 'inst', 'bass', 'drums', 'dial', 'knob', 's button'],
+		keywords: [
+			'stem',
+			'stems',
+			'mixer',
+			'vocal',
+			'inst',
+			'bass',
+			'drums',
+			'dial',
+			'knob',
+			's button'
+		],
 		title: 'Stem level dials beside the EQ on every channel with stems',
 		detail:
 			'The S button left of MORE/LESS. On: each channel whose track has stems shows VOCAL, INST and BASS dials beside HI, MID and LOW, and DRUMS beside FILTER, and the mixer widens 20%. Channels without stems are unchanged. Same as the mixer_stems performance command.',
@@ -485,10 +594,36 @@ export const SETTINGS_CATALOG: readonly SettingDef[] = [
 		control: { kind: 'boolean' }
 	},
 	{
+		id: 'mixer_placement',
+		label: 'Mixer placement',
+		group: 'performance',
+		keywords: ['mixer', 'placement', 'position', 'center', 'side', 'sides', 'mirror', 'mirrored', 'layout'],
+		title: 'Mixer in one center column, or split into mirrored halves beside the decks',
+		detail:
+			'Center keeps the mixer as one column between the decks. Sides splits it into mirrored halves, each beside its own deck. Same as the mixer_placement performance command.',
+		implemented: true,
+		control: {
+			kind: 'enum',
+			options: [
+				{ value: 'center', label: 'Center' },
+				{ value: 'sides', label: 'Sides (mirrored)' }
+			]
+		}
+	},
+	{
 		id: 'feature_icon_single_click',
 		label: 'Feature icons: single click',
 		group: 'performance',
-		keywords: ['icon', 'cluster', 'top bar', 'toggle', 'feature', 'component', 'single click', 'row'],
+		keywords: [
+			'icon',
+			'cluster',
+			'top bar',
+			'toggle',
+			'feature',
+			'component',
+			'single click',
+			'row'
+		],
 		title: 'Click each top-bar feature icon on its own',
 		detail:
 			'The performance top-bar icon strip toggles components on and off. By default the strip is one button: click it and pick components from the list. Core icons stay on the first row of the top bar. More components wrap onto a second row, then a third. Turn this on when each icon should toggle on a single click instead. Saved in this browser only.',
@@ -534,7 +669,8 @@ export const SETTINGS_CATALOG: readonly SettingDef[] = [
 		group: 'library',
 		keywords: ['playlist', 'tree', 'column', 'browser', 'library', 'sidebar'],
 		title: 'Playlist sidebar tree vs column browser',
-		detail: 'Tree shows the playlist list; column browser shows genre/artist/album columns. Persisted across sessions.',
+		detail:
+			'Tree shows the playlist list; column browser shows genre/artist/album columns. Persisted across sessions.',
 		implemented: true,
 		control: {
 			kind: 'enum',
@@ -569,8 +705,18 @@ export const SETTINGS_CATALOG: readonly SettingDef[] = [
 		label: 'Wheel sensitivity: mouse',
 		group: 'performance',
 		keywords: [
-			'wheel', 'scroll', 'scroll wheel', 'mouse', 'sensitivity', 'notch',
-			'detent', 'dial', 'knob', 'fader', 'crossfader', 'pitch'
+			'wheel',
+			'scroll',
+			'scroll wheel',
+			'mouse',
+			'sensitivity',
+			'notch',
+			'detent',
+			'dial',
+			'knob',
+			'fader',
+			'crossfader',
+			'pitch'
 		],
 		title: 'How far one notched mouse-wheel detent moves a dial or fader (1x = the declared step)',
 		detail:
@@ -583,23 +729,65 @@ export const SETTINGS_CATALOG: readonly SettingDef[] = [
 		label: 'Wheel sensitivity: trackpad',
 		group: 'performance',
 		keywords: [
-			'wheel', 'scroll', 'trackpad', 'touchpad', 'two finger', 'macbook',
-			'sensitivity', 'hypersensitive', 'dial', 'knob', 'fader'
+			'wheel',
+			'scroll',
+			'trackpad',
+			'touchpad',
+			'two finger',
+			'macbook',
+			'sensitivity',
+			'hypersensitive',
+			'dial',
+			'knob',
+			'fader'
 		],
-		title: 'Multiplier for a trackpad two-finger scroll, which emits many events where a mouse emits one detent',
+		title:
+			'Multiplier for a trackpad two-finger scroll, which emits many events where a mouse emits one detent',
 		detail:
 			'A macOS trackpad sends a dense burst of wheel events for a single finger movement, so it is scaled separately from a mouse: 1x here means "as sensitive as the mouse". The shipped 1/3 value is an initial starting estimate, derived from WHEEL_TRACKPAD_EVENTS_PER_DETENT in lib/rb/wheel-adjust.ts; tune it for your hardware. Same controls and same persistence as the mouse factor.',
 		implemented: true,
 		control: _wheelSensitivityControl(WHEEL_SENSITIVITY.trackpad)
 	},
 	{
+		id: 'wheel_sensitivity.library_mouse',
+		label: 'Library scroll: mouse',
+		group: 'performance',
+		keywords: ['library', 'track list', 'wheel', 'scroll', 'mouse', 'sensitivity', 'title', 'rows'],
+		title: 'How far one mouse-wheel detent scrolls the library track list (1 = browser default)',
+		detail:
+			'Applied when the wheel moves over the track list. 1 leaves native scrolling; lower values move fewer rows per notch. Persisted locally and through GET/PUT /api/v1/ui-prefs.',
+		implemented: true,
+		control: _libraryListWheelControl(LIBRARY_LIST_WHEEL_DEFAULTS.mouse)
+	},
+	{
+		id: 'wheel_sensitivity.library_trackpad',
+		label: 'Library scroll: trackpad',
+		group: 'performance',
+		keywords: ['library', 'track list', 'wheel', 'scroll', 'trackpad', 'touchpad', 'sensitivity'],
+		title: 'Trackpad scroll distance in the library track list',
+		detail:
+			'Separate from the mouse factor because trackpads emit many small wheel events per gesture. 1 is native browser scrolling.',
+		implemented: true,
+		control: _libraryListWheelControl(LIBRARY_LIST_WHEEL_DEFAULTS.trackpad)
+	},
+	{
 		id: 'drag_sensitivity.base',
 		label: 'Drag sensitivity',
 		group: 'performance',
 		keywords: [
-			'drag', 'click drag', 'sensitivity', 'mouse', 'knob', 'dial', 'fader', 'eq', 'group', 'gain'
+			'drag',
+			'click drag',
+			'sensitivity',
+			'mouse',
+			'knob',
+			'dial',
+			'fader',
+			'eq',
+			'group',
+			'gain'
 		],
-		title: 'How far a click-drag moves a mixer knob or channel fader, as a multiple of the original scale',
+		title:
+			'How far a click-drag moves a mixer knob or channel fader, as a multiple of the original scale',
 		detail:
 			'Applies to every knob and channel fader drag, single or grouped; the crossfader keeps its direct pointer mapping. 0.70x is the default ("30% lower as base"). Changes apply at once, no reload. Try it on the test knobs and faders below: they use the same drag code, shift-select groups and the Opt flip, and are wired to nothing.',
 		implemented: true,
@@ -667,8 +855,20 @@ export const SETTINGS_CATALOG: readonly SettingDef[] = [
 		label: 'Fix broken track metadata',
 		group: 'library',
 		keywords: [
-			'title', 'artist', 'metadata', 'broken', 'fix', 'cleanup', 'junk', 'remix', 'tags',
-			'openrouter', 'api key', 'auto-apply', 'spend', 'cap'
+			'title',
+			'artist',
+			'metadata',
+			'broken',
+			'fix',
+			'cleanup',
+			'junk',
+			'remix',
+			'tags',
+			'openrouter',
+			'api key',
+			'auto-apply',
+			'spend',
+			'cap'
 		],
 		title: 'Open the Title fixes admin pane (/admin?tab=title-fix)',
 		detail:
@@ -742,7 +942,17 @@ export const SETTINGS_CATALOG: readonly SettingDef[] = [
 		id: 'lyrics_waveform_overlay',
 		label: 'Word-aligned waveform lyrics',
 		group: 'performance',
-		keywords: ['lyrics', 'waveform', 'overlay', 'deck', 'karaoke', 'lanes', 'alignment', 'words', 'zoom'],
+		keywords: [
+			'lyrics',
+			'waveform',
+			'overlay',
+			'deck',
+			'karaoke',
+			'lanes',
+			'alignment',
+			'words',
+			'zoom'
+		],
 		title: 'Words on the main waveforms, each at its sung time',
 		detail:
 			'Places each word on the deck waveform at its sung onset. Words spread over two rows, and a third row only when two rows would overlap. The default waveform zoom keeps that spacing on the row width you have. This switch is the global default.',
@@ -775,8 +985,20 @@ export const SETTINGS_CATALOG: readonly SettingDef[] = [
 		label: 'CloudSync: machines & asset policy',
 		group: 'cloudsync',
 		keywords: [
-			'cloudsync', 'cloud', 'sync', 'r2', 'stem', 'stems', 'policy',
-			'machine', 'pin', 'pinned', 'cache', 'cached', 'stream', 'excluded'
+			'cloudsync',
+			'cloud',
+			'sync',
+			'r2',
+			'stem',
+			'stems',
+			'policy',
+			'machine',
+			'pin',
+			'pinned',
+			'cache',
+			'cached',
+			'stream',
+			'excluded'
 		],
 		title: 'Open the CloudSync policy matrix (/cloudsync)',
 		detail:
@@ -849,6 +1071,17 @@ function _wheelSensitivityControl(defaultValue: number): SettingControl {
 		min: WHEEL_SENSITIVITY_MIN,
 		max: WHEEL_SENSITIVITY_MAX,
 		step: WHEEL_SENSITIVITY_STEP,
+		defaultValue,
+		unit: 'x'
+	};
+}
+
+function _libraryListWheelControl(defaultValue: number): SettingControl {
+	return {
+		kind: 'number',
+		min: LIBRARY_LIST_WHEEL_MIN,
+		max: LIBRARY_LIST_WHEEL_MAX,
+		step: LIBRARY_LIST_WHEEL_STEP,
 		defaultValue,
 		unit: 'x'
 	};

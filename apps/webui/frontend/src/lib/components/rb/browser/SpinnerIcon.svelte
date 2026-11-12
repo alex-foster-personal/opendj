@@ -30,4 +30,7 @@
 			animation: none;
 		}
 	}
+	:global(html[data-reduce-motion]) .spinner-icon {
+		animation: none;
+	}
 </style>

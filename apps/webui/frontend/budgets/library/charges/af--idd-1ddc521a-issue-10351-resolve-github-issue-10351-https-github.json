@@ -1,0 +1,9 @@
+{
+  "bytes": 6144,
+  "measured_main": 345598,
+  "measured_with_pr": 350800,
+  "sha": "de2c029618",
+  "date": "Tue 10 Nov 2026",
+  "reason": "PR #10351 (KEYB-11488) shared keyboard modules import from the library graph via prefs and browser-keyboard yield. Local build vs merge-base 3834d2d0ab, +5202 B gzip on library; ceiled to KiB.",
+  "payback": "none planned; resolver imports are shared with the library keyboard path"
+}

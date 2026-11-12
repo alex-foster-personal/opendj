@@ -44,7 +44,7 @@
 			aria-label="Stems separation progress"
 			title={title}
 		>
-			<span class="stems-fill" style={`width: ${pct}%`}></span>
+			<span class="stems-fill motion-essential" style={`width: ${pct}%`}></span>
 		</span>
 		<span class="stems-pct" title={title}>{pct}%</span>
 	</button>

@@ -17,7 +17,7 @@ from __future__ import annotations
 from typing import Any
 
 from apps.analysis_structure import dj_labels
-from apps.analysis_structure.dj_labels import label_sections
+from apps.analysis_structure.dj_labels import NO_ENERGY_CONTRAST, label_sections, own_fast_abstain_reason
 from apps.analysis_structure import pipeline
 from apps.analysis_structure.pipeline import build_sidecar, write_sidecar
 from apps.analysis_structure.serve import merge_own_phrases
@@ -113,7 +113,8 @@ def test_missing_envelopes_leave_every_section_unlabeled():
 def test_flat_energy_track_does_not_get_a_drop_everywhere():
     plan = [(32.0, ON, ON, -6.0, None)] * 6
     result = label_sections(_sections([p[0] for p in plan]), _envelopes(plan))
-    assert result["status"] == "unlabeled" and result["reason"] == "no_energy_contrast"
+    assert result["status"] == "unlabeled" and result["reason"] == NO_ENERGY_CONTRAST
+    assert own_fast_abstain_reason(result) == NO_ENERGY_CONTRAST
 
 
 def test_mastering_level_does_not_change_the_labels():
@@ -352,7 +353,7 @@ def test_a_silent_lead_in_and_fade_tail_do_not_make_a_flat_track_contrasty():
     plan = [(0.2, SILENT, SILENT, SILENT, None), *[(32.0, ON, ON, -6.0, None)] * 6]
     plan.append((6.0, SILENT, SILENT, SILENT, None))
     result = label_sections(_sections([p[0] for p in plan]), _envelopes(plan))
-    assert result["status"] == "unlabeled" and result["reason"] == "no_energy_contrast"
+    assert result["status"] == "unlabeled" and result["reason"] == NO_ENERGY_CONTRAST
     # Control: the same track with a real 16 s breakdown is labeled.
     plan.insert(4, (16.0, OFF, OFF, -20.0, None))
     result = label_sections(_sections([p[0] for p in plan]), _envelopes(plan))

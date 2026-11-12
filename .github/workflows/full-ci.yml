@@ -81,8 +81,23 @@ permissions:
   contents: read
 
 jobs:
+  # SHARDED (Thu 12 Nov 2026, fleet-af #1672 round 3): every scheduled run from
+  # Thu 29 Oct to Wed 11 Nov ended `cancelled`, and no external canceller was
+  # involved. GitHub's own annotation on each one reads "The job has exceeded the
+  # maximum execution time" (20m, then 45m), and nucbox's journal has no line for
+  # any of those run ids. One serial job over 37,192 collected tests reached 4
+  # percent in 39 minutes on run 42951883509, so no single-job timeout can hold the
+  # suite. It now runs as pytest-split slices, one runner each, balanced on the
+  # committed .test_durations; the `coverage` job below combines the shards' data
+  # files and owns the --cov-fail-under gate that a single slice cannot meet.
+  # tests/scripts/test_full_ci_shards.py pins the shard count in both places.
   test:
-    name: full pytest + coverage
+    name: full pytest + coverage (shard ${{ matrix.shard }} of ${{ strategy.job-total }})
+    strategy:
+      # One red or slow shard must not cancel the others.
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]
     env:
       # The job venv IS `.venv`, the path `uv run` treats as the project
       # environment. Tests spawn `uv run --with modal ...` (apps/stems/job.py)
@@ -105,12 +120,16 @@ jobs:
       MKL_NUM_THREADS: "1"
       NUMBA_NUM_THREADS: "1"
     # Runner is a repo-variable switch; see ci.yml's `test` job for the full
-    # rationale. Empty vars.CI_RUNS_ON_LINUX -> hosted ubuntu-latest.
-    runs-on: ${{ fromJSON(vars.CI_RUNS_ON_LINUX || '"ubuntu-latest"') }}
+    # rationale. Shards prefer vars.CI_RUNS_ON_FULL (the fast pytest/ci-fast
+    # seats) because the linux-light pool behind CI_RUNS_ON_LINUX includes
+    # slow hosts (2 to 5x) that time shards out; see fleet-af
+    # inventory/RUNNER-CLASSES.md. Both empty -> hosted ubuntu-latest.
+    runs-on: ${{ fromJSON(vars.CI_RUNS_ON_FULL || vars.CI_RUNS_ON_LINUX || '"ubuntu-latest"') }}
     # 45, not 20: the periodic row-1 run hit 20 on 7/7 nights (21-28 Sep
     # 2026, audit #4264 F5) and produced no result. Pinned by
-    # tests/quality/test_periodic_checks_window_failure_alarm.py.
-    timeout-minutes: 45
+    # tests/quality/test_periodic_checks_window_failure_alarm.py. Now per
+    # shard, 60: collection alone takes about 5 minutes of each slice.
+    timeout-minutes: 60
 
     steps:
       # Pre-checkout hygiene for the persistent self-hosted workspace (#1338).
@@ -318,17 +337,23 @@ jobs:
         # Pinned by tests/scripts/test_ci_jit_warmup.py.
         run: .venv/bin/python -m apps.analysis.jit_warmup --backend librosa --purge-if-stale
 
-      - name: Run full pytest with coverage
-        # coverage: apps/* only. --cov-report=xml for external tools.
-        # --cov-fail-under enforces a minimum coverage gate; tune as the
-        # suite grows. Keep this in sync with pyproject.toml [tool.coverage]
-        # if a project-level threshold is added there.
+      - name: Run full pytest with coverage (one pytest-split slice)
+        # coverage: apps/* only. Each shard writes its own data file and no
+        # report; the `coverage` job below combines them ([tool.coverage.paths]
+        # in pyproject.toml maps each runner's workspace root back to apps/)
+        # and owns --cov-fail-under, which a single slice cannot meet.
         #
-        # Deliberately SINGLE PROCESS: `-n auto` measured slower on the
+        # SINGLE PROCESS within a shard: `-n auto` measured slower on the
         # 4-vCPU runner (273-289s serial vs 295s xdist); see ci.yml.
+        # Parallelism comes from the shard matrix, one runner per shard.
         #
         # --collect-floor 3700 is the FULL-SUITE floor. Raise it, never
-        # lower it. (ci.yml's fast lane carries its own scoped floor.)
+        # lower it. (ci.yml's fast lane carries its own scoped floor.) It is
+        # asserted on the FULL collection before pytest-split deselects the
+        # other slices, so every shard still proves the whole suite collected.
+        #
+        # --timeout bounds one hung test below the shard timeout, so a hang
+        # reads as that test's failure, not a cancelled shard with no evidence.
         #
         # tests/quality/test_frontend_typing_gate.py and
         # tests/quality/test_frontend_typing_directives.py (split off it,
@@ -339,31 +364,168 @@ jobs:
         # tests/quality/test_frontend_unit_seam_gate.py (GUARD-8229, issue
         # #3658) is excluded for the same reason: its scanner imports
         # `typescript`, and it runs in that same `quality` step.
+        env:
+          COVERAGE_FILE: .coverage.shard-${{ matrix.shard }}
         run: |
           .venv/bin/pytest \
             --basetemp="${RUNNER_TEMP:?RUNNER_TEMP must be set}/pytest-basetemp-full-coverage" \
             --collect-floor 3700 \
+            --splits ${{ strategy.job-total }} --group ${{ matrix.shard }} \
+            --splitting-algorithm least_duration \
+            --durations-path .test_durations \
+            --timeout=1500 \
             --ignore=tests/quality/test_frontend_typing_gate.py \
             --ignore=tests/quality/test_frontend_typing_directives.py \
             --ignore=tests/quality/test_frontend_unit_seam_gate.py \
             --ignore=tests/scripts/test_ci_trunk_quarantine_nextest.py \
             --cov=apps --cov-branch \
-            --cov-report=term-missing \
-            --cov-report=html \
-            --cov-report=xml \
-            --cov-fail-under=60
+            --cov-report=
+
+      - name: Upload this shard's coverage data
+        if: always()
+        # Non-fatal: a byproduct upload must not red a job on a storage 403.
+        # The `coverage` job fails loud if any shard's file is missing.
+        continue-on-error: true
+        uses: ./.github/actions/r2-artifact
+        with:
+          mode: upload
+          name: coverage-data-shard-${{ matrix.shard }}
+          path: .coverage.shard-${{ matrix.shard }}
+          include-hidden-files: true
+          if-no-files-found: warn
 
       - name: Upload coverage-matrix.md artifact
         if: always()
-        # SHA-pinned to the v4 tag commit (resolved 2026-04-17).
+        # This shard's slice of the requirement matrix only (the reqs plugin
+        # writes one per session), so the name carries the shard.
         # Non-fatal: a byproduct upload must not red a job on a storage 403.
         continue-on-error: true
         uses: ./.github/actions/r2-artifact
         with:
           mode: upload
-          name: coverage-matrix
+          name: coverage-matrix-shard-${{ matrix.shard }}
           path: coverage-matrix.md
           if-no-files-found: warn
+
+  coverage:
+    name: combined coverage (all shards)
+    needs: test
+    # Combine whatever the shards wrote even when one went red, so a test
+    # failure does not also hide the coverage number.
+    if: ${{ !cancelled() }}
+    runs-on: ${{ fromJSON(vars.CI_RUNS_ON_LINUX || '"ubuntu-latest"') }}
+    timeout-minutes: 15
+    env:
+      # Must equal the length of the `test` matrix (tests/scripts/test_full_ci_shards.py).
+      FULL_CI_SHARDS: "12"
+    steps:
+      - name: Reclaim workspace ownership before checkout
+        run: |
+          set -euo pipefail
+          ws="${GITHUB_WORKSPACE:-}"
+          [ -d "$ws" ] || { echo "[hygiene] no workspace yet, nothing to reclaim"; exit 0; }
+          uid="$(id -u)"; gid="$(id -g)"; LIST_CAP=20
+          esc=${ws//\\/\\134}; esc=${esc// /\\040}; esc=${esc//$'\t'/\\011}; esc=${esc//$'\n'/\\012}
+          nested=$(MDT_WS_ESC="$esc/" awk '$5 != "" && index($5, ENVIRON["MDT_WS_ESC"]) == 1 {print $5}' /proc/self/mountinfo)
+          [ -z "$nested" ] || {
+            echo "::error::mount point(s) beneath the workspace, refusing to chown across them: $nested"
+            exit 1
+          }
+          # fleet-af #742: on the fleet's CI hosts sudo allows only this helper for workspace ownership.
+          # A runner without it (GitHub-hosted) has unrestricted sudo, so the same verbs run through find.
+          if [ -x /usr/local/sbin/ci-workspace-own ]; then
+            own() { sudo -n /usr/local/sbin/ci-workspace-own "$1" "$ws"; }
+          else
+            foreign() { sudo env TZ=UTC find "$ws" -xdev \( ! -user "$uid" -o ! -group "$gid" \) "$@"; }
+            entries() { tr -cd '\0' | wc -c; }
+            own() {
+              case "$1" in
+                count) sudo find "$ws" -xdev -print0 | entries ;;
+                foreign) foreign -print0 | entries ;;
+                list) foreign -printf '  %u:%g %TY-%Tm-%TdT%TH:%TM:%.2TSZ %p\n' ;;
+                reclaim) foreign -exec chown -h "$uid:$gid" {} + ;;
+                *) echo "::error::own: unknown verb $1"; return 1 ;;
+              esac
+            }
+          fi
+          scanned=$(own count)
+          reclaimed=$(own foreign)
+          offenders="$(mktemp)"
+          trap 'rm -f "$offenders"' EXIT
+          name_offenders() {
+            own list >"$offenders"
+            head -n "$LIST_CAP" "$offenders"
+            [ "$1" -le "$LIST_CAP" ] || echo "  ... and $(( $1 - LIST_CAP )) more"
+          }
+          [ "$reclaimed" -eq 0 ] || {
+            echo "[hygiene] entries not owned by uid $uid, listed before the repair:"
+            name_offenders "$reclaimed"
+          }
+          [ "$reclaimed" -eq 0 ] || own reclaim >/dev/null
+          remaining=$(own foreign)
+          echo "[hygiene] scanned=$scanned reclaimed=$reclaimed remaining=$remaining"
+          [ "$remaining" -eq 0 ] || {
+            echo "::error::$remaining of $scanned workspace entries are not owned by uid $uid; checkout would fail with EACCES"
+            name_offenders "$remaining"
+            exit 1
+          }
+          # A cancelled run can kill checkout's fetch mid ref-update and leave a .git/**/*.lock behind; every
+          # later checkout on this runner then dies in seconds ("reference already exists"), draining the queue
+          # as instant reds (nucbox-wsl-14, Fri 11 Sep 2026: 4 jobs in 5 min). This job has started no git
+          # process yet, so a lock with no live git inside the workspace is stale by construction.
+          if [ -d "$ws/.git" ]; then
+            live=$(for p in $(pgrep -x git || true); do if [[ $(readlink -f "/proc/$p/cwd" 2>/dev/null) == "$ws"* ]]; then echo "$p"; fi; done)
+            if [ -z "$live" ]; then
+              echo "[hygiene] stale git locks removed=$(find "$ws/.git" -xdev -name '*.lock' -type f -print -delete | wc -l)"
+            else
+              echo "[hygiene] git still running in the workspace (pids: $(echo $live)); leaving its locks"
+            fi
+          fi
+
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+          ref: ${{ inputs.ref }}
+          clean: false
+
+      - name: Remove untracked build debris, keeping dependency dirs
+        timeout-minutes: 2
+        run: scripts/ci_clean_untracked.sh
+
+      - name: Setup uv for the coverage tool
+        uses: astral-sh/setup-uv@d0cc045d04ccac9d8b7881df0226f9e82c39688e # v6
+        with:
+          version: "0.13.7"
+
+      - name: Stale-install guard - the interpreter imports only this checkout
+        timeout-minutes: 1
+        run: scripts/ci_runner_preflight.sh python
+
+      - name: Download every shard's coverage data
+        run: |
+          set -euo pipefail
+          rm -rf cov-data && mkdir -p cov-data
+          for shard in $(seq 1 "${FULL_CI_SHARDS:?}"); do
+            python3 scripts/r2_artifact.py download --name "coverage-data-shard-$shard" --dest cov-data \
+              || echo "::error title=full-ci coverage::shard $shard uploaded no coverage data"
+          done
+          found=$(find cov-data -maxdepth 1 -name '.coverage.shard-*' | wc -l)
+          echo "[coverage] shard data files: $found of $FULL_CI_SHARDS"
+          [ "$found" -eq "$FULL_CI_SHARDS" ] || {
+            echo "::error title=full-ci coverage::only $found of $FULL_CI_SHARDS shards uploaded coverage data; a combined number would understate coverage"
+            exit 1
+          }
+
+      # coverage pinned to the version pylock.ci.toml gives the shards, so the
+      # data files are read by the same coverage.py that wrote them.
+      - name: Combine shard coverage and gate at 60 percent
+        run: |
+          set -euo pipefail
+          cov() { uvx --from coverage==7.16.2 coverage "$@"; }
+          cov combine --keep cov-data
+          cov html
+          cov xml
+          cov report --fail-under=60
 
       - name: Upload htmlcov/ artifact
         if: always()

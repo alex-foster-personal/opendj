@@ -42,6 +42,9 @@
  *     native MIDI bridge; a missing k-th output leaves hasOutput false.
  *     [if] two inputs share a port name [then] each routes LEDs to its own
  *       matching output occurrence, not the first name match
+ *   ✔︎ Input listeners (subscribeMidiInput, #10251): every inbound message reaches each
+ *     subscriber before the map branches; a throwing listener is logged, never breaks dispatch.
+ *     [if] a practice drill subscriber misses a press because the binding throws [then] ⛔️
  */
 
 import type {
@@ -49,6 +52,7 @@ import type {
 	LearnLogEntry,
 	MidiAction,
 	MidiBinding,
+	MidiInputMessage,
 	MidiInputValue,
 	MidiSource
 } from '$lib/rb/midi/midi-types';
@@ -156,7 +160,7 @@ export interface RegisteredDeviceMap {
 const _deviceMaps: RegisteredDeviceMap[] = [];
 const _resolved: Map<string, _ResolvedDevice> = new Map();
 let _actionHandler:
-	| ((action: MidiAction, value: MidiInputValue, deviceId: string, pressT0Ms: number) => void)
+	| ((action: MidiAction, value: MidiInputValue, deviceId: string, pressT0Ms: number) => void | Promise<unknown>)
 	| null =
 	null;
 /** THE takeover rearm listener, registered by takeover-state.svelte.ts at
@@ -495,21 +499,7 @@ function _emit(
 		console.error('[midi] action arrived before registerActionHandler()', binding.action);
 		return;
 	}
-	try {
-		// `log.ts` is `performance.now()` taken at message RECEIPT, at the top of
-		// `_dispatch`, so it is already the controller press stamp on the epoch
-		// the perf ring uses. A hardware press is the P0 gesture the latency
-		// program exists for; without this it filed a plain schedule row and the
-		// primary control surface went unmeasured.
-		_activeControlId = _bindingKey(binding.shift === true, binding.source);
-		try {
-			_actionHandler(binding.action, value, device.id, log.ts);
-		} finally {
-			_activeControlId = undefined;
-		}
-	} catch (exc) {
-		// Loud fail-fast: the message still lands in the learn log, the error
-		// still propagates (no silent swallow).
+	const logHandlerError = (exc: unknown): void => {
 		_pushLearnLog({
 			...log,
 			mapped: false,
@@ -517,6 +507,39 @@ function _emit(
 			action: binding.action
 		});
 		console.error('[midi] action handler threw', binding.action, exc);
+	};
+	try {
+		// `log.ts` is `performance.now()` taken at message RECEIPT, at the top of
+		// `_dispatch`, so it is already the controller press stamp on the epoch
+		// the perf ring uses. A hardware press is the P0 gesture the latency
+		// program exists for; without this it filed a plain schedule row and the
+		// primary control surface went unmeasured.
+		_activeControlId = _bindingKey(binding.shift === true, binding.source);
+		let pending: unknown;
+		try {
+			pending = _actionHandler(binding.action, value, device.id, log.ts);
+		} finally {
+			_activeControlId = undefined;
+		}
+		if (
+			pending !== undefined &&
+			pending !== null &&
+			typeof (pending as { then?: unknown }).then === 'function'
+		) {
+			void (pending as Promise<unknown>).then(
+				() => {
+					_pushLearnLog({ ...log, mapped: true, note: binding.action.type, action: binding.action });
+				},
+				(exc: unknown) => {
+					logHandlerError(exc);
+				}
+			);
+			return;
+		}
+	} catch (exc) {
+		// Loud fail-fast: the message still lands in the learn log, the error
+		// still propagates (no silent swallow).
+		logHandlerError(exc);
 		throw exc;
 	}
 	_pushLearnLog({ ...log, mapped: true, note: binding.action.type, action: binding.action });
@@ -539,6 +562,7 @@ function _dispatch(device: _ResolvedDevice, ev: { data: Uint8Array | null }): vo
 		data2: d2,
 		decoded: src
 	};
+	_notifyInputListeners({ ...log, mapNameMatch: device.map?.nameMatch ?? null });
 	if (src === null) {
 		_pushLearnLog({ ...log, mapped: false, note: 'undecoded status family (out of P0 scope)' });
 		return;
@@ -722,7 +746,7 @@ export function resolveMapForPort(portName: string): DeviceMap | null {
 /** Register THE action handler (the glue layer). Exactly one; a second
  * registration is a wiring bug and throws. */
 export function registerActionHandler(
-	handler: (action: MidiAction, value: MidiInputValue, deviceId: string, pressT0Ms: number) => void
+	handler: (action: MidiAction, value: MidiInputValue, deviceId: string, pressT0Ms: number) => void | Promise<unknown>
 ): void {
 	if (_actionHandler !== null) {
 		throw new Error('registerActionHandler: a handler is already registered');
@@ -733,6 +757,26 @@ export function registerActionHandler(
 /** Register THE takeover rearm listener (takeover-state, at import). */
 export function registerTakeoverRearm(listener: (deviceId: string) => void): void {
 	_takeoverRearm = listener;
+}
+
+const _inputListeners = new Set<(message: MidiInputMessage) => void>();
+
+/** Subscribe to every inbound message (read-only, sends nothing); returns the unsubscribe. */
+export function subscribeMidiInput(listener: (message: MidiInputMessage) => void): () => void {
+	_inputListeners.add(listener);
+	return () => {
+		_inputListeners.delete(listener);
+	};
+}
+
+function _notifyInputListeners(message: MidiInputMessage): void {
+	for (const listener of _inputListeners) {
+		try {
+			listener(message);
+		} catch (exc) {
+			console.error('[midi] input listener failed', exc);
+		}
+	}
 }
 
 /** Register THE learn tap (midi-ui-state's learn arm); null detaches it. */
@@ -987,6 +1031,7 @@ export function _resetMidiForTests(): void {
 		_ledTimer = null;
 	}
 	_actionHandler = null;
+	_inputListeners.clear();
 	_nativeUnlisten?.();
 	_nativeUnlisten = null;
 	if (_nativePollTimer !== null) {

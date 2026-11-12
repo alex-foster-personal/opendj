@@ -21,13 +21,17 @@ from scripts.build_engine_payload import (
 REPO_ROOT = Path(__file__).resolve().parents[2]
 APPS_SRC = REPO_ROOT / "apps"
 
-#: The ``apps`` packages the CLI reaches while starting up. A real payload
-#: carries the whole tree (``build_engine_payload.APP_SOURCE_ROOTS``), so this
-#: is the reachable slice of it, not a different contract: the CLI package,
-#: the engine package ``apps.opendj_cli.origin`` re-exports through (issue
-#: #2942), and ``shared``, which has owned the lock-file reader itself
-#: (``apps.shared.engine_origin``) since PR #3831.
-CLI_PAYLOAD_PACKAGES: tuple[str, ...] = ("opendj_cli", "engine_core", "shared")
+#: Maintained snapshot of the CLI's module-level import closure at subprocess
+#: start. A real payload carries the whole tree (``build_engine_payload.APP_SOURCE_ROOTS``).
+#: New module-level imports under ``apps/opendj_cli/**`` require updating this tuple.
+CLI_PAYLOAD_PACKAGES: tuple[str, ...] = (
+    "opendj_cli",
+    "engine_core",
+    "shared",
+    "webui",
+    "sets",
+    "stream",
+)
 
 #: Denies the payload run the repo checkout, the way a real runtime does.
 #:
@@ -89,7 +93,7 @@ def _minimal_payload_for_cli_launcher(tmp_path: Path) -> Path:
         shutil.copytree(
             APPS_SRC / package,
             staged_apps / package,
-            ignore=shutil.ignore_patterns("__pycache__"),
+            ignore=shutil.ignore_patterns("__pycache__", "frontend", "node_modules"),
         )
     write_launchers(payload)
     return payload
@@ -158,3 +162,13 @@ def test_bin_opendj_cannot_borrow_a_missing_package_from_the_repo(
     result = _run_cli_launcher(root, tmp_path, "--list-verbs")
     assert result.returncode != 0
     assert "No module named 'apps.engine_core'" in result.stderr
+
+
+@pytest.mark.requirement("AGENT-05")
+def test_bin_opendj_fails_when_entrypoint_package_missing(tmp_path: Path) -> None:
+    """[if] the payload lacks apps.opendj_cli [then] bin/opendj fails naming it, [else stop]."""
+    root = _minimal_payload_for_cli_launcher(tmp_path)
+    shutil.rmtree(root / "app" / "apps" / "opendj_cli")
+    result = _run_cli_launcher(root, tmp_path, "--list-verbs")
+    assert result.returncode != 0
+    assert "apps.opendj_cli" in result.stderr

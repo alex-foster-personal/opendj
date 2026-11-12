@@ -70,6 +70,7 @@ test('setMasterMuted PUTs master_muted to /api/v1/ui-prefs', async () => {
 function hydratorArgs() {
 	const uiPrefs = {
 		confirm: {},
+		midi_setup_dismissed_ports: [],
 		theme: 'dark',
 		hide_todo_settings: false,
 		auto_sync: { rekordbox: false, djay: false, open_dj: false },

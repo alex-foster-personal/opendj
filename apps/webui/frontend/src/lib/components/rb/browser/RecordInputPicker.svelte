@@ -29,13 +29,16 @@
 	let {
 		onstarted,
 		oncancel,
-		notify
+		notify,
+		variant = 'modal'
 	}: {
 		/** Called with the live status once recording has started. */
 		onstarted: (status: RecorderStatus) => void;
 		oncancel: () => void;
 		/** The rail's toast sink, passed in so this lazy chunk adds no store importer. */
 		notify: (message: string, level: 'info' | 'error') => void;
+		/** modal: full-screen backdrop (browser rail). popover: compact top-bar panel. */
+		variant?: 'modal' | 'popover';
 	} = $props();
 
 	const masterUnavailable = masterMixUnavailableReason();
@@ -139,6 +142,7 @@
 	{rememberError}
 	{masterUnavailable}
 	{recordingsDir}
+	{variant}
 	onswitchmode={switchMode}
 	oninstall={() => void installLoopback()}
 	onstart={() => void start()}

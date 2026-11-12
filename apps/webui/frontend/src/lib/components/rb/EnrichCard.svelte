@@ -19,7 +19,7 @@
 -->
 <script lang="ts">
 	import { onMount } from 'svelte';
-	import { api, unwrap } from '$lib/api/client';
+	import { api, unwrap } from '$lib/api/rb-http';
 	import { bootScheduler } from '$lib/rb/boot-scheduler';
 	import StemsPrompt from '$lib/components/rb/StemsPrompt.svelte';
 	import EnrichCardView from '$lib/components/rb/EnrichCardView.svelte';

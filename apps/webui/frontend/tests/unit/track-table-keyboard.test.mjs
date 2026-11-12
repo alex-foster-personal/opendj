@@ -311,10 +311,10 @@ test('ARIA: grid with multiselect, full rowcount, per-row index/selected, roving
 	assert.match(table, /role="grid"/);
 	assert.match(table, /aria-multiselectable="true"/);
 	assert.match(table, /aria-rowcount=\{slotCount \+ 1\}/);
-	assert.match(
-		src,
-		/<thead bind:clientHeight=\{theadHeightPx\}(?: oncontextmenu=\{[^}]*\})?>\s*<tr aria-rowindex=\{1\}>/
-	);
+	const thead = src.match(/<thead[\s\S]*?<\/thead>/)[0];
+	assert.match(thead, /bind:clientHeight=\{theadHeightPx\}/);
+	assert.match(thead, /oncontextmenu=/);
+	assert.match(thead, /<tr aria-rowindex=\{1\}>/);
 	const row = src.match(/data-testid="track-row"[\s\S]*?draggable="true"/)[0];
 	assert.match(row, /data-row-index=\{rowIndex\}/);
 	assert.match(row, /aria-rowindex=\{rowSlot \+ 2\}/);

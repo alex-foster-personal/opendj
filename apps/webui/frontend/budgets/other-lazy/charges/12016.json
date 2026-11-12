@@ -1,0 +1,9 @@
+{
+  "bytes": 1024,
+  "measured_main": 514121,
+  "measured_with_pr": 514425,
+  "sha": "428272b149",
+  "date": "Wed 11 Nov 2026",
+  "reason": "Regenerated OpenAPI client types for POST /api/v1/copilot/find-similar-tracks (generic mode); types land in shared lazy chunks.",
+  "payback": "none planned; contract surface stays in api-types until a narrower typed client splits out"
+}

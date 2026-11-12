@@ -235,7 +235,9 @@ test('no status renders as an empty badge', () => {
 		'endpoint-refused',
 		'manifest-malformed',
 		'platform-unsupported',
-		'identity-unavailable'
+		'identity-unavailable',
+		'shell-broker-unavailable',
+		'shell-broker-invalid'
 	]) {
 		const value = { ...ANSWERED_UP_TO_DATE, status };
 		const state = mod.isAnswered(status)

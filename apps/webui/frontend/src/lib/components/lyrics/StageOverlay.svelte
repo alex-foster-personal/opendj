@@ -394,7 +394,7 @@
 				{:else if audioOk === false}
 					<p class="stage-msg small">
 						Audio for this track could not be resolved on disk, so the stage cannot play or
-						follow it (library relink problem - see docs/library-availability.md). The lines
+						follow it (library relink problem - see (private path)). The lines
 						above are shown at position 0:00 and will not move.
 					</p>
 				{:else}
@@ -591,4 +591,19 @@
 			opacity: 1;
 		}
 	}
+
+	/* A11Y-11811: reduced motion (OS or Appearance); mirrors app.css. */
+	@media (prefers-reduced-motion: reduce) {
+		:where(*) {
+			animation-duration: 0.01ms;
+			animation-iteration-count: 1;
+			transition-duration: 0.01ms;
+		}
+	}
+	:global(html[data-reduce-motion]) :where(*) {
+		animation-duration: 0.01ms;
+		animation-iteration-count: 1;
+		transition-duration: 0.01ms;
+	}
+
 </style>

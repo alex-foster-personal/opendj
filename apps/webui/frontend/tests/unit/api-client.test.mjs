@@ -308,3 +308,27 @@ test('[if] domain HTTP entry modules are missing exports [then] fail, [else stop
 	}
 	assert.equal(typeof clientModule.api.GET, 'function');
 });
+
+// Issue #11212 acceptance (retarget rb / rb-component importers off client.ts)
+
+test('[if] rb or rb-component still imports api/client [then] fail, [else stop].', () => {
+	const offenders = [];
+	for (const rel of ['lib/rb', 'lib/components/rb']) {
+		for (const file of walkSourceFiles(join(FRONTEND_SRC, rel))) {
+			const src = readFileSync(file, 'utf8');
+			if (CLIENT_IMPORT.test(src)) offenders.push(file);
+		}
+	}
+	assert.deepEqual(offenders, []);
+});
+
+test('[if] client scan misses alias or relative ../api/client [then] fail, [else stop].', () => {
+	assert.ok(CLIENT_IMPORT.test("import { api } from '$lib/api/client';"));
+	assert.ok(CLIENT_IMPORT.test('import { api } from "../api/client";'));
+});
+
+test('[if] rb-http.ts is not the http-instance singleton [then] fail, [else stop].', () => {
+	const src = readFrontend('lib/api/rb-http.ts');
+	assert.doesNotMatch(src, /createFetchClient/);
+	assert.match(src, /export \{ api \} from '\.\/http-instance'/);
+});

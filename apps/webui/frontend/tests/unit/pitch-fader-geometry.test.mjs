@@ -41,11 +41,7 @@ describe('pitch fader geometry', () => {
 		const { thumbOffsetPx, THUMB_H } = geo;
 		for (const trackH of [64, 96, 120, 200]) {
 			const centred = (trackH - THUMB_H) / 2;
-			assert.equal(
-				thumbOffsetPx(0.5, trackH),
-				centred,
-				`0% is off-centre on a ${trackH}px track`
-			);
+			assert.equal(thumbOffsetPx(0.5, trackH), centred, `0% is off-centre on a ${trackH}px track`);
 		}
 	});
 
@@ -68,6 +64,42 @@ describe('pitch fader geometry', () => {
 				);
 			}
 		}
+	});
+
+	// Issue #11465 (F21): 64px min-height is the CSS floor; 0.625 is +25% at WIDE.
+	it('a 0.625 thumb on a 64px track round-trips to 0.625 not 17/26', () => {
+		const { thumbOffsetPx, valueFromPointer, THUMB_H } = geo;
+		const trackH = 64;
+		const value = 0.625;
+		const back = valueFromPointer(thumbOffsetPx(value, trackH) + THUMB_H / 2, trackH);
+		assert.ok(Math.abs(back - value) < 1e-9, `round-trip gave ${back}`);
+		assert.notEqual(back, 17 / 26, 'stale full-height aim overshoots to 17/26');
+	});
+
+	it('thumbOffsetPx and valueFromPointer agree after THUMB_H on a 64px track', () => {
+		const { thumbOffsetPx, valueFromPointer, THUMB_H } = geo;
+		const trackH = 64;
+		const value = 0.625;
+		const drawnTop = thumbOffsetPx(value, trackH);
+		const fromThumbCentre = valueFromPointer(drawnTop + THUMB_H / 2, trackH);
+		assert.equal(fromThumbCentre, value);
+	});
+
+	it('stale full-height pointer aim at 0.625 overshoots to ratio 1.307692', () => {
+		const { valueFromPointer } = geo;
+		const { pitchRatioFromFaderValue } = mapping;
+		const trackH = 64;
+		const staleOffset = (1 - 0.625) * trackH;
+		const staleValue = valueFromPointer(staleOffset, trackH);
+		assert.ok(Math.abs(staleValue - 17 / 26) < 1e-9, `stale value is ${staleValue}`);
+		const ratio = pitchRatioFromFaderValue(staleValue, 100);
+		assert.ok(Math.abs(ratio - 1.3076923076923077) < 1e-6);
+		assert.notEqual(ratio, 1.25);
+	});
+
+	it('0.625 fader value at range 100 is tempo ratio 1.25', () => {
+		const { pitchRatioFromFaderValue } = mapping;
+		assert.ok(Math.abs(pitchRatioFromFaderValue(0.625, 100) - 1.25) < 1e-9);
 	});
 
 	it('clamps a pointer dragged past either end', () => {
@@ -126,7 +158,12 @@ test('out-of-travel fader values clamp to the range endpoints', () => {
 test('ratio -> fader-value -> ratio round-trips for values within the selected range', () => {
 	const { faderValueFromPitchRatio, pitchRatioFromFaderValue } = mapping;
 	for (const pitchRangePct of [8, 16, 100]) {
-		for (const ratio of [1, 1 - pitchRangePct / 200, 1 + pitchRangePct / 100, 1 + pitchRangePct / 200]) {
+		for (const ratio of [
+			1,
+			1 - pitchRangePct / 200,
+			1 + pitchRangePct / 100,
+			1 + pitchRangePct / 200
+		]) {
 			const value = faderValueFromPitchRatio(ratio, pitchRangePct);
 			assert.ok(value >= 0 && value <= 1, `value ${value} must stay within fader travel`);
 			assert.ok(
@@ -165,9 +202,7 @@ test('invalid inputs are rejected rather than silently coerced', () => {
 // idiom as jobs-drawer.test.mjs.
 describe('PitchFader double-click reset matches its own tooltip', () => {
 	const svelte = readFileSync(
-		fileURLToPath(
-			new URL('../../src/lib/components/rb/deck/PitchFader.svelte', import.meta.url)
-		),
+		fileURLToPath(new URL('../../src/lib/components/rb/deck/PitchFader.svelte', import.meta.url)),
 		'utf8'
 	);
 
@@ -218,9 +253,7 @@ describe('PitchFader double-click reset matches its own tooltip', () => {
 // Svelte components (same idiom as the double-click block above).
 describe('PitchFader empty-deck tempo refuse (issue 186)', () => {
 	const svelte = readFileSync(
-		fileURLToPath(
-			new URL('../../src/lib/components/rb/deck/PitchFader.svelte', import.meta.url)
-		),
+		fileURLToPath(new URL('../../src/lib/components/rb/deck/PitchFader.svelte', import.meta.url)),
 		'utf8'
 	);
 	const deckSrc = readFileSync(
@@ -266,11 +299,7 @@ describe('PitchFader empty-deck tempo refuse (issue 186)', () => {
 		const loop = svelte.slice(svelte.indexOf('{#each PITCH_RANGES'), svelte.indexOf('{/each}'));
 		assert.match(loop, /onclick=\{async \(\) => await onRangeChange\(range\)\}/);
 		assert.match(loop, /disabled=\{pending\}/);
-		assert.equal(
-			/stable_id/.test(loop),
-			false,
-			'range switcher must not require a loaded track'
-		);
+		assert.equal(/stable_id/.test(loop), false, 'range switcher must not require a loaded track');
 	});
 
 	it('Deck mounts PitchFader onto setTempo / setPitchRangeUi and resets first on narrow', () => {
@@ -443,7 +472,9 @@ describe('ChannelLevelMeter discrete live channel display', () => {
 	// Regression line: if the floor guard goes, M on a silent channel mutes the app.
 	it('a calibration capture at the meter floor is refused', () => {
 		const stripSrc = readFileSync(
-			fileURLToPath(new URL('../../src/lib/components/rb/mixer/ChannelStrip.svelte', import.meta.url)),
+			fileURLToPath(
+				new URL('../../src/lib/components/rb/mixer/ChannelStrip.svelte', import.meta.url)
+			),
 			'utf8'
 		);
 		// Transport state FIRST: the meter's PPM ballistics decay at ~11.8 dB/s,
@@ -451,7 +482,10 @@ describe('ChannelLevelMeter discrete live channel display', () => {
 		// on its way down. A numeric floor alone lets that be captured.
 		assert.match(stripSrc, /if \(!playing\) return;/);
 		assert.match(stripSrc, /if \(db <= METER_FLOOR_DBFS\) return;/);
-		assert.match(stripSrc, /import \{[^}]*\bMETER_FLOOR_DBFS\b[^}]*\} from '\$lib\/rb\/meter-math'/);
+		assert.match(
+			stripSrc,
+			/import \{[^}]*\bMETER_FLOOR_DBFS\b[^}]*\} from '\$lib\/rb\/meter-math'/
+		);
 		// The refusal must be explained where the user can see it.
 		assert.match(stripSrc, /stopped or silent channel captures nothing/i);
 	});

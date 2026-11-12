@@ -1,4 +1,4 @@
-import type { ControlHint, LedRule, MidiBinding } from '$lib/rb/midi/midi-types';
+import type { ControlHint, LedRule, MidiBinding, MixerDeckPairId } from '$lib/rb/midi/midi-types';
 import type { DeckId } from '$lib/rb/deck-slots';
 import type { HotCueSlot } from '$lib/rb/hot-cue-types';
 
@@ -18,6 +18,28 @@ export function pioneerNote(ch: number, id: number): MidiBinding['source'] {
 
 export function pioneerCc(ch: number, id: number): MidiBinding['source'] {
 	return { ch, kind: 'cc', id };
+}
+
+/** Four-deck DECK SELECT pair toggles. [PDF] D5/D6 FLX10: ch3/ch4 note 114
+ * (0x72) for the 3/1 and 2/4 pairs. DDJ-1000 instead sends note 114 on the
+ * channel of the deck being switched to; use `pioneerDeckPairSelectBinding`. */
+export function pioneerDeckPairToggleBindings(): MidiBinding[] {
+	const pairs: { ch: number; pair: MixerDeckPairId }[] = [
+		{ ch: 3, pair: '1-3' },
+		{ ch: 4, pair: '2-4' }
+	];
+	return pairs.map(({ ch, pair }) => ({
+		source: pioneerNote(ch, 0x72),
+		action: { type: 'mixer_deck_pair_select', pair }
+	}));
+}
+
+/** One binding when the wire names the target deck (channel = deck). */
+export function pioneerDeckPairSelectBinding(pair: MixerDeckPairId, deck: DeckId): MidiBinding {
+	return {
+		source: pioneerNote(deck, 0x72),
+		action: { type: 'mixer_deck_pair_select', pair, deck }
+	};
 }
 
 /** Shared per-deck transport rows across Pioneer DDJ P0 maps. */

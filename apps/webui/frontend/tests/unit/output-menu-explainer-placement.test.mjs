@@ -46,11 +46,9 @@ function outputMenuSource(source) {
 test('every device picker in the output menu opens its explainer to the right', () => {
 	const menu = outputMenuSource(cluster);
 	const tags = [...menu.matchAll(/<ControlExplainer[^>]*>/g)].map((m) => m[0]);
-	// Rescan lives in the persistent I/O panel's Devices heading (IOPIN-04),
-	// so the click menu keeps the output pickers plus MIDI. BOOTH / MONITOR is
-	// a fourth picker behind `Add booth / monitor` (source still contains its
-	// ControlExplainer in the `{:else}` branch).
-	assert.equal(tags.length, 5, 'expected MASTER / MAIN, HEADPHONE CUE, BOOTH / MONITOR, AUDIO IN and MIDI');
+	// Rescan lives in the persistent I/O panel's Devices heading (IOPIN-04).
+	// IOPIN-03: BOOTH is a WIP row above the menu; only three live pickers plus MIDI.
+	assert.equal(tags.length, 4, 'expected MASTER / MAIN, HEADPHONE CUE, AUDIO IN and MIDI');
 	for (const tag of tags) assert.match(tag, /placement=["']right["']/);
 });
 
@@ -91,7 +89,7 @@ test('the I/O button still opens and closes the I/O view itself (control)', () =
 	// Real presses on the rendered panel: tests/e2e/io-panel-two-outside-presses.spec.ts.
 	assert.match(cluster, /onpointerdowncapture=\{onIoOutsidePointerDown\}/);
 	assert.match(cluster, /ioOutsideClicks >= 2/);
-	assert.match(cluster, /Two clicks outside, Esc, or X to dismiss/);
+	assert.match(cluster, /Esc or X to dismiss/);
 });
 
 test('every press on a select arms the skip; :open decides at the root hit (Codex P1 4286568922, P2 4286965506)', () => {

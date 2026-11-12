@@ -9,16 +9,27 @@ export {
 export { gridProvenanceFor, requestGridProvenance } from '$lib/rb/grid-provenance.svelte';
 export { camelotKeyColor, camelotKeyHoverLabel } from '$lib/rb/camelot-color';
 export { displayKey, formatKey } from '$lib/rb/key-notation';
-export { canvasMeasureText, fitMusicalColumns, renderedTableFont } from '$lib/rb/musical-column-fit';
+export {
+	canvasMeasureText,
+	fitMusicalColumns,
+	renderedTableFont
+} from '$lib/rb/musical-column-fit';
 export { bpmCellText, hasUsableBpm } from '$lib/rb/bpm-cell-text';
 export { genreCellTitle, listingGenre } from '$lib/rb/genre-source';
 export { columnHeaderTitle, type LibraryColTipId } from '$lib/rb/column-tips';
 export { masterFoldCenterPx } from '$lib/rb/master-fold-anchor';
 export { highlightSpans, keyCellSpans, rowMatchesFind } from '$lib/rb/find-highlight';
-export { arrowHead, buildCurveSegments, hopStroke, paintChainHops, segmentPath } from '$lib/rb/autoplay-curve';
+export {
+	arrowHead,
+	buildCurveSegments,
+	hopStroke,
+	paintChainHops,
+	segmentPath
+} from '$lib/rb/autoplay-curve';
 export { describeAutoPlayMode } from '$lib/rb/autoplay-mode';
 export { installTrackDragGhost, removeTrackDragGhost } from '$lib/rb/drag-ghost';
 export { trackDragRefusal } from '$lib/rb/track-drag-refusal';
+export { libraryWheelScroll } from '$lib/rb/library-wheel-scroll';
 export { draggedDeckRows } from '$lib/rb/deck-track-drop';
 export {
 	dropTargetAt,
@@ -37,11 +48,7 @@ export {
 } from './track-table-drop-gap';
 
 export { animateSectionToggle } from '$lib/library/section-motion';
-export {
-	bpmHeatLabel,
-	classifyBpmHeat,
-	genreHoverColor
-} from './track-table-colors';
+export { bpmHeatLabel, classifyBpmHeat, genreHoverColor } from './track-table-colors';
 export { columnExplainer } from './column-explainer-placement';
 export { trackEditMenuItems, type TrackEditModalKind } from './track-edit-menu';
 export { addToPlaylistMenuItem } from './add-to-playlist-menu';
@@ -51,6 +58,13 @@ export { default as LastPlayedCell } from './LastPlayedCell.svelte';
 export const loadBpmKeyEditPopover = () => import('./BpmKeyEditPopover.svelte');
 export { default as ContextMenu } from '../ContextMenu.svelte';
 export { formatDraftBpm } from './bpm-key-cell-edit';
+export {
+	matchesSearchQuery,
+	SEARCH_PLACEHOLDER,
+	SEARCH_QUERY_HELP,
+	type SearchableTrack
+} from '$lib/rb/browser-search-query';
+export { searchableTrackFromBrowserRow, type SearchableBrowserRow } from './track-table-search';
 export {
 	commitBpmEdit,
 	commitKeyEdit,
@@ -86,9 +100,28 @@ export {
 	worksView
 } from '$lib/rb/works-overlay.svelte';
 export { shiftDropAction } from './works-drop';
-export { default as VersionStackPanel } from './VersionStackPanel.svelte';
-export { default as WorksModals } from './WorksModals.svelte';
+export { default as VersionStackPanel } from './VersionStackPanelLoader.svelte';
+export { default as WorksModals } from './WorksModalsLoader.svelte';
 
 export function formatTagsCell(tags: readonly string[]): string {
 	return tags.map((tag) => `#${tag}`).join(' · ');
 }
+
+export {
+	applyTrackTableColumnFilters,
+	clearColourFilter,
+	colourFilterActive,
+	columnFiltersActiveCount,
+	columnFiltersTitle,
+	EMPTY_COLOUR_FILTER,
+	EMPTY_TRACK_TABLE_COLUMN_FILTERS,
+	normalizeTrackColorId,
+	REKORDBOX_TRACK_COLOR_IDS,
+	toggleColourSelection,
+	trackColourSwatch,
+	TRACK_COLOUR_NONE,
+	type ColourColumnFilter,
+	type TrackTableColumnFilters
+} from './track-table-column-filters';
+export { TrackTableFunnelStore, trackTableFunnelStore } from './track-table-funnel-store.svelte';
+export { default as ColourColumnFunnelPopover } from './ColourColumnFunnelPopover.svelte';

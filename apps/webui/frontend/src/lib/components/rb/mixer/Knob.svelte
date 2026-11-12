@@ -44,6 +44,7 @@
 	import { wheelAdjust } from '$lib/rb/wheel-adjust';
 	import { midiTakeoverGhost } from '$lib/rb/midi/takeover-ui.svelte';
 	import { DIAL_SWEEP_DEG } from '$lib/rb/dial-clock';
+	import { knobValueKind, valueText, type ValueTextKind } from '$lib/a11y/value-text';
 
 	interface Props {
 		/** Stable control id from knobId(deckId, role) - the knob-control registry key. */
@@ -86,6 +87,8 @@
 		/** Set when `ontap` opens a menu: drives aria-haspopup and data-popup-open
 		 * (role=slider does not support aria-expanded). */
 		popupOpen?: boolean;
+		/** Override aria-valuetext unit; defaults from knobValueKind(knobId). */
+		valueKind?: ValueTextKind;
 	}
 
 	let {
@@ -105,7 +108,8 @@
 		ontap,
 		captionTrail,
 		captionTrailPx = 0,
-		popupOpen
+		popupOpen,
+		valueKind
 	}: Props = $props();
 
 	const SWEEP_DEG = DIAL_SWEEP_DEG; // -135deg .. +135deg like rekordbox knobs (7:30 to 4:30, DIALCLOCK-8341)
@@ -190,6 +194,7 @@
 	);
 
 	const displayValue = $derived(dragShown ?? value);
+	const valueKindResolved = $derived(valueKind ?? knobValueKind(knobId));
 	const angleDeg = $derived((displayValue - 0.5) * SWEEP_DEG);
 	/** |offset| from center: >0.15 (~30% of half-throw) orange, >0.25 (~50%) red. */
 	const warn = $derived.by((): 'none' | 'orange' | 'red' => {
@@ -393,6 +398,7 @@
 	aria-valuemin={0}
 	aria-valuemax={1}
 	aria-valuenow={displayValue}
+	aria-valuetext={valueText(valueKindResolved, clamp01(displayValue))}
 	aria-disabled={inert}
 	aria-haspopup={popupOpen === undefined ? undefined : 'menu'}
 	data-popup-open={popupOpen}
@@ -601,6 +607,21 @@
 	}
 	.knob.knob-stem-accent .label {
 		color: var(--knob-accent-color);
+	}
+
+
+	/* A11Y-11811: reduced motion (OS or Appearance); mirrors app.css. */
+	@media (prefers-reduced-motion: reduce) {
+		:where(*) {
+			animation-duration: 0.01ms;
+			animation-iteration-count: 1;
+			transition-duration: 0.01ms;
+		}
+	}
+	:global(html[data-reduce-motion]) :where(*) {
+		animation-duration: 0.01ms;
+		animation-iteration-count: 1;
+		transition-duration: 0.01ms;
 	}
 
 </style>

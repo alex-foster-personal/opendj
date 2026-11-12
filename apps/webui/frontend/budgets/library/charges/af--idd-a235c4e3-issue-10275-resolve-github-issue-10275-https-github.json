@@ -1,0 +1,9 @@
+{
+  "bytes": 1024,
+  "measured_main": 346599,
+  "measured_with_pr": 346750,
+  "sha": "7fca80eaa3",
+  "date": "Tue 10 Nov 2026",
+  "reason": "Issue #10275 arms the opt-in live handles probe (PERF-LEAK-11789) from app-init through a lazy import in frame-probe-flag.ts. Measured: local pnpm build against base 7fca80eaa3, +151 B gzip on library; ceiled to KiB",
+  "payback": "none planned; the growth is the arm helper, the probe itself is a lazy chunk"
+}

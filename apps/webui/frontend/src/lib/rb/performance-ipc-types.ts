@@ -3,6 +3,8 @@
  * performance-ipc.svelte.ts. No runes and no module state here.
  */
 
+import type { MixerPlacement } from '$lib/rb/prefs.svelte';
+import type { MidiLearnSnapshot } from '$lib/rb/midi/learn-ipc';
 import type { MidiTakeoverMode } from '$lib/rb/midi/takeover-policy';
 import type { SortKey } from '$lib/components/rb/browser/browser-sort-ipc';
 import type { MasterMode, MasterReason } from '$lib/rb/audio-engine-types';
@@ -10,6 +12,7 @@ import type { DeckTransportClock } from '$lib/rb/deck-runtime';
 import type { AnlzBeat, DeckAudioSnapshot } from '$lib/rb/deck-state-types';
 import type { Vocals } from '$lib/rb/api-rb';
 import type { DeckId } from '$lib/rb/deck-slots';
+import type { PadModeSnapshot } from './pad-mode-catalog';
 import type {
 	DeckState,
 	HotCue,
@@ -21,6 +24,8 @@ import type {
 	SyncMode
 } from '$lib/rb/deck-state-types';
 import type {
+	BoothSignalMode,
+	BoothState,
 	CrossfaderAssign,
 	EqBand,
 	HeadphoneAlignmentMode,
@@ -71,6 +76,8 @@ import type {
 	LibraryLayout,
 	PerformanceLayout
 } from '$lib/rb/skin-layout';
+import type { BeatFxBeats, BeatFxEffect, BeatFxTarget } from '$lib/rb/beat-fx';
+import type { BeatFxUnitView } from '$lib/rb/beat-fx-unit';
 import type { WindowLabel } from '$lib/shell/native-shell';
 import type { ColorFxDeckView } from '$lib/rb/color-fx.svelte';
 import type { TrackLoadResetPrefs, TrackLoadResetId } from '$lib/rb/track-load-reset';
@@ -102,6 +109,9 @@ export type HeadphoneCommand =
 	| { type: 'headphone_mix'; value: number }
 	| { type: 'headphone_level'; value: number }
 	| { type: 'headphone_booth_level'; value: number }
+	| { type: 'booth_level'; value: number }
+	| { type: 'booth_select'; device_id: string }
+	| { type: 'booth_signal_mode'; mode: BoothSignalMode }
 	| { type: 'head_delay_ms'; value: number }
 	| { type: 'headphone_outputs_refresh' }
 	| { type: 'headphone_output_select'; device_id: string }
@@ -219,6 +229,8 @@ export type PerformanceCommand =
 			force?: boolean;
 	  }
 	| { type: 'loop_interval_mode'; deck: DeckId; enabled: boolean }
+	/** PADFX-11718: the deck's performance-pad mode (HOT CUE menu); Pad FX refuses with the beat FX unit's reason. */
+	| { type: 'pad_mode'; deck: DeckId; mode: string }
 	| { type: 'loop_interval_base'; deck: DeckId; base: number }
 	| { type: 'tempo'; deck: DeckId; ratio: number }
 	| { type: 'pitch_range'; deck: DeckId; range: PitchRange }
@@ -249,7 +261,10 @@ export type PerformanceCommand =
 	 * when it runs, so a click on one track never pays for another. */
 	| { type: 'stem_separate'; deck: DeckId; stable_id?: string }
 	| { type: 'stem_gain'; deck: DeckId; stem: StemControl; value: number }
+	/** STEMPERF-11663: per-stem send into the channel's colour FX input, 0..1 linear. */
+	| { type: 'stem_fx_send'; deck: DeckId; stem: StemControl; value: number }
 	| { type: 'slip'; deck: DeckId; enabled: boolean }
+	| { type: 'roll'; deck: DeckId; beats: number | null }
 	/** KEYSYNC-01: optional mode (exact, relative, compatible) and target (a deck or 'master'); omitted keeps the deck's own. */
 	| {
 			type: 'key_sync';
@@ -288,6 +303,9 @@ export type PerformanceCommand =
 	| { type: 'headphone_mix'; value: number }
 	| { type: 'headphone_level'; value: number }
 	| { type: 'headphone_booth_level'; value: number }
+	| { type: 'booth_level'; value: number }
+	| { type: 'booth_select'; device_id: string }
+	| { type: 'booth_signal_mode'; mode: BoothSignalMode }
 	| { type: 'head_delay_ms'; value: number }
 	| { type: 'master_mute'; muted: boolean; persist?: boolean }
 	// LIBUX-8626: stable_id also selects and scrolls to that track once the list shows.
@@ -310,6 +328,9 @@ export type PerformanceCommand =
 	| { type: 'browser_related_criteria_reset' }
 	/** IOPIN-06: shared command/query parity for the confirmed pickup policy. */
 	| { type: 'midi_takeover_mode'; mode: MidiTakeoverMode }
+	/** Agent parity for the learn status Retry / Cancel / Dismiss buttons (issue #10580). */
+	| { type: 'midi_learn_retry' }
+	| { type: 'midi_learn_cancel' }
 	| { type: 'headphone_outputs_refresh' }
 	| { type: 'headphone_output_acquire' }
 	| { type: 'headphone_output_select'; device_id: string }
@@ -375,18 +396,31 @@ export type PerformanceCommand =
 	| { type: 'wave_eq_reflect'; enabled: boolean }
 	/** The mixer's S button: stem dials beside the EQ on every channel with stems. */
 	| { type: 'mixer_stems'; enabled: boolean }
+	/** Issue #9434: where the mixer sits; `center` or `sides` (#9371). */
+	| { type: 'mixer_placement'; placement: MixerPlacement }
 	// DECKCTL-6235: the AU preference (park a fresh load at its first memory cue).
 	| { type: 'deck_autocue'; enabled: boolean }
-	/** COLORFX-01..05: the channel color knob's effect (FILTER, SPACE, ECHO), the
+	/** COLORFX-01..05: the channel color knob's effect (FILTER, SPACE, ECHO, CRUSH), the
 	 * echo division, and optionally the knob itself. See color-fx.svelte.ts.
 	 * COLORFX-8341: `next` cycles the effect; switching effect returns the knob to
 	 * center unless `value` is given (the old effect is removed, never stacked). */
 	| {
 			type: 'color_fx';
-			deck: DeckId;
-			effect?: 'filter' | 'space' | 'echo' | 'next';
+			deck: DeckId | 'all';
+			effect?: 'filter' | 'space' | 'crush' | 'echo' | 'next';
 			echo_beats?: 0.25 | 0.5 | 0.75 | 1;
 			value?: number;
+	  }
+	/** BEATFX-12: channel-select beat FX unit (issues #9783, #10015). */
+	| {
+			type: 'beat_fx';
+			target?: BeatFxTarget;
+			effect?: BeatFxEffect;
+			beats?: BeatFxBeats;
+			level?: number;
+			enabled?: boolean;
+			quantize?: boolean;
+			xpad?: number | null;
 	  }
 	/** AGENT-20: the AutoPlay switch, the TopBar button's command twin. PLAY-18:
 	 * only a user turns it off, so `enabled: false` needs `by_user: true`. */
@@ -416,6 +450,9 @@ export type PerformanceCommand =
 	 * (which persists a NEW position). BeatSyncMax may arm rather than jump
 	 * immediately - see the module docstring and `hot_cue_armed` in query(). */
 	| { type: 'hot_cue_trigger'; deck: DeckId; slot: HotCueSlot }
+	/** CUES-10639: flag or clear the track's one active memory loop; the loop
+	 * menu and agents share this queue with hot-cue persistence writes. */
+	| { type: 'active_memory_loop'; deck: DeckId; in_ms: number; out_ms: number; active: boolean }
 	// LIBUX-05 "technically-working mode": UI-only overlay state, no engine
 	// write to serialize, but still a real UI action - every one of these has
 	// a Ctrl+R / Opt / cmd+E keyboard equivalent in technically-working-hotkeys.ts,
@@ -513,6 +550,8 @@ export interface PerformanceDeckSnapshot {
 	slip_enabled: boolean;
 	slip_active: boolean;
 	slip_position_ms: number | null;
+	roll_beats: number | null;
+	roll_stack: number[];
 	is_master: boolean;
 	sync_mode: SyncMode;
 	sync_error: string | null;
@@ -542,6 +581,8 @@ export interface PerformanceDeckSnapshot {
 	/** Loop cluster view state, so an agent that can drive the interval grid
 	 * can also read back which mode and window it landed on. */
 	loop_interval: { grid_mode: boolean; grid_base: number; choices: number[] };
+	/** PADFX-11718: the pad mode the deck's pad bank shows, and why each other mode is or is not selectable. */
+	pad_mode: PadModeSnapshot;
 	beatgrid: Array<{ n: number; bpm: number; time_ms: number }>;
 	beatgrid_ms: number[];
 	/** In-time of the `transition_in` row in deck.anlz.cues, or null when absent. */
@@ -586,6 +627,7 @@ export interface PerformanceState {
 	mixer: {
 		crossfader: number;
 		master: number;
+		booth: BoothState;
 		channels: Record<DeckId, MixerChannelState>;
 		headphones: HeadphoneState;
 	};
@@ -599,6 +641,7 @@ export interface PerformanceState {
 		related_active: boolean;
 	};
 	midi_takeover: { mode: MidiTakeoverMode };
+	midi_learn: MidiLearnSnapshot;
 	history: Array<{ id: string; type: PerformanceCommand['type'] }>;
 	preset: PerformancePresetLifecycleSnapshot;
 	rescue_restore: {
@@ -682,12 +725,16 @@ export interface PerformanceState {
 	track_info: { open: boolean; deck: DeckId | null; stable_id: string | null };
 	/** COLORFX-04: per deck, the color knob's effect, echo division and timing. */
 	color_fx: Record<DeckId, ColorFxDeckView>;
+	/** BEATFX-12: the beat FX unit mirror (effect, division, tempo). */
+	beat_fx: BeatFxUnitView;
 	/** DL-2: resizable regions; what set_layout_size / reset_layout move. */
 	layout: LayoutView;
 	ui: {
 		show_stems: boolean;
 		/** The mixer's S button, so a mixer_stems command can be read back. */
 		mixer_stems: boolean;
+		/** Issue #9434: center column or mirrored sides (#9371); `mixer_placement` command read back. */
+		mixer_placement: MixerPlacement;
 		/** LIBUX-10046: Related Tracks criteria the cog edits. */
 		library_related_criteria: RelatedCriteriaPrefs;
 		/** AGENT-20: so an autoplay command's mirror_delta names what it changed. */
@@ -730,6 +777,8 @@ export interface PerformanceState {
 		waveform_overlays: Record<WaveformBoolOverlay, boolean>;
 		/** issue #10244: what set_waveform_overlay grid_lines reads back. */
 		wave_grid_lines: WaveGridLines;
+		/** STRUCTUI-12787: segment display prefs for agents (issue #11436). */
+		segment_display: import('./section-overlay-prefs').SectionOverlayPrefsState;
 	};
 }
 

@@ -1,0 +1,9 @@
+{
+  "bytes": 1024,
+  "measured_main": 516716,
+  "measured_with_pr": 516912,
+  "sha": "5a78a3387d",
+  "date": "Wed 11 Nov 2026",
+  "reason": "branch af--cloud-11423--setup-start-playing-must-not-reload-whil grows the other-lazy surface; measured +196 B gzip over main; ceiled to KiB.",
+  "payback": "none planned; the growth is the change's own code on this surface"
+}

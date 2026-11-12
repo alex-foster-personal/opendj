@@ -450,6 +450,13 @@ TABLE_DOCS: dict[str, str] = {
         "updated_at/origin_device_id/deleted_at -- and does not drop the "
         "loser's tracks row (apps/sync_hub/engine_identity_map.py)."
     ),
+    "sync_hub_answered": (
+        "Spoke-side CloudSync bookkeeping (issue #10304): one row per "
+        "(hub_peer, table_name, row_pk) the hub answered not_newer, with the "
+        "spoke's row_digest at that moment, so the next push skips the row "
+        "until it changes locally. Machine-local, never synced "
+        "(apps/sync_hub/hub_answered.py :: ensure_answered_table)."
+    ),
     "stem_bundle_usage": (
         "The CloudStems monthly bundle meter (CSPAY-08): one row per "
         "(owner_sub, UTC month, stable_id) that a HOSTED hub has presigned a "

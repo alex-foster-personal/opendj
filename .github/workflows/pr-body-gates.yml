@@ -225,8 +225,11 @@ jobs:
         # never runs on a pull request (TEST-BUDGET round 4) and this check only
         # means anything on one. Stdlib only, no venv. The checkout is the PR
         # merge commit with full history, so HEAD^1 is the base it merges into.
-        # Only a real Trunk batch (bot author, same repo) may skip; its members
-        # were checked on their own PRs. Exit 2 = could not measure, never a pass.
+        # Only a real Trunk batch (trunk-merge/ ref, trunk-io[bot] author, same repo)
+        # or a lander bundle train (lander-train/ ref, opendj-devops-trunk-merge[bot]
+        # author, same repo) may skip: its members were checked on their own PRs and
+        # carry their own numbers. The other body gates still run on a train.
+        # Exit 2 = could not measure, never a pass.
         #
         # Reused self-hosted workspaces (clean: false) can be partial clones left by
         # a sparse checkout, so HEAD^1's blobs are fetched lazily from the promisor
@@ -237,7 +240,7 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           REQ_PR_NUMBER: ${{ github.event.pull_request.number }}
-          REQ_HEAD_REF: ${{ (github.event.pull_request.user.login == 'trunk-io[bot]' && github.event.pull_request.head.repo.full_name == github.repository) && github.head_ref || '' }}
+          REQ_HEAD_REF: ${{ github.event.pull_request.head.repo.full_name == github.repository && ((startsWith(github.head_ref, 'trunk-merge/') && github.event.pull_request.user.login == 'trunk-io[bot]') || (startsWith(github.head_ref, 'lander-train/') && github.event.pull_request.user.login == 'opendj-devops-trunk-merge[bot]')) && github.head_ref || '' }}
         run: |
           auth=$(printf 'x-access-token:%s' "$GH_TOKEN" | base64 -w0)
           echo "::add-mask::$auth"

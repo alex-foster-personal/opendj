@@ -71,3 +71,36 @@ test('if link handling narrows to the bridge scope then clicked purchase and pri
 	assert.equal(isExternalUrlAllowed('https://www.beatport.com/track/x/1'), true);
 	assert.equal(isOpenerUrlAllowed('https://www.beatport.com/track/x/1'), false);
 });
+
+const INVENTED_PLAYLIST_ID = 'AbCdEfGhIjKlMnOpQrStUv';
+
+test('if the bridge admits spotify playlist URIs then Open in Spotify app works', () => {
+	const uri = `spotify:playlist:${INVENTED_PLAYLIST_ID}`;
+	assert.equal(isOpenerUrlAllowed(uri), true);
+	assert.equal(isExternalUrlAllowed(uri), true);
+});
+
+test('if the bridge admits Spotify base-62 playlist ids then 21- and 24-char ids open', () => {
+	const id21 = 'AbCdEfGhIjKlMnOpQrStU';
+	const id24 = 'AbCdEfGhIjKlMnOpQrStUvWx';
+	assert.equal(id21.length, 21);
+	assert.equal(id24.length, 24);
+	assert.equal(isOpenerUrlAllowed(`spotify:playlist:${id21}`), true);
+	assert.equal(isOpenerUrlAllowed(`spotify:playlist:${id24}`), true);
+});
+
+test('if the bridge validates playlist ids then path traversal in the URI is refused', () => {
+	assert.equal(isOpenerUrlAllowed('spotify:playlist:../x'), false);
+});
+
+test('if the bridge admits only playlist URIs then track and album schemes stay out', () => {
+	assert.equal(isOpenerUrlAllowed(`spotify:track:${INVENTED_PLAYLIST_ID}`), false);
+	assert.equal(isOpenerUrlAllowed(`spotify:album:${INVENTED_PLAYLIST_ID}`), false);
+	assert.equal(isOpenerUrlAllowed(`spotify:artist:${INVENTED_PLAYLIST_ID}`), false);
+	assert.equal(isOpenerUrlAllowed('spotify:playlist:'), false);
+	assert.equal(isOpenerUrlAllowed('spotify://playlist/x'), false);
+	assert.equal(
+		isOpenerUrlAllowed(`https://open.spotify.com/playlist/${INVENTED_PLAYLIST_ID}`),
+		false
+	);
+});

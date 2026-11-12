@@ -139,7 +139,7 @@ RESERVED_FIXED_PORTS: frozenset[int] = frozenset(
         5214,  # tests/e2e/playwright.play-analytics.config.ts
         5216,  # tests/e2e/playwright.desktop-setup.config.ts
         5228,  # tests/e2e/playwright.library-wheel.config.ts
-        5273,  # tests/e2e/playwright.js-heap-after-pane.config.ts (+9 more)
+        5273,  # tests/e2e/playwright.js-heap-after-pane.config.ts (+10 more)
         5277,  # tests/e2e/library-jobs-e2e-endpoints.ts
         5278,  # tests/e2e/vocals-demucs-overlay-endpoints.ts
         5311,  # tests/e2e/playwright.stretch-artifact.config.ts
@@ -156,9 +156,10 @@ RESERVED_FIXED_PORTS: frozenset[int] = frozenset(
         5334,  # tests/e2e/vite.transition-in-cue.config.ts
         5336,  # tests/e2e/vite.cmdk-pick-race.config.ts
         5337,  # tests/e2e/vite.cmdk-preview-cue.config.ts
+        5338,  # tests/e2e/vite.cmdk-ttx.config.ts
         5399,  # tests/e2e/vite.rekordbox-gate.config.ts
         7700,  # apps/desktop/electron/src/engine.ts
-        8686,  # tests/e2e/playwright.kpi-boot-library-capture.config.ts (+25 more)
+        8686,  # tests/e2e/playwright.kpi-boot-library-capture.config.ts (+26 more)
         8688,  # tests/e2e/stems-e2e-endpoints.ts
         8690,  # tests/e2e/playwright.webkit-deckload.config.ts (+1 more)
         8691,  # apps/desktop/wdio.conf.ts (+1 more)
@@ -182,6 +183,7 @@ RESERVED_FIXED_PORTS: frozenset[int] = frozenset(
         8715,  # tests/e2e/vite.pairing-arrow.config.ts
         8716,  # tests/e2e/vite.cmdk-pick-race.config.ts
         8717,  # tests/e2e/vite.cmdk-preview-cue.config.ts
+        8718,  # tests/e2e/vite.cmdk-ttx.config.ts
         9336,  # apps/desktop/mcp/smoke.ts
         9408,  # tests/e2e/stems-e2e-endpoints.ts
         9410,  # tests/e2e/midi-maps-e2e-endpoints.ts

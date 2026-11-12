@@ -1,0 +1,9 @@
+{
+  "bytes": 1024,
+  "measured_main": 421718,
+  "measured_with_pr": 422191,
+  "sha": "b271d5d9f1",
+  "date": "Tue 10 Nov 2026",
+  "reason": "Issue #10352 (KEYB-11383) grows the performance surface: recent-deck keyboard chords, cycle helper and deck-header marker; measured +473 B gzip over main; ceiled to KiB.",
+  "payback": "none planned; the growth is the feature's own code on this surface"
+}

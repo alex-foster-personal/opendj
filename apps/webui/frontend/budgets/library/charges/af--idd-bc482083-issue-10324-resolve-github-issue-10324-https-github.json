@@ -1,0 +1,9 @@
+{
+  "bytes": 1024,
+  "measured_main": 345656,
+  "measured_with_pr": 346314,
+  "sha": "6664f3d04c",
+  "date": "Tue 10 Nov 2026",
+  "reason": "Issue #10324 adds the per-stem FX send (send GainNode per part, stem_fx_send command, guard, ramp and reset paths). Measured locally against 6664f3d04c: +658 B gzip on library; ceiled to KiB",
+  "payback": "none planned; the growth is the feature's own code"
+}

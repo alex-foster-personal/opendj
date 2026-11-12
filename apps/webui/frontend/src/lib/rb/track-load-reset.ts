@@ -281,7 +281,8 @@ export function resetNowPrefs(parts: readonly TrackLoadResetId[] | undefined): T
 export type StemResetAction =
 	| { kind: 'stem_mute'; stem: StemControl; muted: false }
 	| { kind: 'stem_solo'; stem: StemControl; solo: false }
-	| { kind: 'stem_gain'; stem: StemControl; value: number };
+	| { kind: 'stem_gain'; stem: StemControl; value: number }
+	| { kind: 'stem_fx_send'; stem: StemControl; value: 0 };
 
 /** Unity, as a fresh track publishes it (`createDefaultStemControls`): open, not solo, 0.5. */
 const STEM_UNITY_GAIN = 0.5;
@@ -304,6 +305,7 @@ export function stemResetActions(
 		if (now.solo) actions.push({ kind: 'stem_solo', stem, solo: false });
 		if (now.muted) actions.push({ kind: 'stem_mute', stem, muted: false });
 		if (differs(now.gain, STEM_UNITY_GAIN)) actions.push({ kind: 'stem_gain', stem, value: STEM_UNITY_GAIN });
+		if (differs(now.fx_send ?? 0, 0)) actions.push({ kind: 'stem_fx_send', stem, value: 0 });
 	}
 	return actions;
 }

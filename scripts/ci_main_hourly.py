@@ -66,12 +66,16 @@ Requirements (mini-PRD; statuses: ? todo, ✔︎ done, ✔︎ ✅ done + ran, �
 
 Usage:
     python -m scripts.ci_main_hourly range --repository OWNER/NAME --out-dir DIR [--since-minutes 60]
+    python -m scripts.ci_main_hourly run --out-dir DIR [--output PATH] [--junit PATH]
     python -m scripts.ci_main_hourly report --range DIR/range.json --selection DIR/selection/selection.json \\
         --junit REPORT.xml --pytest-rc N --out DIR/culprits.json [--wall-cap] [--ignore=tests/analysis ...]
 
-`range` reads GH_TOKEN for the previous successful run and the merged PR bodies, writes DIR/range.json
-and DIR/event.json, and prints `key=value` lines for GITHUB_OUTPUT. `report` exits with the pytest rc,
-except 0 for a wall-cap stop with no failing id (R5) and 1 for one with a failing id.
+`run` wraps the hourly lane's select step in GNU `timeout` (90s kill-after 10s), pytest in `timeout
+--signal=INT` (840s kill-after 30s), writes `mode`, `rc`, and optionally `wall_cap` to `GITHUB_OUTPUT`
+or `--output`, stops on `mode=empty` with `rc=0`, and refuses every selector mode other than
+`affected`. `range` reads GH_TOKEN for the previous successful run and the merged PR bodies, writes
+DIR/range.json and DIR/event.json, and prints `key=value` lines for GITHUB_OUTPUT. `report` exits with
+the pytest rc, except 0 for a wall-cap stop with no failing id (R5) and 1 for one with a failing id.
 """
 
 from __future__ import annotations
@@ -79,6 +83,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import shutil
 import subprocess
 import sys
 import time
@@ -87,12 +92,13 @@ import urllib.request
 from collections.abc import Callable
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
+from typing import Literal
 from xml.etree import ElementTree
 
 from scripts.ci_bundle_declarations import graphql_bodies
 from scripts.ci_junit_failures import UNRESOLVED, node_id
 from scripts.ci_main_push_range import MAIN_REF, pr_of
-from scripts.ci_test_selection import parse_declarations
+from scripts.ci_test_selection import junit_all_skipped, parse_declarations
 from scripts.ci_test_selection_rules import FullSuite, Graph, Policy, select_tests
 
 REPO = Path(__file__).resolve().parent.parent
@@ -100,6 +106,16 @@ WORKFLOW = "main-hourly-selected.yml"
 #: First-parent commits searched for the previous run's head: about ten hours of merges at 20 an hour.
 MAX_COMMITS = 200
 SINCE_MINUTES = 60
+#: Hourly `run` lane: selector budget file (same default as the workflow).
+BUDGET = "ci/test-budget-main-hourly.yml"
+#: GNU timeout(1) wall for `ci_test_selection select` (workflow: `timeout --kill-after=10 90 ...`).
+SELECT_TIMEOUT_S = 90
+SELECT_KILL_AFTER_S = 10
+#: Pytest wall cap seconds (workflow: `timeout --signal=INT --kill-after=30 840 ...`).
+PYTEST_WALL_S = 840
+PYTEST_KILL_AFTER_S = 30
+#: Passed to pytest as `--timeout=` (900s per test; workflow parity).
+PYTEST_TEST_TIMEOUT_S = 900
 API = "https://api.github.com"
 FETCH_TIMEOUT_S = 30
 ANNOTATION_TITLE = "main-hourly-selected culprits"
@@ -114,6 +130,64 @@ SUMMARY_CANDIDATES = 8
 ATTRIBUTION_BUDGET_S = 150
 #: R6: the warning naming the commits the budget left unattributed.
 CUT_TITLE = "main-hourly-selected cut"
+
+
+#: Same as .github/workflows/main-hourly-selected.yml `LANE_IGNORES` (ten `--ignore=` tokens).
+LANE_IGNORES: tuple[str, ...] = (
+    "--ignore=tests/analysis",
+    "--ignore=tests/vocals",
+    "--ignore=tests/sync/usb",
+    "--ignore=tests/sets",
+    "--ignore=tests/quality/test_frontend_typing_gate.py",
+    "--ignore=tests/quality/test_frontend_typing_directives.py",
+    "--ignore=tests/quality/test_frontend_unit_seam_gate.py",
+    "--ignore=tests/quality/test_mypy_cache.py",
+    "--ignore=tests/perf/test_library_playlist_switch_bench.py",
+    "--ignore=tests/health_lights/test_ahead_analysis_live_engine.py",
+)
+
+
+# ----- hourly run: pure verdicts -----------------------------------------------------
+
+
+@dataclass(frozen=True)
+class SelectionVerdict:
+    """What the main-hourly `select` + `mode` pairing means for the pytest step."""
+
+    action: Literal["stop", "continue", "refuse"]
+    process_rc: int
+    message: str
+
+
+def selection_verdict(selection_rc: int, mode: str) -> SelectionVerdict:
+    """Map `scripts.ci_test_selection select`'s (return code, printed mode) to stop / continue / refuse.
+
+    The hourly lane accepts only ``0:empty`` (no pytest, output rc 0) and ``0:affected`` (run pytest).
+    Anything else refuses so the lane never widens to the full suite.
+    """
+    key = f"{selection_rc}:{mode}"
+    if key == "0:empty":
+        return SelectionVerdict("stop", 0, "")
+    if key == "0:affected":
+        return SelectionVerdict("continue", 0, "")
+    return SelectionVerdict(
+        "refuse",
+        3,
+        f"the selector exited {selection_rc} with mode [{mode}]; this run never widens to the full suite",
+    )
+
+
+def normalize_pytest_rc(rc: int, all_skipped: bool) -> tuple[int, bool]:
+    """Normalize pytest's exit code after the hourly wall-time cap and the exit-5 all-skipped case.
+
+    Returns ``(exit_code, wall_cap)``. Wall-cap stops use rc 124 or 137 and set ``wall_cap=True``;
+    rc 5 becomes 0 only when every selected module skipped at module level (`junit_all_skipped`).
+    """
+    if rc in (124, 137):
+        return rc, True
+    if rc == 5 and all_skipped:
+        return 0, False
+    return rc, False
 
 
 # ----- the range, pure ---------------------------------------------------------------
@@ -628,6 +702,236 @@ def failing_ids_of(cases: list[Recorded]) -> list[str]:
     return list(dict.fromkeys(ids))
 
 
+# ----- hourly run: select + pytest (workflow parity) ---------------------------------
+
+
+def _append_github_output(path: Path, lines: list[str]) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with open(path, "a", encoding="utf-8") as handle:
+        for line in lines:
+            handle.write(line)
+            if not line.endswith("\n"):
+                handle.write("\n")
+
+
+def _range_base_tip(range_json: Path) -> tuple[str, str]:
+    """Return ``base`` and ``head`` shas from a ``range.json`` record (fallback empty string)."""
+    data = json.loads(range_json.read_text(encoding="utf-8"))
+    base = data.get("base") or ""
+    head = data.get("head") or ""
+    return str(base), str(head)
+
+
+def _resolve_run_output(arguments: argparse.Namespace) -> Path | None:
+    raw = (arguments.output or os.environ.get("GITHUB_OUTPUT") or "").strip()
+    if not raw:
+        print(
+            "run: set --output or GITHUB_OUTPUT before selection (workflow output file is required)",
+            file=sys.stderr,
+        )
+        return None
+    return Path(raw)
+
+
+def _select(out: Path, timeout_bin: str) -> tuple[int, str]:
+    """Run `ci_test_selection select` under GNU timeout; capture stdout for the mode line; stderr inherits."""
+    pyexe = sys.executable
+    selection_dir = out / "selection"
+    range_json = out / "range.json"
+    event_json = out / "event.json"
+    env = {
+        **os.environ,
+        "GITHUB_EVENT_NAME": "push",
+        "GITHUB_EVENT_PATH": str(event_json),
+        "CI_PR_TEST_SELECTION": "affected",
+        "CI_MAIN_PUSH_TEST_SELECTION": "affected",
+        "CI_MAIN_PUSH_RANGE": range_json.read_text(encoding="utf-8"),
+    }
+    argv = [
+        timeout_bin,
+        f"--kill-after={SELECT_KILL_AFTER_S}",
+        str(SELECT_TIMEOUT_S),
+        pyexe,
+        "-m",
+        "scripts.ci_test_selection",
+        "select",
+        "--shard",
+        "1",
+        "--shards",
+        "1",
+        "--out-dir",
+        str(selection_dir),
+        "--budget",
+        str((REPO / BUDGET).resolve()),
+        *list(LANE_IGNORES),
+    ]
+    completed = subprocess.run(
+        argv,
+        cwd=REPO,
+        env=env,
+        stdout=subprocess.PIPE,
+        stderr=None,
+        text=True,
+        check=False,
+    )
+    mode = (completed.stdout or "").strip().splitlines()[-1] if completed.stdout else ""
+    return completed.returncode, mode
+
+
+def _pytest(
+    modules: list[str],
+    *,
+    junit: Path,
+    basetemp: Path,
+    timeout_bin: str,
+    wall_s: int,
+    kill_after_s: int,
+    test_timeout_s: int,
+) -> int:
+    """Run pytest under GNU `timeout --signal=INT` (wall cap); stderr/stdout inherit."""
+    pyexe = sys.executable
+    argv = [
+        timeout_bin,
+        "--signal=INT",
+        f"--kill-after={kill_after_s}",
+        str(wall_s),
+        pyexe,
+        "-m",
+        "pytest",
+        "--basetemp",
+        str(basetemp),
+        "--junitxml",
+        str(junit),
+        *modules,
+        "--durations=25",
+        f"--timeout={test_timeout_s}",
+        *list(LANE_IGNORES),
+    ]
+    result = subprocess.run(argv, cwd=REPO, check=False)
+    return int(result.returncode)
+
+
+def _run_basetemp(arguments: argparse.Namespace) -> Path | None:
+    """Default pytest ``--basetemp`` under ``RUNNER_TEMP`` (workflow parity) or explicit ``--basetemp``."""
+    if getattr(arguments, "basetemp", None) and str(arguments.basetemp).strip():
+        return Path(arguments.basetemp).resolve()
+    runner_temp = os.environ.get("RUNNER_TEMP", "").strip()
+    run_id = os.environ.get("GITHUB_RUN_ID", "").strip()
+    attempt = os.environ.get("GITHUB_RUN_ATTEMPT", "").strip()
+    if not runner_temp or not run_id or not attempt:
+        print(
+            "run: RUNNER_TEMP, GITHUB_RUN_ID, and GITHUB_RUN_ATTEMPT must be set for pytest --basetemp "
+            "(or pass run --basetemp DIR explicitly)",
+            file=sys.stderr,
+        )
+        return None
+    return Path(runner_temp) / f"pytest-basetemp-hourly-{run_id}-{attempt}"
+
+
+def _run_modules_for_junit(modules_path: Path, modules: list[str]) -> list[str]:
+    try:
+        return modules_path.read_text(encoding="utf-8").split()
+    except OSError:
+        return list(modules)
+
+
+def _run_finalize_pytest_rc(output_path: Path, rc: int, junit: Path, modules_for_junit: list[str]) -> int:
+    """Normalize pytest rc, append ``rc=`` / optional ``wall_cap``, return process exit code."""
+    all_skipped = False
+    if rc == 5:
+        try:
+            all_skipped = junit.is_file() and junit_all_skipped(junit, modules_for_junit)
+        except (OSError, ElementTree.ParseError):
+            all_skipped = False
+    norm_rc, wall_cap = normalize_pytest_rc(rc, all_skipped)
+
+    lines: list[str] = []
+    if wall_cap:
+        lines.append("wall_cap=true")
+    lines.append(f"rc={norm_rc}")
+    _append_github_output(output_path, lines)
+    if wall_cap:
+        print(
+            f"[wall-cap] pytest stopped at the wall cap (rc={norm_rc}); the report step decides FAIL or INCONCLUSIVE",
+            file=sys.stderr,
+            flush=True,
+        )
+    return 0 if wall_cap else norm_rc
+
+
+def _run(
+    arguments: argparse.Namespace,
+    *,
+    select_fn: Callable[[Path, str], tuple[int, str]] | None = None,
+    pytest_fn: Callable[..., int] | None = None,
+) -> int:
+    """Select test modules for the hour and run pytest (main-hourly-selected.yml parity)."""
+    select_impl = select_fn or _select
+    pytest_impl = pytest_fn or _pytest
+
+    output_path = _resolve_run_output(arguments)
+    if output_path is None:
+        return 2
+
+    timeout_bin = shutil.which("timeout")
+    if not timeout_bin:
+        print("run: GNU timeout(1) not found on PATH", file=sys.stderr)
+        return 2
+
+    out = Path(arguments.out_dir).resolve()
+    ignores_path = out / "ignores.txt"
+    ignores_path.write_text("\n".join(LANE_IGNORES) + "\n", encoding="utf-8")
+
+    range_json = out / "range.json"
+    if not (out / "event.json").is_file():
+        print("run: event.json is missing under --out-dir (run `range` first)", file=sys.stderr)
+        return 2
+    selection_dir = out / "selection"
+    junit = Path(arguments.junit)
+    if not junit.is_absolute():
+        junit = out / junit
+
+    selection_rc, mode = select_impl(out, timeout_bin)
+
+    _append_github_output(output_path, [f"mode={mode}"])
+
+    verdict = selection_verdict(selection_rc, mode)
+    if verdict.action == "refuse":
+        _append_github_output(output_path, ["rc=3"])
+        print(f"\n::error title=main hourly selection REFUSED::{verdict.message}", flush=True)
+        return 3
+
+    if verdict.action == "stop":
+        _append_github_output(output_path, ["rc=0"])
+        print("[selection] the hour selected no test module", file=sys.stderr, flush=True)
+        return 0
+
+    # continue: affected
+    modules_path = selection_dir / "shard-modules.txt"
+    modules = [line for line in modules_path.read_text(encoding="utf-8").splitlines() if line.strip()]
+    range_base, range_tip = _range_base_tip(range_json)
+    span = f"{range_base[:10]}..{range_tip[:10]}" if range_base and range_tip else f"{range_json.name} base/head"
+    print(f"[selection] {len(modules)} module(s) over {span}", file=sys.stderr, flush=True)
+
+    basetemp = _run_basetemp(arguments)
+    if basetemp is None:
+        return 2
+    basetemp.mkdir(parents=True, exist_ok=True)
+
+    rc = pytest_impl(
+        modules,
+        junit=junit,
+        basetemp=basetemp,
+        timeout_bin=timeout_bin,
+        wall_s=int(arguments.pytest_timeout),
+        kill_after_s=int(arguments.pytest_kill_after),
+        test_timeout_s=int(arguments.pytest_test_timeout),
+    )
+
+    modules_for_junit = _run_modules_for_junit(modules_path, modules)
+    return _run_finalize_pytest_rc(output_path, rc, junit, modules_for_junit)
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__.split("\n", 1)[0])
     commands = parser.add_subparsers(dest="command", required=True)
@@ -649,8 +953,60 @@ def main(argv: list[str] | None = None) -> int:
         default=ATTRIBUTION_BUDGET_S,
         help="R6: seconds of per-commit attribution before the rest of the range is named as cut",
     )
+    run = commands.add_parser("run", help="select modules for the hour and run pytest (hourly lane parity)")
+    run.add_argument(
+        "--out-dir",
+        default=None,
+        help="directory with range.json and event.json from `range` (same as RANGE_DIR in the workflow)",
+    )
+    run.add_argument(
+        "--range-dir",
+        metavar="DIR",
+        default=None,
+        help="deprecated alias for --out-dir",
+    )
+    run.add_argument(
+        "--basetemp", default="", help="override pytest --basetemp (default: RUNNER_TEMP/pytest-basetemp-hourly-...)"
+    )
+    run.add_argument(
+        "--junit",
+        default="junit.xml",
+        help="JUnit report path (default: OUT_DIR/junit.xml)",
+    )
+    run.add_argument(
+        "--pytest-timeout",
+        type=int,
+        default=PYTEST_WALL_S,
+        help=f"wall-time cap for pytest in seconds (passed to GNU timeout, default {PYTEST_WALL_S})",
+    )
+    run.add_argument(
+        "--pytest-kill-after",
+        type=int,
+        default=PYTEST_KILL_AFTER_S,
+        help=f"GNU timeout --kill-after for pytest (default {PYTEST_KILL_AFTER_S})",
+    )
+    run.add_argument(
+        "--pytest-test-timeout",
+        type=int,
+        default=PYTEST_TEST_TIMEOUT_S,
+        help=f"pytest --timeout= value in seconds (default {PYTEST_TEST_TIMEOUT_S})",
+    )
+    run.add_argument(
+        "--output",
+        default="",
+        help="append mode=rc=wall_cap= lines here; default is GITHUB_OUTPUT",
+    )
     arguments = parser.parse_args(argv)
-    return _range(arguments) if arguments.command == "range" else _report(arguments)
+    if arguments.command == "range":
+        return _range(arguments)
+    if arguments.command == "run":
+        out_dir = arguments.out_dir or arguments.range_dir
+        if not out_dir:
+            print("run: give --out-dir DIR (directory with range.json and event.json)", file=sys.stderr)
+            return 2
+        arguments.out_dir = out_dir
+        return _run(arguments)
+    return _report(arguments)
 
 
 if __name__ == "__main__":

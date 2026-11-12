@@ -57,11 +57,18 @@
  *   ✔︎ Zero fabricated numbers: each block comments its [PDF] Fig. row.
  */
 
-import type { ControlHint, DeviceMap, DeviceMapEntry, LedRule, MidiBinding } from '$lib/rb/midi/midi-types';
+import type {
+	ControlHint,
+	DeviceMap,
+	DeviceMapEntry,
+	LedRule,
+	MidiBinding
+} from '$lib/rb/midi/midi-types';
 import type { DeckId } from '$lib/rb/deck-slots';
 import type { HotCueSlot } from '$lib/rb/hot-cue-types';
 import {
 	pioneerDeckBindings,
+	pioneerDeckPairToggleBindings,
 	pioneerNote,
 	pioneerPadChannel,
 	pioneerCc,
@@ -128,11 +135,20 @@ function _mixerBindings(deck: DeckId): MidiBinding[] {
 		// [PDF] p.2 M3 TRIM: CC 4 (0x04) MSB (LSB 36 unbound - header note).
 		{ source: pioneerCc(ch, 0x04), action: { type: 'mixer_channel', deck, target: 'trim' } },
 		// [PDF] p.2 M4 EQ HI: CC 7 (0x07) MSB (LSB 39 unbound).
-		{ source: pioneerCc(ch, 0x07), action: { type: 'mixer_channel', deck, target: 'eq', band: 'high' } },
+		{
+			source: pioneerCc(ch, 0x07),
+			action: { type: 'mixer_channel', deck, target: 'eq', band: 'high' }
+		},
 		// [PDF] p.2 M5 EQ MID: CC 11 (0x0B) MSB (LSB 43 unbound).
-		{ source: pioneerCc(ch, 0x0b), action: { type: 'mixer_channel', deck, target: 'eq', band: 'mid' } },
+		{
+			source: pioneerCc(ch, 0x0b),
+			action: { type: 'mixer_channel', deck, target: 'eq', band: 'mid' }
+		},
 		// [PDF] p.2 M6 EQ LOW: CC 15 (0x0F) MSB (LSB 47 unbound).
-		{ source: pioneerCc(ch, 0x0f), action: { type: 'mixer_channel', deck, target: 'eq', band: 'low' } },
+		{
+			source: pioneerCc(ch, 0x0f),
+			action: { type: 'mixer_channel', deck, target: 'eq', band: 'low' }
+		},
 		// [PDF] p.2 M2 CH FADER: CC 19 (0x13) MSB (LSB 51 unbound), Min at
 		// bottom / Max at top - matches setFader 0..1, no invert.
 		{ source: pioneerCc(ch, 0x13), action: { type: 'mixer_channel', deck, target: 'fader' } }
@@ -227,7 +243,8 @@ export const FLX10_MAP: DeviceMap = {
 		...DECKS.flatMap((deck) => _deckBindings(deck)),
 		...DECKS.flatMap((deck) => _mixerBindings(deck)),
 		...DECKS.flatMap((deck) => _padBindings(deck)),
-		..._browserAndGlobalBindings()
+		..._browserAndGlobalBindings(),
+		...pioneerDeckPairToggleBindings()
 	],
 	leds: DECKS.flatMap((deck) => _ledRules(deck)),
 	hints: DECKS.flatMap((deck) => _deckHints(deck))
@@ -235,5 +252,5 @@ export const FLX10_MAP: DeviceMap = {
 
 /** Self-registration: maps/entries.ts discovers this export, so no shared list names this map. */
 export const DEVICE_MAP_ENTRIES: readonly DeviceMapEntry[] = [
-	{ key: 'FLX10_MAP', map: FLX10_MAP, live: true },
+	{ key: 'FLX10_MAP', map: FLX10_MAP, live: true }
 ];

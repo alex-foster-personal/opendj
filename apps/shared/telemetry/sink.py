@@ -18,13 +18,18 @@ import socket
 import sys
 import traceback
 from collections.abc import Mapping, MutableMapping
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, replace
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 from urllib.parse import urlparse
 
 from apps.shared.telemetry.error_id import stable_error_id
+from apps.shared.telemetry.scrub import (
+    LOG_TEXT_WITHHELD,
+    forwardable_exception_type,
+    forwardable_message,
+)
 
 log = logging.getLogger(__name__)
 
@@ -253,8 +258,14 @@ def capture_error_event(
     kind: str = "engine",
     host: str | None = None,
     build_sha: str | None = None,
+    local_message: str | None = None,
 ) -> ErrorEvent:
-    """Mint id/host/sha, append the local JSONL, return the record."""
+    """Mint id/host/sha, append the local JSONL, return the record.
+
+    ``message`` is the identity material. ``local_message``, when given, is the
+    raw text written to the local JSONL only; the returned record keeps the
+    identity message, so nothing raw reaches the forwarded event.
+    """
     event = make_event(
         message=message,
         source_site=source_site,
@@ -262,7 +273,7 @@ def capture_error_event(
         host=host,
         build_sha=build_sha,
     )
-    append_sink(event)
+    append_sink(event if local_message is None else replace(event, message=local_message))
     return event
 
 
@@ -356,13 +367,19 @@ def post_build_failure(
     host: str | None = None,
     build_sha: str | None = None,
 ) -> ErrorEvent:
-    """CI / headless-dmg failure: local JSONL plus Sentry if telemetry is on."""
+    """CI / headless-dmg failure: local JSONL plus Sentry if telemetry is on.
+
+    Build output is dynamic text that can name a private title or file, so the
+    id, fingerprint and forwarded event derive from its forwardable form (a
+    proven literal, else the fixed placeholder); the raw text stays local.
+    """
     event = capture_error_event(
-        message=message,
+        message=forwardable_message(message),
         source_site=source_site,
         kind="build",
         host=host,
         build_sha=build_sha,
+        local_message=message,
     )
     maybe_send_sentry(event)
     return event
@@ -415,13 +432,41 @@ def attach_identity_to_sentry_event(
 
 
 def _message_from_sentry_event(event: Mapping[str, Any]) -> str:
+    """Return the non-content identity class for an event.
+
+    Exception values are user-controlled free text. The event scrubber hides
+    them before transport, so the local id must not hash the rendered value
+    before that scrub happens either. The exception type plus the raising site
+    supplied by ``_source_site_from_hint`` is the stable identity instead.
+    """
     exception = event.get("exception")
     if isinstance(exception, dict):
         values = exception.get("values") or []
         if values and isinstance(values[0], dict):
-            name = values[0].get("type") or "Error"
-            value = values[0].get("value") or ""
-            return f"{name}: {value}"
+            if not values[0].get("type"):
+                return "Error"
+            # The proven type only: a runtime-built class name is private text (OBS-6393).
+            return forwardable_exception_type(values[0].get("type"), values[0].get("module"))[0]
+    # A top-level message hashes only its forwarded form (scrub.py `_scrub_message`): a
+    # proven literal, or the fixed placeholder, never raw text like f"now playing {title}".
+    message = event.get("message")
+    if isinstance(message, str):
+        return forwardable_message(message)
+    if isinstance(message, dict):
+        formatted = message.get("formatted")
+        return forwardable_message(formatted) if isinstance(formatted, str) else LOG_TEXT_WITHHELD
+    return "unknown error"
+
+
+def _local_message_from_sentry_event(event: Mapping[str, Any]) -> str:
+    """The raw text for the local JSONL only (OBS-6393 scrubs the remote payload, not the local sink)."""
+    exception = event.get("exception")
+    if isinstance(exception, dict):
+        values = exception.get("values") or []
+        if values and isinstance(values[0], dict):
+            name = str(values[0].get("type") or "Error")
+            value = values[0].get("value")
+            return f"{name}: {value}" if isinstance(value, str) and value else name
     message = event.get("message")
     if isinstance(message, str):
         return message
@@ -486,5 +531,6 @@ def enrich_sentry_event(
         message=_message_from_sentry_event(event),
         source_site=_source_site_from_hint(hint),
         kind=_kind_from_sentry_event(event),
+        local_message=_local_message_from_sentry_event(event),
     )
     attach_identity_to_sentry_event(event, record)

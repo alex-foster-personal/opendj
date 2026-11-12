@@ -2,6 +2,11 @@
  * RESCUE-07: a /performance reload that interrupted playing decks offers a
  * one-click resume instead of landing silently stopped.
  *
+ * SETUP-12768 (#11423): finishing setup on the host route without a navigation
+ * is not a reload. The overlay calls `dismissReloadResume()` when
+ * `shouldNavigateSetupDoor()` is false so an earlier partial navigation cannot
+ * surface the banner after Start playing.
+ *
  * Pure half: decides WHICH decks to offer and in what order. The reactive
  * holder (reload-resume.svelte.ts) owns the banner's lifetime and the click.
  *

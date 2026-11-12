@@ -5,7 +5,7 @@
  * and never offers it again. That was the whole story, so a tester who had
  * skipped setup, or who had imported once and wanted to import again, had NO
  * route to /setup from inside the running app. This file pins the four doors
- * that now exist -- the Cmd+, settings overlay, the /admin Setup tab, the
+ * that now exist -- the Cmd+, settings overlay, the /admin Setup action, the
  * /settings page and the Library workspace top bar -- and the one shared
  * module all four call.
  *
@@ -28,8 +28,8 @@
  *   into setup is a URL somebody has to already know
  * - if the Run setup action moves inside .so-body then it is invisible until
  *   the user types a search term first
- * - if the admin tab strip loses its Setup tab then the operator panel has no
- *   route into setup
+ * - if the admin chrome loses its Setup action then the operator panel has no
+ *   route into setup; Setup must not be role="tab"
  * - if any surface spells '/setup' itself instead of using SETUP_ROUTE then
  *   the doors can drift apart
  */
@@ -112,7 +112,7 @@ test('runSetup re-arms the wizard and navigates, in that order', async () => {
 		throw new Error(`unexpected request: ${request.method} ${url.pathname}`);
 	};
 	const navigated = [];
-	assert.equal(await mod.runSetup((path) => navigated.push(path)), null);
+	assert.equal(await mod.runSetup((path) => navigated.push(path), '/library'), null);
 	assert.deepEqual(navigated, [mod.SETUP_ROUTE]);
 	assert.equal(mod.SETUP_ROUTE, '/setup');
 	// The dismissal is cleared BEFORE the navigation, so the page never loads
@@ -132,7 +132,7 @@ test('runSetup awaits the probe, so a click in the first tick still works', asyn
 		return jsonResponse(status());
 	};
 	const navigated = [];
-	assert.equal(await mod.runSetup((path) => navigated.push(path)), null);
+	assert.equal(await mod.runSetup((path) => navigated.push(path), '/library'), null);
 	assert.deepEqual(navigated, ['/setup']);
 });
 
@@ -146,7 +146,7 @@ test('a legacy boot refuses, navigates nowhere and writes nothing', async () => 
 		throw new Error(`a legacy boot must not be asked for ${pathname}`);
 	};
 	const navigated = [];
-	const failure = await mod.runSetup((path) => navigated.push(path));
+	const failure = await mod.runSetup((path) => navigated.push(path), '/library');
 	assert.match(failure, /setup API not offered/);
 	assert.deepEqual(navigated, []);
 	assert.deepEqual(calls, ['/api/v1/health']);
@@ -162,7 +162,7 @@ test('a failed re-arm does not navigate', async () => {
 		return jsonResponse({ detail: { code: 'boom', message: 'dismiss write failed' } }, 500);
 	};
 	const navigated = [];
-	const failure = await mod.runSetup((path) => navigated.push(path));
+	const failure = await mod.runSetup((path) => navigated.push(path), '/library');
 	assert.match(failure, /dismiss write failed|Something went wrong/);
 	assert.match(mod.setupWizard.errorDiagnostic ?? '', /dismiss write failed/);
 	assert.deepEqual(navigated, []);
@@ -207,7 +207,7 @@ test('the wizard load path awaits the probe too', async () => {
 test('the Cmd+, overlay offers Run setup, outside the collapsible body', () => {
 	const overlay = read('src/lib/components/settings/SettingsOverlay.svelte');
 	assert.match(overlay, /from '\$lib\/setup\/run-setup'/);
-	assert.match(overlay, /runSetup\(goto\)/);
+	assert.match(overlay, /runSetup\(goto,\s*\$page\.url\.pathname\)/);
 	assert.match(overlay, /RUN_SETUP_LABEL/);
 	// .so-body is display:none until the panel expands, so an action rendered
 	// inside it is unreachable until the user types a search term.
@@ -234,20 +234,30 @@ test('Cmd+, is a real accelerator, not a label', () => {
 	assert.match(layout, /installSettingsHotkeys\(\)/);
 });
 
-test('the admin panel has a tab strip and Setup is one of the tabs', () => {
+test('the admin panel has a tab strip and Setup is a header action, not a tab', () => {
 	const admin = read('src/routes/admin/+page.svelte');
 	assert.match(admin, /role="tablist"/);
 	const tabs = [...admin.matchAll(/role="tab"/g)];
-	assert.ok(tabs.length >= 2, `expected a strip, found ${tabs.length} tab(s)`);
+	assert.equal(tabs.length, 7, `expected seven tabs, found ${tabs.length}`);
 	assert.match(admin, /KPI ledger/);
+	assert.match(admin, /Lyrics generator/);
+	assert.match(admin, /Quality ratchet/);
 	assert.match(admin, /Diagnostics/);
 	assert.match(admin, /Playground/);
+	assert.match(admin, /selectTab\('lyrics'\)/);
+	assert.match(admin, /selectTab\('quality'\)/);
 	assert.match(admin, /tab=playground|selectTab\('playground'\)/);
 	assert.match(admin, /tab=diagnostics|adminTabFromUrl|from '\.\/admin-tab'/);
-	assert.match(admin, />\s*\{setupBusy \? 'Opening setup\.\.\.' : 'Setup'\}\s*</);
-	// Through the shared module, so the tab behaves like the other two doors.
+	const setupLabel = admin.match(/>\s*\{setupBusy \? 'Opening setup\.\.\.' : 'Setup'\}\s*</);
+	assert.ok(setupLabel, 'Setup label must exist');
+	const setupRegion = admin.slice(
+		Math.max(0, setupLabel.index - 200),
+		setupLabel.index + setupLabel[0].length
+	);
+	assert.doesNotMatch(setupRegion, /role="tab"/, 'Setup must not be a tab');
+	assert.match(admin, /class="admin-setup-action"/);
 	assert.match(admin, /from '\$lib\/setup\/run-setup'/);
-	assert.match(admin, /runSetup\(goto\)/);
+	assert.match(admin, /runSetup\(goto,\s*\$page\.url\.pathname\)/);
 });
 
 test('every entry point goes through the shared module, none reimplements it', () => {

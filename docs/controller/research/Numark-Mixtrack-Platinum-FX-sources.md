@@ -1,6 +1,6 @@
 # Numark Mixtrack Platinum FX sources (research note)
 
-Recorded Tue 10 Nov 2026 for issue #10793 (app MIDI map from the manufacturer chart).
+Recorded Tue 10 Nov 2026 for issue #10793 (app MIDI map from the manufacturer chart). Updated for the practice replica (issue #10875, SKIN-13439).
 
 ## Official sources (clean room)
 
@@ -11,23 +11,44 @@ Recorded Tue 10 Nov 2026 for issue #10793 (app MIDI map from the manufacturer ch
 | Filename | `MixTrackPlatinumFX-UserGuide-v1.2.pdf` (32 pages, created 2019-12-10, modified 2020-09-17) |
 | sha256 | `6eac973b498733d77b7707a97d93e632aa1b4fc3bb83ee1caf4922eea229e4d3` |
 | Fetch date | Tue 10 Nov 2026 |
-| Appendix | Page 31 (English): Technical Specifications and Trademarks & Licenses only |
+| Panel size source | User Guide, Appendix, Technical Specifications: "Dimensions (width x depth x height) 21.1 x 9.7 x 2.0 in, 53.6 x 24.6 x 5.1 cm" |
+| Top-panel figure | User Guide page 3, "Features > Top Panel": a vector line drawing with callouts 1..38 (the measured reference traces a 600 dpi render of it; neither the PDF nor the render is committed) |
+| Render sha256 | `6be510c40e1e6ec5205743dc506c418022fdf3cea5cf8703c880960a41c45ac4` (`pdftoppm -r 600 -f 3 -l 3 -png`, 5100 x 6600 px; the figure crop starts at page pixel (1100, 600) and is 2950 x 1450 px) |
 | MIDI message list | **None published.** Searched the product page (no MIDI download), the User Guide (the only MIDI text is the rear-panel callout "2. USB: Sends USB MIDI data to control various ..." and its translations; no note, CC or channel table), and numark.com, support.numark.com and inmusicbrands.com (no MIDI implementation document for this model, Tue 10 Nov 2026). `docs/controller/research/2026-07-22-map-availability-survey.md` and `(private path)` list Numark as community-only. |
 
-The vendor PDF is **not** committed to this repository (manufacturer copyright).
+The vendor PDF is **not** committed to this repository (manufacturer copyright). Logos, wordmarks and photos stay out of the tree (`(private path)`); the figure's callout numbers are kept as `fig` only.
 
-## Sources this issue excludes
+## Sources this issue excludes as binding authority
 
 | Source | Why excluded |
 | --- | --- |
-| Mixxx `Numark Mixtrack Platinum FX.midi.xml` (GPL-2.0-or-later) | Apache 2.0 repo may read Mixxx only to cross-check a wire already taken from a manufacturer chart; no chart exists, so no cross-check basis. |
-| `tools/deck-diagrams/devices/numark-mixtrack-platinum-fx/midi.json` | Earlier Mixxx ingest; not a wire source for the app map. |
+| Mixxx `Numark Mixtrack Platinum FX.midi.xml` (GPL-2.0-or-later) | Apache 2.0 repo may read Mixxx only to cross-check a wire already taken from a manufacturer chart; no chart exists, so Mixxx is tier 2 only. |
+| `tools/deck-diagrams/devices/numark-mixtrack-platinum-fx/midi.json` | Earlier Mixxx ingest; not a wire source for live bindings. |
 | Serato DJ Pro quick-start guide (serato.com download 151805) | Serato function table, not a Numark MIDI wire list. |
+
+## Wire source (tier 2, community)
+
+With no vendor MIDI list, the only public wire-level source is the community Mixxx mapping, which `(private path)` ranks as tier 2: usable with a mandatory hardware spot-check before anything binds to it.
+
+| Field | Value |
+| --- | --- |
+| Mapping | https://github.com/mixxxdj/mixxx/blob/main/res/controllers/Numark%20Mixtrack%20Platinum%20FX.midi.xml |
+| Script | https://github.com/mixxxdj/mixxx/blob/main/res/controllers/Numark-Mixtrack-Platinum-FX-scripts.js |
+| sha256 (xml) | `673a924d86c3abcb316ffc8986430540c8ed1d4283540ea5fe38a6a9b5ff3e94` |
+| sha256 (js) | `91921759bdeaeb0d966d6255af97f86b3881233e8b4ccf343e384b03466428de` |
+| Fetch date | Thu 12 Nov 2026 (raw.githubusercontent.com, main) |
+| Earlier ingest | `tools/deck-diagrams/devices/numark-mixtrack-platinum-fx/midi.json` (the same XML, grid placeholder positions) |
+
+Only MIDI numbers (facts) are transcribed; no Mixxx code is copied. Every hint in the runtime map cites the Mixxx control it came from.
 
 ## WebMIDI device name
 
-No Numark document gives the USB port name, so it is unconfirmed. Candidate strings used in the guard test: "MixTrack Platinum FX", "Numark MixTrack Platinum FX", "Mixtrack Platinum FX MIDI 1". None of the registered `nameMatch` patterns matches those strings; `numark-mixtrack-pro-fx.ts` deliberately misses the Platinum FX model. A connected unit lands in the learn log as unmapped, which is the intended state. No unit was plugged in.
+No Numark document gives the USB port name, so it is unconfirmed. Candidate strings: "MixTrack Platinum FX", "Numark MixTrack Platinum FX", "Mixtrack Platinum FX MIDI 1". `nameMatch: 'Mixtrack\s*Platinum\s*FX'` (case-insensitive) misses Mixtrack Pro FX and the older Mixtrack Pro family. A real unit should keep landing in the learn log as unmapped until a capture promotes hints to bindings.
 
-## Outcome
+## Runtime map (practice only)
 
-No runtime map, binding, hint, practice fragment or `apps/audio-engine/maps/device-maps.json` entry ships (requirement MIDI-11945). Issue #10793 binding, FX and `nameMatch` acceptance lines stay unmet until a tier-3 hardware capture (`tools/controller-probe/capture.py`) or a future Numark MIDI publication supplies verifiable wires. The `tools/deck-diagrams/scripts/new_panel.py` replica follow-up waits on that map.
+`apps/webui/frontend/src/lib/rb/midi/maps/numark-mixtrack-platinum-fx.ts` exports `NUMARK_MIXTRACK_PLATINUM_FX_MAP`: **hints only, no bindings** (ADR-0137). For the top-panel figure on User Guide page 3, the practice panel traces the same two-deck strip as the Mixtrack Pro FX drawing (80 hit targets); deck transport, jog, pitch and mixer strip follow the Pro FX Mixxx channel layout on channels 1 / 2 with pads on 5 / 6. The map registers for the practice route only (`PRACTICE_DEVICE_MAPS`), not in `DEVICE_MAP_REGISTRY` or `apps/audio-engine/maps/device-maps.json`.
+
+## Practice replica
+
+`tools/deck-diagrams/devices/numark-mixtrack-platinum-fx/panel.json` (80 controls) and `panel.reference.json` are generated by `tools/deck-diagrams/scripts/build_numark_mixtrack_platinum_fx_panel.py`; the route is `/practice/numark-mixtrack-platinum-fx`. MIC GAIN (fig 3) is analogue and sends no MIDI, so it is listed in `out_of_scope` rather than drawn. Jog displays (fig 25) are HID-only and out of scope.

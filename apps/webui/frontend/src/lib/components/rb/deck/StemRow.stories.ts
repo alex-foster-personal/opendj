@@ -19,6 +19,7 @@ const ctl = (over: Partial<StemControlState> = {}): StemControlState => ({
 	muted: false,
 	solo: false,
 	gain: 0.5,
+	fx_send: 0,
 	...over
 });
 
@@ -104,6 +105,7 @@ const meta = {
 		testIdScope: 'deck',
 		onMute: fn(async () => {}),
 		onSolo: fn(async () => {}),
+		onGain: fn(),
 		onLoad: fn(async () => {})
 	}
 } satisfies Meta<typeof StemRow>;
@@ -124,6 +126,7 @@ export const NoStemsSeparate: Story = contracts.NoStemsSeparate;
 export const NoStemsNoSource: Story = contracts.NoStemsNoSource;
 export const NoStemsQueued: Story = contracts.NoStemsQueued;
 export const NoStemsFailed: Story = contracts.NoStemsFailed;
+export const LevelsOffUnity: Story = contracts.LevelsOffUnity;
 export const QuickAca: Story = contracts.QuickAca;
 export const QuickInst: Story = contracts.QuickInst;
 export const QuickCustom: Story = contracts.QuickCustom;

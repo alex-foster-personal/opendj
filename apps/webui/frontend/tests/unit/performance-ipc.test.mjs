@@ -1498,6 +1498,13 @@ test('queryPerformanceState exposes validated vocals per deck (#1031)', () => {
 	}
 });
 
+test('STEMPERF-11699: Deck forwards stem chip onGain into stem_gain IPC (#10323)', async () => {
+	const deckSource = await readFile('src/lib/components/rb/Deck.svelte', 'utf8');
+	assert.match(deckSource, /\{ type: 'stem_gain', deck: deckId, stem, value \}/);
+	assert.match(deckSource, /onGain=\{setStemGain\}/);
+	assert.match(deckSource, /onGain: setStemGain/);
+});
+
 test('deck header key controls dispatch only through the typed performance dispatcher', async () => {
 	const deckSource = await readFile('src/lib/components/rb/Deck.svelte', 'utf8');
 	const headerSource = await readFile('src/lib/components/rb/deck/DeckHeader.svelte', 'utf8');
@@ -1523,11 +1530,11 @@ test('stem commands are strict typed IPC and default state never claims artifact
 		const state = ipc.queryPerformanceState();
 		assert.equal(state.decks[1].stems.status, 'unavailable');
 		assert.deepEqual(state.decks[1].stems.controls, {
-			vocal: { muted: false, solo: false, gain: 0.5 },
-			instrumental: { muted: false, solo: false, gain: 0.5 },
-			drums: { muted: false, solo: false, gain: 0.5 },
-			bass: { muted: false, solo: false, gain: 0.5 },
-			other: { muted: false, solo: false, gain: 0.5 }
+			vocal: { muted: false, solo: false, gain: 0.5, fx_send: 0 },
+			instrumental: { muted: false, solo: false, gain: 0.5, fx_send: 0 },
+			drums: { muted: false, solo: false, gain: 0.5, fx_send: 0 },
+			bass: { muted: false, solo: false, gain: 0.5, fx_send: 0 },
+			other: { muted: false, solo: false, gain: 0.5, fx_send: 0 }
 		});
 
 		await assert.rejects(
@@ -1641,13 +1648,17 @@ test('continuous mixer controls execute through IPC immediately and round-trip i
 		assert.deepEqual(state.mixer, {
 			crossfader: 0.3,
 			master: 0.6,
+			booth: {
+				level: 0.25,
+				selected_output_device_id: null,
+				signal_mode: 'independent',
+				route: { state: 'default', selected: false }
+			},
 			headphones: {
 				mix: 0.25,
 				level: 0.75,
-				booth_level: 0.25,
 				selected_output_device_id: null,
 				selected_master_output_device_id: null,
-				selected_booth_output_device_id: null,
 				selected_input_device_id: null,
 				output_mode: 'practice',
 				split_reason: null,
@@ -1675,8 +1686,7 @@ test('continuous mixer controls execute through IPC immediately and round-trip i
 				},
 				routes: {
 					master: { state: 'default', selected: false },
-					cue: { state: 'default', selected: false },
-					booth: { state: 'default', selected: false }
+					cue: { state: 'default', selected: false }
 				},
 				signals: Object.fromEntries(
 					['master', 'cue', 'input'].map((bus) => [
@@ -2204,6 +2214,31 @@ test('auto_play_two_track is a registered performance command that completes wit
 	}
 });
 
+// Issue #13108: bus record, pref write, deck transport and mixer unchanged (TOPVIEW-06).
+test('auto_play_two_track records on the bus without mutating deck transport or mixer', async () => {
+	// [if] auto_play_two_track toggles the pref [then] decks and mixer are unchanged, [else stop].
+	globalThis.window = {};
+	const uninstall = ipc.installPerformanceBrowserIpc();
+	try {
+		const before = ipc.queryPerformanceState();
+		const decksBefore = structuredClone(before.decks);
+		const mixerBefore = structuredClone(before.mixer);
+		const state = await ipc.dispatchPerformanceCommand({
+			type: 'auto_play_two_track',
+			enabled: true
+		});
+		assert.equal(state.history.at(-1)?.type, 'auto_play_two_track');
+		assert.equal(state.last_error, null);
+		assert.equal(state.ui.auto_play_two_deck, true);
+		assert.doesNotMatch(JSON.stringify(state), /auto_play_two_track: not_implemented/);
+		assert.deepEqual(state.decks, decksBefore);
+		assert.deepEqual(state.mixer, mixerBefore);
+	} finally {
+		uninstall();
+		delete globalThis.window;
+	}
+});
+
 test('TOPVIEW-06 two-track AutoPlay has a queue scope and the checkbox uses the typed dispatcher', async () => {
 	// [if] auto_play_two_track has no queue scope [then] every IPC/CLI call throws, [else stop].
 	assert.equal(
@@ -2353,6 +2388,105 @@ test('IOPIN-06 MIDI panel sends takeover radios through the typed dispatcher', a
 	const source = await readFile('src/lib/components/rb/MidiPanel.svelte', 'utf8');
 	assert.match(source, /runPerformanceCommandFromUi\(\{ type: 'midi_takeover_mode', mode \}\)/);
 	assert.doesNotMatch(source, /setMidiTakeoverMode\(/);
+});
+
+test('issue 10580 midi learn query is idle and commands require the MIDI runtime when unregistered', async () => {
+	// [if] no learn adapter is registered [then] query midi_learn is idle, [else stop].
+	const idle = {
+		phase: 'idle',
+		target: null,
+		reason: null,
+		kind: null,
+		device_id: null,
+		binding: null
+	};
+	assert.deepEqual(ipc.queryPerformanceState().midi_learn, idle);
+	globalThis.window = {};
+	const uninstall = ipc.installPerformanceBrowserIpc();
+	try {
+		await assert.rejects(
+			window.musicDjToolsPerformance.dispatch({ type: 'midi_learn_retry' }),
+			/midi_learn_retry requires the MIDI runtime/
+		);
+	} finally {
+		uninstall();
+		delete globalThis.window;
+	}
+});
+
+test('issue 10580 midi_learn_retry and midi_learn_cancel reject unexpected fields', async () => {
+	// [if] an agent adds extra keys [then] parse fails before dispatch, [else stop].
+	assert.throws(
+		() => ipc.parsePerformanceCommandForTest({ type: 'midi_learn_cancel', extra: 1 }),
+		/unexpected fields: extra/
+	);
+	assert.throws(
+		() => ipc.parsePerformanceCommandForTest({ type: 'midi_learn_retry', deck: 1 }),
+		/unexpected fields: deck/
+	);
+	assert.equal(ipc.performanceCommandQueueScopes({ type: 'midi_learn_retry' }), null);
+	assert.equal(ipc.performanceCommandQueueScopes({ type: 'midi_learn_cancel' }), null);
+});
+
+test('issue 10580 registered learn adapter round-trips retry and cancel on the dispatcher', async () => {
+	// [if] learn is ambiguous [then] retry and cancel reach the adapter, [else stop].
+	let phase = 'ambiguous';
+	const reason = 'too few messages';
+	let retryCalls = 0;
+	let cancelCalls = 0;
+	const unregister = ipc.registerMidiLearnIpc({
+		read: () => ({
+			phase,
+			target: { action: { type: 'browse_encoder' }, shift: false },
+			reason: phase === 'ambiguous' ? reason : null,
+			kind: null,
+			device_id: null,
+			binding: null
+		}),
+		retry: async () => {
+			retryCalls += 1;
+			phase = 'armed';
+		},
+		cancel: () => {
+			cancelCalls += 1;
+			phase = 'idle';
+		}
+	});
+	globalThis.window = {};
+	const uninstall = ipc.installPerformanceBrowserIpc();
+	try {
+		assert.equal(ipc.queryPerformanceState().midi_learn.phase, 'ambiguous');
+		assert.equal(ipc.queryPerformanceState().midi_learn.reason, reason);
+		await ipc.dispatchPerformanceCommand({ type: 'midi_learn_retry' });
+		assert.equal(retryCalls, 1);
+		assert.equal(ipc.queryPerformanceState().midi_learn.phase, 'armed');
+		await ipc.dispatchPerformanceCommand({ type: 'midi_learn_cancel' });
+		assert.equal(cancelCalls, 1);
+		assert.equal(ipc.queryPerformanceState().midi_learn.phase, 'idle');
+	} finally {
+		uninstall();
+		delete globalThis.window;
+		unregister();
+	}
+});
+
+test('issue 10580 MidiLearnStatus routes Retry and Cancel through runPerformanceCommandFromUi', async () => {
+	const source = await readFile('src/lib/components/rb/midi/MidiLearnStatus.svelte', 'utf8');
+	assert.match(source, /runPerformanceCommandFromUi\(\{ type: 'midi_learn_retry' \}\)/);
+	assert.match(source, /runPerformanceCommandFromUi\(\{ type: 'midi_learn_cancel' \}\)/);
+	assert.doesNotMatch(source, /retryMidiLearn/);
+	assert.doesNotMatch(source, /cancelMidiLearn/);
+});
+
+test('issue 10580 learn-ipc leaf imports only types at runtime', async () => {
+	const source = await readFile('src/lib/rb/midi/learn-ipc.ts', 'utf8');
+	for (const line of source.split('\n')) {
+		const trimmed = line.trim();
+		if (!trimmed.startsWith('import ')) continue;
+		assert.match(trimmed, /^import type /, `non-type import: ${trimmed}`);
+	}
+	const ipcSource = await readFile('src/lib/rb/performance-ipc.svelte.ts', 'utf8');
+	assert.doesNotMatch(ipcSource, /midi-ui-state/);
 });
 
 // ----- pin 88e3abec02a0: "show other users' pins" is stubbed, not silent --

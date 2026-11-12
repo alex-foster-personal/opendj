@@ -14,6 +14,7 @@ class ScanStatus(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid")
 
     state: Literal["idle", "running", "done", "failed"]
+    basis: Literal["fingerprint", "tags", "both"]
     total: int
     done: int
     computed: int
@@ -21,6 +22,9 @@ class ScanStatus(BaseModel):
     not_local: int
     errors: int
     clusters: int | None
+    clusters_fingerprint: int | None
+    clusters_tags: int | None
+    tag_precision: float | None
     error: str | None
     started_at: str | None
     finished_at: str | None
@@ -35,7 +39,13 @@ class DedupService(Protocol):
         """Where the background library scan is."""
         ...
 
-    def start_scan(self, *, state_db: Path | None, db_path: Path) -> bool:
+    def start_scan(
+        self,
+        *,
+        state_db: Path | None,
+        db_path: Path,
+        basis: Literal["fingerprint", "tags", "both"] = "both",
+    ) -> bool:
         """Start the background library scan; False when one is already running."""
         ...
 

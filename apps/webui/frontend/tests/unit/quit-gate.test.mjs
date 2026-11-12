@@ -8,8 +8,8 @@ import { resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { before, test } from 'node:test';
 
+import { fixtureServerLaunch } from '../../scripts/fixture-server.mjs';
 import { loadTypeScriptModule } from './load-typescript.mjs';
-import { resolvedRepoUv } from './resolve-repo-uv.mjs';
 
 const FRONTEND_ROOT = fileURLToPath(new URL('../..', import.meta.url));
 const REPO_ROOT = resolve(FRONTEND_ROOT, '../../..');
@@ -27,33 +27,23 @@ let resetShellQuitGateForTests;
 /** Boot the throwaway real engine (WS hub + lifecycle/quit). */
 function startQuitGateTestServer() {
 	return new Promise((resolvePort, reject) => {
-		let uv;
+		let launch;
 		try {
-			uv = resolvedRepoUv(REPO_ROOT);
+			launch = fixtureServerLaunch({
+				repoRoot: REPO_ROOT,
+				pythonTarget: 'scripts.testing.quit_gate_test_server',
+				pythonTargetIsModule: true,
+				extraArgs: ['--port', '0']
+			});
 		} catch (error) {
 			reject(error);
 			return;
 		}
-		// The isolated frontend gate needs the locked project plus its test extra.
-		const proc = spawn(
-			uv,
-			[
-				'run',
-				'--locked',
-				'--extra',
-				'dev',
-				'python',
-				'-m',
-				'scripts.testing.quit_gate_test_server',
-				'--port',
-				'0'
-			],
-			{
-				cwd: REPO_ROOT,
-				env: { ...process.env, MDT_LIBRARY_MODE: 'local', PYTHONPATH: REPO_ROOT },
-				stdio: ['ignore', 'pipe', 'pipe']
-			}
-		);
+		const proc = spawn(launch.command, launch.args, {
+			cwd: launch.cwd,
+			env: launch.env,
+			stdio: ['ignore', 'pipe', 'pipe']
+		});
 		const timer = setTimeout(() => {
 			proc.kill();
 			reject(

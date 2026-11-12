@@ -3,6 +3,7 @@
  * and the types. Tags are not on the library index row, so they load here once
  * and refresh on `library.changed` kind `mytags`; the index stays as cheap as it was.
  */
+import { isPageGoingAway } from '$lib/api/lifecycle-abort';
 import { subscribeKind, subscribeResync } from '$lib/api/events-bus';
 import { pushToast } from '$lib/stores.svelte';
 import {
@@ -69,7 +70,10 @@ export function reportTagFailure(message: string): void {
 }
 
 function _refreshLoudly(): void {
-	refreshTags().catch((exc: unknown) => pushToast(`tags did not load: ${String(exc)}`, 'error'));
+	refreshTags().catch((exc: unknown) => {
+		if (isPageGoingAway()) return;
+		pushToast(`tags did not load: ${String(exc)}`, 'error');
+	});
 }
 
 /** Revert the newest tag change. The ⌘Z router decides when this is the one to run. */

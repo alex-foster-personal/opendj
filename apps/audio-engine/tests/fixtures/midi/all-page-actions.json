@@ -12,6 +12,8 @@
   {"source": {"ch": 1, "kind": "note", "id": 6}, "action": {"type": "deck_loop_exit", "deck": 1}},
   {"source": {"ch": 1, "kind": "note", "id": 7}, "action": {"type": "deck_sync_toggle", "deck": 1}},
   {"source": {"ch": 1, "kind": "note", "id": 8}, "action": {"type": "deck_manual_loop_cycle", "deck": 1}},
+  {"source": {"ch": 1, "kind": "note", "id": 31}, "action": {"type": "deck_loop_in", "deck": 1}},
+  {"source": {"ch": 1, "kind": "note", "id": 32}, "action": {"type": "deck_loop_out", "deck": 1}},
   {"source": {"ch": 1, "kind": "note", "id": 9}, "action": {"type": "deck_loop_scale", "deck": 1, "factor": 2}},
   {"source": {"ch": 1, "kind": "note", "id": 10}, "action": {"type": "deck_key_sync_toggle", "deck": 1}},
   {"source": {"ch": 1, "kind": "note", "id": 11}, "action": {"type": "deck_stem_eq_toggle", "deck": 1}},
@@ -32,6 +34,7 @@
   {"source": {"ch": 1, "kind": "cc", "id": 27}, "action": {"type": "headphone_level"}},
   {"source": {"ch": 1, "kind": "note", "id": 28}, "action": {"type": "master_cue", "mode": "hold"}},
   {"source": {"ch": 1, "kind": "note", "id": 29}, "action": {"type": "color_fx", "deck": 1, "effect": "filter"}},
-  {"source": {"ch": 1, "kind": "note", "id": 24}, "action": {"type": "shift_modifier"}}
+  {"source": {"ch": 1, "kind": "note", "id": 24}, "action": {"type": "shift_modifier"}},
+  {"source": {"ch": 3, "kind": "note", "id": 114}, "action": {"type": "mixer_deck_pair_select", "pair": "1-3"}}
  ]
 }

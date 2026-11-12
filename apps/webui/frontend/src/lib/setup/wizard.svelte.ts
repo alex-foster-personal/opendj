@@ -96,6 +96,7 @@ import {
 } from './setup-read';
 import {
 	backRefusal,
+	humanBackRefusal,
 	nextStepFor,
 	previousStepFor,
 	type ImportSource,
@@ -236,16 +237,20 @@ class SetupWizard {
 	 * silently does nothing is the same dead control the wizard already had.
 	 */
 	back(job: Job | null = null): void {
-		const why = backRefusal(this.step, {
+		const ctx = {
 			source: this.source,
 			detection: this.detection,
 			folderRows: this.folderRows,
 			job
-		});
-		if (why !== null) {
+		};
+		const raw = backRefusal(this.step, ctx);
+		if (raw !== null) {
 			// 'this is the first step' is a statement of fact about a control
 			// that should have been disabled, not an error to shout about.
-			if (this.step !== 'welcome') this.error = why;
+			if (this.step !== 'welcome') {
+				this.error = humanBackRefusal(this.step, ctx);
+				this.errorDiagnostic = raw;
+			}
 			return;
 		}
 		this.goTo(previousStepFor(this.step, this.source));
@@ -424,8 +429,8 @@ class SetupWizard {
 			return;
 		}
 		const normalized = normalizeSetupFolderPath(trimmed);
-		// The same path is already being checked for this row (Enter fires a
-		// commit and then the form's submit button): one scan answers both.
+		// The same path is already being checked for this row (Enter runs Check
+		// and the change event that follows commits the same path): one scan answers both.
 		if (this._folderChecksInFlight.get(id)?.path === normalized) return;
 		const token = Symbol(normalized);
 		this._folderChecksInFlight.set(id, { token, path: normalized });
@@ -580,6 +585,8 @@ class SetupWizard {
 	 * import made that effect raise the overlay again in the same tick.
 	 * "Start playing" looked dead: the packaged preview on demon-llama, Thu 1
 	 * Oct 2026, eleven POST /setup/dismiss all 200 and the wizard never left.
+	 * Host navigation after a successful finish is decided in SetupOverlay using
+	 * `run-setup.ts` (#11423); finish() only dismisses and re-reads preflight.
 	 *
 	 * A reading that still asks for setup is put on `error` rather than
 	 * closing into a reopen nobody can see happen.

@@ -16,6 +16,7 @@
  */
 import { expect, test, type APIRequestContext, type Page } from '@playwright/test';
 
+import type { SelectorCommandId } from '../../src/lib/keyboard/command-registry';
 import { waitForPerformanceIpc } from './support/performance-ready';
 import { watchUiPrefsPuts, type UiPrefsPutWatch } from './support/ui-prefs-puts';
 
@@ -87,6 +88,46 @@ const drillIn = (page: Page): Promise<string> =>
 	page.evaluate(() => window.__odjSelector!.drillIn());
 const move = (page: Page, dir: Dir): Promise<string> =>
 	page.evaluate((d) => window.__odjSelector!.move(d), dir);
+
+test('selector commands are discoverable and share the agent handle selection', async ({
+	page
+}) => {
+	test.setTimeout(90_000);
+	await boot(page, 'MORE');
+	await start(page, 'decks');
+	const commands = await page.evaluate(() => window.__odjSelector!.commands());
+	expect(commands.map((command) => command.id).sort()).toEqual([
+		'selector.drill-in',
+		'selector.drill-out',
+		'selector.move.down',
+		'selector.move.left',
+		'selector.move.right',
+		'selector.move.up'
+	]);
+	for (const command of commands) {
+		expect(command.label.trim().length).toBeGreaterThan(0);
+		expect(command.scope).toBe('global');
+		expect(command).not.toHaveProperty('run');
+	}
+	expect(await page.evaluate(() => window.__odjSelector!.selected())).toBe('decks');
+	const invoke = async (id: SelectorCommandId, expected: string): Promise<void> => {
+		const result = await page.evaluate((commandId) => {
+			const selector = window.__odjSelector!;
+			return { returned: selector.run(commandId), selected: selector.selected() };
+		}, id);
+		expect(result).toEqual({ returned: expected, selected: expected });
+	};
+	await invoke('selector.drill-out', 'decks');
+	await invoke('selector.drill-in', 'deck.1');
+	expect(await drillIn(page)).toBe('deck.1.header');
+	await invoke('selector.drill-in', 'deck.1.header');
+	await invoke('selector.drill-out', 'deck.1');
+	await invoke('selector.move.right', 'mixer');
+	expect(await move(page, 'left')).toBe('deck.1');
+	await expect(
+		page.evaluate(() => Reflect.apply(window.__odjSelector!.run, null, ['selector.unknown']))
+	).rejects.toThrow(/Unknown selector command/);
+});
 
 async function moveUntil(
 	page: Page,

@@ -29,11 +29,13 @@ from apps.autodj.styles import (
     KILL,
     PRE_HIT_LOW,
     STYLES,
+    StyleParams,
     crossover_bars,
     default_hit_bar,
     exit_bar,
     hit_bounds,
     knob_amp,
+    parametric_builder,
 )
 from apps.autodj.windows import MixWindow
 from tests.autodj.fixtures import CHORUS, DOWN, INTRO, OUTRO, UP, profile
@@ -279,6 +281,24 @@ def test_phrase_swap_refuses_a_missing_bar_bass_series() -> None:
     assert placed.entry is None
 
 
+@pytest.mark.requirement("AUTODJ-11838")
+def test_center_swap_uses_unknown_entry_when_bar_bass_is_missing() -> None:
+    """[if] center swap has no bar_bass [then] unknown entry not refusal, [else stop]."""
+    flat = profile("trk-in", arrangement=((INTRO, 64, 0.4, 0.2, False),))
+    missing = replace(flat, bar_bass=None)
+    bars = 16
+    style = STYLES["bass_swap_blend"]
+    placed = place_hit(style, _out_window(), missing, 1, bars)
+    assert placed.refused is None
+    assert placed.entry is not None
+    assert placed.entry["in_bar"] is None
+    assert "unknown" in placed.entry["note"]
+    assert placed.hit_bar == default_hit_bar("overlap", bars, style.min_body_fade_bars)
+    phrase = place_hit(STYLES["bass_phrase_swap"], _out_window(), missing, 1, bars)
+    assert phrase.refused is not None and "phrase swap cannot be placed" in phrase.refused
+    assert phrase.entry is None
+
+
 @pytest.mark.requirement("AGENT-37")
 def test_a_cut_enters_on_the_incoming_bass() -> None:
     """[if] a cut's in-window starts before the incoming bass [then] it moves onto the entry, [else stop]."""
@@ -475,7 +495,7 @@ def test_a_folded_lull_lands_the_drop_exactly_on_the_handover() -> None:
 
 # ----- D14: the low crossover (the maintainer's 1/3-turn rule) -----------------------------------------------------------------
 #: Styles whose point is a killed or filtered entry keep the incoming lows killed before the hit.
-KILLED_ENTRY = {"filter_sweep", "melt"}
+KILLED_ENTRY = {"filter_sweep", "melt", "rise", "wave"}
 #: Styles that swap the lows ON the hit instead of crossing them over (D14: a first-class choice, not the default).
 SWAPS = {"bass_swap_blend"}
 CROSSOVERS = sorted(set(LEGACY_GATED) - SWAPS)
@@ -484,6 +504,35 @@ CROSSOVERS = sorted(set(LEGACY_GATED) - SWAPS)
 def _low_db(knob: float) -> float:
     """The EQ law: 0.5 flat, 0 = -26 dB, linear in dB below flat."""
     return -26.0 * (FLAT - min(knob, FLAT)) / FLAT
+
+
+@pytest.mark.requirement("AUTODJ-12806")
+@pytest.mark.parametrize(
+    ("filter_move", "expected"),
+    [("lp_in_hp_out", KILL), ("lp_both", KILL), ("hp_both", KILL), ("hp_out", PRE_HIT_LOW), (None, PRE_HIT_LOW)],
+)
+@pytest.mark.parametrize(("out_deck", "in_deck"), [(1, 2), (2, 1)])
+@pytest.mark.parametrize("hit_fraction", [0.0, 0.5, 1.0])
+def test_incoming_filter_holds_its_low_park_until_the_hit(
+    filter_move: str | None, expected: float, out_deck: int, in_deck: int, hit_fraction: float
+) -> None:
+    """[if] an incoming filter opens [then] lows stay killed until the hit, [else stop]."""
+    bars = 16
+    params = StyleParams(volume="crossfade", filter=filter_move)
+    low, high = hit_bounds(bars, params.min_body_fade_bars)
+    hit = low + hit_fraction * (high - low)
+    document = _plan_doc("crossfade", bars, hit)
+    document["out"]["deck"], document["in"]["deck"] = out_deck, in_deck
+    document["events"] = parametric_builder(params)(bars, out_deck, in_deck, hit)
+    plan = parse_plan(document)
+    for position in [*(step / 16 for step in range(math.ceil(hit * 16))), hit - 1 / 64]:
+        assert state_at(plan, position, bar=math.floor(position)).in_low == pytest.approx(expected)
+    assert not [
+        event for event in plan.events if event.deck == in_deck and event.name == "eq_low" and 0 < event.at_bar < hit
+    ]
+    assert state_at(plan, hit, bar=math.floor(hit)).in_low > KILL
+    opened = hit + crossover_bars(bars - hit)
+    assert state_at(plan, opened, bar=math.floor(opened)).in_low == pytest.approx(FLAT)
 
 
 @pytest.mark.requirement("AGENT-40")

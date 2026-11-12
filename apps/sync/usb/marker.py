@@ -18,10 +18,13 @@ from apps.shared import macos_diskutil
 MARKER_NAME = ".mdj-marker.json"
 
 
-def _volume_uuid(drive_root: Path) -> str | None:
+def probe_volume_uuid(drive_root: Path) -> str | None:
     """Best-effort: return ``diskutil info`` VolumeUUID for ``drive_root``.
 
-    Returns None on any failure (tests, non-macOS hosts, etc.).
+    Returns None on any failure (tests, non-macOS hosts, etc.). macOS only:
+    ``diskutil`` is read from ``macos_diskutil.DISKUTIL_PATH`` at call time.
+    Callers that bind identity to this answer must treat None as unknown,
+    never as verified.
     """
     try:
         proc = subprocess.run(
@@ -31,7 +34,7 @@ def _volume_uuid(drive_root: Path) -> str | None:
             timeout=5,
             check=False,
         )
-    except (FileNotFoundError, subprocess.TimeoutExpired):
+    except (OSError, subprocess.TimeoutExpired):
         return None
     if proc.returncode != 0:
         return None
@@ -43,6 +46,9 @@ def _volume_uuid(drive_root: Path) -> str | None:
     except Exception:
         return None
     return info.get("VolumeUUID")
+
+
+_volume_uuid = probe_volume_uuid
 
 
 def read_marker(drive_root: Path) -> dict[str, Any] | None:
@@ -93,5 +99,6 @@ __all__ = [
     "MARKER_NAME",
     "read_marker",
     "write_marker",
+    "probe_volume_uuid",
     "resolve_drive_uuid",
 ]

@@ -100,6 +100,7 @@ from ..deps import (
     get_read_state,
     get_write_state,
 )
+from ..vocal_anchor_validation import validate_vocal_anchor_for_vocals
 
 router = APIRouter(prefix="/vocals", tags=["vocals"])
 
@@ -154,6 +155,21 @@ class VocalsStatusOut(BaseModel):
     fps: float | None = None
     regions: list[VocalsRegionOut] = Field(default_factory=list)
     failed_attempt: VocalsFailedAttemptOut | None = None
+
+
+class VocalCorrectionValidateIn(BaseModel):
+    anchor: str = Field(min_length=1)
+
+
+class VocalCorrectionValidateOut(BaseModel):
+    stable_id: str
+    anchor: str
+    kind: Literal["region", "at"]
+    status: Literal["rekordbox", "no_vocals", "demucs", "not_analyzed"]
+    start_s: float | None = None
+    end_s: float | None = None
+    intensity: int | None = None
+    time_s: float | None = None
 
 
 def _resolve_stable_ids(body: VocalsAnalyzeIn, backend: StateBackend) -> list[str]:
@@ -466,6 +482,29 @@ def analyze_vocals(
     return VocalsAnalyzeOut(claimed=claimed, refused=refused)
 
 
+def _resolve_vocals_dict(ctx: Ctx, stable_id: str) -> dict[str, Any]:
+    """Shared vocals read model for status and vocal-area anchor validation."""
+    try:
+        content = rb_vendor.resolve_content(stable_id)
+    except HTTPException as exc:
+        detail: dict[str, str] = exc.detail if isinstance(exc.detail, dict) else {}
+        code = detail.get("code")
+        if code == "VENDOR_MAPPING_NOT_FOUND":
+            return _own_vocals_for_serve(ctx, stable_id)
+        if code == "MASTER_DB_UNAVAILABLE":
+            if not _rekordbox_copy_present(rb_config.MASTER_PLAIN_DB):
+                return _own_vocals_for_serve(ctx, stable_id)
+            raise
+        raise
+    except (OSError, sqlite3.Error) as exc:
+        if _status_mapping_exists(stable_id):
+            raise _master_db_unreadable(
+                rb_config.MASTER_PLAIN_DB, f"{type(exc).__name__}: {exc}"
+            ) from exc
+        raise
+    return rb_vendor.vocals_for_content(content)
+
+
 @router.get("/{stable_id}/status", response_model=VocalsStatusOut)
 def get_vocal_status(
     stable_id: str,
@@ -473,32 +512,7 @@ def get_vocal_status(
     _backend: StateBackend = Depends(get_read_state),  # noqa: B008  # FastAPI DI
 ) -> VocalsStatusOut:
     ctx = _request_vocals_ctx(request)
-    # Lazy copy probe: only after resolve_content knows this track has a
-    # rekordbox mapping do we treat a broken master.plain.db as 503. A
-    # folder-only track is served from the vocal-cache regardless of copy
-    # shape (issue #6125).
-    try:
-        content = rb_vendor.resolve_content(stable_id)
-    except HTTPException as exc:
-        detail: dict[str, str] = exc.detail if isinstance(exc.detail, dict) else {}
-        code = detail.get("code")
-        if code == "VENDOR_MAPPING_NOT_FOUND":
-            vocals = _own_vocals_for_serve(ctx, stable_id)
-        elif code == "MASTER_DB_UNAVAILABLE":
-            if not _rekordbox_copy_present(rb_config.MASTER_PLAIN_DB):
-                vocals = _own_vocals_for_serve(ctx, stable_id)
-            else:
-                raise
-        else:
-            raise
-    except (OSError, sqlite3.Error) as exc:
-        if _status_mapping_exists(stable_id):
-            raise _master_db_unreadable(
-                rb_config.MASTER_PLAIN_DB, f"{type(exc).__name__}: {exc}"
-            ) from exc
-        raise
-    else:
-        vocals = rb_vendor.vocals_for_content(content)
+    vocals = _resolve_vocals_dict(ctx, stable_id)
     failed = (
         vattempts.load_failure(ctx.data_dir, stable_id)
         if vocals["status"] == "not_analyzed"
@@ -521,10 +535,33 @@ def get_vocal_status(
     )
 
 
+@router.post(
+    "/{stable_id}/validate-correction",
+    response_model=VocalCorrectionValidateOut,
+)
+def validate_vocal_correction(
+    stable_id: str,
+    body: VocalCorrectionValidateIn,
+    request: Request,
+    _backend: StateBackend = Depends(get_read_state),  # noqa: B008  # FastAPI DI
+) -> VocalCorrectionValidateOut:
+    """Validate a ``vocal-area:`` anchor against the live vocals model.
+
+    ``POST /api/v1/feedback/comments`` remains the only comment writer (FB-03);
+    this route is the agent-native validation twin (issue #13173).
+    """
+    ctx = _request_vocals_ctx(request)
+    vocals = _resolve_vocals_dict(ctx, stable_id)
+    payload = validate_vocal_anchor_for_vocals(stable_id, body.anchor, vocals)
+    return VocalCorrectionValidateOut(**payload)
+
+
 __all__ = [
     "CATEGORY_IN_PROGRESS",
     "CATEGORY_MISSING_STEMS",
     "CATEGORY_UNKNOWN_TRACK",
+    "VocalCorrectionValidateIn",
+    "VocalCorrectionValidateOut",
     "VocalsAnalyzeIn",
     "VocalsAnalyzeOut",
     "VocalsRegionOut",
@@ -532,4 +569,5 @@ __all__ = [
     "analyze_vocals",
     "get_vocal_status",
     "router",
+    "validate_vocal_correction",
 ]

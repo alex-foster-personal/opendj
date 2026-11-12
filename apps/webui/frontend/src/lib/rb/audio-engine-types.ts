@@ -36,7 +36,13 @@ export interface DeckLoadOptions {
 	suppressFailureToast?: boolean | undefined;
 }
 import type { DeckAudioSnapshot, QuantizeGrid, SyncMode } from './deck-state-types';
-import type { CrossfaderAssign, EqBand, HeadphoneAlignmentMode, HeadphoneOutputMode } from './mixer-types';
+import type {
+	BoothSignalMode,
+	CrossfaderAssign,
+	EqBand,
+	HeadphoneAlignmentMode,
+	HeadphoneOutputMode
+} from './mixer-types';
 import type { StemControl } from './stem-types';
 
 /**
@@ -111,6 +117,7 @@ export interface AudioEngine {
 	setStemSolo(deck: DeckId, stem: StemControl, solo: boolean, pressT0Ms?: number, exclusive?: boolean): void;
 	/** Per-stem level 0..1 (0.5 = unity). Rejects unless aligned artifacts are ready. */
 	setStemGain(deck: DeckId, stem: StemControl, value: number): void;
+	setStemFxSend(deck: DeckId, stem: StemControl, value: number): void;
 	/** Toggle HI/MID/LOW between EQ and stem level for one channel strip. */
 	setStemEqMode(deck: DeckId, enabled: boolean): void;
 	/** Get this deck's stems now: retry a failed load, start one that is held. */
@@ -158,6 +165,7 @@ export interface AudioEngine {
 	setHeadphoneMix(value: number): void;
 	setHeadphoneLevel(value: number): void;
 	setBoothLevel(value: number): void;
+	setBoothSignalMode(mode: BoothSignalMode): void;
 	setHeadDelayMs(value: number): void;
 	/** CUEOUT-14: room delay line, 0..1500 ms, the last node before the destination. */
 	setMasterDelayMs(value: number): void;

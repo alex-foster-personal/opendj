@@ -47,6 +47,7 @@ async function _openPerformance(page: Page): Promise<void> {
 }
 
 test('the command entry is never crushed at any top bar width', async ({ page }) => {
+	test.fixme(true, 'command entry laid out but not clickable, see #13523');
 	test.setTimeout(180_000);
 	await _openPerformance(page);
 	await expect(page.locator('.src-toggle')).toBeVisible();

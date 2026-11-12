@@ -218,7 +218,13 @@ def _doc_problem(doc: dict[str, Any], stable_id: str) -> str | None:
         return _ok_doc_problem(doc)
     if status == "failed":
         return None if isinstance(doc.get("reason"), str) else "status failed without a reason"
-    return f"status {status!r} is neither ok nor failed"
+    if status == "abstain":
+        if not isinstance(doc.get("abstain_reason"), str):
+            return "status abstain without abstain_reason"
+        if doc.get("sections") or doc.get("moments"):
+            return "status abstain with sections or moments"
+        return None
+    return f"status {status!r} is neither ok, failed nor abstain"
 
 
 def _write(data_dir: Path, doc: dict[str, Any]) -> None:

@@ -26,6 +26,7 @@ _BASE_IMPORTABLE: tuple[str, ...] = (
     "apps.vocals.from_stems",
     "apps.vocals.cli",
     "apps.vocals.cli_claims",
+    "apps.vocals.demucs",
 )
 
 _BLOCKER = """

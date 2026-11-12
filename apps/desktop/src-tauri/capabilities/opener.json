@@ -1,8 +1,8 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "opener",
-  "description": "Open the engine's own UI address in the system browser (Settings > Open in browser, http://opendj.localhost:<port>/). The main UI lives on http://127.0.0.1:<ephemeral>, which Tauri classifies as a REMOTE origin, so without the `remote` block below openUrl would be inert in the shipped app. open_url checks every URL against the allow scope and refuses anything outside it. The allow list is the two named-host port patterns, the Google consent URL that starts https://accounts.google.com/o/oauth2/v2/auth?, exactly https://existential.audio/blackhole/, and Polar checkout and customer portal pages on polar.sh, buy.polar.sh, checkout.polar.sh and sandbox.polar.sh (hosted billing, lib/account/hosted-billing-api.ts); every other URL is refused. Polar hosts are listed one by one, never as https://*.polar.sh/*: the glob star also matches a slash, so that pattern would match https://attacker.example/x.polar.sh/. The localhost patterns pin a 4 or 5 digit port followed by a slash: open_url glob-matches the raw string, so a looser `opendj.localhost:*` would also match `http://opendj.localhost:7700@attacker.example/`, whose real host is the attacker's. Scope is limited to opening a URL in the default browser, not the plugin's full default permission set.",
-  "windows": ["main"],
+  "description": "Open the engine's own UI address in the system browser (Settings > Open in browser, http://opendj.localhost:<port>/). The main UI lives on http://127.0.0.1:<ephemeral>, which Tauri classifies as a REMOTE origin, so without the `remote` block below openUrl would be inert in the shipped app. open_url checks every URL against the allow scope and refuses anything outside it. The allow list is the two named-host port patterns, the Google consent URL that starts https://accounts.google.com/o/oauth2/v2/auth?, exactly https://existential.audio/blackhole/, Polar checkout and customer portal pages on polar.sh, buy.polar.sh, checkout.polar.sh and sandbox.polar.sh (hosted billing, lib/account/hosted-billing-api.ts), and the validated spotify:playlist:<id> desktop URI (issue #317); every other URL is refused. Polar hosts are listed one by one, never as https://*.polar.sh/*: the glob star also matches a slash, so that pattern would match https://attacker.example/x.polar.sh/. The localhost patterns pin a 4 or 5 digit port followed by a slash: open_url glob-matches the raw string, so a looser `opendj.localhost:*` would also match `http://opendj.localhost:7700@attacker.example/`, whose real host is the attacker's. Scope is limited to opening a URL in the default browser, not the plugin's full default permission set. The second-screen library window opens the same links.",
+  "windows": ["main", "second-screen"],
   "remote": {
     "urls": ["http://127.0.0.1:*/*", "http://localhost:*/*"]
   },
@@ -17,7 +17,8 @@
         { "url": "https://polar.sh/*" },
         { "url": "https://buy.polar.sh/*" },
         { "url": "https://checkout.polar.sh/*" },
-        { "url": "https://sandbox.polar.sh/*" }
+        { "url": "https://sandbox.polar.sh/*" },
+        { "url": "spotify:playlist:[A-Za-z0-9]*" }
       ]
     }
   ]

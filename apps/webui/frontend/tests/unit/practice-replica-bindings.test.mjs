@@ -1,4 +1,4 @@
-// requirement: SKIN-8871B, SKIN-9564
+// requirement: SKIN-8871B, SKIN-9564, SKIN-11741
 // The FLX4 practice panel joins to FLX4_MAP, the map the real controller drives.
 //
 //   if any panel control's wire identity is neither bound nor hinted by FLX4_MAP then broken
@@ -13,6 +13,9 @@
 //   if a control with a wire number absent from the map resolves silently then broken
 //   if a bound control's hover title omits the action it fires then broken
 //   if TEMPO's value is not 14-bit (continuous14) then broken
+//   if controlIdForWire does not map every FLX4 control's wire (base and SHIFT) back to its id then broken
+//   if controlIdForWire returns a control for a wire the panel does not list then broken
+//   if two controls claiming one wire resolve silently then broken
 
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
@@ -273,4 +276,20 @@ test('legacy null SHIFT keeps the base while shifted-only legacy wires still fai
 		() => bindings.resolveControl(FLX4_MAP, { ...unwired, shift_midi: play.midi }, true),
 		/no base wire/
 	);
+});
+
+test('controlIdForWire inverts every FLX4 control wire and rejects unknown or ambiguous wires', () => {
+	for (const c of layout.controls) {
+		// An unwired control (midi null) sends nothing, so it has no wire to invert.
+		if (c.midi !== null) {
+			assert.equal(bindings.controlIdForWire(layout, c.midi), c.id, `${c.id} base wire`);
+		}
+		if (c.shift_midi !== null) {
+			assert.equal(bindings.controlIdForWire(layout, c.shift_midi), c.id, `${c.id} shift wire`);
+		}
+	}
+	assert.equal(bindings.controlIdForWire(layout, { ch: 1, kind: 'note', id: 0x7e }), null);
+	const [a, b] = layout.controls;
+	const clash = { ...layout, controls: [a, { ...b, midi: a.midi }] };
+	assert.throws(() => bindings.controlIdForWire(clash, a.midi), /claimed by/);
 });

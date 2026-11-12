@@ -2,6 +2,8 @@
 // [if] the bar lines row stays inert, its title omits the CLI verb, or the CLI drops a grid value [then] this fails, [else stop].
 // requirement: CUSTSCR-10464
 // [if] the popover lacks a number row branch with SettingNumberStepper [then] this fails, [else stop].
+// requirement: WAVEQS-11730
+// [if] hot, memory or loop marker rows stay inert or lack a verb [then] this fails, [else stop].
 // requirement: WAVEQS-8348b
 // [if] a quick-settings row names no Settings catalog entry, or one the Settings path refuses [then] this fails, [else stop].
 // [if] an inert row carries any title but the PARITY-TODO one [then] this fails, [else stop].
@@ -37,6 +39,9 @@ const OVERLAY_PREF = {
 	lyrics: 'lyrics_waveform_overlay',
 	lyrics_scrub: 'lyrics_hover_scrub',
 	jog_radial: 'jog_radial_waveform',
+	hot_cues: 'show_hot_cue_markers',
+	memory_cues: 'show_memory_cue_markers',
+	loop_cues: 'show_loop_markers',
 	vocal_lane: 'show_vocal_lane',
 	grid_lines: 'wave_grid_lines'
 };
@@ -109,16 +114,37 @@ test('WAVEQS-8348b inert rows carry exactly the PARITY-TODO title and every grou
 	assert.equal(qs.WAVE_QS_INERT_TITLE, 'not implemented - see PARITY-TODO');
 	const inert = qs.WAVE_QS_GROUPS.flatMap((g) => g.rows.filter((r) => r.kind === 'inert'));
 	assert.ok(inert.some((r) => r.id === 'tempo_lane'), 'the tempo-change lane row is reserved');
-	const tempoLane = inert.find((r) => r.id === 'tempo_lane');
+	const tempoDisplay = qs.resolveWaveQsInertDisplay(catalog.SETTINGS_CATALOG, 'tempo_lane');
 	// WAVEQS-10121: the reserved row points at the shipped Settings controls, never claims the lane is unbuilt.
-	assert.doesNotMatch(tempoLane.detail, /being built|own branch|not built/i);
+	assert.doesNotMatch(tempoDisplay.detail, /being built|own branch|not built/i);
 	const tempoCatalog = catalog.SETTINGS_CATALOG.filter((d) => d.id === 'show_tempo_lane' || d.id === 'tempo_lane_scale');
 	assert.equal(tempoCatalog.length, 2, 'both tempo-lane settings exist in the catalog');
-	for (const def of tempoCatalog) assert.ok(tempoLane.detail.includes(def.label), `the row names ${def.label}`);
+	for (const def of tempoCatalog) assert.ok(tempoDisplay.detail.includes(def.label), `the row names ${def.label}`);
 	for (const group of qs.WAVE_QS_GROUPS) assert.ok(group.rows.length > 0, `${group.id} is empty`);
 	const popover = readFileSync('src/lib/components/rb/WaveQuickSettingsPopover.svelte', 'utf8');
 	assert.match(popover, /title=\{WAVE_QS_INERT_TITLE\}/);
-	assert.match(popover, /\sdisabled\s+aria-label=\{row\.label\}/);
+	assert.match(popover, /\sdisabled\s+aria-label=\{display\.label\}/);
+});
+
+test('WAVEQS-8348b issue #12518 every row label and detail comes from the catalog resolver', () => {
+	for (const id of settingIds()) {
+		const def = qs.resolveWaveQsSetting(catalog.SETTINGS_CATALOG, id);
+		const catalogDef = catalog.SETTINGS_CATALOG.find((d) => d.id === id);
+		assert.ok(catalogDef, `${id} missing from SETTINGS_CATALOG`);
+		assert.equal(def.label, catalogDef.label);
+		assert.equal(def.detail, catalogDef.detail);
+	}
+	for (const row of qs.WAVE_QS_GROUPS.flatMap((g) => g.rows.filter((r) => r.kind === 'inert'))) {
+		const display = qs.resolveWaveQsInertDisplay(catalog.SETTINGS_CATALOG, row.id);
+		if (row.id === 'phrase_markers') {
+			const stub = qs.WAVE_QS_INERT_DEFS.find((d) => d.id === 'phrase_markers');
+			assert.ok(stub);
+			assert.equal(display.label, stub.label);
+			assert.equal(display.detail, stub.detail);
+		}
+		assert.ok(display.label.length > 0);
+		assert.ok(display.detail.length > 0);
+	}
 });
 
 test('WAVEQS-8348c Settings and the popover both render previews through the one SettingPreview component', () => {

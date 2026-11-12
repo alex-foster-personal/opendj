@@ -18,11 +18,11 @@ const stems = (): StemDeckState => ({
 	available_controls: [],
 	alignment: null,
 	controls: {
-		vocal: { muted: false, solo: false, gain: 0.5 },
-		instrumental: { muted: false, solo: false, gain: 0.5 },
-		drums: { muted: false, solo: false, gain: 0.5 },
-		bass: { muted: false, solo: false, gain: 0.5 },
-		other: { muted: false, solo: false, gain: 0.5 }
+		vocal: { muted: false, solo: false, gain: 0.5, fx_send: 0 },
+		instrumental: { muted: false, solo: false, gain: 0.5, fx_send: 0 },
+		drums: { muted: false, solo: false, gain: 0.5, fx_send: 0 },
+		bass: { muted: false, solo: false, gain: 0.5, fx_send: 0 },
+		other: { muted: false, solo: false, gain: 0.5, fx_send: 0 }
 	},
 	error: null,
 	load: null

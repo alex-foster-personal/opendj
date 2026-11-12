@@ -35,11 +35,14 @@ export interface Decision {
 	pending_apply: boolean;
 }
 
+export type ClusterBasis = 'fingerprint' | 'tags';
+
 export interface Cluster {
 	cluster_id: number;
 	cluster_key: string;
 	survivor_stable_id: string;
 	rationale: string | null;
+	basis: ClusterBasis;
 	flagged_manual_review: boolean;
 	members: ClusterMember[];
 	decision: Decision | null;

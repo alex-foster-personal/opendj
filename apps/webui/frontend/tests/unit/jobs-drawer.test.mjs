@@ -46,7 +46,7 @@ test('neither the drawer nor the store hand-rolls a fetch', () => {
 });
 
 test('the store calls the engine through the generated typed client', () => {
-	assert.match(store, /from '\.\.\/api\/client'/);
+	assert.match(store, /from '\.\.\/api\/rb-http'/);
 	for (const path of [
 		"api.GET('/api/v1/jobs'",
 		"api.POST('/api/v1/jobs/{job_id}/cancel'",

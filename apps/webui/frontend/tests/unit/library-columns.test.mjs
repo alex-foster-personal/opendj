@@ -40,7 +40,9 @@ describe('library-columns', () => {
 		for (const id of ['funnel', 'err', 'cloud', 'order', 'title', 'autoplay', 'lyrics']) {
 			assert.equal(cols.isHideableColumn(id), false, id);
 		}
-		assert.equal(cols.HIDEABLE_COLUMNS.length, 15);
+		assert.equal(cols.HIDEABLE_COLUMNS.length, 18);
+		assert.equal(cols.isHideableColumn('colour'), true);
+		assert.equal(cols.HIDEABLE_COLUMN_LABELS.colour, 'Colour');
 		for (const col of cols.HIDEABLE_COLUMNS) assert.ok(cols.HIDEABLE_COLUMN_LABELS[col], col);
 	});
 
@@ -102,12 +104,19 @@ describe('toggleLibraryColumn', () => {
 		try {
 			const prefs = await loadTypeScriptModule('src/lib/rb/prefs.svelte.ts', { viteApiBase: API_BASE });
 			prefs.toggleLibraryColumn('key');
-			assert.deepEqual(prefs.uiPrefs.library_hidden_columns, ['key']);
-			assert.deepEqual(JSON.parse(store.get(STORAGE_KEY)).library_hidden_columns, ['key']);
+			assert.deepEqual(prefs.uiPrefs.library_hidden_columns, ['key', 'filename', 'location']);
+			assert.deepEqual(JSON.parse(store.get(STORAGE_KEY)).library_hidden_columns, [
+				'key',
+				'filename',
+				'location'
+			]);
 			prefs.showAllLibraryColumns();
 			assert.deepEqual(prefs.uiPrefs.library_hidden_columns, []);
 			await new Promise((resolve) => setTimeout(resolve, 0));
-			assert.deepEqual(bodies, [{ library_hidden_columns: ['key'] }, { library_hidden_columns: [] }]);
+			assert.deepEqual(bodies, [
+				{ library_hidden_columns: ['key', 'filename', 'location'] },
+				{ library_hidden_columns: [] }
+			]);
 		} finally {
 			globalThis.fetch = original;
 		}
@@ -177,9 +186,12 @@ describe('TrackTable wiring', () => {
 	});
 
 	it('the header opens the chooser and the sums use the shown widths', () => {
-		assert.match(table, /<thead[^>]*oncontextmenu=\{\(e\) => trackContextMenu\?\.openColumnChooser\(e, columnChooserPrefs\)\}/);
+		assert.match(table, /openColumnChooser\(e, columnChooserPrefs\)/);
+		assert.match(table, /closest\('th\.h-order'\)/);
+		assert.match(table, /openOrderHeaderMenu\(e\)/);
 		const host = readFileSync(join(FRONTEND, 'src/lib/components/rb/browser/TrackContextMenu.svelte'), 'utf8');
 		assert.match(host, /export function openColumnChooser\(event: MouseEvent, prefs: ColumnChooserPrefs\)/);
+		assert.match(host, /export function openOrderHeaderMenu\(event: MouseEvent\)/);
 		assert.match(host, /<ColumnChooserMenu /);
 		// [if] a track menu opens while the chooser is open [then] two menus stack [else stop]
 		assert.match(host, /chooserAt = null;\s*menu = \{/);

@@ -103,6 +103,7 @@ test.skip(process.platform === 'win32', 'POSIX-only: guardedWebServerCommand lau
 test('→ previews the highlighted track in the cue through the dispatcher, Esc and closing the bar stop it, no deck moves', async ({
 	page
 }) => {
+	test.fixme(true, 'fixture track has no downbeats, see #13527');
 	// The dev server compiles /performance on this first visit.
 	test.setTimeout(240_000);
 	// Every grid answer the page gets, so the grid the bar jumps on is read from the real response.

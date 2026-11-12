@@ -168,11 +168,19 @@ test('every command type is one the engine route table names', () => {
 	for (const type of orders.REMOTE_SPEAKER_COMMAND_TYPES) assert.ok(routes.includes(`"${type}"`), type);
 });
 
-test('the panel keeps the inert Remote control entry when the flag is off, and built apps default off', () => {
+test('the panel lazy-loads the speaker section behind its flag and always mounts the phone remote below it', () => {
 	const cluster = readFileSync(new URL('../../src/lib/components/rb/mixer/HeadphoneCluster.svelte', import.meta.url), 'utf8');
-	// The section loads only with the flag on, and starts loading when the cluster mounts.
 	assert.match(cluster, /const remoteSpeakerSection = remoteSpeakerOn \? import\('\.\/RemoteSpeakerSection\.svelte'\) : null;/);
-	assert.match(cluster, /\{#if remoteSpeakerSection\}[\s\S]*\{#await remoteSpeakerSection then[\s\S]*\{:else\}[\s\S]*disabled title=\{plannedTitle\('remote-control'\)\}>Remote control</);
+	assert.match(cluster, /import RemoteControlSection from '\.\/RemoteControlSection\.svelte';/);
+	assert.match(
+		cluster,
+		/\{#if remoteSpeakerSection\}[\s\S]*?<RemoteSpeakerSection \/>\{\/await\}\s*<\/section>\s*\{\/if\}\s*<section class="hp-section" aria-label="Phone remote">\s*(<!--[^>]*-->\s*)?<RemoteControlSection \/>/
+	);
+	assert.doesNotMatch(cluster, /plannedTitle\('remote-control'\)/);
+	const section = readFileSync(new URL('../../src/lib/components/rb/mixer/RemoteControlSection.svelte', import.meta.url), 'utf8');
+	assert.match(section, /startStatusPoll\(/);
+	assert.match(section, /onDestroy\(\(\) => stopPoll\?\.\(\)\)/);
+	assert.match(section, /\{#if listening\}[\s\S]*Stop[\s\S]*\{:else\}[\s\S]*data-remote-control-start/);
 	const vite = readFileSync(new URL('../../vite.config.ts', import.meta.url), 'utf8');
 	assert.match(vite, /devConfig === null\s*\?\s*'off'\s*:\s*'on'/);
 	assert.match(vite, /'import\.meta\.env\.VITE_REMOTE_SPEAKER': JSON\.stringify\(remoteSpeaker\)/);

@@ -167,7 +167,7 @@ def live_member_order(conn: sqlite3.Connection, playlist_id: str) -> list[Member
 
 
 def follow_membership_change(
-    writer: StateWriter, playlist_id: str, before: list[Member]
+    writer: StateWriter, playlist_id: str, before: list[Member], *, keep_groups: bool = False
 ) -> None:
     """Keep dividers on their tracks after a write that knows nothing of sections.
 
@@ -178,7 +178,9 @@ def follow_membership_change(
     with writer._tx() as conn:
         after = [Member(_token_id(m), m["stable_id"]) for m in _live_members(conn, playlist_id)]
         rows = {row["id"]: row for row in list_sections(conn, playlist_id)}
-        for section_id, position in layout.follow_members(before, after, rows.values()).items():
+        regrouped = layout.regroup_positions(before, after, list(rows.values())) if keep_groups else None
+        placed = regrouped if regrouped is not None else layout.follow_members(before, after, rows.values())
+        for section_id, position in placed.items():
             if rows[section_id]["before_position"] != position:
                 _store(
                     writer, "playlist_section", {"id": section_id},

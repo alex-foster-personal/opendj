@@ -1,0 +1,9 @@
+{
+  "bytes": 14336,
+  "measured_main": 421729,
+  "measured_with_pr": 435617,
+  "sha": "de2c029618",
+  "date": "Tue 10 Nov 2026",
+  "reason": "PR #10351 (KEYB-11488) ships rekordbox and Serato keyboard layout presets: keymap-runtime, keymap-commands catalogue and preset data on the /performance graph. Local build vs merge-base 3834d2d0ab, +13888 B gzip on performance; ceiled to KiB.",
+  "payback": "none planned; presets are shipped data on the performance hotkey path"
+}

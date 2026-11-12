@@ -147,6 +147,8 @@ const PAGE_ACTIONS: &[&str] = &[
     "deck_key_sync_toggle",
     "deck_auto_loop_toggle",
     "deck_manual_loop_cycle",
+    "deck_loop_in",
+    "deck_loop_out",
     "deck_loop_scale",
     "deck_key_nudge",
     "deck_tempo_nudge",
@@ -155,6 +157,7 @@ const PAGE_ACTIONS: &[&str] = &[
     "controller_pad_mode",
     "controller_pad",
     "color_fx",
+    "mixer_deck_pair_select",
 ];
 
 #[derive(Clone, Debug)]
@@ -1059,7 +1062,7 @@ mod tests {
             (json!({"vendor": "X", "nameMatch": "X", "bindings": [
                 {"source": {"ch": 1, "kind": "cc", "id": 1}, "action": {"type": "mixer_channel", "deck": 1, "target": "fader", "band": "low"}}]}), "only for the eq"),
             (json!({"vendor": "X", "nameMatch": "X", "bindings": [
-                {"source": {"ch": 1, "kind": "note", "id": 1}, "action": {"type": "deck_cue", "deck": 5}}]}), "deck must be"),
+                {"source": {"ch": 1, "kind": "note", "id": 1}, "action": {"type": "deck_cue", "deck": 9}}]}), "deck must be"),
             (json!({"vendor": "X", "nameMatch": "X", "bindings": [
                 {"source": {"ch": 17, "kind": "note", "id": 1}, "action": {"type": "deck_cue", "deck": 1}}]}), "ch must be"),
             (json!({"vendor": "X", "nameMatch": "X", "bindings": [

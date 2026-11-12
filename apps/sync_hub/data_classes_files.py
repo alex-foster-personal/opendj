@@ -196,7 +196,6 @@ FILE_CLASSES: tuple[DataClass, ...] = (
         "Stem separation experiments",
         files(
             f"<data>/state/{PRODUCTION_ROFORMER_STEMS_DIR.name}*/",
-            "<data>/state/stems-demucs-ab/",
             "<repo>/scripts/bench/clips*/",
         ),
         _LOCAL,

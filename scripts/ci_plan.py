@@ -251,7 +251,13 @@ def _with_dependents(hit: set[str], by_name: dict[str, Scope]) -> set[str]:
     out = set(hit)
     for name in hit:
         if name in by_name:
-            out.update(by_name[name].dependents)
+            deps = by_name[name].dependents
+            # transition_score is split out of autodj for ownership, but mutation_check still
+            # names webui paths; the derivation records autodj as a dependent. Do not widen a
+            # transition_score-only change into the booth core scope (issue #7659 / PR #7596).
+            if name == "transition_score":
+                deps = tuple(d for d in deps if d != "autodj")
+            out.update(deps)
     return out
 
 

@@ -124,6 +124,12 @@ export const TRACK_INFO_FIELD_ROWS: { [K in keyof TrackInfoRecord]-?: RowBuilder
 			provenance: prov('rating')
 		};
 	},
+	color_id: (t) => ({
+		label: 'Colour',
+		value:
+			t.color_id === null || t.color_id === undefined || t.color_id <= 0 ? NOT_SET : String(t.color_id),
+		provenance: null
+	}),
 	tags: (t, _p, prov) => ({
 		label: 'Tags',
 		value: (t.tags ?? []).length === 0 ? NOT_SET : (t.tags ?? []).join(', '),

@@ -9,6 +9,7 @@ tests/analysis_key
 tests/analysis_loudness
 tests/analysis_structure
 tests/analysis_waveform
+tests/audio_devices
 tests/autodj
 tests/b2b_booth
 tests/b2b_pairing
@@ -16,9 +17,12 @@ tests/b2b_session
 tests/b2b_sync
 tests/b2b_transport
 tests/cloudsync
+tests/compatint
 tests/controller_probe
+tests/controllers
 tests/database
 tests/dedup
+(private path)
 tests/engine_core
 tests/entitlements
 tests/feature_flags
@@ -31,9 +35,12 @@ tests/lyrics_alignment
 tests/lyrics_search
 tests/mik
 tests/now_playing
+tests/onboarding
 tests/open_dj
 tests/opendj_cli
+tests/opendj_pins
 tests/ops
+tests/osc
 tests/parity
 tests/perf
 tests/playlist_sets
@@ -43,6 +50,7 @@ tests/reconcile
 tests/rekordbox_analyse
 tests/rekordbox_ingestion
 tests/scripts
+tests/scrobble
 tests/shared
 tests/skins
 tests/smartlists
@@ -50,10 +58,11 @@ tests/standalone
 tests/stream
 tests/streaming_transfer
 tests/sync
-(private path)
+tests/sync_hub
 tests/test_analysis_backlog.py
 tests/test_analysis_backlog_lanes.py
 tests/test_analysis_backlog_token.py
+tests/test_analysis_grid_quality_cli.py
 tests/test_analysis_run_classification.py
 tests/test_analysis_source.py
 tests/test_apply_analysis.py
@@ -79,6 +88,7 @@ tests/test_equivalence_single_source.py
 tests/test_equivalence_sources.py
 (private path)
 (private path)
+tests/test_fixtures_state.py
 tests/test_host_mutation_opt_in.py
 tests/test_live_detect_cache.py
 tests/test_move_copy_between_playlists.py
@@ -94,6 +104,7 @@ tests/test_playlist_memberships_scale.py
 tests/test_playlist_move.py
 tests/test_playlist_openapi_routes.py
 tests/test_playlist_remove.py
+tests/test_playlist_save_order.py
 tests/test_playlist_write_persistence.py
 (private path)
 tests/test_progress_file_lock.py
@@ -113,6 +124,7 @@ tests/test_smartlists_duplicate.py
 tests/test_smartlists_include_counts.py
 tests/test_smartlists_rename.py
 tests/test_smartlists_soft_delete.py
+(private path)
 tests/test_sync_safety.py
 (private path)
 tests/test_title_fix_key_and_cli.py
@@ -123,5 +135,7 @@ tests/test_title_fix_third_party_marks.py
 (private path)
 tests/test_uv_run_no_sync.py
 tests/test_waits_uvicorn_shutdown.py
+tests/transcript_hub
+tests/transcript_index
 tests/transition_score
 tests/webui

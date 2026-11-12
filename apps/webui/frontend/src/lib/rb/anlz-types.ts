@@ -126,6 +126,25 @@ export interface AnlzGridAnchor {
 	bpm: number;
 }
 
+/** One warp-map anchor persisted per track (issue #11199, parent #425). */
+export type AnlzWarpAnchorKind = 'analyzed' | 'locked' | 'creative';
+
+export interface AnlzWarpAnchor {
+	/** Source audio time in SECONDS from track start. */
+	source_s: number;
+	/** Musical beat coordinate (0 = first beat). */
+	beat: number;
+	kind: AnlzWarpAnchorKind;
+}
+
+/** Saved warp map beside analysis; does not modify source audio. */
+export interface AnlzWarpMap {
+	v: 1;
+	anchors: AnlzWarpAnchor[];
+	/** Canonical document SHA-256 when stored with a checksum. */
+	checksum?: string;
+}
+
 /** One tempo change detected by the own beatgrid analyzer (NATIVE-03). */
 export interface AnlzTempoChange {
 	/** Time of the change in SECONDS from track start. */

@@ -194,7 +194,7 @@ test('a resume chunk that fails to load is said in a toast with Retry', async ()
 	);
 	assert.match(
 		src,
-		/pushToast\(`Analysis of a stick from before the reload did not resume: \$\{why\}`, 'error'[\s\S]{0,120}label: 'Retry',\s*handler: resumeUsbAnalysisIfPending/
+		/pushToast\(\s*`Analysis of a stick from before the reload did not resume: \$\{why\}`,\s*'error'[\s\S]{0,400}label: 'Retry',\s*handler: resumeUsbAnalysisIfPending/s
 	);
 	assert.match(src, /onMount\(\(\) => \{\s*startUsbWatch\(\);\s*resumeUsbAnalysisIfPending\(\);/);
 });
@@ -247,7 +247,7 @@ test('an unreadable store at boot is said in a toast with Retry, not skipped', a
 	);
 	assert.match(
 		src,
-		/pushToast\(`Sticks opened before the reload could not be read back[^`]*`, 'error'[\s\S]{0,120}label: 'Retry',\s*handler: resumeUsbAnalysisIfPending\s*\}\);\s*return;/
+		/pushToast\(\s*`Sticks opened before the reload could not be read back[^`]*`,\s*'error'[\s\S]{0,400}label: 'Retry',\s*handler: resumeUsbAnalysisIfPending[\s\S]{0,40}\}\s*\);\s*return;/s
 	);
 });
 

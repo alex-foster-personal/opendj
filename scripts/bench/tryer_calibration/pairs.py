@@ -47,11 +47,6 @@ def pairs_checksum(pairs: list[dict[str, Any]]) -> str:
     return hashlib.sha256(canonical.encode()).hexdigest()
 
 
-def load_pairs(path: Path = FIXTURE_PATH) -> list[CalibrationPair]:
-    """Read and verify the fixture; raise on any defect."""
-    return load_pairs_verified(path)[0]
-
-
 def load_pairs_verified(path: Path = FIXTURE_PATH) -> tuple[list[CalibrationPair], str]:
     """(the verified pairs, the checksum they were verified against), read once: a caller that records provenance
     records THIS checksum, never a re-read of a file that may have changed since."""

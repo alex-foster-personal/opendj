@@ -5,7 +5,7 @@
  * dispatch through performance-ipc so UI and agents share one path.
  */
 
-import { ApiError, api, unwrap } from '../api/client';
+import { ApiError, api, unwrap } from '../api/rb-http';
 import { PlaylistConflictError, type PlaylistRowWire } from './playlist-write';
 
 export { PlaylistConflictError };

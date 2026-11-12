@@ -1,4 +1,4 @@
-"""suggest_next end-to-end tests (AI-01)."""
+"""suggest_next end-to-end tests (AI-01); find-similar Generic mode (INTEL-12016)."""
 
 from __future__ import annotations
 
@@ -8,9 +8,11 @@ from datetime import timedelta
 import pytest
 
 from apps.dj_copilot.session_context import PlayedTrack, SessionContext
-from apps.dj_copilot.suggester import suggest_next
+from apps.dj_copilot.suggester import find_similar_tracks, suggest_next
+from apps.genre_infer import findings, service, taxonomy
 from apps.shared.harmonic import TrackFeature
 from tests.dj_copilot.conftest import FIXED_NOW
+from tests.genre_infer.pipeline_support import library
 
 pytestmark = pytest.mark.requirement("AI-01")
 
@@ -122,6 +124,44 @@ def test_deterministic(tmp_path) -> None:
         conn.close()
 
 
+def _genre_conn(state) -> sqlite3.Connection:
+    conn = sqlite3.connect(str(state))
+    findings.ensure_schema(conn)
+    return conn
+
+
+@pytest.mark.requirement("INTEL-12016")
+def test_find_similar_generic_returns_genre_cosine_neighbours(tmp_path) -> None:
+    """[if] Generic mode runs on a measured track [then] candidates match genre similar, [else stop]."""
+    _data, state = library(tmp_path)
+    conn = _genre_conn(state)
+    base = {g: 0.0 for g in taxonomy.NAMES}
+    findings.put_vector(conn, "t-fred", "jev", base | {"House": 0.8, "Deep House": 0.2})
+    findings.put_vector(conn, "t-fred2", "jev", base | {"House": 0.7, "Deep House": 0.3})
+    ranked = find_similar_tracks(conn, stable_id="t-fred", mode="generic", limit=20)
+    expected = service.similar(conn, "t-fred", 20)
+    assert ranked["mode"] == "generic"
+    assert ranked["candidates"] == expected["similar"]
+
+
+@pytest.mark.requirement("INTEL-12016")
+def test_find_similar_generic_errors_when_unmeasured(tmp_path) -> None:
+    """[if] the query track has no genre vector [then] Generic raises unmeasured, [else stop]."""
+    _data, state = library(tmp_path)
+    conn = _genre_conn(state)
+    with pytest.raises(KeyError, match="no jev genre vector"):
+        find_similar_tracks(conn, stable_id="t-id", mode="generic", limit=20)
+
+
+@pytest.mark.requirement("INTEL-12016")
+def test_find_similar_specific_mode_is_not_implemented_yet(tmp_path) -> None:
+    """[if] Specific mode is requested today [then] the engine refuses before ranking, [else stop]."""
+    _data, state = library(tmp_path)
+    conn = _genre_conn(state)
+    with pytest.raises(findings.GenreInputError, match="not implemented"):
+        find_similar_tracks(conn, stable_id="t-fred", mode="specific", limit=20)
+
+
 @pytest.mark.requirement("SETPREP-12113")
 def test_played_recently_tag_with_history_weight(tmp_path) -> None:
     """[if] history weight 0.10 and recent play [then ⛔️] played_recently tag, [else stop]."""
@@ -200,5 +240,92 @@ def test_session_play_never_suggested(tmp_path) -> None:
         ids = {s.stable_id for s in out}
         assert "played-id" not in ids
         assert "copy-id" not in ids
+    finally:
+        conn.close()
+
+
+def _seed_pairings_table(conn: sqlite3.Connection) -> None:
+    conn.execute(
+        """
+        CREATE TABLE pairings (
+            from_stable_id TEXT NOT NULL,
+            to_stable_id   TEXT NOT NULL,
+            direction      TEXT NOT NULL,
+            source         TEXT NOT NULL,
+            notes          TEXT,
+            confidence     REAL,
+            created_at     TEXT NOT NULL,
+            modified_at    TEXT NOT NULL
+        )
+        """
+    )
+
+
+def test_keyless_candidate_unscored_and_below_adjacent(tmp_path) -> None:
+    db = tmp_path / "s.db"
+    conn = sqlite3.connect(str(db), isolation_level=None)
+    try:
+        library = [*_lib_small(), TrackFeature("t-nokey", "NoKey", 121.0, None, 5)]
+        out = suggest_next(
+            conn=conn,
+            current_stable_id="cur",
+            library=library,
+            top_n=10,
+        )
+        ids = [s.stable_id for s in out]
+        assert ids.index("t-adj") < ids.index("t-nokey")
+        nokey = next(s for s in out if s.stable_id == "t-nokey")
+        assert nokey.unscored == ("key",)
+        assert "camelot_step_0" not in nokey.rationale_tags
+        assert all(s.unscored == () for s in out if s.stable_id != "t-nokey")
+    finally:
+        conn.close()
+
+
+def test_unscored_survives_pairing_bump(tmp_path) -> None:
+    db = tmp_path / "s.db"
+    conn = sqlite3.connect(str(db), isolation_level=None)
+    try:
+        _seed_pairings_table(conn)
+        conn.execute(
+            "INSERT INTO pairings"
+            "(from_stable_id, to_stable_id, direction, source, "
+            " created_at, modified_at) "
+            "VALUES (?, ?, 'into', 'manual', '2026-01-01', '2026-01-01')",
+            ("cur", "t-nokey"),
+        )
+        library = [*_lib_small(), TrackFeature("t-nokey", "NoKey", 121.0, None, 5)]
+        out = suggest_next(
+            conn=conn,
+            current_stable_id="cur",
+            library=library,
+            top_n=10,
+        )
+        nokey = next(s for s in out if s.stable_id == "t-nokey")
+        assert nokey.unscored == ("key",)
+        assert "pair_manual" in nokey.rationale_tags
+    finally:
+        conn.close()
+
+
+def test_unscored_survives_pressure_prior(tmp_path) -> None:
+    db = tmp_path / "s.db"
+    conn = sqlite3.connect(str(db), isolation_level=None)
+    try:
+        library = [*_lib_small(), TrackFeature("t-nokey", "NoKey", 121.0, None, 5)]
+        ctx = SessionContext(
+            recent=[PlayedTrack(f"r-{i}", f"R{i}", 120.0, "8A", 9, played_at=FIXED_NOW) for i in range(4)],
+            source="manual",
+            captured_at=FIXED_NOW,
+        )
+        out = suggest_next(
+            conn=conn,
+            current_stable_id="cur",
+            library=library,
+            context=ctx,
+            top_n=10,
+        )
+        nokey = next(s for s in out if s.stable_id == "t-nokey")
+        assert nokey.unscored == ("key",)
     finally:
         conn.close()

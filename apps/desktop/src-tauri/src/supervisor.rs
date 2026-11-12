@@ -1007,6 +1007,8 @@ fn navigate_to_origin(app: &AppHandle, origin: &str, product_name: &str) {
             let target = format!("{origin}/performance").parse::<Url>().expect("origin url");
             let _ = window.navigate(target);
         }
+        // SECONDSCREEN: the library window follows the engine to its new port.
+        crate::second_screen::follow_engine_origin(&handle, &origin);
     });
 }
 

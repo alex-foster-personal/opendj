@@ -4,7 +4,7 @@
  * Kept out of api-rb.ts (single-owner hotspot per FANOUT-CONVENTIONS.md).
  */
 
-import { api, unwrap } from '../api/client';
+import { api, unwrap } from '../api/rb-http';
 import { refuseStickWrite } from './track-source';
 
 export interface TrackMembershipRef {

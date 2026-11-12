@@ -14,7 +14,13 @@
 	import { page } from '$app/stores';
 	import { onMount, tick, type Snippet } from 'svelte';
 	import { clampToViewport } from '$lib/ui/clamp-to-viewport';
-	import { DECK_IDS, engine, getDeckState, isMasterMuted, mixerState } from '$lib/rb/audio-engine.svelte';
+	import {
+		DECK_IDS,
+		engine,
+		getDeckState,
+		isMasterMuted,
+		mixerState
+	} from '$lib/rb/audio-engine.svelte';
 	import { masterMuteReason } from '$lib/player/master-mute.svelte';
 	import { openStage } from '$lib/lyrics/stage-store.svelte';
 	import type { StageDeck } from '$lib/lyrics/stage-store.svelte';
@@ -103,7 +109,12 @@
 	import TrackInfoHost from './TrackInfoHost.svelte';
 	import WaveQuickSettingsButton from './WaveQuickSettingsButton.svelte';
 	import EdgeSamplerToggle from './sampler/EdgeSamplerToggle.svelte';
-	import { builtExplainerBullets, builtTitle, plannedExplainerBullets, plannedTitle } from '$lib/rb/planned-explainers';
+	import {
+		builtExplainerBullets,
+		builtTitle,
+		plannedExplainerBullets,
+		plannedTitle
+	} from '$lib/rb/planned-explainers';
 	import {
 		FEATURE_ICON_ROWS,
 		featureIconSingleClick,
@@ -198,9 +209,7 @@
 		}
 	});
 
-	const modePickerTitle = $derived(
-		`App mode picker - ${activeMode.label} is the current mode`
-	);
+	const modePickerTitle = $derived(`App mode picker - ${activeMode.label} is the current mode`);
 
 	const stemsProgressLive = $derived(
 		modeFeatureEnabled(liveAppMode.id, LOCAL_STEMS_EXECUTOR_FLAG_ID)
@@ -254,10 +263,7 @@
 	}
 
 	function _hideAutoPlayMenu(e: FocusEvent | PointerEvent): void {
-		const next =
-			e instanceof FocusEvent
-				? e.relatedTarget
-				: (e as PointerEvent).relatedTarget;
+		const next = e instanceof FocusEvent ? e.relatedTarget : (e as PointerEvent).relatedTarget;
 		if (next instanceof Node && autoPlayWrapEl?.contains(next)) return;
 		// Fixed menu is outside the wrap - keep open when moving into it.
 		if (next instanceof Element && next.closest?.('.ap-menu:not(.lyr-menu)')) return;
@@ -383,22 +389,26 @@
 		_openFeatureMenuFromCluster();
 	}
 
+	function _dismissFeatureMenuOnOutsidePointer(e: PointerEvent): void {
+		const target = e.target;
+		if (!(target instanceof Node && featureIconsEl?.contains(target))) featureMenuOpen = false;
+	}
+
+	function _dismissFeatureMenuOnEscape(e: KeyboardEvent): void {
+		if (!featureMenuOpen || e.key !== 'Escape') return;
+		featureMenuOpen = false;
+		iconClusterEl?.focus();
+	}
+
 	// The feature menu listens only while it is open, so the mode menu's
 	// window handlers stay as they were.
 	$effect(() => {
 		if (!featureMenuOpen) return;
-		const onPointer = (e: PointerEvent): void => {
-			const target = e.target;
-			if (!(target instanceof Node && featureIconsEl?.contains(target))) featureMenuOpen = false;
-		};
-		const onKey = (e: KeyboardEvent): void => {
-			if (e.key === 'Escape') featureMenuOpen = false;
-		};
-		window.addEventListener('pointerdown', onPointer);
-		window.addEventListener('keydown', onKey);
+		window.addEventListener('pointerdown', _dismissFeatureMenuOnOutsidePointer);
+		window.addEventListener('keydown', _dismissFeatureMenuOnEscape);
 		return () => {
-			window.removeEventListener('pointerdown', onPointer);
-			window.removeEventListener('keydown', onKey);
+			window.removeEventListener('pointerdown', _dismissFeatureMenuOnOutsidePointer);
+			window.removeEventListener('keydown', _dismissFeatureMenuOnEscape);
 		};
 	});
 
@@ -489,9 +499,7 @@
 	// The bauble's account menu, relayed so the account explainer hides while it is open.
 	let baubleMenuOpen = $state(false);
 
-	const showClock = $derived(
-		signedIn || cloudSyncChipState.value !== 'off'
-	);
+	const showClock = $derived(signedIn || cloudSyncChipState.value !== 'off');
 
 	// Re-run the access request on load IFF the user opted in before (persisted
 	// choice). Goes through requestMidiAccess() - the single init trigger that
@@ -602,7 +610,10 @@
 	}
 </script>
 
-<svelte:window onpointerdown={_dismissModeMenuOnOutsidePointer} onkeydown={_dismissModeMenuOnEscape} />
+<svelte:window
+	onpointerdown={_dismissModeMenuOnOutsidePointer}
+	onkeydown={_dismissModeMenuOnEscape}
+/>
 
 <header
 	class="rb-topbar rb-panel"
@@ -611,7 +622,8 @@
 	class:single-click={featureIconSingleClick()}
 	class:pads-off={!uiPrefs.show_pads}
 	bind:this={topBarRowEl}
->	<!-- top-left: PARITY-02 rbx-vs-own source A/B toggle (issue #1002),
+>
+	<!-- top-left: PARITY-02 rbx-vs-own source A/B toggle (issue #1002),
 	     ahead of the live audio health + prefetch count and mode dropdown. -->
 	<AnalysisSourceToggle />
 
@@ -622,7 +634,10 @@
 		<PerfMeters />
 	{:catch}
 		<!-- A failed chunk load (stale deploy, transient asset error) costs the meters only, never the header. -->
-		<span class="perf-meters-unavailable" title="The performance meters did not load. Reload the app to try again.">meters off</span>
+		<span
+			class="perf-meters-unavailable"
+			title="The performance meters did not load. Reload the app to try again.">meters off</span
+		>
 	{/await}
 
 	<!-- Stems separation, aggregate and live off jobs.updated. Renders nothing
@@ -659,14 +674,18 @@
 			{/each}
 		</div>
 	</details>
-	<AppPostureChip />
+	<AppPostureChip showRecordControl={$page.url.pathname.startsWith('/performance')} />
 	<GigHelperMonitor />
 	<GigHelperPrompt />
 
 	<!-- Pin 87d7dac0a9b8: one button for the strip unless Settings turns on
 	     single click. Core icons stay in the top bar. Scope, then the phase
 	     meter, are the next two rows until real priorities are chosen. -->
-	<div class="feature-icons" class:single-click={featureIconSingleClick()} bind:this={featureIconsEl}>
+	<div
+		class="feature-icons"
+		class:single-click={featureIconSingleClick()}
+		bind:this={featureIconsEl}
+	>
 		<!-- svelte-ignore a11y_no_noninteractive_tabindex -->
 		<div
 			class="icon-cluster"
@@ -694,7 +713,12 @@
 						<rect x="1" y="1.5" width="9" height="1.6" fill="currentColor" />
 						<rect x="1" y="5.2" width="9" height="1.6" fill="currentColor" />
 						<rect x="1" y="8.9" width="9" height="1.6" fill="currentColor" />
-						<path d="M11.5 5 L13.5 7 L15.5 5" fill="none" stroke="currentColor" stroke-width="1.1" />
+						<path
+							d="M11.5 5 L13.5 7 L15.5 5"
+							fill="none"
+							stroke="currentColor"
+							stroke-width="1.1"
+						/>
 					</svg>
 				</button>
 			</ControlExplainer>
@@ -706,8 +730,7 @@
 					disabled
 					aria-disabled="true"
 					inert={!featureIconSingleClick()}
-					aria-label="FX panel"
-				>FX</button>
+					aria-label="FX panel">FX</button>
 			</ControlExplainer>
 			<!-- Split view and grid view are unbuilt: HIDDEN for V1 rather than shown
 			     disabled (JIK, Thu 1 Oct 2026). Their planned-explainers entries stay
@@ -720,13 +743,15 @@
 			<ControlExplainer title="2-deck view" demo="2-deck-view" tooltip={TOOLTIP_SKIM_ROW}>
 				<button
 					type="button"
-					class="tb-icon"
+					class="tb-icon tb-deck-layout"
 					class:active={twoDeck.pressed}
 					aria-label="2 deck view"
 					aria-pressed={twoDeck.pressed}
 					aria-keyshortcuts="Meta+2 Control+2 Meta+4 Control+4"
-					inert={!featureIconSingleClick()}
-					onclick={() => setDeckLayoutMode(twoDeck.next)}
+					onclick={(event) => {
+						event.stopPropagation();
+						setDeckLayoutMode(twoDeck.next);
+					}}
 				>
 					<svg width="12" height="12" viewBox="0 0 12 12" aria-hidden="true">
 						<rect x="1" y="2" width="4.4" height="8" fill="none" stroke="currentColor" />
@@ -737,7 +762,11 @@
 			<!-- 4-waveform icon: starts on (the layout the bar already paints
 			     active). Four stacked jagged polylines - must NOT read as a
 			     plain list glyph or a dotted grid (SCREENSHOT-SPEC 1). -->
-			<ControlExplainer title="4-waveform view" bullets={fourWaveformBullets} tooltip={TOOLTIP_SKIM_ROW}>
+			<ControlExplainer
+				title="4-waveform view"
+				bullets={fourWaveformBullets}
+				tooltip={TOOLTIP_SKIM_ROW}
+			>
 				<button
 					type="button"
 					class="tb-icon tb-view"
@@ -767,7 +796,11 @@
 		<!-- svelte-ignore a11y_click_events_have_key_events -->
 		<div class="icon-cluster-extra" style={featureExtraStyle} onclick={_openFeatureMenuFromCluster}>
 			<div class="icon-row" data-feature-row="2">
-				<ControlExplainer title="Phase scope" bullets={scopeView1Bullets} tooltip={TOOLTIP_SKIM_ROW}>
+				<ControlExplainer
+					title="Phase scope"
+					bullets={scopeView1Bullets}
+					tooltip={TOOLTIP_SKIM_ROW}
+				>
 					<button
 						type="button"
 						class="tb-icon tb-view"
@@ -786,7 +819,11 @@
 				</ControlExplainer>
 			</div>
 			<div class="icon-row" data-feature-row="3">
-				<ControlExplainer title="Phase meter" bullets={scopeView2Bullets} tooltip={TOOLTIP_SKIM_ROW}>
+				<ControlExplainer
+					title="Phase meter"
+					bullets={scopeView2Bullets}
+					tooltip={TOOLTIP_SKIM_ROW}
+				>
 					<button
 						type="button"
 						class="tb-icon tb-view"
@@ -799,7 +836,12 @@
 					>
 						<svg width="12" height="12" viewBox="0 0 12 12" aria-hidden="true">
 							<circle cx="6" cy="6" r="4.6" fill="none" stroke="currentColor" />
-							<path d="M6 1.4 A4.6 4.6 0 0 1 10.6 6" fill="none" stroke="currentColor" stroke-width="1.6" />
+							<path
+								d="M6 1.4 A4.6 4.6 0 0 1 10.6 6"
+								fill="none"
+								stroke="currentColor"
+								stroke-width="1.6"
+							/>
 						</svg>
 					</button>
 				</ControlExplainer>
@@ -822,12 +864,14 @@
 								onclick={(event) => {
 									event.stopPropagation();
 									_toggleFeature(icon.id);
-								}}
-							>{icon.short}</button>
+								}}>{icon.short}</button
+							>
 						{/each}
 					</div>
 				{/each}
-				<p class="feature-menu-note">Core stays on the top row. More components fill row 2, then row 3.</p>
+				<p class="feature-menu-note">
+					Core stays on the top row. More components fill row 2, then row 3.
+				</p>
 			</div>
 		{/if}
 	</div>
@@ -845,7 +889,9 @@
 	<div class="spacer-left"></div>
 
 	<ControlExplainer title="LINK" bullets={linkBullets} demo="link" tooltip={TOOLTIP_SKIM_ROW}>
-		<button type="button" class="link-btn rb-inert" aria-disabled="true" aria-label="LINK">LINK</button>
+		<button type="button" class="link-btn rb-inert" aria-disabled="true" aria-label="LINK"
+			>LINK</button
+		>
 	</ControlExplainer>
 
 	<div class="spacer"></div>
@@ -860,7 +906,8 @@
 	<FeedbackWidget />
 
 	<!-- dead-center feedback thumbs (PREF-02). The vibe meter that sat between
-	     them was removed, R10, Wed 7 Oct 2026. -->
+	     them was removed, R10, Wed 7 Oct 2026. First-open panel placement:
+	     data-feedback-thumbs-anchor on FeedbackThumbs. -->
 	<div class="thumbs-slot topbar-slot-thumbs">
 		<FeedbackThumbs />
 	</div>
@@ -876,7 +923,9 @@
 		disabled={pairingBlocked !== null}
 		onclick={() => void _openPairing()}
 	>
-		<span class="pair-long">Create pairing</span><span class="pair-short" aria-hidden="true">Pair</span>
+		<span class="pair-long">Create pairing</span><span class="pair-short" aria-hidden="true"
+			>Pair</span
+		>
 	</button>
 
 	<button
@@ -1007,22 +1056,33 @@
 				{#if autoPlayNextState.run !== null}
 					<p class="ap-status" data-testid="ap-next-run">{runTitle(autoPlayNextState.run)}</p>
 				{/if}
-				<p class="ap-status" data-testid="ap-decision">{decisionLine(autoPlayDecision, uiPrefs.auto_play_early_planning)}</p>
+				<p class="ap-status" data-testid="ap-decision">
+					{decisionLine(autoPlayDecision, uiPrefs.auto_play_early_planning)}
+				</p>
 				<AutoPlayWhy />
-				<label class="ap-row" title="Decide the next transition early and plan it. Off: AutoPlay hands off in the last ~16 s only.">
+				<label
+					class="ap-row"
+					title="Decide the next transition early and plan it. Off: AutoPlay hands off in the last ~16 s only."
+				>
 					<input
 						type="checkbox"
 						data-testid="ap-early"
 						checked={uiPrefs.auto_play_early_planning}
 						onchange={async (e) => {
 							const input = e.currentTarget as HTMLInputElement;
-							const result = await runPerformanceCommandFromUi({ type: 'auto_play_early', enabled: input.checked });
+							const result = await runPerformanceCommandFromUi({
+								type: 'auto_play_early',
+								enabled: input.checked
+							});
 							if (!result.ok) input.checked = uiPrefs.auto_play_early_planning;
 						}}
 					/>
 					<span>Plan the handoff early</span>
 				</label>
-				<label class="ap-row" title="Soft target: seconds of the master before AutoPlay looks for a mix-out point. Short tracks decide earlier.">
+				<label
+					class="ap-row"
+					title="Soft target: seconds of the master before AutoPlay looks for a mix-out point. Short tracks decide earlier."
+				>
 					Decide after (s)
 					<input
 						type="number"
@@ -1034,7 +1094,10 @@
 						disabled={!uiPrefs.auto_play_early_planning}
 						onchange={async (e) => {
 							const input = e.currentTarget as HTMLInputElement;
-							const result = await runPerformanceCommandFromUi({ type: 'auto_play_early', decide_after_s: input.valueAsNumber });
+							const result = await runPerformanceCommandFromUi({
+								type: 'auto_play_early',
+								decide_after_s: input.valueAsNumber
+							});
 							if (!result.ok) input.value = String(uiPrefs.auto_play_decide_after_s);
 						}}
 					/>
@@ -1051,8 +1114,12 @@
 						autoPlayDecision.phase === 'running' ||
 						rustCommandUnsupported('auto_play_decide_now')}
 					onclick={() => void runPerformanceCommandFromUi({ type: 'auto_play_decide_now' })}
-				>Decide now</button>
-				<label class="ap-row" title="What the next planned transition aims for: the planner tries this intent's styles first">
+					>Decide now</button
+				>
+				<label
+					class="ap-row"
+					title="What the next planned transition aims for: the planner tries this intent's styles first"
+				>
 					Intent
 					<select
 						data-testid="ap-next-intent"
@@ -1075,8 +1142,7 @@
 					<input
 						type="checkbox"
 						checked={uiPrefs.auto_play_enforce_order}
-						onchange={(e) =>
-							setAutoPlayEnforceOrder((e.currentTarget as HTMLInputElement).checked)}
+						onchange={(e) => setAutoPlayEnforceOrder((e.currentTarget as HTMLInputElement).checked)}
 					/>
 					<span>Enforce play order</span>
 				</label>
@@ -1110,9 +1176,9 @@
 					<span>Two-track AutoPlay (decks 1 and 2 only)</span>
 				</label>
 				<p class="ap-hint">
-					Off enforce: key +-1 + Beat Sync BPM. Maximize reach (default on) prefers
-					fewer-outward twins so later tracks stay playable. Enforce order: next row
-					after current (ignores maximize reach).
+					Off enforce: key +-1 + Beat Sync BPM. Maximize reach (default on) prefers fewer-outward
+					twins so later tracks stay playable. Enforce order: next row after current (ignores
+					maximize reach).
 				</p>
 			</div>
 		{/if}
@@ -1182,7 +1248,9 @@
 		onclick={cycleUiSkin}
 	>
 		<!-- One glyph per skin (SKIN_BUTTON_ICON_SVG in ui-skin.ts): static, trusted markup. -->
-		<svg width="12" height="12" viewBox="0 0 12 12" aria-hidden="true">{@html SKIN_BUTTON_ICON_SVG[uiPrefs.ui_skin]}</svg>
+		<svg width="12" height="12" viewBox="0 0 12 12" aria-hidden="true"
+			>{@html SKIN_BUTTON_ICON_SVG[uiPrefs.ui_skin]}</svg
+		>
 	</button>
 
 	<WaveQuickSettingsButton />
@@ -1241,7 +1309,10 @@
 			<div class="master-track"></div>
 			<div class="master-fill" style={`width: ${mixerState.master * 100}%;`}></div>
 			{#if masterTakeoverGhost !== null}
-				<div class="master-takeover-ghost" style={`left: calc(${masterTakeoverGhost.value * 100}% - 4px);`}></div>
+				<div
+					class="master-takeover-ghost"
+					style={`left: calc(${masterTakeoverGhost.value * 100}% - 4px);`}
+				></div>
 			{/if}
 			<div class="master-thumb" style={`left: calc(${mixerState.master * 100}% - 4px);`}></div>
 		</div>
@@ -1307,7 +1378,8 @@
 		title={isMasterMuted()
 			? `${masterMuteReason() ?? ''} Master MUTED - final output gain forced to 0. The whole audio graph still runs, only the speaker feed is silent. Click to unmute (or ?muted=1 to start muted).`
 			: 'Master audible. Click to mute the speaker feed - the audio graph keeps running, so nothing else changes.'}
-		onclick={() => void runPerformanceCommandFromUi({ type: 'master_mute', muted: !isMasterMuted() })}
+		onclick={() =>
+			void runPerformanceCommandFromUi({ type: 'master_mute', muted: !isMasterMuted() })}
 	>
 		<!-- Muted says MUTED, because the button reports a STATE, not an
 		     action; audible shows the speaker glyph, because there is no state
@@ -1356,7 +1428,6 @@
      so its failure shows an error there instead of nothing here. -->
 
 <style>
-
 	.rb-topbar {
 		position: relative;
 		grid-area: topbar;
@@ -1368,7 +1439,6 @@
 		color: var(--rb-text-dim);
 		overflow: hidden;
 	}
-
 
 	.spacer-left {
 		flex: 1;
@@ -1473,8 +1543,12 @@
 	   is strictly healthier than the C baseline: it also closes the 1410-1425
 	   hole. */
 	@media (max-width: 1180px) {
-		.rb-topbar :global(.cmd-input) { width: 86px; }
-		.rb-topbar :global(.cmd-status) { display: none; }
+		.rb-topbar :global(.cmd-input) {
+			width: 86px;
+		}
+		.rb-topbar :global(.cmd-status) {
+			display: none;
+		}
 	}
 	/* 1024px -> 1210px, re-measured Wed 9 Sep 2026 with SOURCE in the row
 	   (same harness and method as the 1530px note above). Two findings, one
@@ -1492,10 +1566,20 @@
 	   placeholder chrome - the eight view icons and LINK are `rb-inert` and
 	   `disabled`, PAD is a dim label - so nothing operable leaves the row. */
 	@media (max-width: 980px) {
-		.rb-topbar .topbar-slot-bsm { font-size: 0; }
-		.rb-topbar .topbar-slot-bsm::after { content: 'BSM'; font-size: 9px; }
-		.rb-topbar .topbar-slot-autoplay > .bsm-toggle:first-child { font-size: 0; }
-		.rb-topbar .topbar-slot-autoplay > .bsm-toggle:first-child::after { content: 'AP'; font-size: 9px; }
+		.rb-topbar .topbar-slot-bsm {
+			font-size: 0;
+		}
+		.rb-topbar .topbar-slot-bsm::after {
+			content: 'BSM';
+			font-size: 9px;
+		}
+		.rb-topbar .topbar-slot-autoplay > .bsm-toggle:first-child {
+			font-size: 0;
+		}
+		.rb-topbar .topbar-slot-autoplay > .bsm-toggle:first-child::after {
+			content: 'AP';
+			font-size: 9px;
+		}
 	}
 	/* Issue #2357, measured Tue 15 Sep 2026 on the built SPA (playwright,
 	   chromium, 800x600 fixture library, one page per configuration, overflow
@@ -1546,7 +1630,9 @@
 		   vanished in a 1508px window (the maintainer, Mon 5 Oct 2026). */
 		.rb-topbar .free-badge,
 		.rb-topbar .topbar-slot-utility,
-		.rb-topbar .clock { display: none; }
+		.rb-topbar .clock {
+			display: none;
+		}
 	}
 	@media (max-width: 1448px) {
 		/* Was 1210px. The inert view-icon cluster, LINK and PAD are 233px of
@@ -1592,7 +1678,9 @@
 		.rb-topbar :global(.perf-meters-root),
 		.rb-topbar :global(.posture-chip),
 		.rb-topbar :global(.cloudsync-status),
-		.rb-topbar :global([data-testid="refresh-analysis"]) { display: none; }
+		.rb-topbar :global([data-testid='refresh-analysis']) {
+			display: none;
+		}
 	}
 	@media (max-width: 1310px) {
 		/* READ-ONLY status, at every height: the pinned waveform quick-settings
@@ -1603,7 +1691,9 @@
 		   meters readout goes here; CloudSync still yields in the 1257px tier
 		   above and in the short-window 1375 (max-height: 799px) tier below.
 		   Posture and refresh-analysis controls keep the 1257px tier. */
-		.rb-topbar :global(.perf-meters-root) { display: none; }
+		.rb-topbar :global(.perf-meters-root) {
+			display: none;
+		}
 	}
 	@media (max-width: 1023px) {
 		/* The command entry yields LAST of the narrow tier's set: it is the
@@ -1612,7 +1702,9 @@
 		   at 1024px. Below 1024px it either fits or it is crushed to zero width,
 		   and a crushed control is the worse of the two failure modes - it looks
 		   operable and is not (same reasoning as the 825px note this replaces). */
-		.rb-topbar :global(.cmd-entry) { display: none; }
+		.rb-topbar :global(.cmd-entry) {
+			display: none;
+		}
 	}
 	/* >=825px and <=1023px, the above still leaves the sign-in pill as the
 	   widest thing in the row. It is the deliverable of this issue, so it keeps
@@ -1630,20 +1722,30 @@
 		flex-shrink: 0;
 		white-space: nowrap;
 	}
-	.rb-topbar .pair-short { display: none; }
+	.rb-topbar .pair-short {
+		display: none;
+	}
 	@media (max-width: 1740px) {
-		.rb-topbar .topbar-slot-thumbs { display: none; }
+		.rb-topbar .topbar-slot-thumbs {
+			display: none;
+		}
 		/* Shorten in the DOM (pair-long / pair-short) rather than a ::after
 		   label. Hiding the control at this width hid it on every Mac laptop
 		   window (1470-1728px). */
-		.rb-topbar .pair-long { display: none; }
-		.rb-topbar .pair-short { display: inline; }
+		.rb-topbar .pair-long {
+			display: none;
+		}
+		.rb-topbar .pair-short {
+			display: inline;
+		}
 	}
 	@media (max-width: 1160px) {
 		/* 1136px (the last width where the short label crushed the command
 		   input; playwright, chromium, fixture library, Fri 2 Oct 2026) plus
 		   the same 25px margin the other tiers use. */
-		.rb-topbar .topbar-slot-pairing { display: none; }
+		.rb-topbar .topbar-slot-pairing {
+			display: none;
+		}
 	}
 	/* LESSV-02 (the maintainer, Tue 6 Oct 2026): the LESS view hides the less important
 	   feature buttons - every unfinished (inert, planned) control, Stage and
@@ -1661,7 +1763,9 @@
 	.rb-topbar.less-view :global(.cmd-entry) { display: none; }
 	/* The overflow rows hold the live phase views (TOPVIEW-02/03): hidden in LESS
 	   only at the default view, so a chosen phase view keeps its way back. */
-	.rb-topbar.less-view:not(.view-chosen):not(.single-click) .icon-cluster-extra { display: none; }
+	.rb-topbar.less-view:not(.view-chosen):not(.single-click) .icon-cluster-extra {
+		display: none;
+	}
 
 	/* SHORT WINDOWS (max-height 799px). The compact lyric chip ("WF hidden",
 	   ~58px) shows only at these heights and is a door that never yields, so
@@ -1683,14 +1787,22 @@
 	   and AP already do; it keeps its aria-label and its menu. Placed after
 	   the base rules so the pair-long/pair-short swap wins. */
 	@media (max-height: 799px) and (max-width: 1795px) {
-		.rb-topbar .topbar-slot-thumbs { display: none; }
-		.rb-topbar .pair-long { display: none; }
-		.rb-topbar .pair-short { display: inline; }
+		.rb-topbar .topbar-slot-thumbs {
+			display: none;
+		}
+		.rb-topbar .pair-long {
+			display: none;
+		}
+		.rb-topbar .pair-short {
+			display: inline;
+		}
 	}
 	@media (max-height: 799px) and (max-width: 1577px) {
 		.rb-topbar .free-badge,
 		.rb-topbar .topbar-slot-utility,
-		.rb-topbar .clock { display: none; }
+		.rb-topbar .clock {
+			display: none;
+		}
 	}
 	@media (max-height: 799px) and (max-width: 1512px) {
 		.rb-topbar .icon-cluster > :global(.explainer:has(.rb-inert)),
@@ -1708,11 +1820,29 @@
 	   (1px sweep), so 1375px is 1350px plus the same 25px margin. */
 	@media (max-height: 799px) and (max-width: 1375px) {
 		.rb-topbar :global(.perf-meters-root),
-		.rb-topbar :global(.cloudsync-status) { display: none; }
+		.rb-topbar :global(.cloudsync-status) {
+			display: none;
+		}
 	}
 	@media (max-height: 799px) and (max-width: 833px) {
-		.rb-topbar :global(.src-toggle) { font-size: 0; }
-		.rb-topbar :global(.src-toggle)::after { content: 'SRC'; font-size: 9px; }
+		.rb-topbar :global(.src-toggle) {
+			font-size: 0;
+		}
+		.rb-topbar :global(.src-toggle)::after {
+			content: 'SRC';
+			font-size: 9px;
+		}
+	}
+	/* Issue #13543: the compact lyric chip (~58px) stays visible at 800x600;
+	   measured 2026-11-12 (playwright, chromium, fixture library): without
+	   this tier the row overflows by 53px and clips the sign-in pill. Tighten
+	   horizontal rhythm only; all controls stay mounted. 853px is 800px plus
+	   the same 25px margin the width tiers use. */
+	@media (max-height: 799px) and (max-width: 853px) {
+		.rb-topbar {
+			gap: 2px;
+			padding-inline: 4px;
+		}
 	}
 
 	.ap-wrap {
@@ -1759,7 +1889,9 @@
 	   labels, rather than let it compete for room with controls a DJ or an
 	   agent actually needs. */
 	@media (max-width: 980px) {
-		.rb-topbar .topbar-slot-autoplay > .ap-next-btn { display: none; }
+		.rb-topbar .topbar-slot-autoplay > .ap-next-btn {
+			display: none;
+		}
 	}
 	.ap-menu {
 		position: fixed;
@@ -1936,6 +2068,15 @@
 	}
 	.feature-icons:not(.single-click) .tb-icon {
 		pointer-events: none;
+	}
+	/* TOPVIEW / PR #4923: the 2-deck toggle stays a real control in the one-button
+	   strip, so its centre must pass elementFromPoint (PERF-UI-06 at 1864px). */
+	.feature-icons:not(.single-click) .icon-cluster > :global(.explainer:has(.tb-deck-layout)) {
+		pointer-events: none;
+	}
+	.feature-icons:not(.single-click) .icon-cluster .tb-deck-layout {
+		pointer-events: auto;
+		cursor: pointer;
 	}
 	.feature-icons.single-click .tb-icon:not(:disabled) {
 		cursor: pointer;
@@ -2297,6 +2438,25 @@
 		flex: 0 0 22px;
 		height: 20px;
 	}
+	/* Reclaimed title bar (packaged macOS app, overlay title bar): leave room for the traffic lights. */
+	:global(html[data-titlebar='overlay']) .rb-topbar {
+		padding-left: 78px;
+		-webkit-app-region: drag;
+	}
+	/* Fully global on purpose: a scoped selector only matches TopBar's own markup,
+	   and a control from a child component inside the drag region would read
+	   clicks as window drags. */
+	:global(html[data-titlebar='overlay'] .rb-topbar button),
+	:global(html[data-titlebar='overlay'] .rb-topbar a),
+	:global(html[data-titlebar='overlay'] .rb-topbar input),
+	:global(html[data-titlebar='overlay'] .rb-topbar select),
+	:global(html[data-titlebar='overlay'] .rb-topbar textarea),
+	:global(html[data-titlebar='overlay'] .rb-topbar summary),
+	:global(html[data-titlebar='overlay'] .rb-topbar details),
+	:global(html[data-titlebar='overlay'] .rb-topbar [role='button']),
+	:global(html[data-titlebar='overlay'] .rb-topbar [role='slider']) {
+		-webkit-app-region: no-drag;
+	}
 
 	a.mode-card:focus-visible {
 		/* A11Y-11403: keyboard focus ring paired with this file's outline reset. */
@@ -2308,4 +2468,19 @@
 		outline: 2px solid var(--rb-focus-ring);
 		outline-offset: 2px;
 	}
+
+	/* A11Y-11811: reduced motion (OS or Appearance); mirrors app.css. */
+	@media (prefers-reduced-motion: reduce) {
+		:where(*) {
+			animation-duration: 0.01ms;
+			animation-iteration-count: 1;
+			transition-duration: 0.01ms;
+		}
+	}
+	:global(html[data-reduce-motion]) :where(*) {
+		animation-duration: 0.01ms;
+		animation-iteration-count: 1;
+		transition-duration: 0.01ms;
+	}
+
 </style>

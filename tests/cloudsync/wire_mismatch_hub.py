@@ -3,7 +3,7 @@
 The real hub gate compares the offered wire to this process's WIRE_VERSION,
 so a same-process uvicorn hub cannot refuse a same-process spoke. This app
 is the captured hello refusal body (same shape as
-``apps.sync_hub.service._require_same_wire``) served over a real socket so
+``apps.sync_hub.service_wiring._require_same_wire``) served over a real socket so
 ``HttpTransport`` and the feedback/ops routes run the production path.
 """
 

@@ -9,10 +9,27 @@ export type SpotifyPlaylistRankRow = {
 	name: string;
 	updated_at?: string | null;
 	owned?: boolean;
+	/** Pins and recents lookup key (#9685); defaults to playlist_id when absent. */
+	pref_key?: string;
 };
 
 export const SPOTIFY_RECENT_CAP = 12;
 export const SPOTIFY_PINNED_CAP = 50;
+
+const _SPOTIFY_ACCOUNT_KEY = /^spotify-account:([A-Za-z0-9]+)$/;
+const _SPOTIFY_IMPORTED_KEY = /^spotify:(?:user:[^:]+:)?(?:playlist:)?([A-Za-z0-9]+)$/;
+
+/** #9685: the one key pins and recents are stored under. An account-only
+ * row (`spotify-account:<sid>`) and the imported playlist (`spotify:<sid>`,
+ * or the older `spotify:user:<owner>:playlist:<sid>`) share `spotify:<sid>`;
+ * any other id (no Spotify id in it) is its own key. */
+export function spotifyPreferenceKey(playlistId: string): string {
+	const account = _SPOTIFY_ACCOUNT_KEY.exec(playlistId);
+	if (account !== null) return `spotify:${account[1]}`;
+	const imported = _SPOTIFY_IMPORTED_KEY.exec(playlistId);
+	if (imported !== null) return `spotify:${imported[1]}`;
+	return playlistId;
+}
 
 export function normalizePlaylistQuery(raw: string): string {
 	return raw.trim();
@@ -66,11 +83,13 @@ export function rankSpotifyPlaylists<T extends SpotifyPlaylistRankRow>(
 	const pinIndex = _indexMap(args.pinnedIds);
 	const recentIndex = _indexMap(args.recentIds);
 	survivors.sort((a, b) => {
-		const aPin = pinIndex.get(a.playlist_id) ?? Number.POSITIVE_INFINITY;
-		const bPin = pinIndex.get(b.playlist_id) ?? Number.POSITIVE_INFINITY;
+		const aKey = a.pref_key ?? a.playlist_id;
+		const bKey = b.pref_key ?? b.playlist_id;
+		const aPin = pinIndex.get(aKey) ?? Number.POSITIVE_INFINITY;
+		const bPin = pinIndex.get(bKey) ?? Number.POSITIVE_INFINITY;
 		if (aPin !== bPin) return aPin - bPin;
-		const aRecent = recentIndex.get(a.playlist_id) ?? Number.POSITIVE_INFINITY;
-		const bRecent = recentIndex.get(b.playlist_id) ?? Number.POSITIVE_INFINITY;
+		const aRecent = recentIndex.get(aKey) ?? Number.POSITIVE_INFINITY;
+		const bRecent = recentIndex.get(bKey) ?? Number.POSITIVE_INFINITY;
 		if (aRecent !== bRecent) return aRecent - bRecent;
 		const aOwned = a.owned === true;
 		const bOwned = b.owned === true;

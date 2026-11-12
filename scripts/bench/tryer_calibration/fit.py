@@ -266,15 +266,10 @@ def kendall_tau(scores: list[float], human_ranks: list[int]) -> float | None:
     """Tau-a between a score (higher better) and a human rank (1 best); None under 2 items."""
     if len(scores) < 2:
         return None
-    concordant = 0
-    discordant = 0
-    for i, j in itertools.combinations(range(len(scores)), 2):
-        model = np.sign(scores[i] - scores[j])
-        human = np.sign(human_ranks[j] - human_ranks[i])
-        concordant += int(model * human > 0)
-        discordant += int(model * human < 0)
-    pairs = len(scores) * (len(scores) - 1) / 2
-    return (concordant - discordant) / pairs
+    pairs = list(itertools.combinations(range(len(scores)), 2))
+    margins = [scores[i] - scores[j] for i, j in pairs]
+    orders = [int(np.sign(human_ranks[j] - human_ranks[i])) for i, j in pairs]
+    return pairwise_tau(margins, orders)
 
 
 def pairwise_tau(margins: list[float], human_orders: list[int]) -> float | None:
@@ -307,7 +302,12 @@ def _mean_tau(grouped: dict[str, list[RatedCandidate]], score_of: Any) -> float 
     taus: list[float] = []
     for candidates in grouped.values():
         rated = [c for c in candidates if c.role != CFG.ANCHOR_ROLE and score_of(c) is not None]
-        tau = kendall_tau([score_of(c) for c in rated], [c.rank for c in rated])
+        margins: list[float] = []
+        orders: list[int] = []
+        for a, b in itertools.combinations(rated, 2):
+            margins.append(score_of(a) - score_of(b))
+            orders.append(int(np.sign(b.rank - a.rank)))
+        tau = pairwise_tau(margins, orders)
         if tau is not None:
             taus.append(tau)
     return float(np.mean(taus)) if taus else None

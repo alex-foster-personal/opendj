@@ -116,9 +116,21 @@ export type EnrichSummary = {
 	warnings?: EnrichWarning[];
 	/** LIBM-189: store covers found, waiting on the user's OK. */
 	artwork_suggestions?: number;
+	/** SETPREP: imports that matched existing audio by hash (see /dedup). */
+	ingest_duplicates?: number;
 	/** SETPREP-10646: genre fill from the latest ingest enrichment batch. */
 	ingest_genre?: { total: number; done?: number; needs_review?: number } | null;
+	/** SETPREP-12099: fingerprint identify proposals from the latest ingest enrichment batch. */
+	ingest_identify?: {
+		total: number;
+		proposals?: number;
+		needs_review?: number;
+		no_match?: number;
+		deferred?: number;
+	} | null;
 };
+
+export const TITLE_FIX_HREF = '/admin?tab=title-fix';
 
 export type EnrichWarning = {
 	lane: string;
@@ -134,6 +146,8 @@ export type CardLine = {
 	text: string;
 	/** Hover text: the named reasons behind a count. */
 	title: string | null;
+	/** When set, the card renders this as the line destination. */
+	href?: string;
 };
 
 const LANE_LABELS: Record<string, string> = {
@@ -351,6 +365,40 @@ export function dudLines(summary: EnrichSummary): CardLine[] {
  *   [if] a blocking warning is reported [then] its line is "unavailable" and the pill needs you
  *   [if] an info warning (opt-in AI genre) is reported [then] its line is a note and never flags the pill
  */
+/** SETPREP-12099: identify proposals after import; not in needsAttention (like genre). */
+export function ingestIdentifyLine(summary: EnrichSummary): CardLine | null {
+	const counts = summary.ingest_identify;
+	if (counts === undefined || counts === null || counts.total === 0) return null;
+	const proposals = counts.proposals ?? 0;
+	const deferred = counts.deferred ?? 0;
+	if (proposals === 0 && deferred === 0) return null;
+	const pText = `${n(proposals)} ${proposals === 1 ? 'proposal' : 'proposals'} to review`;
+	let text = `Identify: ${pText}`;
+	if (deferred > 0) {
+		text += `, ${n(deferred)} deferred`;
+	}
+	return {
+		lane: 'identify',
+		tone: proposals > 0 ? 'working' : 'ready',
+		text,
+		title: null
+	};
+}
+
+/** SETPREP: recent imports that duplicated library audio, with a link to review. */
+export function importDuplicateLine(summary: EnrichSummary): CardLine | null {
+	const count = summary.ingest_duplicates ?? 0;
+	if (count <= 0) return null;
+	const files = count === 1 ? 'file' : 'files';
+	return {
+		lane: 'import-duplicates',
+		tone: 'note',
+		text: `${n(count)} imported ${files} duplicate tracks already in the library`,
+		title: 'Same audio at another path; review and merge on the duplicate page',
+		href: '/dedup'
+	};
+}
+
 /** SETPREP-10646: genre fill after import, once artwork for the batch has settled. */
 export function ingestGenreLine(summary: EnrichSummary): CardLine | null {
 	const counts = summary.ingest_genre;
@@ -365,6 +413,12 @@ export function ingestGenreLine(summary: EnrichSummary): CardLine | null {
 	};
 }
 
+/**
+ * ENRICH-08: one line per capability warning, its fix on hover and after the message.
+ *
+ *   [if] a blocking warning is reported [then] its line is "unavailable" and the pill needs you
+ *   [if] an info warning (opt-in AI genre) is reported [then] its line is a note and never flags the pill
+ */
 export function warningLines(summary: EnrichSummary): CardLine[] {
 	return (summary.warnings ?? []).map((w) => ({
 		lane: `warning-${w.lane}-${w.code}`,

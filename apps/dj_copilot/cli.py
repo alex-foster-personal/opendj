@@ -213,6 +213,8 @@ def _cmd_suggest_next(args: argparse.Namespace) -> int:
                 f"{i:>3}  {sug.stable_id:<40}  "
                 f"{sug.score:>6.3f}  {tags:<40}"
             )
+            if sug.unscored:
+                print(f"       unscored: {', '.join(sug.unscored)}")
             if sug.explain_text:
                 print(f"       explain: {sug.explain_text}")
         return 0

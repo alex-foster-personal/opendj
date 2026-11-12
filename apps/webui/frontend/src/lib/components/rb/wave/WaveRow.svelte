@@ -5,10 +5,12 @@
 	// (WaveGutter, DECKUX-40). An empty deck shows only its number.
 	// rAF repaints ONLY while this deck is playing or being scrubbed.
 	import { untrack } from 'svelte';
+	import { prefersReducedMotion } from '$lib/motion/reduced-motion';
 	import { fetchTrackLyrics } from '$lib/rb/api-rb';
 	import {
 		performanceCommandStatus,
 		queryWaveformSeekArmed,
+		dispatchPerformanceCommand,
 		runPerformanceCommandFromUi
 	} from '$lib/rb/performance-ipc.svelte';
 	import { effectiveQuantize, hasTrustedBeatGrid } from '$lib/player/grid-features';
@@ -50,7 +52,8 @@
 	import {
 		initPaintScheduleState,
 		paintScrollPx,
-		shouldSkipRepaint
+		shouldSkipRepaint,
+		writeVisualInputs
 	} from './paint-position';
 	import { followerSyncPlayheadTone } from './wave-math';
 	import {
@@ -75,6 +78,7 @@
 	import { createLyricsFetchState } from './lyrics-fetch.svelte';
 	import { waveRowVocalsTitle } from './vocals-title';
 	import { uiPrefs } from '$lib/rb/prefs.svelte';
+	import { cueMarkerVisibility } from '$lib/rb/cue-marker-prefs';
 	import { paintBandGains } from '$lib/rb/wave-eq-gains.svelte';
 	import { effectiveWaveformDesign, waveSplitActive } from '$lib/rb/ui-skin';
 	import { paintSplitRow, splitPartnerDeck } from './split-row';
@@ -248,7 +252,7 @@
 		const prev = _prevZoom;
 		_prevZoom = next;
 		if (prev === null || prev === next) return;
-		const reduced = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches === true;
+		const reduced = prefersReducedMotion();
 		const now = performance.now();
 		// A step that lands mid-glide starts from the window on screen, not from
 		// the previous step's target, so the waveform does not jump.
@@ -407,6 +411,7 @@
 	);
 	const tempoScale = $derived(uiPrefs.tempo_lane_scale);
 	const hideTempo = $derived(!uiPrefs.show_tempo_lane);
+	const cueMarkers = $derived(cueMarkerVisibility(uiPrefs));
 	const hideVocals = $derived(!uiPrefs.show_vocal_lane);
 	const tempoColors = $derived(TEMPO_LANE_COLORS[effectiveWaveScheme(uiPrefs.theme, uiPrefs.ui_skin)]);
 	const partnerPlanCurves = $derived(splitPartner === null ? null : planDeckOverlay(splitPartner.id));
@@ -489,8 +494,13 @@
 	let scrubFrozenWindowS: number | null = null;
 	const _paintScheduleState = initPaintScheduleState();
 	const DRAG_THRESHOLD_PX = 3;
-	const seekDispatcher = createLatestSeekDispatcher(async (positionMs) => {
-		await runPerformanceCommandFromUi(waveSeekCommand(deckId, positionMs));
+	const seekDispatcher = createLatestSeekDispatcher(async (positionMs, pressT0Ms) => {
+		// Coalesced drag samples omit the stamp so intermediate targets never arm seek-presented.
+		if (pressT0Ms === undefined) {
+			await dispatchPerformanceCommand(waveSeekCommand(deckId, positionMs));
+			return;
+		}
+		await runPerformanceCommandFromUi(waveSeekCommand(deckId, positionMs), pressT0Ms);
 	});
 
 	/** Mirrors this row's gesture target into the shared registry, so follower rows
@@ -602,7 +612,8 @@
 		const partnerGains = splitPartner === null ? null : paintBandGains(splitPartner.id, uiPrefs.wave_eq_reflect);
 		const dpr = window.devicePixelRatio;
 		const backing = backingSize({ cssW, cssH, dpr, resizing: backingResizing });
-		const visualInputs = [
+		writeVisualInputs(
+			_paintScheduleState,
 			backing.width,
 			backing.height,
 			ghost.blinkPhase,
@@ -632,10 +643,13 @@
 			tempoColors,
 			tempoScale,
 			hideTempo,
+			cueMarkers.hot,
+			cueMarkers.memory,
+			cueMarkers.loop,
 			hideVocals
-		] as const;
+		);
 		tracePlayhead('wave-clock', deckId, paintPositionMs); // before the sub-pixel skip: the clock itself
-		if (shouldSkipRepaint(_paintScheduleState, force, visualInputs, scrollPx)) return;
+		if (shouldSkipRepaint(_paintScheduleState, force, scrollPx)) return;
 		tracePlayhead('wave', deckId, paintPositionMs);
 		if (splitPartner !== null && partnerPaintMs !== null) tracePlayhead('wave-partner', splitPartner.id, partnerPaintMs);
 		if (el.width !== backing.width || el.height !== backing.height) {
@@ -680,6 +694,7 @@
 					tempoColors,
 					tempoScale,
 					hideTempo,
+					cueMarkers,
 					hideVocals
 				},
 				{
@@ -699,6 +714,7 @@
 					tempoColors,
 					tempoScale,
 					hideTempo,
+					cueMarkers,
 					hideVocals
 				},
 				{ top: splitPartner.label, bottom: `DECK ${deckId}`, color: paintPalette.phrase, line: paintPalette.tick },
@@ -734,6 +750,7 @@
 			tempoColors,
 			tempoScale,
 			hideTempo,
+			cueMarkers,
 			hideVocals
 		});
 	}
@@ -824,6 +841,7 @@
 		void tempoColors;
 		void tempoScale;
 		void hideTempo;
+		void cueMarkers;
 		void hideVocals;
 		void effectiveWaveformDesign(uiPrefs.waveform_design, uiPrefs.ui_skin);
 		void uiPrefs.wave_height;
@@ -937,7 +955,7 @@
 				? _dragTarget(event.clientX, event)
 				: _clickTarget(event.clientX, event);
 			_setScrubPreview(targetMs);
-			await seekDispatcher.request(targetMs);
+			await seekDispatcher.request(targetMs, event.timeStamp);
 			if (scrubDispatchError !== null) throw scrubDispatchError;
 		} finally {
 			_clearGesture();
@@ -1051,6 +1069,20 @@ estimated from the render clock and may run ahead of what you hear."
 
 <style>
 	@import './WaveRow.chrome.css';
+
+	.rb-waverow {
+		transition:
+			background 50ms ease-out,
+			box-shadow 50ms ease-out;
+	}
+	@media (prefers-reduced-motion: reduce) {
+		.rb-waverow {
+			transition-duration: 0.01ms;
+		}
+	}
+	:global(html[data-reduce-motion]) .rb-waverow {
+		transition-duration: 0.01ms;
+	}
 
 	/* Match mixer CH3/4 intent: 3/4 recede as the lighter fill. Solid, not
 	   mixer's translucent panel-raised mix, because the canvas is opaque.

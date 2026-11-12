@@ -202,6 +202,8 @@ test('friendlyLabel turns action types into human labels', () => {
 		'Beat jump -4 (deck 2)'
 	);
 	assert.equal(fmt.friendlyLabel({ type: 'deck_loop_exit', deck: 2 }), 'Loop exit (deck 2)');
+	assert.equal(fmt.friendlyLabel({ type: 'deck_loop_in', deck: 1 }), 'Loop in (deck 1)');
+	assert.equal(fmt.friendlyLabel({ type: 'deck_loop_out', deck: 2 }), 'Loop out (deck 2)');
 	assert.equal(fmt.friendlyLabel({ type: 'mixer_channel', deck: 1, target: 'trim' }), 'Trim (deck 1)');
 	assert.equal(fmt.friendlyLabel({ type: 'mixer_channel', deck: 4, target: 'fader' }), 'Channel fader (deck 4)');
 	assert.equal(
@@ -543,6 +545,47 @@ test('cancelMidiLearn returns idle; feed while idle is no-op', async () => {
 		note: 'unmapped'
 	});
 	assert.equal(uiState.midiUi.learn.phase, 'idle');
+});
+
+test('issue 10580 learn retry and cancel dispatch through performance IPC', async () => {
+	// [if] learn is ambiguous [then] typed retry re-arms and cancel idles query midi_learn, [else stop].
+	const ipc = await vite.ssrLoadModule('/src/lib/rb/performance-ipc.svelte.ts');
+	mock.timers.enable({ apis: ['setTimeout'] });
+	try {
+		uiState.cancelMidiLearn();
+		webmidi._resetMidiForTests();
+		await uiState.armMidiLearn({ action: { type: 'browse_encoder' } }, () => {});
+		uiState.feedMidiLearnEntry({
+			ts: 0,
+			deviceId: 'dev-a',
+			deviceName: 'T',
+			status: 0xb0,
+			data1: 7,
+			data2: 64,
+			decoded: { ch: 1, kind: 'cc', id: 7 },
+			mapped: false,
+			note: 'unmapped'
+		});
+		mock.timers.tick(600);
+		assert.equal(uiState.midiUi.learn.phase, 'ambiguous');
+		assert.equal(ipc.queryPerformanceState().midi_learn.phase, 'ambiguous');
+		globalThis.window = {};
+		const uninstall = ipc.installPerformanceBrowserIpc();
+		try {
+			await window.musicDjToolsPerformance.dispatch({ type: 'midi_learn_retry' });
+			assert.equal(uiState.midiUi.learn.phase, 'armed');
+			assert.equal(ipc.queryPerformanceState().midi_learn.phase, 'armed');
+			await window.musicDjToolsPerformance.dispatch({ type: 'midi_learn_cancel' });
+			assert.equal(uiState.midiUi.learn.phase, 'idle');
+			assert.equal(ipc.queryPerformanceState().midi_learn.phase, 'idle');
+		} finally {
+			uninstall();
+			delete globalThis.window;
+		}
+	} finally {
+		mock.timers.reset();
+		uiState.cancelMidiLearn();
+	}
 });
 
 // requirement: CHROME-08

@@ -73,11 +73,13 @@ export async function fetchMissingTrackRows(): Promise<{
 	rows: BrowserRow[];
 	truncated: false;
 	etag: '';
+	match_total: null;
 }> {
 	const listing = await listBroken();
 	return {
 		rows: listing.tracks.map((track, index) => brokenTrackToBrowserRow(track, index + 1)),
 		truncated: false,
-		etag: ''
+		etag: '',
+		match_total: null
 	};
 }

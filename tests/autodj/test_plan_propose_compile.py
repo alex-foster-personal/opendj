@@ -13,7 +13,7 @@ from typing import Any
 import pytest
 
 from apps.autodj.compile import compile_plan
-from apps.autodj.contract.models import INTENTS
+from apps.autodj.contract.models import CONFIDENCE_FACTOR_NAMES, INTENTS, PROPOSE_GATES, KeySegment
 from apps.autodj.plan import (
     LOAD_TRIM,
     PLAY_LEAD_BARS,
@@ -41,11 +41,19 @@ from apps.autodj.plan import (
     validate_plan,
 )
 from apps.autodj.profile import TrackProfile, _key_segments, profile_from_payloads
-from apps.autodj.propose import ENERGY_UP, _overlap_bars, _style_fit, parse_intent, propose_transition
+from apps.autodj.propose import (
+    ENERGY_UP,
+    _overlap_bars,
+    _style_fit,
+    parse_intent,
+    proposal_golden_body,
+    propose_transition,
+)
 from apps.autodj.render_plan import TRANSITION_FX_REFUSAL, RenderPlanError, compile_render_plan
 from apps.autodj.scoring import _key_term, score_pair, score_windows
-from apps.autodj.styles import STYLES, StyleParams, exit_bar, list_styles, style
+from apps.autodj.styles import KILL, PRE_HIT_LOW, STYLES, StyleParams, exit_bar, list_styles, parametric_builder, style
 from apps.autodj.windows import MixWindow, mix_windows
+from apps.shared.harmonic import key_compat
 from tests.autodj.fixtures import CHORUS, DEFAULT_ARRANGEMENT, INTRO, OUTRO, anlz_payload, profile, track_row
 
 OUT, IN = profile("trk-out"), profile("trk-in", key="9A")
@@ -290,6 +298,60 @@ def _live(**out: Any) -> dict[str, Any]:
     return {"master_deck": 1, "decks": {"1": deck1, "2": {"stable_id": "trk-in", "playing": False}}}
 
 
+# ----- dipped fade_shape (issue #11835) -------------------------------------
+
+
+@pytest.mark.requirement("AUTODJ-12817")
+def test_dipped_pair_mid_window_power_dip() -> None:
+    """[if] dipped progress is 0.5 [then] power ~0.5, [else stop]."""
+    from apps.autodj.styles import _dipped_pair
+
+    out, inn = _dipped_pair(0.5)
+    assert out == pytest.approx(0.5, abs=0.02)
+    assert inn == pytest.approx(0.5, abs=0.02)
+    assert out**2 + inn**2 == pytest.approx(0.5, abs=0.02)
+
+
+@pytest.mark.requirement("AUTODJ-12817")
+def test_equal_power_mid_window_stays_near_one_deck() -> None:
+    """[if] equal_power at 0.5 [then] power within 0.05 of 1, [else stop]."""
+    from apps.autodj.styles import _gain
+
+    rising = _gain("equal_power", 0.5, True)
+    falling = _gain("equal_power", 0.5, False)
+    assert rising == pytest.approx(0.707, abs=0.02)
+    assert falling == pytest.approx(0.707, abs=0.02)
+    assert rising**2 + falling**2 == pytest.approx(1.0, abs=0.05)
+
+
+@pytest.mark.requirement("AUTODJ-12817")
+def test_style_params_accepts_dipped_on_fade_in_fade_out_lane() -> None:
+    """[if] dipped on fade_in_fade_out [then] builder runs, [else stop]."""
+    from apps.autodj.styles import StyleParams, parametric_builder
+
+    params = StyleParams(volume="fade_in_fade_out", fade_shape="dipped")
+    events = parametric_builder(params)(16, 1, 2)
+    assert events
+
+
+@pytest.mark.requirement("AUTODJ-12817")
+def test_style_params_still_rejects_unknown_volume_before_fade_shape() -> None:
+    """[if] unknown volume with dipped [then] volume rejected, [else stop]."""
+    from apps.autodj.styles import StyleParams
+
+    with pytest.raises(ValueError, match="volume"):
+        StyleParams(volume="bogus", fade_shape="dipped")
+
+
+@pytest.mark.requirement("AUTODJ-12817")
+def test_melt_style_uses_dipped_fade_shape() -> None:
+    """[if] melt catalog [then] fade_shape dipped on fade_in_fade_out, [else stop]."""
+    melt = STYLES["melt"]
+    assert melt.params is not None
+    assert melt.params.fade_shape == "dipped"
+    assert melt.params.volume == "fade_in_fade_out"
+
+
 # ----- catalog --------------------------------------------------------------
 
 
@@ -309,6 +371,55 @@ def test_phrase_swap_position_is_in_the_catalog() -> None:
     row = next(item for item in list_styles() if item["name"] == "bass_phrase_swap")
     assert row["available"] is True
     assert row["params"]["swap_position"] == "phrase"
+
+
+_ARR_DNB_OUT_DROP_64 = ((INTRO, 63, 0.4, 0.2, False), (CHORUS, 64, 1.0, 1.0, True), (OUTRO, 16, 0.4, 0.2, False))
+_ARR_DNB_IN_DROP_32 = ((INTRO, 31, 0.4, 0.2, False), (CHORUS, 80, 1.0, 1.0, True), (OUTRO, 16, 0.4, 0.2, False))
+_ARR_SHORT_IN_RUNUP = ((INTRO, 11, 0.4, 0.2, False), (CHORUS, 80, 1.0, 1.0, True), (OUTRO, 16, 0.4, 0.2, False))
+
+
+def _dnb_pair(*, bpm: float = 174.0) -> tuple[TrackProfile, TrackProfile]:
+    out = profile("trk-dd-out", bpm=bpm, arrangement=_ARR_DNB_OUT_DROP_64)
+    inn = profile("trk-dd-in", bpm=bpm, arrangement=_ARR_DNB_IN_DROP_32)
+    return out, inn
+
+
+@pytest.mark.requirement("AUTODJ-12793")
+def test_double_drop_proposed_for_aligned_174_drops() -> None:
+    """[if] both tracks are 174 BPM with drops at 64 and 32 [then] double_drop windows are 48 and 16, [else stop]."""
+    out, inn = _dnb_pair()
+    result = propose_transition(out, inn, out_deck=1, in_deck=2, intent=None, top=200)
+    hits = [row for row in result["proposals"] if row["style"] == "double_drop"]
+    assert hits and hits[0]["bars"] == 16
+    plan = hits[0]["plan"]
+    assert plan["out"]["window"]["start_bar"] == 48
+    assert plan["in"]["window"]["start_bar"] == 16
+
+
+@pytest.mark.requirement("AUTODJ-12793")
+def test_double_drop_not_proposed_outside_dnb_bpm_range() -> None:
+    """[if] either track is 128 BPM [then] double_drop is absent, [else stop]."""
+    out, inn = _dnb_pair(bpm=128.0)
+    result = propose_transition(out, inn, out_deck=1, in_deck=2, intent=None, top=200)
+    assert not any(row["style"] == "double_drop" for row in result["proposals"])
+
+
+@pytest.mark.requirement("AUTODJ-12793")
+def test_double_drop_refused_when_runup_is_short() -> None:
+    """[if] the incoming drop has under 16 bars of run-up [then] not_offered names the short run-up, [else stop]."""
+    out, _ = _dnb_pair()
+    inn = profile("trk-dd-short", bpm=174.0, arrangement=_ARR_SHORT_IN_RUNUP)
+    result = propose_transition(out, inn, out_deck=1, in_deck=2, intent=None, top=200)
+    assert not any(row["style"] == "double_drop" for row in result["proposals"])
+    refused = [row for row in result["not_offered"] if row.get("style") == "double_drop"]
+    assert refused and "run-up" in refused[0]["reason"].lower()
+
+
+@pytest.mark.requirement("AUTODJ-12793")
+def test_double_drop_catalog_lists_sixteen_bars_only() -> None:
+    """[if] list_styles runs [then] double_drop min and max bars are both 16, [else stop]."""
+    row = next(item for item in list_styles() if item["name"] == "double_drop")
+    assert row["bars"] == {"min": 16, "max": 16, "default": 16}
 
 
 _GOLDEN_STYLE_EVENTS_SHA256: dict[tuple[str, int], str] = {
@@ -336,10 +447,10 @@ _GOLDEN_STYLE_EVENTS_SHA256: dict[tuple[str, int], str] = {
     ("wave", 15): "1d7bdcc1dbffd5b033d74c96f49f71053aaf154a38ea802a303c2f4842364f74",
     ("wave", 16): "8a97a36269c15f4f3a4a0f8ae44b1292b867b9c2b870638c1b8d1af3657c0db7",
     ("wave", 32): "c947fa956fa9814856250309c489f3d85c73a925e4625e41fb38fec86815162f",
-    ("melt", 12): "840593867b3fc1718f1f21e3316c225400fdb16134414cb0bba57c8459a56634",
-    ("melt", 15): "e8d1d540da651c793b7d05b7b7b5b029467c06654de3a496fe5ada74e1270ca3",
-    ("melt", 16): "67b108d47ee50918f6e321cd8778216d3163790468fc6418cf38c344a98e4358",
-    ("melt", 32): "4807e1717faa8e59eba506f1d3ad6aba2e29d984bfcb4b7687c2cbe98d4a7f2c",
+    ("melt", 12): "d4947bd1f074d611d556413fcc3f0ed561293c247d23c1f6930810ba158ad3c0",
+    ("melt", 15): "3cb4ce8e59dc07e907cd1349e8870989ea16abee83bb380e543e2667d5079e8c",
+    ("melt", 16): "d24cfb6f3c2aa8bdbd312f35c770b75241decd47ed6e9f65801d656431d4186f",
+    ("melt", 32): "1da9b72f7fed57d2c97f1a31198a66e66d601ed604e20b5352a272d4904f4676",
     ("lull_then_drop", 8): "a918a7dbfb9ca915f87166ae2b49425b836b98e1d23fb1c332388df5203707fd",
     ("lull_then_drop", 15): "7ba475cca8d1faa946832372fbdae734b6d1f65eb092be54e6eca76a26597e32",
     ("lull_then_drop", 16): "7e4e414a542adcd100e22d4c8a8935f434957e07ef63d4aefd8898a9b439a2e6",
@@ -352,16 +463,27 @@ _GOLDEN_STYLE_EVENTS_SHA256: dict[tuple[str, int], str] = {
 
 
 @pytest.mark.requirement("FXTRANS-9850")
+@pytest.mark.requirement("AUTODJ-12806")
 def test_no_other_style_changes_its_events() -> None:
-    """[if] echo_out is added [then] every other available style's events stay byte-identical, [else stop]."""
+    """[if] LP entry lows change [then] all other style events stay byte-identical, [else stop]."""
     keys = set(_GOLDEN_STYLE_EVENTS_SHA256)
     for name, s in STYLES.items():
-        if not s.available or name in ("echo_out", "noise_build", "three_band_fade"):
+        if not s.available or name in ("echo_out", "noise_build", "three_band_fade", "double_drop"):
             continue
         for bars in sorted({s.clamp_bars(b) for b in (1, 2, 3, 8, 15, 16, 32, 64)}):
             assert (name, bars) in keys
     for (name, bars), expected in _GOLDEN_STYLE_EVENTS_SHA256.items():
-        doc = json.dumps(STYLES[name].build(bars, 1, 2), sort_keys=True, separators=(",", ":"))
+        events = STYLES[name].build(bars, 1, 2)
+        if name in {"rise", "wave"}:
+            parks = [
+                event
+                for event in events
+                if event["at_bar"] == 0 and event.get("deck") == 2 and "eq_low" in event.get("set", {})
+            ]
+            assert parks == [{"at_bar": 0.0, "deck": 2, "set": {"eq_low": KILL}}]
+            # #11846 changes only this park. Compare the remaining bytes with the immutable golden.
+            parks[0]["set"]["eq_low"] = PRE_HIT_LOW
+        doc = json.dumps(events, sort_keys=True, separators=(",", ":"))
         got = hashlib.sha256(doc.encode()).hexdigest()
         assert got == expected, f"regenerate golden from origin/main for ({name!r}, {bars})"
 
@@ -434,11 +556,10 @@ def test_three_band_fade_compiles_all_bands_and_hoists_incoming_parks(tmp_path: 
     assert validate_plan(plan, OUT, IN).errors == []
     compiled = compile_plan(plan, IN, plan_id="three-bands")["plan"]
     prepare = compiled["prepare"]
-    # A fader set sharing bar zero with its intro ramp stays timed, before that ramp.
+    # The initial fader kill precedes its bar-0 ramp in the plan, so compile hoists the kill into prepare.
+    assert {"type": "fader", "deck": 2, "value": 0.0} in prepare
     initial = [row for row in compiled["events"] if row["at_bar"] == 0]
-    fader_set = {"at_bar": 0.0, "command": {"type": "fader", "deck": 2, "value": 0.0}}
-    intro = next(row for row in initial if row.get("ramp", {}).get("command", {}).get("type") == "fader")
-    assert initial.index(fader_set) < initial.index(intro)
+    assert all(row.get("command", {}).get("value") != 0.0 for row in initial if row.get("command", {}).get("type") == "fader")
     for band, value in (("low", PRE_HIT_LOW), ("mid", 0.0), ("high", 0.0)):
         assert {"type": "eq", "deck": 2, "band": band, "value": value} in prepare
     for deck in (1, 2):
@@ -472,6 +593,55 @@ def test_three_band_fade_compiles_all_bands_and_hoists_incoming_parks(tmp_path: 
     assert {(ramp["deck"], ramp["band"]) for ramp in render_ramps if ramp["type"] == "eq"} == {
         (deck, band) for deck in (1, 2) for band in ("low", "mid", "high")
     }
+
+
+@pytest.mark.requirement("AUTODJ-12806")
+@pytest.mark.parametrize(
+    ("style_name", "filter_move", "expected"),
+    [("rise", None, KILL), ("wave", None, KILL), ("melt", None, KILL), ("crossfade", "hp_out", PRE_HIT_LOW)],
+)
+def test_filtered_incoming_low_is_prepared_and_opens_at_the_hit(
+    style_name: str, filter_move: str | None, expected: float
+) -> None:
+    """[if] filtered entry compiles [then] its low park and hit handoff survive, [else stop]."""
+    bars, hit = 16, 6.0
+    document = _plan(style_name, bars=bars, out_start=97)
+    builder = (
+        STYLES[style_name].build
+        if filter_move is None
+        else parametric_builder(StyleParams(volume="crossfade", filter=filter_move))
+    )
+    document["events"] = builder(bars, 1, 2, hit)
+    plan = parse_plan(document)
+    assert validate_plan(plan, OUT, IN).errors == []
+    compiled = compile_plan(plan, IN, plan_id="filtered-entry")["plan"]
+    assert [
+        command
+        for command in compiled["prepare"]
+        if command.get("type") == "eq" and command.get("deck") == 2 and command.get("band") == "low"
+    ] == [{"type": "eq", "deck": 2, "band": "low", "value": expected}]
+    hit_commands = [
+        row["command"]
+        for row in compiled["events"]
+        if row["at_bar"] == hit
+        and row.get("command", {}).get("type") == "eq"
+        and row["command"].get("deck") == 2
+        and row["command"].get("band") == "low"
+    ]
+    assert len(hit_commands) == 1 and hit_commands[0]["value"] > KILL
+    authored = [event for event in plan.events if event.deck == 2 and event.name == "eq_low" and event.kind == "ramp"]
+    compiled_lows = [
+        row
+        for row in compiled["events"]
+        if row.get("ramp", {}).get("command", {}).get("type") == "eq"
+        and row["ramp"]["command"].get("deck") == 2
+        and row["ramp"]["command"].get("band") == "low"
+    ]
+    assert authored and len(compiled_lows) == len(authored)
+    for event, row in zip(authored, compiled_lows, strict=True):
+        assert row["at_bar"] == event.at_bar
+        assert row["ramp"]["over_bars"] == event.over_bars
+        assert row["ramp"]["command"]["value"] == event.target()
 
 
 @pytest.mark.requirement("TRANSAI-12185")
@@ -921,6 +1091,42 @@ def test_key_term_reads_the_directional_camelot_rule() -> None:
     unknown: list[str] = []
     assert _key_term("8A", None, unknown) == (None, None, None)
     assert unknown == ["a key is unknown: harmony not scored"]
+
+
+@pytest.mark.requirement("HARMONIC-11856")
+def test_key_term_names_wrong_way_diagonal_and_parallel_from_spec_07() -> None:
+    """[if] keys are 8A and 9B or 8B and 5A [then] harmony names the rule and 0.30/0.40 scores, [else stop]."""
+    compat_89 = key_compat("8A", "9B")
+    reasons: list[str] = []
+    distance, relation, score = _key_term("8A", "9B", reasons)
+    assert (distance, relation, score) == (1, "wrong_way_diagonal", pytest.approx(0.30))
+    assert reasons == [f"keys 8A -> 9B wrong_way_diagonal ({compat_89.interval})"]
+
+    parallel: list[str] = []
+    _, parallel_relation, parallel_score = _key_term("8B", "5A", parallel)
+    assert (parallel_relation, parallel_score) == ("parallel", pytest.approx(0.40))
+    assert parallel == ["keys 8B -> 5A parallel (same tonic, major to minor)"]
+
+    _, good_diagonal, good_score = _key_term("8B", "9A", [])
+    assert (good_diagonal, good_score) == ("diagonal", pytest.approx(0.75))
+
+
+@pytest.mark.requirement("HARMONIC-11856")
+def test_score_windows_8a_to_9b_reasons_name_wrong_way_diagonal_not_clash_floor() -> None:
+    """[if] score_windows runs on 8A to 9B [then] reasons name wrong_way_diagonal, [else stop]."""
+    out = profile("trk-out", key="8A")
+    inn = profile("trk-in", key="9B")
+    out_window = MixWindow("out", 9, 8, "outro", 0.5, None, None, 0.5, "x")
+    in_window = MixWindow("in", 1, 8, "intro", 0.5, None, None, 0.5, "x")
+    result = score_windows(out, inn, out_window, in_window)
+    assert result.key_relation == "wrong_way_diagonal"
+    assert any(
+        reason == "keys 8A -> 9B wrong_way_diagonal (whole tone down, no shared triad tone)"
+        for reason in result.reasons
+    ), result.reasons
+    harmony_reason = next(reason for reason in result.reasons if reason.startswith("keys 8A -> 9B"))
+    assert "wrong_way_diagonal" in harmony_reason
+    assert "clash" not in harmony_reason
 
 
 def test_score_pair_summary_carries_the_key_relation() -> None:
@@ -1693,6 +1899,92 @@ def test_key_segments_are_read_as_one_based_inclusive_bars() -> None:
     assert (segment["start_bar"], segment["end_bar"], segment["key"]) == (1, 8, "8A")
 
 
+def _overlap_windows() -> tuple[MixWindow, MixWindow]:
+    out_window = MixWindow("out", 1, 128, "outro", 0.5, None, None, 0.5, "x")
+    in_window = MixWindow("in", 1, 128, "intro", 0.5, None, None, 0.5, "x")
+    return out_window, in_window
+
+
+@pytest.mark.requirement("AUTODJ-12786")
+def test_overlap_harmony_uses_worst_key_when_outgoing_modulates_mid_overlap() -> None:
+    """[if] outgoing overlap is 8A then 10A vs incoming 8A [then] harmony is energy_drop, [else stop]."""
+    out_window, in_window = _overlap_windows()
+    out_mod = replace(
+        profile("trk-out-mod", key="8A", bpm=120.0),
+        key_segments=(
+            KeySegment(start_bar=1, end_bar=8, key="8A"),
+            KeySegment(start_bar=9, end_bar=128, key="10A"),
+        ),
+    )
+    in_const = profile("trk-in-8a", key="8A", bpm=120.0)
+    pair = score_windows(out_mod, in_const, out_window, in_window, overlap_bars=16)
+    assert pair.key_relation == "energy_drop"
+    assert (pair.key_out, pair.key_in) == ("10A", "8A")
+    assert pair.key_distance is not None
+
+
+@pytest.mark.requirement("AUTODJ-12786")
+def test_overlap_harmony_uses_worst_key_when_incoming_modulates_mid_overlap() -> None:
+    """[if] incoming overlap is 8A then 10A vs outgoing 8A [then] harmony is 0.55 boost, [else stop]."""
+    out_window, in_window = _overlap_windows()
+    out_const = profile("trk-out-8a", key="8A", bpm=120.0)
+    in_mod = replace(
+        profile("trk-in-mod", key="8A", bpm=120.0),
+        key_segments=(
+            KeySegment(start_bar=1, end_bar=8, key="8A"),
+            KeySegment(start_bar=9, end_bar=128, key="10A"),
+        ),
+    )
+    pair = score_windows(out_const, in_mod, out_window, in_window, overlap_bars=16)
+    assert pair.key_relation == "energy_boost"
+    assert (pair.key_out, pair.key_in) == ("8A", "10A")
+    old_last_bar_only = _key_term("8A", "8A", [])[2]
+    assert old_last_bar_only == pytest.approx(1.0)
+
+
+@pytest.mark.requirement("AUTODJ-12786")
+def test_overlap_harmony_with_empty_key_segments_records_global_region() -> None:
+    """[if] key_segments is empty [then] reasons carry region.source global on both sides, [else stop]."""
+    out_window, in_window = _overlap_windows()
+    out_global = replace(profile("trk-out", key="8A"), key_segments=())
+    in_global = replace(profile("trk-in", key="9A"), key_segments=())
+    pair = score_windows(out_global, in_global, out_window, in_window, overlap_bars=8)
+    assert "harmony" not in dict(pair.unscored)
+    assert sum(1 for reason in pair.reasons if "region.source global" in reason) >= 2
+
+
+@pytest.mark.requirement("AUTODJ-12786")
+def test_overlap_harmony_is_unscored_when_a_segment_key_is_missing_in_the_span() -> None:
+    """[if] a segment in the span has no key [then] harmony is unscored, not 0.5, [else stop]."""
+    out_window, in_window = _overlap_windows()
+    out_bad = replace(
+        profile("trk-out", key="8A"),
+        key_segments=(KeySegment(start_bar=1, end_bar=64, key=None),),
+    )
+    pair = score_windows(out_bad, IN, out_window, in_window, overlap_bars=8)
+    assert ("harmony", "a key is unknown") in pair.unscored
+    assert pair.measured == 3
+
+
+@pytest.mark.requirement("AUTODJ-12786")
+def test_overlap_harmony_matches_single_segment_constant_keys() -> None:
+    """[if] one segment fixed keys on overlap [then] harmony matches _key_term, [else stop]."""
+    out_window, in_window = _overlap_windows()
+    out_seg = replace(
+        profile("trk-out", key="8A"),
+        key_segments=(KeySegment(start_bar=1, end_bar=64, key="8A"),),
+    )
+    in_seg = replace(
+        profile("trk-in", key="9A"),
+        key_segments=(KeySegment(start_bar=1, end_bar=64, key="9A"),),
+    )
+    pair = score_windows(out_seg, in_seg, out_window, in_window, overlap_bars=16)
+    expect_distance, expect_relation, _ = _key_term("8A", "9A", [])
+    assert pair.key_distance == expect_distance
+    assert pair.key_relation == expect_relation
+    assert pair.key_out == "8A" and pair.key_in == "9A"
+
+
 def test_an_explicit_overlap_longer_than_the_windows_scores_the_bars_they_have() -> None:
     """Bars past either window are not heard, so a 100-bar overlap over 8-bar windows scores as the 8 bars they have."""
     out_window = MixWindow("out", 9, 8, "outro", 0.5, None, None, 0.5, "x")
@@ -2001,7 +2293,7 @@ def test_smooth_crossfade_shallows_the_first_outgoing_fader_steps() -> None:
 
 @pytest.mark.requirement("AUTODJ-12822")
 def test_fade_shape_rejects_unknown_values() -> None:
-    """[if] fade_shape is not equal_power, linear or smooth [then] StyleParams names the value, [else stop]."""
+    """[if] fade_shape is not equal_power, linear, smooth or dipped [then] StyleParams names the value, [else stop]."""
     from apps.autodj.styles import StyleParams
 
     with pytest.raises(ValueError, match="nope"):
@@ -2923,6 +3215,7 @@ def test_an_outgoing_tempo_set_before_the_launch_refreshes_the_incoming_tempo() 
 
 
 @pytest.mark.requirement("AGENT-29")
+@pytest.mark.requirement("AUTODJ-12872")
 def test_the_launch_tempo_refresh_keeps_an_authored_incoming_tempo() -> None:
     """[if] the incoming deck has an authored tempo move [then] the outgoing refresh does not overwrite it, [else stop]."""
     live = {
@@ -2978,6 +3271,7 @@ def test_validation_refuses_an_incoming_deck_with_an_engaged_loop() -> None:
     assert not any("deck 2" in error and "engaged loop" in error for error in released_errors)
 
 
+@pytest.mark.requirement("AUTODJ-12872")
 def test_a_folded_launch_carries_its_fold_and_master_to_the_page() -> None:
     """[if] Beat Sync folds the incoming tempo [then] the prepared beat_sync names the fold and its master, [else stop]."""
     live = _live(effective_bpm=128.0)
@@ -2993,3 +3287,84 @@ def test_an_unfolded_launch_does_not_name_a_fold_to_the_page() -> None:
     order = compile_plan(parse_plan(_plan()), profile("trk-in", bpm=128.0), plan_id="plan-test", live=live)["plan"]
     sync = next(c for c in order["prepare"] if c["type"] == "beat_sync")
     assert sync == {"type": "beat_sync", "deck": 2, "enabled": True}
+
+
+@pytest.mark.requirement("AUTODJ-12872")
+def test_an_outgoing_tempo_ramp_before_the_launch_refreshes_the_incoming_tempo() -> None:
+    """[if] an outgoing tempo ramp ends before the incoming play [then] the incoming tempo is set again at ramp end, [else stop]."""
+    live = {
+        "master_deck": 1,
+        "decks": {
+            "1": {"stable_id": "trk-out", "playing": True, "effective_bpm": 120.0, "pitch": 1.0, "pitch_range": 8.0},
+            "2": {"stable_id": "trk-in", "playing": False, "pitch_range": 8.0},
+        },
+    }
+    document = _plan()
+    document["events"] += [
+        {"at_bar": -1, "deck": 1, "ramp": {"tempo": 1.04}, "over_bars": 0.5},
+        {"at_bar": 0, "deck": 2, "do": "play"},
+    ]
+    events = compile_plan(parse_plan(document), IN, plan_id="plan-test", live=live)["plan"]["events"]
+    expected = sync_tempo_ratio({"effective_bpm": 120.0 * 1.04}, IN, 8.0)
+    assert expected is not None
+    refreshed = [e for e in events if e.get("command") == {"type": "tempo", "deck": 2, "ratio": round(expected, 6)}]
+    assert refreshed and refreshed[0]["at_bar"] == pytest.approx(-0.5)
+
+
+@pytest.mark.requirement("AUTODJ-12872")
+def test_compile_hoists_an_incoming_fader_kill_before_a_same_bar_ramp() -> None:
+    """[if] a fader kill at bar 0 precedes a same-bar ramp [then] the kill is prepared before the ramp, [else stop]."""
+    document = _plan()
+    document["events"] = [event for event in document["events"] if event.get("deck") != 2 or "fader" not in event]
+    document["events"] += [
+        {"at_bar": 0, "deck": 2, "set": {"fader": 0.0}},
+        {"at_bar": 0, "deck": 2, "ramp": {"fader": 1.0}, "over_bars": 4},
+        {"at_bar": 0, "deck": 2, "do": "play"},
+    ]
+    order = compile_plan(parse_plan(document), IN, plan_id="plan-test")["plan"]
+    assert {"type": "fader", "deck": 2, "value": 0.0} in order["prepare"]
+    assert not any(
+        row.get("command") == {"type": "fader", "deck": 2, "value": 0.0} for row in order["events"]
+    )
+
+
+_TRANSAI_10667 = "TRANSAI-10667"
+
+
+@pytest.mark.requirement(_TRANSAI_10667)
+def test_propose_attaches_confidence_product_and_weakest_factor() -> None:
+    """[if] propose runs on fixtures [then] each row has confidence 0..1 and weakest_factor in the four terms, [else stop]."""
+    result = propose_transition(OUT, IN, out_deck=1, in_deck=2, intent="smooth", top=3)
+    assert result["proposals"]
+    for row in result["proposals"]:
+        factors = row["confidence_factors"]
+        assert set(factors) == set(CONFIDENCE_FACTOR_NAMES)
+        product = factors["grid"] * factors["structure"] * factors["vocal"] * factors["gap"]
+        assert row["confidence"] == pytest.approx(product, abs=0.011)
+        assert 0.0 <= row["confidence"] <= 1.0
+        assert row["weakest_factor"] in CONFIDENCE_FACTOR_NAMES
+        assert factors[row["weakest_factor"]] == min(factors.values())
+
+
+@pytest.mark.requirement(_TRANSAI_10667)
+def test_propose_rejected_lists_gate_for_every_skip() -> None:
+    """[if] propose skips window pairs [then] rejected rows name an allowed gate and window coordinates, [else stop]."""
+    result = propose_transition(OUT, IN, out_deck=1, in_deck=2, intent="smooth", top=1)
+    assert result["rejected"]
+    for row in result["rejected"]:
+        assert row["gate"] in PROPOSE_GATES
+        assert {"style", "bars", "out_bar", "in_bar", "gate", "reason"} <= set(row)
+
+
+@pytest.mark.requirement(_TRANSAI_10667)
+def test_propose_ranking_unchanged_when_confidence_fields_stripped() -> None:
+    """[if] smooth propose at bar 60 runs [then] score/style/bars match the pre-confidence golden top three, [else stop]."""
+    result = propose_transition(OUT, IN, out_deck=1, in_deck=2, intent="smooth", min_out_bar=60, top=3)
+    slim = [{"score": row["score"], "style": row["style"], "bars": row["bars"]} for row in result["proposals"]]
+    assert slim == [
+        {"score": 1.133, "style": "long_blend", "bars": 32},
+        {"score": 1.073, "style": "bass_swap_blend", "bars": 32},
+        {"score": 0.944, "style": "long_blend", "bars": 32},
+    ]
+    assert all("confidence" in row for row in result["proposals"])
+    assert [proposal_golden_body(row) for row in result["proposals"]]

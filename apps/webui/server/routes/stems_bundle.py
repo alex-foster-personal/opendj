@@ -35,6 +35,8 @@ from .stems_models import StemUnavailableOut
 #: during a publish or a fetch's cleanup all three are transient states of the
 #: same directory (Windows reports a directory mid-rename as PermissionError).
 _PATH_UNREADABLE = (FileNotFoundError, NotADirectoryError, PermissionError)
+
+
 def _stems_dir(request: Request) -> Path:
     """Use an injected directory in isolated apps, else the canonical state dir."""
     configured = getattr(request.app.state, "stems_dir", DEFAULT_STEMS_DIR)

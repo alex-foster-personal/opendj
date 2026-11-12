@@ -28,5 +28,7 @@ def ensure_schema(db_path: Path) -> sqlite3.Connection:
     cluster_columns = {str(row[1]) for row in conn.execute("PRAGMA table_info(duplicate_clusters)")}
     if "flagged_manual_review" not in cluster_columns:
         conn.execute("ALTER TABLE duplicate_clusters ADD COLUMN flagged_manual_review INTEGER NOT NULL DEFAULT 0")
+    if "basis" not in cluster_columns:
+        conn.execute("ALTER TABLE duplicate_clusters ADD COLUMN basis TEXT NOT NULL DEFAULT 'fingerprint'")
     conn.commit()
     return conn

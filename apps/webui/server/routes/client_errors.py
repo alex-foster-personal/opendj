@@ -6,6 +6,7 @@ import json
 import logging
 import time
 import uuid
+from collections.abc import Mapping
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Literal, get_args
@@ -13,7 +14,7 @@ from typing import Literal, get_args
 from fastapi import APIRouter, HTTPException, Query, Request
 from pydantic import BaseModel, Field, field_validator
 
-from apps.shared.telemetry import capture_browser_error
+from apps.shared.telemetry import capture_browser_error, scrub_bug_report_mapping
 from apps.shared.telemetry.error_id import stable_error_id
 from apps.shared.telemetry.sink import (
     client_error_message,
@@ -136,6 +137,23 @@ def _find_event_log(log_dir: Path, event_id: str) -> Path | None:
 
 def _log_dir(request: Request) -> Path:
     return Path(getattr(request.app.state, "client_error_log_dir", DEFAULT_LOG_DIR))
+
+
+def bug_report_client_error_row(record: Mapping[str, object]) -> dict[str, object]:
+    """One client-error row with the bug-report allowlist (issue #11173)."""
+    payload = {
+        "event_id": record.get("event_id"),
+        "received_at": record.get("received_at"),
+        "kind": record.get("kind"),
+        "message": record.get("message"),
+        "name": record.get("name"),
+        "build_sha": record.get("build_sha"),
+        "error_id": record.get("error_id"),
+        "any_deck_live": record.get("any_deck_live"),
+        "secure_context": record.get("secure_context"),
+        "audio_worklet_available": record.get("audio_worklet_available"),
+    }
+    return scrub_bug_report_mapping(payload)
 
 
 @router.post("", response_model=ClientErrorOut, status_code=202)

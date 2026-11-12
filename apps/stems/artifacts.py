@@ -52,10 +52,11 @@ from pydantic import (
 
 from apps.shared.paths import STATE_DIR
 from apps.shared.stable_id import is_safe_stable_id_segment
-from apps.stems import flac_metadata as _flac_md
+from apps.stems import artifacts_flac as _flac_md
 from apps.stems import mp3_metadata as _mp3_md
 from apps.stems.artifact_types import StemArtifactError, WavMetadata
-from apps.stems.flac_metadata import _require_flac_magic, read_flac_metadata
+from apps.stems.artifacts_flac import _require_flac_magic, read_flac_metadata
+from apps.stems.constants import STEM_MANIFEST_FILENAME
 from apps.stems.mp3_metadata import (
     _looks_like_mp3,
     _read_mp3_probe,
@@ -293,7 +294,7 @@ def _load_from_root(stable_id: str, root: Path) -> StemBundle:
 
     manifest_path = bundle_dir / "manifest.json"
     _require_regular_file(manifest_path, label="manifest.json")
-    raw = _read_manifest_raw(manifest_path)
+    raw = read_manifest_raw(manifest_path)
     schema = raw.get("schema_version")
     if schema == 2:
         if not stems_accept_v2():
@@ -306,7 +307,7 @@ def _load_from_root(stable_id: str, root: Path) -> StemBundle:
     return _load_v1_bundle(stable_id, resolved_bundle, raw)
 
 
-def _read_manifest_raw(path: Path) -> dict:
+def read_manifest_raw(path: Path) -> dict:
     try:
         raw = json.loads(path.read_text(encoding="utf-8"))
     except (OSError, UnicodeDecodeError, json.JSONDecodeError) as exc:
@@ -516,6 +517,39 @@ def _resolve_v3_files(
     if len(media_types) != 1:
         raise StemArtifactError(f"v3 bundle mixes codecs {sorted(media_types)}; every part must share one")
     return files, media_types
+
+
+_LAYOUT_PART_STEM_NAMES: frozenset[str] = frozenset(part for parts in STEM_LAYOUTS.values() for part in parts)
+
+StemArtifactDisposition = Literal["required", "stale"]
+
+
+def classify_bundle_top_level_artifact(
+    bundle_dir: Path,
+    artifact_name: str,
+    *,
+    manifest: StemManifest,
+) -> StemArtifactDisposition:
+    """Classify one top-level bundle entry for cleanup planning (read-only; never deletes).
+
+    Separates required manifest inputs and carry-over sidecars from stale regenerable
+    stem-part files left after codec swaps. Planners use this name/manifest logic only;
+    this module still never deletes or repairs audio.
+    """
+    _ = bundle_dir
+    declared_basenames = set(manifest.files.values())
+    if artifact_name == STEM_MANIFEST_FILENAME:
+        return "required"
+    if artifact_name in declared_basenames:
+        return "required"
+    if Path(artifact_name).stem in _LAYOUT_PART_STEM_NAMES:
+        return "stale"
+    return "required"
+
+
+def resolve_manifest_stem_path(bundle_dir: Path, declared_name: str, part: StemPart) -> Path:
+    """Resolve a manifest-declared stem path within its bundle root."""
+    return _resolve_stem_file(bundle_dir, declared_name, part)
 
 
 def _resolve_stem_file(bundle_dir: Path, declared_name: str, part: StemPart) -> Path:
@@ -747,6 +781,29 @@ def _read_stem_summary(stable_id: str, stems_dir: Path) -> dict[str, Any]:
     return {"status": "none"}
 
 
+def stem_label_clip_api_path(stable_id: str, part: str, *, api_prefix: str = "/api/v1") -> str:
+    """Relative API path for streaming one validated stem part in a label task."""
+    validate_stable_id(stable_id)
+    if part not in STEM_PARTS and part not in ROFORMER_PARTS:
+        raise StemArtifactError(f"unsupported stem part for label clip: {part!r}")
+    prefix = api_prefix.rstrip("/")
+    return f"{prefix}/tracks/{stable_id}/stems/{part}"
+
+
+def validate_label_stem_clip(
+    stable_id: str,
+    part: str,
+    *,
+    stems_dir: Path = DEFAULT_STEMS_DIR,
+    roots: Sequence[Path] | None = None,
+) -> StemBundle:
+    """Load a bundle for a labelling clip; refuse when the part is missing or invalid."""
+    bundle = load_stem_bundle(stable_id, stems_dir=stems_dir, roots=roots)
+    if part not in bundle.files:
+        raise StemArtifactError(f"bundle for {stable_id!r} has no part {part!r}")
+    return bundle
+
+
 def bulk_stem_summaries(stable_ids: Iterable[str], *, stems_dir: Path = DEFAULT_STEMS_DIR) -> dict[str, dict[str, Any]]:
     """``summarize_stem_bundle`` for a listing page, keyed by stable_id.
 
@@ -763,6 +820,7 @@ __all__ = [
     "STEM_LAYOUTS",
     "STEM_PARTS",
     "STEM_SUMMARY_TTL_S",
+    "StemArtifactDisposition",
     "DemucsModel",
     "StemArtifactError",
     "StemBundle",
@@ -772,13 +830,18 @@ __all__ = [
     "StemSourceProvenance",
     "WavMetadata",
     "bulk_stem_summaries",
+    "classify_bundle_top_level_artifact",
     "load_stem_bundle",
+    "read_manifest_raw",
     "read_flac_metadata",
     "read_mp3_metadata",
     "read_stem_container_metadata",
     "read_wav_metadata",
+    "resolve_manifest_stem_path",
     "scan_mp3_frames",
     "stem_roots",
     "summarize_stem_bundle",
+    "stem_label_clip_api_path",
+    "validate_label_stem_clip",
     "validate_stable_id",
 ]

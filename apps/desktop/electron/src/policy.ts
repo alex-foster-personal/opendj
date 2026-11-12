@@ -439,8 +439,16 @@ export function isExternalUrlAllowed(url: string): boolean {
 		return false;
 	}
 	if (parsed.username !== '' || parsed.password !== '') return false;
+	if (isSpotifyDesktopPlaylistUri(url)) return true;
 	if (isOpenDjLocalhostUrl(url, parsed)) return true;
 	return parsed.protocol === 'https:' && parsed.hostname !== '';
+}
+
+const SPOTIFY_DESKTOP_PLAYLIST = /^spotify:playlist:[0-9A-Za-z]{21,24}$/;
+
+/** Playlist-only desktop URI for Open in Spotify app (issue #317). */
+export function isSpotifyDesktopPlaylistUri(url: string): boolean {
+	return SPOTIFY_DESKTOP_PLAYLIST.test(url);
 }
 
 /** How the main window should treat a main-frame navigation, redirect, or window.open URL. */

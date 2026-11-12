@@ -484,16 +484,25 @@ test('the perf ledger parse keeps the start date and the undeclared list', () =>
 	);
 });
 
-// REQ: PERF-DASH-01
-test('perf KPI cards are the second card set: after the farm cards, before the ratchet', () => {
+test('/admin?p=farm-jobs mounts the FarmJobsPanel backstage slice', () => {
 	const source = readFileSync(`${ADMIN}/+page.svelte`, 'utf8');
-	// The panels are Svelte snippets (BACKSTAGE-6529d), so order is the order of the
-	// legacy one-tab render calls, which are the last ones in the file.
+	assert.match(source, /import FarmJobsPanel from '\.\/FarmJobsPanel\.svelte'/);
+	assert.match(source, /panel\.id === 'farm-jobs'/);
+	assert.match(source, /<FarmJobsPanel \/>/);
+});
+
+// REQ: PERF-DASH-01
+test('perf KPI cards are the second card set on the KPI tab, with no QualityRatchet there', () => {
+	const source = readFileSync(`${ADMIN}/+page.svelte`, 'utf8');
 	assert.ok(source.includes('<h3>Demucs farm KPI ledger</h3>') && source.includes('<h3>Performance KPIs</h3>'));
-	const farm = source.lastIndexOf('{@render farmPanel()}');
-	const perf = source.lastIndexOf('{@render perfPanel()}');
-	const ratchet = source.lastIndexOf('<QualityRatchet />');
-	assert.ok(farm > 0 && perf > farm && ratchet > perf, `order farm=${farm} perf=${perf} ratchet=${ratchet}`);
+	const kpiBranchStart = source.indexOf("{#if tab === 'kpi'}");
+	const kpiBranchEnd = source.indexOf('{:else if tab ===', kpiBranchStart);
+	assert.ok(kpiBranchStart >= 0 && kpiBranchEnd > kpiBranchStart);
+	const kpiBranch = source.slice(kpiBranchStart, kpiBranchEnd);
+	const farm = kpiBranch.indexOf('{@render farmPanel()}');
+	const perf = kpiBranch.indexOf('{@render perfPanel()}');
+	assert.ok(farm >= 0 && perf > farm, `KPI tab order farm=${farm} perf=${perf}`);
+	assert.doesNotMatch(kpiBranch, /<QualityRatchet \/>/, 'QualityRatchet must not render on KPI tab');
 	assert.match(source, /fetchPerfKpiLedger\(\)/);
 	assert.match(source, /perf\.sinceLabel/, 'the time period must be stated from the first measurement');
 });

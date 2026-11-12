@@ -2,9 +2,11 @@
 	// HOT CUE pad-mode dropdown (CHROME-11, issue #3886). Deck.svelte mounts
 	// it `stacked` in the left grid column under grid adjust/shift, where the
 	// label wraps to two lines, HOT over CUE (LYR-14). Lists the modes a hardware controller's performance-pad
-	// selector normally exposes. Only Hot Cue is built; every other entry is
-	// labeled not-built-yet and renders inert with a tooltip, per the
-	// house rule for controls with no real backing.
+	// selector normally exposes. Hot Cue, Beat Jump, Pad FX 1 and Pad FX 2 are built;
+	// picking one dispatches the typed pad_mode command (performance-ipc).
+	// Every other entry is labeled not-built-yet, and any entry that cannot be
+	// selected (unbuilt, or Pad FX with no beat FX unit) renders inert with its
+	// reason as the tooltip, per the house rule for controls with no real backing.
 	//
 	// The deck and its main row clip overflow (Deck.svelte), so an absolute
 	// menu below the bank was cut off. The menu is position: fixed and
@@ -14,13 +16,14 @@
 	import type { DeckId } from '$lib/rb/deck-id';
 	import { PAD_MODE_CATALOG, padModeMenuLabel } from '$lib/rb/pad-mode-catalog';
 	import { triggerFloatingAction } from '$lib/ui/clamp-to-viewport';
-	import { plannedTitle } from '$lib/rb/planned-explainers';
-
-	const NOT_BUILT_TIP = plannedTitle('pad-mode-unbuilt');
+	import { runPerformanceCommandFromUi } from '$lib/rb/performance-ipc.svelte';
+	import { padModeFor, padModeSelectable } from '$lib/rb/pad-mode-state.svelte';
 
 	let { deckId, stacked = false }: { deckId: DeckId; stacked?: boolean } = $props();
 
 	let open = $state(false);
+	const mode = $derived(padModeFor(deckId));
+	const triggerLabel = $derived((PAD_MODE_CATALOG.find((entry) => entry.id === mode)?.label ?? 'Hot Cue').toUpperCase());
 	let wrapEl: HTMLSpanElement | undefined = $state();
 	let triggerEl: HTMLButtonElement | undefined = $state();
 
@@ -51,7 +54,7 @@
 		data-testid={`hot-cue-menu-deck-${deckId}`}
 		onclick={() => (open = !open)}
 	>
-		HOT CUE
+		{triggerLabel}
 	</button>
 	{#if open}
 		<div
@@ -60,16 +63,20 @@
 			use:triggerFloatingAction={{ getTrigger: () => triggerEl ?? null, preferred: 'below', gap: 4 }}
 		>
 			{#each PAD_MODE_CATALOG as entry (entry.id)}
+				{@const sel = padModeSelectable(deckId, entry)}
 				<button
 					type="button"
 					class="pad-menu-item"
-					class:rb-inert={!entry.built}
+					class:rb-inert={!sel.enabled}
 					role="menuitem"
 					data-pad-mode={entry.id}
 					data-built={entry.built}
-					disabled={!entry.built}
-					title={entry.built ? undefined : NOT_BUILT_TIP}
-					onclick={() => (open = false)}
+					disabled={!sel.enabled}
+					title={sel.enabled ? undefined : sel.reason}
+					onclick={() => {
+						open = false;
+						void runPerformanceCommandFromUi({ type: 'pad_mode', deck: deckId, mode: entry.id });
+					}}
 				>
 					{padModeMenuLabel(entry)}
 				</button>

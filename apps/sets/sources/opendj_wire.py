@@ -17,8 +17,10 @@ from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
-#: The decks Open DJ exposes (``DeckId = 1|2|3|4`` in the frontend).
+#: Live performance decks the set recorder and UI expose (``DeckId = 1|2|3|4``).
 KNOWN_DECK_IDS: frozenset[str] = frozenset({"1", "2", "3", "4"})
+#: All slots the Rust engine can address, including hidden shadow decks 5-8.
+ENGINE_DECK_IDS: frozenset[str] = frozenset(str(i) for i in range(1, 9))
 
 _REQUIRED_DECK_FIELDS: tuple[str, ...] = (
     "stable_id",
@@ -242,6 +244,7 @@ def iso_utc(at: datetime) -> str:
 
 
 __all__ = [
+    "ENGINE_DECK_IDS",
     "KNOWN_DECK_IDS",
     "DeckObservation",
     "DeckObservationError",

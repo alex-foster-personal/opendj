@@ -1,0 +1,9 @@
+{
+  "bytes": 1024,
+  "measured_main": 504009,
+  "measured_with_pr": 504367,
+  "sha": "e5749425",
+  "date": "Tue 10 Nov 2026",
+  "reason": "Issue #10807 adds XONE_K2_MAP (apps/webui/frontend/src/lib/rb/midi/maps/allen-and-heath-xone-k2.ts) through DEVICE_MAP_ENTRIES live glob, so other-lazy carries the lazy map chunk attribution. Measured: same-host vite build of merge base 0fc9a31202 and this branch, +358 B gzip on other-lazy; ceiled to KiB",
+  "payback": "none planned; the growth is the device map's own code"
+}

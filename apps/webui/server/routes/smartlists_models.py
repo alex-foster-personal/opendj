@@ -76,6 +76,10 @@ class SmartlistTracks(BaseModel):
     order_by: str
     items: list[str]
     tracks: list[TrackRowOut]
+    total: int = Field(
+        ...,
+        description="Total tracks matching the rule (full membership size), not capped by limit.",
+    )
 
 
 __all__ = [

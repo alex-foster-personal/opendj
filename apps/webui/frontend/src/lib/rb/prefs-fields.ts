@@ -14,7 +14,11 @@ import type {
 } from './prefs-types';
 import { PICKS_CAP, type CommandPick } from '../palette/rank';
 import { checkVariantValue, isVariantSettingId } from '../settings/variant-setting';
-import { SPOTIFY_PINNED_CAP, SPOTIFY_RECENT_CAP } from './spotify-playlist-rank';
+import {
+	SPOTIFY_PINNED_CAP,
+	SPOTIFY_RECENT_CAP,
+	spotifyPreferenceKey
+} from './spotify-playlist-rank';
 
 /** Bounds mirror `_CAL_MIN_DBFS`/`_CAL_MAX_DBFS`/`_CAL_CEILING_MAX_DBFS` in
  * `ui_prefs.py`: -60 is the meter's floor, +12 covers loudness-war true peaks
@@ -151,7 +155,8 @@ function _parseSpotifyIdList(
 	raw: unknown,
 	storageKey: string,
 	field: 'pinned_ids' | 'recent_ids',
-	cap: number
+	cap: number,
+	onMigrated?: () => void
 ): string[] {
 	if (raw === undefined) return [];
 	if (!Array.isArray(raw)) {
@@ -169,17 +174,24 @@ function _parseSpotifyIdList(
 					'clear the localStorage key to recover'
 			);
 		}
-		if (seen.has(item)) continue;
-		seen.add(item);
-		out.push(item);
+		const key = spotifyPreferenceKey(item);
+		if (key !== item) onMigrated?.();
+		if (seen.has(key)) continue;
+		seen.add(key);
+		out.push(key);
 	}
 	return out.slice(0, cap);
 }
 
 /** Absent (old blob written before #315) yields empty lists; present but the
  * wrong shape throws, same fail-fast as last_playlist. A too-long but
- * well-typed list loads truncated to the pin/recent caps. */
-export function parseSpotifyLibrary(raw: unknown, storageKey: string): SpotifyLibraryPref {
+ * well-typed list loads truncated to the pin/recent caps. Old-form ids load
+ * as their preference key (#9685). */
+export function parseSpotifyLibrary(
+	raw: unknown,
+	storageKey: string,
+	onMigrated?: () => void
+): SpotifyLibraryPref {
 	if (raw === undefined) return { pinned_ids: [], recent_ids: [], shrink_main_for_player: true };
 	if (raw === null || typeof raw !== 'object') {
 		throw new Error(
@@ -197,8 +209,20 @@ export function parseSpotifyLibrary(raw: unknown, storageKey: string): SpotifyLi
 	}
 	return {
 		shrink_main_for_player: shrink ?? true,
-		pinned_ids: _parseSpotifyIdList(obj.pinned_ids, storageKey, 'pinned_ids', SPOTIFY_PINNED_CAP),
-		recent_ids: _parseSpotifyIdList(obj.recent_ids, storageKey, 'recent_ids', SPOTIFY_RECENT_CAP)
+		pinned_ids: _parseSpotifyIdList(
+			obj.pinned_ids,
+			storageKey,
+			'pinned_ids',
+			SPOTIFY_PINNED_CAP,
+			onMigrated
+		),
+		recent_ids: _parseSpotifyIdList(
+			obj.recent_ids,
+			storageKey,
+			'recent_ids',
+			SPOTIFY_RECENT_CAP,
+			onMigrated
+		)
 	};
 }
 

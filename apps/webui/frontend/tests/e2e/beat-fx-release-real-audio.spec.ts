@@ -254,8 +254,7 @@ test.describe('beat FX quantize and Release FX (real audio)', () => {
 
 	test('quantized ON and OFF land on the boundary within 2 ms', async ({ page }) => {
 		const cases: Array<{ beats: number; nowSec: number }> = [];
-		for (const beats of [1 / 16, 1, 4])
-			cases.push({ beats, nowSec: GRID0 + 0.37 * BEAT_SEC });
+		for (const beats of [1 / 16, 1, 4]) cases.push({ beats, nowSec: GRID0 + 0.37 * BEAT_SEC });
 
 		for (const { beats, nowSec } of cases) {
 			const nowQ = q(nowSec);

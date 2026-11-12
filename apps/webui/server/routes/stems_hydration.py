@@ -53,6 +53,8 @@ _INFLIGHT: dict[str, Future] = {}
 #: stable_id -> number of files the index lists for the bundle being fetched,
 #: recorded at enqueue so a progress read never has to re-parse the index.
 _INFLIGHT_FILE_TOTALS: dict[str, int] = {}
+
+
 #: stable_id -> reason, for a bundle the index says exists but whose last
 #: hydration attempt failed. Consulted BEFORE re-enqueueing so a hot loop of
 #: part requests does not hammer R2 with the same doomed fetch, and so a
@@ -250,11 +252,7 @@ def _log_hydration_failure(stable_id: str, code: str, reason: str) -> None:
     # A spent or unconfigured monthly allowance is an answer from the hub,
     # not a defect: WARNING, so it never reaches Sentry (Sol, P2).
     expected = code in (STEM_MONTHLY_CAP_REACHED, STEM_MONTHLY_CAP_UNSET)
-    level = (
-        logging.WARNING
-        if expected or hub_transport_failure_kind(exc) == "unreachable"
-        else logging.ERROR
-    )
+    level = logging.WARNING if expected or hub_transport_failure_kind(exc) == "unreachable" else logging.ERROR
     log.log(
         level,
         "stem-hydration: indexed bundle could not be fetched [%s] stable_id=%s: %s",
@@ -433,6 +431,7 @@ def _raise_stem_index_corrupt(exc: stem_index.StemIndexError, data_dir: Path) ->
             "path": str(stem_index.local_index_cache_path(data_dir)),
         },
     ) from exc
+
 
 def _raise_index_refresh_failed(reason: str) -> None:
     """Fail loud when a cold-cache single-flight refresh from R2 failed: the

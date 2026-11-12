@@ -43,11 +43,11 @@ export interface RescueDeckSnapshot {
 	} | null;
 	hot_cue_armed: { slot: string; target_position_ms: number } | null;
 	stems: {
-		vocal: { muted: boolean; solo: boolean; gain: number };
-		instrumental: { muted: boolean; solo: boolean; gain: number };
-		drums: { muted: boolean; solo: boolean; gain: number };
-		bass?: { muted: boolean; solo: boolean; gain: number };
-		other?: { muted: boolean; solo: boolean; gain: number };
+		vocal: { muted: boolean; solo: boolean; gain: number; fx_send?: number };
+		instrumental: { muted: boolean; solo: boolean; gain: number; fx_send?: number };
+		drums: { muted: boolean; solo: boolean; gain: number; fx_send?: number };
+		bass?: { muted: boolean; solo: boolean; gain: number; fx_send?: number };
+		other?: { muted: boolean; solo: boolean; gain: number; fx_send?: number };
 	};
 	mixer_channel: {
 		trim: number;

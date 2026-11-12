@@ -23,8 +23,21 @@
 	import type { StemControl } from '$lib/rb/stem-types';
 	import { stemCssColor } from '$lib/rb/stem-colors';
 	import { STEM_DIAL_LABELS, channelShowsStemDials, stemDialLayout } from '$lib/rb/stem-dial-map';
-	import { COLOR_FX_EFFECTS, COLOR_FX_LABELS, COLOR_FX_NEXT, isColorFxCycleGesture, type ColorFxChoice, type ColorFxEchoBeats, type ColorFxEffect } from '$lib/rb/color-fx';
-	import { COLOR_FX_DIVISIONS, COLOR_FX_DIVISION_LABELS, echoDivisionTitle, showsEchoDivisions } from '$lib/rb/color-fx-division';
+	import {
+		COLOR_FX_EFFECTS,
+		COLOR_FX_LABELS,
+		COLOR_FX_NEXT,
+		isColorFxCycleGesture,
+		type ColorFxChoice,
+		type ColorFxEchoBeats,
+		type ColorFxEffect
+	} from '$lib/rb/color-fx';
+	import {
+		COLOR_FX_DIVISIONS,
+		COLOR_FX_DIVISION_LABELS,
+		echoDivisionTitle,
+		showsEchoDivisions
+	} from '$lib/rb/color-fx-division';
 	import { colorFx } from '$lib/rb/color-fx.svelte';
 	import {
 		COLOR_FX_MENU_CLOSED,
@@ -36,7 +49,10 @@
 	import { dialClockLabel } from '$lib/rb/dial-clock';
 	import { quickPickModifier } from '$lib/rb/cmdk-actions';
 	import StemRow from '../deck/StemRow.svelte';
-	import { toggleTrackLoadResetPanel, trackLoadResetEnabled } from '$lib/rb/track-load-reset.svelte';
+	import {
+		toggleTrackLoadResetPanel,
+		trackLoadResetEnabled
+	} from '$lib/rb/track-load-reset.svelte';
 	import Knob from './Knob.svelte';
 	import VFader from './VFader.svelte';
 	import { selId, selectorNode } from '$lib/keyboard/selector-register';
@@ -73,15 +89,23 @@
 		/** The mixer's S button (uiPrefs.mixer_stems): stem dials on every channel with stems. */
 		mixerStems: boolean;
 		stemPending: boolean;
+		/** Shared dispatcher status for this deck, also shown by its error banner. */
+		commandPending: boolean;
+		commandError: string | null;
 		ontrim: (value: number) => void;
 		/** AUTOGAIN-04: set (dB) or clear (null) the user's auto gain via the dispatcher. */
-		onAutoGainOffset: (offsetDb: number | null, stableId: string) => Promise<{ ok: boolean; error?: unknown }>;
+		onAutoGainOffset: (
+			offsetDb: number | null,
+			stableId: string
+		) => Promise<{ ok: boolean; error?: unknown }>;
 		oneq: (band: EqBand, value: number) => void;
 		onfilter: (value: number) => void;
 		/** COLORFX-02: pick what the color knob plays on this channel; COLORFX-8341: `next` cycles. */
 		oncolorfx: (effect: ColorFxChoice) => void;
 		/** COLORFX-10320: the ECHO division picked in the color FX menu (dispatches color_fx echo_beats). */
 		onechodivision: (beats: ColorFxEchoBeats) => void;
+		/** COLORFX-13: apply this effect to every channel (rekordbox single mode). */
+		oncolorfxall: (effect: ColorFxEffect) => void;
 		onfader: (value: number) => void;
 		oncue: (enabled: boolean) => void;
 		onStemGain: (stem: StemControl, value: number) => void;
@@ -101,12 +125,15 @@
 		cueEnabled,
 		mixerStems,
 		stemPending,
+		commandPending,
+		commandError,
 		ontrim,
 		onAutoGainOffset,
 		oneq,
 		onfilter,
 		oncolorfx,
 		onechodivision,
+		oncolorfxall,
 		onfader,
 		oncue,
 		onStemGain,
@@ -130,7 +157,8 @@
 	const COLOR_FX_TINT: Readonly<Record<(typeof COLOR_FX_EFFECTS)[number], string | undefined>> = {
 		filter: undefined,
 		space: '#a99cff',
-		echo: '#6fd6c6'
+		echo: '#6fd6c6',
+		crush: '#ff9f5a'
 	};
 	const colorSettings = $derived(colorFx[deckId]);
 	const colorTint = $derived(COLOR_FX_TINT[colorSettings.effect]);
@@ -138,15 +166,19 @@
 	const COLOR_FX_FILTER_FACE = 'var(--rb-color-fx-filter-face)';
 	const colorFace = $derived(colorSettings.effect === 'filter' ? COLOR_FX_FILTER_FACE : undefined);
 	/** COLORFX-8341: Cmd-click on a Mac, Ctrl-click elsewhere. */
-	const cycleModifier = quickPickModifier(typeof navigator === 'undefined' ? '' : navigator.platform);
+	const cycleModifier = quickPickModifier(
+		typeof navigator === 'undefined' ? '' : navigator.platform
+	);
 	const cycleHint = `${cycleModifier === 'Meta' ? 'Cmd' : 'Ctrl'}-click cycles FILTER, SPACE, ECHO; switching returns the knob to 12 o'clock`;
 	/** Hover title for the selector, naming the echo's timing as numbers and the knob as a clock time (DIALCLOCK-8341). */
 	const colorFxTitle = $derived.by(() => {
+		if (commandError !== null) return commandError;
 		const label = COLOR_FX_LABELS[colorSettings.effect];
 		const at = `knob at ${dialClockLabel(filter)}; ${cycleHint}`;
 		if (colorSettings.effect !== 'echo') return `Color FX: ${label}, ${at}`;
 		const bpm = colorSettings.tempo_bpm;
-		if (bpm === null) return `Color FX: ECHO ${colorSettings.echo_beats} beat - inert: this deck has no tempo; ${at}`;
+		if (bpm === null)
+			return `Color FX: ECHO ${colorSettings.echo_beats} beat - inert: this deck has no tempo; ${at}`;
 		const ms = Math.round((60 / bpm) * colorSettings.echo_beats * 1000);
 		return `Color FX: ECHO ${colorSettings.echo_beats} beat at ${bpm.toFixed(1)} BPM = ${ms} ms per repeat; ${at}`;
 	});
@@ -164,7 +196,11 @@
 	/** Read-only on the event: no preventDefault / stopPropagation, so the press
 	 * that closes the menu still starts a drag on whatever knob is under it. */
 	function handleDocumentPointerDown(event: PointerEvent): void {
-		const where = classifyColorFxPress(event.target as Node | null, colorFxMenuEl, colorFxTriggerEl);
+		const where = classifyColorFxPress(
+			event.target as Node | null,
+			colorFxMenuEl,
+			colorFxTriggerEl
+		);
 		colorFxMenu = colorFxMenuOnPointerDown(colorFxMenu, where);
 	}
 
@@ -184,6 +220,12 @@
 	function chooseEchoDivision(beats: ColorFxEchoBeats): void {
 		colorFxMenu = colorFxMenuClose();
 		if (beats !== colorSettings.echo_beats) onechodivision(beats);
+	}
+
+	/** COLORFX-13: the highlighted effect on all four channels; each follows the switch rule. */
+	function chooseColorFxAll(): void {
+		colorFxMenu = colorFxMenuClose();
+		oncolorfxall(colorSettings.effect);
 	}
 
 	function handleDocumentKeyDown(event: KeyboardEvent): void {
@@ -274,7 +316,9 @@
 				`A stopped or silent channel captures nothing: there is no level to calibrate against.`
 			);
 		}
-		const action = enabled ? 'Click to disable (keeps the captured level).' : 'Click to re-capture and enable.';
+		const action = enabled
+			? 'Click to disable (keeps the captured level).'
+			: 'Click to re-capture and enable.';
 		return `${label}: ${dbfs.toFixed(1)} dBFS, captured at this channel's tap, currently ${enabled ? 'ON' : 'OFF'}. ${action}`;
 	}
 
@@ -343,7 +387,7 @@
 	class:less
 	class:compact={compact}
 	class:deck-focus={focused}
-	class:selected={selected}
+	class:selected
 	data-mixer-channel={deckId}
 	use:selectorNode={{ id: selId.channel(deckId), kind: 'group', enabled: channelSelectable }}
 	onclick={handleStripClick}
@@ -378,20 +422,67 @@
 			>
 		</div>
 	</div>
-	<div class="trim-slot" use:selectorNode={{ id: selId.channelPart(deckId, 'trim'), kind: 'leaf', enabled: true }}>
-		<Knob
-			knobId={knobId(deckId, 'trim')}
-			label="TRIM"
-			accessibleLabel={`trim deck ${deckId}`}
-			value={trim}
-			tone="white"
-			size={trimSize}
-			onchange={ontrim}
-		/>
-		<AutoGainReadout {deckId} onoffset={onAutoGainOffset} />
-	</div>
+	<!-- MIXUX-9832: TRIM, CUE and the fader render in a per-mode DOM spot so Tab
+	     follows what the user sees. MORE is a flex column (DOM order = visual
+	     order, unchanged); LESS is a grid read column by column: fader, then
+	     HI/MID/LOW, then TRIM/CUE/FILTER. -->
+	{#snippet trimBlock()}
+		<div
+			class="trim-slot"
+			use:selectorNode={{ id: selId.channelPart(deckId, 'trim'), kind: 'leaf', enabled: true }}
+		>
+			<Knob
+				knobId={knobId(deckId, 'trim')}
+				label="TRIM"
+				accessibleLabel={`trim deck ${deckId}`}
+				value={trim}
+				tone="white"
+				size={trimSize}
+				onchange={ontrim}
+			/>
+			<AutoGainReadout {deckId} onoffset={onAutoGainOffset} />
+		</div>
+	{/snippet}
+	{#snippet cueBlock()}
+		<button
+			class:enabled={cueEnabled}
+			class="cue-btn"
+			aria-pressed={cueEnabled}
+			aria-label={`cue channel ${deckId}`}
+			title={cueTitle}
+			data-testid={`cue-channel-${deckId}`}
+			data-rust-command="channel_cue"
+			onclick={() => oncue(!cueEnabled)}
+		>
+			<svg class="cue-icon" width="9" height="9" viewBox="0 0 12 12" aria-hidden="true">
+				<!-- headphone band + ear cups, matching the monitor cluster's icon -->
+				<path d="M2 8 V6 a4 4 0 0 1 8 0 v2" fill="none" stroke="currentColor" stroke-width="1.4" />
+				<rect x="1" y="7" width="2.4" height="3.4" rx="0.8" fill="currentColor" />
+				<rect x="8.6" y="7" width="2.4" height="3.4" rx="0.8" fill="currentColor" />
+			</svg>CUE</button
+		>
+	{/snippet}
+	{#snippet faderBlock()}
+		<div
+			class="fader-slot"
+			use:selectorNode={{ id: selId.channelPart(deckId, 'fader'), kind: 'leaf', enabled: true }}
+		>
+			<VFader
+				value={fader}
+				{playing}
+				{looped}
+				{deckId}
+				onchange={onfader}
+				label={`channel fader deck ${deckId}`}
+			/>
+		</div>
+	{/snippet}
+	{#if less}{@render faderBlock()}{:else}{@render trimBlock()}{/if}
 	{#snippet stemDial(stem: StemControl, size: number)}
-		<div class="sel-node" use:selectorNode={{ id: selId.channelStem(deckId, stem), kind: 'leaf', enabled: true }}>
+		<div
+			class="sel-node"
+			use:selectorNode={{ id: selId.channelStem(deckId, stem), kind: 'leaf', enabled: true }}
+		>
 			<Knob
 				knobId={knobId(deckId, stemKnobRole(stem))}
 				label={STEM_DIAL_LABELS[stem]}
@@ -412,7 +503,10 @@
 	<!-- Grid flows down a column then across: HI MID LOW, then VOCAL INST BASS
 	     beside them row for row. An absent stem keeps its cell empty. -->
 	<div class="eq-stack" class:with-stems={stemDials}>
-		<div class="sel-node" use:selectorNode={{ id: selId.channelPart(deckId, 'high'), kind: 'leaf', enabled: true }}>
+		<div
+			class="sel-node"
+			use:selectorNode={{ id: selId.channelPart(deckId, 'high'), kind: 'leaf', enabled: true }}
+		>
 			<Knob
 				knobId={knobId(deckId, 'high')}
 				label="HI"
@@ -422,7 +516,10 @@
 				onchange={(value) => oneq('high', value)}
 			/>
 		</div>
-		<div class="sel-node" use:selectorNode={{ id: selId.channelPart(deckId, 'mid'), kind: 'leaf', enabled: true }}>
+		<div
+			class="sel-node"
+			use:selectorNode={{ id: selId.channelPart(deckId, 'mid'), kind: 'leaf', enabled: true }}
+		>
 			<Knob
 				knobId={knobId(deckId, 'mid')}
 				label="MID"
@@ -432,7 +529,10 @@
 				onchange={(value) => oneq('mid', value)}
 			/>
 		</div>
-		<div class="sel-node" use:selectorNode={{ id: selId.channelPart(deckId, 'low'), kind: 'leaf', enabled: true }}>
+		<div
+			class="sel-node"
+			use:selectorNode={{ id: selId.channelPart(deckId, 'low'), kind: 'leaf', enabled: true }}
+		>
 			<Knob
 				knobId={knobId(deckId, 'low')}
 				label="LOW"
@@ -452,6 +552,7 @@
 			{/each}
 		{/if}
 	</div>
+	{#if less}{@render trimBlock()}{@render cueBlock()}{/if}
 	<!-- COLORFX-09: on SPACE / ECHO the color knob is a Web-Audio-only control, so
 	     Rust engine mode holds it inert with the PARITY-TODO title instead of
 	     letting it drive the Rust FILTER. On FILTER the knob stays live there.
@@ -468,6 +569,7 @@
 		onclickcapture={handleColorSlotClick}
 		role="group"
 		aria-label={`color FX deck ${deckId}`}
+		aria-busy={commandPending}
 	>
 		<!-- COLORFX-10: a tap on the dial or its caption opens the effect menu, a
 		     drag still turns the knob. The chevron sits IN the caption (in flow),
@@ -481,6 +583,7 @@
 		>
 			<Knob
 				knobId={knobId(deckId, 'filter')}
+				valueKind={colorSettings.effect === 'filter' ? 'filter' : 'bipolar'}
 				label={COLOR_FX_LABELS[colorSettings.effect]}
 				accessibleLabel={`filter deck ${deckId}`}
 				value={filter}
@@ -516,8 +619,22 @@
 						onclick={() => chooseColorFx(effect)}>{COLOR_FX_LABELS[effect]}</button
 					>
 				{/each}
+				<button
+					type="button"
+					role="menuitem"
+					class="color-fx-option color-fx-all"
+					title={`Apply ${COLOR_FX_LABELS[colorSettings.effect]} to channels 1 to 4`}
+					data-testid={`color-fx-all-${deckId}`}
+					data-rust-command="color_fx"
+					onclick={chooseColorFxAll}>All channels</button
+				>
 				{#if showsEchoDivisions(colorSettings.effect)}
-					<div class="color-fx-divisions" role="group" aria-label={`echo division deck ${deckId}`} data-testid={`color-fx-divisions-${deckId}`}>
+					<div
+						class="color-fx-divisions"
+						role="group"
+						aria-label={`echo division deck ${deckId}`}
+						data-testid={`color-fx-divisions-${deckId}`}
+					>
 						{#each COLOR_FX_DIVISIONS as beats (beats)}
 							<button
 								type="button"
@@ -539,41 +656,18 @@
 			{@render stemDial(stemLayout.filterPartner, filterSize)}
 		{/if}
 	</div>
-	<button
-		class:enabled={cueEnabled}
-		class="cue-btn"
-		aria-pressed={cueEnabled}
-		aria-label={`cue channel ${deckId}`}
-		title={cueTitle}
-		data-testid={`cue-channel-${deckId}`}
-		data-rust-command="channel_cue"
-		onclick={() => oncue(!cueEnabled)}
+	{#if !less}{@render cueBlock()}{@render faderBlock()}{/if}
+	<span class="stem-label" title="Stem mute (click) and solo (Shift+click) for this channel"
+		>STEM</span
 	>
-		<svg class="cue-icon" width="9" height="9" viewBox="0 0 12 12" aria-hidden="true">
-			<!-- headphone band + ear cups, matching the monitor cluster's icon -->
-			<path d="M2 8 V6 a4 4 0 0 1 8 0 v2" fill="none" stroke="currentColor" stroke-width="1.4" />
-			<rect x="1" y="7" width="2.4" height="3.4" rx="0.8" fill="currentColor" />
-			<rect x="8.6" y="7" width="2.4" height="3.4" rx="0.8" fill="currentColor" />
-		</svg>CUE</button
-	>
-	<div class="fader-slot" use:selectorNode={{ id: selId.channelPart(deckId, 'fader'), kind: 'leaf', enabled: true }}>
-		<VFader
-			value={fader}
-			{playing}
-			{looped}
-			deckId={deckId}
-			onchange={onfader}
-			label={`channel fader deck ${deckId}`}
-		/>
-	</div>
-	<span class="stem-label" title="Stem mute (click) and solo (Shift+click) for this channel">STEM</span>
 	<div class="stem-slot">
 		<StemRow
-			deck={deck}
+			{deck}
 			pending={stemPending}
 			testIdScope="channel"
 			onMute={onStemMute}
 			onSolo={onStemSolo}
+			onGain={onStemGain}
 			stemsResetOn={trackLoadResetEnabled('stems')}
 			onOpenResetConfig={(el) => toggleTrackLoadResetPanel('stems', el, deck.deck_id)}
 		/>
@@ -812,6 +906,11 @@
 		border: 1px solid var(--rb-border);
 		border-radius: 3px;
 		box-shadow: 0 4px 10px rgba(0, 0, 0, 0.45);
+	}
+	.color-fx-all {
+		border-top: 1px solid rgb(255 255 255 / 0.12);
+		margin-top: 2px;
+		padding-top: 5px;
 	}
 	.color-fx-divisions {
 		display: flex;

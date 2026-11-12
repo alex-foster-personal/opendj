@@ -1,0 +1,22 @@
+[
+  {"id": 0, "type": "PipeWire:Interface:Core", "info": {"props": {"core.name": "pipewire-0"}}},
+  {"id": 31, "type": "PipeWire:Interface:Node", "info": {"props": {"media.class": "Audio/Sink",
+    "node.name": "alsa_output.pci-0000_00_1f.3.analog-stereo", "node.description": "Built-in Audio Analog Stereo",
+    "audio.channels": 2, "audio.position": "FL,FR", "object.serial": 41}}},
+  {"id": 32, "type": "PipeWire:Interface:Node", "info": {"props": {"media.class": "Audio/Source",
+    "node.name": "alsa_input.pci-0000_00_1f.3.analog-stereo", "node.description": "Built-in Audio Analog Stereo",
+    "audio.channels": 2, "audio.position": "FL,FR"}}},
+  {"id": 33, "type": "PipeWire:Interface:Node", "info": {"props": {"media.class": "Audio/Sink",
+    "node.name": "alsa_output.usb-Pioneer_DDJ-FLX4-00.analog-surround-40", "node.description": "DDJ-FLX4 Analog Surround 4.0",
+    "audio.channels": 4, "audio.position": "FL,FR,RL,RR"}}},
+  {"id": 34, "type": "PipeWire:Interface:Node", "info": {"props": {"media.class": "Stream/Output/Audio",
+    "node.name": "Firefox", "application.name": "Firefox"}}},
+  {"id": 35, "type": "PipeWire:Interface:Node", "info": {"props": {"media.class": "Video/Source",
+    "node.name": "v4l2_input.platform-usb", "node.description": "Webcam"}}},
+  {"id": 36, "type": "PipeWire:Interface:Node", "info": {"props": {"media.class": "Midi/Bridge",
+    "node.name": "Midi-Bridge"}}},
+  {"id": 40, "type": "PipeWire:Interface:Node", "info": {"props": {"media.class": "Audio/Sink",
+    "node.name": "alsa_output.pci-0000_00_1f.3.analog-stereo", "node.description": "Built-in Audio Analog Stereo",
+    "audio.channels": 2, "audio.position": "FL,FR", "object.serial": 77}}},
+  {"id": 50, "type": "PipeWire:Interface:Port", "info": {"props": {"port.name": "playback_FL"}}}
+]

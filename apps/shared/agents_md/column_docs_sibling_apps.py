@@ -1,8 +1,10 @@
 """Column docs for the tables SIBLING APPS create in the shared state DB.
 
 ``apps/shared/state/schema.py`` is the schema authority, but it is not the
-only writer of ``state.db``. :mod:`apps.analysis.store` and
-:mod:`apps.spotify.state_aux` each run their own additive DDL on the shared
+only writer of ``state.db``. Analysis record DDL lives in
+:mod:`apps.analysis.analysis_records_tables_sql`, assembled into
+:mod:`apps.analysis.store`, which with :mod:`apps.spotify.state_aux` each run
+their own additive DDL on the shared
 connection after the migration ladder has finished, so a live database
 carries tables the ladder never declares.
 
@@ -413,6 +415,15 @@ SIBLING_APP_COLUMN_DOCS: dict[str, dict[str, str]] = {
             "The stable_id every loser_pk's children get remapped onto "
             "before the digest is computed, so a spoke's local digest "
             "matches the hub's remapped bundle (ADR 04 c6)."
+        ),
+    },
+    "sync_hub_answered": {
+        "hub_peer": "The hub peer that answered not_newer for this row.",
+        "table_name": "The synced table the row belongs to.",
+        "row_pk": "The row's encoded primary key (protocol.encode_row_pk).",
+        "row_digest": (
+            "The spoke's canonical row digest when the hub answered; a later "
+            "local change gives a different digest, so the row is pushed again."
         ),
     },
     "stem_bundle_usage": {

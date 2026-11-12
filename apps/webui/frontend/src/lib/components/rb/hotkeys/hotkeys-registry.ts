@@ -25,7 +25,7 @@
  *     - install-hotkeys-overlay.ts imports HOTKEYS_OVERLAY_HOLD_KEY ('/')
  *       and HOTKEYS_OVERLAY_TOGGLE_KEY ('?') for the overlay's own gestures.
  *   DISPLAY-ONLY TRANSCRIPTION (handler logic stays put):
- *     - performance-hotkeys.ts (Space, +/-, ), m, , . Shift+K P) -- transport/loop/pin/tempo
+ *     - performance-hotkeys.ts (Space, +/-, ), m, C, V, K, `, , . Shift+K P, 1-8 hot cues) -- transport/loop/pin/deck/tempo
  *       state machine, latency-stamped Space, loop-target tracking.
  *     - technically-working-hotkeys.ts (Ctrl+R, Opt, Cmd+E) -- hold-vs-press
  *       plus pointer-edge hover, routed through performance IPC.
@@ -211,6 +211,50 @@ export const HOTKEY_REGISTRY: readonly HotkeyEntry[] = [
 		id: 'performance-comment-pin',
 		chord: 'M',
 		description: 'Drop a comment pin without reaching for the topbar icon',
+		group: 'Performance'
+	},
+	{
+		id: 'performance-cue',
+		chord: 'C',
+		description: 'Cue the keyboard deck (the deck whose header carries the marker)',
+		group: 'Performance'
+	},
+	{
+		id: 'performance-beat-sync',
+		chord: 'V',
+		description: 'Toggle beat sync on the keyboard deck',
+		group: 'Performance'
+	},
+	{
+		id: 'performance-master-tempo',
+		chord: 'K',
+		description: 'Toggle master tempo (key lock) on the keyboard deck',
+		group: 'Performance'
+	},
+	{
+		id: 'performance-cycle-deck',
+		chord: '` / Shift+`',
+		description: 'Make the next loaded deck the keyboard deck (Shift goes back)',
+		group: 'Performance'
+	},
+	{
+		id: 'performance-hot-cue-trigger',
+		chord: '1-8',
+		description:
+			'Jump to hot cue 1-8 (A-H) on the most recent deck; ignored while a dial or fader is selected',
+		group: 'Performance'
+	},
+	{
+		id: 'performance-hot-cue-save',
+		chord: 'Shift+1-8',
+		description:
+			'Save the playhead into an empty hot cue slot on the most recent deck (a filled slot is never overwritten)',
+		group: 'Performance'
+	},
+	{
+		id: 'performance-hot-cue-clear',
+		chord: 'Cmd+Shift+1-8',
+		description: 'Clear hot cue 1-8 on the most recent deck',
 		group: 'Performance'
 	},
 	{

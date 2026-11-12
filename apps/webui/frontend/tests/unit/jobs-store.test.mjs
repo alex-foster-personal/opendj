@@ -628,3 +628,67 @@ test('the drawer toggle returns to its initial state after two toggles', () => {
 	mod.toggleJobsDrawer();
 	assert.equal(store.drawerOpen, false);
 });
+
+// requirement: ADMIN-12083
+test('farm active jobs list stems.separate when queued running or failed', () => {
+	const rows = [
+		job({ id: 'q', kind: 'stems.separate', status: 'queued' }),
+		job({ id: 'r', kind: 'stems.separate', status: 'running' }),
+		job({ id: 'f', kind: 'stems.separate', status: 'failed' }),
+		job({
+			id: 'done',
+			kind: 'stems.separate',
+			status: 'succeeded',
+			finished_at: '2026-08-19T10:01:00.000Z'
+		}),
+		job({ id: 'noise', kind: 'setup.import-rekordbox', status: 'running' })
+	];
+	const active = mod.farmActiveJobs(rows);
+	assert.deepEqual(active.map((row) => row.id).sort(), ['f', 'q', 'r']);
+});
+
+test('last finished farm job exposes duration from started and finished timestamps', () => {
+	const rows = [
+		job({
+			id: 'cloud-1',
+			kind: 'cloud.hydrate',
+			status: 'succeeded',
+			created_at: '2026-08-19T09:00:00.000Z',
+			started_at: '2026-08-19T09:00:01.000Z',
+			finished_at: '2026-08-19T09:00:06.500Z'
+		})
+	];
+	const last = mod.lastFinishedFarmJob(rows, 'cloud.hydrate');
+	assert.equal(last?.id, 'cloud-1');
+	assert.equal(mod.jobRunDurationMs(last), 5500);
+	assert.equal(mod.formatDurationMs(5500), '5 s');
+});
+
+test('succeeded jobs must list both started_at and finished_at', () => {
+	assert.equal(
+		mod.succeededJobHasRunTimestamps(
+			job({
+				status: 'succeeded',
+				started_at: '2026-08-19T09:00:01.000Z',
+				finished_at: '2026-08-19T09:00:02.000Z'
+			})
+		),
+		true
+	);
+	assert.equal(
+		mod.succeededJobHasRunTimestamps(
+			job({ status: 'succeeded', started_at: '2026-08-19T09:00:01.000Z', finished_at: null })
+		),
+		false
+	);
+});
+
+test('farm filters leave jobsStore rows intact for the TopBar drawer', () => {
+	store.jobs = [
+		job({ id: 'a', kind: 'stems.separate', status: 'running' }),
+		job({ id: 'b', kind: 'other-kind', status: 'queued' })
+	];
+	const active = mod.farmActiveJobs(store.jobs);
+	assert.equal(active.length, 1);
+	assert.equal(store.jobs.length, 2);
+});

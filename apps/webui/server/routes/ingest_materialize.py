@@ -15,11 +15,13 @@ from pathlib import Path
 from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel
 
+from apps.dedup.http import open_hash_duplicate_recorder
 from apps.shared.paths import AUDIO_EXTENSIONS
 from apps.shared.state import db as state_db
 from apps.shared.state.ingest import folder as folder_ingest
 from apps.shared.state.writer import StateWriter
 from apps.webui.server import ingest_enrichment
+from apps.webui.server.dedup_review_ops import dedup_db_path
 from apps.webui.server.routes import ingest as ingest_cfg
 
 router = APIRouter(prefix="/ingest", tags=["ingest"])
@@ -144,18 +146,23 @@ def materialize_batch(batch: str, request: Request) -> MaterializeOut:
         with StateWriter(conn, actor="webui") as writer, writer.transaction():
                 # The user picked these files to add, so one they removed earlier
                 # comes back rather than failing the drop (LIBM-141).
-                folder_ingest.ingest_folder(
+                ingest_report = folder_ingest.ingest_folder(
                     writer,
                     [dest_dir],
                     dry_run=False,
                     restore_removed=True,
                     on_new_tracks=_queue_strips_fn(request.app),
+                    open_duplicate_recorder=lambda: open_hash_duplicate_recorder(dedup_db_path()),
                 )
                 # Commit only after EVERY staged path resolved (see _resolve_staged).
                 tracks = _resolve_staged(conn, dest_dir, staged, before_ids)
         # After the commit, so the coordinator reads committed rows (ENRICH-06).
         ingest_enrichment.coordinator_for(request.app).register(
-            batch, (track.stable_id for track in tracks), "materialize")
+            batch,
+            (track.stable_id for track in tracks),
+            "materialize",
+            duplicates=ingest_report.content_duplicates,
+        )
         return MaterializeOut(batch=batch, tracks=tracks)
     except Exception:
         if conn.in_transaction:

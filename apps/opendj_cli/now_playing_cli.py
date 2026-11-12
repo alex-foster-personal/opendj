@@ -1,25 +1,76 @@
-"""``opendj now-playing``: the track the room hears (NOWP-11489, issue #10336).
+"""``opendj now-playing``: the track the room hears (NOWP-11489, issue #10336), and tonight's tracklist (NOWP, issue #10341).
 
     opendj now-playing [--json] [--watch] [--interval S]
+    opendj now-playing tracklist [--format txt|json] [--tz ZONE]
 
 ``GET /api/v1/now-playing`` answers which one track the room hears after a 3 s settle delay.
+``tracklist`` reads ``GET /api/v1/now-playing/tracklist``: ``txt`` (the default) prints
+``HH:MM  Artist - Title`` lines in local time (or ``--tz``); ``json`` prints the route's answer unchanged.
 """
 
 from __future__ import annotations
 
 import argparse
+import contextlib
+import io
+import json
 import sys
 import time
 from collections.abc import Sequence
 from pathlib import Path
 from typing import Any
+from urllib.parse import quote
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 import httpx
 
-from apps.opendj_cli import EXIT_CONFIRMED, EXIT_FAILED, EXIT_NO_ENGINE
+from apps.now_playing.http import format_txt
+from apps.opendj_cli import EXIT_CONFIRMED, EXIT_FAILED, EXIT_NO_ENGINE, api_cli
 from apps.opendj_cli.api_cli import UsageError, resolve_backend_base_url
 from apps.opendj_cli.origin import EngineNotRunning
 from apps.opendj_cli.refusal import fail as _fail
+
+USAGE = "usage: opendj now-playing tracklist [--format txt|json] [--tz ZONE]  (default --format txt)"
+TRACKLIST_PATH = "/api/v1/now-playing/tracklist"
+
+
+def _parse_tracklist(args: Sequence[str]) -> argparse.Namespace | None:
+    parser = argparse.ArgumentParser(prog="opendj now-playing tracklist", add_help=False)
+    parser.add_argument("--format", choices=("txt", "json"), default="txt")
+    parser.add_argument("--tz", default=None)
+    try:
+        with contextlib.redirect_stderr(io.StringIO()):
+            return parser.parse_args(list(args))
+    except SystemExit:
+        return None
+
+
+def _tracklist(args: Sequence[str], *, as_json: bool) -> int:
+    opts = _parse_tracklist(args)
+    if opts is None:
+        print(USAGE, file=sys.stderr)
+        return 1
+    zone = None
+    if opts.tz is not None:
+        try:
+            zone = ZoneInfo(opts.tz)
+        except (ZoneInfoNotFoundError, ValueError):
+            print(f"unknown timezone {opts.tz!r}\n{USAGE}", file=sys.stderr)
+            return 1
+    path = TRACKLIST_PATH if opts.tz is None else f"{TRACKLIST_PATH}?tz={quote(opts.tz, safe='')}"
+    if as_json or opts.format == "json":
+        return api_cli.run(["GET", path], as_json=True)
+    buffer = io.StringIO()
+    with contextlib.redirect_stdout(buffer):
+        code = api_cli.run(["GET", path], as_json=True)
+    if code != api_cli.EXIT_OK:
+        sys.stdout.write(buffer.getvalue())
+        return code
+    text = format_txt(json.loads(buffer.getvalue())["rows"], zone)
+    if text:
+        print(text)
+    return code
+
 
 ROUTE = "/api/v1/now-playing"
 REQUEST_TIMEOUT_S = 15.0
@@ -137,6 +188,8 @@ def _run_watch(base_url: str, as_json: bool, interval: float) -> int:
 
 
 def run(rest: Sequence[str], *, as_json: bool = False, lock: Path | None = None) -> int:
+    if rest and rest[0] == "tracklist":
+        return _tracklist(rest[1:], as_json=as_json)
     try:
         ns = _parse(rest)
     except UsageError as error:

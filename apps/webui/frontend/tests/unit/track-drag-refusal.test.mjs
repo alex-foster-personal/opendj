@@ -190,7 +190,7 @@ describe('trackDragRefusal is wired end to end, TrackTable to BrowserPanel', () 
 		);
 		// The flags are built per dragged id by draggedDeckRows (PR #6574 review);
 		// its behaviour is pinned in deck-track-drop.test.mjs.
-		assert.match(fn, /beginTrackDrag\(ids,\s*draggedDeckRows\(ids,\s*rows,/);
+		assert.match(fn, /beginTrackDrag\(\s*ids,\s*draggedDeckRows\(ids,\s*rows,/);
 		const helper = readFileSync(DROP_HELPER_PATH, 'utf8');
 		assert.match(helper, /file_exists:\s*row\.file_exists/);
 		assert.match(

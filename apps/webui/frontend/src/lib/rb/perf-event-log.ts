@@ -9,8 +9,9 @@
  * TWO properties this module owes its callers, both of which a single global
  * FIFO with a synchronous write got wrong:
  *
- * 1. A NOISY KIND MUST NOT EVICT A QUIET ONE. `transport-schedule` is appended
- *    once per _scheduleDeck, and PitchFader drives that from an unthrottled
+ * 1. A NOISY KIND MUST NOT EVICT A QUIET ONE. `seek-presented` (RBPERF #11143)
+ *    has its own budget so measured seeks are not evicted by transport-schedule.
+ *    `transport-schedule` is appended once per _scheduleDeck, and PitchFader drives that from an unthrottled
  *    pointermove - so one fader drag emitted ~40 rows and flushed every
  *    deck-load, deck-load-fail and audio-context row out of a 40-slot ring.
  *    __mdtLastLoads() then returned nothing, silently, exactly when someone was
@@ -24,6 +25,7 @@
  *    localStorage is coalesced onto a timer and forced on pagehide.
  */
 
+import { formatDeckLoadPerfFacts } from './deck-load-stage-units';
 import { withinBudgets, type PerfEvent } from './perf-event-buckets';
 
 export { audioHealthFaultSeverity } from './perf-event-buckets';
@@ -274,10 +276,15 @@ function _push(entry: PerfEvent): void {
 	_scheduleFlush();
 }
 
-function _stageSummary(stages: Record<string, number>): string {
-	return Object.entries(stages)
+function _stageSummary(stages: Record<string, number>, facts?: Record<string, number>): string {
+	const ms = Object.entries(stages)
 		.map(([k, v]) => `${k}=${v}`)
 		.join(' ');
+	const factBits =
+		facts === undefined || Object.keys(facts).length === 0
+			? ''
+			: ` ${formatDeckLoadPerfFacts(facts)}`;
+	return ms === '' ? factBits.trim() : ms + factBits;
 }
 
 /**
@@ -438,9 +445,10 @@ export function recordPerfTiming(
 	stages: Record<string, number>,
 	deck: 1 | 2 | 3 | 4 | null = null,
 	labels?: Record<string, string>,
+	facts?: Record<string, number>,
 	series?: Record<string, number[]>
 ): void {
-	const stageBits = _stageSummary(stages);
+	const stageBits = _stageSummary(stages, facts);
 	const labelBits =
 		labels === undefined
 			? ''
@@ -465,6 +473,7 @@ export function recordPerfTiming(
 		// instead of unknown.
 		severity: 'info',
 		stages: { ...stages },
+		...(facts === undefined || Object.keys(facts).length === 0 ? {} : { facts: { ...facts } }),
 		...(labels === undefined ? {} : { labels: { ...labels } }),
 		...seriesCopy
 	});
@@ -570,14 +579,18 @@ export function recordDeckLoadTiming(
 	stages: Record<string, number>,
 	deck: 1 | 2 | 3 | 4 | null,
 	stems: StemLoadFacts,
-	extraLabels?: Record<string, string>
+	extraLabels?: Record<string, string>,
+	facts?: Record<string, number>
 ): void {
 	const { stemmed, labels } = _stemLoadTelemetry(stems);
+	const stageFacts: Record<string, number> = facts === undefined ? {} : { ...facts };
+	if (stemmed !== null) stageFacts.stemmed = stemmed;
 	recordPerfTiming(
 		kind,
-		stemmed === null ? stages : { ...stages, stemmed },
+		stages,
 		deck,
-		extraLabels === undefined ? labels : { ...labels, ...extraLabels }
+		extraLabels === undefined ? labels : { ...labels, ...extraLabels },
+		Object.keys(stageFacts).length === 0 ? undefined : stageFacts
 	);
 }
 

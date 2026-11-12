@@ -78,3 +78,6 @@ export function judge(delta: number, direction: string): Verdict {
 }
 
 export const ARROW: Record<Verdict, string> = { good: '▲', bad: '▼', flat: '▬' };
+
+/** Arrow for the raw direction of a move (up = the number grew), independent of verdict. */
+export const MOVE_ARROW = { up: '▲', down: '▼' } as const;

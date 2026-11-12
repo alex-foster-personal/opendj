@@ -26,16 +26,25 @@ export const HIDEABLE_COLUMNS = [
 	'tempostab',
 	'plays',
 	'rating',
+	'colour',
 	'comments',
 	'time',
 	'quality',
 	'energy',
 	'genre',
 	'stems',
-	'tags'
+	'tags',
+	'filename',
+	'location'
 ] as const satisfies readonly ColId[];
 
 export type HideableColumn = (typeof HIDEABLE_COLUMNS)[number];
+
+/** Issue #10030: File name and Location start hidden on a fresh install. */
+export const DEFAULT_HIDDEN_LIBRARY_COLUMNS: readonly HideableColumn[] = [
+	'filename',
+	'location'
+];
 
 export const HIDEABLE_COLUMN_LABELS: Readonly<Record<HideableColumn, string>> = {
 	preview: 'Preview',
@@ -46,13 +55,16 @@ export const HIDEABLE_COLUMN_LABELS: Readonly<Record<HideableColumn, string>> = 
 	tempostab: 'Beat stability',
 	plays: 'Plays',
 	rating: 'Rating',
+	colour: 'Colour',
 	comments: 'Comments',
 	time: 'Time',
 	quality: 'Quality',
 	energy: 'Energy',
 	genre: 'Genre',
 	stems: 'Stems',
-	tags: 'Tags'
+	tags: 'Tags',
+	filename: 'File name',
+	location: 'Location'
 };
 
 export function isHideableColumn(value: unknown): value is HideableColumn {
@@ -64,7 +76,9 @@ export function isHideableColumn(value: unknown): value is HideableColumn {
  * blob is seen instead of quietly showing a different set of columns. */
 export function validateHiddenColumns(value: unknown, source: string): HideableColumn[] {
 	if (!Array.isArray(value)) {
-		throw new Error(`${source}: library_hidden_columns must be a list, got ${JSON.stringify(value)}`);
+		throw new Error(
+			`${source}: library_hidden_columns must be a list, got ${JSON.stringify(value)}`
+		);
 	}
 	const seen = new Set<HideableColumn>();
 	for (const item of value) {

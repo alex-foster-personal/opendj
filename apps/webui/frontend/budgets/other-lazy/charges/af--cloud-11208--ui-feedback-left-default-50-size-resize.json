@@ -1,0 +1,9 @@
+{
+  "bytes": 1024,
+  "measured_main": 496924,
+  "measured_with_pr": 497170,
+  "sha": "0936af0f7e",
+  "date": "Tue 10 Nov 2026",
+  "reason": "Issue #11208 grows FeedbackPanel lazy CSS and feedback.ts panel layout helpers on other-lazy; measured +246 B gzip over branch base build.",
+  "payback": "none planned; the growth is the review panel UX on its existing lazy chunk"
+}

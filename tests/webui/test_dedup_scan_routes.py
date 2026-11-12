@@ -80,6 +80,7 @@ def test_scan_starts_once_reports_progress_and_finishes(app_client, monkeypatch)
     assert calls[0] == {
         "state_db": Path(app_client.app.state.state_db_path),
         "db_path": dedup_db_path(),
+        "basis": "both",
     }
 
 

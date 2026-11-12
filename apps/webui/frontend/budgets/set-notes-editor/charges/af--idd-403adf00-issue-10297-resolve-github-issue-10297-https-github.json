@@ -1,0 +1,9 @@
+{
+  "bytes": 1024,
+  "measured_main": 74551,
+  "measured_with_pr": 74555,
+  "sha": "030eb36f0b",
+  "date": "Tue 10 Nov 2026",
+  "reason": "Issue #10297 (SECONDSCREEN-11715) adds the Tauri-only 'Library on second screen' Cmd K row and its native-shell call; measured: local build vs main at 030eb36f0b, +4 B gzip on set-notes-editor; ceiled to KiB",
+  "payback": "none planned; the growth is the feature's own code"
+}

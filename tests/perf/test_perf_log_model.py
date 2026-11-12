@@ -14,11 +14,14 @@ import time
 import pytest
 
 from scripts.perf.perf_log_model import (
+    NON_DURATION_STAGES,
     PerfLogUnreadable,
     deck_load_phase_model,
+    deck_load_stage_maps,
     find_localstorage_stores,
     read_localstorage_perf_log,
     stem_phase_model,
+    sum_deck_stage_durations_ms,
     unclassified_deck_stages,
 )
 
@@ -276,3 +279,26 @@ def test_a_lone_fetch_members_remainder_is_not_credited_as_parallel() -> None:
     assert by_name["fetch-remainder"].wall_ms == pytest.approx(90000)
     assert by_name["fetch-remainder"].parallelizable is False
     assert model.parallelizable_ms == pytest.approx(0)
+
+
+@pytest.mark.requirement("PERF-12046")
+def test_legacy_audio_bytes_promoted_out_of_stage_durations() -> None:
+    """[if] audioBytes sits in stages [then] maps split it from ms, [else stop]."""
+    row = {
+        "stages": {"stretchCreate": 45, "audioBytes": 5_059_178, "total": 100},
+        "facts": {},
+    }
+    stages_ms, facts = deck_load_stage_maps(row)
+    assert facts["audioBytes"] == 5_059_178
+    assert "audioBytes" not in stages_ms
+    assert sum_deck_stage_durations_ms(row["stages"]) < 1_000
+
+
+@pytest.mark.requirement("PERF-12046")
+def test_new_non_duration_key_left_out_of_blind_ms_sum() -> None:
+    """[if] a non-ms key is unknown [then] blind sum still skips NON_DURATION, [else stop]."""
+    legacy = {"stretchCreate": 10, "audioBytes": 9_999, "mysteryFlag": 1}
+    assert sum_deck_stage_durations_ms(legacy) < 100
+    ms_only, _facts = deck_load_stage_maps({"stages": legacy, "facts": {}})
+    assert "mysteryFlag" in unclassified_deck_stages(ms_only, is_load=True)
+    assert "audioBytes" in NON_DURATION_STAGES

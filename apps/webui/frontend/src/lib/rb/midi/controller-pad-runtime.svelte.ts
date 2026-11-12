@@ -23,7 +23,7 @@ const PAD_DEFAULT_MODE: ControllerPadMode = 'hot_cue';
 
 // The action adapter owns user notifications; pad state does not depend on
 // the application's global UI store.
-type Notify = (message: string, tone: 'info' | 'warn' | 'error') => void;
+export type Notify = (message: string, tone: 'info' | 'warn' | 'error') => void;
 
 export function toggleControllerStemEq(deck: DeckId, notify: Notify): void {
 	const enabled = !mixerState.channels[deck].stem_eq_mode;
@@ -166,6 +166,67 @@ function _cmdHotCue(deck: DeckId, slot: HotCueSlot, pressT0Ms?: number): void {
 	void dispatchPerformanceCommand({ type: 'hot_cue_trigger', deck, slot }, pressT0Ms);
 }
 
+export type HotCuePressMode = 'set_or_trigger' | 'set' | 'clear';
+
+/** Shared hot-cue pad and keyboard keymap path (#10351). */
+export function pressHotCueSlot(
+	deck: DeckId,
+	slot: HotCueSlot,
+	mode: HotCuePressMode,
+	notify: Notify,
+	pressT0Ms?: number
+): void {
+	if (_deckIsEmpty(deck)) {
+		_toastEmptyDeck(deck, notify);
+		return;
+	}
+	if (mode === 'clear') {
+		const cue = _findHotCue(deck, slot);
+		if (cue === null) return;
+		void dispatchPerformanceCommand({
+			type: 'hot_cue_clear',
+			deck,
+			slot,
+			revision: deckStates[deck].hot_cue_revisions[slot]
+		});
+		return;
+	}
+	if (mode === 'set_or_trigger') {
+		const cue = _findHotCue(deck, slot);
+		if (cue !== null) {
+			_cmdHotCue(deck, slot, pressT0Ms);
+			return;
+		}
+		if (!hotCueEditsAllowed(deckStates[deck].stable_id, deckStates[deck].has_rb_mapping)) {
+			notify(`Deck ${deck}: this track cannot persist Rekordbox hot cues`, 'error');
+			return;
+		}
+		const loop = engagedLoopForHotCue(deckStates[deck]);
+		void dispatchPerformanceCommand({
+			type: 'hot_cue_save',
+			deck,
+			slot,
+			in_ms: loop?.in_ms ?? persistentCuePositionMs(deckStates[deck].position_ms),
+			revision: deckStates[deck].hot_cue_revisions[slot],
+			...(loop === null ? {} : { out_ms: loop.out_ms })
+		});
+		return;
+	}
+	if (!hotCueEditsAllowed(deckStates[deck].stable_id, deckStates[deck].has_rb_mapping)) {
+		notify(`Deck ${deck}: this track cannot persist Rekordbox hot cues`, 'error');
+		return;
+	}
+	const loop = engagedLoopForHotCue(deckStates[deck]);
+	void dispatchPerformanceCommand({
+		type: 'hot_cue_save',
+		deck,
+		slot,
+		in_ms: loop?.in_ms ?? persistentCuePositionMs(deckStates[deck].position_ms),
+		revision: deckStates[deck].hot_cue_revisions[slot],
+		...(loop === null ? {} : { out_ms: loop.out_ms })
+	});
+}
+
 function _cmdBeatLoop(deck: DeckId, beats: number): void {
 	void dispatchPerformanceCommand({ type: 'beat_loop', deck, beats });
 }
@@ -272,41 +333,7 @@ export function runControllerPad(
 	if (mode === 'hot_cue') {
 		if (!pressed) return;
 		const slot = _slotForPad(pad);
-		const cue = _findHotCue(deck, slot);
-		if (shifted) {
-			if (cue === null) return;
-			void dispatchPerformanceCommand({
-				type: 'hot_cue_clear',
-				deck,
-				slot,
-				revision: deckStates[deck].hot_cue_revisions[slot]
-			});
-			return;
-		}
-		if (cue !== null) {
-			_cmdHotCue(deck, slot, pressT0Ms);
-			return;
-		}
-		// The one predicate HotCueBank's pads and the hot_cue_save IPC gate
-		// share: a stick track keeps its cues in the session, so hardware
-		// must not refuse what the visible pads allow.
-		if (!hotCueEditsAllowed(deckStates[deck].stable_id, deckStates[deck].has_rb_mapping)) {
-			notify(`Deck ${deck}: this track cannot persist Rekordbox hot cues`, 'error');
-			return;
-		}
-		// HOTCUE-LOOP-01: a pad pressed during an engaged loop saves that loop.
-		const loop = engagedLoopForHotCue(deckStates[deck]);
-		void dispatchPerformanceCommand({
-			type: 'hot_cue_save',
-			deck,
-			slot,
-			// Presented transport is sub-millisecond; the persistent Rekordbox
-			// cue contract is integer milliseconds. Round at this boundary so a
-			// physical pad can save the position the engine actually publishes.
-			in_ms: loop?.in_ms ?? persistentCuePositionMs(deckStates[deck].position_ms),
-			revision: deckStates[deck].hot_cue_revisions[slot],
-			...(loop === null ? {} : { out_ms: loop.out_ms })
-		});
+		pressHotCueSlot(deck, slot, shifted ? 'clear' : 'set_or_trigger', notify, pressT0Ms);
 		return;
 	}
 	if (mode === 'auto_loop') {

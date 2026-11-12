@@ -6,11 +6,13 @@
 	// Shift+click mutes it; the event never reaches the main waveform's seek.
 	// An inert row stays inert and sends nothing.
 	import type { StemControl, StemControlState } from '$lib/rb/stem-types';
+	import type { StemRowAudibility } from './stem-waveform-ui';
 
 	let {
 		stem,
 		visible,
 		unavailableTip,
+		audibility,
 		canvasEl = $bindable(null),
 		deckId = null,
 		controlState = null,
@@ -22,6 +24,8 @@
 		visible: boolean;
 		/** Why this stem has no strip, or null when it can paint. */
 		unavailableTip: string | null;
+		/** What the listener hears from this stem, null when stems are not ready. */
+		audibility: StemRowAudibility | null;
 		canvasEl?: HTMLCanvasElement | null;
 		/** Deck number for the testid. */
 		deckId?: number | null;
@@ -65,6 +69,7 @@
 		onpointerdown={onPointerDown}
 		onclick={onClick}
 		data-stem={stem}
+		data-audibility={audibility ?? undefined}
 		data-unavailable={unavailableTip !== null}
 		aria-disabled={unavailableTip !== null}
 		title={unavailableTip ?? `${stem} stem mini-waveform`}

@@ -1,0 +1,9 @@
+{
+  "bytes": 1024,
+  "measured_main": 515784,
+  "measured_with_pr": 515918,
+  "sha": "af052ef89c",
+  "date": "Wed 11 Nov 2026",
+  "reason": "branch af--idd-60f98cc8-issue-12218 (shell broker apply refusal) grows other-lazy by 134 B gzip over main.",
+  "payback": "none planned; backend-only broker guard with no intended frontend shrink on this surface"
+}

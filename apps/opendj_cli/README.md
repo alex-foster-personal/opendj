@@ -49,13 +49,35 @@ The packaged app asks for port 7700 first so the address survives a relaunch,
 and takes an OS-assigned port when 7700 is in use. A portless name would need
 port 80 and a privileged helper, so it is out of scope.
 
+## MyTag rename and delete
+
+These use the library modal's existing PATCH and DELETE `/api/v1/mytags/{name}`
+routes, with the same validation, refusal responses and undo history:
+
+```bash
+opendj track mytag-rename "Warm up" "Opening"
+opendj track mytag-rename "Opening" "Existing tag" --merge
+opendj track mytag-delete "Opening" --confirm --undo-session review
+opendj --lock PATH --json track mytag-rename "Warm up" "Opening"
+opendj track mytag-rename -- --old --new
+opendj api POST /api/v1/undo -H 'X-Undo-Session:review'
+```
+
+Deletion removes the tag from **every track** and requires the exact `--confirm`
+flag. Rename refuses an existing target unless `--merge` is explicit. Both verbs
+use undo session `opendj-cli` by default; `--undo-session SESSION` selects another
+nonempty session. Quote names containing spaces; use `--` before names beginning
+with a dash, placing options before it. Put global `--lock` before `track`.
+`--json` may precede `track` or follow the verb. Refusals print the server's body
+to stderr and return a nonzero exit code (409 conflict returns 4).
+
 ## CLI meta commands
 
 | Command | Purpose |
 |---------|---------|
 | `opendj status [--json]` | Lock-file origin, health, build-info (MCP `status` parity) |
 | `opendj client_errors [--since ISO] [--build-sha PREFIX] [--kind KIND] [--contains TEXT] [--limit N] [--untriaged]` | Browser errors the app recorded, filtered (AGENT-8304); `--json` is the MCP `client_errors` document: `{count, filters, errors: [{timestamp, build_sha, kind, message, event_id}]}` |
-| `opendj api METHOD PATH` | Raw HTTP to `/api/v1/*` only; refuses traversal and non-JSON 2xx bodies; exit codes: see `apps/opendj_cli/__init__.py` |
+| `opendj api METHOD PATH` | Raw HTTP to `/api/v1/*`, GET/HEAD `/api/sets` and `/api/sets/*`, and the exact recorder lifecycle POST routes below; refuses traversal and non-JSON 2xx bodies; exit codes: see `apps/opendj_cli/__init__.py` |
 | `opendj ingest stage PATH...` | Stage ingest uploads and conditionally start batch refresh (issue #12216); same HTTP flow as the ingest drop modal |
 | `opendj dj <tool>` | AutoDJ tools (AGENT-29), same JSON as the MCP tools below: `state`, `profile`, `windows`, `score`, `suggest`, `styles`, `propose`, `validate`, `schedule`, `amend`, plus `show` (a plan as a mix score, bar grid or JSON; offline); for whole sets `set-plan`, `set-show` (offline) and `set-next`; `try` renders and ranks candidate transitions (TRYER-11): `opendj dj try --out X --in Y -n 6 --json`, `opendj dj try pick JOB CAND --etag E`, `opendj dj try undo JOB --etag E` (the etag of the job document you reviewed) |
 
@@ -64,12 +86,38 @@ port 80 and a privileged helper, so it is out of scope.
 | Tool | Purpose |
 |------|---------|
 | `status` | Lock-file origin, health, build-info |
-| `app_state` | GET-only proxy to `/api/v1/*` |
+| `app_state` | GET-only proxy to `/api/v1/*`, `/api/sets` and `/api/sets/*` |
 | `command` | AGENT-03 bus dispatch with mirror deltas |
 | `library` | LIBM-11 library HTTP against the engine origin (`body` = JSON string) |
 | `ui_url` | Engine-served SPA URL for browser MCP (does not move the shell) |
 | `open_route` | Navigate the installed desktop shell to `/performance` |
 | `client_errors` | Browser errors, filtered by `since`, `build_sha` prefix, `kind`, `contains`, `limit`, `untriaged` (AGENT-8304); same document as `opendj --json client_errors` |
+
+### Recorder lifecycle (SETREC-12874)
+
+These shipped MCP tools call the same daemon routes as REC and return its
+status document, including ownership, recoverability and capture diagnostics.
+
+| Tool | Arguments | Daemon route |
+|------|-----------|--------------|
+| `recorder_status` | none | GET `/api/sets/recorder` |
+| `recorder_start` | required `source`; optional `session_id`, `device_name`, `ffmpeg_device_idx`, `sources` | POST `/api/sets/recorder/start` |
+| `recorder_stop` | required `session_id` | POST `/api/sets/recorder/{session_id}/stop` |
+| `recorder_recover` | required `session_id`, positive `expected_pid` | POST `/api/sets/recorder/{session_id}/recover` |
+
+Choose `source` explicitly: `master`, `loopback`, `external`, or `none`
+(tracklist only). External/loopback requires exactly one input name or
+nonnegative device index. Master requires the daemon's real page/master tap.
+Optional event `sources` are `djay_monitor`, `rb_history`, and `opendj_decks`;
+omitting them retains the daemon default, while `[]` disables event pollers.
+Session IDs use `YYYY-MM-DDTHH-MM-SS` with an optional `_N` suffix.
+
+Before recovery, read `recorder_status`, check `recoverable`, and pass the
+observed session ID and PID. A live or changed owner is refused; inspect
+status again instead of retrying with an automatically refreshed PID.
+Daemon refusals remain MCP errors with their `status_code` and complete
+`detail`, including validation lists. Capture transitional states are returned
+as reported by REC. Other `/api/sets` writes remain refused.
 
 ### AutoDJ tools (AGENT-29, AGENT-24)
 

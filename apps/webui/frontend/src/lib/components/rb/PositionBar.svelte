@@ -18,7 +18,7 @@
 
 <div class="position-bar" data-testid="trackify-position-bar" aria-label={label}>
 	<div
-		class="position-fill"
+		class="position-fill motion-essential"
 		style={`width: ${pct}%`}
 		title={`${Math.round(positionMs)} ms of ${durationMs ?? 'unknown'} ms`}
 	></div>
@@ -36,5 +36,14 @@
 		height: 100%;
 		background: var(--accent, #4ea1ff);
 		transition: width 120ms linear;
+	}
+
+	@media (prefers-reduced-motion: reduce) {
+		.position-fill {
+			transition-duration: 0.01ms;
+		}
+	}
+	:global(html[data-reduce-motion]) .position-fill {
+		transition-duration: 0.01ms;
 	}
 </style>

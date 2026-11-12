@@ -82,8 +82,14 @@ def copied(fixture_profile: Profile, fixture_canonical: list[CanonicalTrack], dr
     return drive_root
 
 
-def _verify(profile: Profile, canonical: list[CanonicalTrack], root: Path):
-    return verify_drive(profile=profile, canonical=canonical, drive_root=root)
+def _fake_uuid_lookup(_root: Path) -> str:
+    """The tmp_path volumes here have no diskutil UUID; bind receipts to VOLUME_ID's."""
+    return VOLUME_ID.removeprefix("vol:")
+
+
+def _verify(profile: Profile, canonical: list[CanonicalTrack], root: Path, *, real_diskutil: bool = False):
+    lookup = None if real_diskutil else _fake_uuid_lookup
+    return verify_drive(profile=profile, canonical=canonical, drive_root=root, volume_uuid_lookup=lookup)
 
 
 def _refused(receipt: object, root: Path, *, identity: str = VOLUME_ID) -> tuple[EjectRefused, RecordingEject]:
@@ -327,7 +333,7 @@ def test_disk_image_with_clean_receipt_is_ejected(fixture_profile, fixture_canon
     mount, whole = disk_image
     _copy_to(fixture_profile, fixture_canonical, mount)
     identity = _volume_uuid(mount)
-    report = _verify(fixture_profile, fixture_canonical, mount)
+    report = _verify(fixture_profile, fixture_canonical, mount, real_diskutil=True)
     receipt = eject_after_verify(report, volume_root=mount, volume_identity=identity, eject=_hdiutil_detach(whole))
     assert not _is_mounted(mount), "a verified disk image must not stay mounted"
     assert receipt.volume_identity == identity
@@ -340,7 +346,7 @@ def test_disk_image_with_failed_receipt_stays_mounted(fixture_profile, fixture_c
     mount, whole = disk_image
     _copy_to(fixture_profile, fixture_canonical, mount)
     breaker(mount)
-    report = _verify(fixture_profile, fixture_canonical, mount)
+    report = _verify(fixture_profile, fixture_canonical, mount, real_diskutil=True)
     with pytest.raises(EjectRefused):
         eject_after_verify(report, volume_root=mount, volume_identity=_volume_uuid(mount), eject=_hdiutil_detach(whole))
     assert _is_mounted(mount), "a failed verification must leave the image mounted"

@@ -21,6 +21,8 @@ from apps.lighting.contract import LIGHTING_FLAG_ID
 from apps.lighting.http import bind_lighting_runtime, router
 from apps.lighting.runtime import DeckFeed, FeedFrame, LightingRuntime, ReplayFeed
 from apps.lighting.sections import LightSection, SectionSpan, TrackMood
+from apps.lighting.show_map import list_scene_catalog, load_look_ids
+from apps.lighting.show_runtime import DeckPlan, ShowCue
 
 pytestmark = [pytest.mark.requirement("LIGHT-9863")]
 
@@ -211,3 +213,62 @@ def test_a_seek_back_does_not_double_beats() -> None:
         )
     assert first_pass == second_pass
     assert len(first_pass) == len(set(first_pass))
+
+
+@pytest.mark.requirement("LIGHT-11778")
+def test_scenes_is_409_naming_the_flag_when_off(tmp_path: Path) -> None:
+    """[if] flag off [then] GET scenes is 409 naming lighting.output, [else stop]."""
+    app, _runtime = _app(tmp_path, flag_on=False)
+    with TestClient(app) as client:
+        response = client.get("/api/v1/lighting/scenes")
+        assert response.status_code == 409
+        detail = response.json()["detail"]
+        assert detail["flag"] == "lighting.output"
+        assert "lighting.output" in detail["message"]
+
+
+@pytest.mark.requirement("LIGHT-11778")
+def test_scenes_lists_catalog_ids_when_on(tmp_path: Path) -> None:
+    """[if] flag on [then] GET scenes ids match looks_default.json, [else stop]."""
+    app, _runtime = _app(tmp_path, flag_on=True)
+    expected = [row["id"] for row in list_scene_catalog()]
+    with TestClient(app) as client:
+        response = client.get("/api/v1/lighting/scenes")
+        assert response.status_code == 200
+        body = response.json()
+        assert [row["id"] for row in body] == expected
+        assert load_look_ids() == frozenset(row["id"] for row in body)
+
+
+@pytest.mark.requirement("LIGHT-11778")
+def test_look_is_409_when_flag_off(tmp_path: Path) -> None:
+    """[if] flag off [then] GET look is 409, [else stop]."""
+    app, _runtime = _app(tmp_path, flag_on=False)
+    with TestClient(app) as client:
+        response = client.get("/api/v1/lighting/look")
+        assert response.status_code == 409
+
+
+@pytest.mark.requirement("LIGHT-11778")
+def test_look_returns_scene_and_phrase_after_feed(tmp_path: Path) -> None:
+    """[if] runtime processed a deck frame [then] look has scene_id and phrase_label, [else stop]."""
+    sections = (
+        SectionSpan(0, 1000, LightSection.INTRO, TrackMood.MID, "intro-phrase"),
+        SectionSpan(1000, 4000, LightSection.DROP, TrackMood.HIGH, "drop-phrase"),
+    )
+    plan = DeckPlan("ta", (ShowCue(0, "wash_warm", 0),), (0, 32))
+    sample = _sample("A", 1500.0)
+    frame = FeedFrame(
+        host_time_ns=sample.host_time_ns,
+        decks=(DeckFeed(sample=sample, grid=GRID, sections=sections, plan=plan),),
+        weights={"A": 1.0},
+    )
+    runtime = LightingRuntime()
+    runtime.process(frame)
+    app, _ = _app(tmp_path, flag_on=True, runtime=runtime)
+    with TestClient(app) as client:
+        response = client.get("/api/v1/lighting/look")
+        assert response.status_code == 200
+        body = response.json()
+        assert body["scene_id"] == "wash_warm"
+        assert body["phrase_label"] == "drop-phrase"

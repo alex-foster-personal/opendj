@@ -61,7 +61,9 @@ export type UpdateStatus =
 	| 'endpoint-refused'
 	| 'manifest-malformed'
 	| 'platform-unsupported'
-	| 'identity-unavailable';
+	| 'identity-unavailable'
+	| 'shell-broker-unavailable'
+	| 'shell-broker-invalid';
 
 /** Mirrors UpdateCheckOut in apps/engine_core/update_channel.py. */
 export interface UpdateCheck {

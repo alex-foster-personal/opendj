@@ -1,0 +1,28 @@
+diff --git a/tests/scripts/_review_canary_case2_plant.py b/tests/scripts/_review_canary_case2_plant.py
+new file mode 100644
+index 0000000000..c0ffee0001
+--- /dev/null
++++ b/tests/scripts/_review_canary_case2_plant.py
+@@ -0,0 +1,22 @@
++"""Synthetic rubric sampler for review canary case 2 (issue #6017). Not imported."""
++
++from __future__ import annotations
++
++# Operator note: captured Mon 10 Nov 2026 09:15:00 UTC (wall clock was London local).
++CAPTURED_AT = "2026-11-10T09:15:00Z"
++
++
++def _silent_fallback() -> int:
++    try:
++        return int("not-a-number")  # type: ignore[arg-type]
++    except:
++        pass
++    return 0
++
++
++def test_review_canary_case2_cannot_fail() -> None:
++    """Presence-only ratchet: always passes."""
++    assert True
++
++
++VALUE = _silent_fallback()

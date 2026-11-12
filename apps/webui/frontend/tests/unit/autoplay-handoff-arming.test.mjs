@@ -206,6 +206,29 @@ describe('[PLAY-22] a follower that will not clear is not the candidate\'s fault
 		assert.doesNotMatch(branch, /_unplayableIds/, 'a deck that will not clear must not quarantine the candidate');
 		assert.match(branch, /_claimedIds\.delete\(nextId\)/, 'the candidate must stay pickable');
 	});
+
+	it('SHAPE GUARD: every catch branch routes follower-unload streak through nextFollowerUnloadStreak (#5691)', () => {
+		const source = readFileSync(
+			fileURLToPath(new URL('../../src/lib/rb/auto-play.svelte.ts', import.meta.url)),
+			'utf8'
+		);
+		const catchStart = source.indexOf('} catch (error: unknown) {');
+		assert.notEqual(catchStart, -1, 'handoff catch block missing');
+		const armedGuard = source.indexOf('if (!_armedAt(generation)) return;', catchStart);
+		const helperCall = source.indexOf('nextFollowerUnloadStreak(_followerUnloadStreak', catchStart);
+		const retryableBranch = source.indexOf('if (!handoffFailureIsRetryable(phase))', catchStart);
+		assert.ok(armedGuard < helperCall, 'streak helper must run after the dead-arming guard');
+		assert.ok(helperCall < retryableBranch, 'commit and load must route through the streak helper');
+		assert.doesNotMatch(source, /_followerUnloadFailures/, 'bare counter must be gone');
+		assert.match(
+			source,
+			/await _handoff\([\s\S]*?_followerUnloadStreak = null;/,
+			'success clears the streak'
+		);
+		const armEffect = source.indexOf('$effect(() => {');
+		const streakResetInArm = source.indexOf('_followerUnloadStreak = null;', armEffect);
+		assert.notEqual(streakResetInArm, -1, 'arm toggle must reset the streak');
+	});
 });
 
 // ----- live: the real controller, switched off through the agent order bus ----

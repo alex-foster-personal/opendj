@@ -1,0 +1,9 @@
+{
+  "bytes": 1024,
+  "measured_main": 474593,
+  "measured_with_pr": 475076,
+  "sha": "aace0e3b30",
+  "date": "Sun 8 Nov 2026",
+  "reason": "PR #9679 (SideMixerStrip MX-2 plus preflight identity wiring on this branch) grows the other-lazy surface. Measured: CI bundle check of aace0e3b30, +483 B gzip; ceiled to KiB.",
+  "payback": "none planned; the growth is the feature's own code on this surface"
+}

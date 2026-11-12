@@ -1,6 +1,9 @@
 """WINSTATE-01: ``opendj window state|reset`` reads and clears the shell's saved geometry.
 
 [if] `opendj window state|reset` does not read or clear the shell's saved geometry [then] a bad window position cannot be inspected or recovered without the UI, [else stop].
+
+SECONDSCREEN-11715: [if] `opendj window state` does not list the second-screen window's own geometry
+[then] the library window's saved placement cannot be inspected, [else stop].
 """
 
 from __future__ import annotations
@@ -13,7 +16,7 @@ import pytest
 from apps.opendj_cli import EXIT_CONFIRMED, EXIT_FAILED
 from apps.opendj_cli.__main__ import main
 
-pytestmark = pytest.mark.requirement("WINSTATE-01")
+pytestmark = [pytest.mark.requirement("WINSTATE-01"), pytest.mark.requirement("SECONDSCREEN-11715")]
 
 SAVED = {
     "version": 1,
@@ -40,14 +43,41 @@ def test_state_reads_the_file_beside_the_lock(tmp_path: Path, capsys: pytest.Cap
     payload = json.loads(capsys.readouterr().out)
     assert code == EXIT_CONFIRMED, "if opendj window state fails on a saved file then broken"
     assert payload["saved"] is True
-    assert payload["monitors"] == SAVED["monitors"], "if per-monitor geometry is not reported then broken"
+    assert payload["windows"]["main"]["monitors"] == SAVED["monitors"], (
+        "if per-monitor geometry is not reported then broken"
+    )
+    assert payload["windows"]["second-screen"] == {"last_monitor": None, "monitors": {}}
+
+
+def test_state_lists_each_window_label_with_its_own_geometry(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    desk = {"x_offset_pt": 20.0, "y_offset_pt": 30.0, "width_pt": 1400.0, "height_pt": 900.0, "maximized": False}
+    document = {
+        "version": 2,
+        "windows": {
+            "main": {"last_monitor": SAVED["last_monitor"], "monitors": SAVED["monitors"]},
+            "second-screen": {"last_monitor": "Desk|2560x1440|@1.00", "monitors": {"Desk|2560x1440|@1.00": desk}},
+        },
+    }
+    (tmp_path / "window-state.json").write_text(json.dumps(document), encoding="utf-8")
+    assert main(["--json", "--lock", str(_lock(tmp_path)), "window", "state"]) == EXIT_CONFIRMED
+    payload = json.loads(capsys.readouterr().out)
+    assert payload["windows"]["main"]["monitors"] == SAVED["monitors"]
+    assert payload["windows"]["second-screen"]["monitors"] == {"Desk|2560x1440|@1.00": desk}, (
+        "if the second-screen geometry is not listed then broken"
+    )
+    assert main(["--lock", str(_lock(tmp_path)), "window", "state"]) == EXIT_CONFIRMED
+    text = capsys.readouterr().out
+    assert "main:" in text and "second-screen:" in text and "1400x900" in text
 
 
 def test_state_before_first_save_is_empty_not_an_error(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
     code = main(["--json", "--lock", str(_lock(tmp_path)), "window", "state"])
     payload = json.loads(capsys.readouterr().out)
     assert code == EXIT_CONFIRMED
-    assert payload["saved"] is False and payload["monitors"] == {}
+    assert payload["saved"] is False
+    assert all(payload["windows"][label]["monitors"] == {} for label in ("main", "second-screen"))
 
 
 def test_reset_removes_the_file(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:

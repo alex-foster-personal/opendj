@@ -71,7 +71,13 @@ const FLAGS_BODY = {
 
 const ENTITLEMENTS_BODY = {
 	plan: { plan_id: 'free', label: 'Free' },
-	features: []
+	features: [],
+	provider: null,
+	refusal: {
+		code: 'plan_refusal',
+		message: 'not included in your plan',
+		ui_title: 'not included in your plan - see your account for what is included'
+	}
 };
 
 test('account overlay shows Subscribe and Manage only for a Polar hosted hub', async () => {

@@ -1,7 +1,6 @@
 #!/usr/bin/env bash
-# Download the CI workflow's shared production frontend artifact for this commit,
-# or build it locally when CI's own "production frontend build" job has not
-# reached a state that will land the artifact within budget.
+# Download the CI workflow's shared production frontend artifact from R2 for
+# this commit, or use the validated local build when the producer permits it.
 #
 # Measured Mon 14 Sep 2026 ((private path)): under a deep queue, 15
 # of 17 failed E2E `gate` jobs burned their whole 900s poll budget because
@@ -9,8 +8,10 @@
 # runner-minutes of vacuous red. This script now reads that job's live state
 # via `gh api` and decides:
 #   - artifact already published            -> download it from R2 (unchanged)
-#   - job queued / no CI run yet / budget expired -> build locally at once
-#   - job in_progress or completed success   -> keep polling for the artifact
+#   - job queued / no CI run yet             -> build locally at once
+#   - job in_progress                       -> poll within budget, then refuse
+#   - job completed success                 -> poll through publication grace,
+#                                              then build locally if absent
 #   - job completed failure or timed_out     -> refuse, never rebuild over
 #     a real CI failure
 #   - job completed cancelled or skipped     -> UNMEASURED-upstream local build
@@ -213,12 +214,15 @@ while true; do
             ;;
         running)
             success_deadline=""
-            # The job is on track; keep polling for the shared artifact below.
+            if [ "$(date +%s)" -ge "$deadline" ]; then
+                echo "::error::${MAX_WAIT_S}s budget expired waiting on CI's '${CI_JOB_NAME}' job for ${SHA} (last observed state: running); refusing to build locally"
+                exit 1
+            fi
+            active_deadline="$deadline"
             ;;
         success)
-            # A completed producer has no further work that can publish this
-            # artifact. Give GitHub's artifact service a short, bounded grace period
-            # before using the verified local-build path instead of the 900s budget.
+            # Allow R2 publication a bounded grace after observed success,
+            # independent of the running-job budget, then use the verified build.
             if [ -z "$success_deadline" ]; then
                 success_deadline=$(($(date +%s) + SUCCESS_GRACE_S))
             fi
@@ -226,6 +230,7 @@ while true; do
                 _build_locally "CI's '${CI_JOB_NAME}' job for ${SHA} succeeded but its artifact was not published after ${SUCCESS_GRACE_S}s"
                 exit 0
             fi
+            active_deadline="$success_deadline"
             ;;
         *)
             echo "::error::unexpected CI job state '${CI_JOB_STATE}' for ${SHA}"
@@ -233,9 +238,13 @@ while true; do
             ;;
     esac
 
-    if [ "$(date +%s)" -ge "$deadline" ]; then
-        _build_locally "${MAX_WAIT_S}s budget expired waiting on CI's '${CI_JOB_NAME}' job for ${SHA} (last observed state: ${CI_JOB_STATE})"
-        exit 0
+    remaining_s=$((active_deadline - $(date +%s)))
+    if [ "$remaining_s" -le 0 ]; then
+        continue
     fi
-    sleep "$POLL_S"
+    sleep_s="$POLL_S"
+    if [ "$sleep_s" -gt "$remaining_s" ]; then
+        sleep_s="$remaining_s"
+    fi
+    sleep "$sleep_s"
 done

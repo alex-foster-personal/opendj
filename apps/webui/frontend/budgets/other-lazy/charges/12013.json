@@ -1,0 +1,9 @@
+{
+  "bytes": 1024,
+  "measured_main": 514787,
+  "measured_with_pr": 514918,
+  "sha": "abad6cb2ae",
+  "date": "Wed 11 Nov 2026",
+  "reason": "PR #12013 grows the other-lazy surface; measured +131 B gzip over main; ceiled to KiB.",
+  "payback": "none planned; the growth is the feature's own code on this surface"
+}

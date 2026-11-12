@@ -120,6 +120,15 @@ test('nothing loads until the boot scheduler releases the task', async () => {
 	assert.equal(loads, 1);
 });
 
+test('[if] shell boot loads [then] it registers comment-pins before mounting, [else stop]', () => {
+	const src = readFileSync(
+		new URL('../../src/lib/rb/feedback-pin-shell-boot.ts', import.meta.url),
+		'utf8'
+	);
+	assert.match(src, /comment-pins\/comment-pins-element/);
+	assert.match(src, /defineCommentPinsElement/);
+});
+
 test('the layout turns a failure into an error toast and a marked slot', () => {
 	const layout = readFileSync(new URL('../../src/routes/+layout.svelte', import.meta.url), 'utf8');
 	const call = layout.slice(layout.indexOf('deferFeedbackPinShell('), layout.indexOf('const id = setInterval'));

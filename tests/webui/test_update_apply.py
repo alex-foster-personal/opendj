@@ -6,8 +6,9 @@ import asyncio
 import logging
 
 import httpx
+import pytest
 import yaml
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from httpx import ASGITransport, AsyncClient
 
 from apps.engine_core.build_info import BUILD_IDENTITY_STATE_ATTR, BuildIdentity, BuildInfoOut
@@ -18,8 +19,14 @@ from apps.engine_core.update_channel import (
     add_update_apply_route,
     add_update_check_route,
 )
+from apps.webui.server.app import create_app
+from apps.webui.server.backend import InMemoryBackend
 from apps.webui.server.routes.commands import router as commands_router
-from apps.webui.server.shell_commands import shell_broker
+from apps.webui.server.shell_commands import (
+    SHELL_COMMAND_BROKER_STATE_ATTR,
+    install_shell_command_broker,
+    shell_broker,
+)
 
 KEY = "darwin-aarch64"
 RUNNING_VERSION = "0.1.0"
@@ -60,11 +67,17 @@ def _feed(version: str) -> httpx.Response:
     return httpx.Response(200, text=yaml.safe_dump(_manifest(version)))
 
 
-def _app(identity: BuildIdentity) -> FastAPI:
+def _app_without_broker(identity: BuildIdentity) -> FastAPI:
     app = FastAPI()
     setattr(app.state, BUILD_IDENTITY_STATE_ATTR, identity)
     add_update_check_route(app)
     add_update_apply_route(app)
+    return app
+
+
+def _app(identity: BuildIdentity) -> FastAPI:
+    app = _app_without_broker(identity)
+    install_shell_command_broker(app)
     app.include_router(commands_router, prefix="/api/v1")
     return app
 
@@ -81,6 +94,56 @@ def _patch_channel(monkeypatch, transport: httpx.MockTransport) -> None:
 
     monkeypatch.setattr(module.httpx, "Client", client_factory)
     monkeypatch.setattr(module, "platform_key", lambda *a, **k: KEY)
+
+
+@pytest.mark.requirement("CODE-12218")
+def test_apply_refuses_missing_shell_broker_with_409(monkeypatch) -> None:
+    """[if] apply without shell broker [then] 409 shell-broker-unavailable, [else stop]."""
+    transport = httpx.MockTransport(
+        lambda request: _feed("0.1.1") if request.url == UPDATE_ENDPOINT else httpx.Response(404)
+    )
+    _patch_channel(monkeypatch, transport)
+
+    async def run() -> None:
+        app = _app_without_broker(_identity())
+        assert not hasattr(app.state, SHELL_COMMAND_BROKER_STATE_ATTR)
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+            apply = await client.post(UPDATE_APPLY_PATH)
+            assert apply.status_code == 409
+            refused = apply.json()
+            assert refused["status"] == "shell-broker-unavailable"
+            assert isinstance(refused["detail"], str) and refused["detail"] != ""
+
+    asyncio.run(run())
+
+
+@pytest.mark.requirement("CODE-12218")
+def test_create_app_installs_the_shell_broker() -> None:
+    """[if] the shipped create_app (the engine composes it) has no shell broker [then] restart to update 409s for users, [else stop]."""
+    app = create_app(backend=InMemoryBackend(), bind_host="127.0.0.1", hostname="test-host", mount_frontend=False)
+    # shell_broker is the reader every apply and install route uses; it raises when the broker is absent.
+    assert shell_broker(Request({"type": "http", "app": app})).pending_count() == 0
+
+
+@pytest.mark.requirement("CODE-12218")
+def test_apply_refuses_invalid_shell_broker_with_409(monkeypatch) -> None:
+    """[if] apply with invalid shell broker state [then] 409 shell-broker-invalid, [else stop]."""
+    transport = httpx.MockTransport(
+        lambda request: _feed("0.1.1") if request.url == UPDATE_ENDPOINT else httpx.Response(404)
+    )
+    _patch_channel(monkeypatch, transport)
+
+    async def run() -> None:
+        app = _app_without_broker(_identity())
+        app.state.shell_command_broker = object()
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+            apply = await client.post(UPDATE_APPLY_PATH)
+            assert apply.status_code == 409
+            refused = apply.json()
+            assert refused["status"] == "shell-broker-invalid"
+            assert isinstance(refused["detail"], str) and refused["detail"] != ""
+
+    asyncio.run(run())
 
 
 def test_apply_returns_202_and_shell_next_claims_apply_update(monkeypatch) -> None:

@@ -32,7 +32,7 @@ test('no raw fetch call remains in the component', () => {
 
 test('the suggest-next call goes through the generated client with the schema path', () => {
 	assert.match(source, /api\.POST\('\/api\/v1\/copilot\/suggest-next'/);
-	assert.match(source, /import \{ ApiError, api, unwrap \} from '\$lib\/api\/client';/);
+	assert.match(source, /import \{ ApiError, api, unwrap \} from '\$lib\/api\/rb-http';/);
 	assert.doesNotMatch(source, /RB_API_BASE/);
 });
 

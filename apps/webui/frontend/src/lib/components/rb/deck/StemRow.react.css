@@ -23,6 +23,18 @@
 	padding: 1px 8px;
 	cursor: pointer;
 }
+.stems .chip {
+	position: relative;
+}
+/* STEMPERF-11699: the stem level, shown only off unity. */
+.stems .chip .level {
+	position: absolute;
+	left: 0;
+	right: 0;
+	bottom: 0;
+	background: var(--chip-color);
+	pointer-events: none;
+}
 .stems .chip.muted {
 	background: transparent;
 	color: var(--rb-text-dim);

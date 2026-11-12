@@ -146,7 +146,7 @@ export const EnvOverride: Story = {
 	args: derive(status(), config({ hub_url_source: 'env', enabled_source: 'env' }))
 };
 
-/** Tracks waiting on a content hash: the backlog note shows. */
+/** Tracks waiting on a content hash: enrichment note sits in the secondary block, not the headline strip. */
 export const IdentityBacklog: Story = {
 	args: { ...derive(status({ hash_pending: 37 }), config()), backlogNote: identityBacklogNote(37) }
 };

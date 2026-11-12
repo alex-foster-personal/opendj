@@ -12,7 +12,7 @@
  */
 
 import type { components } from '../api-types';
-import { ApiError, api, unwrap } from '../api/client';
+import { ApiError, api, unwrap } from '../api/rb-http';
 import { RbApiError } from './api-rb-error';
 import type { TagCatalogEntry, TagTypeRow } from './tag-display';
 

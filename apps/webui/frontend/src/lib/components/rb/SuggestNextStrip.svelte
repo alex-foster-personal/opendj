@@ -43,7 +43,7 @@
 	// untouched. The copilot router answers errors as TOP-LEVEL
 	// {error, message, ...} bodies (ErrorBody, not the detail envelope),
 	// so the mapping below reads them off ApiError.body.
-	import { ApiError, api, unwrap } from '$lib/api/client';
+	import { ApiError, api, unwrap } from '$lib/api/rb-http';
 	import { DECK_IDS } from '$lib/player/constants';
 	import { getDeckState } from '$lib/player/state.svelte';
 	import { pushPlayed } from '$lib/rb/peak-play-timeline';

@@ -110,7 +110,8 @@ interface WaveDragTarget {
 
 export interface LatestSeekDispatcher {
 	readonly pending: boolean;
-	request(positionMs: number): Promise<void>;
+	/** `pressT0Ms` is set only on the gesture target that should record seek-presented latency. */
+	request(positionMs: number, pressT0Ms?: number): Promise<void>;
 }
 
 function _assertFinite(name: string, value: number): void {
@@ -141,7 +142,9 @@ export function waveClickTargetMs(target: WaveClickTarget): number {
 	// The same drawable column the playhead core is painted on, so a click on the
 	// visible core seeks to the place it shows, including the exact end.
 	if (!Number.isFinite(target.playheadFrac) || target.playheadFrac < 0 || target.playheadFrac > 1) {
-		throw new RangeError(`waveClickTargetMs: playheadFrac must be within 0..1, got ${target.playheadFrac}`);
+		throw new RangeError(
+			`waveClickTargetMs: playheadFrac must be within 0..1, got ${target.playheadFrac}`
+		);
 	}
 	const playheadX = playheadCenterX(target.widthPx, target.playheadFrac);
 	const offsetMs = ((target.pointerX - playheadX) / pixelsPerSecond) * 1000;
@@ -176,21 +179,28 @@ export function waveDragTargetMs(target: WaveDragTarget): number {
 	return _clampToTrack(target.originPositionMs - draggedMs, target.durationMs);
 }
 
+type SeekDispatch = (positionMs: number, pressT0Ms?: number) => Promise<void>;
+
 class _LatestSeekDispatcher implements LatestSeekDispatcher {
 	private drainPromise: Promise<void> | null = null;
-	private queuedPositionMs: number | null = null;
+	private queued: { positionMs: number; pressT0Ms?: number } | null = null;
 
-	constructor(private readonly dispatch: (positionMs: number) => Promise<void>) {}
+	constructor(private readonly dispatch: SeekDispatch) {}
 
 	get pending(): boolean {
-		return this.drainPromise !== null || this.queuedPositionMs !== null;
+		return this.drainPromise !== null || this.queued !== null;
 	}
 
-	request(positionMs: number): Promise<void> {
+	request(positionMs: number, pressT0Ms?: number): Promise<void> {
 		if (!Number.isFinite(positionMs) || positionMs < 0) {
 			throw new RangeError(`positionMs must be finite and non-negative, got ${positionMs}`);
 		}
-		this.queuedPositionMs = positionMs;
+		if (pressT0Ms !== undefined && (!Number.isFinite(pressT0Ms) || pressT0Ms < 0)) {
+			throw new RangeError(
+				`pressT0Ms must be finite and non-negative when provided, got ${pressT0Ms}`
+			);
+		}
+		this.queued = { positionMs, ...(pressT0Ms === undefined ? {} : { pressT0Ms }) };
 		if (this.drainPromise === null) {
 			const drain = this._drain();
 			const tracked = drain.finally(() => {
@@ -203,20 +213,18 @@ class _LatestSeekDispatcher implements LatestSeekDispatcher {
 
 	private async _drain(): Promise<void> {
 		try {
-			while (this.queuedPositionMs !== null) {
-				const positionMs = this.queuedPositionMs;
-				this.queuedPositionMs = null;
-				await this.dispatch(positionMs);
+			while (this.queued !== null) {
+				const { positionMs, pressT0Ms } = this.queued;
+				this.queued = null;
+				await this.dispatch(positionMs, pressT0Ms);
 			}
 		} catch (error) {
-			this.queuedPositionMs = null;
+			this.queued = null;
 			throw error;
 		}
 	}
 }
 
-export function createLatestSeekDispatcher(
-	dispatch: (positionMs: number) => Promise<void>
-): LatestSeekDispatcher {
+export function createLatestSeekDispatcher(dispatch: SeekDispatch): LatestSeekDispatcher {
 	return new _LatestSeekDispatcher(dispatch);
 }

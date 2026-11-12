@@ -87,3 +87,75 @@ test('surfaces an explicit HTTP failure', async () => {
 
 	await assert.rejects(() => api.getSpotifyPendingTracks(PLAYLIST_ID), /error 404/i);
 });
+
+test('POST import uses the colon route and confirm body', async () => {
+	let url = '';
+	let postBody = null;
+	const playlistId = 'InventedPlaylistId012345678901';
+	globalThis.fetch = async (input, init) => {
+		url = typeof input === 'string' ? input : input.url;
+		const raw = input instanceof Request ? await input.clone().text() : String(init?.body ?? '');
+		postBody = raw === '' ? null : JSON.parse(raw);
+		return Response.json(
+			{
+				running: true,
+				phase: 'running',
+				playlist_id: playlistId,
+				started_at: 1,
+				finished_at: null,
+				error: null,
+				error_code: null,
+				matched_count: null,
+				pending_count: null,
+				track_count: null,
+				playlist_name: null
+			},
+			{ status: 202 }
+		);
+	};
+	const job = await api.startSpotifyImport(playlistId, {
+		confirm_playlist_id: playlistId
+	});
+	assert.match(
+		url,
+		new RegExp(`/api/v1/spotify/playlists/${encodeURIComponent(playlistId)}:import$`)
+	);
+	assert.deepEqual(postBody, {
+		confirm_playlist_id: playlistId,
+		force: false
+	});
+	assert.equal(job.phase, 'running');
+});
+
+test('import POST maps SHARE_READ_ONLY to SpotifyShareReadOnlyError', async () => {
+	globalThis.fetch = async () =>
+		Response.json(
+			{ detail: { code: 'SHARE_READ_ONLY', message: 'read-only share host' } },
+			{ status: 403 }
+		);
+	await assert.rejects(
+		() =>
+			api.startSpotifyImport('InventedPlaylistId012345678901', {
+				confirm_playlist_id: 'InventedPlaylistId012345678901'
+			}),
+		(err) => err.name === 'SpotifyShareReadOnlyError'
+	);
+});
+
+test('import status rejects a bad phase', async () => {
+	globalThis.fetch = async () =>
+		Response.json({
+			running: false,
+			phase: 'bogus',
+			playlist_id: null,
+			started_at: null,
+			finished_at: null,
+			error: null,
+			error_code: null,
+			matched_count: null,
+			pending_count: null,
+			track_count: null,
+			playlist_name: null
+		});
+	await assert.rejects(() => api.getSpotifyImportStatus(), /phase/);
+});

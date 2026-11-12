@@ -615,10 +615,13 @@ def _routers_under(package: ModuleType) -> list[APIRouter]:
 
 
 def _mount_api_routers(app: FastAPI) -> None:
+    # ``label_tasks`` (issue #11193) mounts via ``MOUNT_UNDER_API_PREFIX`` in
+    # ``_routers_under`` below, next to the stems track routes its clips use.
     # Register before /api/v1/{stable_id} so GET /api/v1/sets lists sessions, not a track.
     app.include_router(sets_router, prefix=SETS_API_PREFIX)
     app.include_router(sets_router, prefix=SETS_V1_API_PREFIX)
     api_prefix = "/api/v1"
+    # routes.sample_helper (POST /sample-helper/download) mounts via _routers_under.
     for router in (
         *_routers_under(routes_package),
         library_edits_routes.router,

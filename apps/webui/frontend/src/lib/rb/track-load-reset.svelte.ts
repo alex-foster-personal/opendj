@@ -75,7 +75,11 @@ export function closeTrackLoadReset(): void {
 }
 
 /** Second click on the same chip closes the panel. A different chip moves it. */
-export function toggleTrackLoadResetPanel(id: TrackLoadResetId, el: HTMLElement, deck: DeckId): void {
+export function toggleTrackLoadResetPanel(
+	id: TrackLoadResetId,
+	el: HTMLElement,
+	deck: DeckId
+): void {
 	if (open && trigger === el) {
 		open = false;
 		return;

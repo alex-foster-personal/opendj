@@ -8,6 +8,7 @@
 	// existing grid-provenance cache for where the beatgrid came from. A
 	// failed read is shown with its reason, never as an empty record.
 	import { untrack } from 'svelte';
+	import { focusTrap } from '$lib/keyboard/focus-trap';
 	import { getTrack } from '$lib/api';
 	import { deckStates } from '$lib/rb/audio-engine.svelte';
 	import { fetchTrackPlays } from '$lib/plays/play-counter';
@@ -68,10 +69,6 @@
 			: libraryGridProvenance(gridProvenanceFor(stableId))
 	);
 
-	$effect(() => {
-		panelEl?.focus();
-	});
-
 	function onWindowKeyDown(e: KeyboardEvent): void {
 		if (e.key === 'Escape') onclose();
 	}
@@ -96,6 +93,7 @@
 	data-testid="track-info-overlay"
 	tabindex="-1"
 	bind:this={panelEl}
+	use:focusTrap={{ initialFocus: 'self' }}
 >
 	<header>
 		{#if deckId === null}

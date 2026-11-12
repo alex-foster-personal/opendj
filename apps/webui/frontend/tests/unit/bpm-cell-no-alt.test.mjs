@@ -68,7 +68,7 @@ it('the BPM cell template prints bpmCellText and no literal "alt"', () => {
 	assert.notEqual(start, -1, 'no BPM cell in TrackTable');
 	const td = table.slice(table.lastIndexOf('<td', start), table.indexOf('</td>', start));
 	assert.doesNotMatch(td, />\s*alt\s*</, 'BPM cell prints the word alt');
-	assert.match(td, /bpmCellText\(row\)\.text/, 'BPM cell does not render through bpmCellText');
+	assert.match(td, /bpmCellText\(row\)\s*\.text/, 'BPM cell does not render through bpmCellText');
 });
 
 it('the BPM hover never claims an exact BPM the cell calls missing (review P2, PR #7483)', async () => {

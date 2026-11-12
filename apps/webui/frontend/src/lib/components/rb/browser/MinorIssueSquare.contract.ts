@@ -3,7 +3,13 @@ import { expect, within } from 'storybook/test';
 // Structural copy of MinorIssue (lib/rb/track-minor-issues.ts): importing that
 // module, even for a type, drags pane-contract.svelte.ts and its runes into tsc.
 type MinorIssue = {
-	id: 'not-on-cloud' | 'low-quality' | 'missing-genre' | 'stems-failed' | 'no-lyrics';
+	id:
+		| 'not-on-cloud'
+		| 'low-quality'
+		| 'missing-genre'
+		| 'stems-failed'
+		| 'remote-stems-not-run'
+		| 'no-lyrics';
 	label: string;
 };
 

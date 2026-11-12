@@ -1,0 +1,6 @@
+{
+  "pr": 0,
+  "head_sha": "0000000000000000000000000000000000000000",
+  "title": "test(review-canary): rubric sampler case 2",
+  "body": "Synthetic PR body for review canary case 2. Plants a mislabeled UTC timestamp, a test that cannot fail, and a bare except that passes."
+}

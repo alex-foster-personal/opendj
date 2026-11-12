@@ -5,6 +5,7 @@
  * module only asks the engine to bring the stored facts up to date. CLI twin:
  * `opendj track quality-scan`.
  */
+import { isPageGoingAway } from '$lib/api/lifecycle-abort';
 import { API_BASE } from '$lib/api/base';
 import { requestCoalescer, type Coalescer } from '$lib/api/request-coalescer';
 import { bootScheduler } from '$lib/rb/boot-scheduler';
@@ -41,6 +42,10 @@ export function ensureAudioQualityScan(): Promise<void> {
 				_scanAttempts = 0;
 			})
 			.catch((error: unknown) => {
+				if (isPageGoingAway()) {
+					_scanRequested = null;
+					return;
+				}
 				_scanAttempts += 1;
 				console.error(
 					`[audio-quality] scan request failed (attempt ${_scanAttempts} of ${SCAN_RETRY_LIMIT})`,

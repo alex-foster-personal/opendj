@@ -83,6 +83,7 @@ test('createPaneStore defaults match the blank pane', () => {
 	assert.equal(p.sort_key, null);
 	assert.equal(p.sort_dir, 1);
 	assert.equal(p.truncated, false);
+	assert.equal(p.match_total, null);
 	assert.equal(p.scroll_top, 0);
 	assert.equal(p.etag, '');
 });
@@ -102,6 +103,15 @@ test('completeLoad persists the playlist etag; beginLoad resets it for the next 
 	const allTracksSeq = p.beginLoad('all', 'All Tracks');
 	assert.equal(p.completeLoad(allTracksSeq, [_row()], false), true);
 	assert.equal(p.etag, '');
+});
+
+test('completeLoad optional match_total; beginLoad clears it', () => {
+	const p = contract.createPaneStore();
+	const seq = p.beginLoad('sl-1', 'Rule', 'smartlist');
+	assert.equal(p.completeLoad(seq, [_row(), _row({ stable_id: 'b', order: 2 })], true, '', 5000), true);
+	assert.equal(p.match_total, 5000);
+	p.beginLoad('sl-2', 'Other', 'smartlist');
+	assert.equal(p.match_total, null);
 });
 
 test('beginLoad records smartlist kind while preserving normal defaults', () => {
@@ -323,6 +333,22 @@ test('filterRows: case-insensitive match over title/artist/comments/key and rb_m
 	);
 });
 
+test('filterRows: album loose and quoted exact predicates', () => {
+	const rows = [
+		_row({ stable_id: 'hit', album: 'Midnight Sessions' }),
+		_row({ stable_id: 'miss', album: 'Afternoon Sun' })
+	];
+	assert.deepEqual(
+		contract.filterRows(rows, 'album:~night', false).map((r) => r.stable_id),
+		['hit']
+	);
+	assert.deepEqual(
+		contract.filterRows(rows, 'album:"Midnight Sessions"', false).map((r) => r.stable_id),
+		['hit']
+	);
+	assert.deepEqual(contract.filterRows(rows, 'midnight', false).map((r) => r.stable_id), ['hit']);
+});
+
 test('filterRows: genre: strict token vs genre:~ loose substring', () => {
 	const rows = [
 		_row({ stable_id: 'exact', genre: 'House, Disco' }),
@@ -485,12 +511,25 @@ test('makeClientRowProvider live-tracks its source closures', () => {
 	assert.equal(provider.rows.length, 1);
 	assert.equal(provider.total, 1);
 	assert.equal(provider.truncated, false);
+	assert.equal(provider.matchSnapshot, null);
 
 	rows = [_row({ stable_id: 'a' }), _row({ stable_id: 'b' }), _row({ stable_id: 'c' })];
 	truncated = true;
 	assert.equal(provider.rows.length, 3); // getters re-read, no snapshot
 	assert.equal(provider.total, 3);
 	assert.equal(provider.truncated, true);
+});
+
+test('makeClientRowProvider optional matchSnapshot tracks loaded vs total', () => {
+	let rows = [_row()];
+	const provider = contract.makeClientRowProvider(
+		() => rows,
+		() => true,
+		() => ({ loaded: rows.length, total: 5000 })
+	);
+	assert.deepEqual(provider.matchSnapshot, { loaded: 1, total: 5000 });
+	rows = [_row(), _row({ stable_id: 'x', order: 2 })];
+	assert.deepEqual(provider.matchSnapshot, { loaded: 2, total: 5000 });
 });
 
 test('fetchWindow resolves rows[start, start+count) and clamps at the end', async () => {

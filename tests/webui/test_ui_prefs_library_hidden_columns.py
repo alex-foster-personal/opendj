@@ -3,7 +3,8 @@
 The track table header's right-click chooser drives this key, so PUT
 /api/v1/ui-prefs is the programmatic twin of every checkbox in it.
 
-- [if] a fresh install GETs ui-prefs [then] library_hidden_columns is [], [else stop].
+- [if] a fresh install GETs ui-prefs [then] library_hidden_columns hides filename and location, [else stop].
+- [if] filename or location is PUT hidden [then] it persists through the next GET, [else stop].
 - [if] a hidden-column list is PUT [then] it lands in ui-prefs.json in table order, [else stop].
 - [if] an unknown, repeated or unhashable id is sent or stored [then] the answer is 422, [else stop].
 - [if] the server and browser column lists differ [then] fail, [else stop].
@@ -47,9 +48,11 @@ def prefs_client(tmp_path: Path) -> TestClient:
         yield client
 
 
-def test_hidden_columns_default_to_none(prefs_client: TestClient) -> None:
+@pytest.mark.requirement("LIBUX-10719")
+def test_hidden_columns_default_hides_file_path_columns(prefs_client: TestClient) -> None:
+    """[if] a fresh install GETs ui-prefs [then] filename and location start hidden, [else stop]."""
     body = prefs_client.get("/api/v1/ui-prefs").json()
-    assert body["library_hidden_columns"] == []
+    assert body["library_hidden_columns"] == ["filename", "location"]
 
 
 def test_hidden_columns_round_trip_to_disk_in_table_order(prefs_client: TestClient, tmp_path: Path) -> None:
@@ -65,6 +68,17 @@ def test_showing_every_column_again_stores_an_empty_list(prefs_client: TestClien
     prefs_client.put("/api/v1/ui-prefs", json={"library_hidden_columns": ["key"]})
     put = prefs_client.put("/api/v1/ui-prefs", json={"library_hidden_columns": []})
     assert put.json()["library_hidden_columns"] == []
+
+
+@pytest.mark.requirement("LIBUX-10719")
+def test_file_path_columns_round_trip_to_disk(prefs_client: TestClient, tmp_path: Path) -> None:
+    """[if] filename is PUT hidden [then] it persists through GET and disk, [else stop]."""
+    put = prefs_client.put("/api/v1/ui-prefs", json={"library_hidden_columns": ["filename", "tags"]})
+    assert put.status_code == 200, put.text
+    assert put.json()["library_hidden_columns"] == ["tags", "filename"]
+    on_disk = json.loads((tmp_path / "data" / "state" / "ui-prefs.json").read_text(encoding="utf-8"))
+    assert on_disk["library_hidden_columns"] == ["tags", "filename"]
+    assert prefs_client.get("/api/v1/ui-prefs").json()["library_hidden_columns"] == ["tags", "filename"]
 
 
 def test_tags_column_round_trips_to_disk(prefs_client: TestClient, tmp_path: Path) -> None:
@@ -86,7 +100,10 @@ def test_tags_column_round_trips_to_disk(prefs_client: TestClient, tmp_path: Pat
 def test_put_refuses_a_bad_hidden_column_list(prefs_client: TestClient, bad: object) -> None:
     put = prefs_client.put("/api/v1/ui-prefs", json={"library_hidden_columns": bad})
     assert put.status_code == 422, put.text
-    assert prefs_client.get("/api/v1/ui-prefs").json()["library_hidden_columns"] == []
+    assert prefs_client.get("/api/v1/ui-prefs").json()["library_hidden_columns"] == [
+        "filename",
+        "location",
+    ]
 
 
 @pytest.mark.parametrize(

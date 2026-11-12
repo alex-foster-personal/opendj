@@ -232,6 +232,16 @@ class DeckManualLoopCycle(_Strict):
     deck: DeckId
 
 
+class DeckLoopIn(_Strict):
+    type: Literal["deck_loop_in"]
+    deck: DeckId
+
+
+class DeckLoopOut(_Strict):
+    type: Literal["deck_loop_out"]
+    deck: DeckId
+
+
 class DeckLoopScale(_Strict):
     type: Literal["deck_loop_scale"]
     deck: DeckId
@@ -295,6 +305,15 @@ class ColorFx(_Strict):
     effect: Literal["filter", "space", "echo", "next"]
 
 
+MixerDeckPairId = Literal["1-3", "2-4"]
+
+
+class MixerDeckPairSelect(_Strict):
+    type: Literal["mixer_deck_pair_select"]
+    pair: MixerDeckPairId
+    deck: DeckId | None = None
+
+
 MidiActionModel = Annotated[
     DeckPlayToggle
     | DeckCue
@@ -306,6 +325,8 @@ MidiActionModel = Annotated[
     | DeckSyncToggle
     | DeckKeySyncToggle
     | DeckManualLoopCycle
+    | DeckLoopIn
+    | DeckLoopOut
     | DeckLoopScale
     | DeckKeyNudge
     | DeckTempoNudge
@@ -320,6 +341,7 @@ MidiActionModel = Annotated[
     | HeadphoneLevel
     | MasterCue
     | ColorFx
+    | MixerDeckPairSelect
     | DeckPitch
     | BrowseEncoder
     | BrowseLoad
@@ -335,8 +357,9 @@ _BUTTON_ACTIONS = frozenset(
      "deck_loop_exit",
      "channel_cue", "browse_load", "shift_modifier", "deck_stem_eq_toggle",
      "deck_auto_loop_toggle", "deck_sync_toggle", "deck_key_sync_toggle",
-     "deck_manual_loop_cycle", "deck_loop_scale", "deck_key_nudge", "deck_tempo_nudge",
-     "controller_pad_mode", "controller_pad", "master_cue", "color_fx"}
+     "deck_manual_loop_cycle", "deck_loop_in", "deck_loop_out", "deck_loop_scale", "deck_key_nudge", "deck_tempo_nudge",
+     "controller_pad_mode", "controller_pad", "master_cue", "color_fx",
+     "mixer_deck_pair_select"}
 )
 
 # A cc source with relative=true produces kind:'relative' (_valueFor), the

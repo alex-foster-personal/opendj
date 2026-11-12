@@ -66,9 +66,7 @@ interface DeckLoad {
 }
 
 export interface PlayCounterStatus {
-	decks: Partial<
-		Record<DeckId, { stable_id: string; heard_s: number; phase: DeckLoad['phase'] }>
-	>;
+	decks: Partial<Record<DeckId, { stable_id: string; heard_s: number; phase: DeckLoad['phase'] }>>;
 	posted: number;
 	failed: number;
 }
@@ -101,20 +99,54 @@ function _defaultHeard(): (state: PerformanceState, deck: DeckId) => boolean {
 
 /** One track's play counts (TOPVIEW-05 Track information), or the reason
  * they could not be read. A USB-stick track has no library play log. */
+/** Bulk Open DJ play counts for playlist shuffle (#11325). */
+export async function fetchOpenDjPlayCounts(
+	stableIds: readonly string[]
+): Promise<Map<string, number>> {
+	if (stableIds.length === 0) return new Map();
+	const unique = [...new Set(stableIds)];
+	const { data, error } = await api.POST('/api/v1/tracks/plays:lookup', {
+		body: { stable_ids: unique }
+	});
+	if (data === undefined) {
+		throw new Error(`play counts lookup failed: ${JSON.stringify(error)}`);
+	}
+	const rows = data.rows ?? [];
+	const out = new Map<string, number>();
+	for (const row of rows) {
+		out.set(row.stable_id, row.opendj_play_count);
+	}
+	for (const sid of unique) {
+		if (!out.has(sid)) out.set(sid, 0);
+	}
+	return out;
+}
+
 export async function fetchTrackPlays(
 	stableId: string
 ): Promise<
-	| { plays: { opendj_play_count: number; rekordbox_play_count: number; opendj_last_played_at: string | null }; error: null }
+	| {
+			plays: {
+				opendj_play_count: number;
+				rekordbox_play_count: number;
+				opendj_last_played_at: string | null;
+			};
+			error: null;
+	  }
 	| { plays: null; error: string }
 > {
 	if (isUsbTrackId(stableId)) {
-		return { plays: null, error: 'play counts are kept for library tracks only, not USB-stick tracks' };
+		return {
+			plays: null,
+			error: 'play counts are kept for library tracks only, not USB-stick tracks'
+		};
 	}
 	try {
 		const { data, error } = await api.GET('/api/v1/tracks/{stable_id}/plays', {
 			params: { path: { stable_id: stableId } }
 		});
-		if (data === undefined) return { plays: null, error: `play counts unavailable: ${JSON.stringify(error)}` };
+		if (data === undefined)
+			return { plays: null, error: `play counts unavailable: ${JSON.stringify(error)}` };
 		return { plays: data, error: null };
 	} catch (exc) {
 		return { plays: null, error: `play counts unavailable: ${String(exc)}` };
@@ -144,7 +176,8 @@ export function createPlayCounter(options: PlayCounterOptions = {}): PlayCounter
 	const post = options.post ?? _defaultPost;
 	const now = options.now ?? (() => Date.now());
 	const newPlayId = options.newPlayId ?? _newPlayId;
-	const retryLater = options.retryLater ?? ((retry: () => void) => void setTimeout(retry, PLAY_SAMPLE_INTERVAL_MS));
+	const retryLater =
+		options.retryLater ?? ((retry: () => void) => void setTimeout(retry, PLAY_SAMPLE_INTERVAL_MS));
 	const loads = new Map<DeckId, DeckLoad>();
 	// Plays waiting to be posted, kept apart from `loads` so a failed post is
 	// still retried after its deck unloads or loads the next track.

@@ -341,9 +341,9 @@ def run_find_clusters(
             cur = conn.execute(
                 "INSERT INTO duplicate_clusters "
                 "(canonical_stable_id, canonical_path, rationale, "
-                " flagged_manual_review) "
-                "VALUES (?, ?, ?, ?)",
-                (canonical_sid, winner_path, rationale, int(oversized_cluster)),
+                " flagged_manual_review, basis) "
+                "VALUES (?, ?, ?, ?, ?)",
+                (canonical_sid, winner_path, rationale, int(oversized_cluster), "fingerprint"),
             )
             cluster_id = cur.lastrowid or 0
 

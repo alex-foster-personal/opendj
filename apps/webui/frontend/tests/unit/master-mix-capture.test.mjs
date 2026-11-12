@@ -426,9 +426,9 @@ test('a master start is pushed to the leader page as an agent order the executor
 		/if \(order\.type === 'record_master_tap'\) await _recordMasterTap\(order\)/
 	);
 	assert.match(orders, /ensureMasterMixCapture\(command\.session_id\)/);
-	const rail = readFrontendSource('src/lib/components/rb/browser/PerformanceRecorderRail.svelte');
-	assert.match(rail, /m\.ensureMasterMixCapture\(id,/);
-	assert.doesNotMatch(rail, /startMasterMixCapture/, 'the rail must not start a second tap');
+	const chrome = readFrontendSource('src/lib/sets/performance-recorder-chrome.svelte.ts');
+	assert.match(chrome, /m\s*\.ensureMasterMixCapture\(id,/);
+	assert.doesNotMatch(chrome, /startMasterMixCapture/, 'the rail must not start a second tap');
 });
 
 test('a dropped answer during a stop ends the tap with no second post', async () => {
@@ -579,12 +579,12 @@ test('a dropped answer is terminal even with chunks queued behind it: zero retri
 });
 
 test('the REC rail stays quiet when the daemon cancels the tap, and still toasts a real failure', () => {
-	const rail = readFrontendSource('src/lib/components/rb/browser/PerformanceRecorderRail.svelte');
-	const quiet = rail.indexOf('error instanceof m.MasterMixCancelled');
-	const toast = rail.indexOf('REC failed: the master mix could not be recorded');
+	const chrome = readFrontendSource('src/lib/sets/performance-recorder-chrome.svelte.ts');
+	const quiet = chrome.indexOf('error instanceof m.MasterMixCancelled');
+	const toast = chrome.indexOf('REC failed: the master mix could not be recorded');
 	assert.ok(quiet > 0 && toast > quiet, 'the cancel is filtered before the failure toast');
 	assert.match(
-		rail.slice(quiet, toast),
+		chrome.slice(quiet, toast),
 		/return;\s*}\s*throw error;/,
 		'anything that is not a cancel still reaches the toast'
 	);

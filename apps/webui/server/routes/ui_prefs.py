@@ -20,7 +20,7 @@ from pathlib import Path
 from typing import Any, Literal, get_args
 
 from fastapi import APIRouter, FastAPI, HTTPException, Request
-from pydantic import BaseModel, ConfigDict, Field, StrictBool, StrictFloat, field_validator, model_validator
+from pydantic import BaseModel, ConfigDict, Field, StrictBool, StrictFloat, StrictStr, field_validator, model_validator
 from pydantic.json_schema import SkipJsonSchema
 
 from apps.analysis.backlog import AutoLane
@@ -71,6 +71,8 @@ _DEFAULT_TECH_WORKING_ANIMATE = True
 _DEFAULT_JOG_RADIAL_WAVEFORM = False
 _DEFAULT_SHOW_AGENT_PINS = True
 _DEFAULT_SHOW_STEMS = False
+# A11Y-11811: Appearance > Reduce motion; OR'd with the OS media query in the browser.
+_DEFAULT_REDUCE_MOTION = False
 _DEFAULT_DECK_HOVER_LINK = True
 # LIBUX-11716: shrink 4-deck view so the library shows more rows. Off by default.
 _DEFAULT_COMPACT_DECKS = False
@@ -112,15 +114,31 @@ _DECK_DEFAULT_BOOL_DEFAULTS: dict[str, bool] = {
 # scrolling waveform and the browser preview. Default off so nothing changes
 # for an existing user until they opt in.
 _DEFAULT_SHOW_SECTIONS = False
+# STRUCTUI-12787 (issue #11436): per-surface section display styles (defaults M1/O1/hide).
+SectionsMainStyle = Literal["m1_tint", "m2_recolor", "m3_lines", "m4_base"]
+_DEFAULT_SECTIONS_MAIN_STYLE: SectionsMainStyle = "m1_tint"
+SectionsOverviewStyle = Literal["o1_strip", "o2_tint", "o3_recolor"]
+_DEFAULT_SECTIONS_OVERVIEW_STYLE: SectionsOverviewStyle = "o1_strip"
+SectionsUncertain = Literal["hide", "show_faded"]
+_DEFAULT_SECTIONS_UNCERTAIN: SectionsUncertain = "hide"
+_DEFAULT_SECTIONS_STICKY_TITLE = True
+_DEFAULT_SECTIONS_NEXT_COUNTDOWN = True
+_DEFAULT_SECTIONS_LIBRARY_STRUCTURE_COLUMN = True
+_DEFAULT_SECTIONS_PREVIEW_CURSOR_LABEL = True
 # Tempo-change lane (PR #8342): the deck strip's tempo lane and the main
 # waveform's tempo curve. Default on: it only paints where the beatgrid
 # actually moves, so a steady track shows nothing new.
 _DEFAULT_SHOW_TEMPO_LANE = True
 # issue #10238: the blue vocal bars on the deck rows and overview strip, default on.
 _DEFAULT_SHOW_VOCAL_LANE = True
+# rekordbox waveform view options (issue #10248): hot, memory and loop cue
+# markers each default on so existing users see no change.
 _WAVE_OVERLAY_BOOL_DEFAULTS: dict[str, bool] = {
     "show_sections": _DEFAULT_SHOW_SECTIONS,
     "show_tempo_lane": _DEFAULT_SHOW_TEMPO_LANE,
+    "show_hot_cue_markers": True,
+    "show_memory_cue_markers": True,
+    "show_loop_markers": True,
     "show_vocal_lane": _DEFAULT_SHOW_VOCAL_LANE,
 }
 # The tempo curve's vertical scale: fixed_10 = full height is 10 percent off
@@ -139,6 +157,8 @@ _DEFAULT_WAVE_GRID_LINES: WaveGridLines = "beats_bars"
 # home (prep posture) only, never in gig posture; on = always; off = never.
 SpeakerAutoRecover = Literal["auto", "on", "off"]
 _DEFAULT_SPEAKER_AUTO_RECOVER: SpeakerAutoRecover = "auto"
+LightingProtocol = Literal["off", "artnet", "sacn", "osc"]
+_DEFAULT_LIGHTING: dict[str, Any] = {"enabled": False, "protocol": "off"}
 
 # Issue #2854: library browser prefs, wheel sensitivity, MIDI enabled choice.
 LibraryDensity = Literal["compact", "cosy"]
@@ -158,6 +178,7 @@ LibraryHideableColumn = Literal[
     "tempostab",
     "plays",
     "rating",
+    "colour",
     "comments",
     "time",
     "quality",
@@ -165,8 +186,11 @@ LibraryHideableColumn = Literal[
     "genre",
     "stems",
     "tags",
+    "filename",
+    "location",
 ]
 _LIBRARY_HIDEABLE_COLUMNS: tuple[str, ...] = get_args(LibraryHideableColumn)
+_DEFAULT_LIBRARY_HIDDEN_COLUMNS: list[str] = ["filename", "location"]
 # Off by default, so "hidden" cannot express them. Table order, mirrored by
 # OPTIONAL_COLUMNS in frontend/src/lib/rb/library-works.ts.
 LibraryOptionalColumn = Literal["work", "composer", "ensemble", "label", "year"]
@@ -183,7 +207,14 @@ _DEFAULT_LIBRARY_FILTER_BOOLS: dict[str, bool] = {
     "vocals_filter": False,
     "available_offline_filter": False,
 }
-_DEFAULT_WHEEL_SENSITIVITY: dict[str, float] = {"mouse": 1.0, "trackpad": 1.0 / 3.0}
+_DEFAULT_WHEEL_SENSITIVITY: dict[str, float] = {
+    "mouse": 1.0,
+    "trackpad": 1.0 / 3.0,
+    "library_mouse": 0.5,
+    "library_trackpad": 0.5 / 3.0,
+}
+_LIBRARY_WHEEL_MIN = 0.05
+_LIBRARY_WHEEL_MAX = 1.0
 _DEFAULT_MIDI_ENABLED = False
 # The docked Spotify player shrinks Open DJ to make room unless this is off.
 _DEFAULT_SPOTIFY_SHRINK_MAIN = True
@@ -449,6 +480,18 @@ def _parse_bool_prefs(raw: dict[str, Any], defaults: dict[str, bool]) -> dict[st
     return out
 
 
+def _parse_bool_pref(raw: dict[str, Any], key: str, default: bool) -> bool:
+    if key not in raw:
+        return default
+    val = raw[key]
+    if not isinstance(val, bool):
+        raise HTTPException(
+            status_code=422,
+            detail={"code": "UI_PREFS_INVALID", "message": f"{key} must be a boolean"},
+        )
+    return val
+
+
 def _parse_perf_view(raw: dict[str, Any]) -> str:
     if "perf_view" not in raw:
         return _DEFAULT_PERF_VIEW
@@ -464,6 +507,52 @@ def _parse_perf_view(raw: dict[str, Any]) -> str:
     return value
 
 
+KeymapPreset = Literal["opendj", "rekordbox", "serato"]
+_DEFAULT_KEYBOARD: dict[str, Any] = {"preset": "opendj", "overrides": {}}
+
+
+def _parse_keyboard(raw: dict[str, Any]) -> dict[str, Any]:
+    if "keyboard" not in raw:
+        return dict(_DEFAULT_KEYBOARD)
+    value = raw["keyboard"]
+    if not isinstance(value, dict):
+        raise HTTPException(
+            status_code=422,
+            detail={"code": "UI_PREFS_INVALID", "message": "keyboard must be an object"},
+        )
+    allowed = frozenset({"preset", "overrides"})
+    for key in value:
+        if key not in allowed:
+            raise HTTPException(
+                status_code=422,
+                detail={"code": "UI_PREFS_INVALID", "message": f"keyboard has unknown key: {key}"},
+            )
+    preset = value.get("preset", _DEFAULT_KEYBOARD["preset"])
+    if preset not in get_args(KeymapPreset):
+        raise HTTPException(
+            status_code=422,
+            detail={
+                "code": "UI_PREFS_INVALID",
+                "message": "keyboard.preset must be " + "|".join(get_args(KeymapPreset)),
+            },
+        )
+    overrides = value.get("overrides", {})
+    if not isinstance(overrides, dict):
+        raise HTTPException(
+            status_code=422,
+            detail={"code": "UI_PREFS_INVALID", "message": "keyboard.overrides must be an object"},
+        )
+    parsed_overrides: dict[str, list[str]] = {}
+    for cmd_id, chords in overrides.items():
+        if not isinstance(cmd_id, str) or not isinstance(chords, list) or not all(isinstance(c, str) for c in chords):
+            raise HTTPException(
+                status_code=422,
+                detail={"code": "UI_PREFS_INVALID", "message": "keyboard.overrides values must be lists of strings"},
+            )
+        parsed_overrides[cmd_id] = chords
+    return {"preset": preset, "overrides": parsed_overrides}
+
+
 def _parse_speaker_auto_recover(raw: dict[str, Any]) -> str:
     if "speaker_auto_recover" not in raw:
         return _DEFAULT_SPEAKER_AUTO_RECOVER
@@ -477,6 +566,53 @@ def _parse_speaker_auto_recover(raw: dict[str, Any]) -> str:
             },
         )
     return value
+
+
+def _assert_lighting_enabled_requires_protocol(out: dict[str, Any]) -> None:
+    if out["enabled"] and out["protocol"] == "off":
+        raise HTTPException(
+            status_code=422,
+            detail={
+                "code": "UI_PREFS_INVALID",
+                "message": "lighting: protocol_required_when_enabled",
+            },
+        )
+
+
+def _parse_lighting(raw: Any) -> dict[str, Any]:
+    """Stored lighting output prefs (issue #11774): enable flag and wire protocol."""
+    if raw is None:
+        return dict(_DEFAULT_LIGHTING)
+    if not isinstance(raw, dict):
+        raise HTTPException(
+            status_code=422,
+            detail={"code": "UI_PREFS_INVALID", "message": "lighting must be an object"},
+        )
+    out = dict(_DEFAULT_LIGHTING)
+    if "enabled" in raw:
+        val = raw["enabled"]
+        if not isinstance(val, bool):
+            raise HTTPException(
+                status_code=422,
+                detail={
+                    "code": "UI_PREFS_INVALID",
+                    "message": "lighting.enabled must be a boolean",
+                },
+            )
+        out["enabled"] = val
+    if "protocol" in raw:
+        value = raw["protocol"]
+        if value not in get_args(LightingProtocol):
+            raise HTTPException(
+                status_code=422,
+                detail={
+                    "code": "UI_PREFS_INVALID",
+                    "message": "lighting.protocol must be " + "|".join(get_args(LightingProtocol)),
+                },
+            )
+        out["protocol"] = value
+    _assert_lighting_enabled_requires_protocol(out)
+    return out
 
 
 def _parse_tempo_lane_scale(raw: dict[str, Any]) -> str:
@@ -519,6 +655,52 @@ def _parse_wave_grid_lines(raw: dict[str, Any]) -> str:
             detail={
                 "code": "UI_PREFS_INVALID",
                 "message": "wave_grid_lines must be " + "|".join(get_args(WaveGridLines)),
+            },
+        )
+    return value
+
+
+def _parse_sections_main_style(raw: dict[str, Any]) -> str:
+    if "sections_main_style" not in raw:
+        return _DEFAULT_SECTIONS_MAIN_STYLE
+    value = raw["sections_main_style"]
+    if value not in get_args(SectionsMainStyle):
+        raise HTTPException(
+            status_code=422,
+            detail={
+                "code": "UI_PREFS_INVALID",
+                "message": "sections_main_style must be " + "|".join(get_args(SectionsMainStyle)),
+            },
+        )
+    return value
+
+
+def _parse_sections_overview_style(raw: dict[str, Any]) -> str:
+    if "sections_overview_style" not in raw:
+        return _DEFAULT_SECTIONS_OVERVIEW_STYLE
+    value = raw["sections_overview_style"]
+    if value not in get_args(SectionsOverviewStyle):
+        raise HTTPException(
+            status_code=422,
+            detail={
+                "code": "UI_PREFS_INVALID",
+                "message": "sections_overview_style must be "
+                + "|".join(get_args(SectionsOverviewStyle)),
+            },
+        )
+    return value
+
+
+def _parse_sections_uncertain(raw: dict[str, Any]) -> str:
+    if "sections_uncertain" not in raw:
+        return _DEFAULT_SECTIONS_UNCERTAIN
+    value = raw["sections_uncertain"]
+    if value not in get_args(SectionsUncertain):
+        raise HTTPException(
+            status_code=422,
+            detail={
+                "code": "UI_PREFS_INVALID",
+                "message": "sections_uncertain must be " + "|".join(get_args(SectionsUncertain)),
             },
         )
     return value
@@ -662,6 +844,30 @@ def _parse_library_browser_bool_prefs(raw: dict[str, Any]) -> dict[str, bool]:
     return out
 
 
+def _parse_library_list_wheel_factor(key: str, val: Any) -> float:
+    if isinstance(val, bool) or not isinstance(val, (int, float)):
+        raise HTTPException(
+            status_code=422,
+            detail={
+                "code": "UI_PREFS_INVALID",
+                "message": f"wheel_sensitivity.{key} must be a number",
+            },
+        )
+    factor = float(val)
+    if not _LIBRARY_WHEEL_MIN < factor <= _LIBRARY_WHEEL_MAX:
+        raise HTTPException(
+            status_code=422,
+            detail={
+                "code": "UI_PREFS_INVALID",
+                "message": (
+                    f"wheel_sensitivity.{key} must be between {_LIBRARY_WHEEL_MIN} "
+                    f"and {_LIBRARY_WHEEL_MAX}, got {val}"
+                ),
+            },
+        )
+    return factor
+
+
 def _parse_wheel_factor(key: str, val: Any) -> float:
     if isinstance(val, bool) or not isinstance(val, (int, float)):
         raise HTTPException(
@@ -699,6 +905,10 @@ def _parse_wheel_sensitivity(raw: Any) -> dict[str, float]:
         if key not in raw:
             continue
         out[key] = _parse_wheel_factor(key, raw[key])
+    for key in ("library_mouse", "library_trackpad"):
+        if key not in raw:
+            continue
+        out[key] = _parse_library_list_wheel_factor(key, raw[key])
     return out
 
 
@@ -840,6 +1050,39 @@ def _parse_library_watcher_folders(raw: dict[str, Any]) -> list[str]:
                 },
             )
         out.append(item)
+    return out
+
+
+_MIDI_SETUP_DISMISSED_MESSAGE = (
+    "midi_setup_dismissed_ports must be a list of non-empty port-name strings"
+)
+
+
+def _parse_midi_setup_dismissed_ports(raw: dict[str, Any]) -> list[str]:
+    if "midi_setup_dismissed_ports" not in raw:
+        return []
+    value = raw["midi_setup_dismissed_ports"]
+    if not isinstance(value, list):
+        raise HTTPException(
+            status_code=422,
+            detail={"code": "UI_PREFS_INVALID", "message": _MIDI_SETUP_DISMISSED_MESSAGE},
+        )
+    out: list[str] = []
+    seen: set[str] = set()
+    for item in value:
+        if not isinstance(item, str):
+            raise HTTPException(
+                status_code=422,
+                detail={"code": "UI_PREFS_INVALID", "message": _MIDI_SETUP_DISMISSED_MESSAGE},
+            )
+        if item.strip() == "":
+            raise HTTPException(
+                status_code=422,
+                detail={"code": "UI_PREFS_INVALID", "message": _MIDI_SETUP_DISMISSED_MESSAGE},
+            )
+        if item not in seen:
+            seen.add(item)
+            out.append(item)
     return out
 
 
@@ -1054,6 +1297,7 @@ def _load(path: Path) -> dict[str, Any]:
             "jog_radial_waveform": _DEFAULT_JOG_RADIAL_WAVEFORM,
             "show_agent_pins": _DEFAULT_SHOW_AGENT_PINS,
             "show_stems": _DEFAULT_SHOW_STEMS,
+            "reduce_motion": _DEFAULT_REDUCE_MOTION,
             "deck_hover_link": _DEFAULT_DECK_HOVER_LINK,
             "compact_decks": _DEFAULT_COMPACT_DECKS,
             "level_calibration": dict(_DEFAULT_LEVEL_CALIBRATION),
@@ -1073,18 +1317,28 @@ def _load(path: Path) -> dict[str, Any]:
             "collapsed_sections": [],
             "perf_view": _DEFAULT_PERF_VIEW,
             "speaker_auto_recover": _DEFAULT_SPEAKER_AUTO_RECOVER,
+            "keyboard": dict(_DEFAULT_KEYBOARD),
             "tempo_lane_scale": _DEFAULT_TEMPO_LANE_SCALE,
             "wave_height": _DEFAULT_WAVE_HEIGHT,
             "wave_grid_lines": _DEFAULT_WAVE_GRID_LINES,
+            "sections_main_style": _DEFAULT_SECTIONS_MAIN_STYLE,
+            "sections_sticky_title": _DEFAULT_SECTIONS_STICKY_TITLE,
+            "sections_next_countdown": _DEFAULT_SECTIONS_NEXT_COUNTDOWN,
+            "sections_overview_style": _DEFAULT_SECTIONS_OVERVIEW_STYLE,
+            "sections_library_structure_column": _DEFAULT_SECTIONS_LIBRARY_STRUCTURE_COLUMN,
+            "sections_preview_cursor_label": _DEFAULT_SECTIONS_PREVIEW_CURSOR_LABEL,
+            "sections_uncertain": _DEFAULT_SECTIONS_UNCERTAIN,
             "key_notation": _DEFAULT_KEY_NOTATION,
-            "library_hidden_columns": [],
+            "library_hidden_columns": list(_DEFAULT_LIBRARY_HIDDEN_COLUMNS),
             "library_optional_columns": [],
             "library_classical_layout": False,
             "wheel_sensitivity": dict(_DEFAULT_WHEEL_SENSITIVITY),
             "beat_jump_sizes": dict(_DEFAULT_BEAT_JUMP_SIZES),
             "library_watcher_folders": [],
+            "midi_setup_dismissed_ports": [],
             "library_key_filter": [],
             "compatible_filter": dict(_DEFAULT_COMPATIBLE_FILTER),
+            "lighting": dict(_DEFAULT_LIGHTING),
             "library_tabs": parse_library_tabs(None),
             "library_related_criteria": parse_library_related_criteria(None),
         }
@@ -1151,6 +1405,15 @@ def _load(path: Path) -> dict[str, Any]:
                 "message": "show_stems must be a boolean",
             },
         )
+    reduce_motion = raw.get("reduce_motion", _DEFAULT_REDUCE_MOTION)
+    if not isinstance(reduce_motion, bool):
+        raise HTTPException(
+            status_code=422,
+            detail={
+                "code": "UI_PREFS_INVALID",
+                "message": "reduce_motion must be a boolean",
+            },
+        )
     deck_hover_link = raw.get("deck_hover_link", _DEFAULT_DECK_HOVER_LINK)
     if not isinstance(deck_hover_link, bool):
         raise HTTPException(
@@ -1178,6 +1441,7 @@ def _load(path: Path) -> dict[str, Any]:
         "jog_radial_waveform": jog_radial,
         "show_agent_pins": show_agent_pins,
         "show_stems": show_stems,
+        "reduce_motion": reduce_motion,
         "deck_hover_link": deck_hover_link,
         "compact_decks": compact_decks,
         "level_calibration": _parse_level_calibration(raw.get("level_calibration")),
@@ -1198,9 +1462,25 @@ def _load(path: Path) -> dict[str, Any]:
         # DECKUX-8360: read back what PUT wrote, or every boot's GET resets the mirror.
         **_parse_bool_prefs(raw, {"deck_right_mirror": _DEFAULT_DECK_RIGHT_MIRROR}),
         "speaker_auto_recover": _parse_speaker_auto_recover(raw),
+        "keyboard": _parse_keyboard(raw),
         "tempo_lane_scale": _parse_tempo_lane_scale(raw),
         "wave_height": _parse_wave_height(raw),
         "wave_grid_lines": _parse_wave_grid_lines(raw),
+        "sections_main_style": _parse_sections_main_style(raw),
+        "sections_sticky_title": _parse_bool_pref(
+            raw, "sections_sticky_title", _DEFAULT_SECTIONS_STICKY_TITLE
+        ),
+        "sections_next_countdown": _parse_bool_pref(
+            raw, "sections_next_countdown", _DEFAULT_SECTIONS_NEXT_COUNTDOWN
+        ),
+        "sections_overview_style": _parse_sections_overview_style(raw),
+        "sections_library_structure_column": _parse_bool_pref(
+            raw, "sections_library_structure_column", _DEFAULT_SECTIONS_LIBRARY_STRUCTURE_COLUMN
+        ),
+        "sections_preview_cursor_label": _parse_bool_pref(
+            raw, "sections_preview_cursor_label", _DEFAULT_SECTIONS_PREVIEW_CURSOR_LABEL
+        ),
+        "sections_uncertain": _parse_sections_uncertain(raw),
         "key_notation": _parse_key_notation(raw),
         "library_hidden_columns": _parse_library_hidden_columns(raw),
         "library_optional_columns": _parse_library_optional_columns(raw),
@@ -1208,11 +1488,27 @@ def _load(path: Path) -> dict[str, Any]:
         "wheel_sensitivity": _parse_wheel_sensitivity(raw.get("wheel_sensitivity")),
         "beat_jump_sizes": _parse_beat_jump_sizes(raw.get("beat_jump_sizes")),
         "library_watcher_folders": _parse_library_watcher_folders(raw),
+        "midi_setup_dismissed_ports": _parse_midi_setup_dismissed_ports(raw),
         "library_key_filter": _parse_library_key_filter(raw),
         "compatible_filter": _parse_compatible_filter(raw.get("compatible_filter")),
+        "lighting": _parse_lighting(raw.get("lighting")),
         "library_tabs": parse_library_tabs(raw.get("library_tabs")),
         "library_related_criteria": parse_library_related_criteria(raw.get("library_related_criteria")),
     }
+
+
+class KeyboardPrefsOut(BaseModel):
+    model_config = ConfigDict(frozen=True)
+
+    preset: KeymapPreset = "opendj"
+    overrides: dict[str, list[str]] = Field(default_factory=dict)
+
+
+class KeyboardPrefsPatch(BaseModel):
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    preset: KeymapPreset | None = None
+    overrides: dict[str, list[str]] | None = None
 
 
 class AutoSyncOut(BaseModel):
@@ -1235,6 +1531,8 @@ class WheelSensitivityOut(BaseModel):
 
     mouse: float = _DEFAULT_WHEEL_SENSITIVITY["mouse"]
     trackpad: float = _DEFAULT_WHEEL_SENSITIVITY["trackpad"]
+    library_mouse: float = _DEFAULT_WHEEL_SENSITIVITY["library_mouse"]
+    library_trackpad: float = _DEFAULT_WHEEL_SENSITIVITY["library_trackpad"]
 
 
 class BeatJumpSizesOut(BaseModel):
@@ -1247,6 +1545,22 @@ class BeatJumpSizesOut(BaseModel):
     deck_2: StrictFloat = 4
     deck_3: StrictFloat = 4
     deck_4: StrictFloat = 4
+
+
+class LightingOut(BaseModel):
+    """Lighting output prefs on ui-prefs (issue #11774): storage only, no UDP loop."""
+
+    model_config = ConfigDict(frozen=True)
+
+    enabled: bool = False
+    protocol: LightingProtocol = "off"
+
+
+class LightingPatch(BaseModel):
+    model_config = ConfigDict(frozen=True)
+
+    enabled: bool | None = None
+    protocol: LightingProtocol | None = None
 
 
 class CompatibleFilterOut(BaseModel):
@@ -1312,6 +1626,7 @@ class UiPrefsOut(BaseModel):
     jog_radial_waveform: bool = _DEFAULT_JOG_RADIAL_WAVEFORM
     show_agent_pins: bool = _DEFAULT_SHOW_AGENT_PINS
     show_stems: bool = _DEFAULT_SHOW_STEMS
+    reduce_motion: bool = _DEFAULT_REDUCE_MOTION
     deck_hover_link: bool = _DEFAULT_DECK_HOVER_LINK
     compact_decks: bool = _DEFAULT_COMPACT_DECKS
     level_calibration: LevelCalibrationOut = Field(default_factory=LevelCalibrationOut)
@@ -1337,16 +1652,27 @@ class UiPrefsOut(BaseModel):
     deck_default_quantize: bool = _DEFAULT_DECK_DEFAULT_QUANTIZE
     deck_needle_lock: bool = _DEFAULT_DECK_NEEDLE_LOCK
     show_sections: bool = _DEFAULT_SHOW_SECTIONS
+    sections_main_style: SectionsMainStyle = _DEFAULT_SECTIONS_MAIN_STYLE
+    sections_sticky_title: bool = _DEFAULT_SECTIONS_STICKY_TITLE
+    sections_next_countdown: bool = _DEFAULT_SECTIONS_NEXT_COUNTDOWN
+    sections_overview_style: SectionsOverviewStyle = _DEFAULT_SECTIONS_OVERVIEW_STYLE
+    sections_library_structure_column: bool = _DEFAULT_SECTIONS_LIBRARY_STRUCTURE_COLUMN
+    sections_preview_cursor_label: bool = _DEFAULT_SECTIONS_PREVIEW_CURSOR_LABEL
+    sections_uncertain: SectionsUncertain = _DEFAULT_SECTIONS_UNCERTAIN
     auto_analyze_grid: bool = AUTO_ANALYZE_BOOL_DEFAULTS["auto_analyze_grid"]
     auto_analyze_key: bool = AUTO_ANALYZE_BOOL_DEFAULTS["auto_analyze_key"]
     auto_analyze_sections: bool = AUTO_ANALYZE_BOOL_DEFAULTS["auto_analyze_sections"]
     auto_analyze_vocals: bool = AUTO_ANALYZE_BOOL_DEFAULTS["auto_analyze_vocals"]
     speaker_auto_recover: SpeakerAutoRecover = _DEFAULT_SPEAKER_AUTO_RECOVER
+    keyboard: KeyboardPrefsOut = Field(default_factory=KeyboardPrefsOut)
     show_tempo_lane: bool = _DEFAULT_SHOW_TEMPO_LANE
     show_vocal_lane: bool = _DEFAULT_SHOW_VOCAL_LANE
     tempo_lane_scale: TempoLaneScale = _DEFAULT_TEMPO_LANE_SCALE
     wave_height: WaveHeight = _DEFAULT_WAVE_HEIGHT
     wave_grid_lines: WaveGridLines = _DEFAULT_WAVE_GRID_LINES
+    show_hot_cue_markers: bool = _WAVE_OVERLAY_BOOL_DEFAULTS["show_hot_cue_markers"]
+    show_memory_cue_markers: bool = _WAVE_OVERLAY_BOOL_DEFAULTS["show_memory_cue_markers"]
+    show_loop_markers: bool = _WAVE_OVERLAY_BOOL_DEFAULTS["show_loop_markers"]
     deck_autocue: bool = _DEFAULT_DECK_AUTOCUE
     hide_broken_links: bool = _DEFAULT_HIDE_BROKEN_LINKS
     library_density: LibraryDensity = _DEFAULT_LIBRARY_DENSITY
@@ -1368,8 +1694,11 @@ class UiPrefsOut(BaseModel):
     deck_right_mirror: bool = _DEFAULT_DECK_RIGHT_MIRROR
     playlist_tree_view: PlaylistTreeView = _DEFAULT_PLAYLIST_TREE_VIEW
     library_watcher_folders: list[str] = Field(default_factory=list)
+    # CTRL first-run prompt (#10076): port names the DJ dismissed or finished setting up.
+    midi_setup_dismissed_ports: list[str] = Field(default_factory=list)
     library_key_filter: list[str] = Field(default_factory=list)
     compatible_filter: CompatibleFilterOut = Field(default_factory=CompatibleFilterOut)
+    lighting: LightingOut = Field(default_factory=LightingOut)
     library_tabs: LibraryTabsOut = Field(default_factory=LibraryTabsOut)
     library_related_criteria: LibraryRelatedCriteriaOut = Field(default_factory=LibraryRelatedCriteriaOut)
 
@@ -1385,6 +1714,7 @@ class UiPrefsPatch(BaseModel):
     jog_radial_waveform: bool | None = None
     show_agent_pins: bool | None = None
     show_stems: bool | None = None
+    reduce_motion: StrictBool | SkipJsonSchema[None] = None
     deck_hover_link: bool | None = None
     compact_decks: bool | None = None
     level_calibration: LevelCalibrationOut | None = None
@@ -1416,11 +1746,19 @@ class UiPrefsPatch(BaseModel):
     deck_default_quantize: StrictBool | None = None
     deck_needle_lock: StrictBool | None = None
     show_sections: bool | None = None
+    sections_main_style: SectionsMainStyle | None = None
+    sections_sticky_title: StrictBool | None = None
+    sections_next_countdown: StrictBool | None = None
+    sections_overview_style: SectionsOverviewStyle | None = None
+    sections_library_structure_column: StrictBool | None = None
+    sections_preview_cursor_label: StrictBool | None = None
+    sections_uncertain: SectionsUncertain | None = None
     auto_analyze_grid: StrictBool | None = None
     auto_analyze_key: StrictBool | None = None
     auto_analyze_sections: StrictBool | None = None
     auto_analyze_vocals: StrictBool | None = None
     speaker_auto_recover: SpeakerAutoRecover | None = None
+    keyboard: KeyboardPrefsPatch | None = None
     # Strict: lax bool would coerce "yes" or 1 into a write that hides the lane.
     show_tempo_lane: StrictBool | None = None
     # Strict: lax bool would coerce "yes" or 1 into a write that hides the vocal bars.
@@ -1428,6 +1766,10 @@ class UiPrefsPatch(BaseModel):
     tempo_lane_scale: TempoLaneScale | None = None
     wave_height: WaveHeight | None = None
     wave_grid_lines: WaveGridLines | None = None
+    # Strict: lax bool would coerce "yes" or 1 into hiding cue markers.
+    show_hot_cue_markers: StrictBool | None = None
+    show_memory_cue_markers: StrictBool | None = None
+    show_loop_markers: StrictBool | None = None
     # Strict for the same reason: AU is deck-wide, a coerced 1 or "yes" would arm it.
     # Omitted means unchanged; an explicit null is refused (Sol P1, PR #6235),
     # so the contract advertises it as omittable but never nullable.
@@ -1452,8 +1794,10 @@ class UiPrefsPatch(BaseModel):
     deck_right_mirror: bool | None = None
     playlist_tree_view: PlaylistTreeView | None = None
     library_watcher_folders: list[str] | None = None
+    midi_setup_dismissed_ports: list[StrictStr] | SkipJsonSchema[None] = None
     library_key_filter: list[str] | None = None
     compatible_filter: CompatibleFilterOut | None = None
+    lighting: LightingPatch | None = None
     library_tabs: LibraryTabsOut | None = None
     library_related_criteria: LibraryRelatedCriteriaOut | None = None
 
@@ -1469,8 +1813,17 @@ class UiPrefsPatch(BaseModel):
 
 
 # library_key_filter (#7599): [] clears it, so an explicit null is never "clear" (Sol P1, #7743).
+# midi_setup_dismissed_ports (#10076): same; [] clears dismissed ports.
 # deck_autocue: omitted means unchanged, so an explicit null is refused too (Sol P1, PR #6235).
-_NON_NULL_VIEW_PREF_KEYS = ("show_pads", "auto_play_two_deck", "perf_view", "library_key_filter", "deck_autocue")
+_NON_NULL_VIEW_PREF_KEYS = (
+    "show_pads",
+    "auto_play_two_deck",
+    "perf_view",
+    "library_key_filter",
+    "deck_autocue",
+    "reduce_motion",
+    "midi_setup_dismissed_ports",
+)
 
 
 def _merge_topbar_bool_prefs(current: dict[str, Any], body: UiPrefsPatch) -> None:
@@ -1507,6 +1860,15 @@ def _merge_lyrics(current: dict[str, Any], body: UiPrefsPatch) -> None:
             current[key] = value
 
 
+def _merge_midi_prefs(current: dict[str, Any], body: UiPrefsPatch) -> None:
+    """Replace midi_setup_dismissed_ports when the PATCH names it (#10076)."""
+    if body.midi_setup_dismissed_ports is None:
+        return
+    current["midi_setup_dismissed_ports"] = _parse_midi_setup_dismissed_ports(
+        {"midi_setup_dismissed_ports": list(body.midi_setup_dismissed_ports)}
+    )
+
+
 def _merge_compatible_filter(current: dict[str, Any], body: UiPrefsPatch) -> None:
     """Merge the named compatible-filter fields onto what is stored (LIBUX-32)."""
     if body.compatible_filter is None:
@@ -1520,6 +1882,15 @@ def _merge_compatible_filter(current: dict[str, Any], body: UiPrefsPatch) -> Non
             **current["compatible_filter"],
             **patch,
         }
+    )
+
+
+def _merge_lighting(current: dict[str, Any], body: UiPrefsPatch) -> None:
+    if body.lighting is None:
+        return
+    patch = body.lighting.model_dump(exclude_unset=True)
+    current["lighting"] = _parse_lighting(
+        {**current.get("lighting", _DEFAULT_LIGHTING), **patch}
     )
 
 
@@ -1656,6 +2027,9 @@ _VIEW_SCALAR_PREFS = (
     "tempo_lane_scale",
     "wave_height",
     "wave_grid_lines",
+    "sections_main_style",
+    "sections_overview_style",
+    "sections_uncertain",
 )
 
 
@@ -1686,6 +2060,8 @@ def _merge_ui_prefs_patch(current: dict[str, Any], body: UiPrefsPatch) -> dict[s
         current["show_agent_pins"] = body.show_agent_pins
     if body.show_stems is not None:
         current["show_stems"] = body.show_stems
+    if body.reduce_motion is not None:
+        current["reduce_motion"] = body.reduce_motion
     if body.deck_hover_link is not None:
         current["deck_hover_link"] = body.deck_hover_link
     if body.compact_decks is not None:
@@ -1704,6 +2080,15 @@ def _merge_ui_prefs_patch(current: dict[str, Any], body: UiPrefsPatch) -> dict[s
     _merge_topbar_bool_prefs(current, body)
     _merge_library_browser_bool_prefs(current, body)
     _merge_view_scalar_prefs(current, body)
+    for key in (
+        "sections_sticky_title",
+        "sections_next_countdown",
+        "sections_library_structure_column",
+        "sections_preview_cursor_label",
+    ):
+        value = getattr(body, key)
+        if value is not None:
+            current[key] = value
     _merge_library_enum_prefs(current, body)
     if body.wheel_sensitivity is not None:
         current["wheel_sensitivity"] = _parse_wheel_sensitivity(
@@ -1729,10 +2114,19 @@ def _merge_ui_prefs_patch(current: dict[str, Any], body: UiPrefsPatch) -> dict[s
         current["library_key_filter"] = _parse_library_key_filter(
             {"library_key_filter": body.library_key_filter}
         )
+    _merge_midi_prefs(current, body)
     _merge_compatible_filter(current, body)
+    _merge_lighting(current, body)
     merge_auto_gain(current, body.auto_gain)
     merge_library_tabs(current, body.library_tabs)
     merge_library_related_criteria(current, body.library_related_criteria)
+    if body.keyboard is not None:
+        cur = current.setdefault("keyboard", dict(_DEFAULT_KEYBOARD))
+        patch = body.keyboard.model_dump(exclude_unset=True)
+        if "preset" in patch:
+            cur["preset"] = patch["preset"]
+        if "overrides" in patch:
+            cur["overrides"] = patch["overrides"]
     return current
 
 

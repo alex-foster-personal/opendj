@@ -1,4 +1,5 @@
 <script lang="ts">
+	/** Svelte thread/reply card; shares thread shape with `<comment-pins>` (issue #11295). */
 	import { pinBodyPos, pinBodyStyle, pinIsDone, pinStatus } from '$lib/rb/feedback';
 	import { blockedPinDetail, blockedPinRequest } from '$lib/rb/feedback';
 	import { isPinRegressed } from '$lib/rb/feedback-pin-board';

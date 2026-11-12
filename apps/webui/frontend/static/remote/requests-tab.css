@@ -1,0 +1,64 @@
+.requests-tab h1 {
+	font-size: 1.25rem;
+	margin: 0 0 0.5rem;
+}
+
+.session-state {
+	color: var(--muted);
+	margin: 0 0 0.75rem;
+}
+
+.session-actions,
+.request-row .actions {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 0.5rem;
+}
+
+.request-list {
+	list-style: none;
+	margin: 1rem 0 0;
+	padding: 0;
+}
+
+.request-row {
+	display: flex;
+	flex-wrap: wrap;
+	justify-content: space-between;
+	gap: 0.75rem;
+	padding: 0.85rem 0;
+	border-top: 1px solid #2a2a2a;
+}
+
+.request-row .meta {
+	display: flex;
+	flex-direction: column;
+	gap: 0.2rem;
+}
+
+.request-row .who {
+	font-weight: 600;
+}
+
+.request-row .what,
+.request-row .votes,
+.empty,
+.inline-reason {
+	color: var(--muted);
+}
+
+.inline-reason {
+	margin: 0.5rem 0;
+}
+
+.age {
+	color: var(--muted);
+	font-size: 0.9rem;
+}
+
+.deck-picker {
+	margin: 0.75rem 0;
+	padding: 0.75rem;
+	border: 1px solid #2a2a2a;
+	border-radius: 0.4rem;
+}

@@ -740,6 +740,7 @@ def decide(  # noqa: PLR0913 -- the two TEST-CUT variables are keyword-only, one
     main_switch: str | None = None,
     range_json: str | None = None,
     active_shards: int | None = None,
+    durations_path: Path | None = None,
 ) -> Record:
     """The whole decision for this run. Any failure is a FULL record, except under a hard cap.
 
@@ -751,6 +752,9 @@ def decide(  # noqa: PLR0913 -- the two TEST-CUT variables are keyword-only, one
     here from the selection's recorded seconds (`planned_shard_count`), which is what the scope does.
     `budget` trims an affected selection to its runner-minute budget (ci/test-budget.yml); a main
     push is priced as a PR head. `range_json` is CI_MAIN_PUSH_RANGE, read only for a main push.
+    `durations_path` is the ledger that prices and splits the selection, `root/.test_durations` when
+    None. The scope job passes the ledger the shards will install, so both price one selection
+    from the same seconds (CIPAR-12899).
     """
     changed: list[str] = []
     policy: Policy | None = None
@@ -838,7 +842,7 @@ def decide(  # noqa: PLR0913 -- the two TEST-CUT variables are keyword-only, one
         selection, capped_over = _select_or_cap(changed, ignores, root, budget, policy, event.main_push, added, pinned)
         universe = lane_universe(selection.graph_paths, ignores, root)
         add_declared(selection, declared)
-        ledger = json.loads((root / DURATIONS_NAME).read_text(encoding="utf-8"))
+        ledger = json.loads((durations_path or root / DURATIONS_NAME).read_text(encoding="utf-8"))
         durations = module_durations(ledger)
         budget_block: dict | None = None
         if budget is not None:
@@ -1037,6 +1041,7 @@ def _select(arguments: argparse.Namespace) -> int:
             main_switch=main_switch,
             range_json=os.environ.get(MAIN_RANGE_VARIABLE),
             active_shards=arguments.active_shards,
+            durations_path=Path(arguments.durations) if arguments.durations else None,
         )
     except HardCapError as refused:
         print(f"[ERROR] HARD CAP REFUSED: {refused}", file=sys.stderr)
@@ -1071,6 +1076,10 @@ def main(argv: list[str] | None = None) -> int:
     select.add_argument(
         "--active-shards", type=int, default=None,
         help="shards this run launched (CI-DYNSHARD); unset plans the count from the selection",
+    )  # fmt: skip
+    select.add_argument(
+        "--durations", default=None,
+        help="the durations ledger to price and split on (CIPAR-12899); unset reads the checkout's .test_durations",
     )  # fmt: skip
     matrix = commands.add_parser("shard-matrix", help="print the JSON shard list the scope job launches")
     matrix.add_argument("--record", required=True, help="the scope's selection.json")

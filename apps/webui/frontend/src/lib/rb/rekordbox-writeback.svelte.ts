@@ -28,7 +28,7 @@
  *     [if] the UI wording drifts from UI_REFUSAL_TITLE [then ⛔️] broken
  */
 
-import { api, unwrap } from '$lib/api/client';
+import { api, unwrap } from '$lib/api/rb-http';
 
 /** Fallback wording, used only before the daemon has told us its own. Kept
  * byte-identical to UI_REFUSAL_TITLE in apps/shared/rekordbox_writeback.py. */

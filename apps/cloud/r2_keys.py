@@ -34,10 +34,15 @@ from __future__ import annotations
 import dataclasses
 
 from .asset_store import ASSET_PREFIX, HASH_SHARD_LEN, SHA256_HEX_LEN, asset_object_key
+from apps.sync_hub.conflict_trash import TRASH_PREFIX
 
 #: The one content-addressed layout, in template form. Every producer derives
 #: keys through :func:`asset_object_key`, which realizes exactly this string.
 R2_KEY_TEMPLATE: str = f"{ASSET_PREFIX}/{{sha256[:{HASH_SHARD_LEN}]}}/{{sha256}}"
+
+#: Conflict-trash records (CLOUDSYNC-12622). Same shard layout as assets; keys
+#: are derived by :mod:`apps.sync_hub.conflict_trash`, not this module.
+TRASH_KEY_TEMPLATE: str = f"{TRASH_PREFIX}/{{sha256[:{HASH_SHARD_LEN}]}}/{{sha256}}.json"
 
 #: The pre-unification path-addressed stems layout. Kept so the migration can
 #: recognize, parse and re-key objects already written in it. Nothing NEW is
@@ -141,6 +146,8 @@ def rekey_legacy_stem_key(legacy_key: str, content_sha256: str) -> str:
 
 __all__ = [
     "ASSET_PREFIX",
+    "TRASH_KEY_TEMPLATE",
+    "TRASH_PREFIX",
     "HASH_PREFIX",
     "HASH_SHARD_LEN",
     "LEGACY_STEMS_TEMPLATE",

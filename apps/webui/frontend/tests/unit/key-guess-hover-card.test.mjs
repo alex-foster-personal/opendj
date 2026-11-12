@@ -15,7 +15,7 @@ const TABLE = fileURLToPath(new URL('../../src/lib/components/rb/browser/TrackTa
 const src = readFileSync(TABLE, 'utf8');
 
 test('the dimmed guess span has no title of its own', () => {
-	assert.match(src, /<span class="key-guess">/);
+	assert.match(src, /<span class="key-guess"\s*>/);
 	assert.doesNotMatch(src, /<span class="key-guess"[^>]*title=/);
 });
 
@@ -23,5 +23,5 @@ test('the key hover card note carries the best guess and its confidence', () => 
 	const fn = src.slice(src.indexOf('function keyCellTitle'), src.indexOf('function keyCellTitle') + 1200);
 	assert.match(fn, /row\.key_guess\)[\s\S]*Best guess \$\{row\.key_guess\} \(ambiguous key, confidence \$\{Math\.round\(\(row\.key_guess_confidence \?\? 0\) \* 100\)\}%\)/);
 	assert.match(src, /note=\{keyHoverNote\(keyHover\.row\)\}/);
-	assert.match(src, /\[keyCellInert\(row\) \? keyCellTitle\(row\) : null, clashEdges\.get\(row\.stable_id\) \?\? null\]/);
+	assert.match(src, /\[\s*keyCellInert\(row\) \? keyCellTitle\(row\) : null,\s*clashEdges\.get\(row\.stable_id\) \?\? null,?\s*\]/);
 });

@@ -214,7 +214,9 @@ async function _readLibrary(volumeUuid: string, epoch: number): Promise<UsbLibra
 		});
 		noteUsbLibraryRead(`vol:${volumeUuid}`, {
 			state: 'ok',
-			trackCount: library.tracks.length
+			trackCount: library.tracks.length,
+			has_pdb: library.has_pdb,
+			has_onelibrary: library.has_onelibrary
 		});
 		return library;
 	} catch (exc) {

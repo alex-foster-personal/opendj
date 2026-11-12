@@ -25,10 +25,7 @@ from scripts.perf.process_coverage import (
 
 FAMILY = [(100, "desktop-shell"), (101, "python-engine"), (102, "webkit-webcontent")]
 SHELL_CMD = "/Applications/Open DJ.app/Contents/MacOS/opendj-desktop"
-ENGINE_CMD = (
-    "/Applications/Open DJ.app/Contents/Resources/payload/runtime/bin/python3 "
-    "-m apps.engine_core serve"
-)
+ENGINE_CMD = "/Applications/Open DJ.app/Contents/Resources/payload/runtime/bin/python3 -m apps.engine_core serve"
 WEBCONTENT_CMD = (
     "/System/Library/Frameworks/WebKit.framework/Versions/A/XPCServices/"
     "com.apple.WebKit.WebContent.xpc/Contents/MacOS/com.apple.WebKit.WebContent"
@@ -150,9 +147,7 @@ def test_app_not_running_in_json_mode_prints_nothing_on_stdout(
     assert captured.out == ""
 
 
-def test_json_emits_exactly_the_six_keys(
-    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
-) -> None:
+def test_json_emits_exactly_the_six_keys(monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]) -> None:
     """If broken: machine output drifts from the KPI schema."""
     body = _body(96.0, 400.0)
     rss = {100: 96.0, 101: 400.0, 102: 440.0}
@@ -226,9 +221,7 @@ def test_http_404_is_unmeasurable_not_not_running() -> None:
         thread.join(timeout=5.0)
 
 
-def test_unavailable_body_is_unmeasurable(
-    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
-) -> None:
+def test_unavailable_body_is_unmeasurable(monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]) -> None:
     """If broken: available:false still prints a coverage percentage."""
     with pytest.raises(MeasurementError) as excinfo:
         monitor_rss_mb({"available": False, "reason": "probe not loaded"})
@@ -397,9 +390,7 @@ def test_samples_zero_is_rejected() -> None:
     assert excinfo.value.code == 2
 
 
-def test_multi_sample_text_reports_cpu(
-    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
-) -> None:
+def test_multi_sample_text_reports_cpu(monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]) -> None:
     """If broken: multi-sample runs omit the CPU line in text mode."""
     body = _body(96.0, 400.0, 444.0)
     rss = {100: 96.0, 101: 400.0, 102: 440.0}

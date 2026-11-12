@@ -7,7 +7,12 @@
  * needs a `ready` local stem bundle (PARITY-08 / issue #1038); every other
  * `StemSummary` state is a refusal.
  */
-import type { StemSummary } from './api-rb';
+import type { StemSummary, Vocals } from './api-rb';
+
+/** True when `GET /vocals/{id}/status` already carries regions (issue #11422). */
+export function vocalsStatusHasRegions(vocals: Vocals): boolean {
+	return 'regions' in vocals && vocals.regions.length > 0;
+}
 
 export function vocalsAnalyzeRefusal(stems: StemSummary | null): string | null {
 	if (stems === null || stems.status === 'none') {

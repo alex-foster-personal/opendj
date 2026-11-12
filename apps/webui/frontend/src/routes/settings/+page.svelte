@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
 	import { goto } from '$app/navigation';
+	import { page } from '$app/stores';
 	import { getSettings, type SettingsOut } from '$lib/api';
 	import {
 		RUN_SETUP_LABEL,
@@ -8,9 +9,9 @@
 		runSetup,
 		runSetupBlocked
 	} from '$lib/setup/run-setup';
-	import { catalogLinkSettings } from '$lib/settings/catalog';
+	import type { LinkSettingDef } from '$lib/settings/catalog-types';
 	import ConfiguredMusicFolders from '$lib/components/settings/ConfiguredMusicFolders.svelte';
-	import { openSettings } from '$lib/settings/hotkeys';
+	import { openSettings } from '$lib/settings/overlay.svelte';
 	import OpenInBrowserAction from '$lib/components/settings/OpenInBrowserAction.svelte';
 	import {
 		isRunButtonActionPending,
@@ -26,21 +27,21 @@
 			setupReopenAction = value;
 		}
 	);
-	const cloudsyncLinks = catalogLinkSettings('cloudsync');
+	let cloudsyncLinks = $state<readonly LinkSettingDef[]>([]);
 
 	/** Why the setup wizard is unreachable from here, or null when it is not.
 	 * Only a FINAL refusal disables; an unfinished health probe is resolved by
 	 * the click itself rather than by greying the control out. */
 	const setupBlocked = $derived(runSetupBlocked());
 
-	/** One shared entry point with the Cmd+, overlay and the /admin Setup tab
+	/** One shared entry point with the Cmd+, overlay and the /admin Setup action
 	 * ($lib/setup/run-setup), so three doors into the wizard cannot drift. */
 	async function reopenSetup(): Promise<void> {
 		await runButtonAction(
 			setupReopenGate,
 			'reopen-setup',
 			async () => {
-				const failure = await runSetup(goto);
+				const failure = await runSetup(goto, $page.url.pathname);
 				if (failure !== null) throw new Error(failure);
 			},
 			{ toastMessage: (exc) => `Could not reopen setup: ${exc}` }
@@ -52,7 +53,12 @@
 			setupReopenGate,
 			'load-settings',
 			async () => {
-				settings = await getSettings();
+				const [{ catalogLinkSettings }, settingsOut] = await Promise.all([
+					import('$lib/settings/catalog'),
+					getSettings()
+				]);
+				cloudsyncLinks = catalogLinkSettings('cloudsync');
+				settings = settingsOut;
 			},
 			{ toastMessage: (exc) => `Failed to load settings: ${exc}` }
 		);

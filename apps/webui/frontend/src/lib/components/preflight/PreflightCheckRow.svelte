@@ -32,12 +32,14 @@
 	let {
 		check,
 		navigate,
+		pathname = '/',
 		mode = 'boot',
 		label: labelOverride,
 		detail: detailOverride
 	}: {
 		check: PreflightCheck;
 		navigate?: ((path: string) => unknown) | undefined;
+		pathname?: string;
 		mode?: 'boot' | 'admin';
 		label?: string;
 		detail?: string;
@@ -51,7 +53,7 @@
 	async function handleRunSetup(): Promise<void> {
 		if (!navigate || setupBusy) return;
 		setupBusy = true;
-		setupError = await runSetup(navigate);
+		setupError = await runSetup(navigate, pathname);
 		setupBusy = false;
 	}
 </script>

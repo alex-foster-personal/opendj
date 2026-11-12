@@ -35,11 +35,12 @@ import argparse
 import dataclasses
 import datetime as _dt
 import json
+import logging
 import sys
 import time
 from collections.abc import Callable, Iterable
 from pathlib import Path
-from typing import Any
+from typing import Any, Protocol
 
 from apps.shared import audio_files, audio_playable, fs_access, fs_residency, hashing
 from apps.shared.audio_playable import UnplayableAudioError
@@ -60,7 +61,38 @@ from apps.shared.stem_outputs import is_stem_output
 
 ADAPTER_ID: str = "folder"
 
+_log = logging.getLogger(__name__)
+
 _ClockFn = Callable[[], _dt.datetime]
+
+
+class DuplicateRecorder(Protocol):
+    """Records content duplicates (same ``audio_hash``, different paths) for review.
+
+    The dedup package supplies the implementation; callers above both packages
+    build it and pass an opener to :func:`ingest_folder` (dependency inversion,
+    so ``apps.shared`` never imports ``apps.dedup``).
+    """
+
+    def record(
+        self,
+        new_stable_id: str,
+        existing_stable_id: str,
+        audio_hash: str,
+        *,
+        new_path: str,
+        existing_path: str,
+    ) -> bool:
+        """Record one pair; True only when a new cluster or alias row was written."""
+        ...
+
+    def commit(self) -> None: ...
+
+    def close(self) -> None: ...
+
+
+#: Opens one :class:`DuplicateRecorder` for one non-dry ingest; ingest commits and closes it.
+OpenDuplicateRecorder = Callable[[], DuplicateRecorder]
 #: ``(done, total, message)``. Total is known before the first write because
 #: the walk completes first -- a bar that cannot say "of what" is a spinner.
 ProgressFn = Callable[[int, int, str], None]
@@ -115,6 +147,8 @@ class FolderIngestReport:
     tracks_without_analysis: int = 0
     #: Rewritten rows over ``MAX_ANALYSIS_DROPS_PER_CYCLE``: unserved now, redone next pass.
     analysis_drops_withheld: int = 0
+    #: Live rows elsewhere in the library that share this import's ``audio_hash``.
+    content_duplicates: int = 0
     duration_s: float = 0.0
     dry_run: bool = True
 
@@ -192,6 +226,7 @@ def ingest_folder(  # noqa: PLR0913 - keyword-only ingest controls stay explicit
     allow_mass_missing: bool = False,
     restore_removed: bool = False,
     on_new_tracks: NewTracksFn | None = None,
+    open_duplicate_recorder: OpenDuplicateRecorder | None = None,
 ) -> FolderIngestReport:
     """Ingest every audio file under ``roots`` into the state DB.
 
@@ -205,6 +240,14 @@ def ingest_folder(  # noqa: PLR0913 - keyword-only ingest controls stay explicit
     Those files were chosen to be added, so one the user removed earlier
     comes back instead of being skipped (LIBM-141). Without it, a removed
     track stays removed (LIBM-140).
+
+    ``open_duplicate_recorder``, when set on a non-dry run, is called once to open
+    a :class:`DuplicateRecorder`; each imported file whose ``audio_hash`` matches
+    another live row is recorded through it, counted in
+    ``FolderIngestReport.content_duplicates``, and the recorder is committed after
+    the state write and always closed. When omitted, ingest behaves as it did
+    before content-duplicate recording (SETPREP-10626): nothing is recorded and
+    ``content_duplicates`` stays 0.
     """
     start = time.perf_counter()
     root_list = [Path(root).expanduser() for root in roots]
@@ -224,11 +267,25 @@ def ingest_folder(  # noqa: PLR0913 - keyword-only ingest controls stay explicit
     if limit is not None:
         files = files[:limit]
     new_ids: list[str] = []
+    recorder: DuplicateRecorder | None = None
     try:
         with writer._join_or_begin(commit=not dry_run):
             before = _live_ids(conn) if on_new_tracks is not None else frozenset()
             drop_budget = AnalysisDropBudget(limit=MAX_ANALYSIS_DROPS_PER_CYCLE)
-            _write_tracks(writer, files, report, on_progress, drop_budget, restore_removed=restore_removed)
+            if not dry_run:
+                if open_duplicate_recorder is None:
+                    _log.info("content duplicate check skipped: no duplicate recorder provided")
+                else:
+                    recorder = open_duplicate_recorder()
+            _write_tracks(
+                writer,
+                files,
+                report,
+                on_progress,
+                drop_budget,
+                restore_removed=restore_removed,
+                recorder=recorder,
+            )
             report.analysis_drops_withheld = drop_budget.withheld
             if on_new_tracks is not None:
                 new_ids = _new_live_ids_in_walk_order(conn, files, before)
@@ -245,7 +302,11 @@ def ingest_folder(  # noqa: PLR0913 - keyword-only ingest controls stay explicit
             )
         if on_new_tracks is not None and new_ids and not dry_run:
             on_new_tracks(new_ids)
+        if recorder is not None:
+            recorder.commit()
     finally:
+        if recorder is not None:
+            recorder.close()
         report.duration_s = round(time.perf_counter() - start, 3)
 
     return report
@@ -496,7 +557,47 @@ def _withhold_over_drop_budget(
     return True
 
 
-def _write_one_file(
+def _record_content_duplicate_if_any(
+    writer: StateWriter,
+    recorder: DuplicateRecorder,
+    report: FolderIngestReport,
+    *,
+    stable_id: str,
+    file_path: str,
+    audio_hash: str,
+) -> None:
+    if not audio_hash:
+        _log.info(
+            "content duplicate check skipped for %s: no audio hash (unreadable or not materialised)",
+            file_path,
+        )
+        return
+    for existing_sid, existing_path in _live_rows_with_audio_hash(
+        writer.raw_conn, audio_hash, except_stable_id=stable_id
+    ):
+        if recorder.record(
+            stable_id,
+            existing_sid,
+            audio_hash,
+            new_path=file_path,
+            existing_path=existing_path,
+        ):
+            report.content_duplicates += 1
+
+
+def _live_rows_with_audio_hash(conn: Any, audio_hash: str, *, except_stable_id: str) -> list[tuple[str, str]]:
+    """Other live tracks with the same ``audio_hash``, oldest first."""
+    rows = conn.execute(
+        "SELECT stable_id, file_path FROM tracks "
+        "WHERE deleted_at IS NULL AND audio_hash = ? AND stable_id != ? "
+        "AND file_path IS NOT NULL "
+        "ORDER BY rowid",
+        (audio_hash, except_stable_id),
+    ).fetchall()
+    return [(str(row[0]), str(row[1])) for row in rows]
+
+
+def _write_one_file(  # noqa: PLR0913 - the per-file collision maps and the injected recorder stay explicit
     writer: StateWriter,
     entry: audio_files.AudioFile,
     report: FolderIngestReport,
@@ -506,6 +607,7 @@ def _write_one_file(
     returned_by_key: dict[str, tuple[Any, ...]],
     *,
     restore_removed: bool,
+    recorder: DuplicateRecorder | None,
 ) -> bool:
     """Write one walked file. True only when the upsert path completed."""
     bound = _bind_collision_rows(entry, report, live_by_key, returned_by_key, seen)
@@ -557,6 +659,15 @@ def _write_one_file(
         report.tracks_inserted += 1
     else:
         report.tracks_unchanged += 1
+    if recorder is not None:
+        _record_content_duplicate_if_any(
+            writer,
+            recorder,
+            report,
+            stable_id=bound.stable_id,
+            file_path=str(entry.path),
+            audio_hash=audio_hash,
+        )
     if drop:
         _retire_analysis_of_replaced_bytes(writer.raw_conn, bound.stable_id, delete=True)
     if bound.existing is not None and audio_hash:
@@ -579,6 +690,7 @@ def _write_tracks(
     drop_budget: AnalysisDropBudget,
     *,
     restore_removed: bool = False,
+    recorder: DuplicateRecorder | None = None,
 ) -> None:
     """One row per file, with a tier-3 collision guard.
 
@@ -601,6 +713,7 @@ def _write_tracks(
             live_by_key,
             returned_by_key,
             restore_removed=restore_removed,
+            recorder=recorder,
         ):
             continue
         if on_progress is not None:
@@ -984,8 +1097,13 @@ def _print_summary(report: FolderIngestReport) -> None:
         print(f"\n{fs_access.GRANT_INSTRUCTIONS}", file=sys.stderr)
 
 
-def run_cli(args: argparse.Namespace) -> int:
-    """Entry point called from ``apps.shared.state.cli ingest-folder``."""
+def run_cli(args: argparse.Namespace, *, open_duplicate_recorder: OpenDuplicateRecorder | None = None) -> int:
+    """Entry point called from ``apps.shared.state.cli ingest-folder``.
+
+    ``open_duplicate_recorder`` is passed through to :func:`ingest_folder` on a
+    ``--write`` run; ``apps.shared.state.cli`` cannot build one (it may not import
+    ``apps.dedup``), so that entry point records no content duplicates.
+    """
     state_path = Path(args.db) if args.db else state_paths.STATE_DB
     roots = [Path(root).expanduser() for root in args.root]
     missing = [str(root) for root in roots if not root.exists()]
@@ -1004,6 +1122,7 @@ def run_cli(args: argparse.Namespace) -> int:
             allow_mass_missing=bool(
                 getattr(args, "allow_mass_missing", False)
             ),
+            open_duplicate_recorder=open_duplicate_recorder if args.write else None,
         )
         _print_summary(report)
     except MassMissingError as exc:

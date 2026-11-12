@@ -1,0 +1,9 @@
+{
+  "bytes": 1024,
+  "measured_main": 425358,
+  "measured_with_pr": 425857,
+  "sha": "aced91a523",
+  "date": "Tue 10 Nov 2026",
+  "reason": "Issue #10354 digit hot-cue keyboard bindings on /performance (shortcut routing, hotkey handlers, and overlay registry strings). Measured: local vite build vs merge-base 0ecba8924c, +499 B gzip on performance; ceiled to KiB",
+  "payback": "none planned; the growth is the feature's own code on this surface"
+}

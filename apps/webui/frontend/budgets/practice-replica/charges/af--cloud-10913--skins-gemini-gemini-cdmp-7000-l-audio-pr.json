@@ -1,0 +1,9 @@
+{
+  "bytes": 1024,
+  "measured_main": 35135,
+  "measured_with_pr": 35667,
+  "sha": "dbdafee3b3",
+  "date": "Thu 12 Nov 2026",
+  "reason": "branch af--cloud-10913--skins-gemini-gemini-cdmp-7000-l-audio-pr grows the practice-replica surface; measured +532 B gzip over main; ceiled to KiB.",
+  "payback": "none planned; the growth is the change's own code on this surface"
+}

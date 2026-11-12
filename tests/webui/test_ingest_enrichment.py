@@ -39,8 +39,10 @@ from apps.webui.server.ingest_enrichment import (
     GenreFillOutcome,
     GenreFillRun,
     GENRE_LANE,
+    IDENTIFY_LANE,
     LaneFacts,
 )
+from apps.webui.server.ingest_identify import IdentifyOutcome
 
 pytestmark = pytest.mark.requirement("ENRICH-06")
 
@@ -78,6 +80,19 @@ class FakeCovers:
         return len(ids)
 
 
+class FakeIdentify:
+    def __init__(self, run_fn, on_outcomes) -> None:
+        self.run_fn = run_fn
+        self.on_outcomes = on_outcomes
+        self.scheduled: list[tuple[str, list[str]]] = []
+
+    def schedule(self, batch_id: str, ids: Sequence[str]) -> int:
+        listed = list(ids)
+        self.scheduled.append((batch_id, listed))
+        self.on_outcomes(batch_id, self.run_fn(listed))
+        return len(listed)
+
+
 class Rig:
     """A coordinator over mutable fake engine reads."""
 
@@ -91,13 +106,24 @@ class Rig:
         self.warnings: list[EnrichWarning] = []
         self.filled_genres: list[list[str]] = []
         self.genre_available = (True, "")
+        self.identify_runs: list[list[str]] = []
         self.playlists: dict[str, list[str]] = {}
         self.covers = FakeCovers()
         self.store = tmp_path / "state" / ie.STORE_FILENAME
         self.coordinator = self.build()
 
+    def _identify_run(self, ids: Sequence[str]) -> dict[str, IdentifyOutcome]:
+        self.identify_runs.append(list(ids))
+        return {sid: IdentifyOutcome("no_match", None) for sid in ids}
+
     def build(self) -> EnrichmentCoordinator:
-        return EnrichmentCoordinator(
+        coord_holder: list[EnrichmentCoordinator] = []
+
+        def on_outcomes(_batch_id: str, outcomes: dict[str, IdentifyOutcome]) -> None:
+            coord_holder[0]._record_identify(_batch_id, outcomes)
+
+        identify = FakeIdentify(self._identify_run, on_outcomes)
+        coord = EnrichmentCoordinator(
             EnrichmentSources(
                 facts_fn=lambda _ids: self.facts,
                 new_rows_fn=lambda mark: ([sid for i, sid in enumerate(self.rows) if i + 1 > mark], len(self.rows)),
@@ -112,8 +138,11 @@ class Rig:
                 store_path=self.store,
             ),
             covers=self.covers,  # type: ignore[arg-type]
+            identify=identify,  # type: ignore[arg-type]
             clock=lambda: 1_000.0,
         )
+        coord_holder.append(coord)
+        return coord
 
     def _fill_genres(self, ids: Sequence[str]) -> GenreFillRun:
         self.filled_genres.append(list(ids))
@@ -136,6 +165,15 @@ def test_registered_batch_goes_to_the_front_of_the_drain(rig: Rig) -> None:
     rig.coordinator.register("viva", ["a", "b"], "materialize")
     assert rig.prioritized == [["a", "b"]]
     assert rig.coordinator.status()["batches"][0]["batch_id"] == "viva"
+
+
+@pytest.mark.requirement("SETPREP-10626")
+def test_batch_status_carries_content_duplicate_count(rig: Rig) -> None:
+    """[if] an import batch registered duplicate pairs [then] status duplicates matches, [else stop]."""
+    rig.coordinator.register("viva", ["a"], "materialize", duplicates=2)
+    status = rig.coordinator.status()
+    assert status["import_duplicates"] == 2
+    assert status["batches"][0]["duplicates"] == 2
 
 
 def test_rows_from_another_import_path_become_an_auto_batch(rig: Rig) -> None:
@@ -175,6 +213,7 @@ def test_artwork_waits_while_any_track_lacks_a_waveform(rig: Rig) -> None:
     rig.facts = LaneFacts(**{**done.__dict__, "has_strip": {"a"}})
     assert rig.coordinator.tick() == []
     assert rig.covers.scheduled == []
+    assert rig.identify_runs == []
     lanes = rig.coordinator.status("viva", with_tracks=True)["batches"][0]["track_lanes"]
     assert lanes["b"]["waveform"]["state"] == "pending"
     assert lanes["b"]["artwork"]["state"] == "pending"
@@ -240,8 +279,8 @@ def test_cover_outcomes_show_per_track(rig: Rig) -> None:
     assert rig.coordinator.status("viva")["batches"][0]["lanes"]["artwork"] == {"done": 1, "suggested": 1}
 
 
-def test_lane_priority_is_essentials_then_artwork_then_genre() -> None:
-    assert ie.LANE_PRIORITY == ("tags", "waveform", "beatgrid", "key", "loudness", "artwork", "genre")
+def test_lane_priority_is_essentials_then_identify_artwork_genre() -> None:
+    assert ie.LANE_PRIORITY == ("tags", "waveform", "beatgrid", "key", "loudness", "identify", "artwork", "genre")
 
 
 # -----------------------------------------------------------------------------
@@ -398,6 +437,7 @@ def test_http_status_batch_and_rerun(engine: TestClient, rig: Rig) -> None:
     rig.facts = facts(["a"])
     rig.coordinator.register("viva", ["a"], "materialize")
     listing = engine.get("/api/v1/ingest/enrichment").json()
+    assert IDENTIFY_LANE in listing["lane_priority"]
     assert listing["lane_priority"][-1] == GENRE_LANE
     assert listing["batches"][0]["lanes"]["beatgrid"] == {"done": 1}
     one = engine.get("/api/v1/ingest/enrichment/viva").json()
@@ -427,6 +467,90 @@ def test_cli_request_shapes() -> None:
     )
     with pytest.raises(ValueError):
         enrichment_cli.request_for("rerun", "b", "pl")
+
+
+@pytest.mark.requirement("SETPREP-12099")
+def test_identify_runs_before_artwork(rig: Rig) -> None:
+    """[if] essentials settle [then] identify runs in the same tick before artwork, [else stop]."""
+    rig.coordinator.register("viva", ["a", "b"], "materialize")
+    rig.facts = facts(["a", "b"])
+    assert rig.coordinator.tick() == ["viva"]
+    assert rig.identify_runs == [["a", "b"]]
+    assert rig.covers.scheduled == ["a", "b"]
+
+
+@pytest.mark.requirement("SETPREP-12099")
+def test_identify_runs_once_per_batch_until_rerun(rig: Rig) -> None:
+    """[if] identify already ran [then] a second tick does not call again, [else stop]."""
+    rig.coordinator.register("viva", ["a"], "materialize")
+    rig.facts = facts(["a"])
+    rig.coordinator.tick()
+    assert len(rig.identify_runs) == 1
+    rig.coordinator.tick()
+    assert len(rig.identify_runs) == 1
+    rig.coordinator.rerun(batch_id="viva")
+    rig.facts = facts(["a"])
+    rig.coordinator.tick()
+    assert len(rig.identify_runs) == 2
+
+
+@pytest.mark.requirement("SETPREP-12099")
+def test_identify_outcome_states_on_batch(rig: Rig) -> None:
+    """[if] proposed and deferred outcomes [then] suggested and deferred lane states, [else stop]."""
+    outcomes = {
+        "a": IdentifyOutcome("proposed", "ok"),
+        "b": IdentifyOutcome("deferred", "busy"),
+    }
+
+    def run(_ids):
+        return outcomes
+
+    rig.coordinator._identify.run_fn = run  # type: ignore[union-attr]
+    rig.coordinator.register("viva", ["a", "b"], "materialize")
+    rig.facts = facts(["a", "b"])
+    rig.coordinator.tick()
+    lanes = rig.coordinator.status("viva", with_tracks=True)["batches"][0]["track_lanes"]
+    assert lanes["a"][IDENTIFY_LANE]["state"] == "suggested"
+    assert lanes["b"][IDENTIFY_LANE]["state"] == "deferred"
+
+
+@pytest.mark.requirement("SETPREP-12099")
+def test_deferred_identify_still_releases_artwork(rig: Rig) -> None:
+    """[if] identify is deferred [then] artwork still schedules, [else stop]."""
+    rig.coordinator._identify.run_fn = lambda ids: {sid: IdentifyOutcome("deferred", "busy") for sid in ids}  # type: ignore[union-attr]
+    rig.coordinator.register("viva", ["a"], "materialize")
+    rig.facts = facts(["a"])
+    assert rig.coordinator.tick() == ["viva"]
+    assert rig.covers.scheduled == ["a"]
+
+
+@pytest.mark.requirement("SETPREP-12099")
+def test_ingest_identify_counts_proposals(rig: Rig) -> None:
+    """[if] seven proposed rows [then] counts report seven proposals, [else stop]."""
+    rig.coordinator.register("viva", [f"t{i}" for i in range(7)], "materialize")
+    rig.coordinator._identify.run_fn = lambda ids: {  # type: ignore[union-attr]
+        sid: IdentifyOutcome("proposed" if i < 7 else "no_match", None) for i, sid in enumerate(ids)
+    }
+    rig.facts = facts([f"t{i}" for i in range(7)])
+    rig.coordinator.tick()
+    counts = rig.coordinator.ingest_identify_counts()
+    assert counts is not None and counts.get("proposals") == 7
+
+
+@pytest.mark.requirement("SETPREP-12099")
+def test_identify_key_missing_warning() -> None:
+    """[if] identify_key_missing [then] one info warning with the acoustid phrase, [else stop]."""
+    warnings = ie.capability_warnings(
+        drain_running=True,
+        unavailable={},
+        artwork_online=True,
+        ai_missing_keys=[],
+        identify_key_missing=True,
+    )
+    by_code = {w.code: w for w in warnings}
+    assert by_code["IDENTIFY_KEY_MISSING"].lane == IDENTIFY_LANE
+    assert by_code["IDENTIFY_KEY_MISSING"].severity == "info"
+    assert "set ODJ_ACOUSTID_KEY (free key at acoustid.org)" in by_code["IDENTIFY_KEY_MISSING"].fix
 
 
 @pytest.mark.requirement("ENRICH-09")

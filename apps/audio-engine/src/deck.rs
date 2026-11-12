@@ -58,6 +58,8 @@ pub struct Track {
     /// The file the samples were decoded from, as opened, when known.
     pub source: Option<crate::decode::SourceId>,
     /// Exclusive end frame for virtual edits (source timeline); None = file end.
+    /// On a progressive decode head, kept as requested until decoding finishes,
+    /// then clamped to the whole track's length.
     pub end_frame: Option<usize>,
 }
 
@@ -92,7 +94,14 @@ impl Track {
                 return None;
             }
             let frame = (ms * self.sample_rate as f64 / 1000.0).round() as usize;
-            Some(frame.clamp(1, self.frames))
+            // While decoding, `frames` is provisional (the head's own length when the
+            // container states none): keep the requested end. The whole track, built
+            // once decoding finishes, calls this again and clamps to its real length.
+            Some(if self.decoding {
+                frame.max(1)
+            } else {
+                frame.clamp(1, self.frames)
+            })
         });
     }
 
@@ -2215,6 +2224,27 @@ mod tests {
         d.load(Arc::new(track));
         assert!(d.seek_with_quantize(500.0, false).is_ok());
         assert!(d.seek_with_quantize(1500.0, false).is_err());
+    }
+
+    #[test]
+    fn a_progressive_head_with_no_stated_length_keeps_a_later_out_point() {
+        // PRRT_kwDOSEvNd861DeKj: a head with no stated length must not clamp the
+        // edit's out point to the decoded prefix, or the deck stops there.
+        let sr = 48000u32;
+        let head_n = sr as usize; // 1 s decoded
+        let mut head = Track::head(sr, vec![0.25; head_n * 2], None, vec![], None, 12);
+        head.set_end_ms(Some(3000.0));
+        assert_eq!(head.end_frame, Some(sr as usize * 3));
+        let mut d = Deck::new(sr as f64);
+        d.load(Arc::new(head));
+        d.play(true).unwrap();
+        let mut buf = vec![0.0f32; head_n * 2 * 2]; // 2 s of output
+        assert_eq!(d.render_track(&mut buf, sr as f64), head_n * 2);
+        assert!(d.playing, "a head stopped at its decoded prefix, short of the out point");
+        // Once decoding finishes the whole track clamps the out point to its real length.
+        let mut whole = Track::new(sr, vec![0.25; head_n * 2 * 2], vec![], None);
+        whole.set_end_ms(Some(3000.0));
+        assert_eq!(whole.end_frame, Some(head_n * 2));
     }
 
     #[test]

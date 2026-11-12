@@ -147,7 +147,9 @@ test('scroll still changes the DRUMS dial on FILTER', async ({ page }) => {
 	const filterBefore = await valueOf(filter);
 
 	await drums.hover();
-	await page.mouse.wheel(0, 100);
+	// Playwright's WebKit mouse.wheel omits wheelDeltaY, so detectWheelInputKind
+	// reads trackpad (~scrollStep/3 per event). A real notched wheel is asserted.
+	await drums.dispatchEvent('wheel', { deltaY: 120, deltaMode: 0, wheelDeltaY: -120 });
 
 	await expect
 		.poll(async () => Math.abs((await valueOf(drums)) - drumsBefore))

@@ -225,7 +225,7 @@ test('only the load-failure catch restores off; a settled apply leaves the choic
 	const catchBody = fn.slice(fn.indexOf('} catch'));
 	assert.doesNotMatch(tryBody, /persistMidiEnabled/, 'a successful apply must not overwrite the choice');
 	assert.match(catchBody, /persistMidiEnabled\(false\);/);
-	assert.match(catchBody, /_reportMidiLoadFailure\(exc\);/);
+	assert.match(catchBody, /\breportMidiLoadFailure\(exc\);/, "the catch reports through the reporter module (PR #12832)");
 	// The disk half (Codex P2 4130152647): the usual writer is in the chunk
 	// that failed, so the catch writes "off" itself, never the attempted value.
 	// Driven end to end in tests/e2e/midi-setting-disk-on-failed-load.spec.ts.

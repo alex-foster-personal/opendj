@@ -2,7 +2,8 @@
 	/**
 	 * /practice/<device>: practice mode for a hardware layout skin (ADR-0137).
 	 * ?target=<control id> starts a drill: the named control is outlined, and the page
-	 * records reach time on a hit and counts presses on any other control as misses.
+	 * records reach time on a hit and counts presses on any other control as misses, from the
+	 * replica or the real controller (hardware hits, #10251).
 	 * Agent parity: `opendj practice <device>` opens this route; the layout it renders is
 	 * GET /api/v1/practice/devices/<device>.
 	 */
@@ -13,7 +14,11 @@
 	import { page } from '$app/state';
 	import DeviceReplica from '$lib/components/rb/practice/DeviceReplica.svelte';
 	import { fetchPanelLayout, practiceMapFor } from '$lib/components/rb/practice/practice-devices';
-	import { installPracticeSession } from '$lib/components/rb/practice/practice-session';
+	import { createDrill, type DrillState } from '$lib/components/rb/practice/practice-drill';
+	import {
+		installDrillHardwareHits,
+		installPracticeSession
+	} from '$lib/components/rb/practice/practice-session';
 	import { onMount } from 'svelte';
 
 	import type { PanelLayout } from '$lib/components/rb/practice/practice-bindings';
@@ -24,20 +29,17 @@
 	let replica = $state<ReturnType<typeof DeviceReplica> | undefined>(undefined);
 	let layout = $state<PanelLayout | null>(null);
 	let loadError = $state<string | null>(null);
-	let startedMs = $state(0);
-	let reachMs = $state<number | null>(null);
-	let misses = $state(0);
+	let drill = createDrill(null);
+	let drillState = $state<DrillState>(drill.state);
 
 	function restart(): void {
-		startedMs = performance.now();
-		reachMs = null;
-		misses = 0;
+		drillState = drill.restart(performance.now());
 	}
 
 	// A new device or target is a new drill: reload, and start timing only once the panel is up.
 	$effect(() => {
 		const wanted = device;
-		void target;
+		const drilled = target;
 		layout = null;
 		loadError = null;
 		let live = true;
@@ -45,7 +47,8 @@
 			(loaded) => {
 				if (!live) return;
 				layout = loaded;
-				restart();
+				drill = createDrill(drilled);
+				drillState = drill.start(performance.now());
 			},
 			(err: unknown) => {
 				if (live) loadError = String(err);
@@ -71,10 +74,14 @@
 	onMount(() => installPracticeSession());
 
 	function onHit(controlId: string): void {
-		if (target === null || reachMs !== null) return;
-		if (controlId === target) reachMs = Math.round(performance.now() - startedMs);
-		else misses += 1;
+		drillState = drill.press(controlId, performance.now());
 	}
+
+	// Hardware hits: only while drilling, only from this route's device; no ?target=, no subscription.
+	$effect(() => {
+		if (layout === null || target === null) return;
+		return installDrillHardwareHits(layout, practiceMapFor(layout), onHit);
+	});
 </script>
 
 <svelte:head><title>Practice - {device}</title></svelte:head>
@@ -95,9 +102,10 @@
 				<p class="drill">
 					Drill: reach <strong>{target}</strong>.
 					<span title="Milliseconds from drill start to pressing the target control"
-						>reach {reachMs ?? '-'} ms</span
+						>reach {drillState.reachMs ?? '-'} ms</span
 					>
-					<span title="Presses on other controls before the target">misses {misses}</span>
+					<span title="Presses on other controls before the target">misses {drillState.misses}</span
+					>
 					<button type="button" title="Start the drill timer again" onclick={restart}
 						>Restart</button
 					>

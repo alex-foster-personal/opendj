@@ -1,0 +1,9 @@
+{
+  "bytes": 1024,
+  "measured_main": 35138,
+  "measured_with_pr": 35699,
+  "sha": "89f9e9d5e8",
+  "date": "Thu 12 Nov 2026",
+  "reason": "branch af--cloud-10892--skins-allen-and-heath-allen-and-heath-xo grows the practice-replica surface; measured +561 B gzip over main; ceiled to KiB.",
+  "payback": "none planned; the growth is the change's own code on this surface"
+}

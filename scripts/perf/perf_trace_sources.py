@@ -52,8 +52,8 @@ from typing import Any
 
 try:
     from scripts.perf.perf_log_model import (
-        NON_DURATION_STAGES,
         deck_load_phase_model,
+        deck_load_stage_maps,
         epoch_us,
         event_kind_family,
         stem_phase_model,
@@ -64,8 +64,8 @@ except ImportError:
     # directly (its own directory on sys.path, not the repo root); see the
     # matching comment in export_chrome_trace.py.
     from perf_log_model import (  # type: ignore[import-not-found,no-redef]
-        NON_DURATION_STAGES,
         deck_load_phase_model,
+        deck_load_stage_maps,
         epoch_us,
         event_kind_family,
         stem_phase_model,
@@ -100,10 +100,10 @@ PROBE_LOG_DIRS = (
 # --------------------------------------------------------------- frontend
 
 
-def _stage_facts(stages: dict[str, Any]) -> dict[str, Any]:
-    """The non-duration entries, carried as args so nothing is lost."""
+def _row_stage_facts(facts: dict[str, Any]) -> dict[str, Any]:
+    """Non-duration entries carried as args so nothing is lost."""
 
-    return {name: stages[name] for name in NON_DURATION_STAGES if name in stages}
+    return dict(facts)
 
 
 def _complete_event(name: str, category: str, start_us: int, duration_us: int, tid: int, args: dict) -> dict[str, Any]:
@@ -163,15 +163,16 @@ def frontend_events(rows: list[dict[str, Any]], origin: str) -> tuple[list[dict]
             report["instant_rows"] += 1
             continue
 
+        stages_ms, stage_facts = deck_load_stage_maps(row)
         is_load_path = family.startswith(("deck-load", "deck-stems"))
         row_unclassified: set[str] = set()
         if is_load_path:
-            row_unclassified = unclassified_deck_stages(stages, is_load=family.startswith("deck-load"))
+            row_unclassified = unclassified_deck_stages(stages_ms, is_load=family.startswith("deck-load"))
             report["unclassified_stages"] |= row_unclassified
         model = (
-            stem_phase_model(stages)
+            stem_phase_model(stages_ms)
             if family.startswith("deck-stems")
-            else deck_load_phase_model(stages)
+            else deck_load_phase_model(stages_ms)
             if family.startswith("deck-load")
             else None
         )
@@ -183,7 +184,7 @@ def frontend_events(rows: list[dict[str, Any]], origin: str) -> tuple[list[dict]
             # event throws that duration away, hiding the interval a native
             # counter overlap could otherwise explain (Codex P1/BLOCKING,
             # #705, perf_trace_sources.py:190).
-            failed_at = stages.get("failedAt")
+            failed_at = stages_ms.get("failedAt")
             if is_load_path and isinstance(failed_at, (int, float)):
                 start_us = end_us - round(float(failed_at) * 1000)
                 events.append(
@@ -193,7 +194,11 @@ def frontend_events(rows: list[dict[str, Any]], origin: str) -> tuple[list[dict]
                         start_us,
                         round(float(failed_at) * 1000),
                         tid,
-                        {"stages": stages, "labels": row.get("labels")},
+                        {
+                            "stages": stages_ms,
+                            "facts": stage_facts,
+                            "labels": row.get("labels"),
+                        },
                     )
                 )
                 report["failed_load_spans"] += 1
@@ -207,7 +212,7 @@ def frontend_events(rows: list[dict[str, Any]], origin: str) -> tuple[list[dict]
                     "ts": end_us,
                     "pid": FRONTEND_PID,
                     "tid": tid,
-                    "args": {"stages": stages, "labels": row.get("labels")},
+                    "args": {"stages": stages_ms, "facts": stage_facts, "labels": row.get("labels")},
                 }
             )
             report["instant_rows"] += 1
@@ -222,10 +227,10 @@ def frontend_events(rows: list[dict[str, Any]], origin: str) -> tuple[list[dict]
                 round(model.total_ms * 1000),
                 tid,
                 {
-                    "facts": _stage_facts(stages),
+                    "facts": _row_stage_facts(stage_facts),
                     "labels": row.get("labels"),
                     "residual_ms": round(model.residual_ms, 2),
-                    "stages_ms": {k: v for k, v in stages.items() if k not in NON_DURATION_STAGES},
+                    "stages_ms": dict(stages_ms),
                 },
             )
         )

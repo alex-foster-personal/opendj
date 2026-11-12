@@ -6,7 +6,7 @@ import pytest
 
 from apps.analysis.selection import Selection
 from apps.shared.smartlists import SmartlistRuleError
-from apps.smartlists.evaluator import EvaluatorError, compile_rule, evaluate
+from apps.smartlists.evaluator import EvaluatorError, compile_rule, count_matching, evaluate
 
 # These compile-only tests state the selection explicitly: compile_rule has
 # no default, so a rule can never be compiled against an unstated source.
@@ -194,6 +194,26 @@ def test_limit_clamps_result(seeded_library, state_conn) -> None:
         limit=2,
     )
     assert len(result) == 2
+
+
+def test_count_matching_matches_evaluate_len(seeded_library, state_conn) -> None:
+    rule = {"field": "genre", "op": "=", "value": "House"}
+    full = evaluate(rule, state_conn)
+    assert count_matching(rule, state_conn) == len(full)
+
+
+def test_count_matching_excludes_tombstoned_tracks(fixture_library, state_conn) -> None:
+    fixture_library.add_track("live-h")
+    fixture_library.add_field("live-h", "genre", "House")
+    fixture_library.add_track("gone-h")
+    fixture_library.add_field("gone-h", "genre", "House")
+    state_conn.execute(
+        "UPDATE tracks SET deleted_at = ? WHERE stable_id = ?",
+        ("2026-11-06T10:00:00+00:00", "gone-h"),
+    )
+    rule = {"field": "genre", "op": "=", "value": "House"}
+    assert count_matching(rule, state_conn) == 1
+    assert evaluate(rule, state_conn) == ["live-h"]
 
 
 def test_sql_injection_probe_is_parameterised(

@@ -30,7 +30,7 @@ from typing import Any, Literal
 from apps.shared.state.ids import normalise_isrc
 from apps.shared.state.sync_stamp import LOCAL_CHANGELOG_TABLE
 from apps.shared.text import as_text
-from apps.sync_hub import protocol
+from apps.sync_hub import conflict_trash, protocol
 from apps.sync_hub.engine_common import (
     CHANGELOG_TABLES,
     HUB_CHANGELOG_TABLE,
@@ -41,7 +41,7 @@ from apps.sync_hub.engine_identity_queries import (
     matches_by_hash,
     matches_by_isrc,
 )
-from apps.sync_hub.protocol import MEMBERSHIP_TABLE, SPEC_BY_TABLE, RowChange
+from apps.sync_hub.protocol import MEMBERSHIP_SPEC, MEMBERSHIP_TABLE, SPEC_BY_TABLE, RowChange
 from apps.sync_hub.sync_set import PARENT_KEYS
 
 log = logging.getLogger("apps.sync_hub.engine")
@@ -334,9 +334,7 @@ def _rekey_child_changelog(
             _rekey_one(conn, changelog, table, row_pk, new_pk)
 
 
-def _rekey_one(
-    conn: sqlite3.Connection, changelog: str, table: str, row_pk: str, new_pk: Sequence[Any] | None
-) -> None:
+def _rekey_one(conn: sqlite3.Connection, changelog: str, table: str, row_pk: str, new_pk: Sequence[Any] | None) -> None:
     if new_pk is None:
         conn.execute(f"DELETE FROM {changelog} WHERE table_name = ? AND row_pk = ?", (table, row_pk))
         return
@@ -425,6 +423,12 @@ def _remap_locations(conn: sqlite3.Connection, loser: str, survivor: str) -> Non
             ),
         ).fetchone()
         if conflict is not None:
+            conflict_trash.capture_stored_loser(
+                conn,
+                "track_locations",
+                (str(location_id),),
+                conflict_trash.REASON_IDENTITY_COLLAPSE,
+            )
             conn.execute(
                 "DELETE FROM track_locations WHERE location_id = ?",
                 (location_id,),
@@ -450,7 +454,7 @@ def _remap_memberships(conn: sqlite3.Connection, loser: str, survivor: str) -> N
     ]
     for playlist_id in playlist_ids:
         already = conn.execute(
-            "SELECT 1 FROM playlist_memberships WHERE playlist_id = ? AND stable_id = ? LIMIT 1",
+            "SELECT 1 FROM playlist_memberships WHERE playlist_id = ? AND stable_id = ? AND edit_id IS NULL LIMIT 1",
             (playlist_id, survivor),
         ).fetchone()
         if already is not None:
@@ -462,14 +466,27 @@ def _remap_memberships(conn: sqlite3.Connection, loser: str, survivor: str) -> N
                     (playlist_id, loser),
                 )
             ]
-            conn.execute(
-                "DELETE FROM playlist_memberships "
+            member_spec = MEMBERSHIP_SPEC
+            member_columns = _table_columns(conn, MEMBERSHIP_TABLE)
+            for row in conn.execute(
+                f"SELECT {', '.join(_ident(column) for column in member_columns)} "
+                f"FROM playlist_memberships "
                 "WHERE playlist_id = ? AND stable_id = ? AND edit_id IS NULL",
                 (playlist_id, loser),
+            ):
+                values = {column: row[index] for index, column in enumerate(member_columns)}
+                pk = tuple(
+                    "" if values[column] is None else str(values[column])
+                    for column in member_spec.pk
+                )
+                conflict_trash.capture_stored_loser(
+                    conn, MEMBERSHIP_TABLE, pk, conflict_trash.REASON_IDENTITY_COLLAPSE
+                )
+            conn.execute(
+                "DELETE FROM playlist_memberships WHERE playlist_id = ? AND stable_id = ? AND edit_id IS NULL",
+                (playlist_id, loser),
             )
-            _rekey_child_changelog(
-                conn, MEMBERSHIP_TABLE, [(pk, None) for pk in discarded]
-            )
+            _rekey_child_changelog(conn, MEMBERSHIP_TABLE, [(pk, None) for pk in discarded])
         conn.execute(
             "UPDATE playlist_memberships SET stable_id = ? WHERE playlist_id = ? AND stable_id = ?",
             (survivor, playlist_id, loser),
@@ -477,7 +494,11 @@ def _remap_memberships(conn: sqlite3.Connection, loser: str, survivor: str) -> N
 
 
 def _remap_child_column(
-    conn: sqlite3.Connection, table: str, column: str, loser: str, survivor: str,
+    conn: sqlite3.Connection,
+    table: str,
+    column: str,
+    loser: str,
+    survivor: str,
 ) -> None:
     conn.execute(
         f"UPDATE {_ident(table)} SET {_ident(column)} = ? WHERE {_ident(column)} = ?",
@@ -518,8 +539,7 @@ def losers_with_children(conn: sqlite3.Connection, losers: Iterable[str]) -> set
             found.update(
                 str(row[0])
                 for row in conn.execute(
-                    f"SELECT DISTINCT {_ident(column)} FROM {_ident(table)} "
-                    f"WHERE {_ident(column)} IN ({placeholders})",
+                    f"SELECT DISTINCT {_ident(column)} FROM {_ident(table)} WHERE {_ident(column)} IN ({placeholders})",
                     chunk,
                 )
             )

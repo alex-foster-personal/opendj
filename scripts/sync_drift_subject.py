@@ -77,7 +77,7 @@ from apps.shared.set_target import store as set_target_store
 from apps.shared.state import analysis_stale, sync_stamp
 from apps.shared.state import schema as state_schema
 from apps.spotify import state_aux as spotify_aux
-from apps.sync_hub import engine_identity_map, stem_meter
+from apps.sync_hub import engine_identity_map, hub_answered, stem_meter
 from apps.webui.server import crowd_requests as crowd_requests_store
 from apps.webui.server.http_pairings_schema import (
     HTTP_PAIRINGS_SCHEMA_SOURCE,
@@ -287,8 +287,11 @@ STATE_AUTHORITIES: tuple[Authority, ...] = (
     # Module-private because the module exposes no public ensure_*; this is
     # the entry point production uses (apps/analysis/store.py, on the shared
     # connection) and the one tests/engine_core/test_store_schema.py drives.
+    # Named by the FILE holding the analysis CREATE TABLE text, which PR
+    # #10633 moved out of store.py: the declaration this list is compared
+    # against reads files, and store.py no longer declares any DDL.
     Authority(
-        "apps/analysis/store.py",
+        "apps/analysis/analysis_records_tables_sql.py",
         lambda conn, _path: analysis_store._ensure_analysis_tables(conn),
     ),
     # The backfill queue, additive on the same state.db. Production reaches
@@ -376,6 +379,12 @@ STATE_AUTHORITIES: tuple[Authority, ...] = (
     Authority(
         "apps/sync_hub/stem_meter.py",
         lambda conn, _path: stem_meter.ensure_usage_table(conn),
+    ),
+    # Rows a hub answered as not newer (issue #10304): spoke-local bookkeeping
+    # created by apps/sync_hub/client.py on the same state.db, never synced.
+    Authority(
+        "apps/sync_hub/hub_answered.py",
+        lambda conn, _path: hub_answered.ensure_answered_table(conn),
     ),
 )
 """Every writer of DDL into ``state.db``, in the order production runs them.

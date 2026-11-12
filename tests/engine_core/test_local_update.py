@@ -42,6 +42,7 @@ from apps.engine_core.local_update import (
     resolve_status,
 )
 from apps.webui.server.routes.commands import router as commands_router
+from apps.webui.server.shell_commands import install_shell_command_broker
 from tests.engine_core.local_update_archive import BUILT_SHA, SIGNATURE
 from tests.engine_core.local_update_archive import build_archive as _archive
 
@@ -60,6 +61,8 @@ def _app(tmp_path: Path, *, source: str = "payload", countdown_s: float = 0.0) -
     )
     setattr(app.state, BUILD_IDENTITY_STATE_ATTR, identity)
     add_app_update_routes(app, data_dir=tmp_path / "data", countdown_s=countdown_s)
+    # The real app installs its broker in create_app; a bare FastAPI must do the same.
+    install_shell_command_broker(app)
     app.include_router(commands_router, prefix="/api/v1")
     return app
 

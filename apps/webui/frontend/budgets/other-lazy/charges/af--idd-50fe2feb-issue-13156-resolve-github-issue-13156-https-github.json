@@ -1,0 +1,9 @@
+{
+  "bytes": 1024,
+  "measured_main": 517493,
+  "measured_with_pr": 517622,
+  "sha": "d5da2137d7",
+  "date": "Thu 12 Nov 2026",
+  "reason": "PR #13501 adds playlist undelete regression tests without production frontend changes. Local builds measured +129 B gzip over the merge base; CI at 9371e6d7f measured +182 B. This charge records the build output delta, ceiled to KiB.",
+  "payback": "none planned; this test-only PR adds no production modules to remove, and commit-stamped builds change emitted chunk output"
+}

@@ -302,6 +302,52 @@ test('W19 syncSnapshotBody maps the from deck to side a, the elected master, and
 	);
 });
 
+// requirement: PAIR-12881 (issue #12384)
+// [if] a deck stable_id is missing [then] syncSnapshotBody throws RangeError [else stop].
+test('syncSnapshotBody rejects a missing stable_id before position_ms would pass', () => {
+	const deck = {
+		stable_id: 'track-a',
+		position_ms: 1000,
+		tempo_ratio: 1,
+		is_master: false
+	};
+	assert.throws(
+		() => pairingCapture.syncSnapshotBody({ ...deck, stable_id: '' }, deck, false),
+		RangeError
+	);
+	assert.throws(
+		() => pairingCapture.syncSnapshotBody(deck, { ...deck, stable_id: '   ' }, false),
+		RangeError
+	);
+});
+
+// requirement: PAIR-12881 (issue #12384)
+// [if] capturePairing sees an empty stable_id [then] fetch is never called [else stop].
+test('capturePairing with a missing stable_id writes nothing, not even the pairing row', async () => {
+	let calls = 0;
+	globalThis.fetch = async () => {
+		calls += 1;
+		return jsonResponse({}, { status: 201 });
+	};
+	const caught = await pairingCapture
+		.capturePairing(
+			{ from_stable_id: 'track-a', to_stable_id: 'track-b' },
+			{ stable_id: '', position_ms: 1000, tempo_ratio: 1, is_master: true },
+			{ stable_id: 'track-b', position_ms: 2000, tempo_ratio: 1, is_master: false },
+			false
+		)
+		.then(
+			() => null,
+			(error) => error
+		);
+	assert.ok(caught instanceof RangeError, 'Capture fails visibly');
+	assert.equal(
+		calls,
+		0,
+		'the write-once pairing row must not be created before the snapshot is validated'
+	);
+});
+
 test('W19 capturePairing with an invalid position writes nothing, not even the pairing row', async () => {
 	let calls = 0;
 	globalThis.fetch = async () => {

@@ -35,6 +35,7 @@ from pathlib import Path
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 LEDGER = PROJECT_ROOT / "docs" / "controller" / "preview-pins-ledger.json"
 REQUIREMENTS = PROJECT_ROOT / ".planning" / "REQUIREMENTS.md"
+FRAGMENTS = PROJECT_ROOT / ".planning" / "requirements.d"
 TEST_ROOTS = ("tests", "apps")
 TEST_NAME = re.compile(r"(^test_.*\.py$|_test\.py$|\.test\.(mjs|ts|js)$|\.spec\.ts$)")
 SKIP_DIRS = {"node_modules", "fixtures", ".svelte-kit", "build", "dist", "__pycache__", ".venv"}
@@ -173,10 +174,19 @@ def find_problems(ledger: dict, rows: dict[str, ReqRow], tests: dict[Path, str],
     return problems
 
 
+def requirement_text(root: Path) -> str:
+    """REQUIREMENTS.md plus every fragment under requirements.d: a checkbox row lives in one or the other."""
+    parts = [(root / REQUIREMENTS.relative_to(PROJECT_ROOT)).read_text(encoding="utf-8")]
+    fragments = root / FRAGMENTS.relative_to(PROJECT_ROOT)
+    if fragments.is_dir():
+        parts.extend(p.read_text(encoding="utf-8") for p in sorted(fragments.glob("*.md")) if p.name != "README.md")
+    return "\n".join(parts)
+
+
 def check(root: Path = PROJECT_ROOT, feedback_dirs: list[Path] | None = None) -> list[str]:
     ledger = json.loads((root / LEDGER.relative_to(PROJECT_ROOT)).read_text(encoding="utf-8"))
     builds = set(ledger["preview_builds"])
-    rows = read_requirement_rows((root / REQUIREMENTS.relative_to(PROJECT_ROOT)).read_text(encoding="utf-8"))
+    rows = read_requirement_rows(requirement_text(root))
     snapshot_ids = read_snapshot_pin_ids(root, ledger["snapshots"], builds)
     problems = find_problems(ledger, rows, index_test_files(root), snapshot_ids)
     ledger_ids = {p["id"] for p in ledger["pins"]}

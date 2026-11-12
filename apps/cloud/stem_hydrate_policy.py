@@ -47,9 +47,7 @@ _COMPLIANT = frozenset(
         recompress.SKIP_ALREADY_LOSSY,
     }
 )
-_CANNOT_JUDGE = frozenset(
-    {recompress.SKIP_NO_SOURCE, recompress.SKIP_UNKNOWN_SOURCE, recompress.SKIP_SOURCE_DURATION}
-)
+_CANNOT_JUDGE = frozenset({recompress.SKIP_NO_SOURCE, recompress.SKIP_UNKNOWN_SOURCE, recompress.SKIP_SOURCE_DURATION})
 
 
 class StemPolicyRefusedError(HydrationError):

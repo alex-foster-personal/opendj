@@ -156,8 +156,14 @@ describe('usb tracker helpers (#328)', () => {
 				{ id: 'vol:other', name: 'BACKUP', present: true, kind: 'djay' },
 				{ id: 'vol:gone', name: 'OLD', present: false, kind: 'rekordbox' }
 			],
-			{ 'vol:ssk': { state: 'ok', trackCount: 12 } }
-	,
+			{
+				'vol:ssk': {
+					state: 'ok',
+					trackCount: 12,
+					has_pdb: true,
+					has_onelibrary: true
+				}
+			},
 			true
 		);
 		assert.equal(report.drives, 'Not one drive only. 2 drives: SSK, BACKUP.');
@@ -167,7 +173,25 @@ describe('usb tracker helpers (#328)', () => {
 		);
 		assert.match(report.sticks[0].version, /12 tracks/);
 		assert.match(report.sticks[0].version, /export\.pdb, RBX/);
+		assert.match(report.sticks[0].version, /Browse uses export\.pdb/);
+		assert.match(report.sticks[0].version, /Device Library Plus\) is also on this stick/);
 		assert.match(report.sticks[1].version, /Classified as djay, the other library/);
+	});
+
+	it('says pdb-only RBX when exportLibrary.db was absent on a successful read', () => {
+		const report = usb.usbFormatReport(
+			[{ id: 'vol:ssk', name: 'SSK', present: true, kind: 'rekordbox' }],
+			{
+				'vol:ssk': {
+					state: 'ok',
+					trackCount: 563,
+					has_pdb: true,
+					has_onelibrary: false
+				}
+			},
+			true
+		);
+		assert.match(report.sticks[0].version, /Device Library Plus\) is not on this stick/);
 	});
 
 	// Sol P1 4399554460, PR #6223: before this session's first scan the present

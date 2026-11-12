@@ -1,0 +1,9 @@
+{
+ "map_name": "DJControl Jogvision",
+ "map_const": "HERCULES_DJCONTROL_JOGVISION_MAP",
+ "map_ts": "apps/webui/frontend/src/lib/rb/midi/maps/hercules-djcontrol-jogvision.ts",
+ "panel_w": 455.0,
+ "panel_d": 254.0,
+ "panel_size_source": "Hercules DJControl Jogvision Quick Start Guide (DJCJogvision_QSG_EN.pdf), mechanical specifications: enclosure 17.9 x 10 in (45.5 x 25.4 cm)",
+ "display_name": "2-deck controller with in-jog displays"
+}

@@ -40,6 +40,10 @@
 		vocalsOf
 	} from '$lib/rb/api-rb';
 	import { getSmartlistTracks, type SmartlistSummary } from '$lib/rb/api-smartlists';
+	import {
+		SMARTLIST_PREVIEW_CAP,
+		smartlistMatchIsTruncated
+	} from '$lib/rb/smartlist-preview';
 	import { midiLoadRow, nextMidiSelection } from './browser/browser-midi-selection';
 	import { instantDoubleCommand, locateDecision } from '$lib/rb/browser-navigation';
 	import { getRecentDeck } from '$lib/rb/recent-deck';
@@ -58,6 +62,7 @@
 		refreshLoadedDeckVocalsIfNeeded,
 		subscribeLoadedDeckVocalsRefresh
 	} from '$lib/rb/loaded-deck-vocals-refresh';
+	import { subscribeStemsAndVocalsLibraryRefresh } from '$lib/rb/library-row-assets-refresh';
 	import {
 		plannedTitle,
 		anyDeckPlaying,
@@ -140,6 +145,11 @@
 		untilSelectionLands,
 		LIBRARY_FILTER_LABELS
 	} from './browser/browser-panel-support';
+	import {
+		openUsbPanel,
+		usbDetectPulseActive,
+		usbDetectPulseIds
+	} from '$lib/rb/usb-tracker.svelte';
 	import type {
 		PlaylistSummaryHydrated,
 		PlaylistTrackRowWire,
@@ -191,6 +201,9 @@
 		renamePlaylist,
 		replacePlaylistTracks
 	} from '$lib/rb/playlist-write';
+	import { reorderItemIdsViaMove } from '$lib/rb/playlist-shuffle';
+	import { fetchOpenDjPlayCounts } from '$lib/plays/play-counter';
+	import type { PlaylistShuffleDeps } from './browser/track-context-menu';
 	import { wireHistoryBrowserMenu } from '$lib/history/history-browser-menu';
 	import {
 		removeRowsInPlace,
@@ -286,6 +299,7 @@
 	} from '$lib/rb/playlist-folder-drop';
 	import PlaylistFolderDupModal from './PlaylistFolderDupModal.svelte';
 	import AddToPlaylistPicker from './browser/AddToPlaylistPicker.svelte';
+	import { writablePlaylistNodes } from '$lib/rb/add-to-playlist';
 	import {
 		removeFromLibraryConfirmMessage,
 		removeFromLibraryToastMessage
@@ -308,7 +322,9 @@
 	import TrackEditModals from './TrackEditModals.svelte';
 	import LibraryHeaderTools from './browser/LibraryHeaderTools.svelte';
 	import SetTargetReadout from './browser/SetTargetReadout.svelte';
+	import PlaylistSummaryLine from './browser/PlaylistSummaryLine.svelte';
 	import { setTargetState } from '$lib/rb/set-target-state.svelte';
+	import { playlistSummaryState } from '$lib/rb/playlist-summary-state.svelte';
 	import PerformanceRecorderRail from './browser/PerformanceRecorderRail.svelte';
 	import PaneTabs from './browser/PaneTabs.svelte';
 	import RelatedCriteriaPopover from './browser/RelatedCriteriaPopover.svelte';
@@ -343,6 +359,7 @@
 		applyLibraryKeyFilter,
 		selectedRowKeyIn,
 		sortRows,
+		updateRowAcrossPanes,
 		visibleRowsOf,
 		vocalsFilterCounts,
 		vocalsFilterTitle,
@@ -365,6 +382,8 @@
 	import LibraryLoadIndicator from './browser/LibraryLoadIndicator.svelte';
 	import SessionPlayedBanner from './browser/SessionPlayedBanner.svelte';
 	import { recordSessionPlayed, sessionPlayed } from '$lib/rb/session-played.svelte';
+	import SaveOrderButton from './browser/SaveOrderButton.svelte';
+	import { orderDiffers, saveOrderItemIds, savePlaylistOrder } from '$lib/library/save-order';
 	import {
 		arrangeSections,
 		loadSections,
@@ -644,6 +663,9 @@
 		return untrack(() =>
 			startPendingSettle({
 				rows: () => (p.playlist_id === id ? p.rows : []),
+				publishRows: (rows) => {
+					if (p.playlist_id === id) p.rows = rows as BrowserRow[];
+				},
 				fetchRows: async () => (await fetchRows(id)).rows,
 				onError: (exc) => {
 					const line = `[pending-settle] ${id}: ${String(exc)}`;
@@ -1151,7 +1173,11 @@
 	// not TrackTable's props.
 	const provider = makeClientRowProvider(
 		() => tableRows,
-		() => pane.truncated || (wholeCollectionActive && pane.search_total > MAX_SEARCH_ROWS)
+		() => pane.truncated || (wholeCollectionActive && pane.search_total > MAX_SEARCH_ROWS),
+		() =>
+			pane.match_total === null
+				? null
+				: { loaded: pane.rows.length, total: pane.match_total }
 	);
 	// LIBM-175: list and whole-collection modes pass no placeholder, so
 	// SearchBox's SEARCH_PLACEHOLDER ('Search...') shows; the
@@ -1345,6 +1371,7 @@
 		// `playlists` / resync (see the handlers below); that is cheap and is
 		// user-visible undo/redo state.
 		const unsubscribeLoadedDeckVocals = subscribeLoadedDeckVocalsRefresh();
+		const unsubscribeStemsVocalsRows = subscribeStemsAndVocalsLibraryRefresh();
 		wireHistoryBrowserMenu({
 			ask: askBrowserConfirm,
 			refresh: _requestLibraryRefresh,
@@ -1402,6 +1429,7 @@
 			clearInterval(blankSweepTimer);
 			clearInterval(libraryFallbackTimer);
 			unsubscribeLoadedDeckVocals();
+			unsubscribeStemsVocalsRows();
 			clearInterval(healthRefetchTimer);
 			_coverageRefresh.dispose();
 			_reconcileRefresh.dispose();
@@ -1612,6 +1640,7 @@
 			}
 			if (bootPaneDone !== null) await bootPaneDone;
 		} catch (exc) {
+			if (isPageGoingAway()) return;
 			libraryHealthError = exc instanceof Error ? exc.message : String(exc);
 			playlistsError = String(exc);
 			pushToast(`browser init failed: ${String(exc)}`, 'error');
@@ -2106,6 +2135,7 @@
 				p.rows = result.rows;
 				p.truncated = result.truncated;
 				p.etag = result.etag;
+				p.match_total = result.match_total;
 				// A search-hit selection names search rows; the playlist refresh
 				// must not rebuild it from playlist rows.
 				if (!(p === pane && wholeCollectionActive)) pruneSelection(p, result.rows);
@@ -2475,15 +2505,20 @@
 
 	async function _fetchAutolistRows(
 		selection: AutolistSelection
-	): Promise<{ rows: BrowserRow[]; truncated: boolean; etag: string }> {
+	): Promise<{
+		rows: BrowserRow[];
+		truncated: boolean;
+		etag: string;
+		match_total: null;
+	}> {
 		if (!hasAutolistSelection(selection)) {
-			return { rows: [], truncated: false, etag: '' };
+			return { rows: [], truncated: false, etag: '', match_total: null };
 		}
 		const page = await queryAutolists(selection, 0, PAGE_SIZE);
 		const rows = page.tracks.map((wire, i) =>
 			_rowFromPlaylistWire(wire as PlaylistTrackRowWire, i + 1)
 		);
-		return { rows, truncated: page.total > rows.length, etag: '' };
+		return { rows, truncated: page.total > rows.length, etag: '', match_total: null };
 	}
 
 	function _pushPaneLoadError(
@@ -2648,7 +2683,13 @@
 				node.kind === 'missing_tracks'
 					? await fetchMissingTrackRows()
 					: await _fetchSmartlistRows(node.playlist_id);
-			p.completeLoad(seq, result.rows, result.truncated, result.etag);
+			p.completeLoad(
+				seq,
+				result.rows,
+				result.truncated,
+				result.etag,
+				result.match_total
+			);
 			if (node.kind === 'smartlist') {
 				recordOpenToLibraryRows({ source: 'playlist' });
 				completeLibraryUsable({ source: 'playlist' });
@@ -2701,7 +2742,12 @@
 		return { ..._rowFromPlaylistWire(wire, order), match_context: wire.match_context };
 	}
 
-	async function _fetchAllRows(): Promise<{ rows: BrowserRow[]; truncated: boolean; etag: string }> {
+	async function _fetchAllRows(): Promise<{
+		rows: BrowserRow[];
+		truncated: boolean;
+		etag: string;
+		match_total: null;
+	}> {
 		// All Tracks from the library index (LIBM-171): one request when the
 		// library changed, none otherwise. ?available stays 'all': FR-1 hiding is
 		// client-side so the toggle flips instantly. One ring row per refresh
@@ -2709,34 +2755,47 @@
 		const startedAt = performance.now();
 		const rows = rowsForIndex(await loadAllTracksIndex(), _rowFromIndexWire);
 		recordLibraryLoadTiming('all-tracks', { fetchMs: performance.now() - startedAt, rows: rows.length });
-		return { rows, truncated: false, etag: '' };
+		return { rows, truncated: false, etag: '', match_total: null };
 	}
 
 	async function _fetchSmartlistRows(
 		id: string
-	): Promise<{ rows: BrowserRow[]; truncated: boolean; etag: string }> {
+	): Promise<{
+		rows: BrowserRow[];
+		truncated: boolean;
+		etag: string;
+		match_total: number;
+	}> {
 		const startedAt = performance.now();
-		const detail = await getSmartlistTracks(id);
+		const detail = await getSmartlistTracks(id, SMARTLIST_PREVIEW_CAP);
 		const rows = detail.tracks.map((wire, i) =>
 			_rowFromPlaylistWire(
 				{
 					...wire,
 					has_remote_copy: wire.has_remote_copy ?? false,
+					remote_stem_status: wire.remote_stem_status ?? 'unknown',
 					cloud_transfer: wire.cloud_transfer ?? null
 				},
 				i + 1
 			)
 		);
-		recordLibraryLoadTiming('playlist', {
+		const match_total = detail.total;
+		const truncated = smartlistMatchIsTruncated(rows.length, match_total);
+		recordLibraryLoadTiming('smartlist', {
 			fetchMs: performance.now() - startedAt,
 			rows: rows.length
 		});
-		return { rows, truncated: false, etag: '' };
+		return { rows, truncated, etag: '', match_total };
 	}
 
 	async function _fetchPlaylistRows(
 		id: string
-	): Promise<{ rows: BrowserRow[]; truncated: boolean; etag: string }> {
+	): Promise<{
+		rows: BrowserRow[];
+		truncated: boolean;
+		etag: string;
+		match_total: null;
+	}> {
 		// Hydrated detail (contract 4) + the playlist's membership ETag
 		// (add-remove-reorder-tracks: required If-Match for the write side's
 		// PUT .../tracks) in one request. Never client-slice membership:
@@ -2748,7 +2807,7 @@
 			fetchMs: performance.now() - startedAt,
 			rows: rows.length
 		});
-		return { rows, truncated: false, etag };
+		return { rows, truncated: false, etag, match_total: null };
 	}
 
 	// -------------------------------------------- lazy per-row hydration
@@ -2757,11 +2816,11 @@
 	// observer also flips row.revealed for the one-time canvas draw.
 
 	function rowVisible(row: BrowserRow): void {
-		row.revealed = true;
-		void _hydrateRowMeta(row);
+		updateRowAcrossPanes(panes, row.stable_id, (held) => ({ ...held, revealed: true }));
+		void _hydrateRowMeta(row.stable_id);
 	}
 
-	async function _hydrateRowMeta(row: BrowserRow): Promise<void> {
+	async function _hydrateRowMeta(stable_id: string): Promise<void> {
 		// Pre-#737 a track with no rekordbox mapping had every rb-meta field
 		// pinned to a known constant (artwork/analysis always false), so the
 		// round-trip could only confirm what the row already knew and was
@@ -2772,11 +2831,22 @@
 		// rows now pay the same one-fetch-per-visible-row cost mapped rows
 		// already pay via this same IntersectionObserver-gated path.
 		// Stick rows (usb- ids) have no library row: rb-meta would only 404.
-		if (row.rb_meta !== null || row.stable_id.startsWith('usb-') || _inflight.has(row.stable_id)) return;
-		_inflight.add(row.stable_id);
+		const seed =
+			panes.flatMap((pane) => pane.rows).find((row) => row.stable_id === stable_id) ??
+			panes.flatMap((pane) => pane.search_results).find((row) => row.stable_id === stable_id);
+		if (
+			seed === undefined ||
+			seed.rb_meta !== null ||
+			stable_id.startsWith('usb-') ||
+			_inflight.has(stable_id)
+		)
+			return;
+		_inflight.add(stable_id);
 		try {
-			row.rb_meta = await _fetchRbMetaWithRetry(row.stable_id);
-			applySettledAvailability(row);
+			const rb_meta = await _fetchRbMetaWithRetry(stable_id);
+			updateRowAcrossPanes(panes, stable_id, (row) =>
+				applySettledAvailability({ ...row, rb_meta })
+			);
 		} catch (exc) {
 			// A track with no rekordbox vendor mapping is NOT an error any more:
 			// rb-meta answers 200 with the local-vendor payload. A 404 here now
@@ -2784,9 +2854,9 @@
 			// Loud but non-modal: a toast per row would spam during scrolling.
 			// Transient fails leave rb_meta null; rowVisible can retry later
 			// when the row re-enters the observer (inflight cleared).
-			console.error(`rb-meta hydration failed for ${row.stable_id}:`, exc);
+			console.error(`rb-meta hydration failed for ${stable_id}:`, exc);
 		} finally {
-			_inflight.delete(row.stable_id);
+			_inflight.delete(stable_id);
 		}
 	}
 
@@ -2820,12 +2890,16 @@
 				etag = (await getTrack(row.stable_id)).etag;
 			}
 			const { track, etag: fresh } = await patchTrack(row.stable_id, etag, { rating: next });
-			row.rating = normalizeRating(track.rating ?? null);
-			row.etag = fresh;
+			const rating = normalizeRating(track.rating ?? null);
+			updateRowAcrossPanes(panes, row.stable_id, (held) => ({ ...held, rating, etag: fresh }));
 		} catch (exc) {
 			if (exc instanceof ConflictError) {
-				row.rating = normalizeRating(exc.current.rating ?? null);
-				row.etag = exc.etag;
+				const rating = normalizeRating(exc.current.rating ?? null);
+				updateRowAcrossPanes(panes, row.stable_id, (held) => ({
+					...held,
+					rating,
+					etag: exc.etag
+				}));
 				pushToast('rating conflict: track changed elsewhere - showing current value', 'error');
 				return;
 			}
@@ -2844,11 +2918,14 @@
 		try {
 			const etag = row.etag === '' ? (await getTrack(row.stable_id)).etag : row.etag;
 			const { etag: fresh } = await patchTrack(row.stable_id, etag, { comments: next });
-			row.comments = next;
-			row.etag = fresh;
+			updateRowAcrossPanes(panes, row.stable_id, (held) => ({
+				...held,
+				comments: next,
+				etag: fresh
+			}));
 		} catch (exc) {
 			if (exc instanceof ConflictError) {
-				row.etag = exc.etag;
+				updateRowAcrossPanes(panes, row.stable_id, (held) => ({ ...held, etag: exc.etag }));
 				pushToast('comment conflict: track changed elsewhere - the comment was not saved', 'error');
 				return;
 			}
@@ -3785,6 +3862,14 @@
 		void pane.rows.map((r) => r.stable_id).join(',');
 		untrack(() => void setTargetState.refresh());
 	});
+	const playlistSummaryId = $derived(
+		pane.kind === 'playlist' && pane.playlist_id && pane.playlist_id !== 'all' ? pane.playlist_id : null
+	);
+	$effect(() => playlistSummaryState.attach(playlistSummaryId));
+	$effect(() => {
+		void pane.etag;
+		untrack(() => void playlistSummaryState.refresh());
+	});
 	// PAIR-10: a Spotify pane, an autolist, or a taglist is read-only, so its rows
 	// never offer the pair command. Taglists and autolists both report as collection.
 	const readOnlyPane = $derived(
@@ -3798,6 +3883,62 @@
 	// W33 (LIBM-182): an editable playlist that is sorted or searched says why
 	// drag-reorder is off, and offers one click back to membership order.
 	const reorderBlocked = $derived(reorderBlockedReason(editablePane, pane.sort_key, pane.search));
+
+	const playlistShuffleDeps = $derived.by((): PlaylistShuffleDeps | null => {
+		const id = pane.playlist_id;
+		if (id === null || id === 'all' || isMissingTracksId(id) || isAutolistId(id)) return null;
+		if (source !== 'collection' || pane.whole_collection) return null;
+		const blocked =
+			reorderBlocked ??
+			(readOnlyPane ? 'read-only playlist' : null) ??
+			(pane.truncated ? 'playlist is truncated - membership editing is disabled' : null) ??
+			(pane.etag === '' ? 'playlist still loading' : null);
+		return {
+			rows: pane.rows.map((row) => ({
+				item_id: row.item_id ?? '',
+				stable_id: row.stable_id
+			})),
+			playlistId: id,
+			etag: pane.etag,
+			allowed: reorderablePane && blocked === null,
+			blockedReason: blocked,
+			move: reorderItemIdsViaMove,
+			fetchCounts: fetchOpenDjPlayCounts,
+			seed: () => Date.now(),
+			reload: async () => {
+				const node = _currentNode(pane);
+				if (node !== null) await _loadPane(pane, node);
+			},
+			pushToast: (message, kind) => pushToast(message, kind)
+		};
+	});
+
+	// LIBUX-8678: the shown order with every section open, so a collapsed
+	// section's tracks keep their place when the order is saved.
+	const shownOrder = $derived(
+		tableView.headers.length > 0 ? arrangeSections(renderedRows ?? [], openSections, new Set()).rows : (renderedRows ?? [])
+	);
+	const canSaveOrder = $derived(
+		editablePane && pane.kind === 'playlist' && pane.sort_key !== null && pane.search.trim() === '' &&
+			orderDiffers(shownOrder, pane.rows)
+	);
+	let savingOrder = $state(false);
+
+	async function saveShownOrder(): Promise<void> {
+		const p = pane;
+		if (p.playlist_id === null) return;
+		savingOrder = true;
+		try {
+			await savePlaylistOrder(p.playlist_id, p.etag, saveOrderItemIds(shownOrder, p.rows));
+			restorePlaylistOrder();
+			const node = _currentNode(p);
+			if (node !== null) await _loadPane(p, node);
+		} catch (exc) {
+			pushToast(`save this order failed: ${String(exc)}`, 'error');
+		} finally {
+			savingOrder = false;
+		}
+	}
 
 	function restorePlaylistOrder(): void {
 		const p = panes[activePane];
@@ -4071,6 +4212,7 @@
 			p.rows = fresh.rows;
 			p.truncated = fresh.truncated;
 			p.etag = fresh.etag;
+			p.match_total = fresh.match_total;
 			pruneSelection(p, fresh.rows);
 		},
 		toast: pushToast
@@ -4100,6 +4242,7 @@
 				error={spotifyPendingError}
 				oncollection={selectCollectionSource}
 				onselect={selectSpotifyPlaylist}
+				onimported={() => void _refreshPlaylists()}
 			/>
 		{:else}
 			<LibraryNav
@@ -4185,6 +4328,9 @@
 				</button>
 				<!-- LIBUX-49: the pencil sits at the toolbar's left end, clear of the search box (which grows
 					 leftwards) and of the feedback dock over the bottom-right corner. -->
+				{#if playlistSummaryId}
+					<PlaylistSummaryLine stats={playlistSummaryState.stats} />
+				{/if}
 				{#if editablePane}
 					<SetTargetReadout summary={setTargetState.summary} onsettarget={(t) => void setTargetState.setTarget(t)} />
 				{/if}
@@ -4375,6 +4521,9 @@
 		{#if pane.kind === 'playlist' && pane.playlist_id !== null}
 			<PlaylistSetTabs playlistId={pane.playlist_id} rows={pane.rows} selectedOrders={pane.selected_orders} />
 		{/if}
+		{#if canSaveOrder}
+			<SaveOrderButton busy={savingOrder} onsave={() => void saveShownOrder()} />
+		{/if}
 		{#if openSections.length > 0 && pane.sort_key !== null && pane.search.trim() === ''}
 			<SectionSortBar
 				within={uiPrefs.sort_within_sections}
@@ -4454,6 +4603,7 @@
 			onrefused={(reason) => pushToast(reason, 'error')}
 			onrate={rateRow}
 			oncomment={commentRow}
+			onpatchrow={(stable_id, map) => updateRowAcrossPanes(panes, stable_id, map)}
 			onrowvisible={rowVisible}
 			onremoverow={removeRow}
 			onremoverows={_removeMemberships}
@@ -4477,6 +4627,7 @@
 			onrelocated={() => void _reloadActivePane()}
 			oneditrefresh={() => void _reloadActivePane()}
 			onaddtoplaylist={(ids) => openAddToPlaylistPicker(ids)}
+			shuffleDeps={playlistShuffleDeps}
 			ongenrefilter={genreFilter}
 			{genreFilterUntil}
 			searchQuery={pane.search}
@@ -4557,6 +4708,20 @@
 	</div>
 	<ConnDotsStrip libDot={libraryHealth} beDot={backendOnline} feDot={frontendOnline} softDots={softConnDots} />
 	<div class="bottom-bar">
+		{#if usbDetectPulseActive()}
+			<button
+				type="button"
+				class="usb-detect-ribbon"
+				data-testid="bottom-bar-usb-detect"
+				title="USB stick detected - open the USB panel (does not interrupt mixing)"
+				aria-label="USB stick detected"
+				onclick={() => openUsbPanel()}
+			>
+				<span class="usb-detect-ribbon-label">
+					USB{usbDetectPulseIds().length === 1 ? '' : 's'} detected
+				</span>
+			</button>
+		{/if}
 		<button
 			type="button"
 			class="icon-btn"
@@ -4676,7 +4841,7 @@
 
 <AddToPlaylistPicker
 	open={addToPlaylistIds !== null}
-	playlists={treeNodes}
+	playlists={writablePlaylistNodes(treeNodes)}
 	onpick={(node) => void addTracksToPlaylist(node)}
 	onclose={() => (addToPlaylistIds = null)}
 />
@@ -5006,6 +5171,35 @@
 	.panels-chevron:hover {
 		color: var(--rb-accent);
 	}
+	.usb-detect-ribbon {
+		position: relative;
+		flex: none;
+		max-width: 160px;
+		height: 12px;
+		padding: 0 6px;
+		border: 1px solid color-mix(in srgb, var(--rb-orange) 70%, transparent);
+		background: color-mix(in srgb, var(--rb-orange) 18%, transparent);
+		cursor: pointer;
+		animation: usb-detect-pulse 1.2s ease-in-out infinite;
+	}
+	.usb-detect-ribbon-label {
+		display: block;
+		font-size: 9px;
+		line-height: 12px;
+		color: var(--rb-orange);
+		white-space: nowrap;
+		overflow: hidden;
+		text-overflow: ellipsis;
+	}
+	@keyframes usb-detect-pulse {
+		0%,
+		100% {
+			opacity: 0.55;
+		}
+		50% {
+			opacity: 1;
+		}
+	}
 	.bottom-bar {
 		grid-area: bottom;
 		display: flex;
@@ -5084,7 +5278,14 @@
 	/* HEALTH-8304: amber, softened and pulsing: no answer yet, not a verdict. */
 	.health-dot.waiting > span:first-child { background: var(--rb-orange); opacity: 0.6; animation: health-dot-waiting 1.6s ease-in-out infinite; }
 	@keyframes health-dot-waiting { 50% { opacity: 1; } }
-	@media (prefers-reduced-motion: reduce) { .health-dot.waiting > span:first-child { animation: none; } }
+	@media (prefers-reduced-motion: reduce) {
+		.health-dot.waiting > span:first-child {
+			animation: none;
+		}
+	}
+	:global(html[data-reduce-motion]) .health-dot.waiting > span:first-child {
+		animation: none;
+	}
 	.health-dot.unavailable > span:first-child { background: var(--rb-text-dim); }
 	.health-dot.error > span:first-child { background: var(--rb-red, #d9534f); }
 	.health-popover {

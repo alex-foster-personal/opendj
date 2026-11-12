@@ -241,7 +241,13 @@
 				</p>
 			{:else}
 				{#each active as vol (vol.id)}
-					<div class="usb-item" class:sim={vol.simulated}>
+					<div
+						class="usb-item"
+						class:sim={vol.simulated}
+						class:usb-detect-pulse={vol.id in usbTracker.detectPulse}
+						data-testid="usb-panel-stick-row"
+						data-volume-id={vol.id}
+					>
 						<div class="usb-item-main">
 							<span class="usb-name" title={vol.mount_path ?? vol.id}>{vol.name}</span>
 							<span class="usb-kind" title={usbRowKindLabel(vol)}>
@@ -520,6 +526,25 @@
 	}
 	.usb-item.sim {
 		border-color: color-mix(in srgb, var(--rb-orange, #e8952a) 50%, var(--rb-border));
+	}
+	.usb-item.usb-detect-pulse {
+		border-color: color-mix(in srgb, var(--rb-orange) 75%, var(--rb-border));
+		animation: usb-stick-detect-pulse 1.2s ease-in-out infinite;
+	}
+	@keyframes usb-stick-detect-pulse {
+		0%,
+		100% {
+			opacity: 0.65;
+		}
+		50% {
+			opacity: 1;
+		}
+	}
+	/* A11Y-11811: under reduce motion the detected stick keeps its orange border, without the pulse. */
+	@media (prefers-reduced-motion: reduce) {
+		.usb-item.usb-detect-pulse {
+			animation: none;
+		}
 	}
 	.usb-item.dim {
 		opacity: 0.7;

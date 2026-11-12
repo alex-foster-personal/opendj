@@ -1,0 +1,9 @@
+{
+  "bytes": 1024,
+  "measured_main": 516786,
+  "measured_with_pr": 517086,
+  "sha": "6478141be7",
+  "date": "Wed 11 Nov 2026",
+  "reason": "branch af--cloud-11470--test-unique-follow-up-textarea-and-butto--work grows the other-lazy surface; measured +300 B gzip over main; ceiled to KiB.",
+  "payback": "none planned; the growth is the change's own code on this surface"
+}

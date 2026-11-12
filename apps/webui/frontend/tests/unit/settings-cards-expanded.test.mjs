@@ -19,6 +19,8 @@ const INERT_TITLE = 'not implemented - see PARITY-TODO';
 
 /** SvelteKit's runtime has no build in this harness; the overlay only calls goto on activation. */
 const FAKE_NAVIGATION = new URL('./fake-app-navigation.mjs', import.meta.url).pathname;
+/** The overlay reads $page for the setup return path; a static fake page stands in. */
+const FAKE_STORES = new URL('./fake-app-stores.mjs', import.meta.url).pathname;
 
 const escapeHtml = (s) =>
 	s
@@ -29,7 +31,9 @@ const escapeHtml = (s) =>
 
 /** Render the open overlay once, server-side: no pointer, no focus, nothing hovered. */
 async function renderOpenOverlay() {
-	const mod = await loadSvelteSsrModule(ENTRY, { alias: { '$app/navigation': FAKE_NAVIGATION } });
+	const mod = await loadSvelteSsrModule(ENTRY, {
+		alias: { '$app/navigation': FAKE_NAVIGATION, '$app/stores': FAKE_STORES }
+	});
 	mod.openSettings();
 	return mod.render(mod.SettingsOverlay).body;
 }

@@ -28,6 +28,7 @@ from apps.analysis_beatgrid.bar_phase import BarPhase, assign_bar_phase, lock_ba
 from apps.analysis_beatgrid.bpm import estimate_bpm
 from apps.analysis_beatgrid.meter import MeterEstimate, estimate_beats_per_bar
 from apps.analysis_beatgrid.flags import evaluate_pulse
+from apps.analysis_beatgrid.grid_quality import low_confidence_regions
 from apps.analysis_beatgrid.tempo_change import detect_tempo_changes
 
 
@@ -94,6 +95,9 @@ def analyze(
         return {"status": "failed", "reason": result["error"], "beats": 0}
 
     beats = result["beats"]
+    grid_confidence = low_confidence_regions(beats)
+    if grid_confidence.status == "invalid" and grid_confidence.reason != "too_few_beats":
+        return {"status": "failed", "reason": grid_confidence.reason, "beats": len(beats)}
     pulse = evaluate_pulse(
         beats, result.get("activation_peak"), result.get("downbeats"), threshold=threshold
     )
@@ -145,6 +149,7 @@ def analyze(
         "octave_ambiguous": tempo.octave_ambiguous,
         "residual_rms_ms": round(tempo.residual_rms_s * 1000.0, 2),
         "static_grid_untrusted": changes.static_grid_untrusted,
+        "grid_confidence": grid_confidence.to_json(),
         "tempo_changes": [
             {
                 "at_s": m.at_s,
@@ -220,6 +225,12 @@ def main(argv: list[str] | None = None) -> int:
             f"{' STATIC GRID UNTRUSTED' if a['static_grid_untrusted'] else ''}",
             flush=True,
         )
+        for region in a["grid_confidence"]["regions"]:
+            print(
+                f"[beatgrid-cli]     low confidence {region['start_s']:.3f}s-{region['end_s']:.3f}s "
+                f"(score {region['score']:.3f})",
+                flush=True,
+            )
         for m in a["tempo_changes"]:
             print(
                 f"[beatgrid-cli]     change at {m['at_s']:.2f}s: "

@@ -1,8 +1,10 @@
-"""``opendj playlist thumbnail``, ``export`` and ``import`` (ARTTHUMB-8728b, LIBORG-10314, DJIMPORT-10225).
+"""``opendj playlist thumbnail``, ``export``, ``summary``, ``import`` and ``save-order`` (ARTTHUMB-8728b, LIBORG-10314, DJIMPORT-10225, LIBUX-8678).
 
     opendj playlist thumbnail <playlist-id> [--size 64|232] [--out FILE]
     opendj playlist export <playlist-id> --format txt [--out FILE]
+    opendj playlist summary <playlist-id>
     opendj playlist import <file.m3u|file.m3u8> [--name NAME]
+    opendj playlist save-order <playlist_id> (--by FIELD [--desc] | --ids ITEM_ID...)
 
 ``import`` posts the file to ``POST /api/v1/playlists/import``: a new playlist
 of the tracks whose file paths match, in file order, with the unmatched paths
@@ -23,6 +25,7 @@ import argparse
 import json
 from collections.abc import Sequence
 from pathlib import Path
+from typing import Any
 from urllib.parse import quote
 
 import httpx
@@ -35,10 +38,14 @@ from apps.opendj_cli.refusal import fail as _fail
 REQUEST_TIMEOUT_S = 60.0
 USAGE = (
     "usage: opendj playlist thumbnail <playlist-id> [--size 64|232] [--out FILE]\n"
-    "       opendj playlist export <playlist-id> --format txt [--out FILE]"
+    "       opendj playlist export <playlist-id> --format txt [--out FILE]\n"
+    "       opendj playlist summary <playlist-id>"
 )
 IMPORT_USAGE = "usage: opendj playlist import <file.m3u|file.m3u8> [--name NAME]"
 IMPORT_PATH = "/api/v1/playlists/import"
+PLAYLISTS_PATH = "/api/v1/playlists"
+SORT_FIELDS = ("bpm", "key", "title", "artist", "duration", "rating", "genre")
+SAVE_ORDER_USAGE = "usage: opendj playlist save-order <playlist_id> (--by FIELD [--desc] | --ids ITEM_ID...)"
 
 
 def thumbnail_path(playlist_id: str, size: int) -> str:
@@ -47,6 +54,73 @@ def thumbnail_path(playlist_id: str, size: int) -> str:
 
 def export_path(playlist_id: str) -> str:
     return f"/api/v1/playlists/{quote(playlist_id, safe='')}/export.txt"
+
+
+def summary_path(playlist_id: str) -> str:
+    return f"/api/v1/playlists/{quote(playlist_id, safe='')}/summary"
+
+
+class SaveOrderFailed(RuntimeError):
+    """The engine refused the save; carries its status and body."""
+
+    def __init__(self, status_code: int, body: Any) -> None:
+        super().__init__(f"save-order returned {status_code}: {body}")
+        self.status_code = status_code
+        self.body = body
+
+
+def save_order_body(*, by: str | None, descending: bool, item_ids: list[str] | None) -> dict[str, Any]:
+    """The request body; ValueError unless exactly one of ``by`` / ``item_ids`` is given."""
+    if (by is None) == (item_ids is None):
+        raise ValueError("give exactly one of --by or --ids")
+    if by is not None:
+        return {"by": by, "descending": descending}
+    return {"item_ids": item_ids}
+
+
+def save_order(client: httpx.Client, base_url: str, playlist_id: str, body: dict[str, Any]) -> dict[str, Any]:
+    """Read the playlist's etag, then save the order under it."""
+    url = f"{base_url}{PLAYLISTS_PATH}/{playlist_id}"
+    current = client.get(url)
+    if not current.is_success:
+        raise SaveOrderFailed(current.status_code, current.text)
+    response = client.post(f"{url}/items:save-order", json=body, headers={"If-Match": current.headers["ETag"]})
+    if not response.is_success:
+        raise SaveOrderFailed(response.status_code, response.text)
+    return response.json()
+
+
+def _save_order_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(prog="opendj playlist save-order")
+    parser.add_argument("verb", choices=("save-order",))
+    parser.add_argument("playlist_id")
+    parser.add_argument("--by", choices=SORT_FIELDS)
+    parser.add_argument("--desc", action="store_true", help="sort high to low")
+    parser.add_argument("--ids", nargs="+", metavar="ITEM_ID")
+    return parser
+
+
+def run_save_order(rest: Sequence[str], *, as_json: bool = False, lock: Path | None = None) -> int:
+    try:
+        args = _save_order_parser().parse_args(list(rest))
+        body = save_order_body(by=args.by, descending=args.desc, item_ids=args.ids)
+    except SystemExit:
+        return _fail(as_json, "usage", SAVE_ORDER_USAGE, EXIT_FAILED)
+    except ValueError as error:
+        return _fail(as_json, "usage", str(error), EXIT_FAILED)
+    try:
+        base = resolve_backend_base_url(lock_path=lock).base_url.rstrip("/")
+        with httpx.Client(timeout=REQUEST_TIMEOUT_S) as client:
+            saved = save_order(client, base, args.playlist_id, body)
+    except (UsageError, EngineNotRunning) as error:
+        return _fail(as_json, "engine_not_running", str(error), EXIT_NO_ENGINE)
+    except (SaveOrderFailed, httpx.HTTPError) as error:
+        return _fail(as_json, "request_failed", str(error), EXIT_FAILED)
+    if as_json:
+        print(json.dumps(saved, indent=2))
+    else:
+        print(f"saved the order of {saved['name']} ({saved['track_count']} tracks)")
+    return EXIT_CONFIRMED
 
 
 def run_import(rest: Sequence[str], *, as_json: bool = False, lock: Path | None = None) -> int:
@@ -87,8 +161,14 @@ def run_import(rest: Sequence[str], *, as_json: bool = False, lock: Path | None 
 
 
 def run(rest: Sequence[str], *, as_json: bool = False, lock: Path | None = None) -> int:
+    if list(rest)[:1] == ["save-order"]:
+        return run_save_order(rest, as_json=as_json, lock=lock)
     if list(rest)[:1] == ["import"]:
         return run_import(list(rest)[1:], as_json=as_json, lock=lock)
+    if list(rest)[:1] == ["summary"]:
+        if len(rest) != 2:
+            return _fail(as_json, "usage", USAGE, EXIT_FAILED)
+        return _run_summary(rest[1], as_json=as_json, lock=lock)
     parser = argparse.ArgumentParser(prog="opendj playlist", description=__doc__.splitlines()[0])
     parser.add_argument("verb", choices=("thumbnail", "export"))
     parser.add_argument("playlist_id")
@@ -125,6 +205,25 @@ def _get(path: str, *, as_json: bool, lock: Path | None) -> httpx.Response | int
         return _fail(as_json, "request_failed", f"GET {path} returned {response.status_code}: {response.text}",
                      EXIT_FAILED)
     return response
+
+
+def _run_summary(playlist_id: str, *, as_json: bool, lock: Path | None) -> int:
+    response = _get(summary_path(playlist_id), as_json=as_json, lock=lock)
+    if isinstance(response, int):
+        return response
+    payload = response.json()
+    if as_json:
+        print(json.dumps(payload, indent=2, sort_keys=True))
+    else:
+        bpm = payload["bpm"]
+        energy = payload["energy"]
+        print(
+            f"{payload['tracks']} tracks, {payload['duration_s']:.0f}s, "
+            f"bpm {bpm.get('min')}-{bpm.get('max')} ({bpm.get('median')}), "
+            f"energy {energy.get('min')}-{energy.get('max')}, "
+            f"{payload['keys']['distinct']} keys, {payload['unanalysed']} unanalysed"
+        )
+    return EXIT_CONFIRMED
 
 
 def _run_export(playlist_id: str, out: Path | None, *, as_json: bool, lock: Path | None) -> int:

@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import logging
 import sys
+from dataclasses import replace
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
@@ -76,14 +77,19 @@ class _WarningJsonHandler(logging.Handler):
         message = self.format(record)
         identity: dict[str, str] = {}
         try:
+            from apps.shared.telemetry.scrub import forwardable_log_message
             from apps.shared.telemetry.sink import (
                 append_sink,
                 make_event,
                 maybe_send_sentry,
             )
 
+            # Two texts on purpose (OBS-6393). ``message`` is the rendered line
+            # and stays on this machine: this file and the local sink. The
+            # event that may be forwarded carries the template only, and the
+            # error id is minted from it, so the id never encodes an argument.
             event = make_event(
-                message=message,
+                message=forwardable_log_message(record),
                 source_site=f"engine:{record.name}",
                 kind="engine",
             )
@@ -95,7 +101,7 @@ class _WarningJsonHandler(logging.Handler):
             if record.levelno >= logging.ERROR:
                 self._opendj_sink_busy = True
                 try:
-                    append_sink(event)
+                    append_sink(replace(event, message=message))
                     inner = (
                         record.exc_info[1]
                         if record.exc_info and record.exc_info[1] is not None

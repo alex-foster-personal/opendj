@@ -3,7 +3,12 @@ import type { BrowserRow } from '$lib/components/rb/browser/pane-contract.svelte
 import { listingGenre } from './genre-source';
 
 export type MinorIssueId =
-	'not-on-cloud' | 'low-quality' | 'missing-genre' | 'stems-failed' | 'no-lyrics';
+	| 'not-on-cloud'
+	| 'low-quality'
+	| 'missing-genre'
+	| 'stems-failed'
+	| 'remote-stems-not-run'
+	| 'no-lyrics';
 
 export interface MinorIssue {
 	id: MinorIssueId;
@@ -58,12 +63,9 @@ export function minorIssuesFor(row: BrowserRow): MinorIssue[] {
 		});
 	}
 
-	// "Stems not run remotely" is deliberately NOT emitted: no row field
-	// carries a remote stem job or artifact status. has_remote_copy is the
-	// original audio's cloud presence and row.stems is a LOCAL stems-dir
-	// scan, so combining them would fabricate the warning. Missing data
-	// source: a per-row remote stem status on the listing wire (see
-	// PARITY-TODO); add the issue back only when that field exists.
+	if (row.remote_stem_status === 'not-run' && !_isStreaming(row)) {
+		issues.push({ id: 'remote-stems-not-run', label: 'Stems not run remotely yet' });
+	}
 
 	// Only the lyric verdict establishes "no lyrics"; has_words === false
 	// with n_lines set is line-synced lyrics, not an absence of lyrics.

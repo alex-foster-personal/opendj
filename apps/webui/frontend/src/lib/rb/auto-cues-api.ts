@@ -9,7 +9,7 @@
  * wave hotspot (CLAUDE.md), so this lane's frontend keeps its own thin
  * wrapper rather than editing it.
  */
-import { ApiError, api, unwrap } from '../api/client';
+import { ApiError, api, unwrap } from '../api/rb-http';
 import type { components } from '../api-types';
 import { RbApiError } from './api-rb';
 import { refuseStickRead } from './track-source';

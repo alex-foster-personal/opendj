@@ -58,21 +58,38 @@ const EMPTY_PIN_SUMMARY = {
 	fleet_correlation: 'ok'
 };
 
-function feedbackPathname(request) {
-	const { pathname } = new URL(request.url);
+function fetchUrl(input) {
+	return typeof input === 'string' ? input : input.url;
+}
+
+function fetchMethod(input, init) {
+	if (init?.method !== undefined) return init.method;
+	if (typeof input === 'string') return 'GET';
+	return input.method;
+}
+
+function feedbackPathname(input) {
+	const { pathname } = new URL(fetchUrl(input));
 	return pathname.endsWith('/') ? pathname.slice(0, -1) : pathname;
 }
 
 function mockFeedbackFetch(handlers) {
-	return async (request) => {
-		const pathname = feedbackPathname(request);
+	return async (input, init) => {
+		const pathname = feedbackPathname(input);
+		const method = fetchMethod(input, init);
 		if (pathname === '/api/v1/feedback/comments/summary') {
 			return handlers.summary?.() ?? jsonResponse(EMPTY_PIN_SUMMARY);
 		}
 		if (pathname === '/api/v1/feedback/comments') {
-			return handlers.comments(request);
+			return handlers.comments(input, init, method);
 		}
-		throw new Error(`unexpected feedback poll fetch: ${pathname}`);
+		if (method === 'POST' && pathname.endsWith('/archive')) {
+			return (
+				handlers.archive?.(input, init, method) ??
+				jsonResponse({ archived_to: 'archive-x.json', comment: { id: 'x', status: 'archived' } })
+			);
+		}
+		throw new Error(`unexpected feedback poll fetch: ${method} ${pathname}`);
 	};
 }
 
@@ -117,8 +134,9 @@ test('refreshPins GETs comments and replaces feedbackState.pins', async () => {
 	let seen;
 	const fresh = [{ id: 'abc123', status: 'fixed' }];
 	globalThis.fetch = mockFeedbackFetch({
-		comments: (request) => {
-			seen = request;
+		comments: (input, _init, method) => {
+			seen = { url: fetchUrl(input), method };
+			assert.equal(method, 'GET');
 			return jsonResponse({ comments: fresh });
 		}
 	});
@@ -203,20 +221,24 @@ test('refreshPins discards a snapshot that started before a local mutation lande
 	// updates feedbackState.pins directly. The GET's response reflects the
 	// PRE-archive board, so applying it after would resurrect the archived pin.
 	let resolveGet;
-	globalThis.fetch = async (request) => {
-		const pathname = feedbackPathname(request);
+	globalThis.fetch = async (input, init) => {
+		const pathname = feedbackPathname(input);
+		const method = fetchMethod(input, init);
 		if (pathname === '/api/v1/feedback/comments/summary') {
 			return jsonResponse(EMPTY_PIN_SUMMARY);
 		}
-		if (request.method === 'GET' && pathname === '/api/v1/feedback/comments') {
+		if (method === 'GET' && pathname === '/api/v1/feedback/comments') {
 			return new Promise((resolve) => {
 				resolveGet = () => resolve(jsonResponse({ comments: [{ id: 'abc123', status: 'fixed' }] }));
 			});
 		}
-		return jsonResponse({
-			archived_to: 'archive-x.json',
-			comment: { id: 'abc123', status: 'archived' }
-		});
+		if (method === 'POST' && pathname.endsWith('/archive')) {
+			return jsonResponse({
+				archived_to: 'archive-x.json',
+				comment: { id: 'abc123', status: 'archived' }
+			});
+		}
+		throw new Error(`unexpected fetch ${method} ${pathname}`);
 	};
 
 	store.feedbackState.availability = 'ok';
@@ -511,7 +533,10 @@ test('pin 6af63c5e9b7c a successful addPin refreshes the operator summary at onc
 			summaryGets++;
 			return jsonResponse(after);
 		},
-		comments: () => jsonResponse({ id: 'new1', status: null })
+		comments: (_input, _init, method) =>
+			method === 'POST'
+				? jsonResponse({ id: 'new1', status: null })
+				: jsonResponse({ comments: [] })
 	});
 	store.feedbackState.availability = 'ok';
 	store.feedbackState.pinSummary = { ...EMPTY_PIN_SUMMARY, fleet_correlation: 'ok' };
@@ -529,7 +554,8 @@ test('pin 6af63c5e9b7c a failed addPin does not refresh the summary', async () =
 			summaryGets++;
 			return jsonResponse(EMPTY_PIN_SUMMARY);
 		},
-		comments: () => errorEnvelope(422, 'bad_pin', 'no')
+		comments: (_input, _init, method) =>
+			method === 'POST' ? errorEnvelope(422, 'bad_pin', 'no') : jsonResponse({ comments: [] })
 	});
 	store.feedbackState.availability = 'ok';
 	assert.equal(await store.addPin({ text: 'hi', x: 0, y: 0 }), null);

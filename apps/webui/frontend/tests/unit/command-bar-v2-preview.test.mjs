@@ -957,7 +957,7 @@ test('a picker pick is refused while its deck still has a command queued, so no 
 	assert.ok(load.indexOf('deckPending(deck.id)') < load.indexOf('pickerAction(deck, confirmed)'));
 	// The bar takes the count as a prop, as it takes the dispatcher, and the page passes it.
 	assert.match(bar, /deckPending: \(deck: DeckId\) => number;/);
-	assert.match(readFileSync(new URL('../../src/routes/performance/+page.svelte', import.meta.url), 'utf8'), /deckPending=\{\(deck\) => performanceCommandStatus\.deck_pending\[deck\]\}/);
+	assert.match(readFileSync(new URL('../../src/lib/components/rb/CommandPaletteHost.svelte', import.meta.url), 'utf8'), /deckPending=\{\(deck\) => performanceCommandStatus\.deck_pending\[deck\]\}/);
 });
 
 test('CMDK-19: a pick refuses when a command is queued on its deck during the rb-meta settle (Codex P1, #6687)', () => {

@@ -55,9 +55,7 @@ def _manifest_out(bundle: StemBundle) -> StemManifestOut:
         # The bundle's OWN parts, not a fixed four: a 2-part RoFormer bundle
         # must advertise exactly what it has so the client can render the
         # controls it cannot drive as inert rather than silently dead.
-        parts={
-            part: StemPartOut(media_type=bundle.media_type) for part in bundle.parts
-        },
+        parts={part: StemPartOut(media_type=bundle.media_type) for part in bundle.parts},
     )
 
 
@@ -137,6 +135,8 @@ def _stem_manifest_response(stable_id: str, request: Request) -> StemManifestOut
             detail={"code": "STEM_ARTIFACT_INVALID", "message": str(exc)},
         ) from exc
     return _manifest_out(bundle)
+
+
 def _open_stem_part(stable_id: str, part: str, request: Request) -> tuple[StemBundle, BufferedReader]:
     """Resolve the bundle and open ``part`` inside one :func:`_read_barrier` hold.
 
@@ -150,10 +150,7 @@ def _open_stem_part(stable_id: str, part: str, request: Request) -> tuple[StemBu
                 status_code=404,
                 detail={
                     "code": "STEM_PART_NOT_FOUND",
-                    "message": (
-                        f"unknown stem part {part!r} for a {bundle.layout} bundle; "
-                        f"it has {bundle.parts}"
-                    ),
+                    "message": (f"unknown stem part {part!r} for a {bundle.layout} bundle; it has {bundle.parts}"),
                 },
             )
         try:
@@ -200,9 +197,7 @@ def _stem_file_response(stable_id: str, part: str, request: Request) -> Streamin
                 _raise_hydrate_error(recorded)
             _raise_hydration_failed(str(exc))
         if outcome.status == "hub_error":
-            hub_exc = _stem_source_error_from_hub_reason(
-                outcome.reason or "hub transport failure"
-            )
+            hub_exc = _stem_source_error_from_hub_reason(outcome.reason or "hub transport failure")
             _raise_hydrate_error(_HydrateError(hub_exc.code, hub_exc.message))
         if outcome.status == "error":
             recorded = _recorded_hydration_error(stable_id)

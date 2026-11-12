@@ -103,6 +103,7 @@ function parseStemRow(html, scope) {
 	return {
 		groupTitle: attr(group[0], 'title'),
 		groupState: attr(group[0], 'data-stems-state'),
+		groupPhase: attr(group[0], 'data-stems-phase'),
 		label: status === null ? null : visibleText(status[3]),
 		labelTitle: status === null ? null : attr(status[1], 'title'),
 		labelTag: status === null ? null : status[2],
@@ -115,6 +116,7 @@ function parseStemRow(html, scope) {
 
 function assertFailedRetry(out) {
 	assert.equal(out.groupState, 'error');
+	assert.equal(out.groupPhase, null);
 	assert.equal(out.label, 'STEMS FAILED - RETRY');
 	assert.equal(out.labelTag, 'button');
 	assert.equal(out.labelAction, 'retry');
@@ -149,6 +151,7 @@ describe('StemRow failed load survives remount (#12431)', () => {
 		const props = stemRowProps(readyStems());
 		const out = renderStemRow(props);
 		assert.equal(out.groupState, 'ready');
+		assert.equal(out.groupPhase, null);
 		assert.equal(out.label, null);
 		assert.deepEqual(out.chipsDisabled, [false, false, false, false, false]);
 	});

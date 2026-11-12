@@ -13,12 +13,17 @@ import time
 from collections import deque
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
-from typing import Any
+from typing import Any, Literal
 from uuid import uuid4
 
-from fastapi import Request
+from fastapi import FastAPI, Request
 
 from .utc_timestamps import utc_now_iso_ms
+
+#: Wire vocabulary for apply refusal when the shell broker is misconfigured.
+#: Mirrors ``UpdateStatus`` in ``apps.engine_core.update_channel_contract``
+#: without importing engine_core (import-linter: webui must not import domain packages).
+ShellBrokerFaultStatus = Literal["shell-broker-unavailable", "shell-broker-invalid"]
 
 log = logging.getLogger(__name__)
 
@@ -248,11 +253,35 @@ class _ShellCommandBroker:
         return len(self.pending)
 
 
+class ShellBrokerUnavailableError(Exception):
+    """The app never installed ``app.state.shell_command_broker``."""
+
+    status: ShellBrokerFaultStatus = "shell-broker-unavailable"
+
+    def __init__(self) -> None:
+        self.detail = "shell command broker is not installed on this app"
+
+
+class ShellBrokerInvalidError(Exception):
+    """``app.state.shell_command_broker`` is present but not a broker instance."""
+
+    status: ShellBrokerFaultStatus = "shell-broker-invalid"
+
+    def __init__(self) -> None:
+        self.detail = "app.state.shell_command_broker has an invalid type"
+
+
+def install_shell_command_broker(app: FastAPI) -> _ShellCommandBroker:
+    """Install one shell broker on ``app.state`` for apply and command polling."""
+    broker = _ShellCommandBroker()
+    setattr(app.state, SHELL_COMMAND_BROKER_STATE_ATTR, broker)
+    return broker
+
+
 def shell_broker(request: Request) -> _ShellCommandBroker:
     broker = getattr(request.app.state, SHELL_COMMAND_BROKER_STATE_ATTR, None)
     if broker is None:
-        broker = _ShellCommandBroker()
-        request.app.state.shell_command_broker = broker
+        raise ShellBrokerUnavailableError()
     if not isinstance(broker, _ShellCommandBroker):
-        raise TypeError("app.state.shell_command_broker has an invalid type")
+        raise ShellBrokerInvalidError()
     return broker

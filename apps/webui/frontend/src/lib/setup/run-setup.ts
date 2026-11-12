@@ -7,7 +7,7 @@
  * dir and the overlay never comes back. That was the whole story, so there was
  * NO way back into setup from inside a running app. This module is the way
  * back, and it is deliberately one module rather than one copy per entry
- * point: the Cmd+, settings overlay, the /admin Setup tab, the /settings
+ * point: the Cmd+, settings overlay, the /admin Setup action, the /settings
  * page and the Library workspace top bar all call `runSetup`, so four buttons
  * cannot drift into four different behaviours.
  *
@@ -48,11 +48,46 @@
  *   ✔︎ ✅ 🎯 runSetupBlocked disables the control only on a FINAL refusal, so
  *     an unfinished probe never reads as "you may not".
  *     [if] an unknown flavor disables the button [then ⛔️] broken
+ *   ✔︎ 🎯 a re-run from SETUP_HOST_ROUTE raises the overlay without visiting
+ *     /setup, so a playing deck is not remounted underneath.
+ *     [if] runSetup from /performance still navigates to /setup [then ⛔️] broken
+ *   ✔︎ 🎯 Start playing from the host route closes without goto(SETUP_HOST_ROUTE)
+ *     when a deck is playing or the URL is already on the host route.
+ *     [if] finish navigates to SETUP_HOST_ROUTE while already on /performance
+ *     [then ⛔️] broken
  */
 
 import { capabilities } from '../api/capabilities.svelte';
+import { isPerformanceRoutePath } from '../rb/performance-preset';
 import { openSetupOverlay } from './overlay.svelte';
 import { finalSetupRefusal, setupRefusal } from './setup-api';
+
+export type SetupNavigate = (path: string, opts?: { replaceState?: boolean }) => unknown;
+
+/** Whether the wizard is drawn over the live performance surface for `pathname`. */
+export function isSetupHostPathname(pathname: string): boolean {
+	return isPerformanceRoutePath(pathname);
+}
+
+/**
+ * True when closing the wizard or re-arming it may route away from `/setup`.
+ * A playing deck must not be remounted (issue #11423).
+ */
+export function shouldNavigateSetupDoor(pathname: string, anyDeckPlaying: boolean): boolean {
+	if (anyDeckPlaying) return false;
+	return !isSetupHostPathname(pathname);
+}
+
+/** After a successful finish, leave the `/setup` door only when not already on the host. */
+export function navigateToSetupHostAfterClose(
+	navigate: SetupNavigate,
+	pathname: string,
+	anyDeckPlaying: boolean
+): boolean {
+	if (!shouldNavigateSetupDoor(pathname, anyDeckPlaying) || pathname !== SETUP_ROUTE) return false;
+	void navigate(SETUP_HOST_ROUTE, { replaceState: true });
+	return true;
+}
 
 /** The wizard's route. Spelled once so three entry points cannot disagree.
  *
@@ -112,8 +147,9 @@ export function runSetupBlocked(): string | null {
  * read, and a caller that had to catch would only translate it back into one.
  *
  * @param navigate the router's navigation function, normally `goto`.
+ * @param pathname the tab's current pathname, normally `$page.url.pathname`.
  */
-export async function runSetup(navigate: (path: string) => unknown): Promise<string | null> {
+export async function runSetup(navigate: SetupNavigate, pathname: string): Promise<string | null> {
 	await capabilities.probe();
 	const refusal = setupRefusal();
 	if (refusal !== null) return refusal;
@@ -126,10 +162,11 @@ export async function runSetup(navigate: (path: string) => unknown): Promise<str
 	// reopen() records the server's message rather than throwing, so the
 	// navigation gate is that field and not an exception.
 	if (setupWizard.error !== null) return setupWizard.error;
-	// Raise the overlay BEFORE navigating. /setup would raise it too, but a
-	// caller that is already on the host route never navigates at all, and an
-	// entry point whose only effect was a no-op goto is a dead button.
+	// Raise the overlay BEFORE navigating when the host surface is not already
+	// underneath. Visiting /setup remounts /performance underneath a live deck.
 	openSetupOverlay();
-	await navigate(SETUP_ROUTE);
+	if (shouldNavigateSetupDoor(pathname, false)) {
+		await navigate(SETUP_ROUTE);
+	}
 	return null;
 }

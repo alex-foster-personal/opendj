@@ -1,0 +1,9 @@
+{
+  "bytes": 1024,
+  "measured_main": 442159,
+  "measured_with_pr": 442570,
+  "sha": "a9eecab5ce",
+  "date": "Wed 11 Nov 2026",
+  "reason": "branch af--cloud-11422--stems-refresh-library-row-and-loaded-dec--work grows the performance surface; measured +411 B gzip over main; ceiled to KiB.",
+  "payback": "none planned; the growth is the change's own code on this surface"
+}

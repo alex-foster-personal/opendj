@@ -17,12 +17,11 @@ export interface ListTotals {
 
 /** One pass over rows: count every row, sum known durations, tally nulls. */
 export function summarizeListTotals(rows: readonly DurationRow[]): ListTotals {
-	let count = 0;
+	const count = rows.length;
 	let duration_ms = 0;
 	let unknown = 0;
-	for (const row of rows) {
-		count += 1;
-		const d = row.duration_ms;
+	for (let i = 0; i < count; i += 1) {
+		const d = rows[i]!.duration_ms;
 		if (d === null || !Number.isFinite(d) || d < 0) {
 			unknown += 1;
 			continue;

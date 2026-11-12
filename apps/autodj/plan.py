@@ -32,7 +32,7 @@ from __future__ import annotations
 import json
 import math
 from bisect import bisect_right
-from collections.abc import Callable, Mapping
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field, replace
 from functools import partial
 from itertools import pairwise
@@ -537,13 +537,9 @@ def play_start_bar(at_bar: float, previous: float | None) -> float:
     return float(math.floor(launch_bar(at_bar, previous)) + 1)
 
 
-def _transport_steps(events: list[PlanEvent], deck: int) -> list[tuple[float, bool]]:
-    """Each play or stop of ``deck`` as ``(bar it takes effect, playing after it)``, in effect order.
-
-    A play takes effect at its quantized start (``play_start_bar``), not at its authored bar, so a
-    stop authored after a play can still take effect before it.
-    """
-    steps: list[tuple[float, bool]] = []
+def _surviving_transport_steps(events: Sequence[PlanEvent], deck: int) -> list[tuple[PlanEvent, float, bool]]:
+    """Surviving transport events with their effective bar and resulting playing state."""
+    steps: list[tuple[PlanEvent, float, bool]] = []
     previous: float | None = None
     armed: int | None = None  # index in steps of a play still waiting for its downbeat
     for event in sorted(
@@ -552,20 +548,31 @@ def _transport_steps(events: list[PlanEvent], deck: int) -> list[tuple[float, bo
     ):
         # A play or a stop before the pending launch's downbeat clears it: a second play replaces the launch, and a
         # stop clears it, so that play never starts the deck.
-        if armed is not None and steps[armed][0] > event.at_bar:
-            steps[armed] = (math.inf, False)
+        if armed is not None and steps[armed][1] > event.at_bar:
+            canceled = steps[armed][0]
+            steps[armed] = (canceled, math.inf, False)
         if event.name == "play":
             effective = play_start_bar(event.at_bar, previous)
             armed = len(steps)
         else:
             effective = event.at_bar
             armed = None
-        steps.append((effective, event.name == "play"))
+        steps.append((event, effective, event.name == "play"))
         previous = event.at_bar
-    return sorted((step for step in steps if step[0] != math.inf), key=lambda step: step[0])
+    return sorted((step for step in steps if step[1] != math.inf), key=lambda step: step[1])
 
 
-def _playing_at(events: list[PlanEvent], deck: int, at: float, start: bool) -> bool:
+def surviving_transport(events: Sequence[PlanEvent], deck: int) -> list[PlanEvent]:
+    """Play/stop events of ``deck`` that take effect, omitting a launch canceled before its downbeat."""
+    return [event for event, _, _ in _surviving_transport_steps(events, deck)]
+
+
+def _transport_steps(events: Sequence[PlanEvent], deck: int) -> list[tuple[float, bool]]:
+    """Each surviving play or stop as ``(effective bar, playing after it)``, in effect order."""
+    return [(effective, playing) for _, effective, playing in _surviving_transport_steps(events, deck)]
+
+
+def _playing_at(events: Sequence[PlanEvent], deck: int, at: float, start: bool) -> bool:
     """Whether ``deck`` is playing at plan time ``at``: the latest play or stop to take effect by then wins."""
     return _playing_from(_transport_steps(events, deck), at, start)
 
@@ -1014,14 +1021,21 @@ def hoistable(event: PlanEvent, plan: TransitionPlan) -> bool:
 
     A prepare command runs before every timed event, so it may not jump a
     ramp or set on its control that validation orders first. Only a set with
-    nothing else on its control at or before its bar is hoisted.
+    no earlier event on its control at or before its bar is hoisted; a later
+    same-bar ramp does not block an initial kill that precedes it in the plan.
     """
     if event.kind != "set" or event.deck != plan.in_.deck or event.at_bar > 0:
         return False
-    return not any(
-        other is not event and other.deck == event.deck and other.name == event.name and other.at_bar <= event.at_bar
-        for other in plan.events
-    )
+    try:
+        event_index = plan.events.index(event)
+    except ValueError:
+        return False
+    for index, other in enumerate(plan.events):
+        if index >= event_index or other.deck != event.deck or other.name != event.name:
+            continue
+        if other.at_bar <= event.at_bar:
+            return False
+    return True
 
 
 def _page_order(plan: TransitionPlan, deck: int) -> list[PlanEvent]:

@@ -7,13 +7,18 @@
 	/**
 	 * In-app review/feedback widget (FB-01..FB-04): the topbar cluster.
 	 *
-	 * A down-chevron left of the feedback thumbs toggles the compact, draggable
-	 * review-todo panel (FeedbackPanel.svelte); a comment icon arms one-shot
+	 * A down-chevron left of the feedback thumbs toggles the draggable
+	 * review-todo panel (FeedbackPanel.svelte), which opens beside that cluster
+	 * at about half the viewport width; a comment icon arms one-shot
 	 * comment-anywhere pin placement. Pin markers and placement live in
 	 * FeedbackPinLayer.svelte at the app root (FB-16).
 	 */
 	import { onMount, type Component } from 'svelte';
-	import { onPinsVisibleChanged, readPinsVisible, writePinsVisible } from '$lib/rb/feedback-pin-visibility';
+	import {
+		onPinsVisibleChanged,
+		readPinsVisible,
+		writePinsVisible
+	} from '$lib/rb/feedback-pin-visibility';
 	import {
 		armPinPlacement,
 		commentPinSummaryBullets,
@@ -116,7 +121,6 @@
 		pinsVisible = !pinsVisible;
 		writePinsVisible(window.localStorage, pinsVisible);
 	}
-
 </script>
 
 <span class="fb-cluster">
@@ -135,17 +139,13 @@
 			<path d="M1 1.2 L4.5 4.8 L8 1.2" fill="none" stroke="currentColor" stroke-width="1.4" />
 		</svg>
 		{#if feedbackState.availability === 'ok' && openCount > 0}
-			<span
-				class="fb-count"
-				title={`${openCount} review todo(s) not yet marked done`}>{openCount}</span
+			<span class="fb-count" title={`${openCount} review todo(s) not yet marked done`}
+				>{openCount}</span
 			>
 		{/if}
 	</button>
 	{#snippet pinVisibilityActions()}
-		<FeedbackPinVisibilityActions
-			{pinsVisible}
-			ontoggle={togglePinsVisible}
-		/>
+		<FeedbackPinVisibilityActions {pinsVisible} ontoggle={togglePinsVisible} />
 	{/snippet}
 	<span
 		class="fb-pin-peek"

@@ -1,0 +1,9 @@
+{
+  "bytes": 1024,
+  "measured_main": 35002,
+  "measured_with_pr": 35138,
+  "sha": "989ca8e9d4",
+  "date": "Thu 12 Nov 2026",
+  "reason": "FLX10 practice-replica route shares MIDI map exports that include deck-pair select.",
+  "payback": "none planned; map parity keeps practice replica aligned with live performance maps."
+}

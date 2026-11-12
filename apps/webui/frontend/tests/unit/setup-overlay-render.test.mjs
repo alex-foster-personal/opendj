@@ -36,6 +36,8 @@ const ENTRY = [
 ].join('\n');
 
 const FAKE_NAVIGATION = fileURLToPath(new URL('./fake-app-navigation.mjs', import.meta.url));
+/** The component reads $page for the setup return path; a static fake page stands in. */
+const FAKE_STORES = new URL('./fake-app-stores.mjs', import.meta.url).pathname;
 
 /** The packaged app's real data dir shape on macOS. */
 const DATA_DIR = '/Users/dj/Library/Application Support/com.opendj.desktop';
@@ -61,7 +63,7 @@ let mod;
 
 before(async () => {
 	mod = await loadSvelteSsrModule(ENTRY, {
-		alias: { '$app/navigation': FAKE_NAVIGATION }
+		alias: { '$app/navigation': FAKE_NAVIGATION, '$app/stores': FAKE_STORES }
 	});
 });
 
@@ -364,4 +366,55 @@ test('welcome: the data dir is named, not spelled out', () => {
 	const html = render();
 	assertClean(html, 'welcome');
 	assert.match(html, new RegExp(`data-agent-data-dir="${DATA_DIR}"`));
+});
+
+test('progress: a running import keeps wire job text in the agent channel only', () => {
+	const evilMessage = 'ingesting /Users/dj/Music job-setup-evil via POST /api/v1/setup/import';
+	mod.setupWizard.status = status();
+	mod.setupWizard.source = 'rekordbox';
+	mod.setupWizard.step = 'progress';
+	mod.setupWizard.jobId = 'job-setup-evil';
+	mod.jobsStore.jobs = [
+		{
+			id: 'job-setup-evil',
+			status: 'running',
+			progress: 0.35,
+			message: evilMessage,
+			error: null
+		}
+	];
+
+	const html = render();
+	const text = assertClean(html, 'progress-running');
+	assert.match(text, /Importing/);
+	assert.match(html, /data-agent-job-status="running"/);
+	assert.ok(html.includes('data-agent-job-message=') && html.includes(evilMessage));
+	assert.match(
+		html,
+		/data-agent-refusal="the import is running \(running\); it cannot be un-started by going back"/
+	);
+	assert.doesNotMatch(text, /job-setup-evil/);
+});
+
+test('progress: a failed import hides hostile error tails from visible copy', () => {
+	const evilError =
+		'rekordbox_ingest_failed: demucs torch OOM at /Users/dj/Library/Pioneer (job-setup-evil)';
+	mod.setupWizard.status = status();
+	mod.setupWizard.source = 'folder';
+	mod.setupWizard.step = 'progress';
+	mod.setupWizard.jobId = 'job-setup-evil';
+	mod.jobsStore.jobs = [
+		{
+			id: 'job-setup-evil',
+			status: 'failed',
+			progress: 1,
+			message: null,
+			error: evilError
+		}
+	];
+
+	const html = render();
+	assertClean(html, 'progress-failed');
+	assert.match(html, /data-agent-job-error="job-setup-evil"/);
+	assert.ok(html.includes(evilError), 'agent channel must keep the raw error tail');
 });

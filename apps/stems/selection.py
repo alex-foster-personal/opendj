@@ -42,10 +42,12 @@ Requirements (mini-PRD):
 from __future__ import annotations
 
 import sqlite3
+from collections.abc import Collection, Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
 
 from apps.stems.constants import STEM_MANIFEST_FILENAME
+from apps.stems.crash_blacklist import load_blacklist
 
 # ----- CFG -------------------------------------------------------------------
 MANIFEST_NAME: str = STEM_MANIFEST_FILENAME
@@ -172,3 +174,31 @@ __all__ = [
     "has_bundle",
     "library_buckets",
 ]
+
+
+# ----- stem engine selection --------------------------------------------------
+
+
+class NoEligibleEngine(RuntimeError):
+    """Every preferred engine is ineligible or crash-blacklisted; nothing may run."""
+
+
+def select_engine(preferred: Sequence[str], eligible: Collection[str], blacklist_path: Path, now_s: float) -> str:
+    """Return the first preferred engine that is eligible and not currently blacklisted.
+
+    Fails closed: when none qualifies, raise ``NoEligibleEngine`` naming why each was
+    refused, rather than falling back to an engine nobody chose.
+    """
+    if not preferred:
+        raise NoEligibleEngine("no stem engine is preferred")
+    blacklist = load_blacklist(blacklist_path)
+    refusals: list[str] = []
+    for engine_id in preferred:
+        entry = blacklist.get(engine_id)
+        if engine_id not in eligible:
+            refusals.append(f"{engine_id}: not eligible")
+        elif entry is not None and entry.is_current(now_s):
+            refusals.append(f"{engine_id}: crashed with exit {entry.exit_code}, blacklisted until {entry.expires_at_s}")
+        else:
+            return engine_id
+    raise NoEligibleEngine("no stem engine can run: " + "; ".join(refusals))

@@ -95,12 +95,26 @@ def test_snap_picks_the_nearest_downbeat() -> None:
 
 
 def test_control_without_a_cue_the_intro_wins() -> None:
-    """The old choice, unchanged: no cue means the rule-based ranking."""
+    """No cue: rule-based ranking; a loud intro still wins when salience passes."""
+    from tests.autodj.fixtures import CHORUS, DOWN, INTRO, OUTRO, UP
+
     windows = mix_windows(profile(SID), "in")
     assert profile(SID).transition_in_bar is None
-    assert (windows[0].label, windows[0].start_bar) == ("intro", 1)
+    assert (windows[0].label, windows[0].start_bar) == ("build", 17)
     assert windows[0].pinned is False
     assert len(windows) > 1, "the control must still offer the rule-based candidates"
+    loud_intro = (
+        (INTRO, 16, 0.95, 0.2, False),
+        (UP, 16, 0.6, 0.5, False),
+        (CHORUS, 32, 1.0, 1.0, True),
+        (DOWN, 16, 0.3, 0.1, False),
+        (UP, 16, 0.6, 0.5, False),
+        (CHORUS, 16, 1.0, 1.0, True),
+        (OUTRO, 16, 0.4, 0.8, False),
+    )
+    loud = mix_windows(profile(SID, arrangement=loud_intro), "in")
+    assert (loud[0].label, loud[0].start_bar) == ("intro", 1)
+    assert loud[0].score > 0
 
 
 def test_the_cue_wins_and_is_the_only_in_window() -> None:

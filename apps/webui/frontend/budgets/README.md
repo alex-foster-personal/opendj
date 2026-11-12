@@ -81,3 +81,7 @@ commit. Update `EXPECTED_BASE` in `tests/unit/bundle-budget.test.mjs`, which pin
 rebaseline is the only edit a base ever gets.
 
 Proposal: for a preventive rebaseline of a surface still under its ceiling, use `limit = CI measured + 2%, ceiled to KiB`, because plus 1 KiB is below build noise on surfaces of several hundred KB; keep the rule above for the red-fix case.
+
+## Not bundle surfaces
+
+`budgets/story-coverage/` is the story-coverage ratchet read by `scripts/story-coverage.mjs` (`pnpm story:coverage`). The bundle loader skips it via `NON_BUNDLE_DIRS`. Raise `covered` when a PR adds stories, never lower it.

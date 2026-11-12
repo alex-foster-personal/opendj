@@ -1,12 +1,8 @@
 /**
  * Shared-graph entry for AutoPlay Next transition + fader regression tests.
  */
-export {
-	deckStates,
-	engine,
-	getDeckState,
-	peekDeckFaderGain
-} from '$lib/rb/audio-engine.svelte';
+export { deckStates, engine, getDeckState, peekDeckFaderGain } from '$lib/rb/audio-engine.svelte';
+export { deckRollQueryFields as deckRollQuery } from '$lib/rb/deck-roll-commands';
 export {
 	dispatchPerformanceCommand,
 	installPerformanceBrowserIpc

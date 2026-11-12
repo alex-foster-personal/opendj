@@ -1,0 +1,9 @@
+{
+  "bytes": 1024,
+  "measured_main": 515255,
+  "measured_with_pr": 515418,
+  "sha": "af3a9ef8f",
+  "date": "Thu 12 Nov 2026",
+  "reason": "PR #12877 / issue #12391 adds only Playwright regression coverage and documentation, with no runtime frontend source changes. The supplied CI bundle-budget log measured other-lazy 515255 -> 515418 (+163 B gzip), exceeding the 128 B build-noise floor. This charge records that CI measurement, as with tests-only PR #8992; ceiled to KiB.",
+  "payback": "none planned; no product source grew"
+}

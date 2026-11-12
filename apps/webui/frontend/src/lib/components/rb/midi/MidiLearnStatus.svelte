@@ -1,9 +1,6 @@
 <script lang="ts">
-	import {
-		cancelMidiLearn,
-		midiUi,
-		retryMidiLearn
-	} from '$lib/components/rb/midi/midi-ui-state.svelte';
+	import { midiUi } from '$lib/components/rb/midi/midi-ui-state.svelte';
+	import { runPerformanceCommandFromUi } from '$lib/rb/performance-ipc.svelte';
 	import type { InferredControlKind } from '$lib/rb/midi/learn-infer';
 
 	const KIND_LABEL: Record<InferredControlKind, string> = {
@@ -29,7 +26,13 @@
 {#if midiUi.learn.phase === 'armed'}
 	<div class="learn-status">
 		<span>Move the control to learn…</span>
-		<button type="button" class="log-btn" onclick={cancelMidiLearn}>Cancel</button>
+		<button
+			type="button"
+			class="log-btn"
+			onclick={() => void runPerformanceCommandFromUi({ type: 'midi_learn_cancel' })}
+		>
+			Cancel
+		</button>
 	</div>
 {:else if midiUi.learn.phase === 'capturing'}
 	<div class="learn-status">
@@ -43,11 +46,17 @@
 				type="button"
 				class="log-btn"
 				data-testid="midi-learn-retry"
-				onclick={() => void retryMidiLearn()}
+				onclick={() => void runPerformanceCommandFromUi({ type: 'midi_learn_retry' })}
 			>
 				Retry
 			</button>
-			<button type="button" class="log-btn" onclick={cancelMidiLearn}>Cancel</button>
+			<button
+				type="button"
+				class="log-btn"
+				onclick={() => void runPerformanceCommandFromUi({ type: 'midi_learn_cancel' })}
+			>
+				Cancel
+			</button>
 		</div>
 	</div>
 {:else if midiUi.learn.phase === 'bound'}
@@ -56,7 +65,13 @@
 			Learned {describeBoundSource(midiUi.learn.kind, midiUi.learn.binding.source)} as
 			{KIND_LABEL[midiUi.learn.kind]}
 		</span>
-		<button type="button" class="log-btn" onclick={cancelMidiLearn}>Dismiss</button>
+		<button
+			type="button"
+			class="log-btn"
+			onclick={() => void runPerformanceCommandFromUi({ type: 'midi_learn_cancel' })}
+		>
+			Dismiss
+		</button>
 	</div>
 {/if}
 

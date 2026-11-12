@@ -28,6 +28,7 @@
 	// CMDK-24 (issue #6848): typed search also lists library playlists to open.
 	import { tick, untrack } from 'svelte';
 	import { goto } from '$app/navigation';
+	import { nativeShellKind, openSecondScreen } from '$lib/shell/native-shell';
 	import type { PlaylistNode } from '$lib/rb/library-types';
 	import { revealPlaylist } from '$lib/rb/playlist-reveal.svelte';
 	import { deckStates as decks, DECK_IDS, mixerState, pitchRanges } from '$lib/rb/audio-engine.svelte';
@@ -124,6 +125,9 @@
 	import { sectionSpans } from './wave/sections';
 	import { formatListTotalsLine, summarizeListTotals } from '$lib/rb/list-totals';
 
+	// SECONDSCREEN-11715: read once; the shell does not change under a running page.
+	const SECOND_SCREEN_ROW = nativeShellKind() === 'tauri';
+
 	/** What a row needs to be searched, filtered and loaded. */
 	type CmdkRow = SearchableRow &
 		Omit<FilterFields, 'file_availability'> & {
@@ -160,7 +164,8 @@
 		deckPending,
 		registerAdapter,
 		aiToast,
-		noteCommandPick
+		noteCommandPick,
+		tracks = true
 	}: {
 		rows: readonly CmdkRow[];
 		playlistTitle: string;
@@ -218,6 +223,8 @@
 		aiToast: (message: string) => void;
 		/** The page's frecency recorder (prefs), so this bar does not import prefs.svelte. */
 		noteCommandPick: (key: string) => void;
+		/** False where no browser panel is mounted: commands only, no track groups, no library index load (#9467). */
+		tracks?: boolean;
 	} = $props();
 
 	/** Rows each group draws at once; the header count says when there are more. */
@@ -284,7 +291,7 @@
 	 */
 	const actionsOn = $derived(cmdkActionsEnabled());
 	/** With settings and commands on, one typed character searches no tracks (CMDK-11). */
-	const trackSearch = $derived(!actionsOn || tokens.length === 0 || tracksAllowed(query));
+	const trackSearch = $derived(tracks && (!actionsOn || tokens.length === 0 || tracksAllowed(query)));
 	const awaitingCollection = $derived(
 		(collectionPending || collectionError !== null || !searchWarm) && tokens.length > 0 && trackSearch
 	);
@@ -341,7 +348,7 @@
 	const quickLabel = quickMod === 'Meta' ? '⌘' : 'Ctrl ';
 
 	const recentRows = $derived.by((): CmdkRow[] => {
-		if (!actionsOn) return [];
+		if (!actionsOn || !tracks) return [];
 		const byId = new Map<string, CmdkRow>();
 		for (const row of collection) byId.set(row.stable_id, row);
 		for (const row of playlistRows) if (!byId.has(row.stable_id)) byId.set(row.stable_id, row);
@@ -393,7 +400,7 @@
 						load_generation: decks[id].load_generation
 					}));
 					return [
-						...commandCandidates(rows, query),
+						...commandCandidates(rows, query, { secondScreen: SECOND_SCREEN_ROW }),
 						...paletteCommandRows({ target, decks: rows }, query),
 						...(dialScope === null ? [] : registryCommandCandidates(performanceCommandsInScope(dialScope)))
 					];
@@ -407,6 +414,7 @@
 	// ---- CMDK-17..19: the master deck's pairs on open ----
 
 	const pairsOn = $derived(actionsOn && cmdkPairsEnabled());
+	const pairsActive = $derived(pairsOn && tracks);
 	/** The master deck, when it holds a track. */
 	const masterDeck = $derived(DECK_IDS.find((id) => decks[id].is_master && decks[id].stable_id !== null) ?? null);
 	const pairsState = $derived(cmdkPairs());
@@ -414,7 +422,7 @@
 	let pairsMaster: string | null = null;
 	// The master can change while the bar stays open, and its pairs follow it (Sol: the old answer was dropped and never re-asked).
 	$effect(() => {
-		if (!open || !pairsOn) return;
+		if (!open || !pairsActive) return;
 		const master = masterDeck === null ? null : decks[masterDeck].stable_id;
 		if (master === pairsMaster) return;
 		pairsMaster = master;
@@ -423,7 +431,7 @@
 	/** The master's pairs as bar rows, while the answer is for the track the master holds now. */
 	const pairRows = $derived.by((): { row: CmdkRow; aligned: boolean; basis: string | undefined; snapshot: PairSnapshot | null }[] => {
 		const state = pairsState;
-		if (!pairsOn || masterDeck === null || state.status !== 'ready' || state.master !== decks[masterDeck].stable_id) return [];
+		if (!pairsActive || masterDeck === null || state.status !== 'ready' || state.master !== decks[masterDeck].stable_id) return [];
 		const byId = new Map<string, CmdkRow>();
 		for (const row of collection) byId.set(row.stable_id, row);
 		for (const row of playlistRows) if (!byId.has(row.stable_id)) byId.set(row.stable_id, row);
@@ -543,6 +551,7 @@
 	});
 
 	function setMode(next: CmdkMode): void {
+		if (next === 'ai' && !tracks) return;
 		mode = next;
 		selected = 0;
 		touched = false;
@@ -668,6 +677,16 @@
 			closeBar();
 			const { openSettings } = await import('$lib/settings/overlay.svelte');
 			openSettings(command.query);
+			return null;
+		}
+		if (command.type === 'open_second_screen') {
+			if (source === 'user-ui') noteCommandPick(commandKey(action));
+			closeBar();
+			try {
+				await openSecondScreen();
+			} catch (exc) {
+				return fail(`Library window did not open: ${exc instanceof Error ? exc.message : String(exc)}`);
+			}
 			return null;
 		}
 		if (command.type === 'performance') {
@@ -1377,7 +1396,7 @@
 	// A library change while the bar is open (an ingest, an edit, a track event)
 	// re-asks for the index, so the open bar never keeps searching the old rows.
 	$effect(() => {
-		if (!open) return;
+		if (!open || !tracks) return;
 		return onLibraryIndexInvalidated(() => loadCollection());
 	});
 
@@ -1397,11 +1416,11 @@
 		target = defaultTargetDeck(deckList());
 		pairLoads = [];
 		pairsMaster = masterDeck === null ? null : decks[masterDeck].stable_id;
-		if (pairsOn) requestCmdkPairs(pairsMaster);
+		if (pairsActive) requestCmdkPairs(pairsMaster);
 		open = true;
 		settingsLoading = actionsOn && settingsApi === null;
 		openSettings = actionsOn ? loadSettingsApi() : Promise.resolve(null);
-		loadCollection();
+		if (tracks) loadCollection();
 		await tick();
 		input?.focus();
 		const failure = await openSettings;
@@ -2223,13 +2242,21 @@
 			{#if previewMode === 'above' && previewRow !== null}
 				<div class="strip-slot">{@render strip('above')}</div>
 			{/if}
-			<div class="cmdk2" role="dialog" aria-modal="true" aria-label="Command bar" tabindex="-1" data-testid="command-bar">
+			<div
+				class="cmdk2"
+				role="dialog"
+				aria-modal="true"
+				aria-label="Command bar"
+				tabindex="-1"
+				data-testid="command-bar"
+				data-tracks={tracks ? 'on' : 'off'}
+			>
 				<div class="head">
 					<span
 						class="mode"
 						class:ai={mode === 'ai'}
 						data-testid="command-bar-mode"
-						title={aiOn ? (mode === 'ai' ? 'AI search: JEV ranks tracks that mix into the master by your words (Tab for plain search)' : 'Plain search (Tab for AI search)') : undefined}
+						title={aiOn && tracks ? (mode === 'ai' ? 'AI search: JEV ranks tracks that mix into the master by your words (Tab for plain search)' : 'Plain search (Tab for AI search)') : undefined}
 						>{mode === 'ai' ? 'AI' : 'Search'}</span
 					>
 					{#if mode === 'ai' && aiState.status === 'working'}<span class="sweep" aria-hidden="true" data-testid="command-bar-ai-sweep"></span>{/if}
@@ -2306,7 +2333,7 @@
 						</div></li>
 					{/if}
 					{#each layout.groups as group, g (group.id)}
-						<li class="group" role="presentation">
+						<li class="group" role="presentation" data-testid="command-bar-group" data-group={group.id}>
 							{#if group.id === 'playlist'}
 								<span>In open playlist · "{playlistTitle}"</span>
 								<span title="Tracks in the open playlist that match">{group.total}</span>
@@ -2326,7 +2353,7 @@
 						{#if group.id === 'playlist'}
 							{#each group.entries as entry, i (playlistKeys[i])}{#if entry.kind === 'track'}{@render rowView(entry.row, groupStart[g] + i)}{/if}{/each}
 							{#if lists.rows.length > 0}
-								<li class="group" role="presentation">
+								<li class="group" role="presentation" data-testid="command-bar-group" data-group="playlists">
 									<span>Playlists</span>
 									<span title="Library playlists whose name matches">{lists.total}</span>
 								</li>
@@ -2368,7 +2395,12 @@
 							</li>
 						{/if}
 					{:else}
-					{#if pairsOn && tokens.length === 0 && masterDeck !== null && pairsState.status !== 'ready'}
+					{#if !tracks && (tokens.length === 0 || !actionsOn)}
+						<li class="hint" role="presentation" data-testid="command-bar-no-tracks">
+							Tracks are searchable on Gig; type to search commands
+						</li>
+					{/if}
+					{#if pairsActive && tokens.length === 0 && masterDeck !== null && pairsState.status !== 'ready'}
 						{#if pairsState.status === 'loading'}
 							<li class="hint" role="presentation" data-testid="command-bar-pairs-status">Reading deck {masterDeck}'s pairs...</li>
 						{:else if pairsState.status === 'error'}

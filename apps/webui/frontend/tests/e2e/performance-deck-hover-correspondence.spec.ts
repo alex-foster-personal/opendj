@@ -2,13 +2,19 @@ import { expect, test, type Locator, type Page } from '@playwright/test';
 import type { APIRequestContext } from '@playwright/test';
 import { fileURLToPath } from 'node:url';
 import { fixtureManifestExists, readFixtureManifest } from './support/fixture-manifest';
+import {
+	ensureMoreDeckLayout,
+	visibleDeckOne,
+	visibleMixerChannelOne
+} from './support/performance-visible-layout';
 
 const MANIFEST_PATH = fileURLToPath(
 	new URL('./fixtures/performance-playwright-data/fixture-manifest.json', import.meta.url)
 );
 // The config's own switch. A manifest left on disk by an earlier fixture run must not
 // re-enable these cases when PERFORMANCE_E2E_FIXTURE=0 points the suite at a real library.
-const FIXTURE_MODE_READY = process.env.PERFORMANCE_E2E_FIXTURE !== '0' && fixtureManifestExists(MANIFEST_PATH);
+const FIXTURE_MODE_READY =
+	process.env.PERFORMANCE_E2E_FIXTURE !== '0' && fixtureManifestExists(MANIFEST_PATH);
 
 // The performance config can attach to a caller's backend or copy a real
 // library's prefs, so each test sets deck_hover_link itself and puts back
@@ -40,8 +46,9 @@ test('deck and mixer show the same accent link tick and nothing else', async ({
 		await setLink(request, true);
 		await page.goto('/performance');
 		await page.waitForFunction(() => window.musicDjToolsPerformance?.version === 1);
-		const deck = page.locator('.rb-deck[data-deck-hover="1"]');
-		const channel = page.locator('[data-mixer-channel="1"]');
+		await ensureMoreDeckLayout(page);
+		const deck = visibleDeckOne(page);
+		const channel = visibleMixerChannelOne(page);
 		// The top-left corner sits on the top bar, outside every deck-linked panel.
 		const away = { hover: () => page.mouse.move(1, 1) };
 		const chrome = (el: Element) => {
@@ -96,17 +103,21 @@ test('deck and mixer show the same accent link tick and nothing else', async ({
 // a mixer channel lights no linked panel. Control: back on, the same hover
 // lights the deck again, so the off case is not passing on a hover that never
 // landed.
-test('turning the deck hover link setting off stops every linked tick', async ({ page, request }) => {
+test('turning the deck hover link setting off stops every linked tick', async ({
+	page,
+	request
+}) => {
 	test.skip(!FIXTURE_MODE_READY, 'needs fixture mode and the generated fixture library');
 	const original = await readLink(request);
-	const deck = page.locator('.rb-deck[data-deck-hover="1"]');
-	const channel = page.locator('[data-mixer-channel="1"]');
+	const deck = visibleDeckOne(page);
+	const channel = visibleMixerChannelOne(page);
 	const wave = page.locator('.rb-waverow[data-deck="1"]');
 	const shadow = (loc: Locator) => loc.evaluate((el) => getComputedStyle(el).boxShadow);
 	try {
 		await setLink(request, false);
 		await page.goto('/performance');
 		await page.waitForFunction(() => window.musicDjToolsPerformance?.version === 1);
+		await ensureMoreDeckLayout(page);
 		const linked = await loadNonMasterDeck(page);
 		const row = page.locator(`tr[data-testid="track-row"][data-stable-id="${linked}"]`);
 
@@ -169,7 +180,8 @@ async function cleanup(steps: Array<() => Promise<unknown>>): Promise<void> {
 
 async function dispatch(page: Page, command: Record<string, unknown>): Promise<void> {
 	await page.evaluate((command) => {
-		if (window.musicDjToolsPerformance === undefined) throw new Error('performance IPC unavailable');
+		if (window.musicDjToolsPerformance === undefined)
+			throw new Error('performance IPC unavailable');
 		return window.musicDjToolsPerformance.dispatch(command as never);
 	}, command);
 }
@@ -211,9 +223,10 @@ test.describe('library row carries the link tick on a loaded and a job row', () 
 			await setLink(request, true);
 			await page.goto('/performance');
 			await page.waitForFunction(() => window.musicDjToolsPerformance?.version === 1);
+			await ensureMoreDeckLayout(page);
 			const linked = await loadNonMasterDeck(page);
 			const row = page.locator(`tr[data-testid="track-row"][data-stable-id="${linked}"]`);
-			const deck = page.locator('.rb-deck[data-deck-hover="1"]');
+			const deck = visibleDeckOne(page);
 			const shadow = (loc: Locator) => loc.evaluate((el) => getComputedStyle(el).boxShadow);
 
 			await page.mouse.move(1, 1);
@@ -237,12 +250,16 @@ test.describe('library row carries the link tick on a loaded and a job row', () 
 		}
 	});
 
-	test('an analysis-job row on the hovered deck keeps the accent tick', async ({ page, request }) => {
+	test('an analysis-job row on the hovered deck keeps the accent tick', async ({
+		page,
+		request
+	}) => {
 		const original = await readLink(request);
 		try {
 			await setLink(request, true);
 			await page.goto('/performance?simulateJob=1');
 			await page.waitForFunction(() => window.musicDjToolsPerformance?.version === 1);
+			await ensureMoreDeckLayout(page);
 			const linked = await loadNonMasterDeck(page);
 			// The real job store path (the QA simulate hook, allowed on ?simulateJob=1).
 			// A long run keeps the row in job state for the whole assertion.
@@ -256,7 +273,7 @@ test.describe('library row carries the link tick on a loaded and a job row', () 
 				linked
 			);
 			const row = page.locator(`tr[data-testid="track-row"][data-stable-id="${linked}"]`);
-			const deck = page.locator('.rb-deck[data-deck-hover="1"]');
+			const deck = visibleDeckOne(page);
 			const shadow = (loc: Locator) => loc.evaluate((el) => getComputedStyle(el).boxShadow);
 
 			await page.mouse.move(1, 1);
@@ -291,10 +308,11 @@ test.describe('library row carries the link tick on a loaded and a job row', () 
 			await setLink(request, true);
 			await page.goto('/performance');
 			await page.waitForFunction(() => window.musicDjToolsPerformance?.version === 1);
+			await ensureMoreDeckLayout(page);
 			const linked = await loadNonMasterDeck(page);
 			await dispatch(page, { type: 'master', deck: 1 });
 			const row = page.locator(`tr[data-testid="track-row"][data-stable-id="${linked}"]`);
-			const deck = page.locator('.rb-deck[data-deck-hover="1"]');
+			const deck = visibleDeckOne(page);
 			const shadow = (loc: Locator) => loc.evaluate((el) => getComputedStyle(el).boxShadow);
 
 			await page.mouse.move(1, 1);

@@ -98,10 +98,14 @@ _IF_MATCH_OPENAPI_PARAMETER: dict[str, Any] = {
 }
 
 
+ScanBasisLiteral = Literal["fingerprint", "tags", "both"]
+
+
 class ScanStatusOut(BaseModel):
     """Progress of the on-device library fingerprint scan."""
 
     state: Literal["idle", "running", "done", "failed"]
+    basis: ScanBasisLiteral
     total: int
     done: int
     computed: int
@@ -109,10 +113,19 @@ class ScanStatusOut(BaseModel):
     not_local: int
     errors: int
     clusters: int | None
+    clusters_fingerprint: int | None
+    clusters_tags: int | None
+    tag_precision: float | None
     error: str | None
     started_at: str | None
     finished_at: str | None
     error_samples: list[str]
+
+
+class ScanStartIn(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    basis: ScanBasisLiteral = "both"
 
 
 @router.get("/scan", response_model=ScanStatusOut)
@@ -127,7 +140,7 @@ def get_dedup_scan() -> ScanStatusOut:
     status_code=status.HTTP_202_ACCEPTED,
     responses={409: {"description": "A scan is already running"}},
 )
-def post_dedup_scan(request: Request) -> ScanStatusOut:
+def post_dedup_scan(request: Request, body: ScanStartIn = ScanStartIn()) -> ScanStatusOut:
     """Start fingerprinting the library and rebuilding duplicate clusters.
 
     Local only: the engine fingerprints each track's own file, nothing is
@@ -138,7 +151,7 @@ def post_dedup_scan(request: Request) -> ScanStatusOut:
     # default, and writes clusters where the review routes read them.
     configured = getattr(request.app.state, "state_db_path", None)
     state_db = Path(configured) if configured is not None else None
-    if not build_service().start_scan(state_db=state_db, db_path=dedup_db_path()):
+    if not build_service().start_scan(state_db=state_db, db_path=dedup_db_path(), basis=body.basis):
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail={"code": "scan_running", "message": "a duplicate scan is already running"},
@@ -178,6 +191,7 @@ class ClusterOut(BaseModel):
     cluster_key: str
     survivor_stable_id: str
     rationale: str | None
+    basis: Literal["fingerprint", "tags"]
     flagged_manual_review: bool
     members: list[MemberOut]
     decision: DecisionOut | None = None
@@ -346,6 +360,7 @@ def get_dedup_clusters(
                 cluster_key=key,
                 survivor_stable_id=cluster["canonical_stable_id"],
                 rationale=cluster["rationale"],
+                basis=cluster.get("basis", "fingerprint"),
                 flagged_manual_review=cluster_needs_manual_review(cluster),
                 members=members,
                 decision=(

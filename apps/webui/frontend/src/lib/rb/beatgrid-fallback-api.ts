@@ -9,7 +9,7 @@
  * per-wave hotspot (CLAUDE.md), so this lane's frontend keeps its own
  * thin wrapper rather than editing it.
  */
-import { ApiError, api, unwrap } from '../api/client';
+import { ApiError, api, unwrap } from '../api/rb-http';
 import type { components } from '../api-types';
 import { RbApiError } from './api-rb-error';
 import { refuseStickRead, refuseStickWrite } from './track-source';
@@ -89,6 +89,19 @@ export async function undoGridEdit(stableId: string, source: GridEditSource) {
 			params: { path: { stable_id: stableId }, query: { source } }
 		})
 	);
+}
+
+// KEY-10229: the library key cell's stored edit, the same route as `opendj track key-edit`.
+const _KEY_EDIT = '/api/v1/tracks/{stable_id}/key-edit';
+
+export async function putKeyEdit(stableId: string, key: string) {
+	refuseStickWrite(stableId, 'key edit');
+	return unwrap(api.PUT(_KEY_EDIT, { params: { path: { stable_id: stableId } }, body: { key } }));
+}
+
+export async function deleteKeyEdit(stableId: string) {
+	refuseStickWrite(stableId, 'key edit');
+	return unwrap(api.DELETE(_KEY_EDIT, { params: { path: { stable_id: stableId } } }));
 }
 
 export async function resetGridEditPart(

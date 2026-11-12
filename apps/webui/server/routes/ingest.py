@@ -8,6 +8,8 @@ Backs two UI features and their agent-native parity:
     ``{"scope": "unmapped"}``; see routes/analysis_queue.py
   * Drag-in ingest modal              -> GET/PUT /ingest/config,
     POST /ingest/upload (moved to routes/ingest_upload.py; shared CFG here)
+  * Sample helper (YouTube paste)     -> POST /sample-helper/download,
+    GET /sample-helper/preview (routes/sample_helper.py; stages via ingest upload)
 
 Design constraints honoured here:
   * Rekordbox remains the only writer of its own DB; upload stages files

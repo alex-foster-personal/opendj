@@ -131,6 +131,7 @@ def apply_pressure_prior(stage2: list[ScoredCandidate], pressure: PeakPressure) 
                 score=score,
                 rationale=rationale,
                 candidate=sc.candidate,
+                unscored=sc.unscored,
             )
         )
 

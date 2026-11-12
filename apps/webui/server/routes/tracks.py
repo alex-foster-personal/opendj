@@ -52,7 +52,7 @@ from ..models import (
     TrackPlaylistOut,
     TracksPage,
 )
-from ..rb_vendor_pkg.track_rows import KEY_WIRE_FIELDS, _artwork_facts, key_chain_for_track
+from ..rb_vendor_pkg.track_rows import KEY_WIRE_FIELDS, _artwork_facts, key_chain_for_track, load_key_edits
 from ..reveal_path import RevealPathError, reveal_track_path
 from ..shell_output_health import data_dir_from_state_db
 from ..track_loudness import track_loudness
@@ -260,6 +260,7 @@ def _track_own_fields(track: Track) -> dict[str, Any]:
         "bpm": track.bpm,
         "key": track.key,
         "rating": track.rating,
+        "color_id": track.color_id,
         "tags": list(track.tags or []),
         "notes": track.notes,
         "comments": track.comments,
@@ -336,6 +337,7 @@ def _listing_row_from_builder(track: Track, row: dict[str, Any]) -> dict[str, An
         "is_streaming": row["is_streaming"],
         "streaming_provider": row["streaming_provider"],
         "has_remote_copy": bool(row["has_remote_copy"]),
+        "remote_stem_status": row["remote_stem_status"],
         "deck_load_refusal": row["deck_load_refusal"],
         "cloud_transfer": row["cloud_transfer"],
         "offload": row["offload"],
@@ -378,8 +380,8 @@ def _listing_row_from_builder(track: Track, row: dict[str, Any]) -> dict[str, An
         "is_radio_edit": bool(row["is_radio_edit"]),
         "genre": row["genre"],
         "genre_source": row["genre_source"],
-        "genre_family": row.get("genre_family"),
-        "genre_family_color": row.get("genre_family_color"),
+        "genre_family": row["genre_family"],
+        "genre_family_color": row["genre_family_color"],
         "genre_reason": row["genre_reason"],
         "genre_guess": row["genre_guess"],
         # CMDK-04: the index carries the comment the library shows. Listing
@@ -468,6 +470,18 @@ INCLUDE_NON_MUSIC_DOC = (
 )
 
 
+def _parse_color_id_query(color_id: list[int] | None) -> tuple[int, ...]:
+    if not color_id:
+        return ()
+    for value in color_id:
+        if value < 0 or value > 8:
+            raise HTTPException(
+                status_code=422,
+                detail={"code": "color_id_invalid", "message": "color_id must be 0 to 8"},
+            )
+    return tuple(color_id)
+
+
 @router.get("", response_model=TracksPage)
 def list_tracks(
     request: Request,
@@ -477,6 +491,7 @@ def list_tracks(
     key: str | None = None,
     rating_min: int | None = None,
     tag: str | None = None,
+    color_id: list[int] | None = Query(None, description="Repeatable rekordbox ColorID 0..8"),
     available: AvailableFilter = Query(  # noqa: B008  # FastAPI DI
         "all",
         description=(
@@ -502,6 +517,7 @@ def list_tracks(
         key=key,
         rating_min=rating_min,
         tag=tag,
+        color_ids=_parse_color_id_query(color_id),
         cursor=cursor,
         limit=limit,
         show_deleted=show_deleted,
@@ -988,7 +1004,8 @@ def deck_key_fields(
     guess = key_guess.load_key_guesses(
         state_db_path, [track.stable_id], backend=key_guess.KEY_BACKEND, version=key_guess.KEY_VERSION
     ).get(track.stable_id)
-    chain = key_chain_for_track(track, has_rb_mapping=has_rb_mapping, mik=mik, guess=guess)
+    edit = load_key_edits(state_db_path, [track.stable_id]).get(track.stable_id)
+    chain = key_chain_for_track(track, has_rb_mapping=has_rb_mapping, mik=mik, guess=guess, key_edit=edit)
     return {name: chain[name] for name in KEY_WIRE_FIELDS}
 
 

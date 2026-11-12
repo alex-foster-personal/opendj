@@ -2,9 +2,69 @@
 
 import type { DeckState } from '$lib/rb/deck-state-types';
 import { stemColorFromToken } from '$lib/rb/stem-colors';
-import { STEM_CONTROLS } from '$lib/rb/stem-graph';
+import { STEM_CONTROLS, STEM_LAYOUT_CONTROLS, type StemControls } from '$lib/rb/stem-graph';
 import type { StemControl, StemLayout } from '$lib/rb/stem-types';
 import type { PerformanceCommand } from '$lib/rb/performance-ipc-types';
+
+export type StemRowAudibility = 'audible' | 'muted' | 'silenced_by_solo';
+
+/** Paint alpha for a row nobody can hear; mimics the stem chips' 0.3 unavailable opacity. */
+export const STEM_WAVE_ROW_SILENT_ALPHA = 0.3;
+
+/** Layout when the deck's stem-set is ready; throws if ready with no layout. */
+export function readyStemLayout(deck: DeckState): StemLayout {
+	if (deck.stems.status !== 'ready' || deck.stems.layout === null) {
+		throw new Error('stems ready with no layout');
+	}
+	return deck.stems.layout;
+}
+
+/**
+ * What the listener hears from one stem row, by the engine's own gate
+ * (stemPartGains in $lib/rb/stem-graph): mute wins; solo counts only over the
+ * controls the layout owns; demucs4 bass/other follow the instrumental group;
+ * an AUDFID-02 held stem-set (playback 'original') plays the mix, so every
+ * stem is audible. Gain is ignored (gain as height is out of scope).
+ */
+export function stemRowAudibility(
+	controls: StemControls,
+	stem: StemControl,
+	playback: 'original' | 'stems' | undefined,
+	layout: StemLayout = 'demucs4'
+): StemRowAudibility {
+	if (playback === 'original') return 'audible';
+
+	const parent: StemControl | undefined =
+		layout === 'demucs4' && (stem === 'bass' || stem === 'other') ? 'instrumental' : undefined;
+	const group = parent === undefined ? undefined : controls[parent];
+	if (controls[stem].muted || group?.muted) return 'muted';
+
+	const owned = STEM_LAYOUT_CONTROLS[layout];
+	const anySolo = owned.some((s) => controls[s].solo);
+	const soloedThrough =
+		controls[stem].solo ||
+		group?.solo === true ||
+		(layout === 'demucs4' &&
+			stem === 'instrumental' &&
+			(controls.bass.solo || controls.other.solo));
+
+	if (anySolo && !soloedThrough) return 'silenced_by_solo';
+	return 'audible';
+}
+
+export function stemWaveRowAlpha(audibility: StemRowAudibility): number {
+	switch (audibility) {
+		case 'audible':
+			return 1;
+		case 'muted':
+		case 'silenced_by_solo':
+			return STEM_WAVE_ROW_SILENT_ALPHA;
+		default: {
+			const _exhaustive: never = audibility;
+			throw new RangeError(`stemWaveRowAlpha: unknown audibility ${_exhaustive}`);
+		}
+	}
+}
 
 /** Fixed CSS height for one stem mini-waveform row. */
 export const STEM_WAVE_ROW_PX = 12;

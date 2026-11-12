@@ -335,7 +335,7 @@ def test_every_state_authority_contributes_to_the_subject(clean_scan: lint.Scan)
     """
     per_authority = {
         "apps/shared/state/schema.py": "tracks",
-        "apps/analysis/store.py": "analysis",
+        "apps/analysis/analysis_records_tables_sql.py": "analysis",
         # The backfill queue, additive on the same state.db, and its
         # staleness table. Two FILES rather than two entry points: the
         # declaration these are compared against reads files, so a
@@ -378,6 +378,9 @@ def test_every_state_authority_contributes_to_the_subject(clean_scan: lint.Scan)
         # additive on the same state.db, created by the first presign of a
         # month on a hosted hub.
         "apps/sync_hub/stem_meter.py": "stem_bundle_usage",
+        # CloudSync not_newer memory (issue #10304), spoke-local on state.db.
+        "apps/sync_hub/hub_answered.py": "sync_hub_answered",
+        "apps/webui/server/crowd_requests.py": "crowd_requests",
         "apps/webui/server/http_pairings_schema.py": "http_pairings",
     }
     assert {a.name for a in subject.STATE_AUTHORITIES} == set(per_authority)

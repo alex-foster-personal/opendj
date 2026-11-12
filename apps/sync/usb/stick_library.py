@@ -33,7 +33,7 @@ from typing import Literal
 
 from apps.shared.bounded_file_open import AUDIO_ACCESS_TIMEOUT_S, probe_readable_byte
 from apps.shared.state.locations import AUDIO_MEDIA_TYPES
-from apps.sync.usb.pioneer.reader import read_export_pdb
+from apps.sync.usb.pioneer.reader import RekordboxStickExports, read_export_pdb, rekordbox_stick_exports
 from apps.sync.usb.stick_model import (
     HISTORY_ID_PREFIX,
     PLAYLIST_ID_PREFIX,
@@ -97,6 +97,8 @@ class OpenedStickLibrary:
     stick: MountedStick
     library: StickLibrary
     cache_hit: bool
+    #: Which rekordbox export files were on the stick when it was bound.
+    exports: RekordboxStickExports
     #: pdb ids whose artwork both served sizes (``s`` and ``_m``) were on the
     #: stick when this ``export.pdb`` was parsed.
     artwork_available: frozenset[int]
@@ -121,6 +123,7 @@ class _Binding:
     st_dev: int
     #: ``_now()`` when discovery last confirmed this VolUUID at this mount.
     verified_at: float
+    exports: RekordboxStickExports
 
 
 @dataclass(frozen=True)
@@ -155,15 +158,19 @@ def open_stick_library(volume_uuid: str, scan: VolumeScan) -> OpenedStickLibrary
             stick = _bind_from_fresh_scan(volume_uuid, scan)
         fingerprint = _pdb_fingerprint(stick)
         cached = _libraries.get(volume_uuid)
+        binding = _bindings.get(volume_uuid)
+        exports = binding.exports if binding is not None else rekordbox_stick_exports(stick.mount)
         if cached is not None and fingerprint == cached.fingerprint:
-            return _opened(stick, cached, cache_hit=True)
+            return _opened(stick, cached, exports, cache_hit=True)
         if not freshly_bound:
             # The pdb changed or vanished under a trusted binding: prove which
             # stick is mounted there before parsing anything under this UUID.
             stick = _bind_from_fresh_scan(volume_uuid, scan)
+            binding = _bindings[volume_uuid]
+            exports = binding.exports
             fingerprint = _pdb_fingerprint(stick)
             if cached is not None and fingerprint == cached.fingerprint:
-                return _opened(stick, cached, cache_hit=True)
+                return _opened(stick, cached, exports, cache_hit=True)
         if fingerprint is None:
             raise StickError(
                 "USB_FILE_MISSING",
@@ -172,7 +179,7 @@ def open_stick_library(volume_uuid: str, scan: VolumeScan) -> OpenedStickLibrary
             )
         parsed = _parsed_library(stick, fingerprint)
         _libraries[volume_uuid] = parsed
-        return _opened(stick, parsed, cache_hit=False)
+        return _opened(stick, parsed, exports, cache_hit=False)
 
 
 def _parsed_library(stick: MountedStick, fingerprint: tuple[int, int]) -> _CachedLibrary:
@@ -190,11 +197,18 @@ def _parsed_library(stick: MountedStick, fingerprint: tuple[int, int]) -> _Cache
     )
 
 
-def _opened(stick: MountedStick, cached: _CachedLibrary, *, cache_hit: bool) -> OpenedStickLibrary:
+def _opened(
+    stick: MountedStick,
+    cached: _CachedLibrary,
+    exports: RekordboxStickExports,
+    *,
+    cache_hit: bool,
+) -> OpenedStickLibrary:
     return OpenedStickLibrary(
         stick=stick,
         library=cached.library,
         cache_hit=cache_hit,
+        exports=exports,
         artwork_available=cached.artwork_available,
         audio_present=cached.audio_present,
     )
@@ -263,6 +277,15 @@ def _bind_from_fresh_scan(volume_uuid: str, scan: VolumeScan) -> MountedStick:
         name=volume.name,
         mount=volume.mount_path,
     )
+    exports = rekordbox_stick_exports(stick.mount)
+    if not exports.has_pdb:
+        extra = {"reason": "export_pdb_missing"} if exports.has_onelibrary else {}
+        raise StickError(
+            "USB_FILE_MISSING",
+            f"no rekordbox export at {'/'.join(EXPORT_PDB_PARTS)} on this stick",
+            volume_uuid=volume_uuid,
+            **extra,
+        )
     _probe_export_readable(stick)
     st_dev = _mount_device(stick.mount)
     if st_dev is None:
@@ -271,7 +294,9 @@ def _bind_from_fresh_scan(volume_uuid: str, scan: VolumeScan) -> MountedStick:
             f"{stick.mount} went away while it was being bound",
             volume_uuid=volume_uuid,
         )
-    _bindings[volume_uuid] = _Binding(stick=stick, st_dev=st_dev, verified_at=_now())
+    _bindings[volume_uuid] = _Binding(
+        stick=stick, st_dev=st_dev, verified_at=_now(), exports=exports
+    )
     return stick
 
 

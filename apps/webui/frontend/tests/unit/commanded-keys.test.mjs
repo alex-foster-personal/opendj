@@ -309,7 +309,9 @@ test('performanceCommandsInScope lists dial commands in both dial and fader scop
 		assert.ok(def.scopes.includes('dial') && def.scopes.includes('fader'));
 	}
 	assert.ok(global.length > 0);
-	assert.ok(global.every((def) => def.id.startsWith('preset.run.')));
+	assert.ok(
+		global.every((def) => def.id.startsWith('preset.run.') || def.id.startsWith('selector.'))
+	);
 });
 
 test('registryCommandCandidates builds Cmd-K performance rows', async () => {

@@ -14,6 +14,7 @@
 	} from '$lib/rb/crossfader-geometry';
 	import { WHEEL_STEP, wheelAdjust } from '$lib/rb/wheel-adjust';
 	import { midiTakeoverGhost } from '$lib/rb/midi/takeover-ui.svelte';
+	import { valueText } from '$lib/a11y/value-text';
 
 	interface Props {
 		/** 0..1; 0 = full A, 1 = full B. */
@@ -83,6 +84,7 @@
 	aria-valuemin={0}
 	aria-valuemax={1}
 	aria-valuenow={value}
+	aria-valuetext={valueText('crossfader', value)}
 	tabindex="0"
 	data-takeover-ghost={takeoverGhost === null ? undefined : takeoverGhost.value}
 	bind:clientWidth={trackWidth}

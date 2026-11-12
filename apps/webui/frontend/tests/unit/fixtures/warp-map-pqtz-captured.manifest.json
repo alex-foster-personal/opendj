@@ -1,0 +1,14 @@
+{
+  "schema_version": 1,
+  "capture": {
+    "kind": "warp-map-pqtz-seed",
+    "source": "apps/webui/frontend/tests/unit/warp-map.test.mjs",
+    "track_stable_id": "placeholder-stable-id"
+  },
+  "files": {
+    "warp-map-pqtz-captured.json": {
+      "bytes": 0,
+      "sha256": "0000000000000000000000000000000000000000000000000000000000000000"
+    }
+  }
+}

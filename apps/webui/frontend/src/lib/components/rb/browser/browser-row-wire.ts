@@ -42,6 +42,13 @@ type DeckLoadRowFacts = StreamingRowFacts & {
 	offload?: { state: string } | null | undefined;
 };
 
+export type RemoteStemStatus = 'ready' | 'not-run' | 'unknown';
+
+function parseRemoteStemStatus(value: unknown): RemoteStemStatus {
+	if (value === 'ready' || value === 'not-run' || value === 'unknown') return value;
+	return 'unknown';
+}
+
 function upfrontDeckLoadRefusal(row: DeckLoadRowFacts): string | null {
 	const code = row.deck_load_refusal;
 	if (code === 'streaming') return streamingLoadRefusal(row);
@@ -168,14 +175,16 @@ export function settledAvailabilityFromRbMeta(
 	else return { file_exists: false, file_availability: 'absent' };
 }
 
-/** Write rb-meta disk truth onto a pending row and name a streaming URI.
- * No-op once the row has already settled. */
-export function applySettledAvailability(row: {
-	file_exists: boolean | null;
-	file_availability?: BrowserRow['file_availability'] | null;
-	file_path?: string | null;
-	rb_meta?: { file_exists: boolean; is_streaming: boolean; folder_path?: string | null } | null;
-}): void {
+/** Merge rb-meta disk truth onto a pending row and name a streaming URI.
+ * Returns the input row when nothing settles. */
+export function applySettledAvailability<
+	T extends {
+		file_exists: boolean | null;
+		file_availability?: BrowserRow['file_availability'] | null;
+		file_path?: string | null;
+		rb_meta?: { file_exists: boolean; is_streaming: boolean; folder_path?: string | null } | null;
+	}
+>(row: T): T {
 	const settled = settledAvailabilityFromRbMeta(
 		{
 			file_exists: row.file_exists,
@@ -183,12 +192,13 @@ export function applySettledAvailability(row: {
 		},
 		row.rb_meta ?? null
 	);
-	if (settled === null) return;
+	if (settled === null) return row;
 	const path = row.file_path ?? row.rb_meta?.folder_path ?? null;
-	Object.assign(row, {
+	return {
+		...row,
 		...settled,
 		file_availability: nameStreamingAvailability(settled.file_availability, path, null)
-	});
+	};
 }
 
 // too_short / no_pulse: bpm was analyzed and no tempo was measured (issue
@@ -265,6 +275,8 @@ export function rowFromPlaylistWire(wire: PlaylistTrackRowWire, order: number): 
 		key: wire.key,
 		bpm: wire.bpm,
 		rating: normalizeRating(wire.rating),
+		color_id: wire.color_id ?? null,
+		tags: wire.tags ?? [],
 		etag: wire.etag,
 		comments: wire.comments,
 		tracklist_hidden: wire.tracklist_hidden === true,
@@ -307,6 +319,7 @@ export function rowFromPlaylistWire(wire: PlaylistTrackRowWire, order: number): 
 		is_streaming: wire.is_streaming,
 		is_remote: wire.is_remote === true,
 		has_remote_copy: wire.has_remote_copy === true,
+		remote_stem_status: parseRemoteStemStatus(wire.remote_stem_status),
 		deck_load_refusal: wire.deck_load_refusal ?? null,
 		cloud_transfer: wire.cloud_transfer ?? null,
 		offload: wire.offload ?? null,
@@ -376,6 +389,8 @@ export function rowFromListWire(track: TrackListItemWire, order: number): Browse
 		key: track.key ?? null,
 		bpm: track.bpm ?? null,
 		rating: normalizeRating(track.rating ?? null),
+		color_id: track.color_id ?? null,
+		tags: track.tags ?? [],
 		// List items carry no ETag; rating edits lazily fetch one.
 		etag: '',
 		comments: track.notes ?? null,
@@ -434,6 +449,7 @@ export function rowFromListWire(track: TrackListItemWire, order: number): Browse
 		streaming_provider: track.streaming_provider ?? null,
 		is_remote: track.is_remote === true,
 		has_remote_copy: track.has_remote_copy === true,
+		remote_stem_status: parseRemoteStemStatus(track.remote_stem_status),
 		cloud_transfer: track.cloud_transfer ?? null,
 		offload: track.offload ?? null,
 		deck_load_refusal: track.deck_load_refusal ?? null,

@@ -15,6 +15,11 @@
  *     [if] a branch schedule fails [then] the group rejects and disconnects
  *   ✔︎ Mute/solo state is deterministic and serializable.
  *     [if] any group is soloed [then] non-solo groups gain 0; mute wins
+ *   ✔︎ PERFBATCH-06 / LATENCY-04: precomputed stem bundles before live-generation.
+ *     [if] probe is ready [then] use precomputed decode; never consider live gen [else stop]
+ *     [if] probe is hydrating [then] await precomputed; never consider live gen [else stop]
+ *     [if] probe is unavailable [then] may invoke live-generation fallback once [else stop]
+ *     [if] probe is invalid or deck load is stale (null probe) [then] reject; never fallback [else stop]
  */
 
 import {
@@ -41,6 +46,47 @@ import type {
 } from '$lib/rb/stem-types';
 import { STEM_CONTROL_IDS } from '$lib/rb/stem-types';
 import type { PcmHandoff } from '$lib/rb/stretch-pcm-handoff';
+
+/** Settled probe inputs for stem load policy (mirrors api-rb StemArtifactProbe). */
+export type StemLoadProbeInput =
+	| { status: 'ready' }
+	| { status: 'hydrating' }
+	| { status: 'unavailable'; error: string }
+	| { status: 'invalid'; error: string };
+
+export type StemLoadPolicyDecision =
+	| 'use-precomputed'
+	| 'await-precomputed'
+	| 'consider-live-generation-fallback'
+	| 'reject-loud'
+	| 'aborted-stale';
+
+export type StemLiveGenerationFallback = () => boolean;
+
+/** Prefer a fresh precomputed bundle; live-generation only when probe is unavailable. */
+export function resolveStemLoadPolicy(
+	probe: StemLoadProbeInput | null,
+	considerLiveGeneration: StemLiveGenerationFallback
+): StemLoadPolicyDecision {
+	if (probe === null) {
+		return 'aborted-stale';
+	}
+	switch (probe.status) {
+		case 'ready':
+			return 'use-precomputed';
+		case 'hydrating':
+			return 'await-precomputed';
+		case 'invalid':
+			return 'reject-loud';
+		case 'unavailable':
+			considerLiveGeneration();
+			return 'consider-live-generation-fallback';
+		default: {
+			const _exhaustive: never = probe;
+			throw new Error(`Unhandled stem load probe: ${JSON.stringify(_exhaustive)}`);
+		}
+	}
+}
 
 export const STEM_CONTROLS = STEM_CONTROL_IDS;
 export const DEMUCS_PARTS = ['vocals', 'drums', 'bass', 'other'] as const;
@@ -140,11 +186,11 @@ export async function decodeStemBuffers(
 
 export function createDefaultStemControls(): StemControls {
 	return {
-		vocal: { muted: false, solo: false, gain: 0.5 },
-		instrumental: { muted: false, solo: false, gain: 0.5 },
-		drums: { muted: false, solo: false, gain: 0.5 },
-		bass: { muted: false, solo: false, gain: 0.5 },
-		other: { muted: false, solo: false, gain: 0.5 }
+		vocal: { muted: false, solo: false, gain: 0.5, fx_send: 0 },
+		instrumental: { muted: false, solo: false, gain: 0.5, fx_send: 0 },
+		drums: { muted: false, solo: false, gain: 0.5, fx_send: 0 },
+		bass: { muted: false, solo: false, gain: 0.5, fx_send: 0 },
+		other: { muted: false, solo: false, gain: 0.5, fx_send: 0 }
 	};
 }
 
@@ -210,12 +256,54 @@ function _validateControls(controls: StemControls): void {
 		if (typeof state !== 'object' || state === null) {
 			throw new TypeError(`stem controls.${stem} must be an object`);
 		}
-		_exactKeys(`stem controls.${stem}`, state, ['muted', 'solo', 'gain']);
+		// STEMPERF-11663: fx_send is optional at runtime (missing = 0) so older
+		// snapshots and {muted, solo, gain} literals stay valid.
+		_exactKeys(
+			`stem controls.${stem}`,
+			state,
+			'fx_send' in state ? ['muted', 'solo', 'gain', 'fx_send'] : ['muted', 'solo', 'gain']
+		);
 		if (typeof state.muted !== 'boolean' || typeof state.solo !== 'boolean') {
 			throw new TypeError(`stem controls.${stem} mute/solo values must be boolean`);
 		}
 		assertUnitRange(`stem controls.${stem}.gain`, state.gain);
+		if (state.fx_send !== undefined) assertUnitRange(`stem controls.${stem}.fx_send`, state.fx_send);
 	}
+}
+
+/** STEMPERF-11663: per-part FX send levels (0..1 linear, no knob law). In
+ * demucs4 the instrumental control is the group parent of bass and other; a
+ * send cannot be multiplied by a parent that defaults to 0, so the larger wins. */
+export function stemPartSends(
+	controls: StemControls,
+	layout: StemLayout = 'demucs4'
+): Partial<Record<StemPart, number>> {
+	_validateControls(controls);
+	const send = (stem: StemControl): number => controls[stem].fx_send ?? 0;
+	if (layout === 'roformer2') {
+		return { vocals: send('vocal'), instrumental: send('instrumental') };
+	}
+	return {
+		vocals: send('vocal'),
+		drums: send('drums'),
+		bass: Math.max(send('bass'), send('instrumental')),
+		other: Math.max(send('other'), send('instrumental'))
+	};
+}
+
+/** STEMPERF-11663: one part's dry gain (1) and FX send (0), both fed from the
+ * part's stretch processor output in parallel. */
+export function createStemPartBus(
+	context: Pick<BaseAudioContext, 'createGain'>,
+	source: { connect(node: AudioNode): unknown }
+): { gain: GainNode; send: GainNode } {
+	const gain = context.createGain();
+	gain.gain.value = 1;
+	const send = context.createGain();
+	send.gain.value = 0;
+	source.connect(gain);
+	source.connect(send);
+	return { gain, send };
 }
 
 export function stemPartGains(
@@ -392,6 +480,9 @@ export class AlignedStemDeckProcessor {
 	readonly #context: AudioContext;
 	readonly #processors: Partial<Record<StemPart, StretchDeckProcessor>>;
 	readonly #gains: Partial<Record<StemPart, GainNode>>;
+	/** STEMPERF-11663: per-part FX sends, tapped from the processor in parallel
+	 * with the part gain (pre-fader): mute, solo and gain gate only the dry path. */
+	readonly #sends: Partial<Record<StemPart, GainNode>>;
 	readonly #latencySec: number;
 	readonly #layout: StemLayout;
 	readonly #parts: readonly StemPart[];
@@ -402,6 +493,7 @@ export class AlignedStemDeckProcessor {
 		context: AudioContext,
 		processors: Partial<Record<StemPart, StretchDeckProcessor>>,
 		gains: Partial<Record<StemPart, GainNode>>,
+		sends: Partial<Record<StemPart, GainNode>>,
 		latencySec: number,
 		layout: StemLayout,
 		envelopes: Partial<Record<StemPart, PeakEnvelope>>
@@ -409,6 +501,7 @@ export class AlignedStemDeckProcessor {
 		this.#context = context;
 		this.#processors = processors;
 		this.#gains = gains;
+		this.#sends = sends;
 		this.#latencySec = latencySec;
 		this.#layout = layout;
 		this.#parts = STEM_LAYOUT_PARTS[layout];
@@ -440,6 +533,7 @@ export class AlignedStemDeckProcessor {
 		const parts = STEM_LAYOUT_PARTS[layout];
 		const processors: Partial<Record<StemPart, StretchDeckProcessor>> = {};
 		const gains: Partial<Record<StemPart, GainNode>> = {};
+		const sends: Partial<Record<StemPart, GainNode>> = {};
 		const handoffs: PcmHandoff[] = [];
 		const envelopes: Partial<Record<StemPart, PeakEnvelope>> = {};
 		try {
@@ -454,10 +548,9 @@ export class AlignedStemDeckProcessor {
 				// move instead of being copied on the main thread.
 				handoffs.push(await processor.load(buffers[part] as AudioBuffer, 'transfer'));
 				processors[part] = processor;
-				const gain = context.createGain();
-				gain.gain.value = 1;
-				processor.connect(gain);
-				gains[part] = gain;
+				const bus = createStemPartBus(context, processor);
+				gains[part] = bus.gain;
+				sends[part] = bus.send;
 			}
 			const latencies = await Promise.all(
 				parts.map((part) => (processors[part] as StretchDeckProcessor).latencySec())
@@ -484,7 +577,7 @@ export class AlignedStemDeckProcessor {
 			}
 			return {
 				processor: new AlignedStemDeckProcessor(
-					context, processors, gains, latencySec, layout, envelopes
+					context, processors, gains, sends, latencySec, layout, envelopes
 				),
 				alignment,
 				pcmHandoff: handoffs.every((handoff) => handoff === 'transfer') ? 'transfer' : 'copy'
@@ -499,6 +592,11 @@ export class AlignedStemDeckProcessor {
 				}
 				try {
 					gains[part]?.disconnect();
+				} catch (cleanupError) {
+					cleanupFailures.push(cleanupError);
+				}
+				try {
+					sends[part]?.disconnect();
 				} catch (cleanupError) {
 					cleanupFailures.push(cleanupError);
 				}
@@ -517,6 +615,17 @@ export class AlignedStemDeckProcessor {
 		for (const part of this.#parts) this.#gains[part]?.connect(destination);
 	}
 
+	/** STEMPERF-11663: the per-part FX sends, read by tests. */
+	get fxSends(): Readonly<Partial<Record<StemPart, GainNode>>> {
+		return Object.freeze({ ...this.#sends });
+	}
+
+	/** STEMPERF-11663: wire every part's FX send to the engine-injected send
+	 * destination (the channel's stemFxSend bus into the colour FX input). */
+	connectFxSend(destination: AudioNode): void {
+		for (const part of this.#parts) this.#sends[part]?.connect(destination);
+	}
+
 	disconnect(): void {
 		const failures: unknown[] = [];
 		for (const part of this.#parts) {
@@ -530,6 +639,11 @@ export class AlignedStemDeckProcessor {
 			} catch (error) {
 				failures.push(error);
 			}
+			try {
+				this.#sends[part]?.disconnect();
+			} catch (error) {
+				failures.push(error);
+			}
 		}
 		if (failures.length === 1) throw failures[0];
 		if (failures.length > 1) throw new AggregateError(failures, 'stem graph disconnect failed');
@@ -540,6 +654,11 @@ export class AlignedStemDeckProcessor {
 		for (const part of this.#parts) {
 			try {
 				this.#gains[part]?.disconnect();
+			} catch (error) {
+				failures.push(error);
+			}
+			try {
+				this.#sends[part]?.disconnect();
 			} catch (error) {
 				failures.push(error);
 			}
@@ -591,13 +710,39 @@ export class AlignedStemDeckProcessor {
 			}
 			node.gain.setTargetAtTime(value, this.#context.currentTime, 0.01);
 		}
+		const sends = stemPartSends(controls, this.#layout);
+		for (const part of this.#parts) {
+			this.#sends[part]?.gain.setTargetAtTime(sends[part] ?? 0, this.#context.currentTime, 0.01);
+		}
+		const copy = (state: StemControls[StemControl]) => ({ ...state, fx_send: state.fx_send ?? 0 });
 		this.#controls = {
-			vocal: { ...controls.vocal },
-			instrumental: { ...controls.instrumental },
-			drums: { ...controls.drums },
-			bass: { ...controls.bass },
-			other: { ...controls.other }
+			vocal: copy(controls.vocal),
+			instrumental: copy(controls.instrumental),
+			drums: copy(controls.drums),
+			bass: copy(controls.bass),
+			other: copy(controls.other)
 		};
+	}
+
+	/** STEMPERF-11663: ramp one control's FX send. Touches only the send nodes
+	 * whose level changes; the part gains (the dry path) are never ramped. */
+	setStemFxSend(stem: StemControl, value: number): void {
+		assertUnitRange('setStemFxSend', value);
+		if (!STEM_LAYOUT_CONTROLS[this.#layout].includes(stem)) {
+			throw new TypeError(`stem layout ${this.#layout} has no ${stem} control`);
+		}
+		const before = stemPartSends(this.#controls, this.#layout);
+		const next: StemControls = {
+			...this.#controls,
+			[stem]: { ...this.#controls[stem], fx_send: value }
+		};
+		const after = stemPartSends(next, this.#layout);
+		for (const part of this.#parts) {
+			const level = after[part] ?? 0;
+			if (level === (before[part] ?? 0)) continue;
+			this.#sends[part]?.gain.setTargetAtTime(level, this.#context.currentTime, 0.01);
+		}
+		this.#controls = next;
 	}
 
 	controls(): StemControls {
@@ -609,4 +754,15 @@ export class AlignedStemDeckProcessor {
 			other: { ...this.#controls.other }
 		};
 	}
+}
+
+/** STEMPERF-11663: wire a stem processor's FX sends to the channel's stemFxSend
+ * bus. Lives here so the instanceof uses the class's own module. */
+export function connectStemFxSend(
+	processor: unknown,
+	nodes: { stemFxSend?: GainNode } | null | undefined
+): void {
+	if (!(processor instanceof AlignedStemDeckProcessor)) return;
+	if (nodes === null || nodes === undefined || nodes.stemFxSend === undefined) return;
+	processor.connectFxSend(nodes.stemFxSend);
 }

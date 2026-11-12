@@ -23,8 +23,24 @@ import { claimArmedHotCuePress, claimLoadSpanningPress, isSyncJoinPress } from '
 import { recordPerfEvent, recordPerfTiming } from '$lib/rb/perf-event-log';
 
 export { applyEqRamp } from '$lib/player/eq-apply';
-export { FILTER_APPLY_KIND, FADER_APPLY_KIND, XFADER_APPLY_KIND, STEM_MUTE_APPLY_KIND, STEM_SOLO_APPLY_KIND } from '$lib/player/mixer-apply';
+export {
+	FILTER_APPLY_KIND,
+	FADER_APPLY_KIND,
+	XFADER_APPLY_KIND,
+	STEM_MUTE_APPLY_KIND,
+	STEM_SOLO_APPLY_KIND
+} from '$lib/player/mixer-apply';
 export { outputLatencyIfDevice, watchOutputDevice } from '$lib/player/transport/press-audible';
+export {
+	armSeekPresented,
+	armSeekPresentedFromPressMark,
+	cancelSeekPresented,
+	markSeekPresentedPress,
+	noteSeekPresentedPosition,
+	presentedMatchesSeekTarget,
+	SEEK_PRESENTED_KIND,
+	seekPresentedPending
+} from '$lib/player/transport/seek-presented';
 
 /**
  * A deck, exactly as the perf ring accepts one.

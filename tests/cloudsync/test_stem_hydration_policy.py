@@ -156,9 +156,7 @@ def test_a_compliant_mp3_stem_set_hydrates_unchanged(tmp_path: Path, fake_s3, cf
     assert {p.name: p.read_bytes() for p in (stems_dir / SID).iterdir()} == files
 
 
-def test_a_flac_stem_set_whose_source_is_not_here_hydrates_unchanged(
-    tmp_path: Path, fake_s3, cfg: CloudConfig
-) -> None:
+def test_a_flac_stem_set_whose_source_is_not_here_hydrates_unchanged(tmp_path: Path, fake_s3, cfg: CloudConfig) -> None:
     """[if] a set the rule cannot judge (no source on disk) is refused or rewritten [then] broken, [else stop]."""
     stems_dir = tmp_path / "stems"
     files = _flac_set(tmp_path / "scratch", tmp_path / "absent.mp3")

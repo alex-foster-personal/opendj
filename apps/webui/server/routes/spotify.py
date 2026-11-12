@@ -1,10 +1,9 @@
-"""Read-only Spotify acquisition queue endpoints.
+"""Spotify acquisition queue endpoints and the live import job.
 
-The imported playlist itself is resolved through the shared ``StateBackend``.
-The Phase 9 ``pending_tracks`` auxiliary table is deliberately read directly
-from the configured state database because it is not part of that protocol.
-This module never creates or repairs auxiliary state: missing or malformed
-persisted data is an explicit server error.
+Read paths resolve imported playlists through the shared ``StateBackend`` and
+read ``pending_tracks`` directly from the configured state database. Write
+paths start a background ``run_import`` job (202 + status poll). Missing or
+malformed persisted read data is an explicit server error.
 """
 from __future__ import annotations
 
@@ -12,6 +11,8 @@ import json
 import os
 import sqlite3
 import threading
+import time
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Annotated, Literal
 
@@ -37,7 +38,9 @@ from apps.spotify.client import (
     ReauthorizationRequired,
     SpotifyClient,
 )
+from apps.spotify.importer import ImportOptions, run_import
 from apps.spotify.listen_history import fetch_recent_plays
+from apps.spotify.url_parse import parse_playlist_identifier
 
 from ..backend import NotFoundError, StateBackend
 from ..deps import get_read_state
@@ -529,6 +532,8 @@ def start_account_connect(request: Request) -> ConnectStartOut:
         raise HTTPException(status_code=409, detail={"code": exc.reason.upper(), "message": exc.message}) from exc
     except spotify_account.ClientIdUnreadable as exc:
         raise _server_error("SPOTIFY_CLIENT_ID_UNREADABLE", str(exc)) from exc
+    except spotify_account.TokenCacheUnwritable as exc:
+        raise _server_error("SPOTIFY_TOKEN_CACHE_UNWRITABLE", str(exc)) from exc
     except RuntimeError as exc:
         raise HTTPException(status_code=409, detail={"code": "SPOTIFY_CONNECT_BUSY", "message": str(exc)}) from exc
     except OSError as exc:
@@ -586,9 +591,208 @@ def get_account_connect(request: Request) -> ConnectStatusOut:
     return ConnectStatusOut(**_connect_flow(request).status())
 
 
+class ImportIn(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    confirm_playlist_id: str
+    force: bool = False
+
+
+class ImportJobOut(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    running: bool
+    phase: Literal["idle", "running", "done", "error"]
+    playlist_id: str | None
+    started_at: float | None
+    finished_at: float | None
+    error: str | None
+    error_code: str | None
+    matched_count: int | None
+    pending_count: int | None
+    track_count: int | None
+    playlist_name: str | None
+
+
+@dataclass
+class _ImportJob:
+    playlist_id: str
+    phase: Literal["running", "done", "error"] = "running"
+    started_at: float = field(default_factory=time.time)
+    finished_at: float | None = None
+    error: str | None = None
+    error_code: str | None = None
+    matched_count: int | None = None
+    pending_count: int | None = None
+    track_count: int | None = None
+    playlist_name: str | None = None
+    log: list[str] = field(default_factory=list)
+
+    def append_log(self, message: str) -> None:
+        self.log.append(message)
+
+
+@dataclass
+class _ImportJobs:
+    current: _ImportJob | None = None
+
+
+_IMPORT_LOCK = threading.Lock()
+_IMPORT_JOBS = _ImportJobs()
+
+
+def _import_status_of(job: _ImportJob | None) -> ImportJobOut:
+    if job is None:
+        return ImportJobOut(
+            running=False,
+            phase="idle",
+            playlist_id=None,
+            started_at=None,
+            finished_at=None,
+            error=None,
+            error_code=None,
+            matched_count=None,
+            pending_count=None,
+            track_count=None,
+            playlist_name=None,
+        )
+    return ImportJobOut(
+        running=job.phase == "running",
+        phase=job.phase,
+        playlist_id=job.playlist_id,
+        started_at=job.started_at,
+        finished_at=job.finished_at,
+        error=job.error,
+        error_code=job.error_code,
+        matched_count=job.matched_count,
+        pending_count=job.pending_count,
+        track_count=job.track_count,
+        playlist_name=job.playlist_name,
+    )
+
+
+def _spotify_import_client(*, interactive: bool) -> SpotifyClient:
+    try:
+        return SpotifyClient.from_saved(interactive=interactive)
+    except MissingCredentialsError as exc:
+        raise HTTPException(
+            status_code=503,
+            detail={"code": "SPOTIFY_NOT_CONFIGURED", "message": str(exc)},
+        ) from exc
+    except ReauthorizationRequired as exc:
+        raise HTTPException(
+            status_code=401,
+            detail={"code": "SPOTIFY_REAUTH_REQUIRED", "message": str(exc)},
+        ) from exc
+    except ModuleNotFoundError as exc:
+        raise HTTPException(
+            status_code=503,
+            detail={
+                "code": "SPOTIFY_EXTRA_MISSING",
+                "message": (
+                    "Spotify support is not installed in this engine "
+                    "(the 'spotify' extra)."
+                ),
+            },
+        ) from exc
+    except spotify_account.ClientIdUnreadable as exc:
+        raise _server_error("SPOTIFY_CLIENT_ID_UNREADABLE", str(exc)) from exc
+    except spotify_account.EnvClientIdInvalid as exc:
+        raise _server_error("SPOTIFY_CLIENT_ID_UNREADABLE", str(exc)) from exc
+
+
+def _import_worker(job: _ImportJob, *, client: SpotifyClient, options: ImportOptions) -> None:
+    try:
+        run = run_import(job.playlist_id, client=client, options=options)
+        job.matched_count = len(run.result.matched)
+        job.pending_count = len(run.result.unmatched)
+        job.track_count = run.playlist.track_count
+        job.playlist_name = run.playlist.name
+        job.phase = "done"
+        job.finished_at = time.time()
+    except Exception as exc:  # noqa: BLE001 -- worker must not raise
+        status = getattr(exc, "http_status", None)
+        job.error = f"{type(exc).__name__}: {exc}"
+        job.error_code = "SPOTIFY_API_ERROR" if status is not None else "SPOTIFY_IMPORT_FAILED"
+        job.phase = "error"
+        job.finished_at = time.time()
+
+
+@router.post(
+    "/playlists/{playlist_id}:import",
+    status_code=202,
+    response_model=ImportJobOut,
+    operation_id="import_spotify_playlist",
+)
+def import_spotify_playlist(
+    playlist_id: str,
+    body: ImportIn,
+    request: Request,
+) -> ImportJobOut:
+    try:
+        parsed_id = parse_playlist_identifier(playlist_id)
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=422,
+            detail={"code": "SPOTIFY_PLAYLIST_ID_INVALID", "message": str(exc)},
+        ) from exc
+    try:
+        confirm_id = parse_playlist_identifier(body.confirm_playlist_id)
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=422,
+            detail={"code": "SPOTIFY_IMPORT_CONFIRM_MISMATCH", "message": str(exc)},
+        ) from exc
+    if confirm_id != parsed_id:
+        raise HTTPException(
+            status_code=422,
+            detail={
+                "code": "SPOTIFY_IMPORT_CONFIRM_MISMATCH",
+                "message": "confirm_playlist_id must match the playlist being imported",
+            },
+        )
+
+    client = _spotify_import_client(interactive=False)
+    state_db_path = _state_db_path(request)
+
+    with _IMPORT_LOCK:
+        if _IMPORT_JOBS.current is not None and _IMPORT_JOBS.current.phase == "running":
+            raise HTTPException(
+                status_code=409,
+                detail={
+                    "code": "SPOTIFY_IMPORT_RUNNING",
+                    "message": "a Spotify import is already running",
+                },
+            )
+        job = _ImportJob(playlist_id=parsed_id)
+        options = ImportOptions(
+            live=True,
+            force=body.force,
+            max_tracks=None,
+            use_cache=True,
+            state_db_path=state_db_path,
+            progress=job.append_log,
+        )
+        _IMPORT_JOBS.current = job
+        threading.Thread(
+            target=_import_worker,
+            args=(job,),
+            kwargs={"client": client, "options": options},
+            daemon=True,
+        ).start()
+        return _import_status_of(job)
+
+
+@router.get("/imports/status", response_model=ImportJobOut, operation_id="spotify_import_status")
+def spotify_import_status() -> ImportJobOut:
+    return _import_status_of(_IMPORT_JOBS.current)
+
+
 __all__ = [
     "AccountPlaylistOut",
     "AccountPlaylistsOut",
+    "ImportIn",
+    "ImportJobOut",
     "PendingTrackOut",
     "RecentPlayOut",
     "SpotifyStatusOut",

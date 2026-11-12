@@ -1,0 +1,9 @@
+{
+  "bytes": 2048,
+  "measured_main": 405337,
+  "measured_with_pr": 406883,
+  "sha": "aace0e3b30",
+  "date": "Sun 8 Nov 2026",
+  "reason": "PR #9679 (SideMixerStrip MX-2 plus preflight identity wiring on this branch) grows the performance surface. Measured: CI bundle check of aace0e3b30, +1546 B gzip; ceiled to KiB.",
+  "payback": "none planned; the growth is the feature's own code on this surface"
+}

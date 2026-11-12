@@ -1,14 +1,13 @@
 /**
  * @pytest.mark.requirement LIBM-174
- * The library track list scrolls natively (supersedes PVPIN-19, the maintainer, Tue 6 Oct
- * 2026: "Anyone can adjust their mouse sensitivity. The lag is VERY not worth it.").
+ * @pytest.mark.requirement LIBM-12633
+ * Library list scroll is native when wheel_sensitivity.library_* is 1 (LIBM-174).
+ * Below 1, only libraryWheelScroll may handle wheel on `.table-wrap` (pin 535c07d9fe88).
  *
- * [if] the track list is scrolled with a wheel or trackpad [then] no app wheel
- *   handler runs and the browser scrolls it [else stop].
+ * [if] library scroll factors are 1 [then] no wheel listener is bound [else stop].
  *
  * Regression lines:
- * - if TrackTable's scroll container gets a wheel action or listener again then
- *   wheel scrolling leaves the compositor and stalls whenever the app is busy -> broken
+ * - if a second ad-hoc wheel handler lands on table-wrap beyond libraryWheelScroll then broken
  * - if any module under src/lib binds a non-passive wheel listener on window or
  *   document outside a selection's lifetime then EVERY wheel event on the page,
  *   the library list included, waits on the main thread (PERF-UI-13, #10227)
@@ -22,7 +21,7 @@ import { test } from 'node:test';
 const path = (p) => fileURLToPath(new URL(`../../${p}`, import.meta.url));
 const read = (p) => readFileSync(path(p), 'utf8');
 
-test('the track list scroll container has no wheel handler', () => {
+test('the track list uses only the library wheel scroll action', () => {
 	const table = read('src/lib/components/rb/browser/TrackTable.svelte');
 	const wrapAt = table.indexOf('class="table-wrap"');
 	assert.ok(wrapAt > 0, 'table-wrap missing (control: the probe found the container)');
@@ -30,11 +29,11 @@ test('the track list scroll container has no wheel handler', () => {
 	assert.ok(tagEnd > wrapAt, 'end of the table-wrap tag not found (control)');
 	const tag = table.slice(wrapAt, tagEnd);
 	assert.match(tag, /onscroll=/, 'control: the slice is the real tag, which carries onscroll');
-	assert.doesNotMatch(tag, /wheel/i, 'no use: action or handler named for the wheel');
+	assert.match(tag, /use:libraryWheelScroll/, 'library list scroll sensitivity action');
 	assert.doesNotMatch(
 		table,
 		/addEventListener\(\s*['"]wheel['"]/,
-		'no wheel listener anywhere in TrackTable'
+		'no inline wheel listener anywhere in TrackTable'
 	);
 });
 
@@ -107,12 +106,10 @@ test('PERF-UI-13: no non-passive window or document wheel listener outside a sel
 	);
 });
 
-test('the half-speed wheel helper is gone, not just unused', () => {
-	assert.equal(existsSync(path('src/lib/rb/library-wheel-scroll.ts')), false);
-	assert.doesNotMatch(
+test('library wheel scroll module is wired through track-table-support', () => {
+	assert.equal(existsSync(path('src/lib/rb/library-wheel-scroll.ts')), true);
+	assert.match(
 		read('src/lib/components/rb/browser/track-table-support.ts'),
 		/library-wheel-scroll/
 	);
-	// Negative control: a path that does exist reports present, so the probe can say yes.
-	assert.equal(existsSync(path('src/lib/rb/playing-gate.ts')), true);
 });

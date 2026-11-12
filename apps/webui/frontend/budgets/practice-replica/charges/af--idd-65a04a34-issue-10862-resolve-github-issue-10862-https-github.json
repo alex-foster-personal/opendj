@@ -1,0 +1,9 @@
+{
+  "bytes": 1024,
+  "measured_main": 30506,
+  "measured_with_pr": 31068,
+  "sha": "7a9faed657",
+  "date": "Tue 10 Nov 2026",
+  "reason": "branch af--idd-65a04a34-issue-10862-resolve-github-issue-10862-https-github grows the practice-replica surface; measured +562 B gzip over main; ceiled to KiB.",
+  "payback": "none planned; the growth is the change's own code on this surface"
+}

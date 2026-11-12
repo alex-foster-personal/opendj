@@ -37,10 +37,16 @@ from tests.webui.app_fixtures import client_fixture  # noqa: F401  (pytest fixtu
 
 pytestmark = pytest.mark.requirement("CUEOUT-04")
 
+_DEFAULT_BOOTH: dict[str, Any] = {
+    "level": 0.5,
+    "selected_output_device_id": None,
+    "signal_mode": "independent",
+    "route": {"state": "default", "selected": False},
+}
+
 _DEFAULT_HEADPHONES: dict[str, Any] = {
     "mix": 0.5,
     "level": 0.5,
-    "booth_level": 0.5,
     "head_delay_ms": 0,
     "alignment_mode": "hybrid",
     "master_delay_ms": 0,
@@ -63,7 +69,6 @@ _DEFAULT_HEADPHONES: dict[str, Any] = {
     },
     "selected_output_device_id": None,
     "selected_master_output_device_id": None,
-    "selected_booth_output_device_id": None,
     "selected_input_device_id": None,
     "output_mode": "practice",
     "outputs": [],
@@ -96,6 +101,7 @@ _HEADPHONE_IPC_PREDICATE = frozenset(
         command_type
         for command_type in command_fields()
         if command_type.startswith("headphone_")
+        or command_type.startswith("booth_")
         # CUEOUT-15: preview_* joins at `cueSum`, like channel CUE.
         or command_type
         in {
@@ -142,6 +148,7 @@ async def _open_page(
             "client_open": True,
             "mixer": {
                 "headphones": headphones or dict(_DEFAULT_HEADPHONES),
+                "booth": dict(_DEFAULT_BOOTH),
                 "channels": channels or dict(_DEFAULT_CHANNELS),
             },
         },
@@ -159,9 +166,12 @@ def _apply_command(mirror: dict[str, Any], command: dict[str, Any]) -> dict[str,
     elif command_type == "headphone_level":
         mirror["mixer"]["headphones"]["level"] = command["value"]
         changed = {"mixer": {"headphones": {"level": command["value"]}}}
-    elif command_type == "headphone_booth_level":
-        mirror["mixer"]["headphones"]["booth_level"] = command["value"]
-        changed = {"mixer": {"headphones": {"booth_level": command["value"]}}}
+    elif command_type in ("headphone_booth_level", "booth_level"):
+        mirror["mixer"]["booth"]["level"] = command["value"]
+        changed = {"mixer": {"booth": {"level": command["value"]}}}
+    elif command_type == "booth_signal_mode":
+        mirror["mixer"]["booth"]["signal_mode"] = command["mode"]
+        changed = {"mixer": {"booth": {"signal_mode": command["mode"]}}}
     elif command_type == "head_delay_ms":
         mirror["mixer"]["headphones"]["head_delay_ms"] = command["value"]
         changed = {"mixer": {"headphones": {"head_delay_ms": command["value"]}}}
@@ -234,13 +244,13 @@ def _apply_command(mirror: dict[str, Any], command: dict[str, Any]) -> dict[str,
                 },
             },
         }
-    elif command_type == "headphone_booth_select":
+    elif command_type in ("headphone_booth_select", "booth_select"):
         selected = command["device_id"] or None
-        mirror["mixer"]["headphones"]["selected_booth_output_device_id"] = selected
+        mirror["mixer"]["booth"]["selected_output_device_id"] = selected
         changed = {
             "mixer": {
-                "headphones": {
-                    "selected_booth_output_device_id": selected,
+                "booth": {
+                    "selected_output_device_id": selected,
                 },
             },
         }
@@ -261,13 +271,23 @@ async def _fake_page(
     apply: Callable[[dict[str, Any], dict[str, Any]], dict[str, Any] | None] | None = None,
 ) -> dict[str, Any]:
     """Claim the next order, apply it to the mirror, and complete it."""
-    mirror: dict[str, Any] = {
-        "client_open": True,
-        "mixer": {
-            "headphones": dict(_DEFAULT_HEADPHONES),
-            "channels": dict(_DEFAULT_CHANNELS),
-        },
-    }
+    existing = await client.get("/api/v1/state/ui-mirror")
+    if existing.status_code == 200:
+        mirror = dict(existing.json())
+    else:
+        mirror = {
+            "client_open": True,
+            "mixer": {
+                "headphones": dict(_DEFAULT_HEADPHONES),
+                "booth": dict(_DEFAULT_BOOTH),
+                "channels": dict(_DEFAULT_CHANNELS),
+            },
+        }
+    mirror.setdefault("client_open", True)
+    mixer = mirror.setdefault("mixer", {})
+    mixer.setdefault("headphones", dict(_DEFAULT_HEADPHONES))
+    mixer.setdefault("booth", dict(_DEFAULT_BOOTH))
+    mixer.setdefault("channels", dict(_DEFAULT_CHANNELS))
     claimed: dict[str, Any] | None = None
     for _ in range(200):
         await asyncio.sleep(0.01)
@@ -423,6 +443,21 @@ def test_no_page_returns_503() -> None:
             "/api/v1/performance/headphones/booth-level",
             {"value": 0.25},
             {"type": "headphone_booth_level", "value": 0.25},
+        ),
+        (
+            "/api/v1/performance/headphones/booth/level",
+            {"value": 0.25},
+            {"type": "booth_level", "value": 0.25},
+        ),
+        (
+            "/api/v1/performance/headphones/booth/outputs/select",
+            {"device_id": "booth-usb"},
+            {"type": "booth_select", "device_id": "booth-usb"},
+        ),
+        (
+            "/api/v1/performance/headphones/booth/signal-mode",
+            {"mode": "follows_master"},
+            {"type": "booth_signal_mode", "mode": "follows_master"},
         ),
         (
             "/api/v1/performance/headphones/channel-cue",
@@ -621,6 +656,74 @@ def test_failed_page_step_returns_400_and_leaves_selection_unchanged() -> None:
             == "headphone output usb-x is not an enumerated headphone output"
         )
         assert got.json()["selected_output_device_id"] == "existing"
+
+    asyncio.run(run())
+
+
+@pytest.mark.requirement("CUEOUT-12100")
+def test_get_booth_exposes_device_level_and_signal_mode() -> None:
+    """[if] GET booth with page open [then] pinned id, level and signal_mode return, [else stop]."""
+
+    async def run() -> None:
+        async with AsyncClient(transport=ASGITransport(app=_app()), base_url="http://test") as client:
+            await _open_page(client)
+            got = await client.get("/api/v1/performance/headphones/booth")
+        assert got.status_code == 200, got.text
+        body = got.json()
+        assert body["level"] == 0.5
+        assert body["selected_output_device_id"] is None
+        assert body["signal_mode"] == "independent"
+
+    asyncio.run(run())
+
+
+@pytest.mark.requirement("CUEOUT-12100")
+def test_post_booth_device_does_not_move_master_device() -> None:
+    """[if] POST booth device B while master is A [then] report keeps master on A, [else stop]."""
+
+    async def run() -> None:
+        async with AsyncClient(transport=ASGITransport(app=_app()), base_url="http://test") as client:
+            await _open_page(
+                client,
+                headphones={
+                    **dict(_DEFAULT_HEADPHONES),
+                    "selected_master_output_device_id": "master-a",
+                },
+            )
+            fake = asyncio.create_task(_fake_page(client))
+            booth = await client.post(
+                "/api/v1/performance/headphones/booth/outputs/select",
+                json={"device_id": "booth-b"},
+            )
+            await fake
+            got = await client.get("/api/v1/performance/headphones/booth")
+            master = (await client.get("/api/v1/performance/headphones")).json()
+        assert booth.status_code == 200, booth.text
+        assert got.json()["selected_output_device_id"] == "booth-b"
+        assert master["selected_master_output_device_id"] == "master-a"
+
+    asyncio.run(run())
+
+
+@pytest.mark.requirement("CUEOUT-12100")
+def test_booth_level_zero_does_not_change_master_level() -> None:
+    """[if] booth level 0 posts [then] master level is unchanged, [else stop]."""
+
+    async def run() -> None:
+        async with AsyncClient(transport=ASGITransport(app=_app()), base_url="http://test") as client:
+            await _open_page(
+                client,
+                headphones={**dict(_DEFAULT_HEADPHONES), "level": 0.75},
+            )
+            fake = asyncio.create_task(_fake_page(client))
+            booth = await client.post(
+                "/api/v1/performance/headphones/booth/level",
+                json={"value": 0.0},
+            )
+            await fake
+            assert booth.status_code == 200, booth.text
+            assert (await client.get("/api/v1/performance/headphones/booth")).json()["level"] == 0.0
+            assert (await client.get("/api/v1/performance/headphones")).json()["level"] == 0.75
 
     asyncio.run(run())
 

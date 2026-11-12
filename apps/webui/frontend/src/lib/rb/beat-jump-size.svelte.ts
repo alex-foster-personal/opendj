@@ -60,9 +60,7 @@ export function steppedBeatJumpSize(size: BeatJumpSize, direction: -1 | 1): Beat
 	return BEAT_JUMP_SIZES[Math.min(Math.max(index, 0), BEAT_JUMP_SIZES.length - 1)];
 }
 
-export function beatJumpSizeLabel(size: number): string {
-	return size === 0.5 ? '1/2' : String(size);
-}
+export { beatJumpSizeLabel } from '$lib/rb/format-beat-jump';
 
 // ---------------------------------------------------------------- setters
 

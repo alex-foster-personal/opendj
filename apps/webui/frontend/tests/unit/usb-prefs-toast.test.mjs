@@ -7,8 +7,8 @@ import { loadTypeScriptModule } from './load-typescript.mjs';
 // - if usb_toast_enabled is absent or defaults false then _onNewDetect's
 //   `if (uiPrefs.usb_toast_enabled)` is dead and the detect toast never
 //   fires for anyone -- broken (this is the bug these prefs fix)
-// - if usb_toast_ms defaults to something other than the 5000 pushToast
-//   used to hardcode then existing toasts silently change duration -- broken
+// - if usb_toast_ms defaults to something other than 60s then detect
+//   toasts silently change duration -- broken
 // - if usb_auto_open_panel defaults true then every stick that needs
 //   nothing yanks the panel open -- broken
 // - if a malformed persisted blob is silently reset instead of throwing
@@ -44,7 +44,7 @@ test('first run defaults carry all three USB prefs', async () => {
 	const prefs = await _loadPrefs();
 
 	assert.equal(prefs.uiPrefs.usb_toast_enabled, true);
-	assert.equal(prefs.uiPrefs.usb_toast_ms, 5000);
+	assert.equal(prefs.uiPrefs.usb_toast_ms, 60_000);
 	assert.equal(prefs.uiPrefs.usb_auto_open_panel, false);
 });
 
@@ -56,7 +56,7 @@ test('a blob saved before these prefs existed takes the defaults', async () => {
 	const prefs = await _loadPrefs();
 
 	assert.equal(prefs.uiPrefs.usb_toast_enabled, true);
-	assert.equal(prefs.uiPrefs.usb_toast_ms, 5000);
+	assert.equal(prefs.uiPrefs.usb_toast_ms, 60_000);
 	assert.equal(prefs.uiPrefs.usb_auto_open_panel, false);
 });
 

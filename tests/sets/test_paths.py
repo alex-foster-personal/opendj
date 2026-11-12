@@ -56,3 +56,11 @@ def test_resolve_sets_root_uses_default_or_injected_root(sets_root: Path) -> Non
 @pytest.mark.requirement("SET-03")
 def test_session_dir_returns_resolved_direct_child(sets_root: Path) -> None:
     assert sets_paths.session_dir("session-1", root=sets_root) == (sets_root / "session-1").resolve()
+
+
+@pytest.mark.requirement("SET-12012")
+@pytest.mark.parametrize("char", sorted(sets_paths.DISALLOWED_FILENAME_CHARS))
+def test_session_id_rejects_disallowed_filename_chars(sets_root: Path, char: str) -> None:
+    """[if] session_id contains a forbidden filename char [then] session_dir refuses it, [else stop]."""
+    with pytest.raises(sets_paths.SessionPathError):
+        sets_paths.session_dir(f"bad{char}id", root=sets_root)

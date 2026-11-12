@@ -59,6 +59,10 @@ Requirements (mini-PRD):
     [if a header naming another model or effort is accepted then broken]
   / Log input, cached and output tokens separately, or UNKNOWN with a reason.
     [if the log line can read "tokens=1,068" for a 38k-token input then broken]
+  / Under --seat auto, skip a remote seat that ssh cannot reach (exit 255)
+    and try the next seat; raise only when every seat is spent or unreachable.
+    [if auto fails over a reachable seat's non-255 error then broken]
+    [if an explicit --seat 255 is skipped then broken]
 
 Usage:
     python -m scripts.sol_review <PR> [--seat auto|local|<ssh-host>]
@@ -310,6 +314,21 @@ def _seat_error_location(seat: str, returncode: int) -> str:
     raise TriageError("seat must name a configured local alias or an SSH host")
 
 
+def _seat_unreachable(seat: str, returncode: int, output: str) -> str | None:
+    """Whether this looks like ssh could not reach the remote seat.
+
+    ssh exits 255 when the host alias does not resolve or the connection is refused.
+    A remote Codex process that exits 255 is indistinguishable from that on this
+    lane; 255 is treated as the SSH-level unreachable signal for non-local seats.
+    """
+    if _is_local_seat(seat):
+        return None
+    if returncode != 255:
+        return None
+    tail = output.rstrip()[-200:] if output.strip() else "(no output)"
+    return f"skipped seat {seat}: unreachable (ssh exit 255): {tail}"
+
+
 def _seat_is_spent(output: str) -> bool:
     """A wall is codex's own `ERROR:` line, never text the prompt echoes back.
 
@@ -469,19 +488,25 @@ def review_with_codex(prompt: str, seat: str) -> tuple[str, str, str]:
     """Run the review. Returns (output, seat used, model reported).
 
     Under `--seat auto` a spent seat fails over to the next SUBSCRIPTION seat,
-    which is a different quota bucket on the same billing route. It never
+    which is a different quota bucket on the same billing route. An unreachable
+    remote SSH seat (exit 255) is skipped and the next seat is tried. It never
     falls back to an API key: the child environment has none, by construction.
-    Any error that is not a quota wall is raised, because failing over on it
-    would run the same bug twice and hide it.
+    Any other non-zero exit, and any failure on an explicit `--seat`, is raised.
     """
-    seats = configured_seats() if seat == "auto" else (seat,)
-    spent: list[str] = []
+    auto = seat == "auto"
+    seats = configured_seats() if auto else (seat,)
+    skipped: list[str] = []
     for candidate in seats:
         proc = _run_seat(candidate, prompt)
         output = proc.stdout + proc.stderr
         if _seat_is_spent(output):
-            spent.append(seat_wall_report(candidate, output))
-            print(f"[sol-review] {spent[-1]}")
+            skipped.append(seat_wall_report(candidate, output))
+            print(f"[sol-review] {skipped[-1]}")
+            continue
+        unreachable = _seat_unreachable(candidate, proc.returncode, output)
+        if unreachable is not None and auto:
+            skipped.append(unreachable)
+            print(f"[sol-review] {unreachable}")
             continue
         if proc.returncode != 0:
             location = _seat_error_location(candidate, proc.returncode)
@@ -491,7 +516,7 @@ def review_with_codex(prompt: str, seat: str) -> tuple[str, str, str]:
         return output, candidate, first_group(_MODEL_LINE, output)
     raise TriageError(
         "no seat accepted this review. "
-        + " ".join(spent)
+        + " ".join(skipped)
         + " Nothing here is a reason to use an OpenAI API key."
     )
 

@@ -186,6 +186,21 @@ export function isTrackifyRoutePath(pathname: string): boolean {
 	return pathname === '/music-player' || pathname.startsWith('/music-player/');
 }
 
+/** SECONDSCREEN-11713: the library-only second-screen window owns its whole window. */
+export function isSecondScreenRoutePath(pathname: string): boolean {
+	return pathname === '/second-screen' || pathname.startsWith('/second-screen/');
+}
+
+/**
+ * SECONDSCREEN-11713: the root layout's main-window loops (shell command and
+ * navigation polls, app instruments, quit gate, first-run setup redirect)
+ * belong to the window that owns the engine. A second-screen window runs none
+ * of them, so it cannot claim shell work or be navigated off its route.
+ */
+export function rootLayoutRunsMainWindowLoops(pathname: string): boolean {
+	return !isSecondScreenRoutePath(pathname);
+}
+
 /** LIBWS-01: the Library workspace (Crate Desk) owns the whole window at `/`. */
 export function isLibraryWorkspaceRoutePath(pathname: string): boolean {
 	return pathname === '/';

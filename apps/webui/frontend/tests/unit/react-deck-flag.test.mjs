@@ -58,3 +58,12 @@ test('ReactIsland stories load twins by their .tsx file', () => {
 	assert.ok(loads.length >= 3, `found ${loads.length} twin loaders`);
 	for (const spec of loads) assert.match(spec, /\.tsx$/, spec);
 });
+
+test('STEMPERF-11699: StemRow React twin keeps wheel, double-click and level bar (#10323)', () => {
+	const twin = read('lib/components/rb/deck/StemRow.tsx');
+	for (const fragment of ['wheelAdjust(el, params)', 'onDoubleClick=', 'className="level"']) {
+		assert.ok(twin.includes(fragment), `StemRow.tsx lost ${fragment}`);
+	}
+	assert.ok(!twin.includes('setTimeout'), 'StemRow.tsx defers stem mute (Class A, PRRT_kwDOSEvNd861jTeZ)');
+	assert.ok(!twin.includes('STEM_CHIP_DBLCLICK_MS'), 'StemRow.tsx defers stem mute (Class A, PRRT_kwDOSEvNd861jTeZ)');
+});

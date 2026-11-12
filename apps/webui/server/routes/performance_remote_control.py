@@ -12,7 +12,8 @@ import logging
 from pathlib import Path
 from typing import Annotated, Any, Literal
 
-from fastapi import APIRouter, Body, FastAPI, HTTPException, Request
+from fastapi import APIRouter, Body, FastAPI, HTTPException, Query, Request
+from fastapi.responses import Response
 from pydantic import BaseModel, Field
 
 from apps.webui.server import remote_control
@@ -21,6 +22,8 @@ from apps.webui.server.remote_control import (
     REMOTE_CONTROL_DEFAULT_PORT,
     DeviceRecord,
     RemoteSession,
+    encode_qr_url,
+    qr_svg_payload,
     reopen_at_boot,
 )
 
@@ -250,3 +253,35 @@ async def delete_remote_control_device(device_id: str, request: Request) -> Remo
         raise HTTPException(status_code=404, detail=f"unknown device_id {device_id}")
     session.forget(device_id)
     return _state_out(request.app)
+
+
+QR_TARGETS = ("remote", "request", "display")
+
+
+@router.get("/qr.svg")
+async def get_remote_control_qr(
+    request: Request,
+    target: Annotated[str, Query(description="remote | request | display")] = "remote",
+) -> Response:
+    """SVG QR for the remote, request or display page URL (issue #10442)."""
+    if target not in QR_TARGETS:
+        raise HTTPException(status_code=400, detail=f"target must be one of {', '.join(QR_TARGETS)}")
+    session = _session(request.app)
+    if session is None or not session.is_open:
+        raise HTTPException(status_code=409, detail="remote-control listener is not listening")
+    if session.status == "locked_out":
+        raise HTTPException(status_code=409, detail="remote-control listener is locked out")
+    if not session.address:
+        raise HTTPException(
+            status_code=503,
+            detail={"error": "address_error", "message": session.address_error or "no LAN route"},
+        )
+    assert session.port is not None
+    url = encode_qr_url(
+        target=target,
+        address=session.address,
+        port=int(session.port),
+        code=session.display_code,
+    )
+    svg = qr_svg_payload(url)
+    return Response(content=svg, media_type="image/svg+xml")

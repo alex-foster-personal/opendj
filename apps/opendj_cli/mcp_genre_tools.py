@@ -144,7 +144,11 @@ def register_genre_tools(
 
     @server.tool(annotations=_READ_ONLY)
     def genres_similar(stable_id: str, limit: int = 20) -> dict[str, Any]:
-        """Tracks whose genre probability vector is closest (cosine) to this one's; never its own duplicates."""
+        """Generic find-similar-tracks: genre-vector cosine neighbours (issue #11188).
+
+        Same ranking as ``POST /api/v1/copilot/find-similar-tracks`` with
+        ``mode=generic`` and this HTTP route; never the query track's duplicates.
+        """
         return call("GET", f"/{stable_id}/similar", params={"limit": limit})
 
     @server.tool(annotations=_DESTRUCTIVE)

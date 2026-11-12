@@ -296,8 +296,9 @@
 	</p>
 	<a class="act link" href="/performance?source=spotify">Open the Spotify source in the browser</a>
 	<p class="note">
-		Import a playlist with
-		<code>python -m apps.spotify import &lt;url&gt;</code> (dry run first), then
+		Import from the Spotify source on <code>/performance</code> (Import on the playlist row). The CLI
+		remains for dry-run and agent use:
+		<code>python -m apps.spotify import &lt;url&gt;</code>, then
 		<code>--live --i-understand-the-risks</code> to write.
 	</p>
 </section>

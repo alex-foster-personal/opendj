@@ -72,7 +72,6 @@ from apps.engine_core.lock import EngineLock
 from apps.engine_core.perf_tier_api import add_perf_tier_route
 from apps.engine_core.plugins_api import mount_plugins
 from apps.engine_core.rescue_api import add_rescue_routes
-from apps.engine_core.session_played import add_session_played_routes
 from apps.engine_core.setup.api import router as setup_router
 from apps.engine_core.setup.folder_rescan_scheduler import folder_rescan_lifespan
 from apps.engine_core.setup.jobs import SETUP_IMPORT_KIND
@@ -80,6 +79,7 @@ from apps.engine_core.setup.library_events import on_setup_import_progress
 from apps.engine_core.local_update import add_app_update_routes
 from apps.engine_core.stems_wiring import wire_stems_truth
 from apps.engine_core.update_channel import add_update_apply_route, add_update_check_route
+from apps.engine_core.link_clock_ws import LINK_CLOCK_WS_PATH, link_clock_endpoint
 from apps.engine_core.ws import TOPIC_HEALTH_CHANGED, WsHub, events_endpoint
 from apps.feature_flags import load_flags
 from apps.plugins.host import PluginRuntime
@@ -97,6 +97,7 @@ from apps.stems import job as stems_job
 from apps.stems.api import router as stems_plan_router
 from apps.stems.live_capability import assess_install_once
 from apps.stems.live_capability_api import router as live_stems_capability_router
+from apps.webui.server.routes import label_tasks as label_tasks_routes
 from apps.sync_hub import first_run as cloudsync_first_run
 from apps.sync_hub import policy_bootstrap as cloudsync_policy_bootstrap
 from apps.sync_hub.scheduler import scheduler_lifespan
@@ -173,6 +174,9 @@ def create_app(
     # roots this app's coverage reads. Bound to this runner so a second
     # engine in-process cannot retarget the measurement.
     wire_stems_truth(app, runner)
+    # Issue #11193: stem A/B/C label tasks mount on the legacy app; keep the
+    # router import beside stems wiring so agent-native boots load the module.
+    _ = label_tasks_routes.router
     app.include_router(jobs_router, prefix=API_PREFIX)
     # Engine-only: the plan describes a run only an engine can start.
     app.include_router(stems_plan_router, prefix=API_PREFIX)
@@ -193,6 +197,7 @@ def create_app(
     app.include_router(entitlements_router, prefix=API_PREFIX)
     app.include_router(account_router, prefix=API_PREFIX)
     app.add_api_websocket_route(EVENTS_PATH, events_endpoint, name="events")
+    app.add_api_websocket_route(LINK_CLOCK_WS_PATH, link_clock_endpoint, name="link_clock")
     # Identity before the SPA mount, like every other route: a Mount at "/"
     # swallows anything registered after it. platform_paths.PROJECT_ROOT is
     # the checkout root in a dev boot and the payload's app/ dir in a bundled
@@ -235,7 +240,8 @@ def create_app(
     add_audio_engine_routes(app, audio_engine)
     app.state.engine_cfg = cfg
     add_rescue_routes(app)
-    add_session_played_routes(app)
+    # The legacy app mounted the played-set routes (issue #13522); pin their store here.
+    app.state.session_played_data_dir = cfg.data_dir
     # The plugin store, and every module the user enabled (PLUG-6522e). Last
     # among the API routes so a module's routes can be checked against every
     # core route, and before the SPA mount, which would shadow them. Changes

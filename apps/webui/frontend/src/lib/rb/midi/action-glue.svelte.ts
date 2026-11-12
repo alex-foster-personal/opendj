@@ -75,9 +75,13 @@ import {
 import type { DeckId } from '$lib/rb/deck-slots';
 import type { HotCueSlot } from '$lib/rb/hot-cue-types';
 import { effectiveBeatSync } from '$lib/player/grid-features';
+import { clearPendingLoopIn } from '$lib/rb/manual-loop-commands';
 import { JogWheel } from '$lib/rb/midi/jog';
 import { getBrowseAdapter, type BrowseAdapter } from '$lib/rb/midi/browse-adapter';
-import { startTakeoverEngineSync, takeoverContinuous } from '$lib/rb/midi/takeover-engine-sync.svelte';
+import {
+	startTakeoverEngineSync,
+	takeoverContinuous
+} from '$lib/rb/midi/takeover-engine-sync.svelte';
 import {
 	faderControlId,
 	knobId,
@@ -85,6 +89,7 @@ import {
 	stemKnobRole
 } from '$lib/rb/knob-control.svelte';
 import { stemDialAssignment, type EqDial } from '$lib/rb/stem-dial-map';
+import { midiSelectDeckPair } from '$lib/rb/mixer-selection.svelte';
 
 export {
 	controllerPadMode,
@@ -202,7 +207,10 @@ function _scaleLoop(deck: DeckId, factor: 0.5 | 2): void {
 	if (loop.beat_length !== null) {
 		// Preserve the PQTZ anchor and beat identity, including pad-toggle state.
 		void dispatchPerformanceCommand({
-			type: 'beat_loop', deck, beats: loop.beat_length * factor, start_ms: loop.in_ms
+			type: 'beat_loop',
+			deck,
+			beats: loop.beat_length * factor,
+			start_ms: loop.in_ms
 		});
 		return;
 	}
@@ -250,7 +258,12 @@ function _jogWheel(deck: DeckId): JogWheel {
 		},
 		{
 			seek: (positionMs) => {
-				void dispatchPerformanceCommand({ type: 'seek', deck, position_ms: positionMs, exact: true });
+				void dispatchPerformanceCommand({
+					type: 'seek',
+					deck,
+					position_ms: positionMs,
+					exact: true
+				});
 			},
 			tempo: (ratio) => {
 				void dispatchPerformanceCommand({ type: 'tempo', deck, ratio });
@@ -278,11 +291,11 @@ function _ifPressedOnLoadedDeck(
 	value: MidiInputValue,
 	deck: DeckId,
 	what: string,
-	then: () => void
-): void {
+	then: () => void | Promise<unknown>
+): void | Promise<unknown> {
 	if (!_pressed(value)) return;
 	if (_deckIsEmpty(deck)) return _toastEmptyDeck(deck, what);
-	then();
+	return then();
 }
 
 type _MidiGlueCtx = {
@@ -304,6 +317,8 @@ type _DeckLoopAction = Extract<
 			| 'deck_auto_loop_toggle'
 			| 'deck_loop_exit'
 			| 'deck_manual_loop_cycle'
+			| 'deck_loop_in'
+			| 'deck_loop_out'
 			| 'deck_loop_scale';
 	}
 >;
@@ -335,10 +350,14 @@ function _handleDeckTransport(
 ): void {
 	switch (action.type) {
 		case 'deck_play_toggle':
-			_ifPressedOnLoadedDeck(value, action.deck, 'play', () => _cmdPlayToggle(action.deck, pressT0Ms));
+			_ifPressedOnLoadedDeck(value, action.deck, 'play', () =>
+				_cmdPlayToggle(action.deck, pressT0Ms)
+			);
 			return;
 		case 'deck_cue':
-			_ifPressedOnLoadedDeck(value, action.deck, 'cueing', () => _cmdPressCue(action.deck, pressT0Ms));
+			_ifPressedOnLoadedDeck(value, action.deck, 'cueing', () =>
+				_cmdPressCue(action.deck, pressT0Ms)
+			);
 			return;
 		case 'deck_hot_cue':
 			_handleDeckHotCue(action, value, pressT0Ms);
@@ -346,11 +365,17 @@ function _handleDeckTransport(
 	}
 }
 
-function _handleDeckLoop(action: _DeckLoopAction, value: MidiInputValue, ctx: _MidiGlueCtx): void {
+function _handleDeckLoop(
+	action: _DeckLoopAction,
+	value: MidiInputValue,
+	ctx: _MidiGlueCtx
+): void | Promise<unknown> {
 	const { deviceId } = ctx;
 	switch (action.type) {
 		case 'deck_beat_loop':
-			_ifPressedOnLoadedDeck(value, action.deck, 'looping', () => _cmdBeatLoop(action.deck, action.beats));
+			_ifPressedOnLoadedDeck(value, action.deck, 'looping', () =>
+				_cmdBeatLoop(action.deck, action.beats)
+			);
 			return;
 		case 'deck_beat_jump':
 			_ifPressedOnLoadedDeck(value, action.deck, 'beat jumping', () =>
@@ -365,6 +390,7 @@ function _handleDeckLoop(action: _DeckLoopAction, value: MidiInputValue, ctx: _M
 		case 'deck_loop_exit':
 			_ifPressedOnLoadedDeck(value, action.deck, 'looping', () => {
 				clearControllerManualLoop(action.deck, deviceId);
+				clearPendingLoopIn(deckStates[action.deck]);
 				_cmdLoopExit(action.deck);
 			});
 			return;
@@ -373,6 +399,18 @@ function _handleDeckLoop(action: _DeckLoopAction, value: MidiInputValue, ctx: _M
 				cycleControllerManualLoop(action.deck, deviceId, pushToast)
 			);
 			return;
+		case 'deck_loop_in':
+			_ifPressedOnLoadedDeck(
+				value,
+				action.deck,
+				'looping',
+				() => void dispatchPerformanceCommand({ type: 'loop_in', deck: action.deck })
+			);
+			return;
+		case 'deck_loop_out':
+			return _ifPressedOnLoadedDeck(value, action.deck, 'looping', () =>
+				dispatchPerformanceCommand({ type: 'loop_out', deck: action.deck })
+			);
 		case 'deck_loop_scale':
 			_ifPressedOnLoadedDeck(value, action.deck, 'resizing a loop', () =>
 				_scaleLoop(action.deck, action.factor)
@@ -384,30 +422,42 @@ function _handleDeckLoop(action: _DeckLoopAction, value: MidiInputValue, ctx: _M
 function _handleDeckKeyAndTempo(action: _DeckKeyTempoAction, value: MidiInputValue): void {
 	switch (action.type) {
 		case 'deck_sync_toggle':
-			_ifPressedOnLoadedDeck(value, action.deck, 'syncing', () =>
-				void dispatchPerformanceCommand({
-					type: 'beat_sync',
-					deck: action.deck,
-					enabled: !deckStates[action.deck].beat_sync_enabled
-				})
+			_ifPressedOnLoadedDeck(
+				value,
+				action.deck,
+				'syncing',
+				() =>
+					void dispatchPerformanceCommand({
+						type: 'beat_sync',
+						deck: action.deck,
+						enabled: !deckStates[action.deck].beat_sync_enabled
+					})
 			);
 			return;
 		case 'deck_key_sync_toggle':
-			_ifPressedOnLoadedDeck(value, action.deck, 'key sync', () =>
-				void dispatchPerformanceCommand({
-					type: 'key_sync',
-					deck: action.deck,
-					enabled: !deckStates[action.deck].key_sync_enabled
-				})
+			_ifPressedOnLoadedDeck(
+				value,
+				action.deck,
+				'key sync',
+				() =>
+					void dispatchPerformanceCommand({
+						type: 'key_sync',
+						deck: action.deck,
+						enabled: !deckStates[action.deck].key_sync_enabled
+					})
 			);
 			return;
 		case 'deck_key_nudge':
-			_ifPressedOnLoadedDeck(value, action.deck, 'changing key', () =>
-				void dispatchPerformanceCommand({
-					type: 'key_nudge',
-					deck: action.deck,
-					semitones: action.semitones
-				})
+			_ifPressedOnLoadedDeck(
+				value,
+				action.deck,
+				'changing key',
+				() =>
+					void dispatchPerformanceCommand({
+						type: 'key_nudge',
+						deck: action.deck,
+						semitones: action.semitones
+					})
 			);
 			return;
 		case 'deck_tempo_nudge':
@@ -418,7 +468,10 @@ function _handleDeckKeyAndTempo(action: _DeckKeyTempoAction, value: MidiInputVal
 	}
 }
 
-function _handleDeckJog(action: Extract<MidiAction, { type: 'deck_jog' }>, value: MidiInputValue): void {
+function _handleDeckJog(
+	action: Extract<MidiAction, { type: 'deck_jog' }>,
+	value: MidiInputValue
+): void {
 	if (value.kind !== 'relative') {
 		throw new Error(`deck_jog requires a relative binding, got ${value.kind}`);
 	}
@@ -518,7 +571,10 @@ function _handleMixerGlobal(
 	}
 }
 
-function _handleChannelCue(action: Extract<MidiAction, { type: 'channel_cue' }>, value: MidiInputValue): void {
+function _handleChannelCue(
+	action: Extract<MidiAction, { type: 'channel_cue' }>,
+	value: MidiInputValue
+): void {
 	if (!_pressed(value)) return;
 	void dispatchPerformanceCommand({
 		type: 'channel_cue',
@@ -552,7 +608,10 @@ function _handleHeadphoneLevel(
 	});
 }
 
-function _handleMasterCue(action: Extract<MidiAction, { type: 'master_cue' }>, value: MidiInputValue): void {
+function _handleMasterCue(
+	action: Extract<MidiAction, { type: 'master_cue' }>,
+	value: MidiInputValue
+): void {
 	if (action.mode === 'latch') {
 		if (!_pressed(value)) return;
 		if (_masterCue === null) _engageMasterCue();
@@ -590,7 +649,10 @@ function _handleBrowseEncoder(
 	_requireBrowseAdapter('browse_encoder')?.moveSelection(value.delta);
 }
 
-function _handleBrowseLoad(action: Extract<MidiAction, { type: 'browse_load' }>, value: MidiInputValue): void {
+function _handleBrowseLoad(
+	action: Extract<MidiAction, { type: 'browse_load' }>,
+	value: MidiInputValue
+): void {
 	if (!_pressed(value)) return;
 	_requireBrowseAdapter('browse_load')?.loadSelected(action.deck);
 }
@@ -618,7 +680,7 @@ function _routeMidiAction(
 	ctx: _MidiGlueCtx,
 	pressT0Ms: number | undefined,
 	deviceId: string | undefined
-): void {
+): void | Promise<unknown> {
 	switch (action.type) {
 		case 'deck_play_toggle':
 		case 'deck_cue':
@@ -630,9 +692,10 @@ function _routeMidiAction(
 		case 'deck_auto_loop_toggle':
 		case 'deck_loop_exit':
 		case 'deck_manual_loop_cycle':
+		case 'deck_loop_in':
+		case 'deck_loop_out':
 		case 'deck_loop_scale':
-			_handleDeckLoop(action, value, ctx);
-			return;
+			return _handleDeckLoop(action, value, ctx);
 		case 'deck_sync_toggle':
 		case 'deck_key_sync_toggle':
 		case 'deck_key_nudge':
@@ -681,6 +744,10 @@ function _routeMidiAction(
 		case 'color_fx':
 			_handleColorFx(action, value);
 			return;
+		case 'mixer_deck_pair_select':
+			if (!_pressed(value)) return;
+			midiSelectDeckPair(action.pair, action.deck);
+			return;
 		case 'shift_modifier':
 			// Consumed inside webmidi.svelte.ts; reaching the glue is a bug.
 			throw new Error('shift_modifier must never reach the action glue');
@@ -699,14 +766,14 @@ export function handleMidiAction(
 	_deviceId?: string,
 	pressT0Ms?: number,
 	controlId?: string
-): void {
+): void | Promise<unknown> {
 	const physicalControlId = controlId ?? activeMidiControlId();
 	const ctx: _MidiGlueCtx = {
 		deviceId: _deviceId,
 		pressT0Ms,
 		physicalControlId
 	};
-	_routeMidiAction(action, value, ctx, pressT0Ms, _deviceId);
+	return _routeMidiAction(action, value, ctx, pressT0Ms, _deviceId);
 }
 
 /** Fader position 0..1 -> playbackRate ratio within +-range%.
@@ -729,7 +796,9 @@ export function ledTriggerActive(trigger: LedTrigger, deviceId?: string): boolea
 		const stems = deckStates[trigger.deck].stems;
 		if (!controllerStemPadsAvailable(stems)) return false;
 		if (trigger.kind === 'stem_solo') return stems.controls[trigger.stem].solo;
-		return (stemPartGains(stems.controls)[trigger.stem === 'vocal' ? 'vocals' : trigger.stem] ?? 0) > 0;
+		return (
+			(stemPartGains(stems.controls)[trigger.stem === 'vocal' ? 'vocals' : trigger.stem] ?? 0) > 0
+		);
 	} else if (trigger.kind === 'deck_playing') {
 		return deckStates[trigger.deck].playing;
 	} else if (trigger.kind === 'deck_loaded') {
@@ -745,12 +814,16 @@ export function ledTriggerActive(trigger: LedTrigger, deviceId?: string): boolea
 	} else if (trigger.kind === 'beat_sync_effective') {
 		return effectiveBeatSync(deckStates[trigger.deck]);
 	} else if (trigger.kind === 'stem_eq_enabled') {
-		return mixerState.channels[trigger.deck].stem_eq_mode && deckStates[trigger.deck].stems.status === 'ready';
+		return (
+			mixerState.channels[trigger.deck].stem_eq_mode &&
+			deckStates[trigger.deck].stems.status === 'ready'
+		);
 	} else if (trigger.kind === 'pad_mode_selected') {
 		return controllerPadMode(deviceId, trigger.deck) === trigger.mode;
 	} else if (trigger.kind === 'hot_cue_present') {
 		return (
-			(trigger.padMode === undefined || controllerPadMode(deviceId, trigger.deck) === trigger.padMode) &&
+			(trigger.padMode === undefined ||
+				controllerPadMode(deviceId, trigger.deck) === trigger.padMode) &&
 			deckStates[trigger.deck].hot_cues.some((c) => c.slot === trigger.slot)
 		);
 	} else if (trigger.kind === 'channel_cue_enabled') {
@@ -762,12 +835,23 @@ export function ledTriggerActive(trigger: LedTrigger, deviceId?: string): boolea
 
 /** Engine-backed, mode-resolved output snapshot. Last matching rule owns an
  * address, just as the bounded MIDI writer coalesces writes to that address. */
-export function midiLedFeedback(map: DeviceMap, deviceId?: string): { ch: number; note: number; velocity: number }[] {
+export function midiLedFeedback(
+	map: DeviceMap,
+	deviceId?: string
+): { ch: number; note: number; velocity: number }[] {
 	const outputs = new Map<string, { ch: number; note: number; velocity: number }>();
 	for (const rule of map.leds ?? []) {
-		if (rule.padMode !== undefined && controllerPadMode(deviceId, rule.trigger.deck) !== rule.padMode) continue;
+		if (
+			rule.padMode !== undefined &&
+			controllerPadMode(deviceId, rule.trigger.deck) !== rule.padMode
+		)
+			continue;
 		const { ch, note, velocityOn, velocityOff } = rule.out;
-		outputs.set(`${ch}:${note}`, { ch, note, velocity: ledTriggerActive(rule.trigger, deviceId) ? velocityOn : velocityOff });
+		outputs.set(`${ch}:${note}`, {
+			ch,
+			note,
+			velocity: ledTriggerActive(rule.trigger, deviceId) ? velocityOn : velocityOff
+		});
 	}
 	return [...outputs.values()];
 }

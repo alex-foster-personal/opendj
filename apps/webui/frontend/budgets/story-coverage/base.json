@@ -1,0 +1,7 @@
+{
+	"note": "Svelte components under src/lib/components covered by X.stories.ts or XView.stories.ts (scripts/story-coverage.mjs). The ratchet is on covered; raise it when a PR adds stories, never lower it.",
+	"covered": 168,
+	"total": 324,
+	"measured_on": "Sun 8 Nov 2026",
+	"baseline_sha": "1ea799f35c"
+}

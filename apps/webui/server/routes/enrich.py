@@ -40,6 +40,7 @@ def get_summary(request: Request) -> dict[str, Any]:
         coverage_error = None
     except Exception as exc:  # noqa: BLE001 - surfaced on the card, never a silent empty
         coverage, coverage_error = None, f"{type(exc).__name__}: {exc}"
+    enrichment = ingest_enrichment.coordinator_for(request.app).status()
     return enrich_prompt.build_summary(
         analysis=analysis,
         analysis_error=analysis_error,
@@ -48,7 +49,9 @@ def get_summary(request: Request) -> dict[str, Any]:
         decisions=enrich_prompt.load_decisions(ingest_routes.COVERAGE_DATA_DIR),
         warnings=ingest_enrichment.coordinator_for(request.app).warnings(),
         artwork_suggestions=len(artwork_suggestions.pending_document()["pending"]),
+        ingest_duplicates=int(enrichment.get("import_duplicates", 0)),
         ingest_genre=ingest_enrichment.coordinator_for(request.app).ingest_genre_counts(),
+        ingest_identify=ingest_enrichment.coordinator_for(request.app).ingest_identify_counts(),
     )
 
 

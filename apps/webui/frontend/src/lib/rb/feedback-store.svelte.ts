@@ -42,16 +42,21 @@
  *     data, or a 404 polls forever [then ⛔️] broken
  */
 
-import type { components } from "../api-types";
-import { API_BASE, ApiError, api, unwrap } from "../api/client";
-import { describeFleetCorrelation, describePinOperatorSummary, type CommentSummary } from "./feedback-pin-operator-summary";
-import { describePinStatusSummary, makeDebounce, type Debounced, type PinDraft } from "./feedback";
+import type { components } from '../api-types';
+import { CommentPinsApi } from '$lib/components/comment-pins/comment-pins-api';
+import { API_BASE, ApiError, api, unwrap } from '../api/rb-http';
+import {
+	describeFleetCorrelation,
+	describePinOperatorSummary,
+	type CommentSummary
+} from './feedback-pin-operator-summary';
+import { describePinStatusSummary, makeDebounce, type Debounced, type PinDraft } from './feedback';
 
-export type FeedbackTodo = components["schemas"]["TodoOut"];
-export type FeedbackPin = components["schemas"]["CommentOut"];
-export type FeedbackGeneralNote = components["schemas"]["GeneralNoteOut"];
+export type FeedbackTodo = components['schemas']['TodoOut'];
+export type FeedbackPin = components['schemas']['CommentOut'];
+export type FeedbackGeneralNote = components['schemas']['GeneralNoteOut'];
 
-export type FeedbackAvailability = "unknown" | "ok" | "missing";
+export type FeedbackAvailability = 'unknown' | 'ok' | 'missing';
 
 export const AUTOSAVE_DEBOUNCE_MS = 600;
 // Same-tab pin-status polling (issue #914 review, Wed 2 Sep 2026): hydrate
@@ -60,42 +65,46 @@ export const AUTOSAVE_DEBOUNCE_MS = 600;
 // usb-tracker.svelte.ts's POLL_MS for a live-but-not-noisy interval.
 const PIN_POLL_MS = 5000;
 
+function _commentPinsApi(): CommentPinsApi {
+	return new CommentPinsApi({ apiBase: API_BASE });
+}
+
 interface FeedbackState {
-  availability: FeedbackAvailability;
-  todos: FeedbackTodo[];
-  pins: FeedbackPin[];
-  /** Last GET /comments/summary body (FB-20). Null until one succeeds, and
-   * again once the daemon answers 404 for the route, so the widget keeps the
-   * legacy lifecycle line and its honest "not tracked" stub. */
-  pinSummary: CommentSummary | null;
-  /** Why the last summary failed for a reason a retry will not fix (see
-   * classifySummaryFailure). While set, `pinSummary` is null and the comment-pin
-   * controls say the summary failed instead of showing unvouched counts. */
-  pinSummaryError: string | null;
-  general: FeedbackGeneralNote | null;
-  panelOpen: boolean;
-  placementArmed: boolean;
-  /** True while a comment control's hover explainer is open. Pins draw for
-   * that peek without writing the saved visibility preference. */
-  pinsPeek: boolean;
-  /** One-shot pin-draft handoff for QuickDraw; the widget consumes it. */
-  pendingDraft: PinDraft | null;
-  /** Last daemon refusal, verbatim; null while everything saves clean. */
-  error: string | null;
+	availability: FeedbackAvailability;
+	todos: FeedbackTodo[];
+	pins: FeedbackPin[];
+	/** Last GET /comments/summary body (FB-20). Null until one succeeds, and
+	 * again once the daemon answers 404 for the route, so the widget keeps the
+	 * legacy lifecycle line and its honest "not tracked" stub. */
+	pinSummary: CommentSummary | null;
+	/** Why the last summary failed for a reason a retry will not fix (see
+	 * classifySummaryFailure). While set, `pinSummary` is null and the comment-pin
+	 * controls say the summary failed instead of showing unvouched counts. */
+	pinSummaryError: string | null;
+	general: FeedbackGeneralNote | null;
+	panelOpen: boolean;
+	placementArmed: boolean;
+	/** True while a comment control's hover explainer is open. Pins draw for
+	 * that peek without writing the saved visibility preference. */
+	pinsPeek: boolean;
+	/** One-shot pin-draft handoff for QuickDraw; the widget consumes it. */
+	pendingDraft: PinDraft | null;
+	/** Last daemon refusal, verbatim; null while everything saves clean. */
+	error: string | null;
 }
 
 export const feedbackState: FeedbackState = $state({
-  availability: "unknown",
-  todos: [],
-  pins: [],
-  pinSummary: null,
-  pinSummaryError: null,
-  general: null,
-  panelOpen: false,
-  placementArmed: false,
-  pinsPeek: false,
-  pendingDraft: null,
-  error: null,
+	availability: 'unknown',
+	todos: [],
+	pins: [],
+	pinSummary: null,
+	pinSummaryError: null,
+	general: null,
+	panelOpen: false,
+	placementArmed: false,
+	pinsPeek: false,
+	pendingDraft: null,
+	error: null
 });
 
 const pinPeekSources = new Set<string>();
@@ -103,196 +112,188 @@ const pinPeekSources = new Set<string>();
 /** Hover/focus on a comment control (top bar or the bottom-right overlay).
  * Several controls can peek at once; pins stay up until the last one leaves. */
 export function setCommentPinPeek(source: string, active: boolean): void {
-  if (active) pinPeekSources.add(source);
-  else pinPeekSources.delete(source);
-  feedbackState.pinsPeek = pinPeekSources.size > 0;
+	if (active) pinPeekSources.add(source);
+	else pinPeekSources.delete(source);
+	feedbackState.pinsPeek = pinPeekSources.size > 0;
 }
 
 /** Focus left a comment control. Ignore moves that stay inside that control,
  * so tabbing from the button onto its visibility checkbox does not hide pins. */
 export function endCommentPinPeek(
-  source: string,
-  event: { relatedTarget: EventTarget | null; currentTarget: EventTarget | null }
+	source: string,
+	event: { relatedTarget: EventTarget | null; currentTarget: EventTarget | null }
 ): void {
-  const next = event.relatedTarget;
-  const current = event.currentTarget;
-  if (next instanceof Node && current instanceof Node && current.contains(next)) return;
-  setCommentPinPeek(source, false);
+	const next = event.relatedTarget;
+	const current = event.currentTarget;
+	if (next instanceof Node && current instanceof Node && current.contains(next)) return;
+	setCommentPinPeek(source, false);
 }
 
 /** Total + breakdown for the comment-pin controls (FB-20): the daemon's operator
  * buckets when it serves /comments/summary, else lifecycle counts from `pins`. */
 export function commentPinSummaryTitle(pins: readonly FeedbackPin[]): string {
-  if (feedbackState.pinSummaryError !== null) {
-    return `Comment pin summary failed: ${feedbackState.pinSummaryError}`;
-  }
-  const summary = feedbackState.pinSummary;
-  return summary ? describePinOperatorSummary(summary.operator) : describePinStatusSummary(pins);
+	if (feedbackState.pinSummaryError !== null) {
+		return `Comment pin summary failed: ${feedbackState.pinSummaryError}`;
+	}
+	const summary = feedbackState.pinSummary;
+	return summary ? describePinOperatorSummary(summary.operator) : describePinStatusSummary(pins);
 }
 
 /** Hover/focus explainer bullets for the comment-pin controls. */
 export function commentPinSummaryBullets(pins: readonly FeedbackPin[]): string[] {
-  const bullets = [
-    commentPinSummaryTitle(pins),
-    "Press M to arm comment placement (or Cmd+Shift+M from a text field).",
-  ];
-  if (feedbackState.pinSummaryError !== null) return bullets;
-  const summary = feedbackState.pinSummary;
-  if (!summary) {
-    bullets.push("Delegated / in-progress / queued are not tracked by the comment API yet.");
-  } else {
-    const fleet = describeFleetCorrelation(summary.fleet_correlation);
-    if (fleet) bullets.push(fleet);
-  }
-  return bullets;
+	const bullets = [
+		commentPinSummaryTitle(pins),
+		'Press M to arm comment placement (or Cmd+Shift+M from a text field).'
+	];
+	if (feedbackState.pinSummaryError !== null) return bullets;
+	const summary = feedbackState.pinSummary;
+	if (!summary) {
+		bullets.push('Delegated / in-progress / queued are not tracked by the comment API yet.');
+	} else {
+		const fleet = describeFleetCorrelation(summary.fleet_correlation);
+		if (fleet) bullets.push(fleet);
+	}
+	return bullets;
 }
 
 // ----- hydrate ------------------------------------------------------------
 let hydrating: Promise<void> | null = null;
 
 export async function hydrateFeedback(): Promise<void> {
-  if (feedbackState.availability !== "unknown") return;
-  hydrating ??= _hydrate().finally(() => {
-    hydrating = null;
-  });
-  return hydrating;
+	if (feedbackState.availability !== 'unknown') return;
+	hydrating ??= _hydrate().finally(() => {
+		hydrating = null;
+	});
+	return hydrating;
 }
 
 async function _hydrate(): Promise<void> {
-  try {
-    const [todos, pins, general] = await Promise.all([
-      api.GET("/api/v1/feedback/todos"),
-      api.GET("/api/v1/feedback/comments"),
-      api.GET("/api/v1/feedback/general"),
-    ]);
-    feedbackState.todos = todos.data?.todos ?? [];
-    feedbackState.pins = pins.data?.comments ?? [];
-    feedbackState.general = general.data ?? null;
-    feedbackState.availability = "ok";
-    feedbackState.error = null;
-    await _refreshPinSummary();
-  } catch (err) {
-    if (err instanceof ApiError && err.status === 404) {
-      // The daemon answered and does not serve feedback: settled fact.
-      feedbackState.availability = "missing";
-      return;
-    }
-    // Unreachable or 5xx: stay 'unknown' so a later toggle retries.
-    feedbackState.error = err instanceof Error ? err.message : String(err);
-  }
+	try {
+		const [todos, pins, general] = await Promise.all([
+			api.GET('/api/v1/feedback/todos'),
+			api.GET('/api/v1/feedback/comments'),
+			api.GET('/api/v1/feedback/general')
+		]);
+		feedbackState.todos = todos.data?.todos ?? [];
+		feedbackState.pins = pins.data?.comments ?? [];
+		feedbackState.general = general.data ?? null;
+		feedbackState.availability = 'ok';
+		feedbackState.error = null;
+		await _refreshPinSummary();
+	} catch (err) {
+		if (err instanceof ApiError && err.status === 404) {
+			// The daemon answered and does not serve feedback: settled fact.
+			feedbackState.availability = 'missing';
+			return;
+		}
+		// Unreachable or 5xx: stay 'unknown' so a later toggle retries.
+		feedbackState.error = err instanceof Error ? err.message : String(err);
+	}
 }
 
 // ----- panel --------------------------------------------------------------
 export function toggleFeedbackPanel(): void {
-  if (feedbackState.availability !== "ok") {
-    void hydrateFeedback();
-    return;
-  }
-  feedbackState.panelOpen = !feedbackState.panelOpen;
+	if (feedbackState.availability !== 'ok') {
+		void hydrateFeedback();
+		return;
+	}
+	feedbackState.panelOpen = !feedbackState.panelOpen;
 }
 
 export function armPinPlacement(): void {
-  if (feedbackState.availability !== "ok") return;
-  // Markers draw while placement is armed (FeedbackPinLayer), then hide
-  // again once the draft opens. Arming must not flip the saved "show
-  // comment pins" preference: that stays the checkbox in the comment hover.
-  feedbackState.placementArmed = true;
+	if (feedbackState.availability !== 'ok') return;
+	// Markers draw while placement is armed (FeedbackPinLayer), then hide
+	// again once the draft opens. Arming must not flip the saved "show
+	// comment pins" preference: that stays the checkbox in the comment hover.
+	feedbackState.placementArmed = true;
 }
 
 export function disarmPinPlacement(): void {
-  feedbackState.placementArmed = false;
+	feedbackState.placementArmed = false;
 }
 
 /** Queue a pin draft for FeedbackWidget without arming the placement overlay. */
 export function queuePinDraft(draft: PinDraft): boolean {
-  if (feedbackState.availability !== "ok") return false;
-  feedbackState.pendingDraft = draft;
-  feedbackState.placementArmed = false;
-  return true;
+	if (feedbackState.availability !== 'ok') return false;
+	feedbackState.pendingDraft = draft;
+	feedbackState.placementArmed = false;
+	return true;
 }
 
 /** Widget-only: return and clear the queued draft. */
 export function takePendingPinDraft(): PinDraft | null {
-  const draft = feedbackState.pendingDraft;
-  feedbackState.pendingDraft = null;
-  return draft;
+	const draft = feedbackState.pendingDraft;
+	feedbackState.pendingDraft = null;
+	return draft;
 }
 
 // ----- todos --------------------------------------------------------------
 function _upsertTodo(updated: FeedbackTodo): void {
-  feedbackState.todos = feedbackState.todos.map((t) =>
-    t.id === updated.id ? updated : t,
-  );
+	feedbackState.todos = feedbackState.todos.map((t) => (t.id === updated.id ? updated : t));
 }
 
 async function _patchTodo(
-  todoId: string,
-  body: components["schemas"]["TodoPatchIn"],
+	todoId: string,
+	body: components['schemas']['TodoPatchIn']
 ): Promise<void> {
-  try {
-    const { data } = await api.PATCH("/api/v1/feedback/todos/{todo_id}", {
-      params: { path: { todo_id: todoId } },
-      body,
-    });
-    if (data) _upsertTodo(data);
-    feedbackState.error = null;
-  } catch (err) {
-    feedbackState.error = err instanceof Error ? err.message : String(err);
-  }
+	try {
+		const { data } = await api.PATCH('/api/v1/feedback/todos/{todo_id}', {
+			params: { path: { todo_id: todoId } },
+			body
+		});
+		if (data) _upsertTodo(data);
+		feedbackState.error = null;
+	} catch (err) {
+		feedbackState.error = err instanceof Error ? err.message : String(err);
+	}
 }
 
 export function setTodoDone(todoId: string, done: boolean): Promise<void> {
-  return _patchTodo(todoId, { done });
+	return _patchTodo(todoId, { done });
 }
 
-export function chooseTodoOption(
-  todoId: string,
-  option: string,
-): Promise<void> {
-  return _patchTodo(todoId, { chosen_option: option });
+export function chooseTodoOption(todoId: string, option: string): Promise<void> {
+	return _patchTodo(todoId, { chosen_option: option });
 }
 
 const todoFeedbackSavers = new Map<string, Debounced<string>>();
 
 export function queueTodoFeedback(todoId: string, text: string): void {
-  let saver = todoFeedbackSavers.get(todoId);
-  if (saver === undefined) {
-    saver = makeDebounce<string>(AUTOSAVE_DEBOUNCE_MS, (value) => {
-      void _patchTodo(todoId, { feedback: value });
-    });
-    todoFeedbackSavers.set(todoId, saver);
-  }
-  saver.set(text);
+	let saver = todoFeedbackSavers.get(todoId);
+	if (saver === undefined) {
+		saver = makeDebounce<string>(AUTOSAVE_DEBOUNCE_MS, (value) => {
+			void _patchTodo(todoId, { feedback: value });
+		});
+		todoFeedbackSavers.set(todoId, saver);
+	}
+	saver.set(text);
 }
 
 // ----- general note -------------------------------------------------------
-const generalSaver: Debounced<string> = makeDebounce<string>(
-  AUTOSAVE_DEBOUNCE_MS,
-  (text) => {
-    void _putGeneral(text);
-  },
-);
+const generalSaver: Debounced<string> = makeDebounce<string>(AUTOSAVE_DEBOUNCE_MS, (text) => {
+	void _putGeneral(text);
+});
 
 async function _putGeneral(text: string): Promise<void> {
-  try {
-    const { data } = await api.PUT("/api/v1/feedback/general", {
-      body: { text },
-    });
-    if (data) feedbackState.general = data;
-    feedbackState.error = null;
-  } catch (err) {
-    feedbackState.error = err instanceof Error ? err.message : String(err);
-  }
+	try {
+		const { data } = await api.PUT('/api/v1/feedback/general', {
+			body: { text }
+		});
+		if (data) feedbackState.general = data;
+		feedbackState.error = null;
+	} catch (err) {
+		feedbackState.error = err instanceof Error ? err.message : String(err);
+	}
 }
 
 export function queueGeneralFeedback(text: string): void {
-  generalSaver.set(text);
+	generalSaver.set(text);
 }
 
 /** Force every pending debounced save out NOW (pagehide, panel close). */
 export function flushFeedbackSaves(): void {
-  for (const saver of todoFeedbackSavers.values()) saver.flush();
-  generalSaver.flush();
+	for (const saver of todoFeedbackSavers.values()) saver.flush();
+	generalSaver.flush();
 }
 
 // ----- pins ---------------------------------------------------------------
@@ -308,45 +309,26 @@ let _pinGeneration = 0;
  * child (issue #914 review, Wed 3 Sep 2026): without this, the keyed pin loop
  * would render the same id twice until the next poll happened to repair it. */
 function _upsertPin(pin: FeedbackPin): void {
-  const idx = feedbackState.pins.findIndex((p) => p.id === pin.id);
-  feedbackState.pins =
-    idx === -1
-      ? [...feedbackState.pins, pin]
-      : feedbackState.pins.map((p, i) => (i === idx ? pin : p));
+	const idx = feedbackState.pins.findIndex((p) => p.id === pin.id);
+	feedbackState.pins =
+		idx === -1
+			? [...feedbackState.pins, pin]
+			: feedbackState.pins.map((p, i) => (i === idx ? pin : p));
 }
 
 export async function addPin(
-  pin: components["schemas"]["CommentCreateIn"],
+	pin: components['schemas']['CommentCreateIn']
 ): Promise<FeedbackPin | null> {
-  try {
-    const { data } = await api.POST("/api/v1/feedback/comments", { body: pin });
-    if (data) {
-      _notePinMutation();
-      _upsertPin(data);
-    }
-    feedbackState.error = null;
-    return data ?? null;
-  } catch (err) {
-    feedbackState.error = err instanceof Error ? err.message : String(err);
-    return null;
-  }
-}
-
-/** The daemon's `{"detail": {code, message}}` error envelope, read without a
- * throwing typed client - the multipart attachment upload below is a plain
- * `fetch()` (openapi-fetch has no first-class multipart support), so it
- * decodes its own error body the way api-ingest.ts's `_err` does. */
-async function _attachmentErrorMessage(response: Response): Promise<string> {
-  try {
-    const body = (await response.json()) as {
-      detail?: { message?: string } | string;
-    };
-    if (typeof body.detail === "string") return body.detail;
-    if (typeof body.detail?.message === "string") return body.detail.message;
-  } catch {
-    // fall through to the generic message below
-  }
-  return `HTTP ${response.status}`;
+	try {
+		const data = await _commentPinsApi().createComment(pin);
+		_notePinMutation();
+		_upsertPin(data);
+		feedbackState.error = null;
+		return data;
+	} catch (err) {
+		feedbackState.error = err instanceof Error ? err.message : String(err);
+		return null;
+	}
 }
 
 /**
@@ -357,32 +339,20 @@ async function _attachmentErrorMessage(response: Response): Promise<string> {
  * call above has returned.
  */
 async function _uploadPinAttachment(
-  pinId: string,
-  file: File,
+	pinId: string,
+	file: File
 ): Promise<{ ok: true } | { ok: false; message: string }> {
-  const form = new FormData();
-  form.append("file", file, file.name);
-  let response: Response;
-  try {
-    response = await fetch(
-      `${API_BASE}/api/v1/feedback/comments/${encodeURIComponent(pinId)}/attachment`,
-      { method: "POST", body: form },
-    );
-  } catch (err) {
-    const message = err instanceof Error ? err.message : String(err);
-    feedbackState.error = message;
-    return { ok: false, message };
-  }
-  if (!response.ok) {
-    const message = await _attachmentErrorMessage(response);
-    feedbackState.error = message;
-    return { ok: false, message };
-  }
-  const updated = (await response.json()) as FeedbackPin;
-  _notePinMutation();
-  _upsertPin(updated);
-  feedbackState.error = null;
-  return { ok: true };
+	try {
+		const updated = await _commentPinsApi().uploadAttachment(pinId, file);
+		_notePinMutation();
+		_upsertPin(updated);
+		feedbackState.error = null;
+		return { ok: true };
+	} catch (err) {
+		const message = err instanceof Error ? err.message : String(err);
+		feedbackState.error = message;
+		return { ok: false, message };
+	}
 }
 
 /**
@@ -394,9 +364,9 @@ async function _uploadPinAttachment(
  * and typed text on a create failure while showing a false success toast).
  */
 export type AddPinWithAttachmentResult =
-  | { kind: "created" }
-  | { kind: "created-attachment-failed"; reason: string }
-  | { kind: "create-failed"; reason: string };
+	| { kind: 'created' }
+	| { kind: 'created-attachment-failed'; reason: string }
+	| { kind: 'create-failed'; reason: string };
 
 /**
  * Create a pin, then attach a pasted screenshot to it in the same save
@@ -406,16 +376,16 @@ export type AddPinWithAttachmentResult =
  * keeps the draft instead of clearing it.
  */
 export async function addPinWithAttachment(
-  pin: components["schemas"]["CommentCreateIn"],
-  file: File,
+	pin: components['schemas']['CommentCreateIn'],
+	file: File
 ): Promise<AddPinWithAttachmentResult> {
-  const created = await addPin(pin);
-  if (created === null) {
-    return { kind: "create-failed", reason: feedbackState.error ?? "unknown error" };
-  }
-  const uploaded = await _uploadPinAttachment(created.id, file);
-  if (!uploaded.ok) return { kind: "created-attachment-failed", reason: uploaded.message };
-  return { kind: "created" };
+	const created = await addPin(pin);
+	if (created === null) {
+		return { kind: 'create-failed', reason: feedbackState.error ?? 'unknown error' };
+	}
+	const uploaded = await _uploadPinAttachment(created.id, file);
+	if (!uploaded.ok) return { kind: 'created-attachment-failed', reason: uploaded.message };
+	return { kind: 'created' };
 }
 
 /**
@@ -424,18 +394,16 @@ export async function addPinWithAttachment(
  * dropping it locally first would hide a pin the archive never received.
  */
 export async function archivePin(pinId: string): Promise<boolean> {
-  try {
-    await api.POST("/api/v1/feedback/comments/{comment_id}/archive", {
-      params: { path: { comment_id: pinId } },
-    });
-    _notePinMutation();
-    feedbackState.pins = feedbackState.pins.filter((p) => p.id !== pinId);
-    feedbackState.error = null;
-    return true;
-  } catch (err) {
-    feedbackState.error = err instanceof Error ? err.message : String(err);
-    return false;
-  }
+	try {
+		await _commentPinsApi().archiveComment(pinId);
+		_notePinMutation();
+		feedbackState.pins = feedbackState.pins.filter((p) => p.id !== pinId);
+		feedbackState.error = null;
+		return true;
+	} catch (err) {
+		feedbackState.error = err instanceof Error ? err.message : String(err);
+		return false;
+	}
 }
 
 /**
@@ -445,35 +413,26 @@ export async function archivePin(pinId: string): Promise<boolean> {
  * deleted in the draft textarea. `text` is the reviewer's own addition,
  * appended after that generated reference; it may be empty.
  */
-async function _submitFollowOnPin(
-  parentId: string,
-  text: string,
-): Promise<FeedbackPin | null> {
-  try {
-    const { data } = await api.POST(
-      "/api/v1/feedback/comments/{comment_id}/follow-on",
-      {
-        params: { path: { comment_id: parentId } },
-        body: { text: text === "" ? null : text },
-      },
-    );
-    if (data) {
-      _notePinMutation();
-      _upsertPin(data);
-    }
-    feedbackState.error = null;
-    return data ?? null;
-  } catch (err) {
-    feedbackState.error = err instanceof Error ? err.message : String(err);
-    return null;
-  }
+async function _submitFollowOnPin(parentId: string, text: string): Promise<FeedbackPin | null> {
+	try {
+		const { data } = await api.POST('/api/v1/feedback/comments/{comment_id}/follow-on', {
+			params: { path: { comment_id: parentId } },
+			body: { text: text === '' ? null : text }
+		});
+		if (data) {
+			_notePinMutation();
+			_upsertPin(data);
+		}
+		feedbackState.error = null;
+		return data ?? null;
+	} catch (err) {
+		feedbackState.error = err instanceof Error ? err.message : String(err);
+		return null;
+	}
 }
 
-export async function submitFollowOn(
-  parentId: string,
-  text: string,
-): Promise<boolean> {
-  return (await _submitFollowOnPin(parentId, text)) !== null;
+export async function submitFollowOn(parentId: string, text: string): Promise<boolean> {
+	return (await _submitFollowOnPin(parentId, text)) !== null;
 }
 
 /**
@@ -481,21 +440,16 @@ export async function submitFollowOn(
  * `replies` and returns the full pin; only then does the canvas re-render.
  */
 export async function addReply(pinId: string, text: string): Promise<FeedbackPin | null> {
-  try {
-    const { data } = await api.POST("/api/v1/feedback/comments/{comment_id}/replies", {
-      params: { path: { comment_id: pinId } },
-      body: { text, author: "operator" },
-    });
-    if (data) {
-      _notePinMutation();
-      _upsertPin(data);
-    }
-    feedbackState.error = null;
-    return data ?? null;
-  } catch (err) {
-    feedbackState.error = err instanceof Error ? err.message : String(err);
-    return null;
-  }
+	try {
+		const data = await _commentPinsApi().addReply(pinId, text);
+		_notePinMutation();
+		_upsertPin(data);
+		feedbackState.error = null;
+		return data;
+	} catch (err) {
+		feedbackState.error = err instanceof Error ? err.message : String(err);
+		return null;
+	}
 }
 
 /**
@@ -507,17 +461,17 @@ export async function addReply(pinId: string, text: string): Promise<FeedbackPin
  * only exists once the follow-on create call above has returned.
  */
 export async function submitFollowOnWithAttachment(
-  parentId: string,
-  text: string,
-  file: File,
+	parentId: string,
+	text: string,
+	file: File
 ): Promise<AddPinWithAttachmentResult> {
-  const created = await _submitFollowOnPin(parentId, text);
-  if (created === null) {
-    return { kind: "create-failed", reason: feedbackState.error ?? "unknown error" };
-  }
-  const uploaded = await _uploadPinAttachment(created.id, file);
-  if (!uploaded.ok) return { kind: "created-attachment-failed", reason: uploaded.message };
-  return { kind: "created" };
+	const created = await _submitFollowOnPin(parentId, text);
+	if (created === null) {
+		return { kind: 'create-failed', reason: feedbackState.error ?? 'unknown error' };
+	}
+	const uploaded = await _uploadPinAttachment(created.id, file);
+	if (!uploaded.ok) return { kind: 'created-attachment-failed', reason: uploaded.message };
+	return { kind: 'created' };
 }
 
 // ----- pin polling (same-tab live refresh, issue #914 review) -------------
@@ -531,42 +485,44 @@ let _summarySeq = 0;
  * retries. `classifySummaryFailure` decides a request failure: 404 clears, a
  * transient miss keeps the last counts, a persistent error drops them and sets
  * `pinSummaryError`. Only the newest request may write (FB-20). */
-type SummaryCheckModule = typeof import("./feedback-pin-summary-check");
+type SummaryCheckModule = typeof import('./feedback-pin-summary-check');
 let _summaryCheck: Promise<SummaryCheckModule> | null = null;
 
 async function _refreshPinSummary(): Promise<void> {
-  const seq = ++_summarySeq;
-  let mod: SummaryCheckModule;
-  try {
-    mod = await (_summaryCheck ??= import("./feedback-pin-summary-check"));
-  } catch (err) {
-    _summaryCheck = null;
-    if (seq !== _summarySeq) return;
-    feedbackState.pinSummary = null;
-    const why = err instanceof Error ? err.message : String(err);
-    feedbackState.pinSummaryError = `summary code failed to load (${why}); reload the page to retry`;
-    return;
-  }
-  try {
-    // A stream body: a rejected request is transport; decode fails in the module.
-    const stream = await unwrap(api.GET("/api/v1/feedback/comments/summary", { parseAs: "stream" }));
-    const summary = mod.parseCommentSummary(await mod.decodeSummaryBody(stream));
-    if (seq !== _summarySeq) return;
-    feedbackState.pinSummary = summary;
-    feedbackState.pinSummaryError = null;
-  } catch (err) {
-    if (seq !== _summarySeq) return;
-    const outcome = mod.classifySummaryFailure(err);
-    if (outcome.kind === "transient") return;
-    feedbackState.pinSummary = null;
-    feedbackState.pinSummaryError = outcome.kind === "error" ? outcome.message : null;
-  }
+	const seq = ++_summarySeq;
+	let mod: SummaryCheckModule;
+	try {
+		mod = await (_summaryCheck ??= import('./feedback-pin-summary-check'));
+	} catch (err) {
+		_summaryCheck = null;
+		if (seq !== _summarySeq) return;
+		feedbackState.pinSummary = null;
+		const why = err instanceof Error ? err.message : String(err);
+		feedbackState.pinSummaryError = `summary code failed to load (${why}); reload the page to retry`;
+		return;
+	}
+	try {
+		// A stream body: a rejected request is transport; decode fails in the module.
+		const stream = await unwrap(
+			api.GET('/api/v1/feedback/comments/summary', { parseAs: 'stream' })
+		);
+		const summary = mod.parseCommentSummary(await mod.decodeSummaryBody(stream));
+		if (seq !== _summarySeq) return;
+		feedbackState.pinSummary = summary;
+		feedbackState.pinSummaryError = null;
+	} catch (err) {
+		if (seq !== _summarySeq) return;
+		const outcome = mod.classifySummaryFailure(err);
+		if (outcome.kind === 'transient') return;
+		feedbackState.pinSummary = null;
+		feedbackState.pinSummaryError = outcome.kind === 'error' ? outcome.message : null;
+	}
 }
 
 /** After a successful local pin mutation: outrank in-flight polls and refresh the summary now. */
 function _notePinMutation(): void {
-  _pinGeneration++;
-  if (feedbackState.availability === "ok") void _refreshPinSummary();
+	_pinGeneration++;
+	if (feedbackState.availability === 'ok') void _refreshPinSummary();
 }
 
 /** Re-GET pins and re-render. A transient miss leaves the board as it was;
@@ -575,39 +531,39 @@ function _notePinMutation(): void {
  * attached mid-session) and retires the watch the same way hydrateFeedback
  * does, rather than polling a missing route forever. */
 export async function refreshPins(): Promise<void> {
-  if (feedbackState.availability !== "ok") return;
-  const generation = _pinGeneration;
-  try {
-    const body = await unwrap(api.GET("/api/v1/feedback/comments"));
-    // A mutation landed while this GET was in flight: its response is newer
-    // than what this GET started from, so applying this snapshot now would
-    // roll the board back.
-    if (generation === _pinGeneration) feedbackState.pins = body.comments;
-  } catch (err) {
-    if (err instanceof ApiError && err.status === 404) {
-      feedbackState.availability = "missing";
-      return;
-    }
-    // stays on the last-known board; polling itself never surfaces an error
-    return;
-  }
-  if (generation === _pinGeneration) await _refreshPinSummary();
+	if (feedbackState.availability !== 'ok') return;
+	const generation = _pinGeneration;
+	try {
+		const body = await unwrap(api.GET('/api/v1/feedback/comments'));
+		// A mutation landed while this GET was in flight: its response is newer
+		// than what this GET started from, so applying this snapshot now would
+		// roll the board back.
+		if (generation === _pinGeneration) feedbackState.pins = body.comments;
+	} catch (err) {
+		if (err instanceof ApiError && err.status === 404) {
+			feedbackState.availability = 'missing';
+			return;
+		}
+		// stays on the last-known board; polling itself never surfaces an error
+		return;
+	}
+	if (generation === _pinGeneration) await _refreshPinSummary();
 }
 
 export function startPinWatch(): void {
-  if (_pinPollTimer !== null) return;
-  _pinPollTimer = setInterval(() => {
-    if (feedbackState.availability === "missing") {
-      stopPinWatch();
-      return;
-    }
-    void refreshPins();
-  }, PIN_POLL_MS);
+	if (_pinPollTimer !== null) return;
+	_pinPollTimer = setInterval(() => {
+		if (feedbackState.availability === 'missing') {
+			stopPinWatch();
+			return;
+		}
+		void refreshPins();
+	}, PIN_POLL_MS);
 }
 
 export function stopPinWatch(): void {
-  if (_pinPollTimer !== null) {
-    clearInterval(_pinPollTimer);
-    _pinPollTimer = null;
-  }
+	if (_pinPollTimer !== null) {
+		clearInterval(_pinPollTimer);
+		_pinPollTimer = null;
+	}
 }

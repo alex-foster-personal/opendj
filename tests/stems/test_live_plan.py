@@ -1,6 +1,6 @@
-"""Pure live-stems lookahead plan calculator (issue #12436).
+"""Acceptance boundaries for live-stems lookahead planning and inference deadline policy.
 
-Regression:
+Lookahead regression (issue #12436):
   if two decks at 120 BPM then four bars, 8000 ms, 24576000 PCM bytes else broken
   if four decks at 120 BPM then eight bars, 16000 ms, 98304000 PCM bytes else broken
   if unsupported deck count then LiveStemsPlanError else broken
@@ -13,8 +13,79 @@ import math
 
 import pytest
 
-from apps.stems.live_capability import MAX_PLAN_BPM, MIN_PLAN_BPM
-from apps.stems.live_plan import LiveStemsPlanError, plan_live_stems_lookahead
+from apps.stems.live_capability import (
+    BENCHMARK_MIN_HASHES_PER_SECOND,
+    MAX_PLAN_BPM,
+    MIN_PLAN_BPM,
+    LiveStemsCapabilityError,
+    LiveStemsPlan,
+    assess_machine,
+    plan_live_stems,
+)
+from apps.stems.live_plan import (
+    LiveStemsPlanError,
+    evaluate_live_stems_deadline,
+    plan_live_stems_lookahead,
+)
+
+
+@pytest.fixture(params=[(2, 120, 8_000), (4, 120, 16_000), (2, 160, 6_000), (4, 160, 12_000)])
+def plan(request: pytest.FixtureRequest) -> LiveStemsPlan:
+    deck_count, bpm, expected_ms = request.param
+    capability = assess_machine("Apple M3", BENCHMARK_MIN_HASHES_PER_SECOND)
+    result = plan_live_stems(capability, deck_count=deck_count, bpm=bpm)
+    assert result.lookahead_ms == expected_ms
+    return result
+
+
+@pytest.mark.requirement("RB-PERFORMANCE-12850")
+@pytest.mark.parametrize("use_zero", [True, False])
+def test_inference_strictly_before_deadline_is_enabled(plan: LiveStemsPlan, use_zero: bool) -> None:
+    """[if] inference finishes strictly early [then] the deadline check enables, [else stop]."""
+    inference_ms = 0.0 if use_zero else plan.lookahead_ms - 0.25
+    original_plan = plan.to_dict()
+
+    result = evaluate_live_stems_deadline(plan, inference_ms=inference_ms)
+
+    assert result.enabled is True
+    assert result.inference_ms == inference_ms
+    assert result.lookahead_ms == plan.lookahead_ms
+    assert f"{inference_ms} ms" in result.reason
+    assert f"{plan.lookahead_ms} ms" in result.reason
+    assert "strictly before" in result.reason
+    assert plan.to_dict() == original_plan
+    assert evaluate_live_stems_deadline(plan, inference_ms=inference_ms) == result
+
+
+@pytest.mark.requirement("RB-PERFORMANCE-12850")
+@pytest.mark.parametrize("overrun_ms", [0.0, 0.25], ids=["exact-deadline", "overrun"])
+def test_inference_at_or_after_deadline_is_refused(plan: LiveStemsPlan, overrun_ms: float) -> None:
+    """[if] inference meets or exceeds its deadline [then] the plan is refused, [else stop]."""
+    inference_ms = plan.lookahead_ms + overrun_ms
+    original_plan = plan.to_dict()
+
+    result = evaluate_live_stems_deadline(plan, inference_ms=inference_ms)
+
+    assert result.enabled is False
+    assert result.inference_ms == inference_ms
+    assert result.lookahead_ms == plan.lookahead_ms
+    assert f"{inference_ms} ms" in result.reason
+    assert f"{plan.lookahead_ms} ms" in result.reason
+    assert "must finish strictly before" in result.reason
+    assert plan.to_dict() == original_plan
+    assert evaluate_live_stems_deadline(plan, inference_ms=inference_ms) == result
+
+
+@pytest.mark.requirement("RB-PERFORMANCE-12850")
+@pytest.mark.parametrize("inference_ms", [-0.25, math.nan, math.inf, -math.inf])
+def test_invalid_inference_duration_raises(plan: LiveStemsPlan, inference_ms: float) -> None:
+    """[if] inference duration is negative or non-finite [then] validation raises, [else stop]."""
+    original_plan = plan.to_dict()
+
+    with pytest.raises(LiveStemsCapabilityError, match="inference duration must be finite and nonnegative"):
+        evaluate_live_stems_deadline(plan, inference_ms=inference_ms)
+
+    assert plan.to_dict() == original_plan
 
 
 @pytest.mark.requirement("RB-PERFORMANCE-12851")

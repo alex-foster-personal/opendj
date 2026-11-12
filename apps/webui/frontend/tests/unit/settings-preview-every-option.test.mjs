@@ -109,6 +109,13 @@ test('CHROME-16 if a row that had a preview on main stops declaring one then its
 	const ids = previewRows().map((d) => d.id);
 	for (const id of PREVIEW_ROWS_ON_MAIN) assert.ok(ids.includes(id), `${id} lost its preview declaration`);
 	for (const def of previewRows()) {
+		if (def.preview === 'sections') {
+			assert.ok(
+				def.control.kind === 'enum' || def.control.kind === 'boolean',
+				`${def.id}: sections preview needs enum or boolean control`
+			);
+			continue;
+		}
 		assert.equal(def.preview, 'waveform', `${def.id}: unknown preview kind`);
 		assert.equal(def.control.kind, 'enum', `${def.id}: the overlay renders previews under enum controls only`);
 		assert.ok(def.id in PREF_SET_BY_ROW, `${def.id}: declares a preview but this test does not know which pref it sets`);
@@ -118,6 +125,7 @@ test('CHROME-16 if a row that had a preview on main stops declaring one then its
 test('CHROME-16 if any option value of a preview row paints an empty or invisible preview under any skin then that value has no preview', () => {
 	let painted = 0;
 	for (const def of previewRows()) {
+		if (def.preview === 'sections') continue;
 		for (const { value } of def.control.options) {
 			for (const skinId of skin.UI_SKIN_CHOICES) {
 				const designPref = PREF_SET_BY_ROW[def.id] === 'design' ? value : 'auto';
@@ -156,6 +164,7 @@ test('CHROME-16 if SettingsOverlay lazy-imports the preview again then a pending
 	assert.match(src, /import SettingPreview from '\.\/SettingPreview\.svelte';/);
 	assert.match(src, /\{#if def\.preview !== undefined\}/);
 	assert.match(shared, /import WaveformDesignPreview from '\.\/WaveformDesignPreview\.svelte';/);
+	assert.match(shared, /import SectionDisplayPreview from '\.\/SectionDisplayPreview\.svelte';/);
 	for (const file of [src, shared]) {
 		assert.doesNotMatch(file, /import\(\s*['"]\.\/(WaveformDesignPreview|SettingPreview)\.svelte['"]\s*\)/);
 	}

@@ -58,7 +58,7 @@ function addMusicButton(html) {
 
 test('SETUP-8732: LibraryTopBar wires runSetup through the shared module', () => {
 	assert.match(CONTAINER, /from '\$lib\/setup\/run-setup'/);
-	assert.match(CONTAINER, /runSetup\(goto\)/);
+	assert.match(CONTAINER, /runSetup\(goto, \$page\.url\.pathname\)/);
 	assert.match(CONTAINER, /ADD_MUSIC_LABEL/);
 	assert.doesNotMatch(CONTAINER, /IMPORT_MUSIC_LABEL/);
 	assert.doesNotMatch(CONTAINER, /RUN_SETUP_LABEL/);

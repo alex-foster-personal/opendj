@@ -33,6 +33,7 @@ import {
 	type TempoLaneColors,
 	type TempoLaneScale
 } from '../wave/tempo-marks';
+import { ALL_CUE_MARKERS_VISIBLE, type CueMarkerVisibility } from '../wave/cues';
 
 export { TEMPO_LANE_COLORS };
 
@@ -141,6 +142,8 @@ export interface StripFrame {
 	tempoScale?: TempoLaneScale;
 	/** CSS width / height stretch of one backing px (icons stay round); default 1. */
 	tempoXStretch?: number;
+	/** Issue #10248: which cue-marker kinds paint; absent = all. */
+	cueMarkers?: CueMarkerVisibility;
 }
 
 /** Unity gains: what an unreported deck, or a heights-only payload, draws at. */
@@ -213,8 +216,11 @@ export function drawStripWaveform(ctx: CanvasRenderingContext2D, frame: StripFra
 		);
 	}
 	if (durationMs !== null && durationMs > 0) {
-		drawLoopRegion(ctx, frame.loop, (ms) => (ms / durationMs) * w, w, h);
-		_drawLoopCueBands(ctx, frame.loopCues, durationMs, w, h);
+		const cueMarkers = frame.cueMarkers ?? ALL_CUE_MARKERS_VISIBLE;
+		if (cueMarkers.loop) {
+			drawLoopRegion(ctx, frame.loop, (ms) => (ms / durationMs) * w, w, h);
+			_drawLoopCueBands(ctx, frame.loopCues, durationMs, w, h);
+		}
 	}
 }
 

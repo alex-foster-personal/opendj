@@ -10,7 +10,7 @@
 		type HeadphoneMixDirection,
 		type HeadphoneMixStepResult
 	} from '$lib/rb/headphone-mix-step';
-	import { headphoneLivenessAlertForState, headphoneMixAccent, inputLooksLikeHandsfree, MIC_DECLINED_NOTICE, monitorLabelIsBluetooth, nativeCueSinkAvailable, twoOutputsWarning } from '$lib/player/headphones';
+	import { acquireHeadphoneSignalMeters, headphoneLivenessAlertForState, headphoneMixAccent, inputLooksLikeHandsfree, MIC_DECLINED_NOTICE, monitorLabelIsBluetooth, nativeCueSinkAvailable, twoOutputsWarning } from '$lib/player/headphones';
 	import { ioMeterFill, ioTestDeviceId, ioTestEnvelope, ioTestRefusal, passiveInputMeterBlockedReason, type IoTestBus } from '$lib/player/io-device-test';
 	import {
 		assertCalibrationProbe,
@@ -20,7 +20,6 @@
 	import { calibrateButtonEnabled } from '$lib/player/cue-align-policy';
 	import { loadMixerConfig, persistMixerConfig } from '$lib/player/mixer-config';
 	import { recordPerfEvent } from '$lib/rb/perf-event-log';
-	import { plannedTitle } from '$lib/rb/planned-explainers';
 	import { remoteSpeakerBuildFlag } from '$lib/player/remote-speaker-flag';
 	import { pickThenMirror, type DevicePick } from './device-select-mirror';
 	import { outputOptionLabel, wirelessMainNote } from '$lib/player/wireless-output';
@@ -34,6 +33,7 @@
 	} from '$lib/ui/tooltip-timing';
 	import CueAlignModal from './CueAlignModal.svelte';
 	import SpeakerLinkSection from './SpeakerLinkSection.svelte';
+	import RemoteControlSection from './RemoteControlSection.svelte';
 	import { CLOSE_PATH, PLAY_TRIANGLE_PATH, RESCAN_ARROW_PATH, RESCAN_PATH } from '$lib/ui/icon-glyphs';
 	import { closeIoView, openIoView, ioSurface } from '$lib/rb/io-surface.svelte';
 	import { audioOutputStatus, djioFallbackTitle } from '$lib/rb/audio-output-status.svelte';
@@ -44,7 +44,13 @@
 	import { ioOutputsSession, noteSetOutputsClicked } from '$lib/rb/io-outputs-session.svelte';
 	import Knob from './Knob.svelte';
 	import MidiStatusGlyph from './MidiStatusGlyph.svelte';
-	import type { HeadphoneAlignmentMode, HeadphoneOutputMode, HeadphoneState } from '$lib/rb/mixer-types';
+	import { _defaultBooth } from '$lib/player/state.svelte';
+	import type {
+		BoothState,
+		HeadphoneAlignmentMode,
+		HeadphoneOutputMode,
+		HeadphoneState
+	} from '$lib/rb/mixer-types';
 	import type { PerformanceUiCommandResult } from '$lib/rb/performance-ipc-types';
 	import { runOutputRefresh } from '$lib/rb/output-refresh-ui';
 
@@ -53,15 +59,16 @@
 
 	interface Props {
 		state: HeadphoneState;
+		booth?: BoothState;
 		onmix: (value: number) => void;
 		onlevel: (value: number) => void;
-		onboothlevel: (value: number) => void;
+		onboothlevel?: (value: number) => void;
 		ondelay: (value: number) => void;
 		onrefresh: () => Promise<PerformanceUiCommandResult>;
 		onacquire: () => void;
 		onselect: DevicePick;
 		onmaster: DevicePick;
-		onbooth: DevicePick;
+		onbooth?: DevicePick;
 		oninput: DevicePick;
 		onmode: (mode: HeadphoneOutputMode) => void;
 		/** CUEOUT-14: open the mic calibration modal. */
@@ -72,12 +79,27 @@
 		testrun: <T>(work: (stillCurrent: () => boolean, signal: AbortSignal) => Promise<T>) => Promise<T>;
 	}
 
-	let { state: headphoneState, onmix, onlevel, onboothlevel, ondelay, onrefresh, onacquire, onselect, onmaster, onbooth, oninput, onmode, oncalibrate, onAlignmentMode, testrun }: Props =
-		$props();
+	const _noop = () => {};
+	let {
+		state: headphoneState,
+		booth = _defaultBooth(),
+		onmix,
+		onlevel,
+		onboothlevel = _noop,
+		ondelay,
+		onrefresh,
+		onacquire,
+		onselect,
+		onmaster,
+		onbooth = _noop,
+		oninput,
+		onmode,
+		oncalibrate,
+		onAlignmentMode,
+		testrun
+	}: Props = $props();
 	let boothPickerRevealed = $state(false);
-	const showBoothPicker = $derived(
-		boothPickerRevealed || headphoneState.selected_booth_output_device_id !== null
-	);
+	const showBoothPicker = $derived(boothPickerRevealed || booth.selected_output_device_id !== null);
 
 	/** I18: the remote speaker build flag (on in dev, off in built apps). */
 	const remoteSpeakerOn = remoteSpeakerBuildFlag() === 'on';
@@ -199,9 +221,10 @@
 			: (headphoneState.outputs.find((output) => output.id === headphoneState.selected_master_output_device_id)?.label ?? null)
 	);
 	const boothLabel = $derived(
-		headphoneState.selected_booth_output_device_id === null
+		booth.selected_output_device_id === null
 			? null
-			: (headphoneState.outputs.find((output) => output.id === headphoneState.selected_booth_output_device_id)?.label ?? null)
+			: (headphoneState.outputs.find((output) => output.id === booth.selected_output_device_id)?.label ??
+					null)
 	);
 	const warningText = $derived(twoOutputsWarning({ outputMode: headphoneState.output_mode, selectedLabel }));
 	const livenessAlert = $derived(headphoneLivenessAlertForState(headphoneState));
@@ -268,6 +291,14 @@
 	function openIo(): void {
 		openIoView();
 	}
+
+	// The signal lamps are the meters' only UI reader, and they render only
+	// inside the I/O panel (the calibration modal lives there too): sample the
+	// analysers only while it is open.
+	$effect(() => {
+		if (!ioSurface.open && !cueAlignModal.open) return;
+		return acquireHeadphoneSignalMeters();
+	});
 
 	function closeIo(): void {
 		if (cueAlignModal.open) closeCueAlignModal();
@@ -520,7 +551,7 @@
 	});
 
 	function testDeviceId(bus: IoTestBus): string | null {
-		return ioTestDeviceId(bus, headphoneState);
+		return ioTestDeviceId(bus, { ...headphoneState, booth });
 	}
 
 	async function chooseBooth(deviceId: string): Promise<void> {
@@ -702,7 +733,7 @@
 		<header class="hp-panel-header">
 			<div>
 				<strong>Audio I/O</strong>
-				<small>Two clicks outside, Esc, or X to dismiss</small>
+				<small class="hp-panel-dismiss-hint">Esc or X to dismiss</small>
 			</div>
 			<button type="button" class="hp-panel-close" aria-label="Close audio I/O settings" onclick={closeIo}><svg viewBox="0 0 24 24" width="14" height="14" aria-hidden="true"><path d={CLOSE_PATH} fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" /></svg></button>
 		</header>
@@ -722,14 +753,15 @@
 					<ControlExplainer title="SPLIT warning" bullets={splitBullets} tooltip={TOOLTIP_HEADPHONE_CLUSTER}><p class="hp-warn" role="status">{splitBullets[0]} {splitBullets[1]}</p></ControlExplainer>
 				{/if}
 			</section>
-			<section class="hp-section" aria-label="Future routing options">
-				<div class="hp-future"><button type="button" disabled>Advanced channel assignment</button><span>Coming soon</span></div>
-				{#if remoteSpeakerSection}
-					<!-- I18: loaded on demand, so a build with the flag off ships none of it. -->
+			{#if remoteSpeakerSection}
+				<!-- I18: loaded on demand, so a build with the flag off ships none of it. -->
+				<section class="hp-section" aria-label="Remote speaker">
 					{#await remoteSpeakerSection then { default: RemoteSpeakerSection }}<RemoteSpeakerSection />{/await}
-				{:else}
-					<div class="hp-future"><button type="button" disabled title={plannedTitle('remote-control')}>Remote control</button><span>Coming soon</span></div>
-				{/if}
+				</section>
+			{/if}
+			<section class="hp-section" aria-label="Phone remote">
+				<!-- #10441: the phone remote; unmounts with the panel, which stops its poll. -->
+				<RemoteControlSection />
 			</section>
 			<section class="hp-section" aria-label="Audio devices">
 				<div class="hp-section-heading"><h3>Devices</h3><ControlExplainer title="Rescan" bullets={rescanBullets} tooltip={TOOLTIP_INFREQUENT}><button type="button" aria-label="Rescan available headphone output devices" aria-busy={outputRefreshPending} disabled={outputRefreshPending} onclick={runHeadphoneOutputRefresh}><svg width="12" height="12" viewBox="0 0 12 12" aria-hidden="true"><path d={RESCAN_PATH} fill="none" stroke="currentColor" stroke-width="1.2" /><path d={RESCAN_ARROW_PATH} fill="currentColor" /></svg> Rescan</button></ControlExplainer></div>
@@ -752,7 +784,15 @@
 				{#if masterLabel !== null || selectedLabel !== null || boothLabel !== null}
 					<p class="hp-context">{#if masterLabel !== null}MASTER: {masterLabel}. {/if}{#if selectedLabel !== null}CUE: {selectedLabel}. {/if}{#if boothLabel !== null}BOOTH: {boothLabel}.{/if}</p>
 				{/if}
-					{@render outputMenu()}
+				<div class="hp-future-stack" aria-label="Future outputs">
+					<div class="hp-future" data-io-wip-output>
+						<button type="button" disabled>BOOTH / MONITOR</button><span>WIP · Coming soon</span>
+					</div>
+					<div class="hp-future" data-io-wip-output>
+						<button type="button" disabled>Advanced channel assignment</button><span>WIP · Coming soon</span>
+					</div>
+				</div>
+				{@render outputMenu()}
 					<p class="hp-context">Meters show app-bus or mic level. Test plays a few beeps. Neither proves a speaker you have not heard.</p>
 				{#if showError}
 					<p class="hp-error" role="alert">{headphoneState.error}</p>
@@ -820,40 +860,6 @@
 			<p class="hp-warn hp-routing-toast" role="status" data-two-outputs-warning data-io-routing-feedback>
 				{warningText}
 			</p>
-		{/if}
-		{#if !showBoothPicker}
-			<button type="button" class="hp-acquire" data-add-booth onclick={() => (boothPickerRevealed = true)}>Add booth / monitor</button>
-		{:else}
-			<ControlExplainer title="BOOTH / MONITOR" bullets={boothPickBullets} tooltip={TOOLTIP_HEADPHONE_STACK} placement="right">
-				<span class="hp-pick" data-booth-output-row>
-					<span class="hp-pick-name">BOOTH / MONITOR</span>
-					<span class="hp-pick-row">
-						<select
-							aria-label="booth output device"
-							value={headphoneState.selected_booth_output_device_id ?? ''}
-							disabled={!headphoneState.supported || !access.output_pinning}
-							onchange={(event) => pickThenMirror(event.currentTarget, chooseBooth, () => headphoneState.selected_booth_output_device_id)}
-						>
-							<option value="">None</option>
-							{#each headphoneState.outputs as output (output.id)}
-								<option value={output.id}>{outputOptionLabel(output)}</option>
-							{/each}
-						</select>
-						{@render testAndMeter('booth', 'booth output')}
-					</span>
-					<label class="hp-context">BOOTH GAIN
-						<input
-							type="range"
-							min="0"
-							max="1"
-							step="0.01"
-							value={headphoneState.booth_level}
-							aria-label="booth gain"
-							oninput={(event) => onboothlevel(event.currentTarget.valueAsNumber)}
-						/>
-					</label>
-				</span>
-			</ControlExplainer>
 		{/if}
 		{#if wirelessMain !== null}<p class="hp-context" data-wireless-main-note>{wirelessMain}</p>{/if}
 		{#if selectedLabel !== null && monitorLabelIsBluetooth(selectedLabel)}<p class="hp-context">Bluetooth CUE can drift against MASTER. Use CALIBRATE for a measured starting offset.</p>{/if}
@@ -1067,6 +1073,16 @@
 			animation: none;
 			opacity: 0.5;
 		}
+		.midi-btn.st-amber {
+			animation: none;
+		}
+	}
+	:global(html[data-reduce-motion]) .hp-btn-io.io-alert::after {
+		animation: none;
+		opacity: 0.5;
+	}
+	:global(html[data-reduce-motion]) .midi-btn.st-amber {
+		animation: none;
 	}
 	.hp-btn:hover {
 		color: var(--rb-text, #c8cdd2);

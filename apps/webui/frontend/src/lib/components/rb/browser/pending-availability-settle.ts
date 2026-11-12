@@ -64,28 +64,31 @@ export function isTransientListingBusy(exc: unknown): boolean {
 	);
 }
 
-/** Copy settled answers from `fresh` onto the pending rows of `held`, in
- * place. Returns how many held rows are still pending. */
-export function applySettledAvailability(
-	held: readonly AvailabilityRow[],
+/** Copy settled answers from `fresh` onto the pending rows of `held`.
+ * Returns a new row array and how many held rows are still pending. */
+export function applySettledAvailability<T extends AvailabilityRow>(
+	held: readonly T[],
 	fresh: readonly AvailabilityRow[]
-): number {
+): { rows: T[]; stillPending: number } {
 	const settled = new Map<string, AvailabilityRow>();
 	for (const row of fresh) {
 		if (!_isPending(row)) settled.set(row.stable_id, row);
 	}
 	let stillPending = 0;
-	for (const row of held) {
-		if (!_isPending(row)) continue;
+	const rows = held.map((row) => {
+		if (!_isPending(row)) return row;
 		const answer = settled.get(row.stable_id);
 		if (answer === undefined) {
 			stillPending += 1;
-			continue;
+			return row;
 		}
-		row.file_exists = answer.file_exists;
-		row.file_availability = answer.file_availability;
-	}
-	return stillPending;
+		return {
+			...row,
+			file_exists: answer.file_exists,
+			file_availability: answer.file_availability
+		};
+	});
+	return { rows, stillPending };
 }
 
 //-----------------------------------------------------------------------------
@@ -95,6 +98,8 @@ export function applySettledAvailability(
 export interface PendingSettleArgs {
 	/** The rows on screen now. Read again at every step. */
 	rows: () => readonly AvailabilityRow[];
+	/** Publish merged rows after a re-ask (required for raw pane row arrays). */
+	publishRows: (rows: readonly AvailabilityRow[]) => void;
 	/** One fresh listing of the same rows. */
 	fetchRows: () => Promise<readonly AvailabilityRow[]>;
 	onError: (exc: unknown) => void;
@@ -119,7 +124,8 @@ export function startPendingSettle(args: PendingSettleArgs): () => void {
 			try {
 				const fresh = await args.fetchRows();
 				if (stopped) return;
-				applySettledAvailability(args.rows(), fresh);
+				const { rows: next } = applySettledAvailability(args.rows(), fresh);
+				args.publishRows(next);
 			} catch (exc: unknown) {
 				args.onError(exc);
 			}

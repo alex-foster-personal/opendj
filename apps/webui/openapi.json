@@ -1117,6 +1117,58 @@
         "title": "AnalysisQueueOut",
         "type": "object"
       },
+      "AnalysisRangeIn": {
+        "additionalProperties": false,
+        "properties": {
+          "range": {
+            "title": "Range",
+            "type": "string"
+          }
+        },
+        "required": [
+          "range"
+        ],
+        "title": "AnalysisRangeIn",
+        "type": "object"
+      },
+      "AnalysisRangeOut": {
+        "properties": {
+          "choices": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Choices",
+            "type": "array"
+          },
+          "effective": {
+            "title": "Effective",
+            "type": "string"
+          },
+          "range": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Range"
+          },
+          "stable_id": {
+            "title": "Stable Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "stable_id",
+          "range",
+          "effective",
+          "choices"
+        ],
+        "title": "AnalysisRangeOut",
+        "type": "object"
+      },
       "AnalysisSourceOut": {
         "properties": {
           "lanes": {
@@ -1996,7 +2048,7 @@
       "AudioEngineLoadIn": {
         "properties": {
           "deck": {
-            "maximum": 4.0,
+            "maximum": 8.0,
             "minimum": 1.0,
             "title": "Deck",
             "type": "integer"
@@ -4909,6 +4961,8 @@
                 "deck_key_nudge": "#/components/schemas/DeckKeyNudge",
                 "deck_key_sync_toggle": "#/components/schemas/DeckKeySyncToggle",
                 "deck_loop_exit": "#/components/schemas/DeckLoopExit",
+                "deck_loop_in": "#/components/schemas/DeckLoopIn",
+                "deck_loop_out": "#/components/schemas/DeckLoopOut",
                 "deck_loop_scale": "#/components/schemas/DeckLoopScale",
                 "deck_manual_loop_cycle": "#/components/schemas/DeckManualLoopCycle",
                 "deck_pitch": "#/components/schemas/DeckPitch",
@@ -4920,6 +4974,7 @@
                 "headphone_mix": "#/components/schemas/HeadphoneMix",
                 "master_cue": "#/components/schemas/MasterCue",
                 "mixer_channel": "#/components/schemas/MixerChannel",
+                "mixer_deck_pair_select": "#/components/schemas/MixerDeckPairSelect",
                 "mixer_global": "#/components/schemas/MixerGlobal",
                 "shift_modifier": "#/components/schemas/ShiftModifier"
               },
@@ -4955,6 +5010,12 @@
               },
               {
                 "$ref": "#/components/schemas/DeckManualLoopCycle"
+              },
+              {
+                "$ref": "#/components/schemas/DeckLoopIn"
+              },
+              {
+                "$ref": "#/components/schemas/DeckLoopOut"
               },
               {
                 "$ref": "#/components/schemas/DeckLoopScale"
@@ -4997,6 +5058,9 @@
               },
               {
                 "$ref": "#/components/schemas/ColorFx"
+              },
+              {
+                "$ref": "#/components/schemas/MixerDeckPairSelect"
               },
               {
                 "$ref": "#/components/schemas/DeckPitch"
@@ -5125,6 +5189,81 @@
           "file"
         ],
         "title": "Body_upload_attachment_api_v1_feedback_comments__comment_id__attachment_post",
+        "type": "object"
+      },
+      "BoothRouteHealthOut": {
+        "properties": {
+          "selected": {
+            "title": "Selected",
+            "type": "boolean"
+          },
+          "state": {
+            "title": "State",
+            "type": "string"
+          }
+        },
+        "required": [
+          "state",
+          "selected"
+        ],
+        "title": "BoothRouteHealthOut",
+        "type": "object"
+      },
+      "BoothStateOut": {
+        "description": "Serializable booth monitor read model (#11257).",
+        "properties": {
+          "level": {
+            "title": "Level",
+            "type": "number"
+          },
+          "report_age_ms": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Report Age Ms"
+          },
+          "reporting_client_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reporting Client Id"
+          },
+          "route": {
+            "$ref": "#/components/schemas/BoothRouteHealthOut"
+          },
+          "selected_output_device_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Selected Output Device Id"
+          },
+          "signal_mode": {
+            "title": "Signal Mode",
+            "type": "string"
+          }
+        },
+        "required": [
+          "level",
+          "selected_output_device_id",
+          "signal_mode",
+          "route"
+        ],
+        "title": "BoothStateOut",
         "type": "object"
       },
       "BpmAlternative": {
@@ -5685,7 +5824,7 @@
       },
       "BuildableIn": {
         "additionalProperties": false,
-        "description": "Buildability classification; both fields required, replaces wholesale.\n\ntier says WHERE the node's iterative build loop can run (cloud/hybrid/\nlocal); reason is a one-line justification grounded in what the node\ntouches. See (private path).",
+        "description": "Buildability classification; both fields required, replaces wholesale.\n\ntier says WHERE the node's iterative build loop can run (cloud/hybrid/\nlocal); reason is a one-line justification grounded in what the node\ntouches. See .planning/rekordbox-parity/CLOUD-BUILDABILITY.md.",
         "properties": {
           "reason": {
             "title": "Reason",
@@ -5885,6 +6024,41 @@
           "plan_sha256": {
             "title": "Plan Sha256",
             "type": "string"
+          },
+          "planner_confidence": {
+            "anyOf": [
+              {
+                "maximum": 1.0,
+                "minimum": 0.0,
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Planner Confidence"
+          },
+          "planner_confidence_title": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Planner Confidence Title"
+          },
+          "planner_weakest_factor": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Planner Weakest Factor"
           },
           "rank_group": {
             "enum": [
@@ -6987,6 +7161,16 @@
             ],
             "title": "Js Heap Mb"
           },
+          "live_handles": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/LiveHandlesSample"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "page_uptime_ms": {
             "minimum": 0.0,
             "title": "Page Uptime Ms",
@@ -7601,6 +7785,14 @@
       },
       "ClusterOut": {
         "properties": {
+          "basis": {
+            "enum": [
+              "fingerprint",
+              "tags"
+            ],
+            "title": "Basis",
+            "type": "string"
+          },
           "cluster_id": {
             "title": "Cluster Id",
             "type": "integer"
@@ -7651,6 +7843,7 @@
           "cluster_key",
           "survivor_stable_id",
           "rationale",
+          "basis",
           "flagged_manual_review",
           "members"
         ],
@@ -10180,6 +10373,58 @@
         "title": "DeckLoopExit",
         "type": "object"
       },
+      "DeckLoopIn": {
+        "additionalProperties": false,
+        "properties": {
+          "deck": {
+            "enum": [
+              1,
+              2,
+              3,
+              4
+            ],
+            "title": "Deck",
+            "type": "integer"
+          },
+          "type": {
+            "const": "deck_loop_in",
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "type",
+          "deck"
+        ],
+        "title": "DeckLoopIn",
+        "type": "object"
+      },
+      "DeckLoopOut": {
+        "additionalProperties": false,
+        "properties": {
+          "deck": {
+            "enum": [
+              1,
+              2,
+              3,
+              4
+            ],
+            "title": "Deck",
+            "type": "integer"
+          },
+          "type": {
+            "const": "deck_loop_out",
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "type",
+          "deck"
+        ],
+        "title": "DeckLoopOut",
+        "type": "object"
+      },
       "DeckLoopScale": {
         "additionalProperties": false,
         "properties": {
@@ -12519,7 +12764,7 @@
           },
           "mode": {
             "default": "niche",
-            "description": "Niche: labelled region matches only.",
+            "description": "generic: JEV genre-vector cosine neighbours; niche: labelled region matches; specific: not implemented.",
             "enum": [
               "generic",
               "specific",
@@ -14371,11 +14616,6 @@
             "title": "Alignment Mode",
             "type": "string"
           },
-          "booth_level": {
-            "default": 0.5,
-            "title": "Booth Level",
-            "type": "number"
-          },
           "calibration": {
             "$ref": "#/components/schemas/HeadphoneCalibrationOut"
           },
@@ -14472,17 +14712,6 @@
               }
             ],
             "title": "Reporting Client Id"
-          },
-          "selected_booth_output_device_id": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Selected Booth Output Device Id"
           },
           "selected_input_device_id": {
             "anyOf": [
@@ -15482,6 +15711,158 @@
         "title": "IdentityRemapPairModel",
         "type": "object"
       },
+      "ImportIn": {
+        "additionalProperties": false,
+        "properties": {
+          "confirm_playlist_id": {
+            "title": "Confirm Playlist Id",
+            "type": "string"
+          },
+          "force": {
+            "default": false,
+            "title": "Force",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "confirm_playlist_id"
+        ],
+        "title": "ImportIn",
+        "type": "object"
+      },
+      "ImportJobOut": {
+        "additionalProperties": false,
+        "properties": {
+          "error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error"
+          },
+          "error_code": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error Code"
+          },
+          "finished_at": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Finished At"
+          },
+          "matched_count": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Matched Count"
+          },
+          "pending_count": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Pending Count"
+          },
+          "phase": {
+            "enum": [
+              "idle",
+              "running",
+              "done",
+              "error"
+            ],
+            "title": "Phase",
+            "type": "string"
+          },
+          "playlist_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Playlist Id"
+          },
+          "playlist_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Playlist Name"
+          },
+          "running": {
+            "title": "Running",
+            "type": "boolean"
+          },
+          "started_at": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Started At"
+          },
+          "track_count": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Track Count"
+          }
+        },
+        "required": [
+          "running",
+          "phase",
+          "playlist_id",
+          "started_at",
+          "finished_at",
+          "error",
+          "error_code",
+          "matched_count",
+          "pending_count",
+          "track_count",
+          "playlist_name"
+        ],
+        "title": "ImportJobOut",
+        "type": "object"
+      },
       "InferIn": {
         "properties": {
           "force": {
@@ -16238,6 +16619,57 @@
         "title": "KeyClashOut",
         "type": "object"
       },
+      "KeyEditIn": {
+        "additionalProperties": false,
+        "properties": {
+          "key": {
+            "title": "Key",
+            "type": "string"
+          }
+        },
+        "required": [
+          "key"
+        ],
+        "title": "KeyEditIn",
+        "type": "object"
+      },
+      "KeyEditOut": {
+        "properties": {
+          "key": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Key"
+          },
+          "modified_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Modified At"
+          },
+          "stable_id": {
+            "title": "Stable Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "stable_id",
+          "key",
+          "modified_at"
+        ],
+        "title": "KeyEditOut",
+        "type": "object"
+      },
       "KeyIn": {
         "additionalProperties": false,
         "properties": {
@@ -16289,6 +16721,72 @@
         "title": "KeyStatusOut",
         "type": "object"
       },
+      "KeyboardPrefsOut": {
+        "properties": {
+          "overrides": {
+            "additionalProperties": {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            "title": "Overrides",
+            "type": "object"
+          },
+          "preset": {
+            "default": "opendj",
+            "enum": [
+              "opendj",
+              "rekordbox",
+              "serato"
+            ],
+            "title": "Preset",
+            "type": "string"
+          }
+        },
+        "title": "KeyboardPrefsOut",
+        "type": "object"
+      },
+      "KeyboardPrefsPatch": {
+        "additionalProperties": false,
+        "properties": {
+          "overrides": {
+            "anyOf": [
+              {
+                "additionalProperties": {
+                  "items": {
+                    "type": "string"
+                  },
+                  "type": "array"
+                },
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Overrides"
+          },
+          "preset": {
+            "anyOf": [
+              {
+                "enum": [
+                  "opendj",
+                  "rekordbox",
+                  "serato"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Preset"
+          }
+        },
+        "title": "KeyboardPrefsPatch",
+        "type": "object"
+      },
       "KindDefaultIn": {
         "additionalProperties": false,
         "properties": {
@@ -16306,6 +16804,100 @@
           "mode"
         ],
         "title": "KindDefaultIn",
+        "type": "object"
+      },
+      "LabelClipOut": {
+        "properties": {
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "part": {
+            "title": "Part",
+            "type": "string"
+          },
+          "stable_id": {
+            "title": "Stable Id",
+            "type": "string"
+          },
+          "url": {
+            "title": "Url",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "stable_id",
+          "part",
+          "url"
+        ],
+        "title": "LabelClipOut",
+        "type": "object"
+      },
+      "LabelConsensusOut": {
+        "properties": {
+          "batch_size": {
+            "title": "Batch Size",
+            "type": "integer"
+          },
+          "consensus": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Consensus"
+          },
+          "experiment_id": {
+            "title": "Experiment Id",
+            "type": "string"
+          },
+          "max_wait_s": {
+            "title": "Max Wait S",
+            "type": "integer"
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reason"
+          },
+          "response_count": {
+            "title": "Response Count",
+            "type": "integer"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          },
+          "task_id": {
+            "title": "Task Id",
+            "type": "string"
+          },
+          "wait_elapsed_s": {
+            "title": "Wait Elapsed S",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "task_id",
+          "experiment_id",
+          "status",
+          "response_count",
+          "batch_size",
+          "max_wait_s",
+          "wait_elapsed_s"
+        ],
+        "title": "LabelConsensusOut",
         "type": "object"
       },
       "LabelRequest": {
@@ -16328,6 +16920,78 @@
           "class"
         ],
         "title": "LabelRequest",
+        "type": "object"
+      },
+      "LabelResponseIn": {
+        "properties": {
+          "anon_session": {
+            "minLength": 1,
+            "title": "Anon Session",
+            "type": "string"
+          },
+          "cost_choice": {
+            "minLength": 1,
+            "title": "Cost Choice",
+            "type": "string"
+          },
+          "ms_to_complete": {
+            "minimum": 0.0,
+            "title": "Ms To Complete",
+            "type": "integer"
+          },
+          "ranking": {
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 3,
+            "minItems": 3,
+            "title": "Ranking",
+            "type": "array"
+          },
+          "strength": {
+            "maximum": 1.0,
+            "minimum": 0.0,
+            "title": "Strength",
+            "type": "number"
+          },
+          "user_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "User Id"
+          }
+        },
+        "required": [
+          "anon_session",
+          "ranking",
+          "strength",
+          "cost_choice",
+          "ms_to_complete"
+        ],
+        "title": "LabelResponseIn",
+        "type": "object"
+      },
+      "LabelResponseOut": {
+        "properties": {
+          "karma_granted": {
+            "default": true,
+            "title": "Karma Granted",
+            "type": "boolean"
+          },
+          "response_id": {
+            "title": "Response Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "response_id"
+        ],
+        "title": "LabelResponseOut",
         "type": "object"
       },
       "LabsIn": {
@@ -17844,6 +18508,109 @@
         "title": "LightingDisabledResponse",
         "type": "object"
       },
+      "LightingLook": {
+        "properties": {
+          "phrase_label": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Phrase Label"
+          },
+          "scene_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Scene Id"
+          }
+        },
+        "title": "LightingLook",
+        "type": "object"
+      },
+      "LightingOut": {
+        "description": "Lighting output prefs on ui-prefs (issue #11774): storage only, no UDP loop.",
+        "properties": {
+          "enabled": {
+            "default": false,
+            "title": "Enabled",
+            "type": "boolean"
+          },
+          "protocol": {
+            "default": "off",
+            "enum": [
+              "off",
+              "artnet",
+              "sacn",
+              "osc"
+            ],
+            "title": "Protocol",
+            "type": "string"
+          }
+        },
+        "title": "LightingOut",
+        "type": "object"
+      },
+      "LightingPatch": {
+        "properties": {
+          "enabled": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Enabled"
+          },
+          "protocol": {
+            "anyOf": [
+              {
+                "enum": [
+                  "off",
+                  "artnet",
+                  "sacn",
+                  "osc"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Protocol"
+          }
+        },
+        "title": "LightingPatch",
+        "type": "object"
+      },
+      "LightingSceneRef": {
+        "properties": {
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "name"
+        ],
+        "title": "LightingSceneRef",
+        "type": "object"
+      },
       "LightingStatus": {
         "properties": {
           "contract": {
@@ -18243,6 +19010,39 @@
           "screenshots"
         ],
         "title": "ListingOut",
+        "type": "object"
+      },
+      "LiveHandlesSample": {
+        "description": "Live in-page handle totals from the opt-in probe (PERF-LEAK-11789).",
+        "properties": {
+          "intervals": {
+            "minimum": 0.0,
+            "title": "Intervals",
+            "type": "integer"
+          },
+          "long_timeouts": {
+            "minimum": 0.0,
+            "title": "Long Timeouts",
+            "type": "integer"
+          },
+          "rafs": {
+            "minimum": 0.0,
+            "title": "Rafs",
+            "type": "integer"
+          },
+          "window_listeners": {
+            "minimum": 0.0,
+            "title": "Window Listeners",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "intervals",
+          "long_timeouts",
+          "window_listeners",
+          "rafs"
+        ],
+        "title": "LiveHandlesSample",
         "type": "object"
       },
       "LocalDataOut": {
@@ -20282,6 +21082,47 @@
         "title": "MixerChannelMarkOut",
         "type": "object"
       },
+      "MixerDeckPairSelect": {
+        "additionalProperties": false,
+        "properties": {
+          "deck": {
+            "anyOf": [
+              {
+                "enum": [
+                  1,
+                  2,
+                  3,
+                  4
+                ],
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Deck"
+          },
+          "pair": {
+            "enum": [
+              "1-3",
+              "2-4"
+            ],
+            "title": "Pair",
+            "type": "string"
+          },
+          "type": {
+            "const": "mixer_deck_pair_select",
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "type",
+          "pair"
+        ],
+        "title": "MixerDeckPairSelect",
+        "type": "object"
+      },
       "MixerGlobal": {
         "additionalProperties": false,
         "properties": {
@@ -20780,8 +21621,7 @@
         },
         "required": [
           "stable_id",
-          "score",
-          "citations"
+          "score"
         ],
         "title": "NicheSimilarCandidateOut",
         "type": "object"
@@ -24333,6 +25173,135 @@
         "title": "PlaylistSummary",
         "type": "object"
       },
+      "PlaylistSummaryBpmStats": {
+        "properties": {
+          "max": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Max"
+          },
+          "median": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Median"
+          },
+          "min": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Min"
+          },
+          "missing": {
+            "default": 0,
+            "title": "Missing",
+            "type": "integer"
+          }
+        },
+        "title": "PlaylistSummaryBpmStats",
+        "type": "object"
+      },
+      "PlaylistSummaryEnergyStats": {
+        "properties": {
+          "max": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Max"
+          },
+          "min": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Min"
+          },
+          "missing": {
+            "default": 0,
+            "title": "Missing",
+            "type": "integer"
+          }
+        },
+        "title": "PlaylistSummaryEnergyStats",
+        "type": "object"
+      },
+      "PlaylistSummaryKeysStats": {
+        "properties": {
+          "distinct": {
+            "default": 0,
+            "title": "Distinct",
+            "type": "integer"
+          },
+          "missing": {
+            "default": 0,
+            "title": "Missing",
+            "type": "integer"
+          }
+        },
+        "title": "PlaylistSummaryKeysStats",
+        "type": "object"
+      },
+      "PlaylistSummaryStats": {
+        "description": "Aggregate counts for one playlist membership (SETPREP-10645).",
+        "properties": {
+          "bpm": {
+            "$ref": "#/components/schemas/PlaylistSummaryBpmStats"
+          },
+          "duration_s": {
+            "default": 0,
+            "title": "Duration S",
+            "type": "number"
+          },
+          "energy": {
+            "$ref": "#/components/schemas/PlaylistSummaryEnergyStats"
+          },
+          "keys": {
+            "$ref": "#/components/schemas/PlaylistSummaryKeysStats"
+          },
+          "tracks": {
+            "default": 0,
+            "title": "Tracks",
+            "type": "integer"
+          },
+          "unanalysed": {
+            "default": 0,
+            "title": "Unanalysed",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "bpm",
+          "energy",
+          "keys"
+        ],
+        "title": "PlaylistSummaryStats",
+        "type": "object"
+      },
       "PlaylistTracksPage": {
         "description": "Paginated playlist membership slice (PERF-UI-05, issue #3530).\n\nHydrated rows in membership order for ``[offset:offset+limit]`` only.\nAgent parity: ``GET /api/v1/playlists/{playlist_id}/tracks``.",
         "properties": {
@@ -25306,6 +26275,57 @@
           "counts_by_state"
         ],
         "title": "ProposalsPage",
+        "type": "object"
+      },
+      "ProposeIn": {
+        "additionalProperties": false,
+        "properties": {
+          "in_deck": {
+            "default": 2,
+            "maximum": 4.0,
+            "minimum": 1.0,
+            "title": "In Deck",
+            "type": "integer"
+          },
+          "in_stable_id": {
+            "title": "In Stable Id",
+            "type": "string"
+          },
+          "intent": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Intent"
+          },
+          "out_deck": {
+            "default": 1,
+            "maximum": 4.0,
+            "minimum": 1.0,
+            "title": "Out Deck",
+            "type": "integer"
+          },
+          "out_stable_id": {
+            "title": "Out Stable Id",
+            "type": "string"
+          },
+          "top": {
+            "default": 3,
+            "maximum": 50.0,
+            "minimum": 1.0,
+            "title": "Top",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "out_stable_id",
+          "in_stable_id"
+        ],
+        "title": "ProposeIn",
         "type": "object"
       },
       "Provenance": {
@@ -26912,7 +27932,7 @@
                 "type": "null"
               }
             ],
-            "description": "Why the capture failed, in the engine's words (for example microphone access turned off at the macOS prompt), when capture is failed and the engine said why; null otherwise (SET-11).",
+            "description": "Always present: why the capture failed in the engine's words (for example microphone access turned off at the macOS prompt) when capture is failed and the engine said why; null for idle, external, and every non-failed capture state (SET-11).",
             "title": "Capture Error"
           },
           "capture_source": {
@@ -27042,7 +28062,8 @@
           "pid",
           "owned",
           "recoverable",
-          "capture"
+          "capture",
+          "capture_error"
         ],
         "title": "RecorderStatus",
         "type": "object"
@@ -27861,6 +28882,7 @@
             "anyOf": [
               {
                 "enum": [
+                  "edit",
                   "own",
                   "rekordbox",
                   "file_tag",
@@ -27994,6 +29016,15 @@
             ],
             "title": "Rating"
           },
+          "remote_stem_status": {
+            "enum": [
+              "ready",
+              "not-run",
+              "unknown"
+            ],
+            "title": "Remote Stem Status",
+            "type": "string"
+          },
           "score": {
             "title": "Score",
             "type": "integer"
@@ -28085,6 +29116,7 @@
           "file_exists",
           "is_streaming",
           "has_remote_copy",
+          "remote_stem_status",
           "quality",
           "vocals",
           "stems",
@@ -28994,6 +30026,127 @@
         "title": "RowsResponse",
         "type": "object"
       },
+      "SampleDownloadIn": {
+        "properties": {
+          "batch": {
+            "maxLength": 80,
+            "minLength": 1,
+            "title": "Batch",
+            "type": "string"
+          },
+          "force": {
+            "default": false,
+            "title": "Force",
+            "type": "boolean"
+          },
+          "url": {
+            "maxLength": 2048,
+            "minLength": 1,
+            "title": "Url",
+            "type": "string"
+          }
+        },
+        "required": [
+          "url",
+          "batch"
+        ],
+        "title": "SampleDownloadIn",
+        "type": "object"
+      },
+      "SampleDownloadOut": {
+        "properties": {
+          "batch": {
+            "title": "Batch",
+            "type": "string"
+          },
+          "dest_dir": {
+            "title": "Dest Dir",
+            "type": "string"
+          },
+          "preview_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Preview Url"
+          },
+          "results": {
+            "items": {
+              "$ref": "#/components/schemas/UploadFileResult"
+            },
+            "title": "Results",
+            "type": "array"
+          },
+          "source_url": {
+            "title": "Source Url",
+            "type": "string"
+          },
+          "video_id": {
+            "title": "Video Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "batch",
+          "dest_dir",
+          "video_id",
+          "source_url",
+          "results",
+          "preview_url"
+        ],
+        "title": "SampleDownloadOut",
+        "type": "object"
+      },
+      "SaveOrderIn": {
+        "description": "Exactly one of ``item_ids`` (the displayed order) or ``by`` (agents: sort by a field).",
+        "properties": {
+          "by": {
+            "anyOf": [
+              {
+                "enum": [
+                  "bpm",
+                  "key",
+                  "title",
+                  "artist",
+                  "duration",
+                  "rating",
+                  "genre"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "By"
+          },
+          "descending": {
+            "default": false,
+            "title": "Descending",
+            "type": "boolean"
+          },
+          "item_ids": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Item Ids"
+          }
+        },
+        "title": "SaveOrderIn",
+        "type": "object"
+      },
       "ScanIn": {
         "additionalProperties": false,
         "properties": {
@@ -29119,9 +30272,35 @@
         "title": "ScanOut",
         "type": "object"
       },
+      "ScanStartIn": {
+        "additionalProperties": false,
+        "properties": {
+          "basis": {
+            "default": "both",
+            "enum": [
+              "fingerprint",
+              "tags",
+              "both"
+            ],
+            "title": "Basis",
+            "type": "string"
+          }
+        },
+        "title": "ScanStartIn",
+        "type": "object"
+      },
       "ScanStatusOut": {
         "description": "Progress of the on-device library fingerprint scan.",
         "properties": {
+          "basis": {
+            "enum": [
+              "fingerprint",
+              "tags",
+              "both"
+            ],
+            "title": "Basis",
+            "type": "string"
+          },
           "cache_hits": {
             "title": "Cache Hits",
             "type": "integer"
@@ -29136,6 +30315,28 @@
               }
             ],
             "title": "Clusters"
+          },
+          "clusters_fingerprint": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Clusters Fingerprint"
+          },
+          "clusters_tags": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Clusters Tags"
           },
           "computed": {
             "title": "Computed",
@@ -29203,6 +30404,17 @@
             "title": "State",
             "type": "string"
           },
+          "tag_precision": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Tag Precision"
+          },
           "total": {
             "title": "Total",
             "type": "integer"
@@ -29210,6 +30422,7 @@
         },
         "required": [
           "state",
+          "basis",
           "total",
           "done",
           "computed",
@@ -29217,6 +30430,9 @@
           "not_local",
           "errors",
           "clusters",
+          "clusters_fingerprint",
+          "clusters_tags",
+          "tag_precision",
           "error",
           "started_at",
           "finished_at",
@@ -29754,6 +30970,7 @@
             "anyOf": [
               {
                 "enum": [
+                  "edit",
                   "own",
                   "rekordbox",
                   "file_tag",
@@ -29811,6 +31028,18 @@
           },
           "match_context": {
             "title": "Match Context",
+            "type": "string"
+          },
+          "match_provenance": {
+            "default": "metadata",
+            "description": "Whether the winning match came from metadata FTS or lyric index.",
+            "enum": [
+              "metadata",
+              "lyrics",
+              "ai_library",
+              "ai_external"
+            ],
+            "title": "Match Provenance",
             "type": "string"
           },
           "offload": {
@@ -29874,6 +31103,15 @@
               }
             ],
             "title": "Rating"
+          },
+          "remote_stem_status": {
+            "enum": [
+              "ready",
+              "not-run",
+              "unknown"
+            ],
+            "title": "Remote Stem Status",
+            "type": "string"
           },
           "source_flags": {
             "items": {
@@ -29962,6 +31200,7 @@
           "file_exists",
           "is_streaming",
           "has_remote_copy",
+          "remote_stem_status",
           "quality",
           "vocals",
           "stems",
@@ -30330,6 +31569,39 @@
         "title": "SessionPlayedRowOut",
         "type": "object"
       },
+      "SetImportResponse": {
+        "properties": {
+          "event_count": {
+            "title": "Event Count",
+            "type": "integer"
+          },
+          "message": {
+            "title": "Message",
+            "type": "string"
+          },
+          "renamed": {
+            "title": "Renamed",
+            "type": "boolean"
+          },
+          "requested_session_id": {
+            "title": "Requested Session Id",
+            "type": "string"
+          },
+          "session_id": {
+            "title": "Session Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "session_id",
+          "requested_session_id",
+          "renamed",
+          "event_count",
+          "message"
+        ],
+        "title": "SetImportResponse",
+        "type": "object"
+      },
       "SetNoteOut": {
         "properties": {
           "body_md": {
@@ -30693,7 +31965,7 @@
                 "type": "null"
               }
             ],
-            "description": "explicit rekordbox database to read; omit to auto-detect",
+            "description": "explicit rekordbox database to read; omit to auto-detect, which skips a master.plain.db older than the live rekordbox database and re-decrypts from a fresh snapshot instead",
             "title": "Source"
           }
         },
@@ -31193,6 +32465,11 @@
             "title": "Smartlist Id",
             "type": "string"
           },
+          "total": {
+            "description": "Total tracks matching the rule (full membership size), not capped by limit.",
+            "title": "Total",
+            "type": "integer"
+          },
           "tracks": {
             "items": {
               "$ref": "#/components/schemas/TrackRowOut"
@@ -31207,7 +32484,8 @@
           "rule_summary",
           "order_by",
           "items",
-          "tracks"
+          "tracks",
+          "total"
         ],
         "title": "SmartlistTracks",
         "type": "object"
@@ -31566,6 +32844,44 @@
           "delay_note"
         ],
         "title": "SpeakerStateOut",
+        "type": "object"
+      },
+      "SplitRequest": {
+        "properties": {
+          "out_dir": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Out Dir"
+          }
+        },
+        "title": "SplitRequest",
+        "type": "object"
+      },
+      "SplitResponse": {
+        "properties": {
+          "session_id": {
+            "title": "Session Id",
+            "type": "string"
+          },
+          "track_files": {
+            "items": {
+              "$ref": "#/components/schemas/TrackFileResponse"
+            },
+            "title": "Track Files",
+            "type": "array"
+          }
+        },
+        "required": [
+          "session_id",
+          "track_files"
+        ],
+        "title": "SplitResponse",
         "type": "object"
       },
       "SpokeBillingBody": {
@@ -31943,6 +33259,58 @@
           "entitlement_provider"
         ],
         "title": "StatusResponse",
+        "type": "object"
+      },
+      "StemAbRankTaskOut": {
+        "properties": {
+          "batch_size": {
+            "title": "Batch Size",
+            "type": "integer"
+          },
+          "clips": {
+            "items": {
+              "$ref": "#/components/schemas/LabelClipOut"
+            },
+            "title": "Clips",
+            "type": "array"
+          },
+          "experiment_id": {
+            "title": "Experiment Id",
+            "type": "string"
+          },
+          "max_wait_s": {
+            "title": "Max Wait S",
+            "type": "integer"
+          },
+          "modality": {
+            "title": "Modality",
+            "type": "string"
+          },
+          "payload": {
+            "additionalProperties": true,
+            "title": "Payload",
+            "type": "object"
+          },
+          "reward_karma": {
+            "title": "Reward Karma",
+            "type": "integer"
+          },
+          "task_id": {
+            "title": "Task Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "task_id",
+          "experiment_id",
+          "modality",
+          "reward_karma",
+          "batch_size",
+          "max_wait_s",
+          "payload",
+          "clips"
+        ],
+        "title": "StemAbRankTaskOut",
         "type": "object"
       },
       "StemBulkHydrateIn": {
@@ -33175,6 +34543,59 @@
         "title": "StreamEncoderStartRequest",
         "type": "object"
       },
+      "StreamRtmpConfigRequest": {
+        "properties": {
+          "audio_kbps": {
+            "default": 160,
+            "title": "Audio Kbps",
+            "type": "integer"
+          },
+          "image": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Image"
+          },
+          "key": {
+            "title": "Key",
+            "type": "string"
+          },
+          "url": {
+            "title": "Url",
+            "type": "string"
+          },
+          "video_size": {
+            "default": "1280x720",
+            "title": "Video Size",
+            "type": "string"
+          }
+        },
+        "required": [
+          "url",
+          "key"
+        ],
+        "title": "StreamRtmpConfigRequest",
+        "type": "object"
+      },
+      "StreamStartRequest": {
+        "properties": {
+          "sink": {
+            "const": "rtmp",
+            "title": "Sink",
+            "type": "string"
+          }
+        },
+        "required": [
+          "sink"
+        ],
+        "title": "StreamStartRequest",
+        "type": "object"
+      },
       "StripCoverageOut": {
         "description": "Answer of ``GET /library/strip-coverage`` (#9422, epic #9377 strip_coverage_pct).",
         "properties": {
@@ -33452,6 +34873,13 @@
               }
             ],
             "title": "Title"
+          },
+          "unscored": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Unscored",
+            "type": "array"
           }
         },
         "required": [
@@ -35652,6 +37080,39 @@
         "title": "TrackAnalysisHintsOut",
         "type": "object"
       },
+      "TrackFileResponse": {
+        "properties": {
+          "duration_s": {
+            "title": "Duration S",
+            "type": "number"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "path": {
+            "title": "Path",
+            "type": "string"
+          },
+          "size_bytes": {
+            "title": "Size Bytes",
+            "type": "integer"
+          },
+          "start_t_s": {
+            "title": "Start T S",
+            "type": "number"
+          }
+        },
+        "required": [
+          "name",
+          "path",
+          "start_t_s",
+          "duration_s",
+          "size_bytes"
+        ],
+        "title": "TrackFileResponse",
+        "type": "object"
+      },
       "TrackIndexItemOut": {
         "description": "One library index row: a listing row without its per-row disk reads (LIBM-172).\n\nThe preview strip, vocal regions, cover verdict and stem bundle summary are\nread off disk per row, which was 7.8 s of a cold 9,713-row index (stems\nanother 1.2 s). They are never sent here (excluded and absent from the\nschema); the browser asks ``POST /library/row-assets`` for the rows in view.\n\nAlso left out, because no library view reads them off an index row:\n``provenance``, ``tags``, ``last_played_at``, ``tempo_pref``, ``created_at``,\n``updated_at`` and the three optional-resource flags (``GET /tracks/{sid}``\nserves all of them). ``lyrics_available`` alone cost 2.9 s of a cold index,\nclassifying every lyric file for ASR hallucinations.",
         "properties": {
@@ -35808,6 +37269,17 @@
                 "type": "null"
               }
             ]
+          },
+          "color_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Color Id"
           },
           "comments": {
             "anyOf": [
@@ -36117,6 +37589,7 @@
             "anyOf": [
               {
                 "enum": [
+                  "edit",
                   "own",
                   "rekordbox",
                   "file_tag",
@@ -36247,6 +37720,15 @@
             ],
             "title": "Rating"
           },
+          "remote_stem_status": {
+            "enum": [
+              "ready",
+              "not-run",
+              "unknown"
+            ],
+            "title": "Remote Stem Status",
+            "type": "string"
+          },
           "source_flags": {
             "items": {
               "$ref": "#/components/schemas/SourceFlagOut"
@@ -36304,6 +37786,7 @@
           "file_exists",
           "is_streaming",
           "has_remote_copy",
+          "remote_stem_status",
           "quality",
           "energy",
           "energy_source",
@@ -36567,6 +38050,17 @@
               }
             ]
           },
+          "color_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Color Id"
+          },
           "comments": {
             "anyOf": [
               {
@@ -36879,6 +38373,7 @@
             "anyOf": [
               {
                 "enum": [
+                  "edit",
                   "own",
                   "rekordbox",
                   "file_tag",
@@ -37054,6 +38549,15 @@
             ],
             "title": "Rating"
           },
+          "remote_stem_status": {
+            "enum": [
+              "ready",
+              "not-run",
+              "unknown"
+            ],
+            "title": "Remote Stem Status",
+            "type": "string"
+          },
           "source_flags": {
             "items": {
               "$ref": "#/components/schemas/SourceFlagOut"
@@ -37155,6 +38659,7 @@
           "file_exists",
           "is_streaming",
           "has_remote_copy",
+          "remote_stem_status",
           "quality",
           "vocals",
           "stems",
@@ -37392,6 +38897,17 @@
             ],
             "title": "Bpm"
           },
+          "color_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Color Id"
+          },
           "comments": {
             "anyOf": [
               {
@@ -37470,6 +38986,7 @@
             "anyOf": [
               {
                 "enum": [
+                  "edit",
                   "own",
                   "rekordbox",
                   "file_tag",
@@ -37783,6 +39300,59 @@
           "positions"
         ],
         "title": "TrackPlaylistOut",
+        "type": "object"
+      },
+      "TrackPlaysLookupIn": {
+        "additionalProperties": false,
+        "properties": {
+          "stable_ids": {
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 2000,
+            "minItems": 1,
+            "title": "Stable Ids",
+            "type": "array"
+          }
+        },
+        "required": [
+          "stable_ids"
+        ],
+        "title": "TrackPlaysLookupIn",
+        "type": "object"
+      },
+      "TrackPlaysLookupOut": {
+        "properties": {
+          "rows": {
+            "items": {
+              "$ref": "#/components/schemas/TrackPlaysLookupRow"
+            },
+            "title": "Rows",
+            "type": "array"
+          }
+        },
+        "required": [
+          "rows"
+        ],
+        "title": "TrackPlaysLookupOut",
+        "type": "object"
+      },
+      "TrackPlaysLookupRow": {
+        "properties": {
+          "opendj_play_count": {
+            "title": "Opendj Play Count",
+            "type": "integer"
+          },
+          "stable_id": {
+            "title": "Stable Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "stable_id",
+          "opendj_play_count"
+        ],
+        "title": "TrackPlaysLookupRow",
         "type": "object"
       },
       "TrackPlaysOut": {
@@ -38362,6 +39932,7 @@
             "anyOf": [
               {
                 "enum": [
+                  "edit",
                   "own",
                   "rekordbox",
                   "file_tag",
@@ -38479,6 +40050,15 @@
             ],
             "title": "Rating"
           },
+          "remote_stem_status": {
+            "enum": [
+              "ready",
+              "not-run",
+              "unknown"
+            ],
+            "title": "Remote Stem Status",
+            "type": "string"
+          },
           "source_flags": {
             "items": {
               "$ref": "#/components/schemas/SourceFlagOut"
@@ -38566,6 +40146,7 @@
           "file_exists",
           "is_streaming",
           "has_remote_copy",
+          "remote_stem_status",
           "quality",
           "vocals",
           "stems",
@@ -38650,6 +40231,319 @@
           "id"
         ],
         "title": "TrackUpdateModel",
+        "type": "object"
+      },
+      "TracklistOut": {
+        "properties": {
+          "count": {
+            "title": "Count",
+            "type": "integer"
+          },
+          "night_date": {
+            "description": "YYYY-MM-DD of the history day",
+            "title": "Night Date",
+            "type": "string"
+          },
+          "night_start": {
+            "description": "Canonical UTC start of tonight (inclusive)",
+            "title": "Night Start",
+            "type": "string"
+          },
+          "rows": {
+            "items": {
+              "$ref": "#/components/schemas/TracklistRowOut"
+            },
+            "title": "Rows",
+            "type": "array"
+          },
+          "tz": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Tz"
+          }
+        },
+        "required": [
+          "night_start",
+          "night_date",
+          "tz",
+          "count",
+          "rows"
+        ],
+        "title": "TracklistOut",
+        "type": "object"
+      },
+      "TracklistResponse": {
+        "properties": {
+          "rows": {
+            "items": {
+              "$ref": "#/components/schemas/TracklistRowModel"
+            },
+            "title": "Rows",
+            "type": "array"
+          },
+          "session_id": {
+            "title": "Session Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "session_id",
+          "rows"
+        ],
+        "title": "TracklistResponse",
+        "type": "object"
+      },
+      "TracklistRowModel": {
+        "properties": {
+          "artist": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Artist"
+          },
+          "deck": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Deck"
+          },
+          "display_name": {
+            "title": "Display Name",
+            "type": "string"
+          },
+          "duration_ms": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Duration Ms"
+          },
+          "hidden": {
+            "title": "Hidden",
+            "type": "boolean"
+          },
+          "key": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Key"
+          },
+          "played_label": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Played Label"
+          },
+          "played_s": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Played S"
+          },
+          "position": {
+            "title": "Position",
+            "type": "integer"
+          },
+          "source": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source"
+          },
+          "start_label": {
+            "title": "Start Label",
+            "type": "string"
+          },
+          "start_s": {
+            "title": "Start S",
+            "type": "number"
+          },
+          "title": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Title"
+          },
+          "track_stable_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Track Stable Id"
+          },
+          "transition_label": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Transition Label"
+          }
+        },
+        "required": [
+          "position",
+          "start_s",
+          "start_label",
+          "artist",
+          "title",
+          "display_name",
+          "key",
+          "played_s",
+          "played_label",
+          "transition_label",
+          "hidden",
+          "track_stable_id",
+          "source",
+          "deck",
+          "duration_ms"
+        ],
+        "title": "TracklistRowModel",
+        "type": "object"
+      },
+      "TracklistRowOut": {
+        "properties": {
+          "artist": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Artist"
+          },
+          "bpm": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Bpm"
+          },
+          "deck": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Deck"
+          },
+          "hidden": {
+            "title": "Hidden",
+            "type": "boolean"
+          },
+          "in_library": {
+            "title": "In Library",
+            "type": "boolean"
+          },
+          "key": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Key"
+          },
+          "played_at": {
+            "description": "Canonical UTC play time",
+            "title": "Played At",
+            "type": "string"
+          },
+          "source": {
+            "title": "Source",
+            "type": "string"
+          },
+          "stable_id": {
+            "title": "Stable Id",
+            "type": "string"
+          },
+          "title": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Title"
+          }
+        },
+        "required": [
+          "stable_id",
+          "played_at",
+          "artist",
+          "title",
+          "key",
+          "bpm",
+          "hidden",
+          "in_library",
+          "deck",
+          "source"
+        ],
+        "title": "TracklistRowOut",
         "type": "object"
       },
       "TracksIn": {
@@ -39080,6 +40974,41 @@
           "out_start_bar": {
             "title": "Out Start Bar",
             "type": "integer"
+          },
+          "planner_confidence": {
+            "anyOf": [
+              {
+                "maximum": 1.0,
+                "minimum": 0.0,
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Planner Confidence"
+          },
+          "planner_confidence_title": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Planner Confidence Title"
+          },
+          "planner_weakest_factor": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Planner Weakest Factor"
           },
           "rationale": {
             "title": "Rationale",
@@ -39735,6 +41664,9 @@
             "title": "Key Notation",
             "type": "string"
           },
+          "keyboard": {
+            "$ref": "#/components/schemas/KeyboardPrefsOut"
+          },
           "level_calibration": {
             "$ref": "#/components/schemas/LevelCalibrationOut"
           },
@@ -39763,13 +41695,16 @@
                 "tempostab",
                 "plays",
                 "rating",
+                "colour",
                 "comments",
                 "time",
                 "quality",
                 "energy",
                 "genre",
                 "stems",
-                "tags"
+                "tags",
+                "filename",
+                "location"
               ],
               "type": "string"
             },
@@ -39814,6 +41749,9 @@
             },
             "title": "Library Watcher Folders",
             "type": "array"
+          },
+          "lighting": {
+            "$ref": "#/components/schemas/LightingOut"
           },
           "lyrics_deck_line": {
             "default": true,
@@ -39860,6 +41798,13 @@
             "title": "Midi Enabled",
             "type": "boolean"
           },
+          "midi_setup_dismissed_ports": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Midi Setup Dismissed Ports",
+            "type": "array"
+          },
           "next_only_filter": {
             "default": false,
             "title": "Next Only Filter",
@@ -39896,14 +41841,84 @@
             "title": "Playlist Tree View",
             "type": "string"
           },
+          "reduce_motion": {
+            "default": false,
+            "title": "Reduce Motion",
+            "type": "boolean"
+          },
           "remixes_filter": {
             "default": false,
             "title": "Remixes Filter",
             "type": "boolean"
           },
+          "sections_library_structure_column": {
+            "default": true,
+            "title": "Sections Library Structure Column",
+            "type": "boolean"
+          },
+          "sections_main_style": {
+            "default": "m1_tint",
+            "enum": [
+              "m1_tint",
+              "m2_recolor",
+              "m3_lines",
+              "m4_base"
+            ],
+            "title": "Sections Main Style",
+            "type": "string"
+          },
+          "sections_next_countdown": {
+            "default": true,
+            "title": "Sections Next Countdown",
+            "type": "boolean"
+          },
+          "sections_overview_style": {
+            "default": "o1_strip",
+            "enum": [
+              "o1_strip",
+              "o2_tint",
+              "o3_recolor"
+            ],
+            "title": "Sections Overview Style",
+            "type": "string"
+          },
+          "sections_preview_cursor_label": {
+            "default": true,
+            "title": "Sections Preview Cursor Label",
+            "type": "boolean"
+          },
+          "sections_sticky_title": {
+            "default": true,
+            "title": "Sections Sticky Title",
+            "type": "boolean"
+          },
+          "sections_uncertain": {
+            "default": "hide",
+            "enum": [
+              "hide",
+              "show_faded"
+            ],
+            "title": "Sections Uncertain",
+            "type": "string"
+          },
           "show_agent_pins": {
             "default": true,
             "title": "Show Agent Pins",
+            "type": "boolean"
+          },
+          "show_hot_cue_markers": {
+            "default": true,
+            "title": "Show Hot Cue Markers",
+            "type": "boolean"
+          },
+          "show_loop_markers": {
+            "default": true,
+            "title": "Show Loop Markers",
+            "type": "boolean"
+          },
+          "show_memory_cue_markers": {
+            "default": true,
+            "title": "Show Memory Cue Markers",
             "type": "boolean"
           },
           "show_pads": {
@@ -40326,6 +42341,16 @@
             ],
             "title": "Key Notation"
           },
+          "keyboard": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/KeyboardPrefsPatch"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "level_calibration": {
             "anyOf": [
               {
@@ -40375,13 +42400,16 @@
                     "tempostab",
                     "plays",
                     "rating",
+                    "colour",
                     "comments",
                     "time",
                     "quality",
                     "energy",
                     "genre",
                     "stems",
-                    "tags"
+                    "tags",
+                    "filename",
+                    "location"
                   ],
                   "type": "string"
                 },
@@ -40472,6 +42500,16 @@
               }
             ],
             "title": "Library Watcher Folders"
+          },
+          "lighting": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/LightingPatch"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "lyrics_deck_line": {
             "anyOf": [
@@ -40566,6 +42604,13 @@
             ],
             "title": "Midi Enabled"
           },
+          "midi_setup_dismissed_ports": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Midi Setup Dismissed Ports",
+            "type": "array"
+          },
           "next_only_filter": {
             "anyOf": [
               {
@@ -40619,6 +42664,10 @@
             ],
             "title": "Playlist Tree View"
           },
+          "reduce_motion": {
+            "title": "Reduce Motion",
+            "type": "boolean"
+          },
           "remixes_filter": {
             "anyOf": [
               {
@@ -40630,6 +42679,98 @@
             ],
             "title": "Remixes Filter"
           },
+          "sections_library_structure_column": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sections Library Structure Column"
+          },
+          "sections_main_style": {
+            "anyOf": [
+              {
+                "enum": [
+                  "m1_tint",
+                  "m2_recolor",
+                  "m3_lines",
+                  "m4_base"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sections Main Style"
+          },
+          "sections_next_countdown": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sections Next Countdown"
+          },
+          "sections_overview_style": {
+            "anyOf": [
+              {
+                "enum": [
+                  "o1_strip",
+                  "o2_tint",
+                  "o3_recolor"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sections Overview Style"
+          },
+          "sections_preview_cursor_label": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sections Preview Cursor Label"
+          },
+          "sections_sticky_title": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sections Sticky Title"
+          },
+          "sections_uncertain": {
+            "anyOf": [
+              {
+                "enum": [
+                  "hide",
+                  "show_faded"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sections Uncertain"
+          },
           "show_agent_pins": {
             "anyOf": [
               {
@@ -40640,6 +42781,39 @@
               }
             ],
             "title": "Show Agent Pins"
+          },
+          "show_hot_cue_markers": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Show Hot Cue Markers"
+          },
+          "show_loop_markers": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Show Loop Markers"
+          },
+          "show_memory_cue_markers": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Show Memory Cue Markers"
           },
           "show_pads": {
             "title": "Show Pads",
@@ -41009,7 +43183,9 @@
               "endpoint-refused",
               "manifest-malformed",
               "platform-unsupported",
-              "identity-unavailable"
+              "identity-unavailable",
+              "shell-broker-unavailable",
+              "shell-broker-invalid"
             ],
             "title": "Status",
             "type": "string"
@@ -41230,7 +43406,9 @@
               "endpoint-refused",
               "manifest-malformed",
               "platform-unsupported",
-              "identity-unavailable"
+              "identity-unavailable",
+              "shell-broker-unavailable",
+              "shell-broker-invalid"
             ],
             "title": "Status",
             "type": "string"
@@ -41747,12 +43925,25 @@
       },
       "UsbStickLibraryOut": {
         "properties": {
+          "browse_source": {
+            "const": "export.pdb",
+            "title": "Browse Source",
+            "type": "string"
+          },
           "cache_hit": {
             "title": "Cache Hit",
             "type": "boolean"
           },
           "counts": {
             "$ref": "#/components/schemas/UsbStickCountsOut"
+          },
+          "has_onelibrary": {
+            "title": "Has Onelibrary",
+            "type": "boolean"
+          },
+          "has_pdb": {
+            "title": "Has Pdb",
+            "type": "boolean"
           },
           "history": {
             "items": {
@@ -41806,7 +43997,10 @@
           "history",
           "counts",
           "read_ms",
-          "cache_hit"
+          "cache_hit",
+          "has_pdb",
+          "has_onelibrary",
+          "browse_source"
         ],
         "title": "UsbStickLibraryOut",
         "type": "object"
@@ -42080,6 +44274,28 @@
             ],
             "title": "Access",
             "type": "string"
+          },
+          "has_onelibrary": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Has Onelibrary"
+          },
+          "has_pdb": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Has Pdb"
           },
           "hide_reason": {
             "anyOf": [
@@ -42422,6 +44638,102 @@
         "title": "VetoOut",
         "type": "object"
       },
+      "VocalCorrectionValidateIn": {
+        "properties": {
+          "anchor": {
+            "minLength": 1,
+            "title": "Anchor",
+            "type": "string"
+          }
+        },
+        "required": [
+          "anchor"
+        ],
+        "title": "VocalCorrectionValidateIn",
+        "type": "object"
+      },
+      "VocalCorrectionValidateOut": {
+        "properties": {
+          "anchor": {
+            "title": "Anchor",
+            "type": "string"
+          },
+          "end_s": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "End S"
+          },
+          "intensity": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Intensity"
+          },
+          "kind": {
+            "enum": [
+              "region",
+              "at"
+            ],
+            "title": "Kind",
+            "type": "string"
+          },
+          "stable_id": {
+            "title": "Stable Id",
+            "type": "string"
+          },
+          "start_s": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Start S"
+          },
+          "status": {
+            "enum": [
+              "rekordbox",
+              "no_vocals",
+              "demucs",
+              "not_analyzed"
+            ],
+            "title": "Status",
+            "type": "string"
+          },
+          "time_s": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Time S"
+          }
+        },
+        "required": [
+          "stable_id",
+          "anchor",
+          "kind",
+          "status"
+        ],
+        "title": "VocalCorrectionValidateOut",
+        "type": "object"
+      },
       "VocalsAnalyzeIn": {
         "properties": {
           "mode": {
@@ -42710,6 +45022,16 @@
       },
       "WheelSensitivityOut": {
         "properties": {
+          "library_mouse": {
+            "default": 0.5,
+            "title": "Library Mouse",
+            "type": "number"
+          },
+          "library_trackpad": {
+            "default": 0.16666666666666666,
+            "title": "Library Trackpad",
+            "type": "number"
+          },
           "mouse": {
             "default": 1.0,
             "title": "Mouse",
@@ -44381,6 +46703,49 @@
         ]
       }
     },
+    "/api/sets/import": {
+      "post": {
+        "operationId": "api_import_set_api_sets_import_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": true,
+                "title": "Document",
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SetImportResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Api Import Set",
+        "tags": [
+          "sets"
+        ]
+      }
+    },
     "/api/sets/recorder": {
       "get": {
         "operationId": "api_recorder_status_api_sets_recorder_get",
@@ -44488,6 +46853,29 @@
         ]
       }
     },
+    "/api/sets/recorder/stream": {
+      "get": {
+        "operationId": "api_stream_status_api_sets_recorder_stream_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Api Stream Status Api Sets Recorder Stream Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Api Stream Status",
+        "tags": [
+          "sets"
+        ]
+      }
+    },
     "/api/sets/recorder/stream-encoder": {
       "get": {
         "description": "The master-mix stream encoder's status, or null when none was started.",
@@ -44507,6 +46895,71 @@
           }
         },
         "summary": "Api Stream Encoder Status",
+        "tags": [
+          "sets"
+        ]
+      }
+    },
+    "/api/sets/recorder/stream/rtmp": {
+      "get": {
+        "operationId": "api_stream_rtmp_config_api_sets_recorder_stream_rtmp_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Api Stream Rtmp Config Api Sets Recorder Stream Rtmp Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Api Stream Rtmp Config",
+        "tags": [
+          "sets"
+        ]
+      },
+      "put": {
+        "description": "Store RTMP URL, key and optional still image for the next push (STREAM-11743).",
+        "operationId": "api_stream_rtmp_configure_api_sets_recorder_stream_rtmp_put",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/StreamRtmpConfigRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Api Stream Rtmp Configure Api Sets Recorder Stream Rtmp Put",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Api Stream Rtmp Configure",
         "tags": [
           "sets"
         ]
@@ -44688,6 +47141,61 @@
         ]
       }
     },
+    "/api/sets/recorder/{session_id}/stream": {
+      "post": {
+        "description": "Tee a ``source: master`` recording into an RTMP push (STREAM-11743).",
+        "operationId": "api_stream_start_api_sets_recorder__session_id__stream_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "session_id",
+            "required": true,
+            "schema": {
+              "title": "Session Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/StreamStartRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Api Stream Start Api Sets Recorder  Session Id  Stream Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Api Stream Start",
+        "tags": [
+          "sets"
+        ]
+      }
+    },
     "/api/sets/recorder/{session_id}/stream-encoder": {
       "post": {
         "description": "Tee a ``source: master`` recording into an encoder (STREAM-11486).",
@@ -44787,6 +47295,50 @@
         ]
       }
     },
+    "/api/sets/recorder/{session_id}/stream/stop": {
+      "post": {
+        "operationId": "api_stream_stop_api_sets_recorder__session_id__stream_stop_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "session_id",
+            "required": true,
+            "schema": {
+              "title": "Session Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Api Stream Stop Api Sets Recorder  Session Id  Stream Stop Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Api Stream Stop",
+        "tags": [
+          "sets"
+        ]
+      }
+    },
     "/api/sets/{session_id}": {
       "get": {
         "operationId": "api_get_session_api_sets__session_id__get",
@@ -44873,6 +47425,46 @@
           }
         },
         "summary": "Api Audio",
+        "tags": [
+          "sets"
+        ]
+      }
+    },
+    "/api/sets/{session_id}/export": {
+      "get": {
+        "operationId": "api_export_set_api_sets__session_id__export_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "session_id",
+            "required": true,
+            "schema": {
+              "title": "Session Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Api Export Set",
         "tags": [
           "sets"
         ]
@@ -45064,6 +47656,65 @@
         ]
       }
     },
+    "/api/sets/{session_id}/split": {
+      "post": {
+        "operationId": "api_split_tracks_api_sets__session_id__split_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "session_id",
+            "required": true,
+            "schema": {
+              "title": "Session Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "anyOf": [
+                  {
+                    "$ref": "#/components/schemas/SplitRequest"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Body"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SplitResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Api Split Tracks",
+        "tags": [
+          "sets"
+        ]
+      }
+    },
     "/api/sets/{session_id}/timeline": {
       "get": {
         "operationId": "api_timeline_stream_api_sets__session_id__timeline_get",
@@ -45099,6 +47750,118 @@
           }
         },
         "summary": "Api Timeline Stream",
+        "tags": [
+          "sets"
+        ]
+      }
+    },
+    "/api/sets/{session_id}/tracklist": {
+      "get": {
+        "operationId": "api_get_tracklist_api_sets__session_id__tracklist_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "session_id",
+            "required": true,
+            "schema": {
+              "title": "Session Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TracklistResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Api Get Tracklist",
+        "tags": [
+          "sets"
+        ]
+      }
+    },
+    "/api/sets/{session_id}/tracklist.{fmt}": {
+      "get": {
+        "operationId": "api_get_tracklist_export_api_sets__session_id__tracklist__fmt__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "session_id",
+            "required": true,
+            "schema": {
+              "title": "Session Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "fmt",
+            "required": true,
+            "schema": {
+              "enum": [
+                "txt",
+                "md",
+                "csv",
+                "timestamped",
+                "soundcloud",
+                "cue",
+                "m3u8"
+              ],
+              "title": "Fmt",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "acknowledge_rights",
+            "required": false,
+            "schema": {
+              "default": false,
+              "title": "Acknowledge Rights",
+              "type": "boolean"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/x-cue": {},
+              "audio/x-mpegurl": {},
+              "text/csv": {},
+              "text/markdown": {},
+              "text/plain": {}
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Api Get Tracklist Export",
         "tags": [
           "sets"
         ]
@@ -48135,7 +50898,7 @@
     },
     "/api/v1/bench/lyrics-kpi": {
       "get": {
-        "description": "The lyrics KPI ledger verbatim (``(private path)``).\n\nRead-only here: appending a snapshot is a CLI act\n(``scripts/bench/lyrics_kpi_append.py``) so the ledger keeps one writer.\nA missing key raises rather than defaulting - a KPI panel drawing invented\nnumbers is worse than a panel that fails.",
+        "description": "The lyrics KPI ledger verbatim (``scripts/bench/lyrics_kpi_ledger.json``).\n\nRead-only here: appending a snapshot is a CLI act\n(``scripts/bench/lyrics_kpi_append.py``) so the ledger keeps one writer.\nA missing key raises rather than defaulting - a KPI panel drawing invented\nnumbers is worse than a panel that fails.",
         "operationId": "get_lyrics_kpi_ledger_api_v1_bench_lyrics_kpi_get",
         "responses": {
           "200": {
@@ -50048,7 +52811,7 @@
                 }
               }
             },
-            "description": "unknown track"
+            "description": "unknown track or unmeasured genre vector (generic)"
           },
           "422": {
             "content": {
@@ -50704,6 +53467,18 @@
       "post": {
         "description": "Start fingerprinting the library and rebuilding duplicate clusters.\n\nLocal only: the engine fingerprints each track's own file, nothing is\nlooked up online, and no audio file is written, moved or deleted.",
         "operationId": "post_dedup_scan_api_v1_dedup_scan_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ScanStartIn",
+                "default": {
+                  "basis": "both"
+                }
+              }
+            }
+          }
+        },
         "responses": {
           "202": {
             "content": {
@@ -50717,11 +53492,60 @@
           },
           "409": {
             "description": "A scan is already running"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
           }
         },
         "summary": "Post Dedup Scan",
         "tags": [
           "dedup-review"
+        ]
+      }
+    },
+    "/api/v1/dj/propose": {
+      "post": {
+        "operationId": "propose_pair_api_v1_dj_propose_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ProposeIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          }
+        },
+        "summary": "Propose Pair",
+        "tags": [
+          "dj-propose"
         ]
       }
     },
@@ -54385,6 +57209,145 @@
         ]
       }
     },
+    "/api/v1/label-tasks/{task_id}": {
+      "get": {
+        "description": "Return a stems_ab_rank task with clip URLs backed by validated bundles.",
+        "operationId": "get_label_task_api_v1_label_tasks__task_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "task_id",
+            "required": true,
+            "schema": {
+              "title": "Task Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StemAbRankTaskOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Label Task",
+        "tags": [
+          "label-tasks"
+        ]
+      }
+    },
+    "/api/v1/label-tasks/{task_id}/consensus": {
+      "get": {
+        "description": "Aggregate batch responses; incomplete batches return insufficient_labels.",
+        "operationId": "get_label_consensus_api_v1_label_tasks__task_id__consensus_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "task_id",
+            "required": true,
+            "schema": {
+              "title": "Task Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LabelConsensusOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Label Consensus",
+        "tags": [
+          "label-tasks"
+        ]
+      }
+    },
+    "/api/v1/label-tasks/{task_id}/responses": {
+      "post": {
+        "description": "Store ranking, strength, and cost_choice; karma is granted in the ledger.",
+        "operationId": "post_label_response_api_v1_label_tasks__task_id__responses_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "task_id",
+            "required": true,
+            "schema": {
+              "title": "Task Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LabelResponseIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LabelResponseOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Post Label Response",
+        "tags": [
+          "label-tasks"
+        ]
+      }
+    },
     "/api/v1/library-jobs": {
       "get": {
         "operationId": "list_library_jobs_api_v1_library_jobs_get",
@@ -55003,6 +57966,30 @@
         ]
       }
     },
+    "/api/v1/lighting/look": {
+      "get": {
+        "operationId": "api_lighting_look_api_v1_lighting_look_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LightingLook"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "409": {
+            "description": "lighting.output is off"
+          }
+        },
+        "summary": "Api Lighting Look",
+        "tags": [
+          "lighting"
+        ]
+      }
+    },
     "/api/v1/lighting/output/artnet/address": {
       "get": {
         "description": "Read this daemon's Art-Net address, or null before any selection; no output is sent.",
@@ -55117,6 +58104,34 @@
           }
         },
         "summary": "Get Lighting Patch",
+        "tags": [
+          "lighting"
+        ]
+      }
+    },
+    "/api/v1/lighting/scenes": {
+      "get": {
+        "operationId": "api_lighting_scenes_api_v1_lighting_scenes_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/LightingSceneRef"
+                  },
+                  "title": "Response Api Lighting Scenes Api V1 Lighting Scenes Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "409": {
+            "description": "lighting.output is off"
+          }
+        },
+        "summary": "Api Lighting Scenes",
         "tags": [
           "lighting"
         ]
@@ -56253,6 +59268,57 @@
         ]
       }
     },
+    "/api/v1/now-playing/tracklist": {
+      "get": {
+        "operationId": "get_tracklist_api_v1_now_playing_tracklist_get",
+        "parameters": [
+          {
+            "description": "IANA timezone for the night boundary; default is server local.",
+            "in": "query",
+            "name": "tz",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "IANA timezone for the night boundary; default is server local.",
+              "title": "Tz"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TracklistOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Tracklist",
+        "tags": [
+          "now-playing"
+        ]
+      }
+    },
     "/api/v1/offload/operations": {
       "get": {
         "operationId": "offload_operations",
@@ -57157,6 +60223,29 @@
         ]
       }
     },
+    "/api/v1/performance/headphones/booth": {
+      "get": {
+        "description": "Return the live booth monitor state beside the headphone routes (#11257).",
+        "operationId": "get_booth_api_v1_performance_headphones_booth_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BoothStateOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Get Booth",
+        "tags": [
+          "performance-headphones",
+          "performance-booth"
+        ]
+      }
+    },
     "/api/v1/performance/headphones/booth-level": {
       "post": {
         "operationId": "post_headphone_booth_level_api_v1_performance_headphones_booth_level_post",
@@ -57197,6 +60286,138 @@
         "summary": "Post Headphone Booth Level",
         "tags": [
           "performance-headphones"
+        ]
+      }
+    },
+    "/api/v1/performance/headphones/booth/level": {
+      "post": {
+        "operationId": "post_booth_level_route_api_v1_performance_headphones_booth_level_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": true,
+                "title": "BoothLevelBody",
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BoothStateOut"
+                }
+              }
+            },
+            "description": "Booth state after setting BOOTH level"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Post Booth Level Route",
+        "tags": [
+          "performance-headphones",
+          "performance-booth"
+        ]
+      }
+    },
+    "/api/v1/performance/headphones/booth/outputs/select": {
+      "post": {
+        "operationId": "post_booth_select_route_api_v1_performance_headphones_booth_outputs_select_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": true,
+                "title": "BoothOutputBody",
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BoothStateOut"
+                }
+              }
+            },
+            "description": "Booth state after selecting or clearing the BOOTH sink"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Post Booth Select Route",
+        "tags": [
+          "performance-headphones",
+          "performance-booth"
+        ]
+      }
+    },
+    "/api/v1/performance/headphones/booth/signal-mode": {
+      "post": {
+        "operationId": "post_booth_signal_mode_route_api_v1_performance_headphones_booth_signal_mode_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": true,
+                "title": "BoothSignalModeBody",
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BoothStateOut"
+                }
+              }
+            },
+            "description": "Booth state after setting off / follows_master / independent"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Post Booth Signal Mode Route",
+        "tags": [
+          "performance-headphones",
+          "performance-booth"
         ]
       }
     },
@@ -57878,6 +61099,50 @@
           }
         },
         "summary": "Delete Remote Control Device",
+        "tags": [
+          "performance-remote-control"
+        ]
+      }
+    },
+    "/api/v1/performance/remote-control/qr.svg": {
+      "get": {
+        "description": "SVG QR for the remote, request or display page URL (issue #10442).",
+        "operationId": "get_remote_control_qr_api_v1_performance_remote_control_qr_svg_get",
+        "parameters": [
+          {
+            "description": "remote | request | display",
+            "in": "query",
+            "name": "target",
+            "required": false,
+            "schema": {
+              "default": "remote",
+              "description": "remote | request | display",
+              "title": "Target",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Remote Control Qr",
         "tags": [
           "performance-remote-control"
         ]
@@ -59739,6 +63004,75 @@
         ]
       }
     },
+    "/api/v1/playlists/{playlist_id}/items:save-order": {
+      "post": {
+        "description": "\"Save this order\" (LIBUX-8678): the given order becomes the stored one, one undo step.",
+        "operationId": "save_playlist_order",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "playlist_id",
+            "required": true,
+            "schema": {
+              "title": "Playlist Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "If-Match",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "If-Match"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SaveOrderIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PlaylistWriteOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Save Playlist Order",
+        "tags": [
+          "playlists-write"
+        ]
+      }
+    },
     "/api/v1/playlists/{playlist_id}/organization": {
       "put": {
         "operationId": "organize_playlist_api_v1_playlists__playlist_id__organization_put",
@@ -60371,6 +63705,49 @@
         "summary": "Create Run",
         "tags": [
           "playlist-sets"
+        ]
+      }
+    },
+    "/api/v1/playlists/{playlist_id}/summary": {
+      "get": {
+        "description": "Aggregate playlist stats: count, duration, bpm, energy, keys, unanalysed (SETPREP-10645).",
+        "operationId": "get_playlist_summary_api_v1_playlists__playlist_id__summary_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "playlist_id",
+            "required": true,
+            "schema": {
+              "title": "Playlist Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PlaylistSummaryStats"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Playlist Summary",
+        "tags": [
+          "playlists"
         ]
       }
     },
@@ -62917,6 +66294,100 @@
         ]
       }
     },
+    "/api/v1/sample-helper/download": {
+      "post": {
+        "operationId": "download_sample_api_v1_sample_helper_download_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SampleDownloadIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SampleDownloadOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Download Sample",
+        "tags": [
+          "sample-helper"
+        ]
+      }
+    },
+    "/api/v1/sample-helper/preview": {
+      "get": {
+        "operationId": "preview_staged_api_v1_sample_helper_preview_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "batch",
+            "required": true,
+            "schema": {
+              "maxLength": 80,
+              "minLength": 1,
+              "title": "Batch",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "filename",
+            "required": true,
+            "schema": {
+              "maxLength": 256,
+              "minLength": 1,
+              "title": "Filename",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Preview Staged",
+        "tags": [
+          "sample-helper"
+        ]
+      }
+    },
     "/api/v1/search": {
       "get": {
         "operationId": "search_collection_api_v1_search_get",
@@ -62954,6 +66425,45 @@
               "minimum": 0,
               "title": "Offset",
               "type": "integer"
+            }
+          },
+          {
+            "description": "Optional loaded-deck BPM for hybrid tie-break proximity.",
+            "in": "query",
+            "name": "reference_bpm",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maximum": 400,
+                  "minimum": 0,
+                  "type": "number"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Optional loaded-deck BPM for hybrid tie-break proximity.",
+              "title": "Reference Bpm"
+            }
+          },
+          {
+            "description": "Optional loaded-deck key for hybrid tie-break proximity.",
+            "in": "query",
+            "name": "reference_key",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 20,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Optional loaded-deck key for hybrid tie-break proximity.",
+              "title": "Reference Key"
             }
           }
         ],
@@ -63530,6 +67040,49 @@
         ]
       }
     },
+    "/api/v1/sets/import": {
+      "post": {
+        "operationId": "api_import_set_api_v1_sets_import_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": true,
+                "title": "Document",
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SetImportResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Api Import Set",
+        "tags": [
+          "sets"
+        ]
+      }
+    },
     "/api/v1/sets/recorder": {
       "get": {
         "operationId": "api_recorder_status_api_v1_sets_recorder_get",
@@ -63637,6 +67190,29 @@
         ]
       }
     },
+    "/api/v1/sets/recorder/stream": {
+      "get": {
+        "operationId": "api_stream_status_api_v1_sets_recorder_stream_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Api Stream Status Api V1 Sets Recorder Stream Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Api Stream Status",
+        "tags": [
+          "sets"
+        ]
+      }
+    },
     "/api/v1/sets/recorder/stream-encoder": {
       "get": {
         "description": "The master-mix stream encoder's status, or null when none was started.",
@@ -63656,6 +67232,71 @@
           }
         },
         "summary": "Api Stream Encoder Status",
+        "tags": [
+          "sets"
+        ]
+      }
+    },
+    "/api/v1/sets/recorder/stream/rtmp": {
+      "get": {
+        "operationId": "api_stream_rtmp_config_api_v1_sets_recorder_stream_rtmp_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Api Stream Rtmp Config Api V1 Sets Recorder Stream Rtmp Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Api Stream Rtmp Config",
+        "tags": [
+          "sets"
+        ]
+      },
+      "put": {
+        "description": "Store RTMP URL, key and optional still image for the next push (STREAM-11743).",
+        "operationId": "api_stream_rtmp_configure_api_v1_sets_recorder_stream_rtmp_put",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/StreamRtmpConfigRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Api Stream Rtmp Configure Api V1 Sets Recorder Stream Rtmp Put",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Api Stream Rtmp Configure",
         "tags": [
           "sets"
         ]
@@ -63837,6 +67478,61 @@
         ]
       }
     },
+    "/api/v1/sets/recorder/{session_id}/stream": {
+      "post": {
+        "description": "Tee a ``source: master`` recording into an RTMP push (STREAM-11743).",
+        "operationId": "api_stream_start_api_v1_sets_recorder__session_id__stream_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "session_id",
+            "required": true,
+            "schema": {
+              "title": "Session Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/StreamStartRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Api Stream Start Api V1 Sets Recorder  Session Id  Stream Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Api Stream Start",
+        "tags": [
+          "sets"
+        ]
+      }
+    },
     "/api/v1/sets/recorder/{session_id}/stream-encoder": {
       "post": {
         "description": "Tee a ``source: master`` recording into an encoder (STREAM-11486).",
@@ -63936,6 +67632,50 @@
         ]
       }
     },
+    "/api/v1/sets/recorder/{session_id}/stream/stop": {
+      "post": {
+        "operationId": "api_stream_stop_api_v1_sets_recorder__session_id__stream_stop_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "session_id",
+            "required": true,
+            "schema": {
+              "title": "Session Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Api Stream Stop Api V1 Sets Recorder  Session Id  Stream Stop Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Api Stream Stop",
+        "tags": [
+          "sets"
+        ]
+      }
+    },
     "/api/v1/sets/{session_id}": {
       "get": {
         "operationId": "api_get_session_api_v1_sets__session_id__get",
@@ -64022,6 +67762,46 @@
           }
         },
         "summary": "Api Audio",
+        "tags": [
+          "sets"
+        ]
+      }
+    },
+    "/api/v1/sets/{session_id}/export": {
+      "get": {
+        "operationId": "api_export_set_api_v1_sets__session_id__export_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "session_id",
+            "required": true,
+            "schema": {
+              "title": "Session Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Api Export Set",
         "tags": [
           "sets"
         ]
@@ -64213,6 +67993,65 @@
         ]
       }
     },
+    "/api/v1/sets/{session_id}/split": {
+      "post": {
+        "operationId": "api_split_tracks_api_v1_sets__session_id__split_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "session_id",
+            "required": true,
+            "schema": {
+              "title": "Session Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "anyOf": [
+                  {
+                    "$ref": "#/components/schemas/SplitRequest"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Body"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SplitResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Api Split Tracks",
+        "tags": [
+          "sets"
+        ]
+      }
+    },
     "/api/v1/sets/{session_id}/timeline": {
       "get": {
         "operationId": "api_timeline_stream_api_v1_sets__session_id__timeline_get",
@@ -64248,6 +68087,118 @@
           }
         },
         "summary": "Api Timeline Stream",
+        "tags": [
+          "sets"
+        ]
+      }
+    },
+    "/api/v1/sets/{session_id}/tracklist": {
+      "get": {
+        "operationId": "api_get_tracklist_api_v1_sets__session_id__tracklist_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "session_id",
+            "required": true,
+            "schema": {
+              "title": "Session Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TracklistResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Api Get Tracklist",
+        "tags": [
+          "sets"
+        ]
+      }
+    },
+    "/api/v1/sets/{session_id}/tracklist.{fmt}": {
+      "get": {
+        "operationId": "api_get_tracklist_export_api_v1_sets__session_id__tracklist__fmt__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "session_id",
+            "required": true,
+            "schema": {
+              "title": "Session Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "fmt",
+            "required": true,
+            "schema": {
+              "enum": [
+                "txt",
+                "md",
+                "csv",
+                "timestamped",
+                "soundcloud",
+                "cue",
+                "m3u8"
+              ],
+              "title": "Fmt",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "acknowledge_rights",
+            "required": false,
+            "schema": {
+              "default": false,
+              "title": "Acknowledge Rights",
+              "type": "boolean"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/x-cue": {},
+              "audio/x-mpegurl": {},
+              "text/csv": {},
+              "text/markdown": {},
+              "text/plain": {}
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Api Get Tracklist Export",
         "tags": [
           "sets"
         ]
@@ -65613,6 +69564,27 @@
         ]
       }
     },
+    "/api/v1/spotify/imports/status": {
+      "get": {
+        "operationId": "spotify_import_status",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ImportJobOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Spotify Import Status",
+        "tags": [
+          "spotify"
+        ]
+      }
+    },
     "/api/v1/spotify/playlists/{playlist_id}/pending-tracks": {
       "get": {
         "description": "Return persisted pending rows for one imported Spotify playlist.",
@@ -65655,6 +69627,58 @@
           }
         },
         "summary": "Get Pending Tracks",
+        "tags": [
+          "spotify"
+        ]
+      }
+    },
+    "/api/v1/spotify/playlists/{playlist_id}:import": {
+      "post": {
+        "operationId": "import_spotify_playlist",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "playlist_id",
+            "required": true,
+            "schema": {
+              "title": "Playlist Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ImportIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ImportJobOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Import Spotify Playlist",
         "tags": [
           "spotify"
         ]
@@ -69183,6 +73207,27 @@
             }
           },
           {
+            "description": "Repeatable rekordbox ColorID 0..8",
+            "in": "query",
+            "name": "color_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "items": {
+                    "type": "integer"
+                  },
+                  "type": "array"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Repeatable rekordbox ColorID 0..8",
+              "title": "Color Id"
+            }
+          },
+          {
             "description": "Filter rows on file_exists disk truth (FR-1 agent parity). Applied to the page AFTER cursor pagination, so a page may return fewer than `limit` rows while next_cursor still advances over the full track set.",
             "in": "query",
             "name": "available",
@@ -69488,6 +73533,48 @@
         ]
       }
     },
+    "/api/v1/tracks/plays:lookup": {
+      "post": {
+        "description": "Open DJ play counts for shuffle weighting (#11325); rekordbox-only ids are zero.",
+        "operationId": "lookup_track_plays_api_v1_tracks_plays_lookup_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TrackPlaysLookupIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TrackPlaysLookupOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Lookup Track Plays",
+        "tags": [
+          "track-plays"
+        ]
+      }
+    },
     "/api/v1/tracks/quality-ladder": {
       "get": {
         "description": "The six venue rungs, so the UI legend is not a second copy of them.",
@@ -69644,9 +73731,142 @@
         ]
       }
     },
+    "/api/v1/tracks/{stable_id}/analysis-range": {
+      "delete": {
+        "operationId": "clear_analysis_range_api_v1_tracks__stable_id__analysis_range_delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "stable_id",
+            "required": true,
+            "schema": {
+              "title": "Stable Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AnalysisRangeOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Clear Analysis Range",
+        "tags": [
+          "analysis-range"
+        ]
+      },
+      "get": {
+        "operationId": "get_analysis_range_api_v1_tracks__stable_id__analysis_range_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "stable_id",
+            "required": true,
+            "schema": {
+              "title": "Stable Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AnalysisRangeOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Analysis Range",
+        "tags": [
+          "analysis-range"
+        ]
+      },
+      "put": {
+        "description": "Analyze this track's beatgrid inside ``range`` from the next re-analyze on.",
+        "operationId": "set_analysis_range_api_v1_tracks__stable_id__analysis_range_put",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "stable_id",
+            "required": true,
+            "schema": {
+              "title": "Stable Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AnalysisRangeIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AnalysisRangeOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Set Analysis Range",
+        "tags": [
+          "analysis-range"
+        ]
+      }
+    },
     "/api/v1/tracks/{stable_id}/anlz": {
       "get": {
-        "description": "Waveform (preview + detail) / beatgrid / cues / phrases JSON.\n\nThe ``vocals`` field carries FOUR statuses: ``rekordbox`` (PVDI),\n``no_vocals`` (PVDI present, all zero), ``demucs`` (local detection\nfrom (private path), merged when PVDI is absent), and\n``not_analyzed`` (NEITHER source exists).",
+        "description": "Waveform (preview + detail) / beatgrid / cues / phrases JSON.\n\nThe ``vocals`` field carries FOUR statuses: ``rekordbox`` (PVDI),\n``no_vocals`` (PVDI present, all zero), ``demucs`` (local detection\nfrom data/state/vocal-cache, merged when PVDI is absent), and\n``not_analyzed`` (NEITHER source exists).",
         "operationId": "get_track_anlz_api_v1_tracks__stable_id__anlz_get",
         "parameters": [
           {
@@ -71004,6 +75224,139 @@
         "summary": "Restore Hot Cue",
         "tags": [
           "rb-hot-cues"
+        ]
+      }
+    },
+    "/api/v1/tracks/{stable_id}/key-edit": {
+      "delete": {
+        "description": "Back to the analysed key. A write of ``{\"key\": null}``, so history keeps the old edit.",
+        "operationId": "clear_key_edit_api_v1_tracks__stable_id__key_edit_delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "stable_id",
+            "required": true,
+            "schema": {
+              "title": "Stable Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/KeyEditOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Clear Key Edit",
+        "tags": [
+          "key-edit"
+        ]
+      },
+      "get": {
+        "operationId": "get_key_edit_api_v1_tracks__stable_id__key_edit_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "stable_id",
+            "required": true,
+            "schema": {
+              "title": "Stable Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/KeyEditOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Key Edit",
+        "tags": [
+          "key-edit"
+        ]
+      },
+      "put": {
+        "operationId": "set_key_edit_api_v1_tracks__stable_id__key_edit_put",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "stable_id",
+            "required": true,
+            "schema": {
+              "title": "Stable Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/KeyEditIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/KeyEditOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Set Key Edit",
+        "tags": [
+          "key-edit"
         ]
       }
     },
@@ -74218,6 +78571,59 @@
           }
         },
         "summary": "Get Vocal Status",
+        "tags": [
+          "vocals"
+        ]
+      }
+    },
+    "/api/v1/vocals/{stable_id}/validate-correction": {
+      "post": {
+        "description": "Validate a ``vocal-area:`` anchor against the live vocals model.\n\n``POST /api/v1/feedback/comments`` remains the only comment writer (FB-03);\nthis route is the agent-native validation twin (issue #13173).",
+        "operationId": "validate_vocal_correction_api_v1_vocals__stable_id__validate_correction_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "stable_id",
+            "required": true,
+            "schema": {
+              "title": "Stable Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/VocalCorrectionValidateIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/VocalCorrectionValidateOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Validate Vocal Correction",
         "tags": [
           "vocals"
         ]

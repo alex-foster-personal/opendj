@@ -17,7 +17,7 @@ from typing import Any
 from apps.shared.state import sync_stamp
 from apps.shared.state.sync_stamp import LOCAL_CHANGELOG_TABLE
 from apps.shared.text import as_text
-from apps.sync_hub import protocol, track_lifecycle
+from apps.sync_hub import conflict_trash, protocol, track_lifecycle
 from apps.sync_hub.engine_common import (
     HUB_CHANGELOG_TABLE,
     SyncApplyError,
@@ -41,7 +41,13 @@ from apps.sync_hub.engine_identity_map import (
     retire_tombstoned_remap_losers,
 )
 from apps.sync_hub.engine_watermark import current_seq
-from apps.sync_hub.protocol import MEMBERSHIP_TABLE, SPEC_BY_TABLE, RowChange, TableSpec
+from apps.sync_hub.protocol import (
+    MEMBERSHIP_SPEC,
+    MEMBERSHIP_TABLE,
+    SPEC_BY_TABLE,
+    RowChange,
+    TableSpec,
+)
 from apps.sync_hub.rejected_rows import (
     MAX_REJECTED_ROWS_NAMED,
     REASON_IDENTITY_LOSER,
@@ -282,7 +288,11 @@ def _duplicate_incoming_wins(
 
 
 def _drop_superseded(
-    conn: sqlite3.Connection, spec: TableSpec, pk: Sequence[str]
+    conn: sqlite3.Connection,
+    spec: TableSpec,
+    pk: Sequence[str],
+    *,
+    reason: str = conflict_trash.REASON_IDENTITY_COLLAPSE,
 ) -> None:
     """Remove the losing duplicate, and every changelog entry naming it.
 
@@ -295,6 +305,7 @@ def _drop_superseded(
     tombstone -- they receive the winner, resolve it against their own copy
     on the same natural key, and drop their duplicate by this same path.
     """
+    conflict_trash.capture_stored_loser(conn, spec.name, pk, reason)
     row_pk = protocol.encode_row_pk(pk)
     if spec.name == track_lifecycle.TRACKS_TABLE:
         track_lifecycle.assert_hard_delete_allowed(conn, str(pk[0]))
@@ -426,6 +437,16 @@ def _write_members(
     kept: Sequence[tuple[Any, ...]],
 ) -> None:
     """Replace the playlist's stored bundle with ``kept``, one row per member."""
+    for row in conn.execute(
+        f"SELECT {', '.join(columns)} FROM {MEMBERSHIP_TABLE} WHERE playlist_id = ?",
+        (playlist_id,),
+    ):
+        values = {column: row[index] for index, column in enumerate(columns)}
+        member_spec = MEMBERSHIP_SPEC
+        pk = tuple(str(values[column]) for column in member_spec.pk)
+        conflict_trash.capture_stored_loser(
+            conn, MEMBERSHIP_TABLE, pk, conflict_trash.REASON_LWW_OVERWRITE
+        )
     conn.execute(f"DELETE FROM {MEMBERSHIP_TABLE} WHERE playlist_id = ?", (playlist_id,))
     sql = (
         f"INSERT INTO {MEMBERSHIP_TABLE} ({', '.join(columns)}) "
@@ -599,6 +620,12 @@ def _apply_one(
         return _ApplyOneOutcome(status="identity")
     if verdict.faults:
         _log_quarantine(change, verdict.faults)
+        conflict_trash.capture_values_loser(
+            change.table,
+            change.pk,
+            change.values,
+            conflict_trash.REASON_QUARANTINE_DROP,
+        )
         return _ApplyOneOutcome(status="quarantined", faults=verdict.faults)
     if verdict.loses:
         identity_reject: protocol.IdentityReject | None = None
@@ -618,6 +645,14 @@ def _apply_one(
             # push, so a fresh changelog entry for the stored tombstone is
             # what brings it back in line instead of leaving it diverged.
             _log_hub_change(conn, change, stamp)
+        trash_reason = conflict_trash.REASON_TOMBSTONE if verdict.tombstone_held else (
+            conflict_trash.REASON_IDENTITY_COLLAPSE
+            if verdict.rewrite_incoming_to is not None
+            else conflict_trash.REASON_LWW_OVERWRITE
+        )
+        conflict_trash.capture_values_loser(
+            change.table, change.pk, change.values, trash_reason
+        )
         return _ApplyOneOutcome(
             status="rejected", identity_reject=identity_reject, reject_reason=reason
         )
@@ -626,6 +661,13 @@ def _apply_one(
     # children, then drops the loser. The other order is a FOREIGN KEY
     # failure: the incoming PK is not stored yet.
     repairs: list[IdentityRepairRequest] = []
+    if conn.execute(
+        f"SELECT 1 FROM {change.table} WHERE {_pk_predicate(spec)} LIMIT 1",
+        tuple(change.pk),
+    ).fetchone() is not None:
+        conflict_trash.capture_stored_loser(
+            conn, change.table, change.pk, conflict_trash.REASON_LWW_OVERWRITE
+        )
     _upsert(conn, change.table, spec, columns, values)
     for stored_pk in verdict.drop_stored_pks:
         if hub_authoritative:
@@ -647,7 +689,12 @@ def _apply_one(
                 )
             )
         else:
-            _drop_superseded(conn, spec, (stored_pk,))
+            _drop_superseded(
+                conn,
+                spec,
+                (stored_pk,),
+                reason=conflict_trash.REASON_IDENTITY_COLLAPSE,
+            )
     if change.table == "playlists" and change.members is not None:
         _replace_members(conn, change.pk[0], change.members)
     if record_changelog:
@@ -880,7 +927,12 @@ def _resolve_against_duplicates(
         return _Resolution(loses=False, faults=tuple(faults))
     if hub_row_authority:
         for conflict_pk in conflict_pks:
-            _drop_superseded(conn, spec, conflict_pk)
+            _drop_superseded(
+                conn,
+                spec,
+                conflict_pk,
+                reason=conflict_trash.REASON_NATURAL_KEY_LOSER,
+            )
         return _Resolution(loses=False)
     if not all(
         _duplicate_incoming_wins(
@@ -890,7 +942,9 @@ def _resolve_against_duplicates(
     ):
         return _Resolution(loses=True)
     for conflict_pk in conflict_pks:
-        _drop_superseded(conn, spec, conflict_pk)
+        _drop_superseded(
+            conn, spec, conflict_pk, reason=conflict_trash.REASON_NATURAL_KEY_LOSER
+        )
     return _Resolution(loses=False)
 
 
@@ -942,7 +996,8 @@ def hub_apply(
     """
     stamp = received_at or sync_stamp.canonical_now()
     retire_tombstoned_remaps(conn, stamp)
-    return _apply(conn, changes, record_changelog=True, received_at=stamp)
+    with conflict_trash.maybe_capture_pass(conn):
+        return _apply(conn, changes, record_changelog=True, received_at=stamp)
 
 
 def retire_tombstoned_remaps(conn: sqlite3.Connection, stamp: str) -> None:
@@ -987,13 +1042,14 @@ def spoke_apply(
     A spoke keeps no changelog: its pull watermark is the hub's ``seq``, so a
     local changelog would only be a second, divergent numbering.
     """
-    return _apply(
-        conn,
-        changes,
-        record_changelog=False,
-        hub_authoritative=True,
-        hub_row_authority=repair_bundle,
-    )
+    with conflict_trash.maybe_capture_pass(conn):
+        return _apply(
+            conn,
+            changes,
+            record_changelog=False,
+            hub_authoritative=True,
+            hub_row_authority=repair_bundle,
+        )
 
 
 __all__ = [

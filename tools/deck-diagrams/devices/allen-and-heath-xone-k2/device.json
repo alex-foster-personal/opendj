@@ -1,0 +1,9 @@
+{
+  "map_name": "\\bXONE[:_ ]?K2\\b",
+  "map_const": "XONE_K2_MAP",
+  "map_ts": "apps/webui/frontend/src/lib/rb/midi/maps/allen-and-heath-xone-k2.ts",
+  "panel_w": 358.0,
+  "panel_d": 135.0,
+  "panel_size_source": "Allen & Heath XONE:K2 User Guide AP8509 Issue 3, Specifications (page 29): Width 358 mm (14 in), Depth 135 mm (5.3 in)",
+  "display_name": "2-deck MIDI controller"
+}

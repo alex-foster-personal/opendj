@@ -71,12 +71,14 @@
 		mode = 'boot',
 		blocking = true,
 		hideCheckIds = [],
-		navigate
+		navigate,
+		pathname = '/'
 	}: {
 		mode?: 'boot' | 'admin';
 		blocking?: boolean;
 		hideCheckIds?: string[];
 		navigate?: (path: string) => unknown;
+		pathname?: string;
 	} = $props();
 
 	const hiddenIds = $derived(new Set(hideCheckIds));
@@ -161,7 +163,9 @@
 		setupPending
 			? ['recheck']
 			: [
-					...(mode === 'boot' && blocking && firstRunGate.hasError ? (['retry-setup'] as const) : []),
+					...(mode === 'boot' && blocking && firstRunGate.hasError
+						? (['retry-setup'] as const)
+						: []),
 					...(showImportCta ? (['import'] as const) : []),
 					'recheck',
 					'permissions'
@@ -179,7 +183,9 @@
 	);
 
 	function openImporter(): Promise<string | null> {
-		return navigate ? runSetup(navigate) : Promise.resolve('no way to open setup from this screen');
+		return navigate
+			? runSetup(navigate, pathname)
+			: Promise.resolve('no way to open setup from this screen');
 	}
 
 	function setActionStatus(status: string): void {
@@ -254,6 +260,7 @@
 			<PreflightCheckRow
 				{check}
 				{navigate}
+				{pathname}
 				{mode}
 				label={mode === 'boot' ? bootRowLabel(check) : check.label}
 				detail={mode === 'boot' ? bootRowDetail(check) : check.detail}

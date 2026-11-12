@@ -1,15 +1,14 @@
 """Play-order event emission wired to the Phase 5 event bus.
 
-Two things happen on every ``emit_play_order_changed`` call:
+On every ``emit_play_order_changed`` call:
 
-1. A row lands in Phase 5's durable ``events`` table via the caller's
-   sqlite3 connection (which the caller got from
-   :func:`apps.shared.state.db.open_rw`, so the table and pragmas are
-   already in place).
-2. An :class:`apps.shared.state.types.Event` is fanned out on a shared
-   :class:`apps.shared.state.events.EventBus` so in-process subscribers
-   (Phase 12 sets, Phase 14 voice contexts, etc.) see the change
-   without polling the DB.
+1. :class:`apps.shared.state.writer.StateWriter` appends the durable ``events``
+   row via :meth:`~apps.shared.state.writer.StateWriter.append_play_order_changed`
+   (the SAVEPOINT / ``BEGIN IMMEDIATE`` contract in
+   :func:`apps.shared.state.db.write_unit`).
+2. The same :class:`apps.shared.state.types.Event` is fanned out on the shared
+   :class:`apps.shared.state.events.EventBus` so in-process subscribers see the
+   change without polling the DB.
 
 If Phase 5's schema has not been applied to the supplied connection
 (e.g. a legacy caller), we log a one-time INFO and drop the event
@@ -26,20 +25,16 @@ Payload schema (see (private path) for the full contract):
 
 from __future__ import annotations
 
-import json
 import logging
 import sqlite3
 from typing import Literal
 
 from apps.shared.lazy_event_bus import LazyModuleEventBus
 
-from ._time import _now_iso
-
 _logger = logging.getLogger(__name__)
 _logged_bus_missing = False
 
 Action = Literal["created", "updated", "deleted"]
-
 
 _MODULE_BUS = LazyModuleEventBus()
 
@@ -74,42 +69,18 @@ def emit_play_order_changed(
     to avoid emitting without a durable row backing it.
     """
     global _logged_bus_missing  # noqa: PLW0603
-    payload = {"playlist_id": playlist_id, "name": name, "action": action}
-    ts = _now_iso()
-    payload_json = json.dumps(payload, separators=(",", ":"), sort_keys=True)
     try:
-        conn.execute(
-            "INSERT INTO events(ts, kind, stable_id, payload_json, actor) VALUES (?, ?, ?, ?, ?)",
-            (
-                ts,
-                "play_order_changed",
-                None,
-                payload_json,
-                actor,
-            ),
-        )
+        from apps.shared.state.writer import StateWriter
+    except ImportError:
+        return
+
+    writer = StateWriter(conn, bus=_get_shared_bus(), actor=actor)
+    try:
+        writer.append_play_order_changed(playlist_id=playlist_id, name=name, action=action)
     except sqlite3.OperationalError as exc:
-        # Typically: "no such table: events" when the caller opened a
-        # bare sqlite3 file without running Phase 5 migrations.
         if not _logged_bus_missing:
             _logger.info(
                 "play_order_changed event dropped (event bus not online): %s",
                 exc,
             )
             _logged_bus_missing = True
-        return
-
-    # Durable row is in. Fan out to in-process subscribers.
-    try:
-        from apps.shared.state.types import Event
-    except ImportError:
-        return
-    _get_shared_bus().publish(
-        Event(
-            ts=ts,
-            kind="play_order_changed",
-            stable_id=None,
-            payload=payload,
-            actor=actor,
-        )
-    )

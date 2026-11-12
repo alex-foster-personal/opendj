@@ -4,6 +4,7 @@
 - [if] the token is ``1`` [then] it stays the dial value 1.0 (full right), so no script changes meaning, [else stop].
 - [if] a clock time sits in the dead gap at the bottom of the dial [then] it is refused by name, never clamped, [else stop].
 - [if] ``color_fx 2 next`` is sent [then] the command carries ``effect: next``, [else stop].
+- [if] ``color_fx 1 effect=crush`` is sent [then] the command carries ``effect: crush`` (SNDCOL-10655), [else stop].
 """
 
 from __future__ import annotations
@@ -74,3 +75,11 @@ def test_color_fx_next_cycles() -> None:
     assert parse_invocation(["color_fx", "2", "next"]).command == {"type": "color_fx", "deck": 2, "effect": "next"}
     with pytest.raises(InvocationError):
         parse_invocation(["color_fx", "2", "prev"])
+
+
+def test_color_fx_accepts_crush() -> None:
+    assert parse_invocation(["color_fx", "1", "effect=crush"]).command == {
+        "type": "color_fx",
+        "deck": 1,
+        "effect": "crush",
+    }

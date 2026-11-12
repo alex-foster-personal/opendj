@@ -1,10 +1,26 @@
-import { expect, test } from '@playwright/test';
+import { expect, test, type Locator, type Page } from '@playwright/test';
 
 const SEED_TEXT =
 	'comment pins re-opened later must close on a real column resize (seeded by performance-feedback-card-dismiss.spec.ts)';
 
 const REPLY_SEED_TEXT =
 	'comment pins can take a follow-up on the same marker (seeded by performance-feedback-card-dismiss.spec.ts)';
+
+const COMMENT_PIN_DIALOG = 'Comment pin';
+const FOLLOW_UP_FIELD = 'Follow-up comment';
+const ADD_FOLLOW_UP_BUTTON = 'Add follow-up comment';
+
+function commentPinDialog(page: Page): Locator {
+	return page.getByRole('dialog', { name: COMMENT_PIN_DIALOG, exact: true });
+}
+
+function followUpFieldInCommentPin(card: Locator): Locator {
+	return card.getByRole('textbox', { name: FOLLOW_UP_FIELD, exact: true });
+}
+
+function addFollowUpButtonInCommentPin(card: Locator): Locator {
+	return card.getByRole('button', { name: ADD_FOLLOW_UP_BUTTON, exact: true });
+}
 
 test('reopened comment card accepts a follow-up that survives reload', async ({ page }) => {
 	const seeded = await page.request.post('/api/v1/feedback/comments', {
@@ -33,12 +49,12 @@ test('reopened comment card accepts a follow-up that survives reload', async ({ 
 		const existingPin = page.locator(`button.fb-pin[title^="${REPLY_SEED_TEXT}"]`);
 		await expect(existingPin).toBeVisible({ timeout: 60_000 });
 		await existingPin.click();
-		const card = page.getByRole('dialog', { name: 'Comment pin', exact: true });
+		const card = commentPinDialog(page);
 		await expect(card).toBeVisible();
 		await expect(card.locator('.fb-body-text')).toHaveText(REPLY_SEED_TEXT);
 		await expect(card.locator('.fb-note')).toContainText('queued as #905');
-		await card.getByLabel('Follow-up comment', { exact: true }).fill(followUp);
-		await card.getByRole('button', { name: 'Add follow-up comment', exact: true }).click();
+		await followUpFieldInCommentPin(card).fill(followUp);
+		await addFollowUpButtonInCommentPin(card).click();
 		await expect(card.locator('.fb-note').filter({ hasText: followUp })).toHaveCount(1);
 		const listed = await page.request.get('/api/v1/feedback/comments');
 		const pins = (await listed.json()).comments as Array<{

@@ -1,0 +1,24 @@
+{
+  "schema": 1,
+  "case": "case1_5968_replay",
+  "source": {
+    "pr": 5968,
+    "head_sha": "abae480279b5541dc23c5e861a358782fcd4ecc9"
+  },
+  "recall_min": 1.0,
+  "must_flag": [
+    {
+      "path": "tests/quality/fixtures/MANIFEST.json",
+      "line_range": [19, 19],
+      "class": "real_identity_provenance",
+      "min_severity": "P1"
+    },
+    {
+      "path": "tests/quality/fixtures/MANIFEST.json",
+      "line_range": [17, 17],
+      "class": "weekday_mismatch",
+      "min_severity": "P1"
+    }
+  ],
+  "must_not_flag": []
+}

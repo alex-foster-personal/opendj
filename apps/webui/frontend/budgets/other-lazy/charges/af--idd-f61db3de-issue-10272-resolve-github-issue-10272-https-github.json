@@ -1,0 +1,9 @@
+{
+  "bytes": 6144,
+  "measured_main": 504000,
+  "measured_with_pr": 509457,
+  "sha": "94b90d60ca",
+  "date": "Tue 10 Nov 2026",
+  "reason": "#10272 moves WorksModals and VersionStackPanel out of the performance boot chunks into their own lazy chunks (+5,457 B gzip here, -3,154 B on performance).",
+  "payback": "none planned; these are the same bytes the performance surface stopped paying at boot"
+}

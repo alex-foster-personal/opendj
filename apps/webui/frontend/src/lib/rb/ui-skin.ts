@@ -21,12 +21,41 @@
  */
 
 import type { WaveformDesign, WaveformDesignPref } from './waveform-design';
-import { parseWavePalettePref, type WavePaletteChoice, type WavePalettePref, type WaveScheme } from './wave-palette';
+import {
+	parseWavePalettePref,
+	type WavePaletteChoice,
+	type WavePalettePref,
+	type WaveScheme
+} from './wave-palette';
+import {
+	listSkinPackRegistry,
+	SKIN_PACK_REGISTRY,
+	type RegisteredSkinPackId,
+	type SkinPackRegistryEntry
+} from './view-registry';
 
 export type UiSkin = 'default' | 'mono-dev' | 'light' | 'green-room' | 'practice-ddj-flx4';
 
 /** Also the top-bar cycle order: default (dark), Gothic, Light, Green Room, Practice, then wrap. */
-export const UI_SKIN_CHOICES: readonly UiSkin[] = ['default', 'mono-dev', 'light', 'green-room', 'practice-ddj-flx4'];
+export const UI_SKIN_CHOICES: readonly UiSkin[] = [
+	'default',
+	'mono-dev',
+	'light',
+	'green-room',
+	'practice-ddj-flx4'
+];
+
+/** First-wave packs in view-registry.ts (default, Gothic, Light). */
+export function skinPackRegistryEntry(skin: RegisteredSkinPackId): SkinPackRegistryEntry {
+	return SKIN_PACK_REGISTRY[skin];
+}
+
+export {
+	listSkinPackRegistry,
+	SKIN_PACK_REGISTRY,
+	type RegisteredSkinPackId,
+	type SkinPackRegistryEntry
+};
 
 export const UI_SKIN_LABELS: Readonly<Record<UiSkin, string>> = {
 	default: 'Default',
@@ -48,7 +77,9 @@ export const UI_SKIN_PRE_GOTHIC_DEFAULT: UiSkin = 'default';
  * pref of 'auto' resolves through this table, so switching skin changes the
  * waveforms; an explicit pref ignores it. Gothic is the mono grayscale palette
  * on blocks, the pairing the skin was designed with. */
-export const SKIN_WAVE_LOOK: Readonly<Record<UiSkin, Readonly<{ design: WaveformDesign; palette: WavePaletteChoice }>>> = {
+export const SKIN_WAVE_LOOK: Readonly<
+	Record<UiSkin, Readonly<{ design: WaveformDesign; palette: WavePaletteChoice }>>
+> = {
 	default: { design: 'tri-band', palette: 'rekordbox' },
 	'mono-dev': { design: 'blocks', palette: 'mono' },
 	light: { design: 'blocks', palette: 'mono' },
@@ -63,12 +94,17 @@ export const SKIN_WAVE_LOOK: Readonly<Record<UiSkin, Readonly<{ design: Waveform
  * Green Room (our own mark, no vendor icon). A Record, so a new skin without a
  * glyph fails the type check. */
 export const SKIN_BUTTON_ICON_SVG: Readonly<Record<UiSkin, string>> = {
-	default: '<path d="M9.8 8.1A4.5 4.5 0 0 1 3.9 2.2 4.6 4.6 0 1 0 9.8 8.1Z" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linejoin="round" />',
-	'mono-dev': '<circle cx="6" cy="6" r="4.6" fill="none" stroke="currentColor" stroke-width="1.2" /><path d="M6 1.4a4.6 4.6 0 0 1 0 9.2Z" fill="currentColor" />',
-	light: '<circle cx="6" cy="6" r="2.4" fill="none" stroke="currentColor" stroke-width="1.2" /><path d="M6 0.8v1.3M6 9.9v1.3M0.8 6h1.3M9.9 6h1.3M2.3 2.3l.9.9M8.8 8.8l.9.9M9.7 2.3l-.9.9M3.2 8.8l-.9.9" stroke="currentColor" stroke-width="1.1" stroke-linecap="round" />',
-	'green-room': '<rect x="1.2" y="1.2" width="9.6" height="9.6" rx="2.6" fill="none" stroke="currentColor" stroke-width="1.2" /><circle cx="6" cy="6" r="1.8" fill="currentColor" />',
+	default:
+		'<path d="M9.8 8.1A4.5 4.5 0 0 1 3.9 2.2 4.6 4.6 0 1 0 9.8 8.1Z" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linejoin="round" />',
+	'mono-dev':
+		'<circle cx="6" cy="6" r="4.6" fill="none" stroke="currentColor" stroke-width="1.2" /><path d="M6 1.4a4.6 4.6 0 0 1 0 9.2Z" fill="currentColor" />',
+	light:
+		'<circle cx="6" cy="6" r="2.4" fill="none" stroke="currentColor" stroke-width="1.2" /><path d="M6 0.8v1.3M6 9.9v1.3M0.8 6h1.3M9.9 6h1.3M2.3 2.3l.9.9M8.8 8.8l.9.9M9.7 2.3l-.9.9M3.2 8.8l-.9.9" stroke="currentColor" stroke-width="1.1" stroke-linecap="round" />',
+	'green-room':
+		'<rect x="1.2" y="1.2" width="9.6" height="9.6" rx="2.6" fill="none" stroke="currentColor" stroke-width="1.2" /><circle cx="6" cy="6" r="1.8" fill="currentColor" />',
 	// Two jog circles on a plate: a schematic controller, our own mark.
-	'practice-ddj-flx4': '<rect x="0.8" y="2.6" width="10.4" height="6.8" rx="1.2" fill="none" stroke="currentColor" stroke-width="1.1" /><circle cx="3.6" cy="6" r="1.7" fill="currentColor" /><circle cx="8.4" cy="6" r="1.7" fill="currentColor" />',
+	'practice-ddj-flx4':
+		'<rect x="0.8" y="2.6" width="10.4" height="6.8" rx="1.2" fill="none" stroke="currentColor" stroke-width="1.1" /><circle cx="3.6" cy="6" r="1.7" fill="currentColor" /><circle cx="8.4" cy="6" r="1.7" fill="currentColor" />'
 };
 
 export function effectiveWaveformDesign(pref: WaveformDesignPref, skin: UiSkin): WaveformDesign {
@@ -106,7 +142,8 @@ export function applyUiSkinDom(skin: UiSkin): void {
 
 export function nextUiSkin(skin: UiSkin): UiSkin {
 	const index = UI_SKIN_CHOICES.indexOf(skin);
-	if (index === -1) throw new Error(`ui_skin must be ${UI_SKIN_CHOICES.join('|')}, got ${String(skin)}`);
+	if (index === -1)
+		throw new Error(`ui_skin must be ${UI_SKIN_CHOICES.join('|')}, got ${String(skin)}`);
 	return UI_SKIN_CHOICES[(index + 1) % UI_SKIN_CHOICES.length];
 }
 
@@ -127,7 +164,9 @@ export const WAVE_SPLIT_MASTER_DEFAULT: WaveSplitMaster = 'auto';
 export function parseWaveSplitMaster(raw: unknown): WaveSplitMaster | undefined {
 	if (raw === undefined) return undefined;
 	if (!WAVE_SPLIT_MASTER_CHOICES.includes(raw as WaveSplitMaster)) {
-		throw new Error(`wave_split_master must be ${WAVE_SPLIT_MASTER_CHOICES.join('|')}, got ${String(raw)}`);
+		throw new Error(
+			`wave_split_master must be ${WAVE_SPLIT_MASTER_CHOICES.join('|')}, got ${String(raw)}`
+		);
 	}
 	return raw as WaveSplitMaster;
 }

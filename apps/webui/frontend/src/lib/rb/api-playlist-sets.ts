@@ -2,7 +2,7 @@
  * Typed client for playlist-set routes (SET-05) and set routes (SET-6586).
  */
 import { RbApiError } from './api-rb-error';
-import { ApiError, api, unwrap } from '../api/client';
+import { ApiError, api, unwrap } from '../api/rb-http';
 
 export interface PlaylistSetEntry {
 	stable_id: string;

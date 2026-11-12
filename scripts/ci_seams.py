@@ -98,10 +98,16 @@ _PREFIXES: tuple[tuple[str, Kind], ...] = (
     # The B2B relay Worker: tests/b2b_transport runs it in workerd (wrangler dev), so a
     # relay change needs the python seam. Its own vitest suite has no CI job yet (#7955).
     ("cloud--b2b-relay/", Kind.PYTHON),
+    # Fleet transcript shipper and index: tests/transcript_hub and tests/transcript_index
+    # are their CI consumers; the ingest Worker's own vitest suite has no CI job yet.
+    ("agents--transcript-hub/", Kind.PYTHON),
+    ("agents--transcript-index/", Kind.PYTHON),
     ("scripts/", Kind.PYTHON),
     ("tests/", Kind.PYTHON),
     ("ops/", Kind.PYTHON),
     ("tools/", Kind.PYTHON),
+    # Throwaway research code (B2B spikes): nothing imports it; pytest-adjacent Python.
+    ("spikes/", Kind.PYTHON),
     ("open-dj/", Kind.PYTHON),
     ("usb-profiles/", Kind.PYTHON),
     # Dependency license register and policy; read by scripts/license_gate.py and its tests.

@@ -48,7 +48,7 @@ jobs:
     runs-on: ${{ fromJSON(vars.CI_RUNS_ON_LINUX || '"ubuntu-latest"') }}
     # A checkout, a handful of API calls and five small downloads; capped so
     # the cost guard can price this workflow (tests/test_ci_cost_guard.py).
-    timeout-minutes: 10
+    timeout-minutes: 12
     steps:
       - name: Reclaim workspace ownership before checkout
         run: |
@@ -145,6 +145,23 @@ jobs:
           "$py" -m scripts.ci_durations_ledger build \
             --repo "$GITHUB_REPOSITORY" \
             --out "$RUNNER_TEMP/durations-ledger/.test_durations"
+
+      # CIPAR-12899: both CI planners price a selection from this ledger, so its seconds
+      # must be what a pull request run really pays. The nightly full lane times some
+      # tests 10x that on its loaded hosts ((private path) 658 s against
+      # 59 s, Wed 11 Nov 2026). Each row becomes its median JUnit time over the newest
+      # green PR runs; a row they never timed is scaled by their median ratio. Red, and
+      # nothing is published, when too few rows were timed or R2 fails: a nightly-only
+      # ledger would bring the overstated prices back.
+      - name: Reprice the ledger at what pull request runs really pay
+        timeout-minutes: 4
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          ledger="$RUNNER_TEMP/durations-ledger/.test_durations"
+          [ -f "$ledger" ] || { echo "[durations-ledger] nothing fresh built; nothing to reprice"; exit 0; }
+          py="$(command -v python3)"
+          "$py" -m scripts.ci_durations_ledger reprice --repo "$GITHUB_REPOSITORY" --ledger "$ledger"
 
       - name: Publish the ledger to the ci-data branch
         timeout-minutes: 2

@@ -44,6 +44,8 @@ export async function refreshLoadedDeckVocalsFromServer(
 ): Promise<void> {
 	for (const stable_id of stable_ids) {
 		const status = await getVocalStatus(stable_id);
+		// The track may have left every deck while its status request was in flight.
+		if (!isStableIdOnLoadedDeck(stable_id)) continue;
 		refreshAnlzVocalsIfNeeded(stable_id, status.status);
 	}
 }

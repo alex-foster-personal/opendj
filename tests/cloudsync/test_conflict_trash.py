@@ -5,13 +5,16 @@ from __future__ import annotations
 import json
 from dataclasses import replace
 from datetime import UTC, datetime, timedelta
+from pathlib import Path
 from uuid import uuid4
 
 import pytest
 
 from apps.cloud import asset_store
 from apps.cloud.config import CloudConfig
-from apps.sync_hub import conflict_trash
+from apps.sync_hub import conflict_trash, engine
+from tests.cloudsync.test_hub_sync import _DEV_A, _DEV_B, _T0, _T1, _T2, _insert_track, _open
+from tests.cloudsync.test_track_identity_collapse import _incoming_track
 
 from .conftest import InMemoryAssetS3
 
@@ -28,7 +31,9 @@ def _cfg() -> CloudConfig:
     )
 
 
+@pytest.mark.requirement("CLOUDSYNC-12622")
 def test_trash_payload_is_canonical_and_retained_for_fourteen_days() -> None:
+    """[if] a loser record is captured [then] payload fields include expiry, [else stop]."""
     captured = datetime(2026, 9, 25, 21, 30, tzinfo=UTC)
     record = conflict_trash.TrashRecord(
         table="tracks",
@@ -49,7 +54,9 @@ def test_trash_payload_is_canonical_and_retained_for_fourteen_days() -> None:
     assert conflict_trash.trash_object_key(body).startswith("trash/")
 
 
+@pytest.mark.requirement("CLOUDSYNC-12622")
 def test_store_is_idempotent_and_rejects_expired_restore() -> None:
+    """[if] restore is requested at or after expires_at [then] restore fails, [else stop]."""
     now = datetime(2026, 9, 25, 21, 30, tzinfo=UTC)
     record = conflict_trash.TrashRecord(
         table="tracks",
@@ -73,7 +80,110 @@ def test_store_is_idempotent_and_rejects_expired_restore() -> None:
         conflict_trash.restore_record(_cfg(), s3, first.object_key, now=now + timedelta(days=14, microseconds=1))
 
 
-@pytest.mark.live_r2
+def _register_machine(conn, machine_id: str, name: str) -> None:
+    conn.execute(
+        """
+        INSERT OR REPLACE INTO machines(
+            machine_id, name, platform, first_seen, last_seen, is_hub, data_root
+        ) VALUES (?, ?, 'linux', ?, ?, 0, '')
+        """,
+        (machine_id, name, _T0, _T0),
+    )
+
+
+def _trash_keys(s3: InMemoryAssetS3, bucket: str) -> list[str]:
+    return [key for (bkt, key) in s3.store if bkt == bucket and key.startswith("trash/")]
+
+
+def _capture_fixture(tmp_path: Path) -> tuple:
+    conn = _open(tmp_path / "hub")
+    _register_machine(conn, _DEV_A, "device-a")
+    _register_machine(conn, _DEV_B, "device-b")
+    cfg = _cfg()
+    s3 = InMemoryAssetS3()
+    now = datetime(2026, 9, 25, 21, 30, tzinfo=UTC)
+    return conn, cfg, s3, now
+
+
+@pytest.mark.requirement("CLOUDSYNC-12622b")
+def test_apply_lww_overwrite_captures_the_stored_loser(tmp_path: Path) -> None:
+    """[if] LWW overwrite happens [then] trash holds the stored row stamps and values, [else stop]."""
+    conn, cfg, s3, now = _capture_fixture(tmp_path)
+    try:
+        _insert_track(conn, "trk-1", title="old", updated_at=_T0, origin=_DEV_A)
+        incoming = _incoming_track(conn, "trk-1", title="new", updated_at=_T2)
+        with conflict_trash.capture_pass(conn, cfg, s3, clock=lambda: now):
+            engine.hub_apply(conn, [incoming])
+        keys = _trash_keys(s3, cfg.state_bucket)
+        assert len(keys) == 1
+        body = json.loads(s3.store[(cfg.state_bucket, keys[0])][0])
+        assert body["table"] == "tracks"
+        assert body["primary_key"] == ["trk-1"]
+        assert body["values"]["title"] == "old"
+        assert body["origin_machine"] == "device-a"
+        assert body["updated_at"] == _T0
+        assert body["origin_device_id"] == _DEV_A
+        assert body["reason"] == conflict_trash.REASON_LWW_OVERWRITE
+    finally:
+        conn.close()
+
+
+@pytest.mark.requirement("CLOUDSYNC-12622b")
+def test_apply_replay_does_not_create_a_second_trash_object(tmp_path: Path) -> None:
+    """[if] the same loser is applied again [then] no second trash object is created, [else stop]."""
+    conn, cfg, s3, now = _capture_fixture(tmp_path)
+    try:
+        _insert_track(conn, "trk-1", title="kept", updated_at=_T2, origin=_DEV_A)
+        incoming = _incoming_track(conn, "trk-1", title="stale", updated_at=_T0)
+        with conflict_trash.capture_pass(conn, cfg, s3, clock=lambda: now):
+            engine.hub_apply(conn, [incoming])
+            engine.hub_apply(conn, [incoming])
+        assert len(_trash_keys(s3, cfg.state_bucket)) == 1
+    finally:
+        conn.close()
+
+
+@pytest.mark.requirement("CLOUDSYNC-12622b")
+def test_restore_before_deadline_returns_stored_values(tmp_path: Path) -> None:
+    """[if] restore is requested before 14 days [then] stored values are returned, [else stop]."""
+    conn, cfg, s3, now = _capture_fixture(tmp_path)
+    try:
+        _insert_track(conn, "trk-1", title="old", updated_at=_T0, origin=_DEV_A)
+        with conflict_trash.capture_pass(conn, cfg, s3, clock=lambda: now):
+            engine.hub_apply(
+                conn,
+                [_incoming_track(conn, "trk-1", title="new", updated_at=_T2)],
+            )
+        key = _trash_keys(s3, cfg.state_bucket)[0]
+        restored = conflict_trash.restore_record(cfg, s3, key, now=now)
+        assert restored.values["title"] == "old"
+    finally:
+        conn.close()
+
+
+@pytest.mark.requirement("CLOUDSYNC-12622b")
+def test_restore_after_expiry_is_not_recoverable(tmp_path: Path) -> None:
+    """[if] restore is requested after expiry [then] the item is not recoverable, [else stop]."""
+    conn, cfg, s3, now = _capture_fixture(tmp_path)
+    try:
+        _insert_track(conn, "trk-1", title="old", updated_at=_T0, origin=_DEV_A)
+        with conflict_trash.capture_pass(conn, cfg, s3, clock=lambda: now):
+            engine.hub_apply(
+                conn,
+                [_incoming_track(conn, "trk-1", title="new", updated_at=_T2)],
+            )
+        key = _trash_keys(s3, cfg.state_bucket)[0]
+        with pytest.raises(conflict_trash.ExpiredTrashError):
+            conflict_trash.restore_record(
+                cfg,
+                s3,
+                key,
+                now=now + timedelta(days=14, microseconds=1),
+            )
+    finally:
+        conn.close()
+
+
 def test_live_r2_conflict_trash_round_trip() -> None:
     """The production boto3 adapter must store and restore a real object."""
     from tests.cloudsync.conftest import LIVE_R2_ENV_VARS, live_r2_config

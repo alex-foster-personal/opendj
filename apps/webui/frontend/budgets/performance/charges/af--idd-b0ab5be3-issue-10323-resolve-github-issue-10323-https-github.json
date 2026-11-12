@@ -1,0 +1,9 @@
+{
+  "bytes": 1024,
+  "measured_main": 423998,
+  "measured_with_pr": 424724,
+  "sha": "5523fdabb1",
+  "date": "Tue 10 Nov 2026",
+  "reason": "Issue #10323 (STEMPERF-11699) adds scroll-to-level, double-click to unity and a level bar to the stem chips (Svelte and React twins); measured local build vs main at 5523fdabb1, +726 B gzip on performance; ceiled to KiB",
+  "payback": "none planned; the growth is the feature's own code on this surface"
+}

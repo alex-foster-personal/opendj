@@ -514,15 +514,19 @@ def test_tracks_respects_order_by_and_limit(client, state_db_path):
     )
     r = client.get(f"/api/v1/smartlists/{sid}/tracks")
     assert r.status_code == 200
-    assert r.json()["items"] == [
+    body = r.json()
+    assert body["items"] == [
         "sl-track-003",
         "sl-track-001",
         "sl-track-002",
         "sl-track-004",
     ]
+    assert body["total"] == 4
     r2 = client.get(f"/api/v1/smartlists/{sid}/tracks", params={"limit": 2})
     assert r2.status_code == 200
-    assert r2.json()["items"] == ["sl-track-003", "sl-track-001"]
+    body2 = r2.json()
+    assert body2["items"] == ["sl-track-003", "sl-track-001"]
+    assert body2["total"] == 4
 
 
 def test_tracks_contains_predicate(client, state_db_path):

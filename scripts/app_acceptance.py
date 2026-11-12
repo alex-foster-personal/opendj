@@ -44,7 +44,8 @@ Requirements (statuses per the house docstring convention):
   `deck_load`, `audio_plays`, `memory`, `stems_lyrics`, `analysis`,
   `clean_quit`, `real_store_untouched`, `harness_cleanup` and `harness`.
   The last two appear only when the harness had to signal a leftover process
-  or crashed. `memory` is report-only in v1.
+  or crashed. `memory` FAILs when engine-tree or webview RSS is at or above the
+  performance-register warn line after load/eject cycles.
   - [if] the running engine's build-info sha differs from --expect-sha
     [then ⛔️] `manifest_sha` FAILs
   - [if] the meter reads no audible level while a deck plays, or the output
@@ -63,10 +64,16 @@ Requirements (statuses per the house docstring convention):
     [then ⛔️] `stems_lyrics` FAILs even when a real bundle exists
   - [if] any import job this run did not start is present [then ⛔️]
     `first_run_import` is UNKNOWN
+  - [if] the foreign-import control job is absent from the jobs list [then ⛔️]
+    `first_run_import` FAILs (must not PASS on absence)
   - [if] quit takes longer than QUIT_TOTAL_MAX_S, the engine exits slower
     than ENGINE_SIGTERM_EXIT_MAX_MS after SIGTERM, any SIGKILL sweep ran, or a
     process from the bundle or run root, or a renderer this launch owned,
     survives [then ⛔️] `clean_quit` FAILs
+  - [if] a sigterm-ignoring child survives quit or the shell had to SIGKILL [then ⛔️]
+    `clean_quit` FAILs; a clean quit does not FAIL for absence of SIGKILL alone
+  - [if] the sigkill control child is invisible or quit_problems ignores survivors
+    and SIGKILL lines [then ⛔️] `clean_quit` FAILs before the real quit
   - [if] the renderers this launch owns cannot be told apart from another
     app's (the ownership lookup is unavailable or fails) [then ⛔️] `memory`
     is UNKNOWN and `clean_quit` is UNKNOWN: no webview figure is reported
@@ -113,6 +120,7 @@ import argparse
 import base64
 import contextlib
 import ctypes
+import signal
 import hashlib
 import json
 import math
@@ -173,8 +181,8 @@ ENGINE_SIGTERM_EXIT_MAX_MS = 5000
 DURATION_TOLERANCE_MS = 1500
 # A playing deck through the master: measured RMS above this. Paused: below it.
 RMS_AUDIBLE_MIN = 1e-3
-# (private path), RAM / decoded PCM row: the in-app memory
-# meter warns at 800 MB and alarms at 1600 MB. Report-only in v1, no gate.
+# (private path), RAM / decoded PCM row: acceptance FAILs at
+# the same 800 / 1600 MB RSS warn and alarm lines as the in-app memory meter.
 RSS_WARN_MB = 800
 RSS_ALARM_MB = 1600
 MEMORY_CYCLES = 3
@@ -776,6 +784,7 @@ class Run:
     launched_at: float = 0.0
     # True when this run wrote REAL_STORE_SENTINEL_BYTES because state.db was absent.
     real_store_sentinel_seeded: bool = False
+    quit_sigkill_control_exercised: bool = False
 
 
 # ----- helpers --------------------------------------------------------------------
@@ -1053,8 +1062,14 @@ def parse_shutdown_log(text: str) -> dict[str, Any]:
 
 
 def quit_problems(quit_s: float, survivors: int, exit_ms: list[int], sigkill_lines: list[str],
-                  port_open: bool) -> list[str] | None:
-    """Problems with a quit, [] when clean, None when the exit time is unmeasured."""
+                  port_open: bool, *, sigkill_control_blind: bool = False) -> list[str] | None:
+    """Problems with a quit, [] when clean, None when the exit time is unmeasured.
+
+    A clean quit does not fail merely because SIGKILL was not logged: absence of
+    survivors, a closed port, and no SIGKILL line pass together. ``sigkill_control_blind``
+    is set when a sigterm-ignoring control child was left through quit but neither a
+  survivor nor a SIGKILL line was recorded.
+    """
     if not exit_ms:
         return None
     problems = []
@@ -1068,6 +1083,8 @@ def quit_problems(quit_s: float, survivors: int, exit_ms: list[int], sigkill_lin
         problems.append(f"shell had to SIGKILL: {sigkill_lines[-1][:200]}")
     if port_open:
         problems.append("engine port still listening after quit")
+    if sigkill_control_blind:
+        problems.append("SIGKILL control child ignored SIGTERM but quit passed without survivor or SIGKILL evidence")
     return problems
 
 
@@ -1390,6 +1407,94 @@ def foreign_import_jobs(jobs: list[dict[str, Any]], our_job_ids: set[str]) -> li
     return foreign
 
 
+_SIGKILL_CONTROL_CHILD = Path(__file__).with_name("app_acceptance_sigkill_control_child.py")
+
+
+def _spawn_sigterm_ignoring_child(home: Path) -> subprocess.Popen[bytes]:
+    """A child that survives SIGTERM, with the run HOME in its argv for the orphan probe."""
+    if not _SIGKILL_CONTROL_CHILD.is_file():
+        raise Unmeasurable(f"sigkill control script missing: {_SIGKILL_CONTROL_CHILD}")
+    marker = home / ".opendj-acceptance-sigkill-control"
+    return subprocess.Popen(
+        [sys.executable, str(_SIGKILL_CONTROL_CHILD), str(marker)],
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+        start_new_session=True,
+    )
+
+
+def _reap_sigkill_control_child(child: subprocess.Popen[bytes]) -> None:
+    if child.poll() is None:
+        with contextlib.suppress(OSError, ProcessLookupError):
+            os.kill(child.pid, signal.SIGKILL)
+    with contextlib.suppress(subprocess.TimeoutExpired):
+        child.wait(timeout=5)
+
+
+def exercise_sigkill_quit_control(run: Run, check: Check) -> str | None:
+    """Prove clean_quit can go red on a sigterm-ignoring child before the real quit."""
+    child = _spawn_sigterm_ignoring_child(run.home)
+    home_marker = str(run.home)
+    try:
+        time.sleep(0.25)
+        if child.poll() is not None:
+            return "SIGKILL control: sigterm-ignoring child exited before the probe"
+        visible = [p for p in _ps() if p.pid == child.pid and home_marker in p.command]
+        if not visible:
+            return "SIGKILL control: child not visible to the orphan probe"
+        if os.name != "nt":
+            os.kill(child.pid, signal.SIGTERM)
+            time.sleep(0.25)
+            if child.poll() is not None:
+                return "SIGKILL control: child died on SIGTERM instead of ignoring it"
+        survivor_problem = quit_problems(1.0, 1, [100], [], False)
+        if survivor_problem is None or not any("still alive" in item for item in survivor_problem):
+            return "SIGKILL control: quit_problems did not fail on a survivor"
+        sigkill_problem = quit_problems(
+            1.0, 0, [100], ["[shell shutdown] engine pgid 99: SIGKILLed processes left behind"], False)
+        if sigkill_problem is None or not any("SIGKILL" in item for item in sigkill_problem):
+            return "SIGKILL control: quit_problems did not fail on a SIGKILL log line"
+        check.numbers["sigkill_control_child_pid"] = child.pid
+        check.evidence.append(f"SIGKILL control: child {child.pid} ignored SIGTERM and was visible before quit")
+        run.quit_sigkill_control_exercised = True
+        return None
+    finally:
+        _reap_sigkill_control_child(child)
+
+
+def plant_foreign_import_control(run: Run, check: Check) -> str | None:
+    """Start a foreign import job, require the guard to see it, then cancel and own it."""
+    engine = run.engine
+    assert engine is not None
+    control_dir = run.home / ".opendj-acceptance-foreign-import-control"
+    control_dir.mkdir(parents=True, exist_ok=True)
+    code, job, _ = engine.call("POST", "/api/v1/setup/import/folder", {"folders": [str(control_dir)]})
+    if code != 202 or not isinstance(job, dict) or not job.get("id"):
+        return f"foreign import control refused: {code} {str(job)[:200]}"
+    control_id = str(job["id"])
+    foreign = foreign_import_jobs(_jobs(engine), run.our_job_ids)
+    if not any(str(item.get("id")) == control_id for item in foreign):
+        return f"foreign import control job {control_id} not listed as foreign"
+    matched = next(item for item in foreign if str(item.get("id")) == control_id)
+    roots = matched.get("payload", {}).get("roots") if isinstance(matched.get("payload"), dict) else None
+    check.numbers["foreign_import_control_job_id"] = control_id
+    check.evidence.append(f"foreign import control saw job {control_id} kind={matched.get('kind')} roots={roots}")
+    cancel_code, cancel_body, _ = engine.call("POST", f"/api/v1/jobs/{control_id}/cancel", {})
+    if cancel_code not in (200, 202):
+        return f"foreign import control cancel refused: {cancel_code} {str(cancel_body)[:200]}"
+
+    def finished() -> dict[str, Any] | None:
+        current = engine.get(f"/api/v1/jobs/{control_id}")
+        return current if current.get("status") in TERMINAL_JOB_STATES else None
+
+    if _poll(finished, 60) is None:
+        return f"foreign import control job {control_id} did not finish after cancel"
+    run.our_job_ids.add(control_id)
+    if foreign_import_jobs(_jobs(engine), run.our_job_ids):
+        return f"foreign import control job {control_id} still foreign after claiming it"
+    return None
+
+
 def check_first_run_import(run: Run) -> Check:
     check = Check("first_run_import")
     engine = run.engine
@@ -1413,6 +1518,9 @@ def check_first_run_import(run: Run) -> Check:
                           "expected_tracks": run.fixture.expected_tracks,
                           "expected_import_playlists": run.fixture.expected_import_playlists,
                           "titles_listed": sorted(t for t in run.ids_by_title if t)})
+    failure = plant_foreign_import_control(run, check)
+    if failure:
+        return check.set(FAIL, failure)
     foreign = foreign_import_jobs(_jobs(engine), run.our_job_ids)
     if foreign:
         for job in foreign:
@@ -1659,12 +1767,28 @@ def check_memory(run: Run) -> Check:
     check.numbers["thresholds_mb"] = {"warn": RSS_WARN_MB, "alarm": RSS_ALARM_MB,
                                       "source": "(private path) RAM / decoded PCM"}
     check.numbers["delta_total_mb"] = round(after["total_mb"] - run.memory_boot["total_mb"], 1)
-    over = [k for k in ("engine_tree_mb", "webview_mb") if after[k] >= RSS_WARN_MB]
-    note = f"; over the {RSS_WARN_MB} MB meter warn line: {over}" if over else ""
-    return check.set(PASS, f"report-only: boot {run.memory_boot['total_mb']} MB -> {after['total_mb']} MB after "
-                           f"{MEMORY_CYCLES} load/eject cycles (engine tree {after['engine_tree_mb']}, of which workers "
-                           f"{after['engine_workers_mb']}; webview {after['webview_mb']}){note}")
+    watched = ("engine_tree_mb", "webview_mb")
+    over = [k for k in watched if after[k] >= RSS_WARN_MB]
+    over_alarm = [k for k in over if after[k] >= RSS_ALARM_MB]
+    check.numbers["over_budget"] = over
+    if over_alarm:
+        check.numbers["over_alarm_mb"] = {k: after[k] for k in over_alarm}
+    summary = (f"boot {run.memory_boot['total_mb']} MB -> {after['total_mb']} MB after "
+               f"{MEMORY_CYCLES} load/eject cycles (engine tree {after['engine_tree_mb']}, of which workers "
+               f"{after['engine_workers_mb']}; webview {after['webview_mb']})")
+    if over:
+        note = f"over the {RSS_WARN_MB} MB warn line: {over}"
+        if over_alarm:
+            note += f"; over the {RSS_ALARM_MB} MB alarm line: {over_alarm}"
+        return check.set(FAIL, f"{summary}; {note}")
+    return check.set(PASS, summary)
 
+
+def check_memory_after_boot(run: Run) -> Check:
+    """Gate the memory check on a measured boot RSS: unmeasured boot is UNKNOWN, never PASS."""
+    if not run.memory_boot.get("total_mb"):
+        return Check("memory").set(UNKNOWN, f"boot RSS unmeasured: {run.memory_boot.get('error')}")
+    return check_memory(run)
 
 def _enqueue(engine: Engine, lane: str, track_id: str) -> tuple[int, Any]:
     code, body, _ = engine.call("POST", "/api/v1/library-jobs/enqueue",
@@ -2359,6 +2483,9 @@ def check_clean_quit(run: Run) -> Check:
     if len(before) - len(_owned_renderers_alive(run, before)) < 2:
         return check.set(UNKNOWN, f"orphan probe sees {len(before)} app processes before quit: it cannot see "
                                   "the app, so an empty result after would mean nothing")
+    failure = exercise_sigkill_quit_control(run, check)
+    if failure:
+        return check.set(FAIL, failure)
     t0 = time.monotonic()
     code, body, _ = engine.call("POST", "/api/v1/lifecycle/quit", {"force": True})
     if code != 200:
@@ -2373,7 +2500,8 @@ def check_clean_quit(run: Run) -> Check:
                           "engine_exit_ms_after_sigterm": exit_ms[-1] if exit_ms else None,
                           "engine_exit_max_ms": ENGINE_SIGTERM_EXIT_MAX_MS,
                           "survivors": [f"{p.pid} {p.command[:160]}" for p in left],
-                          "port_listening_after": port_open})
+                          "port_listening_after": port_open,
+                          "sigkill_control_exercised": run.quit_sigkill_control_exercised})
     check.evidence += findings["shutdown_lines"]
     problems = quit_problems(quit_s, len(left), exit_ms, findings["sigkill_lines"], port_open)
     if problems is None:
@@ -2692,8 +2820,7 @@ def _launch_and_check(run: Run, result: dict[str, Any], checks: list[Check],
     stems_deadline = time.monotonic() + max(run.stems_timeout_s, run.lyrics_timeout_s)
     _guarded_call(start_stems_lyrics, run, stems_check)
     checks.extend(_guarded(fn, run) for fn in (check_deck_load, check_audio_plays))
-    checks.append(_guarded(lambda r: check_memory(r) if r.memory_boot.get("total_mb") else
-                           Check("memory").set(UNKNOWN, f"boot RSS unmeasured: {r.memory_boot.get('error')}"), run, "memory"))
+    checks.append(_guarded(check_memory_after_boot, run, "memory"))
     checks.append(_guarded(lambda r: check_stems_lyrics(r, stems_check, stems_deadline), run, "stems_lyrics"))
     _restore_negative_carrier_for_analysis(run, analysis_check)
     checks.append(_guarded(check_clean_quit, run))

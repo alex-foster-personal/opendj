@@ -106,13 +106,23 @@ test('a successful shell open, focus and close talk to the Electron bridge', asy
 			action: 'open',
 			label: 'second-screen'
 		});
-		assert.deepEqual(ipc.queryPerformanceState().windows, ['second-screen']);
+		const undoOpen = ipc.applyShellWindowLabelsForTest(['second-screen']);
+		try {
+			assert.deepEqual(ipc.queryPerformanceState().windows, ['second-screen']);
+		} finally {
+			undoOpen();
+		}
 		await globalThis.window.musicDjToolsPerformance.dispatch({
 			type: 'window',
 			action: 'focus',
 			label: 'second-screen'
 		});
-		assert.deepEqual(ipc.queryPerformanceState().windows, ['second-screen']);
+		const undoFocus = ipc.applyShellWindowLabelsForTest(['second-screen']);
+		try {
+			assert.deepEqual(ipc.queryPerformanceState().windows, ['second-screen']);
+		} finally {
+			undoFocus();
+		}
 		await globalThis.window.musicDjToolsPerformance.dispatch({
 			type: 'window',
 			action: 'close',
@@ -126,6 +136,77 @@ test('a successful shell open, focus and close talk to the Electron bridge', asy
 		]);
 	} finally {
 		uninstall();
+		restore();
+	}
+});
+
+function memoryLocalStorage() {
+	const map = new Map();
+	return {
+		getItem: (key) => (map.has(key) ? map.get(key) : null),
+		setItem: (key, value) => map.set(key, String(value)),
+		removeItem: (key) => {
+			map.delete(key);
+		},
+		clear: () => {
+			map.clear();
+		}
+	};
+}
+
+test('in Tauri a window command succeeds through control_shell_window and shell reports', async () => {
+	const invokeCalls = [];
+	let shellHandler = null;
+	globalThis.__tauriInvokeMock = async (command, args) => {
+		invokeCalls.push([command, args]);
+		if (command === 'query_shell_window_labels') return [];
+		return undefined;
+	};
+	globalThis.__tauriListenMock = async (_event, handler) => {
+		shellHandler = handler;
+		return () => {
+			shellHandler = null;
+		};
+	};
+	const previousStorage = globalThis.localStorage;
+	const restore = withBrowserWindow();
+	const store = memoryLocalStorage();
+	globalThis.localStorage = store;
+	globalThis.window = { ...globalThis.window, localStorage: store };
+	globalThis.__TAURI_INTERNALS__ = {};
+	await loadTypeScriptModule('src/lib/rb/prefs.svelte.ts', { viteApiBase: API_BASE });
+	const tauriIpc = await loadTypeScriptModule('src/lib/rb/performance-ipc.svelte.ts', {
+		viteApiBase: API_BASE,
+		alias: {
+			'@tauri-apps/api/core': new URL('./tauri-core-mock.mjs', import.meta.url).pathname,
+			'@tauri-apps/api/event': new URL('./tauri-event-mock.mjs', import.meta.url).pathname
+		}
+	});
+	const uninstall = tauriIpc.installPerformanceBrowserIpc();
+	await new Promise((resolve) => setTimeout(resolve, 0));
+	try {
+		assert.deepEqual(tauriIpc.queryPerformanceState().windows, []);
+		await globalThis.window.musicDjToolsPerformance.dispatch({
+			type: 'window',
+			action: 'open',
+			label: 'second-screen'
+		});
+		assert.deepEqual(invokeCalls[invokeCalls.length - 1], [
+			'control_shell_window',
+			{ action: 'open', label: 'second-screen' }
+		]);
+		assert.equal(typeof shellHandler, 'function');
+		shellHandler({ payload: { labels: ['second-screen'] } });
+		assert.deepEqual(tauriIpc.queryPerformanceState().windows, ['second-screen']);
+		shellHandler({ payload: { labels: [] } });
+		assert.deepEqual(tauriIpc.queryPerformanceState().windows, []);
+	} finally {
+		uninstall();
+		delete globalThis.__tauriInvokeMock;
+		delete globalThis.__tauriListenMock;
+		delete globalThis.__TAURI_INTERNALS__;
+		if (previousStorage === undefined) delete globalThis.localStorage;
+		else globalThis.localStorage = previousStorage;
 		restore();
 	}
 });

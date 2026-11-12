@@ -1,8 +1,14 @@
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
 import { types } from 'node:util';
 import { before, describe, it, test } from 'node:test';
 import { loadRuneModule } from './load-rune-module.mjs';
 import { loadTypeScriptModule } from './load-typescript.mjs';
+
+const JOB_PROGRESS_SRC = fileURLToPath(
+	new URL('../../src/lib/rb/job-progress.svelte.ts', import.meta.url)
+);
 
 const RUNE_ENTRY = "export { jobProgress } from '$lib/rb/job-progress.svelte';\n";
 
@@ -228,7 +234,14 @@ describe('job-progress helpers', () => {
 	});
 });
 
-describe('job-progress raw store (PERF-UI-11091, #10235)', () => {
+describe('job-progress raw store (PERF-UI-11091, #10235; PERF-12719, #11391)', () => {
+	test('if setBadge source then badges use $state.raw and _withEntry', () => {
+		const src = readFileSync(JOB_PROGRESS_SRC, 'utf8');
+		assert.match(src, /\$state\.raw<Record<string, AnalysisBadge>>/);
+		assert.match(src, /badges = _withEntry\(badges,/);
+		assert.doesNotMatch(src, /badges = \{\s*\n\s*\.\.\.badges,/);
+	});
+
 	test('if 1,000 badge writes then badges and entries stay plain not proxied', async () => {
 		const m = await loadRuneModule(RUNE_ENTRY);
 		for (let i = 0; i < 1000; i++) {

@@ -1,11 +1,20 @@
 <script lang="ts" module>
 	import { readKeyNudgeStep, subscribeKeyNudgeStep, type KeyNudgeStep } from '$lib/player/key/camelot';
+	import { getRecentDeck, resolveKeyboardDeck, subscribeRecentDeck } from '$lib/rb/recent-deck';
+	import type { DeckId } from '$lib/rb/deck-slots';
 
 	// DECKGAP-7691b: one step size for every deck, owned by camelot.ts and set
 	// only through the `key_nudge_step` command; this mirror redraws the row.
 	let keyNudgeStep: KeyNudgeStep = $state(readKeyNudgeStep());
 	subscribeKeyNudgeStep((step) => {
 		keyNudgeStep = step;
+	});
+
+	// KEYB-11383: the recent deck lives in a plain module; mirror it so the
+	// keyboard-deck marker moves with clicks, loads and Backquote.
+	let recentDeck: DeckId | null = $state(getRecentDeck());
+	subscribeRecentDeck((next) => {
+		recentDeck = next;
 	});
 </script>
 
@@ -46,7 +55,6 @@
 	import { gridFeatureInertTip, gridFeaturesInert, beatSyncFeaturesInert, beatSyncInertTip } from '$lib/player/grid-features';
 	import { deckKeyAtPlayheadNow } from '$lib/player/key-playhead-lazy.svelte';
 	import { keyNudgeSemitones, keySourceHint, keySyncKey, keySyncKeyIsGuess, keySyncStatusTitle, type KeySyncMode, type KeySyncStatus } from '$lib/player/key/camelot';
-	import type { DeckId } from '$lib/rb/deck-slots';
 	import type { DeckState } from '$lib/rb/deck-state-types';
 	import ControlExplainer from './ControlExplainer.svelte';
 	import { TOOLTIP_DECK_CHROME, TOOLTIP_ISOLATED } from '$lib/ui/tooltip-timing';
@@ -538,7 +546,16 @@
 		if (originalNote !== null) parts.push(`Original: ${originalNote}`);
 		return parts.join(' — ');
 	});
-	const deckNumTitle: string = $derived(`Deck ${deckId}`);
+	// KEYB-11383: every header runs the same resolver, so exactly one is marked.
+	const isKeyboardDeck = $derived(
+		resolveKeyboardDeck(
+			recentDeck,
+			DECK_IDS.map((id) => ({ id, loaded: deckStates[id].stable_id !== null, playing: deckStates[id].playing }))
+		) === deckId
+	);
+	const deckNumTitle: string = $derived(
+		isKeyboardDeck ? `Deck ${deckId} - keyboard deck (Space, C, V, K act here; \` cycles)` : `Deck ${deckId}`
+	);
 	// DECKMOVE-01 (the maintainer, Wed 4 Nov 2026): right-click the artwork, "Move track
 	// to deck N". The target takes the track, playhead, live loop and settings,
 	// crossfades over 8 beats, and this deck unloads. A playing target is named
@@ -565,6 +582,8 @@
 	class="deck-header"
 	class:mirrored
 	data-mirrored={mirrored}
+	class:keyboard-deck={isKeyboardDeck}
+	data-keyboard-deck={isKeyboardDeck ? 'true' : 'false'}
 	use:selectorNode={{ id: selId.deckPart(deckId, 'header'), kind: 'leaf', enabled: true }}
 >
 	{#if cloudDownload !== null}
@@ -632,7 +651,11 @@
 	<!-- Body wraps beside art so a second chrome row does not stack under the
 	     full artwork height (header = max(art, body), not art + body). -->
 	<div class="header-body">
-		<span class="deck-num" title={deckNumTitle}>{deckId}</span>
+		<span
+			class="deck-num"
+			title={deckNumTitle}
+			data-testid={isKeyboardDeck ? `keyboard-deck-marker-${deckId}` : undefined}>{deckId}</span
+		>
 
 		<div class="meta" class:empty={deck.stable_id === null}>
 			<!-- The title and artist ellipsize in a narrow deck; the hover tip is
@@ -1012,6 +1035,11 @@
 		flex: 1 1 auto;
 		min-width: 0;
 	}
+	/* KEYB-11383: non-text marker, rb-accent on rb-panel clears 3:1 in every skin. */
+	.deck-header.keyboard-deck .deck-num {
+		box-shadow: inset 0 -3px 0 var(--rb-accent);
+	}
+
 	.deck-num {
 		font-size: var(--rb-fs-deck-title);
 		font-weight: 700;

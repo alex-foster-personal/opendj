@@ -9,11 +9,8 @@
 	import { isNewPin } from '$lib/rb/feedback-pin-age';
 	import { isPinUnread, pinStyle, type PinSeen } from '$lib/rb/feedback';
 	import { resolvedPinStyle, type ResolvedPinPosition } from '$lib/rb/feedback-pin-position';
-	import {
-		anchorMovedBeneathPin,
-		pinBoardState,
-		type PinBoardBadge
-	} from '$lib/rb/feedback-pin-board';
+	import { badgeLabel } from '$lib/components/comment-pins/comment-pins-ux';
+	import { anchorMovedBeneathPin, pinBoardState } from '$lib/rb/feedback-pin-board';
 	import { pinVisualState } from '$lib/rb/feedback-pin-partial';
 	import type { FeedbackPin } from '$lib/rb/feedback-store.svelte';
 
@@ -35,23 +32,6 @@
 		onopen: (pin: FeedbackPin) => void;
 	} = $props();
 
-	function badgeLabel(badge: PinBoardBadge): string {
-		switch (badge) {
-			case 'anchor-moved':
-				return 'anchor moved';
-			case 'route-moved':
-				return 'route moved';
-			case 'harvested':
-				return 'harvested';
-			case 'regressed':
-				return 'regressed';
-			default: {
-				const _exhaustive: never = badge;
-				return _exhaustive;
-			}
-		}
-	}
-
 	function anchorMovedFor(pin: FeedbackPin): boolean {
 		if (typeof document === 'undefined') return false;
 		return anchorMovedBeneathPin(pin, (x, y) => document.elementsFromPoint(x, y));
@@ -72,6 +52,8 @@
 		class:fb-pos-fallback={pos?.fallback === true}
 		data-pin-id={pin.id}
 		data-pin-tier={pos?.tier ?? 'viewport'}
+		data-pin-harvested={board.badges.includes('harvested') ? 'true' : 'false'}
+		data-pin-anchor-moved={board.badges.includes('anchor-moved') ? 'true' : 'false'}
 		style={pos === undefined ? pinStyle(pin) : resolvedPinStyle(pin, pos)}
 		title={`${pin.text} - ${pin.created_at}${pin.anchor ? ` (near ${pin.anchor})` : ''}${pos?.fallback ? ` [placed via ${pos.via ?? 'saved screen position'}]` : ''}${pin.page !== pathname ? ` [page ${pin.page}]` : ''}${board.badges.length ? ` - ${board.badges.map(badgeLabel).join(', ')}` : ''}`}
 		aria-label={`Comment pin (${state}) - open${board.badges.length ? ` - ${board.badges.join(', ')}` : ''}`}

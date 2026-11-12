@@ -22,18 +22,20 @@ from __future__ import annotations
 
 import time
 from collections.abc import Callable, Iterator
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from typing import Any
 
 import httpx
 import pytest
 
+from apps.ableton_link import carabiner as carabiner_mod
 from apps.ableton_link.carabiner import CarabinerClient
 from apps.ableton_link.link_clock import beat_at_time, link_host_clock_available, link_now_us
 from apps.b2b_pairing.b2b_door import Door
 from apps.b2b_sync import relay_clock
 from apps.b2b_sync.link_relay import (
     CFG,
+    AlignPlan,
     LeaderState,
     LinkRelay,
     RelayWireError,
@@ -48,6 +50,7 @@ from apps.b2b_sync.link_relay import (
     seal,
     unseal,
 )
+from apps.b2b_sync.relay_clock import ClockEstimate
 from apps.b2b_transport.channel import ChannelKind, LanChannel, Timeout
 from tests.ableton_link.carabiner_sim import SimCarabiner
 
@@ -254,8 +257,8 @@ class _Laptop:
         self.sim.close()
 
 
-def _laptop(role: str, bpm: float, start_us: float) -> _Laptop:
-    sim = SimCarabiner(bpm=bpm, start_us=start_us)
+def _laptop(role: str, bpm: float, start_us: float, *, write_mode: str = "normal") -> _Laptop:
+    sim = SimCarabiner(bpm=bpm, start_us=start_us, write_mode=write_mode)  # type: ignore[arg-type]
     client = CarabinerClient(port=sim.port)
     client.start()
     host = _Host(TOKEN)
@@ -409,3 +412,119 @@ def test_a_partition_holds_as_follow_with_no_relay_peer_and_writes_nothing(
     written = [c for c in follower.sim.commands if c != "status"]
     time.sleep(1.0)
     assert [c for c in follower.sim.commands if c != "status"] == written, "if the follower writes Link on stale state then broken"
+
+
+# ---------------------------------------------------------------- alignment acknowledgement
+
+
+def _clock_estimate(offset_us: float = 0.0, skew_ppm: float = 0.0) -> ClockEstimate:
+    return ClockEstimate(
+        offset_us=offset_us,
+        skew_ppm=skew_ppm,
+        skew_ready=True,
+        skew_clamped=False,
+        rtt_min_us=1_000.0,
+        rtt_p50_us=2_000.0,
+        samples=8,
+        used=8,
+    )
+
+
+def _alignment_relay(write_mode: str = "normal") -> tuple[LinkRelay, CarabinerClient, LeaderState, SimCarabiner]:
+    """Engaged follower with a leader that forces a tempo write on the next align."""
+    now = link_now_us()
+    sim = SimCarabiner(bpm=128.0, start_us=now - 11_000_000, write_mode=write_mode)  # type: ignore[arg-type]
+    client = CarabinerClient(port=sim.port)
+    client.start()
+    leader = LeaderState(
+        seq=1,
+        role="on_air",
+        engaged=True,
+        joined=True,
+        connected=True,
+        peers=0,
+        bpm=124.0,
+        start_us=now + 1_234_567.0 - 37_123_456,
+        received_at=time.monotonic(),
+    )
+    relay = LinkRelay(
+        client=lambda: client,
+        role=lambda: "following",
+        peer=lambda: None,
+        verdict=lambda: ("multicast_blocked", "test"),
+        enabled=lambda: True,
+        wire_clock=WireClock(offset_us=1_234_567.0, skew_ppm=0.0, ref_us=now),
+    )
+    relay.engaged = True
+    relay._leader = leader
+    relay._estimator.estimate = lambda _now: _clock_estimate(offset_us=1_234_567.0)  # type: ignore[method-assign]
+    try:
+        _wait(
+            "carabiner session snapshot",
+            lambda: client.snapshot().connected
+            and client.snapshot().bpm is not None
+            and client.snapshot().start_us is not None,
+            2.0,
+        )
+    except AssertionError:
+        client.stop()
+        sim.close()
+        raise
+    return relay, client, leader, sim
+
+
+@pytest.mark.requirement("RBPERFORMANCE-13262")
+def test_status_sync_not_locked_after_carabiner_rejects_alignment() -> None:
+    """[if] Carabiner rejects align [then] sync not locked and outcome rejected, [else stop]."""
+    relay, client, leader, sim = _alignment_relay("reject")
+    try:
+        relay._align(client, leader)
+        status = relay.status()
+        assert status["sync"] != "locked"
+        assert status["last_alignment"]["outcome"] == "rejected"
+        assert status["counts"]["refused_writes"] == 1
+        assert status["last_error"]
+    finally:
+        client.stop()
+        sim.close()
+
+
+@pytest.mark.requirement("RBPERFORMANCE-13262")
+def test_status_sync_not_locked_after_carabiner_alignment_timeout(monkeypatch: pytest.MonkeyPatch) -> None:
+    """[if] Carabiner silent on align [then] sync not locked and outcome timeout, [else stop]."""
+    monkeypatch.setattr(carabiner_mod, "REPLY_TIMEOUT_S", 0.05)
+    relay, client, leader, sim = _alignment_relay("silent")
+    try:
+        relay._align(client, leader)
+        status = relay.status()
+        assert status["sync"] != "locked"
+        assert status["last_alignment"]["outcome"] == "timeout"
+        assert status["counts"]["refused_writes"] == 1
+        assert status["last_error"]
+    finally:
+        client.stop()
+        sim.close()
+
+
+@pytest.mark.requirement("RBPERFORMANCE-13262")
+@HOST_CLOCK_REQUIRED
+def test_status_acknowledged_after_successful_alignment_write() -> None:
+    """[if] Carabiner acks align [then] outcome acknowledged and tempo_sets increments, [else stop]."""
+    relay, client, leader, sim = _alignment_relay("normal")
+    try:
+        relay._align(client, leader)
+        status = relay.status()
+        assert status["last_alignment"]["outcome"] == "acknowledged"
+        assert status["counts"]["tempo_sets"] == 1
+        assert status["last_alignment"]["error"] is None
+        assert status["mode"] == "follow"
+        with relay._lock:
+            plan = relay._plan
+            assert isinstance(plan, AlignPlan)
+            relay._plan = replace(plan, phase_error_ms=1.0)
+        locked = relay.status()
+        assert locked["sync"] == "locked"
+        assert abs(locked["phase_error_ms"]) <= CFG.LOCKED_MS
+    finally:
+        client.stop()
+        sim.close()

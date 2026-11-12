@@ -92,6 +92,15 @@ class FrameProbeSample(BaseModel):
     xruns: int | None = Field(default=None, ge=0)
 
 
+class LiveHandlesSample(BaseModel):
+    """Live in-page handle totals from the opt-in probe (PERF-LEAK-11789)."""
+
+    intervals: int = Field(ge=0)
+    long_timeouts: int = Field(ge=0)
+    window_listeners: int = Field(ge=0)
+    rafs: int = Field(ge=0)
+
+
 class ClientPerformanceSampleIn(BaseModel):
     client_sample_id: str = Field(min_length=1, max_length=128)
     client_session_id: str = Field(min_length=1, max_length=128)
@@ -110,6 +119,8 @@ class ClientPerformanceSampleIn(BaseModel):
     decks: list[DeckPerformanceSample] = Field(min_length=4, max_length=4)
     # Null unless the page was opened with ?perfprobe=1 (PERFPROBE-01).
     frame_probe: FrameProbeSample | None = None
+    # Null unless ?perfprobe=1 armed the live handles probe (PERF-LEAK-11789).
+    live_handles: LiveHandlesSample | None = None
 
 
 class ClientPerformanceSampleOut(BaseModel):

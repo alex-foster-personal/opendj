@@ -10,6 +10,7 @@ import { readAutoPlayNextMirror } from './auto-play-next.svelte';
 import { autoPlayHandoffInFlight } from './auto-play-plan-gate';
 import { readLastDeckStop } from './deck-stop-log';
 import { queryPerformanceState } from './performance-ipc.svelte';
+import { refreshHeadphoneSignals } from '$lib/player/headphones';
 import { installAgentOrderPoll, readAgentPlanMirror } from './agent-orders';
 import type { TabLeadership } from './tab-leadership';
 import { createLeasedMirrorPublisher, MIRROR_PATH } from './leased-mirror-publisher';
@@ -83,6 +84,9 @@ function _position(deck: ReturnType<typeof queryPerformanceState>['decks'][1]): 
 }
 
 export function buildUiMirror(): Record<string, unknown> {
+	// Runs from a timer, never a reactive read: refresh the gated signal meters
+	// so mixer.headphones.signals stays current with the I/O panel closed.
+	refreshHeadphoneSignals();
 	const state = queryPerformanceState();
 	const silence = masterSilenceState();
 	// Two distinct claims (#1642): the mixer being quiet (silence.verdict) and
@@ -155,6 +159,8 @@ export function buildUiMirror(): Record<string, unknown> {
 				// KEYSYNC-01: KEY SYNC mode/target/status, the applied shift and the ladder per target deck.
 				key_sync: { mode: deck.key_sync_mode, target: deck.key_sync_target, status: deck.key_sync_status, shift_semitones: deck.key_shift_semitones, options: deck.key_options },
 				phrases: deck.phrases,
+				// PADFX-11718: the pad bank the deck shows and each mode's selectability.
+				pad_mode: deck.pad_mode,
 				// PLAY-18: the deck's last stop and its cause; user_pause is true only
 				// when a person stopped it. The engine logs each new one on ingest.
 				last_stop: readLastDeckStop(deck.deck_id),

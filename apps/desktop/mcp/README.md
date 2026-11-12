@@ -1,5 +1,10 @@
 # webview-mcp -- drive and see inside the REAL Tauri WKWebView, cheaply
 
+For recorder lifecycle actions in the shipped app, use `opendj mcp`:
+`recorder_status`, `recorder_start`, `recorder_stop`, and `recorder_recover`
+call REC's daemon routes. Arguments and recovery preconditions are documented
+in `apps/opendj_cli/README.md`. The tools in this directory are for debug shells.
+
 The iteration-speed fix for the desktop shell: an MCP server any agent
 (Claude Code, Codex, Cursor) can plug in to observe and drive the running
 DEBUG shell without screenshots-by-hand, without rebuilding a dmg, and at

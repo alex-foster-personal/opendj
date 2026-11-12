@@ -1,4 +1,7 @@
-"""Cached profile snapshots (D10): calibration builds read saved engine documents, never a running app."""
+"""Cached profile snapshots (D10): calibration builds read saved engine documents, never a running app.
+
+Issue #13157 acceptance (stable-id match, mismatch, and missing-field refusal) is covered below.
+"""
 
 from __future__ import annotations
 

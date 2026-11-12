@@ -1,0 +1,9 @@
+{
+ "map_name": "Kontrol Dj",
+ "map_const": "KONTROL_DJ_KDJ500_MAP",
+ "map_ts": "apps/webui/frontend/src/lib/rb/midi/maps/kontrol-dj-kdj500.ts",
+ "panel_w": 400.0,
+ "panel_d": 170.0,
+ "panel_size_source": "KDJ500 user manual (c) 2006 Kontrol Dj, Part III Technical specifications: Compact size 400 mm. (W) x 170 mm. (D) x 45 mm. (H)",
+ "display_name": "2-channel MIDI rack controller"
+}

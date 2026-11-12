@@ -29,7 +29,8 @@ from pydantic import BaseModel, ConfigDict, Field
 from apps.shared.events import publish
 from apps.shared.state import db as state_db
 from apps.webui.server import crowd_requests as store
-from apps.webui.server.deps import get_library_state_db
+from apps.webui.server.backend import StateBackend, Track
+from apps.webui.server.deps import get_backend, get_library_state_db
 from apps.webui.server.errors import ErrorBody
 
 router = APIRouter(prefix="/requests", tags=["requests"])
@@ -100,13 +101,34 @@ def put_session(
         return _error(status.HTTP_422_UNPROCESSABLE_CONTENT, error.code, error.message)
 
 
+def _title_fields(track: Track | None) -> tuple[str, str]:
+    if track is None:
+        return "", ""
+    return (track.title or "", track.artist or "")
+
+
+def _with_titles(rows: list[dict[str, Any]], backend: StateBackend) -> list[dict[str, Any]]:
+    ids = [str(row.get("stable_id") or "") for row in rows if row.get("kind") == "track" and row.get("stable_id")]
+    tracks = backend.get_tracks_bulk(ids) if ids else {}
+    for row in rows:
+        if row.get("kind") == "track":
+            title, artist = _title_fields(tracks.get(str(row.get("stable_id") or "")))
+        else:
+            title, artist = "", ""
+        row["title"] = title
+        row["artist"] = artist
+    return rows
+
+
 @router.get("")
 def list_requests(
     status_filter: Annotated[StatusFilter, Query(alias="status")] = "new",
     path: Path = Depends(get_library_state_db),  # noqa: B008
+    backend: StateBackend = Depends(get_backend),  # noqa: B008
 ) -> dict[str, Any]:
     with _connect(path, write=False) as conn:
-        return {"requests": [row.to_json() for row in store.list_requests(conn, status_filter)]}
+        rows = [row.to_json() for row in store.list_requests(conn, status_filter)]
+    return {"requests": _with_titles(rows, backend)}
 
 
 @router.post("", status_code=status.HTTP_201_CREATED, response_model=None, responses=_INVALID)

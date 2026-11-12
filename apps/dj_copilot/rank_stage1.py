@@ -7,14 +7,15 @@ from datetime import datetime
 
 from apps.dj_copilot.history_term import days_since_played, history_term
 from apps.shared.harmonic import (
+    TRACK_TERMS,
     TrackFeature,
-    bpm_compatibility,
-    camelot_compatibility,
-    energy_compatibility,
     track_compatibility,
+    track_compatibility_terms,
 )
 
 from .session_context import PlayedTrack
+
+_RATIONALE_NAMES = {"key": "camelot", "bpm": "bpm", "energy": "energy"}
 
 
 @dataclass(slots=True)
@@ -23,11 +24,12 @@ class ScoredCandidate:
     score: float
     rationale: dict[str, float] = field(default_factory=dict)
     candidate: TrackFeature | None = None
+    unscored: tuple[str, ...] = ()
 
 
-def scored_candidate_order_key(sc: ScoredCandidate) -> tuple[float, str]:
-    """Deterministic rank: score DESC, stable_id ASC."""
-    return (-sc.score, sc.stable_id)
+def scored_candidate_order_key(sc: ScoredCandidate) -> tuple[int, float, str]:
+    """Deterministic rank: more measured terms first (AGENT-33), then score DESC, then stable_id ASC."""
+    return (len(sc.unscored), -sc.score, sc.stable_id)
 
 
 def rank_stage1(
@@ -42,22 +44,28 @@ def rank_stage1(
     if history_weight > 0 and now is None:
         raise ValueError("now is required when history_weight > 0")
     cur_key = getattr(current_track, "key_camelot", None)
-    cur_bpm = getattr(current_track, "bpm", 0.0) or 0.0
-    cur_energy = getattr(current_track, "energy", 0) or 0
+    cur_bpm = getattr(current_track, "bpm", None)
+    cur_energy = getattr(current_track, "energy", None)
     scored: list[ScoredCandidate] = []
     for cand in candidates:
+        terms = track_compatibility_terms(
+            current_key=cur_key,
+            current_bpm=cur_bpm,
+            current_rating=cur_energy,
+            candidate_key=cand.key_camelot,
+            candidate_bpm=cand.bpm,
+            candidate_rating=cand.energy,
+        )
         score = track_compatibility(
             current_key=cur_key,
             current_bpm=cur_bpm,
             current_rating=cur_energy,
             candidate_key=cand.key_camelot,
-            candidate_bpm=cand.bpm or 0.0,
-            candidate_rating=cand.energy or 0,
+            candidate_bpm=cand.bpm,
+            candidate_rating=cand.energy,
         )
-        key_sub = camelot_compatibility(cur_key, cand.key_camelot) if cur_key and cand.key_camelot else 0.5
-        bpm_sub = bpm_compatibility(cur_bpm, cand.bpm)
-        eng_sub = energy_compatibility(cur_energy, cand.energy or 0)
-        rationale = {"camelot": key_sub, "bpm": bpm_sub, "energy": eng_sub}
+        rationale = {_RATIONALE_NAMES[name]: value for name, value in terms.items()}
+        unscored = tuple(name for name in TRACK_TERMS if name not in terms)
         if history_weight:
             assert now is not None
             term = history_term(cand, now)
@@ -73,6 +81,7 @@ def rank_stage1(
                 score=round(score, 6),
                 rationale=rationale,
                 candidate=cand,
+                unscored=unscored,
             )
         )
     scored.sort(key=scored_candidate_order_key)

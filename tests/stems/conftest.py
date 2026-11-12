@@ -10,3 +10,9 @@ shares the webui fixtures.
 from __future__ import annotations
 
 from tests.health_lights.conftest import library  # noqa: F401  (re-exported as a fixture)
+from tests.stems.stems_separate_wire_helpers import (  # noqa: F401  (re-exported as fixtures)
+    client,
+    data_dir,
+    engine_library,
+    shipped_build_env,
+)

@@ -18,6 +18,7 @@
 		analysisLines,
 		attentionTitle,
 		collapsedLine,
+		importDuplicateLine,
 		lyricsLine,
 		offersRetry,
 		songsTitle,
@@ -26,7 +27,9 @@
 		stemsTitle,
 		stemsTone,
 		warningLines,
-		ingestGenreLine
+		ingestGenreLine,
+		ingestIdentifyLine,
+		TITLE_FIX_HREF
 	} from '$lib/enrich/enrich-card';
 	import { suggestionsLine } from '$lib/enrich/artwork-suggestions';
 	import { triggerFloatingAction } from '$lib/ui/clamp-to-viewport';
@@ -79,10 +82,24 @@
 	}: Props = $props();
 
 	const coversLine = $derived(summary ? suggestionsLine(summary.artwork_suggestions ?? 0) : null);
+	const duplicateLine = $derived(summary ? importDuplicateLine(summary) : null);
 
 	const lines = $derived(
-		summary ? [...analysisLines(summary), ...[lyricsLine(summary), ingestGenreLine(summary)].filter((l) => l !== null), ...dudLines(summary), ...absentLines(summary), ...warningLines(summary)] : []
+		summary
+			? [
+					...analysisLines(summary),
+					...[
+						lyricsLine(summary),
+						ingestIdentifyLine(summary),
+						ingestGenreLine(summary)
+					].filter((l) => l !== null),
+					...dudLines(summary),
+					...absentLines(summary),
+					...warningLines(summary)
+				]
+			: []
 	);
+	const identifyLine = $derived(summary ? ingestIdentifyLine(summary) : null);
 	const stemsLine = $derived(summary ? stemsText(summary.stems) : null);
 	const declinedLine = $derived(summary ? stemsDeclinedText(summary) : null);
 	const pillLine = $derived(
@@ -145,15 +162,38 @@
 		{/if}
 		{#each lines as line (line.lane + line.tone)}
 			<p class="enrich-line {line.tone}" title={line.title ?? undefined} data-lane={line.lane} data-tone={line.tone}>
-				{line.text}
+				{#if line.href}
+					<a class="enrich-link" href={line.href}>{line.text}</a>
+				{:else}
+					{line.text}
+				{/if}
 			</p>
 		{/each}
+		{#if duplicateLine}
+			<p
+				class="enrich-line note"
+				title={duplicateLine.title ?? undefined}
+				data-lane={duplicateLine.lane}
+				data-tone={duplicateLine.tone}
+			>
+				{#if duplicateLine.href}
+					<a class="enrich-link" href={duplicateLine.href}>{duplicateLine.text}</a>
+				{:else}
+					{duplicateLine.text}
+				{/if}
+			</p>
+		{/if}
 		{#if coversLine}
 			<p class="enrich-line note" data-lane="artwork-suggestions" data-tone="note">{coversLine}</p>
 			<div class="enrich-actions">
 				<button type="button" class="enrich-go" onclick={onreviewcovers} disabled={onreviewcovers === undefined}
 					data-testid="enrich-review-covers">Review covers...</button
 				>
+			</div>
+		{/if}
+		{#if identifyLine && (summary?.ingest_identify?.proposals ?? 0) > 0}
+			<div class="enrich-actions">
+				<a class="enrich-go" href={TITLE_FIX_HREF} data-testid="enrich-review-identify">Review in title fixer...</a>
 			</div>
 		{/if}
 		{#if summary && offersRetry(summary)}
@@ -312,7 +352,8 @@
 		gap: 8px;
 		flex-wrap: wrap;
 	}
-	button {
+	button,
+	a.enrich-go {
 		font: inherit;
 		font-size: 11px;
 		padding: 4px 10px;
@@ -321,11 +362,17 @@
 		color: var(--rb-text);
 		cursor: pointer;
 		align-self: flex-start;
+		text-decoration: none;
+		display: inline-block;
 	}
 	.enrich-go {
 		border-color: var(--rb-accent);
 	}
 	.enrich-hide {
 		padding: 2px 8px;
+	}
+	.enrich-link {
+		color: inherit;
+		text-decoration: underline;
 	}
 </style>

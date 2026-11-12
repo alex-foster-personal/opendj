@@ -26,6 +26,7 @@ mod http_paths;
 mod launch;
 mod local_update;
 mod midi;
+mod second_screen;
 mod shell_health;
 mod supervisor;
 mod window;
@@ -48,7 +49,7 @@ use tauri::{AppHandle, Manager, RunEvent, WebviewUrl, WebviewWindowBuilder, Wind
 /// rebuilding it. Set means "do not start a sidecar".
 const ENGINE_ORIGIN_ENV: &str = "OPENDJ_ENGINE_ORIGIN";
 
-use crate::window::MAIN_WINDOW_LABEL;
+use crate::window::{MAIN_WINDOW_LABEL, SECOND_SCREEN_WINDOW_LABEL};
 use crate::window_state::WindowStateStore;
 
 /// The size the window opens at, in LOGICAL POINTS -- not pixels. On a 2x
@@ -285,7 +286,7 @@ fn open_window_state(app: &AppHandle, data_dir: &Path) -> (WindowStateStore, Opt
     };
     let placement = match window_state::connected_monitors(app) {
         Ok(monitors) => window_state::placement_for_launch(
-            &saved,
+            &saved.window(MAIN_WINDOW_LABEL),
             &monitors,
             (STARTING_WINDOW_W_PT, STARTING_WINDOW_H_PT),
         ),
@@ -705,6 +706,29 @@ fn fail_visibly(error: &engine::EngineError) -> ! {
     std::process::exit(1);
 }
 
+/// The shell globals every Open DJ webview gets before its scripts run.
+/// serde_json does the escaping, so neither value can break out.
+pub(crate) fn shell_globals_script(
+    origin: &str,
+    identity: &serde_json::Value,
+) -> Result<String, serde_json::Error> {
+    Ok(format!(
+        "globalThis.OPENDJ_ENGINE_ORIGIN = {};\
+         globalThis.OPENDJ_SHELL_BUILD = {};\
+         globalThis.__OPENDJ_requestQuit = globalThis.__OPENDJ_requestQuit || function () {{}};\
+         globalThis.__OPENDJ_PENDING_SHELL_ERRORS__ = globalThis.__OPENDJ_PENDING_SHELL_ERRORS__ || [];\
+         globalThis.__OPENDJ_enqueueShellClientError = function(kind, message, context) {{\
+           globalThis.__OPENDJ_PENDING_SHELL_ERRORS__.push({{\
+             kind: kind,\
+             message: message,\
+             context: context || {{ source: 'shell-webview' }}\
+           }});\
+         }};",
+        serde_json::to_string(origin)?,
+        serde_json::to_string(identity)?,
+    ))
+}
+
 fn cue_sink_log(message: &str) {
     engine::append_shell_log("cue-sink", message);
 }
@@ -738,8 +762,31 @@ fn main() {
             midi::platform::native_midi_send,
             // INSTALL-40: restart to update from a local build the engine
             // offers on loopback; the updater plugin verifies and installs.
-            local_update::install_local_update
+            local_update::install_local_update,
+            // SECONDSCREEN: the Cmd K row and order bus share one window control path.
+            second_screen::open_second_screen,
+            second_screen::control_shell_window,
+            second_screen::query_shell_window_labels
         ])
+        // SECONDSCREEN: Window > Library on Second Screen (Cmd+Shift+L). Built
+        // in Rust: Tauri 2's tauri.conf.json has no menu schema.
+        .menu(|handle| second_screen::app_menu(handle))
+        .on_menu_event(|app, event| {
+            if event.id().as_ref() == second_screen::SECOND_SCREEN_MENU_ID {
+                let app = app.clone();
+                tauri::async_runtime::spawn(async move {
+                    if let Err(failure) = second_screen::control_shell_window(
+                        app,
+                        "open".into(),
+                        SECOND_SCREEN_WINDOW_LABEL.into(),
+                    )
+                    .await
+                    {
+                        engine::append_shell_log("WARN", &format!("second-screen: {failure}"));
+                    }
+                });
+            }
+        })
         .plugin(tauri_plugin_single_instance::init(focus_existing_window))
         // THE AUTO-UPDATE CHANNEL. Registered unconditionally, in release and in
         // debug, so a developer build cannot silently lack the surface a shipped
@@ -764,10 +811,19 @@ fn main() {
 
     let app = builder
         .on_window_event(|window, event| {
-            if window.label() != MAIN_WINDOW_LABEL {
+            let label = window.label();
+            if label != MAIN_WINDOW_LABEL && label != SECOND_SCREEN_WINDOW_LABEL {
                 return;
             }
             match event {
+                // The library window closes like any window: it never reaches
+                // the quit gate, and the main (audio) webview is untouched.
+                WindowEvent::CloseRequested { .. } if label == SECOND_SCREEN_WINDOW_LABEL => {
+                    engine::append_shell_log("second-screen", "closed; audio unaffected");
+                }
+                WindowEvent::Destroyed if label == SECOND_SCREEN_WINDOW_LABEL => {
+                    second_screen::publish_shell_window_labels(window.app_handle());
+                }
                 WindowEvent::CloseRequested { api, .. } => {
                     api.prevent_close();
                     engine::append_shell_log(
@@ -868,21 +924,21 @@ fn main() {
             // serde_json does the escaping, so neither the origin nor the
             // identity can break out of its assignment.
             let script = format!(
-                "globalThis.OPENDJ_ENGINE_ORIGIN = {};\
-                 globalThis.OPENDJ_SHELL_BUILD = {};\
-                 globalThis.__OPENDJ_requestQuit = globalThis.__OPENDJ_requestQuit || function () {{}};\
-                 globalThis.__OPENDJ_PENDING_SHELL_ERRORS__ = globalThis.__OPENDJ_PENDING_SHELL_ERRORS__ || [];\
-                 globalThis.__OPENDJ_enqueueShellClientError = function(kind, message, context) {{\
-                   globalThis.__OPENDJ_PENDING_SHELL_ERRORS__.push({{\
-                     kind: kind,\
-                     message: message,\
-                     context: context || {{ source: 'shell-webview' }}\
-                   }});\
-                 }};{}",
-                serde_json::to_string(&origin)?,
-                serde_json::to_string(&identity)?,
+                "{}{}",
+                shell_globals_script(&origin, &identity)?,
                 cue_sink_script,
             );
+            // SECONDSCREEN: the library window gets the same globals (not the
+            // cue sink) and the same data store, only with a real engine.
+            if second_screen::second_screen_url(&origin).is_ok() {
+                app.manage(second_screen::SecondScreenPage {
+                    origin: Mutex::new(origin.clone()),
+                    identity: identity.clone(),
+                    data_store: webkit_data_store_identifier(&data_dir),
+                    title: format!("{} Library", package.name),
+                    default_size_pt: (STARTING_WINDOW_W_PT, STARTING_WINDOW_H_PT),
+                });
+            }
             // The window title IS productName, so the per-lane `--config`
             // overlay labels the window without a second place to edit.
             let title = package.name.clone();

@@ -198,12 +198,32 @@ export function readPalette(el: HTMLElement): WavePalette {
 	return out;
 }
 
+export type CueMarkerKind = 'hot' | 'memory' | 'loop';
+export interface CueMarkerVisibility {
+	hot: boolean;
+	memory: boolean;
+	loop: boolean;
+}
+export const ALL_CUE_MARKERS_VISIBLE: CueMarkerVisibility = Object.freeze({
+	hot: true,
+	memory: true,
+	loop: true
+});
+
+/** Classify one cue for visibility and fill colour (issue #10248). */
+export function cueMarkerKind(cue: AnlzCue): CueMarkerKind {
+	if (cue.is_loop) return 'loop';
+	if (cue.kind === 'hot_cue') return 'hot';
+	return 'memory';
+}
+
 /** Fill colour for one cue marker, by kind (issue #877): loops (bank orange)
  * are kept out of the hot-cue/memory colours so the two read separably, per
  * slot letter, at a glance. */
 function _cueFillColor(cue: AnlzCue, palette: WavePalette): string {
-	if (cue.is_loop) return palette.cueLoop;
-	if (cue.kind === 'hot_cue') return palette.cueHotCue;
+	const kind = cueMarkerKind(cue);
+	if (kind === 'loop') return palette.cueLoop;
+	if (kind === 'hot') return palette.cueHotCue;
 	return palette.cueMemory;
 }
 
@@ -272,7 +292,8 @@ function _drawLoopCueMarker(
  * phrase chevrons: a loop band is opaque across the full MARKER_BAND_PX
  * strip, so painting it on top of those (the pre-#877 combined single-pass
  * order) blanks out whatever beat/phrase marks fall under its span
- * (discussion_r3918219289). */
+ * (discussion_r3918219289). Issue #10248: a hidden loop kind skips paint
+ * entirely (never transparent, never a hit target). */
 export function drawLoopCueBands(
 	ctx: CanvasRenderingContext2D,
 	cues: AnlzCue[],
@@ -280,8 +301,10 @@ export function drawLoopCueBands(
 	pxPerS: number,
 	w: number,
 	palette: WavePalette,
-	markerBandPx = MARKER_BAND_PX
+	markerBandPx = MARKER_BAND_PX,
+	visible: CueMarkerVisibility = ALL_CUE_MARKERS_VISIBLE
 ): void {
+	if (!visible.loop) return;
 	if (!Number.isFinite(markerBandPx) || markerBandPx <= 0 || markerBandPx > MARKER_BAND_PX) {
 		throw new RangeError(`wave/cues: markerBandPx must be within 0..${MARKER_BAND_PX}`);
 	}
@@ -292,17 +315,21 @@ export function drawLoopCueBands(
 
 /** Paint non-loop cue markers (hot cue / memory) only - the FOREGROUND half
  * of the split with `drawLoopCueBands`, run after the beat grid and phrases
- * so a point marker still reads on top of them. */
+ * so a point marker still reads on top of them. Issue #10248: hidden kinds
+ * are skipped entirely. */
 export function drawPointCueMarkers(
 	ctx: CanvasRenderingContext2D,
 	cues: AnlzCue[],
 	tLeft: number,
 	pxPerS: number,
 	w: number,
-	palette: WavePalette
+	palette: WavePalette,
+	visible: CueMarkerVisibility = ALL_CUE_MARKERS_VISIBLE
 ): void {
 	for (const cue of cues) {
-		if (!cue.is_loop) _drawPointCueMarker(ctx, cue, tLeft, pxPerS, w, palette);
+		if (cue.is_loop) continue;
+		if (!visible[cueMarkerKind(cue)]) continue;
+		_drawPointCueMarker(ctx, cue, tLeft, pxPerS, w, palette);
 	}
 }
 

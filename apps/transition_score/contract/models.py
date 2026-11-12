@@ -161,6 +161,10 @@ class Candidate:
     refused: str | None = None
     #: The kept 16-bit mix (``try_plans(keep_renders_in=...)``), or None when the caller kept no renders.
     render_path: str | None = None
+    #: Planner confidence from ``propose_transition`` for this plan (issue #10150).
+    planner_confidence: float | None = None
+    planner_weakest_factor: str | None = None
+    planner_confidence_title: str | None = None
     #: MIK energy seam line and strip for the open review page (issue #10132).
     energy_json: str = DEFAULT_ENERGY_JSON
 
@@ -216,6 +220,9 @@ class Candidate:
             "score_ms": self.score_ms,
             "refused": self.refused,
             "render_path": self.render_path,
+            "planner_confidence": self.planner_confidence,
+            "planner_weakest_factor": self.planner_weakest_factor,
+            "planner_confidence_title": self.planner_confidence_title,
             "rank_group": self.rank_group,
         }
 

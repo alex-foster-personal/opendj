@@ -48,7 +48,11 @@ from apps.opendj_cli.mcp_key_tools import register_key_tools
 from apps.opendj_cli.mcp_list_totals_tools import register_list_totals_tools
 from apps.opendj_cli.mcp_offload_tools import register_offload_tools
 from apps.opendj_cli.mcp_played_length_tools import register_played_length_tools
+from apps.opendj_cli.mcp_playlist_tools import register_playlist_tools
+from apps.opendj_cli.mcp_rec_tools import register_rec_tools
+from apps.opendj_cli.mcp_recorder_tools import register_recorder_tools
 from apps.opendj_cli.mcp_rekordbox_analyse_tools import register_rekordbox_analyse_tools
+from apps.opendj_cli.mcp_remote_tools import register_remote_tools
 from apps.opendj_cli.mcp_requests_tools import register_requests_tools
 from apps.opendj_cli.mcp_safety import (
     SafetyRefusal,
@@ -474,8 +478,10 @@ def create_server(*, command_timeout_s: float = ORDER_TIMEOUT_S) -> MCPServer:
         and color_fx values take "3pm", "3 o'clock", "15:00" or a 0..1 number
         (``1`` is full right; say "1pm" for one o'clock). A raw ``order`` takes
         the 0..1 number only. ``color_fx`` with ``effect=next`` cycles FILTER,
-        SPACE, ECHO; switching effect removes the old one and returns the knob
-        to 12 o'clock unless ``value`` is given (COLORFX-8341).
+        SPACE, ECHO, CRUSH; switching effect removes the old one and returns the knob
+        to 12 o'clock unless ``value`` is given (COLORFX-8341). ``color_fx`` also
+        takes ``deck=all`` to put one named effect on every channel; ``value`` and
+        ``effect=next`` are refused with ``deck=all`` (COLORFX-13).
         """
         try:
             origin = _resolve_verified_origin()
@@ -738,6 +744,12 @@ def create_server(*, command_timeout_s: float = ORDER_TIMEOUT_S) -> MCPServer:
         tool_error=_tool_error,
         engine_not_running=_engine_not_running,
     )
+    register_remote_tools(
+        server,
+        lock_path=lambda: _state.lock_path,
+        tool_error=_tool_error,
+        engine_not_running=_engine_not_running,
+    )
     register_enrichment_tools(
         server,
         lock_path=lambda: _state.lock_path,
@@ -762,13 +774,31 @@ def create_server(*, command_timeout_s: float = ORDER_TIMEOUT_S) -> MCPServer:
         tool_error=_tool_error,
         engine_not_running=_engine_not_running,
     )
+    register_recorder_tools(
+        server,
+        lock_path=lambda: _state.lock_path,
+        tool_error=_tool_error,
+        engine_not_running=_engine_not_running,
+    )
     register_set_tools(
         server,
         lock_path=lambda: _state.lock_path,
         tool_error=_tool_error,
         engine_not_running=_engine_not_running,
     )
+    register_rec_tools(
+        server,
+        lock_path=lambda: _state.lock_path,
+        tool_error=_tool_error,
+        engine_not_running=_engine_not_running,
+    )
     register_tempo_tools(
+        server,
+        lock_path=lambda: _state.lock_path,
+        tool_error=_tool_error,
+        engine_not_running=_engine_not_running,
+    )
+    register_playlist_tools(
         server,
         lock_path=lambda: _state.lock_path,
         tool_error=_tool_error,

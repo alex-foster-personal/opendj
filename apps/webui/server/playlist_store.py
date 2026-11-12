@@ -149,7 +149,7 @@ class PlaylistStore:
 
     # --- internal helpers -------------------------------------------------
     @contextmanager
-    def _sections_follow(self, *playlist_ids: str) -> Iterator[None]:
+    def _sections_follow(self, *playlist_ids: str, keep_groups: bool = False) -> Iterator[None]:
         """Keep each list's dividers on their tracks across a membership write.
 
         Costs one index read on a list with no sections, so the O(1) add and
@@ -159,7 +159,9 @@ class PlaylistStore:
         yield
         for playlist_id, members in before.items():
             if members:
-                library_entries.follow_membership_change(self._writer, playlist_id, members)
+                library_entries.follow_membership_change(
+                    self._writer, playlist_id, members, keep_groups=keep_groups,
+                )
 
     @contextmanager
     def recording_membership_edit(self, playlist_id: str) -> Iterator[None]:
@@ -597,6 +599,15 @@ class PlaylistStore:
                 expected_etag=expected_etag,
                 record_edit=record_edit,
             )
+
+    def save_order(
+        self, playlist_id: str, item_ids: list[str], *, expected_etag: str,
+    ) -> PlaylistRow:
+        """"Save this order": renumber every live member into ``item_ids`` order (LIBUX-8678)."""
+        from .playlist_save_order import save_order
+
+        with self._lock, self._sections_follow(playlist_id, keep_groups=True):
+            return save_order(self, playlist_id, item_ids, expected_etag=expected_etag)
 
     def transfer_memberships(
         self,

@@ -1,0 +1,9 @@
+{
+  "bytes": 1024,
+  "measured_main": 431819,
+  "measured_with_pr": 432543,
+  "sha": "b24328337c",
+  "date": "Wed 11 Nov 2026",
+  "reason": "branch af--cloud-11242--admin-farm-jobs-status-panel-read-only grows the performance surface; measured +724 B gzip over main; ceiled to KiB.",
+  "payback": "none planned; the growth is the change's own code on this surface"
+}

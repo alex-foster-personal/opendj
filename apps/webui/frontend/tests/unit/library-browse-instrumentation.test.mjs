@@ -231,15 +231,17 @@ test('library load rows name the source and carry the walked row count', () => {
 	const mark = ringMark();
 	lib.recordLibraryLoadTiming('all-tracks', { fetchMs: 2410.4, rows: 8355 });
 	lib.recordLibraryLoadTiming('playlist', { fetchMs: 118.9, rows: 35 });
+	lib.recordLibraryLoadTiming('smartlist', { fetchMs: 92.1, rows: 2000 });
 	const rows = rowsSince(mark);
 	assert.deepEqual(
 		rows.map((r) => r.kind),
-		['library-load-all-tracks', 'library-load-playlist'],
+		['library-load-all-tracks', 'library-load-playlist', 'library-load-smartlist'],
 		'if both loads share one kind then the 8k cursor walk cannot be told apart ' +
 			'from a 35-track playlist hydrate when reading the ring back'
 	);
 	assert.deepEqual(rows[0].stages, { fetch_ms: 2410, rows: 8355 });
 	assert.deepEqual(rows[1].stages, { fetch_ms: 119, rows: 35 });
+	assert.deepEqual(rows[2].stages, { fetch_ms: 92, rows: 2000 });
 });
 
 test('a completed whole-collection search emits one library-search-collection row', () => {

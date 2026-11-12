@@ -27,7 +27,7 @@ import { DECK_DEFAULT_PRE_GAIN, type PitchRange } from '$lib/player/constants';
 import type { DeckId } from '$lib/rb/deck-slots';
 import type { DeckState } from '$lib/rb/deck-state-types';
 import type { HotCueSlot } from '$lib/rb/hot-cue-types';
-import type { HeadphoneState, MixerChannelState, MixerState } from '$lib/rb/mixer-types';
+import type { BoothState, HeadphoneState, MixerChannelState, MixerState } from '$lib/rb/mixer-types';
 
 /** Exported (name kept) so dispose and unload reset through one definition. */
 export function _emptyDeckState(deck_id: DeckId): DeckState {
@@ -74,6 +74,7 @@ export function _emptyDeckState(deck_id: DeckId): DeckState {
 		hot_cue_revisions: _emptyHotCueRevisions(),
 		has_rb_mapping: true,
 		anlz: null,
+		warp_map: null,
 		anlz_error: null,
 		last_load_latency_ms: null,
 		load_generation: 0,
@@ -84,7 +85,14 @@ export function _emptyDeckState(deck_id: DeckId): DeckState {
 
 function _emptyHotCueRevisions(): Record<HotCueSlot, string> {
 	return {
-		A: '', B: '', C: '', D: '', E: '', F: '', G: '', H: ''
+		A: '',
+		B: '',
+		C: '',
+		D: '',
+		E: '',
+		F: '',
+		G: '',
+		H: ''
 	};
 }
 
@@ -116,6 +124,16 @@ import { calibrationProbeDiagnostics } from '$lib/player/cue-latency';
 import { loadMixerConfig } from '$lib/player/mixer-config';
 import { ioDeviceAccessNotChecked } from '$lib/player/io-device-access';
 
+/** Exported (name kept) so dispose resets the booth sink through one definition. */
+export function _defaultBooth(): BoothState {
+	return {
+		level: 0.5,
+		selected_output_device_id: null,
+		signal_mode: 'independent',
+		route: { state: 'default', selected: false }
+	};
+}
+
 /** Exported (name kept) so dispose resets headphones through one definition. */
 export function _defaultHeadphones(): HeadphoneState {
 	const persisted = loadMixerConfig();
@@ -123,9 +141,7 @@ export function _defaultHeadphones(): HeadphoneState {
 	return {
 		mix: 0,
 		level: 0.5,
-		booth_level: 0.5,
 		selected_output_device_id: null,
-		selected_booth_output_device_id: null,
 		selected_master_output_device_id: null,
 		selected_input_device_id: null,
 		output_mode: 'practice',
@@ -152,14 +168,34 @@ export function _defaultHeadphones(): HeadphoneState {
 			}
 		},
 		signals: {
-			master: { state: 'unavailable', rms: null, peak: null, measured_at: null, source: 'application_bus', physical_output_proven: false },
-			cue: { state: 'unavailable', rms: null, peak: null, measured_at: null, source: 'application_bus', physical_output_proven: false },
-			input: { state: 'inactive', rms: null, peak: null, measured_at: null, source: 'captured_input', physical_output_proven: false }
+			master: {
+				state: 'unavailable',
+				rms: null,
+				peak: null,
+				measured_at: null,
+				source: 'application_bus',
+				physical_output_proven: false
+			},
+			cue: {
+				state: 'unavailable',
+				rms: null,
+				peak: null,
+				measured_at: null,
+				source: 'application_bus',
+				physical_output_proven: false
+			},
+			input: {
+				state: 'inactive',
+				rms: null,
+				peak: null,
+				measured_at: null,
+				source: 'captured_input',
+				physical_output_proven: false
+			}
 		},
 		routes: {
 			master: { state: 'default', selected: false },
-			cue: { state: 'default', selected: false },
-			booth: { state: 'default', selected: false }
+			cue: { state: 'default', selected: false }
 		},
 		outputs: [],
 		inputs: [],
@@ -224,7 +260,8 @@ function _createMixerState(): MixerState {
 		},
 		crossfader: 0.5,
 		master: 1,
-		headphones: _defaultHeadphones()
+		headphones: _defaultHeadphones(),
+		booth: _defaultBooth()
 	});
 	return mixer;
 }

@@ -29,6 +29,7 @@
 		recordingBusy = false,
 		recordingWaiting = false,
 		recordingTip = null,
+		recordingStoppable = true,
 		onrecord = () => {},
 		onusb = () => {},
 		recordable = true,
@@ -44,6 +45,8 @@
 		recordingWaiting?: boolean;
 		/** Overrides the REC tooltip, e.g. while waiting for permission. */
 		recordingTip?: string | null;
+		/** False when a lit REC must not offer stop (foreign-owned recording). */
+		recordingStoppable?: boolean;
 		onrecord?: () => void;
 		/** USBEXP-9746: opens the USB export screen (the bottom bar's export/eject path). */
 		onusb?: () => void;
@@ -63,7 +66,7 @@
 			action: 'collection'
 		},
 		{
-			tip: 'Spotify playlists and acquisition queue',
+			tip: 'Spotify playlists -- import, buy list, and side player',
 			color: 'var(--rb-rail-spotify)',
 			d: 'M8 2a6 6 0 1 0 0 12A6 6 0 0 0 8 2z',
 			mode: 'fill',
@@ -88,7 +91,7 @@
 			mode: 'stroke'
 		},
 		{
-			tip: 'Start set recording',
+			tip: 'Set recording - configure sources, then press Start recording',
 			color: 'var(--rb-rail-record)',
 			d: 'M8 3a5 5 0 1 1 0 10A5 5 0 1 1 8 3M8 7a1 1 0 1 1 0 2a1 1 0 1 1 0-2',
 			mode: 'stroke',
@@ -108,7 +111,11 @@
 		{@const isInert = icon.source === undefined && icon.action === undefined}
 		{@const tip = isRecord
 			? (recordingTip ??
-				(recording ? 'Stop set recording' : (icon.tip ?? 'Start set recording')))
+				(recording
+					? recordingStoppable
+						? 'Stop set recording'
+						: 'Recording owned elsewhere'
+					: (icon.tip ?? 'Start set recording')))
 			: isInert && icon.plannedId !== undefined
 				? plannedTitle(icon.plannedId)
 				: (icon.tip ?? '')}
@@ -119,7 +126,7 @@
 			class:recording={isRecord && recording}
 			class:waiting={isRecord && recordingWaiting}
 			class:active={icon.source === 'spotify' && source === 'spotify'}
-			disabled={isInert || (isRecord && recordingBusy)}
+			disabled={isInert || (isRecord && (recordingBusy || (recording && !recordingStoppable)))}
 			title={tip}
 			aria-label={tip}
 			aria-pressed={icon.source === 'spotify' ? source === 'spotify' : isRecord ? recording : undefined}
@@ -180,13 +187,38 @@
 		background: #4a1717;
 		box-shadow: inset 2px 0 #d0342c;
 	}
+	/* Blinking edge bar as a static box-shadow on ::after whose OPACITY
+	 * animates (a box-shadow keyframe repainted the button every frame). */
 	.rail-btn.waiting {
+		position: relative;
+		box-shadow: none;
+	}
+	.rail-btn.waiting::after {
+		content: '';
+		position: absolute;
+		inset: 0;
+		pointer-events: none;
 		box-shadow: inset 2px 0 #d09a2c;
 		animation: rec-waiting 1.2s ease-in-out infinite;
 	}
 	@keyframes rec-waiting {
 		50% {
-			box-shadow: inset 2px 0 transparent;
+			opacity: 0;
 		}
 	}
+
+	/* A11Y-11811: reduced motion (OS or Appearance); mirrors app.css. */
+	@media (prefers-reduced-motion: reduce) {
+		:where(*) {
+			animation-duration: 0.01ms;
+			animation-iteration-count: 1;
+			transition-duration: 0.01ms;
+		}
+	}
+	:global(html[data-reduce-motion]) :where(*) {
+		animation-duration: 0.01ms;
+		animation-iteration-count: 1;
+		transition-duration: 0.01ms;
+	}
+
 </style>

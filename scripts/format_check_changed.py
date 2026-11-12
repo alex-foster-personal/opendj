@@ -294,7 +294,8 @@ def check(repo: Path, base: str) -> tuple[str, Report]:
     fork = _git(repo, "merge-base", base, "HEAD").strip()
     by_kind: dict[str, list[Change]] = {}
     for change in changed_files(repo, fork):
-        kind = kind_of(change.path, (repo / change.path).read_bytes()[:200])
+        # Classify the committed path even when its working copy has been deleted.
+        kind = kind_of(change.path, _git_bytes(repo, "HEAD", change.path)[:200])
         if kind is not None:
             by_kind.setdefault(kind, []).append(change)
     report = Report(checked={kind: len(changes) for kind, changes in by_kind.items()})

@@ -5,6 +5,9 @@ does not run Demucs or mutate files: every request reloads and validates the
 stored artifact before it exposes either the manifest or a container-typed audio response.
 The manifest GET answers HTTP 200 unavailable when no bundle exists; the
 part GET still 404s when there is no file to stream.
+
+Stem A/B/C labelling tasks (issue #11193) expose clip URLs under this router's
+``GET .../stems/{part}`` path; see ``apps.webui.server.routes.label_tasks``.
 """
 
 from __future__ import annotations

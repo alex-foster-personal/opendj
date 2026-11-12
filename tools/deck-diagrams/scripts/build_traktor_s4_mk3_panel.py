@@ -59,6 +59,7 @@ REPEAT_SPREAD_MM = 0.7
 TRACE_DATE = "Sun 8 Nov 2026"
 TRACE_ISSUE = "#9366"
 
+
 @dataclass(frozen=True)
 class Wire:
     ch: int

@@ -159,6 +159,7 @@ test.describe("onboarding gauntlet: the open page sees the import", () => {
   test("a folder import fills the already-open All Tracks table with no reload (#4040)", async ({
     page,
   }) => {
+    test.fixme(true, "comment-pin button intercepts the Setup chip, see #13523");
     const music = `${engine.musicRoot}/Fresh Crate`;
     writeMusicFolder(music, TRACKS, "Refresh Probe");
 

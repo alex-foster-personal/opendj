@@ -21,8 +21,20 @@ it stages anything.
 Exit 0 when every id new in this diff is the next canonical name for the PR (or
 none are new) and no id gained a second definition, 1 with the fix to make when
 one does not, 2 ([UNKNOWN]) when a side cannot be read.
-A Trunk merge-queue batch PR (head ref ``trunk-merge/...``) is skipped: its
-members were checked on their own PRs and the batch number is not theirs.
+A Trunk merge-queue batch PR (head ref ``trunk-merge/...``) or a lander bundle-train PR
+(head ref ``lander-train/...``) is skipped: its members were checked on their own PRs and
+the batch number is not theirs. The workflow passes ``--head-ref`` only when the author is
+that ref's bot (trunk-io[bot], opendj-devops-trunk-merge[bot]) in this repo.
+
+From PR #12882 on, a NEW id may not be a bullet in REQUIREMENTS.md itself: it lives
+in ``(private path)/<ID>.md`` (issue #10541 format). Every open PR that
+appended to the one ledger conflicted with every other one that did (59 of 203
+conflicting PRs on Wed 11 Nov 2026), and the fragment README and lane prompts alone
+did not stop it (132 ledger commits on main against 77 fragment commits in its first
+day). The same holds for the dated "recorded" log lines appended at its end (33 of
+the 221 open ledger PRs add one). Flipping or editing an existing bullet in place stays allowed. Lower PR numbers
+keep the old rule so in-flight PRs are not failed by a rule they predate; their new
+ledger bullets are converted to fragments when main is merged into them.
 
 What could satisfy this without its intent: an id that is new but not parsed as
 a bullet. The id set is read with build_reqs_json's own id pattern, so a bullet
@@ -43,7 +55,12 @@ from pathlib import Path
 from scripts.build_reqs_json import _REQ_ID, FRAGMENTS_REL, fragments_text_at, fragments_text_in
 
 SOURCE = ".planning/REQUIREMENTS.md"
+#: First PR number whose new ids may not be bullets in SOURCE itself (fragments only).
+MONOLITH_CLOSED_FROM_PR = 12882
 CARRIED = "(private path)"
+#: Head refs of PRs that batch already-checked members: Trunk merge-queue drafts and lander
+#: bundle trains. Only the workflow decides the author is trusted; this only matches the ref.
+BATCH_HEAD_REF_PREFIXES = ("trunk-merge/", "lander-train/")
 _BULLET = re.compile(rf"^\s*-\s+(?:\[[ x]\]\s+)?\*\*({_REQ_ID})\*\*")
 _NUMBERED = re.compile(r"^(?P<code>.+)-(?P<num>\d+)(?P<suffix>[a-z]?)$")
 _SUFFIXES = ["", *"bcdefghijklmnopqrstuvwxyz"]
@@ -128,6 +145,35 @@ def check(base_ids: Counter[str], head_ids: Counter[str], pr: int, carried: froz
     return failures
 
 
+#: The dated "_<day> <date>: ID recorded (...)_" log at the end of SOURCE, the ledger's second append point.
+_RECORDED_LOG = re.compile(r"^_.*\brecorded\b")
+
+
+def monolith_failures(base_md: str, head_md: str, pr: int) -> list[str]:
+    """One failure per id a PR from MONOLITH_CLOSED_FROM_PR on adds as a bullet in REQUIREMENTS.md itself.
+
+    ``base_md`` and ``head_md`` are SOURCE alone, never stitched with fragments: the
+    point is where the new bullet lives. Ids already in SOURCE at the base, edited or
+    not, and ids that leave SOURCE are never a failure.
+    """
+    if pr < MONOLITH_CLOSED_FROM_PR:
+        return []
+    new = set(defined_ids(head_md)) - set(defined_ids(base_md))
+    failures = [
+        f"[FAIL] new requirement {rid} is a bullet in {SOURCE}: add it as {FRAGMENTS_REL}/{rid}.md "
+        f"(format in {FRAGMENTS_REL}/README.md) and remove it from {SOURCE}"
+        for rid in sorted(new, key=_order)
+    ]
+    base_log = {line.strip() for line in base_md.splitlines() if _RECORDED_LOG.match(line)}
+    failures.extend(
+        f"[FAIL] new 'recorded' log line in {SOURCE}: delete it, the fragment and its PR already record it: "
+        f"{line.strip()[:80]}"
+        for line in head_md.splitlines()
+        if _RECORDED_LOG.match(line) and line.strip() not in base_log
+    )
+    return failures
+
+
 def _next_free(code: str, pr: int, taken: set[str]) -> str:
     return next(
         (f"{code}-{pr}{s}" for s in _SUFFIXES if f"{code}-{pr}{s}" not in taken),
@@ -147,8 +193,8 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--head-ref", default="")
     args = parser.parse_args(argv)
 
-    if args.head_ref.startswith("trunk-merge/"):
-        print(f"[OK] skipped: {args.head_ref} is a merge-queue batch; members were checked on their own PRs")
+    if args.head_ref.startswith(BATCH_HEAD_REF_PREFIXES):
+        print(f"[OK] skipped: {args.head_ref} is a merge batch; members were checked on their own PRs")
         return 0
     if args.pr < 1:
         print("[UNKNOWN] PR number must be positive", file=sys.stderr)
@@ -181,7 +227,11 @@ def main(argv: list[str] | None = None) -> int:
         )
         return 2
     carried_text = _read_worktree(CARRIED) if args.head_worktree else _show(git, args.head, CARRIED)[0]
-    failures = check(base_ids, head_ids, args.pr, carried_ids(carried_text or ""))
+    head_md = _read_worktree(SOURCE) if args.head_worktree else _show(git, args.head)[0]
+    base_md = _show(git, args.base)[0]
+    failures = check(base_ids, head_ids, args.pr, carried_ids(carried_text or "")) + monolith_failures(
+        base_md or "", head_md or "", args.pr
+    )
     for line in failures:
         print(line, file=sys.stderr)
     if failures:

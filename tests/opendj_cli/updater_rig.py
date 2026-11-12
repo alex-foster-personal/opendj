@@ -35,6 +35,7 @@ from apps.engine_core.update_channel import (
     platform_key,
 )
 from apps.webui.server.routes.commands import router as commands_router
+from apps.webui.server.shell_commands import install_shell_command_broker
 from tests.waits import LIVENESS_CHECK_S, THREAD_HANG_GUARD_S, start_uvicorn_in_thread
 
 SHELL_POLL_S = 0.05
@@ -172,6 +173,7 @@ class Updater:
         # INSTALL-39: one data dir across boots, so a flagged build's record
         # outlives the relaunch exactly as it does in the installed app.
         add_app_update_routes(app, data_dir=self.tmp_path / "data", countdown_s=self.countdown_s)
+        install_shell_command_broker(app)
         app.include_router(commands_router, prefix="/api/v1")
         listener = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         listener.bind(("127.0.0.1", 0))

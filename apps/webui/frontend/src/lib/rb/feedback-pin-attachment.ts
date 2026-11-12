@@ -1,6 +1,7 @@
 /**
  * Client-side policy for pasted comment-pin screenshots (issue #1333, part 2
- * of #928). Split into its own module rather than feedback.ts, which is
+ * of #928); the `<comment-pins>` element and Svelte shell share these limits.
+ * Split into its own module rather than feedback.ts, which is
  * already at the 600-line file-size gate.
  *
  * MAX_PIN_ATTACHMENT_BYTES and ALLOWED_PIN_ATTACHMENT_TYPES mirror

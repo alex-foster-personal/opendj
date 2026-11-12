@@ -52,6 +52,11 @@ export function manualLoopIn(port: ManualLoopPort, deck: DeckId): number {
 	return st.pending_loop_in_ms;
 }
 
+/** LOOP EXIT cancels a LOOP IN that was never closed, so a later LOOP OUT cannot engage from it. */
+export function clearPendingLoopIn(st: DeckState): void {
+	st.pending_loop_in_ms = null;
+}
+
 export async function manualLoopOut(port: ManualLoopPort, deck: DeckId): Promise<void> {
 	const st = loadedDeck(port, deck, 'loop_out');
 	const d = manualLoopOutDecision(deck, st.pending_loop_in_ms, port.playheadMs(deck));

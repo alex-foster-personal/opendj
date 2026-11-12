@@ -29,7 +29,8 @@ const meta = {
 		deckId: 1,
 		controlState: { muted: false, solo: false },
 		onSolo: () => {},
-		onMute: () => {}
+		onMute: () => {},
+		audibility: 'audible'
 	}
 } satisfies Meta<typeof StemWaveRowView>;
 
@@ -57,8 +58,10 @@ export const Soloed: Story = {
 	args: { stem: 'vocal', controlState: { muted: false, solo: true } }
 };
 
-/** Muted: Shift+click unmutes; painting the muted state is a sibling issue. */
-export const Muted: Story = { args: { stem: 'drums', controlState: { muted: true, solo: false } } };
+/** Muted: Shift+click unmutes; data-audibility shows muted while the canvas paints dimmed. */
+export const Muted: Story = {
+	args: { stem: 'drums', controlState: { muted: true, solo: false }, audibility: 'muted' }
+};
 
 /** Stems hidden, or no track loaded: nothing is drawn. */
 export const Hidden: Story = { args: { visible: false }, tags: ['renders-nothing'] };

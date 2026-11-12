@@ -73,11 +73,20 @@ test('hot cue menu button is enabled with data-testid preserved', () => {
 	assert.doesNotMatch(menuButton, /\bdisabled\b/);
 });
 
-test('unbuilt pad-mode items render inert with a tooltip, built ones stay live', () => {
+test('unselectable pad-mode items render inert with their reason, selectable ones stay live', () => {
 	const item = padModeMenu.slice(padModeMenu.indexOf('class="pad-menu-item"'));
-	assert.match(item, /disabled=\{!entry\.built\}/);
-	assert.match(item, /title=\{entry\.built \? undefined : NOT_BUILT_TIP\}/);
-	assert.match(padModeMenu, /const NOT_BUILT_TIP = plannedTitle\('pad-mode-unbuilt'\)/);
+	assert.match(padModeMenu, /\{@const sel = padModeSelectable\(deckId, entry\)\}/);
+	assert.match(item, /disabled=\{!sel\.enabled\}/);
+	assert.match(item, /title=\{sel\.enabled \? undefined : sel\.reason\}/);
+	assert.match(item, /runPerformanceCommandFromUi\(\{ type: 'pad_mode', deck: deckId, mode: entry\.id \}\)/);
+});
+
+test('pad-fx-1 and pad-fx-2 are built (PADFX-11718)', () => {
+	for (const id of ['pad-fx-1', 'pad-fx-2']) {
+		const entry = catalog.PAD_MODE_CATALOG.find((e) => e.id === id);
+		assert.equal(entry.built, true, id);
+		assert.equal(catalog.padModeMenuLabel(entry).includes('not-built-yet'), false, id);
+	}
 });
 
 // The deck and its main row set overflow: hidden (Deck.svelte), so an

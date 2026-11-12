@@ -263,9 +263,9 @@ describe('a pending row settles from its rb-meta disk truth', () => {
 			file_path: 'tidal:tracks:99560085',
 			rb_meta: { file_exists: false, is_streaming: true, folder_path: 'tidal:tracks:99560085' }
 		};
-		wire.applySettledAvailability(row);
-		assert.equal(row.file_exists, false);
-		assert.equal(row.file_availability, 'tidal-streaming');
+		const next = wire.applySettledAvailability(row);
+		assert.equal(next.file_exists, false);
+		assert.equal(next.file_availability, 'tidal-streaming');
 	});
 	it('a settled row is left alone, including its availability label', () => {
 		const row = {
@@ -274,24 +274,48 @@ describe('a pending row settles from its rb-meta disk truth', () => {
 			file_path: null,
 			rb_meta: { file_exists: true, is_streaming: false, folder_path: '/music/a.mp3' }
 		};
-		wire.applySettledAvailability(row);
-		assert.equal(row.file_availability, 'awaiting_volume');
+		const next = wire.applySettledAvailability(row);
+		assert.equal(next.file_availability, 'awaiting_volume');
 	});
 });
 
 // Regression line: a visible row's rb-meta fetch is a full stat, so its answer
 // must land on the row. Deck load and preview no longer wait on it: a pending
 // row loads (pin c90b8036d495), which the "never refuses" test above pins.
+test('[if] row fields mutate [then] BrowserPanel and TrackTable use whole-row publish, not in-place writes [else stop]', () => {
+	const banned = [
+		/row\.revealed\s*=\s*[^=]/,
+		/row\.rb_meta\s*=\s*[^=]/,
+		/row\.rating\s*=\s*[^=]/,
+		/row\.etag\s*=\s*[^=]/,
+		/row\.grid_quality\s*=\s*[^=]/,
+		/row\.file_exists\s*=\s*[^=]/,
+		/row\.file_availability\s*=\s*[^=]/,
+		/row\.strip\s*=\s*[^=]/,
+		/Object\.assign\(row,/
+	];
+	for (const path of [
+		'src/lib/components/rb/BrowserPanel.svelte',
+		'src/lib/components/rb/browser/TrackTable.svelte'
+	]) {
+		const src = read(path);
+		for (const pattern of banned) {
+			assert.equal(pattern.test(src), false, `${path} still matches ${pattern}`);
+		}
+	}
+	assert.match(read('src/lib/components/rb/BrowserPanel.svelte'), /onpatchrow=/);
+});
+
 test('BrowserPanel settles a visible pending row from the rb-meta it fetched', () => {
 	const panel = read('src/lib/components/rb/BrowserPanel.svelte');
 	assert.match(
 		panel,
-		/row\.rb_meta = await _fetchRbMetaWithRetry\(row\.stable_id\);\s*applySettledAvailability\(row\);/,
+		/updateRowAcrossPanes\(panes, stable_id, \(row\) =>\s*applySettledAvailability/,
 		'a visible row never settles from the rb-meta it already fetched'
 	);
 	// Settling lives in the row helper: the pure mapper, then the streaming name.
 	const helper = read('src/lib/components/rb/browser/browser-row-wire.ts');
-	assert.match(helper, /export function applySettledAvailability\(/);
+	assert.match(helper, /export function applySettledAvailability</);
 	assert.match(helper, /settledAvailabilityFromRbMeta\(/);
 	assert.match(helper, /nameStreamingAvailability\(settled\.file_availability, path, null\)/);
 });

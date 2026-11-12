@@ -1,25 +1,11 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
-	import { getRecorderStatus, type RecorderStatus } from '../../../../routes/sets/sets-api';
-	import {
-		captureFailureMessage,
-		recordRailState,
-		stopPerformanceRecorder,
-		updateRetainedCaptureFailure,
-		type RetainedCaptureFailure
-	} from '$lib/sets/performance-recorder';
-	import { pushToast } from '$lib/stores.svelte';
-	import {
-		REC_STATUS_UNREACHABLE_GROUP,
-		REC_STATUS_UNREACHABLE_LIMIT,
-		recorderStatusRetryMs,
-		recorderStatusUnreachable,
-		recorderStatusUnreachableMessage
-	} from '$lib/sets/recorder-status-retry';
 	import { showWholeCollectionFromChrome } from '$lib/rb/playlist-history-chrome.svelte';
 	import IconRail from './IconRail.svelte';
 	import { openUsbExport } from '$lib/rb/usb-export.svelte';
 	import { setRecordingEnabled } from '$lib/sets/recording-flag';
+	import { usePerformanceRecorderChrome } from '$lib/sets/performance-recorder-chrome.svelte';
+	import { pushToast } from '$lib/stores.svelte';
 
 	let {
 		source,
@@ -29,170 +15,17 @@
 	}: {
 		source: 'collection' | 'spotify';
 		onspotify: () => void;
-		/** Flips the tree back from a non-collection source (Spotify). */
 		oncollection?: () => void;
-		/** False in Library mode: no REC, and no status read that could attach
-		 * the master-mix tap (an audio graph) to an owned recording. */
 		recordable?: boolean;
 	} = $props();
 
-	// UX-RAIL-01: the rail's top-left entry goes back to the whole collection
-	// through the same browser_select_playlist command agents use, so the
-	// button and an agent cannot disagree about what "All Tracks" means.
+	const chrome = usePerformanceRecorderChrome(() => recordable);
+
+	onMount(() => chrome.mount());
+
 	function showWholeCollection(event: MouseEvent): void {
 		if (source !== 'collection') oncollection?.();
 		showWholeCollectionFromChrome(event.timeStamp);
-	}
-
-	let recorder = $state<RecorderStatus>({
-		active: false,
-		session_id: null,
-		pid: null,
-		owned: false,
-		recoverable: false,
-		capture: 'none'
-	});
-	let retainedFailure = $state<RetainedCaptureFailure | null>(null);
-	let rail = $derived(recordRailState(recorder, retainedFailure));
-	let recorderBusy = $state(false);
-	// Lazy: the picker renders only after a REC click, so it stays out of the
-	// /performance bundle budget (charged to other-lazy instead). Non-null
-	// means the picker is open.
-	let RecordInputPicker = $state<typeof import('./RecordInputPicker.svelte').default | null>(null);
-	// SET-12: the recording this page's master-mix tap feeds, if any. The tap
-	// module is lazy for the same reason as the picker.
-	let tapSession: string | null = null;
-	// True while REC is stopping: a status read that lands mid-stop must not
-	// attach a second tap to the recording being stopped.
-	let stopping = false;
-
-	onMount(() => {
-		if (recordable) void refreshRecorderStatus();
-	});
-
-	// SET-11: while the capture is starting or waiting on the macOS microphone
-	// prompt, re-read it so REC lights the moment audio is really written; and
-	// while it records, so an input that stops mid-set unlights REC.
-	// OPEN-DJ-BE-4G: an unanswered status read keeps the last status and asks
-	// for another read. A fresh object each time, so the retry effect re-arms
-	// even when the delay is unchanged.
-	let statusRetry = $state<{ after: number } | null>(null);
-	let unreachableReads = 0;
-
-	$effect(() => {
-		// A pending retry owns the next read, so the poll does not double it.
-		if (statusRetry !== null) return;
-		const after = rail.poll;
-		if (after === null || !recordable) return;
-		const timer = setTimeout(() => void refreshRecorderStatus(), after);
-		return () => clearTimeout(timer);
-	});
-
-	// The retry read is gated on recordable like every other status read.
-	$effect(() => {
-		const retry = statusRetry;
-		if (retry === null || !recordable) return;
-		const timer = setTimeout(() => refreshRecorderStatus(), retry.after);
-		return () => clearTimeout(timer);
-	});
-
-	let failureShown = false;
-	$effect(() => {
-		const failure = captureFailureMessage(recorder);
-		if (failure !== null && !failureShown) pushToast(failure, 'error');
-		failureShown = failure !== null;
-	});
-
-	// SET-12: a master recording (started here, by an agent, or before a
-	// reload) is fed by this page. The start route already pushed the attach
-	// to the leader page; this makes sure of it (the same one tap, never a
-	// second) and gives the tap this page's toast. A tap that cannot start
-	// stops the recording and says why.
-	function syncMasterTap(status: RecorderStatus): void {
-		const id = status.session_id;
-		if (stopping || tapSession === id || !status.owned || status.capture_source !== 'master' || id === null) return;
-		tapSession = id;
-		import('$lib/sets/master-mix-capture')
-			.then((m) =>
-				m.ensureMasterMixCapture(id, (why) => pushToast(`Set recording: ${why}`, 'error')).catch((error: unknown) => {
-					// The daemon withdrew the start and said why in its 503: not a new failure.
-					if (error instanceof m.MasterMixCancelled) {
-						console.info(`master mix: ${error.message}`);
-						return;
-					}
-					throw error;
-				})
-			)
-			.catch(async (error: unknown) => {
-				pushToast(`REC failed: the master mix could not be recorded: ${String(error)}`, 'error');
-				tapSession = null;
-				recorder = await stopPerformanceRecorder(status).catch(() => recorder);
-			});
-	}
-
-	async function stopMasterTap(): Promise<void> {
-		if (tapSession === null) return;
-		tapSession = null;
-		await (await import('$lib/sets/master-mix-capture')).stopMasterMixCapture();
-	}
-
-	function setRecorder(status: RecorderStatus): void {
-		retainedFailure = updateRetainedCaptureFailure(retainedFailure, status);
-		recorder = status;
-		if (status.active) syncMasterTap(status);
-		else void stopMasterTap();
-	}
-
-	async function refreshRecorderStatus(): Promise<void> {
-		try {
-			setRecorder(await getRecorderStatus());
-			unreachableReads = 0;
-			statusRetry = null;
-		} catch (error) {
-			if (!recorderStatusUnreachable(error)) {
-				unreachableReads = 0;
-				statusRetry = null;
-				pushToast(`REC status failed: ${String(error)}`, 'error', undefined, error);
-				return;
-			}
-			unreachableReads += 1;
-			statusRetry = { after: recorderStatusRetryMs(unreachableReads) };
-			if (unreachableReads === REC_STATUS_UNREACHABLE_LIMIT) {
-				pushToast(
-					recorderStatusUnreachableMessage(unreachableReads, error),
-					'error',
-					undefined,
-					error,
-					{},
-					REC_STATUS_UNREACHABLE_GROUP
-				);
-			}
-		}
-	}
-
-	async function togglePerformanceRecording(): Promise<void> {
-		recorderBusy = true;
-		try {
-			recorder = await getRecorderStatus();
-			if (recorder.active) {
-				stopping = true;
-				try {
-					await stopMasterTap();
-					setRecorder(await stopPerformanceRecorder(recorder));
-				} finally {
-					stopping = false;
-				}
-				pushToast('Recording stopped and session finalized.', 'info');
-				return;
-			}
-			// SET-10: pick the input by name in-app. A browser prompt dialog never shows in
-			// the desktop app's WKWebView, so the old index prompt did nothing.
-			RecordInputPicker = (await import('./RecordInputPicker.svelte')).default;
-		} catch (error) {
-			pushToast(`REC failed: ${String(error)}`, 'error');
-		} finally {
-			recorderBusy = false;
-		}
 	}
 </script>
 
@@ -202,18 +35,20 @@
 	oncollection={showWholeCollection}
 	{recordable}
 	recordingAvailable={setRecordingEnabled()}
-	recording={rail.recording}
-	recordingBusy={recorderBusy}
-	recordingWaiting={rail.waiting}
-	recordingTip={rail.tip}
-	onrecord={() => void togglePerformanceRecording()}
+	recording={chrome.rail.recording}
+	recordingBusy={chrome.recorderBusy}
+	recordingWaiting={chrome.rail.waiting}
+	recordingTip={chrome.rail.tip}
+	recordingStoppable={chrome.rail.stoppable}
+	onrecord={() => void chrome.togglePerformanceRecording()}
 	onusb={openUsbExport}
 />
 
-{#if RecordInputPicker !== null}
-	<RecordInputPicker
-		onstarted={(status) => (setRecorder(status), (RecordInputPicker = null))}
-		oncancel={() => (RecordInputPicker = null)}
+{#if chrome.RecordInputPicker !== null}
+	<chrome.RecordInputPicker
+		variant={chrome.pickerVariant}
+		onstarted={(status) => chrome.onPickerStarted(status)}
+		oncancel={() => chrome.closePicker()}
 		notify={pushToast}
 	/>
 {/if}

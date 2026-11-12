@@ -607,24 +607,9 @@ def cmd_bulk_hydrate(args: argparse.Namespace) -> int:
 
 def cmd_audit_quality(args: argparse.Namespace) -> int:
     """Exit 0 when every set is COMPLIANT and N > 0; 1 when not; 2 on self-test or store errors."""
-    import json as json_mod
-    import sys
+    from apps.stems.audit_cli import run_audit_quality
 
-    from apps.stems.stem_set_audit import AuditError, run_audit
-
-    try:
-        report = run_audit(stems_dir(args.data_dir))
-    except AuditError as exc:
-        print(f"error: {exc}", file=sys.stderr)
-        return 2
-    if args.json:
-        print(json_mod.dumps(report.to_json(), indent=2))
-    else:
-        for row in report.rows:
-            axis = f" [{row.axis}]" if row.axis else ""
-            print(f"{row.status:<10} {row.stable_id}{axis} {row.reason}")
-        print(report.summary_line())
-    return 0 if report.passed else 1
+    return run_audit_quality(data_dir=args.data_dir, json_output=args.json)
 
 
 def build_parser() -> argparse.ArgumentParser:

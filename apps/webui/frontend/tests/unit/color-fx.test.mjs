@@ -1,3 +1,4 @@
+// requirement: COLORFX-12718
 // requirement: COLORFX-01
 // requirement: COLORFX-02
 // requirement: COLORFX-04
@@ -5,7 +6,7 @@
 // requirement: COLORFX-8341
 // [if] the effect switches (by name or effect next) [then] the old effect is removed and the knob returns to 12 o'clock unless the command names a value
 // [if] the current effect is re-picked or only echo_beats is sent [then] the knob stays where it is
-// [if] effect next is sent [then] it cycles FILTER, SPACE, ECHO and back to FILTER
+// [if] effect next is sent [then] it cycles FILTER, SPACE, ECHO, CRUSH and back to FILTER
 // [if] the color knob sits at its center detent with SPACE or ECHO selected [then] every send is 0 and the filter is a dry bypass
 // [if] the knob moves away from center with SPACE or ECHO [then] the send grows monotonically on that side only
 // [if] ECHO is selected and the knob returns to center [then] the send closes but the echo input, feedback and return stay open, so the tail rings out
@@ -18,7 +19,9 @@
 // [if] a SPACE send has been closed past its tail plus a hold [then] the convolver detaches, and the next turn re-attaches it
 // [if] Rust engine mode is on and a channel is on SPACE or ECHO [then] its knob is refused by name, never sent to the Rust FILTER
 import assert from 'node:assert/strict';
-import { after, before, beforeEach, describe, test } from 'node:test';
+import { after, afterEach, before, beforeEach, describe, test } from 'node:test';
+
+import { loadSvelteSsrModule } from './load-svelte-ssr.mjs';
 
 import { loadTypeScriptModule } from './load-typescript.mjs';
 
@@ -30,6 +33,9 @@ let guards;
 let player;
 let ipc;
 let rust;
+let engine;
+let mixerState;
+let banner;
 
 /** A recording stand-in for the AudioParam methods the color FX touch. */
 class FakeParam {
@@ -158,10 +164,14 @@ function setDeckTempo(deck, bpm) {
 }
 
 before(async () => {
-	({ pure, graph, live, channel, guards, player, ipc, rust } = await loadTypeScriptModule(
+	({ pure, graph, live, channel, guards, player, ipc, rust, engine, mixerState } = await loadTypeScriptModule(
 		'tests/unit/fixtures/color-fx-entry.ts',
 		{ viteApiBase: 'http://127.0.0.1:9' }
 	));
+	banner = await loadSvelteSsrModule(`
+		export { render } from 'svelte/server';
+		export { default as DeckErrorBanner } from '$lib/components/rb/deck/DeckErrorBanner.svelte';
+	`);
 });
 
 after(() => {
@@ -175,6 +185,9 @@ describe('pure half', () => {
 		});
 		assert.deepEqual(pure.parseColorFxCommand({ type: 'color_fx', deck: 4, effect: 'echo', echo_beats: 0.75, value: 0.9 }), {
 			type: 'color_fx', deck: 4, effect: 'echo', echo_beats: 0.75, value: 0.9
+		});
+		assert.deepEqual(pure.parseColorFxCommand({ type: 'color_fx', deck: 'all', effect: 'space' }), {
+			type: 'color_fx', deck: 'all', effect: 'space'
 		});
 		for (const bad of [
 			{ type: 'color_fx', deck: 1 },
@@ -488,7 +501,8 @@ describe('agent parity', () => {
 	test('COLORFX-8341: the switch rule, pure', () => {
 		assert.equal(pure.nextColorFxEffect('filter'), 'space');
 		assert.equal(pure.nextColorFxEffect('space'), 'echo');
-		assert.equal(pure.nextColorFxEffect('echo'), 'filter');
+		assert.equal(pure.nextColorFxEffect('echo'), 'crush');
+		assert.equal(pure.nextColorFxEffect('crush'), 'filter');
 		const cmd = (rest) => ({ type: 'color_fx', deck: 1, ...rest });
 		assert.deepEqual(pure.planColorFxSwitch('filter', 0.8333, cmd({ effect: 'echo' })), { effect: 'echo', value: 0.5, switched: true });
 		assert.deepEqual(pure.planColorFxSwitch('filter', 0.8333, cmd({ effect: 'next' })), { effect: 'space', value: 0.5, switched: true });
@@ -511,7 +525,7 @@ describe('agent parity', () => {
 		assert.deepEqual(ipc.parsePerformanceCommandForTest({ type: 'color_fx', deck: 1, effect: 'next' }), {
 			type: 'color_fx', deck: 1, effect: 'next'
 		});
-		assert.throws(() => ipc.parsePerformanceCommandForTest({ type: 'color_fx', deck: 1, effect: 'prev' }), /filter\|space\|echo\|next/);
+		assert.throws(() => ipc.parsePerformanceCommandForTest({ type: 'color_fx', deck: 1, effect: 'prev' }), /filter\|space\|echo\|crush\|next/);
 	});
 
 	test('COLORFX-8341: dispatched next cycles, removes the old effect and recentres the knob; same-effect keeps it', async () => {
@@ -532,6 +546,9 @@ describe('agent parity', () => {
 			await dispatch({ type: 'filter', deck: 4, value: 1 / 6 });
 			await dispatch({ type: 'color_fx', deck: 4, effect: 'next' });
 			assert.equal(live.colorFx[4].effect, 'echo');
+			assert.equal(knob(), 0.5);
+			await dispatch({ type: 'color_fx', deck: 4, effect: 'next' });
+			assert.equal(live.colorFx[4].effect, 'crush');
 			assert.equal(knob(), 0.5);
 			await dispatch({ type: 'color_fx', deck: 4, effect: 'next', value: 0.7 });
 			assert.equal(live.colorFx[4].effect, 'filter', 'wraps round');
@@ -608,4 +625,156 @@ describe('agent parity', () => {
 	test('Rust engine mode refuses color_fx by name rather than filtering instead', () => {
 		assert.ok(rust.WEB_AUDIO_ONLY.has('color_fx'));
 	});
+});
+
+// Rejection and recovery execute the real dispatcher; only the late-failing
+// engine dependency below is substituted. Rust refusal uses the real adapter.
+describe('Color FX command failure recovery', () => {
+	let uninstall;
+	let oldWindow;
+	let oldLocation;
+	beforeEach(() => {
+		live._resetColorFxForTests();
+		oldWindow = globalThis.window;
+		oldLocation = globalThis.location;
+		globalThis.window = {};
+		globalThis.location = new URL('http://127.0.0.1/performance');
+		uninstall = ipc.installPerformanceBrowserIpc();
+	});
+	afterEach(() => {
+		rust.rustMode.enabled = false;
+		uninstall();
+		if (oldWindow === undefined) delete globalThis.window;
+		else globalThis.window = oldWindow;
+		if (oldLocation === undefined) delete globalThis.location;
+		else globalThis.location = oldLocation;
+		live._resetColorFxForTests();
+	});
+
+	const dispatch = (rest) => window.musicDjToolsPerformance.dispatch({ type: 'color_fx', deck: 2, ...rest });
+	const snapshot = () => ipc.queryPerformanceState();
+	function assertSettled() {
+		assert.equal(snapshot().decks[2].command_pending, false);
+		assert.equal(ipc.performanceCommandStatus.deck_pending[2], 0);
+		assert.equal(ipc.performanceCommandStatus.active, 0);
+		assert.equal(ipc.performanceCommandStatus.queued, 0);
+	}
+
+	test('real Rust refusal publishes one deck error, renders its banner, and recovers on retry', async () => {
+		const before = snapshot();
+		rust.rustMode.enabled = true;
+		const refused = dispatch({ effect: 'space', value: 0.7 });
+		assert.equal(snapshot().decks[2].command_pending, true);
+		await assert.rejects(refused, /RUST_ENGINE_UNAVAILABLE.*color_fx/);
+		const failed = snapshot();
+		assert.match(failed.decks[2].command_error, /RUST_ENGINE_UNAVAILABLE.*color_fx/);
+		assertSettled();
+		assert.deepEqual(failed.color_fx[2], before.color_fx[2]);
+		const html = banner.render(banner.DeckErrorBanner, { props: {
+			deckId: 2, error: failed.decks[2].command_error, errorId: null,
+			tone: 'fault', onDismiss: () => {}
+		} }).body;
+		assert.match(html, /role="alert"/);
+		assert.match(html, /data-performance-error="2"/);
+		assert.match(html, /color_fx/);
+		const ids = new Set(window.musicDjToolsPerformance.toasts().map((toast) => toast.id));
+		const result = await ipc.runPerformanceCommandFromUi({ type: 'color_fx', deck: 2, echo_beats: 0.75 });
+		assert.equal(result.ok, false);
+		assert.equal(result.reason, 'failed');
+		const introduced = window.musicDjToolsPerformance.toasts().filter((toast) => !ids.has(toast.id));
+		assert.equal(introduced.length, 1);
+		assertSettled();
+		rust.rustMode.enabled = false;
+		await dispatch({ effect: 'echo', echo_beats: 0.75, value: 0.8 });
+		const recovered = snapshot();
+		assert.equal(recovered.decks[2].command_error, null);
+		assert.equal(recovered.color_fx[2].effect, 'echo');
+		assert.equal(recovered.color_fx[2].echo_beats, 0.75);
+		assert.equal(recovered.mixer.channels[2].filter, 0.8);
+		assertSettled();
+		for (const deck of [1, 3, 4]) {
+			assert.equal(recovered.decks[deck].command_error, before.decks[deck].command_error);
+			assert.equal(recovered.decks[deck].command_pending, before.decks[deck].command_pending);
+			assert.deepEqual(recovered.color_fx[deck], before.color_fx[deck]);
+			assert.equal(recovered.mixer.channels[deck].filter, before.mixer.channels[deck].filter);
+		}
+	});
+
+	test('synchronous failure retains its cause and exposes a restoration failure explicitly', async () => {
+		await dispatch({ effect: 'space', value: 0.8 });
+		const nodes = buildChannels(fakeContext())[2];
+		live.applyColorKnob(2, nodes, 0.8);
+		const original = engine.setFilter;
+		const originalRamp = nodes.filterDry.gain.setTargetAtTime;
+		const cause = new Error('output refused');
+		engine.setFilter = () => { throw cause; };
+		try {
+			await assert.rejects(dispatch({ effect: 'next' }), (error) => {
+				assert.equal(error.cause, cause);
+				assert.match(error.message, /Color FX.*deck 2.*output refused/);
+				return true;
+			});
+			assert.equal(snapshot().color_fx[2].effect, 'space');
+			engine.setFilter = () => {
+				nodes.filterDry.gain.setTargetAtTime = () => { throw new Error('graph disconnected'); };
+				throw cause;
+			};
+			await assert.rejects(dispatch({ effect: 'next' }), (error) => {
+				assert.ok(error instanceof AggregateError);
+				assert.equal(error.errors[0], cause);
+				assert.match(error.message, /output refused; restoration failed: .*graph disconnected/);
+				return true;
+			});
+			assert.match(snapshot().decks[2].command_error, /restoration failed/);
+			assertSettled();
+		} finally {
+			engine.setFilter = original;
+			nodes.filterDry.gain.setTargetAtTime = originalRamp;
+		}
+	});
+
+	for (const command of [{ effect: 'next' }, { echo_beats: 0.75, value: 0.9 }]) {
+		test(`late engine rejection restores acknowledged settings and graph: ${JSON.stringify(command)}`, async () => {
+			setDeckTempo(2, 120);
+			await dispatch({ effect: 'echo', echo_beats: 0.5, value: 0.8 });
+			const nodes = buildChannels(fakeContext())[2];
+			live.applyColorKnob(2, nodes, 0.8);
+			const before = snapshot();
+			const original = engine.setFilter;
+			let rejectCall;
+			let entered;
+			const called = new Promise((resolve) => { entered = resolve; });
+			engine.setFilter = (deck, value) => {
+				mixerState.channels[deck].filter = value;
+				live.applyColorKnob(deck, nodes, value);
+				entered();
+				return new Promise((_resolve, reject) => { rejectCall = reject; });
+			};
+			try {
+				const pending = dispatch(command);
+				const rejected = assert.rejects(pending, /Color FX.*deck 2.*output refused/);
+				await called;
+				const wasPending = snapshot().decks[2].command_pending;
+				rejectCall(new Error('output refused'));
+				await rejected;
+				assert.equal(wasPending, true);
+				assertSettled();
+				const failed = snapshot();
+				assert.match(failed.decks[2].command_error, /Color FX.*deck 2.*output refused/);
+				assert.deepEqual(failed.color_fx[2], before.color_fx[2]);
+				assert.equal(failed.mixer.channels[2].filter, 0.8);
+				assert.equal(live._colorFxGraphForTests(2).echoIn.gain.landing(),
+					pure.colorFxTargets('echo', 0.8, true).echoIn);
+				engine.setFilter = original;
+				await dispatch(command);
+				assertSettled();
+				assert.equal(snapshot().decks[2].command_error, null);
+				assert.equal(snapshot().color_fx[2].effect, command.effect === 'next' ? 'crush' : 'echo');
+				assert.equal(snapshot().color_fx[2].echo_beats, command.echo_beats ?? 0.5);
+				assert.equal(snapshot().mixer.channels[2].filter, command.value ?? 0.5);
+			} finally {
+				engine.setFilter = original;
+			}
+		});
+	}
 });

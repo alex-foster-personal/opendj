@@ -3,17 +3,25 @@
  * so the reactive singleton stays under the 600-line file-size gate.
  */
 import type { components } from '../api-types';
-import { api, unwrap } from '../api/client';
+import { api, unwrap } from '../api/rb-http';
 import {
 	DECK_LAYOUT_DURATIONS_MS,
 	type DeckLayoutDurationMs,
 	type DeckLayoutMode
 } from './deck-layout-prefs';
 import { announceDeckDefaults } from './deck-default-prefs';
-import { beatJumpSizesFromPrefs, restoreBeatJumpSizes, type BeatJumpSizesByDeck } from './beat-jump-size.svelte';
+import {
+	beatJumpSizesFromPrefs,
+	restoreBeatJumpSizes,
+	type BeatJumpSizesByDeck
+} from './beat-jump-size.svelte';
 import { makeKeyFilterReadGuard } from './library-key-filter';
 import { makeDiskWriteChain } from './disk-write-chain';
-import { LYRICS_BOOLEAN_KEYS, LYRICS_LOAD_STRATEGIES, type LyricsLoadStrategy } from './lyrics-prefs';
+import {
+	LYRICS_BOOLEAN_KEYS,
+	LYRICS_LOAD_STRATEGIES,
+	type LyricsLoadStrategy
+} from './lyrics-prefs';
 import { APP_MODE_PREF_IDS, type AppModePrefs, type DiskAppModePatch } from './app-mode-prefs';
 import { APP_POSTURE_PREFS, type AppPosturePref } from './app-posture-prefs';
 import { GIG_HELPER_PREFS, type GigHelperPref } from './gig-helper-prefs';
@@ -23,22 +31,34 @@ import { PERF_TIER_PREFS, type PerfTierPref } from './perf-tier-prefs';
 import { parseSpeakerAutoRecover, type SpeakerAutoRecoverPref } from './speaker-link-prefs';
 import { parseWaveHeight, type WaveHeight } from '$lib/rb/wave-height';
 import { parseTempoLaneScale, type TempoLaneScale } from './tempo-lane-prefs';
+import { hydrateCueMarkerPrefs } from './cue-marker-prefs';
 import { parseWaveGridLines, type WaveGridLines } from './wave-grid-lines';
+import {
+	parseSectionsMainStyle,
+	parseSectionsOverviewStyle,
+	parseSectionsUncertain,
+	type SectionsMainStyle,
+	type SectionsOverviewStyle,
+	type SectionsUncertain
+} from './section-overlay-prefs';
 import { parseAutoSync, parseLevelCalibration } from './prefs-fields';
 import { writeBootStampMirror } from './gig-stamp-mirror';
 import { hydrateMidiEnabledFromDisk } from '../components/rb/midi/midi-enabled-choice';
 import { hydrateSidebarArtFromDisk } from './library-sidebar-art.svelte';
-import {
-	hydrateWheelSensitivityFromDisk,
-	type WheelSensitivityDisk
-} from './wheel-adjust';
+import { hydrateWheelSensitivityFromDisk, type WheelSensitivityDisk } from './wheel-adjust';
+import { hydrateLibraryListWheelFromDisk } from './library-wheel-scroll';
 import { hydrateMasterMutedFromDisk } from '../player/master-mute.svelte';
 import type { CompatibleFilterPrefs } from './compatible-filter-prefs';
 import type { RelatedCriteriaPrefs } from './related-criteria-prefs';
 import { validateHiddenColumns, type HideableColumn } from './library-columns';
 import type { DiskConfirmPatch } from './verified-pref-writes';
 import { hydrateTopbarViewFromDisk, type PerfView } from './topbar-view-prefs';
-import type { AutoSyncPrefs, LastPlaylistPref, LevelCalibrationPrefs, SpotifyLibraryPref } from './prefs-types';
+import type {
+	AutoSyncPrefs,
+	LastPlaylistPref,
+	LevelCalibrationPrefs,
+	SpotifyLibraryPref
+} from './prefs-types';
 import { isKeyNotation, KEY_NOTATIONS, type KeyNotation } from './key-notation';
 
 export type UiTheme = 'dark' | 'light';
@@ -94,7 +114,6 @@ export type LiveConfirmPrefs = {
 	dblclick_load_play?: boolean;
 };
 
-
 export type DiskPrefsPatch = {
 	confirm?: DiskConfirmPatch;
 	theme?: UiTheme;
@@ -103,19 +122,32 @@ export type DiskPrefsPatch = {
 	technically_working_animate?: boolean;
 	show_agent_pins?: boolean;
 	show_stems?: boolean;
+	/** A11Y-11811: Appearance > Reduce motion; OR'd with the OS media query. */
+	reduce_motion?: boolean;
 	deck_hover_link?: boolean;
 	compact_decks?: boolean;
 	show_sections?: boolean;
+	sections_main_style?: string;
+	sections_sticky_title?: boolean;
+	sections_next_countdown?: boolean;
+	sections_overview_style?: string;
+	sections_library_structure_column?: boolean;
+	sections_preview_cursor_label?: boolean;
+	sections_uncertain?: string;
 	auto_analyze_grid?: boolean;
 	auto_analyze_key?: boolean;
 	auto_analyze_sections?: boolean;
 	auto_analyze_vocals?: boolean;
 	speaker_auto_recover?: SpeakerAutoRecoverPref;
+	keyboard?: { preset?: string; overrides?: Record<string, string[]> };
 	show_tempo_lane?: boolean;
 	tempo_lane_scale?: TempoLaneScale;
 	show_vocal_lane?: boolean;
 	wave_height?: WaveHeight;
 	wave_grid_lines?: WaveGridLines;
+	show_hot_cue_markers?: boolean;
+	show_memory_cue_markers?: boolean;
+	show_loop_markers?: boolean;
 	jog_radial_waveform?: boolean;
 	deck_layout?: DeckLayoutMode;
 	deck_layout_animate?: boolean;
@@ -162,6 +194,7 @@ export type DiskPrefsPatch = {
 	compatible_filter?: CompatibleFilterPrefs;
 	library_related_criteria?: RelatedCriteriaPrefs;
 	library_watcher_folders?: string[];
+	midi_setup_dismissed_ports?: string[];
 	library_key_filter?: string[];
 };
 
@@ -174,15 +207,15 @@ function _diskPrefsToWirePatch(patch: DiskPrefsPatch): components['schemas']['Ui
 			...(app_mode.last_gig_at !== undefined ? { last_gig_at: app_mode.last_gig_at } : {})
 		} as components['schemas']['AppModeOut'];
 	}
-	if (
-		wheel_sensitivity !== undefined &&
-		wheel_sensitivity.mouse !== undefined &&
-		wheel_sensitivity.trackpad !== undefined
-	) {
-		wire.wheel_sensitivity = {
-			mouse: wheel_sensitivity.mouse,
-			trackpad: wheel_sensitivity.trackpad
-		};
+	if (wheel_sensitivity !== undefined) {
+		const ws: Partial<components['schemas']['WheelSensitivityOut']> = {};
+		for (const key of ['mouse', 'trackpad', 'library_mouse', 'library_trackpad'] as const) {
+			const value = wheel_sensitivity[key];
+			if (value !== undefined) ws[key] = value;
+		}
+		if (Object.keys(ws).length > 0) {
+			wire.wheel_sensitivity = ws as components['schemas']['WheelSensitivityOut'];
+		}
 	}
 	return wire;
 }
@@ -217,19 +250,31 @@ export interface PrefsHydrateTarget {
 	technically_working_animate: boolean;
 	show_agent_pins: boolean;
 	show_stems: boolean;
+	reduce_motion: boolean;
 	deck_hover_link: boolean;
 	compact_decks: boolean;
 	show_sections: boolean;
+	sections_main_style: SectionsMainStyle;
+	sections_sticky_title: boolean;
+	sections_next_countdown: boolean;
+	sections_overview_style: SectionsOverviewStyle;
+	sections_library_structure_column: boolean;
+	sections_preview_cursor_label: boolean;
+	sections_uncertain: SectionsUncertain;
 	auto_analyze_grid: boolean;
 	auto_analyze_key: boolean;
 	auto_analyze_sections: boolean;
 	auto_analyze_vocals: boolean;
 	speaker_auto_recover: SpeakerAutoRecoverPref;
+	keyboard: { preset: import('$lib/keyboard/presets/index').KeymapPresetId; overrides: Record<string, string[]> };
 	show_tempo_lane: boolean;
 	tempo_lane_scale: TempoLaneScale;
 	show_vocal_lane: boolean;
 	wave_height: WaveHeight;
 	wave_grid_lines: WaveGridLines;
+	show_hot_cue_markers: boolean;
+	show_memory_cue_markers: boolean;
+	show_loop_markers: boolean;
 	jog_radial_waveform: boolean;
 	deck_layout: DeckLayoutMode;
 	deck_layout_animate: boolean;
@@ -270,10 +315,32 @@ export interface PrefsHydrateTarget {
 	vocals_filter: boolean;
 	available_offline_filter: boolean;
 	library_watcher_folders: string[];
+	midi_setup_dismissed_ports: string[];
 	library_key_filter: string[];
 	compatible_filter: CompatibleFilterPrefs;
 	library_related_criteria: RelatedCriteriaPrefs;
 	spotify_library: SpotifyLibraryPref;
+}
+
+/** Union disk + local dismissed MIDI ports so a race cannot drop a dismissal (#10076). */
+export function hydrateMidiSetupDismissedPorts(
+	uiPrefs: PrefsHydrateTarget,
+	body: DiskPrefsPatch
+): boolean {
+	const disk = Array.isArray(body.midi_setup_dismissed_ports)
+		? body.midi_setup_dismissed_ports.filter((p): p is string => typeof p === 'string')
+		: [];
+	const local = uiPrefs.midi_setup_dismissed_ports.filter((p): p is string => typeof p === 'string');
+	const seen = new Set<string>();
+	const union: string[] = [];
+	for (const name of [...disk, ...local]) {
+		if (seen.has(name)) continue;
+		seen.add(name);
+		union.push(name);
+	}
+	uiPrefs.midi_setup_dismissed_ports = union;
+	const diskSet = new Set(disk);
+	return union.length !== disk.length || union.some((n) => !diskSet.has(n));
 }
 
 /** The five boolean lyric prefs hydrate in one loop rather than five ifs. */
@@ -358,8 +425,10 @@ export function makeLibraryKeyFilterRehydrator(deps: {
  * command, Codex P2 on PR #6235) can fail instead of trusting a stale value. */
 export const AUTO_CUE_READ_ATTEMPTS = 3;
 
-export function makeAutoCueRefresher(
-	uiPrefs: Pick<PrefsHydrateTarget, 'deck_autocue'>,
+export function makeDiskBoolPrefRefresher<K extends 'deck_autocue' | 'reduce_motion'>(
+	key: K,
+	staleMessage: string,
+	uiPrefs: Pick<PrefsHydrateTarget, K>,
 	persist: () => void,
 	report: (message: string, cause: unknown) => void,
 	retryDelayMs = 1000
@@ -370,11 +439,12 @@ export function makeAutoCueRefresher(
 		const body = (await unwrap(api.GET('/api/v1/ui-prefs'))) as DiskPrefsPatch;
 		// The response always carries a boolean; anything else is a failed read
 		// (retried, then reported), never a confirmation (Sol P1, PR #6235).
-		if (typeof body.deck_autocue !== 'boolean') {
-			throw new Error(`ui-prefs answered without a boolean deck_autocue: ${JSON.stringify(body.deck_autocue)}`);
+		const value = body[key];
+		if (typeof value !== 'boolean') {
+			throw new Error(`ui-prefs answered without a boolean ${key}: ${JSON.stringify(value)}`);
 		}
-		if (body.deck_autocue !== uiPrefs.deck_autocue) {
-			uiPrefs.deck_autocue = body.deck_autocue;
+		if (value !== uiPrefs[key]) {
+			uiPrefs[key] = value;
 			persist();
 		}
 	}
@@ -385,7 +455,7 @@ export function makeAutoCueRefresher(
 				return true;
 			} catch (error) {
 				if (attempt >= AUTO_CUE_READ_ATTEMPTS) {
-					report('Auto cue (AU) changed elsewhere, but this page could not re-read it; AU may be stale until reload', error);
+					report(staleMessage, error);
 					return false;
 				}
 				await new Promise((resolve) => setTimeout(resolve, retryDelayMs));
@@ -411,6 +481,39 @@ export function makeAutoCueRefresher(
 		})();
 		return inFlight;
 	};
+}
+
+export function makeAutoCueRefresher(
+	uiPrefs: Pick<PrefsHydrateTarget, 'deck_autocue'>,
+	persist: () => void,
+	report: (message: string, cause: unknown) => void,
+	retryDelayMs = 1000
+): () => Promise<boolean> {
+	return makeDiskBoolPrefRefresher(
+		'deck_autocue',
+		'Auto cue (AU) changed elsewhere, but this page could not re-read it; AU may be stale until reload',
+		uiPrefs,
+		persist,
+		report,
+		retryDelayMs
+	);
+}
+
+/** A11Y-11811: re-read `reduce_motion` on a `ui_prefs` change event (agent PUT). */
+export function makeReduceMotionRefresher(
+	uiPrefs: Pick<PrefsHydrateTarget, 'reduce_motion'>,
+	persist: () => void,
+	report: (message: string, cause: unknown) => void,
+	retryDelayMs = 1000
+): () => Promise<boolean> {
+	return makeDiskBoolPrefRefresher(
+		'reduce_motion',
+		'Reduce motion changed elsewhere, but this page could not re-read it; motion may be stale until reload',
+		uiPrefs,
+		persist,
+		report,
+		retryDelayMs
+	);
 }
 
 /** Pull on-disk confirm + theme prefs once (daemon may have remembered choices). */
@@ -469,6 +572,9 @@ export function makePrefsHydrator(deps: PrefsHydrateDeps): () => Promise<void> {
 		if (typeof body.show_stems === 'boolean') {
 			uiPrefs.show_stems = body.show_stems;
 		}
+		if (typeof body.reduce_motion === 'boolean') {
+			uiPrefs.reduce_motion = body.reduce_motion;
+		}
 		if (typeof body.deck_hover_link === 'boolean') {
 			uiPrefs.deck_hover_link = body.deck_hover_link;
 		}
@@ -478,6 +584,24 @@ export function makePrefsHydrator(deps: PrefsHydrateDeps): () => Promise<void> {
 		if (typeof body.show_sections === 'boolean') {
 			uiPrefs.show_sections = body.show_sections;
 		}
+		const mainStyle = parseSectionsMainStyle(body.sections_main_style);
+		if (mainStyle !== undefined) uiPrefs.sections_main_style = mainStyle;
+		if (typeof body.sections_sticky_title === 'boolean') {
+			uiPrefs.sections_sticky_title = body.sections_sticky_title;
+		}
+		if (typeof body.sections_next_countdown === 'boolean') {
+			uiPrefs.sections_next_countdown = body.sections_next_countdown;
+		}
+		const overviewStyle = parseSectionsOverviewStyle(body.sections_overview_style);
+		if (overviewStyle !== undefined) uiPrefs.sections_overview_style = overviewStyle;
+		if (typeof body.sections_library_structure_column === 'boolean') {
+			uiPrefs.sections_library_structure_column = body.sections_library_structure_column;
+		}
+		if (typeof body.sections_preview_cursor_label === 'boolean') {
+			uiPrefs.sections_preview_cursor_label = body.sections_preview_cursor_label;
+		}
+		const uncertain = parseSectionsUncertain(body.sections_uncertain);
+		if (uncertain !== undefined) uiPrefs.sections_uncertain = uncertain;
 		if (typeof body.auto_analyze_grid === 'boolean') {
 			uiPrefs.auto_analyze_grid = body.auto_analyze_grid;
 		}
@@ -494,6 +618,13 @@ export function makePrefsHydrator(deps: PrefsHydrateDeps): () => Promise<void> {
 		if (speakerAutoRecover !== undefined) {
 			uiPrefs.speaker_auto_recover = speakerAutoRecover;
 		}
+		if (body.keyboard !== undefined) {
+			const { parseKeyboardPrefs } = await import('$lib/keyboard/keyboard-prefs');
+			const keyboard = parseKeyboardPrefs(body.keyboard);
+			if (keyboard !== undefined) {
+				uiPrefs.keyboard = keyboard;
+			}
+		}
 		if (typeof body.show_tempo_lane === 'boolean') {
 			uiPrefs.show_tempo_lane = body.show_tempo_lane;
 		}
@@ -504,6 +635,7 @@ export function makePrefsHydrator(deps: PrefsHydrateDeps): () => Promise<void> {
 		if (tempoLaneScale !== undefined) {
 			uiPrefs.tempo_lane_scale = tempoLaneScale;
 		}
+		hydrateCueMarkerPrefs(body, uiPrefs);
 		const waveHeight = parseWaveHeight(body.wave_height);
 		if (waveHeight !== undefined) {
 			uiPrefs.wave_height = waveHeight;
@@ -637,7 +769,10 @@ export function makePrefsHydrator(deps: PrefsHydrateDeps): () => Promise<void> {
 			uiPrefs.deck_default_quantize = body.deck_default_quantize;
 			announceDeckDefaults(uiPrefs);
 		}
-		if (typeof body.deck_needle_lock === 'boolean' && body.deck_needle_lock !== uiPrefs.deck_needle_lock) {
+		if (
+			typeof body.deck_needle_lock === 'boolean' &&
+			body.deck_needle_lock !== uiPrefs.deck_needle_lock
+		) {
 			uiPrefs.deck_needle_lock = body.deck_needle_lock;
 			announceDeckDefaults(uiPrefs);
 		}
@@ -679,6 +814,7 @@ export function makePrefsHydrator(deps: PrefsHydrateDeps): () => Promise<void> {
 			contractError ??= error instanceof Error ? error : new Error(String(error));
 		}
 		hydrateWheelSensitivityFromDisk(body);
+		hydrateLibraryListWheelFromDisk(body.wheel_sensitivity);
 		hydrateMidiEnabledFromDisk(body);
 		hydrateSidebarArtFromDisk(body);
 		if (typeof body.master_muted === 'boolean') {
@@ -688,6 +824,9 @@ export function makePrefsHydrator(deps: PrefsHydrateDeps): () => Promise<void> {
 			uiPrefs.library_watcher_folders = body.library_watcher_folders.filter(
 				(p): p is string => typeof p === 'string'
 			);
+		}
+		if (hydrateMidiSetupDismissedPorts(uiPrefs, body)) {
+			void syncDiskPrefs({ midi_setup_dismissed_ports: uiPrefs.midi_setup_dismissed_ports });
 		}
 		hydrateCompatibleFilter(uiPrefs, body);
 		hydrateRelatedCriteria(uiPrefs, body);
@@ -700,4 +839,3 @@ export function makePrefsHydrator(deps: PrefsHydrateDeps): () => Promise<void> {
 		if (contractError !== null) throw contractError;
 	};
 }
-

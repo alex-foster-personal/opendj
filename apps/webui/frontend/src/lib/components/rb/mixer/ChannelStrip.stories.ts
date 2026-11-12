@@ -10,7 +10,7 @@ import type { StemControl, StemDeckState } from '$lib/rb/stem-types';
 import ChannelStrip from './ChannelStrip.svelte';
 
 /**
- * MIXUX-14 (the maintainer, Mon 2 Nov 2026): the mixer's S button stands stem level
+ * MIXUX-8244 (the maintainer, Mon 2 Nov 2026): the mixer's S button stands stem level
  * dials beside the EQ. These contracts turn a stem dial for real in Chromium
  * (drag, wheel, arrow keys) and measure the layout at the strip width the
  * widened mixer gives one channel.
@@ -20,7 +20,7 @@ import ChannelStrip from './ChannelStrip.svelte';
  * back the way the engine does, so the dial's own value is what is asserted.
  */
 
-const ctl = () => ({ muted: false, solo: false, gain: 0.5 });
+const ctl = () => ({ muted: false, solo: false, gain: 0.5, fx_send: 0 });
 
 function stems(layout: 'demucs4' | 'roformer2'): StemDeckState {
 	return {
@@ -56,12 +56,15 @@ const baseArgs = {
 	cueEnabled: false,
 	mixerStems: true,
 	stemPending: false,
+	commandPending: false,
+	commandError: null,
 	ontrim: fn(),
 	onAutoGainOffset: fn(async () => ({ ok: true })),
 	oneq: fn(),
 	onfilter: fn(),
 	oncolorfx: fn(),
 	onechodivision: fn(),
+	oncolorfxall: fn(),
 	onfader: fn(),
 	oncue: fn(),
 	onStemGain: fn(writeGain),

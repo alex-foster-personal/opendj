@@ -501,6 +501,7 @@ export function keySyncKeyIsGuess(deck: { key: string | null; key_guess?: string
 
 /** KEY-FALLBACK-01: where a shown key came from, for the library cell and the deck key hover. */
 export const KEY_SOURCE_HINT: Readonly<Record<string, string>> = {
+	edit: 'your edit',
 	own: 'our analysis',
 	rekordbox: 'from rekordbox',
 	file_tag: 'from the file tag',

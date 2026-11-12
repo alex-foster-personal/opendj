@@ -5,6 +5,7 @@
  * module only asks the engine to bring them up to date and writes the
  * per-track dismissal. CLI twin: `opendj track grid-flags` / `grid-scan` / `grid-flag`.
  */
+import { isPageGoingAway } from '$lib/api/lifecycle-abort';
 import { API_BASE } from '$lib/api';
 import { bootScheduler } from '$lib/rb/boot-scheduler';
 
@@ -64,6 +65,7 @@ export function ensureGridQualityScan(): Promise<void> {
 			})
 			.catch((error: unknown) => {
 				_scanRequested = null;
+				if (isPageGoingAway()) return;
 				console.error('[grid-flags] scan request failed', error);
 			});
 	}

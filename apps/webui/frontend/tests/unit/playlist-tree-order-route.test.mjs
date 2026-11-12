@@ -14,8 +14,9 @@ import { fileURLToPath } from 'node:url';
 import { after, before, test } from 'node:test';
 
 import { loadTypeScriptModule } from './load-typescript.mjs';
-import { stopFixtureServer } from './fixtures/stop-fixture-server.mjs';
+import { fixtureServerLaunch } from '../../scripts/fixture-server.mjs';
 import { resolveUv } from './fixtures/resolve-uv.mjs';
+import { stopFixtureServer } from './fixtures/stop-fixture-server.mjs';
 
 const REPOSITORY_ROOT = fileURLToPath(new URL('../../../../..', import.meta.url));
 const SERVER_SCRIPT = fileURLToPath(
@@ -28,16 +29,12 @@ let serverProcess;
 let apiBase;
 
 before(async () => {
-	// The isolated frontend gate needs the locked project plus its test extra.
-	serverProcess = spawn(
-		resolveUv(),
-		['run', '--locked', '--extra', 'dev', 'python', SERVER_SCRIPT],
-		{
-			cwd: REPOSITORY_ROOT,
-			env: { ...process.env, MDT_LIBRARY_MODE: 'local', PYTHONPATH: REPOSITORY_ROOT },
-			stdio: ['ignore', 'pipe', 'inherit']
-		}
-	);
+	const launch = fixtureServerLaunch({ repoRoot: REPOSITORY_ROOT, pythonTarget: SERVER_SCRIPT });
+	serverProcess = spawn(launch.command, launch.args, {
+		cwd: launch.cwd,
+		env: launch.env,
+		stdio: ['ignore', 'pipe', 'inherit']
+	});
 	const port = await new Promise((resolve, reject) => {
 		serverProcess.once('exit', (code) =>
 			reject(new Error(`fixture server exited early (${code})`))

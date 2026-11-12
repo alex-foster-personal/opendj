@@ -86,12 +86,19 @@ test('the deferred upgrade owns every stage the critical path gave up', () => {
 		// awaitStemArtifact wraps probeStemArtifact and waits out a bundle the
 		// server is still pulling from R2; a bare probeStemArtifact here would
 		// settle a spoke's first load of every track as "no stems".
+		'forgetStemsAbsence',
 		'awaitStemArtifact',
 		'fetchStemAudioArrayBuffers',
 		'AlignedStemDeckProcessor.create'
 	]) {
 		assert.ok(deferred.includes(required), `${required} was dropped, not deferred`);
 	}
+	const forget = deferred.indexOf('forgetStemsAbsence(');
+	const probe = deferred.indexOf('awaitStemArtifact(');
+	assert.ok(
+		forget >= 0 && forget < probe,
+		'forgetStemsAbsence must run before the server probe on every lazy upgrade'
+	);
 	assert.ok(
 		!/probeStemArtifact\(/.test(deferred),
 		'_upgradeDeckStems calls probeStemArtifact directly: one STEM_BUNDLE_HYDRATING ' +

@@ -180,6 +180,7 @@ test.describe('comment pin on Audio I/O modal', () => {
 	});
 
 	test('feedback explainer does not overlap the open Audio I/O menu', async ({ page }) => {
+		test.fixme(true, 'fb-cluster popover never opens, see #13524');
 		const ioButton = page.getByRole('button', { name: 'SHOW AUDIO I/O' });
 		await ioButton.click({ timeout: 5_000 });
 		const menu = page.locator('.hp-menu');

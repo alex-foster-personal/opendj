@@ -28,7 +28,12 @@ from apps.engine_core.update_channel_contract import (
 from apps.engine_core.update_channel_feed import (
     resolve_update_check,
 )
-from apps.webui.server.shell_commands import ShellCommandConflictError, shell_broker
+from apps.webui.server.shell_commands import (
+    ShellBrokerInvalidError,
+    ShellBrokerUnavailableError,
+    ShellCommandConflictError,
+    shell_broker,
+)
 
 
 # ----- route --------------------------------------------------------------
@@ -120,7 +125,18 @@ def add_update_apply_route(app: FastAPI, *, endpoint: str | None = None) -> None
                     detail="update-available without available_version",
                 ).model_dump(),
             )
-        broker = shell_broker(request)
+        try:
+            broker = shell_broker(request)
+        except ShellBrokerUnavailableError as error:
+            return JSONResponse(
+                status_code=status.HTTP_409_CONFLICT,
+                content=UpdateApplyRefused(status=error.status, detail=error.detail).model_dump(),
+            )
+        except ShellBrokerInvalidError as error:
+            return JSONResponse(
+                status_code=status.HTTP_409_CONFLICT,
+                content=UpdateApplyRefused(status=error.status, detail=error.detail).model_dump(),
+            )
         try:
             command_id = broker.enqueue_apply(available_version)
         except ShellCommandConflictError as error:
@@ -142,8 +158,20 @@ def add_update_apply_route(app: FastAPI, *, endpoint: str | None = None) -> None
         tags=["health"],
         name="update_apply_status",
     )
-    def update_apply_status(request: Request, command_id: str) -> UpdateApplyStatusOut:
-        status_payload = shell_broker(request).get_status(command_id)
+    def update_apply_status(request: Request, command_id: str) -> UpdateApplyStatusOut | JSONResponse:
+        try:
+            broker = shell_broker(request)
+        except ShellBrokerUnavailableError as error:
+            return JSONResponse(
+                status_code=status.HTTP_409_CONFLICT,
+                content=UpdateApplyRefused(status=error.status, detail=error.detail).model_dump(),
+            )
+        except ShellBrokerInvalidError as error:
+            return JSONResponse(
+                status_code=status.HTTP_409_CONFLICT,
+                content=UpdateApplyRefused(status=error.status, detail=error.detail).model_dump(),
+            )
+        status_payload = broker.get_status(command_id)
         if status_payload is None:
             raise HTTPException(status_code=404, detail="unknown apply command")
         return UpdateApplyStatusOut(**status_payload)

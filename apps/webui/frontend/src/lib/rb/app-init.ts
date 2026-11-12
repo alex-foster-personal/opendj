@@ -36,7 +36,7 @@ import { resumeAnlzPrefetchOwedFetch, setAnlzPrefetchShedRequest } from '$lib/co
 import { installReloadCountdown } from './reload-countdown';
 import { readXrunSessionCounter } from './xrun-sentinel';
 import { pushToast } from '$lib/stores.svelte';
-import { setMidiLoadFailureReporter } from '$lib/settings/apply';
+import { setMidiLoadFailureReporter } from '$lib/settings/midi-load-failure-reporter';
 import { installSettingSaveErrorSink } from '$lib/settings/setting-save-errors';
 import { startClientPerformanceSampling } from './client-performance-samples';
 import { startUsageHeartbeat } from './usage-heartbeat';
@@ -48,6 +48,7 @@ import {
 	deckStates,
 	pitchRanges
 } from '$lib/rb/audio-engine.svelte';
+import { armLiveHandlesProbe, type StorageLike } from '$lib/rb/frame-probe-flag';
 import { deckStemEnvelopes } from '$lib/rb/audio-engine-silence-probes';
 import { silenceSourceDeckSnap } from '$lib/rb/silence-source-snap';
 import { everyStemPartSilent } from '$lib/sets/deck-audibility';
@@ -151,6 +152,16 @@ export function toastMidiLoadFailure(exc: unknown): void {
  * nothing and gets the page's one scheduler.
  */
 export function startAppInstruments(scheduler: BootScheduler = bootScheduler): () => void {
+	// PERF-LEAK-11789: opt-in live handles probe, armed first so the handles the
+	// instruments below create are counted. Off, its module never loads.
+	let stopLiveHandles: (() => void) | null = null;
+	let instrumentsStopped = false;
+	if (typeof window !== 'undefined') {
+		void armLiveHandlesProbe(window.location?.search ?? '', liveProbeStorage()).then((stop) => {
+			if (instrumentsStopped) stop?.();
+			else stopLiveHandles = stop;
+		});
+	}
 	installPerfEventLogGlobal();
 	setMidiLoadFailureReporter(toastMidiLoadFailure);
 	// A settings write that failed on disk shows as an error toast (PR #4014).
@@ -261,5 +272,15 @@ export function startAppInstruments(scheduler: BootScheduler = bootScheduler): (
 		stopReloadCountdown();
 		stopUsageHeartbeat();
 		stopBootScheduler();
+		instrumentsStopped = true;
+		stopLiveHandles?.();
 	};
+}
+
+function liveProbeStorage(): StorageLike | null {
+	try {
+		return typeof localStorage === 'undefined' ? null : localStorage;
+	} catch {
+		return null;
+	}
 }

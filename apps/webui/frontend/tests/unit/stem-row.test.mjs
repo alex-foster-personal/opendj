@@ -20,6 +20,7 @@ import { build } from './esbuild-tsconfig.mjs';
 const FRONTEND_ROOT = fileURLToPath(new URL('../../', import.meta.url));
 const LIB_ROOT = fileURLToPath(new URL('../../src/lib', import.meta.url));
 const BROWSER_NAME = process.env.STEM_ROW_BROWSER ?? 'chromium';
+const HARNESS_URL = 'http://stem-row.harness.test/';
 const EMPTY_CALLS = [];
 const MUTE_CALLS = [{ action: 'mute', stem: 'vocal' }];
 let browser;
@@ -61,6 +62,9 @@ before(async () => {
 			loader: 'js'
 		},
 		alias: { $lib: LIB_ROOT },
+		// StemRow's wheel-adjust import reaches api/base.ts, which reads import.meta.env at
+		// module scope; the iife bundle has no Vite env, so define it like the other harnesses.
+		define: { 'import.meta.env.VITE_API_BASE': 'undefined', 'import.meta.env.DEV': 'false' },
 		bundle: true,
 		platform: 'browser',
 		conditions: ['browser'],
@@ -119,7 +123,11 @@ function deck(stems = {}) {
 async function mountRow(t, stems = {}) {
 	const page = await browser.newPage();
 	const pageErrors = [];
+	const consoleErrors = [];
 	page.on('pageerror', (error) => pageErrors.push(error.message));
+	page.on('console', (message) => {
+		if (message.type() === 'error') consoleErrors.push(message.text());
+	});
 	let mounted = false;
 	t.after(async () => {
 		try {
@@ -129,8 +137,22 @@ async function mountRow(t, stems = {}) {
 		}
 		assert.deepEqual(pageErrors, [], 'component must not throw browser errors');
 	});
-	await page.setContent('<button id="before">Before stems</button><div id="target"></div>');
+	// A real (routed, offline) origin, not about:blank: StemRow's wheel-adjust import reads
+	// window.localStorage at module load, which an about:blank document refuses.
+	await page.route(HARNESS_URL, (route) =>
+		route.fulfill({
+			contentType: 'text/html',
+			body: '<!doctype html><button id="before">Before stems</button><div id="target"></div>'
+		})
+	);
+	await page.goto(HARNESS_URL);
 	await page.addScriptTag({ content: bundle });
+	if (!(await page.evaluate(() => window.stemRowHarness !== undefined))) {
+		assert.fail(
+			`stem-row harness bundle did not define window.stemRowHarness; ` +
+				`page errors: ${JSON.stringify(pageErrors)}; console errors: ${JSON.stringify(consoleErrors)}`
+		);
+	}
 	await page.evaluate((props) => window.stemRowHarness.mount(props), deck(stems));
 	mounted = true;
 	return page;

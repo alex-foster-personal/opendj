@@ -50,6 +50,8 @@ export interface PerformanceSessionStemControlSnapshot {
 	muted: boolean;
 	solo: boolean;
 	gain?: number;
+	/** STEMPERF-11663: optional; missing = 0. */
+	fx_send?: number;
 }
 
 /** V1 snapshots predate independent bass/harmonics. Absent child controls
@@ -204,7 +206,10 @@ function _parseStemControl(raw: unknown): PerformanceSessionStemControlSnapshot 
 		}
 		gain = control.gain;
 	}
-	return { muted: control.muted, solo: control.solo, gain };
+	if (control.fx_send === undefined) return { muted: control.muted, solo: control.solo, gain };
+	const fx = control.fx_send;
+	if (typeof fx !== 'number' || !Number.isFinite(fx) || fx < 0 || fx > 1) return null;
+	return { muted: control.muted, solo: control.solo, gain, fx_send: fx };
 }
 
 export function serializePerformanceSession(input: PerformanceSessionSnapshotInput): string {

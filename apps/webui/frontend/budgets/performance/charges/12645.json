@@ -1,0 +1,9 @@
+{
+  "bytes": 2048,
+  "measured_main": 421662,
+  "measured_with_pr": 423264,
+  "sha": "56148a92a1",
+  "date": "Wed 11 Nov 2026",
+  "reason": "PR #12645 adds shared performance recorder chrome, top-bar REC explainer, and library recordings tab on the performance surface.",
+  "payback": "none planned; the growth is the feature's own code on this surface"
+}

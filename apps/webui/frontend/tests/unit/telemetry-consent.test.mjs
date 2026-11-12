@@ -225,7 +225,7 @@ test('accepting records the current terms version and then loads the loader, mas
 	// The loader SDK's own error capture: scrubbed when idle, DROPPED while a
 	// deck is live (the engine's any_deck_live gate cannot see these events).
 	const idle = options.beforeSend({ message: 'decode failed /Users/dev/Music/x.mp3', tags: {} });
-	assert.equal(idle.message, 'decode failed <path.mp3>');
+	assert.equal(idle.message, consent.LOG_TEXT_WITHHELD);
 	assert.equal(idle.tags.origin, 'browser-sdk');
 	live = true;
 	assert.equal(options.beforeSend({ message: 'mid-set' }), null, 'nothing leaves while live');
@@ -374,12 +374,11 @@ test('the loader SDK scrub reduces paths and audio filenames to their extension'
 		user: { id: 'u' },
 		tags: { a: 'b' }
 	});
-	assert.equal(event.message, 'could not decode <path.mp3>');
-	assert.equal(event.exception.values[0].value, 'read <path.flac> failed');
-	// The bare-filename rule stops at whitespace, exactly as the engine's does
-	// (`scrub.py` `_PATH_RE`, third branch); a rooted path is what carries the
-	// artist, and that branch allows spaces. Same output on both sides by design.
-	assert.equal(event.breadcrumbs[0].message, 'loaded Delilah <path.wav>');
+	assert.equal(event.message, consent.LOG_TEXT_WITHHELD);
+	assert.equal(event.exception.values[0].value, consent.EXCEPTION_VALUE_WITHHELD);
+	// A non-DOM loader breadcrumb proves nothing about its text, so the fixed
+	// placeholder travels, the engine's rule (`scrub.py` `_scrub_breadcrumbs`).
+	assert.equal(event.breadcrumbs[0].message, '[breadcrumb text withheld]');
 	// Breadcrumb data takes the engine's allowlist: `route` survives, `title` is redacted.
 	assert.deepEqual(event.breadcrumbs[0].data, { title: '[redacted]', route: '/x' });
 	assert.equal(event.request, undefined);
@@ -415,10 +414,11 @@ test('the loader SDK scrub mirrors the engine: tokens, extra/contexts allowlist,
 		server_name: 'silver.local',
 		tags: { error_id: 'eid-1', album: 'Actual Life' }
 	});
-	assert.equal(event.message, 'fetch failed [filtered] for <path.mp3>');
-	assert.equal(event.logentry.message, '[filtered] rejected');
-	assert.deepEqual(event.logentry.params, ['[filtered]']);
+	assert.equal(event.message, consent.LOG_TEXT_WITHHELD);
+	assert.equal(event.logentry.message, consent.LOG_TEXT_WITHHELD);
+	assert.deepEqual(event.logentry.params, ['<arg>']);
 	assert.equal(event.transaction, '<path.flac>');
+	assert.equal(event.exception.values[0].value, consent.EXCEPTION_VALUE_WITHHELD);
 	const frame = event.exception.values[0].stacktrace.frames[0];
 	assert.equal(frame.vars, undefined, 'frame locals never leave');
 	assert.equal(frame.filename, '<path.js>');
@@ -434,6 +434,64 @@ test('the loader SDK scrub mirrors the engine: tokens, extra/contexts allowlist,
 	assert.equal(consent.scrubEvent(poisoned), null);
 });
 
+test('loader message and logentry free text never travel; frames are rebuilt from the field allowlist', () => {
+	const event = consent.scrubEvent({
+		message: { formatted: 'now playing Zelda Quillfeather', message: 'now playing %s', params: ['Zelda'] },
+		logentry: { message: 'now playing %s', formatted: 'now playing Zelda Quillfeather', params: ['Zelda', 3, true] },
+		exception: {
+			values: [
+				{
+					value: 'boom',
+					raw_stacktrace: {
+						frames: [
+							{ filename: 'app.js', function: 'f', lineno: 1, context_line: 'title = "Zelda Quillfeather"', extra_text: 'x' }
+						]
+					},
+					stacktrace: {
+						frames: [
+							{
+								filename: 'chunk.js',
+								abs_path: 'https://host/chunk.js',
+								function: 'load',
+								lineno: 3,
+								colno: 9,
+								in_app: true,
+								pre_context: ['const a = "Zelda"'],
+								context_line: 'play("Zelda Quillfeather")',
+								post_context: ['}'],
+								data: { note: 'Zelda' }
+							}
+						]
+					}
+				}
+			]
+		}
+	});
+	assert.deepEqual(event.message, { formatted: consent.LOG_TEXT_WITHHELD });
+	assert.deepEqual(event.logentry, { message: consent.LOG_TEXT_WITHHELD, params: ['<arg>', 3, true] });
+	assert.equal(consent.scrubEvent({ message: 'now playing Zelda Quillfeather' }).message, consent.LOG_TEXT_WITHHELD);
+	assert.deepEqual(event.exception.values[0].stacktrace.frames, [
+		{ filename: 'chunk.js', function: 'load', lineno: 3, colno: 9, in_app: true }
+	]);
+	assert.deepEqual(event.exception.values[0].raw_stacktrace.frames, [{ filename: 'app.js', function: 'f', lineno: 1 }]);
+	assert.ok(!JSON.stringify(event).includes('Zelda'), 'no library text survives anywhere');
+});
+
+test('a page-chosen Error.name never travels as the loader exception type', () => {
+	const event = consent.scrubEvent({
+		exception: {
+			values: [
+				{ type: 'Zelda Quillfeather', value: 'boom' },
+				{ type: 'TypeError', value: 'boom' },
+				{ type: 42, value: 'boom' }
+			]
+		}
+	});
+	const types = event.exception.values.map((v) => v.type);
+	assert.deepEqual(types, [consent.BROWSER_ERROR_NAME_WITHHELD, 'TypeError', consent.BROWSER_ERROR_NAME_WITHHELD]);
+	assert.ok(!JSON.stringify(event).includes('Zelda'), 'no page-chosen error name survives');
+});
+
 test('the allowlists match the engine verbatim', async () => {
 	const { readFileSync } = await import('node:fs');
 	const py = readFileSync(new URL('../../../../../apps/shared/telemetry/scrub.py', import.meta.url), 'utf8');
@@ -444,6 +502,11 @@ test('the allowlists match the engine verbatim', async () => {
 	};
 	assert.deepEqual(new Set(consent.ALLOWED_CONTEXT_KEYS), block('ALLOWED_CONTEXT_KEYS'));
 	assert.deepEqual(new Set(consent.SDK_CONTEXT_BLOCKS), block('SDK_CONTEXT_BLOCKS'));
+	const init = readFileSync(new URL('../../../../../apps/shared/telemetry/__init__.py', import.meta.url), 'utf8');
+	const names = init.match(/BROWSER_ERROR_NAMES[^=]*=\s*frozenset\(\s*\{([\s\S]*?)\}\s*\)/);
+	assert.ok(names, 'BROWSER_ERROR_NAMES not found in telemetry/__init__.py');
+	assert.deepEqual(new Set(consent.BROWSER_ERROR_NAMES), new Set([...names[1].matchAll(/"([^"]+)"/g)].map((x) => x[1])));
+	assert.equal(consent.BROWSER_ERROR_NAME_WITHHELD, init.match(/BROWSER_ERROR_NAME_WITHHELD: str = "([^"]+)"/)[1]);
 });
 
 test('an operator-explicit host is never asked: a decline there could not close the gate', async () => {
@@ -541,13 +604,37 @@ test('the error-event click breadcrumb gets the same selector scrub', () => {
 		message: 'div.deck[aria-label="webkit-fixture-b-124bpm"] > button[type="button"]'
 	});
 	assert.equal(crumb.message, 'div.deck[aria-label="[filtered]"]');
-	// Only the SDK's DOM breadcrumbs are selector paths; a console line with a
-	// ` > ` in it is scrubbed as text, not thrown away as an unparseable path.
+	// Only the SDK's DOM breadcrumbs are selector paths; a console line is
+	// free text, so it travels as the fixed placeholder, never its words.
 	const line = consent.scrubBreadcrumb({
 		category: 'console',
-		message: 'decode a > b /Users/dev/Music/x.mp3'
+		message: 'now playing Zelda Quillfeather'
 	});
-	assert.equal(line.message, 'decode a > b <path.mp3>');
+	assert.equal(line.message, '[breadcrumb text withheld]');
+	const replay = consent.scrubRecordingEvent({
+		type: 5,
+		data: { tag: 'breadcrumb', payload: { category: 'console', message: 'now playing Zelda Quillfeather' } }
+	});
+	assert.equal(replay.data.payload.message, '[breadcrumb text withheld]');
+});
+
+test('a loader exception entry is rebuilt from allowlisted fields only', () => {
+	const event = consent.scrubEvent({
+		exception: {
+			values: [
+				{
+					type: 'TypeError',
+					value: 'Zelda Quillfeather.wav',
+					description: 'Zelda Quillfeather',
+					mechanism: { type: 'onerror', handled: false, description: 'Zelda', data: { title: 'Zelda' } }
+				}
+			]
+		}
+	});
+	const entry = event.exception.values[0];
+	assert.equal(entry.description, undefined);
+	assert.deepEqual(entry.mechanism, { type: 'onerror', handled: false });
+	assert.ok(!JSON.stringify(event).includes('Zelda'), 'if any sibling field forwards the title then broken');
 });
 
 test('a selector the SDK wrote with an unescaped title keeps only the prefix before it', () => {

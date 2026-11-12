@@ -32,6 +32,7 @@ single ``READY <port>`` stdout line.
 """
 from __future__ import annotations
 
+import asyncio
 import hashlib
 import json
 import os
@@ -61,7 +62,7 @@ from apps.engine_core.jobs.store import JobStore  # noqa: E402
 from apps.engine_core.setup.api import router as setup_router  # noqa: E402
 from apps.shared.paths import STATE_DB  # noqa: E402
 from apps.webui.server.auto_analyze_prefs import DEFAULT_AUTO_LANES  # noqa: E402
-from apps.webui.server.routes import ingest  # noqa: E402
+from apps.webui.server.routes import ingest, ingest_cli_procs  # noqa: E402
 from apps.webui.server.routes.analysis_queue import router as analysis_queue_router  # noqa: E402
 
 _REPO_ROOT = Path(__file__).resolve().parents[6]
@@ -75,7 +76,10 @@ _STICK_DIR = _SCRATCH_DIR / "stick"
 _MISSING_STICK_DIR = _SCRATCH_DIR / "stick-that-was-pulled"
 #: How long shutdown waits for a drain this process started to finish, so its
 #: analysis subprocess cannot write into the scratch dir after it is removed.
-_DRAIN_SETTLE_S = 120.0
+#: Shutdown stops the drain's CLIs first (ingest_cli_procs.stop_all), so this
+#: only covers the job noticing; it plus the test's 15 s margin stays under the
+#: runner's 120 s file timeout.
+_DRAIN_SETTLE_S = 15.0
 
 if STATE_DB != _DATA_DIR / "state" / "state.db":
     raise SystemExit(f"STATE_DB resolved to {STATE_DB}, not the scratch data dir {_DATA_DIR}")
@@ -112,6 +116,7 @@ def create_app() -> FastAPI:
         try:
             yield
         finally:
+            await asyncio.to_thread(ingest_cli_procs.stop_all)
             await runner.stop()
             store.close()
 

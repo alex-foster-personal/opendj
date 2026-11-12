@@ -301,4 +301,27 @@ def evaluate(
     return [r[0] for r in rows]
 
 
-__all__ = ["EvaluatorError", "compile_rule", "evaluate"]
+def count_matching(
+    rule: dict,
+    conn: sqlite3.Connection,
+    *,
+    validate: bool = True,
+    selection: Selection | None = None,
+) -> int:
+    """Count tracks matching ``rule`` (same predicate as :func:`evaluate`, no order or limit)."""
+    if validate:
+        validate_rule(rule)
+    if selection is None:
+        selection = Selection.resolve(conn)
+    where_sql, params = compile_rule(rule, selection=selection)
+    sql = "SELECT COUNT(*) FROM tracks WHERE tracks.deleted_at IS NULL AND (" + where_sql + ")"
+    try:
+        row = conn.execute(sql, params).fetchone()
+    except sqlite3.OperationalError as exc:
+        raise EvaluatorError(
+            f"evaluator could not query tracks: {exc}. Run the Phase 5 ingest first to populate tracks + track_fields."
+        ) from exc
+    return int(row[0]) if row is not None else 0
+
+
+__all__ = ["EvaluatorError", "compile_rule", "count_matching", "evaluate"]

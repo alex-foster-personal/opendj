@@ -158,6 +158,8 @@ class EngineProfiles:
                 response = client.get(f"{self.origin.base_url}{path}")
         except httpx.TransportError as error:
             raise unreachable(self.origin, error) from error
+        if response.status_code == 404:
+            raise PairNotTryable(f"GET {path} -> 404: {response.text[:300]}")
         if not response.is_success:
             raise TryError(f"GET {path} -> {response.status_code}: {response.text[:300]}")
         return response.json()
@@ -434,12 +436,16 @@ def rendered_steps(
     from apps.transition_score.scorer import Step
 
     bars = autodj.effective_bars(plan)
+    kept = {
+        id(event) for deck in (plan.out.deck, plan.in_.deck) for event in autodj.surviving_transport(plan.events, deck)
+    }
     timed = [
         (
             event,
             0.0 if autodj.renders_at_start(event, plan, layout) else _render_s(bars[index], plan, out_profile, layout),
         )
         for index, event in enumerate(plan.events)
+        if not (_is_transport_seam(event) and id(event) not in kept)
     ]
     after_zero = [(e, at) for e, at in timed if at > 0]
     steps = tuple(Step(at, "out" if e.deck == plan.out.deck else "in") for e, at in after_zero if _is_level_step(e))
@@ -602,6 +608,40 @@ def _keep_render(render: Render, cid: str, job: _Job) -> Path | None:
         shutil.rmtree(target)  # a partial copy never outlives its failure
         raise
     return target / "mix.wav"
+
+
+def _planner_rows_by_sha(proposed: Mapping[str, Any], autodj: AutoDjService) -> dict[str, dict[str, Any]]:
+    by_sha: dict[str, dict[str, Any]] = {}
+    for row in proposed.get("proposals") or []:
+        plan = autodj.parse_plan(row["plan"])
+        _, sha = _recorded_plan(plan)
+        by_sha[sha] = row
+    return by_sha
+
+
+def _attach_planner_confidence(
+    candidates: tuple[Candidate, ...],
+    proposed: Mapping[str, Any],
+    autodj: AutoDjService,
+) -> tuple[Candidate, ...]:
+    by_sha = _planner_rows_by_sha(proposed, autodj)
+    if not by_sha:
+        return candidates
+    enriched: list[Candidate] = []
+    for candidate in candidates:
+        row = by_sha.get(candidate.plan_sha256)
+        if row is None:
+            enriched.append(candidate)
+            continue
+        enriched.append(
+            dataclasses.replace(
+                candidate,
+                planner_confidence=row.get("confidence"),
+                planner_weakest_factor=row.get("weakest_factor"),
+                planner_confidence_title=row.get("confidence_title"),
+            )
+        )
+    return tuple(enriched)
 
 
 def _recorded_plan(plan: TransitionPlan) -> tuple[dict[str, Any], str]:
@@ -828,6 +868,7 @@ def try_pair(  # noqa: PLR0913 - the public bench operation has keyword-only exe
         keep_renders_in=keep_renders_in,
         autodj=autodj,
     )
+    candidates = _attach_planner_confidence(candidates, proposed, autodj)
     notes = (
         f"{proposed_count} of {n} requested candidates proposed ({proposed['considered']} considered)",
         *(f"not rendered: {reason}" for reason in refused),

@@ -1,0 +1,9 @@
+{
+  "bytes": 2048,
+  "measured_main": 7971,
+  "measured_with_pr": 9508,
+  "sha": "0ba92087b5",
+  "date": "Wed 11 Nov 2026",
+  "reason": "branch af--cloud-11436--structui-persist-segment-display-setting--work grows the wave-quick-settings surface; measured +1537 B gzip over main; ceiled to KiB.",
+  "payback": "none planned; the growth is the change's own code on this surface"
+}

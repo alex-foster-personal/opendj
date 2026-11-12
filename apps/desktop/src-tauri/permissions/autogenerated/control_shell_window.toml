@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-control-shell-window"
+description = "Enables the control_shell_window command without any pre-configured scope."
+commands.allow = ["control_shell_window"]
+
+[[permission]]
+identifier = "deny-control-shell-window"
+description = "Denies the control_shell_window command without any pre-configured scope."
+commands.deny = ["control_shell_window"]

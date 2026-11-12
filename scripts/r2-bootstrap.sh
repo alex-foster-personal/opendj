@@ -34,7 +34,7 @@ create_bucket() {
     echo "created bucket '${bucket}'"
 }
 
-apply_wal_lifecycle() {
+apply_state_lifecycle() {
     local bucket="$1"
     local tmp
     tmp="$(mktemp)"
@@ -46,6 +46,12 @@ apply_wal_lifecycle() {
       "Status": "Enabled",
       "Filter": {"Prefix": "wal/"},
       "Expiration": {"Days": 90}
+    },
+    {
+      "ID": "trash-14day-ttl",
+      "Status": "Enabled",
+      "Filter": {"Prefix": "trash/"},
+      "Expiration": {"Days": 14}
     }
   ]
 }
@@ -54,12 +60,12 @@ JSON
         --endpoint-url "${ENDPOINT}" --bucket "${bucket}" \
         --lifecycle-configuration "file://${tmp}" >/dev/null
     rm -f "${tmp}"
-    echo "applied 90-day TTL on ${bucket}/wal/"
+    echo "applied 90-day TTL on ${bucket}/wal/ and 14-day TTL on ${bucket}/trash/"
 }
 
 create_bucket "${STATE_BUCKET}"
 create_bucket "${AUDIO_BUCKET}"
-apply_wal_lifecycle "${STATE_BUCKET}"
+apply_state_lifecycle "${STATE_BUCKET}"
 
 cat <<EOF
 

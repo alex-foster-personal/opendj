@@ -16,6 +16,8 @@ Regression one-liners:
   - if a dry run writes rows then the default run is not safe
   - if import_plays accepts source opendj then imports pose as Open DJ's own plays
   - if the parser misreads Serato's real layout then the committed capture disagrees with Serato's own export
+  - if every entry is unplayed then import writes no plays
+  - if a session field has bad utf-16 then read.error names the file and malformed offset
 """
 from __future__ import annotations
 
@@ -52,6 +54,40 @@ def _manifest() -> list[dict[str, object]]:
     return list(data["captures"])
 
 
+def _expect_type(value: object, typ: type[object], label: str) -> None:
+    if not isinstance(value, typ):
+        raise TypeError(f"{label} must be {typ.__name__}")
+
+
+def _validate_capture_entry(ent: object, index: int) -> None:
+    if not isinstance(ent, dict):
+        raise TypeError(f"entries[{index}] must be a dict")
+    for key in _REQUIRED_ENTRY_KEYS:
+        if key not in ent:
+            raise ValueError(f"entries[{index}] missing key {key!r}")
+    _expect_type(ent["index"], int, f"entries[{index}].index")
+    _expect_type(ent["path"], str, f"entries[{index}].path")
+    _expect_type(ent["start_s"], int, f"entries[{index}].start_s")
+    _expect_type(ent["played"], bool, f"entries[{index}].played")
+
+
+def _validate_capture_row(row: dict[str, object]) -> None:
+    file = row["file"]
+    _expect_type(file, str, "capture file")
+    if not file.endswith(".session"):
+        raise ValueError(f"capture file must be a .session name, got {file!r}")
+    digest = row["sha256"]
+    _expect_type(digest, str, "capture sha256")
+    if len(digest) != 64:
+        raise ValueError(f"capture sha256 must be a 64-character string, got {digest!r}")
+    if digest != digest.lower() or any(c not in "0123456789abcdef" for c in digest):
+        raise ValueError(f"capture sha256 must be lowercase hex, got {digest!r}")
+    entries = row["entries"]
+    _expect_type(entries, list, "capture entries")
+    for i, ent in enumerate(entries):
+        _validate_capture_entry(ent, i)
+
+
 # Synthesized sessions: built with the parser's own field ids and framing, so they cover
 # edge cases only; Serato's real format is checked against committed captures in
 # tests/fixtures/serato_history/.
@@ -73,15 +109,27 @@ def _field(fid: int, value: bytes) -> bytes:
     return _u32(fid) + _u32(len(value)) + value
 
 
-def _oent(path: str, start: int, *, played: bool, extra: bytes = b"") -> bytes:
-    adat = (
-        extra
-        + _field(history.FIELD_PATH, _u16(path))
-        + _field(history.FIELD_TITLE, _u16("Title"))
+def _oent(
+    path: str | None,
+    start: int | None,
+    *,
+    played: bool,
+    extra: bytes = b"",
+    include_path: bool = True,
+    include_start: bool = True,
+) -> bytes:
+    adat = extra
+    if include_path and path is not None:
+        adat += _field(history.FIELD_PATH, _u16(path))
+    adat += (
+        _field(history.FIELD_TITLE, _u16("Title"))
         + _field(history.FIELD_ARTIST, _u16("Artist"))
-        + _field(history.FIELD_START, _u32(start))
-        + _field(history.FIELD_END, _u32(start + 300))
-        + _field(history.FIELD_DECK, _u32(2))
+    )
+    if include_start and start is not None:
+        adat += _field(history.FIELD_START, _u32(start))
+        adat += _field(history.FIELD_END, _u32(start + 300))
+    adat += (
+        _field(history.FIELD_DECK, _u32(2))
         + _field(history.FIELD_PLAYED, b"\x01" if played else b"\x00")
     )
     return _tag(b"oent", _tag(b"adat", adat))
@@ -233,6 +281,148 @@ def test_cli_writes_and_reports_truncation(
     assert "13.session: truncated at offset" in capsys.readouterr().err
 
 
+def test_import_multiple_played_entries_in_file_order(tmp_path: Path) -> None:
+    """[if] a session has 3 played entries [then] 3 plays import in file order, [else stop]."""
+    a, b, c = (
+        str(tmp_path / "Music" / "a.mp3"),
+        str(tmp_path / "Music" / "b.mp3"),
+        str(tmp_path / "Music" / "c.mp3"),
+    )
+    serato = _serato(
+        tmp_path,
+        {
+            "multi.session": _session(
+                _oent(a, START_A, played=True),
+                _oent(b, START_B, played=True),
+                _oent(c, START_C, played=True),
+            )
+        },
+    )
+    db = _db(tmp_path, {"a" * 40: a, "b" * 40: b, "c" * 40: c})
+    conn = state_db.open_rw(db)
+    try:
+        report = library_import.import_serato_history(conn, serato, dry_run=False)
+    finally:
+        conn.close()
+    assert report.plays_written == 3
+    stamp = lambda s: canonical_from(datetime.fromtimestamp(s, UTC))  # noqa: E731
+    assert _plays(db) == [
+        ("a" * 40, stamp(START_A), "serato"),
+        ("b" * 40, stamp(START_B), "serato"),
+        ("c" * 40, stamp(START_C), "serato"),
+    ]
+
+
+def test_import_skips_all_unplayed_entries(tmp_path: Path) -> None:
+    """[if] every session entry is unplayed [then] import writes zero plays, [else stop]."""
+    paths = [str(tmp_path / "Music" / f"{i}.mp3") for i in range(3)]
+    serato = _serato(
+        tmp_path,
+        {
+            "unplayed.session": _session(
+                *(_oent(p, START_A + i * 100, played=False) for i, p in enumerate(paths))
+            )
+        },
+    )
+    db = _db(tmp_path, {f"{i:040x}": p for i, p in enumerate(paths)})
+    conn = state_db.open_rw(db)
+    try:
+        report = library_import.import_serato_history(conn, serato, dry_run=False)
+    finally:
+        conn.close()
+    assert (report.plays_written, report.skipped, report.errors) == (0, {"not played": 3}, [])
+    assert _plays(db) == []
+
+
+def test_import_skips_played_entry_without_start_time(tmp_path: Path) -> None:
+    """[if] a played entry has no start field [then] skip as no start time, [else stop]."""
+    track = str(tmp_path / "Music" / "a.mp3")
+    serato = _serato(
+        tmp_path,
+        {"nostart.session": _session(_oent(track, None, played=True, include_start=False))},
+    )
+    db = _db(tmp_path, {"a" * 40: track})
+    conn = state_db.open_rw(db)
+    try:
+        report = library_import.import_serato_history(conn, serato, dry_run=False)
+    finally:
+        conn.close()
+    assert (report.plays_written, report.skipped) == (0, {"no start time": 1})
+
+
+def test_import_skips_played_entry_without_path(tmp_path: Path) -> None:
+    """[if] a played entry has no path field [then] skip as no path, [else stop]."""
+    serato = _serato(
+        tmp_path,
+        {"nopath.session": _session(_oent(None, START_A, played=True, include_path=False))},
+    )
+    db = _db(tmp_path, {})
+    conn = state_db.open_rw(db)
+    try:
+        report = library_import.import_serato_history(conn, serato, dry_run=False)
+    finally:
+        conn.close()
+    assert (report.plays_written, report.skipped) == (0, {"no path": 1})
+
+
+def test_import_empty_session_writes_nothing(tmp_path: Path) -> None:
+    """[if] a session file has zero oent tags [then] import sees no entries, [else stop]."""
+    serato = _serato(tmp_path, {"empty.session": _session()})
+    db = _db(tmp_path, {})
+    conn = state_db.open_rw(db)
+    try:
+        report = library_import.import_serato_history(conn, serato, dry_run=False)
+    finally:
+        conn.close()
+    assert (report.entries_seen, report.plays_written, report.errors) == (0, 0, [])
+
+
+def test_malformed_utf16_path_reports_read_error(tmp_path: Path) -> None:
+    """[if] a path field has invalid utf-16 [then] read.error names malformed, [else stop]."""
+    adat = (
+        _field(history.FIELD_PATH, b"\x00a\x00")
+        + _field(history.FIELD_START, _u32(START_A))
+        + _field(history.FIELD_PLAYED, b"\x01")
+    )
+    bad = _session(_tag(b"oent", _tag(b"adat", adat)))
+    serato = _serato(tmp_path, {"bad.session": bad})
+    session_path = history.session_files(serato)[0]
+    read = history.read_session(session_path)
+    assert read.entries == ()
+    assert read.error is not None
+    assert "bad.session" in read.error
+    assert "malformed field" in read.error
+    db = _db(tmp_path, {})
+    conn = state_db.open_rw(db)
+    try:
+        report = library_import.import_serato_history(conn, serato, dry_run=False)
+    finally:
+        conn.close()
+    assert report.errors == [read.error]
+    argv = ["serato-history", "--source", str(serato), "--db", str(db), "--write"]
+    assert library_import.main(argv) == 1
+
+
+def test_capture_manifest_rejects_malformed_oracle_row() -> None:
+    """[if] a manifest oracle row has wrong types [then] validation fails, [else stop]."""
+    with pytest.raises(ValueError, match="sha256"):
+        _validate_capture_row(
+            {
+                "file": "x.session",
+                "sha256": "not-hex",
+                "entries": [{"index": 0, "path": "p", "start_s": 1, "played": True}],
+            }
+        )
+    with pytest.raises(TypeError, match="played must be bool"):
+        _validate_capture_row(
+            {
+                "file": "y.session",
+                "sha256": "a" * 64,
+                "entries": [{"index": 0, "path": "p", "start_s": 1, "played": "yes"}],
+            }
+        )
+
+
 def test_import_plays_refuses_opendj_source(tmp_path: Path) -> None:
     conn = state_db.open_rw(_db(tmp_path, {}))
     try:
@@ -249,11 +439,11 @@ def test_capture_manifest_pins_every_committed_session() -> None:
     assert {str(c["file"]) for c in manifests} == on_disk
     for cap in manifests:
         assert set(cap) >= _REQUIRED_CAPTURE_KEYS
+        _validate_capture_row(cap)
         entries = cap["entries"]
         assert isinstance(entries, list) and entries
         for i, row in enumerate(entries):
             assert isinstance(row, dict)
-            assert set(row) >= _REQUIRED_ENTRY_KEYS
             assert row["index"] == i
             path = str(row["path"])
             assert not any(marker in path for marker in _FORBIDDEN_PATH_MARKERS)

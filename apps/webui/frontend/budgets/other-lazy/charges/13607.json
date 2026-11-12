@@ -1,0 +1,9 @@
+{
+  "bytes": 38912,
+  "measured_main": 520362,
+  "measured_with_pr": 557314,
+  "sha": "6ea9a58ad52",
+  "date": "Thu 12 Nov 2026",
+  "reason": "PR #13607 is a bundle of 225 re-applied pull requests. CI measured other-lazy 520362 -> 557314 (+36952 B gzip) on 6ea9a58ad52. That growth is the members' own: this PR also carries 35 member charge files for this surface, 54528 B in all, each with its own reason. The gate counts only a charge named for the PR under test, so this file restates the measured total under the bundle's number; ceiled to KiB plus 1 KiB.",
+  "payback": "this file double counts the ceiling: the member charges already hold these bytes. Delete it at the next rebaseline, or sooner once #13607 has merged, since nothing reads a merged PR's allowance."
+}

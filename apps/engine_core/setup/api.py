@@ -312,17 +312,18 @@ def start_import(request: Request, body: SetupImportIn) -> dict[str, Any]:
             status.HTTP_409_CONFLICT,
         )
 
+    detected: detect.RekordboxDetection | None = None
     if body.source is None:
-        found = detect.detect_rekordbox(data_dir)
+        detected = detect.detect_rekordbox(data_dir)
         fatal = [
             code
-            for code in found.blockers
+            for code in detected.blockers
             if code != detect.CODE_SHARE_MISSING
         ]
         if fatal:
             raise _refuse(
                 fatal[0],
-                _blocker_message(fatal[0], found),
+                _blocker_message(fatal[0], detected),
                 status.HTTP_409_CONFLICT,
             )
 
@@ -331,7 +332,13 @@ def start_import(request: Request, body: SetupImportIn) -> dict[str, Any]:
         payload["source"] = body.source
     if body.limit is not None:
         payload["limit"] = body.limit
-    if body.refresh_decrypt:
+    stale_plain_refresh = body.refresh_decrypt or (
+        detected is not None
+        and detect.copy_stale_vs_live(
+            copy=detected.plain_copy, live_db=detected.live_db
+        )
+    )
+    if stale_plain_refresh:
         payload["refresh_decrypt"] = True
 
     try:

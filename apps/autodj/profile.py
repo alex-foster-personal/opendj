@@ -25,9 +25,9 @@ import bisect
 import math
 import statistics
 from collections.abc import Mapping, Sequence
-from dataclasses import replace
+from dataclasses import dataclass, replace
 from itertools import pairwise
-from typing import Any
+from typing import Any, Literal
 
 from apps.autodj.contract.models import (
     MIK_BOUNDARY_SNAP_BARS,
@@ -41,6 +41,38 @@ from apps.autodj.contract.models import (
 )
 from apps.autodj.sections import UNKNOWN, phrase_label
 from apps.shared.harmonic import key_to_camelot
+
+
+@dataclass(frozen=True)
+class ResolvedKey:
+    """The key at a bar and how it was chosen (for overlap-span harmony)."""
+
+    key: str | None
+    source: Literal["segment", "global"] | None
+    unscored: bool = False
+
+
+def _bar_in_segment(start: object, end: object, bar: int) -> bool:
+    return (
+        isinstance(start, (int, float))
+        and isinstance(end, (int, float))
+        and start <= bar <= end
+    )
+
+
+def resolve_key_at_bar(profile: TrackProfile, bar: int) -> ResolvedKey:
+    """The key at ``bar`` for span scoring: segment when covered, else the track key.
+
+    A segment covering the bar without a string key makes the bar unscored (never a silent global fallback).
+    """
+    for segment in profile.key_segments:
+        if _bar_in_segment(segment.start_bar, segment.end_bar, bar):
+            if isinstance(segment.key, str):
+                return ResolvedKey(segment.key, "segment", False)
+            return ResolvedKey(None, None, True)
+    if isinstance(profile.key, str) and profile.key:
+        return ResolvedKey(profile.key, "global", False)
+    return ResolvedKey(None, None, True)
 
 
 def heard_profile(

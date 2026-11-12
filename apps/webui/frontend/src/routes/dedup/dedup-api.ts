@@ -14,6 +14,7 @@ import type { paths } from '$lib/api-types';
 
 import type {
 	ApplyRecord,
+	ClusterBasis,
 	ClustersResponse,
 	Decision,
 	DecisionAction,
@@ -23,6 +24,7 @@ import type {
 } from './types';
 
 const DECISION_ACTIONS: readonly DecisionAction[] = ['merge', 'keep-all', 'skip'];
+const CLUSTER_BASES: readonly ClusterBasis[] = ['fingerprint', 'tags'];
 
 export class DedupConflictError extends Error {
 	constructor(
@@ -74,6 +76,13 @@ function asInteger(value: unknown, context: string): number {
 		throw new Error(`dedup: ${context} is not an integer`);
 	}
 	return value;
+}
+
+function asClusterBasis(value: unknown, context: string): ClusterBasis {
+	if (typeof value !== 'string' || !CLUSTER_BASES.includes(value as ClusterBasis)) {
+		throw new Error(`dedup: ${context} is not a supported cluster basis`);
+	}
+	return value as ClusterBasis;
 }
 
 function asDecisionAction(value: unknown, context: string): DecisionAction {
@@ -130,6 +139,7 @@ function parseCluster(value: unknown, context: string) {
 		cluster_key: asString(object.cluster_key, `${clusterContext}.cluster_key`),
 		survivor_stable_id: asString(object.survivor_stable_id, `${clusterContext}.survivor_stable_id`),
 		rationale: asStringOrNull(object.rationale, `${clusterContext}.rationale`),
+		basis: asClusterBasis(object.basis, `${clusterContext}.basis`),
 		flagged_manual_review: asBoolean(
 			object.flagged_manual_review,
 			`${clusterContext}.flagged_manual_review`
@@ -260,9 +270,15 @@ export async function fetchDedupScan(signal?: AbortSignal): Promise<DedupScanSta
 }
 
 /** Start the scan. A scan already running is not an error: its status comes back. */
-export async function startDedupScan(signal?: AbortSignal): Promise<DedupScanStatus> {
+export async function startDedupScan(
+	signal?: AbortSignal,
+	basis: 'fingerprint' | 'tags' | 'both' = 'both'
+): Promise<DedupScanStatus> {
 	try {
-		const { data } = await api.POST('/api/v1/dedup/scan', { signal: signal ?? null });
+		const { data } = await api.POST('/api/v1/dedup/scan', {
+			body: { basis },
+			signal: signal ?? null
+		});
 		return data as DedupScanStatus;
 	} catch (error) {
 		if (error instanceof ApiError && error.status === 409) return fetchDedupScan(signal);

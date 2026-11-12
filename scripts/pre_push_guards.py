@@ -4,7 +4,8 @@ Tue 3 Nov 2026 main went red five ways a builder could have seen in seconds: the
 `helper_carried_paths` drift guard (#8313 repeated an entry, #8444/#8445 a missing one), the
 FILETREE.md map, the OSS tip audit (a CGNAT literal, then #8392, a home path whose folder name was learned as a
 login), a frontend bundle budget grown without a charge file (#8429), and the `.svelte`-as-text
-ratchet (GUARD-15). This module reads the branch diff against origin/main, runs only the guards
+ratchet (GUARD-15). Later, #12086 and #12009 each landed a table with no CloudSync data class
+(the `data-classes` guard). This module reads the branch diff against origin/main, runs only the guards
 those paths can break, in parallel, and prints the exact fix for each red.
 
     python -m scripts.pre_push_guards run [--base origin/main]   # exit 1 on a blocking FAIL
@@ -63,6 +64,9 @@ NOT_BUILD_INPUT = re.compile(
     r"^apps/webui/frontend/(tests/|\.storybook/|README\.md$|knip\.js$|playwright\.config\.ts$|\.nvmrc$|\.gitignore$)"
 )
 FILETREE_MAPPED = ("apps", "ops", "tools", "ci", "docs")
+DATA_CLASS_PATHS = "apps/sync_hub/data_classes"
+# An added diff line creating a table; `git diff -G` prefilters, this decides.
+CREATE_TABLE = re.compile(r"^\+(?!\+\+ ).*\bcreate\s+(?:(?:temp|temporary|virtual)\s+)?table\b", re.IGNORECASE)
 DEEP_CARRY = "uv run --no-sync pytest -q tests/scripts/test_ci_plan_carry_paths.py -k committed_path_list"
 
 
@@ -96,7 +100,7 @@ GUARDS: dict[str, Guard] = {
         Guard(
             "filetree",
             "add or remove the paths the test names in FILETREE.md, then:"
-            " uv run --no-sync pytest -q (private path)",
+            " uv run --no-sync pytest -q tests/quality/test_filetree.py",
         ),
         Guard(
             "oss-audit",
@@ -112,6 +116,11 @@ GUARDS: dict[str, Guard] = {
             "svelte-source-text",
             "render the component (loadSvelteSsrModule) or add a reasoned entry to"
             " tests/unit/source-regex-test-allowlist.json; rerun: just pre-push-guards",
+        ),
+        Guard(
+            "data-classes",
+            "each table above: add to a class in apps/sync_hub/data_classes_tables.py, then run"
+            " uv run python -m apps.sync_hub.data_classes --markdown",
         ),
     )
 }
@@ -142,8 +151,24 @@ def _is_helper_candidate(path: str, config: Config) -> bool:
     return path.endswith("conftest.py") or (matches(path, config.always) and not is_test_module(path))
 
 
-def select_guards(changes: tuple[Change, ...], config: Config) -> dict[str, str]:
-    """Guard id -> the first changed path that selected it, in GUARDS order."""
+def create_table_paths(diff: str) -> frozenset[str]:
+    """Paths whose `git diff` hunks ADD a `CREATE TABLE` line; context and removed lines do not count."""
+    paths: set[str] = set()
+    path = ""
+    for line in diff.splitlines():
+        if line.startswith("+++ "):
+            path = line[6:] if line.startswith("+++ b/") else ""
+        elif path and CREATE_TABLE.match(line):
+            paths.add(path)
+    return frozenset(paths)
+
+
+def select_guards(
+    changes: tuple[Change, ...], config: Config, created_tables_in: frozenset[str] = frozenset()
+) -> dict[str, str]:
+    """Guard id -> the first changed path that selected it, in GUARDS order.
+
+    `created_tables_in` is the paths whose diff adds a `CREATE TABLE` line (`create_table_paths`)."""
     owner = _owner_index(config)
     picks: dict[str, str] = {}
 
@@ -165,6 +190,8 @@ def select_guards(changes: tuple[Change, ...], config: Config) -> dict[str, str]
             path.startswith(FRONTEND + "src/") and path.endswith(".svelte") and _is_structural(change)
         ):
             pick("svelte-source-text", path)
+        if path in created_tables_in or path.startswith(DATA_CLASS_PATHS):
+            pick("data-classes", path)
     return {g: picks[g] for g in GUARDS if g in picks}
 
 
@@ -344,18 +371,54 @@ def _guard_svelte_text(root: Path) -> tuple[str, str]:
     return ("PASS" if code == 0 else "FAIL"), _tap_failures(out)
 
 
+def _guard_data_classes(root: Path) -> tuple[str, str]:
+    code, out = _run([sys.executable, "-m", "scripts.data_class_guard"], root)
+    if code == 0:
+        return "PASS", _tail(out, 1)
+    if code == 1:
+        return "FAIL", _tail(out, 40)
+    return (
+        "WARN",
+        f"could not measure (exit {code}): {_tail(out, 5)}; run: uv run --no-sync python -m scripts.data_class_guard",
+    )
+
+
+def read_create_table_paths(base: str, root: Path) -> frozenset[str]:
+    """`create_table_paths` of the branch diff; `-G` keeps git from printing unrelated hunks."""
+    code, out = _run(
+        [
+            "git",
+            "diff",
+            "-U0",
+            "--no-color",
+            "--no-ext-diff",
+            "--src-prefix=a/",
+            "--dst-prefix=b/",
+            "-G",
+            "[Tt][Aa][Bb][Ll][Ee]",
+            f"{base}...HEAD",
+        ],
+        root,
+    )
+    if code != 0:
+        raise PlanError(f"git diff {base}...HEAD failed: {_tail(out, 3)}")
+    return create_table_paths(out)
+
+
 def _run_guard(guard: str, changes: tuple[Change, ...], config: Config, root: Path) -> Outcome:
     start = time.monotonic()
     if guard == "carry-paths":
         status, detail = _guard_carry(changes, config, root)
     elif guard == "filetree":
-        status, detail = _guard_pytest("(private path)", root)
+        status, detail = _guard_pytest("tests/quality/test_filetree.py", root)
     elif guard == "oss-audit":
         status, detail = _guard_oss(root)
     elif guard == "bundle-budget":
         status, detail = _guard_bundle(changes, root)
     elif guard == "svelte-source-text":
         status, detail = _guard_svelte_text(root)
+    elif guard == "data-classes":
+        status, detail = _guard_data_classes(root)
     else:
         raise PlanError(f"unhandled guard: {guard}")
     return Outcome(guard, status, time.monotonic() - start, detail)
@@ -365,7 +428,7 @@ def run_guards(base: str, root: Path = REPO) -> int:
     start = time.monotonic()
     changes = read_changes(base, "HEAD")
     config = read_config(root / "ci" / "test-scopes.yml")
-    selected = select_guards(changes, config)
+    selected = select_guards(changes, config, read_create_table_paths(base, root))
     for guard in GUARDS:
         if guard not in selected:
             print(f"[pre-push-guards] SKIP {guard}: no changed path reaches it")

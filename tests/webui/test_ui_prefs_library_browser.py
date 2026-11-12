@@ -29,7 +29,12 @@ LIBRARY_BROWSER_DEFAULTS: dict[str, Any] = {
     "remixes_filter": False,
     "vocals_filter": False,
     "available_offline_filter": False,
-    "wheel_sensitivity": {"mouse": 1.0, "trackpad": 1.0 / 3.0},
+    "wheel_sensitivity": {
+        "mouse": 1.0,
+        "trackpad": 1.0 / 3.0,
+        "library_mouse": 0.5,
+        "library_trackpad": 0.5 / 3.0,
+    },
     "midi_enabled": False,
     "spotify_shrink_main_for_player": True,
     "library_sidebar_art": True,
@@ -92,9 +97,18 @@ def test_ui_prefs_wheel_sensitivity_round_trips_to_disk(
     payload = {"mouse": 2.0, "trackpad": 0.25}
     r = prefs_client.put("/api/v1/ui-prefs", json={"wheel_sensitivity": payload})
     assert r.status_code == 200
-    assert r.json()["wheel_sensitivity"] == payload
+    body = r.json()["wheel_sensitivity"]
+    assert body["mouse"] == payload["mouse"]
+    assert body["trackpad"] == payload["trackpad"]
+    assert body["library_mouse"] == LIBRARY_BROWSER_DEFAULTS["wheel_sensitivity"]["library_mouse"]
+    assert (
+        body["library_trackpad"]
+        == LIBRARY_BROWSER_DEFAULTS["wheel_sensitivity"]["library_trackpad"]
+    )
     on_disk = json.loads((tmp_path / "data" / "state" / "ui-prefs.json").read_text())
-    assert on_disk["wheel_sensitivity"] == payload
+    stored = on_disk["wheel_sensitivity"]
+    assert stored["mouse"] == payload["mouse"]
+    assert stored["trackpad"] == payload["trackpad"]
 
 
 def test_ui_prefs_wheel_sensitivity_partial_put_merges_trackpad_default(
@@ -105,6 +119,30 @@ def test_ui_prefs_wheel_sensitivity_partial_put_merges_trackpad_default(
     body = r.json()["wheel_sensitivity"]
     assert body["mouse"] == 1.5
     assert body["trackpad"] == LIBRARY_BROWSER_DEFAULTS["wheel_sensitivity"]["trackpad"]
+
+
+@pytest.mark.requirement("LIBM-12633")
+def test_ui_prefs_library_list_wheel_sensitivity_round_trips(
+    prefs_client: TestClient, tmp_path: Path
+) -> None:
+    """[if] library list wheel prefs PUT [then] GET matches disk, [else stop]."""
+    payload = {"library_mouse": 0.4, "library_trackpad": 0.2}
+    r = prefs_client.put("/api/v1/ui-prefs", json={"wheel_sensitivity": payload})
+    assert r.status_code == 200
+    body = r.json()["wheel_sensitivity"]
+    assert body["library_mouse"] == 0.4
+    assert body["library_trackpad"] == 0.2
+    on_disk = json.loads((tmp_path / "data" / "state" / "ui-prefs.json").read_text())
+    assert on_disk["wheel_sensitivity"]["library_mouse"] == 0.4
+
+
+@pytest.mark.requirement("LIBM-12633")
+def test_ui_prefs_rejects_library_list_wheel_above_one(prefs_client: TestClient) -> None:
+    """[if] library list wheel factor is above 1 [then] PUT 422, [else stop]."""
+    r = prefs_client.put(
+        "/api/v1/ui-prefs", json={"wheel_sensitivity": {"library_mouse": 1.1}}
+    )
+    assert r.status_code == 422
 
 
 @pytest.mark.requirement("LIBM-129")

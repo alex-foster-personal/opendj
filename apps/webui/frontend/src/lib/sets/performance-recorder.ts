@@ -17,6 +17,8 @@ export interface RecordRailState {
 	 * the capture is starting or waiting, slower while it records, so a
 	 * capture that fails mid-set (input unplugged) still unlights REC. */
 	poll: number | null;
+	/** True when this surface may call stopPerformanceRecorder (owned active session). */
+	stoppable: boolean;
 }
 
 /** How often an idle REC re-reads the recorder (SET-12). */
@@ -92,7 +94,13 @@ export function recordRailState(
 	if (!status.active) {
 		// SET-12: a recording an agent starts over HTTP (`python -m apps.sets rec
 		// start`) is seen within this, so a master recording gets its tap.
-		return { recording: false, waiting: false, tip: null, poll: IDLE_POLL_MS };
+		return { recording: false, waiting: false, tip: null, poll: IDLE_POLL_MS, stoppable: false };
+	}
+	if (!status.owned) {
+		const tip = status.recoverable
+			? `Recording owner exited (process ${status.pid}); finalize on Sessions / REC`
+			: `Owned by process ${status.pid}; stop from that process or Sessions / REC`;
+		return { recording: true, waiting: false, tip, poll: null, stoppable: false };
 	}
 	switch (status.capture) {
 		case 'waiting_permission':
@@ -100,21 +108,24 @@ export function recordRailState(
 				recording: false,
 				waiting: true,
 				tip: 'Waiting for microphone permission: answer the macOS prompt to start recording (click to cancel)',
-				poll: 1000
+				poll: 1000,
+				stoppable: false
 			};
 		case 'starting':
 			return {
 				recording: false,
 				waiting: true,
 				tip: 'Starting the audio input (click to cancel)',
-				poll: 1000
+				poll: 1000,
+				stoppable: false
 			};
 		case 'failed':
 			return {
 				recording: false,
 				waiting: false,
 				tip: failureRailTip(status, retainedFailure),
-				poll: null
+				poll: null,
+				stoppable: true
 			};
 		case 'stopped': {
 			const retainedForSession =
@@ -124,15 +135,21 @@ export function recordRailState(
 				waiting: false,
 				tip:
 					retainedForSession !== null ? failureRailTip(status, retainedFailure) : STOPPED_CLEAN_TIP,
-				poll: null
+				poll: null,
+				stoppable: true
 			};
 		}
 		case 'recording':
-			return { recording: true, waiting: false, tip: recordingTip(status), poll: 3000 };
+			return {
+				recording: true,
+				waiting: false,
+				tip: recordingTip(status),
+				poll: 3000,
+				stoppable: true
+			};
 		default:
-			// none (tracklist only) and unknown (another process owns it): no
-			// capture of ours whose state can change.
-			return { recording: true, waiting: false, tip: null, poll: null };
+			// none (tracklist only): no capture of ours whose state can change.
+			return { recording: true, waiting: false, tip: null, poll: null, stoppable: true };
 	}
 }
 
@@ -161,7 +178,60 @@ export async function stopPerformanceRecorder(status: RecorderStatus): Promise<R
 		throw new Error('no active recording to stop');
 	}
 	if (!status.owned) {
+		if (status.recoverable) {
+			throw new Error(`recording owner exited (process ${status.pid}); finalize on Sessions / REC`);
+		}
 		throw new Error(`recording ${status.session_id} is owned by process ${status.pid}`);
 	}
 	return stopRecorder(status.session_id);
+}
+
+/** Pin 894af5672c3b recording half: informational hover uses instant; the small
+ *  REC panel is interactive and stays while the pointer is over it. */
+export const RECORD_CONTROL_EXPLAINER_DISMISS = 'stay' as const;
+
+/** [if] recording is idle [then] a REC click opens the source panel only. */
+export function recordIdleClickOpensPicker(active: boolean): boolean {
+	return !active;
+}
+
+const RECORD_EXPLAINER_BULLETS = [
+	'Open this panel to pick MACHINE, LOOPBACK, or MIDI, then press Start recording.',
+	'While a recording runs, REC lights only once audio is actually being written.',
+	'Keep /performance open for a master-mix recording.'
+] as const;
+
+/** Hover copy for the Prep|Gig REC control (top bar). */
+export function recordControlExplainerBullets(): readonly string[] {
+	return RECORD_EXPLAINER_BULLETS;
+}
+
+/** Default tooltip when the recorder is idle. */
+export function recordControlIdleTitle(): string {
+	return 'Set recording - click to configure and start';
+}
+
+export interface RecordingFileRow {
+	session_id: string;
+	file_name: string;
+	size_bytes: number;
+}
+
+/** Flatten session audio segments into rows for the library Recordings tab. */
+export function recordingRowsFromSegments(
+	sessions: readonly { session_id: string }[],
+	segmentsBySession: ReadonlyMap<string, readonly { name: string; size_bytes: number }[]>
+): RecordingFileRow[] {
+	const rows: RecordingFileRow[] = [];
+	for (const session of sessions) {
+		const segments = segmentsBySession.get(session.session_id) ?? [];
+		for (const segment of segments) {
+			rows.push({
+				session_id: session.session_id,
+				file_name: segment.name,
+				size_bytes: segment.size_bytes
+			});
+		}
+	}
+	return rows.sort((a, b) => b.file_name.localeCompare(a.file_name));
 }

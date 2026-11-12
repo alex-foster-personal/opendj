@@ -66,7 +66,7 @@ class AudioEngineStartIn(BaseModel):
 
 
 class AudioEngineLoadIn(BaseModel):
-    deck: int = Field(ge=1, le=4)
+    deck: int = Field(ge=1, le=8)
     stable_id: str = Field(min_length=1)
     out_ms: int | None = Field(default=None, gt=0)
 

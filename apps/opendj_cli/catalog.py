@@ -30,6 +30,7 @@ from apps.opendj_cli.kinds import (
     beat_jump_beats_value,
     beat_jump_size_value,
     bool_value,
+    deck_or_all_value,
     deck_or_master_value,
     deck_value,
     dial_value,
@@ -50,6 +51,7 @@ from apps.opendj_cli.kinds import (
     related_bpm_percent_value,
     rescue_decks_value,
     reset_parts_value,
+    roll_beats_value,
     text_value,
     unit_value,
 )
@@ -65,12 +67,23 @@ SYNC_MODE_VALUES: tuple[str, ...] = ("beat", "bar")
 DECK_MOVE_MODE_VALUES: tuple[str, ...] = ("move", "copy")
 OUTPUT_MODE_VALUES: tuple[str, ...] = ("practice", "two_outputs", "split_cable")
 HEADPHONE_ALIGNMENT_MODE_VALUES: tuple[str, ...] = ("headphones_only", "delay_all", "hybrid")
+BOOTH_SIGNAL_MODE_VALUES: tuple[str, ...] = ("off", "follows_master", "independent")
 MIDI_TAKEOVER_MODE_VALUES: tuple[str, ...] = ("pickup", "jump")
 PITCH_RANGE_VALUES: tuple[int, ...] = (8, 16, 100)
 KEY_NUDGE_VALUES: tuple[int, ...] = (-1, 1)
 KEY_SYNC_MODE_VALUES: tuple[str, ...] = ("exact", "relative", "compatible")
 QUANTIZE_GRID_VALUES: tuple[int, ...] = (1, 4, 8)
 BEAT_JUMP_SIZE_VALUES: tuple[float, ...] = (0.5, 1, 2, 4, 8, 16, 32, 64)
+PAD_MODE_VALUES: tuple[str, ...] = (
+    "hot-cue",
+    "beat-loop",
+    "beat-jump",
+    "sampler",
+    "pad-fx-1",
+    "pad-fx-2",
+    "key-shift",
+    "keyboard",
+)
 ANALYSIS_SOURCE_FEATURES: tuple[str, ...] = (
     "beatgrid",
     "key",
@@ -81,8 +94,32 @@ ANALYSIS_SOURCE_FEATURES: tuple[str, ...] = (
 )
 ANALYSIS_SOURCE_VALUES: tuple[str, ...] = ("rekordbox", "own")
 WAVEFORM_SEEK_SNAP_VALUES: tuple[str, ...] = ("downbeat", "beat", "exact")
-COLOR_FX_EFFECT_VALUES: tuple[str, ...] = ("filter", "space", "echo", "next")
+COLOR_FX_EFFECT_VALUES: tuple[str, ...] = ("filter", "space", "echo", "crush", "next")
 COLOR_FX_ECHO_BEAT_VALUES: tuple[float, ...] = (0.25, 0.5, 0.75, 1.0)
+# Keep in sync with TIME_FX_BUILT_EFFECT_NAMES in apps/webui/frontend/src/lib/rb/fx/time-fx-catalog.ts.
+BEAT_FX_EFFECT_VALUES: tuple[str, ...] = (
+    "delay",
+    "echo",
+    "pingpong",
+    "spiral",
+    "helix",
+    "reverse_delay",
+    "multitap",
+    "tape",
+)
+BEAT_FX_TARGET_VALUES: tuple[str, ...] = ("1", "2", "3", "4", "master")
+BEAT_FX_BEAT_VALUES: tuple[float, ...] = (
+    1 / 16,
+    1 / 8,
+    1 / 4,
+    1 / 2,
+    0.75,
+    1,
+    2,
+    4,
+    8,
+    16,
+)
 WAVEFORM_DESIGN_VALUES: tuple[str, ...] = ("auto", "tri-band", "mono", "line", "blocks", "rgb")
 WAVE_HEIGHT_VALUES: tuple[str, ...] = ("full", "half")
 DECK_NUMBER_ART_VALUES: tuple[str, ...] = ("off", "halo", "glow", "tinted")
@@ -92,6 +129,9 @@ WAVEFORM_OVERLAY_VALUES: tuple[str, ...] = (
     "lyrics",
     "lyrics_scrub",
     "jog_radial",
+    "hot_cues",
+    "memory_cues",
+    "loop_cues",
     "vocal_lane",
     "grid_lines",
 )
@@ -117,12 +157,16 @@ _PERFORMANCE_LAYOUT_VALUES: tuple[str, ...] = ("deck-grid", "replica-desk")
 _LIBRARY_LAYOUT_VALUES: tuple[str, ...] = ("crate-desk", "three-panel")
 LAYOUT_PRESET_VALUES: tuple[str, ...] = ("auto", *_PERFORMANCE_LAYOUT_VALUES, *_LIBRARY_LAYOUT_VALUES)
 LAYOUT_REGION_VALUES: tuple[str, ...] = tuple(LAYOUT_REGION_BOUNDS)
+#: Issue #9434 / epic #9371: mixer column layout (rendering in MX-2/MX-3).
+MIXER_PLACEMENT_VALUES: tuple[str, ...] = ("center", "sides")
 
 # The command types AGENT-03 will ramp. An ordering that carries a target must
 # be one of these, mirroring the guard in the page's own ramp executor
 # (apps/webui/frontend/src/lib/rb/agent-orders.ts). AGENT-24 added crossfader
 # and tempo (the canon AutoDJ doc's first gap); tempo travels as a ratio.
-RAMPABLE_TYPES: frozenset[str] = frozenset({"eq", "fader", "trim", "filter", "stem_gain", "crossfader", "tempo"})
+RAMPABLE_TYPES: frozenset[str] = frozenset(
+    {"eq", "fader", "trim", "filter", "stem_gain", "stem_fx_send", "crossfader", "tempo"}
+)
 
 _DECK = arg("deck", "deck", deck_value, "1-4")
 _ENABLED = arg("enabled", "bool", bool_value, "true|false")
@@ -296,6 +340,14 @@ _VERBS: tuple[Verb, ...] = (
         ),
         quick_draws=("loop.start_4", "loop.start_8", "loop.start_16"),
     ),
+    Verb(
+        "roll",
+        "roll",
+        (_DECK, arg("beats", "number", roll_beats_value, "1/32|1/16|1/8|1/4|1/2|1|2|4|8|16|32")),
+        note="FXROLL-01: a momentary beat loop that forces SLIP; a second roll while held stacks. "
+        "End it with roll_release; the deck returns to where the track would have been.",
+    ),
+    Verb("roll_release", "roll", (_DECK,), fixed=(("beats", None),)),
     Verb("beat_jump", "beat_jump", (_DECK, arg("beats", "number", beat_jump_beats_value, "whole beats or +-0.5"))),
     Verb(
         "beat_jump_size",
@@ -326,6 +378,13 @@ _VERBS: tuple[Verb, ...] = (
         "EQ, stems, colour FX) onto <to>; move crossfades then unloads <from>, copy leaves it playing.",
     ),
     Verb("loop_interval_mode", "loop_interval_mode", (_DECK, _ENABLED)),
+    Verb(
+        "pad_mode",
+        "pad_mode",
+        (_DECK, arg("mode", "enum", enum_value(PAD_MODE_VALUES), "|".join(PAD_MODE_VALUES))),
+        note="PADFX-11718: the deck's performance-pad mode (HOT CUE menu); Pad FX refuses with the beat FX unit's reason.",
+        observes=(Observe(("decks", "{deck}", "pad_mode", "selected"), "mode"),),
+    ),
     Verb("loop_interval_base", "loop_interval_base", (_DECK, arg("base", "number", number_value))),
     Verb(
         "tempo",
@@ -422,6 +481,13 @@ _VERBS: tuple[Verb, ...] = (
         (_DECK, _STEM, _UNIT),
         observes=(Observe(("decks", "{deck}", "stems", "controls", "{stem}", "gain"), "value", 1e-6),),
     ),
+    Verb(
+        "stem_fx_send",
+        "stem_fx_send",
+        (_DECK, _STEM, _UNIT),
+        observes=(Observe(("decks", "{deck}", "stems", "controls", "{stem}", "fx_send"), "value", 1e-6),),
+        note="STEMPERF-11663: per-stem send (0..1) into the channel's colour FX input; heard on SPACE/ECHO.",
+    ),
     Verb("slip", "slip", (_DECK, _ENABLED), quick_draws=("slip.toggle",)),
     Verb(
         "key_sync",
@@ -498,6 +564,18 @@ _VERBS: tuple[Verb, ...] = (
         "headphone_booth_level",
         (_UNIT,),
         note="CUEOUT-13: BOOTH gain only; MAIN and HEADPHONE CUE are unchanged.",
+    ),
+    Verb(
+        "booth_level",
+        "booth_level",
+        (_UNIT,),
+        note="CUEOUT-12100: booth monitor gain; heard as-is when signal_mode is independent.",
+    ),
+    Verb(
+        "booth_signal_mode",
+        "booth_signal_mode",
+        (arg("mode", "enum", enum_value(BOOTH_SIGNAL_MODE_VALUES), "off|follows_master|independent"),),
+        note="CUEOUT-12100: off mutes the booth; follows_master scales it by the room master level.",
     ),
     Verb(
         "head_delay_ms",
@@ -603,6 +681,12 @@ _VERBS: tuple[Verb, ...] = (
         note="CUEOUT-13: pin BOOTH to the room mix; an empty id unsets it.",
     ),
     Verb(
+        "booth_select",
+        "booth_select",
+        (arg("device_id", "text", text_value),),
+        note="CUEOUT-12100: pin the booth output device (mixer.booth.device_id).",
+    ),
+    Verb(
         "headphone_input_select",
         "headphone_input_select",
         (arg("device_id", "text", text_value),),
@@ -623,6 +707,8 @@ _VERBS: tuple[Verb, ...] = (
         (arg("mode", "enum", enum_value(MIDI_TAKEOVER_MODE_VALUES), "pickup|jump"),),
         note="IOPIN-06: pickup holds a MIDI dial until the hardware crosses the software value.",
     ),
+    Verb("midi_learn_retry", "midi_learn_retry", ()),
+    Verb("midi_learn_cancel", "midi_learn_cancel", ()),
     Verb(
         "analysis_source",
         "analysis_source",
@@ -758,19 +844,37 @@ _VERBS: tuple[Verb, ...] = (
         "color_fx",
         "color_fx",
         (
-            _DECK,
-            arg("effect", "enum", enum_value(COLOR_FX_EFFECT_VALUES), "filter|space|echo|next", optional=True),
+            arg("deck", "deck", deck_or_all_value, "1-4|all"),
+            arg("effect", "enum", enum_value(COLOR_FX_EFFECT_VALUES), "filter|space|echo|crush|next", optional=True),
             arg("echo_beats", "number", number_enum_value(COLOR_FX_ECHO_BEAT_VALUES), "0.25|0.5|0.75|1", optional=True),
             arg("value", "dial", dial_value, "0..1|clock", optional=True),
         ),
         note="COLORFX-01..05: pick what the channel color knob plays (FILTER, SPACE reverb or a "
-        "beat-synced dub ECHO timed to the deck tempo), the echo division in beats, and "
+        "beat-synced dub ECHO timed to the deck tempo, or SNDCOL-10655 CRUSH: bit depth and sample rate drop "
+        "counterclockwise, clockwise a fixed crush through a rising high-pass), the echo division in beats, and "
         "optionally the knob itself (0.5 = center, exactly dry). Sticky across track loads; "
         "the mirror's color_fx carries it per deck. Refused in Rust engine mode. "
-        "COLORFX-8341: effect=next cycles FILTER, SPACE, ECHO; switching effect removes the "
+        "COLORFX-8341: effect=next cycles FILTER, SPACE, ECHO, CRUSH; switching effect removes the "
         "old one and returns the knob to 12 o'clock unless value is given. DIALCLOCK-8341: "
         "value takes a clock time (9 o'clock = 0.1667, 12 = centre, 3 o'clock = 0.8333; "
-        "the dial runs 7:30 to 4:30).",
+        "the dial runs 7:30 to 4:30). COLORFX-13: deck=all puts one effect on channels 1 to 4 "
+        "(rekordbox single mode); each channel follows the switch rule; value and effect=next "
+        "are refused with deck=all.",
+    ),
+    Verb(
+        "beat_fx",
+        "beat_fx",
+        (
+            arg("target", "enum", enum_value(BEAT_FX_TARGET_VALUES), "1|2|3|4|master", optional=True),
+            arg("effect", "enum", enum_value(BEAT_FX_EFFECT_VALUES), "|".join(BEAT_FX_EFFECT_VALUES), optional=True),
+            arg("beats", "number", number_enum_value(BEAT_FX_BEAT_VALUES), "1/16..16", optional=True),
+            arg("level", "dial", dial_value, "0..1", optional=True),
+            arg("enabled", "bool", bool_value, "true|false", optional=True),
+            arg("quantize", "bool", bool_value, "true|false", optional=True),
+        ),
+        note="BEATFX-12: the channel-select beat FX unit (DELAY, ECHO, SPIRAL, HELIX, and the "
+        "rest of TIME_FX_CATALOG with builtOnMain). The mirror beat_fx field reports effect "
+        "and division. Refused in Rust engine mode.",
     ),
     Verb("show_stems", "show_stems", (_ENABLED,), note="DECKUX-19: per-stem mini-waveforms under the deck wavestack."),
     Verb(
@@ -828,7 +932,7 @@ _VERBS: tuple[Verb, ...] = (
                 "overlay",
                 "enum",
                 enum_value(WAVEFORM_OVERLAY_VALUES),
-                "sections|lyrics|lyrics_scrub|jog_radial|vocal_lane|grid_lines",
+                "|".join(WAVEFORM_OVERLAY_VALUES),
             ),
             arg("enabled", "bool", bool_value, "true|false (the switch overlays)", optional=True),
             arg(
@@ -840,7 +944,7 @@ _VERBS: tuple[Verb, ...] = (
             ),
         ),
         note="WAVEQS-8348e: the waveform quick-settings popover's switches: sections, lyrics on the waveform, "
-        "lyrics while hover-scrubbing, the radial jog waveform. "
+        "lyrics while hover-scrubbing, the radial jog waveform, hot cue, memory cue and loop markers (#10248). "
         "WAVEQS-11734: vocal_lane shows or hides the blue vocal bars. "
         "WAVEQS-11736: grid_lines takes value=beats_bars|bars|off (beat and bar lines, bar lines only, none), "
         "as in: set_waveform_overlay grid_lines value=bars.",
@@ -921,7 +1025,9 @@ _VERBS: tuple[Verb, ...] = (
             arg("edit", "grid_edit", grid_edit_value, "adjust|shift|<offset_ms>[:<beats>]"),
         ),
         note="GRIDEDIT-6235d: nudge the loaded track's stored grid (ms, plus whole beats) or reset "
-        "the adjust or shift part; the same queue the deck's grid buttons use.",
+        "the adjust or shift part; the same queue the deck's grid buttons use. "
+        "BEATGRID-13519: a constant-tempo override at a served anchor is "
+        "`opendj track grid-edit <stable_id> bpm <bpm> <anchor_t>` (PUT /grid-edit), not a bus verb.",
     ),
     Verb("feedback_mark", "feedback_mark", (arg("vote", "enum", enum_value(VOTE_VALUES), "bad|good|great"),)),
     # RESCUE-01 HTTP parity (not command-bus verbs):
@@ -967,6 +1073,19 @@ _VERBS: tuple[Verb, ...] = (
         ),
     ),
     Verb("hot_cue_trigger", "hot_cue_trigger", (_DECK, _SLOT)),
+    # CUES-10639: the deck loop menu's Set active / Clear active flag.
+    Verb(
+        "active_memory_loop",
+        "active_memory_loop",
+        (
+            _DECK,
+            arg("in_ms", "number", number_value),
+            arg("out_ms", "number", number_value),
+            arg("active", "bool", bool_value, "true|false"),
+        ),
+        note="Flag or clear the track's one active memory loop, then refresh cues "
+        "and arm or disarm the matching safety slot, as the loop menu does.",
+    ),
     # CUES-10013: rekordbox CALL < / >, `opendj memory_cue_call 1 next`.
     Verb(
         "memory_cue_call",
@@ -991,6 +1110,13 @@ _VERBS: tuple[Verb, ...] = (
     ),
     # ----- top bar Track information (i) overlay (TOPVIEW-05) -----------
     Verb("track_info_toggle", "track_info_toggle", ()),
+    Verb(
+        "mixer_placement",
+        "mixer_placement",
+        (arg("placement", "enum", enum_value(MIXER_PLACEMENT_VALUES), "center|sides"),),
+        note="Where the mixer sits: one center column or mirrored halves beside the decks "
+        "(#9371); read back as ui.mixer_placement.",
+    ),
     Verb("track_info_open", "track_info_open", (arg("stable_id", "text", text_value),)),
     Verb("track_info_close", "track_info_close", ()),
     Verb("oj_toggle", "oj_toggle", ()),
@@ -1098,14 +1224,14 @@ MIDI_MONITOR_SECONDS_HELP = "stop after N seconds and print fader verdicts (defa
 # Re-exported so callers that only need "is this a deck?" do not import kinds.
 __all__ = [
     "DECK_VALUES",
+    "MIDI_MONITOR_DEVICE_HELP",
+    "MIDI_MONITOR_SECONDS_HELP",
+    "MIDI_MONITOR_USAGE",
     "NULL",
     "PRESENT",
     "RAMPABLE_TYPES",
     "VERBS",
     "VERB_NAMES",
-    "MIDI_MONITOR_USAGE",
-    "MIDI_MONITOR_DEVICE_HELP",
-    "MIDI_MONITOR_SECONDS_HELP",
     "Expectation",
     "Observe",
     "Verb",

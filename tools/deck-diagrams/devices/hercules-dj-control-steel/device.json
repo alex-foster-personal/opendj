@@ -1,0 +1,9 @@
+{
+ "map_name": "DJ Control Steel",
+ "map_const": "HERCULES_DJ_CONTROL_STEEL_MAP",
+ "map_ts": "apps/webui/frontend/src/lib/rb/midi/maps/hercules-dj-control-steel.ts",
+ "panel_w": 350.0,
+ "panel_d": 252.0,
+ "panel_size_source": "Hercules DJ Control Steel product specifications (W x D x H 350 x 252 x 68 mm); cited by retailers from the manufacturer sheet (13 in x 9.7 in x 2.6 in)",
+ "display_name": "2-channel DJ controller with steel deck plate"
+}

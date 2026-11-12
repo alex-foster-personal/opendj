@@ -22,7 +22,6 @@
 		parseCamelotKey,
 		pitchRanges
 	} from '$lib/rb/audio-engine.svelte';
-	import { fetchMemoryCues, setActiveMemoryLoop as putActiveMemoryLoop } from '$lib/rb/api-rb';
 	import type { PitchRange } from '$lib/rb/audio-engine.svelte';
 	import { bannerSyncError, deckErrorIds, noteDeckError } from '$lib/rb/deck-error-id.svelte';
 	import { deckBannerDismissMs, deckBannerTone } from '$lib/rb/deck-banner-policy';
@@ -65,6 +64,8 @@
 	import type { BeatJumpSize } from '$lib/rb/beat-jump-size.svelte';
 	import DeckHeader from './deck/DeckHeader.svelte';
 	import HotCueBank from './deck/HotCueBank.svelte';
+	import BeatJumpPads from './deck/BeatJumpPads.svelte';
+	import { padModeFor } from '$lib/rb/pad-mode-state.svelte';
 	import JogDial from './deck/JogDial.svelte';
 	import LoopCluster from './deck/LoopCluster.svelte';
 	import PadStrip from './deck/PadStrip.svelte';
@@ -304,9 +305,9 @@
 	// Engine methods throw loudly on empty decks (fail-fast contract);
 	// callers below are gated by disabled states, never by silent catches.
 
-	async function seekTo(ms: number): Promise<void> {
+	async function seekTo(ms: number, pressT0Ms?: number): Promise<void> {
 		// The strip already snapped the target (WAVE-SEEK-01): exact, no grid re-snap.
-		await runPerformanceCommandFromUi(waveSeekCommand(deckId, ms));
+		await runPerformanceCommandFromUi(waveSeekCommand(deckId, ms), pressT0Ms);
 	}
 
 	/** #884: a populated hot-cue pad, unlike a plain waveform seek, may need to
@@ -367,23 +368,15 @@
 		loop: { in_ms: number; out_ms: number },
 		active: boolean
 	): Promise<boolean> {
-		const stableId = deck.stable_id;
-		try {
-			if (stableId === null) throw new Error('no track loaded');
-			const { revision } = await fetchMemoryCues(stableId);
-			await putActiveMemoryLoop(stableId, loop.in_ms, active, revision);
-			await engine.refreshHotCues(deckId);
-			if (active) {
-				engine.armActiveLoopFromCues(deckId);
-			} else if (deck.safety_loop?.in_ms === loop.in_ms && deck.safety_loop.out_ms === loop.out_ms) {
-				await armSafetyLoop(false);
-			}
-			return true;
-		} catch (error) {
-			const message = error instanceof Error ? error.message : String(error);
-			pushToast(`Active loop ${active ? 'set' : 'clear'} failed - ${message}`, 'error');
-			return false;
-		}
+		return (
+			await runPerformanceCommandFromUi({
+				type: 'active_memory_loop',
+				deck: deckId,
+				in_ms: loop.in_ms,
+				out_ms: loop.out_ms,
+				active
+			})
+		).ok;
 	}
 
 	async function disengageLoop(): Promise<boolean> {
@@ -488,8 +481,9 @@
 	});
 
 	// STEM-77: a deck showing NO STEMS offers to separate the loaded track.
+	const stemStateName = $derived(stemStatusView(deck.stems).name);
 	const separateId = $derived(
-		deck.stable_id !== null && stemStatusView(deck.stems).name === 'none' ? deck.stable_id : null
+		deck.stable_id !== null && stemStateName === 'none' ? deck.stable_id : null
 	);
 	// The separation store (and the jobs client behind it) loads on demand, the
 	// first time a deck shows NO STEMS, so it is not in this route's first load
@@ -624,6 +618,10 @@
 		});
 	}
 
+	function setStemGain(stem: StemControl, value: number): void {
+		void runPerformanceCommandFromUi({ type: 'stem_gain', deck: deckId, stem, value });
+	}
+
 	/** STEMPERF-11695: one press to acapella, instrumental or everything, as the existing stem commands. */
 	async function applyStemQuickMode(mode: StemQuickMode): Promise<void> {
 		for (const command of quickModePlan(deckId, mode, deck.stems)) {
@@ -728,6 +726,7 @@
 	data-deck-hover={deckId}
 	use:selectorNode={{ id: selId.deck(deckId), kind: 'group', enabled: deckSelectable }}
 	data-command-pending={pending}
+	data-stems-state={stemStateName}
 	use:wheelAdjust={{
 		step: WHEEL_STEP.fader,
 		get: () => mixerState.channels[deckId].fader,
@@ -791,6 +790,9 @@
 		     LYR-14: the 2x4 bank sits on top and the lyric strip runs under it
 		     at the bank's full width, so a lyric line reads left to right. -->
 		<div class="cue-flex" bind:this={cueFlexEl} use:selectorNode={{ id: selId.deckPart(deckId, 'cues'), kind: 'leaf', enabled: true }}>
+			{#if padModeFor(deckId) === 'beat-jump'}
+				<BeatJumpPads {deck} {pending} onJump={beatJump} />
+			{:else}
 			<HotCueBank
 				{deck}
 				{pending}
@@ -800,6 +802,7 @@
 				onDelete={hotCueActions.clearHotCueAt}
 				onRestore={hotCueActions.restoreHotCueAt}
 			/>
+			{/if}
 			{#if uiPrefs.lyrics_deck_line && uiPrefs.lyrics_global && deck.stable_id !== null}
 				<div class="deck-lyric-host" style:height={`${deckLyricStripHeight}px`}>
 					<DeckLyricLine
@@ -865,6 +868,7 @@
 					pending,
 					onMute: toggleStemMute,
 					onSolo: toggleStemSolo,
+					onGain: setStemGain,
 					onLoad: loadStems,
 					separate: separateView,
 					onSeparate: separateStems,
@@ -877,6 +881,7 @@
 				{pending}
 				onMute={toggleStemMute}
 				onSolo={toggleStemSolo}
+				onGain={setStemGain}
 				onLoad={loadStems}
 				separate={separateView}
 				onSeparate={separateStems}
@@ -1076,8 +1081,8 @@
 		 * LoopCluster keeps its own
 		 * fixed 44px width and vertical controls. */
 	}
-	/* SKINLAYOUT-10203: deck tiers by container query, never @media
-	 * (PLAN.md 2.4). Optional parts carry data-priority and drop lowest first.
+	/* SKINLAYOUT-10203: deck tiers by container query only; see PLAN.md 2.4.
+	 * Optional parts carry data-priority and drop lowest first.
 	 * compact < 360 px: artwork, pad labels, BeatJump (priority 3).
 	 * narrow  < 300 px: loop column and grid-edit buttons too (priority 2).
 	 * Nothing scales fonts. */
@@ -1137,5 +1142,9 @@
 		display: flex;
 		align-items: stretch;
 		overflow: hidden;
+	}
+
+	:global(html[data-reduce-motion]) .rb-deck.loading::after {
+		animation: none;
 	}
 </style>

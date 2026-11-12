@@ -99,7 +99,7 @@ test('BOOTH GAIN changes only booth state', () => {
 	const cueLevel = hp.level;
 	const masterLevel = state.mixerState.master;
 	headphones.setBoothLevel(0);
-	assert.equal(hp.booth_level, 0);
+	assert.equal(state.mixerState.booth.level, 0);
 	assert.equal(hp.level, cueLevel);
 	assert.equal(state.mixerState.master, masterLevel);
 });

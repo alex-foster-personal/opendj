@@ -59,6 +59,9 @@ The library is the user's private music collection, and a track title is the
 single most identifying thing this app touches. So the payload is an
 ALLOWLIST, not a denylist: ``extra``, ``tags`` and ``contexts`` keep only
 :data:`ALLOWED_CONTEXT_KEYS` and every other key becomes ``[redacted]``.
+Free text is an allowlist as well (OBS-6393): a forwarded log or a breadcrumb
+carries its logging template and numeric arguments, an exception carries
+its type and stack, and the rendered text stays in the local logs.
 Filesystem paths are rewritten to their extension alone, in exception
 messages and breadcrumbs as well as context. Frame-local variables are OFF
 (``include_local_variables=False``) -- that switch is what stops a local
@@ -75,6 +78,8 @@ Requirements:
   defaults ON and honors the opt-out marker. -> :func:`decide_telemetry`
 - ✔︎ ✅ 🎯 Track titles and library paths never reach an event payload.
   -> :func:`scrub_event`
+- ✔︎ ✅ 🎯 Free text forwards templates and types, never rendered content
+  (OBS-6393). -> :func:`forwardable_log_message`, :func:`_before_breadcrumb`
 - ✔︎ ✅ 🎯 Events carry the build sha as the release and dev/ship as the
   environment. -> :func:`decide_telemetry`
 
@@ -88,6 +93,9 @@ Acceptance tests:
   event's extra value is "[redacted]", [else ⛔️].
 - [if] an exception message contains /Users/x/Music/Artist - Title.mp3
   [then] the scrubbed message contains neither "Artist" nor "Title", [else ⛔️].
+- [if] a log line, a breadcrumb or an exception message names an artist, a
+  title or a track file [then] none of them is anywhere in the serialized
+  event, with the path filter bypassed too, [else ⛔️].
 
 This module is a LEAF on purpose: apps.engine_core imports apps.webui, so
 anything both of them use has to live somewhere neither owns, or the
@@ -98,9 +106,11 @@ feeds decide_telemetry lives in the engine entry point rather than here.
 from __future__ import annotations
 
 import logging
+import re
 import sys
 from collections.abc import Mapping
 from typing import Any, cast
+from urllib.parse import urlsplit
 
 from apps.shared.telemetry.consent import (
     configure_consent_gate,
@@ -127,14 +137,27 @@ from apps.shared.telemetry.live import (
 )
 from apps.shared.telemetry.scrub import (
     ALLOWED_CONTEXT_KEYS,
+    BREADCRUMB_TEXT_WITHHELD,
+    BUG_REPORT_ALLOWED_KEYS,
+    BUG_REPORT_TEXT_MAX_BYTES,
+    EXCEPTION_VALUE_WITHHELD,
     FILTERED,
+    LOG_ARG_WITHHELD,
+    LOG_TEXT_WITHHELD,
     REDACTED,
+    SAFE_EXCEPTION_TYPES,
     SDK_CONTEXT_BLOCKS,
+    ForwardableText,
+    assert_bug_report_text_safe,
+    forwardable_log_message,
+    scrub_bug_report_mapping,
     scrub_event,
     scrub_string,
+    truncate_bug_report_text,
 )
 
 log = logging.getLogger(__name__)
+
 
 class _LiveGateCounter:
     """Events the live-set gate kept local this process. Read by tests."""
@@ -158,6 +181,7 @@ class _LastDecision:
 
 
 LAST_DECISION = _LastDecision()
+
 
 # ----- init ---------------------------------------------------------------
 def init_telemetry(
@@ -227,6 +251,7 @@ def init_telemetry(
         include_local_variables=False,
         max_breadcrumbs=25,
         before_send=_before_send,
+        before_breadcrumb=_before_breadcrumb,
         integrations=[
             # Logs are breadcrumbs only. The default (event_level=ERROR) sent
             # every log.error as a second, unscrubbed event: 92 of the org's
@@ -267,9 +292,7 @@ def reset_live_gate_for_tests() -> None:
     set_live_transport_probe(None)
 
 
-def _before_send(
-    event: dict[str, Any], hint: dict[str, Any] | None = None
-) -> dict[str, Any] | None:
+def _before_send(event: dict[str, Any], hint: dict[str, Any] | None = None) -> dict[str, Any] | None:
     """Stamp error id / host / sha, hold while live, spend the budget, then scrub.
 
     Order matters. The sink row is written FIRST so the local record is
@@ -309,9 +332,25 @@ def _before_send(
     return cast("dict[str, Any] | None", scrub_event(event, hint))
 
 
-def _before_send_transaction(
-    event: dict[str, Any], hint: dict[str, Any] | None = None
-) -> dict[str, Any] | None:
+def _before_breadcrumb(crumb: dict[str, Any], hint: dict[str, Any] | None = None) -> dict[str, Any] | None:
+    """A breadcrumb carries the log TEMPLATE, never the rendered line (OBS-6393).
+
+    Up to 25 breadcrumbs ride on every error event, and the logging
+    integration fills each one with the fully rendered message. The record
+    itself arrives in the hint, so the template is still recoverable here and
+    nowhere later. A breadcrumb that did not come from a log record has free
+    text nobody can vouch for, so its message becomes a placeholder; its
+    ``data`` is allowlisted by the scrub like any other.
+    """
+    record = (hint or {}).get("log_record")
+    if isinstance(record, logging.LogRecord):
+        crumb["message"] = forwardable_log_message(record)
+    elif crumb.get("message") is not None:
+        crumb["message"] = BREADCRUMB_TEXT_WITHHELD
+    return crumb
+
+
+def _before_send_transaction(event: dict[str, Any], hint: dict[str, Any] | None = None) -> dict[str, Any] | None:
     """Tracing only: same live-set gate, same scrub. No sink row, no budget.
 
     A transaction is not an error, so it mints no error id and writes no
@@ -343,6 +382,62 @@ def _browser_error_held(context: Mapping[str, Any]) -> bool:
     if any_deck_live is True:
         return True
     return any_deck_live is None and transport_is_live()
+
+
+#: One stack frame: V8 ``at fn (url:line:col)`` / ``at url:line:col``, or
+#: Firefox and Safari ``fn@url:line:col``. A stack's header (``Error: <message>``)
+#: and any line V8 repeats the message on match neither, so they are dropped.
+_BROWSER_FRAME = re.compile(
+    r"^\s*at (?:\S.* \()?(?P<v8>\S+?):(?P<v8l>\d+):(?P<v8c>\d+)\)?\s*$"
+    r"|^\S*@(?P<url>\S+?):(?P<line>\d+):(?P<col>\d+)\s*$"
+)
+#: The app's own code, as Vite serves it in dev and SvelteKit builds it. Any
+#: other URL path (a route, a blob) is page-chosen text and does not travel.
+_BROWSER_CODE_PATH = re.compile(r"^/(?:src|_app|node_modules|@vite|@id)/[\w./@~+-]*\.(?:m?js|cjs|ts|svelte)$")
+BROWSER_FRAME_WITHHELD: str = "    at [frame withheld]"
+#: JavaScript's and the DOM's own error types; any other ``Error.name`` is
+#: set by page code and may carry anything.
+BROWSER_ERROR_NAMES: frozenset[str] = frozenset(
+    {
+        "Error",
+        "TypeError",
+        "RangeError",
+        "ReferenceError",
+        "SyntaxError",
+        "EvalError",
+        "URIError",
+        "AggregateError",
+        "DOMException",
+        "AbortError",
+        "NotAllowedError",
+        "NotFoundError",
+        "NotSupportedError",
+        "InvalidStateError",
+        "SecurityError",
+        "QuotaExceededError",
+        "NetworkError",
+        "TimeoutError",
+        "EncodingError",
+        "DataError",
+    }
+)
+BROWSER_ERROR_NAME_WITHHELD: str = "[error name withheld]"
+
+
+def _browser_frame(line: str) -> str | None:
+    match = _BROWSER_FRAME.match(line)
+    if match is None:
+        return None
+    url, row, col = (match["v8"], match["v8l"], match["v8c"]) if match["v8"] else match.group("url", "line", "col")
+    path = urlsplit(url).path
+    # The function name is page-chosen text too; source maps recover it from the position.
+    return f"    at {path}:{row}:{col}" if _BROWSER_CODE_PATH.match(path) else BROWSER_FRAME_WITHHELD
+
+
+def browser_stack_frames(stack: str | None) -> str:
+    """A browser stack rebuilt from its frames: code path and position only."""
+    frames = (_browser_frame(line) for line in (stack or "").splitlines())
+    return "\n".join(frame for frame in frames if frame is not None)
 
 
 def capture_browser_error(
@@ -396,10 +491,13 @@ def capture_browser_error(
     )
 
     kind = str(context.get("kind") or "client")
+    safe_name = name if name in BROWSER_ERROR_NAMES else BROWSER_ERROR_NAME_WITHHELD
     record = capture_error_event(
-        message=client_error_message(name, message),
+        message=client_error_message(safe_name, EXCEPTION_VALUE_WITHHELD),
         source_site=client_source_site(kind, url),
         kind="client",
+        # Raw text for the local JSONL only; identity and the forwarded event keep the safe form.
+        local_message=client_error_message(name, message),
     )
     if is_local_only_browser_error(kind, name, message):
         return None
@@ -431,10 +529,12 @@ def capture_browser_error(
                 scope.set_extra(key, value)
             # A browser stack is a string here, not a Python traceback, so it
             # travels as the message body. Sentry groups on it the same way.
-            body = client_error_message(name, message)
-            if stack:
-                body = f"{body}\n{stack}"
-            return sentry_sdk.capture_message(body, level="error")
+            # The browser's message is withheld like a Python exception's.
+            body = client_error_message(safe_name, EXCEPTION_VALUE_WITHHELD)
+            frames = browser_stack_frames(stack)
+            if frames:
+                body = f"{body}\n{frames}"
+            return sentry_sdk.capture_message(ForwardableText(body), level="error")
     except Exception:
         log.warning("forwarding a browser error to Sentry failed", exc_info=True)
         return None
@@ -460,30 +560,43 @@ def _client() -> Any | None:
 
 __all__ = [
     "ALLOWED_CONTEXT_KEYS",
+    "BREADCRUMB_TEXT_WITHHELD",
     "BROWSER_CONTEXT_FIELDS",
+    "BUG_REPORT_ALLOWED_KEYS",
+    "BUG_REPORT_TEXT_MAX_BYTES",
     "DSN_ENV",
     "ENVIRONMENTS",
     "ENVIRONMENT_ENV",
+    "EXCEPTION_VALUE_WITHHELD",
     "FILTERED",
     "LAST_DECISION",
     "LIVE_GATE",
+    "LOG_ARG_WITHHELD",
+    "LOG_TEXT_WITHHELD",
     "MIRROR_LIVE_MAX_AGE_S",
     "MIRROR_RECEIVED_MONOTONIC_KEY",
     "REDACTED",
+    "SAFE_EXCEPTION_TYPES",
     "SDK_CONTEXT_BLOCKS",
     "TELEMETRY_ENV",
     "TRACES_SAMPLE_RATE_ENV",
+    "ForwardableText",
     "TelemetryConfigError",
     "TelemetryDecision",
+    "assert_bug_report_text_safe",
+    "browser_stack_frames",
     "capture_browser_error",
     "decide_telemetry",
+    "forwardable_log_message",
     "init_telemetry",
     "mirror_age_s",
     "mirror_decks_live",
     "mirror_transport_live",
     "reset_live_gate_for_tests",
+    "scrub_bug_report_mapping",
     "scrub_event",
     "scrub_string",
     "set_live_transport_probe",
     "transport_is_live",
+    "truncate_bug_report_text",
 ]

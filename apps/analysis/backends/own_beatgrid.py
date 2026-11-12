@@ -83,6 +83,7 @@ from . import own_beatgrid_input, register
 from .base import BackendNotAvailable, TrackUnreadable, TrackVanished
 from .genre_hint import library_genre
 from .grid_fit_setting import grid_fit_mode
+from .range_hint import track_bpm_range
 
 log = logging.getLogger("apps.analysis.backends.own_beatgrid")
 
@@ -335,6 +336,7 @@ def record_from_payload(
     decode_fingerprint: str,
     grid_fit: str = GRID_FIT_RAW,
     genre: str | None = None,
+    bpm_range: tuple[float, float] | None = None,
 ) -> AnalysisRecord:
     """Turn one runner payload into one v2 record. Pure; raises, never guesses.
 
@@ -388,7 +390,7 @@ def record_from_payload(
         raise TrackUnreadable(
             f"beat_this_runner.py could not analyze {audio_path}: {runner_error}"
         )
-    lane = build_beatgrid_lane(result, threshold=threshold, grid_fit=grid_fit, genre=genre)
+    lane = build_beatgrid_lane(result, threshold=threshold, grid_fit=grid_fit, genre=genre, bpm_range=bpm_range)
     # The runner reports the sha256 of ITS OWN model input: Beat This's
     # `load_audio` float32 at whatever rate it chose. The record may not carry
     # that. `decode_fingerprint` is defined over the canonical decode (44100
@@ -548,6 +550,7 @@ class OwnBeatgridBackfillBackend:
                 decode_fingerprint=decode_fingerprint,
                 grid_fit=grid_fit,
                 genre=library_genre(stable_id),
+                bpm_range=track_bpm_range(stable_id),
             )
         except TrackUnreadable:
             # `record_from_payload` raises this specifically for a

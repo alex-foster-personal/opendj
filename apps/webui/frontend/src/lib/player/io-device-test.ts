@@ -96,10 +96,13 @@ export function ioTestDeviceId(
 		output_mode: string;
 		selected_output_device_id: string | null;
 		selected_master_output_device_id: string | null;
-		selected_booth_output_device_id: string | null;
+		selected_booth_output_device_id?: string | null;
+		booth?: { selected_output_device_id: string | null };
 	}
 ): string | null {
-	if (bus === 'booth') return hp.selected_booth_output_device_id;
+	if (bus === 'booth') {
+		return hp.booth?.selected_output_device_id ?? hp.selected_booth_output_device_id ?? null;
+	}
 	if (bus !== 'cue') return hp.selected_master_output_device_id;
 	if (hp.output_mode === 'split_cable') return hp.selected_master_output_device_id ?? 'default';
 	return hp.selected_output_device_id;

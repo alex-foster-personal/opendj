@@ -92,6 +92,9 @@ CANDIDATE_FIELDS: tuple[str, ...] = (
     "score_ms",
     "rank_group",
     "refused",
+    "planner_confidence",
+    "planner_weakest_factor",
+    "planner_confidence_title",
 )
 
 TryRunner = Callable[..., TryResult]
@@ -145,6 +148,9 @@ class CandidateOut(BaseModel):
     refused: str | None
     rank_group: Literal["measured", "alignment unknown", "refused"]
     render_url: str
+    planner_confidence: float | None = Field(default=None, ge=0.0, le=1.0)
+    planner_weakest_factor: str | None = None
+    planner_confidence_title: str | None = None
 
 
 class PickOut(BaseModel):

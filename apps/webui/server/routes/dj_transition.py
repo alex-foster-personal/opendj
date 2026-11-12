@@ -151,6 +151,9 @@ class TransitionPickOut(BaseModel):
     score: float | None = Field(ge=0.0, le=1.0)
     out_start_bar: int
     rationale: str
+    planner_confidence: float | None = Field(default=None, ge=0.0, le=1.0)
+    planner_weakest_factor: str | None = None
+    planner_confidence_title: str | None = None
 
 
 class TransitionPlanOut(BaseModel):
@@ -216,6 +219,9 @@ def _pick_document(answer: LiveAnswer) -> TransitionPickOut | None:
         score=score,
         out_start_bar=plan["out"]["window"]["start_bar"],
         rationale=str(plan.get("rationale") or ""),
+        planner_confidence=answer.planner_confidence,
+        planner_weakest_factor=answer.planner_weakest_factor,
+        planner_confidence_title=answer.planner_confidence_title,
     )
 
 

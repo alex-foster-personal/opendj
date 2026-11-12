@@ -1,0 +1,9 @@
+{
+  "map_name": "DJ Control Instinct(?:$|\\S|\\s+(?:$|[^\\sP]|P(?:$|[^8])|P8\\w))",
+  "map_const": "HERCULES_DJ_CONTROL_INSTINCT_MAP",
+  "map_ts": "apps/webui/frontend/src/lib/rb/midi/maps/hercules-dj-control-instinct.ts",
+  "panel_w": 265.0,
+  "panel_d": 187.0,
+  "panel_size_source": "Hercules DJ Control Instinct technical specifications (DJCInstinct_Technical_specifications.pdf): Dimensions (W x D x H) 26.5 x 18.7 x 4.8 cm",
+  "display_name": "2-channel DJControl Instinct-class controller"
+}

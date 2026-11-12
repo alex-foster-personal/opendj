@@ -11,9 +11,12 @@ Regression lines (CLAUDE.md format):
     naming the missing fields then broken
   * if a library with no in-window candidates doesn't return an explicit
     empty candidates list then broken
+  * if a candidate has no key then its row lists unscored key and ranks below
+    measured candidates then broken
 """
 from __future__ import annotations
 
+import sqlite3
 from collections.abc import Iterator
 from datetime import UTC, datetime
 
@@ -25,6 +28,7 @@ from apps.webui.server.backend import InMemoryBackend, Pairing, Provenance, Trac
 from apps.webui.server.routes import copilot as copilot_routes
 
 BASE = "/api/v1/copilot/suggest-next"
+FIND_SIMILAR_BASE = "/api/v1/copilot/find-similar-tracks"
 PEAK_BASE = "/api/v1/copilot/peak-pressure"
 
 
@@ -230,11 +234,33 @@ def test_unparseable_key_counts_as_missing(
 
 
 @pytest.mark.requirement("CAT-05")
+def test_keyless_candidate_lists_unscored_key(
+    client: TestClient, backend: InMemoryBackend
+) -> None:
+    _seed_track(
+        backend,
+        "nokey-1",
+        title="NoKey",
+        artist="Kappa",
+        bpm=125.0,
+        key=None,
+        energy=6,
+    )
+    r = client.post(BASE, json={"stable_id": "cur-001"})
+    assert r.status_code == 200, r.text
+    rows = {c["stable_id"]: c for c in r.json()["candidates"]}
+    assert rows["nokey-1"]["unscored"] == ["key"]
+    for sid, row in rows.items():
+        if sid != "nokey-1":
+            assert row["unscored"] == []
+
+
+@pytest.mark.requirement("CAT-05")
 def test_missing_energy_alone_does_not_422(
     client: TestClient, backend: InMemoryBackend
 ) -> None:
     # Sqlite backend does not project energy yet (documented gap) -- the
-    # endpoint must still work, scoring energy as neutral.
+    # endpoint must still work with energy unscored.
     _seed_track(backend, "noeng-1", title="NoEnergy", artist="Theta",
                 bpm=125.0, key="8A", energy=None)
     r = client.post(BASE, json={"stable_id": "noeng-1"})
@@ -318,6 +344,48 @@ def test_suggest_next_includes_pressure_and_release_prior(
         if c.get("energy") is not None and c["energy"] >= 8
     ]
     assert high_energy, "high-energy candidates must remain listed"
+
+
+@pytest.mark.requirement("INTEL-12016")
+def test_find_similar_generic_route(tmp_path) -> None:
+    """[if] copilot Generic mode runs on a measured track [then] candidates match genres similar, [else stop]."""
+    from apps.genre_infer import findings, taxonomy
+    from apps.webui.server.sqlite_backend import SqliteBackend
+    from tests.genre_infer.pipeline_support import library
+
+    _data, state = library(tmp_path)
+    conn = sqlite3.connect(str(state))
+    findings.ensure_schema(conn)
+    base = {g: 0.0 for g in taxonomy.NAMES}
+    findings.put_vector(conn, "t-fred", "jev", base | {"House": 0.8, "Deep House": 0.2})
+    findings.put_vector(conn, "t-fred2", "jev", base | {"House": 0.7, "Deep House": 0.3})
+    conn.commit()
+    conn.close()
+    app = create_app(
+        backend=SqliteBackend(state),
+        bind_host="127.0.0.1",
+        hostname="test-host",
+        state_db_path=str(state),
+        mount_frontend=False,
+    )
+    app.include_router(copilot_routes.router, prefix="/api/v1")
+    with TestClient(app) as client:
+        genre = client.get("/api/v1/genres/t-fred/similar").json()
+        copilot = client.post(
+            FIND_SIMILAR_BASE,
+            json={"stable_id": "t-fred", "mode": "generic"},
+        ).json()
+        assert copilot["mode"] == "generic"
+        assert [
+            {"stable_id": row["stable_id"], "score": row["score"]}
+            for row in copilot["candidates"]
+        ] == genre["similar"]
+        unmeasured = client.post(
+            FIND_SIMILAR_BASE,
+            json={"stable_id": "t-id", "mode": "generic"},
+        )
+        assert unmeasured.status_code == 404
+        assert unmeasured.json()["error"] == "not_found"
 
 
 @pytest.mark.requirement("AI-05")

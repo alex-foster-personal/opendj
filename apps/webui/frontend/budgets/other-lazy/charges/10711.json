@@ -1,0 +1,9 @@
+{
+  "bytes": 1024,
+  "measured_main": 496730,
+  "measured_with_pr": 496881,
+  "sha": "e8a459212e",
+  "date": "Mon 9 Nov 2026",
+  "reason": "PR #10711 wires XDJ loop in/out MIDI actions and friendly labels for deck_loop_in and deck_loop_out (issue #10286). Measured: CI bundle budgets step at head e8a459212e, +151 B gzip on other-lazy vs merge-base main; ceiled to KiB",
+  "payback": "none planned; the growth is the feature's own MIDI glue and map strings"
+}

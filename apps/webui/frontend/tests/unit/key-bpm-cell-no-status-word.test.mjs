@@ -28,5 +28,5 @@ test('the empty BPM cell renders no status word and keeps the reason on its hove
 test('an empty key cell explains itself on the key hover card note', () => {
 	assert.match(src, /class:key-inert=\{keyCellInert\(row\) && !keyEdited\}/);
 	assert.match(src, /note=\{keyHoverNote\(keyHover\.row\)\}/);
-	assert.match(src, /\[keyCellInert\(row\) \? keyCellTitle\(row\) : null, clashEdges\.get\(row\.stable_id\) \?\? null\]/);
+	assert.match(src, /\[\s*keyCellInert\(row\) \? keyCellTitle\(row\) : null,\s*clashEdges\.get\(row\.stable_id\) \?\? null,?\s*\]/);
 });

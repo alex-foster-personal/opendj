@@ -17,9 +17,9 @@ import pytest
 import uvicorn
 from fastapi import FastAPI
 
-from apps.sets.api import router
 from apps.sets.manifest import AudioSegment, Manifest, write_manifest
 from apps.sets.recorder_service import RecorderService
+from tests.sets.conftest import mount_sets_router
 from tests.waits import start_uvicorn_in_thread, stop_uvicorn_in_thread
 
 pytestmark = pytest.mark.requirement("SETREC-19")
@@ -99,7 +99,7 @@ def sets_read_base_url(tmp_path: Path, sets_state_db: Path) -> Iterator[str]:
     app.state.sets_recorder_service = service
     app.state.sets_root = sets_dir
     app.state.state_db_path = str(sets_state_db)
-    app.include_router(router)
+    mount_sets_router(app)
     listener = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     listener.bind(("127.0.0.1", 0))
     listener.listen(5)

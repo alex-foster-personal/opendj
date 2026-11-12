@@ -27,7 +27,7 @@ import os
 import sqlite3
 import tempfile
 import uuid
-from collections.abc import Callable, Iterator
+from collections.abc import Callable, Iterator, Sequence
 from contextlib import AbstractContextManager, contextmanager
 from dataclasses import asdict, dataclass
 from datetime import UTC, datetime
@@ -37,6 +37,7 @@ from typing import Any, Literal
 from apps.shared.private_files import is_owner_only, restrict_to_owner
 
 from ._helpers import chunked
+from .identify import IdentifyProposal
 from .title_fix import VERSION_TAGS, Track, Verdict
 from .title_fix_rows import (  # noqa: F401  # re-exported: the row types are part of the store's surface
     PRODUCER_NOTE_PREFIX,
@@ -75,6 +76,32 @@ POLICIES: tuple[str, ...] = ("off", "safe_tier", "gate_approved")
 ProposalState = Literal["pending", "applied", "rejected", "superseded", "stale", "undone", "noop"]
 ScanState = Literal["running", "done", "capped", "failed"]
 SAFE_TIER_SOURCES = frozenset({"safe-tier"})  # title_fix round 6 names its no-LLM tier this way
+
+
+@dataclass(frozen=True)
+class IdentifyItem:
+    stable_id: str
+    original_title: str
+    original_artist: str
+    original_artists: list[str]
+    proposal: IdentifyProposal
+
+
+def identify_notes(proposal: IdentifyProposal) -> list[str]:
+    best = proposal.best
+    notes = [
+        f"musicbrainz recording: {best.recording_id}",
+        f"acoustid score: {proposal.score:.2f}",
+    ]
+    if best.year is not None:
+        notes.append(f"year: {best.year}")
+    if best.label:
+        notes.append(f"label: {best.label}")
+    if proposal.status == "needs_review":
+        for cand in proposal.candidates:
+            year_bit = str(cand.year) if cand.year is not None else "?"
+            notes.append(f"candidate: {cand.artist} - {cand.title} ({year_bit}) {cand.recording_id}")
+    return notes
 
 
 class BatchReleasedError(RuntimeError):
@@ -615,6 +642,59 @@ class ProposalStore:
                 ),
             )
         return self.get_proposals([proposal_id])[0]
+
+    def add_identify_proposals(self, items: Sequence[IdentifyItem]) -> list[ProposalRow]:
+        if not items:
+            return []
+        scan_id = uuid.uuid4().hex
+        now = _utcnow()
+        proposal_ids: list[str] = []
+        with self._conn() as conn:
+            conn.execute(
+                "INSERT INTO scans(scan_id, started_at, finished_at, state, requested, processed, "
+                "spend_cap_usd, cost_usd, heartbeat_at, auto_apply_policy) "
+                "VALUES (?,?,?,?,?,?,?,?,?,?)",
+                (scan_id, now, now, "done", len(items), len(items), 0.0, 0.0, now, "off"),
+            )
+            for item in items:
+                proposal_id = uuid.uuid4().hex
+                fixer_status = "fixed" if item.proposal.status == "confident" else "review"
+                best = item.proposal.best
+                changed = best.title != item.original_title or best.artist != item.original_artist
+                state = "pending" if changed else "noop"
+                conn.execute(
+                    "UPDATE proposals SET state = 'superseded', decided_at = ? WHERE stable_id = ? AND state = 'pending'",
+                    (now, item.stable_id),
+                )
+                conn.execute(
+                    "INSERT INTO proposals(proposal_id, scan_id, stable_id, created_at, original_title, original_artist, "
+                    "original_artists_json, proposed_title, proposed_artist, original_artist_credit, tags_json, "
+                    "fixer_status, source, confidence, jev_kind, notes_json, error, cost_usd, state) "
+                    "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                    (
+                        proposal_id,
+                        scan_id,
+                        item.stable_id,
+                        now,
+                        item.original_title,
+                        item.original_artist,
+                        json.dumps(item.original_artists, ensure_ascii=False),
+                        best.title,
+                        best.artist,
+                        "",
+                        "[]",
+                        fixer_status,
+                        "identify",
+                        item.proposal.score,
+                        "",
+                        json.dumps(identify_notes(item.proposal), ensure_ascii=False),
+                        "",
+                        0.0,
+                        state,
+                    ),
+                )
+                proposal_ids.append(proposal_id)
+        return self.get_proposals(proposal_ids)
 
     def get_proposals(self, proposal_ids: list[str]) -> list[ProposalRow]:
         if not proposal_ids:

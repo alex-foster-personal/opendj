@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import shutil
 import subprocess
 from pathlib import Path
 
@@ -13,6 +12,7 @@ from apps.sets.control_ids import (
     SCRIPTED_MIXER_CONTROL_IDS,
     assert_engine_page_mixer_disjoint,
 )
+from tests.rust_build_env import run_cargo_lib_tests
 
 CRATE = Path(__file__).resolve().parents[2] / "apps" / "audio-engine"
 RUST_MIXER_TESTS = (
@@ -23,20 +23,7 @@ RUST_MIXER_TESTS = (
 
 
 def _cargo_mixer_tests() -> subprocess.CompletedProcess[str]:
-    cargo = shutil.which("cargo")
-    if cargo is None:
-        pytest.skip("UNAVAILABLE: no cargo to run engine mixer capture tests")
-    env = dict(**__import__("os").environ)
-    if shutil.which("g++"):
-        env["CXX"] = "g++"
-    return subprocess.run(
-        ["cargo", "test", "--manifest-path", str(CRATE / "Cargo.toml"), "--lib", "--", *RUST_MIXER_TESTS],
-        capture_output=True,
-        text=True,
-        check=False,
-        cwd=CRATE,
-        env=env,
-    )
+    return run_cargo_lib_tests(CRATE, RUST_MIXER_TESTS)
 
 
 @pytest.mark.requirement("SETREC-05")

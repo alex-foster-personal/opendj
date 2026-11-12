@@ -26,5 +26,7 @@ test('both REC entry points are gated on the flag', () => {
 	const read = (path) => readFileSync(new URL(`../../src/${path}`, import.meta.url), 'utf8');
 	assert.match(read('lib/components/rb/browser/IconRail.svelte'), /entry\.action !== 'record' \|\| \(recordable && recordingAvailable\)/);
 	assert.match(read('lib/components/rb/browser/PerformanceRecorderRail.svelte'), /recordingAvailable=\{setRecordingEnabled\(\)\}/);
+	assert.match(read('lib/components/rb/AppPostureChip.svelte'), /setRecordingEnabled\(\)/);
+	assert.match(read('lib/components/rb/browser/LibrarySourceTabs.svelte'), /libraryRecordingsTabEnabled\(\)/);
 	assert.match(read('routes/sets/+page.svelte'), /\{:else if setRecordingEnabled\(\)\}\s*<button class="record"/);
 });

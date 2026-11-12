@@ -206,8 +206,8 @@ test('CMDK-21: a newer request wins and no key is its own state with one red toa
 	assert.match(bar, /title="Set OPENROUTER_API_KEY in the engine's environment/);
 	// The page wires the toast through the bar, so neither the bar nor "/" first paint imports the toast store.
 	assert.match(bar, /\$effect\(\(\) => setCmdkAiToast\(aiToast\)\);/);
-	const page = readFileSync(`${SRC}routes/performance/+page.svelte`, 'utf8');
-	assert.match(page, /aiToast=\{\(message\) => pushToast\(message, 'error'\)\}/);
+	const host = readFileSync(`${SRC}lib/components/rb/CommandPaletteHost.svelte`, 'utf8');
+	assert.match(host, /aiToast=\{\(message\) => pushToast\(message, 'error'\)\}/);
 	const init = readFileSync(`${SRC}lib/rb/app-init.ts`, 'utf8');
 	assert.doesNotMatch(init, /cmdk-ai-toast/);
 	assert.doesNotMatch(bar, /stores\.svelte/);

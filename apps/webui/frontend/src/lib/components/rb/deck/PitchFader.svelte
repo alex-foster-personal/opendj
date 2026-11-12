@@ -11,6 +11,7 @@
 	import { midiTakeoverGhost } from '$lib/rb/midi/takeover-ui.svelte';
 	import { faderValueFromPitchRatio, pitchRatioFromFaderValue } from './pitch-fader-geometry';
 	import { thumbOffsetPx, valueFromPointer } from '$lib/rb/pitch-fader-geometry';
+	import { valueText } from '$lib/a11y/value-text';
 
 	let {
 		deck,
@@ -27,6 +28,8 @@
 	} = $props();
 
 	const KEY_STEP_PCT = 0.1; // ArrowUp/Down nudges pitch by 0.1%
+
+	const pitchPct = $derived(Number(((deck.pitch - 1) * 100).toFixed(2)));
 
 	/** The live track height. `.rb-fader` is `height: 100%`, so this cannot be
 	 * a constant - it was one, and 0% drew above centre on every fader taller
@@ -145,7 +148,8 @@
 		aria-orientation="vertical"
 		aria-valuemin={-pitchRange}
 		aria-valuemax={pitchRange}
-		aria-valuenow={Number(((deck.pitch - 1) * 100).toFixed(2))}
+		aria-valuenow={pitchPct}
+		aria-valuetext={valueText('pitch', pitchPct)}
 		aria-disabled={pending || deck.stable_id === null}
 		tabindex="0"
 		data-performance-control="pitch"

@@ -4,5 +4,6 @@
     "outDir": "dist-test",
     "rootDir": "."
   },
-  "include": ["src/**/*.ts", "test/**/*.ts", "e2e/**/*.ts"]
+  "include": ["src/**/*.ts", "test/**/*.ts", "e2e/**/*.ts"],
+  "exclude": []
 }

@@ -305,6 +305,49 @@ def test_api_transitions_returns_classified(api_test_client):
     assert data[0]["predicted_class"] == "cut"
 
 
+@pytest.mark.requirement("SET-12826")
+def test_api_transitions_empty_when_no_jsonl(api_test_client):
+    """[if] manifest exists without transitions.jsonl [then ⛔️] GET returns []."""
+    client, sets_root = api_test_client
+    session_id = "empty-trans"
+    sess = sets_root / session_id
+    sess.mkdir(parents=True)
+    mp3 = sess / "audio_2026-04-17T21-30-00.mp3"
+    mp3.write_bytes(b"\xff\xfb" + b"\x00" * 1024)
+    write_manifest(
+        sess,
+        Manifest(
+            session_id=session_id,
+            started_at="2026-04-17T21:30:00+00:00",
+            ended_at="2026-04-17T23:00:00+00:00",
+            capture_device="BlackHole 2ch",
+            share_state="private",
+            event_count=0,
+            deck_sources=[],
+            mp3_segments=[
+                AudioSegment(
+                    name=mp3.name,
+                    start_t_s=0.0,
+                    duration_s=300.0,
+                    size_bytes=mp3.stat().st_size,
+                )
+            ],
+        ),
+    )
+    resp = client.get(f"/api/sets/{session_id}/transitions")
+    assert resp.status_code == 200
+    assert resp.json() == []
+
+
+@pytest.mark.requirement("SET-12826")
+def test_api_transitions_missing_session_404(api_test_client):
+    """[if] session id is unknown [then ⛔️] GET /transitions returns 404."""
+    client, _ = api_test_client
+    resp = client.get("/api/sets/no-such-session/transitions")
+    assert resp.status_code == 404
+    assert resp.json()["detail"] == "session not found"
+
+
 @pytest.mark.requirement("SET-03")
 def test_api_relabel_appends_to_labels_jsonl(api_test_client):
     client, sets_root = api_test_client

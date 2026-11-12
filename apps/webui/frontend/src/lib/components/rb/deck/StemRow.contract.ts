@@ -19,6 +19,7 @@ type Args = {
 	testIdScope?: 'deck' | 'channel';
 	onMute: (stem: StemControl) => Promise<void>;
 	onSolo: (stem: StemControl) => Promise<void>;
+	onGain: (stem: StemControl, value: number) => void;
 	onLoad?: () => Promise<void>;
 	separate?: SeparateActionView | null;
 	onSeparate?: () => Promise<void>;
@@ -26,7 +27,7 @@ type Args = {
 };
 type Ctx = { canvasElement: HTMLElement; args: Args };
 
-const ctl = (over: Partial<StemControlState> = {}): StemControlState => ({ muted: false, solo: false, gain: 0.5, ...over });
+const ctl = (over: Partial<StemControlState> = {}): StemControlState => ({ muted: false, solo: false, gain: 0.5, fx_send: 0, ...over });
 
 function deck(deck_id: 1 | 2 | 3 | 4, stems: Partial<StemDeckState>): DeckState {
 	const full: StemDeckState = {
@@ -102,13 +103,15 @@ export const contracts = {
 			}),
 			pending: false,
 			onMute: fn(),
-			onSolo: fn()
+			onSolo: fn(),
+			onGain: fn()
 		} satisfies Args,
 		play: async ({ canvasElement, args }: Ctx) => {
 			const canvas = within(canvasElement);
 			const group = canvas.getByRole('group', { name: 'stem controls deck 2' });
 			await expect(group).toHaveAttribute('data-stems-status', 'ready');
 			await expect(group).toHaveAttribute('data-stems-state', 'ready');
+			await expect(group).not.toHaveAttribute('data-stems-phase');
 			await expect(group).toHaveAttribute('title', READY_TIP);
 			await expect(canvas.getByText('MUTE')).toHaveClass('mute');
 			await expect(chipText(canvasElement)).toEqual(['VOCAL', 'INST', 'DRUMS', 'BASS', 'HARM']);
@@ -122,14 +125,14 @@ export const contracts = {
 			await expect(vocal).toHaveAttribute('aria-busy', 'false');
 			await expect(vocal).toHaveAttribute('data-unavailable', 'false');
 			await expect(vocal).toHaveAttribute('data-performance-control', 'stem-vocal');
-			await expect(vocal).toHaveAttribute('title', `VOCAL stem is muted now. Click to mute, Shift+click to solo. ${READY_TIP}`);
+			await expect(vocal).toHaveAttribute('title', `VOCAL stem is muted now, level 0.0 dB. Click to mute, Shift+click to solo, scroll for level, double-click for unity. ${READY_TIP}`);
 			const drums = canvas.getByTestId('stem-drums-deck-2');
 			await expect(drums).toHaveClass('solo');
-			await expect(drums).toHaveAttribute('title', `DRUMS stem is solo selected. Click to mute, Shift+click to solo. ${READY_TIP}`);
+			await expect(drums).toHaveAttribute('title', `DRUMS stem is solo selected, level 0.0 dB. Click to mute, Shift+click to solo, scroll for level, double-click for unity. ${READY_TIP}`);
 			const inst = canvas.getByRole('button', { name: 'INST stem mute deck 2; Shift+click solo' });
 			await expect(inst).toHaveAttribute(
 				'title',
-				`INST stem is unmuted (other solo/group controls still apply). Click to mute, Shift+click to solo. ${READY_TIP}`
+				`INST stem is unmuted (other solo/group controls still apply), level 0.0 dB. Click to mute, Shift+click to solo, scroll for level, double-click for unity. ${READY_TIP}`
 			);
 			await expect(inst.style.getPropertyValue('--chip-color').trim()).toBe('var(--rb-stem-instrumental, #9ad67a)');
 
@@ -140,6 +143,38 @@ export const contracts = {
 			await expect(args.onMute).toHaveBeenCalledTimes(1);
 			// No status text while the chips speak for themselves.
 			await expect(canvasElement.querySelector('.status')).toBeNull();
+			// STEMPERF-11699: no level bar while every stem sits at unity.
+			await expect(canvasElement.querySelector('.chip .level')).toBeNull();
+		}
+	},
+	/** STEMPERF-11699: VOCAL at -6 dB and DRUMS at +3 dB show a level bar; click mutes at once, double-click returns to unity. */
+	LevelsOffUnity: {
+		args: {
+			deck: deck(1, {
+				controls: { vocal: ctl({ gain: 0.25 }), instrumental: ctl(), drums: ctl({ gain: 0.75 }), bass: ctl(), other: ctl() }
+			}),
+			pending: false,
+			onMute: fn(),
+			onSolo: fn(),
+			onGain: fn()
+		} satisfies Args,
+		play: async ({ canvasElement, args }: Ctx) => {
+			const canvas = within(canvasElement);
+			const vocal = canvas.getByTestId('stem-vocal-deck-1');
+			await expect(vocal.querySelector<HTMLElement>('.level')?.style.height).toBe('1px');
+			await expect(vocal.getAttribute('title')).toContain('level -6.0 dB');
+			const drums = canvas.getByTestId('stem-drums-deck-1');
+			await expect(drums.querySelector<HTMLElement>('.level')?.style.height).toBe('3px');
+			await expect(drums.getAttribute('title')).toContain('level +3.0 dB');
+			await expect(canvas.getByTestId('stem-instrumental-deck-1').querySelector('.level')).toBeNull();
+			await fireEvent.click(vocal);
+			// Class A: a click off unity mutes at once, no double-click window.
+			await expect(args.onMute).toHaveBeenCalledTimes(1);
+			await expect(args.onMute).toHaveBeenCalledWith('vocal');
+			await fireEvent.dblClick(vocal);
+			await expect(args.onGain).toHaveBeenCalledWith('vocal', 0.5);
+			// The dblclick itself sends no stem_mute.
+			await expect(args.onMute).toHaveBeenCalledTimes(1);
 		}
 	},
 	/** Two-stem RoFormer bundle on a mixer channel: BASS/HARM hidden, DRUMS inert with the reason, 3-letter labels. */
@@ -149,7 +184,8 @@ export const contracts = {
 			pending: false,
 			testIdScope: 'channel',
 			onMute: fn(),
-			onSolo: fn()
+			onSolo: fn(),
+			onGain: fn()
 		} satisfies Args,
 		play: async ({ canvasElement, args }: Ctx) => {
 			const canvas = within(canvasElement);
@@ -174,6 +210,7 @@ export const contracts = {
 			pending: false,
 			onMute: fn(),
 			onSolo: fn(),
+			onGain: fn(),
 			onLoad: fn()
 		} satisfies Args,
 		play: async ({ canvasElement, args }: Ctx) => {
@@ -200,10 +237,13 @@ export const contracts = {
 			pending: true,
 			onMute: fn(),
 			onSolo: fn(),
+			onGain: fn(),
 			onLoad: fn()
 		} satisfies Args,
 		play: async ({ canvasElement, args }: Ctx) => {
 			const canvas = within(canvasElement);
+			const group = canvas.getByRole('group', { name: 'stem controls deck 4' });
+			await expect(group).toHaveAttribute('data-stems-phase', 'fetching');
 			const status = canvas.getByRole('status');
 			await expect(status).toHaveClass('status', 'busy');
 			await expect(status).toHaveTextContent('FETCHING STEMS 2/4');
@@ -230,6 +270,7 @@ export const contracts = {
 			pending: true,
 			onMute: fn(),
 			onSolo: fn(),
+			onGain: fn(),
 			onLoad: fn()
 		} satisfies Args,
 		play: async ({ canvasElement, args }: Ctx) => {
@@ -264,6 +305,7 @@ export const contracts = {
 			pending: true,
 			onMute: fn(),
 			onSolo: fn(),
+			onGain: fn(),
 			onLoad: fn()
 		} satisfies Args,
 		play: async ({ canvasElement, args }: Ctx) => {
@@ -298,6 +340,7 @@ export const contracts = {
 			pending: true,
 			onMute: fn(),
 			onSolo: fn(),
+			onGain: fn(),
 			onLoad: fn()
 		} satisfies Args,
 		play: async ({ canvasElement, args }: Ctx) => {
@@ -336,6 +379,7 @@ export const contracts = {
 			pending: false,
 			onMute: fn(),
 			onSolo: fn(),
+			onGain: fn(),
 			onLoad: fn()
 		} satisfies Args,
 		play: async ({ canvasElement, args }: Ctx) => {
@@ -376,6 +420,7 @@ export const contracts = {
 			pending: true,
 			onMute: fn(),
 			onSolo: fn(),
+			onGain: fn(),
 			onLoad: fn()
 		} satisfies Args,
 		play: async ({ canvasElement, args }: Ctx) => {
@@ -401,8 +446,11 @@ export const contracts = {
 	},
 	/** NO STEMS with no separate action wired: the status label only, no button (what the mixer strip shows). */
 	NoStemsNoAction: {
-		args: { deck: noStems(1), pending: false, onMute: fn(), onSolo: fn(), onLoad: fn(), separate: null, onSeparate: fn() } satisfies Args,
+		args: { deck: noStems(1), pending: false, onMute: fn(), onSolo: fn(),
+			onGain: fn(), onLoad: fn(), separate: null, onSeparate: fn() } satisfies Args,
 		play: async ({ canvasElement }: Ctx) => {
+			const group = within(canvasElement).getByRole('group', { name: 'stem controls deck 1' });
+			await expect(group).not.toHaveAttribute('data-stems-phase');
 			await expect(within(canvasElement).getByTestId('stem-status-deck-1')).toHaveAttribute('data-stems-state', 'none');
 			await expect(canvasElement.querySelector('.separate')).toBeNull();
 		}
@@ -414,6 +462,7 @@ export const contracts = {
 			pending: false,
 			onMute: fn(),
 			onSolo: fn(),
+			onGain: fn(),
 			onLoad: fn(),
 			separate: separateActionView(SEPARATE_BASE),
 			onSeparate: fn()
@@ -430,6 +479,7 @@ export const contracts = {
 			pending: false,
 			onMute: fn(),
 			onSolo: fn(),
+			onGain: fn(),
 			onLoad: fn(),
 			separate: separateActionView({ ...SEPARATE_BASE, refusal: 'this build has no GPU relay and no local separator' }),
 			onSeparate: fn()
@@ -446,6 +496,7 @@ export const contracts = {
 			pending: false,
 			onMute: fn(),
 			onSolo: fn(),
+			onGain: fn(),
 			onLoad: fn(),
 			separate: separateActionView({ ...SEPARATE_BASE, job: { id: 'job-42', status: 'queued' } }),
 			onSeparate: fn()
@@ -462,6 +513,7 @@ export const contracts = {
 			pending: false,
 			onMute: fn(),
 			onSolo: fn(),
+			onGain: fn(),
 			onLoad: fn(),
 			separate: separateActionView({ ...SEPARATE_BASE, job: { id: 'job-42', status: 'failed', error: 'relay answered HTTP 503' } }),
 			onSeparate: fn()
@@ -473,7 +525,7 @@ export const contracts = {
 	},
 	/** STEMPERF-11695: VOCAL soloed alone lights ACA; ALL asks for everything. */
 	QuickAca: {
-		args: { deck: deck(1, { controls: { vocal: ctl({ solo: true }), instrumental: ctl(), drums: ctl(), bass: ctl(), other: ctl() } }), pending: false, onMute: fn(), onSolo: fn(), onQuickMode: fn() } satisfies Args,
+		args: { deck: deck(1, { controls: { vocal: ctl({ solo: true }), instrumental: ctl(), drums: ctl(), bass: ctl(), other: ctl() } }), pending: false, onMute: fn(), onSolo: fn(), onGain: fn(), onQuickMode: fn() } satisfies Args,
 		play: async ({ canvasElement, args }: Ctx) => {
 			await expectQuickActive(canvasElement, 1, 'aca');
 			await userEvent.click(within(canvasElement).getByTestId('stem-quick-all-deck-1'));
@@ -482,7 +534,7 @@ export const contracts = {
 	},
 	/** VOCAL the only mute, no solo: INST is lit; ACA asks for the acapella. */
 	QuickInst: {
-		args: { deck: deck(1, { controls: { vocal: ctl({ muted: true }), instrumental: ctl(), drums: ctl(), bass: ctl(), other: ctl() } }), pending: false, onMute: fn(), onSolo: fn(), onQuickMode: fn() } satisfies Args,
+		args: { deck: deck(1, { controls: { vocal: ctl({ muted: true }), instrumental: ctl(), drums: ctl(), bass: ctl(), other: ctl() } }), pending: false, onMute: fn(), onSolo: fn(), onGain: fn(), onQuickMode: fn() } satisfies Args,
 		play: async ({ canvasElement, args }: Ctx) => {
 			await expectQuickActive(canvasElement, 1, 'inst');
 			await userEvent.click(within(canvasElement).getByTestId('stem-quick-aca-deck-1'));
@@ -491,7 +543,7 @@ export const contracts = {
 	},
 	/** VOCAL soloed with DRUMS muted matches no quick mode. */
 	QuickCustom: {
-		args: { deck: deck(1, { controls: { vocal: ctl({ solo: true }), instrumental: ctl(), drums: ctl({ muted: true }), bass: ctl(), other: ctl() } }), pending: false, onMute: fn(), onSolo: fn(), onQuickMode: fn() } satisfies Args,
+		args: { deck: deck(1, { controls: { vocal: ctl({ solo: true }), instrumental: ctl(), drums: ctl({ muted: true }), bass: ctl(), other: ctl() } }), pending: false, onMute: fn(), onSolo: fn(), onGain: fn(), onQuickMode: fn() } satisfies Args,
 		play: async ({ canvasElement }: Ctx) => {
 			await expectQuickActive(canvasElement, 1, null);
 			await expect(within(canvasElement).getByTestId('stem-quick-aca-deck-1')).toBeEnabled();
@@ -499,9 +551,11 @@ export const contracts = {
 	},
 	/** Stems not ready: the quick chips are inert and carry the STEM-48 status tip. */
 	QuickLoading: {
-		args: { deck: deck(1, { status: 'loading', load: { phase: 'decoding', progress: null, reason: null } }), pending: false, onMute: fn(), onSolo: fn(), onQuickMode: fn() } satisfies Args,
+		args: { deck: deck(1, { status: 'loading', load: { phase: 'decoding', progress: null, reason: null } }), pending: false, onMute: fn(), onSolo: fn(), onGain: fn(), onQuickMode: fn() } satisfies Args,
 		play: async ({ canvasElement }: Ctx) => {
-			const groupTitle = within(canvasElement).getByRole('group', { name: 'stem controls deck 1' }).getAttribute('title') ?? '';
+			const group = within(canvasElement).getByRole('group', { name: 'stem controls deck 1' });
+			await expect(group).toHaveAttribute('data-stems-phase', 'decoding');
+			const groupTitle = group.getAttribute('title') ?? '';
 			await expect(groupTitle).not.toBe('');
 			for (const mode of ['aca', 'inst', 'all'] as const) {
 				const button = within(canvasElement).getByTestId(`stem-quick-${mode}-deck-1`);

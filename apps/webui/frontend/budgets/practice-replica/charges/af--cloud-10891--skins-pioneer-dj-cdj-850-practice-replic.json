@@ -1,0 +1,9 @@
+{
+  "bytes": 1024,
+  "measured_main": 35132,
+  "measured_with_pr": 35456,
+  "sha": "1d57fb70b8",
+  "date": "Thu 12 Nov 2026",
+  "reason": "branch af--cloud-10891--skins-pioneer-dj-cdj-850-practice-replic grows the practice-replica surface; measured +324 B gzip over main; ceiled to KiB.",
+  "payback": "none planned; the growth is the change's own code on this surface"
+}

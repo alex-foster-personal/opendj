@@ -1,0 +1,9 @@
+{
+  "bytes": 1024,
+  "measured_main": 516811,
+  "measured_with_pr": 517021,
+  "sha": "e3b5694a22",
+  "date": "Wed 11 Nov 2026",
+  "reason": "branch af--cloud-11465--deckux-map-pitch-fader-pointer-travel-to grows the other-lazy surface; measured +210 B gzip over main; ceiled to KiB.",
+  "payback": "none planned; the growth is the change's own code on this surface"
+}

@@ -8,26 +8,22 @@
  * prefs.svelte.ts owns the state and passes it in by reference.
  */
 
+import { isPerfViewId, PERF_VIEW_IDS, parsePerfViewId, type PerfViewId } from './view-registry';
+
 /**
- * What the wavestack area of /performance shows (TOPVIEW-01..03).
- *
- * - 'waveform': the four scrolling deck waveforms (default, unchanged).
- * - 'list': no waveforms; the library takes their height so more rows fit.
- * - 'phase-scope': one circular dial per deck, its dot turning once per bar.
- * - 'phase-meter': each deck's beat offset against the master deck's beat.
+ * What the wavestack area of /performance shows (TOPVIEW-01..03). Allowed ids
+ * come from view-registry.ts so agents add one row instead of parallel lists.
  */
-export const PERF_VIEWS = ['waveform', 'list', 'phase-scope', 'phase-meter'] as const;
-export type PerfView = (typeof PERF_VIEWS)[number];
+export const PERF_VIEWS = PERF_VIEW_IDS;
+export type PerfView = PerfViewId;
 
 export function isPerfView(value: unknown): value is PerfView {
-	return typeof value === 'string' && (PERF_VIEWS as readonly string[]).includes(value);
+	return isPerfViewId(value);
 }
 
 /** Fail-fast: an unlisted view is a bug in the caller, not a silent default. */
 export function assertPerfView(value: unknown): asserts value is PerfView {
-	if (!isPerfView(value)) {
-		throw new Error(`perf_view must be one of ${PERF_VIEWS.join(', ')}, got ${String(value)}`);
-	}
+	parsePerfViewId(value);
 }
 
 /** Validate the top-bar view fields of a parsed prefs blob (all optional). */

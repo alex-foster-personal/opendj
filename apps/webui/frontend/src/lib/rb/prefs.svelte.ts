@@ -49,7 +49,11 @@ import {
 	isPinVisibleDays
 } from '$lib/rb/feedback-pin-age';
 import type { PreviewBeatSync } from '$lib/player/preview-beat-sync';
-import { DECIDE_AFTER_MAX_S, DECIDE_AFTER_MIN_S, DEFAULT_DECIDE_AFTER_S } from '$lib/rb/auto-play-early';
+import {
+	DECIDE_AFTER_MAX_S,
+	DECIDE_AFTER_MIN_S,
+	DEFAULT_DECIDE_AFTER_S
+} from '$lib/rb/auto-play-early';
 import {
 	parseWaveHeight,
 	validateWaveHeightPrefFields,
@@ -113,11 +117,23 @@ import {
 	type SpeakerLinkPrefsState
 } from './speaker-link-prefs';
 import {
+	KEYBOARD_PREF_DEFAULTS,
+	makeKeyboardSetters,
+	validateKeyboardPrefFields,
+	type KeyboardPrefsState
+} from '$lib/keyboard/keyboard-prefs';
+import {
 	TEMPO_LANE_PREF_DEFAULTS,
 	makeTempoLaneSetters,
 	validateTempoLanePrefFields,
 	type TempoLanePrefsState
 } from './tempo-lane-prefs';
+import {
+	CUE_MARKER_PREF_DEFAULTS,
+	makeCueMarkerSetters,
+	validateCueMarkerPrefFields,
+	type CueMarkerPrefsState
+} from './cue-marker-prefs';
 import {
 	VOCAL_LANE_PREF_DEFAULTS,
 	makeVocalLaneSetters,
@@ -145,10 +161,7 @@ import {
 	validateRelatedCriteriaPrefs,
 	type RelatedCriteriaPrefs
 } from './related-criteria-prefs';
-import {
-	canonicalizeLibraryKeyFilter,
-	validateLibraryKeyFilterField
-} from './library-key-filter';
+import { canonicalizeLibraryKeyFilter, validateLibraryKeyFilterField } from './library-key-filter';
 import { isPageGoingAway } from '$lib/api/lifecycle-abort';
 import { reportSettingSaveError } from '$lib/settings/setting-save-errors';
 import { makeLevelCalibrationSetters } from './level-calibration-prefs';
@@ -202,8 +215,10 @@ import {
 	mergePerfTierPrefsFromParsed,
 	type PerfTierPrefs
 } from './perf-tier-prefs';
+import { setReduceMotionPref } from '$lib/motion/reduced-motion';
 import {
 	makeAutoCueRefresher,
+	makeReduceMotionRefresher,
 	makePrefsHydrator,
 	makeLibraryKeyFilterRehydrator,
 	setLibraryBrowserDiskPref,
@@ -220,11 +235,21 @@ import {
 	parseSpotifyLibrary,
 	parseVariants
 } from './prefs-fields';
-import type { AutoSyncPrefs, LastPlaylistPref, LevelCalibrationPrefs, SpotifyLibraryPref } from './prefs-types';
+import type {
+	AutoSyncPrefs,
+	LastPlaylistPref,
+	LevelCalibrationPrefs,
+	SpotifyLibraryPref
+} from './prefs-types';
 import { makeSpotifyLibrarySetters } from './spotify-library-prefs';
 import { validateActiveScheme } from './theme-tokens';
 import { DEFAULT_KEY_NOTATION, installKeyNotationSource, isKeyNotation, KEY_NOTATIONS, type KeyNotation } from './key-notation';
-import { toggleHiddenColumn, validateHiddenColumns, type HideableColumn } from './library-columns';
+import {
+	DEFAULT_HIDDEN_LIBRARY_COLUMNS,
+	toggleHiddenColumn,
+	validateHiddenColumns,
+	type HideableColumn
+} from './library-columns';
 import {
 	applyUiSkinDom,
 	effectiveWavePalette,
@@ -250,7 +275,11 @@ import { announceBeatSyncMaxChange } from './beat-sync-max-enable';
 // Re-exported so performance-ipc (at the frontend.max_fan_out ceiling) reaches
 // the enabler through the prefs import it already has.
 export { enableBeatSyncAfterLoad, installBeatSyncMaxEnabler } from './beat-sync-max-enable';
-export { DECK_LAYOUT_DURATIONS_MS, type DeckLayoutDurationMs, type DeckLayoutMode } from './deck-layout-prefs';
+export {
+	DECK_LAYOUT_DURATIONS_MS,
+	type DeckLayoutDurationMs,
+	type DeckLayoutMode
+} from './deck-layout-prefs';
 // The top bar's 2-deck toggle copy, re-exported beside setDeckLayoutMode so
 // TopBar reads both from this one module (quality ratchet: max fan-out).
 export { describeTwoDeckToggle } from './two-deck-toggle';
@@ -288,8 +317,17 @@ export type CrossfadeCurve = 'magic' | 'bass_swap' | 'linear';
 /** Horizontal wheel target on /performance (MIXUX-08). Color routes to FILTER until built. */
 export type HorizontalWheelKnob = 'filter' | 'color';
 
+/** Issue #9434 / epic #9371: where the mixer sits; layout rendering is MX-2/MX-3. */
+export const MIXER_PLACEMENT_VALUES = ['center', 'sides'] as const;
+export type MixerPlacement = (typeof MIXER_PLACEMENT_VALUES)[number];
+
+export function isMixerPlacement(v: unknown): v is MixerPlacement {
+	return v === 'center' || v === 'sides';
+}
+
 export interface RbUiPrefs
-	extends PerfTierPrefs,
+	extends
+		PerfTierPrefs,
 		AppPosturePrefs,
 		GigHelperPrefs,
 		AppModePrefs,
@@ -302,7 +340,9 @@ export interface RbUiPrefs
 		AutoAnalyzePrefsState,
 		DeckNumberArtPrefsState,
 		SpeakerLinkPrefsState,
+		KeyboardPrefsState,
 		TempoLanePrefsState,
+		CueMarkerPrefsState,
 		VocalLanePrefsState,
 		WaveGridLinesPrefsState,
 		WaveZoomPrefsState {
@@ -337,7 +377,7 @@ export interface RbUiPrefs
 	 * double time count); 'off' plays every preview at its own tempo.
 	 */
 	preview_beat_sync: PreviewBeatSync;
-/** Library list: keep only tracks appropriate as next (Camelot + BPM
+	/** Library list: keep only tracks appropriate as next (Camelot + BPM
 	 * window vs master / loaded reference). Toggle with Tab. */
 	next_only_filter: boolean;
 	/** Library list: keep only remixes (title-marker heuristic, backend
@@ -386,11 +426,7 @@ export interface RbUiPrefs
 	usb_toast_enabled: boolean;
 	/** Dismiss delay for that toast, in milliseconds. */
 	usb_toast_ms: number;
-	/**
-	 * Open the USB panel on ANY new detect. Off by default: a volume that
-	 * still needs its first-seen answers already forces the panel open, so
-	 * this only adds the intrusion for sticks that need nothing.
-	 */
+	/** Open the USB panel as soon as a new stick is detected (off by default). */
 	usb_auto_open_panel: boolean;
 	/**
 	 * LIBUX-05: "Technically-working mode" edge-reveal overlay. True = smooth
@@ -413,10 +449,18 @@ export interface RbUiPrefs
 	cmdk_command_picks: CommandPick[];
 	/** DECKUX-19: per-stem mini-waveforms under deck wavestack rows. Default off. */
 	show_stems: boolean;
+	/** A11Y-11811: Appearance > Reduce motion. OR'd with the OS media query by $lib/motion/reduced-motion. */
+	reduce_motion: boolean;
 	/** Mixer S button (the maintainer, Mon 2 Nov 2026): stem level dials VOCAL/INST/BASS
 	 * beside HI/MID/LOW and DRUMS beside FILTER, on every channel whose track
 	 * has stems; the mixer column widens 20% while on. Default off. */
 	mixer_stems: boolean;
+	/**
+	 * Where the mixer sits (#9371): `center` is one column between the decks
+	 * (today's layout); `sides` is mirrored halves beside each deck. Default
+	 * `center`. Saved in this browser like `mixer_stems`.
+	 */
+	mixer_placement: MixerPlacement;
 	/** DECKUX-5917b: hovering a deck, wavestack row or mixer strip highlights its linked panels. Default on. */
 	deck_hover_link: boolean;
 	/** LIBUX-11716: shrink 4-deck view so the library shows more rows. Default off. */
@@ -427,6 +471,8 @@ export interface RbUiPrefs
 	library_related_criteria: RelatedCriteriaPrefs;
 	/** LIBM-129 v2: configured watcher folders (no daemon yet). */
 	library_watcher_folders: string[];
+	/** Issue #10076: port names whose first-run MIDI setup prompt was dismissed or completed. */
+	midi_setup_dismissed_ports: string[];
 	/** DECKUX-20: tri-band, mono envelope, line outline or blocks, or 'auto'
 	 * (default) to follow the skin (ui-skin.ts SKIN_WAVE_LOOK). */
 	waveform_design: WaveformDesignPref;
@@ -524,7 +570,7 @@ const DEFAULTS: RbUiPrefs = {
 	sampler_enabled: true,
 	collapsed_sections: [],
 	key_notation: DEFAULT_KEY_NOTATION,
-	library_hidden_columns: [],
+	library_hidden_columns: [...DEFAULT_HIDDEN_LIBRARY_COLUMNS],
 	beat_sync_max: true,
 	deck_autocue: false,
 	// CUEOUT-6060 (the maintainer's recommended default, fleet-af #335 1A): a preview
@@ -541,7 +587,7 @@ const DEFAULTS: RbUiPrefs = {
 	hide_todo_settings: false,
 	auto_sync: { rekordbox: false, djay: false, open_dj: false },
 	usb_toast_enabled: true,
-	usb_toast_ms: 5000,
+	usb_toast_ms: 60_000,
 	usb_auto_open_panel: false,
 	technically_working_animate: true,
 	jog_radial_waveform: false,
@@ -549,13 +595,16 @@ const DEFAULTS: RbUiPrefs = {
 	pin_visible_days: PIN_VISIBLE_DAYS_DEFAULT,
 	cmdk_command_picks: [],
 	show_stems: false,
+	reduce_motion: false,
 	mixer_stems: false,
+	mixer_placement: 'center',
 	deck_hover_link: true,
 	compact_decks: false,
 	compatible_filter: { ...COMPATIBLE_FILTER_DEFAULTS },
 	library_related_criteria: { ...RELATED_CRITERIA_DEFAULTS },
 	library_key_filter: [],
 	library_watcher_folders: [],
+	midi_setup_dismissed_ports: [],
 	waveform_design: WAVEFORM_DESIGN_PREF_DEFAULT,
 	wave_height: WAVE_HEIGHT_DEFAULT,
 	wave_eq_reflect: true,
@@ -576,7 +625,12 @@ const DEFAULTS: RbUiPrefs = {
 	deck_right_mirror: false,
 	deck_left_mirror: false,
 	playlist_tree_view: 'tree',
-	level_calibration: { red_dbfs: null, red_enabled: false, ceiling_dbfs: null, ceiling_enabled: false },
+	level_calibration: {
+		red_dbfs: null,
+		red_enabled: false,
+		ceiling_dbfs: null,
+		ceiling_enabled: false
+	},
 	crossfade_curve: 'magic',
 	horizontal_wheel_knob: 'filter',
 	drag_sensitivity: { base: DRAG_DEFAULTS.base, falloff_px: DRAG_DEFAULTS.falloffPx },
@@ -584,7 +638,9 @@ const DEFAULTS: RbUiPrefs = {
 	...AUTO_ANALYZE_PREF_DEFAULTS,
 	...DECK_NUMBER_ART_PREF_DEFAULTS,
 	...SPEAKER_LINK_PREF_DEFAULTS,
+	keyboard: { ...KEYBOARD_PREF_DEFAULTS },
 	...TEMPO_LANE_PREF_DEFAULTS,
+	...CUE_MARKER_PREF_DEFAULTS,
 	...VOCAL_LANE_PREF_DEFAULTS,
 	...WAVE_GRID_LINES_PREF_DEFAULTS,
 	...WAVE_ZOOM_PREF_DEFAULTS,
@@ -622,13 +678,17 @@ function _applyThemeDom(theme: UiTheme): void {
 function _applyWavePaletteDom(choice: WavePaletteChoice): void {
 	if (typeof document === 'undefined') return;
 	if (choice === 'rekordbox') delete document.documentElement.dataset.wavePalette;
-	else if (choice === 'legacy' || choice === 'mono' || choice === 'blue') document.documentElement.dataset.wavePalette = choice;
+	else if (choice === 'legacy' || choice === 'mono' || choice === 'blue')
+		document.documentElement.dataset.wavePalette = choice;
 }
 
 /** True when _load migrated a stored blob, so boot persists the new version. */
 let _bootMigrated = false;
 
-type SkinLookPrefs = Pick<RbUiPrefs, 'ui_skin' | 'waveform_design' | 'wave_palette' | 'defaults_migration'>;
+type SkinLookPrefs = Pick<
+	RbUiPrefs,
+	'ui_skin' | 'waveform_design' | 'wave_palette' | 'defaults_migration'
+>;
 
 /** Apply PREFS_DEFAULTS_MIGRATION to a stored blob's skin-look fields. */
 function _migrateSkinDefaults(
@@ -637,7 +697,10 @@ function _migrateSkinDefaults(
 	palette: WavePalettePref | undefined,
 	version: unknown
 ): SkinLookPrefs {
-	if (version !== undefined && (typeof version !== 'number' || !Number.isInteger(version) || version < 0)) {
+	if (
+		version !== undefined &&
+		(typeof version !== 'number' || !Number.isInteger(version) || version < 0)
+	) {
 		throw new Error(
 			`${STORAGE_KEY}: malformed prefs blob (defaults_migration must be a non-negative integer) - ` +
 				'clear the localStorage key to recover'
@@ -655,8 +718,13 @@ function _migrateSkinDefaults(
 	return {
 		ui_skin: skin === undefined || skin === UI_SKIN_PRE_GOTHIC_DEFAULT ? DEFAULTS.ui_skin : skin,
 		waveform_design:
-			design === undefined || design === _PRE_GOTHIC_WAVEFORM_DESIGN ? DEFAULTS.waveform_design : design,
-		wave_palette: palette === undefined || palette === _PRE_GOTHIC_WAVE_PALETTE ? DEFAULTS.wave_palette : palette,
+			design === undefined || design === _PRE_GOTHIC_WAVEFORM_DESIGN
+				? DEFAULTS.waveform_design
+				: design,
+		wave_palette:
+			palette === undefined || palette === _PRE_GOTHIC_WAVE_PALETTE
+				? DEFAULTS.wave_palette
+				: palette,
 		defaults_migration: _SKIN_DEFAULTS_MIGRATION
 	};
 }
@@ -679,7 +747,11 @@ function _migrateRadialOff(
 		};
 	}
 	_bootMigrated = true;
-	return { jog_radial_waveform: false, defaults_migration: PREFS_DEFAULTS_MIGRATION, radial_off_pending: true };
+	return {
+		jog_radial_waveform: false,
+		defaults_migration: PREFS_DEFAULTS_MIGRATION,
+		radial_off_pending: true
+	};
 }
 
 type LibraryPrefsValidated = {
@@ -774,7 +846,10 @@ function _validateAutomationPrefs(parsed: Partial<RbUiPrefs>): void {
 				'clear the localStorage key to recover'
 		);
 	}
-	if (parsed.next_panel_collapsed !== undefined && typeof parsed.next_panel_collapsed !== 'boolean') {
+	if (
+		parsed.next_panel_collapsed !== undefined &&
+		typeof parsed.next_panel_collapsed !== 'boolean'
+	) {
 		throw new Error(
 			`${STORAGE_KEY}: malformed prefs blob (next_panel_collapsed is not a boolean) - ` +
 				'clear the key to recover'
@@ -801,7 +876,10 @@ function _validateAutomationPrefs(parsed: Partial<RbUiPrefs>): void {
 				'clear the localStorage key to recover'
 		);
 	}
-	if (parsed.auto_play_early_planning !== undefined && typeof parsed.auto_play_early_planning !== 'boolean') {
+	if (
+		parsed.auto_play_early_planning !== undefined &&
+		typeof parsed.auto_play_early_planning !== 'boolean'
+	) {
 		throw new Error(
 			`${STORAGE_KEY}: malformed prefs blob (auto_play_early_planning is not a boolean) - ` +
 				`${JSON.stringify(parsed.auto_play_early_planning)}`
@@ -871,10 +949,7 @@ function _validateThemeAndDevicePrefs(parsed: Partial<RbUiPrefs>): ThemePrefsVal
 				'clear the localStorage key to recover'
 		);
 	}
-	if (
-		parsed.usb_auto_open_panel !== undefined &&
-		typeof parsed.usb_auto_open_panel !== 'boolean'
-	) {
+	if (parsed.usb_auto_open_panel !== undefined && typeof parsed.usb_auto_open_panel !== 'boolean') {
 		throw new Error(
 			`${STORAGE_KEY}: malformed prefs blob (usb_auto_open_panel is not a boolean) - ` +
 				'clear the localStorage key to recover'
@@ -929,6 +1004,12 @@ function _validatePerformanceTogglePrefs(parsed: Partial<RbUiPrefs>): void {
 				'clear the localStorage key to recover'
 		);
 	}
+	if (parsed.reduce_motion !== undefined && typeof parsed.reduce_motion !== 'boolean') {
+		throw new Error(
+			`${STORAGE_KEY}: malformed prefs blob (reduce_motion is not a boolean) - ` +
+				'clear the localStorage key to recover'
+		);
+	}
 	if (parsed.wave_eq_reflect !== undefined && typeof parsed.wave_eq_reflect !== 'boolean') {
 		throw new Error(
 			`${STORAGE_KEY}: malformed prefs blob (wave_eq_reflect is not a boolean) - ` +
@@ -938,6 +1019,12 @@ function _validatePerformanceTogglePrefs(parsed: Partial<RbUiPrefs>): void {
 	if (parsed.mixer_stems !== undefined && typeof parsed.mixer_stems !== 'boolean') {
 		throw new Error(
 			`${STORAGE_KEY}: malformed prefs blob (mixer_stems is not a boolean) - ` +
+				'clear the localStorage key to recover'
+		);
+	}
+	if (parsed.mixer_placement !== undefined && !isMixerPlacement(parsed.mixer_placement)) {
+		throw new Error(
+			`${STORAGE_KEY}: malformed prefs blob (mixer_placement must be center|sides, got ${String(parsed.mixer_placement)}) - ` +
 				'clear the localStorage key to recover'
 		);
 	}
@@ -1130,7 +1217,9 @@ function _assembleLoadedPrefs(
 			? parsed.pin_visible_days
 			: DEFAULTS.pin_visible_days,
 		show_stems: parsed.show_stems ?? DEFAULTS.show_stems,
+		reduce_motion: parsed.reduce_motion ?? DEFAULTS.reduce_motion,
 		mixer_stems: parsed.mixer_stems ?? DEFAULTS.mixer_stems,
+		mixer_placement: parsed.mixer_placement ?? DEFAULTS.mixer_placement,
 		deck_hover_link: parsed.deck_hover_link ?? DEFAULTS.deck_hover_link,
 		compact_decks: parsed.compact_decks ?? DEFAULTS.compact_decks,
 		...skinLook,
@@ -1139,7 +1228,9 @@ function _assembleLoadedPrefs(
 		wave_split_master: waveSplitMaster ?? DEFAULTS.wave_split_master,
 		confirm: { ...confirm },
 		last_playlist: lastPlaylist,
-		spotify_library: parseSpotifyLibrary(parsed.spotify_library, STORAGE_KEY),
+		spotify_library: parseSpotifyLibrary(parsed.spotify_library, STORAGE_KEY, () => {
+			_bootMigrated = true;
+		}),
 		cmdk_command_picks: parseCmdkCommandPicks(parsed.cmdk_command_picks, STORAGE_KEY),
 		deck_layout: deckLayout ?? DEFAULTS.deck_layout,
 		deck_layout_animate: deckLayoutAnimate ?? DEFAULTS.deck_layout_animate,
@@ -1148,7 +1239,11 @@ function _assembleLoadedPrefs(
 		deck_left_mirror: deckLeftMirror,
 		..._topbarViewFromParsed(parsed),
 		playlist_tree_view: playlistTreeView ?? DEFAULTS.playlist_tree_view,
-		level_calibration: parseLevelCalibration(parsed.level_calibration, STORAGE_KEY, DEFAULTS.level_calibration),
+		level_calibration: parseLevelCalibration(
+			parsed.level_calibration,
+			STORAGE_KEY,
+			DEFAULTS.level_calibration
+		),
 		crossfade_curve: crossfadeCurve ?? DEFAULTS.crossfade_curve,
 		horizontal_wheel_knob: horizontalWheelKnob ?? DEFAULTS.horizontal_wheel_knob,
 		drag_sensitivity:
@@ -1163,8 +1258,14 @@ function _assembleLoadedPrefs(
 		...validateDeckNumberArtPrefFields(parsed as Record<string, unknown>, STORAGE_KEY),
 		...SPEAKER_LINK_PREF_DEFAULTS,
 		...validateSpeakerLinkPrefFields(parsed, STORAGE_KEY),
+		keyboard: {
+			...KEYBOARD_PREF_DEFAULTS,
+			...validateKeyboardPrefFields(parsed, STORAGE_KEY).keyboard
+		},
 		...TEMPO_LANE_PREF_DEFAULTS,
 		...validateTempoLanePrefFields(parsed, STORAGE_KEY),
+		...CUE_MARKER_PREF_DEFAULTS,
+		...validateCueMarkerPrefFields(parsed as Record<string, unknown>, STORAGE_KEY),
 		...VOCAL_LANE_PREF_DEFAULTS,
 		...validateVocalLanePrefFields(parsed, STORAGE_KEY),
 		...WAVE_HEIGHT_PREF_DEFAULTS,
@@ -1196,6 +1297,9 @@ function _assembleLoadedPrefs(
 		library_watcher_folders: Array.isArray(parsed.library_watcher_folders)
 			? parsed.library_watcher_folders.filter((p): p is string => typeof p === 'string')
 			: DEFAULTS.library_watcher_folders,
+		midi_setup_dismissed_ports: Array.isArray(parsed.midi_setup_dismissed_ports)
+			? [...new Set(parsed.midi_setup_dismissed_ports.filter((p): p is string => typeof p === 'string'))]
+			: DEFAULTS.midi_setup_dismissed_ports,
 		...mergeDevUiPrefsFromParsed(parsed, STORAGE_KEY),
 		variants: parseVariants(parsed.variants, STORAGE_KEY),
 		...mergeDeckDefaultPrefsFromParsed(parsed, STORAGE_KEY),
@@ -1208,7 +1312,9 @@ function _assembleLoadedPrefs(
 }
 
 /** TOPVIEW-01..06: the top-bar view fields, each falling back to its default. */
-function _topbarViewFromParsed(parsed: Parameters<typeof validateTopbarViewFields>[0]): TopbarViewPrefsState {
+function _topbarViewFromParsed(
+	parsed: Parameters<typeof validateTopbarViewFields>[0]
+): TopbarViewPrefsState {
 	const v = validateTopbarViewFields(parsed, STORAGE_KEY);
 	return {
 		perf_view: v.perf_view ?? DEFAULTS.perf_view,
@@ -1252,6 +1358,7 @@ installKeyNotationSource(() => uiPrefs.key_notation);
 _applyThemeDom(uiPrefs.theme);
 _applyWavePaletteDom(effectiveWavePalette(uiPrefs.wave_palette, uiPrefs.ui_skin));
 applyUiSkinDom(uiPrefs.ui_skin);
+setReduceMotionPref(uiPrefs.reduce_motion);
 if (_bootMigrated) _persist();
 applyDragSensitivity(uiPrefs.drag_sensitivity);
 /** The DJ picked the radial waveform this session, so no disk read may undo it. */
@@ -1276,13 +1383,44 @@ function _settleRadialOff(): void {
 	_syncDiskPrefs({ jog_radial_waveform: false }, putDiskPrefsVerified)
 		.then(_clearRadialOffPending)
 		.catch((cause) =>
-			reportSettingSaveError('Could not save the radial waveform default to disk; retrying next launch', cause)
+			reportSettingSaveError(
+				'Could not save the radial waveform default to disk; retrying next launch',
+				cause
+			)
 		);
 }
 if (_radialBootWrite) _settleRadialOff();
 
 export function setHideBrokenLinks(next: boolean): void {
 	setLibraryBrowserDiskPref(uiPrefs, _persist, _syncDiskPrefs, 'hide_broken_links', next);
+}
+
+/** #328 / USB-328: show a toast when a new USB stick mounts. */
+export function setUsbToastEnabled(next: boolean): void {
+	uiPrefs.usb_toast_enabled = next;
+	_persist();
+}
+
+/** #328 / USB-328: steal focus by opening the USB panel on detect. */
+export function setUsbAutoOpenPanel(next: boolean): void {
+	uiPrefs.usb_auto_open_panel = next;
+	_persist();
+}
+
+/** Never offer first-run setup for this port again (Not now, or setup completed). Idempotent. */
+export function addMidiSetupDismissedPort(portName: string): string[] {
+	if (typeof portName !== 'string' || portName.trim() === '') {
+		throw new Error('addMidiSetupDismissedPort: port name must be a non-empty string');
+	}
+	const current = uiPrefs.midi_setup_dismissed_ports;
+	if (current.includes(portName)) return current;
+	const next = [...current, portName];
+	uiPrefs.midi_setup_dismissed_ports = next;
+	_persist();
+	_syncDiskPrefs({ midi_setup_dismissed_ports: next }).catch((err: unknown) =>
+		reportSettingSaveError(`Could not save MIDI setup dismissal to disk: ${err}`, err)
+	);
+	return next;
 }
 
 /** Persist the tree width after clamping it to its documented 220-520px range. */
@@ -1319,11 +1457,8 @@ export function setLastPlaylist(next: LastPlaylistPref | null): void {
 	_persist();
 }
 
-export const { toggleSpotifyPinned, rememberSpotifyRecent, setSpotifyShrinkMain } = makeSpotifyLibrarySetters(
-	uiPrefs,
-	_persist,
-	(patch) => void _syncDiskPrefs(patch)
-);
+export const { toggleSpotifyPinned, rememberSpotifyRecent, setSpotifyShrinkMain } =
+	makeSpotifyLibrarySetters(uiPrefs, _persist, (patch) => void _syncDiskPrefs(patch));
 export function setSortWithinSections(next: boolean): void {
 	setLibraryBrowserDiskPref(uiPrefs, _persist, _syncDiskPrefs, 'sort_within_sections', next);
 }
@@ -1378,7 +1513,18 @@ export function setPreviewBeatSync(next: PreviewBeatSync): void {
 }
 
 /** DECKCTL-6235: an agent's PUT of `deck_autocue` reaches an open page. */
-export const refreshAutoCueFromDisk = makeAutoCueRefresher(uiPrefs, _persist, reportSettingSaveError);
+export const refreshAutoCueFromDisk = makeAutoCueRefresher(
+	uiPrefs,
+	_persist,
+	reportSettingSaveError
+);
+
+/** A11Y-11811: an agent's PUT of `reduce_motion` reaches an open page. */
+export const refreshReduceMotionFromDisk = makeReduceMotionRefresher(
+	uiPrefs,
+	_persist,
+	reportSettingSaveError
+);
 
 /** DECKCTL-6235: the deck AU button. The write runs on the shared disk chain
  * with the verified (throwing) PUT, so the command confirms only a saved
@@ -1480,12 +1626,8 @@ export function setLibraryPanelCollapsed(panel: LibraryPanel, collapsed: boolean
 
 /** The Next / Remixes / Vocals library filter setters, built against this
  * module's own uiPrefs/_persist (library-filter-prefs.ts). */
-export const {
-	setNextOnlyFilter,
-	setRemixesFilter,
-	setVocalsFilter,
-	setAvailableOfflineFilter
-} = makeLibraryFilterSetters(uiPrefs, _persist, (patch) => void _syncDiskPrefs(patch));
+export const { setNextOnlyFilter, setRemixesFilter, setVocalsFilter, setAvailableOfflineFilter } =
+	makeLibraryFilterSetters(uiPrefs, _persist, (patch) => void _syncDiskPrefs(patch));
 
 export function setTheme(next: UiTheme): void {
 	uiPrefs.theme = next;
@@ -1522,12 +1664,18 @@ export const { setJogRadialWaveform } = makeJogRadialWaveformSetters(
 	(patch) => void _syncDiskPrefs(patch)
 );
 
-/** STRUCT-05: labeled section bands over the waveforms (default off). */
-export const { setShowSections, toggleShowSections } = makeSectionOverlaySetters(
-	uiPrefs,
-	_persist,
-	(patch) => void _syncDiskPrefs(patch)
-);
+/** STRUCT-05 / STRUCTUI-12787: segment display prefs over the waveforms. */
+export const {
+	setShowSections,
+	toggleShowSections,
+	setSectionsMainStyle,
+	setSectionsStickyTitle,
+	setSectionsNextCountdown,
+	setSectionsOverviewStyle,
+	setSectionsLibraryStructureColumn,
+	setSectionsPreviewCursorLabel,
+	setSectionsUncertain
+} = makeSectionOverlaySetters(uiPrefs, _persist, (patch) => void _syncDiskPrefs(patch));
 
 /** ANALYSIS-11724: which lanes the analyze-on-import drain runs automatically. */
 export const {
@@ -1544,8 +1692,21 @@ export const { setSpeakerAutoRecover } = makeSpeakerLinkSetters(
 	(patch) => void _syncDiskPrefs(patch)
 );
 
+export const { setKeyboardPreset, setKeyboardOverrides } = makeKeyboardSetters(
+	uiPrefs,
+	_persist,
+	(patch) => void _syncDiskPrefs(patch)
+);
+
 /** Tempo-change lane (PR #8342): lane visibility and curve scale (default on, fixed_10). */
 export const { setShowTempoLane, setTempoLaneScale } = makeTempoLaneSetters(
+	uiPrefs,
+	_persist,
+	(patch) => void _syncDiskPrefs(patch)
+);
+
+/** Hot, memory and loop cue markers on deck waveforms (issue #10248). */
+export const { setShowHotCueMarkers, setShowMemoryCueMarkers, setShowLoopMarkers } = makeCueMarkerSetters(
 	uiPrefs,
 	_persist,
 	(patch) => void _syncDiskPrefs(patch)
@@ -1595,11 +1756,28 @@ export function setShowStems(next: boolean): void {
 	void _syncDiskPrefs({ show_stems: next });
 }
 
+/** A11Y-11811: Appearance > Reduce motion; also synced to ui-prefs on disk. */
+export function setReduceMotion(next: boolean): void {
+	uiPrefs.reduce_motion = next;
+	setReduceMotionPref(next);
+	_persist();
+	void _syncDiskPrefs({ reduce_motion: next });
+}
+
 /** The mixer's S button and the `mixer_stems` command. Saved in this browser,
  * the same store the MORE/LESS layout reads first. */
 export function setMixerStems(next: boolean): void {
-	if (typeof next !== 'boolean') throw new TypeError(`mixer_stems must be boolean, got ${String(next)}`);
+	if (typeof next !== 'boolean')
+		throw new TypeError(`mixer_stems must be boolean, got ${String(next)}`);
 	uiPrefs.mixer_stems = next;
+	_persist();
+}
+
+/** Where the mixer sits (#9371): one center column, or mirrored halves at the sides.
+ * The `mixer_placement` command and Settings row. Saved in this browser, like mixer_stems. */
+export function setMixerPlacement(next: MixerPlacement): void {
+	if (!isMixerPlacement(next)) throw new TypeError(`mixer_placement must be center|sides, got ${String(next)}`);
+	uiPrefs.mixer_placement = next;
 	_persist();
 }
 
@@ -1635,7 +1813,8 @@ export function setWaveHeight(next: WaveHeight): void {
 }
 
 export function setWaveEqReflect(next: boolean): void {
-	if (typeof next !== 'boolean') throw new TypeError(`wave_eq_reflect must be a boolean, got ${String(next)}`);
+	if (typeof next !== 'boolean')
+		throw new TypeError(`wave_eq_reflect must be a boolean, got ${String(next)}`);
 	uiPrefs.wave_eq_reflect = next;
 	_persist();
 }
@@ -1661,7 +1840,9 @@ export function setCrossfadeCurve(next: CrossfadeCurve): void {
 /** R6: base gain and falloff; applies live to every drag, then persists. */
 export function setDragSensitivity(next: Partial<DragSensitivityPrefs>): void {
 	if (next === null || typeof next !== 'object' || Array.isArray(next)) {
-		throw new TypeError(`setDragSensitivity: expected an object with base and/or falloff_px, got ${String(next)}`);
+		throw new TypeError(
+			`setDragSensitivity: expected an object with base and/or falloff_px, got ${String(next)}`
+		);
 	}
 	const keys = Object.keys(next);
 	const unknown = keys.filter((k) => k !== 'base' && k !== 'falloff_px');
@@ -1670,7 +1851,10 @@ export function setDragSensitivity(next: Partial<DragSensitivityPrefs>): void {
 			`setDragSensitivity: only base and falloff_px may be set, got ${keys.length === 0 ? 'no fields' : unknown.join(', ')}`
 		);
 	}
-	const merged = validateDragSensitivity({ ...uiPrefs.drag_sensitivity, ...next }, 'setDragSensitivity');
+	const merged = validateDragSensitivity(
+		{ ...uiPrefs.drag_sensitivity, ...next },
+		'setDragSensitivity'
+	);
 	uiPrefs.drag_sensitivity = merged;
 	applyDragSensitivity(merged);
 	_persist();
@@ -1687,7 +1871,8 @@ if (typeof window !== 'undefined') {
 	(window as Window & { __mdtDragSensitivity?: DragSensitivityBridge }).__mdtDragSensitivity = {
 		get: () => ({ ...uiPrefs.drag_sensitivity }),
 		set: (next) => setDragSensitivity(next),
-		reset: () => setDragSensitivity({ base: DRAG_DEFAULTS.base, falloff_px: DRAG_DEFAULTS.falloffPx })
+		reset: () =>
+			setDragSensitivity({ base: DRAG_DEFAULTS.base, falloff_px: DRAG_DEFAULTS.falloffPx })
 	};
 }
 
@@ -1731,7 +1916,11 @@ export const {
 	setLyricsDeckLine
 } = makeLyricsPrefSetters(uiPrefs, _persist, (patch) => void _syncDiskPrefs(patch));
 
-export const { setPerfTier } = bindPerfTierPrefSetters(uiPrefs, _persist, (p) => void _syncDiskPrefs(p));
+export const { setPerfTier } = bindPerfTierPrefSetters(
+	uiPrefs,
+	_persist,
+	(p) => void _syncDiskPrefs(p)
+);
 const { setAppPosture: _setAppPostureRaw } = bindAppPosturePrefSetters(
 	uiPrefs,
 	_persist,
@@ -1742,8 +1931,16 @@ export function setAppPosture(next: AppPosturePref): void {
 	_setAppPostureRaw(next);
 	tryOfferGigHelperPromptOnPostureChange(previous, next, uiPrefs.gig_helper);
 }
-export const { setGigHelper } = bindGigHelperPrefSetters(uiPrefs, _persist, (p) => void _syncDiskPrefs(p));
-export const { setAppMode } = bindAppModePrefSetters(uiPrefs, _persist, (p) => void _syncDiskPrefs(p));
+export const { setGigHelper } = bindGigHelperPrefSetters(
+	uiPrefs,
+	_persist,
+	(p) => void _syncDiskPrefs(p)
+);
+export const { setAppMode } = bindAppModePrefSetters(
+	uiPrefs,
+	_persist,
+	(p) => void _syncDiskPrefs(p)
+);
 /** "Show developer pages" - local-only, see dev-ui-prefs.ts. */
 export const { setShowDevUi } = makeDevUiPrefSetters(uiPrefs, _persist);
 /** Taste variant picks - local-only, see variant-prefs.ts. setVariant reassigns variants so each
@@ -1751,7 +1948,11 @@ export const { setShowDevUi } = makeDevUiPrefSetters(uiPrefs, _persist);
 export const { readVariant, setVariant } = makeVariantPrefAccessors(uiPrefs, _persist);
 export { onVariantChange };
 /** "Quantize on new decks" (SETSTUB-02) - see deck-default-prefs.ts. */
-export const { setDeckDefaultQuantize, setDeckNeedleLock } = makeDeckDefaultPrefSetters(uiPrefs, _persist, (p) => void _syncDiskPrefs(p));
+export const { setDeckDefaultQuantize, setDeckNeedleLock } = makeDeckDefaultPrefSetters(
+	uiPrefs,
+	_persist,
+	(p) => void _syncDiskPrefs(p)
+);
 // Seed the deck store from the stored value without it importing this module.
 announceDeckDefaults(uiPrefs);
 // DECKUX-10470: restore the per-deck beat jump size, then persist every change
@@ -1769,11 +1970,8 @@ export function setAutoSyncDestination(dest: AutoSyncDestination, next: boolean)
 	void _syncDiskPrefs({ auto_sync: { ...uiPrefs.auto_sync } });
 }
 
-export const { setLevelCalibrationCapture, setLevelCalibrationDisabled } = makeLevelCalibrationSetters(
-	uiPrefs,
-	_persist,
-	(patch) => void _syncDiskPrefs(patch)
-);
+export const { setLevelCalibrationCapture, setLevelCalibrationDisabled } =
+	makeLevelCalibrationSetters(uiPrefs, _persist, (patch) => void _syncDiskPrefs(patch));
 
 /** Verified disk writes (PR #4014): each commits only after its PUT lands and
  * rejects otherwise; see verified-pref-writes.ts. Loaded on first use, since
@@ -1892,7 +2090,9 @@ export function setConfirmPref<K extends keyof RbUiPrefs['confirm']>(
 	_unsavedConfirm.set(key, ++_confirmRev);
 	_verified()
 		.then((v) => v.saveUnsavedConfirm())
-		.catch((err: unknown) => reportSettingSaveError(`Confirmation choice not saved to disk: ${err}`, err));
+		.catch((err: unknown) =>
+			reportSettingSaveError(`Confirmation choice not saved to disk: ${err}`, err)
+		);
 }
 
 /** Pull on-disk confirm + theme prefs once (daemon may have remembered choices). */
@@ -1952,7 +2152,8 @@ export function cycleUiSkin(): UiSkin {
 }
 
 export function setWaveSplitMaster(next: WaveSplitMaster): void {
-	if (parseWaveSplitMaster(next) === undefined) throw new Error('wave_split_master must be set, got undefined');
+	if (parseWaveSplitMaster(next) === undefined)
+		throw new Error('wave_split_master must be set, got undefined');
 	uiPrefs.wave_split_master = next;
 	_persist();
 }
@@ -1974,7 +2175,8 @@ export function stepWaveZoomPref(direction: 'in' | 'out', deck?: DeckId): void {
 
 /** WAVEZOOM-6802c: where the playhead sits once zoomed far out. */
 export function setWaveZoomPlayhead(next: WavePlayheadMode): void {
-	if (parseWavePlayheadMode(next) === undefined) throw new Error('wave_zoom_playhead must be set, got undefined');
+	if (parseWavePlayheadMode(next) === undefined)
+		throw new Error('wave_zoom_playhead must be set, got undefined');
 	uiPrefs.wave_zoom_playhead = next;
 	_persist();
 }
@@ -1982,7 +2184,8 @@ export function setWaveZoomPlayhead(next: WavePlayheadMode): void {
 /** WAVEZOOM-6802d: one zoom for every deck (true) or one per deck (false).
  * Unlinking starts every deck at the shared step. */
 export function setWaveZoomLinked(next: boolean): void {
-	if (typeof next !== 'boolean') throw new Error(`wave_zoom_linked must be a boolean, got ${String(next)}`);
+	if (typeof next !== 'boolean')
+		throw new Error(`wave_zoom_linked must be a boolean, got ${String(next)}`);
 	if (!next && uiPrefs.wave_zoom_linked) uiPrefs.wave_zoom_decks = {};
 	uiPrefs.wave_zoom_linked = next;
 	_persist();
@@ -2009,7 +2212,8 @@ _applySkinFromUrl();
 
 /** ARTNUM-9649: the deck number drawn over each deck's artwork (default off). */
 export function setDeckNumberArt(next: DeckNumberArt): void {
-	if (parseDeckNumberArt(next) === undefined) throw new Error(`deck_number_art must be ${DECK_NUMBER_ART_VALUES.join('|')}, got ${String(next)}`);
+	if (parseDeckNumberArt(next) === undefined)
+		throw new Error(`deck_number_art must be ${DECK_NUMBER_ART_VALUES.join('|')}, got ${String(next)}`);
 	uiPrefs.deck_number_art = next;
 	_persist();
 }

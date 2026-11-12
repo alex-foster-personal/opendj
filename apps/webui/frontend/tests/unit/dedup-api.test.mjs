@@ -19,6 +19,7 @@ function clusterPayload({ decisionAction = null } = {}) {
 				cluster_key: CLUSTER_KEY,
 				survivor_stable_id: 'track-canon',
 				rationale: 'bitrate=320',
+				basis: 'fingerprint',
 				flagged_manual_review: false,
 				members: [
 					{

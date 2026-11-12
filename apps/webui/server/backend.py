@@ -91,6 +91,8 @@ class Track:
     bpm: float | None = None
     key: str | None = None
     rating: int | None = None
+    # Rekordbox ColorID 1..8; None or 0 = no colour label (issue #9737 / #10041).
+    color_id: int | None = None
     tags: list[str] = field(default_factory=list)
     notes: str | None = None
     genre: str | None = None
@@ -187,9 +189,23 @@ class TrackFilter:
     key: str | None = None
     rating_min: int | None = None
     tag: str | None = None
+    color_ids: tuple[int, ...] = ()
     cursor: str | None = None
     limit: int = DEFAULT_LIMIT
     show_deleted: bool = False
+
+
+def effective_track_color_id(color_id: int | None) -> int:
+    """Rekordbox uses 0 for no colour; None counts the same for filtering."""
+    if color_id is None or color_id <= 0:
+        return 0
+    return int(color_id)
+
+
+def track_matches_color_ids(track: Track, color_ids: tuple[int, ...]) -> bool:
+    if not color_ids:
+        return True
+    return effective_track_color_id(track.color_id) in color_ids
 
 
 @dataclass
@@ -430,6 +446,7 @@ class StateBackend(Protocol):
     def get_playlist_page(
         self, playlist_id: str, *, limit: int, offset: int,
     ) -> PlaylistPage: ...
+    def get_playlist_summary_stats(self, playlist_id: str) -> Any: ...
     def list_track_playlists(self, stable_id: str) -> list[TrackPlaylistHit]: ...
     def list_pairings(self, *, from_stable_id: str | None = None,
                       to_stable_id: str | None = None,
@@ -534,6 +551,8 @@ class InMemoryBackend:
             tracks = [t for t in tracks if t.rating is not None and t.rating >= flt.rating_min]
         if flt.tag:
             tracks = [t for t in tracks if flt.tag in (t.tags or [])]
+        if flt.color_ids:
+            tracks = [t for t in tracks if track_matches_color_ids(t, flt.color_ids)]
         tracks.sort(key=lambda t: t.stable_id)
         limit = max(1, min(flt.limit, MAX_LIMIT))
         start = 0
@@ -614,6 +633,15 @@ class InMemoryBackend:
         if pl is None:
             raise NotFoundError(f"playlist not found: {playlist_id}")
         return pl
+
+    def get_playlist_summary_stats(self, playlist_id: str) -> Any:
+        from .playlist_summary_stats import stats_from_in_memory
+
+        pl = self.get_playlist(playlist_id)
+        distinct = list(dict.fromkeys(pl.items))
+        tracks = self.get_tracks_bulk(distinct)
+        paths = self.get_file_paths_bulk(distinct)
+        return stats_from_in_memory(distinct, tracks, paths)
 
     def get_playlist_page(
         self, playlist_id: str, *, limit: int, offset: int,
@@ -717,6 +745,11 @@ class InMemoryBackend:
                     prov["rating"] = Provenance(value=updated.rating, source=source,
                                                 confidence=1.0, modified_at=now,
                                                 status="ok")
+                if "color_id" in update.patch:
+                    color_id = update.patch["color_id"]
+                    if color_id is not None and not (1 <= int(color_id) <= 8):
+                        raise BackendError("color_id must be between 1 and 8 or null")
+                    updated.color_id = color_id
                 if "notes" in update.patch:
                     updated.notes = update.patch["notes"]
                     prov["notes"] = Provenance(value=updated.notes, source=source,

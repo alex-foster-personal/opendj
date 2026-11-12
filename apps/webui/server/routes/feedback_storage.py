@@ -2,7 +2,9 @@
 
 Split out of ``feedback.py`` to keep that module under the file-size limit
 with room to grow. ``feedback.py`` re-exports every name here, so the sibling
-modules that import them from it are unchanged. No behavior change.
+modules that import them from it are unchanged. The mountable SQLite store
+for comment pins lives in ``apps.opendj_pins.store``; this JSON layer remains
+the Open DJ engine path until a later wiring PR switches the daemon.
 """
 
 from __future__ import annotations
@@ -67,20 +69,9 @@ def _save(path: Path, root_key: str, items: list[dict[str, Any]]) -> None:
 
 
 def keep_unknown_fields(raw: dict[str, Any], known: dict[str, Any]) -> dict[str, Any]:
-    """``known`` (a model dump) laid over ``raw``, so fields this build lacks survive.
+    from apps.opendj_pins.http import keep_unknown_fields as _merge
 
-    A newer build may add a pin field this one's ``CommentOut`` does not know.
-    Validating and dumping drops it; overlaying the dump on the raw doc keeps
-    it, at every nesting level, while still filling this build's defaults.
-    """
-    merged = dict(raw)
-    for key, value in known.items():
-        prior = raw.get(key)
-        if isinstance(value, dict) and isinstance(prior, dict):
-            merged[key] = keep_unknown_fields(prior, value)
-        else:
-            merged[key] = value
-    return merged
+    return _merge(raw, known)
 
 
 def _load_general(path: Path) -> dict[str, Any]:

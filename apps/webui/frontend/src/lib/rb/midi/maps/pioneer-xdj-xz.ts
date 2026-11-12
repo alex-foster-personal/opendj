@@ -230,21 +230,40 @@ function _xzBrowserHints(): ControlHint[] {
 	];
 }
 
-export const XDJ_XZ_MAP: DeviceMap = {
-	vendor: 'Pioneer DJ',
-	nameMatch: 'XDJ-XZ',
-	bindings: [
-		...XDJ_RX3_MAP.bindings,
-		...DECKS.flatMap((deck) => _xzDeckBindings(deck)),
-		..._xzGlobalBindings()
-	],
-	leds: [...(XDJ_RX3_MAP.leds ?? []), ...DECKS.flatMap((deck) => _xzDeckLeds(deck))],
-	hints: [
+const _wireKey = (s: { ch: number; kind: string; id: number }): string =>
+	`${s.ch}/${s.kind}/${s.id}`;
+
+/** RX3 hints are shared with XZ; drop rows XZ already binds and fold duplicate sources. */
+function _xzMergedHints(bindings: readonly MidiBinding[]): ControlHint[] {
+	const bound = new Set(bindings.map((b) => _wireKey(b.source)));
+	const seen = new Set<string>();
+	const out: ControlHint[] = [];
+	for (const hint of [
 		...(XDJ_RX3_MAP.hints ?? []),
 		...DECKS.flatMap((deck) => _xzDeckHints(deck)),
 		..._xzMixerAndEffectHints(),
 		..._xzBrowserHints()
-	]
+	]) {
+		const key = _wireKey(hint.source);
+		if (bound.has(key) || seen.has(key)) continue;
+		seen.add(key);
+		out.push(hint);
+	}
+	return out;
+}
+
+const _XZ_BINDINGS: readonly MidiBinding[] = [
+	...XDJ_RX3_MAP.bindings,
+	...DECKS.flatMap((deck) => _xzDeckBindings(deck)),
+	..._xzGlobalBindings()
+];
+
+export const XDJ_XZ_MAP: DeviceMap = {
+	vendor: 'Pioneer DJ',
+	nameMatch: 'XDJ-XZ',
+	bindings: [..._XZ_BINDINGS],
+	leds: [...(XDJ_RX3_MAP.leds ?? []), ...DECKS.flatMap((deck) => _xzDeckLeds(deck))],
+	hints: _xzMergedHints(_XZ_BINDINGS)
 };
 
 /** Self-registration: maps/entries.ts discovers this export, so no shared list names this map. */

@@ -15,6 +15,11 @@
  *              the deck's own effective tempo. Same left/right tone law. At the
  *              center detent the SEND closes, never the loop, so the repeats
  *              ring out after the knob comes back, as on the hardware.
+ *  - `crush`:  bit depth and sample rate reduction (SNDCOL-10655), an AudioWorklet
+ *              kernel with its own dry/wet crossfade (`color-fx-crush.ts`).
+ *              Left of center crushes harder the further the turn; right of
+ *              center a fixed crush through a rising highpass. Here its targets
+ *              are only the FILTER bypass.
  *
  * At the detent every send is 0 and the filter is a dry bypass, so the channel
  * plays exactly dry (bit-exact once any earlier tail has decayed).
@@ -22,14 +27,15 @@
 import { DECK_IDS, FILTER_DEADZONE_FRAC, type DeckId } from '$lib/player/constants';
 import { filterParamsFromKnob } from './audio-engine-guards';
 
-export const COLOR_FX_EFFECTS = ['filter', 'space', 'echo'] as const;
+export const COLOR_FX_EFFECTS = ['filter', 'space', 'echo', 'crush'] as const;
 export type ColorFxEffect = (typeof COLOR_FX_EFFECTS)[number];
 
 /** Short knob captions, as the DJM prints them over the selector. */
 export const COLOR_FX_LABELS: Readonly<Record<ColorFxEffect, string>> = Object.freeze({
 	filter: 'FILTER',
 	space: 'SPACE',
-	echo: 'ECHO'
+	echo: 'ECHO',
+	crush: 'CRUSH'
 });
 
 /** Echo divisions in beats: 1/4, 1/2, 3/4 (the dotted-eighth dub classic) and 1. */
@@ -56,18 +62,22 @@ export const DEFAULT_COLOR_FX_SETTINGS: Readonly<ColorFxSettings> = Object.freez
 	echo_beats: 0.75
 });
 
-/** COLORFX-8341: `next` cycles FILTER -> SPACE -> ECHO -> FILTER (the Cmd-click on the caption). */
+/** COLORFX-8341: `next` cycles FILTER -> SPACE -> ECHO -> CRUSH -> FILTER (the Cmd-click on the caption). */
 export const COLOR_FX_NEXT = 'next';
 export type ColorFxChoice = ColorFxEffect | typeof COLOR_FX_NEXT;
+
+/** COLORFX-13: `deck: 'all'` applies one effect to every channel (rekordbox single mode). */
+export const COLOR_FX_ALL_DECKS = 'all';
+export type ColorFxDeck = DeckId | typeof COLOR_FX_ALL_DECKS;
 
 /** The knob's center detent, where every effect is exactly dry (12 o'clock). */
 export const COLOR_FX_CENTER = 0.5;
 
-/** The `color_fx` command. `deck` plus at least one of the rest; `value` is the
+/** The `color_fx` command. `deck` (1..4 or `all`) plus at least one of the rest; `value` is the
  * color knob (0..1, 0.5 = center), the same number the `filter` command sets. */
 export interface ColorFxCommand {
 	type: 'color_fx';
-	deck: DeckId;
+	deck: ColorFxDeck;
 	effect?: ColorFxChoice;
 	echo_beats?: ColorFxEchoBeats;
 	value?: number;
@@ -119,7 +129,28 @@ export function planColorFxSwitch(current: ColorFxEffect, knob: number, command:
 	return { effect, value, switched };
 }
 
+/** COLORFX-13: refuse an all-decks `color_fx` the wire cannot apply as one knob. */
+export function assertColorFxAllCommand(command: ColorFxCommand): void {
+	if (command.deck !== COLOR_FX_ALL_DECKS) {
+		throw new TypeError(`assertColorFxAllCommand: deck must be ${COLOR_FX_ALL_DECKS}`);
+	}
+	if (command.value !== undefined) {
+		throw new TypeError(
+			'color_fx deck all takes no value: each channel has its own knob, never moved together'
+		);
+	}
+	if (command.effect === COLOR_FX_NEXT) {
+		throw new TypeError(
+			'color_fx deck all refuses effect next: cycling four channels from different effects is ambiguous; name the effect'
+		);
+	}
+	if (command.effect === undefined) {
+		throw new TypeError('color_fx deck all needs an effect');
+	}
+}
+
 const COMMAND_KEYS = new Set(['type', 'deck', 'effect', 'echo_beats', 'value']);
+const DECK_OR_ALL = [...DECK_IDS, COLOR_FX_ALL_DECKS] as const;
 
 /** Validate a `color_fx` command off the wire. Throws with the reason, never guesses. */
 export function parseColorFxCommand(record: Record<string, unknown>): ColorFxCommand {
@@ -127,10 +158,10 @@ export function parseColorFxCommand(record: Record<string, unknown>): ColorFxCom
 		if (!COMMAND_KEYS.has(key)) throw new TypeError(`color_fx has unexpected field ${key}`);
 	}
 	if (record.type !== 'color_fx') throw new TypeError('color_fx command type must be color_fx');
-	if (!(DECK_IDS as readonly unknown[]).includes(record.deck)) {
-		throw new TypeError(`color_fx deck must be one of ${DECK_IDS.join('|')}; got ${String(record.deck)}`);
+	if (!(DECK_OR_ALL as readonly unknown[]).includes(record.deck)) {
+		throw new TypeError(`color_fx deck must be one of ${DECK_OR_ALL.join('|')}; got ${String(record.deck)}`);
 	}
-	const out: ColorFxCommand = { type: 'color_fx', deck: record.deck as DeckId };
+	const out: ColorFxCommand = { type: 'color_fx', deck: record.deck as ColorFxDeck };
 	if (record.effect !== undefined) {
 		if (record.effect !== COLOR_FX_NEXT && !(COLOR_FX_EFFECTS as readonly unknown[]).includes(record.effect)) {
 			throw new TypeError(
@@ -153,6 +184,7 @@ export function parseColorFxCommand(record: Record<string, unknown>): ColorFxCom
 		}
 		out.value = record.value;
 	}
+	if (out.deck === COLOR_FX_ALL_DECKS) assertColorFxAllCommand(out);
 	if (Object.keys(out).length === 2) throw new TypeError('color_fx needs at least one of effect, echo_beats, value');
 	return out;
 }
@@ -178,12 +210,19 @@ export interface ColorFxTargets {
 
 const FILTER_BYPASS: FilterParams = filterParamsFromKnob(0.5);
 
-/** Knob travel away from the detent on 0..1, 0 inside the detent (same detent as FILTER). */
-function _travel(value: number): { side: -1 | 0 | 1; amount: number } {
+/** Signed knob travel away from the detent, -1..1, exactly 0 inside the detent (same detent as FILTER). */
+export function colorFxTravel(value: number): number {
 	const colour = (value - 0.5) * 2;
-	if (Math.abs(colour) < FILTER_DEADZONE_FRAC) return { side: 0, amount: 0 };
+	if (Math.abs(colour) < FILTER_DEADZONE_FRAC) return 0;
 	const amount = (Math.abs(colour) - FILTER_DEADZONE_FRAC) / (1 - FILTER_DEADZONE_FRAC);
-	return { side: colour < 0 ? -1 : 1, amount };
+	return colour < 0 ? -amount : amount;
+}
+
+/** Knob travel away from the detent on 0..1, 0 inside the detent. */
+function _travel(value: number): { side: -1 | 0 | 1; amount: number } {
+	const travel = colorFxTravel(value);
+	if (travel === 0) return { side: 0, amount: 0 };
+	return { side: travel < 0 ? -1 : 1, amount: Math.abs(travel) };
 }
 
 /** Exponential-in-Hz sweep, linear in octaves (the filter-taper-laws L2 law). */
@@ -212,6 +251,10 @@ export function colorFxTargets(effect: ColorFxEffect, value: number, echoTimed: 
 			echoIn: effect === 'echo' && echoTimed ? 1 : 0,
 			spaceIn: effect === 'space' ? 1 : 0
 		};
+	} else if (effect === 'crush') {
+		// CRUSH crossfades its own wet path against filterDry (color-fx-crush.ts);
+		// here the FILTER is bypassed and every SPACE / ECHO send stays closed.
+		return { filter: FILTER_BYPASS, darkSend: 0, darkHz, brightSend: 0, brightHz, echoIn: 0, spaceIn: 0 };
 	} else {
 		const _exhaustive: never = effect;
 		throw new Error(`Unhandled color FX effect: ${String(_exhaustive)}`);

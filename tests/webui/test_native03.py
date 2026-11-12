@@ -172,7 +172,8 @@ def test_static_grid_untrusted_true_gates_every_named_grid_reader() -> None:
     save_slice = ipc[save_start : save_start + 800]
     assert "hasTrustedBeatGrid(" in save_slice, "hot_cue_save must gate on hasTrustedBeatGrid"
     trigger_start = ipc.index("} else if (command.type === 'hot_cue_trigger')")
-    trigger_slice = ipc[trigger_start : trigger_start + 600]
+    # 1000, not 600: the SETREC-07 capture call (PR #12158) now precedes the plan.
+    trigger_slice = ipc[trigger_start : trigger_start + 1000]
     assert "hasTrustedBeatGrid(" in trigger_slice, "hot_cue_trigger must gate on hasTrustedBeatGrid"
     assert "planHotCueTrigger(" in trigger_slice
 

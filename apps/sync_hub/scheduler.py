@@ -49,7 +49,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Literal
 
-from apps.shared.async_scheduler import launch_scheduler_loop, sleep_until_stop
+from apps.shared.async_scheduler import drain_shielded_in_flight, launch_scheduler_loop, sleep_until_stop
 
 from apps.shared.shutdown_bound import STOP_STEPS_DEADLINE_S
 from apps.shared.state import machine_identity
@@ -328,19 +328,16 @@ class CloudSyncScheduler:
                 await sleep_until_stop(self._stopping, self._cfg.BEAT_INTERVAL_S)
         finally:
             if in_flight is not None:
-                await self._drain(in_flight)
+                await drain_shielded_in_flight(
+                    in_flight,
+                    stop_timeout_s=self._cfg.STOP_TIMEOUT_S,
+                    timeout_warning=(
+                        "cloudsync round still in flight after %ss; its thread finishes on its own"
+                    ),
+                )
 
     def _stopped(self) -> bool:
         return self._stopping is not None and self._stopping.is_set()
-
-    async def _drain(self, in_flight: asyncio.Task[RoundOutcome]) -> None:
-        try:
-            await asyncio.wait_for(asyncio.shield(in_flight), timeout=self._cfg.STOP_TIMEOUT_S)
-        except TimeoutError:
-            log.warning(
-                "cloudsync round still in flight after %ss; its thread finishes on its own",
-                self._cfg.STOP_TIMEOUT_S,
-            )
 
 
 def _log_loop_death(task: asyncio.Task[None]) -> None:

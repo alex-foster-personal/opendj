@@ -71,6 +71,7 @@ from apps.shared.process_groups import WorkerCleanupError as _WorkerCleanupError
 from apps.shared.process_tree import TreeRoot, spawn_tree, stop_tree
 from apps.vocals import attempts as vattempts
 from apps.vocals import cache as vcache
+from apps.vocals import demucs as vdemucs
 from apps.vocals.cli_claims import (
     TrackClaim,
     _assert_track_claim,  # noqa: F401 - re-export
@@ -256,6 +257,7 @@ def _process_one(
             f"(source identity changed); regions were computed "
             f"from the old content, refusing to cache them"
         )
+    vdemucs.assert_publishable_worker_result(result)
     if claim is None:
         entry = vcache.write_entry(
             vcache.cache_path(ctx.data_dir, tr.stable_id),

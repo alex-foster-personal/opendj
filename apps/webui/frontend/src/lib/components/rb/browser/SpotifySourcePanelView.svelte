@@ -9,6 +9,7 @@
 	import { isSpotifyClientId, spotifyNotConnectedText } from '$lib/rb/spotify-account-copy';
 	import {
 		importedAccountCount,
+		importedSpotifyId,
 		mergeSpotifyPlaylists,
 		type SpotifyPanelRow
 	} from '$lib/rb/spotify-account-merge';
@@ -47,7 +48,13 @@
 		onimportlogins,
 		onshrinkchange,
 		onsaveclientid,
-		onopenexternal
+		onopenexternal,
+		importBusy = false,
+		importNote = null,
+		ownedTracks = null,
+		ownedLoading = false,
+		onimport = () => {},
+		onopendesktop = () => {}
 	}: {
 		playlists: SpotifyPlaylist[];
 		playlistsLoading: boolean;
@@ -83,7 +90,19 @@
 		/** Resolves true once the Client ID is saved, so the draft can clear. */
 		onsaveclientid: (clientId: string) => Promise<boolean>;
 		onopenexternal: (url: string) => void;
+		importBusy?: boolean;
+		importNote?: string | null;
+		ownedTracks?: { title: string; artist: string; album: string | null }[] | null;
+		ownedLoading?: boolean;
+		onimport?: (row: SpotifyPanelRow<SpotifyPlaylist>) => void;
+		onopendesktop?: (row: SpotifyPanelRow<SpotifyPlaylist>) => void;
 	} = $props();
+
+	function rowSpotifyId(row: SpotifyPanelRow<SpotifyPlaylist>): string | null {
+		if (row.account?.spotify_id) return row.account.spotify_id;
+		if (row.imported !== null) return importedSpotifyId(row.imported);
+		return null;
+	}
 
 	// A fresh install has no Spotify app yet: the user pastes their own app's
 	// public Client ID once, then Connect appears.
@@ -108,10 +127,13 @@
 	// A failed imported-list load must not hide the account's own playlists: the error is reported above the rows, not instead of them.
 	const showFilter = $derived(rows.length > 0);
 	const importedCount = $derived(importedAccountCount(rows));
+	const selectedImported = $derived(
+		selectedId !== null && playlists.some((p) => p.playlist_id === selectedId)
+	);
 </script>
 
 {#snippet playlistRow(row: SpotifyPanelRow<SpotifyPlaylist>)}
-	{@const pinned = pinnedSet.has(row.playlist_id)}
+	{@const pinned = pinnedSet.has(row.pref_key)}
 	{@const imported = row.imported}
 	<div class="playlist-row-wrap" class:selected={selectedId === row.playlist_id}>
 		<button
@@ -122,7 +144,7 @@
 			aria-pressed={pinned}
 			onclick={(e) => {
 				e.stopPropagation();
-				ontogglepin(row.playlist_id);
+				ontogglepin(row.pref_key);
 			}}
 		>
 			<svg viewBox="0 0 16 16" width="10" height="10" aria-hidden="true">
@@ -159,6 +181,21 @@
 			<button
 				type="button"
 				class="play-btn"
+				aria-label={`Open ${row.name} in the Spotify app`}
+				title="Open in the Spotify desktop app"
+				disabled={rowSpotifyId(row) === null || importBusy}
+				onclick={(e) => {
+					e.stopPropagation();
+					onopendesktop(row);
+				}}
+			>
+				<svg viewBox="0 0 10 10" width="8" height="8" aria-hidden="true"
+					><path fill="currentColor" d="M1 1h2v8H1V1zm3 0h2v8H4V1zm3 0h2v8H7V1z" /></svg
+				>
+			</button>
+			<button
+				type="button"
+				class="play-btn"
 				aria-label={`Play ${row.name} in the Spotify side player`}
 				title={sidePlayerDocked
 					? 'Play in the Spotify side player, docked beside Open DJ'
@@ -172,6 +209,29 @@
 					><path fill="currentColor" d="M2 1l7 4-7 4z" /></svg
 				>
 			</button>
+			{#if row.imported === null}
+				<button
+					type="button"
+					class="import-btn"
+					disabled={rowSpotifyId(row) === null || importBusy}
+					aria-label={`Import ${row.name} into Open DJ`}
+					onclick={(e) => {
+						e.stopPropagation();
+						onimport(row);
+					}}>Import</button
+				>
+			{:else if rowSpotifyId(row) !== null}
+				<button
+					type="button"
+					class="import-btn"
+					disabled={importBusy}
+					aria-label={`Re-import ${row.name} into Open DJ`}
+					onclick={(e) => {
+						e.stopPropagation();
+						onimport(row);
+					}}>Re-import</button
+				>
+			{/if}
 		{:else}
 			<!-- A row with no Spotify id keeps its play button, inert with the reason. -->
 			<button
@@ -294,6 +354,7 @@
 		</label>
 	</div>
 	{#if playerNote !== null}<p class="source-state">{playerNote}</p>{/if}
+	{#if importNote !== null}<p class="source-state">{importNote}</p>{/if}
 	{#if showFilter}
 		<div class="playlist-filter">
 			<input
@@ -346,6 +407,32 @@
 	</div>
 
 	<div class="buy-list">
+		{#if selectedImported}
+			<div class="buy-list-heading">
+				<span>Already owned</span>
+				{#if ownedTracks !== null}<span title="Tracks in your library from this playlist"
+						>{ownedTracks.length}</span
+					>{/if}
+			</div>
+			{#if ownedLoading}
+				<p class="source-state">Loading library matches...</p>
+			{:else if ownedTracks !== null && ownedTracks.length > 0}
+				<div class="owned-list">
+					{#each ownedTracks as track, index (index)}
+						<article class="owned-row">
+							<div class="pending-copy">
+								<span class="pending-title">{track.title}</span>
+								<span class="pending-artist">{track.artist}</span>
+								{#if track.album !== null}<span class="pending-album">{track.album}</span>{/if}
+							</div>
+							<span class="owned-mark" title="Already in your library">in library</span>
+						</article>
+					{/each}
+				</div>
+			{/if}
+		{:else if selectedId !== null && !selectedImported}
+			<p class="source-state">Import this playlist to match it against the library.</p>
+		{/if}
 		<div class="buy-list-heading">
 			<span>Buy list</span>
 			{#if pendingTracks !== null}<span>{pendingTracks.length}</span>{/if}
@@ -358,6 +445,9 @@
 			<p class="source-state source-error">Buy-list load failed: {error}</p>
 		{:else if pendingTracks !== null && pendingTracks.length === 0}
 			<p class="source-state">No pending purchases for this playlist.</p>
+			{#if selectedImported && ownedTracks !== null && ownedTracks.length === 0 && !ownedLoading}
+				<p class="source-state">None of these tracks are in the library yet.</p>
+			{/if}
 		{:else if pendingTracks !== null}
 			<div class="pending-list">
 				{#each pendingTracks as track (track.pending_id)}
@@ -549,6 +639,27 @@
 		opacity: 0.4;
 		cursor: not-allowed;
 	}
+	.import-btn {
+		flex: none;
+		height: 18px;
+		margin-right: 2px;
+		padding: 0 5px;
+		border: 1px solid var(--rb-border);
+		border-radius: 3px;
+		background: transparent;
+		color: var(--rb-text-dim);
+		font: inherit;
+		font-size: var(--rb-fs-label);
+		cursor: pointer;
+	}
+	.import-btn:hover:not(:disabled) {
+		color: var(--rb-text);
+		background: var(--rb-panel-raised);
+	}
+	.import-btn:disabled {
+		opacity: 0.4;
+		cursor: not-allowed;
+	}
 	/* flex: none: in the panel's column a wrapped status line must push the bar
 	   below it down, not shrink under it (the bar then covered Connect). */
 	.account-line,
@@ -629,6 +740,24 @@
 	}
 	.pending-list {
 		overflow-y: auto;
+	}
+	.owned-list {
+		overflow-y: auto;
+		max-height: 28%;
+		border-bottom: 1px solid var(--rb-border);
+	}
+	.owned-row {
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+		gap: 6px;
+		padding: 5px 6px;
+		border-bottom: 1px solid var(--rb-border);
+	}
+	.owned-mark {
+		flex: none;
+		color: var(--rb-accent);
+		font-size: var(--rb-fs-label);
 	}
 	.pending-row {
 		padding: 5px 6px;

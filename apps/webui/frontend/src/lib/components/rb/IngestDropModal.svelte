@@ -24,6 +24,8 @@
 	import { refreshIngestPending } from '$lib/rb/ingest-pending.svelte';
 	import { pushToast } from '$lib/stores.svelte';
 
+	let { onYoutubeLink }: { onYoutubeLink?: (() => void) | undefined } = $props();
+
 	let dragDepth = $state(0);
 	let open = $state(false);
 	let files = $state<File[]>([]);
@@ -296,6 +298,17 @@
 			{/if}
 
 			<div class="m-actions">
+				{#if onYoutubeLink && result === null}
+					<button
+						type="button"
+						class="m-btn linkish"
+						data-testid="ingest-youtube-link"
+						disabled={busy}
+						onclick={() => onYoutubeLink?.()}
+					>
+						Paste YouTube link
+					</button>
+				{/if}
 				<button class="m-btn" onclick={close} disabled={busy}>Close</button>
 				{#if result === null}
 					<button
@@ -412,7 +425,12 @@
 	.m-actions {
 		display: flex;
 		justify-content: flex-end;
+		align-items: center;
+		flex-wrap: wrap;
 		gap: 8px;
+	}
+	.m-btn.linkish {
+		margin-right: auto;
 	}
 	.m-btn {
 		padding: 5px 12px;

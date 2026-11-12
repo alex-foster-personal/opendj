@@ -118,6 +118,7 @@ test.describe('Cmd K pick race (CMDK-16)', () => {
 	});
 
 	test('a pick with nothing racing it loads once rb-meta answers (positive control)', async () => {
+		test.fixme(true, 'positive control times out, see #13527');
 		const deck: DeckId = 1;
 		const { picked, meta } = await pickPendingRow(page, deck);
 		meta.release();

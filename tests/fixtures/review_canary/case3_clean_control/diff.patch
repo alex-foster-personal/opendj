@@ -1,0 +1,25 @@
+diff --git a/docs/decisions/ADR-NEW-review-canary-clean-control.md b/docs/decisions/ADR-NEW-review-canary-clean-control.md
+new file mode 100644
+index 0000000000..deadbee001
+--- /dev/null
++++ b/docs/decisions/ADR-NEW-review-canary-clean-control.md
+@@ -0,0 +1,18 @@
++# ADR-NEW-review-canary-clean-control
++
++Status: proposed
++Date: Thu 8 Oct 2026
++
++## Context
++
++the maintainer asked that reviewer lanes treat attribution names, fleet machine nicknames,
++documented placeholder home paths, and correct weekday checksums as out of scope
++for OSSPUB-style blocking findings (issue #6017, parent of the review canary).
++
++The NucBoxEVO-X2 host and the agentbox tailnet runner are fleet nicknames, not
++personal identities. Sample fixture audio is stored under `/Users/dev/music/sample.flac`,
++a documented placeholder path from `scripts/oss_tip_rules.py`.
++
++## Decision
++
++No production behavior changes; this file exists only as a clean control for the
++review canary corpus.

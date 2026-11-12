@@ -8,7 +8,14 @@
  * it is deliberately downstream of them and nothing here is a wire shape.
  */
 
-import type { AnlzBeat, AnlzBeatgridEdit, AnlzBeatgridSource, AnlzCue, AnlzData } from './anlz-types';
+import type {
+	AnlzBeat,
+	AnlzBeatgridEdit,
+	AnlzBeatgridSource,
+	AnlzCue,
+	AnlzData,
+	AnlzWarpMap
+} from './anlz-types';
 import type { DeckId } from './deck-slots';
 import type { HotCue, HotCueSlot } from './hot-cue-types';
 import type { StemDeckState } from './stem-types';
@@ -16,7 +23,17 @@ import type { KeySyncMode } from '$lib/player/key/camelot';
 
 /** Re-exported so deck components and the dispatcher take the deck's own
  * id and hot-cue types from one module (frontend coupling ratchet). */
-export type { AnlzBeat, AnlzBeatgridEdit, AnlzBeatgridSource, AnlzCue, AnlzData, DeckId, HotCue, HotCueSlot };
+export type {
+	AnlzBeat,
+	AnlzBeatgridEdit,
+	AnlzBeatgridSource,
+	AnlzCue,
+	AnlzData,
+	AnlzWarpMap,
+	DeckId,
+	HotCue,
+	HotCueSlot
+};
 
 /** Beat Sync phase target. Beat mode matches the closest beat; bar mode also
  * requires the follower PQTZ beat number (1..4) to match the master. */
@@ -153,6 +170,8 @@ export interface DeckState {
 	has_rb_mapping: boolean;
 	/** Analysis payload once fetched; null while absent. */
 	anlz: AnlzData | null;
+	/** Variable-tempo warp map for this load; absent until built or loaded (#11199). */
+	warp_map?: AnlzWarpMap | null;
 	/** Explicit no-analysis state: the error code (e.g. ANALYSIS_NOT_FOUND)
 	 * when /anlz 404s. Renders the 'no analysis' treatment - never invented
 	 * waveforms. null = not attempted or succeeded. */

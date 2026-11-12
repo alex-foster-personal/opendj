@@ -19,7 +19,7 @@ import { normalizeRating } from '$lib/rating';
 import type { BpmAlternative, BpmAlternativeSource } from '$lib/rb/bpm-dispute';
 import type { PlaylistDetail, PlaylistSummary, Track } from '$lib/api';
 import type { components } from '$lib/api-types';
-import { api, unwrap } from '$lib/api/client';
+import { api, unwrap } from '$lib/api/rb-http';
 import { releaseBody } from '$lib/api/release-body';
 import { RbApiError } from './api-rb-error';
 import { anlzTrackRevision, currentAnlzFetchGeneration } from './anlz-fetch-generation';
@@ -157,6 +157,34 @@ export async function putBpmPick(
 	});
 	if (!r.ok) await _throwRbApiError(r);
 	return (await r.json()) as { stable_id: string; source: BpmAlternativeSource | null };
+}
+
+/** ANALYSIS-11723: one track's own BPM range for the beatgrid analysis. */
+export type AnalysisRangeOut = {
+	stable_id: string;
+	range: string | null;
+	effective: string;
+	choices: string[];
+};
+
+async function _writeAnalysisRange(stableId: string, init: RequestInit): Promise<AnalysisRangeOut> {
+	refuseStickWrite(stableId, 'set the BPM range');
+	const r = await fetch(
+		`${RB_API_BASE}/api/v1/tracks/${encodeURIComponent(stableId)}/analysis-range`,
+		{ ...init, headers: { Accept: 'application/json', 'Content-Type': 'application/json' } }
+	);
+	if (!r.ok) await _throwRbApiError(r);
+	return (await r.json()) as AnalysisRangeOut;
+}
+
+/** Store the track's own BPM range (one of the presets; 422 ANALYSIS_RANGE_INVALID otherwise). */
+export function putAnalysisRange(stableId: string, range: string): Promise<AnalysisRangeOut> {
+	return _writeAnalysisRange(stableId, { method: 'PUT', body: JSON.stringify({ range }) });
+}
+
+/** Back to the global BPM band for this track. */
+export function clearAnalysisRange(stableId: string): Promise<AnalysisRangeOut> {
+	return _writeAnalysisRange(stableId, { method: 'DELETE' });
 }
 
 export async function fetchTrackifyLibraryRevision(): Promise<string> {
@@ -398,6 +426,10 @@ export interface PlaylistTrackRowWire {
 	key: string | null;
 	bpm: number | null;
 	rating: number | null;
+	/** Rekordbox ColorID 1..8; absent or null means no colour. */
+	color_id?: number | null;
+	/** Custom tags on the listing row when the backend sends them. */
+	tags?: readonly string[];
 	energy: number | null;
 	energy_source: 'mik' | null;
 	energy_reason: string;
@@ -443,6 +475,8 @@ export interface PlaylistTrackRowWire {
 	is_remote?: boolean;
 	/** LIBUX-13: a recorded remote copy, including when local audio also exists. */
 	has_remote_copy: boolean;
+	/** CHROME-03: remote stem bundle index membership on the listing wire. */
+	remote_stem_status?: 'ready' | 'not-run' | 'unknown';
 	/** Issue #11290: upfront deck-load refusal, or null when loadable on this host. */
 	deck_load_refusal?: 'streaming' | 'cloud_policy_unconfigured' | null;
 	/** LIBUX-13: present only while this engine process is moving real bytes. */
@@ -752,6 +786,8 @@ export type TrackListItemWire = Track & {
 	streaming_provider?: 'spotify' | 'tidal' | 'soundcloud' | 'unknown' | null;
 	/** LIBUX-13: a recorded remote copy, including when local audio also exists. */
 	has_remote_copy: boolean;
+	/** CHROME-03: remote stem bundle index membership on the listing wire. */
+	remote_stem_status?: 'ready' | 'not-run' | 'unknown';
 	/** Issue #11290: upfront deck-load refusal, or null when loadable on this host. */
 	deck_load_refusal?: 'streaming' | 'cloud_policy_unconfigured' | null;
 	/** LIBUX-13: present only while this engine process is moving real bytes. */

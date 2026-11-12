@@ -15,7 +15,7 @@
  * money being spent.
  */
 
-import { api, unwrap } from '$lib/api/client';
+import { api, unwrap } from '$lib/api/rb-http';
 import { ApiError } from '$lib/api/errors';
 
 import { type Job, isTerminal, jobsStore, readJobPayload } from './jobs-store.svelte';

@@ -17,7 +17,7 @@
  *     [if] the url contains /artwork [then ⛔️ a skin grays it by accident]
  */
 import { buildFlags } from '$lib/api/store-build.svelte';
-import { api } from '$lib/api/client';
+import { api } from '$lib/api/rb-http';
 import { sidebarArtEnabledIn } from './library-sidebar-art-url';
 
 export {

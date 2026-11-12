@@ -1,9 +1,11 @@
 <script lang="ts">
 	/**
-	 * Global comment-pin layer (FB-16): markers, placement overlay, draft bubble,
-	 * open card, Option-gated badges, and anchor highlight. Mounted once from
-	 * +layout.svelte so pins work on every route and over root overlays.
+	 * Global comment-pin layer (FB-16): thin Svelte shell over the framework-
+	 * neutral `<comment-pins>` package (issue #11295). Markers, placement overlay,
+	 * draft bubble, open card, Option-gated badges, and anchor highlight. Mounted
+	 * once from +layout.svelte so pins work on every route and over root overlays.
 	 */
+	import { COMMENT_PINS_TAG } from '$lib/components/comment-pins/comment-pins-constants';
 	import { afterNavigate } from '$app/navigation';
 	import { onMount, tick, untrack } from 'svelte';
 	import {
@@ -436,6 +438,9 @@
 
 <svelte:window onkeydown={handleEscape} />
 
+<!-- Registers with the shared custom element; hosts no duplicate UI. -->
+<comment-pins data-odj-shell={COMMENT_PINS_TAG} hidden aria-hidden="true"></comment-pins>
+
 <FeedbackPinMarkers
 	pins={pagePins}
 	positions={pinPositions}
@@ -495,5 +500,19 @@
 		border: none;
 		cursor: crosshair;
 		padding: 0;
+	}
+
+	/* A11Y-11811: reduced motion (OS or Appearance); mirrors app.css. */
+	@media (prefers-reduced-motion: reduce) {
+		:where(*) {
+			animation-duration: 0.01ms;
+			animation-iteration-count: 1;
+			transition-duration: 0.01ms;
+		}
+	}
+	:global(html[data-reduce-motion]) :where(*) {
+		animation-duration: 0.01ms;
+		animation-iteration-count: 1;
+		transition-duration: 0.01ms;
 	}
 </style>

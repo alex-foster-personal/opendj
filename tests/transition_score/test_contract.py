@@ -46,6 +46,10 @@ CANDIDATE_KEYS = [
     "score_ms",
     "refused",
     "render_path",
+    # PR 10667: the planner's confidence for the plan rides on every candidate.
+    "planner_confidence",
+    "planner_weakest_factor",
+    "planner_confidence_title",
     "rank_group",
 ]
 

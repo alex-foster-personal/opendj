@@ -16,7 +16,7 @@ FastAPI table, not a hand list, so a later /remote/api, /request/api or
 [if] a POST is text/plain [then] it is 415
 [if] a body is 17 KiB [then] it is 413
 [if] a body trickles past 5 s [then] it is 408
-[if] five wrong codes are posted [then] the port closes and a later right code fails at the socket
+[if] five wrong codes are posted [then] pairing locks out but the listener stays up for /request
 [if] a device is paired, then a paired read (and a command and request when those routes exist)
 [then] logs and the devices file contain no token, code, cookie or IP
 [if] 30 commands arrive in one second from one device [then] 20 are admitted and 10 get 429
@@ -35,11 +35,13 @@ import time
 from collections.abc import Iterator
 from dataclasses import dataclass
 from pathlib import Path
+from types import SimpleNamespace
 
 import httpx
 import pytest
 from fastapi import FastAPI
 
+from apps.webui.server import remote_control_phone_commands as phone_commands
 from apps.webui.server.remote_control import (
     MAX_BODY_BYTES,
     MAX_WRONG_CODES,
@@ -218,6 +220,9 @@ def _pair(lan: httpx.Client, live: LiveListener, name: str = "sec-phone") -> dic
 
 def _port_refuses(port: int) -> bool:
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as probe:
+        probe.bind(("127.0.0.1", 0))
+        if int(probe.getsockname()[1]) == port:
+            return True
         probe.settimeout(1.0)
         return probe.connect_ex(("127.0.0.1", port)) != 0
 
@@ -466,11 +471,17 @@ def _assert_secrets_stay_out(live: LiveListener, lan: httpx.Client, caplog: pyte
         assert not _IPV4.findall(text), f"{label} leaked an IP address"
 
 
-def test_thirty_commands_in_one_second_yield_twenty_admitted_and_ten_429(live: LiveListener, lan: httpx.Client) -> None:
+def test_thirty_commands_in_one_second_yield_twenty_admitted_and_ten_429(
+    live: LiveListener, lan: httpx.Client, monkeypatch: pytest.MonkeyPatch
+) -> None:
     """[if] 30 commands arrive in one second from one device [then] 20 are admitted and 10 get 429, [else stop].
 
     Admission is judged by status code only; the engine URL is a dead port, so bus orders are not counted.
+    The limiter's clock is held inside one window for the burst: on a slow CI runner 30 real round trips
+    can take longer than the 1 s window, which then rolls over mid-burst and admits more than 20.
     """
+    burst_started = time.monotonic()
+    monkeypatch.setattr(phone_commands, "time", SimpleNamespace(monotonic=lambda: burst_started))
     command_routes = [
         path for method, path in _route_rows(live.app()) if method == "POST" and path.rstrip("/").endswith("/command")
     ]

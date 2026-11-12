@@ -315,6 +315,62 @@ def test_similar_leaves_out_deleted_tracks(tmp_path: Path) -> None:
     assert [sid for sid, _ in findings.similar_tracks(conn, "t-fred")] == ["t-copy"]
 
 
+@pytest.mark.requirement("INTEL-12016")
+def test_generic_similar_omits_own_duplicate_copies(tmp_path: Path) -> None:
+    """[if] Generic mode ranks a grouped track [then] own duplicates never neighbour it, [else stop]."""
+    from apps.genre_infer import groups
+
+    _data, state = library(tmp_path)
+    conn = _conn(state)
+    _add_duplicate_of_fred(conn)
+    base = {g: 0.0 for g in taxonomy.NAMES}
+    findings.put_vector(conn, "t-fred", "jev", base | {"House": 0.8, "Deep House": 0.2})
+    findings.put_vector(conn, "t-fred-dup", "jev", base | {"House": 0.8, "Deep House": 0.2})
+    findings.put_vector(conn, "t-fred2", "jev", base | {"House": 0.7, "Deep House": 0.3})
+    ids = [sid for sid, _ in groups.similar_tracks(conn, groups.load(conn), "t-fred", limit=10)]
+    assert "t-fred-dup" not in ids and "t-fred" not in ids
+    assert ids == ["t-fred2"]
+
+
+@pytest.mark.requirement("INTEL-12016")
+def test_generic_similar_empty_when_no_other_vectors(tmp_path: Path) -> None:
+    """[if] cosine ranking finds zero neighbours [then] candidates stay empty, [else stop]."""
+    _data, state = library(tmp_path)
+    conn = _conn(state)
+    base = {g: 0.0 for g in taxonomy.NAMES}
+    findings.put_vector(conn, "t-fred", "jev", base | {"House": 1.0})
+    doc = service.find_similar_tracks(conn, "t-fred", mode="generic", limit=20)
+    assert doc["candidates"] == []
+
+
+@pytest.mark.requirement("INTEL-12016")
+def test_genres_similar_http_matches_service_similar(tmp_path: Path) -> None:
+    """[if] HTTP GET similar and service.similar share an id [then] neighbour ids and scores match, [else stop]."""
+    from fastapi.testclient import TestClient
+
+    from apps.webui.server.app import create_app
+    from apps.webui.server.sqlite_backend import SqliteBackend
+
+    _data, state = library(tmp_path)
+    conn = _conn(state)
+    base = {g: 0.0 for g in taxonomy.NAMES}
+    findings.put_vector(conn, "t-fred", "jev", base | {"House": 0.8, "Deep House": 0.2})
+    findings.put_vector(conn, "t-fred2", "jev", base | {"House": 0.7, "Deep House": 0.3})
+    conn.commit()
+    conn.close()
+    expected = service.similar(_conn(state), "t-fred", 20)
+    app = create_app(
+        backend=SqliteBackend(state),
+        bind_host="127.0.0.1",
+        hostname="test-host",
+        state_db_path=str(state),
+        mount_frontend=False,
+    )
+    with TestClient(app) as client:
+        http = client.get("/api/v1/genres/t-fred/similar").json()
+    assert http == expected
+
+
 def test_a_rekordbox_genre_is_the_library_tag_for_choice_and_for_writes(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

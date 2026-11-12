@@ -104,6 +104,8 @@ export default {
 		'src/service-worker.{js,ts}',
 		'tests/unit/**/*.test.mjs',
 		'tests/live/stem-decode-harness-entry.ts',
+		// Bundled by path and loaded into real Chromium by headphone-signal-meter-gate.test.mjs.
+		'tests/unit/headphone-meter-browser-entry.mjs',
 		// Live cue alignment probes are run directly (node tests/live/<probe>.mjs
 		// --url ...) against real audio hardware, so each one is an entry point,
 		// not a module something is expected to import.
@@ -160,7 +162,12 @@ export default {
 		// #9456 transition presets: pure planner/runner until Cmd-K wires the registry.
 		'src/lib/rb/transition-presets.ts',
 		// #9456 preset.run.* commands until palette epic imports the registry.
-		'src/lib/keyboard/command-registry.ts'
+		'src/lib/keyboard/command-registry.ts',
+		// #10270 / #9804 NOISE kernel: unit tests until color-fx-graph splices it in.
+		'src/lib/rb/color-fx-noise.ts',
+		'tests/unit/color-fx-noise-entry.mjs',
+		'tests/unit/variant-setting-entry.mjs',
+		'tests/unit/variant-setting-test-row.mjs'
 	],
 	// Both Storybooks (Svelte in .storybook/, React twins in .storybook-react/):
 	// knip's storybook plugin reads each main.ts for stories, addons and the

@@ -1,0 +1,157 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://music-dj-tools/schemas/set_document.schema.json",
+  "title": "SetDocument",
+  "description": "Portable recorded set: no audio, no file paths.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "kind",
+    "schema_version",
+    "exported_at",
+    "audio",
+    "manifest",
+    "events",
+    "tracklist",
+    "transitions",
+    "labels"
+  ],
+  "properties": {
+    "kind": {
+      "type": "string",
+      "const": "open_dj.set_document"
+    },
+    "schema_version": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "exported_at": {
+      "type": "string"
+    },
+    "audio": {
+      "type": "string",
+      "const": "absent"
+    },
+    "manifest": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "session_id",
+        "started_at",
+        "ended_at",
+        "capture_device",
+        "share_state",
+        "event_count",
+        "deck_sources",
+        "watermark",
+        "notes",
+        "audio"
+      ],
+      "properties": {
+        "session_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64
+        },
+        "started_at": { "type": "string" },
+        "ended_at": { "type": ["string", "null"] },
+        "capture_device": { "type": "string" },
+        "share_state": { "type": "string", "const": "private" },
+        "event_count": { "type": "integer", "minimum": 0 },
+        "deck_sources": {
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "watermark": { "type": "string" },
+        "notes": { "type": ["string", "null"] },
+        "audio": { "type": "string", "const": "absent" }
+      }
+    },
+    "events": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/event" }
+    },
+    "tracklist": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "timestamp_s",
+          "stable_id",
+          "artist",
+          "title",
+          "hidden",
+          "deck",
+          "source"
+        ],
+        "properties": {
+          "timestamp_s": { "type": "number", "minimum": 0 },
+          "stable_id": { "type": ["string", "null"] },
+          "artist": { "type": ["string", "null"] },
+          "title": { "type": ["string", "null"] },
+          "hidden": { "type": "boolean" },
+          "deck": { "type": ["string", "null"] },
+          "source": { "type": ["string", "null"] }
+        },
+        "if": {
+          "properties": { "hidden": { "const": true } },
+          "required": ["hidden"]
+        },
+        "then": {
+          "properties": {
+            "artist": { "type": "null" },
+            "title": { "type": "null" }
+          }
+        }
+      }
+    },
+    "transitions": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["idx"],
+        "properties": {
+          "idx": { "type": "integer", "minimum": 0 }
+        }
+      }
+    },
+    "labels": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["idx", "class"],
+        "properties": {
+          "idx": { "type": "integer", "minimum": 0 },
+          "class": { "type": "string" },
+          "labeler": { "type": "string" },
+          "labeled_at": { "type": "string" }
+        }
+      }
+    }
+  },
+  "$defs": {
+    "event": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "timestamp_s",
+        "wall_clock",
+        "action",
+        "source",
+        "deck",
+        "track_stable_id",
+        "value"
+      ],
+      "properties": {
+        "timestamp_s": { "type": "number", "minimum": 0 },
+        "wall_clock": { "type": "string" },
+        "action": { "type": "string" },
+        "source": { "type": "string" },
+        "deck": { "type": ["string", "null"] },
+        "track_stable_id": { "type": ["string", "null"] },
+        "value": { "type": "object" }
+      }
+    }
+  }
+}

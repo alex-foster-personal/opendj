@@ -18,7 +18,7 @@
 // Userinfo is refused everywhere, so a URL whose real host follows a userinfo
 // part shaped like an allowed origin (the named local port, polar.sh) is out.
 
-import { isOpenDjLocalhostUrl } from './policy';
+import { isOpenDjLocalhostUrl, isSpotifyDesktopPlaylistUri } from './policy';
 
 const GOOGLE_CONSENT_PREFIX = 'https://accounts.google.com/o/oauth2/v2/auth?';
 const BLACKHOLE_INSTALLER_URL = 'https://existential.audio/blackhole/';
@@ -41,6 +41,7 @@ function isPolarBillingUrl(parsed: URL): boolean {
 
 /** May the page's `openExternal` bridge call open `url` in the system browser? Never throws. */
 export function isOpenerUrlAllowed(url: string): boolean {
+	if (isSpotifyDesktopPlaylistUri(url)) return true;
 	if (url === BLACKHOLE_INSTALLER_URL) return true;
 	let parsed: URL;
 	try {

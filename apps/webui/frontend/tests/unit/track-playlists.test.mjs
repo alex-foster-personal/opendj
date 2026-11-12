@@ -21,10 +21,10 @@ function jsonResponse(body, init = {}) {
 }
 
 before(async () => {
-	const client = await loadTypeScriptModule('src/lib/api/client.ts', {
+	const rbHttp = await loadTypeScriptModule('src/lib/api/rb-http.ts', {
 		viteApiBase: API_BASE
 	});
-	readApiErrorStatus = client.readApiErrorStatus;
+	readApiErrorStatus = rbHttp.readApiErrorStatus;
 	trackPlaylists = await loadTypeScriptModule('src/lib/rb/track-playlists.ts', {
 		viteApiBase: API_BASE
 	});

@@ -6,17 +6,26 @@
 	 * the comment pins; this component owns everything that renders while
 	 * feedbackState.panelOpen is true.
 	 *
-	 * Only the panel POSITION persists client-side (localStorage, per-viewer
+	 * Panel position and size persist client-side (localStorage, per-viewer
 	 * convenience); content lives on /api/v1/feedback.
 	 */
 	import {
 		clampPanelPos,
+		clampPanelSize,
+		defaultPanelPos,
+		defaultPanelSize,
+		PANEL_DEFAULT_TOP_PX,
 		PANEL_POS_KEY,
+		PANEL_SIZE_KEY,
 		parsePanelPos,
+		parsePanelSize,
 		serializePanelPos,
+		serializePanelSize,
 		startsPanelDrag,
 		type DragNode,
-		type PanelPos
+		type PanelOpenAnchor,
+		type PanelPos,
+		type PanelSize
 	} from '$lib/rb/feedback';
 	import { linkifyAgentNote } from '$lib/rb/feedback';
 	import {
@@ -29,15 +38,13 @@
 		type FeedbackTodo
 	} from '$lib/rb/feedback-store.svelte';
 
-	const PANEL_W = 272;
-	const PANEL_H = 300;
-
-	/** Null until the panel first opens: the position must be computed against
-	 * a LIVE viewport. Computing it at mount clamps to {0,0} when the tab
-	 * mounts hidden or before layout (innerWidth reads 0). */
+	/** Null until the panel first opens: placement must use a LIVE viewport. */
 	let panelPos: PanelPos | null = $state(null);
+	let panelSize: PanelSize | null = $state(null);
 	let dragging = false;
+	let resizing = false;
 	let dragOffset: PanelPos = { x: 0, y: 0 };
+	let resizeOrigin: PanelPos & PanelSize = { x: 0, y: 0, w: 0, h: 0 };
 
 	/** Per-item text drafts so a PATCH response never clobbers live typing. */
 	let todoDrafts: Record<string, string> = $state({});
@@ -47,27 +54,67 @@
 
 	const openCount = $derived(feedbackState.todos.filter((t) => !t.done).length);
 
-	// Position the panel the first time it opens, against the live viewport.
+	function _viewport(): { w: number; h: number } {
+		return { w: window.innerWidth, h: window.innerHeight };
+	}
+
+	function _livePanelSize(): PanelSize {
+		if (panelSize !== null) return panelSize;
+		const viewport = _viewport();
+		return _readStoredSize() ?? defaultPanelSize(viewport);
+	}
+
+	function _readStoredSize(): PanelSize | null {
+		try {
+			const parsed = parsePanelSize(window.localStorage.getItem(PANEL_SIZE_KEY));
+			if (parsed === null) return null;
+			return clampPanelSize(parsed, _viewport());
+		} catch {
+			return null;
+		}
+	}
+
+	function _persistSize(): void {
+		if (panelSize === null) return;
+		try {
+			window.localStorage.setItem(PANEL_SIZE_KEY, serializePanelSize(panelSize));
+		} catch {
+			// storage blocked: size will not survive reload
+		}
+	}
+
+	function _openAnchor(): PanelOpenAnchor {
+		const thumbs =
+			document.querySelector<HTMLElement>('[data-feedback-thumbs-anchor]') ??
+			document.querySelector<HTMLElement>('.topbar-slot-thumbs') ??
+			document.querySelector<HTMLElement>('.thumbs-slot');
+		const cluster = document.querySelector<HTMLElement>('.fb-cluster');
+		const thumbsLeft = thumbs?.getBoundingClientRect().left;
+		const clusterRect = cluster?.getBoundingClientRect();
+		const anchorLeft = thumbsLeft ?? clusterRect?.left ?? window.innerWidth / 2 - 92;
+		const top = Math.round(
+			Math.max(
+				PANEL_DEFAULT_TOP_PX,
+				clusterRect?.bottom ?? thumbs?.getBoundingClientRect().bottom ?? PANEL_DEFAULT_TOP_PX
+			)
+		);
+		return { thumbsLeft: anchorLeft, top };
+	}
+
+	// Position and size the panel the first time it opens, against the live viewport.
 	$effect(() => {
 		if (!feedbackState.panelOpen || panelPos !== null) return;
-		panelPos =
-			_readStoredPos() ??
-			clampPanelPos(
-				{ x: window.innerWidth / 2 - PANEL_W / 2, y: 34 },
-				{ w: PANEL_W, h: PANEL_H },
-				{ w: window.innerWidth, h: window.innerHeight }
-			);
+		const viewport = _viewport();
+		panelSize = _readStoredSize() ?? defaultPanelSize(viewport);
+		const size = panelSize;
+		panelPos = _readStoredPos(size) ?? defaultPanelPos(_openAnchor(), size, viewport);
 	});
 
-	function _readStoredPos(): PanelPos | null {
+	function _readStoredPos(size: PanelSize): PanelPos | null {
 		try {
 			const parsed = parsePanelPos(window.localStorage.getItem(PANEL_POS_KEY));
 			if (parsed === null) return null;
-			return clampPanelPos(
-				parsed,
-				{ w: PANEL_W, h: PANEL_H },
-				{ w: window.innerWidth, h: window.innerHeight }
-			);
+			return clampPanelPos(parsed, size, _viewport());
 		} catch {
 			return null; // storage blocked: default position, panel still works
 		}
@@ -95,11 +142,11 @@
 	}
 
 	function handleDragMove(e: PointerEvent): void {
-		if (!dragging) return;
+		if (!dragging || panelSize === null) return;
 		panelPos = clampPanelPos(
 			{ x: e.clientX - dragOffset.x, y: e.clientY - dragOffset.y },
-			{ w: PANEL_W, h: PANEL_H },
-			{ w: window.innerWidth, h: window.innerHeight }
+			panelSize,
+			_viewport()
 		);
 	}
 
@@ -128,15 +175,56 @@
 	function handleEscape(e: KeyboardEvent): void {
 		if (e.key === 'Escape' && optionModalTodo !== null) optionModalTodo = null;
 	}
+
+	// ----- panel resize ---------------------------------------------------
+	function handleResizeDown(e: PointerEvent): void {
+		if (panelPos === null || panelSize === null) return;
+		e.stopPropagation();
+		resizing = true;
+		resizeOrigin = {
+			x: e.clientX,
+			y: e.clientY,
+			w: panelSize.w,
+			h: panelSize.h
+		};
+		(e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
+	}
+
+	function handleResizeMove(e: PointerEvent): void {
+		if (!resizing || panelPos === null || panelSize === null) return;
+		const next = clampPanelSize(
+			{
+				w: resizeOrigin.w + (e.clientX - resizeOrigin.x),
+				h: resizeOrigin.h + (e.clientY - resizeOrigin.y)
+			},
+			_viewport()
+		);
+		panelSize = next;
+		panelPos = clampPanelPos(panelPos, next, _viewport());
+	}
+
+	function handleResizeUp(e: PointerEvent): void {
+		if (!resizing) return;
+		resizing = false;
+		(e.currentTarget as HTMLElement).releasePointerCapture(e.pointerId);
+		_persistSize();
+		_persistPos();
+	}
+
+	const panelLayout = $derived.by(() => {
+		if (panelPos === null) return null;
+		const size = _livePanelSize();
+		return { pos: panelPos, size };
+	});
 </script>
 
 <svelte:window onkeydown={handleEscape} />
 
 <!-- the review-todo panel -->
-{#if feedbackState.panelOpen && panelPos !== null}
+{#if feedbackState.panelOpen && panelLayout !== null}
 	<div
 		class="fb-panel"
-		style={`left:${panelPos.x}px;top:${panelPos.y}px;width:${PANEL_W}px`}
+		style={`left:${panelLayout.pos.x}px;top:${panelLayout.pos.y}px;width:${panelLayout.size.w}px;height:${panelLayout.size.h}px`}
 		role="dialog"
 		aria-label="Review todos"
 	>
@@ -234,6 +322,14 @@
 				oninput={(e) => handleGeneralInput((e.currentTarget as HTMLTextAreaElement).value)}
 			></textarea>
 		</div>
+		<!-- svelte-ignore a11y_no_static_element_interactions -->
+		<div
+			class="fb-panel-resize"
+			title="Drag to resize - size is remembered on this machine"
+			onpointerdown={handleResizeDown}
+			onpointermove={handleResizeMove}
+			onpointerup={handleResizeUp}
+		></div>
 	</div>
 {/if}
 
@@ -281,14 +377,66 @@
 		z-index: 120;
 		display: flex;
 		flex-direction: column;
-		max-height: 46vh;
-		background: var(--rb-well, #0a0c0f);
-		border: 1px solid var(--rb-border);
-		border-radius: 3px;
+		box-sizing: border-box;
+		padding: 2px;
+		border-radius: 4px;
+		background: linear-gradient(
+			120deg,
+			#ff6b6b,
+			#ffa94d,
+			#ffd43b,
+			#69db7c,
+			#4dabf7,
+			#9775fa,
+			#ff6b6b
+		);
+		background-size: 320% 320%;
+		animation: fb-panel-rainbow 6s linear infinite;
 		box-shadow: 0 6px 18px rgba(0, 0, 0, 0.55);
 		color: var(--rb-text);
 		font-family: var(--rb-font);
 		font-size: 10px;
+	}
+
+	.fb-panel::before {
+		content: '';
+		position: absolute;
+		inset: 2px;
+		border-radius: 2px;
+		background: var(--rb-well, #0a0c0f);
+		pointer-events: none;
+		z-index: 0;
+	}
+
+	.fb-panel > :not(.fb-panel-resize) {
+		position: relative;
+		z-index: 1;
+	}
+
+	@keyframes fb-panel-rainbow {
+		0% {
+			background-position: 0% 50%;
+		}
+		100% {
+			background-position: 100% 50%;
+		}
+	}
+
+	.fb-panel-resize {
+		position: absolute;
+		right: 0;
+		bottom: 0;
+		z-index: 2;
+		width: 12px;
+		height: 12px;
+		cursor: nwse-resize;
+		touch-action: none;
+		background: linear-gradient(135deg, transparent 50%, var(--rb-text-dim) 50%);
+		opacity: 0.65;
+		border-bottom-right-radius: 2px;
+	}
+	.fb-panel-resize:hover {
+		opacity: 1;
 	}
 
 	.fb-panel-head {
@@ -296,6 +444,7 @@
 		align-items: center;
 		gap: 6px;
 		padding: 5px 6px;
+		background: var(--rb-well, #0a0c0f);
 		border-bottom: 1px solid var(--rb-border);
 		cursor: grab;
 		touch-action: none;
@@ -327,7 +476,10 @@
 	}
 
 	.fb-todos {
+		flex: 1;
+		min-height: 0;
 		overflow-y: auto;
+		background: var(--rb-well, #0a0c0f);
 		padding: 4px 6px;
 		display: flex;
 		flex-direction: column;
@@ -357,14 +509,19 @@
 	}
 
 	.fb-todo-title {
-		overflow: hidden;
-		text-overflow: ellipsis;
-		white-space: nowrap;
+		flex: 1;
+		min-width: 0;
+		white-space: normal;
+		overflow-wrap: anywhere;
+		line-height: 1.25;
 	}
 
 	.fb-todo-detail {
 		margin: 0;
 		color: var(--rb-text-dim);
+		white-space: pre-wrap;
+		overflow-wrap: anywhere;
+		line-height: 1.35;
 		user-select: text;
 	}
 
@@ -375,6 +532,7 @@
 
 	.fb-general {
 		padding: 5px 6px 6px;
+		background: var(--rb-well, #0a0c0f);
 		border-top: 1px solid var(--rb-border);
 	}
 
@@ -389,6 +547,12 @@
 		font-family: var(--rb-font);
 		font-size: 10px;
 		padding: 3px 4px;
+	}
+
+	.fb-general-text::placeholder,
+	.fb-todo-input::placeholder {
+		color: var(--rb-text-dim);
+		opacity: 0.55;
 	}
 
 	.fb-modal-backdrop {
@@ -433,5 +597,13 @@
 	.fb-option.on {
 		color: var(--rb-accent);
 		border-color: color-mix(in srgb, var(--rb-accent) 55%, var(--rb-border));
+	}
+	@media (prefers-reduced-motion: reduce) {
+		.fb-panel {
+			animation: none;
+		}
+	}
+	:global([data-reduce-motion]) .fb-panel {
+		animation: none;
 	}
 </style>

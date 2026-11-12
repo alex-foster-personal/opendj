@@ -1,0 +1,9 @@
+{
+  "bytes": 1024,
+  "measured_main": 345638,
+  "measured_with_pr": 345746,
+  "sha": "c863141cd7",
+  "date": "Tue 10 Nov 2026",
+  "reason": "Issue #10262 (ANALYSIS-11723) adds the Re-analyze grid item with a BPM range picker to the analysis dots popover, plus the analysis-range API helpers. Measured: local build vs base at c863141cd7, +108 B gzip on library; ceiled to KiB",
+  "payback": "none planned; the growth is the feature's own code"
+}

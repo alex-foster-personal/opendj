@@ -43,6 +43,7 @@ from apps.autodj.plan import (
     live_child,
     live_mapping,
     parse_plan,
+    surviving_transport,
     validate_plan,
 )
 from apps.autodj.profile import (
@@ -53,7 +54,13 @@ from apps.autodj.profile import (
     profile_from_payloads,
     snap_to_downbeat,
 )
-from apps.autodj.propose import match_live_trim_db, parse_intent, propose_transition
+from apps.autodj.propose import (
+    match_live_trim_db,
+    parse_intent,
+    propose_parity_bytes,
+    propose_transition,
+    refresh_proposal_confidence,
+)
 from apps.autodj.render_plan import (
     RENDER_SAMPLE_RATE,
     RenderPlanError,
@@ -129,9 +136,11 @@ __all__ = [
     "print_score",
     "print_set_score",
     "profile_from_payloads",
+    "propose_parity_bytes",
     "propose_transition",
     "read_set",
     "record_played",
+    "refresh_proposal_confidence",
     "render_grid",
     "renders_at_start",
     "save_decision",
@@ -182,6 +191,7 @@ class _Service:
     layout_of = staticmethod(layout_of)
     effective_bars = staticmethod(effective_bars)
     renders_at_start = staticmethod(renders_at_start)
+    surviving_transport = staticmethod(surviving_transport)
 
 
 def build_service() -> AutoDjService:

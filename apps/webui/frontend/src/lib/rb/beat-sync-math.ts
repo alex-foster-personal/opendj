@@ -130,7 +130,8 @@ function _firstBeatAtOrAfter(beats: readonly AnlzBeat[], positionSec: number): n
  * (before the first beat or at/after the last). Shared with phase-lock.ts. */
 export function gridBeatPosition(beats: readonly AnlzBeat[], positionSec: number): number | null {
 	// The comparisons also refuse NaN and +-Infinity.
-	if (beats.length < 2 || !(positionSec >= beats[0].t && positionSec < beats[beats.length - 1].t)) return null;
+	if (beats.length < 2 || !(positionSec >= beats[0].t && positionSec < beats[beats.length - 1].t))
+		return null;
 	const lo = _enclosingBeatIndex(beats, positionSec, 'position'); // in range: never throws
 	const span = beats[lo + 1].t - beats[lo].t;
 	if (!(span > 0)) return null;
@@ -282,10 +283,7 @@ function _positionAtIntervalOffset(
 	if (intervalIndex >= beats.length) return null;
 	if (fraction === 0) return beats[intervalIndex].t;
 	if (intervalIndex + 1 >= beats.length) return null;
-	return (
-		beats[intervalIndex].t +
-		fraction * (beats[intervalIndex + 1].t - beats[intervalIndex].t)
-	);
+	return beats[intervalIndex].t + fraction * (beats[intervalIndex + 1].t - beats[intervalIndex].t);
 }
 
 /** Half-window (beats) for tempo from intervals; absorbs dirty PQTZ gaps. */
@@ -406,11 +404,7 @@ function _bestFollowerAnchor(
 		const phaseOffsetIntervals = (subBeatIndex + beatPhase) * tempo.normalization;
 		const nextBoundaryOffsetIntervals = (subBeatIndex + 1) * tempo.normalization;
 		const targetPositionSec = _positionAtIntervalOffset(beats, index, phaseOffsetIntervals);
-		const nextBoundarySec = _positionAtIntervalOffset(
-			beats,
-			index,
-			nextBoundaryOffsetIntervals
-		);
+		const nextBoundarySec = _positionAtIntervalOffset(beats, index, nextBoundaryOffsetIntervals);
 		if (targetPositionSec === null || nextBoundarySec === null) continue;
 		const distance = Math.abs((anchorOnBeat ? beat.t : targetPositionSec) - positionSec);
 		const candidate: _FollowerAnchorPlan = {
@@ -487,6 +481,14 @@ export function resetBeatGridValidationMemoForTest(): void {
 function _detachStack(error: Error): Error {
 	void error.stack;
 	return error;
+}
+
+/**
+ * PQTZ grid required before building a warp map from analysis (issue #11199).
+ * Fail closed: callers must not synthesize a fallback grid when this throws.
+ */
+export function requireBeatGridForWarpMap(beats: readonly AnlzBeat[]): void {
+	validateBeatGrid(beats);
 }
 
 /** Validate the complete runtime shape required by PQTZ beat math. */
@@ -569,10 +571,7 @@ function _offGridEdgeIntervalSec(beats: readonly AnlzBeat[], positionSec: number
 }
 
 /** Return the exact t of the nearest beat. Equidistant ties choose earlier. */
-export function quantizeToNearestBeat(
-	beats: readonly AnlzBeat[],
-	positionSec: number
-): number {
+export function quantizeToNearestBeat(beats: readonly AnlzBeat[], positionSec: number): number {
 	validateBeatGrid(beats);
 	_assertFiniteNonNegative('positionSec', positionSec);
 	return beats[_nearestBeatIndex(beats, positionSec)].t;
@@ -587,10 +586,7 @@ export function quantizeToNearestBeat(
  * quantization. A position more than one beat outside the grid is returned
  * unchanged, as in `quantizeToNearestGridBeat` (SEEK-GRID-01).
  */
-export function quantizeToNearestDownbeat(
-	beats: readonly AnlzBeat[],
-	positionSec: number
-): number {
+export function quantizeToNearestDownbeat(beats: readonly AnlzBeat[], positionSec: number): number {
 	validateBeatGrid(beats);
 	_assertFiniteNonNegative('positionSec', positionSec);
 	const downbeats = beats.filter((beat) => beat.n === 1);
@@ -720,13 +716,18 @@ export function describeUnsyncedStartOther(message: string): string {
 /** True for a `sync_error` written by an unsynced start (PLAY-27). It is the
  * Play glow's reason, not a deck error, so the deck's error strip leaves it out. */
 export function isUnsyncedStartSyncError(syncError: string | null): boolean {
-	return syncError !== null && (syncError.startsWith(TEMPO_TOO_FAR_TO_SYNC) || syncError.startsWith(BEAT_SYNC_NOT_LOCKED));
+	return (
+		syncError !== null &&
+		(syncError.startsWith(TEMPO_TOO_FAR_TO_SYNC) || syncError.startsWith(BEAT_SYNC_NOT_LOCKED))
+	);
 }
 
 /** The Play button's warning for a deck carrying `syncError`. */
 export function unsyncedPlayWarning(syncError: string): string {
 	if (syncError.startsWith(TEMPO_TOO_FAR_TO_SYNC)) return TEMPO_TOO_FAR_TO_SYNC;
-	return syncError.startsWith(BEAT_SYNC_NOT_LOCKED) ? syncError : `${BEAT_SYNC_NOT_LOCKED} ${syncError}`;
+	return syncError.startsWith(BEAT_SYNC_NOT_LOCKED)
+		? syncError
+		: `${BEAT_SYNC_NOT_LOCKED} ${syncError}`;
 }
 
 type ArmAnchor = { contextTime: number; positionSec: number; tempoRatio: number };
@@ -737,9 +738,14 @@ type ArmAnchor = { contextTime: number; positionSec: number; tempoRatio: number 
  * position on the pre-seek timeline (Codex P1, PR #6834: a pending jump from
  * 10 s to 100 s made a hot cue wait about 90 s). A point behind the anchor is
  * refused: it is already past by the time anything can be scheduled. */
-export function armAtContextTime(armAt: ArmAtPosition, anchor: ArmAnchor): { armAtPositionSec: number; contextTime: number } {
-	if (!Number.isFinite(anchor.contextTime)) throw new RangeError(`armAtContextTime: contextTime ${anchor.contextTime} is not finite`);
-	if (!(anchor.tempoRatio > 0)) throw new RangeError(`armAtContextTime: tempoRatio ${anchor.tempoRatio} must be positive`);
+export function armAtContextTime(
+	armAt: ArmAtPosition,
+	anchor: ArmAnchor
+): { armAtPositionSec: number; contextTime: number } {
+	if (!Number.isFinite(anchor.contextTime))
+		throw new RangeError(`armAtContextTime: contextTime ${anchor.contextTime} is not finite`);
+	if (!(anchor.tempoRatio > 0))
+		throw new RangeError(`armAtContextTime: tempoRatio ${anchor.tempoRatio} must be positive`);
 	const armAtPositionSec = resolveArmAtPosition(armAt, anchor.positionSec);
 	return {
 		armAtPositionSec,
@@ -757,7 +763,11 @@ export function armAtContextTime(armAt: ArmAtPosition, anchor: ArmAnchor): { arm
  * A boundary before the anchor is already on the anchor's segment. */
 export type ArmPlan = { armAtPositionSec: number; contextTime: number; cappedAtPending: boolean };
 
-export function planArm(armAt: ArmAtPosition, anchor: ArmAnchor, pendingBoundaryContextTime: number | null): ArmPlan {
+export function planArm(
+	armAt: ArmAtPosition,
+	anchor: ArmAnchor,
+	pendingBoundaryContextTime: number | null
+): ArmPlan {
 	const resolved = armAtContextTime(armAt, anchor);
 	if (
 		pendingBoundaryContextTime !== null &&
@@ -765,7 +775,8 @@ export function planArm(armAt: ArmAtPosition, anchor: ArmAnchor, pendingBoundary
 		resolved.contextTime > pendingBoundaryContextTime
 	) {
 		return {
-			armAtPositionSec: anchor.positionSec + (pendingBoundaryContextTime - anchor.contextTime) * anchor.tempoRatio,
+			armAtPositionSec:
+				anchor.positionSec + (pendingBoundaryContextTime - anchor.contextTime) * anchor.tempoRatio,
 			contextTime: pendingBoundaryContextTime,
 			cappedAtPending: true
 		};
@@ -852,7 +863,9 @@ export function beatJumpTargetMs(
 		if (!positionWithinGridSpan(beats, targetSec)) return targetSec * 1000;
 		if (!half) return beats[_nearestBeatIndex(beats, targetSec)].t * 1000;
 		const at = gridBeatPosition(beats, targetSec);
-		return (at === null ? beats[beats.length - 1].t : beatTimeAt(beats, Math.floor(at) + 0.5)) * 1000;
+		return (
+			(at === null ? beats[beats.length - 1].t : beatTimeAt(beats, Math.floor(at) + 0.5)) * 1000
+		);
 	}
 	const from = keepPhase ? gridBeatPosition(beats, positionMs / 1000) : null;
 	if (from !== null && from + deltaBeats >= 0 && from + deltaBeats <= beats.length - 1) {
@@ -865,7 +878,11 @@ export function beatJumpTargetMs(
 
 /** A beat jump moves whole beats or exactly half a beat (DECKUX-10470). */
 function _assertBeatJumpDelta(deltaBeats: number): void {
-	if (!Number.isFinite(deltaBeats) || deltaBeats === 0 || (!Number.isInteger(deltaBeats) && Math.abs(deltaBeats) !== 0.5)) {
+	if (
+		!Number.isFinite(deltaBeats) ||
+		deltaBeats === 0 ||
+		(!Number.isInteger(deltaBeats) && Math.abs(deltaBeats) !== 0.5)
+	) {
 		throw new RangeError(`deltaBeats must be a non-zero integer or +-0.5, got ${deltaBeats}`);
 	}
 }
@@ -955,9 +972,10 @@ export function beatJumpMovesTransportWithinDuration(
 ): boolean {
 	try {
 		// Off the grid the jump anchors on the playhead itself (SEEK-GRID-02).
-		const anchorRawMs = _offGridEdgeIntervalSec(beats, positionMs / 1000) !== null
-			? positionMs
-			: beats[_nearestBeatIndex(beats, positionMs / 1000)].t * 1000;
+		const anchorRawMs =
+			_offGridEdgeIntervalSec(beats, positionMs / 1000) !== null
+				? positionMs
+				: beats[_nearestBeatIndex(beats, positionMs / 1000)].t * 1000;
 		const anchorMs = beatJumpTargetWithinDurationMs(beats, anchorRawMs, durationMs);
 		const targetMs = beatJumpTargetWithinDurationMs(
 			beats,
@@ -992,12 +1010,25 @@ export function followerAnchorReachableNear(request: {
 	const master = request.masterGrid;
 	const follower = request.followerGrid;
 	if (master.length < 2 || follower.length < 2) return false;
-	const masterBpm = _windowedIntervalBpm(master, _nearestBeatIndex(master, request.masterPositionSec));
+	const masterBpm = _windowedIntervalBpm(
+		master,
+		_nearestBeatIndex(master, request.masterPositionSec)
+	);
 	const at = _nearestBeatIndex(follower, request.followerPositionSec);
 	const radius = Math.ceil(request.radiusBeats);
-	for (let index = Math.max(0, at - radius); index <= Math.min(follower.length - 2, at + radius); index++) {
+	for (
+		let index = Math.max(0, at - radius);
+		index <= Math.min(follower.length - 2, at + radius);
+		index++
+	) {
 		const rawRatio = (masterBpm * request.masterTempoRatio) / _windowedIntervalBpm(follower, index);
-		if (_tempoRatioWithinRangeOrNull(rawRatio, request.minFollowerTempoRatio, request.maxFollowerTempoRatio) !== null) {
+		if (
+			_tempoRatioWithinRangeOrNull(
+				rawRatio,
+				request.minFollowerTempoRatio,
+				request.maxFollowerTempoRatio
+			) !== null
+		) {
 			return true;
 		}
 	}
@@ -1005,10 +1036,7 @@ export function followerAnchorReachableNear(request: {
 }
 
 /** Local tempo (BPM) from the nearest beat's interval; null when unusable. */
-export function gridBpmAt(
-	beats: readonly AnlzBeat[],
-	positionSec: number
-): number | null {
+export function gridBpmAt(beats: readonly AnlzBeat[], positionSec: number): number | null {
 	try {
 		validateBeatGrid(beats);
 		_assertFiniteNonNegative('positionSec', positionSec);
@@ -1372,8 +1400,13 @@ export function computeFollowerSyncPlan(request: FollowerSyncRequest): FollowerS
 	// on (the first one in the intro). The grid is validated, so `n` is 1..4
 	// and `back * interval` is exactly 0 on it.
 	const grid = request.masterGrid;
-	const back = Math.min(0, Math.floor((projectedMasterPositionSec - grid[0].t) / (grid[1].t - grid[0].t)));
-	const gridIndex = back ? 0 : _enclosingBeatIndex(grid, projectedMasterPositionSec, 'master position');
+	const back = Math.min(
+		0,
+		Math.floor((projectedMasterPositionSec - grid[0].t) / (grid[1].t - grid[0].t))
+	);
+	const gridIndex = back
+		? 0
+		: _enclosingBeatIndex(grid, projectedMasterPositionSec, 'master position');
 	const masterBeatIndex = gridIndex + back;
 	_enclosingBeatIndex(request.followerGrid, request.followerPositionSec, 'follower position');
 
@@ -1422,13 +1455,13 @@ export function computeFollowerSyncPlan(request: FollowerSyncRequest): FollowerS
 	};
 }
 
-
 // --------------------------------------------- grids Beat Sync may wander on
 
 /** A beat interval further than this from the grid's median interval is
  * uneven. Above what millisecond storage alone produces (two rounded beat
  * times put an interval up to 1 ms off, and the median up to 1 ms more).
  * The number itself lives in the shared rule (`$lib/rb/grid-quality`). */
+// prettier-ignore
 export const UNEVEN_GRID_INTERVAL_TOLERANCE_SEC = GRID_QUALITY_THRESHOLDS.unevenIntervalToleranceSec;
 
 export interface BeatSyncGridWarning {
@@ -1481,7 +1514,9 @@ export function beatSyncGridWarning(beats: readonly AnlzBeat[]): BeatSyncGridWar
 	const reasons: string[] = [];
 	if (flagged) reasons.push(gridFlagClause(quality));
 	if (extrapolatedBeatCount > 0) {
-		reasons.push(`${extrapolatedBeatCount} of ${beats.length} beats are extrapolated, not detected`);
+		reasons.push(
+			`${extrapolatedBeatCount} of ${beats.length} beats are extrapolated, not detected`
+		);
 	}
 	return {
 		unevenIntervalCount: quality.unevenIntervalCount,
@@ -1538,8 +1573,16 @@ export interface BeatSyncNotice<D extends number> {
  * engine's own notice path never runs for it. The page raises the same orange notice here, from the
  * fold the compiled plan names. An unfolded launch raises nothing.
  */
-export function foldedLaunchNotices<D extends number>(deck: D, master: D, normalization: 0.5 | 2): BeatSyncNotice<D>[] {
-	return beatSyncOutcomeNotices([{ deck, plan: { mode: 'bar', tempoNormalization: normalization } }], [], master);
+export function foldedLaunchNotices<D extends number>(
+	deck: D,
+	master: D,
+	normalization: 0.5 | 2
+): BeatSyncNotice<D>[] {
+	return beatSyncOutcomeNotices(
+		[{ deck, plan: { mode: 'bar', tempoNormalization: normalization } }],
+		[],
+		master
+	);
 }
 
 /** The slice of a planned follower these notices read. */

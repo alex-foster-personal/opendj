@@ -240,3 +240,19 @@ test('SPOT-6555: a signed-out listing shows its reason and keeps the imported ro
 	assert.equal(html.includes('aria-label="Imported into Open DJ"'), true);
 	assert.match(html, /1 \/ 1/);
 });
+
+test('issue #317: account-only row shows Import', () => {
+	const html = renderPanel({
+		initialAccount: connectedAccount([accountPlaylist('aaa')]),
+		playlists: []
+	});
+	assert.match(html, /aria-label="Import Invented aaa into Open DJ"/);
+});
+
+test('issue #317: imported account row shows Re-import', () => {
+	const html = renderPanel({
+		initialAccount: connectedAccount([accountPlaylist('bbb')]),
+		playlists: [playlist({ playlist_id: 'spotify:bbb', name: 'Imported bbb', vendor_pl_id: 'bbb' })]
+	});
+	assert.match(html, /aria-label="Re-import Invented bbb into Open DJ"/);
+});

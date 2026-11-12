@@ -45,22 +45,24 @@ def test_review_lane_tools_do_not_call_gh_pr_directly() -> None:
 def test_pull_to_gh_view_reads_the_recorded_rest_pull() -> None:
     """[if] a REST pulls/{n} payload is mapped [then] it has the gh pr view shape, [else stop]."""
     pull = _load_fixture()["pull"]
-    view = _pull_to_gh_view(pull, ("number", "state", "headRefOid", "headRefName", "baseRefOid", "labels"))
+    view = _pull_to_gh_view(
+        pull,
+        ("number", "state", "headRefOid", "headRefName", "baseRefOid", "baseRefName", "labels"),
+    )
     assert view == {
         "number": 1234,
         "state": "OPEN",
         "headRefOid": "abcdef0123456789abcdef0123456789abcdef01",
         "headRefName": "af--fixture-branch",
         "baseRefOid": "1111111111111111111111111111111111111111",
+        "baseRefName": "main",
         "labels": [{"name": "reviewer:codex"}],
     }
 
 
-def test_pull_to_gh_view_returns_only_the_requested_fields() -> None:
+def test_pull_to_gh_view_returns_only_the_requested_base_name() -> None:
     """[if] one field is asked for [then] only that field comes back, [else stop]."""
-    assert _pull_to_gh_view(_load_fixture()["pull"], ("baseRefOid",)) == {
-        "baseRefOid": "1111111111111111111111111111111111111111"
-    }
+    assert _pull_to_gh_view(_load_fixture()["pull"], ("baseRefName",)) == {"baseRefName": "main"}
 
 
 def test_pull_to_gh_view_refuses_a_field_it_cannot_map() -> None:

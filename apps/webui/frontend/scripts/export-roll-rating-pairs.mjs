@@ -92,8 +92,8 @@ export const REAL_PATH_DEPENDENCIES = Object.freeze([
 	},
 	{
 		issue: '#9840',
-		what: 'deck roll command',
-		path: 'apps/webui/frontend/src/lib/player/transport/roll-state.ts'
+		what: 'deck roll render adapter',
+		path: 'apps/webui/frontend/scripts/roll-rating-real-renderer.mjs'
 	}
 ]);
 export const VARIANTS = Object.freeze({

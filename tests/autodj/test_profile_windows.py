@@ -5,11 +5,19 @@ from __future__ import annotations
 import dataclasses
 import hashlib
 import json
+from dataclasses import replace
 
 import pytest
 
-from apps.autodj.contract.models import MikBoundary
-from apps.autodj.profile import ProfileError, _camelot, _sections, profile_from_payloads
+from apps.autodj.contract.models import KeySegment, MikBoundary
+from apps.autodj.profile import (
+    ProfileError,
+    _camelot,
+    _key_segments,
+    _sections,
+    profile_from_payloads,
+    resolve_key_at_bar,
+)
 from apps.autodj.sections import own_label, phrase_label, pssi_label
 from apps.autodj.windows import USER_CUE_SCORE, mix_windows, window_at
 from tests.autodj.fixtures import CHORUS, DOWN, INTRO, OUTRO, UP, anlz_payload, profile, track_row
@@ -301,10 +309,76 @@ def test_out_windows_prefer_the_outro_and_end_by_the_last_downbeat() -> None:
 
 
 def test_in_windows_prefer_the_intro_and_stop_before_the_first_vocal() -> None:
-    windows = mix_windows(profile("trk-b"), "in")
+    """[if] intro salience passes [then] it ranks first and caps before the first vocal, [else stop]."""
+    loud_intro = (
+        (INTRO, 16, 0.95, 0.2, False),
+        (UP, 16, 0.6, 0.5, False),
+        (CHORUS, 32, 1.0, 1.0, True),
+        (DOWN, 16, 0.3, 0.1, False),
+        (UP, 16, 0.6, 0.5, False),
+        (CHORUS, 16, 1.0, 1.0, True),
+        (OUTRO, 16, 0.4, 0.8, False),
+    )
+    track = profile("trk-b", arrangement=loud_intro)
+    windows = mix_windows(track, "in")
     assert (windows[0].label, windows[0].start_bar) == ("intro", 1)
     assert windows[0].max_bars == 32  # bar 33 is the drop and the first vocal
     assert windows[0].peak_bar == 33
+    assert windows[0].score > 0
+    # Default fixture: intro fails salience; build wins but keeps peak/vocal caps.
+    default = mix_windows(profile("trk-b"), "in")
+    assert (default[0].label, default[0].start_bar) == ("build", 17)
+    assert default[0].peak_bar == 33
+
+
+_AUTODJ_SALIENCE_REQ = "AUTODJ-11850"
+
+
+@pytest.mark.requirement(_AUTODJ_SALIENCE_REQ)
+def test_in_window_scores_zero_when_salience_is_low() -> None:
+    """[if] next 4 bars average 0.2 of max [then] in window scores 0 with salience in reason, [else stop]."""
+    track = profile("salience-low")
+    intro = next(window for window in mix_windows(track, "in") if window.start_bar == 1)
+    assert intro.score == 0.0
+    assert "salience" in intro.reason and "below 0.4" in intro.reason
+
+
+@pytest.mark.requirement(_AUTODJ_SALIENCE_REQ)
+def test_in_window_keeps_score_when_salience_passes() -> None:
+    """[if] next 4 bars average 0.5 of max [then] in window kept with salience in reason, [else stop]."""
+    track = profile("salience-pass")
+    build = next(window for window in mix_windows(track, "in") if window.start_bar == 17)
+    assert build.score > 0
+    assert "salience" in build.reason and "below 0.4" not in build.reason
+
+
+@pytest.mark.requirement(_AUTODJ_SALIENCE_REQ)
+def test_in_windows_skip_salience_when_bar_energy_missing() -> None:
+    """[if] bar_energy is None [then] salience skipped and windows still offered, [else stop]."""
+    anlz = anlz_payload("no-energy")
+    anlz["waveform"] = {}
+    track = profile_from_payloads(anlz, track_row("no-energy"))
+    windows = mix_windows(track, "in")
+    assert windows
+    assert all(window.score > 0 for window in windows)
+    assert all("salience skipped: energy series missing" in window.reason for window in windows)
+
+
+@pytest.mark.requirement(_AUTODJ_SALIENCE_REQ)
+def test_transition_in_cue_bypasses_salience_gate() -> None:
+    """[if] user transition-in cue on a quiet bar [then] it is the only in window, [else stop]."""
+    stable_id = "trk-cue-salience"
+    anlz = anlz_payload(stable_id)
+    anlz["cues"] = [{"kind": "transition_in", "slot": None, "in_ms": 0}]
+    track = profile_from_payloads(anlz, track_row(stable_id))
+    assert track.transition_in_bar == 1
+    windows = mix_windows(track, "in")
+    assert len(windows) == 1
+    assert windows[0].start_bar == 1
+    assert windows[0].score > 0
+    assert windows[0].pinned is True
+    assert windows[0].reason.startswith("your transition-in cue")
+    assert "salience" not in windows[0].reason
 
 
 @pytest.mark.requirement("AUTODJ-11851")
@@ -541,3 +615,34 @@ def test_a_non_int_mik_level_still_raises() -> None:
         anlz["energy_level"] = bad
         with pytest.raises(ProfileError, match="energy_level"):
             profile_from_payloads(anlz, track_row("mik-bad-level", bpm=120.0, bars=8))
+
+
+def test_resolve_key_at_bar_honors_inclusive_segment_bounds() -> None:
+    """[if] two wire segments abut [then] each inclusive profile bar resolves to its segment key, [else stop]."""
+    anlz = {
+        "key_segments": {
+            "status": "ok",
+            "segments": [
+                {"start_bar": 0, "end_bar": 8, "key_camelot": "8A", "confidence": 0.9},
+                {"start_bar": 8, "end_bar": 16, "key_camelot": "10A", "confidence": 0.9},
+            ],
+        }
+    }
+    rows = _key_segments(anlz)
+    track = replace(
+        profile("key-span", key="1A"),
+        key_segments=tuple(KeySegment(**row) for row in rows),
+    )
+    assert resolve_key_at_bar(track, 8).key == "8A"
+    assert resolve_key_at_bar(track, 9).key == "10A"
+    assert resolve_key_at_bar(track, 8).source == "segment"
+
+
+def test_resolve_key_at_bar_falls_back_to_global_outside_segments() -> None:
+    """[if] a bar is past the last segment [then] the track key is used with global source, [else stop]."""
+    track = replace(
+        profile("key-fallback", key="9A"),
+        key_segments=(KeySegment(start_bar=1, end_bar=64, key="8A"),),
+    )
+    resolved = resolve_key_at_bar(track, 100)
+    assert resolved.key == "9A" and resolved.source == "global"

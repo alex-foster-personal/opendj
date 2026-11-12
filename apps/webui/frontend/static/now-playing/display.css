@@ -1,0 +1,283 @@
+:root {
+	color-scheme: dark;
+}
+
+html,
+body {
+	margin: 0;
+	height: 100%;
+	overflow: hidden;
+	background: #000;
+	color: #fff;
+	cursor: none;
+	font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+}
+
+[hidden] {
+	display: none !important;
+}
+
+.np {
+	position: fixed;
+	top: 0;
+	right: 0;
+	bottom: 0;
+	left: 0;
+}
+
+.np__drift {
+	position: absolute;
+	top: 0;
+	right: 0;
+	bottom: 0;
+	left: 0;
+	transition: transform 2s ease;
+	will-change: transform;
+}
+
+.np--reconnecting .np__drift {
+	opacity: 0.35;
+}
+
+.np__reconnecting {
+	position: fixed;
+	top: 50%;
+	left: 50%;
+	transform: translate(-50%, -50%);
+	font-size: 40px;
+	padding: 24px 48px;
+	background: #1a1a1a;
+	border-radius: 12px;
+	z-index: 10;
+}
+
+.np__bg {
+	position: absolute;
+	top: -48px;
+	right: -48px;
+	bottom: -48px;
+	left: -48px;
+	overflow: hidden;
+}
+
+.np__bg-img {
+	width: 100%;
+	height: 100%;
+	object-fit: cover;
+	filter: blur(40px) brightness(0.4);
+	transform: scale(1.15);
+}
+
+.np__clock {
+	position: absolute;
+	top: 48px;
+	right: 48px;
+	font-size: 48px;
+	font-weight: 500;
+	opacity: 0.9;
+	z-index: 2;
+}
+
+.np__card {
+	display: flex;
+	flex-direction: row;
+	align-items: center;
+	box-sizing: border-box;
+	width: 100%;
+	height: 100%;
+	padding: 96px;
+	position: relative;
+	z-index: 1;
+}
+
+.np__cover {
+	position: relative;
+	width: 560px;
+	height: 560px;
+	flex-shrink: 0;
+	margin-right: 64px;
+}
+
+.np__cover-ph {
+	position: absolute;
+	top: 0;
+	right: 0;
+	bottom: 0;
+	left: 0;
+	background: #222;
+}
+
+.np__cover-img {
+	position: absolute;
+	top: 0;
+	right: 0;
+	bottom: 0;
+	left: 0;
+	width: 100%;
+	height: 100%;
+	object-fit: cover;
+}
+
+.np__text {
+	flex: 1;
+	min-width: 0;
+	display: flex;
+	flex-direction: column;
+	justify-content: center;
+}
+
+.np__title {
+	font-size: 72px;
+	line-height: 1.15;
+	height: 1.15em;
+	font-weight: 700;
+	white-space: nowrap;
+	overflow: hidden;
+	text-overflow: ellipsis;
+}
+
+.np__artist {
+	font-size: 44px;
+	line-height: 1.15;
+	height: 1.15em;
+	opacity: 0.85;
+	margin-top: 12px;
+	white-space: nowrap;
+	overflow: hidden;
+	text-overflow: ellipsis;
+}
+
+.np__chips {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 16px;
+	margin-top: 24px;
+	min-height: 48px;
+	align-items: center;
+}
+
+.np__chip {
+	font-size: 32px;
+	padding: 8px 20px;
+	background: #2a2a2a;
+	border-radius: 8px;
+}
+
+.np__progress {
+	height: 6px;
+	background: #333;
+	border-radius: 3px;
+	margin-top: 32px;
+	overflow: hidden;
+}
+
+.np__progress-fill {
+	height: 100%;
+	background: #fff;
+	width: 0%;
+}
+
+.np__next {
+	font-size: 32px;
+	opacity: 0.65;
+	margin-top: 24px;
+	min-height: 1.15em;
+	line-height: 1.15;
+	white-space: nowrap;
+	overflow: hidden;
+	text-overflow: ellipsis;
+}
+
+.np__idle {
+	display: flex;
+	flex-direction: column;
+	align-items: center;
+	justify-content: center;
+	width: 100%;
+	height: 100%;
+	text-align: center;
+}
+
+.np__wordmark {
+	font-size: 120px;
+	font-weight: 700;
+	letter-spacing: 0.08em;
+}
+
+.np__idle-line {
+	font-size: 48px;
+	opacity: 0.55;
+	margin-top: 24px;
+}
+
+.np--strip .np__bg {
+	display: none;
+}
+
+.np--strip .np__card {
+	position: absolute;
+	left: 0;
+	right: 0;
+	bottom: 0;
+	height: 33.333vh;
+	padding: 32px 48px;
+	background: #0b0b0b;
+	align-items: center;
+}
+
+.np--strip .np__cover {
+	width: 260px;
+	height: 260px;
+	margin-right: 40px;
+}
+
+.np--strip .np__title {
+	font-size: 64px;
+}
+
+.np--strip .np__artist {
+	font-size: 40px;
+}
+
+.np--strip .np__clock {
+	top: auto;
+	bottom: 0;
+	right: 48px;
+	line-height: 33.333vh;
+}
+
+.np--strip.np--idle .np__idle {
+	position: absolute;
+	left: 0;
+	right: 0;
+	bottom: 0;
+	height: 33.333vh;
+	background: #0b0b0b;
+}
+
+.np--strip .np__wordmark {
+	font-size: 72px;
+}
+
+.np--strip .np__idle-line {
+	font-size: 36px;
+}
+
+@media (max-width: 1100px) {
+	.np__card {
+		padding: 48px;
+	}
+
+	.np__cover {
+		width: 320px;
+		height: 320px;
+	}
+
+	.np__title {
+		font-size: 48px;
+	}
+
+	.np__artist {
+		font-size: 32px;
+	}
+}

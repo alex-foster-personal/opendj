@@ -1,0 +1,9 @@
+{
+  "bytes": 3072,
+  "measured_main": 503414,
+  "measured_with_pr": 505200,
+  "sha": "0e0671f135",
+  "date": "Mon 9 Nov 2026",
+  "reason": "PR #10715 (issue #10442): phone remote QR lazy chunk plus stacked-base /lighting other-lazy growth CI measures against merge-base #10713 until this PR retargets to main. Charge ceiled to 8192 B gzip to cover CI delta 8089 B (QR ~2 KiB; remainder is sibling lighting on the stacked baseline, already charged in 10573.json on main)",
+  "payback": "none planned; the growth is the feature's own code, already split into a lazy chunk"
+}

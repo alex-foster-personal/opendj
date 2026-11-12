@@ -271,7 +271,11 @@
 				<section class="cluster-card" data-testid="dedup-cluster">
 					<header class="cluster-header">
 						<h3 title="Duplicate-cluster id assigned by the dedup scan">Cluster #{cluster.cluster_id}</h3>
-						{#if cluster.flagged_manual_review}
+						{#if cluster.basis === 'tags'}
+							<span class="badge flagged" data-testid="dedup-tags-unproven">
+								tags only, unproven
+							</span>
+						{:else if cluster.flagged_manual_review}
 							<span class="badge flagged">needs manual review</span>
 						{/if}
 						{#if cluster.rationale}
@@ -371,7 +375,7 @@
 							onclick={() => applyMerge(cluster)}
 							disabled={posting[cluster.cluster_key]}
 						>
-							Merge into selected
+							{cluster.basis === 'tags' ? 'Merge (unproven)' : 'Merge into selected'}
 						</button>
 						<button
 							data-testid="dedup-keep-all"

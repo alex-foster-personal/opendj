@@ -180,8 +180,13 @@ def test_adopted_machine_identity_is_the_seed_target(tmp_path: Path) -> None:
             "UPDATE machines SET machine_id = ? WHERE machine_id = ?",
             (_ADOPTED_ID, file_id),
         )
+        conn.execute(
+            "UPDATE track_locations SET machine_id = ? WHERE machine_id = ?",
+            (_ADOPTED_ID, file_id),
+        )
     finally:
         conn.close()
+    sync_stamp.reset_machine_id_cache()
     sync_config.write_config(
         data_dir,
         sync_config.CloudSyncConfig(enabled=True, hub_url=_HUB, machine_name=str(name)),

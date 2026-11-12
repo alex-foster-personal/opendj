@@ -64,8 +64,9 @@ def register_enrichment_tools(
         """What each recent import batch still lacks, lane by lane in priority order.
 
         Lanes run in ``lane_priority`` order: tags, waveform, beatgrid, key and
-        loudness for every track of a batch, then artwork (which waits until
-        all of them are settled). ``warnings`` names any lane that cannot run
+        loudness for every track of a batch, then identify (fingerprint lookup
+        for untagged rows), artwork and genre (each waits until the prior lanes
+        settle). ``warnings`` names any lane that cannot run
         here and where to set what is missing. With ``batch_id``, every
         track's state and reason per lane is included.
         """

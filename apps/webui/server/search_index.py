@@ -9,9 +9,10 @@ Every call performs only cheap file metadata reads; a full re-ingest happens
 only when that source state changed (or the index does not exist yet, or its
 schema version is stale).
 
-Indexed columns: title, artist (joined from ``tracks.artists_json``), the
-precedence-selected genre shown by the Library, plus comments / notes / tags
-pulled from the ``track_fields`` EAV table (apps/shared/state/schema.py).
+Indexed columns: title, artist (joined from ``tracks.artists_json``), album
+from ``tracks.album``, the precedence-selected genre shown by the Library, plus
+comments / notes / tags pulled from the ``track_fields`` EAV table
+(apps/shared/state/schema.py).
 EAV is sparse by design, so absent fields simply contribute empty text. Query
 tokenisation mirrors the launcher's Tauri
 search command (apps/launcher/src-tauri/src/commands/search.rs
@@ -26,6 +27,7 @@ from __future__ import annotations
 import json
 import sqlite3
 import time
+from dataclasses import dataclass
 from pathlib import Path
 
 from apps.adapters.rekordbox import config as rb_config
@@ -34,7 +36,7 @@ from apps.genre_infer import library_tags
 from apps.shared.state.db import DEFAULT_BUSY_TIMEOUT_S, is_sqlite_busy
 from apps.webui.soft_deletes import has_soft_deletes
 
-_SCHEMA_VERSION = 4
+_SCHEMA_VERSION = 5
 _EAV_FIELDS: tuple[str, ...] = ("comments", "notes", "tags")
 _SOURCE_READ_ATTEMPTS = 3
 
@@ -45,6 +47,14 @@ class SearchIndexUnavailable(RuntimeError):
 
 class SearchQueryError(ValueError):
     """Malformed FTS5 query syntax (not SQLite busy/locked)."""
+
+
+@dataclass(frozen=True, slots=True)
+class MetadataHit:
+    stable_id: str
+    match_context: str
+    title: str
+    artist: str
 
 
 def index_path_for(state_db_path: Path) -> Path:
@@ -171,11 +181,11 @@ def _read_source(
         modern_schema = has_soft_deletes(state, "tracks")
         if modern_schema:
             tracks_sql = (
-                "SELECT stable_id, title, artists_json FROM tracks "
+                "SELECT stable_id, title, artists_json, album FROM tracks "
                 "WHERE deleted_at IS NULL"
             )
         else:
-            tracks_sql = "SELECT stable_id, title, artists_json FROM tracks"
+            tracks_sql = "SELECT stable_id, title, artists_json, album FROM tracks"
         tracks = state.execute(tracks_sql).fetchall()
         stable_ids = [str(row["stable_id"]) for row in tracks]
         eav: dict[str, dict[str, str]] = {}
@@ -229,7 +239,7 @@ def _rebuild(conn: sqlite3.Connection, state_db_path: Path) -> None:
         conn.execute("DROP TABLE IF EXISTS search_meta")
         conn.execute(
             "CREATE VIRTUAL TABLE tracks_fts USING fts5("
-            "stable_id UNINDEXED, title, artist, genre, comments, notes, tags, "
+            "stable_id UNINDEXED, title, artist, album, genre, comments, notes, tags, "
             "tokenize='unicode61 remove_diacritics 2')"
         )
         conn.execute(
@@ -243,6 +253,7 @@ def _rebuild(conn: sqlite3.Connection, state_db_path: Path) -> None:
                 r["stable_id"],
                 r["title"] or "",
                 _artist_of(r["artists_json"]),
+                r["album"] or "",
                 _eav_text(eav.get(r["stable_id"], {}).get("genre")),
                 _eav_text(eav.get(r["stable_id"], {}).get("comments")),
                 _eav_text(eav.get(r["stable_id"], {}).get("notes")),
@@ -251,8 +262,8 @@ def _rebuild(conn: sqlite3.Connection, state_db_path: Path) -> None:
             for r in tracks
         ]
         conn.executemany(
-            "INSERT INTO tracks_fts(stable_id, title, artist, genre, comments, notes, tags) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?)",
+            "INSERT INTO tracks_fts(stable_id, title, artist, album, genre, comments, notes, tags) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
             rows,
         )
         conn.execute(
@@ -333,7 +344,7 @@ def search(
                 "SELECT stable_id, "
                 "snippet(tracks_fts, -1, '', '', ' ... ', 10) AS context "
                 "FROM tracks_fts WHERE tracks_fts MATCH ? "
-                "ORDER BY bm25(tracks_fts, 10.0, 5.0, 3.0, 2.0, 1.0, 1.0, 1.0) "
+                "ORDER BY bm25(tracks_fts, 10.0, 5.0, 3.0, 2.0, 2.0, 1.0, 1.0, 1.0) "
                 "LIMIT ? OFFSET ?",
                 (fts_query, limit, offset),
             ).fetchall()
@@ -346,11 +357,60 @@ def search(
     return [(r[0], r[1]) for r in rows], total
 
 
+def search_metadata_hits(
+    state_db_path: Path,
+    query: str,
+    *,
+    cap: int,
+    index_db_path: Path | None = None,
+) -> tuple[list[MetadataHit], int]:
+    """Return up to ``cap`` metadata FTS hits with title/artist for banding."""
+    fts_query = build_fts_query(query)
+    if fts_query is None or cap <= 0:
+        return [], 0
+    target = ensure_index(state_db_path, index_db_path)
+    conn = sqlite3.connect(f"file:{target}?mode=ro", uri=True)
+    try:
+        try:
+            total = int(
+                conn.execute(
+                    "SELECT COUNT(*) FROM tracks_fts WHERE tracks_fts MATCH ?",
+                    (fts_query,),
+                ).fetchone()[0]
+            )
+            rows = conn.execute(
+                "SELECT stable_id, title, artist, "
+                "snippet(tracks_fts, -1, '', '', ' ... ', 10) AS context "
+                "FROM tracks_fts WHERE tracks_fts MATCH ? "
+                "ORDER BY bm25(tracks_fts, 10.0, 5.0, 3.0, 2.0, 1.0, 1.0, 1.0) "
+                "LIMIT ?",
+                (fts_query, cap),
+            ).fetchall()
+        except sqlite3.OperationalError as exc:
+            if is_sqlite_busy(exc):
+                raise
+            raise SearchQueryError(str(exc)) from exc
+    finally:
+        conn.close()
+    hits = [
+        MetadataHit(
+            stable_id=str(row[0]),
+            title=str(row[1] or ""),
+            artist=str(row[2] or ""),
+            match_context=str(row[3]),
+        )
+        for row in rows
+    ]
+    return hits, total
+
+
 __all__ = [
+    "MetadataHit",
     "SearchIndexUnavailable",
     "SearchQueryError",
     "build_fts_query",
     "ensure_index",
     "index_path_for",
     "search",
+    "search_metadata_hits",
 ]

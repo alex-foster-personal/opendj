@@ -12,7 +12,10 @@
 	 * knob/fader positions inseparable.
 	 */
 	import { onMount, untrack } from 'svelte';
-	import { listIoDevicesAndRestoreOutputsOnMount, listIoDevicesOnOpen } from '$lib/rb/io-device-refresh';
+	import {
+		listIoDevicesAndRestoreOutputsOnMount,
+		listIoDevicesOnOpen
+	} from '$lib/rb/io-device-refresh';
 	import { ioDeviceAccessOnOpen } from '$lib/player/io-device-access';
 	import { ioSurface } from '$lib/rb/io-surface.svelte';
 	import { engine, getDeckState, mixerState } from '$lib/rb/audio-engine.svelte';
@@ -22,10 +25,16 @@
 		runPerformanceCommandFromUi
 	} from '$lib/rb/performance-ipc.svelte';
 	import type { DeckId } from '$lib/rb/deck-slots';
-	import type { CrossfaderAssign, EqBand, HeadphoneAlignmentMode, HeadphoneOutputMode } from '$lib/rb/mixer-types';
+	import type {
+		CrossfaderAssign,
+		EqBand,
+		HeadphoneAlignmentMode,
+		HeadphoneOutputMode
+	} from '$lib/rb/mixer-types';
 	import { openCueAlignModal } from '$lib/rb/cue-align-session.svelte';
 	import type { StemControl } from '$lib/rb/stem-types';
 	import { setDeckLayoutMode, uiPrefs } from '$lib/rb/prefs.svelte';
+	import { releaseDeckControls } from '$lib/rb/knob-control.svelte';
 	import { deckArtworkUrl } from '$lib/rb/artwork-url';
 	import ArtworkDeckNumber from './ArtworkDeckNumber.svelte';
 	import { coverFailed, coverLoaded, coverSrc, coverVisible } from '$lib/rb/artwork-cover.svelte';
@@ -50,6 +59,20 @@
 	 * persisted preference (also driven by Cmd/Ctrl+2/+4 via
 	 * deck-layout-hotkeys.ts - same setter, single source of truth). */
 	const deckLayoutLess = $derived(uiPrefs.deck_layout === 'less');
+
+	/** Decks LESS collapses; one list for `inert` and the release below. */
+	const HIDDEN_IN_LESS: readonly DeckId[] = [3, 4];
+	function hiddenInLess(deck: DeckId): boolean {
+		return deckLayoutLess && HIDDEN_IN_LESS.includes(deck);
+	}
+
+	// MIXUX-9832: every path into LESS (this toggle, Cmd/Ctrl+2, the top bar,
+	// settings apply, disk prefs) lands here, because the mixer owns the
+	// collapse. Untracked so a later selection change does not re-run it.
+	$effect(() => {
+		if (!deckLayoutLess) return;
+		untrack(() => releaseDeckControls(HIDDEN_IN_LESS));
+	});
 
 	/** Same play command as the deck transport, including Cmd/Ctrl quantize. */
 	function duplicatePlayPause(deck: DeckId, event: MouseEvent): void {
@@ -104,13 +127,18 @@
 		void runPerformanceCommandFromUi({ type: 'filter', deck, value });
 	}
 
-	function handleColorFx(deck: DeckId, effect: 'filter' | 'space' | 'echo' | 'next'): void {
+	function handleColorFx(deck: DeckId, effect: 'filter' | 'space' | 'echo' | 'crush' | 'next'): void {
 		void runPerformanceCommandFromUi({ type: 'color_fx', deck, effect });
 	}
 
 	/** COLORFX-10320: the menu's ECHO division; the same command agents send. */
 	function handleEchoDivision(deck: DeckId, echo_beats: 0.25 | 0.5 | 0.75 | 1): void {
 		void runPerformanceCommandFromUi({ type: 'color_fx', deck, echo_beats });
+	}
+
+	/** COLORFX-13: one effect on every channel; the same command agents send. */
+	function handleColorFxAll(effect: 'filter' | 'space' | 'echo' | 'crush'): void {
+		void runPerformanceCommandFromUi({ type: 'color_fx', deck: 'all', effect });
 	}
 
 	function handleFader(deck: DeckId, value: number): void {
@@ -219,46 +247,50 @@
 	use:selectorNode={{ id: selId.mixer(), kind: 'group', enabled: true }}
 >
 	<div class="mixer-view-row">
-	<button
-		type="button"
-		class="mixer-stems-btn"
-		class:active={mixerStems}
-		aria-pressed={mixerStems}
-		aria-label="Stem dials on every channel with stems"
-		data-testid="mixer-stems-toggle"
-		title={mixerStems
-			? 'S - stem dials ON: VOCAL/INST/BASS beside HI/MID/LOW and DRUMS beside FILTER on every channel with stems. Click to hide them.'
-			: 'S - show stem dials (VOCAL/INST/BASS beside HI/MID/LOW, DRUMS beside FILTER) on every channel whose track has stems. Widens the mixer.'}
-		onclick={() => handleMixerStems(!mixerStems)}
+		<button
+			type="button"
+			class="mixer-stems-btn"
+			class:active={mixerStems}
+			aria-pressed={mixerStems}
+			aria-label="Stem dials on every channel with stems"
+			data-testid="mixer-stems-toggle"
+			title={mixerStems
+				? 'S - stem dials ON: VOCAL/INST/BASS beside HI/MID/LOW and DRUMS beside FILTER on every channel with stems. Click to hide them.'
+				: 'S - show stem dials (VOCAL/INST/BASS beside HI/MID/LOW, DRUMS beside FILTER) on every channel whose track has stems. Widens the mixer.'}
+			onclick={() => handleMixerStems(!mixerStems)}
+		>
+			S
+		</button>
+		<div class="deck-layout-toggle" role="group" aria-label="Deck layout">
+			<button
+				type="button"
+				class="deck-layout-btn"
+				class:active={!deckLayoutLess}
+				title={deckLayoutLess
+					? 'MORE - switch to all 4 decks (Cmd/Ctrl+4). Current layout is LESS (2 decks, more library space).'
+					: 'MORE - currently showing all 4 decks. Click LESS for 2 decks and more library space (Cmd/Ctrl+2).'}
+				onclick={() => setDeckLayoutMode('more')}
+			>
+				MORE
+			</button>
+			<button
+				type="button"
+				class="deck-layout-btn"
+				class:active={deckLayoutLess}
+				title={deckLayoutLess
+					? 'LESS - currently showing 2 decks, more library space. Click MORE for all 4 decks (Cmd/Ctrl+4).'
+					: 'LESS - switch to 2 decks and more library space (Cmd/Ctrl+2). Current layout is MORE (all 4 decks).'}
+				onclick={() => setDeckLayoutMode('less')}
+			>
+				LESS
+			</button>
+		</div>
+	</div>
+	<div
+		class="strips"
+		class:less={deckLayoutLess}
+		class:with-art={librarySongCapacity.showMixerColumnArt}
 	>
-		S
-	</button>
-	<div class="deck-layout-toggle" role="group" aria-label="Deck layout">
-		<button
-			type="button"
-			class="deck-layout-btn"
-			class:active={!deckLayoutLess}
-			title={deckLayoutLess
-				? 'MORE - switch to all 4 decks (Cmd/Ctrl+4). Current layout is LESS (2 decks, more library space).'
-				: 'MORE - currently showing all 4 decks. Click LESS for 2 decks and more library space (Cmd/Ctrl+2).'}
-			onclick={() => setDeckLayoutMode('more')}
-		>
-			MORE
-		</button>
-		<button
-			type="button"
-			class="deck-layout-btn"
-			class:active={deckLayoutLess}
-			title={deckLayoutLess
-				? 'LESS - currently showing 2 decks, more library space. Click MORE for all 4 decks (Cmd/Ctrl+4).'
-				: 'LESS - switch to 2 decks and more library space (Cmd/Ctrl+2). Current layout is MORE (all 4 decks).'}
-			onclick={() => setDeckLayoutMode('less')}
-		>
-			LESS
-		</button>
-	</div>
-	</div>
-	<div class="strips" class:less={deckLayoutLess} class:with-art={librarySongCapacity.showMixerColumnArt}>
 		{#each STRIP_ORDER as deck (deck)}
 			{@const channel = getDeckState(deck)}
 			{@const artId = channel.stable_id}
@@ -271,11 +303,7 @@
 			     covers TRIM, the EQs, CUE, the fader and STEM as well. `inert`
 			     removes the whole subtree from focus AND from the a11y tree,
 			     so it closes all of them at once. Blinded review + Sol P2. -->
-			<div
-				class="strip-slot"
-				class:collapsed={deckLayoutLess && (deck === 3 || deck === 4)}
-				inert={deckLayoutLess && (deck === 3 || deck === 4)}
-			>
+			<div class="strip-slot" class:collapsed={hiddenInLess(deck)} inert={hiddenInLess(deck)}>
 				{#if librarySongCapacity.showMixerColumnArt}
 					<div class="col-art" data-mixer-column-art={deck}>
 						{#if artId !== null && coverVisible(artId)}
@@ -329,30 +357,33 @@
 					</div>
 				{/if}
 				<div class="strip-fit">
-				<ChannelStrip
-					deckId={deck}
-					less={deckLayoutLess}
-					trim={mixerState.channels[deck].trim}
-					eqHigh={mixerState.channels[deck].eq_high}
-					eqMid={mixerState.channels[deck].eq_mid}
-					eqLow={mixerState.channels[deck].eq_low}
-					filter={mixerState.channels[deck].filter}
-					fader={mixerState.channels[deck].fader}
-					cueEnabled={mixerState.channels[deck].cue_enabled}
-					{mixerStems}
-					stemPending={performanceCommandStatus.deck_pending[deck] > 0}
-					ontrim={(v) => handleTrim(deck, v)}
-					onAutoGainOffset={(db, id) => handleAutoGainOffset(deck, db, id)}
-					oneq={(band, v) => handleEq(deck, band, v)}
-					onfilter={(v) => handleFilter(deck, v)}
-					oncolorfx={(effect) => handleColorFx(deck, effect)}
-					onechodivision={(beats) => handleEchoDivision(deck, beats)}
-					onfader={(v) => handleFader(deck, v)}
-					oncue={(enabled) => handleCue(deck, enabled)}
-					onStemGain={(stem, value) => handleStemGain(deck, stem, value)}
-					onStemMute={(stem) => handleStemMute(deck, stem)}
-					onStemSolo={(stem) => handleStemSolo(deck, stem)}
-				/>
+					<ChannelStrip
+						deckId={deck}
+						less={deckLayoutLess}
+						trim={mixerState.channels[deck].trim}
+						eqHigh={mixerState.channels[deck].eq_high}
+						eqMid={mixerState.channels[deck].eq_mid}
+						eqLow={mixerState.channels[deck].eq_low}
+						filter={mixerState.channels[deck].filter}
+						fader={mixerState.channels[deck].fader}
+						cueEnabled={mixerState.channels[deck].cue_enabled}
+						{mixerStems}
+						stemPending={performanceCommandStatus.deck_pending[deck] > 0}
+						commandPending={performanceCommandStatus.deck_pending[deck] > 0}
+						commandError={performanceCommandStatus.deck_errors[deck]}
+						ontrim={(v) => handleTrim(deck, v)}
+						onAutoGainOffset={(db, id) => handleAutoGainOffset(deck, db, id)}
+						oneq={(band, v) => handleEq(deck, band, v)}
+						onfilter={(v) => handleFilter(deck, v)}
+						oncolorfx={(effect) => handleColorFx(deck, effect)}
+						onechodivision={(beats) => handleEchoDivision(deck, beats)}
+						oncolorfxall={(effect) => handleColorFxAll(effect)}
+						onfader={(v) => handleFader(deck, v)}
+						oncue={(enabled) => handleCue(deck, enabled)}
+						onStemGain={(stem, value) => handleStemGain(deck, stem, value)}
+						onStemMute={(stem) => handleStemMute(deck, stem)}
+						onStemSolo={(stem) => handleStemSolo(deck, stem)}
+					/>
 				</div>
 			</div>
 		{/each}
@@ -361,6 +392,7 @@
 		<div class="hp-row" use:selectorNode={{ id: selId.headphones(), kind: 'leaf', enabled: true }}>
 			<HeadphoneCluster
 				state={mixerState.headphones}
+				booth={mixerState.booth}
 				onmix={handleHeadphoneMix}
 				onlevel={handleHeadphoneLevel}
 				onboothlevel={handleBoothLevel}
@@ -380,7 +412,10 @@
 		<div class="xfade-row">
 			<AssignMatrix bus="A" {assigns} onassign={handleAssign} />
 			<CrossfadeCurveSelect />
-			<div class="sel-node" use:selectorNode={{ id: selId.crossfader(), kind: 'leaf', enabled: true }}>
+			<div
+				class="sel-node"
+				use:selectorNode={{ id: selId.crossfader(), kind: 'leaf', enabled: true }}
+			>
 				<Crossfader value={mixerState.crossfader} onchange={handleCrossfader} />
 			</div>
 			<AssignMatrix bus="B" {assigns} onassign={handleAssign} />
@@ -574,4 +609,19 @@
 		align-items: center;
 		gap: 5px;
 	}
+
+	/* A11Y-11811: reduced motion (OS or Appearance); mirrors app.css. */
+	@media (prefers-reduced-motion: reduce) {
+		:where(*) {
+			animation-duration: 0.01ms;
+			animation-iteration-count: 1;
+			transition-duration: 0.01ms;
+		}
+	}
+	:global(html[data-reduce-motion]) :where(*) {
+		animation-duration: 0.01ms;
+		animation-iteration-count: 1;
+		transition-duration: 0.01ms;
+	}
+
 </style>

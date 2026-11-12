@@ -510,6 +510,19 @@ def test_flac_v1_bundle_loads(tmp_path: Path) -> None:
     assert bundle.alignment.frame_count > 0
 
 
+@pytest.mark.requirement("QUALITY-12057")
+def test_flac_part_metadata_via_artifacts_flac_seam(tmp_path: Path) -> None:
+    """[if] a FLAC v1 bundle part exists [then] container metadata matches read_flac_metadata, [else stop]."""
+    bundle = _bundle_with_codec(tmp_path, "track-flac-seam", "flac")
+    from apps.stems.artifacts import read_flac_metadata, read_stem_container_metadata
+
+    vocals = bundle / "vocals.flac"
+    direct = read_flac_metadata(vocals)
+    dispatched, suffix = read_stem_container_metadata(vocals)
+    assert suffix == ".flac"
+    assert dispatched == direct
+
+
 def test_wav_v1_bundle_still_loads_exactly(tmp_path: Path) -> None:
     _wav_bundle(tmp_path)
     bundle = load_stem_bundle("track-wav", stems_dir=tmp_path)

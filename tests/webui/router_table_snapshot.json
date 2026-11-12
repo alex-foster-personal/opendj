@@ -2951,28 +2951,28 @@
    "path": "/api/v1/sync/billing/refresh"
   },
   {
-   "endpoint": "apps.sync_hub.service.digest",
+   "endpoint": "apps.sync_hub.service_reads.digest",
    "methods": [
     "GET"
    ],
    "path": "/api/v1/sync/digest"
   },
   {
-   "endpoint": "apps.sync_hub.service.enroll",
+   "endpoint": "apps.sync_hub.service_handshake.enroll",
    "methods": [
     "POST"
    ],
    "path": "/api/v1/sync/enroll"
   },
   {
-   "endpoint": "apps.sync_hub.service.hash_pending_list",
+   "endpoint": "apps.sync_hub.service_reads.hash_pending_list",
    "methods": [
     "GET"
    ],
    "path": "/api/v1/sync/hash-pending"
   },
   {
-   "endpoint": "apps.sync_hub.service.hello",
+   "endpoint": "apps.sync_hub.service_handshake.hello",
    "methods": [
     "POST"
    ],
@@ -2993,35 +2993,35 @@
    "path": "/api/v1/sync/plugins/index"
   },
   {
-   "endpoint": "apps.sync_hub.service.pull",
+   "endpoint": "apps.sync_hub.service_reads.pull",
    "methods": [
     "GET"
    ],
    "path": "/api/v1/sync/pull"
   },
   {
-   "endpoint": "apps.sync_hub.service.push",
+   "endpoint": "apps.sync_hub.service_push.push",
    "methods": [
     "POST"
    ],
    "path": "/api/v1/sync/push"
   },
   {
-   "endpoint": "apps.sync_hub.service.rows",
+   "endpoint": "apps.sync_hub.service_reads.rows",
    "methods": [
     "GET"
    ],
    "path": "/api/v1/sync/rows"
   },
   {
-   "endpoint": "apps.sync_hub.service.stale_check",
+   "endpoint": "apps.sync_hub.service_push.stale_check",
    "methods": [
     "POST"
    ],
    "path": "/api/v1/sync/stale-check"
   },
   {
-   "endpoint": "apps.sync_hub.service.status",
+   "endpoint": "apps.sync_hub.service_reads.status",
    "methods": [
     "GET"
    ],
@@ -3299,6 +3299,27 @@
     "PATCH"
    ],
    "path": "/api/v1/tracks/{stable_id}"
+  },
+  {
+   "endpoint": "apps.webui.server.routes.analysis_range.clear_analysis_range",
+   "methods": [
+    "DELETE"
+   ],
+   "path": "/api/v1/tracks/{stable_id}/analysis-range"
+  },
+  {
+   "endpoint": "apps.webui.server.routes.analysis_range.get_analysis_range",
+   "methods": [
+    "GET"
+   ],
+   "path": "/api/v1/tracks/{stable_id}/analysis-range"
+  },
+  {
+   "endpoint": "apps.webui.server.routes.analysis_range.set_analysis_range",
+   "methods": [
+    "PUT"
+   ],
+   "path": "/api/v1/tracks/{stable_id}/analysis-range"
   },
   {
    "endpoint": "apps.webui.server.routes.rb_assets.get_track_anlz",
@@ -6516,25 +6537,25 @@
    "method": "GET",
    "path": "/api/v1/sync/digest",
    "url": "/api/v1/sync/digest",
-   "winner": "apps.sync_hub.service.digest"
+   "winner": "apps.sync_hub.service_reads.digest"
   },
   {
    "method": "POST",
    "path": "/api/v1/sync/enroll",
    "url": "/api/v1/sync/enroll",
-   "winner": "apps.sync_hub.service.enroll"
+   "winner": "apps.sync_hub.service_handshake.enroll"
   },
   {
    "method": "GET",
    "path": "/api/v1/sync/hash-pending",
    "url": "/api/v1/sync/hash-pending",
-   "winner": "apps.sync_hub.service.hash_pending_list"
+   "winner": "apps.sync_hub.service_reads.hash_pending_list"
   },
   {
    "method": "POST",
    "path": "/api/v1/sync/hello",
    "url": "/api/v1/sync/hello",
-   "winner": "apps.sync_hub.service.hello"
+   "winner": "apps.sync_hub.service_handshake.hello"
   },
   {
    "method": "GET",
@@ -6552,31 +6573,31 @@
    "method": "GET",
    "path": "/api/v1/sync/pull",
    "url": "/api/v1/sync/pull",
-   "winner": "apps.sync_hub.service.pull"
+   "winner": "apps.sync_hub.service_reads.pull"
   },
   {
    "method": "POST",
    "path": "/api/v1/sync/push",
    "url": "/api/v1/sync/push",
-   "winner": "apps.sync_hub.service.push"
+   "winner": "apps.sync_hub.service_push.push"
   },
   {
    "method": "GET",
    "path": "/api/v1/sync/rows",
    "url": "/api/v1/sync/rows",
-   "winner": "apps.sync_hub.service.rows"
+   "winner": "apps.sync_hub.service_reads.rows"
   },
   {
    "method": "POST",
    "path": "/api/v1/sync/stale-check",
    "url": "/api/v1/sync/stale-check",
-   "winner": "apps.sync_hub.service.stale_check"
+   "winner": "apps.sync_hub.service_push.stale_check"
   },
   {
    "method": "GET",
    "path": "/api/v1/sync/status",
    "url": "/api/v1/sync/status",
-   "winner": "apps.sync_hub.service.status"
+   "winner": "apps.sync_hub.service_reads.status"
   },
   {
    "method": "GET",
@@ -6811,6 +6832,24 @@
    "path": "/api/v1/tracks/{stable_id}",
    "url": "/api/v1/tracks/sample",
    "winner": "apps.webui.server.routes.tracks.patch_track"
+  },
+  {
+   "method": "DELETE",
+   "path": "/api/v1/tracks/{stable_id}/analysis-range",
+   "url": "/api/v1/tracks/sample/analysis-range",
+   "winner": "apps.webui.server.routes.analysis_range.clear_analysis_range"
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/tracks/{stable_id}/analysis-range",
+   "url": "/api/v1/tracks/sample/analysis-range",
+   "winner": "apps.webui.server.routes.analysis_range.get_analysis_range"
+  },
+  {
+   "method": "PUT",
+   "path": "/api/v1/tracks/{stable_id}/analysis-range",
+   "url": "/api/v1/tracks/sample/analysis-range",
+   "winner": "apps.webui.server.routes.analysis_range.set_analysis_range"
   },
   {
    "method": "GET",

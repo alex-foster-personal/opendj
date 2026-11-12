@@ -24,10 +24,10 @@ import soundfile as sf
 
 from apps.autodj.contract.models import MikBoundary, TrackProfile
 from apps.autodj.http import build_service
-from apps.autodj.plan import BassEntry, parse_plan
+from apps.autodj.plan import BassEntry, PlanEvent, parse_plan
 from apps.autodj.profile import heard_profile
 from apps.autodj.propose import propose_transition
-from apps.autodj.render_plan import RenderPlanError, compile_render_plan, layout_of
+from apps.autodj.render_plan import RenderPlanError, compile_render_plan, incoming_played_bars, layout_of
 from apps.autodj.styles import STYLES
 from apps.mik.serve_energy import merge_mik_energy
 from apps.shared.engine_origin import EngineOrigin
@@ -49,10 +49,19 @@ from apps.transition_score.tryer import (
     worker_count,
     write_pcm16_set,
 )
-from tests.autodj.fixtures import CHORUS, INTRO, OUTRO, anlz_payload, profile, track_row
+from tests.autodj.fixtures import CHORUS, INTRO, OUTRO, UP, anlz_payload, profile, track_row
 from tests.transition_score.synth import track_audio
 
 ARRANGEMENT = ((INTRO, 16, 0.4, 0.3, False), (CHORUS, 16, 1.0, 1.0, True), (OUTRO, 16, 0.4, 0.8, False))
+#: The incoming track carries a 16-bar bass build before its chorus, so a blend entered where its bass lands
+#: still has the 16 bars (64 beats) of forward mixability blends need (AUTODJ-11851).
+IN_ARRANGEMENT = (
+    (INTRO, 16, 0.4, 0.3, False),
+    (UP, 16, 0.6, 1.0, False),
+    (CHORUS, 16, 1.0, 1.0, True),
+    (OUTRO, 16, 0.4, 0.8, False),
+)
+IN_BARS = sum(row[1] for row in IN_ARRANGEMENT)
 OUT_BPM, IN_BPM = 124.0, 126.0
 _AUTODJ = build_service()
 render_context = partial(render_context, autodj=_AUTODJ)
@@ -63,7 +72,7 @@ try_plans = partial(try_plans, autodj=_AUTODJ)
 def _profiles():  # type: ignore[no-untyped-def]
     return (
         profile("fixture-out", bpm=OUT_BPM, arrangement=ARRANGEMENT),
-        profile("fixture-in", bpm=IN_BPM, key="9A", arrangement=ARRANGEMENT),
+        profile("fixture-in", bpm=IN_BPM, key="9A", arrangement=IN_ARRANGEMENT),
     )
 
 
@@ -168,7 +177,7 @@ def test_compile_is_deterministic() -> None:
 def test_layout_and_compile_use_judged_bpm_for_ratios_and_heard_outgoing_tempo() -> None:
     """[if] the master is heard faster than stored [then] in_ratio and render tempos use heard BPM, [else stop]."""
     out_stored = profile("fixture-out-heard", bpm=120.0, arrangement=ARRANGEMENT)
-    in_profile = profile("fixture-in-heard", bpm=134.0, key="9A", arrangement=ARRANGEMENT)
+    in_profile = profile("fixture-in-heard", bpm=134.0, key="9A", arrangement=IN_ARRANGEMENT)
     out_heard = heard_profile(out_stored, heard_bpm=127.2)
     proposed = propose_transition(out_heard, in_profile, out_deck=1, in_deck=2, top=6)
     plan = parse_plan(proposed["proposals"][0]["plan"])
@@ -296,7 +305,7 @@ def tracks(tmp_path_factory: pytest.TempPathFactory) -> tuple[Path, Path]:
     root = tmp_path_factory.mktemp("tracks")
     out_path, in_path = root / "out.wav", root / "in.wav"
     sf.write(out_path, track_audio(OUT_BPM, 48, 50.0, 41.2, 1), 48000, subtype="PCM_16")
-    sf.write(in_path, track_audio(IN_BPM, 48, 62.0, 55.0, 2), 48000, subtype="PCM_16")
+    sf.write(in_path, track_audio(IN_BPM, IN_BARS, 62.0, 55.0, 2), 48000, subtype="PCM_16")
     return out_path, in_path
 
 
@@ -1045,7 +1054,7 @@ def test_engine_profiles_read_the_same_payloads_as_opendj_dj_without_importing_t
         _AUTODJ,
         transport=httpx.MockTransport(answer),
     )
-    with pytest.raises(tryer.TryError, match="404"):
+    with pytest.raises(tryer.PairNotTryable, match="404"):
         reader.profile("a b")
     assert seen == ["http://127.0.0.1:1/api/v1/tracks/a%20b"]
 
@@ -1159,6 +1168,23 @@ def test_engine_profiles_without_mik_keep_energy_unscored(tmp_path: Path, missin
     block = build_energy_block(plan, outgoing, incoming, intent="energy_up")
     assert block.unscored and block.line == UNSCORED_LINE
     assert block.out is None and block.in_ is None
+
+
+def test_engine_profiles_keep_server_failures_systemic() -> None:
+    """[if] a profile request returns 500 [then] raise plain TryError, [else stop]."""
+    import httpx
+
+    from apps.shared.engine_origin import EngineOrigin
+    from apps.transition_score import tryer
+
+    reader = tryer.EngineProfiles(
+        EngineOrigin(host="127.0.0.1", port=1, lock_path=Path("x.lock"), pid=None, role=None, boot_id=None),
+        _AUTODJ,
+        transport=httpx.MockTransport(lambda _: httpx.Response(500, text="broken")),
+    )
+    with pytest.raises(tryer.TryError, match="500") as systemic:
+        reader.profile("track")
+    assert not isinstance(systemic.value, tryer.PairNotTryable)
 
 
 def test_one_unrenderable_proposal_does_not_sink_the_pair(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -1607,6 +1633,91 @@ def _incoming_play_bar(doc: dict[str, Any], in_deck: int) -> float:
     return float(rows[0]["at"]["bar"])
 
 
+def _with_incoming_transport(plan: Any, *events: PlanEvent) -> Any:
+    import dataclasses
+
+    retained = tuple(
+        event
+        for event in plan.events
+        if not (event.kind == "do" and event.deck == plan.in_.deck and event.name in ("play", "stop"))
+    )
+    return dataclasses.replace(plan, events=(*retained, *events))
+
+
+@pytest.mark.requirement("TRYER-02")
+def test_a_stop_before_launch_cancels_it_until_the_next_play() -> None:
+    """[if] stop clears an armed play [then] only the later play renders, [else stop]."""
+    out_profile, in_profile = _profiles()
+    plan = _plans()[0]
+
+    def play(at: float) -> PlanEvent:
+        return PlanEvent(at, plan.in_.deck, "do", "play")
+
+    stop = PlanEvent(0.75, plan.in_.deck, "do", "stop")
+    canceled = _with_incoming_transport(plan, play(0.5), stop, play(2.0))
+    control = _with_incoming_transport(plan, play(0.5), play(2.0))
+
+    doc = compile_render_plan(canceled, out_profile, in_profile, 4, out_audio=A_WAV, in_audio=B_WAV)
+    canceled_plays = [
+        row
+        for row in doc["events"]
+        if row.get("cmd", {}).get("type") == "play"
+        and row["cmd"]["deck"] == plan.in_.deck
+        and row["cmd"]["playing"] is True
+    ]
+    assert [row["at"]["bar"] for row in canceled_plays] == [plan.out.start_bar + 2]
+    without_canceled = _with_incoming_transport(plan, stop, play(2.0))
+    assert (
+        rendered_steps(canceled, out_profile, layout_of(canceled, out_profile, in_profile, 4))[1]
+        == rendered_steps(without_canceled, out_profile, layout_of(without_canceled, out_profile, in_profile, 4))[1]
+    )
+    control_doc = compile_render_plan(control, out_profile, in_profile, 4, out_audio=A_WAV, in_audio=B_WAV)
+    plays = [
+        row
+        for row in control_doc["events"]
+        if row.get("cmd", {}).get("type") == "play"
+        and row["cmd"]["deck"] == plan.in_.deck
+        and row["cmd"]["playing"] is True
+    ]
+    assert [row["at"]["bar"] for row in plays] == [plan.out.start_bar + 1, plan.out.start_bar + 2]
+    assert incoming_played_bars(control) - incoming_played_bars(canceled) == 1.0
+
+
+@pytest.mark.requirement("TRYER-02")
+def test_a_stop_before_downbeat_prevents_the_deck_starting() -> None:
+    """[if] stop precedes an armed downbeat [then] no play renders, [else stop]."""
+    out_profile, in_profile = _profiles()
+    plan = _plans()[0]
+    play = PlanEvent(0.62, plan.in_.deck, "do", "play")
+    stopped = _with_incoming_transport(plan, play, PlanEvent(0.8, plan.in_.deck, "do", "stop"))
+    control = _with_incoming_transport(plan, play)
+
+    doc = compile_render_plan(stopped, out_profile, in_profile, 4, out_audio=A_WAV, in_audio=B_WAV)
+    assert not any(
+        row.get("cmd", {}).get("type") == "play"
+        and row["cmd"]["deck"] == plan.in_.deck
+        and row["cmd"]["playing"] is True
+        for row in doc["events"]
+    )
+    control_doc = compile_render_plan(control, out_profile, in_profile, 4, out_audio=A_WAV, in_audio=B_WAV)
+    assert _incoming_play_bar(control_doc, plan.in_.deck) == plan.out.start_bar + 1
+    assert incoming_played_bars(stopped) == 0.0
+
+
+@pytest.mark.requirement("TRYER-02")
+def test_a_second_play_before_downbeat_replaces_the_first() -> None:
+    """[if] play replaces an armed play [then] one launch renders, [else stop]."""
+    out_profile, in_profile = _profiles()
+    plan = _plans()[0]
+    replaced = _with_incoming_transport(
+        plan,
+        PlanEvent(0.5, plan.in_.deck, "do", "play"),
+        PlanEvent(0.62, plan.in_.deck, "do", "play"),
+    )
+    doc = compile_render_plan(replaced, out_profile, in_profile, 4, out_audio=A_WAV, in_audio=B_WAV)
+    assert _incoming_play_bar(doc, plan.in_.deck) == plan.out.start_bar + 1
+
+
 def test_an_off_grid_play_renders_at_the_executors_quantized_downbeat() -> None:
     """[if] a play is authored between downbeats [then] the render starts it on the next downbeat, where the
     quantized live launch does, while an on-grid play is unchanged, [else stop] (Sol P1 on #7597)."""
@@ -2024,4 +2135,6 @@ def test_try_plans_candidates_carry_energy_from_the_plan(
         mik_level=7,
     )
     ranked = try_plans([plan], out_profile, in_profile, tracks, context_bars=4, binary=engine)
-    assert ranked[0].energy == build_energy_block(plan, out_profile, in_profile, intent="energy_up").to_json()
+    expected = build_energy_block(plan, out_profile, in_profile, intent="energy_up").to_json()
+    # The candidate carries energy as stored JSON (energy_json), so tuples come back as lists.
+    assert ranked[0].energy == json.loads(json.dumps(expected))

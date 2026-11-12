@@ -1,0 +1,9 @@
+{
+  "bytes": 1024,
+  "measured_main": 447253,
+  "measured_with_pr": 447393,
+  "sha": "4402e1f7e5a450b5b6de9833273e8414e77a9a4b",
+  "date": "Wed 11 Nov 2026",
+  "reason": "PR #10715 (issue #10442): remote-control QR entry wires into the performance surface; +140 B gzip over main at CI merge base.",
+  "payback": "none planned; the growth is the feature wiring on this surface"
+}

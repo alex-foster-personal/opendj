@@ -10,6 +10,8 @@ export const BROWSER_SORT_KEYS = [
 	'time',
 	'energy',
 	'genre',
+	'filename',
+	'location',
 	'lyrics',
 	'grid',
 	'autoplay',

@@ -31,18 +31,7 @@ const SHORT_VIEWPORT = { width: 1280, height: 560 };
  *  channel-strip-less-floor.test.mjs and written into +page.svelte. */
 const LESS_DECK_AREA_FLOOR_PX = 249;
 
-async function enterLessMode(
-	page: import('@playwright/test').Page,
-	viewport: { width: number; height: number } = STANDARD_VIEWPORT
-): Promise<void> {
-	await page.setViewportSize(viewport);
-	await page.goto('/performance');
-	// Scoped and exact: the enrich card's own "Less" (collapse) button also
-	// matches a loose name, and appears only while the library is enriching.
-	await page
-		.locator('.deck-layout-toggle')
-		.getByRole('button', { name: 'LESS', exact: true })
-		.click();
+async function waitForLessCollapse(page: import('@playwright/test').Page): Promise<void> {
 	await expect(page.locator('.perf-root')).toHaveClass(/deck-layout-less/);
 	// Scoped to `.rb-deck` specifically (not the bare `[data-deck='3']`
 	// attribute selector, which also matches WaveRow's own row div - that
@@ -55,6 +44,62 @@ async function enterLessMode(
 	await expect
 		.poll(async () => (await deck3Panel.boundingBox())?.height ?? -1)
 		.toBeLessThanOrEqual(10);
+}
+
+async function enterLessMode(
+	page: import('@playwright/test').Page,
+	viewport: { width: number; height: number } = STANDARD_VIEWPORT
+): Promise<void> {
+	await page.setViewportSize(viewport);
+	await page.goto('/performance');
+	// Scoped and exact: the enrich card's own "Less" (collapse) button also
+	// matches a loose name, and appears only while the library is enriching.
+	await page
+		.locator('.deck-layout-toggle')
+		.getByRole('button', { name: 'LESS', exact: true })
+		.click();
+	await waitForLessCollapse(page);
+}
+
+type FocusStop = {
+	inMixer: boolean;
+	channel: string | null;
+	label: string;
+};
+
+function activeFocusStop(): FocusStop {
+	const active = document.activeElement;
+	if (!(active instanceof HTMLElement)) {
+		return { inMixer: false, channel: null, label: 'none' };
+	}
+	const mixer = document.querySelector('.rb-mixer');
+	const inMixer = mixer !== null && mixer.contains(active);
+	const channelEl = active.closest('[data-mixer-channel]');
+	const channel = channelEl?.getAttribute('data-mixer-channel') ?? null;
+	const label =
+		active.getAttribute('data-knob-id') ??
+		active.getAttribute('data-testid') ??
+		active.getAttribute('aria-label') ??
+		active.tagName.toLowerCase();
+	return { inMixer, channel, label };
+}
+
+async function shiftClickKnob(
+	page: import('@playwright/test').Page,
+	knobId: string
+): Promise<void> {
+	const dial = page.locator(`[data-knob-id="${knobId}"]`);
+	await page.keyboard.down('Shift');
+	await dial.click();
+	await page.keyboard.up('Shift');
+	await expect(dial).toHaveClass(/knob-selected/);
+}
+
+async function knobValue(dial: import('@playwright/test').Locator): Promise<number> {
+	const raw = await dial.getAttribute('aria-valuenow');
+	const value = raw === null ? Number.NaN : Number.parseFloat(raw);
+	if (!Number.isFinite(value)) throw new Error(`knob aria-valuenow is not a number: ${raw}`);
+	return value;
 }
 
 test('performance LESS mode: channel 1/2 faders and level meters stay fully inside the visible mixer panel', async ({
@@ -454,4 +499,148 @@ test('performance LESS mode: no control in a collapsed strip can take focus', as
 		}, deck);
 		expect(reachable, `channel ${deck} FILTER must still be keyboard reachable in LESS`).toBe(true);
 	}
+});
+
+// requirement: MIXUX-9832
+// [if] the view is LESS and the user tabs through the mixer [then] focus never lands on a deck 3 or 4 control
+// [if] the view is LESS [then] Tab visits fader, HI, MID, LOW, TRIM, CUE, FILTER in that order
+test('performance LESS mode: Tab through the mixer never lands on a deck 3/4 control and follows the strip grid', async ({
+	page
+}) => {
+	await enterLessMode(page);
+
+	for (const deck of [3, 4]) {
+		const precondition = await page.evaluate((deckId) => {
+			const strip = document.querySelector(`[data-mixer-channel="${deckId}"]`);
+			if (strip === null) throw new Error(`channel ${deckId} strip is not mounted`);
+			const slot = strip.closest('.strip-slot');
+			if (slot === null) throw new Error(`channel ${deckId} has no .strip-slot ancestor`);
+			const collapsed = slot.classList.contains('collapsed');
+			const focusable = [...slot.querySelectorAll<HTMLElement>('button, input, [tabindex]')].filter(
+				(el) => {
+					const tabindex = el.getAttribute('tabindex');
+					return tabindex === null || Number(tabindex) >= 0;
+				}
+			);
+			return { collapsed, focusableCount: focusable.length };
+		}, deck);
+		expect(precondition.collapsed, `channel ${deck} must be collapsed in LESS`).toBe(true);
+		expect(
+			precondition.focusableCount,
+			`channel ${deck} collapsed slot must mount focusable controls or this test is vacuous`
+		).toBeGreaterThan(0);
+	}
+
+	await page
+		.locator('.deck-layout-toggle')
+		.getByRole('button', { name: 'LESS', exact: true })
+		.focus();
+
+	const stops: FocusStop[] = [];
+	let enteredMixer = false;
+	const TAB_CAP = 80;
+	for (let i = 0; i < TAB_CAP; i += 1) {
+		await page.keyboard.press('Tab');
+		const stop = await page.evaluate(activeFocusStop);
+		if (stop.inMixer) {
+			enteredMixer = true;
+			stops.push(stop);
+		} else if (enteredMixer) {
+			break;
+		}
+	}
+	expect(enteredMixer, 'Tab must enter the mixer at least once').toBe(true);
+	const finalStop = await page.evaluate(activeFocusStop);
+	expect(
+		finalStop.inMixer && stops.length >= TAB_CAP,
+		`Tab did not leave the mixer within ${TAB_CAP} presses: ${JSON.stringify(stops)}`
+	).toBe(false);
+
+	const hiddenHits = stops.filter((s) => s.channel === '3' || s.channel === '4');
+	expect(
+		hiddenHits.map((s) => s.label),
+		'focus must never land on a hidden deck 3 or 4 control in LESS'
+	).toEqual([]);
+
+	const channel1Stops = stops.filter((s) => s.channel === '1');
+	const channel2Stops = stops.filter((s) => s.channel === '2');
+	expect(channel1Stops.length, 'deck 1 must receive keyboard focus in LESS').toBeGreaterThan(0);
+	expect(channel2Stops.length, 'deck 2 must receive keyboard focus in LESS').toBeGreaterThan(0);
+
+	const channel1Order = [
+		'1:fader',
+		'1:high',
+		'1:mid',
+		'1:low',
+		'1:trim',
+		'cue-channel-1',
+		'1:filter'
+	];
+	const labels1 = channel1Stops.map((s) => s.label);
+	for (const expected of channel1Order) {
+		expect(labels1, `deck 1 Tab must visit ${expected}`).toContain(expected);
+	}
+	const positions = channel1Order.map((label) => labels1.indexOf(label));
+	for (let i = 1; i < positions.length; i += 1) {
+		expect(
+			positions[i - 1],
+			`deck 1 Tab order: ${channel1Order[i]} must come after ${channel1Order[i - 1]}`
+		).toBeLessThan(positions[i]!);
+	}
+
+	const channel2Order = channel1Order.map((label) => label.replace(/1/g, '2'));
+	const labels2 = channel2Stops.map((s) => s.label);
+	for (const expected of channel2Order) {
+		expect(labels2, `deck 2 Tab must visit ${expected}`).toContain(expected);
+	}
+	const positions2 = channel2Order.map((label) => labels2.indexOf(label));
+	for (let i = 1; i < positions2.length; i += 1) {
+		expect(
+			positions2[i - 1],
+			`deck 2 Tab order: ${channel2Order[i]} must come after ${channel2Order[i - 1]}`
+		).toBeLessThan(positions2[i]!);
+	}
+});
+
+// requirement: MIXUX-9832
+// [if] a deck 3/4 dial was Shift-selected in MORE and the view switches to LESS [then] a wheel event leaves it unchanged
+test('performance: switching MORE to LESS releases a Shift-selected deck 3 FILTER, so the wheel no longer moves it', async ({
+	page
+}) => {
+	await page.setViewportSize(STANDARD_VIEWPORT);
+	await page.goto('/performance');
+	await page
+		.locator('.deck-layout-toggle')
+		.getByRole('button', { name: 'MORE', exact: true })
+		.click();
+	await expect(page.locator('.perf-root')).not.toHaveClass(/deck-layout-less/);
+
+	await shiftClickKnob(page, '3:filter');
+	await shiftClickKnob(page, '1:filter');
+
+	const filter3 = page.locator('[data-knob-id="3:filter"]');
+	const filter1 = page.locator('[data-knob-id="1:filter"]');
+	const value3Before = await knobValue(filter3);
+	const lower = page.locator('.rb-mixer .lower');
+	const lowerBox = await lower.boundingBox();
+	expect(lowerBox).not.toBeNull();
+	await page.mouse.move(lowerBox!.x + lowerBox!.width / 2, lowerBox!.y + lowerBox!.height / 2);
+	await page.mouse.wheel(0, -200);
+	await expect.poll(() => knobValue(filter3)).not.toBe(value3Before);
+
+	await page
+		.locator('.deck-layout-toggle')
+		.getByRole('button', { name: 'LESS', exact: true })
+		.click();
+	await waitForLessCollapse(page);
+
+	await expect(filter3).not.toHaveClass(/knob-selected/);
+	await expect(filter1).toHaveClass(/knob-selected/);
+
+	const value3AfterRelease = await knobValue(filter3);
+	const value1BeforeWheel = await knobValue(filter1);
+	await page.mouse.move(lowerBox!.x + lowerBox!.width / 2, lowerBox!.y + lowerBox!.height / 2);
+	await page.mouse.wheel(0, -400);
+	await expect.poll(() => knobValue(filter1)).not.toBe(value1BeforeWheel);
+	expect(await knobValue(filter3)).toBe(value3AfterRelease);
 });

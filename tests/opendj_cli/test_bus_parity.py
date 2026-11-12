@@ -20,10 +20,11 @@
 from __future__ import annotations
 
 import re
+from pathlib import Path
 
 import pytest
 
-from apps.opendj_cli.catalog import RAMPABLE_TYPES, VERBS, Expectation
+from apps.opendj_cli.catalog import BEAT_FX_EFFECT_VALUES, PAD_MODE_VALUES, RAMPABLE_TYPES, VERBS, Expectation
 from apps.opendj_cli.confirm import checks_for, verdict
 from apps.opendj_cli.orders import parse_script
 from apps.opendj_cli.verbs import (
@@ -35,6 +36,8 @@ from apps.opendj_cli.verbs import (
 )
 from tests.opendj_cli import ts_contract
 
+REPO_ROOT = ts_contract.REPO_ROOT
+
 # A token per value kind, tried in order: the first that parses is the sample.
 # Derived by asking the verb's own parser rather than by restating the domain,
 # so a narrowed domain cannot leave this list quietly wrong.
@@ -43,7 +46,11 @@ _SAMPLE_TOKENS = (
     "A", "bad", "beat", "low", "next", "top", "vocal",
     "beatgrid", "own", "practice", "hybrid", "pickup", "tri-band", "mono-dev", "mono", "auto", "ai",
     "phase-meter", "smooth", "in", "elastic", "tone", "sections", "space", "stems", "exact", "move", "halo", "half",
+    "hot-cue",
     "performance", "browser.tree", "300", "open", "second-screen", "bars", "beats_bars", "grid_lines", "off",
+    "center",
+    "sides",
+    "echo", "helix", "spiral", "master",
 )
 
 
@@ -131,6 +138,29 @@ def test_catalog_observe_and_verdict_against_browser_playlist_mirror() -> None:
     assert verdict(checks, {"browser": {"playlist": "inbox"}})[0] == "confirmed"
     assert verdict(checks, {"browser": {"playlist": "other"}})[0] == "unconfirmed"
     assert verdict(checks, {})[0] == "unconfirmed"
+
+
+def test_roll_cli_parses_fractional_and_whole_lengths() -> None:
+    assert parse_invocation(["roll", "1", "1/4"]).command == {
+        "type": "roll",
+        "deck": 1,
+        "beats": 0.25,
+    }
+    assert parse_invocation(["roll", "1", "2"]).command == {
+        "type": "roll",
+        "deck": 1,
+        "beats": 2,
+    }
+    assert parse_invocation(["roll_release", "1"]).command == {
+        "type": "roll",
+        "deck": 1,
+        "beats": None,
+    }
+
+
+def test_roll_cli_refuses_an_out_of_set_length() -> None:
+    with pytest.raises(InvocationError, match=r"1/32\|1/16"):
+        parse_invocation(["roll", "1", "3"])
 
 
 @pytest.mark.parametrize("verb", ["loop_in", "loop_out", "reloop"])
@@ -242,6 +272,20 @@ def test_set_perf_view_and_show_pads_build_the_bus_commands() -> None:
         parse_invocation(["set_perf_view", "grid"])
 
 
+def test_pad_mode_builds_the_bus_command_and_tracks_catalog_ids() -> None:
+    """[if] pad_mode is not reachable from the CLI or its enum drifts from the catalog [then] agent parity is broken, [else stop]."""
+    assert parse_invocation(["pad_mode", "2", "pad-fx-1"]).command == {
+        "type": "pad_mode",
+        "deck": 2,
+        "mode": "pad-fx-1",
+    }
+    with pytest.raises(InvocationError):
+        parse_invocation(["pad_mode", "2", "pads"])
+    catalog_path = Path("apps/webui/frontend/src/lib/rb/pad-mode-catalog.ts")
+    catalog_ids = re.findall(r"\{ id: '([a-z0-9-]+)'", catalog_path.read_text(encoding="utf-8"))
+    assert list(PAD_MODE_VALUES) == catalog_ids
+
+
 def test_set_deck_number_art_builds_the_bus_command() -> None:
     """[if] set_deck_number_art halo/glow/tinted does not build the typed command [then] agents lose parity with the Appearance setting."""
     for mode in ("halo", "glow", "tinted"):
@@ -251,6 +295,16 @@ def test_set_deck_number_art_builds_the_bus_command() -> None:
         }
     with pytest.raises(InvocationError):
         parse_invocation(["set_deck_number_art", "outline"])
+
+
+def test_mixer_placement_builds_the_bus_command() -> None:
+    """[if] mixer_placement has no verb or refuses center|sides [then] agents lose parity with Settings (#9434)."""
+    assert parse_invocation(["mixer_placement", "sides"]).command == {
+        "type": "mixer_placement",
+        "placement": "sides",
+    }
+    with pytest.raises(InvocationError, match=r"center\|sides"):
+        parse_invocation(["mixer_placement", "left"])
 
 
 def test_autoplay_verdict_builds_the_bus_command() -> None:
@@ -368,7 +422,7 @@ def test_the_rampable_types_match_the_pages_own_ramp_guard() -> None:
     assert match is not None, "agent-orders.ts no longer declares RAMP_TYPES"
     page_types = set(re.findall(r"'([a-z_]+)'", match.group(1)))
     assert page_types == RAMPABLE_TYPES
-    assert {"eq", "fader", "trim", "filter", "stem_gain", "crossfader", "tempo"} == RAMPABLE_TYPES
+    assert {"eq", "fader", "trim", "filter", "stem_gain", "stem_fx_send", "crossfader", "tempo"} == RAMPABLE_TYPES
 
 
 def test_anchors_are_the_three_the_duration_type_declares() -> None:
@@ -604,9 +658,67 @@ def test_beat_jump_size_builds_the_bus_command_for_every_rekordbox_size() -> Non
         parse_invocation(["beat_jump_size", "1", "3"])
 
 
+def test_color_fx_all_reaches_every_channel_as_one_command() -> None:
+    """COLORFX-13: deck=all is color_fx-only and reaches the bus command agents send."""
+    assert parse_invocation(["color_fx", "all", "space"]).command == {
+        "type": "color_fx",
+        "deck": "all",
+        "effect": "space",
+    }
+    assert parse_invocation(["color_fx", "1", "space"]).command["deck"] == 1
+    with pytest.raises(InvocationError):
+        parse_invocation(["fader", "all", "0.5"])
+
+
+@pytest.mark.requirement("TRANSAI-10667")
+def test_propose_transition_parity_bytes_are_stable_across_calls() -> None:
+    """[if] the same pair is proposed twice [then] confidence and rejected parity bytes match, [else stop]."""
+    from apps.autodj.http import propose_parity_bytes, propose_transition
+    from tests.autodj.fixtures import profile
+
+    out_profile, in_profile = profile("parity-out"), profile("parity-in", key="9A")
+    first = propose_transition(out_profile, in_profile, out_deck=1, in_deck=2, top=2)
+    second = propose_transition(out_profile, in_profile, out_deck=1, in_deck=2, top=2)
+    for document in (first, second):
+        document.pop("_valid_proposal_scores", None)
+    assert propose_parity_bytes(first) == propose_parity_bytes(second)
+    assert first["proposals"][0]["confidence"] == second["proposals"][0]["confidence"]
+
+
 def test_beat_jump_accepts_a_half_beat_and_refuses_other_fractions() -> None:
     """DECKUX-10470: if beat_jump refuses -0.5 or accepts 1.5 then the half-beat jump is broken."""
     assert parse_invocation(["beat_jump", "1", "-0.5"]).command["beats"] == -0.5
     assert parse_invocation(["beat_jump", "1", "8"]).command["beats"] == 8
     with pytest.raises(InvocationError, match="non-zero whole number or"):
         parse_invocation(["beat_jump", "1", "1.5"])
+
+
+@pytest.mark.requirement("FXECHO-10722")
+def test_beat_fx_effect_values_match_ts_catalog() -> None:
+    """[if] BEAT_FX_EFFECT_VALUES drifts from TIME_FX_BUILT_EFFECT_NAMES [then] agent parity breaks, [else stop]."""
+
+    catalog_path = REPO_ROOT / "apps/webui/frontend/src/lib/rb/fx/time-fx-catalog.ts"
+    built: list[str] = []
+    block_name: str | None = None
+    block_built = False
+    for line in catalog_path.read_text(encoding="utf-8").splitlines():
+        stripped = line.strip()
+        if stripped.startswith("name:"):
+            block_name = stripped.split("'")[1]
+            block_built = False
+        elif stripped == "builtOnMain: true," and block_name is not None:
+            block_built = True
+        elif (stripped.startswith("}),") or stripped == "})") and block_name is not None:
+            if block_built:
+                built.append(block_name)
+            block_name = None
+    assert tuple(built) == BEAT_FX_EFFECT_VALUES
+
+
+def test_beat_fx_cli_builds_the_bus_command() -> None:
+    assert parse_invocation(["beat_fx", "target=master", "effect=helix", "enabled=true"]).command == {
+        "type": "beat_fx",
+        "target": "master",
+        "effect": "helix",
+        "enabled": True,
+    }

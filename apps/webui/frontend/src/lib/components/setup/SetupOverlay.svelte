@@ -26,8 +26,10 @@
 	 * endpoints in $lib/setup/setup-api; the only browser-only state is
 	 * whether this tab is drawing the panel, the chip, or neither.
 	 */
-	import { untrack } from 'svelte';
+	import { tick, untrack } from 'svelte';
+	import { focusTrap } from '$lib/keyboard/focus-trap';
 	import { goto } from '$app/navigation';
+	import { page } from '$app/stores';
 	import AssistantSidebar from '$lib/components/assistant/AssistantSidebar.svelte';
 	import StemsPrompt from '$lib/components/rb/StemsPrompt.svelte';
 	import MusicFolderRows from '$lib/components/setup/MusicFolderRows.svelte';
@@ -63,7 +65,13 @@
 		openSetupOverlay,
 		setupOverlay
 	} from '$lib/setup/overlay.svelte';
-	import { SETUP_HOST_ROUTE } from '$lib/setup/run-setup';
+	import {
+		navigateToSetupHostAfterClose,
+		SETUP_HOST_ROUTE,
+		shouldNavigateSetupDoor
+	} from '$lib/setup/run-setup';
+	import { dismissReloadResume } from '$lib/rb/reload-resume.svelte';
+	import { queryPerformanceState } from '$lib/rb/performance-ipc.svelte';
 	import { nativeShellKind, pickFolder } from '$lib/shell/native-shell';
 	import {
 		FOLDER_STAGE_LABELS,
@@ -94,12 +102,16 @@
 		advanceRefusal,
 		backRefusal,
 		fatalBlockers,
+		humanBackRefusal,
 		humanRefusal,
 		importPct,
 		setupWizard,
 		stepCount,
 		stepPosition,
-		visibleSteps
+		visibleSteps,
+		wizardAnnouncement,
+		type AnnouncerState,
+		type WizardStep
 	} from '$lib/setup/wizard.svelte';
 	import {
 		isRunButtonActionPending,
@@ -181,9 +193,10 @@
 	const nextRefusalAgent = $derived(advanceRefusal(step, advanceCtx));
 	/** Operator-safe sentence for the same refusal, the only one rendered. */
 	const nextRefusal = $derived(humanRefusal(step, advanceCtx));
-	/** Why Back is refused here, or null. Same function that gates the button,
-	 * so the tooltip and the disabled state can never disagree. */
-	const backWhy = $derived(backRefusal(step, { source, detection, folderRows, job }));
+	/** Raw Back refusal: gates the control and rides on data-agent-refusal. */
+	const backWhyAgent = $derived(backRefusal(step, { source, detection, folderRows, job }));
+	/** Operator-safe sentence for the same Back refusal. */
+	const backWhyHuman = $derived(humanBackRefusal(step, { source, detection, folderRows, job }));
 	const showAddFolderRow = $derived(
 		folderRows.some((row) => row.path.trim() !== '')
 	);
@@ -213,6 +226,42 @@
 	}
 
 	const nativeFolderPicker = canUseNativeFolderPicker();
+
+	const INTERACTIVE_TARGET =
+		'button, a[href], input, textarea, select, summary, [contenteditable]';
+
+	let panelEl = $state<HTMLDivElement | null>(null);
+
+	const politeRefusal = $derived(
+		step === 'detect' && source === 'rekordbox' && fatal.length > 0 ? null : nextRefusal
+	);
+	let announcement = $state('');
+	let announced: AnnouncerState | null = null;
+
+	$effect(() => {
+		const current: AnnouncerState = { step, source, refusal: politeRefusal };
+		if (panelEl === null) {
+			announced = null;
+			return;
+		}
+		const said = wizardAnnouncement(announced, current);
+		announced = current;
+		if (said !== null) announcement = said;
+	});
+
+	let focusedStep: WizardStep | null = null;
+
+	$effect(() => {
+		const panel = panelEl;
+		const current = step;
+		if (panel === null) {
+			focusedStep = null;
+			return;
+		}
+		if (current === focusedStep) return;
+		focusedStep = current;
+		void tick().then(() => panel.querySelector<HTMLElement>('[data-step-heading]')?.focus());
+	});
 
 	/** Open the OS-native directory picker in the desktop shell; browser tabs keep
 	 * the text field as the only path and this handler is never called there.
@@ -337,6 +386,17 @@
 		void setupWizard.refreshStatusAfterImport(job.id);
 	});
 
+	function anyDeckPlaying(): boolean {
+		return Object.values(queryPerformanceState().decks).some((deck) => deck.playing);
+	}
+
+	function closeSetupWithoutHostNavigation(): void {
+		const pathname = $page.url.pathname;
+		if (!shouldNavigateSetupDoor(pathname, anyDeckPlaying())) {
+			dismissReloadResume();
+		}
+	}
+
 	async function dismissAndClose(): Promise<void> {
 		// finish(), not skip(): it re-reads preflight before saying the close
 		// will stick, and refuses with a visible reason when the engine still
@@ -346,6 +406,8 @@
 		// Honest close: the library really is whatever was already in it, and
 		// the chip that replaces the panel says so rather than vanishing.
 		closeSetupOverlay({ incomplete: (setupWizard.status?.tracks ?? 0) === 0 });
+		closeSetupWithoutHostNavigation();
+		navigateToSetupHostAfterClose(goto, $page.url.pathname, anyDeckPlaying());
 	}
 
 	async function finish(): Promise<void> {
@@ -353,6 +415,8 @@
 		// fresh reading agrees (the stale-fail reopen of #3422).
 		if (!(await setupWizard.finish())) return;
 		closeSetupOverlay();
+		closeSetupWithoutHostNavigation();
+		navigateToSetupHostAfterClose(goto, $page.url.pathname, anyDeckPlaying());
 	}
 
 	/** Progress Continue waits for the post-import status refresh. */
@@ -367,10 +431,31 @@
 
 	function reopen(): void {
 		openSetupOverlay();
-		void goto(SETUP_HOST_ROUTE);
+		const pathname = $page.url.pathname;
+		if (shouldNavigateSetupDoor(pathname, anyDeckPlaying())) {
+			void goto(SETUP_HOST_ROUTE);
+		}
 	}
 
 	function onPanelKeydown(event: KeyboardEvent): void {
+		const panel = event.currentTarget;
+		if (!(panel instanceof HTMLDivElement)) return;
+		if (
+			event.key === 'Enter' &&
+			!event.isComposing &&
+			!event.shiftKey &&
+			!event.altKey &&
+			!event.ctrlKey &&
+			!event.metaKey
+		) {
+			const target = event.target instanceof Element ? event.target : null;
+			if (target?.closest(INTERACTIVE_TARGET) != null) return;
+			const primary = panel.querySelector<HTMLButtonElement>('[data-step-primary]:not([disabled])');
+			if (primary == null) return;
+			event.preventDefault();
+			primary.click();
+			return;
+		}
 		// Escape MINIMISES rather than closes. Closing would either drop a
 		// running import off screen with no trace, or record a dismissal the
 		// operator never asked for; the chip does neither.
@@ -389,8 +474,9 @@
 		type="button"
 		class="secondary"
 		onclick={() => setupWizard.back(job)}
-		disabled={backWhy !== null || setupWizard.busy}
-		title={backWhy ?? `Go back to ${STEP_TITLES[route[Math.max(position - 2, 0)]]}`}
+		disabled={backWhyAgent !== null || setupWizard.busy}
+		title={backWhyHuman ?? `Go back to ${STEP_TITLES[route[Math.max(position - 2, 0)]]}`}
+		data-agent-refusal={backWhyAgent ?? undefined}
 	>
 		Back
 	</button>
@@ -439,6 +525,8 @@
 			aria-modal="true"
 			aria-label="First-run setup"
 			tabindex="-1"
+			bind:this={panelEl}
+			use:focusTrap={{ initialFocus: 'self' }}
 			onkeydown={onPanelKeydown}
 		>
 			<header class="su-head">
@@ -474,8 +562,9 @@
 										type="button"
 										class="step-link"
 										onclick={() => setupWizard.goTo(name)}
-										disabled={backWhy !== null}
-										title={backWhy ?? `Go back to step ${index + 1} of ${total}: ${STEP_TITLES[name]}`}
+										disabled={backWhyAgent !== null}
+										title={backWhyHuman ?? `Go back to step ${index + 1} of ${total}: ${STEP_TITLES[name]}`}
+										data-agent-refusal={backWhyAgent ?? undefined}
 									>
 										{STEP_TITLES[name]}
 									</button>
@@ -485,8 +574,16 @@
 							</li>
 						{/each}
 					</ol>
-					<p class="step-counter" role="status">
+					<p class="step-counter">
 						Step {position} of {total}: {STEP_TITLES[step]}
+					</p>
+					<p
+						class="su-announce"
+						aria-live="polite"
+						aria-atomic="true"
+						data-testid="setup-announcer"
+					>
+						{announcement}
 					</p>
 
 					{#if refusal !== null}
@@ -514,6 +611,7 @@
 					<!-- -------------------------------------------------- welcome -->
 					{#if step === 'welcome'}
 						<div class="panel">
+							<h3 tabindex="-1" data-step-heading>Welcome</h3>
 							<p>
 								This app keeps its own library. You can fill it from your existing
 								DJ collection or from a folder of audio files, but only when you
@@ -564,6 +662,7 @@
 								{/if}
 								<button
 									type="button"
+									data-step-primary
 									onclick={() => setupWizard.next()}
 									disabled={setupWizard.busy}
 								>
@@ -628,6 +727,7 @@
 
 					{#if step === 'detect' && source === null}
 						<div class="panel">
+							<h3 tabindex="-1" data-step-heading>Find your music</h3>
 							<p class="muted">
 								Choose an import source above. Nothing is imported until you pick
 								one and explicitly start it.
@@ -637,6 +737,7 @@
 								{@render detectEscapeButtons()}
 								<button
 									type="button"
+									data-step-primary
 									onclick={() => setupWizard.next()}
 									disabled={nextRefusalAgent !== null || setupWizard.busy}
 									data-agent-refusal={nextRefusalAgent}
@@ -646,7 +747,7 @@
 								</button>
 							</div>
 							{#if nextRefusal !== null}
-								<p class="why" role="status">
+								<p class="why">
 									Continue is not available. {nextRefusal}
 								</p>
 							{/if}
@@ -655,7 +756,7 @@
 
 					{#if step === 'detect' && source === 'folder'}
 						<div class="panel">
-							<h3>Point at a folder</h3>
+							<h3 tabindex="-1" data-step-heading>Point at a folder</h3>
 							<p class="muted">
 								This reads tags only. No BPM, no key and no beatgrid are written,
 								and none are guessed -- the library you get is unanalysed, and the
@@ -674,6 +775,7 @@
 							candidates={setupWizard.folderCandidates ?? []}
 							onPick={(id) => void chooseFolder(id)}
 							onCheck={(id) => void setupWizard.checkFolderRow(id)}
+							onCommit={(id) => setupWizard.commitFolderRow(id)}
 							onRemove={(id) => setupWizard.removeFolderRow(id)}
 							onAdd={() => setupWizard.addFolderRow()}
 							onSuggestion={(path) => setupWizard.applyFolderSuggestion(path)}
@@ -840,6 +942,7 @@
 								</button>
 								<button
 									type="button"
+									data-step-primary
 									onclick={() => setupWizard.beginFolderImport()}
 									disabled={nextRefusalAgent !== null || setupWizard.busy}
 									data-agent-refusal={nextRefusalAgent}
@@ -854,7 +957,7 @@
 								</button>
 							</div>
 							{#if nextRefusal !== null}
-								<p class="why" role="status">
+								<p class="why">
 									Import is not available yet. {nextRefusal}
 								</p>
 							{/if}
@@ -863,7 +966,7 @@
 
 					{#if step === 'detect' && source === 'rekordbox'}
 						<div class="panel">
-							<h3>What is on this machine</h3>
+							<h3 tabindex="-1" data-step-heading>What is on this machine</h3>
 							{#if phase === 'scanning'}
 								<p class="scanning" role="status">{SCANNING_SENTENCE}</p>
 							{:else if notice !== null}
@@ -926,6 +1029,7 @@
 								{@render detectEscapeButtons()}
 								<button
 									type="button"
+									data-step-primary
 									onclick={() => setupWizard.next()}
 									disabled={nextRefusalAgent !== null || setupWizard.busy}
 									title={nextRefusal ?? 'Continue to the import'}
@@ -934,7 +1038,7 @@
 								</button>
 							</div>
 							{#if nextRefusal !== null}
-								<p class="why" class:fatal={fatal.length > 0} role={fatal.length > 0 ? 'alert' : 'status'}>
+								<p class="why" class:fatal={fatal.length > 0} role={fatal.length > 0 ? 'alert' : undefined}>
 									Continue is not available. {nextRefusal}
 									{#if fatal.length > 0}
 										Use one of the three options above instead.
@@ -953,7 +1057,7 @@
 					<!-- -------------------------------------------------- confirm -->
 					{#if step === 'confirm'}
 						<div class="panel">
-							<h3>Confirm the import</h3>
+							<h3 tabindex="-1" data-step-heading>Confirm the import</h3>
 							{#if detection !== null && detection.import_source !== null}
 								<p>
 									Reading your collection into
@@ -987,6 +1091,7 @@
 								</button>
 								<button
 									type="button"
+									data-step-primary
 									onclick={() => setupWizard.beginImport({ refreshDecrypt })}
 									disabled={setupWizard.busy || refusal !== null}
 									title={refusal ?? 'Start the import as a background job'}
@@ -1000,7 +1105,7 @@
 					<!-- ------------------------------------------------- progress -->
 					{#if step === 'progress'}
 						<div class="panel">
-							<h3>Importing</h3>
+							<h3 tabindex="-1" data-step-heading>Importing</h3>
 							{#if job === null}
 								<p class="scanning" role="status">
 									Waiting for the import to start. Nothing has come back yet.
@@ -1062,6 +1167,7 @@ message={job.message}
 								</button>
 								<button
 									type="button"
+									data-step-primary
 									onclick={() => void continueFromProgress()}
 									disabled={nextRefusalAgent !== null || setupWizard.busy}
 									title={nextRefusal ?? 'Continue'}
@@ -1070,7 +1176,7 @@ message={job.message}
 								</button>
 							</div>
 							{#if nextRefusal !== null}
-								<p class="why" role="status">Continue is not available. {nextRefusal}</p>
+								<p class="why">Continue is not available. {nextRefusal}</p>
 							{/if}
 						</div>
 					{/if}
@@ -1078,7 +1184,7 @@ message={job.message}
 					<!-- ---------------------------------------------------- stems -->
 					{#if step === 'stems'}
 						<div class="panel">
-							<h3>Stems analysis</h3>
+							<h3 tabindex="-1" data-step-heading>Stems analysis</h3>
 							<p>
 								Stem separation splits a track into vocals, drums, bass and the
 								rest. It is what makes acapella and instrumental playback possible.
@@ -1126,7 +1232,9 @@ message={job.message}
 
 							<div class="actions">
 								{@render backButton()}
-								<button type="button" onclick={() => setupWizard.next()}>Continue</button>
+								<button type="button" data-step-primary onclick={() => setupWizard.next()}>
+									Continue
+								</button>
 							</div>
 						</div>
 					{/if}
@@ -1134,7 +1242,7 @@ message={job.message}
 					<!-- ----------------------------------------------------- done -->
 					{#if step === 'done'}
 						<div class="panel">
-							<h3>Done</h3>
+							<h3 tabindex="-1" data-step-heading>Done</h3>
 							{#if lastImport !== null && lastImport.kind === 'rekordbox'}
 								<p class="counts">
 									Imported
@@ -1276,7 +1384,12 @@ message={job.message}
 							{/if}
 							<div class="actions">
 								{@render backButton()}
-								<button type="button" onclick={() => void finish()} disabled={setupWizard.busy}>
+								<button
+									type="button"
+									data-step-primary
+									onclick={() => void finish()}
+									disabled={setupWizard.busy}
+								>
 									Start playing
 								</button>
 							</div>
@@ -1334,6 +1447,17 @@ message={job.message}
 {/if}
 
 <style>
+	.su-announce {
+		position: absolute;
+		width: 1px;
+		height: 1px;
+		padding: 0;
+		margin: -1px;
+		overflow: hidden;
+		clip: rect(0 0 0 0);
+		white-space: nowrap;
+		border: 0;
+	}
 	.su-backdrop {
 		position: fixed;
 		inset: 0;

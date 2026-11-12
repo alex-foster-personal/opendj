@@ -94,6 +94,11 @@ beforeEach(() => {
 	glue._resetControllerStateForTests();
 	knobs._resetKnobRegistryForTests();
 	runner._resetCommandedMovesForTests();
+	const { mixerState, deckStates } = audioEngine;
+	for (const deck of [1, 2, 3, 4]) {
+		mixerState.channels[deck].stem_eq_mode = false;
+		deckStates[deck].stems = { ...deckStates[deck].stems, status: 'idle' };
+	}
 	t = 1000;
 	pending = [];
 	runner._setCommandedMoveClockForTests({
@@ -122,6 +127,24 @@ function registerMixerKnob(id, read, write, runnerWrites) {
 			write(x);
 		}
 	});
+}
+
+/** @param {string[]} available */
+function readyStems(available) {
+	const controls = {};
+	for (const stem of ['vocal', 'instrumental', 'drums', 'bass', 'other']) {
+		controls[stem] = { muted: false, solo: false, gain: 0.5 };
+	}
+	return {
+		status: 'ready',
+		source: 'demucs',
+		model: 'htdemucs',
+		layout: 'demucs4',
+		available_controls: available,
+		controls,
+		error: null,
+		load: null
+	};
 }
 
 // [if] a move runs on 2:low and MIDI EQ-low for deck 2 arrives [then] cancel midi same tick.
@@ -223,6 +246,111 @@ test('deck 1 fader MIDI cancels deck 1 fader move with reason midi', async () =>
 	assert.equal(runnerWrites.length, n);
 });
 
+// [if] deck 2 trim move runs and MIDI trim arrives [then] log shows cancelled midi end_ms finite.
+test('MIDI trim on deck 2 cancels commanded move on knobId(2, trim)', async () => {
+	const { mixerState } = audioEngine;
+	mixerState.channels[2].trim = 0.6;
+	const trimId = knobs.knobId(2, 'trim');
+	const runnerWrites = [];
+	registerMixerKnob(
+		trimId,
+		() => mixerState.channels[2].trim,
+		(v) => {
+			mixerState.channels[2].trim = v;
+		},
+		runnerWrites
+	);
+	const endMs = t + 4 * BEAT_MS;
+	const handle = runner.startCommandedMove(trimId, (from, now) =>
+		linearPlan(from, 0.1, now, endMs)
+	);
+	assert.ok(handle);
+	await step(16);
+	const writesBeforeMidi = runnerWrites.length;
+	glue.handleMidiAction(
+		{ type: 'mixer_channel', deck: 2, target: 'trim' },
+		{ kind: 'continuous', value01: 0.75, raw: 95 }
+	);
+	const rec = runner.commandedMoveLog().at(-1);
+	assert.deepEqual(
+		{ control_id: rec.control_id, outcome: rec.outcome, reason: rec.reason },
+		{ control_id: '2:trim', outcome: 'cancelled', reason: 'midi' }
+	);
+	assert.ok(Number.isFinite(rec.actual_end_ms));
+	const result = await handle.done;
+	assert.equal(result.outcome, 'cancelled');
+	await new Promise((resolve) => setImmediate(resolve));
+	await step(80);
+	assert.equal(mixerState.channels[2].trim, 0.75);
+	assert.equal(runnerWrites.length, writesBeforeMidi);
+});
+
+// [if] stem-EQ move on vocal dial runs and MIDI EQ-high arrives [then] cancel midi on stem-vocal.
+test('stem-EQ mode: MIDI EQ-high cancels move on the vocal stem dial', async () => {
+	const { mixerState, deckStates } = audioEngine;
+	mixerState.channels[2].stem_eq_mode = true;
+	deckStates[2].stems = readyStems(['vocal', 'instrumental', 'drums']);
+	const stemId = knobs.knobId(2, knobs.stemKnobRole('vocal'));
+	const runnerWrites = [];
+	registerMixerKnob(
+		stemId,
+		() => deckStates[2].stems.controls.vocal.gain,
+		(v) => {
+			deckStates[2].stems.controls.vocal.gain = v;
+		},
+		runnerWrites
+	);
+	const endMs = t + 4 * BEAT_MS;
+	const handle = runner.startCommandedMove(stemId, (from, now) =>
+		linearPlan(from, 0.2, now, endMs)
+	);
+	await step(16);
+	glue.handleMidiAction(
+		{ type: 'mixer_channel', deck: 2, target: 'eq', band: 'high' },
+		{ kind: 'continuous', value01: 0.35, raw: 45 }
+	);
+	const rec = runner.commandedMoveLog().at(-1);
+	assert.deepEqual(
+		{ control_id: rec.control_id, outcome: rec.outcome, reason: rec.reason },
+		{ control_id: '2:stem-vocal', outcome: 'cancelled', reason: 'midi' }
+	);
+	await handle.done;
+});
+
+// [if] hp-level move runs and headphone_level MIDI arrives [then] cancel midi on hp:hp-level.
+test('headphone level MIDI cancels move on hp:hp-level', async () => {
+	const { mixerState } = audioEngine;
+	mixerState.headphones.level = 0.5;
+	const hpLevelId = knobs.knobId('hp', 'hp-level');
+	const runnerWrites = [];
+	registerMixerKnob(
+		hpLevelId,
+		() => mixerState.headphones.level,
+		(v) => {
+			mixerState.headphones.level = v;
+		},
+		runnerWrites
+	);
+	const endMs = t + 4 * BEAT_MS;
+	const handle = runner.startCommandedMove(hpLevelId, (from, now) =>
+		linearPlan(from, 0.2, now, endMs)
+	);
+	await step(16);
+	glue.handleMidiAction(
+		{ type: 'headphone_level' },
+		{ kind: 'continuous', value01: 0.75, raw: 95 }
+	);
+	const rec = runner.commandedMoveLog().at(-1);
+	assert.deepEqual(
+		{ control_id: rec.control_id, outcome: rec.outcome, reason: rec.reason },
+		{ control_id: 'hp:hp-level', outcome: 'cancelled', reason: 'midi' }
+	);
+	await handle.done;
+	await new Promise((resolve) => setImmediate(resolve));
+	await step(80);
+	assert.equal(mixerState.headphones.level, 0.75);
+});
+
 test('no active move: MIDI dispatches exactly as before', async () => {
 	const { mixerState } = audioEngine;
 	mixerState.channels[2].trim = 0;
@@ -318,5 +446,31 @@ test('color_fx press on a loaded deck 1 / filter dispatches; release does not', 
 		assert.equal(performanceIpc.queryPerformanceState().color_fx[1].effect, 'space');
 	} finally {
 		deck.stable_id = null;
+	}
+});
+
+// [if] LOOP IN is pending and LOOP EXIT is pressed [then] pending_loop_in_ms is cleared.
+test('deck_loop_exit clears pending_loop_in_ms so LOOP OUT cannot use the cancelled in point', async () => {
+	const deck = audioEngine.deckStates[1];
+	deck.stable_id = 'b'.repeat(40);
+	deck.pending_loop_in_ms = 1234;
+	const realSetLoop = audioEngine.engine.setLoop;
+	audioEngine.engine.setLoop = async () => {};
+	try {
+		glue.handleMidiAction(
+			{ type: 'deck_loop_exit', deck: 1 },
+			{ kind: 'button', pressed: false, velocity: 0 }
+		);
+		assert.equal(deck.pending_loop_in_ms, 1234, 'release does not clear');
+		glue.handleMidiAction(
+			{ type: 'deck_loop_exit', deck: 1 },
+			{ kind: 'button', pressed: true, velocity: 127 }
+		);
+		await new Promise((resolve) => setImmediate(resolve));
+		assert.equal(deck.pending_loop_in_ms, null);
+	} finally {
+		audioEngine.engine.setLoop = realSetLoop;
+		deck.stable_id = null;
+		deck.pending_loop_in_ms = null;
 	}
 });

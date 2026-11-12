@@ -228,6 +228,7 @@ export function recordFilterTiming(args: {
 		},
 		null,
 		undefined,
+		undefined,
 		{ keystroke_ms: [...args.keystrokeMs] }
 	);
 }
@@ -262,23 +263,31 @@ export function recordFilterTimingOnPaint(
  */
 export function recordFilterDropped(keystrokes: number): void {
 	if (keystrokes <= 0) return;
-	recordPerfTiming('library-filter', { keystrokes, dropped: keystrokes }, null, undefined, {
-		keystroke_ms: []
-	});
+	recordPerfTiming(
+		'library-filter',
+		{ keystrokes, dropped: keystrokes },
+		null,
+		undefined,
+		undefined,
+		{
+			keystroke_ms: []
+		}
+	);
 }
 
 /** One completed pane load. Split by source: an 8k-row cursor walk and a
  * 35-track playlist hydrate are different animals and must stay tellable
  * apart when the ring is read back. */
 export function recordLibraryLoadTiming(
-	source: 'all-tracks' | 'playlist',
+	source: 'all-tracks' | 'playlist' | 'smartlist',
 	args: { fetchMs: number; rows: number }
 ): void {
 	recordPerfTiming(`library-load-${source}`, {
 		fetch_ms: Math.round(args.fetchMs),
 		rows: args.rows
 	});
-	completeLibraryUsable({ source });
+	const kpiSource: 'all-tracks' | 'playlist' = source === 'smartlist' ? 'playlist' : source;
+	completeLibraryUsable({ source: kpiSource });
 }
 
 /**

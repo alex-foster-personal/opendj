@@ -36,6 +36,7 @@ from apps.shared.events import publish
 from apps.shared.sync_runtime_gates import SyncDeferredError
 from apps.sync_hub import status as sync_status
 from apps.sync_hub.client import SyncDigestMismatch
+from apps.sync_hub.rejected_rows import begin_answer_log_tick
 from apps.sync_hub.scheduler import next_delay_s
 from apps.sync_hub.transport import (
     SyncTransportError,
@@ -170,6 +171,7 @@ class CloudSyncScheduler:
         if self._state == "halted":
             return None
         self._ticks += 1
+        begin_answer_log_tick()
         try:
             result = sync_feedback_pins(
                 store_for_app(self._app), ui_mirror=ui_mirror_for_app(self._app)

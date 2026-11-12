@@ -27,7 +27,8 @@
 		onswitchmode,
 		oninstall,
 		onstart,
-		oncancel
+		oncancel,
+		variant = 'modal'
 	}: {
 		modes: typeof RECORD_MODES;
 		mode: RecordMode;
@@ -49,9 +50,13 @@
 		oninstall: () => void;
 		onstart: () => void;
 		oncancel: () => void;
+		variant?: 'modal' | 'popover';
 	} = $props();
 
+	const embedded = $derived(variant === 'popover');
+
 	function onKeydown(event: KeyboardEvent): void {
+		if (embedded) return;
 		if (event.key === 'Escape') {
 			event.preventDefault();
 			oncancel();
@@ -62,15 +67,18 @@
 <svelte:window onkeydown={onKeydown} />
 
 <div
-	class="rec-backdrop"
+	class="rec-shell"
+	class:rec-backdrop={!embedded}
+	class:rec-popover={embedded}
 	role="dialog"
-	aria-modal="true"
+	aria-modal={!embedded}
 	aria-labelledby="rec-picker-title"
 	tabindex="-1"
-	onpointerdown={(e) => e.target === e.currentTarget && oncancel()}
+	onpointerdown={(e) => !embedded && e.target === e.currentTarget && oncancel()}
 >
 	<form
 		class="rec-picker"
+		class:rec-picker-popover={embedded}
 		data-testid="record-input-picker"
 		aria-labelledby="rec-picker-title"
 		onsubmit={(e) => {
@@ -111,13 +119,18 @@
 						</label>
 						<dl class="rec-facts">
 							<dt>Captures</dt>
-							<dd>What the audience hears: the master output after the master fader. Never the headphone cue.</dd>
+							<dd>
+								What the audience hears: the master output after the master fader. Never the
+								headphone cue.
+							</dd>
 							<dt>Format</dt>
 							<dd>WAV, 16-bit stereo, at the engine's sample rate, in 5-minute segments</dd>
 							<dt>Saved to</dt>
 							<dd class="rec-path">{recordingsDir ?? 'the recordings folder'}/&lt;set&gt;/</dd>
 						</dl>
-						<p class="rec-note">No driver or loopback needed. Keep this page open while recording.</p>
+						<p class="rec-note">
+							No driver or loopback needed. Keep this page open while recording.
+						</p>
 					{/if}
 				</div>
 			{:else}
@@ -150,7 +163,9 @@
 							<input type="radio" name="rec-input" value={device.name} bind:group={selected} />
 							<span class="rec-name">{device.name}</span>
 							{#if device.loopback}
-								<span class="rec-tag" title="A virtual input that carries computer audio back in">loopback</span>
+								<span class="rec-tag" title="A virtual input that carries computer audio back in"
+									>loopback</span
+								>
 							{/if}
 						</label>
 					{/each}
@@ -177,7 +192,7 @@
 </div>
 
 <style>
-	.rec-backdrop {
+	.rec-shell.rec-backdrop {
 		position: fixed;
 		inset: 0;
 		z-index: 1100;
@@ -185,6 +200,10 @@
 		align-items: center;
 		justify-content: center;
 		background: rgb(0 0 0 / 45%);
+	}
+	.rec-shell.rec-popover {
+		position: relative;
+		z-index: auto;
 	}
 	.rec-picker {
 		width: min(400px, calc(100vw - 32px));
@@ -197,6 +216,11 @@
 		border-radius: 6px;
 		box-shadow: 0 8px 24px rgb(0 0 0 / 50%);
 		font-size: 12px;
+	}
+	.rec-picker.rec-picker-popover {
+		width: min(360px, calc(100vw - 24px));
+		max-height: min(420px, calc(100vh - 120px));
+		box-shadow: 0 6px 18px rgb(0 0 0 / 55%);
 	}
 	h2 {
 		margin: 0 0 10px;

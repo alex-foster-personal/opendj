@@ -1,0 +1,13 @@
+# Named pytest / node suites for agent transcript tooling (fleet-style agent packages).
+version: 1
+
+suites:
+  - name: transcript-index
+    description: agents--transcript-index hooks, ingest helpers, cloud ingest worker, and CLI
+    sources:
+      - agents--transcript-index/**
+    pytest:
+      - tests/transcript_index
+      - (private path)
+    node:
+      - (private path)

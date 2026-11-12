@@ -1,6 +1,8 @@
 // requirement STEM-48: the stems "missing" states render what they mean, in
 // the browser Stems column (StemTags) and on the deck's stem row (StemRow,
 // fed by stem-status.ts). Issue #6241 (GB-15).
+// requirement PERFORMANCE-SCREEN-12732: progress has one explicit polite status
+// region; ready chips and mixer rows do not duplicate announcements. Issue #12426.
 //
 // [if] the listing says a bundle is ready [then] StemTags shows V/I/D tags,
 //   the meta line, and a title naming model, format and sizes
@@ -187,6 +189,8 @@ function channelStemRow(stems) {
 		cueEnabled: false,
 		stemEqMode: false,
 		stemPending: false,
+		commandPending: false,
+		commandError: null,
 		ontrim: noop,
 		oneq: noop,
 		onfilter: noop,
@@ -210,13 +214,27 @@ function parseStemRow(html, scope) {
 		)
 	);
 	return {
+		groupRole: attr(group[0], 'role'),
+		groupLive: attr(group[0], 'aria-live'),
 		groupTitle: attr(group[0], 'title'),
 		groupState: attr(group[0], 'data-stems-state'),
+		groupPhase: attr(group[0], 'data-stems-phase'),
+		statusCount: [
+			...html.matchAll(new RegExp(`data-testid="stem-status-${scope}-${DECK_ID}"`, 'g'))
+		].length,
+		labelRole: status === null ? null : attr(status[1], 'role'),
+		labelLive: status === null ? null : attr(status[1], 'aria-live'),
 		label: status === null ? null : visibleText(status[3]),
 		labelTitle: status === null ? null : attr(status[1], 'title'),
 		labelTag: status === null ? null : status[2],
 		labelAction: status === null ? null : attr(status[1], 'data-stems-action'),
 		labelBusy: status === null ? null : /class="status[^"]*\bbusy\b/.test(status[1]),
+		chips: [...html.matchAll(/<button class="chip[^"]*"[^>]*>/g)].map((m) => ({
+			role: attr(m[0], 'role'),
+			live: attr(m[0], 'aria-live'),
+			label: attr(m[0], 'aria-label'),
+			pressed: attr(m[0], 'aria-pressed')
+		})),
 		chipsDisabled: [...html.matchAll(/<button class="chip[^"]*"[^>]*>/g)].map((m) =>
 			/\sdisabled=""/.test(m[0])
 		)
@@ -229,6 +247,7 @@ describe('StemRow NO STEMS label (deck via Deck.svelte)', () => {
 		const tip =
 			'This track has no stems: none on this machine and none in the cloud. (no stem bundle for t-42)';
 		assert.equal(out.groupState, 'none');
+		assert.equal(out.groupPhase, null);
 		assert.equal(out.label, 'NO STEMS');
 		assert.equal(out.labelTag, 'span');
 		assert.equal(out.labelBusy, false);
@@ -240,6 +259,7 @@ describe('StemRow NO STEMS label (deck via Deck.svelte)', () => {
 	test('stems switched off by a mode: STEMS OFF, never NO STEMS', () => {
 		const out = deckStemRow(mod.unavailableStemDeckState('stems disabled: less mode'));
 		assert.equal(out.groupState, 'off');
+		assert.equal(out.groupPhase, null);
 		assert.equal(out.label, 'STEMS OFF');
 		assert.equal(out.labelTitle, 'Stems are switched off: less mode.');
 	});
@@ -247,6 +267,7 @@ describe('StemRow NO STEMS label (deck via Deck.svelte)', () => {
 	test('empty deck: no label at all, and the hover does not claim the track has no stems', () => {
 		const out = deckStemRow(mod.unavailableStemDeckState(null));
 		assert.equal(out.groupState, 'empty');
+		assert.equal(out.groupPhase, null);
 		assert.equal(out.label, null);
 		assert.equal(
 			out.groupTitle,
@@ -258,15 +279,36 @@ describe('StemRow NO STEMS label (deck via Deck.svelte)', () => {
 		const out = deckStemRow(
 			mod.readyStemDeckState({ source: 'demucs', model: 'htdemucs', layout: 'demucs4' }, ALIGNMENT)
 		);
+		assert.equal(out.statusCount, 0);
+		assert.equal(out.groupRole, 'group');
+		assert.equal(out.groupLive, null);
+		assert.deepEqual(
+			out.chips,
+			['VOCAL', 'INST', 'DRUMS', 'BASS', 'HARM'].map((label) => ({
+				role: null,
+				live: null,
+				label: `${label} stem mute deck ${DECK_ID}; Shift+click solo`,
+				pressed: 'false'
+			}))
+		);
 		assert.equal(out.groupState, 'ready');
+		assert.equal(out.groupPhase, null);
 		assert.equal(out.label, null);
 		assert.equal(out.groupTitle, 'real htdemucs stems (demucs4) - click mute, Shift+click solo');
 		assert.deepEqual(out.chipsDisabled, [false, false, false, false, false]);
 	});
 
+	test('stem load without published load detail: probing state, phase attribute omitted', () => {
+		const stems = { ...mod.loadingStemDeckState(), load: null };
+		const out = deckStemRow(stems);
+		assert.equal(out.groupState, 'probing');
+		assert.equal(out.groupPhase, null);
+	});
+
 	test('stem load running (checking): CHECKING STEMS, busy, hover says the deck already plays', () => {
 		const out = deckStemRow(mod.loadingStemDeckState());
 		assert.equal(out.groupState, 'probing');
+		assert.equal(out.groupPhase, 'probing');
 		assert.equal(out.label, 'CHECKING STEMS');
 		assert.equal(out.labelBusy, true);
 		assert.equal(
@@ -283,7 +325,23 @@ describe('StemRow NO STEMS label (deck via Deck.svelte)', () => {
 				reason: null
 			})
 		);
+		assert.equal(out.groupPhase, 'fetching');
 		assert.equal(out.label, 'FETCHING STEMS 2/5');
+		assert.equal(out.statusCount, 1);
+		assert.equal(out.labelTag, 'span');
+		assert.equal(out.labelRole, 'status');
+		assert.equal(out.labelLive, 'polite');
+		const progressed = deckStemRow(
+			mod.loadingStemDeckState({
+				phase: 'fetching',
+				progress: { files_total: 5, files_done: 3, bytes_done: 18_000_000 },
+				reason: null
+			})
+		);
+		assert.equal(progressed.label, 'FETCHING STEMS 3/5');
+		assert.equal(progressed.statusCount, 1);
+		assert.equal(progressed.labelRole, 'status');
+		assert.equal(progressed.labelLive, 'polite');
 		assert.equal(out.labelBusy, true);
 		assert.match(
 			out.labelTitle,
@@ -295,6 +353,7 @@ describe('StemRow NO STEMS label (deck via Deck.svelte)', () => {
 		const out = deckStemRow(
 			mod.loadingStemDeckState({ phase: 'fetching', progress: null, reason: null })
 		);
+		assert.equal(out.groupPhase, 'fetching');
 		assert.equal(out.label, 'FETCHING STEMS');
 		assert.equal(out.labelBusy, true);
 		assert.match(
@@ -316,8 +375,12 @@ describe('StemRow NO STEMS label (deck via Deck.svelte)', () => {
 		for (const [phase, label, tip] of phases) {
 			const out = deckStemRow(mod.loadingStemDeckState({ phase, progress: null, reason: null }));
 			assert.equal(out.groupState, phase);
+			assert.equal(out.groupPhase, phase, phase);
 			assert.equal(out.label, label, phase);
 			assert.equal(out.labelTag, 'span', phase);
+			assert.equal(out.statusCount, 1, phase);
+			assert.equal(out.labelRole, 'status', phase);
+			assert.equal(out.labelLive, 'polite', phase);
 			assert.equal(out.labelBusy, true, phase);
 			assert.match(out.labelTitle, tip, phase);
 		}
@@ -331,9 +394,12 @@ describe('StemRow NO STEMS label (deck via Deck.svelte)', () => {
 				reason: 'memory pressure'
 			})
 		);
+		assert.equal(out.groupPhase, 'waiting');
 		assert.equal(out.label, 'STEMS WAITING - LOAD NOW');
 		assert.equal(out.labelTag, 'button');
 		assert.equal(out.labelAction, 'load_now');
+		assert.equal(out.labelRole, null);
+		assert.equal(out.labelLive, null);
 		assert.equal(out.labelTitle, 'Stems are held back: memory pressure. Click to load them now.');
 	});
 
@@ -341,14 +407,33 @@ describe('StemRow NO STEMS label (deck via Deck.svelte)', () => {
 		const failed = { ...mod.unavailableStemDeckState('decode failed: bad frame'), status: 'error' };
 		const out = deckStemRow(failed);
 		assert.equal(out.groupState, 'error');
+		assert.equal(out.groupPhase, null);
 		assert.equal(out.label, 'STEMS FAILED - RETRY');
 		assert.equal(out.labelTag, 'button');
 		assert.equal(out.labelAction, 'retry');
+		assert.equal(out.labelRole, null);
+		assert.equal(out.labelLive, null);
 		assert.equal(out.labelTitle, 'Stems failed to load: decode failed: bad frame. Click to retry.');
 	});
 });
 
 describe('StemRow mixer strip (via ChannelStrip.svelte)', () => {
+	test('fetching and decoding do not duplicate the deck progress status', () => {
+		for (const phase of ['fetching', 'decoding']) {
+			const out = channelStemRow(
+				mod.loadingStemDeckState({
+					phase,
+					progress: { files_total: 5, files_done: 2, bytes_done: 12_900_000 },
+					reason: null
+				})
+			);
+			assert.equal(out.label, null, phase);
+			assert.equal(out.statusCount, 0, phase);
+			assert.equal(out.groupRole, 'group', phase);
+			assert.equal(out.groupLive, null, phase);
+		}
+	});
+
 	test('mixer strip: no NO STEMS label, the reason stays on hover', () => {
 		const out = channelStemRow(mod.unavailableStemDeckState('no stem bundle for t-42'));
 		assert.equal(out.label, null);

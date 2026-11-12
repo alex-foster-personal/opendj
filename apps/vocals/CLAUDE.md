@@ -45,6 +45,7 @@ Cache contract: `apps/vocals/cache.py`. Listing UI reads vocals via
 
 ## module layout
 
+- `demucs.py`: stdlib outcome classifier; `assert_publishable_worker_result` gates cache writes in `_process_one` so fabricated empty payloads cannot publish as analyzed.
 - `cli.py`: demucs run path (`_worker_command`, `_terminate_worker_tree`, `run_worker`, `_process_one`, `cmd_trickle`, `cmd_one`), `build_parser`, `main`; re-exports the names callers import from the siblings.
 - `cli_library.py`: `Ctx`, `VocalTrack`, db plumbing, track loading, `classify`, queue ordering and budget.
 - `cli_claims.py`: `TrackClaim` lease locking.

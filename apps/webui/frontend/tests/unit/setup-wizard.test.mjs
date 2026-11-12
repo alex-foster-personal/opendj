@@ -787,6 +787,24 @@ test('a refused import leaves the step alone and shows the server sentence', asy
 	assert.equal(wizard.errorDiagnostic, 'setup import job-9 is already running');
 });
 
+test('back() on a live import keeps raw refusal for agents only', () => {
+	wizard._resetForTests();
+	wizard.useSource('rekordbox');
+	wizard.step = 'progress';
+	const job = { id: 'job-setup-evil', status: 'running', progress: 0.2, message: 'ignored' };
+	wizard.back(job);
+	assert.equal(wizard.step, 'progress');
+	assert.equal(
+		wizard.error,
+		'The import is still running. You cannot go back until it finishes.'
+	);
+	assert.doesNotMatch(wizard.error, /\(running\)/);
+	assert.equal(
+		wizard.errorDiagnostic,
+		'the import is running (running); it cannot be un-started by going back'
+	);
+});
+
 test('refreshDecrypt is sent as the flag the CLI calls --refresh-decrypt', async () => {
 	let body;
 	routeFetch({

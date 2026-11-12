@@ -1,8 +1,15 @@
 <script lang="ts">
 	import { untrack } from 'svelte';
 	import type { PlaylistSummaryHydrated } from '$lib/rb/api-rb';
-	import { setSpotifyShrinkMain, toggleSpotifyPinned, uiPrefs } from '$lib/rb/prefs.svelte';
-	import { SPOTIFY_PURCHASE_SOURCES, type SpotifyPendingTrack } from '$lib/rb/spotify-api';
+	import { listPlaylistTracksPage } from '$lib/rb/api-rb';
+	import { rememberSpotifyRecent, setSpotifyShrinkMain, toggleSpotifyPinned, uiPrefs } from '$lib/rb/prefs.svelte';
+	import {
+		SPOTIFY_PURCHASE_SOURCES,
+		getSpotifyImportStatus,
+		SpotifyShareReadOnlyError,
+		startSpotifyImport,
+		type SpotifyPendingTrack
+	} from '$lib/rb/spotify-api';
 	import {
 		getSpotifyAccountPlaylists,
 		getSpotifyConnectStatus,
@@ -11,7 +18,9 @@
 		startSpotifyConnect,
 		type SpotifyAccountListing
 	} from '$lib/rb/spotify-account-api';
-	import type { SpotifyPanelRow } from '$lib/rb/spotify-account-merge';
+	import { playSpotifyRow, type SpotifyPanelRow } from '$lib/rb/spotify-account-merge';
+	import { importedSpotifyId } from '$lib/rb/spotify-account-merge';
+	import { ApiError, readApiErrorCode } from '$lib/api/rb-http';
 	import { nativeShellKind, openExternal } from '$lib/shell/native-shell';
 	import { hasSidePlayer, importBrowserLogins, openSpotifySidePlayer } from '$lib/shell/side-player-shell';
 	import SpotifySourcePanelView from './SpotifySourcePanelView.svelte';
@@ -26,6 +35,7 @@
 		error,
 		oncollection,
 		onselect,
+		onimported,
 		initialAccount = null
 	}: {
 		playlists: PlaylistSummaryHydrated[];
@@ -37,6 +47,7 @@
 		error: string | null;
 		oncollection: () => void;
 		onselect: (playlist: PlaylistSummaryHydrated) => void;
+		onimported?: () => void;
 		/** An account listing already in hand: painted at once, then refreshed from the engine. */
 		initialAccount?: SpotifyAccountListing | null;
 	} = $props();
@@ -102,13 +113,22 @@
 		}
 	}
 
-	async function play(row: Pick<SpotifyPanelRow<PlaylistSummaryHydrated>, 'open_url'>): Promise<void> {
+	async function play(
+		row: Pick<SpotifyPanelRow<PlaylistSummaryHydrated>, 'open_url' | 'pref_key'>
+	): Promise<void> {
 		if (row.open_url === null) return;
 		playerNote = null;
 		try {
-			await openSpotifySidePlayer(row.open_url, {
-				shrinkMain: uiPrefs.spotify_library.shrink_main_for_player
-			});
+			// #9685: a played row counts as recent, but only once the player really opened.
+			await playSpotifyRow(
+				row,
+				async (url) => {
+					await openSpotifySidePlayer(url, {
+						shrinkMain: uiPrefs.spotify_library.shrink_main_for_player
+					});
+				},
+				rememberSpotifyRecent
+			);
 		} catch (exc) {
 			playerNote = `Could not open the player: ${String(exc instanceof Error ? exc.message : exc)}`;
 		}
@@ -146,6 +166,114 @@
 			clientIdSaving = false;
 		}
 	}
+
+	let importBusy = $state(false);
+	let importNote = $state<string | null>(null);
+	let ownedTracks = $state<{ title: string; artist: string; album: string | null }[] | null>(
+		null
+	);
+	let ownedLoading = $state(false);
+	let ownedFetchSeq = 0;
+
+	function resolveRowSpotifyId(row: SpotifyPanelRow<PlaylistSummaryHydrated>): string | null {
+		if (row.account?.spotify_id) return row.account.spotify_id;
+		if (row.imported !== null) return importedSpotifyId(row.imported);
+		return null;
+	}
+
+	async function importPlaylist(row: SpotifyPanelRow<PlaylistSummaryHydrated>): Promise<void> {
+		const id = resolveRowSpotifyId(row);
+		if (id === null) return;
+		const count = row.track_count ?? '?';
+		const first = row.imported === null;
+		const ok = window.confirm(
+			first
+				? `Import "${row.name}" (${count} tracks) into Open DJ? This snapshots the library and writes pending purchase rows.`
+				: `Re-import "${row.name}" (${count} tracks)? This rewrites the Open DJ copy.`
+		);
+		if (!ok) return;
+		importBusy = true;
+		importNote = first ? 'Importing playlist...' : 'Re-importing playlist...';
+		try {
+			await startSpotifyImport(id, {
+				confirm_playlist_id: id,
+				force: !first
+			});
+			for (;;) {
+				await new Promise((resolve) => setTimeout(resolve, 1000));
+				const status = await getSpotifyImportStatus();
+				if (status.phase === 'running') continue;
+				if (status.phase === 'error') {
+					importNote = status.error ?? 'Import failed.';
+					return;
+				}
+				importNote = null;
+				onimported?.();
+				await loadAccount();
+				return;
+			}
+		} catch (exc) {
+			if (exc instanceof SpotifyShareReadOnlyError) {
+				importNote = "This share is read-only; import from the engine's machine.";
+				return;
+			}
+			if (exc instanceof ApiError && readApiErrorCode(exc) === 'SPOTIFY_REAUTH_REQUIRED') {
+				importNote =
+					'Spotify sign-in expired. Connect Spotify in this panel or run `python -m apps.spotify login` on the engine machine.';
+				return;
+			}
+			importNote = `Import failed: ${String(exc instanceof Error ? exc.message : exc)}`;
+		} finally {
+			importBusy = false;
+		}
+	}
+
+	function openDesktop(row: SpotifyPanelRow<PlaylistSummaryHydrated>): void {
+		const id = resolveRowSpotifyId(row);
+		if (id === null) return;
+		void openExternal(`spotify:playlist:${id}`);
+	}
+
+	$effect(() => {
+		const playlistId = selectedId;
+		const imported = playlists.some((p) => p.playlist_id === playlistId);
+		if (playlistId === null || !imported) {
+			ownedTracks = null;
+			ownedLoading = false;
+			return;
+		}
+		const seq = ++ownedFetchSeq;
+		ownedLoading = true;
+		ownedTracks = null;
+		void (async () => {
+			const collected: { title: string; artist: string; album: string | null }[] = [];
+			let offset = 0;
+			try {
+				for (;;) {
+					const { page } = await listPlaylistTracksPage(playlistId, { limit: 500, offset });
+					if (seq !== ownedFetchSeq) return;
+					for (const track of page.tracks) {
+						if (track.spotify_pending === true) continue;
+						collected.push({
+							title: track.title ?? '',
+							artist: track.artist ?? '',
+							album: null
+						});
+						if (collected.length >= 2000) break;
+					}
+					if (collected.length >= 2000 || page.next_offset === null) break;
+					offset = page.next_offset;
+				}
+				if (seq !== ownedFetchSeq) return;
+				ownedTracks = collected;
+			} catch {
+				if (seq !== ownedFetchSeq) return;
+				ownedTracks = [];
+			} finally {
+				if (seq === ownedFetchSeq) ownedLoading = false;
+			}
+		})();
+	});
 </script>
 
 <SpotifySourcePanelView
@@ -179,4 +307,10 @@
 	onshrinkchange={setSpotifyShrinkMain}
 	onsaveclientid={saveClientId}
 	onopenexternal={(url) => void openExternal(url)}
+	{importBusy}
+	{importNote}
+	{ownedTracks}
+	{ownedLoading}
+	onimport={(row) => void importPlaylist(row)}
+	onopendesktop={openDesktop}
 />

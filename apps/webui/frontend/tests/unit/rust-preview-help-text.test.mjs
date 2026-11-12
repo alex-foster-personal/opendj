@@ -25,7 +25,7 @@ const protocol = readFileSync(new URL('../../../../audio-engine/src/protocol.rs'
 const CLAIMABLE = {
 	'key sync': ['key_sync'],
 	slip: ['slip'],
-	stems: ['stem_load', 'stem_separate', 'stem_mute', 'stem_solo', 'stem_gain', 'stem_eq_mode'],
+	stems: ['stem_load', 'stem_separate', 'stem_mute', 'stem_solo', 'stem_gain', 'stem_fx_send', 'stem_eq_mode'],
 	'safety loops': ['safety_loop_save', 'safety_loop_arm', 'safety_loop_clear'],
 	'autoplay next': ['auto_play_next_arm', 'auto_play_next_cancel', 'auto_play_decide_now'],
 	'the headphone cue bus': ['channel_cue', 'headphone_mix', 'headphone_level', 'head_delay_ms'],
@@ -56,6 +56,9 @@ const UNNAMED = new Set([
 	'rescue_stop_all',
 	// DECKUX-6794: behind a default-off flag, so the preview's help text has no feature to name yet.
 	'grid_jump',
+	// BEATFX-13: beat FX kernels play in Web Audio only; the preview help text has no feature for them yet.
+	'beat_fx',
+	'beat_fx_release',
 	// DECKMOVE-01: an artwork right-click action, refused by name with its own error; the native port is a follow-up.
 	'deck_move',
 	// DECKUX-10478: manual loop buttons, refused by name; the help text names features, not each loop button.
@@ -63,7 +66,9 @@ const UNNAMED = new Set([
 	'loop_out',
 	'reloop',
 	// CUES-10013: the page engine owns the memory cue pick; CALL refuses by name in the preview, the native port is a follow-up.
-	'memory_cue_call'
+	'memory_cue_call',
+	// FXROLL-01: roll forces SLIP; the help text names features, not each FX button.
+	'roll'
 ]);
 
 function detail() {

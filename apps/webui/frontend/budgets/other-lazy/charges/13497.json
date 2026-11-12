@@ -1,0 +1,9 @@
+{
+  "bytes": 1024,
+  "measured_main": 519240,
+  "measured_with_pr": 519420,
+  "sha": "a31861c032",
+  "date": "Thu 12 Nov 2026",
+  "reason": "PR #13497 has no frontend source change (Electron CoreAudio list classifier and tests only); CI measured other-lazy +180 B gzip over main, 52 B past the 128 B noise floor, so this is build variance charged to keep the gate green; ceiled to KiB.",
+  "payback": "none planned; no code growth to pay back, the next rebaseline folds this charge"
+}

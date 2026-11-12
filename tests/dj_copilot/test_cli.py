@@ -355,6 +355,7 @@ def test_suggest_next_happy_path(
         rationale_numbers={},
         explain_text=None,
         candidate=None,
+        unscored=(),
     )
 
     called = {}
@@ -402,6 +403,7 @@ def test_suggest_next_with_explain_prints_explain_block(
         rationale_numbers={},
         explain_text="because vibes",
         candidate=None,
+        unscored=(),
     )
     monkeypatch.setattr(cli, "suggest_next", lambda **_: [sug])
 
@@ -420,6 +422,38 @@ def test_suggest_next_with_explain_prints_explain_block(
     assert rc == 0
     out = capsys.readouterr().out
     assert "explain: because vibes" in out
+
+
+def test_suggest_next_prints_unscored_terms(
+    tracks_json: Path,
+    state_db: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    sug = SimpleNamespace(
+        stable_id="B",
+        score=0.75,
+        rationale_tags=[],
+        rationale_numbers={},
+        explain_text=None,
+        candidate=None,
+        unscored=("key",),
+    )
+    monkeypatch.setattr(cli, "suggest_next", lambda **_: [sug])
+
+    rc = cli.main(
+        [
+            "--db",
+            str(state_db),
+            "suggest-next",
+            "--current",
+            "A",
+            "--library-json",
+            str(tracks_json),
+        ]
+    )
+    assert rc == 0
+    assert "unscored: key" in capsys.readouterr().out
 
 
 def test_suggest_next_with_session_json_builds_context(

@@ -28,6 +28,13 @@ Subcommands (standard library only, so a bare runner `python3` can run them):
   missing shard; any other R2 failure fails the build, it is never read as missing. When no
   run qualifies it writes nothing and keeps the published ledger, green with a warning
   while that ledger is under `MAX_LEDGER_AGE_DAYS` old, red beyond it.
+- `reprice` (CIPAR-12899): set each row of a built ledger to what a pull request run really
+  pays for it, the median of its JUnit seconds over the newest `PR_RUNS_TO_PRICE` green PR
+  `ci.yml` runs (`ci-insights-shard-N-attempt-A` on R2). A row no such run timed keeps its
+  nightly value scaled by the median real-to-nightly ratio of the rows they did time. Both
+  planners (the scope job and every shard) price a selection from this one ledger, so it must
+  track real seconds: the nightly full lane runs on loaded hosts and times some tests 10x what
+  a PR run pays (`(private path)` 658 s against 59 s, Wed 11 Nov 2026).
 - `publish`: store a built ledger on `ci-data` (force-moved, no history kept).
 - `resolve`: print the `ci-data` commit sha whose ledger downloads and holds enough of
   the committed seed's rows, or nothing. The scope job resolves it ONCE so every shard
@@ -58,7 +65,9 @@ import statistics
 import subprocess
 import sys
 import tarfile
+import xml.etree.ElementTree as ET
 from collections.abc import Callable, Sequence
+from concurrent.futures import ThreadPoolExecutor
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Protocol
@@ -99,6 +108,20 @@ SOURCE_RUN_STATUS = {"schedule": "completed", "push": "success"}
 # CI step with 15 s to spare.
 FETCH_GH_TIMEOUT_S = 15
 FETCH_ATTEMPTS = 2
+#: reprice (CIPAR-12899): the newest green PR `ci.yml` runs whose shard JUnit reports price the
+#: ledger: one page of the runs listing, about 5 hours of PR traffic on Wed 11 Nov 2026, so every
+#: always-run test is timed about 100 times and a changed module's tests a few times; a median of
+#: that many ignores the loaded host that doubles a run now and then.
+PR_RUNS_TO_PRICE = 100
+INSIGHTS_ARTIFACT = "ci-insights-shard-{n}-attempt-{attempt}"
+JUNIT_MEMBER = "junit-shard-{n}.xml"
+#: Fewer ledger rows than this timed by PR runs is too little evidence to price the rest from,
+#: so reprice refuses rather than publish a ledger that is half nightly and half real.
+MIN_PRICED_ROWS = 200
+#: A row under this many nightly seconds is noise in the real-to-nightly ratio (a 1 ms test
+#: timed at 3 ms is a ratio of 3), so it does not vote on the scale of the untimed rows.
+RATIO_FLOOR_SECONDS = 0.05
+R2_READERS = 8
 
 # The one network seam: `gh api <path>` -> response body. Tests replay real captured
 # exchanges through it ((private path)).
@@ -274,6 +297,111 @@ def build(repo: str, out: Path, seed_path: Path, api: Api = _gh, store: Artifact
     )
 
 
+# ---------------------------------------------------------------------------
+# reprice: the ledger's seconds are what a PR run really pays (CIPAR-12899)
+# ---------------------------------------------------------------------------
+
+
+def junit_seconds(xml: bytes) -> dict[str, float]:
+    """Seconds per pytest node id in one shard's JUnit report (pytest's default `total`:
+    setup, call and teardown, the same span pytest-split records). A case whose classname
+    is not its file's dotted module path cannot be mapped to a node id, and is skipped."""
+    seconds: dict[str, float] = {}
+    for case in ET.fromstring(xml).iter("testcase"):
+        file, classname, name = case.get("file"), case.get("classname", ""), case.get("name")
+        if not file or not name or not file.endswith(".py"):
+            continue
+        module = file[: -len(".py")].replace("/", ".")
+        if classname == module:
+            node = f"{file}::{name}"
+        elif classname.startswith(module + "."):
+            node = "::".join([file, *classname[len(module) + 1 :].split("."), name])
+        else:
+            continue
+        seconds[node] = seconds.get(node, 0.0) + float(case.get("time") or 0.0)
+    return seconds
+
+
+def _junit_if_present(store: ArtifactStore, key: str, member: str) -> bytes | None:
+    """One shard's JUnit report, None when the shard did not run (absent object); any other
+    R2 failure raises, never reads as absent."""
+    if not _artifact_present(store, key):
+        return None
+    try:
+        return store.read_member(key, member)
+    except r2_artifact.R2Error as exc:
+        raise LedgerError(f"R2 read of {key}:{member} failed: {exc}") from exc
+
+
+def pr_observations(repo: str, api: Api, store: ArtifactStore) -> tuple[dict[str, list[float]], int]:
+    """Every JUnit time per node id over the newest `PR_RUNS_TO_PRICE` green PR runs, and how
+    many runs gave at least one report."""
+    runs = _gh_json(
+        api,
+        f"repos/{repo}/actions/workflows/{SOURCE_WORKFLOW}/runs"
+        f"?event=pull_request&status=success&per_page={PR_RUNS_TO_PRICE}",
+    ).get("workflow_runs", [])
+    wanted = [
+        (
+            int(run["id"]),
+            r2_artifact.object_key(repo, INSIGHTS_ARTIFACT.format(n=n, attempt=run["run_attempt"]), str(run["id"])),
+            JUNIT_MEMBER.format(n=n),
+        )
+        for run in runs
+        for n in range(1, SHARDS + 1)
+    ]
+    with ThreadPoolExecutor(R2_READERS) as pool:
+        reports = list(pool.map(lambda item: _junit_if_present(store, item[1], item[2]), wanted))
+    observations: dict[str, list[float]] = {}
+    timed_runs: set[int] = set()
+    for (run_id, key, _member), xml in zip(wanted, reports, strict=True):
+        if xml is None:
+            continue
+        try:
+            seconds = junit_seconds(xml)
+        except ET.ParseError as exc:
+            raise LedgerError(f"{key}: the JUnit report does not parse ({exc})") from exc
+        timed_runs.add(run_id)
+        for node, value in seconds.items():
+            observations.setdefault(node, []).append(value)
+    return observations, len(timed_runs)
+
+
+def reprice(ledger: dict[str, float], observations: dict[str, list[float]]) -> tuple[dict[str, float], float, int]:
+    """The ledger with each row at its median real seconds, and an untimed row at its own
+    value times the median real-to-ledger ratio of the timed rows; with that ratio and the
+    count of timed rows. Only the ledger's own rows are priced: a node id it lacks is a test
+    the nightly never collected, which the planners price as untimed anyway."""
+    real = {node: statistics.median(values) for node, values in observations.items() if node in ledger and values}
+    if len(real) < MIN_PRICED_ROWS:
+        raise LedgerError(
+            f"PR runs timed {len(real)} of the ledger's {len(ledger)} rows, under the {MIN_PRICED_ROWS} "
+            "needed to price the rest; refusing a ledger that is mostly nightly seconds"
+        )
+    ratios = [real[node] / ledger[node] for node in real if ledger[node] >= RATIO_FLOOR_SECONDS]
+    if not ratios:
+        raise LedgerError(
+            f"no timed row is at least {RATIO_FLOOR_SECONDS} s in the ledger, so untimed rows cannot be scaled"
+        )
+    ratio = statistics.median(ratios)
+    priced = {node: round(real[node] if node in real else seconds * ratio, 4) for node, seconds in ledger.items()}
+    return priced, ratio, len(real)
+
+
+def reprice_file(repo: str, ledger_path: Path, api: Api = _gh, store: ArtifactStore | None = None) -> str:
+    store = R2Store() if store is None else store
+    ledger = _validate(_read_json(ledger_path), f"built ledger {ledger_path}")
+    observations, timed_runs = pr_observations(repo, api, store)
+    priced, ratio, timed_rows = reprice(ledger, observations)
+    _validate(priced, "repriced ledger")
+    ledger_path.write_text(render(priced), encoding="utf-8", newline="\n")
+    return (
+        f"[durations-ledger] repriced {timed_rows} of {len(ledger)} rows at their median over {timed_runs} green PR "
+        f"run(s); the other {len(ledger) - timed_rows} scaled by {ratio:.3f}; total {sum(ledger.values()):.0f} -> "
+        f"{sum(priced.values()):.0f} s"
+    )
+
+
 def _gh_send(method: str, path: str, body: dict, timeout: float = 120) -> bytes:
     """`gh api -X <method> <path>` with a JSON body on stdin (the ledger is 2.5 MB)."""
     return gh_send(method, path, body, timeout, error=LedgerError)
@@ -437,6 +565,9 @@ def main(
     p_build.add_argument("--repo", required=True)
     p_build.add_argument("--out", type=Path, required=True)
     p_build.add_argument("--seed", type=Path, default=Path(LEDGER_FILE))
+    p_reprice = sub.add_parser("reprice")
+    p_reprice.add_argument("--repo", required=True)
+    p_reprice.add_argument("--ledger", type=Path, required=True)
     p_publish = sub.add_parser("publish")
     p_publish.add_argument("--repo", required=True)
     p_publish.add_argument("--ledger", type=Path, required=True)
@@ -455,6 +586,8 @@ def main(
             except LedgerError as exc:
                 # Nothing is written to --out, so the workflow's publish step skips.
                 print(keep_published(args.repo, now or datetime.now(UTC), str(exc), api))
+        elif args.command == "reprice":
+            print(reprice_file(args.repo, args.ledger, api, store))
         elif args.command == "publish":
             print(publish(args.repo, args.ledger, send))
         elif args.command == "resolve":

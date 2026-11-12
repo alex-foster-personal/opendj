@@ -22,9 +22,17 @@ library (opendj api, LIBM-11; library daemon, not the performance bus):
   opendj density compact                                 # compact library rows
   opendj density cosy                                    # cosy library rows
 
+MyTag edits (same undoable routes as the library modal):
+  opendj track mytag-rename OLD NEW [--merge] [--undo-session SESSION] [--json]
+  opendj track mytag-delete NAME --confirm [--undo-session SESSION] [--json]
+  Delete removes the tag from every track. Server refusals return a nonzero exit code.
+
 play history delete (PLAYS-10523; Open DJ play log only, not rekordbox DJPlayCount):
   opendj history delete-play <stable_id> <play_id>
   opendj history delete-day <YYYY-MM-DD> [IANA_ZONE]
+
+recorder recovery (SET-12844; status-derived stale owner only):
+  opendj rec recover
 
 audio output health (AUDIO-DEVICE-01, issue #923):
   opendj audio_output_health
@@ -46,6 +54,8 @@ store cover suggestions (LIBM-189; accept only covers for tracks you own and bou
 lighting tools (LIGHT-70, LIGHT-10573):
   opendj lighting monitor [--artnet] [--sacn] [--host H] [--sacn-universe U ...] [--json]
   opendj lighting replay FILE [--at S] [--json]  (same StageQuery as window.musicDjToolsLightingStage)
+  opendj lighting scenes [--json]  (GET /api/v1/lighting/scenes)
+  opendj lighting look [--json]  (GET /api/v1/lighting/look)
 
 MIDI monitor (each incoming message with its mapped action or unmapped, then fader direction):
   opendj midi monitor --device <name-match> [--seconds N]
@@ -66,6 +76,7 @@ desktop window geometry (WINSTATE-01; per monitor, survives updates) and extra w
 
 phone remote LAN listener (REMOTE-CTL; pairing code and paired devices):
   opendj remote start [--port N] | stop | status | rotate | forget <device-id>
+  opendj remote qr [--target remote|request|display] [--out FILE]
 
 playlist art thumbnail (ARTTHUMB-8728b) and tab-separated text track list (LIBORG-10314):
   opendj playlist thumbnail <playlist-id> [--size 64|232] [--out FILE]

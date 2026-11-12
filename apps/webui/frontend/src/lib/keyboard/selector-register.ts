@@ -9,9 +9,15 @@
  * children. A disabled node (decks 3/4 in two-deck mode) keeps its attribute, gains
  * `data-sel-disabled`, and the snapshot drops it with its whole subtree.
  *
- * `window.__odjSelector` is the agent-parity endpoint until K2/K3 route WASD keys
- * through the command registry.
+ * `window.__odjSelector` discovers and invokes selector commands through the shared
+ * command registry, using the same tree as its move/drill convenience methods.
  */
+import {
+	listPerformanceCommandMetadata,
+	runCommand,
+	type CommandMetadata,
+	type SelectorCommandId
+} from './command-registry';
 import {
 	createSelectorTree,
 	type SelectorDirection,
@@ -148,6 +154,8 @@ export function buildSelectorTree(initialId?: string): SelectorTree {
 }
 
 export type SelectorDebugHandle = {
+	commands(): readonly CommandMetadata[];
+	run(id: SelectorCommandId): string;
 	nodes(): SelectorNode[];
 	start(initialId?: string): string;
 	selected(): string;
@@ -168,15 +176,29 @@ export function installSelectorDebugHandle(): void {
 		if (tree === null) throw new Error('__odjSelector.start() must run first');
 		return tree;
 	};
+	const commands = (): readonly CommandMetadata[] =>
+		listPerformanceCommandMetadata().filter((command) => command.id.startsWith('selector.'));
+	const dispatch = (id: SelectorCommandId): string => {
+		if (!commands().some((command) => command.id === id)) {
+			throw new Error(`Unknown selector command: ${id}`);
+		}
+		const selectedId = runCommand(id, { timeStamp: performance.now(), selector: live() });
+		if (typeof selectedId !== 'string') {
+			throw new Error(`Selector command ${id} did not return a selected node id`);
+		}
+		return selectedId;
+	};
 	window.__odjSelector = {
+		commands,
+		run: dispatch,
 		nodes: snapshotSelectorNodes,
 		start(initialId?: string): string {
 			tree = buildSelectorTree(initialId);
 			return tree.selected();
 		},
 		selected: () => live().selected(),
-		move: (dir) => live().move(dir),
-		drillIn: () => live().drillIn(),
-		drillOut: () => live().drillOut()
+		move: (dir) => dispatch(`selector.move.${dir}`),
+		drillIn: () => dispatch('selector.drill-in'),
+		drillOut: () => dispatch('selector.drill-out')
 	};
 }

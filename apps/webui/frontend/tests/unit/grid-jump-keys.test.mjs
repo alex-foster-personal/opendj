@@ -83,6 +83,14 @@ test('WASD: Cmd+D mirrors Right; Cmd+A mirrors Left only after a deck press', ()
 	assert.equal(resolve(key('a'), { gridJump: true, deckFocus: true }).bars, -4);
 });
 
+test('Cmd+A over a library title keeps Select all when deckFocus is stale', () => {
+	const titleTarget = { closest: (sel) => (sel.includes('title-text') ? {} : null) };
+	assert.equal(
+		resolve(key('a', { target: titleTarget }), { gridJump: true, deckFocus: true }),
+		null
+	);
+});
+
 test('text fields keep their own keys; Alt chords are left for shadow decks', () => {
 	assert.equal(resolve(key('ArrowRight', { target: TEXT })), null);
 	assert.equal(resolve(key('d', { target: TEXT })), null);

@@ -42,14 +42,16 @@ def node_version_refusal(version: tuple[int, int, int], floor: tuple[int, int, i
     return None
 
 
-def resolved_node(search_path: str | None = None) -> str:
-    """Absolute path of the `node` on `search_path` (default: this process's PATH), at or above the floor."""
+def resolved_node(search_path: str | None = None, package_json: Path = _FRONTEND_PACKAGE) -> str:
+    """Absolute path of the `node` on `search_path` (default: this process's PATH), at or above the
+    `engines.node` floor in `package_json`: this checkout's frontend by default, and the TARGET
+    worktree's frontend when the node will run that worktree's code."""
     search = os.environ.get("PATH", "") if search_path is None else search_path
     node = shutil.which("node", path=search)
     if node is None:
         raise SystemExit(f"node is not on PATH ({search!r}): the PERFMODE-15 capture helpers run under Node")
     version = subprocess.run([node, "--version"], capture_output=True, text=True, timeout=30, check=True).stdout
-    refusal = node_version_refusal(parse_node_version(version), node_floor())
+    refusal = node_version_refusal(parse_node_version(version), node_floor(package_json))
     if refusal is not None:
-        raise SystemExit(f"{node}: {refusal}")
+        raise SystemExit(f"{node}: {refusal} ({package_json})")
     return str(Path(node).resolve())

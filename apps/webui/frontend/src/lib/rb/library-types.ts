@@ -149,6 +149,8 @@ export interface TrackRow {
 	analysis_hints?: TrackAnalysisHints;
 	/** Rating column 0..5 stars, editable via existing PATCH + If-Match etag. */
 	rating: number | null;
+	/** Rekordbox track colour label 1..8; null means no colour. */
+	color_id?: number | null;
 	/** Current etag for optimistic-concurrency PATCH; from GET /tracks/{sid}. */
 	etag: string;
 	/** Comments column (TrackOut.notes); mostly empty, matches screenshot. */

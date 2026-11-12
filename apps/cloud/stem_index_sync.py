@@ -29,6 +29,7 @@ from apps.cloud.asset_store import (
     AssetS3Client,
     AssetStoreError,
     asset_object_key,
+    compute_asset_hash,
     object_exists,
     push_asset,
 )
@@ -175,13 +176,20 @@ def ensure_index_assets_remote(
         for _filename, digest in file_hashes.items():
             local_path = _local_stem_file(data_dir, stable_id, _filename)
             if local_path is not None:
+                on_disk = compute_asset_hash(local_path)
+                if on_disk != digest:
+                    absent.append(asset_object_key(digest))
+                    continue
                 key = asset_object_key(digest)
                 try:
-                    push_asset(cfg, assets, local_path)
+                    pushed = push_asset(cfg, assets, local_path)
                 except AssetStoreError as exc:
                     raise StemIndexError(
                         f"upload failed for {local_path} (expected {key}): {exc}"
                     ) from exc
+                if pushed.content_hash != digest:
+                    absent.append(asset_object_key(digest))
+                    continue
             if not object_exists(cfg, assets, digest):
                 absent.append(asset_object_key(digest))
     if absent:

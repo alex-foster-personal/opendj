@@ -29,6 +29,7 @@ from typing import Any
 from apps.autodj.plan import (
     PlanEvent,
     TransitionPlan,
+    _value_at,
     cap_outgoing_fader,
     handover_bar,
     hoistable,
@@ -186,15 +187,32 @@ def _launch_tempo_refreshes(
     if inputs is None:
         return []
     grid_bpm, range_pct = inputs
+    start_pitch = _outgoing_pitch_start(plan, live)
+    if start_pitch is None:
+        return []
     refreshes: list[dict[str, Any]] = []
-    for event in plan.events:
-        value = _outgoing_tempo_value(event, plan)
-        if value is None or event.at_bar >= launch_at:
-            continue
-        ratio = sync_tempo_ratio({"effective_bpm": grid_bpm * value}, in_profile, range_pct)
+    events = list(plan.events)
+
+    def append_refresh(at_bar: float, pitch: float) -> None:
+        ratio = sync_tempo_ratio({"effective_bpm": grid_bpm * pitch}, in_profile, range_pct)
         if ratio is None:
+            return
+        refreshes.append({"at_bar": at_bar, "command": control_command(plan.in_.deck, "tempo", round(ratio, 6))})
+
+    for event in events:
+        if event.deck != plan.out.deck or event.name != "tempo" or event.at_bar >= launch_at:
             continue
-        refreshes.append({"at_bar": event.at_bar, "command": control_command(plan.in_.deck, "tempo", round(ratio, 6))})
+        if event.kind == "set" and event.value is not None:
+            append_refresh(event.at_bar, float(event.value))
+            continue
+        if event.kind != "ramp" or event.over_bars <= 0:
+            continue
+        end_bar = event.at_bar + event.over_bars
+        if end_bar <= launch_at:
+            append_refresh(end_bar, float(event.target()))
+        elif event.at_bar < launch_at:
+            pitch = _value_at(events, plan.out.deck, "tempo", launch_at, start_pitch)
+            append_refresh(launch_at, pitch)
     return refreshes
 
 
@@ -216,11 +234,18 @@ def _refresh_inputs(plan: TransitionPlan, live: Mapping[str, Any] | None) -> tup
     return float(out_bpm) / float(out_pitch), float(range_pct)
 
 
-def _outgoing_tempo_value(event: PlanEvent, plan: TransitionPlan) -> float | None:
-    """The tempo an authored set on the outgoing deck moves to, or None for any other event: the change a launch must follow."""
-    if event.kind != "set" or event.deck != plan.out.deck or event.name != "tempo" or event.value is None:
+def _outgoing_pitch_start(plan: TransitionPlan, live: Mapping[str, Any] | None) -> float | None:
+    """The outgoing deck's live pitch ratio when launch tempo is refreshed, or None if unknown."""
+    decks = live.get("decks") if live is not None else None
+    if not isinstance(decks, Mapping):
         return None
-    return float(event.value)
+    out_state = decks.get(str(plan.out.deck))
+    if not isinstance(out_state, Mapping):
+        return None
+    pitch = out_state.get("pitch")
+    if not isinstance(pitch, (int, float)) or pitch <= 0:
+        return None
+    return float(pitch)
 
 
 def _incoming_tempo_moves(plan: TransitionPlan) -> bool:

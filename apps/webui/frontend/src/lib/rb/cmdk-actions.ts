@@ -13,7 +13,8 @@
  * Commands are built from live deck state: one "Eject deck N" per loaded
  * deck, plus runnable rows from the palette registry (CMDK-9600). A playing
  * deck asks first (the play-interrupt rule), like the deck picker's replace
- * guard.
+ * guard. In the Tauri shell a "Library on second screen" row opens or focuses
+ * the second-screen library window (SECONDSCREEN-11715).
  */
 import { PALETTE_REGISTRY, type PaletteBarRun, type PaletteContext, type PaletteDeck } from '$lib/palette/commands';
 import type { SettingDef } from '$lib/settings/catalog-types';
@@ -53,6 +54,7 @@ export interface CommandAction {
 	command:
 		| { type: 'eject'; deck: DeckId }
 		| { type: 'open_settings'; query: string }
+		| { type: 'open_second_screen' }
 		| { type: 'performance'; id: PerformanceCommandId }
 		| { type: 'palette'; run: PaletteBarRun };
 	/** Registry keywords for ranking and `actionRows` token matching. */
@@ -211,8 +213,15 @@ export function rankSettings(settings: readonly SettingAction[], query: string):
 		.map(({ action }) => action);
 }
 
-/** One "Eject deck N" per loaded deck, plus "Open settings" carrying the query. */
-export function commandCandidates(decks: readonly ActionDeck[], query: string): CommandAction[] {
+/**
+ * One "Eject deck N" per loaded deck, the second-screen row when the shell can open
+ * that window, plus "Open settings" carrying the query.
+ */
+export function commandCandidates(
+	decks: readonly ActionDeck[],
+	query: string,
+	options: { secondScreen?: boolean } = {}
+): CommandAction[] {
 	const out: CommandAction[] = [];
 	for (const deck of decks) {
 		if (!deck.loaded) continue;
@@ -222,6 +231,16 @@ export function commandCandidates(decks: readonly ActionDeck[], query: string): 
 			label: `Eject deck ${deck.id}`,
 			hint: `${deck.title ?? '(untitled)'}${deck.playing ? ' · playing, asks first' : ''}`,
 			command: { type: 'eject', deck: deck.id }
+		});
+	}
+	if (options.secondScreen === true) {
+		out.push({
+			kind: 'command',
+			id: 'open-second-screen',
+			label: 'Library on second screen',
+			hint: 'Cmd Shift L',
+			keywords: ['window', 'display', 'monitor', 'library', 'second screen'],
+			command: { type: 'open_second_screen' }
 		});
 	}
 	const q = query.trim();

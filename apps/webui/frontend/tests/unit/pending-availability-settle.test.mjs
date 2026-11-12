@@ -45,14 +45,14 @@ describe('applySettledAvailability', () => {
 			row('b', 'AVAILABILITY_PENDING'),
 			row('c', 'AVAILABILITY_PENDING')
 		];
-		const left = mod.applySettledAvailability(held, [
+		const { rows: next, stillPending } = mod.applySettledAvailability(held, [
 			row('a', 'present'),
 			row('b', 'absent'),
 			row('c', 'AVAILABILITY_PENDING')
 		]);
-		assert.equal(left, 1);
-		assert.deepEqual(held[1], row('b', 'absent'));
-		assert.deepEqual(held[2], row('c', 'AVAILABILITY_PENDING'));
+		assert.equal(stillPending, 1);
+		assert.deepEqual(next[1], row('b', 'absent'));
+		assert.deepEqual(next[2], row('c', 'AVAILABILITY_PENDING'));
 	});
 
 	it('the pin: 44 rows shown under hide-broken become the 4 the tree counted', () => {
@@ -62,20 +62,25 @@ describe('applySettledAvailability', () => {
 		];
 		assert.equal(hideBroken(held).length, 44);
 		const fresh = held.map((r) => (r.file_exists === null ? row(r.stable_id, 'absent') : r));
-		assert.equal(mod.applySettledAvailability(held, fresh), 0);
-		assert.equal(hideBroken(held).length, 4);
+		const { rows: next, stillPending } = mod.applySettledAvailability(held, fresh);
+		assert.equal(stillPending, 0);
+		assert.equal(hideBroken(next).length, 4);
 	});
 
 	it('never un-settles a held row from a later pending answer', () => {
 		const held = [row('a', 'absent')];
-		assert.equal(mod.applySettledAvailability(held, [row('a', 'AVAILABILITY_PENDING')]), 0);
-		assert.deepEqual(held[0], row('a', 'absent'));
+		const { stillPending, rows: next } = mod.applySettledAvailability(held, [
+			row('a', 'AVAILABILITY_PENDING')
+		]);
+		assert.equal(stillPending, 0);
+		assert.deepEqual(next[0], row('a', 'absent'));
 	});
 
 	it('a pending row missing from the fresh answer stays pending', () => {
 		const held = [row('gone', 'AVAILABILITY_PENDING')];
-		assert.equal(mod.applySettledAvailability(held, []), 1);
-		assert.equal(held[0].file_exists, null);
+		const { stillPending, rows: next } = mod.applySettledAvailability(held, []);
+		assert.equal(stillPending, 1);
+		assert.equal(next[0].file_exists, null);
 	});
 
 	it('hasPendingAvailability sees pending and only pending', () => {
@@ -91,6 +96,10 @@ describe('startPendingSettle', () => {
 		let fetches = 0;
 		const stop = mod.startPendingSettle({
 			rows: () => held,
+			publishRows: (next) => {
+				held.length = 0;
+				held.push(...next);
+			},
 			fetchRows: async () => {
 				const answer = answers[Math.min(fetches, answers.length - 1)];
 				fetches += 1;
@@ -147,6 +156,7 @@ describe('startPendingSettle', () => {
 		const timers = [];
 		mod.startPendingSettle({
 			rows: () => [row('a', 'present')],
+			publishRows: () => {},
 			fetchRows: async () => assert.fail('fetched with nothing pending'),
 			setTimer: (fn, ms) => timers.push({ fn, ms }),
 			clearTimer: () => {},
@@ -185,6 +195,7 @@ describe('startPendingSettle', () => {
 test('BrowserPanel starts the settle loop for the active pane', () => {
 	const panel = read('src/lib/components/rb/BrowserPanel.svelte');
 	assert.match(panel, /startPendingSettle\(\{/);
+	assert.match(panel, /publishRows:/);
 	assert.match(panel, /isTransientListingBusy\(exc\)/);
 	assert.match(panel, /console\.debug\(line\)/);
 	assert.match(panel, /console\.error\(line\)/);

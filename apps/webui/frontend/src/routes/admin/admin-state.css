@@ -1,0 +1,20 @@
+/*
+ * Backstage state tokens (ok / warn / err), defined once for every admin
+ * panel that opts in with class="admin-st".
+ */
+.admin-st {
+	--st-ok: #4ecb8c;
+	--st-warn: #e0a83a;
+	--st-err: #e0463e;
+}
+/* Gothic (mono-dev) stays gray elsewhere, but admin keeps its state colors. */
+html[data-skin='mono-dev'] .admin-st {
+	--st-ok: #6fbf8a;
+	--st-warn: #d9a441;
+	--st-err: #e0463e;
+}
+html:is([data-theme='light'], [data-skin='light']) .admin-st {
+	--st-ok: #1f7a46;
+	--st-warn: #8a5a00;
+	--st-err: #b3261e;
+}

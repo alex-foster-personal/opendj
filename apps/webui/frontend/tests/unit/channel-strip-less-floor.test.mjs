@@ -70,9 +70,15 @@ const CAL_CONTROLS_PX = 11;
 const CHANNEL_STRIP_PATH = fileURLToPath(
 	new URL('../../src/lib/components/rb/mixer/ChannelStrip.svelte', import.meta.url)
 );
-const KNOB_PATH = fileURLToPath(new URL('../../src/lib/components/rb/mixer/Knob.svelte', import.meta.url));
-const MIXER_PATH = fileURLToPath(new URL('../../src/lib/components/rb/Mixer.svelte', import.meta.url));
-const PAGE_PATH = fileURLToPath(new URL('../../src/routes/performance/+page.svelte', import.meta.url));
+const KNOB_PATH = fileURLToPath(
+	new URL('../../src/lib/components/rb/mixer/Knob.svelte', import.meta.url)
+);
+const MIXER_PATH = fileURLToPath(
+	new URL('../../src/lib/components/rb/Mixer.svelte', import.meta.url)
+);
+const PAGE_PATH = fileURLToPath(
+	new URL('../../src/routes/performance/+page.svelte', import.meta.url)
+);
 const THEME_PATH = fileURLToPath(new URL('../../src/lib/rb/theme.css', import.meta.url));
 
 function firstMatch(source, pattern, label) {
@@ -95,8 +101,25 @@ function firstMatch(source, pattern, label) {
 // [if] the LESS strip grid loses a placed control or its dial-block order [then] fail, [else stop]
 test('ChannelStrip.svelte keeps FILTER in both modes and shrinks every dial in LESS', () => {
 	const src = readFileSync(CHANNEL_STRIP_PATH, 'utf8');
+	// MIXUX-9832 moves TRIM, CUE and the fader to a per-mode DOM spot (so Tab
+	// follows the grid). Each block must render in BOTH modes: once under
+	// `less`, once under the MORE branch. Only those exact lines may branch.
+	const MODE_SWITCHES = [
+		'{#if less}{@render faderBlock()}{:else}{@render trimBlock()}{/if}',
+		'{#if less}{@render trimBlock()}{@render cueBlock()}{/if}',
+		'{#if !less}{@render cueBlock()}{@render faderBlock()}{/if}'
+	];
+	for (const line of MODE_SWITCHES)
+		assert.ok(src.includes(line), `per-mode render line missing: ${line}`);
+	for (const block of ['trimBlock', 'cueBlock', 'faderBlock']) {
+		assert.equal(
+			src.split(`{@render ${block}()}`).length - 1,
+			2,
+			`${block} must render once in LESS and once in MORE`
+		);
+	}
 	assert.doesNotMatch(
-		src,
+		MODE_SWITCHES.reduce((rest, line) => rest.replace(line, ''), src),
 		/\{#if !less\}/,
 		'no control may be unmounted by LESS mode any more - the grid makes room for all of them'
 	);
@@ -123,7 +146,10 @@ test('ChannelStrip.svelte keeps FILTER in both modes and shrinks every dial in L
 		);
 	}
 	const areas = firstMatch(src, /grid-template-areas:\s*([^;]*);/, 'the LESS grid-template-areas');
-	const rows = areas[1].trim().split('\n').map((row) => row.trim().replace(/'/g, '').split(/\s+/));
+	const rows = areas[1]
+		.trim()
+		.split('\n')
+		.map((row) => row.trim().replace(/'/g, '').split(/\s+/));
 	assert.deepEqual(
 		rows,
 		[
@@ -144,7 +170,11 @@ test('ChannelStrip.svelte keeps FILTER in both modes and shrinks every dial in L
 		['trim', 'cue', 'filter'],
 		'TRIM, CUE and FILTER read top to bottom RIGHT of the EQs'
 	);
-	assert.deepEqual(rows[4], ['stem', 'stem', 'stem'], 'the STEM chips run full width under the dials');
+	assert.deepEqual(
+		rows[4],
+		['stem', 'stem', 'stem'],
+		'the STEM chips run full width under the dials'
+	);
 	// Every named area is used by exactly one child.
 	const areaNames = new Set(rows.flat());
 	assert.equal(areaNames.size, 8, 'the LESS grid names exactly eight areas');
@@ -184,7 +214,10 @@ function readSharedStripNumbers() {
 	const gapMatch = firstMatch(knobSrc, /--knob-caption-gap: (\d+)px/, "Knob's caption gap");
 	firstMatch(knobSrc, /--knob-caption-size: \$\{caption\.fontPx\}px/, "Knob's fitted caption size");
 	const captionMatch = firstMatch(
-		readFileSync(KNOB_PATH.replace(/components\/rb\/mixer\/Knob\.svelte$/, 'rb/knob-caption-fit.ts'), 'utf8'),
+		readFileSync(
+			KNOB_PATH.replace(/components\/rb\/mixer\/Knob\.svelte$/, 'rb/knob-caption-fit.ts'),
+			'utf8'
+		),
 		/FULL_FONT_PX: (\d+),/,
 		"Knob's full caption size"
 	);
@@ -195,7 +228,11 @@ function readSharedStripNumbers() {
 	// is read: `.strip.less .eq-stack { grid-area: eq; }` (pin 2917b0eca218)
 	// also contains the text `.eq-stack {`, and an unanchored search would
 	// read the descendant rule's body instead of the base rule's.
-	const eqGapMatch = firstMatch(stripSrc, /^\t\.eq-stack\s*\{[^}]*gap:\s*(\d+)px/m, '.eq-stack gap');
+	const eqGapMatch = firstMatch(
+		stripSrc,
+		/^\t\.eq-stack\s*\{[^}]*gap:\s*(\d+)px/m,
+		'.eq-stack gap'
+	);
 	const eqGapPx = Number(eqGapMatch[1]);
 
 	const faderMinMatch = firstMatch(
@@ -205,7 +242,11 @@ function readSharedStripNumbers() {
 	);
 	const faderMinPx = Number(faderMinMatch[1]);
 
-	const stripFlexGapMatch = firstMatch(stripSrc, /\.strip\s*\{[^}]*gap:\s*(\d+)px/, '.strip flex gap');
+	const stripFlexGapMatch = firstMatch(
+		stripSrc,
+		/\.strip\s*\{[^}]*gap:\s*(\d+)px/,
+		'.strip flex gap'
+	);
 	const stripFlexGapPx = Number(stripFlexGapMatch[1]);
 
 	const stripPaddingMatch = firstMatch(
@@ -267,14 +308,23 @@ const STEM_CHIP_ROW_PX = 12;
 // requirement: LESSV-01
 // [if] LESS decks differ from MORE's or the LESS mixer outgrows its row [then] fail, [else stop]
 test('the mixer LESS floor (+page.svelte) covers the real ChannelStrip LESS-mode content height', () => {
-	const { stripSrc, knobBoxPx, eqGapPx, faderMinPx, stripFlexGapPx, stripPaddingPx } = readSharedStripNumbers();
+	const { stripSrc, knobBoxPx, eqGapPx, faderMinPx, stripFlexGapPx, stripPaddingPx } =
+		readSharedStripNumbers();
 	const pageSrc = readFileSync(PAGE_PATH, 'utf8');
 	const mixerChromePx = readMixerChromePx();
 
-	const lessTrimSize = Number(firstMatch(stripSrc, /const LESS_TRIM_SIZE = (\d+(?:\.\d+)?);/, 'LESS_TRIM_SIZE')[1]);
-	const lessEqSize = Number(firstMatch(stripSrc, /const LESS_EQ_SIZE = (\d+(?:\.\d+)?);/, 'LESS_EQ_SIZE')[1]);
+	const lessTrimSize = Number(
+		firstMatch(stripSrc, /const LESS_TRIM_SIZE = (\d+(?:\.\d+)?);/, 'LESS_TRIM_SIZE')[1]
+	);
+	const lessEqSize = Number(
+		firstMatch(stripSrc, /const LESS_EQ_SIZE = (\d+(?:\.\d+)?);/, 'LESS_EQ_SIZE')[1]
+	);
 	// MIXUX-12: FILTER is TRIM's size in both views.
-	firstMatch(stripSrc, /const filterSize = \$derived\(trimSize\);/, 'filterSize derived from trimSize');
+	firstMatch(
+		stripSrc,
+		/const filterSize = \$derived\(trimSize\);/,
+		'filterSize derived from trimSize'
+	);
 	const lessFilterSize = lessTrimSize;
 
 	function lessMarginPx(selector, label) {
@@ -283,7 +333,11 @@ test('the mixer LESS floor (+page.svelte) covers the real ChannelStrip LESS-mode
 			new RegExp(`\\.strip\\.less ${selector.replace('.', '\\.')}\\s*\\{([^}]*)\\}`),
 			`a .strip.less ${label} override`
 		);
-		const marginMatch = firstMatch(rule[1], /margin-(?:top|bottom):\s*(\d+)px/, `${label}'s LESS margin`);
+		const marginMatch = firstMatch(
+			rule[1],
+			/margin-(?:top|bottom):\s*(\d+)px/,
+			`${label}'s LESS margin`
+		);
 		return Number(marginMatch[1]);
 	}
 	const trimMarginPx = lessMarginPx('.trim-slot', 'trim-slot');
@@ -304,7 +358,8 @@ test('the mixer LESS floor (+page.svelte) covers the real ChannelStrip LESS-mode
 	const headRowPx = Math.max(CH_NUM_PX, STEM_LABEL_PX);
 	const eqColumnPx = 3 * knobBoxPx(lessEqSize) + 2 * eqGapPx;
 	const rightColumnPx =
-		knobBoxPx(lessTrimSize) + trimMarginPx +
+		knobBoxPx(lessTrimSize) +
+		trimMarginPx +
 		(CUE_BTN_PX + cueMarginPx) +
 		(knobBoxPx(lessFilterSize) + filterMarginPx) +
 		2 * stripFlexGapPx;
@@ -348,16 +403,27 @@ test('the mixer LESS floor (+page.svelte) covers the real ChannelStrip LESS-mode
 	);
 	assert.equal(
 		Number(commentMatch[5]),
-		Number(commentMatch[1]) + Number(commentMatch[2]) + Number(commentMatch[3]) + Number(commentMatch[4])
+		Number(commentMatch[1]) +
+			Number(commentMatch[2]) +
+			Number(commentMatch[3]) +
+			Number(commentMatch[4])
 	);
-	assert.equal(Number(commentMatch[5]), requiredMixerPx, 'the documented total must equal the derived requirement');
+	assert.equal(
+		Number(commentMatch[5]),
+		requiredMixerPx,
+		'the documented total must equal the derived requirement'
+	);
 	assert.equal(
 		Number(commentMatch[2]),
 		stripContentPx,
 		`the documented "strip" term (${commentMatch[2]}px) must equal the strip's real derived ` +
 			`LESS content height (${stripContentPx}px)`
 	);
-	assert.equal(Number(commentMatch[4]), mixerChromePx, 'the documented "chrome" term must equal the real mixer chrome');
+	assert.equal(
+		Number(commentMatch[4]),
+		mixerChromePx,
+		'the documented "chrome" term must equal the real mixer chrome'
+	);
 });
 
 // Sol P1 finding (comment 3963232872, BLOCKING): MORE mode's strip never
@@ -365,14 +431,19 @@ test('the mixer LESS floor (+page.svelte) covers the real ChannelStrip LESS-mode
 // rule means it must fit inside the shared deck-area floor too, exactly
 // like LESS - this was never checked before that finding.
 test('the mixer MORE floor (+page.svelte) covers the real ChannelStrip MORE-mode content height', () => {
-	const { stripSrc, knobBoxPx, eqGapPx, faderMinPx, stripFlexGapPx, stripPaddingPx } = readSharedStripNumbers();
+	const { stripSrc, knobBoxPx, eqGapPx, faderMinPx, stripFlexGapPx, stripPaddingPx } =
+		readSharedStripNumbers();
 	const pageSrc = readFileSync(PAGE_PATH, 'utf8');
 	const mixerChromePx = readMixerChromePx();
 
 	const trimSizeMatch = firstMatch(stripSrc, /const TRIM_SIZE = (\d+(?:\.\d+)?);/, 'TRIM_SIZE');
 	const eqSizeMatch = firstMatch(stripSrc, /const EQ_SIZE = (\d+(?:\.\d+)?);/, 'EQ_SIZE');
 	// MIXUX-12: FILTER is TRIM's size in both views.
-	firstMatch(stripSrc, /const filterSize = \$derived\(trimSize\);/, 'filterSize derived from trimSize');
+	firstMatch(
+		stripSrc,
+		/const filterSize = \$derived\(trimSize\);/,
+		'filterSize derived from trimSize'
+	);
 	const trimSize = Number(trimSizeMatch[1]);
 	const eqSize = Number(eqSizeMatch[1]);
 	const filterSize = trimSize;
@@ -385,7 +456,11 @@ test('the mixer MORE floor (+page.svelte) covers the real ChannelStrip MORE-mode
 			new RegExp(`^\\t\\.${selector}\\s*\\{([^}]*)\\}`, 'm'),
 			`a .${selector} rule`
 		);
-		const marginMatch = firstMatch(rule[1], new RegExp(`margin-${side}:\\s*(\\d+)px`), `${label}'s MORE margin`);
+		const marginMatch = firstMatch(
+			rule[1],
+			new RegExp(`margin-${side}:\\s*(\\d+)px`),
+			`${label}'s MORE margin`
+		);
 		return Number(marginMatch[1]);
 	}
 
@@ -394,8 +469,16 @@ test('the mixer MORE floor (+page.svelte) covers the real ChannelStrip MORE-mode
 	const faderMarginPx = baseMarginPx('fader-slot', 'fader-slot', 'bottom');
 	const stemLabelMarginPx = baseMarginPx('stem-label', 'stem-label', 'top');
 
-	const filterSlotRule = firstMatch(stripSrc, /^\t\.filter-slot\s*\{([^}]*)\}/m, 'a .filter-slot rule');
-	const filterMarginTopMatch = firstMatch(filterSlotRule[1], /margin-top:\s*(\d+)px/, "filter-slot's margin-top");
+	const filterSlotRule = firstMatch(
+		stripSrc,
+		/^\t\.filter-slot\s*\{([^}]*)\}/m,
+		'a .filter-slot rule'
+	);
+	const filterMarginTopMatch = firstMatch(
+		filterSlotRule[1],
+		/margin-top:\s*(\d+)px/,
+		"filter-slot's margin-top"
+	);
 	const filterMarginBottomMatch = firstMatch(
 		filterSlotRule[1],
 		/margin-bottom:\s*(\d+)px/,
@@ -515,7 +598,11 @@ test('the MORE/LESS toggle is compact (pin 246b0f5: "toggle is too big ... pushi
 	const src = readFileSync(MIXER_PATH, 'utf8');
 	// The S button joined MORE/LESS on one row (Mon 2 Nov 2026); that row carries the padding.
 	const toggleRule = firstMatch(src, /\.mixer-view-row\s*\{([^}]*)\}/, 'a .mixer-view-row rule');
-	const paddingMatch = firstMatch(toggleRule[1], /padding-bottom:\s*(\d+)px/, 'toggle padding-bottom');
+	const paddingMatch = firstMatch(
+		toggleRule[1],
+		/padding-bottom:\s*(\d+)px/,
+		'toggle padding-bottom'
+	);
 	assert.ok(Number(paddingMatch[1]) <= 2, 'toggle padding-bottom must be shrunk to <= 2px');
 
 	const btnRule = firstMatch(src, /\.deck-layout-btn\s*\{([^}]*)\}/, 'a .deck-layout-btn rule');

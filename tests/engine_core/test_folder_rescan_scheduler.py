@@ -22,6 +22,7 @@ would need its own filesystem race.
 from __future__ import annotations
 
 import asyncio
+import functools
 import itertools
 import logging
 import sqlite3
@@ -33,6 +34,7 @@ from unittest import mock
 
 import pytest
 
+from apps.engine_core.setup import detect
 from apps.engine_core.setup import folder_rescan_scheduler as fr_scheduler
 from apps.engine_core.setup import record as setup_record
 from apps.shared.state.ingest.folder_rescan import FolderRescanReport
@@ -152,24 +154,35 @@ def test_state_db_open_failure_is_a_retryable_round_failure(tmp_path: Path) -> N
 
 
 def test_database_locked_round_is_deferred_not_logged_as_exception(
-    tmp_path: Path, caplog: pytest.LogCaptureFixture
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
 ) -> None:
-    """[if] a rescan hits database is locked [then] it retries without ERROR, [else stop]."""
-    _mark_folder_import(tmp_path, [str(tmp_path / "music")])
-
-    def locked_reconcile(writer, roots, previous_signature):
-        raise sqlite3.OperationalError("database is locked")
-
-    scheduler = fr_scheduler.FolderRescanScheduler(
-        tmp_path, cfg=_FAST, reconcile_fn=locked_reconcile
+    """[if] peer holds writer lock [then] defer round not ERROR log, [else stop]."""
+    music = tmp_path / "music"
+    music.mkdir()
+    _mark_folder_import(tmp_path, [str(music)])
+    state_path = tmp_path / "state" / detect.STATE_DB_NAME
+    fr_scheduler.state_db.open_rw(state_path).close()
+    monkeypatch.setattr(
+        fr_scheduler.state_db,
+        "open_rw",
+        functools.partial(fr_scheduler.state_db.open_rw, busy_timeout_s=0.2),
     )
-    with caplog.at_level(logging.INFO):
-        outcome = scheduler.run_round([tmp_path / "music"])
-
-    assert outcome == "error"
-    assert scheduler.consecutive_failures == 1
-    assert "folder-rescan round deferred" in caplog.text
-    assert "folder-rescan round failed" not in caplog.text
+    holder = sqlite3.connect(str(state_path), isolation_level=None, check_same_thread=False)
+    holder.execute("BEGIN IMMEDIATE")
+    holder.execute("UPDATE schema_meta SET applied_at = applied_at WHERE version = 1")
+    scheduler = fr_scheduler.FolderRescanScheduler(tmp_path, cfg=_FAST)
+    try:
+        with caplog.at_level(logging.INFO):
+            outcome = scheduler.run_round([music])
+        assert outcome == "error"
+        assert scheduler.consecutive_failures == 1
+        assert "folder-rescan round deferred" in caplog.text
+        assert "folder-rescan round failed" not in caplog.text
+    finally:
+        holder.execute("ROLLBACK")
+        holder.close()
+    assert scheduler.run_round([music]) == "ok"
+    assert scheduler.consecutive_failures == 0
 
 
 def test_folder_import_landing_after_boot_is_picked_up_without_restart(tmp_path: Path) -> None:

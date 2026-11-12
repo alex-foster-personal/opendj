@@ -242,19 +242,34 @@ def _extend(regions: Sequence[ConstRegion], i_ref: int, tolerance_s: float, stop
 
 
 def _line_for_span(
-    ts: Sequence[float], span: _Span, rounding: bool, tolerance_s: float, cover: tuple[float, float]
+    ts: Sequence[float],
+    span: _Span,
+    rounding: bool,
+    tolerance_s: float,
+    cover: tuple[float, float],
+    octave_multiple: float = 1.0,
 ) -> SegmentLine:
-    """The rounded, phase-averaged line through `span`, rendered over `cover`."""
-    fitted = 60.0 / span.period_s
+    """The rounded, phase-averaged line through `span`, rendered over `cover`.
+
+    `octave_multiple` publishes at `fitted * octave_multiple` the same way
+    `grid_fit.fit_line` does, so a 90 BPM model pulse inside 93-186 serves
+    180 BPM. Default 1.0 leaves callers that omit it at the model's level.
+    Phase uses model-level indices scaled by `octave_multiple`, as `fit_line`
+    does, so a halved 180 BPM pulse keeps its anchor.
+    """
+    fitted = 60.0 / span.period_s * octave_multiple
     bpm, step = fitted, None
     if rounding:
-        bpm, step = round_bpm(fitted, span.n_beats, tolerance_s=tolerance_s)
+        bpm, step = round_bpm(fitted, span.n_beats * octave_multiple, tolerance_s=tolerance_s)
     period = 60.0 / bpm
-    # Phase: the mean of every member beat's offset from the rounded grid,
-    # indexed from the span's first beat.
+    # Phase: mean residual of every member beat against the rounded published
+    # grid. Model index k (from the span's own period) sits at published index
+    # k * octave_multiple (fractional when halving). Rounding that product to a
+    # whole published beat is what shifted the 180->90 case by ~167 ms.
     idx = sorted({j for r in span.members for j in range(r.lo, r.hi + 1)})
-    ks = [round((ts[j] - span.start_s) / period) for j in idx]
-    residuals = [ts[j] - k * period for j, k in zip(idx, ks, strict=True)]
+    k_model = [round((ts[j] - span.start_s) / span.period_s) for j in idx]
+    kpub = [k * octave_multiple for k in k_model]
+    residuals = [ts[j] - k * period for j, k in zip(idx, kpub, strict=True)]
     anchor = statistics.fmean(residuals)
     rms = statistics.fmean((r - anchor) ** 2 for r in residuals) ** 0.5
     # Beats whose phase against the line is off by more than the tolerance
@@ -292,6 +307,7 @@ def const_lines(
     min_region_beats: int = MIN_REGION_BEATS,
     min_coverage: float = 0.0,
     least_squares: bool = False,
+    octave_multiple: float = 1.0,
 ) -> list[SegmentLine] | None:
     """The one constant-tempo line for the track, or None without a long region
     or when the merged span covers less than `min_coverage` of the beats' time."""
@@ -303,7 +319,7 @@ def const_lines(
     span = _extend(regions, i_ref, tolerance_s, (float("-inf"), float("inf")))
     if (span.end_s - span.start_s) < min_coverage * (ts[-1] - ts[0]):
         return None
-    return [_line_for_span(ts, span, rounding, tolerance_s, (ts[0], ts[-1]))]
+    return [_line_for_span(ts, span, rounding, tolerance_s, (ts[0], ts[-1]), octave_multiple)]
 
 
 def _place_spans(regions: Sequence[ConstRegion], order: Sequence[int], tolerance_s: float) -> list[_Span]:
@@ -327,6 +343,7 @@ def piecewise_lines(
     tolerance_s: float = PHASE_TOLERANCE_S,
     min_region_beats: int = MIN_REGION_BEATS,
     least_squares: bool = False,
+    octave_multiple: float = 1.0,
 ) -> list[SegmentLine] | None:
     """One line per long region after merging, gaps filled by the neighbors.
 
@@ -348,11 +365,11 @@ def piecewise_lines(
     for n, s in enumerate(spans):
         lo = ts[0] if n == 0 else 0.5 * (spans[n - 1].end_s + s.start_s)
         hi = ts[-1] if n == len(spans) - 1 else 0.5 * (s.end_s + spans[n + 1].start_s)
-        lines.append(_line_for_span(ts, s, rounding, tolerance_s, (lo, hi)))
+        lines.append(_line_for_span(ts, s, rounding, tolerance_s, (lo, hi), octave_multiple))
     return lines
 
 
-def fit_const_regions(
+def fit_const_regions(  # noqa: PLR0913 - octave_multiple matches fit_grid; the rest are the recipe knobs
     beats: Sequence[float],
     downbeats: Sequence[float],
     *,
@@ -362,26 +379,36 @@ def fit_const_regions(
     fallback_line: bool = True,
     piecewise: bool = False,
     least_squares: bool = False,
+    octave_multiple: float = 1.0,
 ) -> GridFit:
     """Regularize one track's model beats with the constant-region recipe.
 
     Same contract as `grid_fit.fit_grid`: a `GridFit` with the served beats
-    and bar numbers, or a reason and no beats. When no region of
-    `MIN_REGION_BEATS` extends over `min_coverage` of the track, the track is
-    not one steady tempo, and with `fallback_line` (the served behavior) the
-    line fitter, which splits at tempo changes, grids it instead; the result
-    then says `fitter="line"`. Without it the track fails with
+    and bar numbers, or a reason and no beats. `octave_multiple` (from
+    `bpm.estimate_bpm`) renders the grid at the published metrical level, so
+    a model that tracked 90 BPM for a track the octave policy publishes at
+    180 serves beats 60/180 s apart. When no region of `MIN_REGION_BEATS`
+    extends over `min_coverage` of the track, the track is not one steady
+    tempo, and with `fallback_line` (the served behavior) the line fitter,
+    which splits at tempo changes, grids it instead (with the same multiple);
+    the result then says `fitter="line"`. Without it the track fails with
     `REASON_NO_CONST_REGION`, which is the recipe measured on its own.
     """
     ts = [float(t) for t in beats]
     if piecewise:
-        lines = piecewise_lines(ts, rounding=rounding, least_squares=least_squares)
+        lines = piecewise_lines(ts, rounding=rounding, least_squares=least_squares, octave_multiple=octave_multiple)
     else:
-        lines = const_lines(ts, rounding=rounding, min_coverage=min_coverage, least_squares=least_squares)
+        lines = const_lines(
+            ts,
+            rounding=rounding,
+            min_coverage=min_coverage,
+            least_squares=least_squares,
+            octave_multiple=octave_multiple,
+        )
     if lines:
         return grid_from_lines(lines, downbeats, offset_s, fitter=FITTER_CONST_REGIONS)
     if fallback_line:
-        return fit_grid(ts, downbeats, rounding=rounding, offset_s=offset_s)
+        return fit_grid(ts, downbeats, rounding=rounding, offset_s=offset_s, octave_multiple=octave_multiple)
     return GridFit([], [], (), offset_s, REASON_NO_CONST_REGION, fitter=FITTER_CONST_REGIONS)
 
 

@@ -255,6 +255,12 @@ export const PAIRINGS: ContrastPairing[] = [
     label: "accent indicator (toggles, faders, lit buttons)",
   },
   {
+    fg: "rb-accent",
+    bg: "rb-panel",
+    level: "non-text",
+    label: "keyboard deck marker on the deck header (KEYB-11383)",
+  },
+  {
     fg: "rb-on-accent",
     bg: "rb-accent",
     level: "body",

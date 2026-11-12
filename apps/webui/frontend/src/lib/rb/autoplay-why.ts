@@ -4,7 +4,7 @@
  * `opendj dj verdict`.
  */
 
-import { api, readApiErrorStatus, unwrap } from '$lib/api/client';
+import { api, readApiErrorStatus, unwrap } from '$lib/api/rb-http';
 
 export const LAST_URL = '/api/v1/dj/transitions/last' as const;
 export const VERDICT_URL = '/api/v1/dj/transitions/verdict' as const;

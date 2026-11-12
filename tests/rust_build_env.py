@@ -106,3 +106,37 @@ def build_audio_engine(crate: Path, *, features: tuple[str, ...] = ()) -> Path:
             _unavailable("no ALSA development files here, so the device feature cannot build")
         pytest.fail(f"cargo build of odj-audio exited {result.returncode}:\n{result.stderr[-4000:]}")
     return target / "debug" / ("odj-audio.exe" if sys.platform == "win32" else "odj-audio")
+
+
+def run_cargo_lib_tests(
+    crate: Path, names: tuple[str, ...], *, exact: bool = False
+) -> subprocess.CompletedProcess[str]:
+    """``cargo test --lib`` the named Rust unit tests in ``crate`` and return the run.
+
+    Same host contract as ``build_audio_engine``: bindgen gets gcc's builtin
+    headers, and only a missing cargo or libclang is UNAVAILABLE. Any other
+    outcome is returned for the caller to assert on, stderr included.
+    """
+    cargo = shutil.which("cargo")
+    if cargo is None:
+        _unavailable("no cargo here, so odj-audio's Rust tests cannot run from this checkout")
+    result = subprocess.run(
+        [
+            cargo,
+            "test",
+            "--manifest-path",
+            str(crate / "Cargo.toml"),
+            "--lib",
+            "--",
+            *names,
+            *(["--exact"] if exact else []),
+        ],
+        capture_output=True,
+        text=True,
+        check=False,
+        cwd=crate,
+        env=bindgen_env(os.environ),
+    )
+    if result.returncode != 0 and NO_LIBCLANG in result.stderr:
+        _unavailable("no libclang here, so bindgen cannot build signalsmith-stretch")
+    return result

@@ -146,9 +146,9 @@ function buildDeck1(ctx, usb = false) {
 
 /** Splice the real way: SPACE first (attaches the convolver), then ECHO. */
 function spliceSpaceAndEcho(nodes) {
-	const rt = { nodes, graph: null, spaceQuietSince: null };
-	graph.driveColorChannel(rt, { effect: 'space', echo_beats: 0.75 }, 124, 1);
-	graph.driveColorChannel(rt, { effect: 'echo', echo_beats: 0.75 }, 124, 1);
+	const rt = { nodes, graph: null, crush: null, spaceQuietSince: null };
+	graph.driveColorChannel(rt, { effect: 'space', echo_beats: 0.75 }, 124, 1, 0.5);
+	graph.driveColorChannel(rt, { effect: 'echo', echo_beats: 0.75 }, 124, 1, 0.5);
 	assert.ok(rt.graph !== null, 'the color FX graph spliced');
 	assert.ok(rt.graph.space !== null, 'the SPACE convolver attached');
 	return rt;

@@ -1,13 +1,22 @@
 <script lang="ts">
 	// Real precomputed Demucs controls. Click toggles mute; Shift+click toggles
-	// solo. Both paths dispatch through the typed browser-agent command surface.
-	// STEMPERF-11695: ACA / INST / ALL quick chips (deck only) plan the same commands.
+	// solo; scroll sets the stem level; double-click returns it to unity
+	// (STEMPERF-11699). All paths dispatch through the typed browser-agent
+	// command surface. STEMPERF-11695: ACA / INST / ALL quick chips (deck only)
+	// plan the same commands.
 	import type { DeckState } from '$lib/rb/deck-state-types';
+	import {
+		createChipClickArbiter,
+		stemChipDbLabel,
+		stemChipLevelView,
+		stemChipWheelParams
+	} from '$lib/rb/stem-chip-level';
 	import { stemCssColor } from '$lib/rb/stem-colors';
 	import type { SeparateActionView } from '$lib/rb/stem-separate-view';
 	import { stemStatusView } from '$lib/rb/stem-status';
 	import { quickModeActive, type StemQuickMode } from '$lib/rb/stem-quick-mode';
 	import type { StemControl } from '$lib/rb/stem-types';
+	import { WHEEL_STEP, wheelAdjust } from '$lib/rb/wheel-adjust';
 
 	let {
 		deck,
@@ -15,6 +24,7 @@
 		testIdScope = 'deck',
 		onMute,
 		onSolo,
+		onGain,
 		onLoad,
 		separate = null,
 		onSeparate,
@@ -28,6 +38,8 @@
 		testIdScope?: 'deck' | 'channel';
 		onMute: (stem: StemControl) => Promise<void>;
 		onSolo: (stem: StemControl) => Promise<void>;
+		/** STEMPERF-11699: wheel over a live chip sets that stem's level; double-click returns it to unity. */
+		onGain: (stem: StemControl, value: number) => void;
 		/** STEM-48: retry a failed stem load, or start one that is held. The deck
 		 * passes it; the mixer strip does not, and shows the reason on hover only. */
 		onLoad?: () => Promise<void>;
@@ -88,18 +100,26 @@
 		}
 		const ctrl = deck.stems.controls[stem];
 		const state = ctrl.solo ? 'solo selected' : ctrl.muted ? 'muted now' : 'unmuted (other solo/group controls still apply)';
-		return `${label} stem is ${state}. Click to mute, Shift+click to solo. ${statusTip}`;
+		const level = stemChipDbLabel(ctrl.gain);
+		return `${label} stem is ${state}, level ${level}. Click to mute, Shift+click to solo, scroll for level, double-click for unity. ${statusTip}`;
 	}
 
-	async function toggle(event: MouseEvent, stem: StemControl): Promise<void> {
-		if (event.shiftKey) await onSolo(stem);
-		else await onMute(stem);
+	// Every click dispatches at once; a double-click's two clicks cancel out, so the dblclick only resets gain.
+	const arbiter = createChipClickArbiter({
+		onMute: (stem) => onMute(stem),
+		onSolo: (stem) => onSolo(stem),
+		onGain: (stem, value) => onGain(stem, value)
+	});
+
+	function toggle(event: MouseEvent, stem: StemControl): void {
+		arbiter.click({ stem, shift: event.shiftKey });
 	}
 </script>
 
-	<div class="stems" role="group" aria-label={`stem controls deck ${deck.deck_id}`} data-stems-status={deck.stems.status} data-stems-state={view.name} title={statusTip}>
+	<div class="stems" role="group" aria-label={`stem controls deck ${deck.deck_id}`} data-stems-status={deck.stems.status} data-stems-state={view.name} data-stems-phase={deck.stems.load?.phase ?? null} title={statusTip}>
 	<span class="mute">MUTE</span>
 	{#each visibleStems as stem (stem.id)}
+		{@const level = stemChipLevelView(deck.stems.controls[stem.id].gain)}
 		<button
 			class="chip"
 			class:muted={deck.stems.controls[stem.id].muted}
@@ -115,10 +135,20 @@
 			data-performance-control={`stem-${stem.id}`}
 			data-muted={deck.stems.controls[stem.id].muted}
 			data-solo={deck.stems.controls[stem.id].solo}
+			data-stem-gain={deck.stems.controls[stem.id].gain}
 			style={`--chip-color:${stemCssColor(stem.id)}`}
-			onclick={async (event) => await toggle(event, stem.id)}
+			onclick={(event) => toggle(event, stem.id)}
+			ondblclick={() => arbiter.doubleClick(stem.id)}
+			use:wheelAdjust={stemChipWheelParams({
+				stem: stem.id,
+				gain: () => deck.stems.controls[stem.id].gain,
+				live: ready && !unavailable(stem.id),
+				step: WHEEL_STEP.knob,
+				onGain
+			})}
 		>
 			{testIdScope === 'channel' ? stem.label.slice(0, 3) : stem.label}
+			{#if !level.unity}<span class="level" aria-hidden="true" style={`height:${level.barPx}px`}></span>{/if}
 		</button>
 	{/each}
 	{#if onQuickMode !== undefined}
@@ -173,6 +203,7 @@
 				class="status"
 				class:busy={view.busy}
 				role="status"
+				aria-live="polite"
 				title={view.tip}
 				data-testid={`stem-status-${testIdScope}-${deck.deck_id}`}
 				data-stems-state={view.name}
@@ -222,6 +253,16 @@
 		font-weight: 600;
 		padding: 1px 8px;
 		cursor: pointer;
+		position: relative;
+	}
+	/* STEMPERF-11699: the stem level, shown only off unity; independent of mute. */
+	.chip .level {
+		position: absolute;
+		left: 0;
+		right: 0;
+		bottom: 0;
+		background: var(--chip-color);
+		pointer-events: none;
 	}
 	.chip.muted {
 		background: transparent;

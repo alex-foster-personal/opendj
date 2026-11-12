@@ -265,7 +265,12 @@ async function beepTarget(bus: IoTestBus, deviceId: string | null, signal: Abort
 	if (bus === 'booth' && (deviceId === null || deviceId === '')) {
 		throw new Error('No BOOTH output is picked. Pick the BOOTH device, then test again.');
 	}
-	const hp = mixerState.headphones;
+	const hp = {
+		...mixerState.headphones,
+		selected_booth_output_device_id: mixerState.booth.selected_output_device_id,
+		booth: mixerState.booth,
+		routes: { ...mixerState.headphones.routes, booth: mixerState.booth.route }
+	};
 	// A switch still pending refuses with or without a live graph: before any
 	// deck builds one, a device change's MAIN move may still be landing, and a
 	// short-lived context would beep wherever the room was before it.

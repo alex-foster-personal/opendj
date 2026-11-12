@@ -8,8 +8,14 @@
  * One entry rather than four parallel import() calls so Rollup emits the
  * engine as one chunk instead of one chunk per module (each extra chunk costs
  * its own gzip framing and loses shared compression context).
+ * Mixer deck-pair select is handled in action-glue via mixer-selection.
  */
-export { initMidi, releaseMidiInputs, registerLearnTap } from './webmidi.svelte';
+export {
+	initMidi,
+	releaseMidiInputs,
+	registerLearnTap,
+	subscribeMidiInput
+} from './webmidi.svelte';
 export { registerAllDeviceMaps } from './maps';
 export { attachMidiGlue } from './action-glue.svelte';
 export { loadInstalledDeviceMaps } from './installed-maps';

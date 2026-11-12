@@ -12,7 +12,9 @@
 	} from './practice-pad-layers';
 	import type { DeviceMap } from '$lib/rb/midi/midi-types';
 	import { onDestroy } from 'svelte';
-	import { handleMidiAction } from '$lib/rb/midi/action-glue.svelte';
+	import { handleMidiAction, midiLedFeedback } from '$lib/rb/midi/action-glue.svelte';
+	import { softwareScalar } from '$lib/rb/midi/takeover-engine-sync.svelte';
+	import { midiTakeoverUi } from '$lib/rb/midi/takeover-ui.svelte';
 	import { midiState, setDeviceShiftHeld } from '$lib/rb/midi/midi-state.svelte';
 	import {
 		controlTitle,
@@ -25,6 +27,13 @@
 		type PadLayerSelection,
 		type ResolvedControl
 	} from './practice-bindings';
+	import {
+		isContinuousControl,
+		liveByControl,
+		NO_SOURCE_TITLE,
+		type ControlLive,
+		type LiveReaders
+	} from './practice-live-values';
 
 	interface Props {
 		layout: PanelLayout;
@@ -32,17 +41,45 @@
 		/** Practice drill target control id; null = free play. */
 		target?: string | null;
 		onHit?: (controlId: string) => void;
+		/** What controls show. Default: the live engine stores (the ones the mixer renders from). */
+		readLive?: (map: DeviceMap) => LiveReaders;
 		/** When true, the replica does not accept pointer input (compare / blind modes). */
 		disablePointerEvents?: boolean;
 	}
 
-	let { layout, map, target = null, onHit, disablePointerEvents = false }: Props = $props();
+	let {
+		layout,
+		map,
+		target = null,
+		onHit,
+		readLive = engineReaders,
+		disablePointerEvents = false
+	}: Props = $props();
+
+	function engineReaders(m: DeviceMap): LiveReaders {
+		return {
+			scalar: softwareScalar,
+			ghost: (fid) => midiTakeoverUi.ghosts[fid] ?? null,
+			leds: midiLedFeedback(m)
+		};
+	}
 
 	let selection = $state<PadLayerSelection>({});
 	$effect.pre(() => {
 		selection = initialPadLayers(layout);
 	});
 	const resolved = $derived(resolveLayout(map, layout, midiState.shiftHeld, selection));
+
+	// One pass over the panel per engine change it reads; no polling, no frame loop.
+	const live = $derived(liveByControl(resolved, map, readLive(map)));
+	const _live = (r: ResolvedControl): ControlLive => live.get(r.control.id) ?? { kind: 'none' };
+
+	/** On release, the thumb returns to the engine's value: pickup may have held the move back,
+	 * and the screen must never show a value the deck does not have. */
+	function _resyncThumb(r: ResolvedControl, el: HTMLInputElement): void {
+		const shown = _live(r);
+		if (shown.kind === 'value') el.value = String(shown.value);
+	}
 
 	export function queryLayers() {
 		return queryPadLayers(layout, map, selection, midiState.shiftHeld);
@@ -138,10 +175,6 @@
 		_held.releaseAll();
 	});
 
-	function _isContinuous(r: ResolvedControl): boolean {
-		return ['fader', 'knob', 'crossfader'].includes(r.control.type);
-	}
-
 	function _isVertical(r: ResolvedControl): boolean {
 		return r.control.type === 'fader';
 	}
@@ -176,9 +209,16 @@
 	data-device={layout.device}
 >
 	{#each resolved as r (r.control.id)}
+		{@const shown = _live(r)}
 		<div
 			class="ctl ctl-{r.control.type}"
-			class:inert={r.kind !== 'bound'}
+			class:inert={r.kind !== 'bound' || shown.kind === 'no-source'}
+			class:lit={shown.kind === 'lit' && shown.on}
+			data-lit={shown.kind === 'lit' ? String(shown.on) : undefined}
+			data-value={shown.kind === 'value' ? shown.value.toFixed(3) : undefined}
+			data-ghost={shown.kind === 'value' && shown.ghost !== null
+				? shown.ghost.toFixed(3)
+				: undefined}
 			class:target={target === r.control.id}
 			style={_box(r)}
 			title={controlTitle(r)}
@@ -202,20 +242,35 @@
 				>
 			{:else if r.kind !== 'bound' && r.control.pad_layers === undefined}
 				<span class="lbl" aria-disabled="true">{r.control.label}</span>
-			{:else if _isContinuous(r)}
+			{:else if shown.kind === 'no-source'}
+				<span class="lbl" aria-disabled="true" title={NO_SOURCE_TITLE}>{r.control.label}</span>
+			{:else if isContinuousControl(r) && shown.kind === 'value'}
 				<input
 					type="range"
 					min="0"
 					max="1"
 					step="0.01"
-					value="0.5"
+					value={shown.value}
 					class:vertical={_isVertical(r)}
 					onpointerdown={() => _reach(r)}
 					aria-label={controlTitle(r)}
 					title={controlTitle(r)}
 					oninput={(e) =>
 						_fire(r, { value01: Number((e.currentTarget as HTMLInputElement).value) })}
+					onchange={(e) => _resyncThumb(r, e.currentTarget as HTMLInputElement)}
 				/>
+				{#if shown.ghost !== null}
+					<span
+						class="ghost"
+						class:vertical={_isVertical(r)}
+						style="--g:{shown.ghost}"
+						title="Last position a controller sent: {shown.ghost.toFixed(
+							2
+						)}. The deck is at {shown.value.toFixed(
+							2
+						)}; move the control through that value to pick it up."
+					></span>
+				{/if}
 				<span class="lbl">{r.control.label}</span>
 			{:else if r.control.type === 'encoder'}
 				<button
@@ -290,6 +345,8 @@
 		--p-label: #e8ebf0;
 		--p-inert: #a9b0bc;
 		--p-accent: #4da3ff;
+		--p-lit: #d9482b;
+		--p-ghost: #ff9f1a;
 		position: relative;
 		width: 100%;
 		background: var(--p-panel);
@@ -320,6 +377,31 @@
 	.ctl.inert {
 		color: var(--p-inert);
 		border-style: dashed;
+	}
+	.ctl.lit {
+		background: var(--p-lit);
+		border-color: var(--p-lit);
+	}
+	.ctl.lit .press {
+		color: #fff;
+	}
+	.ghost {
+		position: absolute;
+		left: calc(5% + var(--g) * 90%);
+		bottom: 2px;
+		width: 6px;
+		height: 6px;
+		margin-left: -3px;
+		border: 1.5px solid var(--p-ghost);
+		border-radius: 50%;
+		pointer-events: none;
+	}
+	.ghost.vertical {
+		left: auto;
+		right: 2px;
+		bottom: calc(10% + var(--g) * 80%);
+		margin-left: 0;
+		margin-bottom: -3px;
 	}
 	.ctl.target {
 		outline: 3px solid var(--p-accent);

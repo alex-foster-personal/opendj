@@ -1,17 +1,26 @@
-import type { CSSProperties, MouseEvent } from 'react';
+import { useEffect, useRef, type CSSProperties, type MouseEvent, type ReactElement } from 'react';
 
 import type { DeckState } from '$lib/rb/deck-state-types';
+import {
+	createChipClickArbiter,
+	stemChipDbLabel,
+	stemChipLevelView,
+	stemChipWheelParams,
+	type ChipClickArbiter,
+	type StemChipWheelParams
+} from '$lib/rb/stem-chip-level';
 import { stemCssColor } from '$lib/rb/stem-colors';
 import type { SeparateActionView } from '$lib/rb/stem-separate-view';
 import { quickModeActive, type StemQuickMode } from '$lib/rb/stem-quick-mode';
 import { stemStatusView } from '$lib/rb/stem-status';
 import type { StemControl } from '$lib/rb/stem-types';
+import { WHEEL_STEP, wheelAdjust } from '$lib/rb/wheel-adjust';
 
 import './StemRow.react.css';
 
 // React twin of StemRow.svelte: same DOM, classes, ARIA and behavior, held to
 // the same contract (StemRow.contract.ts). Click toggles mute; Shift+click
-// toggles solo.
+// toggles solo; scroll sets the level; double-click returns it to unity.
 
 export type StemRowProps = {
 	/** Only what the twin reads, so a caller can pass a plain snapshot. */
@@ -21,6 +30,8 @@ export type StemRowProps = {
 	testIdScope?: 'deck' | 'channel';
 	onMute: (stem: StemControl) => Promise<void>;
 	onSolo: (stem: StemControl) => Promise<void>;
+	/** STEMPERF-11699: wheel over a live chip sets that stem's level; double-click returns it to unity. */
+	onGain: (stem: StemControl, value: number) => void;
 	/** STEM-48: retry a failed stem load, or start one that is held. */
 	onLoad?: () => Promise<void>;
 	/** STEM-77: the "Separate this track" action on a NO STEMS deck, or null. */
@@ -44,6 +55,30 @@ const STEMS: readonly { id: StemControl; label: string }[] = [
 	{ id: 'other', label: 'HARM' }
 ];
 
+/** Attaches the shared wheel action; React's onWheel is passive and cannot preventDefault. */
+function useWheelAdjust(params: StemChipWheelParams) {
+	const ref = useRef<HTMLButtonElement>(null);
+	const handle = useRef<ReturnType<typeof wheelAdjust> | null>(null);
+	useEffect(() => {
+		const el = ref.current;
+		if (el === null) return;
+		handle.current = wheelAdjust(el, params);
+		return () => {
+			handle.current?.destroy();
+			handle.current = null;
+		};
+		// eslint-disable-next-line react-hooks/exhaustive-deps
+	}, []);
+	useEffect(() => {
+		handle.current?.update(params);
+	});
+	return ref;
+}
+
+function ChipWheel({ params, render }: { params: StemChipWheelParams; render: (ref: ReturnType<typeof useWheelAdjust>) => ReactElement }) {
+	return render(useWheelAdjust(params));
+}
+
 const cls = (...parts: (string | false)[]): string => parts.filter(Boolean).join(' ');
 
 export default function StemRow({
@@ -52,6 +87,7 @@ export default function StemRow({
 	testIdScope = 'deck',
 	onMute,
 	onSolo,
+	onGain,
 	onLoad,
 	separate = null,
 	onSeparate,
@@ -76,12 +112,25 @@ export default function StemRow({
 		}
 		const ctrl = stems.controls[stem];
 		const state = ctrl.solo ? 'solo selected' : ctrl.muted ? 'muted now' : 'unmuted (other solo/group controls still apply)';
-		return `${label} stem is ${state}. Click to mute, Shift+click to solo. ${statusTip}`;
+		const level = stemChipDbLabel(ctrl.gain);
+		return `${label} stem is ${state}, level ${level}. Click to mute, Shift+click to solo, scroll for level, double-click for unity. ${statusTip}`;
 	}
 
-	async function toggle(event: MouseEvent, stem: StemControl): Promise<void> {
-		if (event.shiftKey) await onSolo(stem);
-		else await onMute(stem);
+	// Latest callbacks, read at fire time so the arbiter is created once.
+	const latest = useRef({ onMute, onSolo, onGain });
+	latest.current = { onMute, onSolo, onGain };
+	const arbiterRef = useRef<ChipClickArbiter | null>(null);
+	if (arbiterRef.current === null) {
+		arbiterRef.current = createChipClickArbiter({
+			onMute: (stem) => latest.current.onMute(stem),
+			onSolo: (stem) => latest.current.onSolo(stem),
+			onGain: (stem, value) => latest.current.onGain(stem, value)
+		});
+	}
+	const arbiter = arbiterRef.current;
+
+	function toggle(event: MouseEvent, stem: StemControl): void {
+		arbiter.click({ stem, shift: event.shiftKey });
 	}
 
 	return (
@@ -91,15 +140,25 @@ export default function StemRow({
 			aria-label={`stem controls deck ${deck.deck_id}`}
 			data-stems-status={stems.status}
 			data-stems-state={view.name}
+			data-stems-phase={stems.load?.phase ?? undefined}
 			title={statusTip}
 		>
 			<span className="mute">MUTE</span>
 			{visibleStems.map((stem) => {
 				const ctrl = stems.controls[stem.id];
 				const off = unavailable(stem.id);
+				const level = stemChipLevelView(ctrl.gain);
+				const params = stemChipWheelParams({
+					stem: stem.id,
+					gain: () => stems.controls[stem.id].gain,
+					live: ready && !off,
+					step: WHEEL_STEP.knob,
+					onGain: (s, v) => latest.current.onGain(s, v)
+				});
 				return (
+					<ChipWheel key={stem.id} params={params} render={(ref) => (
 					<button
-						key={stem.id}
+						ref={ref}
 						className={cls('chip', ctrl.muted && 'muted', ctrl.solo && 'solo', off && 'unavailable')}
 						disabled={!ready || off}
 						aria-busy={pending}
@@ -111,11 +170,15 @@ export default function StemRow({
 						data-performance-control={`stem-${stem.id}`}
 						data-muted={ctrl.muted}
 						data-solo={ctrl.solo}
+						data-stem-gain={ctrl.gain}
 						style={{ '--chip-color': stemCssColor(stem.id) } as CSSProperties}
-						onClick={async (event) => await toggle(event, stem.id)}
+						onClick={(event) => toggle(event, stem.id)}
+						onDoubleClick={() => arbiter.doubleClick(stem.id)}
 					>
 						{testIdScope === 'channel' ? stem.label.slice(0, 3) : stem.label}
+						{!level.unity && <span className="level" aria-hidden="true" style={{ height: `${level.barPx}px` }} />}
 					</button>
+					)} />
 				);
 			})}
 			{onQuickMode !== undefined &&

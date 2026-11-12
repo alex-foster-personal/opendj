@@ -2,23 +2,26 @@ import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 
 import type { DeckId } from '$lib/rb/deck-id';
 import { PAD_MODE_CATALOG, padModeMenuLabel } from '$lib/rb/pad-mode-catalog';
-import { plannedTitle } from '$lib/rb/planned-explainers';
+import { runPerformanceCommandFromUi } from '$lib/rb/performance-ipc.svelte';
+import { padModeFor, padModeSelectable } from '$lib/rb/pad-mode-state.svelte';
 import { triggerFloatingAction } from '$lib/ui/clamp-to-viewport';
 
 import './PadModeMenu.react.css';
 
 // React twin of PadModeMenu.svelte: same DOM, classes, ARIA and behavior,
-// held to the same contract (PadModeMenu.contract.ts). Only Hot Cue is built;
-// every other mode renders inert with the not-built tooltip. The menu is
+// held to the same contract (PadModeMenu.contract.ts). Hot Cue, Beat Jump (DECKUX-9956) and
+// Pad FX 1/2 are built; a mode that cannot be selected renders inert with its reason as the tooltip. The menu is
 // position: fixed, placed from the trigger's rect by triggerFloatingAction
 // (the same helper the Svelte `use:` action runs), because the deck clips overflow.
-
-const NOT_BUILT_TIP = plannedTitle('pad-mode-unbuilt');
 
 export type PadModeMenuProps = { deckId: DeckId; stacked?: boolean };
 
 export default function PadModeMenu({ deckId, stacked = false }: PadModeMenuProps) {
 	const [open, setOpen] = useState(false);
+	const mode = padModeFor(deckId);
+	const triggerLabel = (
+		PAD_MODE_CATALOG.find((entry) => entry.id === mode)?.label ?? 'Hot Cue'
+	).toUpperCase();
 	const wrapRef = useRef<HTMLSpanElement>(null);
 	const triggerRef = useRef<HTMLButtonElement>(null);
 	const menuRef = useRef<HTMLDivElement>(null);
@@ -65,25 +68,35 @@ export default function PadModeMenu({ deckId, stacked = false }: PadModeMenuProp
 				data-testid={`hot-cue-menu-deck-${deckId}`}
 				onClick={() => setOpen(!open)}
 			>
-				HOT CUE
+				{triggerLabel}
 			</button>
 			{open ? (
 				<div className="pad-menu" role="menu" ref={menuRef}>
-					{PAD_MODE_CATALOG.map((entry) => (
-						<button
-							key={entry.id}
-							type="button"
-							className={entry.built ? 'pad-menu-item' : 'pad-menu-item rb-inert'}
-							role="menuitem"
-							data-pad-mode={entry.id}
-							data-built={entry.built}
-							disabled={!entry.built}
-							title={entry.built ? undefined : NOT_BUILT_TIP}
-							onClick={() => setOpen(false)}
-						>
-							{padModeMenuLabel(entry)}
-						</button>
-					))}
+					{PAD_MODE_CATALOG.map((entry) => {
+						const sel = padModeSelectable(deckId, entry);
+						return (
+							<button
+								key={entry.id}
+								type="button"
+								className={sel.enabled ? 'pad-menu-item' : 'pad-menu-item rb-inert'}
+								role="menuitem"
+								data-pad-mode={entry.id}
+								data-built={entry.built}
+								disabled={!sel.enabled}
+								title={sel.enabled ? undefined : sel.reason}
+								onClick={() => {
+									setOpen(false);
+									void runPerformanceCommandFromUi({
+										type: 'pad_mode',
+										deck: deckId,
+										mode: entry.id
+									});
+								}}
+							>
+								{padModeMenuLabel(entry)}
+							</button>
+						);
+					})}
 				</div>
 			) : null}
 		</span>

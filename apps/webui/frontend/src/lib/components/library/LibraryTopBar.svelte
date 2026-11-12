@@ -42,7 +42,7 @@
 	const addMusicBlocked = $derived(runSetupBlocked());
 
 	async function onAddMusic(): Promise<void> {
-		const failure = await runSetup(goto);
+		const failure = await runSetup(goto, $page.url.pathname);
 		if (failure !== null) pushToast(`Could not reopen setup: ${failure}`, 'error');
 	}
 

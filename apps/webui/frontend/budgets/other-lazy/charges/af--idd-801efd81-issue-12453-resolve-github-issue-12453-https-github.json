@@ -1,0 +1,9 @@
+{
+  "bytes": 1024,
+  "measured_main": 515255,
+  "measured_with_pr": 515512,
+  "sha": "2311470f00",
+  "date": "Wed 11 Nov 2026",
+  "reason": "StemRow data-stems-phase on both twins and extended stem-row SSR and Storybook contract tests grow the other-lazy shell surface; measured +257 B gzip over main at CI; ceiled to KiB.",
+  "payback": "none planned; the growth is the change's own code on this surface"
+}

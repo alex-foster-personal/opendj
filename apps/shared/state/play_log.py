@@ -178,23 +178,67 @@ def record_play(
     return True
 
 
+def _rollover_local(day: date, tz: tzinfo | None) -> datetime:
+    """The rollover hour on ``day`` as an aware datetime (machine local zone when ``tz`` is None)."""
+    wall = datetime(day.year, day.month, day.day, HISTORY_DAY_ROLLOVER_HOUR, tzinfo=tz)
+    return wall.astimezone() if tz is None else wall
+
+
 def history_day_bounds(day: date, tz: tzinfo | None = None) -> tuple[str, str]:
-    """Canonical UTC ``[start, end)`` for one history day: local 06:00 on ``day`` to 06:00 the next.
+    """Canonical UTC ``[start, end)`` for one history day: the rollover on ``day`` to the next one.
 
     ``tz=None`` uses the machine local zone; each bound is its own wall-time ``astimezone()``
     so a DST fall-back night yields a 25-hour window instead of pinning the start offset.
     """
-    if tz is None:
-        start_local = datetime(day.year, day.month, day.day, HISTORY_DAY_ROLLOVER_HOUR).astimezone()
-        next_day = day + timedelta(days=1)
-        end_local = datetime(
-            next_day.year, next_day.month, next_day.day, HISTORY_DAY_ROLLOVER_HOUR
-        ).astimezone()
-        return canonical_from(start_local), canonical_from(end_local)
-    next_day = day + timedelta(days=1)
-    start = datetime(day.year, day.month, day.day, HISTORY_DAY_ROLLOVER_HOUR, tzinfo=tz)
-    end = datetime(next_day.year, next_day.month, next_day.day, HISTORY_DAY_ROLLOVER_HOUR, tzinfo=tz)
+    start = _rollover_local(day, tz)
+    end = _rollover_local(day + timedelta(days=1), tz)
     return canonical_from(start), canonical_from(end)
+
+
+def night_of(now: datetime, tz: tzinfo | None = None) -> date:
+    """The history day ``now`` belongs to: today from the rollover on, yesterday before it."""
+    if now.tzinfo is None:
+        raise ValueError("night_of needs a timezone-aware datetime")
+    local = now.astimezone(tz) if tz is not None else now.astimezone()
+    if local.hour >= HISTORY_DAY_ROLLOVER_HOUR:
+        return local.date()
+    return local.date() - timedelta(days=1)
+
+
+def night_start(now: datetime, tz: tzinfo | None = None) -> str:
+    """Canonical UTC start of tonight: the most recent local rollover at or before ``now``."""
+    return history_day_bounds(night_of(now, tz), tz)[0]
+
+
+@dataclass(frozen=True)
+class PlayRow:
+    """One logged play, as read back for a tracklist."""
+
+    stable_id: str
+    play_id: str | None
+    played_at: str
+    deck: int | None
+    source: str
+
+
+def plays_since(conn: sqlite3.Connection, since_ts: str) -> list[PlayRow]:
+    """Every play with ``ts >= since_ts``, oldest first (ties in insert order)."""
+    return [
+        PlayRow(
+            stable_id=str(sid),
+            play_id=None if pid is None else str(pid),
+            played_at=str(ts),
+            deck=None if deck is None else int(deck),
+            source=str(source),
+        )
+        for ts, sid, pid, deck, source in conn.execute(
+            "SELECT ts, stable_id, json_extract(payload_json, '$.play_id'), "
+            "json_extract(payload_json, '$.deck'), "
+            "COALESCE(json_extract(payload_json, '$.source'), ?) "
+            "FROM events WHERE kind = ? AND ts >= ? ORDER BY ts, rowid",
+            (OPENDJ_SOURCE, PLAY_KIND, since_ts),
+        )
+    ]
 
 
 def delete_play(conn: sqlite3.Connection, stable_id: str, play_id: str) -> bool:
@@ -292,14 +336,18 @@ __all__ = [
     "DeletedPlays",
     "ImportedPlay",
     "OwnPlays",
+    "PlayRow",
     "bulk_own_plays",
     "delete_play",
     "delete_plays_between",
     "history_day_bounds",
     "import_plays",
     "imported_play_ids",
+    "night_of",
+    "night_start",
     "play_payload",
     "play_recorded",
     "plays_by_source",
+    "plays_since",
     "record_play",
 ]

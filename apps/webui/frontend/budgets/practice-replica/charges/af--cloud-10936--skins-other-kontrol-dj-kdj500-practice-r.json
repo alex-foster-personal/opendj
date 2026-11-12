@@ -1,0 +1,9 @@
+{
+  "bytes": 1024,
+  "measured_main": 35135,
+  "measured_with_pr": 36131,
+  "sha": "bf7d857166",
+  "date": "Thu 12 Nov 2026",
+  "reason": "branch af--cloud-10936--skins-other-kontrol-dj-kdj500-practice-r grows the practice-replica surface; measured +996 B gzip over main; ceiled to KiB.",
+  "payback": "none planned; the growth is the change's own code on this surface"
+}

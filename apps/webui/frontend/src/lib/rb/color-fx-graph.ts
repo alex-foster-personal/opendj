@@ -38,6 +38,13 @@
  * sends and the effect inputs, so an effect switch or a return to center
  * crossfades what goes IN and lets what is already in the loop ring out. A retune
  * crossfades the two echo lines over 30 ms and never ramps a delay time.
+ *
+ * CRUSH (SNDCOL-10655) is a separate branch, tapped BEFORE the FILTER from the
+ * channel's `high` EQ node and returned into the color bus, crossfaded
+ * linearly against `filterDry` (`color-fx-crush.ts`):
+ *
+ *   high -+-> filterDry / filterLp / filterHp -> colorBus
+ *         +-> crush worklet -> highpass -> crushWet -> colorBus
  */
 import {
 	COLOR_FX_ECHO_BEATS,
@@ -47,6 +54,14 @@ import {
 	type ColorFxSettings,
 	type ColorFxTargets
 } from './color-fx';
+import {
+	CRUSH_CLOSED,
+	applyCrushTargets,
+	buildCrushGraph,
+	crushTargets,
+	type CrushGraph,
+	type CrushVoicing
+} from './color-fx-crush';
 import { buildEchoKernel, type EchoKernel } from './fx/echo-kernel';
 import { glideCorner } from './filter-glide';
 import { FILTER_GLIDE_DOMAIN, FILTER_GLIDE_S } from '$lib/player/constants';
@@ -276,15 +291,21 @@ export function applyColorFxTargets(
 /** The channel nodes the color knob drives: the FILTER nodes plus the color
  * bus and the two destinations the SPACE / ECHO returns feed. */
 export interface ColorChannelNodes extends ColorFilterNodes {
+	/** The pre-color EQ stage, CRUSH's tap. */
+	high: AudioNode;
 	colorBus: GainNode;
 	cue: GainNode;
 	fader: GainNode;
+	/** STEMPERF-11663: stem FX sends -> stemFxSend -> fxIn (connected at splice). */
+	stemFxSend?: GainNode;
 }
 
 /** One channel's color FX runtime: its nodes and, once spliced, its graph. */
 export interface ColorChannelRuntime {
 	nodes: ColorChannelNodes;
 	graph: ColorFxGraph | null;
+	/** CRUSH nodes, spliced once its worklet has loaded on this context (spliceCrush). */
+	crush: CrushGraph | null;
 	/** Context time the SPACE send last closed (input or both sends at 0), or null while open. */
 	spaceQuietSince: number | null;
 }
@@ -317,17 +338,32 @@ export function detachIdleSpace(rt: ColorChannelRuntime, now: number, options: C
 	return true;
 }
 
+/** Splice this channel's CRUSH nodes (once; the worklet module must already be
+ * loaded on the channel's context). Silent: built with its wet gain at 0. */
+export function spliceCrush(
+	rt: ColorChannelRuntime,
+	voicing?: CrushVoicing,
+	onProcessorError?: (graph: CrushGraph) => void
+): CrushGraph {
+	if (rt.crush !== null) return rt.crush;
+	rt.crush = buildCrushGraph(rt.nodes.colorBus.context, rt.nodes.high, rt.nodes.colorBus, voicing, onProcessorError);
+	return rt.crush;
+}
+
 /**
  * Drive one channel to `settings` at knob `value`, the echo timed to
  * `tempoBpm`: the FILTER nodes always, the SPACE / ECHO graph once the channel
- * leaves FILTER (spliced then, on the channel's own context). The live module
- * and the render test both call this, so the render measures shipped code.
+ * selects SPACE or ECHO (spliced then, on the channel's own context), and the
+ * CRUSH nodes whenever they are spliced, at PARAMETER `crushParameter`. The
+ * live module and the render test both call this, so the render measures
+ * shipped code.
  */
 export function driveColorChannel(
 	rt: ColorChannelRuntime,
 	settings: ColorFxSettings,
 	tempoBpm: number | null,
 	value: number,
+	crushParameter: number,
 	options: ColorFxGraphOptions = {}
 ): void {
 	const echoSeconds = echoDelaySeconds(settings.echo_beats, tempoBpm);
@@ -335,9 +371,10 @@ export function driveColorChannel(
 	const ctx = rt.nodes.colorBus.context;
 	const now = ctx.currentTime;
 	applyColorFilterTargets(rt.nodes, targets, now, ctx.sampleRate);
-	if (settings.effect !== 'filter' && rt.graph === null) {
+	if ((settings.effect === 'space' || settings.effect === 'echo') && rt.graph === null) {
 		const graph = buildColorFxGraph(ctx, rt.nodes.colorBus, [rt.nodes.cue, rt.nodes.fader], options);
 		rt.graph = graph;
+		rt.nodes.stemFxSend?.connect(graph.fxIn);
 	}
 	const spaceOpen = targets.spaceIn > 0 && (targets.darkSend > 0 || targets.brightSend > 0);
 	if (spaceOpen) rt.spaceQuietSince = null;
@@ -348,4 +385,12 @@ export function driveColorChannel(
 	// An already-spliced graph is driven even in FILTER, so leaving SPACE/ECHO
 	// closes their inputs on the ramp and lets the tails ring out.
 	if (rt.graph !== null) applyColorFxTargets(rt.graph, targets, echoSeconds, now);
+	// After the FILTER drive: on CRUSH this replaces the dry ramp just scheduled
+	// with the linear crossfade, so dry and wet stay complementary. A failed
+	// processor is driven closed, so the FILTER-bypass dry ramp stands.
+	if (rt.crush !== null) {
+		const onCrush = settings.effect === 'crush' && rt.crush.failure === null;
+		const crush = onCrush ? crushTargets(value, crushParameter) : CRUSH_CLOSED;
+		applyCrushTargets(rt.crush, rt.nodes.filterDry.gain, crush, onCrush, now, COLOR_FX_RAMP_SEC);
+	}
 }

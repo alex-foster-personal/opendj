@@ -46,7 +46,8 @@ def _text(payload: dict[str, Any]) -> str:
     lines = [f"[WARN] {w['lane']}: {w['message']} Fix: {w['fix']}" for w in payload.get("warnings", [])]
     for batch in payload.get("batches", []):
         lines.append(
-            f"{batch['batch_id']} ({batch['source']}, {batch['tracks']} tracks, artwork {batch['artwork_stage']})"
+            f"{batch['batch_id']} ({batch['source']}, {batch['tracks']} tracks, "
+            f"identify {batch.get('identify_stage', 'waiting')}, artwork {batch['artwork_stage']})"
         )
         for lane in payload.get("lane_priority", []):
             counts = ", ".join(f"{state} {n}" for state, n in sorted(batch["lanes"][lane].items()))

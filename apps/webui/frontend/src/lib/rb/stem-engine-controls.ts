@@ -30,7 +30,7 @@ export interface StemEngineControlDeps {
 export function applyStemControl(
 	deck: DeckId,
 	stem: StemControl,
-	field: 'muted' | 'solo' | 'gain',
+	field: 'muted' | 'solo' | 'gain' | 'fx_send',
 	value: boolean | number,
 	deps: StemEngineControlDeps
 ): void {
@@ -41,7 +41,13 @@ export function applyStemControl(
 		throw new TypeError(`unknown stem control: ${String(stem)}`);
 	}
 	const op =
-		field === 'muted' ? 'setStemMute' : field === 'solo' ? 'setStemSolo' : 'setStemGain';
+		field === 'muted'
+			? 'setStemMute'
+			: field === 'solo'
+				? 'setStemSolo'
+				: field === 'fx_send'
+					? 'setStemFxSend'
+					: 'setStemGain';
 	const loaded = _loadedStemDeck(deps.requireLoaded, deck, op);
 	if (loaded === null) {
 		// Empty deck: same as unavailable stems. CLI / agent / IPC can fire
@@ -81,6 +87,17 @@ export function applyStemControl(
 	};
 	if (field === 'solo' && deps.exclusive) {
 		for (const control of STEM_CONTROLS) controls[control].solo = false;
+	}
+	if (field === 'fx_send') {
+		// STEMPERF-11663: only the send ramps; the part gains get no call.
+		if (typeof value !== 'number') {
+			throw new TypeError('setStemFxSend: value must be a number');
+		}
+		controls[stem].fx_send = value;
+		st.stems.controls = controls;
+		target.setStemFxSend(stem, value);
+		if (held !== null) deps.engageHeldStems(deck);
+		return;
 	}
 	if (field === 'gain') {
 		if (typeof value !== 'number') {

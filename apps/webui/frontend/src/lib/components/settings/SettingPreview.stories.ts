@@ -48,5 +48,17 @@ export const Waveform: Story = {
 	}
 };
 
-const STORY_PER_KIND = { waveform: Waveform } satisfies Record<SettingPreviewKind, Story>;
+/** The segment display preview paints the sample sections, never a blank canvas. */
+export const Sections: Story = {
+	args: { kind: 'sections', label: 'Segment display preview' },
+	play: async ({ canvasElement, args }) => {
+		const root = canvasElement.querySelector<HTMLElement>(`[aria-label="${args.label}"]`);
+		await expect(root).not.toBeNull();
+		const canvas = root!.querySelector<HTMLCanvasElement>('canvas');
+		await expect(canvas).not.toBeNull();
+		await waitFor(() => expect(paintedPixelCount(canvas!)).toBeGreaterThan(0), { timeout: 5000 });
+	}
+};
+
+const STORY_PER_KIND = { waveform: Waveform, sections: Sections } satisfies Record<SettingPreviewKind, Story>;
 void STORY_PER_KIND;

@@ -180,6 +180,13 @@ def _section_at(spans: Sequence[SectionSpan], position_ms: float) -> str | None:
     return None
 
 
+def _phrase_label_at(spans: Sequence[SectionSpan], position_ms: float) -> str | None:
+    for span in spans:
+        if span.start_ms <= position_ms < span.end_ms:
+            return span.raw
+    return None
+
+
 def _bpm_at(grid: Sequence[GridBeat], position_ms: float, rate: float) -> float | None:
     last_bpm: float | None = None
     for beat in grid:
@@ -255,6 +262,21 @@ class LightingRuntime:
         self.feed_connected = False
         self.hub.close_all(RUNTIME_STOPPED_CODE, "lighting runtime stopped")
 
+    def current_look(self) -> dict[str, str | None]:
+        """Owner-deck scene look and phrase label for GET /lighting/look."""
+        scene_id: str | None = None
+        phrase_label: str | None = None
+        frame = self._last_show_frame
+        colour_deck = frame.colour_deck if frame is not None else None
+        if frame is not None and not frame.ambient and frame.layers and colour_deck:
+            for layer in frame.layers:
+                if layer.deck == colour_deck:
+                    scene_id = layer.look
+                    break
+        if colour_deck:
+            phrase_label = self._deck_state.get(colour_deck, {}).get("phrase_label")
+        return {"scene_id": scene_id, "phrase_label": phrase_label}
+
     def status(self) -> dict[str, Any]:
         decks = sorted(
             [
@@ -328,6 +350,7 @@ class LightingRuntime:
                 "bpm": _bpm_at(deck_feed.grid, position, sample.rate),
                 "playing": sample.playing,
                 "section": _section_at(deck_feed.sections, position),
+                "phrase_label": _phrase_label_at(deck_feed.sections, position),
             }
 
         weights = dict(frame.weights)

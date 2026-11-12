@@ -878,8 +878,9 @@ export function headlineStripAction(status: CloudSyncStatus | null): HeadlineStr
  * Mon 14 Sep 2026: an 'inconclusive' result's only advice was
  * "run Sync now again", which does nothing when the true cause is rows that
  * can never sync until fingerprinted -- retrying re-runs the same exclusion
- * every time). Shown as a SEPARATE line from `statusHeadline`, never folded
- * into it: the backlog and any given sync's outcome are correlated on a
+ * every time). Shown as a SEPARATE secondary block from `statusHeadline`, never
+ * folded into it and never styled as a warn/error headline (#11291): the backlog
+ * and any given sync's outcome are correlated on a
  * real library but not proven to be the same event on any one run, so this
  * never claims causation, only reports the count honestly.
  *

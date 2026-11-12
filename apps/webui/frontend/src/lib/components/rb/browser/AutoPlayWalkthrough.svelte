@@ -4,6 +4,7 @@
 	// or compatibility logic lives here, only a requestAnimationFrame loop
 	// copied from WaveRow.svelte's own pattern (mount starts, unmount stops)
 	// and a lookup into the current frame via frameAt.
+	import { prefersReducedMotion } from '$lib/motion/reduced-motion';
 	import {
 		buildWalkthroughTimeline,
 		camelotHue,
@@ -66,7 +67,7 @@
 	}
 
 	$effect(() => {
-		const reduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+		const reduced = prefersReducedMotion();
 		if (reduced) {
 			elapsedMs = totalMs(frames);
 			return;

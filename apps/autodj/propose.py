@@ -13,12 +13,14 @@ see what was understood instead of trusting a silent guess.
 
 from __future__ import annotations
 
+import json
 import math
 import re
 from collections.abc import Mapping
 from dataclasses import dataclass, replace
 from typing import Any
 
+from apps.autodj.contract.models import CONFIDENCE_FACTOR_NAMES, PROPOSE_GATES
 from apps.autodj.contract.models import INTENTS as _CONTRACT_INTENTS
 from apps.autodj.contract.models import WIND_DOWN as _CONTRACT_WIND_DOWN
 from apps.autodj.notation import print_score
@@ -43,9 +45,10 @@ from apps.autodj.profile import (
     trim_db_of_knob,
 )
 from apps.autodj.scoring import PairScore, rank_key, score_windows
-from apps.autodj.sections import BREAKDOWN, BRIDGE, PEAK_LABELS
+from apps.autodj.sections import BREAKDOWN, BRIDGE, PEAK_LABELS, UNKNOWN
 from apps.autodj.styles import (
     HIT_GATED,
+    HIT_ON_ALIGNED_DROP,
     HIT_ON_EXIT,
     HIT_ON_HANDOVER,
     HIT_ON_START,
@@ -393,6 +396,28 @@ def lull_bars(profile: TrackProfile, start_bar: int) -> int:
     return end - start_bar
 
 
+_DOUBLE_DROP_BARS = 16
+_DOUBLE_DROP_BPM_LO = 160.0
+_DOUBLE_DROP_BPM_HI = 180.0
+
+
+def _primary_peak(profile: TrackProfile) -> Section | None:
+    peaks = sorted((section for section in profile.sections if section.label in PEAK_LABELS), key=lambda s: s.start_bar)
+    return peaks[0] if peaks else None
+
+
+def _aligned_drop_on_handover(
+    in_profile: TrackProfile, entry: int, in_start: int, bars: int, fold: float
+) -> tuple[int, float, int] | str:
+    """Incoming drop on the handover without requiring an outgoing lull (double_drop)."""
+    if not float(bars * fold).is_integer():
+        return f"a {bars}-bar double_drop cannot land the incoming drop on the handover under a {fold:g} fold"
+    start = entry - int(bars * fold)
+    if start < 1 or incoming_bass_entry(in_profile, start) != entry:
+        return f"no bass-free {bars}-bar run-up before the incoming drop at its bar {entry}"
+    return start, float(bars), entry
+
+
 def _drop_on_handover(
     in_profile: TrackProfile, entry: int, in_start: int, bars: int, fold: float
 ) -> tuple[int, float, int] | str:
@@ -419,6 +444,8 @@ def _start_and_hit(
         return entry, exit_bar(bars), entry
     if style.hit == HIT_ON_HANDOVER:
         return _drop_on_handover(in_profile, entry, in_start, bars, fold)
+    if style.hit == HIT_ON_ALIGNED_DROP:
+        return _aligned_drop_on_handover(in_profile, entry, in_start, bars, fold)
     if style.hit == HIT_GATED:
         low, high = hit_bounds(bars, style.min_body_fade_bars)
         phrase = _phrase_swap(style)
@@ -454,7 +481,7 @@ def _unknown_entry(style: Style, in_start: int, bars: int) -> HitPlacement:
             "",
             "the incoming track has no bar_bass series; phrase swap cannot be placed",
         )
-    if style.hit == HIT_ON_HANDOVER:
+    if style.hit in (HIT_ON_HANDOVER, HIT_ON_ALIGNED_DROP):
         return HitPlacement(
             in_start, 0.0, None, "", "the incoming track has no bar_bass series, so its drop cannot be found"
         )
@@ -557,6 +584,159 @@ def _rationale(style_name: str, style: Style, bars: int, out_window: MixWindow, 
     if in_window.peak_bar is not None and style.max_bars > 1:
         rationale += f"; its peak lands at bar {in_window.peak_bar}"
     return rationale
+
+
+_GRID_BAR_FACTOR = 1.0
+_GRID_BEAT_FACTOR = 0.7
+_GRID_NONE_FACTOR = 0.4
+_VOCAL_NONE_FACTOR = 0.6
+
+
+def _grid_factor(profile: TrackProfile) -> float:
+    if profile.grid_trusted:
+        return _GRID_BAR_FACTOR
+    if profile.downbeats_s:
+        return _GRID_BEAT_FACTOR
+    return _GRID_NONE_FACTOR
+
+
+def _structure_factor(profile: TrackProfile) -> float:
+    source = profile.sections_source
+    if source == "rekordbox":
+        return 1.0
+    if source == "own":
+        if not profile.sections:
+            return 0.4
+        if all(section.label == UNKNOWN for section in profile.sections):
+            return 0.7
+        return 1.0
+    return 0.4
+
+
+def _vocal_factor(profile: TrackProfile) -> float:
+    if profile.vocals_status and profile.vocals_status != "not_analyzed":
+        return 1.0
+    return _VOCAL_NONE_FACTOR
+
+
+def _pair_confidence_base(out_profile: TrackProfile, in_profile: TrackProfile) -> dict[str, float]:
+    return {
+        "grid": min(_grid_factor(out_profile), _grid_factor(in_profile)),
+        "structure": min(_structure_factor(out_profile), _structure_factor(in_profile)),
+        "vocal": min(_vocal_factor(out_profile), _vocal_factor(in_profile)),
+    }
+
+
+def _gap_factor(score: float, runner_up: float | None) -> float:
+    if runner_up is None:
+        normalized = 1.0
+    else:
+        span = max(score, 1e-9)
+        normalized = max(0.0, min(1.0, (score - runner_up) / span))
+    return 0.7 + 0.3 * normalized
+
+
+def _weakest_factor(factors: dict[str, float]) -> str:
+    return min(factors, key=lambda name: (factors[name], name))
+
+
+def _confidence_title(factors: dict[str, float]) -> str:
+    return "; ".join(f"{name} {factors[name]:.2f}" for name in CONFIDENCE_FACTOR_NAMES)
+
+
+def _propose_gate(reason: str, validation: Validation | None = None) -> str:
+    blob = reason.lower()
+    if validation is not None and not validation.ok:
+        blob = f"{blob} {' '.join(validation.errors).lower()}".strip()
+    if "vocal" in blob:
+        return "vocal"
+    if "grid" in blob or "past the outgoing grid" in blob:
+        return "grid"
+    if "tempo" in blob or "beat sync" in blob or "bpm" in blob:
+        return "tempo"
+    if "key" in blob:
+        return "key"
+    if (
+        "min_bars" in blob
+        or "max_bars" in blob
+        or "no overlap" in blob
+        or "past the" in blob
+        or " overlap" in blob
+        or blob.startswith("overlap")
+    ):
+        return "length"
+    return "windows"
+
+
+def _attach_confidence(
+    summaries: list[dict[str, Any]],
+    proposals: list[Proposal],
+    ranked_valid: list[Proposal],
+    out_profile: TrackProfile,
+    in_profile: TrackProfile,
+) -> None:
+    """Write confidence fields on ``summaries`` aligned with ``proposals``."""
+    base = _pair_confidence_base(out_profile, in_profile)
+    index = {id(proposal): position for position, proposal in enumerate(ranked_valid)}
+    for summary, proposal in zip(summaries, proposals, strict=True):
+        position = index.get(id(proposal))
+        runner_up = (
+            ranked_valid[position + 1].score if position is not None and position + 1 < len(ranked_valid) else None
+        )
+        factors = {**base, "gap": _gap_factor(proposal.score, runner_up)}
+        summary["confidence"] = round(
+            factors["grid"] * factors["structure"] * factors["vocal"] * factors["gap"],
+            2,
+        )
+        summary["weakest_factor"] = _weakest_factor(factors)
+        summary["confidence_factors"] = {name: round(value, 3) for name, value in factors.items()}
+        summary["confidence_title"] = _confidence_title(factors)
+
+
+def refresh_proposal_confidence(
+    result: dict[str, Any],
+    out_profile: TrackProfile,
+    in_profile: TrackProfile,
+) -> None:
+    """Recompute gap terms after a live recheck dropped some proposals."""
+    result.pop("_valid_proposal_scores", None)
+    rows = result.get("proposals") or []
+    if not rows:
+        return
+    ranked_scores = sorted(float(row["score"]) for row in rows)
+    ranked_scores.reverse()
+    base = _pair_confidence_base(out_profile, in_profile)
+    for index, row in enumerate(rows):
+        score = float(row["score"])
+        runner = ranked_scores[index + 1] if index + 1 < len(ranked_scores) else None
+        factors = {**base, "gap": _gap_factor(score, runner)}
+        row["confidence"] = round(
+            factors["grid"] * factors["structure"] * factors["vocal"] * factors["gap"],
+            2,
+        )
+        row["weakest_factor"] = _weakest_factor(factors)
+        row["confidence_factors"] = {name: round(value, 3) for name, value in factors.items()}
+        row["confidence_title"] = _confidence_title(factors)
+
+
+def propose_parity_bytes(document: Mapping[str, Any]) -> bytes:
+    """Stable JSON of confidence, weakest_factor and rejected for HTTP/CLI/MCP parity checks."""
+    public = {
+        "proposals": [
+            {key: row[key] for key in ("confidence", "weakest_factor", "style", "bars", "score") if key in row}
+            for row in document.get("proposals") or []
+        ],
+        "rejected": list(document.get("rejected") or []),
+    }
+    return json.dumps(public, sort_keys=True, separators=(",", ":")).encode()
+
+
+def proposal_golden_body(row: dict[str, Any]) -> dict[str, Any]:
+    """Proposal fields compared for golden ranking tests (everything except confidence metadata)."""
+    skip = frozenset(
+        {"confidence", "weakest_factor", "confidence_factors", "confidence_title"},
+    )
+    return {key: value for key, value in row.items() if key not in skip}
 
 
 def _best_valid(proposals: list[Proposal], top: int | None) -> list[Proposal]:
@@ -728,6 +908,7 @@ def propose_transition(  # noqa: C901, PLR0913 - keyword-only options of one ent
     )
     proposals: list[Proposal] = []
     not_offered: list[dict[str, Any]] = []
+    rejected: list[dict[str, Any]] = []
     seen: set[tuple[str, int, int, int]] = set()
     trim_db, trim_reason = match_live_trim_db(out_profile, in_profile, live, out_deck, in_deck)
     # Synced proposals play ``fold`` incoming grid bars per plan bar; tempo-none styles start on their own bass and tempo.
@@ -849,7 +1030,88 @@ def propose_transition(  # noqa: C901, PLR0913 - keyword-only options of one ent
         validation = validate_plan(plan, out_profile, in_profile, live=live)
         preference = _preference_bonus(parsed, rank)
         score = pair.score + preference + _style_fit(style, pair, parsed) - _penalty(validation, parsed)
+        if not validation.ok:
+            rejected.append(
+                {
+                    "style": style_name,
+                    "bars": bars,
+                    "out_bar": out_window.start_bar,
+                    "in_bar": entered.start_bar,
+                    "gate": _propose_gate("", validation),
+                    "reason": "; ".join(validation.errors),
+                }
+            )
         proposals.append(Proposal(plan, validation, pair, score, rationale))
+
+    def _try_double_drop() -> None:
+        if intent is not None:
+            return
+        style = STYLES["double_drop"]
+        if not style.available:
+            return
+        out_bpm, in_bpm = out_profile.judged_bpm, in_profile.judged_bpm
+        if out_bpm is None or in_bpm is None:
+            return
+        if not (
+            _DOUBLE_DROP_BPM_LO <= out_bpm <= _DOUBLE_DROP_BPM_HI
+            and _DOUBLE_DROP_BPM_LO <= in_bpm <= _DOUBLE_DROP_BPM_HI
+        ):
+            return
+        out_peak, in_peak = _primary_peak(out_profile), _primary_peak(in_profile)
+        if out_peak is None or in_peak is None:
+            return
+        wanted = _DOUBLE_DROP_BARS
+        out_start = out_peak.start_bar - wanted
+        in_start = in_peak.start_bar - wanted
+        style_name = style.name
+        if out_start < 1 or in_start < 1:
+            not_offered.append(
+                {
+                    "style": style_name,
+                    "bars": wanted,
+                    "out_bar": max(1, out_start),
+                    "in_bar": max(1, in_start),
+                    "reason": (
+                        f"no bass-free {wanted}-bar run-up before the incoming drop at its bar {in_peak.start_bar}"
+                        if in_start < 1
+                        else f"no {wanted}-bar run-up before the outgoing drop at its bar {out_peak.start_bar}"
+                    ),
+                }
+            )
+            return
+        out_window = window_at(out_profile, "out", out_start)
+        in_window = window_at(in_profile, "in", in_start)
+        if out_window.max_bars < wanted:
+            not_offered.append(
+                {
+                    "style": style_name,
+                    "bars": wanted,
+                    "out_bar": out_start,
+                    "in_bar": in_start,
+                    "reason": (
+                        f"out-window max_bars={out_window.max_bars} < double_drop min_bars={wanted}"
+                        " (short run-up before the drop)"
+                    ),
+                }
+            )
+            return
+        if in_window.max_bars < wanted:
+            not_offered.append(
+                {
+                    "style": style_name,
+                    "bars": wanted,
+                    "out_bar": out_start,
+                    "in_bar": in_start,
+                    "reason": (
+                        f"in-window max_bars={in_window.max_bars} < double_drop min_bars={wanted}"
+                        " (short run-up before the drop)"
+                    ),
+                }
+            )
+            return
+        consider(style, wanted, len(_PREFERENCES[parsed]), out_window, in_window)
+
+    _try_double_drop()
 
     for rank, (style_name, wanted_bars) in enumerate(_PREFERENCES[parsed]):
         style = STYLES[style_name]
@@ -881,14 +1143,28 @@ def propose_transition(  # noqa: C901, PLR0913 - keyword-only options of one ent
         for out_window in out_windows[:3]:
             for in_window in _in_windows_for(parsed, in_profile, style)[:3]:
                 consider(style, wanted_bars, escape_rank, out_window, in_window)
-    best = _best_valid(proposals, top)
+    ranked_valid = sorted(
+        (proposal for proposal in proposals if proposal.validation.ok),
+        key=lambda proposal: rank_key(proposal.pair, proposal.score),
+        reverse=True,
+    )
+    best = ranked_valid if top is None else ranked_valid[: max(1, top)]
+    summaries = [proposal.summary() for proposal in best]
+    _attach_confidence(summaries, best, ranked_valid, out_profile, in_profile)
+    for row in not_offered:
+        rejected.append({**row, "gate": _propose_gate(str(row.get("reason") or ""))})
+    for gate in {row["gate"] for row in rejected}:
+        if gate not in PROPOSE_GATES:
+            raise ValueError(f"unknown propose gate {gate!r}")
     return {
         "intent": parsed,
         "intent_text": intent,
         "out_track": out_profile.stable_id,
         "in_track": in_profile.stable_id,
-        "proposals": [proposal.summary() for proposal in best],
+        "proposals": summaries,
         "considered": len(proposals),
         # D11: window pairs a style could not use, and why (never a silent skip).
         "not_offered": not_offered,
+        "rejected": rejected,
+        "_valid_proposal_scores": [proposal.score for proposal in ranked_valid],
     }

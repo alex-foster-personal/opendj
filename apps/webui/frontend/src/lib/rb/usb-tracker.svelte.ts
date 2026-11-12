@@ -6,7 +6,7 @@
  * Never writes to a USB mount from this pass.
  * Future agentic check/fix: (private path)/
  */
-import { ApiError, api, unwrap } from '../api/client';
+import { ApiError, api, unwrap } from '../api/rb-http';
 import { uiPrefs } from '$lib/rb/prefs.svelte';
 import { pushToast } from '$lib/stores.svelte';
 
@@ -84,6 +84,8 @@ export type UsbLibraryReadNote = {
 	code?: string;
 	detail?: string;
 	trackCount?: number;
+	has_pdb?: boolean;
+	has_onelibrary?: boolean;
 };
 
 export type UsbDeckClassHealth = {
@@ -113,6 +115,8 @@ export const usbTracker = $state({
 	volumes: _load(),
 	panelOpen: false,
 	promptId: null as string | null,
+	/** Per-volume ids the UI should pulse until the user opens the USB panel. */
+	detectPulse: {} as Record<string, true>,
 	polling: false,
 	lastError: null as string | null,
 	discovery: 'unknown' as UsbDiscoveryState,
@@ -290,10 +294,15 @@ function _versionSentence(kind: UsbKind | undefined, note: UsbLibraryReadNote | 
 	if (note?.state === 'ok') {
 		const tracks = typeof note.trackCount === 'number' ? `${note.trackCount} tracks. ` : '';
 		if (kind === 'rekordbox') {
+			const plus =
+				note.has_onelibrary === true
+					? ' exportLibrary.db (Device Library Plus) is also on this stick.'
+					: note.has_onelibrary === false
+						? ' exportLibrary.db (Device Library Plus) is not on this stick.'
+						: '';
 			return (
 				`${tracks}Version found: rekordbox Device Library (export.pdb, RBX). ` +
-				'The pdb file version number is not reported. ' +
-				'Device Library Plus, the other rekordbox export, was not part of this read.'
+				`Browse uses export.pdb.${plus}`
 			);
 		}
 		return `${tracks}Version found: ${_libraryKindWords(kind)}. Not a rekordbox (RBX) export.`;
@@ -379,7 +388,25 @@ export function announceUsbProblem(message: string): void {
 	pushToast(message, 'error');
 }
 
+export function usbDetectPulseIds(): string[] {
+	return Object.keys(usbTracker.detectPulse);
+}
+
+export function usbDetectPulseActive(): boolean {
+	return usbDetectPulseIds().length > 0;
+}
+
+export function markUsbDetectPulse(volumeId: string): void {
+	if (volumeId === '') return;
+	usbTracker.detectPulse = { ...usbTracker.detectPulse, [volumeId]: true };
+}
+
+export function clearUsbDetectPulses(): void {
+	if (usbDetectPulseActive()) usbTracker.detectPulse = {};
+}
+
 export function openUsbPanel(id?: string): void {
+	clearUsbDetectPulses();
 	usbTracker.panelOpen = true;
 	if (id !== undefined) {
 		const vol = usbTracker.volumes.find((v) => v.id === id);
@@ -735,7 +762,7 @@ function _ingest(remote: ApiVolume[]): void {
 	for (const id of freshIds) {
 		const row = byId.get(id);
 		if (!row || row.forgotten || !row.needs_prompt) continue;
-		_onNewDetect(row);
+		applyUsbDetectSignals(row);
 	}
 }
 
@@ -760,16 +787,29 @@ function _mergeAliasIds(byId: Map<string, UsbVolumeKnown>, remote: ApiVolume[]):
 	}
 }
 
+/** Unit tests and merge simulation call this when a row is newly detected. */
+export function applyUsbDetectSignals(row: UsbVolumeKnown): void {
+	_onNewDetect(row);
+}
+
 function _onNewDetect(row: UsbVolumeKnown): void {
+	markUsbDetectPulse(row.id);
 	if (uiPrefs.usb_toast_enabled) {
-		pushToast(`USB detected: ${row.name}`, 'info', uiPrefs.usb_toast_ms);
+		pushToast(
+			`USB detected: ${row.name}`,
+			'info',
+			uiPrefs.usb_toast_ms,
+			undefined,
+			{},
+			'usb-detect',
+			{
+				label: 'Open USB panel',
+				handler: () => openUsbPanel(row.id)
+			}
+		);
 	}
 	if (uiPrefs.usb_auto_open_panel) {
-		usbTracker.panelOpen = true;
-	}
-	if (row.needs_prompt) {
-		usbTracker.promptId = row.id;
-		usbTracker.panelOpen = true;
+		openUsbPanel(row.needs_prompt ? row.id : undefined);
 	}
 }
 

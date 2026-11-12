@@ -129,6 +129,7 @@ test('fetchMissingTrackRows calls GET /api/v1/reconcile/broken with no playlist_
 	assert.equal(seen.method, 'GET');
 	assert.equal(result.truncated, false);
 	assert.equal(result.etag, '');
+	assert.equal(result.match_total, null);
 	assert.equal(result.rows.length, 1);
 	assert.equal(result.rows[0].order, 1);
 	assert.equal(result.rows[0].file_exists, false);

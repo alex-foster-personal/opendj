@@ -140,6 +140,10 @@ export function friendlyLabel(action: MidiAction): string {
 			return `Beat sync (deck ${action.deck})`;
 		case 'deck_manual_loop_cycle':
 			return `Loop in / out / exit (deck ${action.deck})`;
+		case 'deck_loop_in':
+			return `Loop in (deck ${action.deck})`;
+		case 'deck_loop_out':
+			return `Loop out (deck ${action.deck})`;
 		case 'deck_loop_scale':
 			return `Loop ${action.factor === 0.5 ? 'half' : 'double'} (deck ${action.deck})`;
 		case 'deck_key_sync_toggle':
@@ -192,6 +196,10 @@ export function friendlyLabel(action: MidiAction): string {
 			return 'Master cue';
 		case 'color_fx':
 			return `Colour FX ${action.effect} (deck ${action.deck})`;
+		case 'mixer_deck_pair_select':
+			return action.deck === undefined
+				? `Deck pair ${action.pair}`
+				: `Deck ${action.deck} (${action.pair})`;
 		default: {
 			const _exhaustive: never = action;
 			throw new Error(`Unhandled MidiAction: ${JSON.stringify(_exhaustive)}`);

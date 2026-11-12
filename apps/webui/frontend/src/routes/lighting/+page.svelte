@@ -1,5 +1,11 @@
+<!--
+	/lighting: the stage visualiser (issue #9898) with the overrides panel (issue #9899)
+	mounted below it.
+-->
 <script lang="ts">
 	import { onDestroy, untrack } from 'svelte';
+
+	import LightingOverrides from '$lib/components/lighting/LightingOverrides.svelte';
 
 	import { connectFrames, fetchPatch, type FramesStatus } from '$lib/lighting/frames-client';
 	import { createLightingStageIpc, installLightingStageIpc } from '$lib/lighting/stage-ipc';
@@ -400,6 +406,8 @@
 			</button>
 		{/if}
 	</div>
+
+	<LightingOverrides />
 </div>
 
 <style>

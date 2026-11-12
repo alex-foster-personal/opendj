@@ -17,6 +17,12 @@ import { pushToast } from '$lib/stores.svelte';
 import { announcePairingsChanged } from '$lib/rb/pairings-changed';
 import { normalizeRating } from '$lib/rating';
 import { invalidateLibraryIndex } from '$lib/rb/library-index';
+import { fetchOpenDjPlayCounts } from '$lib/plays/play-counter';
+import {
+	reorderItemIdsViaMove,
+	weightedShuffleItemIds,
+	type PlaylistShuffleMember
+} from '$lib/rb/playlist-shuffle';
 
 export const REVEAL_TRACK_TITLE = 'POST /api/v1/tracks/{stable_id}:reveal';
 
@@ -40,11 +46,7 @@ export function reportMenuLoadFailure(cause: unknown): void {
 	);
 }
 
-export type ToastFn = (
-	message: string,
-	kind: 'info' | 'warn' | 'error',
-	duration?: number
-) => void;
+export type ToastFn = (message: string, kind: 'info' | 'warn' | 'error', duration?: number) => void;
 
 /**
  * The menu a row may show. A stick row (Play from USB) is read only and has
@@ -55,7 +57,10 @@ export type ToastFn = (
  * item added to the menu later stays off stick rows until it is proven to
  * work for them.
  */
-export function menuItemsForTrack<T extends { id: string }>(stableId: string, items: readonly T[]): T[] {
+export function menuItemsForTrack<T extends { id: string }>(
+	stableId: string,
+	items: readonly T[]
+): T[] {
 	return isUsbTrackId(stableId) ? items.filter((item) => item.id.startsWith('load-')) : [...items];
 }
 
@@ -72,7 +77,10 @@ export function menuTargetIds(
  * one stable id, so `menuTargetIds(...).length` can be smaller than the rows the
  * user selected. PAIR-10 counts rows, so the pair rule reads this instead.
  */
-export function menuTargetRowCount(row: { order: number }, selectedOrders: readonly number[]): number {
+export function menuTargetRowCount(
+	row: { order: number },
+	selectedOrders: readonly number[]
+): number {
 	return selectedOrders.includes(row.order) ? selectedOrders.length : 1;
 }
 
@@ -80,9 +88,7 @@ export function isStreamingUri(path: string | null | undefined): boolean {
 	if (!path) return true;
 	const lower = path.toLowerCase();
 	return (
-		lower.startsWith('tidal:') ||
-		lower.startsWith('spotify:') ||
-		lower.startsWith('soundcloud:')
+		lower.startsWith('tidal:') || lower.startsWith('spotify:') || lower.startsWith('soundcloud:')
 	);
 }
 
@@ -110,10 +116,7 @@ export async function runCopyPaths(
 		paths.push(filePath);
 	}
 	if (paths.length === 0) {
-		deps.pushToast(
-			`no file_path on GET /api/v1/tracks/${firstMissingId ?? targetIds[0]}`,
-			'error'
-		);
+		deps.pushToast(`no file_path on GET /api/v1/tracks/${firstMissingId ?? targetIds[0]}`, 'error');
 		return;
 	}
 	try {
@@ -145,10 +148,7 @@ export async function runRevealTracks(
 		}
 	}
 	if (revealed > 0) {
-		deps.pushToast(
-			`Revealed ${revealed} track${revealed === 1 ? '' : 's'}`,
-			'info'
-		);
+		deps.pushToast(`Revealed ${revealed} track${revealed === 1 ? '' : 's'}`, 'info');
 	}
 	if (firstError !== null) {
 		deps.pushToast(firstError, 'error');
@@ -160,16 +160,11 @@ function _pushReanalyzeToast(
 	presentation: { message: string; kind: 'info' | 'warn' | 'error'; title?: string }
 ): void {
 	const { headline, detail, kind } = toReanalyzeToastPresentation(presentation);
-	push(
-		presentation.message,
-		kind,
-		undefined,
-		undefined,
-		{},
-		REANALYZE_TOAST_GROUP,
-		undefined,
-		{ headline, detail, feature: 'Analysis' }
-	);
+	push(presentation.message, kind, undefined, undefined, {}, REANALYZE_TOAST_GROUP, undefined, {
+		headline,
+		detail,
+		feature: 'Analysis'
+	});
 }
 
 export async function runReanalyze(
@@ -207,7 +202,8 @@ export async function runReanalyze(
 			deps.watchBatch(result.batch_id, planLabel, {
 				onUpdate: (_progress, presentation) => _pushReanalyzeToast(deps.pushToast, presentation),
 				onTerminal: (_progress, presentation) => _pushReanalyzeToast(deps.pushToast, presentation),
-				onError: (message) => deps.pushToast(message, 'error', undefined, undefined, {}, REANALYZE_TOAST_GROUP)
+				onError: (message) =>
+					deps.pushToast(message, 'error', undefined, undefined, {}, REANALYZE_TOAST_GROUP)
 			});
 		}
 	} catch (error) {
@@ -253,7 +249,10 @@ export async function runSetRating(
 	}
 	if (ok > 0) {
 		invalidateLibraryIndex();
-		deps.pushToast(`Rating set (${normalizeRating(rating) ?? rating}) on ${ok} track${ok === 1 ? '' : 's'}`, 'info');
+		deps.pushToast(
+			`Rating set (${normalizeRating(rating) ?? rating}) on ${ok} track${ok === 1 ? '' : 's'}`,
+			'info'
+		);
 	}
 	if (firstError !== null) {
 		deps.pushToast(firstError, 'error');
@@ -309,6 +308,64 @@ export async function runSetTracklistHidden(
  * either track later loads it like any other. The route publishes
  * `library.changed` kind=pairings, which repaints the paired-row edges.
  */
+export type PlaylistShuffleRow = {
+	item_id: string;
+	stable_id: string;
+};
+
+export type PlaylistShuffleDeps = {
+	rows: readonly PlaylistShuffleRow[];
+	playlistId: string;
+	etag: string;
+	/** False when read-only, sorted, searched, or truncated. */
+	allowed: boolean;
+	blockedReason: string | null;
+	move: typeof reorderItemIdsViaMove;
+	fetchCounts: typeof fetchOpenDjPlayCounts;
+	seed: () => number;
+	reload: () => Promise<void>;
+	pushToast: ToastFn;
+};
+
+export async function runPlaylistShuffle(deps: PlaylistShuffleDeps): Promise<void> {
+	if (!deps.allowed) {
+		deps.pushToast(
+			deps.blockedReason ?? 'Shuffle needs an editable playlist in membership order',
+			'error'
+		);
+		return;
+	}
+	const members: PlaylistShuffleMember[] = [];
+	for (const row of deps.rows) {
+		if (row.item_id === null || row.item_id === '') {
+			deps.pushToast('playlist row has no membership id - reload and try again', 'error');
+			return;
+		}
+		members.push({ item_id: row.item_id, stable_id: row.stable_id });
+	}
+	if (members.length < 2) {
+		deps.pushToast('Playlist needs at least 2 tracks to shuffle', 'info');
+		return;
+	}
+	let counts: Map<string, number>;
+	try {
+		counts = await deps.fetchCounts(members.map((m) => m.stable_id));
+	} catch (error) {
+		deps.pushToast(`play counts unavailable: ${String(error)}`, 'error');
+		return;
+	}
+	const current = members.map((m) => m.item_id);
+	const target = weightedShuffleItemIds(members, (sid) => counts.get(sid) ?? 0, deps.seed() >>> 0);
+	try {
+		await deps.move(deps.playlistId, deps.etag, current, target);
+		await deps.reload();
+		invalidateLibraryIndex();
+		deps.pushToast(`Shuffled ${members.length} tracks`, 'info');
+	} catch (error) {
+		deps.pushToast(`shuffle failed: ${String(error)}`, 'error');
+	}
+}
+
 export async function runPairTracks(targetIds: readonly string[]): Promise<void> {
 	if (targetIds.length !== 2 || targetIds[0] === targetIds[1]) {
 		pushToast('Pairing needs exactly 2 different tracks', 'error');

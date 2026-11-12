@@ -40,9 +40,10 @@ import { gridFlagSortValue, type GridQualityRow } from '$lib/rb/analysis-issues'
 import { worksSortValue } from '$lib/rb/library-works';
 import { viaWorkHits, worksView } from '$lib/rb/works-overlay.svelte';
 import { matchesSearchQuery } from '$lib/rb/browser-search-query';
+import { searchableTrackFromBrowserRow } from './track-table-search';
 import { normalizeRating } from '$lib/rating';
+import { fileNameSortValue, locationSortValue } from '$lib/rb/file-path-cells';
 import { listingGenre } from '$lib/rb/genre-source';
-import { keyForms } from '$lib/rb/key-notation';
 import { sortRowsByAutoPlayOrder } from '$lib/rb/auto-play';
 import type { PlaylistNode, RbMeta, TrackQuality, TrackRow } from '$lib/rb/library-types';
 import type { LyricsRowSummary } from '$lib/rb/lyrics/types';
@@ -97,9 +98,15 @@ export interface BrowserRow extends Pick<
 	order: number;
 	title: string | null;
 	artist: string | null;
+	/** Album title when the listing carries it (LIBUX-9732); null when absent. */
+	album?: string | null;
 	key: string | null;
 	bpm: number | null;
 	rating: number | null;
+	/** Rekordbox ColorID 1..8 on the wire; null or absent means no colour (0). */
+	color_id?: number | null;
+	/** Inline listing tags for column funnels and the Tags column. */
+	tags?: readonly string[];
 	/** MIK energy on the display's explicit 1-9 scale. */
 	energy: number | null;
 	/** `mik` only. A future computed value must not masquerade as MIK. */
@@ -144,6 +151,8 @@ export interface BrowserRow extends Pick<
 	is_remote?: boolean;
 	/** Durable cloud presence; unlike is_remote, stays true for local+cloud. */
 	has_remote_copy?: boolean;
+	/** Remote stem bundle index fact from the listing wire (CHROME-03). */
+	remote_stem_status?: 'ready' | 'not-run' | 'unknown';
 	/** Issue #11290: server verdict that deck load would fail on this host. */
 	deck_load_refusal?: 'streaming' | 'cloud_policy_unconfigured' | null;
 	/** Live CloudSync bytes from the same listing snapshot as this row. */
@@ -220,6 +229,8 @@ export interface RowProvider {
 	 * (browser-panel.svelte's _fetchAllRows/_fetchPlaylistRows), so this
 	 * is false in the normal case. */
 	readonly truncated: boolean;
+	/** Smartlist: loaded row count vs rule match total for N-of-M copy; null when N/A. */
+	readonly matchSnapshot: { loaded: number; total: number } | null;
 	/** Resolve rows[start .. start+count). v1 slices the in-memory
 	 * array; windowed providers fetch. Fail-fast on negative args. */
 	fetchWindow(start: number, count: number): Promise<BrowserRow[]>;
@@ -230,7 +241,8 @@ export interface RowProvider {
  * sources reactively. */
 export function makeClientRowProvider(
 	rowsOf: () => BrowserRow[],
-	truncatedOf: () => boolean
+	truncatedOf: () => boolean,
+	matchOf?: () => { loaded: number; total: number } | null
 ): RowProvider {
 	return {
 		get rows(): BrowserRow[] {
@@ -241,6 +253,9 @@ export function makeClientRowProvider(
 		},
 		get truncated(): boolean {
 			return truncatedOf();
+		},
+		get matchSnapshot(): { loaded: number; total: number } | null {
+			return matchOf?.() ?? null;
 		},
 		fetchWindow(start: number, count: number): Promise<BrowserRow[]> {
 			if (start < 0 || count < 0) {
@@ -267,8 +282,9 @@ export class PaneStore {
 	kind = $state<PlaylistNode['kind'] | null>(null);
 	/** Pane tab title (playlist name; 'blank list' when empty). */
 	title = $state('blank list');
-	/** Loaded rows in membership order (pre filter/sort). */
-	rows = $state<BrowserRow[]>([]);
+	/** Loaded rows in membership order (pre filter/sort). Raw array: each row
+	 * edit replaces the whole row so ~20 fields are not deep-proxied. */
+	rows = $state.raw<BrowserRow[]>([]);
 	loading = $state(false);
 	/** False until this pane's current load has returned or failed. This keeps
 	 * consumers from mistaking the deliberate empty pre-mount state for an
@@ -289,6 +305,8 @@ export class PaneStore {
 	sort_dir = $state<SortDir>(1);
 	/** True when the source fetch hit the row cap (truncation note). */
 	truncated = $state(false);
+	/** Smartlist rule match total from GET .../tracks when known; null otherwise. */
+	match_total = $state<number | null>(null);
 	/** Scroll cursor: table-wrap scrollTop, restored on pane activation. */
 	scroll_top = $state(0);
 	/**
@@ -300,7 +318,7 @@ export class PaneStore {
 	sticky = $state(false);
 	/** Whole-collection FTS5 search state, independent for every pane. */
 	whole_collection = $state(false);
-	search_results = $state<BrowserRow[]>([]);
+	search_results = $state.raw<BrowserRow[]>([]);
 	searching = $state(false);
 	search_total = $state(0);
 	search_result_query = $state('');
@@ -342,6 +360,7 @@ export class PaneStore {
 		this.selected_order = null;
 		this.selected_orders = [];
 		this.truncated = false;
+		this.match_total = null;
 		this.scroll_top = 0;
 		this.etag = '';
 		this.load_progress = null;
@@ -367,10 +386,17 @@ export class PaneStore {
 	/** Publish rows for load `seq`. Stale tokens are a full no-op
 	 * (the newer load owns the pane) - returns whether it applied.
 	 * `etag` defaults to '' (All Tracks / blank pane loads omit it). */
-	completeLoad(seq: number, rows: BrowserRow[], truncated: boolean, etag = ''): boolean {
+	completeLoad(
+		seq: number,
+		rows: BrowserRow[],
+		truncated: boolean,
+		etag = '',
+		matchTotal: number | null = null
+	): boolean {
 		if (!this.isCurrentLoad(seq)) return false;
 		this.rows = rows;
 		this.truncated = truncated;
+		this.match_total = matchTotal;
 		this.loading = false;
 		this.has_settled_result = true;
 		this.etag = etag;
@@ -596,23 +622,7 @@ export function filterRows(rows: BrowserRow[], query: string, hideBroken: boolea
 	if (query.trim() === '') return base;
 	const viaWork = viaWorkHits(query);
 	return base.filter(
-		(r) =>
-			viaWork.has(r.stable_id) ||
-			matchesSearchQuery(
-				{
-					title: r.title,
-					artist: r.artist,
-					comments: r.comments,
-					key: r.key,
-					// Every notation, so the key the cell shows always matches
-					// whatever key_notation is set (Sentry review, PR #7483).
-					key_forms: keyForms(r.key),
-					genre: listingGenre(r),
-					bpm: r.bpm,
-					rating: normalizeRating(r.rating)
-				},
-				query
-			)
+		(r) => viaWork.has(r.stable_id) || matchesSearchQuery(searchableTrackFromBrowserRow(r), query)
 	);
 }
 
@@ -632,6 +642,8 @@ export function sortValue(row: BrowserRow, key: SortKey): string | number | null
 	else if (key === 'time') return row.duration_ms;
 	else if (key === 'energy') return row.energy;
 	else if (key === 'genre') return listingGenre(row);
+	else if (key === 'filename') return fileNameSortValue(row);
+	else if (key === 'location') return locationSortValue(row);
 	else if (key === 'lyrics') return lyricsSortValue(row.lyrics);
 	else if (key === 'grid') return gridFlagSortValue(row);
 	throw new Error('AutoPlay ranks are not cell values');
@@ -676,17 +688,55 @@ export function visibleRowsOf(
 	);
 }
 
+/** Replace one row in a pane's rows and search_results (raw $state arrays). */
+export function replacePaneRow(pane: PaneStore, stable_id: string, next: BrowserRow): void {
+	let rowsChanged = false;
+	const rows = pane.rows.map((row) => {
+		if (row.stable_id !== stable_id) return row;
+		rowsChanged = true;
+		return next;
+	});
+	if (rowsChanged) pane.rows = rows;
+
+	let searchChanged = false;
+	const search = pane.search_results.map((row) => {
+		if (row.stable_id !== stable_id) return row;
+		searchChanged = true;
+		return next;
+	});
+	if (searchChanged) pane.search_results = search;
+}
+
+/** Map one row everywhere it appears in a pane (membership and FTS results). */
+export function updatePaneRow(
+	pane: PaneStore,
+	stable_id: string,
+	map: (row: BrowserRow) => BrowserRow
+): void {
+	const fromRows = pane.rows.find((row) => row.stable_id === stable_id);
+	const fromSearch = pane.search_results.find((row) => row.stable_id === stable_id);
+	const seed = fromRows ?? fromSearch;
+	if (seed === undefined) return;
+	const next = map(seed);
+	replacePaneRow(pane, stable_id, next);
+}
+
+/** The same row update across every open pane (strip adoption, shared cache). */
+export function updateRowAcrossPanes(
+	panes: readonly PaneStore[],
+	stable_id: string,
+	map: (row: BrowserRow) => BrowserRow
+): void {
+	for (const pane of panes) updatePaneRow(pane, stable_id, map);
+}
+
 /** Writes a decoded strip into every matching row in every pane, ALWAYS overwriting - the audience-ambiguous sidecar (TECH-DEBT.md) never outranks /anlz's own audience-scoped decode. */
 export function applyDecodedStripAcrossPanes(
 	panes: readonly PaneStore[],
 	stable_id: string,
 	strip: PreviewStripData | null
 ): void {
-	for (const pane of panes) {
-		for (const row of pane.rows) {
-			if (row.stable_id === stable_id) row.strip = strip;
-		}
-	}
+	updateRowAcrossPanes(panes, stable_id, (row) => ({ ...row, strip }));
 }
 
 // ---------------------------------------------------------------- pane tabs

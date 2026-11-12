@@ -1,0 +1,6 @@
+{
+  "pr": 0,
+  "head_sha": "0000000000000000000000000000000000000000",
+  "title": "docs(review-canary): clean control for out-of-scope rubric hits",
+  "body": "Adds a proposed ADR fragment used only as review canary case 3. Expect zero blocking findings: attribution, fleet nicknames, placeholder /Users/dev, and Thu 8 Oct 2026 are all in scope for out-of-scope treatment per REVIEW-20."
+}

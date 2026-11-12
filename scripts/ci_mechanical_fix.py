@@ -17,8 +17,9 @@ import sys
 from datetime import UTC, date, datetime
 from pathlib import Path
 
+from scripts.build_reqs_json import FRAGMENTS_REL, fragments_text_in
 from scripts.gh_pr_view import pr_view
-from scripts.req_id_pr_number import CARRIED, SOURCE, _show, carried_ids, check, defined_ids
+from scripts.req_id_pr_number import CARRIED, SOURCE, _show, _with_fragments, carried_ids, check, defined_ids
 
 _FAIL_RENAME = re.compile(r"^\[FAIL\] new requirement (?P<old>.+) must use PR #\d+: rename it to (?P<new>.+)$")
 _FAIL_DUP = re.compile(r"^\[FAIL\] requirement .+ is defined \d+ times:")
@@ -192,8 +193,21 @@ def _rename_targets(pairs: list[tuple[str, str]], paths: list[str], cwd: Path) -
     return hits
 
 
-def _apply_renames(pairs: list[tuple[str, str]], paths: list[str], cwd: Path) -> list[str]:
+def _fragment_move(old: str, new: str, rel: str) -> tuple[str, str] | None:
+    """The (old path, new path) of a requirements.d fragment named for the id being renamed: build_reqs_json requires a
+    fragment to define exactly the id in its file name, so renaming only its text leaves a tree the id check rejects."""
+    path = Path(rel)
+    if path.parent == Path(FRAGMENTS_REL) and path.suffix == ".md" and path.stem == old:
+        return rel, str(path.with_name(f"{new}.md"))
+    return None
+
+
+def _apply_renames(
+    pairs: list[tuple[str, str]], paths: list[str], cwd: Path
+) -> tuple[list[str], list[tuple[str, str]]]:
+    """Rename the ids in every PR-diff file that names one. Returns the edited paths and the (old, new) fragment moves."""
     changed: list[str] = []
+    moves: list[tuple[str, str]] = []
     for rel in _rename_targets(pairs, paths, cwd):
         path = cwd / rel
         text = path.read_text(encoding="utf-8")
@@ -201,7 +215,11 @@ def _apply_renames(pairs: list[tuple[str, str]], paths: list[str], cwd: Path) ->
             text = re.sub(rf"\b{re.escape(old)}\b", new, text)
         path.write_text(text, encoding="utf-8")
         changed.append(rel)
-    return changed
+        for old, new in pairs:
+            if move := _fragment_move(old, new, rel):
+                (cwd / move[0]).rename(cwd / move[1])
+                moves.append(move)
+    return changed, moves
 
 
 def _apply_charges(
@@ -340,7 +358,11 @@ def _run_format_check(root: Path, write: bool) -> subprocess.CompletedProcess[st
     )
 
 
-def _restore(renamed: list[str], created: list[str], updated: list[str], cwd: Path) -> None:
+def _restore(
+    renamed: list[str], created: list[str], updated: list[str], cwd: Path, moves: list[tuple[str, str]]
+) -> None:
+    for _, new_rel in moves:
+        (cwd / new_rel).unlink(missing_ok=True)
     for rel in renamed + updated:
         _git(cwd, "checkout", "--", rel)
     for rel in created:
@@ -405,7 +427,9 @@ def _plan_renames(
     base_text: str,
     base_rev: str,
 ) -> tuple[list[tuple[str, str]], list[str], int | None]:
-    head_text = (cwd / SOURCE).read_text(encoding="utf-8")
+    # the ids defined by requirements.d fragments count: the IDD lane defines a new id there, not in REQUIREMENTS.md, and the
+    # id check reads both, so planning from REQUIREMENTS.md alone saw nothing to rename (PRs 12066, 12080)
+    head_text = (cwd / SOURCE).read_text(encoding="utf-8") + "\n" + fragments_text_in(cwd / FRAGMENTS_REL)
     carried_text, _ = _show("git", "HEAD", CARRIED)
     failures = check(defined_ids(base_text), defined_ids(head_text), args.pr, carried_ids(carried_text or ""))
     pairs, has_dup = _parse_rename_failures(failures)
@@ -465,7 +489,7 @@ def _finish(
     n_renames: int,
     n_charges: int,
 ) -> int:
-    renamed = _apply_renames(pairs, diff_paths, cwd) if pairs else []
+    renamed, moves = _apply_renames(pairs, diff_paths, cwd) if pairs else ([], [])
     created_charges: list[str] = []
     updated_charges: list[str] = []
     if overs:
@@ -473,7 +497,7 @@ def _finish(
 
     ok, err = _run_checks(cwd, args.base, args.pr)
     if not ok:
-        _restore(renamed, created_charges, updated_charges, cwd)
+        _restore(renamed, created_charges, updated_charges, cwd, moves)
         print(err, file=sys.stderr)
         return 2
 
@@ -495,7 +519,7 @@ def main(argv: list[str] | None = None) -> int:
     cwd = Path.cwd()
 
     base_rev = f"origin/{args.base}"
-    base_text, base_err = _show("git", base_rev, SOURCE)
+    base_text, base_err = _with_fragments("git", base_rev, _show("git", base_rev, SOURCE))
     if base_text is None:
         print(f"[UNKNOWN] cannot read {SOURCE} at {base_rev}: {base_err}", file=sys.stderr)
         return 4

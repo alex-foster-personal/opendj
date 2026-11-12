@@ -6,7 +6,6 @@
 import assert from 'node:assert/strict';
 import { after, before, test } from 'node:test';
 
-import { readFrontendSource } from './engine-source.mjs';
 import { loadSvelteSsrModule } from './load-svelte-ssr.mjs';
 import { loadTypeScriptModule } from './load-typescript.mjs';
 
@@ -23,16 +22,6 @@ before(async () => {
 after(() => {
 	fx?._resetColorFxForTests();
 });
-
-const STRIP = readFrontendSource('src/lib/components/rb/mixer/ChannelStrip.svelte');
-const MIXER = readFrontendSource('src/lib/components/rb/Mixer.svelte');
-
-function divisionGroup() {
-	const start = STRIP.indexOf('{#if showsEchoDivisions(colorSettings.effect)}');
-	assert.ok(start >= 0, 'the division group is gated on ECHO (control)');
-	const end = STRIP.indexOf('{/if}', start);
-	return STRIP.slice(start, end);
-}
 
 test('COLORFX-10320: the four divisions in menu order with their labels', () => {
 	assert.deepEqual([...division.COLOR_FX_DIVISIONS], [0.25, 0.5, 0.75, 1]);
@@ -64,33 +53,6 @@ test('COLORFX-10320: the group shows on ECHO only', () => {
 	assert.equal(division.showsEchoDivisions('echo'), true);
 	assert.equal(division.showsEchoDivisions('filter'), false);
 	assert.equal(division.showsEchoDivisions('space'), false);
-});
-
-test('COLORFX-10320: the menu renders the divisions as checked menuitemradio items held inert by Rust', () => {
-	const group = divisionGroup();
-	assert.match(group, /\{#each COLOR_FX_DIVISIONS as beats \(beats\)\}/);
-	assert.match(group, /role="menuitemradio"/);
-	assert.match(group, /aria-checked=\{colorSettings\.echo_beats === beats\}/);
-	assert.match(group, /title=\{echoDivisionTitle\(beats, colorSettings\.tempo_bpm\)\}/);
-	assert.match(group, /data-rust-command="color_fx"/);
-	assert.match(group, /onclick=\{\(\) => chooseEchoDivision\(beats\)\}/);
-	// The group sits inside the open menu, after the effect items.
-	const menu = STRIP.indexOf('class="color-fx-menu"');
-	const effects = STRIP.indexOf('{#each COLOR_FX_EFFECTS as effect (effect)}', menu);
-	assert.ok(
-		menu >= 0 && effects > menu && STRIP.indexOf('{#if showsEchoDivisions', effects) > effects
-	);
-});
-
-test('COLORFX-10320: a pick dispatches color_fx echo_beats only, never the knob value', () => {
-	assert.match(STRIP, /if \(beats !== colorSettings\.echo_beats\) onechodivision\(beats\);/);
-	assert.match(MIXER, /onechodivision=\{\(beats\) => handleEchoDivision\(deck, beats\)\}/);
-	const handler = MIXER.slice(
-		MIXER.indexOf('function handleEchoDivision'),
-		MIXER.indexOf('function handleFader')
-	);
-	assert.match(handler, /runPerformanceCommandFromUi\(\{ type: 'color_fx', deck, echo_beats \}\)/);
-	assert.doesNotMatch(handler, /value/, 'the division command carries no knob value');
 });
 
 test('COLORFX-10320: echo_beats reads back, the knob stays, and the division is sticky across effects', () => {

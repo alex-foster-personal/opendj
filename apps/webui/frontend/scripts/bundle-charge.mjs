@@ -28,7 +28,9 @@ import {
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { BUDGETS_DIR, ceilToKiB, checkCharge } from './bundle-budget-load.mjs';
+import { BUDGETS_DIR, ceilToKiB, chargeBranchId, checkCharge } from './bundle-budget-load.mjs';
+
+export { chargeBranchId };
 
 // Same floor as PR_DELTA_NOISE_BYTES in scripts/bundle-budget.mjs: the gate passes a delta up to
 // the PR's own charges plus this, so growth at or under it needs no charge.
@@ -138,9 +140,10 @@ function main(argv) {
 			throw new Error(`${flag} needs a value`);
 		return argv[index + 1];
 	};
-	const branch = value('--branch') ?? _git(FRONTEND, 'rev-parse', '--abbrev-ref', 'HEAD');
-	if (branch === 'HEAD' || branch === 'main')
-		throw new Error(`run on a feature branch, not ${branch}`);
+	const gitBranch = value('--branch') ?? _git(FRONTEND, 'rev-parse', '--abbrev-ref', 'HEAD');
+	if (gitBranch === 'HEAD' || gitBranch === 'main')
+		throw new Error(`run on a feature branch, not ${gitBranch}`);
+	const branch = chargeBranchId(gitBranch);
 	const sha = _git(FRONTEND, 'rev-parse', '--short=10', 'HEAD');
 	const scratch = mkdtempSync(join(tmpdir(), 'bundle-charge-'));
 	try {
@@ -161,7 +164,7 @@ function main(argv) {
 			);
 			baseline = _measureMergeBase(baseSha, scratch);
 		}
-		const plan = planCharges({ baseline, current, branch, sha, date: chargeDate() });
+		const plan = planCharges({ baseline, current, branch: gitBranch, sha, date: chargeDate() });
 		for (const line of applyCharges(plan, { budgetsDir: BUDGETS_DIR, branch })) console.log(line);
 	} finally {
 		rmSync(scratch, { recursive: true, force: true });

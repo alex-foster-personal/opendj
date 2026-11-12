@@ -183,8 +183,15 @@ def _is_sets_path(path: str) -> bool:
     return path == "/api/sets" or path.startswith("/api/sets/")
 
 
+def _is_recorder_lifecycle_path(path: str) -> bool:
+    return path == "/api/sets/recorder/start" or re.fullmatch(
+        r"/api/sets/recorder/\d{4}-\d{2}-\d{2}T\d{2}-\d{2}-\d{2}(?:_\d+)?/(?:stop|recover)",
+        path,
+    ) is not None
+
+
 def validate_api_path(path: str, *, method: str | None = None) -> str:
-    """Allow v1 paths and explicit GET/HEAD sets reads; return the canonical path."""
+    """Allow v1, GET/HEAD sets reads and exact REC lifecycle POSTs; return the canonical path."""
     # Raw AND canonical: the engine decodes %2e%2e to '..' before routing, and
     # the raw form is appended to an origin, so both must stay in one namespace.
     canonical = canonical_api_path(path)
@@ -196,10 +203,16 @@ def validate_api_path(path: str, *, method: str | None = None) -> str:
         and _is_sets_path(raw_route)
         and _is_sets_path(canonical)
     )
-    if not (v1_path or sets_read):
+    recorder_write = (
+        method is not None
+        and method.upper() == "POST"
+        and _is_recorder_lifecycle_path(raw_route)
+        and _is_recorder_lifecycle_path(canonical)
+    )
+    if not (v1_path or sets_read or recorder_write):
         raise SafetyRefusal(
             "invalid_path",
-            f"only /api/v1/* paths or GET/HEAD /api/sets and /api/sets/* are allowed, got: {path}",
+            f"only /api/v1/*, GET/HEAD /api/sets, or recorder lifecycle POST paths are allowed, got: {path}",
             path=path,
         )
     if ".." in unquote(path):

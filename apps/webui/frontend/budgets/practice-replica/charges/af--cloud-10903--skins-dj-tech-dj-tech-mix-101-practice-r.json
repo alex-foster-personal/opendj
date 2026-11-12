@@ -1,0 +1,9 @@
+{
+  "bytes": 1024,
+  "measured_main": 35138,
+  "measured_with_pr": 35857,
+  "sha": "5e200bc787",
+  "date": "Thu 12 Nov 2026",
+  "reason": "branch af--cloud-10903--skins-dj-tech-dj-tech-mix-101-practice-r grows the practice-replica surface; measured +719 B gzip over main; ceiled to KiB.",
+  "payback": "none planned; the growth is the change's own code on this surface"
+}

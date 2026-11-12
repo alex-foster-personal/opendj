@@ -331,3 +331,57 @@ def run_density(
     if rest:
         request = ["PUT", "/api/v1/ui-prefs", "--json", json.dumps({"library_density": rest[0]})]
     return run(request, as_json=as_json, environ=environ, lock=lock)
+
+
+_SEGMENT_DISPLAY_KEYS: dict[str, frozenset[str] | None] = {
+    "show_sections": frozenset({"true", "false"}),
+    "sections_main_style": frozenset({"m1_tint", "m2_recolor", "m3_lines", "m4_base"}),
+    "sections_sticky_title": frozenset({"true", "false"}),
+    "sections_next_countdown": frozenset({"true", "false"}),
+    "sections_overview_style": frozenset({"o1_strip", "o2_tint", "o3_recolor"}),
+    "sections_library_structure_column": frozenset({"true", "false"}),
+    "sections_preview_cursor_label": frozenset({"true", "false"}),
+    "sections_uncertain": frozenset({"hide", "show_faded"}),
+}
+
+
+def _segment_display_wire_value(key: str, raw: str) -> bool | str:
+    allowed = _SEGMENT_DISPLAY_KEYS[key]
+    if allowed is not None and raw not in allowed:
+        raise ValueError(f"{key} value must be one of {'|'.join(sorted(allowed))}")
+    if raw in {"true", "false"}:
+        return raw == "true"
+    return raw
+
+
+def run_set_segment_display(
+    rest: Sequence[str],
+    *,
+    as_json: bool = False,
+    environ: Mapping[str, str] | None = None,
+    lock: Path | None = None,
+) -> int:
+    """Persist a STRUCTUI segment display pref (issue #11436)."""
+    if len(rest) != 2:
+        keys = "|".join(sorted(_SEGMENT_DISPLAY_KEYS))
+        print(
+            f"usage: opendj [--json] [--lock PATH] set-segment-display <key> <value>  ({keys})",
+            file=sys.stderr,
+        )
+        return EXIT_FAILED
+    key, raw = rest[0], rest[1]
+    if key not in _SEGMENT_DISPLAY_KEYS:
+        print(f"unknown key {key!r}", file=sys.stderr)
+        return EXIT_FAILED
+    try:
+        wire = _segment_display_wire_value(key, raw)
+    except ValueError as error:
+        print(str(error), file=sys.stderr)
+        return EXIT_FAILED
+    payload = {key: wire}
+    return run(
+        ["PUT", "/api/v1/ui-prefs", "--json", json.dumps(payload)],
+        as_json=as_json,
+        environ=environ,
+        lock=lock,
+    )

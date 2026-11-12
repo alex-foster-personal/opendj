@@ -3,8 +3,11 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 import time
 from collections.abc import Callable, Coroutine
+
+log = logging.getLogger(__name__)
 
 
 async def sleep_until_stop(stopping: asyncio.Event | None, seconds: float) -> None:
@@ -14,6 +17,19 @@ async def sleep_until_stop(stopping: asyncio.Event | None, seconds: float) -> No
         await asyncio.wait_for(stopping.wait(), timeout=seconds)
     except TimeoutError:
         return
+
+
+async def drain_shielded_in_flight(
+    in_flight: asyncio.Task[object],
+    *,
+    stop_timeout_s: float,
+    timeout_warning: str,
+) -> None:
+    """Bounded await of a shielded in-flight round on scheduler stop; on timeout, log and return."""
+    try:
+        await asyncio.wait_for(asyncio.shield(in_flight), timeout=stop_timeout_s)
+    except TimeoutError:
+        log.warning(timeout_warning, stop_timeout_s)
 
 
 def launch_scheduler_loop(
@@ -35,4 +51,4 @@ def launch_scheduler_loop(
     return stopping, task, next_due
 
 
-__all__ = ["launch_scheduler_loop", "sleep_until_stop"]
+__all__ = ["drain_shielded_in_flight", "launch_scheduler_loop", "sleep_until_stop"]

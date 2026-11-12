@@ -464,3 +464,15 @@ def test_status_reports_pending_and_accumulated_dwell(sets_state: SetsState):
     # Audible for 4s, well under the advisory 60s, and recorded anyway.
     assert deck_one["recorded"] is True
     assert deck_one["event_id"] is not None
+
+
+@pytest.mark.requirement("SET-12828")
+def test_status_last_received_at_is_set_on_submit_before_poll(sets_state: SetsState):
+    """[if] a snapshot is submitted [then] last_received_at is parseable before poll, [else stop]."""
+    src = _source(sets_state, "s-receipt")
+    src.submit(_snapshot(0, {"1": _deck("trk-a", playing=True, audible=True)}))
+    status = src.status()
+    assert status["last_received_at"] is not None
+    datetime.fromisoformat(status["last_received_at"].replace("Z", "+00:00"))
+    assert status["last_error"] is None
+    assert status["pending_snapshots"] == 1

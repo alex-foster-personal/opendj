@@ -18,6 +18,15 @@
 
 import { contextBridge, ipcRenderer } from 'electron';
 
+if (process.platform === 'darwin') {
+	contextBridge.executeInMainWorld({
+		func: () => {
+			document.documentElement.setAttribute('data-titlebar', 'overlay');
+		},
+		args: []
+	});
+}
+
 type Progress =
 	| { phase: 'checking' }
 	| { phase: 'downloading'; received: number; total: number | null }

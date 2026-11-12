@@ -24,9 +24,17 @@
 import { registerCapsConsumer } from '$lib/rb/cache-caps-registry';
 import { audioUrl } from '$lib/rb/api-rb';
 import { recordAudioPrefetchSampled } from '$lib/rb/library-perf';
-import { prefetchByteCapForPosture, prefetchTrackCapForPosture, setResolvedPosture } from '$lib/rb/app-posture';
+import {
+	prefetchByteCapForPosture,
+	prefetchTrackCapForPosture,
+	setResolvedPosture
+} from '$lib/rb/app-posture';
 import { prefetchByteCap, prefetchTrackCap } from '$lib/rb/perf-tier';
-import { pressureScaledPrefetchByteCap, pressureScaledPrefetchTrackCap } from '$lib/rb/prefetch-pressure-caps';
+import {
+	pressureScaledPrefetchByteCap,
+	pressureScaledPrefetchTrackCap
+} from '$lib/rb/prefetch-pressure-caps';
+import type { DeckLoadStageFacts } from '$lib/rb/deck-load-stage-units';
 
 export { setResolvedPosture };
 
@@ -46,7 +54,9 @@ export function MAX_AUDIO_PREFETCH_BYTES(): number {
  */
 let _shedRequest: ((id: 'audio-prefetch-cache-caps') => void) | null = null;
 
-export function setAudioPrefetchShedRequest(fn: ((id: 'audio-prefetch-cache-caps') => void) | null): void {
+export function setAudioPrefetchShedRequest(
+	fn: ((id: 'audio-prefetch-cache-caps') => void) | null
+): void {
 	_shedRequest = fn;
 }
 
@@ -251,7 +261,7 @@ export interface DeckLoadAudio {
 	fetchStage: 'decodedShareHit' | 'fetchAudioCacheHit' | 'fetchAudio';
 	decodeStage: 'decodeMixShared' | 'decodeMix';
 	fetch: (stable_id: string) => Promise<ArrayBuffer>;
-	stats: (bytes: ArrayBuffer | null) => Record<string, number>;
+	stats: (bytes: ArrayBuffer | null) => DeckLoadStageFacts;
 }
 
 /**

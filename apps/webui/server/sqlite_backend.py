@@ -236,7 +236,7 @@ def _reset_warnings_for_tests() -> None:
 # Fields the webui Track exposes that live in track_fields (EAV). Any field
 # name listed here is JSON-decoded on the way out.
 _EAV_FIELDS: tuple[str, ...] = (
-    "bpm", "key", "rating", "tags", "notes", "last_played_at", "genre", "comments",
+    "bpm", "key", "rating", "color_id", "tags", "notes", "last_played_at", "genre", "comments",
     "energy", "tempo_pref", "grid_flag_dismissed", "tracklist_hidden", "auto_gain_user_db",
 )
 
@@ -447,6 +447,7 @@ def _row_to_track(
     bpm = _val("bpm")
     key = _val("key")
     rating = _val("rating")
+    color_id = _val("color_id")
     tags_val = _val("tags")
     notes = _val("notes")
     genre = _val("genre")
@@ -463,6 +464,11 @@ def _row_to_track(
             rating = int(rating)
         except (TypeError, ValueError):
             rating = None
+    if color_id is not None:
+        try:
+            color_id = int(color_id)
+        except (TypeError, ValueError):
+            color_id = None
     if isinstance(tags_val, list):
         tags = [str(t) for t in tags_val]
     else:
@@ -503,6 +509,7 @@ def _row_to_track(
         bpm=bpm,
         key=key,
         rating=rating,
+        color_id=color_id,
         tags=tags,
         notes=notes,
         genre=genre,
@@ -607,7 +614,14 @@ def _matches_track_filter(track: Track, flt: TrackFilter) -> bool:
         track.rating is not None and track.rating >= flt.rating_min
     ):
         return False
-    return not flt.tag or flt.tag in (track.tags or [])
+    if flt.tag and flt.tag not in (track.tags or []):
+        return False
+    if flt.color_ids:
+        from .backend import track_matches_color_ids
+
+        if not track_matches_color_ids(track, flt.color_ids):
+            return False
+    return True
 
 
 def _field_writes(current: Track, patch: dict[str, Any]) -> dict[str, Any]:
@@ -618,6 +632,11 @@ def _field_writes(current: Track, patch: dict[str, Any]) -> dict[str, Any]:
         if rating is not None and not (0 <= rating <= 5):
             raise BackendError("rating must be between 0 and 5")
         writes["rating"] = rating
+    if "color_id" in patch:
+        color_id = patch["color_id"]
+        if color_id is not None and not (1 <= int(color_id) <= 8):
+            raise BackendError("color_id must be between 1 and 8 or null")
+        writes["color_id"] = color_id
     if "notes" in patch:
         writes["notes"] = patch["notes"]
     if "genre" in patch:
@@ -980,6 +999,26 @@ class SqliteBackend:
                     total=len(pl.items),
                 )
             return read_playlist_page(conn, playlist_id, limit=limit, offset=offset)
+
+    def get_playlist_summary_stats(self, playlist_id: str) -> Any:
+        from .inbox_playlist import INBOX_PLAYLIST_ID
+        from .playlist_summary_stats import stats_from_in_memory, stats_from_sqlite
+
+        if playlist_id == INBOX_PLAYLIST_ID:
+            pl = self.get_playlist(playlist_id)
+            distinct = list(dict.fromkeys(pl.items))
+            tracks = self.get_tracks_bulk(distinct)
+            paths = self.get_file_paths_bulk(distinct)
+            return stats_from_in_memory(
+                distinct,
+                tracks,
+                paths,
+                state_db_path=self._path,
+            )
+        with self._ro() as conn:
+            if not self._table_exists(conn, "playlists"):
+                return self._fallback.get_playlist_summary_stats(playlist_id)
+            return stats_from_sqlite(conn, playlist_id)
 
     def list_track_playlists(self, stable_id: str) -> list[TrackPlaylistHit]:
         with self._ro() as conn:

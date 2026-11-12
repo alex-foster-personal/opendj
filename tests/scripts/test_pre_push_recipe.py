@@ -60,7 +60,7 @@ RECIPE_NAME = "pre-push"
 # not run still fails.
 REQUIRED_STEPS: list[tuple[str, str]] = [
     (
-        "reviewer lease (open PR on current branch only)",
+        "branch safety (reviewer lease and inherited parent holds)",
         r"scripts\.review_lease\s+check-branch",
     ),
     (

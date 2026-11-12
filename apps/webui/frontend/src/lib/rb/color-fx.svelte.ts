@@ -12,6 +12,10 @@
  * Selection is per channel and sticky across track loads. FILTER (the default)
  * never builds the SPACE / ECHO nodes, so a channel that never leaves FILTER
  * renders exactly as before plus one unity gain (the color bus).
+ *
+ * CRUSH (SNDCOL-10655) loads its AudioWorklet module once per AudioContext, the
+ * first time a channel selects it. Until the module is ready (or if it fails)
+ * the channel plays dry, FILTER-bypassed, and the view's `inert_reason` says why.
  */
 import { DECK_IDS, type DeckId } from '$lib/player/constants';
 import { deckEffectiveBpm } from '$lib/player/state.svelte';
@@ -27,8 +31,17 @@ import {
 	type ColorFxSettings
 } from './color-fx';
 import {
+	CRUSH_PARAMETER_NOMINAL,
+	crushLoadState,
+	loadCrushWorklet,
+	type CrushGraph
+} from './color-fx-crush';
+import { pushToast } from '$lib/stores.svelte';
+import crushProcessorUrl from './color-fx-crush-processor.js?url';
+import {
 	detachIdleSpace,
 	driveColorChannel,
+	spliceCrush,
 	spaceDetachDelaySec,
 	type ColorChannelNodes,
 	type ColorChannelRuntime,
@@ -42,6 +55,12 @@ const TEMPO_EPSILON_BPM = 0.05;
 
 export const ECHO_NO_TEMPO_REASON =
 	'echo is timed in beats and this deck has no tempo: load a track with a BPM or beatgrid';
+
+export const CRUSH_LOADING_REASON = 'crush is loading its audio worklet; the channel plays dry until it is ready';
+export const CRUSH_UNAVAILABLE = 'CRUSH_UNAVAILABLE';
+
+/** CRUSH's PARAMETER, fixed at the calibrated curve until #9796 brings the channel's `param`. */
+const CRUSH_PARAMETER = CRUSH_PARAMETER_NOMINAL;
 
 export interface ColorFxDeckView extends ColorFxSettings {
 	/** Whether this channel's SPACE / ECHO nodes are in the current graph. */
@@ -66,6 +85,8 @@ export const colorFx = $state<Record<DeckId, ColorFxSettings & { tempo_bpm: numb
 /** Per channel: the nodes last driven, the knob value, the spliced graph and its idle clock. */
 interface ChannelRuntime extends ColorChannelRuntime {
 	value: number;
+	/** Whether a splice is already waiting on this context's CRUSH load. */
+	crushPending: boolean;
 }
 const _runtime = new Map<DeckId, ChannelRuntime>();
 let _tempoTimer: ReturnType<typeof setInterval> | null = null;
@@ -77,9 +98,37 @@ function _deckTempo(deck: DeckId): number | null {
 
 const _detachTimers = new Map<DeckId, ReturnType<typeof setTimeout>>();
 
+/** On CRUSH: load the worklet (once per context) and splice when it is ready. */
+function _ensureCrush(deck: DeckId, rt: ChannelRuntime): void {
+	// A failed node is never rebuilt on the same context.
+	if (colorFx[deck].effect !== 'crush' || rt.crush !== null) return;
+	const load = loadCrushWorklet(rt.nodes.colorBus.context, crushProcessorUrl);
+	if (load.state === 'ready') spliceCrush(rt, undefined, (graph) => _crushProcessorFailed(deck, rt, graph));
+	else if (load.state === 'loading' && !rt.crushPending) {
+		rt.crushPending = true;
+		void load.promise.then(() => {
+			rt.crushPending = false;
+			if (_runtime.get(deck) === rt && load.state === 'ready') _drive(deck, rt);
+		});
+	}
+}
+
+function _crushFailureReason(message: string): string {
+	return `${CRUSH_UNAVAILABLE}: the crush audio worklet stopped with a processor error: ${message}`;
+}
+
+/** Terminal processorerror: log, toast, and re-drive so the channel plays dry at once. */
+function _crushProcessorFailed(deck: DeckId, rt: ChannelRuntime, graph: CrushGraph): void {
+	const reason = _crushFailureReason(graph.failure ?? '');
+	console.error(`[color-fx] ${reason}`);
+	pushToast(`Deck ${deck}: ${reason}`, 'error');
+	if (_runtime.get(deck) === rt) _drive(deck, rt);
+}
+
 function _drive(deck: DeckId, rt: ChannelRuntime): void {
 	const settings = colorFx[deck];
-	driveColorChannel(rt, settings, settings.tempo_bpm, rt.value);
+	_ensureCrush(deck, rt);
+	driveColorChannel(rt, settings, settings.tempo_bpm, rt.value, CRUSH_PARAMETER);
 	_scheduleSpaceDetach(deck, rt);
 }
 
@@ -120,7 +169,7 @@ export type { ColorChannelNodes } from './color-fx-graph';
 export function applyColorKnob(deck: DeckId, nodes: ColorChannelNodes, value: number): void {
 	const current = _runtime.get(deck);
 	const rt: ChannelRuntime =
-		current !== undefined && current.nodes === nodes ? current : { nodes, value, graph: null, spaceQuietSince: null };
+		current !== undefined && current.nodes === nodes ? current : { nodes, value, graph: null, crush: null, crushPending: false, spaceQuietSince: null };
 	rt.value = value;
 	_runtime.set(deck, rt);
 	if (colorFx[deck].effect === 'echo') colorFx[deck].tempo_bpm = _deckTempo(deck) ?? colorFx[deck].tempo_bpm;
@@ -173,6 +222,40 @@ export function applyColorFxSettings(update: ColorFxSettingsUpdate): ColorFxDeck
 	return colorFxView()[update.deck];
 }
 
+/** Acknowledged settings and knob depth, without copying graph nodes. */
+export interface ColorFxSnapshot {
+	settings: ColorFxSettings & { tempo_bpm: number | null };
+	value: number;
+}
+
+export function snapshotColorFx(deck: DeckId, acknowledgedValue: number): ColorFxSnapshot {
+	return { settings: { ...colorFx[deck] }, value: _runtime.get(deck)?.value ?? acknowledgedValue };
+}
+
+/** Restore the affected channel and its timer ownership after a failed command. */
+export function restoreColorFx(deck: DeckId, snapshot: ColorFxSnapshot): void {
+	Object.assign(colorFx[deck], snapshot.settings);
+	const rt = _runtime.get(deck);
+	try {
+		if (rt !== undefined) {
+			rt.value = snapshot.value;
+			_drive(deck, rt);
+		}
+	} finally {
+		_syncTempoPoll();
+	}
+}
+
+function _crushInertReason(deck: DeckId): string | null {
+	const rt = _runtime.get(deck);
+	if (rt === undefined) return null;
+	if (rt.crush !== null) return rt.crush.failure === null ? null : _crushFailureReason(rt.crush.failure);
+	const load = crushLoadState(rt.nodes.colorBus.context);
+	if (load === null) return null;
+	if (load.state === 'failed') return `${CRUSH_UNAVAILABLE}: the crush audio worklet failed to load: ${load.error}`;
+	return CRUSH_LOADING_REASON;
+}
+
 function _deckView(deck: DeckId): ColorFxDeckView {
 	const settings = colorFx[deck];
 	const echoSeconds = echoDelaySeconds(settings.echo_beats, settings.tempo_bpm);
@@ -184,7 +267,12 @@ function _deckView(deck: DeckId): ColorFxDeckView {
 		space_attached: (_runtime.get(deck)?.graph?.space ?? null) !== null,
 		tempo_bpm: echo ? settings.tempo_bpm : null,
 		echo_ms: echo && echoSeconds !== null ? Math.round(echoSeconds * 100000) / 100 : null,
-		inert_reason: echo && echoSeconds === null ? ECHO_NO_TEMPO_REASON : null
+		inert_reason:
+			echo && echoSeconds === null
+				? ECHO_NO_TEMPO_REASON
+				: settings.effect === 'crush'
+					? _crushInertReason(deck)
+					: null
 	};
 }
 
@@ -227,6 +315,9 @@ export function _detachIdleSpaceForTests(deck: DeckId): boolean {
 }
 export function _colorFxGraphForTests(deck: DeckId): ColorFxGraph | null {
 	return _runtime.get(deck)?.graph ?? null;
+}
+export function _crushGraphForTests(deck: DeckId): CrushGraph | null {
+	return _runtime.get(deck)?.crush ?? null;
 }
 export function _resetColorFxForTests(): void {
 	if (_tempoTimer !== null) clearInterval(_tempoTimer);

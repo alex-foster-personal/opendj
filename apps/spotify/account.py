@@ -43,6 +43,7 @@ __all__ = [
     "AccountPlaylists",
     "ClientIdUnreadable",
     "EnvClientIdInvalid",
+    "TokenCacheUnwritable",
     "ConnectFlow",
     "NotConnected",
     "NotConnectedReason",
@@ -106,6 +107,21 @@ class EnvClientIdInvalid(ClientIdUnreadable):
             self, f"SPOTIFY_CLIENT_ID in the environment is not a Spotify Client ID ({value!r}): {problem}"
         )
         self.path = None
+
+
+class TokenCacheUnwritable(OSError):
+    """The token cache directory cannot be created (permissions, wrong type, full disk)."""
+
+    def __init__(self, token_path: Path, cause: OSError) -> None:
+        parent = token_path.parent
+        self.token_path: Path = token_path
+        self.path: Path = parent
+        self._cause: OSError = cause
+        msg = f"cannot create the Spotify token cache directory at {parent}: {cause}"
+        super().__init__(msg)
+
+    def __str__(self) -> str:
+        return str(self.args[0]) if self.args else ""
 
 
 class NotConnected(Exception):
@@ -513,7 +529,10 @@ def _pkce(
             "spotify_extra_missing",
             "Spotify support is not installed in this engine (the 'spotify' extra).",
         ) from exc
-    token_path.parent.mkdir(parents=True, exist_ok=True)
+    try:
+        token_path.parent.mkdir(parents=True, exist_ok=True)
+    except OSError as exc:
+        raise TokenCacheUnwritable(token_path, exc) from exc
     auth = SpotifyPKCE(
         client_id=client_id,
         redirect_uri=redirect_uri,
@@ -720,7 +739,7 @@ class ConnectFlow:
             self._detail = detail
 
     def start(self, env: dict[str, str] | None = None) -> str:
-        """Return the authorize URL; raises NotConnected, ClientIdUnreadable or OSError (port busy)."""
+        """Return the authorize URL; raises NotConnected, ClientIdUnreadable, TokenCacheUnwritable or OSError (port busy)."""
         with self._start_lock:
             return self._start(env)
 
@@ -742,7 +761,7 @@ class ConnectFlow:
         class _Handler(BaseHTTPRequestHandler):
             timeout = CALLBACK_READ_TIMEOUT_S
 
-            def do_GET(self) -> None:  # noqa: N802 - http.server API
+            def do_GET(self) -> None:  # http.server BaseHTTPRequestHandler API
                 parsed = urlparse(self.path)
                 if parsed.path != redirect.path:
                     self.send_response(404)

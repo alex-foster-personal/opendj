@@ -79,8 +79,10 @@ test('flag on: Gig first, then the Backstage groups in order', () => {
 	assert.deepEqual(labels.sets, ['Sessions / REC', 'Play analytics']);
 	assert.deepEqual(labels.sync, ['CloudSync']);
 	assert.deepEqual(labels.prefs, ['Settings', 'Setup', 'Plugins']);
-	assert.equal(nav.backstage[0].items[0].href, null);
-	assert.equal(nav.backstage[0].items[0].inert, 'unbuilt');
+	assert.deepEqual(labels.overview, ['Farm jobs', 'Status']);
+	assert.equal(nav.backstage[0].items[0].href, '/admin?p=farm-jobs');
+	assert.equal(nav.backstage[0].items[1].href, '/admin?p=status');
+	assert.equal(nav.backstage[0].items[1].inert, undefined);
 	assert.equal(allItems(nav)[0].id, 'gig');
 });
 
@@ -193,6 +195,7 @@ test('W/A/S/D map to the arrow keys; modifiers jump to the ends; never wraps', (
 test('/admin?p=<id> picks one panel; unknown ids are refused; absent is the old page', () => {
 	const u = (q) => new URL(`http://x/admin${q}`);
 	assert.deepEqual(tab.adminPanelFromUrl(u('')), { kind: 'none' });
+	assert.deepEqual(tab.adminPanelFromUrl(u('?p=farm-jobs')), { kind: 'panel', id: 'farm-jobs' });
 	assert.deepEqual(tab.adminPanelFromUrl(u('?p=status')), { kind: 'panel', id: 'status' });
 	assert.deepEqual(tab.adminPanelFromUrl(u('?p=nope')), { kind: 'unknown', id: 'nope' });
 	const ids = allItems(bs.backstageNav(true))
@@ -201,6 +204,7 @@ test('/admin?p=<id> picks one panel; unknown ids are refused; absent is the old 
 	for (const id of ids) assert.equal(tab.adminPanelFromUrl(u(`?p=${id}`)).kind, 'panel', id);
 	assert.equal(bs.isCurrentBackstageItem({ href: '/admin?p=jobs' }, u('?p=jobs')), true);
 	assert.equal(bs.isCurrentBackstageItem({ href: '/admin?p=jobs' }, u('?p=sources')), false);
+	assert.equal(bs.isCurrentBackstageItem({ href: '/admin?p=farm-jobs' }, u('?p=farm-jobs')), true);
 });
 
 test('flag off leaves the account overlay unchanged: shell.backstage is not listed as a missing capability', () => {

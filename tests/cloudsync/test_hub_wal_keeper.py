@@ -15,7 +15,7 @@ the real ``close_wal_keepers`` (no swapped implementation); the keeper must
 not hold a read transaction, or no checkpoint could ever reset the WAL; one
 keeper per database, however many requests. That the WAL-present test goes
 red without the keeper is proved by hand mutation (unwire
-``keep_wal_open`` in ``service._hub_conn``), recorded in the commit body.
+``keep_wal_open`` in ``service_wiring._hub_conn``), recorded in the commit body.
 """
 
 from __future__ import annotations

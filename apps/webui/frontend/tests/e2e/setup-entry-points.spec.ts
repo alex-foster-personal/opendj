@@ -53,7 +53,7 @@
  * - ✔︎ Cmd+, opens the settings surface from the app shell AND from
  *   /performance, because the accelerator is installed at the root layout.
  * - ✔︎ "Run setup" from that surface opens the setup dialog over the app.
- * - ✔︎ The /admin Setup tab opens the same dialog.
+ * - ✔︎ The /admin Setup action opens the same dialog.
  * - ✔︎ /setup deep-links to the same dialog rather than 404ing or rendering a
  *   second wizard.
  * - ✔︎ The detect step ALWAYS offers three enabled ways forward, whatever
@@ -69,7 +69,7 @@
  *   label-only outside the app shell.
  * - [if] "Run setup" is present but inert [then ⛔️] the entry point is
  *   decoration.
- * - [if] the Setup tab opens no dialog [then ⛔️] the operator panel's route
+ * - [if] the Setup action opens no dialog [then ⛔️] the operator panel's route
  *   into setup is wrong.
  * - [if] the overlay renders its "daemon not identified yet" refusal after
  *   any entry point [then ⛔️] the capability probe is being raced again.
@@ -98,6 +98,25 @@ const NEW_TAB_TIMEOUT_MS = 15_000;
 const MANIFEST_REQUEST_TIMEOUT_MS = 3_000;
 
 /** Real GET to the external release manifest with a per-request timeout. Transport failures skip as UNMEASURED. */
+type TauriFeed = {
+	version?: string;
+	platforms?: Record<string, { url?: string; signature?: string }>;
+};
+type FeedEntry = { version: string; url: string; signature: string };
+
+/** The darwin-aarch64 build a Tauri `latest.json` feed offers. */
+function _tauriFeedEntry(feed: TauriFeed): FeedEntry {
+	const entry = feed.platforms?.['darwin-aarch64'];
+	return { version: feed.version ?? '', url: entry?.url ?? '', signature: entry?.signature ?? '' };
+}
+
+/** The arm64 zip an electron-updater `latest-mac.yml` feed offers, with its sha512. */
+function _electronFeedEntry(yml: string): FeedEntry {
+	const version = /^version:\s*(\S+)\s*$/m.exec(yml)?.[1] ?? '';
+	const entry = /^- url:\s*(\S+-arm64-mac\.zip)\s*\n\s+sha512:\s*(\S+)\s*$/m.exec(yml);
+	return { version, url: entry?.[1] ?? '', signature: entry?.[2] ?? '' };
+}
+
 async function getReleaseManifest(
 	request: APIRequestContext,
 	endpoint: string
@@ -322,18 +341,14 @@ test.describe('setup entry points', () => {
 			`UNMEASURED: release manifest ${endpoint} answered ${manifestResponse.status()} after 4 attempts`
 		);
 		expect(manifestResponse.status()).toBe(200);
-		const manifest = (await manifestResponse.json()) as {
-			version?: string;
-			platforms?: Record<string, { url?: string; signature?: string }>;
-		};
-		expect(typeof manifest.version).toBe('string');
-		expect((manifest.version ?? '').length).toBeGreaterThan(0);
-		expect(manifest.platforms).toBeTruthy();
-		const darwinEntry = manifest.platforms?.['darwin-aarch64'];
-		expect(typeof darwinEntry?.url).toBe('string');
-		expect((darwinEntry?.url ?? '').length).toBeGreaterThan(0);
-		expect(typeof darwinEntry?.signature).toBe('string');
-		expect((darwinEntry?.signature ?? '').length).toBeGreaterThan(0);
+		// The engine reads electron-updater's latest-mac.yml since #8807 (Thu 5 Nov);
+		// latest.json is the retired Tauri feed. Parse whichever the engine names.
+		const manifest = endpoint.endsWith('.json')
+			? _tauriFeedEntry((await manifestResponse.json()) as TauriFeed)
+			: _electronFeedEntry(await manifestResponse.text());
+		expect(manifest.version.length).toBeGreaterThan(0);
+		expect(manifest.url.length).toBeGreaterThan(0);
+		expect(manifest.signature.length).toBeGreaterThan(0);
 	});
 
 	test('the accelerator also works on /performance', async ({ page }) => {
@@ -345,6 +360,19 @@ test.describe('setup entry points', () => {
 		await expect(runSetupButton(page)).toBeEnabled();
 	});
 
+	test('Run setup from /performance keeps the host URL', async ({ page }) => {
+		// SETUP-12768: visiting /setup remounts the performance route and stops a
+		// live deck. Re-arming setup must raise the overlay in place.
+		await gotoShellReady(page, '/performance');
+		const before = page.url();
+		await page.keyboard.press(SETTINGS_CHORD);
+		await expect(settingsDialog(page)).toBeVisible();
+		await runSetupButton(page).click();
+		await expectWizard(page);
+		expect(page.url()).toBe(before);
+		await expect(page.getByTestId('reload-resume-banner')).toHaveCount(0);
+	});
+
 	test('the Run setup action is reachable before typing anything', async ({ page }) => {
 		// It lives outside the collapsible body on purpose. An entry point you
 		// can only reach by first searching for it is not an entry point.
@@ -353,7 +381,7 @@ test.describe('setup entry points', () => {
 		await expect(runSetupButton(page)).toBeVisible();
 	});
 
-	test('the admin Setup tab lands on the wizard', async ({ page }) => {
+	test('the admin Setup action lands on the wizard', async ({ page }) => {
 		await gotoShellReady(page, '/admin');
 		const tabs = page.getByRole('tablist', { name: 'admin sections' });
 		await expect(tabs).toBeVisible();
@@ -361,8 +389,54 @@ test.describe('setup entry points', () => {
 			'aria-selected',
 			'true'
 		);
-		await tabs.getByRole('tab', { name: 'Setup' }).click();
+		await expect(tabs.getByRole('tab', { name: 'Setup' })).toHaveCount(0);
+		await page.getByRole('button', { name: 'Setup' }).click();
 		await expectWizard(page);
+	});
+
+	test('default admin tab shows farm KPI ledger first, not lyrics generator', async ({ page }) => {
+		await gotoShellReady(page, '/admin');
+		const tabs = page.getByRole('tablist', { name: 'admin sections' });
+		await expect(tabs.getByRole('tab', { name: 'KPI ledger' })).toHaveAttribute(
+			'aria-selected',
+			'true'
+		);
+		await expect(tabs.getByRole('tab', { name: 'Lyrics generator' })).toHaveAttribute(
+			'aria-selected',
+			'false'
+		);
+		const firstPanelHeading = page.locator('section.panel h3').first();
+		await expect(firstPanelHeading).toHaveText('Demucs farm KPI ledger');
+		await expect(page.locator('#lyrics-generator')).toHaveCount(0);
+	});
+
+	test('the admin Lyrics generator tab shows lyrics panel first', async ({ page }) => {
+		await gotoShellReady(page, '/admin?tab=lyrics');
+		const tabs = page.getByRole('tablist', { name: 'admin sections' });
+		await expect(tabs.getByRole('tab', { name: 'Lyrics generator' })).toHaveAttribute(
+			'aria-selected',
+			'true'
+		);
+		await expect(tabs.getByRole('tab', { name: 'KPI ledger' })).toHaveAttribute(
+			'aria-selected',
+			'false'
+		);
+		await expect(page.locator('section.panel h3').first()).toHaveText('Lyrics generator');
+		await expect(page.locator('#lyrics-generator')).toBeVisible();
+	});
+
+	test('the admin Quality ratchet tab shows the ratchet panel', async ({ page }) => {
+		await gotoShellReady(page, '/admin?tab=quality');
+		const tabs = page.getByRole('tablist', { name: 'admin sections' });
+		await expect(tabs.getByRole('tab', { name: 'Quality ratchet' })).toHaveAttribute(
+			'aria-selected',
+			'true'
+		);
+		await expect(tabs.getByRole('tab', { name: 'KPI ledger' })).toHaveAttribute(
+			'aria-selected',
+			'false'
+		);
+		await expect(page.getByRole('heading', { name: 'Code quality ratchet' })).toBeVisible();
 	});
 
 	test('the admin Diagnostics tab is visible but not selected by default', async ({ page }) => {

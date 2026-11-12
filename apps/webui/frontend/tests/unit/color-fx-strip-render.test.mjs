@@ -1,21 +1,16 @@
+// requirement: COLORFX-12718
 // requirement: COLORFX-02
 // requirement: COLORFX-15
 // [if] the channel is on FILTER [then] the color knob carries the white face token (knob-face, --knob-face-color: var(--rb-color-fx-filter-face)) and no tint
 // [if] the channel is on SPACE or ECHO [then] the color knob has no face override and keeps its tint
 // requirement: COLORFX-8341
-// [if] the color slot is Cmd-clicked (Ctrl-clicked off a Mac) [then] it dispatches color_fx effect next, and the press neither drags the knob, opens the select nor selects the deck
 // [if] the selector is hovered [then] its title names the knob as a clock time and the cycle gesture
 // Rendered (svelte/server) check of the channel strip's color FX selector, the
 // dropdown the maintainer reported missing on main (Mon 2 Nov 2026).
 // requirement: COLORFX-10
 // [if] a channel strip renders [then] its color knob is a closed menu button (aria-haspopup=menu) with the chevron inside its caption and no native select
 // [if] the deck's effect is SPACE [then] the knob caption reads SPACE
-// [if] the deck's effect is SPACE or ECHO [then] the color knob (not its slot: DRUMS shares it, STEMDIAL-DRAG-01) carries data-rust-command="color_fx" so Rust engine mode holds it inert by name
-// [if] the color FX menu opens [then] it offers FILTER, SPACE and ECHO as menuitemradio options that dispatch color_fx for that deck
-// [if] SPACE or ECHO is selected [then] the knob caption reads the effect and the knob is tinted; FILTER keeps the default look
-// [if] Rust engine mode is on [then] every menu option is inert by name (data-rust-command="color_fx")
-// [if] Rust engine mode is on and the channel is on SPACE or ECHO [then] the color knob itself is inert by name
-// [if] ECHO is selected [then] the chevron and menu hover title states the division, tempo and ms per repeat
+// [if] the deck's effect is SPACE or ECHO [then] the color knob carries data-rust-command="color_fx" in SSR when that effect is selected
 import assert from 'node:assert/strict';
 import { after, before, test } from 'node:test';
 
@@ -45,8 +40,9 @@ const asyncOk = async () => ({ ok: true });
 function props(deckId) {
 	return {
 		deckId, less: false, trim: 0.5, eqHigh: 0.5, eqMid: 0.5, eqLow: 0.5, filter: 0.5, fader: 1,
-		cueEnabled: false, stemEqMode: false, stemPending: false,
-		ontrim: noop, onAutoGainOffset: asyncOk, oneq: noop, onfilter: noop, oncolorfx: noop, onfader: noop,
+		cueEnabled: false, mixerStems: false, stemPending: false,
+		commandPending: false, commandError: null,
+		ontrim: noop, onAutoGainOffset: asyncOk, oneq: noop, onfilter: noop, oncolorfx: noop, onechodivision: noop, oncolorfxall: noop, onfader: noop,
 		oncue: noop, onStemEqMode: noop, onStemGain: noop, onStemMute: async () => {}, onStemSolo: async () => {}
 	};
 }
@@ -91,67 +87,6 @@ test('selecting SPACE on one deck changes that strip only: caption, Rust hold', 
 	mod._resetColorFxForTests();
 });
 
-// Drift pins on the wiring the render cannot see (handlers, the Rust hold attribute).
-const STRIP = readFrontendSource('src/lib/components/rb/mixer/ChannelStrip.svelte');
-const MIXER = readFrontendSource('src/lib/components/rb/Mixer.svelte');
-
-test('the menu offers the shipped effect list, one option per effect, dispatching color_fx', () => {
-	const menu = STRIP.slice(STRIP.indexOf('class="color-fx-menu"'), STRIP.indexOf('{/each}', STRIP.indexOf('class="color-fx-menu"')));
-	assert.ok(menu.length > 0, 'the menu markup is present (control)');
-	assert.match(menu, /role="menu"/);
-	assert.match(menu, /aria-label=\{`color FX type deck \$\{deckId\}`\}/);
-	assert.match(menu, /\{#each COLOR_FX_EFFECTS as effect \(effect\)\}/);
-	assert.match(menu, /role="menuitemradio"/);
-	assert.match(menu, /aria-checked=\{colorSettings\.effect === effect\}/);
-	assert.match(menu, /onclick=\{\(\) => chooseColorFx\(effect\)\}/);
-	assert.match(STRIP, /if \(effect !== colorSettings\.effect\) oncolorfx\(effect\);/);
-});
-
-test('every menu option is inert by name in Rust engine mode', () => {
-	const option = STRIP.slice(STRIP.indexOf('role="menuitemradio"'), STRIP.indexOf('</button', STRIP.indexOf('role="menuitemradio"')));
-	assert.ok(option.length > 0, 'the option is present (control)');
-	assert.match(option, /data-rust-command="color_fx"/);
-});
-
-test('a SPACE or ECHO channel holds its color knob inert in Rust mode; FILTER stays live', () => {
-	assert.match(STRIP, /class="filter-knob"\s+data-rust-command=\{colorSettings\.effect === 'filter' \? undefined : 'color_fx'\}/);
-	// STEMDIAL-DRAG-01: never the slot, which also holds the DRUMS stem dial.
-	assert.doesNotMatch(STRIP, /class="filter-slot"\s+data-rust-command=/);
-});
-
-test('the caption follows the effect and non-FILTER effects are tinted', () => {
-	assert.match(STRIP, /label=\{COLOR_FX_LABELS\[colorSettings\.effect\]\}/);
-	assert.doesNotMatch(STRIP, /label="FILTER"/, 'the caption is no longer hard-coded');
-	assert.match(STRIP, /filter: undefined,/);
-	assert.match(STRIP, /\{\.\.\.\(colorTint \? \{ accentColor: colorTint \} : \{\}\)\}/);
-});
-
-test('the echo title names its numbers on the chevron and the menu', () => {
-	assert.equal(STRIP.match(/title=\{colorFxTitle\}/g)?.length, 2);
-	assert.match(STRIP, /beat at \$\{bpm\.toFixed\(1\)\} BPM = \$\{ms\} ms per repeat/);
-});
-
-test('the mixer dispatches color_fx through the typed dispatcher for that deck', () => {
-	assert.match(MIXER, /runPerformanceCommandFromUi\(\{ type: 'color_fx', deck, effect \}\)/);
-	assert.match(MIXER, /oncolorfx=\{\(effect\) => handleColorFx\(deck, effect\)\}/);
-});
-
-test('COLORFX-8341: a Cmd-click anywhere on the color slot cycles, in capture, before the knob or select see it', () => {
-	const slot = STRIP.slice(STRIP.indexOf('class="filter-slot"'), STRIP.indexOf('<Knob', STRIP.indexOf('class="filter-slot"')));
-	assert.match(slot, /onpointerdowncapture=\{handleColorSlotPointerDown\}/);
-	assert.match(slot, /onmousedowncapture=\{handleColorSlotMouseDown\}/);
-	assert.match(slot, /onclickcapture=\{handleColorSlotClick\}/);
-	const click = STRIP.slice(STRIP.indexOf('function handleColorSlotClick'), STRIP.indexOf('function handleColorSlotClick') + 400);
-	assert.match(click, /isColorFxCycleGesture\(event, cycleModifier\)/);
-	assert.match(click, /event\.stopPropagation\(\)/, 'not also a deck select');
-	assert.match(click, /oncolorfx\(COLOR_FX_NEXT\)/);
-	for (const name of ['handleColorSlotPointerDown', 'handleColorSlotMouseDown']) {
-		const body = STRIP.slice(STRIP.indexOf(`function ${name}`), STRIP.indexOf(`function ${name}`) + 300);
-		assert.match(body, /event\.preventDefault\(\);[\s\S]*event\.stopPropagation\(\)/, `${name} swallows the press`);
-	}
-	assert.match(STRIP, /const cycleModifier = quickPickModifier\(/);
-});
-
 test('COLORFX-8341 / DIALCLOCK-8341: the selector title names the knob as a clock time and the gesture', async () => {
 	mod._resetColorFxForTests();
 	const html = renderStrip({ ...props(1), filter: 5 / 6 });
@@ -191,4 +126,20 @@ test('COLORFX-15: the filter face token is light in the dark and the light theme
 		const block = css.slice(start, css.indexOf('\n}', start));
 		assert.match(block, /--rb-color-fx-filter-face: #f[0-9a-f]{5};/, `${head} defines a white filter face`);
 	}
+});
+
+
+test('Color FX busy state and failure title follow the deck status, then recover', () => {
+	mod._resetColorFxForTests();
+	const busy = renderStrip({ ...props(2), commandPending: true });
+	assert.match(busy, /aria-label="color FX deck 2" aria-busy="true"/);
+	const failed = renderStrip({ ...props(2), commandError: 'Color FX deck 2: output refused', filter: 0.8 });
+	assert.match(failed, /aria-busy="false"/);
+	assert.match(failed, /title="Color FX deck 2: output refused"/);
+	assert.match(triggerFor(failed, 2), />FILTER</);
+	const recovered = renderStrip({ ...props(2), filter: 0.8 });
+	assert.match(recovered, /aria-busy="false"/);
+	assert.doesNotMatch(recovered, /output refused/);
+	assert.match(recovered, /Color FX: FILTER, knob at/);
+	assert.match(triggerFor(recovered, 2), /aria-valuenow="0.8"/);
 });

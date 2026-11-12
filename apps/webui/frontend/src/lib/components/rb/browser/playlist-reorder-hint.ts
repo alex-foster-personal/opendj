@@ -20,6 +20,8 @@ const SORT_LABELS: Readonly<Record<SortKey, string>> = {
 	time: 'Time',
 	energy: 'Energy',
 	genre: 'Genre',
+	filename: 'File name',
+	location: 'Location',
 	lyrics: 'Lyrics',
 	grid: 'Grid',
 	autoplay: 'AutoPlay rank',

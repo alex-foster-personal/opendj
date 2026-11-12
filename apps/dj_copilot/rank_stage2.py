@@ -77,6 +77,7 @@ def rerank_with_pairings(
                     score=round(new_score, 6),
                     rationale=rationale,
                     candidate=sc.candidate,
+                    unscored=sc.unscored,
                 )
             )
         else:

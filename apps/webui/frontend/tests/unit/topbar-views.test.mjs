@@ -87,7 +87,7 @@ describe('TOPVIEW-01..04: the view icons and PAD are live controls', () => {
 	});
 
 	it('List view collapses only the wavestack track; the deck track keeps the real row height', () => {
-		assert.match(PAGE, /class:perf-view-list=\{uiPrefs\.perf_view === 'list'\}/);
+		assert.match(PAGE, /class:perf-view-list=\{perfViewCollapsesWavestack\(uiPrefs\.perf_view\)\}/);
 		const rule = PAGE.match(/\.perf-root\.perf-view-list \{([^}]*)\}/);
 		assert.ok(rule, 'no List view rule');
 		assert.match(rule[1], /--rb-wavestack-shown: 0;/);
@@ -102,9 +102,10 @@ describe('TOPVIEW-01..04: the view icons and PAD are live controls', () => {
 	it('the route mounts only the chosen view in the wavestack area', () => {
 		assert.match(PAGE, /<PerfViewArea view=\{uiPrefs\.perf_view\} lessLayout=\{uiPrefs\.deck_layout === 'less'\} \/>/);
 		assert.doesNotMatch(PAGE, /<WaveformStack \/>/);
-		assert.match(AREA, /\{#if view === 'waveform'\}\s*<WaveformStack \/>/);
-		assert.match(AREA, /'phase-scope'\}\s*\{#await loadPhaseScope\(\) then \{ default: PhaseScopeView \}\}\s*<PhaseScopeView \{lessLayout\} \/>/);
-		assert.match(AREA, /'phase-meter'\}\s*\{#await loadPhaseMeter\(\) then \{ default: PhaseMeterView \}\}\s*<PhaseMeterView \{lessLayout\} \/>/);
+		assert.match(AREA, /\{#if mount === 'waveform'\}\s*<WaveformStack \/>/);
+		assert.match(AREA, /mount === 'phase-scope'\}\s*\{#await loadPhaseScope\(\) then \{ default: PhaseScopeView \}\}\s*<PhaseScopeView \{lessLayout\} \/>/);
+		assert.match(AREA, /mount === 'phase-meter'\}\s*\{#await loadPhaseMeter\(\) then \{ default: PhaseMeterView \}\}\s*<PhaseMeterView \{lessLayout\} \/>/);
+		assert.match(AREA, /perfViewWavestackMount/);
 		// The phase views stay out of the first-paint performance chunk.
 		assert.match(AREA, /import\('\.\/wave\/PhaseScopeView\.svelte'\)/);
 		assert.match(AREA, /import\('\.\/wave\/PhaseMeterView\.svelte'\)/);
@@ -651,6 +652,7 @@ describe('TOPVIEW-05: focused deck and the track record', () => {
 			key_guess_confidence: 0.42,
 			duration_ms: 1000,
 			rating: 3,
+			color_id: 2,
 			tags: ['x'],
 			notes: 'n',
 			comments: 'c',

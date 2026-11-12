@@ -2,11 +2,13 @@
 
 from __future__ import annotations
 
+import json
 import os
 import sys
 import time
 from pathlib import Path
 from types import SimpleNamespace
+from unittest.mock import MagicMock
 
 import pytest
 
@@ -19,6 +21,10 @@ from apps.spotify.client import (
 )
 
 from .fake_spotipy import FakeSpotipy, make_meta, make_track
+
+
+def _fake_spotipy_client(**kwargs: object) -> SimpleNamespace:
+    return SimpleNamespace(**kwargs)
 
 
 @pytest.fixture
@@ -56,7 +62,7 @@ def test_from_env_uses_registered_loopback_callback(
     monkeypatch.setitem(
         sys.modules,
         "spotipy",
-        SimpleNamespace(Spotify=lambda **kwargs: SimpleNamespace(**kwargs)),
+        SimpleNamespace(Spotify=_fake_spotipy_client),
     )
     monkeypatch.setitem(
         sys.modules,
@@ -75,6 +81,48 @@ def test_from_env_raises_when_client_id_missing(monkeypatch: pytest.MonkeyPatch)
     monkeypatch.delenv("SPOTIFY_CLIENT_ID", raising=False)
     with pytest.raises(MissingCredentialsError):
         SpotifyClient.from_env()
+
+
+@pytest.mark.requirement("SPOT-9013")
+def test_from_saved_reads_saved_client_id_and_requires_token(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    """[if] SPOTIFY_CLIENT_ID is unset [then] from_saved uses the saved file, [else stop]."""
+    from apps.spotify.client import ReauthorizationRequired
+
+    monkeypatch.delenv("SPOTIFY_CLIENT_ID", raising=False)
+    client_id_path = tmp_path / "spotify-client.json"
+    client_id_path.write_text(
+        json.dumps({"client_id": "a" * 32}),
+        encoding="utf-8",
+    )
+    token_path = tmp_path / "token.json"
+
+    captured: dict[str, object] = {}
+
+    def fake_pkce(**kwargs: object) -> object:
+        captured.update(kwargs)
+        auth = MagicMock()
+        auth.get_cached_token.return_value = None
+        return auth
+
+    monkeypatch.setitem(
+        sys.modules,
+        "spotipy",
+        SimpleNamespace(Spotify=_fake_spotipy_client),
+    )
+    monkeypatch.setitem(
+        sys.modules,
+        "spotipy.oauth2",
+        SimpleNamespace(SpotifyPKCE=fake_pkce),
+    )
+
+    with pytest.raises(ReauthorizationRequired):
+        SpotifyClient.from_saved(
+            interactive=False,
+            client_id_path=client_id_path,
+            token_path=token_path,
+        )
+    assert captured.get("client_id") == "a" * 32
+    assert captured.get("open_browser") is False
 
 
 @pytest.mark.requirement("CAT-01")

@@ -21,6 +21,10 @@ A user's transition-in cue (AGENT-51, ADR-0128) overrides the rules for
 the mimicked behavior of Traktor (Cruise mode mixes in at the Fade In cue)
 and Mixxx (AutoDJ starts the incoming track at its intro start cue), which
 take the user's placement as the answer rather than one candidate among many.
+
+Rule-based mix-in candidates also need mean ``bar_energy`` over the next four
+bars at least 0.4 of the track peak (Zehren salience), except the user's
+transition-in cue.
 """
 
 from __future__ import annotations
@@ -53,6 +57,10 @@ FALLBACK_BARS = 32
 MIN_BLEND_BARS = 4
 #: Incoming forward mixability for blends: four beats per bar, 64 beats (#11851).
 MIN_INCOMING_MIXABLE_BARS = 16
+#: Mix-in salience (Zehren 2020): mean energy over this many bars after the window start.
+SALIENCE_BARS = 4
+#: Minimum fraction of the track peak that salience window must reach.
+SALIENCE_MIN_RATIO = 0.4
 
 _OUT_LABEL_WEIGHT = {OUTRO: 1.0, BREAKDOWN: 0.8, BRIDGE: 0.7, INSTRUMENTAL: 0.7}
 _IN_LABEL_WEIGHT = {INTRO: 1.0, BUILD: 0.8, INSTRUMENTAL: 0.7}
@@ -236,6 +244,22 @@ def _offer_in_windows(
         offer(_in_window(profile, 1, "unknown", "no phrase analysis: from bar 1"))
 
 
+def _salience_gate(profile: TrackProfile, start_bar: int) -> tuple[bool, str]:
+    series = profile.bar_energy
+    if series is None:
+        return True, "salience skipped: energy series missing"
+    peak = max(series)
+    if peak <= 0:
+        return True, "salience skipped: track peak is zero"
+    heard = profile.mean_between(series, start_bar, SALIENCE_BARS)
+    if heard is None:
+        return False, f"salience below {SALIENCE_MIN_RATIO} of the track peak over {SALIENCE_BARS} bars"
+    ratio = heard / peak
+    if ratio >= SALIENCE_MIN_RATIO:
+        return True, f"salience {ratio:.2f} of the track peak over {SALIENCE_BARS} bars"
+    return False, f"salience {ratio:.2f} below {SALIENCE_MIN_RATIO} of the track peak over {SALIENCE_BARS} bars"
+
+
 def _transition_in_window(profile: TrackProfile, bar: int) -> MixWindow:
     """The in window at the user's transition-in cue.
 
@@ -278,6 +302,13 @@ def mix_windows(
         _offer_out_windows(profile, candidates, offer)
     else:
         _offer_in_windows(profile, candidates, offer)
+        for start_bar, window in list(candidates.items()):
+            kept, note = _salience_gate(profile, start_bar)
+            candidates[start_bar] = replace(
+                window,
+                score=window.score if kept else 0.0,
+                reason=f"{window.reason}; {note}",
+            )
     ranked = sorted(candidates.values(), key=lambda window: (-window.score, window.start_bar))
     if min_start_bar is not None:
         ranked = [window for window in ranked if window.start_bar > min_start_bar]

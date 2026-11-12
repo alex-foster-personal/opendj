@@ -34,6 +34,9 @@ MANIFESTS=(
   apps/ai_gateway_worker/pnpm-lock.yaml
   apps/launcher/pnpm-lock.yaml
   (private path)
+  (private path)
+  (private path)
+  pnpm-lock.yaml
   apps/desktop/src-tauri/Cargo.lock
   apps/desktop/native/odj-output-probe/Cargo.lock
   apps/webui/server/native/waveform/Cargo.lock

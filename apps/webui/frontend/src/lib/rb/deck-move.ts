@@ -50,7 +50,7 @@ export const DECK_MOVE_MAX_CROSSFADE_BEATS = 64;
 export const HANDOVER_CURVE_POINTS = 256;
 /** Cleanup waits this long past the curve's end on the audio clock. */
 export const HANDOVER_SETTLE_SEC = 0.05;
-const NEUTRAL_STEM: StemControlState = { muted: false, solo: false, gain: 0.5 };
+const NEUTRAL_STEM: StemControlState = { muted: false, solo: false, gain: 0.5, fx_send: 0 };
 const EQ_BANDS: readonly EqBand[] = ['low', 'mid', 'high'];
 
 export type DeckMoveMode = 'move' | 'copy';

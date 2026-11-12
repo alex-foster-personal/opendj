@@ -17,8 +17,10 @@ Single-line intent:
 
 from __future__ import annotations
 
+import os
 import shutil
 import sqlite3
+import time
 from pathlib import Path
 
 import pytest
@@ -88,9 +90,7 @@ def test_the_fixture_import_populates_state_db(
     data_dir: Path, emitted: list[tuple[float, str]], rb_plain_db_path: Path
 ) -> None:
     source = _plain_source(data_dir, rb_plain_db_path)
-    outcome = importer.run_import(
-        data_dir, emit=_emit_into(emitted), source=source
-    )
+    outcome = importer.run_import(data_dir, emit=_emit_into(emitted), source=source)
     assert outcome.tracks > 0
     assert outcome.tracks == _state_track_count(data_dir)
     assert outcome.playlists > 0
@@ -161,18 +161,14 @@ def test_the_import_reads_a_copy_and_leaves_the_source_alone(
     shutil.copy2(rb_plain_db_path, source)
     before = source.read_bytes()
 
-    outcome = importer.run_import(
-        data_dir, emit=_emit_into(emitted), source=source
-    )
+    outcome = importer.run_import(data_dir, emit=_emit_into(emitted), source=source)
 
     assert source.read_bytes() == before
     assert outcome.ingested_from == str(data_dir / detect.WORKING_COPY_NAME)
 
 
 # ----- refusals -----------------------------------------------------------
-def test_a_missing_source_is_rekordbox_not_found(
-    data_dir: Path, emitted: list[tuple[float, str]]
-) -> None:
+def test_a_missing_source_is_rekordbox_not_found(data_dir: Path, emitted: list[tuple[float, str]]) -> None:
     with pytest.raises(importer.SetupImportError) as caught:
         importer.run_import(
             data_dir,
@@ -190,9 +186,7 @@ def test_no_rekordbox_at_all_is_rekordbox_not_found(
 ) -> None:
     empty = tmp_path / "no-rekordbox"
     empty.mkdir()
-    monkeypatch.setattr(
-        "apps.shared.platform_paths.rekordbox_app_dir", lambda: empty
-    )
+    monkeypatch.setattr("apps.shared.platform_paths.rekordbox_app_dir", lambda: empty)
     with pytest.raises(importer.SetupImportError) as caught:
         importer.run_import(data_dir, emit=_emit_into(emitted))
     assert caught.value.code == detect.CODE_REKORDBOX_NOT_FOUND
@@ -203,9 +197,7 @@ def test_an_encrypted_source_without_a_key_is_key_unavailable(
     emitted: list[tuple[float, str]],
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    monkeypatch.setattr(
-        detect, "key_status", lambda: (False, "no sqlcipher driver here")
-    )
+    monkeypatch.setattr(detect, "key_status", lambda: (False, "no sqlcipher driver here"))
     with pytest.raises(importer.SetupImportError) as caught:
         importer.run_import(
             data_dir,
@@ -251,9 +243,7 @@ def test_a_decrypt_that_lies_about_succeeding_is_still_decrypt_failed(
         return destination, True
 
     monkeypatch.setattr(detect, "key_status", lambda: (True, "key present"))
-    monkeypatch.setattr(
-        "apps.shared.rekordbox_db.ensure_plain_db", _pretend
-    )
+    monkeypatch.setattr("apps.shared.rekordbox_db.ensure_plain_db", _pretend)
     with pytest.raises(importer.SetupImportError) as caught:
         importer.run_import(
             data_dir,
@@ -304,9 +294,7 @@ def test_the_decrypt_stage_calls_the_shared_routine(
     monkeypatch.setattr("apps.shared.rekordbox_db.ensure_plain_db", _fake_ensure)
     source = _encrypted_source(data_dir)
 
-    outcome = importer.run_import(
-        data_dir, emit=_emit_into(emitted), source=source
-    )
+    outcome = importer.run_import(data_dir, emit=_emit_into(emitted), source=source)
 
     assert calls == [
         {
@@ -318,9 +306,7 @@ def test_the_decrypt_stage_calls_the_shared_routine(
     assert outcome.source_was_encrypted is True
     assert outcome.tracks > 0
     decrypt_messages = [m for _, m in emitted if m.startswith("decrypt:")]
-    assert decrypt_messages == [
-        f"decrypt: decrypted {source.name} -> {detect.PLAIN_COPY_NAME}"
-    ]
+    assert decrypt_messages == [f"decrypt: decrypted {source.name} -> {detect.PLAIN_COPY_NAME}"]
 
 
 def test_a_reused_plain_copy_says_so_rather_than_claiming_a_decrypt(
@@ -339,14 +325,127 @@ def test_a_reused_plain_copy_says_so_rather_than_claiming_a_decrypt(
     monkeypatch.setattr(detect, "key_status", lambda: (True, "key present"))
     monkeypatch.setattr("apps.shared.rekordbox_db.ensure_plain_db", _fake_ensure)
 
-    importer.run_import(
-        data_dir, emit=_emit_into(emitted), source=_encrypted_source(data_dir)
-    )
+    importer.run_import(data_dir, emit=_emit_into(emitted), source=_encrypted_source(data_dir))
 
     decrypt_messages = [m for _, m in emitted if m.startswith("decrypt:")]
-    assert decrypt_messages == [
-        f"decrypt: reusing decrypted copy at {data_dir / detect.PLAIN_COPY_NAME}"
-    ]
+    assert decrypt_messages == [f"decrypt: reusing decrypted copy at {data_dir / detect.PLAIN_COPY_NAME}"]
+
+
+def _write_plain_sqlite(path: Path) -> Path:
+    conn = sqlite3.connect(path)
+    conn.execute("CREATE TABLE IF NOT EXISTS djmdContent (ID TEXT)")
+    conn.commit()
+    conn.close()
+    return path
+
+
+@pytest.mark.requirement("SETUP-12782")
+def test_an_explicit_source_still_ingests_stale_plain(
+    data_dir: Path,
+    emitted: list[tuple[float, str]],
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    """[if] source names stale plain [then] that file is ingested, [else stop]."""
+    rb_dir = tmp_path / "rekordbox"
+    rb_dir.mkdir()
+    live = _write_plain_sqlite(rb_dir / "master.db")
+    now = time.time()
+    os.utime(live, (now, now))
+    monkeypatch.setattr("apps.shared.platform_paths.rekordbox_app_dir", lambda: rb_dir)
+    plain = _write_plain_sqlite(data_dir / detect.PLAIN_COPY_NAME)
+    os.utime(plain, (now - 120.0, now - 120.0))
+
+    def _fake_analysis(*args: object, **kwargs: object):
+        counts = detect.library_counts(data_dir)
+        return counts, {
+            "rekordbox_linked": 0,
+            "with_analysis_path": 0,
+            "resolvable": 0,
+        }
+
+    monkeypatch.setattr(importer, "_stage_ingest", lambda *args, **kwargs: None)
+    monkeypatch.setattr(importer, "_stage_analysis", _fake_analysis)
+
+    outcome = importer.run_import(data_dir, emit=_emit_into(emitted), source=plain)
+
+    assert outcome.ingested_from == str(plain)
+
+
+def test_auto_import_snapshots_live_instead_of_a_stale_plain_copy(
+    data_dir: Path,
+    emitted: list[tuple[float, str]],
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    """[if] plain is stale vs live [then] ingest uses live snapshot, [else stop]."""
+    rb_dir = tmp_path / "rekordbox"
+    rb_dir.mkdir()
+    live = _write_plain_sqlite(rb_dir / "master.db")
+    now = time.time()
+    os.utime(live, (now, now))
+    monkeypatch.setattr("apps.shared.platform_paths.rekordbox_app_dir", lambda: rb_dir)
+    plain = data_dir / detect.PLAIN_COPY_NAME
+    plain.write_bytes(b"\x01not-the-library-you-want" * 32)
+    os.utime(plain, (now - 120.0, now - 120.0))
+
+    def _fake_analysis(*args: object, **kwargs: object):
+        counts = detect.library_counts(data_dir)
+        return counts, {
+            "rekordbox_linked": 0,
+            "with_analysis_path": 0,
+            "resolvable": 0,
+        }
+
+    monkeypatch.setattr(importer, "_stage_ingest", lambda *args, **kwargs: None)
+    monkeypatch.setattr(importer, "_stage_analysis", _fake_analysis)
+
+    outcome = importer.run_import(data_dir, emit=_emit_into(emitted))
+
+    assert outcome.ingested_from == str(data_dir / detect.WORKING_COPY_NAME)
+
+
+def test_auto_refresh_recopies_live_when_the_snapshot_is_stale_too(
+    data_dir: Path,
+    emitted: list[tuple[float, str]],
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    """[if] plain AND snapshot are stale vs live [then] live is re-copied, [else stop]."""
+    rb_dir = tmp_path / "rekordbox"
+    rb_dir.mkdir()
+    live = _write_plain_sqlite(rb_dir / "master.db")
+    now = time.time()
+    os.utime(live, (now, now))
+    monkeypatch.setattr("apps.shared.platform_paths.rekordbox_app_dir", lambda: rb_dir)
+    for name in (detect.PLAIN_COPY_NAME, detect.WORKING_COPY_NAME):
+        stale = data_dir / name
+        stale.write_bytes(b"\x01an-older-library" * 32)
+        os.utime(stale, (now - 120.0, now - 120.0))
+    seen: list[Path] = []
+
+    def _fake_decrypt(data_dir: Path, emit: object, working: Path, *, refresh: bool):
+        seen.append(working)
+        return working
+
+    def _fake_analysis(*args: object, **kwargs: object):
+        counts = detect.library_counts(data_dir)
+        return counts, {
+            "rekordbox_linked": 0,
+            "with_analysis_path": 0,
+            "resolvable": 0,
+        }
+
+    monkeypatch.setattr(importer, "_stage_decrypt", _fake_decrypt)
+    monkeypatch.setattr(importer, "_stage_ingest", lambda *args, **kwargs: None)
+    monkeypatch.setattr(importer, "_stage_analysis", _fake_analysis)
+
+    outcome = importer.run_import(data_dir, emit=_emit_into(emitted))
+
+    snapshot = data_dir / detect.WORKING_COPY_NAME
+    assert outcome.source == str(live)
+    assert seen == [snapshot]
+    assert snapshot.read_bytes() == live.read_bytes()
 
 
 def test_refresh_decrypt_goes_back_to_the_encrypted_snapshot(
@@ -373,9 +472,7 @@ def test_refresh_decrypt_goes_back_to_the_encrypted_snapshot(
     monkeypatch.setattr(detect, "key_status", lambda: (True, "key present"))
     monkeypatch.setattr("apps.shared.rekordbox_db.ensure_plain_db", _fake_ensure)
 
-    importer.run_import(
-        data_dir, emit=_emit_into(emitted), refresh_decrypt=True
-    )
+    importer.run_import(data_dir, emit=_emit_into(emitted), refresh_decrypt=True)
 
     assert calls == [
         {
@@ -387,9 +484,7 @@ def test_refresh_decrypt_goes_back_to_the_encrypted_snapshot(
 
 
 # ----- limit --------------------------------------------------------------
-def test_limit_caps_the_ingest(
-    data_dir: Path, emitted: list[tuple[float, str]], rb_plain_db_path: Path
-) -> None:
+def test_limit_caps_the_ingest(data_dir: Path, emitted: list[tuple[float, str]], rb_plain_db_path: Path) -> None:
     outcome = importer.run_import(
         data_dir,
         emit=_emit_into(emitted),

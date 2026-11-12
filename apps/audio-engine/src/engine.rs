@@ -19,7 +19,10 @@ use crate::deck::{Beat, Deck, Track};
 use crate::dsp::Smoothed;
 use crate::mixer::{self, Assign};
 
-pub const MAX_DECKS: usize = 4;
+/// Decks the performance surface shows and the mixer maps (channels 1-4).
+pub const LIVE_DECKS: usize = 4;
+/// Live decks plus shadow stem slots 5-8 (refs #313, #11153).
+pub const MAX_DECKS: usize = 8;
 /// Largest block `render` processes in one pass; longer requests are chunked.
 pub const MAX_BLOCK: usize = 1024;
 /// Window of the master output meter, in frames. The page's Web Audio meter
@@ -73,8 +76,18 @@ impl EngineError {
     }
 }
 
-/// Deck number as the page names it: 1..=4.
+/// Deck number: live channels 1..=4 and shadow slots 5..=8.
 pub type DeckId = u8;
+
+#[inline]
+pub const fn is_shadow_deck(deck: DeckId) -> bool {
+    deck as usize > LIVE_DECKS
+}
+
+#[inline]
+pub const fn is_shadow_slot(slot: usize) -> bool {
+    slot >= LIVE_DECKS
+}
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum EqBand {
@@ -130,6 +143,85 @@ pub struct CapturedMixerEvent {
     pub value: f64,
     pub sample: u64,
     pub source: EventSource,
+}
+
+/// SETREC-07 loop/cue value: a loop carries both ends in one event.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum LoopCueValue {
+    Loop { in_ms: f64, out_ms: f64 },
+    LoopExit,
+    BeatLoop { beats: f64, in_ms: f64, out_ms: f64 },
+    Beats(f64),
+    Bool(bool),
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum CaptureKind {
+    Set,
+    Trigger,
+}
+
+impl CaptureKind {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            CaptureKind::Set => "set",
+            CaptureKind::Trigger => "trigger",
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct CapturedLoopCueEvent {
+    pub control: &'static str,
+    pub kind: CaptureKind,
+    pub value: LoopCueValue,
+    pub sample: u64,
+    pub source: EventSource,
+}
+
+const LOOP_CUE_CAPTURE_CAP: usize = 512;
+
+struct LoopCueCapture {
+    buf: [Option<CapturedLoopCueEvent>; LOOP_CUE_CAPTURE_CAP],
+    head: usize,
+    tail: usize,
+    dropped: u64,
+}
+
+impl LoopCueCapture {
+    fn new() -> Self {
+        LoopCueCapture {
+            buf: std::array::from_fn(|_| None),
+            head: 0,
+            tail: 0,
+            dropped: 0,
+        }
+    }
+
+    fn push(&mut self, event: CapturedLoopCueEvent) {
+        let next = (self.tail + 1) % LOOP_CUE_CAPTURE_CAP;
+        if next == self.head {
+            self.dropped += 1;
+            return;
+        }
+        self.buf[self.tail] = Some(event);
+        self.tail = next;
+    }
+
+    fn drain(&mut self) -> Vec<CapturedLoopCueEvent> {
+        let mut out = Vec::new();
+        while self.head != self.tail {
+            if let Some(ev) = self.buf[self.head].take() {
+                out.push(ev);
+            }
+            self.head = (self.head + 1) % LOOP_CUE_CAPTURE_CAP;
+        }
+        out
+    }
+
+    fn dropped(&self) -> u64 {
+        self.dropped
+    }
 }
 
 /// Coalesce continuous mixer moves to the 10 ms render quantum in
@@ -342,6 +434,46 @@ pub fn mixer_control_id_assign(deck: DeckId) -> Option<&'static str> {
         2 => Some("deck.2.assign"),
         3 => Some("deck.3.assign"),
         4 => Some("deck.4.assign"),
+        _ => None,
+    }
+}
+
+pub fn loop_control_id(deck: DeckId) -> Option<&'static str> {
+    match deck {
+        1 => Some("deck.1.loop"),
+        2 => Some("deck.2.loop"),
+        3 => Some("deck.3.loop"),
+        4 => Some("deck.4.loop"),
+        _ => None,
+    }
+}
+
+pub fn beat_loop_control_id(deck: DeckId) -> Option<&'static str> {
+    match deck {
+        1 => Some("deck.1.beat_loop"),
+        2 => Some("deck.2.beat_loop"),
+        3 => Some("deck.3.beat_loop"),
+        4 => Some("deck.4.beat_loop"),
+        _ => None,
+    }
+}
+
+pub fn beat_jump_control_id(deck: DeckId) -> Option<&'static str> {
+    match deck {
+        1 => Some("deck.1.beat_jump"),
+        2 => Some("deck.2.beat_jump"),
+        3 => Some("deck.3.beat_jump"),
+        4 => Some("deck.4.beat_jump"),
+        _ => None,
+    }
+}
+
+pub fn quantize_control_id(deck: DeckId) -> Option<&'static str> {
+    match deck {
+        1 => Some("deck.1.quantize"),
+        2 => Some("deck.2.quantize"),
+        3 => Some("deck.3.quantize"),
+        4 => Some("deck.4.quantize"),
         _ => None,
     }
 }
@@ -652,6 +784,7 @@ pub struct Engine {
     control_source: ControlSource,
     control_tx: Option<Producer<ControlStamp>>,
     mixer_capture: MixerCapture,
+    loop_cue_capture: LoopCueCapture,
 }
 
 impl Engine {
@@ -670,13 +803,19 @@ impl Engine {
             control_source: ControlSource::User,
             control_tx: None,
             mixer_capture: MixerCapture::new(sample_rate),
+            loop_cue_capture: LoopCueCapture::new(),
         };
         // The page's default assign matrix (`_defaultChannel`): odd decks on
-        // A, even decks on B. The strips start at the gain that gives, with
-        // no glide in from THRU.
+        // A, even decks on B. Shadow slots stay THRU, fader 0, unmapped.
         for (i, d) in e.decks.iter_mut().enumerate() {
-            d.assign = if i % 2 == 0 { Assign::A } else { Assign::B };
-            d.snap_xf_gain(mixer::xf_gain(d.assign, e.crossfader));
+            if is_shadow_slot(i) {
+                d.assign = Assign::Thru;
+                d.set_fader(0.0);
+                d.snap_xf_gain(0.0);
+            } else {
+                d.assign = if i % 2 == 0 { Assign::A } else { Assign::B };
+                d.snap_xf_gain(mixer::xf_gain(d.assign, e.crossfader));
+            }
         }
         e.apply_crossfader();
         e
@@ -730,10 +869,11 @@ impl Engine {
     fn deck_mut(&mut self, deck: DeckId) -> Result<&mut Deck, EngineError> {
         let i = (deck as usize)
             .checked_sub(1)
-            .ok_or(EngineError::new(ErrorCode::Invalid, "deck must be 1..4"))?;
+            .filter(|&i| i < MAX_DECKS)
+            .ok_or(EngineError::new(ErrorCode::Invalid, "deck must be 1..8"))?;
         self.decks
             .get_mut(i)
-            .ok_or(EngineError::new(ErrorCode::Invalid, "deck must be 1..4"))
+            .ok_or(EngineError::new(ErrorCode::Invalid, "deck must be 1..8"))
     }
 
     fn apply_crossfader(&mut self) {
@@ -751,6 +891,31 @@ impl Engine {
     /// Mixer control rows coalesced on the audio thread, drained by the recorder.
     pub fn drain_mixer_capture(&mut self) -> Vec<CapturedMixerEvent> {
         self.mixer_capture.drain()
+    }
+
+    fn capture_loop_cue(
+        &mut self,
+        control: &'static str,
+        kind: CaptureKind,
+        value: LoopCueValue,
+        source: EventSource,
+    ) {
+        self.loop_cue_capture.push(CapturedLoopCueEvent {
+            control,
+            kind,
+            value,
+            sample: self.frame,
+            source,
+        });
+    }
+
+    /// Loop and cue rows captured without coalescing (SETREC-07).
+    pub fn drain_loop_cue_capture(&mut self) -> Vec<CapturedLoopCueEvent> {
+        self.loop_cue_capture.drain()
+    }
+
+    pub fn loop_cue_capture_dropped(&self) -> u64 {
+        self.loop_cue_capture.dropped()
     }
 
     /// Apply one command at the current frame (`source=user`).
@@ -814,7 +979,17 @@ impl Engine {
                 d.play(playing)?
             }
             Cue { deck } => self.deck_mut(deck)?.cue()?,
-            Quantize { deck, enabled } => self.deck_mut(deck)?.set_quantize(enabled),
+            Quantize { deck, enabled } => {
+                self.deck_mut(deck)?.set_quantize(enabled);
+                if let Some(id) = quantize_control_id(deck) {
+                    self.capture_loop_cue(
+                        id,
+                        CaptureKind::Set,
+                        LoopCueValue::Bool(enabled),
+                        source,
+                    );
+                }
+            }
             QuantizeGrid { deck, beats } => self.deck_mut(deck)?.set_quantize_grid(beats)?,
             Seek {
                 deck,
@@ -827,13 +1002,65 @@ impl Engine {
                 deck,
                 bounds_ms,
                 quantize,
-            } => self.deck_mut(deck)?.set_loop_with(bounds_ms, quantize)?,
+            } => {
+                self.deck_mut(deck)?.set_loop_with(bounds_ms, quantize)?;
+                let value = if bounds_ms.is_none() {
+                    LoopCueValue::LoopExit
+                } else {
+                    let d = self.deck_mut(deck)?;
+                    let t = d.track.as_ref().ok_or(EngineError::new(
+                        ErrorCode::NoTrack,
+                        "no track loaded on this deck",
+                    ))?;
+                    match d.looping {
+                        Some((a, b)) => LoopCueValue::Loop {
+                            in_ms: t.frames_to_ms(a),
+                            out_ms: t.frames_to_ms(b),
+                        },
+                        None => LoopCueValue::LoopExit,
+                    }
+                };
+                if let Some(id) = loop_control_id(deck) {
+                    self.capture_loop_cue(id, CaptureKind::Set, value, source);
+                }
+            }
             BeatLoop {
                 deck,
                 beats,
                 start_ms,
-            } => self.deck_mut(deck)?.beat_loop(beats, start_ms)?,
-            BeatJump { deck, beats } => self.deck_mut(deck)?.beat_jump(beats)?,
+            } => {
+                self.deck_mut(deck)?.beat_loop(beats, start_ms)?;
+                let value = {
+                    let d = self.deck_mut(deck)?;
+                    let t = d.track.as_ref().ok_or(EngineError::new(
+                        ErrorCode::NoTrack,
+                        "no track loaded on this deck",
+                    ))?;
+                    let (a, b) = d.looping.ok_or(EngineError::new(
+                        ErrorCode::Invalid,
+                        "beat loop did not engage",
+                    ))?;
+                    LoopCueValue::BeatLoop {
+                        beats,
+                        in_ms: t.frames_to_ms(a),
+                        out_ms: t.frames_to_ms(b),
+                    }
+                };
+                if let Some(id) = beat_loop_control_id(deck) {
+                    self.capture_loop_cue(id, CaptureKind::Trigger, value, source);
+                }
+            }
+            BeatJump { deck, beats } => {
+                self.deck_mut(deck)?.beat_jump(beats)?;
+                if let Some(id) = beat_jump_control_id(deck) {
+                    self.capture_loop_cue(
+                        id,
+                        CaptureKind::Trigger,
+                        LoopCueValue::Beats(beats),
+                        source,
+                    );
+                }
+            }
             Tempo { deck, ratio } => self.deck_mut(deck)?.set_tempo(ratio)?,
             TempoFader { deck, value } => {
                 let v = mixer::check_unit(value)?;
@@ -938,12 +1165,14 @@ impl Engine {
             let chunk = &mut out[off..end];
             chunk.fill(0.0);
             let sr = self.sr as f64;
-            for (d, s) in self.decks.iter_mut().zip(split.iter_mut()) {
+            for (i, (d, s)) in self.decks.iter_mut().zip(split.iter_mut()).enumerate() {
                 let s = &mut s[off..end];
                 s.fill(0.0);
                 d.render_add(s, sr);
-                for (o, x) in chunk.iter_mut().zip(s.iter()) {
-                    *o += *x;
+                if !is_shadow_slot(i) {
+                    for (o, x) in chunk.iter_mut().zip(s.iter()) {
+                        *o += *x;
+                    }
                 }
             }
             self.finish_block(chunk);
@@ -954,8 +1183,13 @@ impl Engine {
     fn render_block(&mut self, out: &mut [f32]) {
         out.fill(0.0);
         let sr = self.sr as f64;
-        for d in self.decks.iter_mut() {
-            d.render_add(out, sr);
+        for (i, d) in self.decks.iter_mut().enumerate() {
+            if is_shadow_slot(i) {
+                let mut scratch = [0.0f32; MAX_BLOCK * 2];
+                d.render_add(&mut scratch[..out.len()], sr);
+            } else {
+                d.render_add(out, sr);
+            }
         }
         self.finish_block(out);
     }
@@ -1752,9 +1986,16 @@ mod tests {
             .code,
             ErrorCode::NoTrack
         );
+        assert!(e
+            .apply(EngineCmd::Fader {
+                deck: 5,
+                value: 0.5
+            })
+            .unwrap()
+            .is_none());
         assert_eq!(
             e.apply(EngineCmd::Fader {
-                deck: 5,
+                deck: 9,
                 value: 0.5
             })
             .unwrap_err()
@@ -1774,12 +2015,13 @@ mod tests {
         let t = Arc::new(Track::new(48000, vec![0.0f32; 96], vec![], None));
         let r = e
             .apply(EngineCmd::Load {
-                deck: 5,
+                deck: 9,
                 track: t.clone(),
             })
             .unwrap_err();
         assert_eq!(r.code, ErrorCode::Invalid);
         assert!(r.track.as_ref().is_some_and(|x| Arc::ptr_eq(x, &t)));
+        assert!(e.apply(EngineCmd::Load { deck: 5, track: t.clone() }).unwrap().is_none());
         // Control: a good load keeps it on the deck.
         assert!(e
             .apply(EngineCmd::Load {
@@ -1847,7 +2089,7 @@ mod tests {
     #[test]
     fn decks_start_on_the_pages_crossfader_sides() {
         let mut e = Engine::new(48000);
-        let sides: Vec<_> = e.snapshot().decks.iter().map(|d| d.assign).collect();
+        let sides: Vec<_> = e.snapshot().decks.iter().take(LIVE_DECKS).map(|d| d.assign).collect();
         assert_eq!(sides, vec![Assign::A, Assign::B, Assign::A, Assign::B]);
         // So the crossfader works with no assign sent: hard to A silences
         // deck 2 and leaves deck 1 at full level.
@@ -2015,6 +2257,41 @@ mod tests {
         // Control: built from the track the deck now holds, it is accepted.
         let ok = e.regridded(1, grid(400.0, 2.0), None).unwrap();
         assert!(e.apply(EngineCmd::Regrid { deck: 1, track: ok }).is_ok());
+    }
+
+    #[test]
+    fn snapshot_exposes_eight_decks_with_empty_shadow_slots() {
+        let e = Engine::new(48000);
+        let s = e.snapshot();
+        assert_eq!(s.decks.len(), MAX_DECKS);
+        for (i, d) in s.decks.iter().enumerate().skip(LIVE_DECKS) {
+            assert!(!d.loaded, "shadow deck {} must start empty", i + 1);
+            assert!(!d.playing);
+        }
+    }
+
+    #[test]
+    fn shadow_deck_commands_apply_but_stay_inaudible_on_the_master() {
+        let peak = |b: &[f32]| b.iter().fold(0.0f32, |m, &x| m.max(x.abs()));
+        let mut e = Engine::new(48000);
+        let t = Arc::new(tone(48000, 440.0, 2.0));
+        e.apply(EngineCmd::Load { deck: 5, track: t }).unwrap();
+        e.apply(EngineCmd::Play { deck: 5, playing: true }).unwrap();
+        e.apply(EngineCmd::Fader { deck: 5, value: 1.0 }).unwrap();
+        e.apply(EngineCmd::Seek {
+            deck: 5,
+            position_ms: 0.0,
+            quantize: false,
+        })
+        .unwrap();
+        let mut buf = vec![0.0f32; 4800 * 2];
+        e.render(&mut buf);
+        assert!(
+            peak(&buf) < 1e-6,
+            "shadow deck 5 must not reach the master bus"
+        );
+        let d = e.snapshot().decks[4];
+        assert!(d.loaded && d.playing);
     }
 
     #[test]
@@ -2186,5 +2463,268 @@ mod tests {
             missing.is_empty(),
             "scripted session missed controls: {missing:?}"
         );
+    }
+
+    fn grid_track() -> Arc<Track> {
+        let grid = (0..20)
+            .map(|i| Beat {
+                time_ms: i as f64 * 500.0,
+                downbeat: i % 4 == 0,
+                bpm: None,
+            })
+            .collect();
+        Arc::new(Track::new(
+            48000,
+            vec![0.0f32; 48000 * 2 * 10],
+            grid,
+            Some(120.0),
+        ))
+    }
+
+    #[test]
+    fn loop_cue_capture_loop_is_one_compound_event_with_both_points() {
+        let mut e = Engine::new(48000);
+        e.apply(EngineCmd::Load {
+            deck: 1,
+            track: grid_track(),
+        })
+        .unwrap();
+        let mut buf = vec![0.0f32; 4800 * 2];
+        e.render(&mut buf);
+        assert_eq!(e.frame(), 4800);
+        e.apply(EngineCmd::Loop {
+            deck: 1,
+            bounds_ms: Some((1000.0, 3000.0)),
+            quantize: true,
+        })
+        .unwrap();
+        let loop_ev: Vec<_> = e
+            .drain_loop_cue_capture()
+            .into_iter()
+            .filter(|ev| ev.control == "deck.1.loop")
+            .collect();
+        assert_eq!(loop_ev.len(), 1, "one compound loop row, got {loop_ev:?}");
+        assert_eq!(loop_ev[0].kind, CaptureKind::Set);
+        assert_eq!(
+            loop_ev[0].value,
+            LoopCueValue::Loop {
+                in_ms: 1000.0,
+                out_ms: 3000.0
+            }
+        );
+        assert_eq!(loop_ev[0].sample, 4800);
+        e.apply(EngineCmd::Loop {
+            deck: 1,
+            bounds_ms: None,
+            quantize: false,
+        })
+        .unwrap();
+        let exit: Vec<_> = e.drain_loop_cue_capture();
+        assert_eq!(exit.len(), 1);
+        assert_eq!(exit[0].value, LoopCueValue::LoopExit);
+        e.apply(EngineCmd::BeatLoop {
+            deck: 1,
+            beats: 4.0,
+            start_ms: Some(1000.0),
+        })
+        .unwrap();
+        let bl: Vec<_> = e
+            .drain_loop_cue_capture()
+            .into_iter()
+            .filter(|ev| ev.control == "deck.1.beat_loop")
+            .collect();
+        assert_eq!(bl.len(), 1);
+        assert_eq!(
+            bl[0].value,
+            LoopCueValue::BeatLoop {
+                beats: 4.0,
+                in_ms: 1000.0,
+                out_ms: 3000.0
+            }
+        );
+        let loop_family: Vec<CapturedLoopCueEvent> = loop_ev
+            .into_iter()
+            .chain(exit)
+            .chain(bl)
+            .collect();
+        assert_eq!(
+            loop_family.len(),
+            3,
+            "one row per loop-family command: {loop_family:?}"
+        );
+        let split: Vec<_> = loop_family
+            .iter()
+            .filter(|ev| ev.control.contains("loop_in") || ev.control.contains("loop_out"))
+            .collect();
+        assert!(split.is_empty(), "no split loop rows: {split:?}");
+    }
+
+    #[test]
+    fn loop_cue_capture_keeps_every_trigger_in_one_quantum() {
+        let mut e = Engine::new(48000);
+        e.apply(EngineCmd::Load {
+            deck: 1,
+            track: grid_track(),
+        })
+        .unwrap();
+        let jumps = [1.0, -1.0, 1.0, -1.0, 1.0, -1.0, 1.0, -1.0, 1.0, -1.0];
+        for beats in jumps {
+            e.apply(EngineCmd::BeatJump { deck: 1, beats }).unwrap();
+        }
+        for deck in 1..=4 {
+            e.apply(EngineCmd::Quantize {
+                deck,
+                enabled: deck % 2 == 0,
+            })
+            .unwrap();
+        }
+        let events = e.drain_loop_cue_capture();
+        assert_eq!(events.len(), 14, "every trigger kept: {events:?}");
+        assert!(events.iter().all(|ev| ev.sample == 0));
+        assert_eq!(e.loop_cue_capture_dropped(), 0);
+        for (i, ev) in events.iter().take(10).enumerate() {
+            assert_eq!(ev.control, beat_jump_control_id(1).expect("deck 1 beat jump"));
+            assert_eq!(ev.value, LoopCueValue::Beats(jumps[i]));
+        }
+        for (ev, deck) in events.iter().skip(10).zip(1u8..=4) {
+            assert_eq!(
+                ev.control,
+                quantize_control_id(deck).expect("quantize id")
+            );
+            assert_eq!(ev.value, LoopCueValue::Bool(deck % 2 == 0));
+        }
+    }
+
+    #[test]
+    fn loop_cue_capture_from_controller_is_tagged_controller() {
+        let mut e = Engine::new(48000);
+        e.apply(EngineCmd::Load {
+            deck: 1,
+            track: grid_track(),
+        })
+        .unwrap();
+        e.apply_with_source(
+            EngineCmd::Loop {
+                deck: 1,
+                bounds_ms: Some((1000.0, 2000.0)),
+                quantize: false,
+            },
+            EventSource::Controller,
+        )
+        .unwrap();
+        let hit = e
+            .drain_loop_cue_capture()
+            .into_iter()
+            .find(|ev| ev.control == "deck.1.loop")
+            .expect("loop captured");
+        assert_eq!(hit.source, EventSource::Controller);
+    }
+
+    #[test]
+    fn loop_cue_capture_rejected_command_logs_nothing() {
+        let mut e = Engine::new(48000);
+        e.apply(EngineCmd::Load {
+            deck: 1,
+            track: Arc::new(tone(48000, 440.0, 2.0)),
+        })
+        .unwrap();
+        assert!(e
+            .apply(EngineCmd::BeatLoop {
+                deck: 1,
+                beats: 4.0,
+                start_ms: Some(0.0),
+            })
+            .is_err());
+        assert!(e.drain_loop_cue_capture().is_empty());
+    }
+
+    fn render_frames(e: &mut Engine, frames: u64) {
+        let samples = (frames * 2) as usize;
+        let mut buf = vec![0.0f32; samples];
+        e.render(&mut buf);
+    }
+
+    #[test]
+    fn loop_cue_capture_scripted_session_stamps_every_trigger() {
+        let mut e = Engine::new(48000);
+        for deck in 1u8..=4 {
+            e.apply(EngineCmd::Load {
+                deck,
+                track: grid_track(),
+            })
+            .unwrap();
+        }
+        let mut expected_samples = Vec::with_capacity(20);
+        for deck in 1..=4 {
+            render_frames(&mut e, 480);
+            expected_samples.push(e.frame());
+            e.apply(EngineCmd::Quantize {
+                deck,
+                enabled: true,
+            })
+            .unwrap();
+            render_frames(&mut e, 480);
+            expected_samples.push(e.frame());
+            e.apply(EngineCmd::Loop {
+                deck,
+                bounds_ms: Some((1000.0, 3000.0)),
+                quantize: true,
+            })
+            .unwrap();
+            render_frames(&mut e, 480);
+            expected_samples.push(e.frame());
+            e.apply(EngineCmd::Loop {
+                deck,
+                bounds_ms: None,
+                quantize: false,
+            })
+            .unwrap();
+            render_frames(&mut e, 480);
+            expected_samples.push(e.frame());
+            e.apply(EngineCmd::BeatLoop {
+                deck,
+                beats: 4.0,
+                start_ms: Some(1000.0),
+            })
+            .unwrap();
+            render_frames(&mut e, 480);
+            expected_samples.push(e.frame());
+            e.apply(EngineCmd::BeatJump { deck, beats: 1.0 }).unwrap();
+        }
+        let events = e.drain_loop_cue_capture();
+        assert_eq!(events.len(), 20, "five loop/cue commands per deck: {events:?}");
+        for (i, ev) in events.iter().enumerate() {
+            assert_eq!(
+                ev.sample, expected_samples[i],
+                "event {i} control {} stamp",
+                ev.control
+            );
+        }
+        let seen: std::collections::BTreeSet<&'static str> =
+            events.iter().map(|ev| ev.control).collect();
+        const WANT: &[&str] = &[
+            "deck.1.loop",
+            "deck.2.loop",
+            "deck.3.loop",
+            "deck.4.loop",
+            "deck.1.beat_loop",
+            "deck.2.beat_loop",
+            "deck.3.beat_loop",
+            "deck.4.beat_loop",
+            "deck.1.beat_jump",
+            "deck.2.beat_jump",
+            "deck.3.beat_jump",
+            "deck.4.beat_jump",
+            "deck.1.quantize",
+            "deck.2.quantize",
+            "deck.3.quantize",
+            "deck.4.quantize",
+        ];
+        let missing: Vec<_> = WANT
+            .iter()
+            .filter(|id| !seen.contains(*id))
+            .copied()
+            .collect();
+        assert!(missing.is_empty(), "scripted loop/cue missed: {missing:?}");
     }
 }

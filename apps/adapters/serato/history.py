@@ -78,6 +78,16 @@ class SessionTruncated(ValueError):
         self.entries = entries
 
 
+class SessionMalformed(ValueError):
+    def __init__(
+        self, file: str, offset: int, detail: str, entries: tuple[HistoryEntry, ...] = ()
+    ) -> None:
+        super().__init__(f"{file}: malformed field at offset {offset}: {detail}")
+        self.file = file
+        self.offset = offset
+        self.entries = entries
+
+
 def _frames(
     data: bytes, start: int, end: int, header: struct.Struct, file: str, what: str
 ) -> list[tuple[int, bytes | int, int, int]]:
@@ -101,11 +111,18 @@ def _entry(data: bytes, start: int, end: int, file: str, index: int) -> HistoryE
     for _, tag, a_start, a_end in _frames(data, start, end, _TAG, file, "tag"):
         if tag != b"adat":
             continue
-        for _, fid, v_start, v_end in _frames(data, a_start, a_end, _FIELD, file, "field"):
+        for f_offset, fid, v_start, v_end in _frames(data, a_start, a_end, _FIELD, file, "field"):
             value = data[v_start:v_end]
             if fid in _STRING_FIELDS:
-                values[_STRING_FIELDS[fid]] = value.decode("utf-16-be").rstrip("\x00")
+                try:
+                    values[_STRING_FIELDS[fid]] = value.decode("utf-16-be").rstrip("\x00")
+                except UnicodeDecodeError as exc:
+                    raise SessionMalformed(file, f_offset, "invalid utf-16-be") from exc
             elif fid in _INT_FIELDS:
+                if len(value) == 0:
+                    if fid == FIELD_START:
+                        continue
+                    raise SessionMalformed(file, f_offset, "empty integer field")
                 values[_INT_FIELDS[fid]] = int.from_bytes(value, "big")
             elif fid == FIELD_PLAYED:
                 values["played"] = value[:1] == b"\x01"
@@ -134,7 +151,7 @@ def parse_session(data: bytes, session_file: str) -> tuple[HistoryEntry, ...]:
     entries: list[HistoryEntry] = []
     try:
         _read_entries(data, session_file, entries)
-    except SessionTruncated as exc:
+    except (SessionTruncated, SessionMalformed) as exc:
         exc.entries = tuple(entries)
         raise
     return tuple(entries)
@@ -144,7 +161,7 @@ def read_session(path: Path) -> SessionRead:
     data = path.read_bytes()
     try:
         return SessionRead(path, parse_session(data, path.name), None)
-    except SessionTruncated as exc:
+    except (SessionTruncated, SessionMalformed) as exc:
         return SessionRead(path, exc.entries, str(exc))
 
 
@@ -165,6 +182,7 @@ __all__ = [
     "FIELD_START",
     "FIELD_TITLE",
     "HistoryEntry",
+    "SessionMalformed",
     "SessionRead",
     "SessionTruncated",
     "parse_session",

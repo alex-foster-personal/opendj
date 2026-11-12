@@ -139,12 +139,14 @@ def _sections_and_moments(doc: dict[str, Any]) -> tuple[list[dict[str, Any]], li
 
 def _merge_fast(payload: dict[str, Any], stable_id: str, data_dir: Path) -> dict[str, Any]:
     fast = fast_sidecar.fast_sections(payload, stable_id, data_dir)
-    status = {
+    status: dict[str, Any] = {
         "status": fast["status"],
         "reason": fast.get("reason"),
         "producer": fast.get("producer"),
         "producer_version": fast.get("producer_version"),
     }
+    if fast.get("abstain_reason") is not None:
+        status["abstain_reason"] = fast["abstain_reason"]
     if fast["status"] != "ok":
         return {**payload, "phrases": [], "phrases_source": "none", "own_phrases": status}
     sections, moments = _sections_and_moments(fast)

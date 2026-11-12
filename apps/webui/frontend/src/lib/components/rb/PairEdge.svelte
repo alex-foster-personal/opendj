@@ -7,6 +7,7 @@
 	// row, so the row keeps its own clicks and hovers.
 	import { onMount } from 'svelte';
 	import { COMET, lapRunning, mayReplay, pulseStrokes, ringPath } from '$lib/rb/pair-edge';
+	import { prefersReducedMotion } from '$lib/motion/reduced-motion';
 
 	let { seed = 0 }: { seed?: number } = $props();
 
@@ -19,10 +20,7 @@
 	let frame = 0;
 	let lastDraw = 0;
 
-	const reduce =
-		typeof window !== 'undefined' && typeof window.matchMedia === 'function'
-			? window.matchMedia('(prefers-reduced-motion: reduce)').matches
-			: false;
+	const reduce = prefersReducedMotion();
 
 	const now = (): number => performance.now() / 1000;
 

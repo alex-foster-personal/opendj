@@ -19,6 +19,7 @@ Acceptance, one test each:
 
 [if] two machines ingest one audio under different PKs [then] the hub holds one row, [else stop].
 """
+
 from __future__ import annotations
 
 import sqlite3
@@ -231,21 +232,13 @@ def _insert_vendor(
 
 
 def _track_ids(conn: sqlite3.Connection) -> set[str]:
-    return {
-        str(row[0])
-        for row in conn.execute(
-            "SELECT stable_id FROM tracks WHERE deleted_at IS NULL"
-        )
-    }
+    return {str(row[0]) for row in conn.execute("SELECT stable_id FROM tracks WHERE deleted_at IS NULL")}
 
 
 def _location_ids(conn: sqlite3.Connection) -> set[tuple[str, str]]:
     return {
         (str(row[0]), str(row[1]))
-        for row in conn.execute(
-            "SELECT stable_id, file_path FROM track_locations "
-            "WHERE deleted_at IS NULL"
-        )
+        for row in conn.execute("SELECT stable_id, file_path FROM track_locations WHERE deleted_at IS NULL")
     }
 
 
@@ -303,9 +296,7 @@ def test_same_content_hash_different_stable_id_collapses_to_one_track(
         )
 
         assert result.quarantined == 0
-        assert _track_ids(conn) == {_INCOMING_PK}, (
-            "same content_hash under two PKs must collapse to one tracks row"
-        )
+        assert _track_ids(conn) == {_INCOMING_PK}, "same content_hash under two PKs must collapse to one tracks row"
         assert _location_ids(conn) == {
             (_INCOMING_PK, "/Silver/a.mp3"),
             (_INCOMING_PK, "/Air/a.mp3"),
@@ -321,14 +312,28 @@ def test_same_audio_hash_different_content_hash_collapses_to_one_track(
     conn = _open_hub(tmp_path)
     try:
         _insert_identified_track(
-            conn, _STORED_PK, title="before", content_hash=_HASH_A,
-            audio_hash="c" * 64, updated_at=_T0, origin=_DEV_A,
+            conn,
+            _STORED_PK,
+            title="before",
+            content_hash=_HASH_A,
+            audio_hash="c" * 64,
+            updated_at=_T0,
+            origin=_DEV_A,
         )
         conn.commit()
-        result = engine.hub_apply(conn, [_incoming_track(
-            conn, _INCOMING_PK, title="after", content_hash=_HASH_B,
-            audio_hash="c" * 64, updated_at=_T1,
-        )])
+        result = engine.hub_apply(
+            conn,
+            [
+                _incoming_track(
+                    conn,
+                    _INCOMING_PK,
+                    title="after",
+                    content_hash=_HASH_B,
+                    audio_hash="c" * 64,
+                    updated_at=_T1,
+                )
+            ],
+        )
         assert result.quarantined == 0
         assert _track_ids(conn) == {_INCOMING_PK}
     finally:
@@ -412,12 +417,10 @@ def test_same_content_hash_disagreeing_isrc_quarantines_both(
 
         assert result.quarantined >= 1
         assert result.identity_conflicts >= 1
-        assert _track_ids(conn) == {_STORED_PK}, (
-            "disagreeing ISRC on one hash must not insert a second tracks row"
+        assert _track_ids(conn) == {_STORED_PK}, "disagreeing ISRC on one hash must not insert a second tracks row"
+        assert conn.execute("SELECT title FROM tracks WHERE stable_id = ?", (_STORED_PK,)).fetchone()[0] == "silver", (
+            "the local row must be untouched"
         )
-        assert conn.execute(
-            "SELECT title FROM tracks WHERE stable_id = ?", (_STORED_PK,)
-        ).fetchone()[0] == "silver", "the local row must be untouched"
     finally:
         conn.close()
 
@@ -514,9 +517,7 @@ def test_run_sync_holds_unidentifiable_inferred_off_an_empty_hub(
     from tests.cloudsync.test_hub_sync import _TestClientTransport
 
     with TestClient(_hub_app(hub_dir)) as http:
-        client.run_sync(
-            spoke, "http://hub.invalid", transport=_TestClientTransport(http), name="spoke"
-        )
+        client.run_sync(spoke, "http://hub.invalid", transport=_TestClientTransport(http), name="spoke")
 
     hub_after = state_db.open_rw(client.state_db_path(hub_dir))
     try:
@@ -600,9 +601,7 @@ def test_hub_library_size_counts_live_rows_whatever_authored_them(
     the case that broke an origin-based check on the real library."""
     conn = _open_hub(tmp_path)
     try:
-        _insert_identified_track(
-            conn, "trk-a", title="a", updated_at=_T0, origin=_DEV_A
-        )
+        _insert_identified_track(conn, "trk-a", title="a", updated_at=_T0, origin=_DEV_A)
         _insert_identified_track(
             conn,
             "trk-b-dead",
@@ -668,12 +667,8 @@ def test_surviving_row_remaps_locations_fields_vendor_ids_and_memberships(
             updated_at=_T0,
             origin=_DEV_A,
         )
-        _insert_playlist(
-            conn, "pl-1", name="crate", updated_at=_T0, origin=_DEV_A
-        )
-        _set_members(
-            conn, "pl-1", (_STORED_PK,), updated_at=_T0, origin=_DEV_A
-        )
+        _insert_playlist(conn, "pl-1", name="crate", updated_at=_T0, origin=_DEV_A)
+        _set_members(conn, "pl-1", (_STORED_PK,), updated_at=_T0, origin=_DEV_A)
         conn.commit()
 
         result = engine.hub_apply(
@@ -691,21 +686,22 @@ def test_surviving_row_remaps_locations_fields_vendor_ids_and_memberships(
 
         assert result.quarantined == 0
         assert _track_ids(conn) == {_INCOMING_PK}
-        assert conn.execute(
-            "SELECT stable_id FROM track_locations WHERE location_id = 'loc-silver'"
-        ).fetchone()[0] == _INCOMING_PK
-        assert conn.execute(
-            "SELECT stable_id FROM track_fields WHERE field_name = 'rating'"
-        ).fetchone()[0] == _INCOMING_PK
-        assert conn.execute(
-            "SELECT stable_id FROM track_vendor_ids WHERE vendor = 'rekordbox'"
-        ).fetchone()[0] == _INCOMING_PK
-        assert conn.execute(
-            "SELECT stable_id FROM playlist_memberships WHERE playlist_id = 'pl-1'"
-        ).fetchone()[0] == _INCOMING_PK
-        leftover = conn.execute(
-            "SELECT COUNT(*) FROM tracks WHERE stable_id = ?", (_STORED_PK,)
-        ).fetchone()[0]
+        assert (
+            conn.execute("SELECT stable_id FROM track_locations WHERE location_id = 'loc-silver'").fetchone()[0]
+            == _INCOMING_PK
+        )
+        assert (
+            conn.execute("SELECT stable_id FROM track_fields WHERE field_name = 'rating'").fetchone()[0] == _INCOMING_PK
+        )
+        assert (
+            conn.execute("SELECT stable_id FROM track_vendor_ids WHERE vendor = 'rekordbox'").fetchone()[0]
+            == _INCOMING_PK
+        )
+        assert (
+            conn.execute("SELECT stable_id FROM playlist_memberships WHERE playlist_id = 'pl-1'").fetchone()[0]
+            == _INCOMING_PK
+        )
+        leftover = conn.execute("SELECT COUNT(*) FROM tracks WHERE stable_id = ?", (_STORED_PK,)).fetchone()[0]
         assert leftover == 0
     finally:
         conn.close()
@@ -798,10 +794,89 @@ def test_remap_track_children_moves_memberships_including_edit_rows(
         conn.commit()
 
         rows = conn.execute(
-            "SELECT stable_id, edit_id FROM playlist_memberships "
-            "WHERE playlist_id = 'pl-1' ORDER BY position"
+            "SELECT stable_id, edit_id FROM playlist_memberships WHERE playlist_id = 'pl-1' ORDER BY position"
         ).fetchall()
         assert rows == [(survivor, None), (survivor, edit_id)]
+        assert (
+            conn.execute(
+                "SELECT COUNT(*) FROM playlist_memberships WHERE stable_id = ?",
+                (loser,),
+            ).fetchone()[0]
+            == 0
+        )
+    finally:
+        conn.close()
+
+
+def test_remap_track_children_keeps_plain_loser_row_when_survivor_has_only_an_edit(
+    tmp_path: Path,
+) -> None:
+    """PRRT_kwDOSEvNd861DeKm: do not drop a plain loser row when the survivor has only an edit membership."""
+    edit_id = "edit-survivor-only"
+    loser = _STORED_PK
+    survivor = _INCOMING_PK
+    conn = _open_hub(tmp_path)
+    try:
+        _insert_identified_track(
+            conn,
+            loser,
+            title="silver",
+            content_hash=_HASH_A,
+            updated_at=_T0,
+            origin=_DEV_A,
+        )
+        _insert_identified_track(
+            conn,
+            survivor,
+            title="air",
+            content_hash=_HASH_A,
+            updated_at=_T1,
+            origin=_DEV_B,
+        )
+        conn.execute(
+            """
+            INSERT INTO track_edit(
+                id, source_track_id, label, in_ms, out_ms, fx,
+                created_by, created_at, updated_at, origin_device_id, deleted_at
+            )
+            VALUES (?, ?, 'cut', 0, 5000, '{}', 'test', ?, ?, ?, NULL)
+            """,
+            (edit_id, survivor, _T0, _T0, _DEV_A),
+        )
+        _insert_playlist(conn, "pl-1", name="crate", updated_at=_T0, origin=_DEV_A)
+        for position, stable_id, member_edit in (
+            (0, survivor, edit_id),
+            (1, loser, None),
+        ):
+            conn.execute(
+                """
+                INSERT INTO playlist_memberships(
+                    playlist_id, stable_id, position, item_id, order_key,
+                    updated_at, origin_device_id, edit_id
+                )
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    "pl-1",
+                    stable_id,
+                    position,
+                    f"item-{position}",
+                    f"ord-{position}",
+                    _T0,
+                    _DEV_A,
+                    member_edit,
+                ),
+            )
+        conn.commit()
+
+        remap_track_children(conn, loser, survivor)
+        conn.execute("DELETE FROM tracks WHERE stable_id = ?", (loser,))
+        conn.commit()
+
+        rows = conn.execute(
+            "SELECT stable_id, edit_id FROM playlist_memberships WHERE playlist_id = 'pl-1' ORDER BY position"
+        ).fetchall()
+        assert rows == [(survivor, edit_id), (survivor, None)]
         assert (
             conn.execute(
                 "SELECT COUNT(*) FROM playlist_memberships WHERE stable_id = ?",
@@ -893,8 +968,46 @@ def test_isrc_merges_when_content_hash_is_absent(tmp_path: Path) -> None:
 
         assert result.quarantined == 0
         assert _track_ids(conn) == {_INCOMING_PK}
-        assert conn.execute(
-            "SELECT title FROM tracks WHERE stable_id = ?", (_INCOMING_PK,)
-        ).fetchone()[0] == "air"
+        assert conn.execute("SELECT title FROM tracks WHERE stable_id = ?", (_INCOMING_PK,)).fetchone()[0] == "air"
+    finally:
+        conn.close()
+
+
+@pytest.mark.requirement("CLOUDSYNC-12622b")
+def test_identity_collapse_captures_the_dropped_track_in_trash(tmp_path: Path) -> None:
+    """[if] identity collapse drops a track [then] the loser is in trash, [else stop]."""
+    import json
+
+    from apps.sync_hub import conflict_trash
+    from tests.cloudsync.test_conflict_trash import _capture_fixture, _trash_keys
+
+    conn, cfg, s3, now = _capture_fixture(tmp_path)
+    try:
+        _insert_identified_track(
+            conn,
+            _STORED_PK,
+            title="silver",
+            updated_at=_T0,
+            origin=_DEV_A,
+            content_hash=_HASH_A,
+        )
+        with conflict_trash.capture_pass(conn, cfg, s3, clock=lambda: now):
+            engine.hub_apply(
+                conn,
+                [
+                    _incoming_track(
+                        conn,
+                        _INCOMING_PK,
+                        title="air copy",
+                        content_hash=_HASH_A,
+                        updated_at=_T1,
+                    )
+                ],
+            )
+        reasons = {
+            json.loads(s3.store[(cfg.state_bucket, key)][0])["reason"]
+            for key in _trash_keys(s3, cfg.state_bucket)
+        }
+        assert conflict_trash.REASON_IDENTITY_COLLAPSE in reasons
     finally:
         conn.close()

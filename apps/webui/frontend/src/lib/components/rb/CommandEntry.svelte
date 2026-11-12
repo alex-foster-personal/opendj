@@ -24,11 +24,12 @@
 		if (r.intent === null) return `no match: "${r.transcript}"`;
 		if (r.blocked) return `${r.intent} blocked: ${r.reason ?? 'destructive intent'}`;
 		const query = typeof r.slots.query === 'string' ? ` "${r.slots.query}"` : '';
-		const fallback = browserSearchResult === null
-			? '; browser search result pending'
-			: browserSearchResult.fallback
-			? `; ${browserSearchResult.rowCount} result${browserSearchResult.rowCount === 1 ? '' : 's'} ignoring ${browserSearchResult.ignoredFilters.join(' and ')}`
-			: '';
+		const fallback =
+			browserSearchResult === null
+				? '; browser search result pending'
+				: browserSearchResult.fallback
+					? `; ${browserSearchResult.rowCount} result${browserSearchResult.rowCount === 1 ? '' : 's'} ignoring ${browserSearchResult.ignoredFilters.join(' and ')}`
+					: '';
 		return `${r.intent}${query}${r.reply ? ` -> ${r.reply}` : ''}${fallback}`;
 	}
 

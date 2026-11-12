@@ -92,6 +92,19 @@ test('neither claimed nor refused: generic error, logged', (t) => {
 	assert.equal(err.mock.callCount(), 1);
 });
 
+test('vocalsStatusHasRegions is true only when regions are non-empty', () => {
+	assert.equal(
+		mod.vocalsStatusHasRegions({
+			status: 'demucs',
+			fps: 10,
+			regions: [{ start_s: 0, end_s: 1, intensity: 1 }]
+		}),
+		true
+	);
+	assert.equal(mod.vocalsStatusHasRegions({ status: 'not_analyzed' }), false);
+	assert.equal(mod.vocalsStatusHasRegions({ status: 'no_vocals', fps: 10, regions: [] }), false);
+});
+
 test('requestTracksRefresh reaches subscribers until unsubscribed; a throwing one does not block others', (t) => {
 	t.mock.method(console, 'error', () => {});
 	const seen = [];

@@ -1,0 +1,492 @@
+{
+ "format": "opendj-panel-layout/1",
+ "device": "dj-tech-mix-101",
+ "display_name": "2-channel compact USB MIDI controller",
+ "units": "mm",
+ "panel": {
+  "w": 210.0,
+  "d": 73.5
+ },
+ "device_map": "DJ_TECH_MIX_101_MAP",
+ "sources": {
+  "panel_size": "DJ-Tech MIX-101 product datasheet: Dimension 210 x 140 x 73.5 mm (W x H x D); top panel W x D = 210 x 73.5 mm",
+  "wire": "apps/webui/frontend/src/lib/rb/midi/maps/dj-tech-mix-101.ts",
+  "positions": "measured trace of the ManualsLib top-panel figure, normalised for the renderer; reference: devices/dj-tech-mix-101/panel.reference.json (ADR-0137)"
+ },
+ "out_of_scope": [
+  "map hints only: SELECT 0x05, encoder pushes 0x0B/0x0D, jog touch 0x15, EQ detent notes, MIDI channel 0x0E, SW142/SW143",
+  "SCRATCH CC 0x15 shares the jog wheel; panel carries JOG 0x13",
+  "deck 2 shifted twins: same physical control while A/B is held",
+  "vendor wordmarks on the product photo"
+ ],
+ "controls": [
+  {
+   "id": "ab-shift",
+   "fig": "A/B",
+   "type": "button",
+   "label": "A/B",
+   "does": "Hold to target deck B on the shared transport section",
+   "x": 129.0,
+   "y": 60.5,
+   "w": 15.0,
+   "h": 8.0,
+   "section": "deck",
+   "midi": {
+    "ch": 1,
+    "kind": "note",
+    "id": 9
+   },
+   "shift_midi": null
+  },
+  {
+   "id": "play",
+   "fig": "PLAY",
+   "type": "button",
+   "label": "PLAY",
+   "does": "Play or pause deck 1; hold A/B for deck 2",
+   "x": 155.0,
+   "y": 60.5,
+   "w": 15.0,
+   "h": 8.0,
+   "section": "deck",
+   "midi": {
+    "ch": 1,
+    "kind": "note",
+    "id": 7
+   },
+   "shift_midi": null
+  },
+  {
+   "id": "cue",
+   "fig": "CUE",
+   "type": "button",
+   "label": "CUE",
+   "does": "Cue deck 1; hold A/B for deck 2",
+   "x": 181.0,
+   "y": 60.5,
+   "w": 15.0,
+   "h": 8.0,
+   "section": "deck",
+   "midi": {
+    "ch": 1,
+    "kind": "note",
+    "id": 8
+   },
+   "shift_midi": null
+  },
+  {
+   "id": "sync",
+   "fig": "SYNC",
+   "type": "button",
+   "label": "SYNC",
+   "does": "Sync deck 1; hold A/B for deck 2",
+   "x": 191.0,
+   "y": 54.0,
+   "w": 11.0,
+   "h": 6.0,
+   "section": "deck",
+   "midi": {
+    "ch": 1,
+    "kind": "note",
+    "id": 6
+   },
+   "shift_midi": null
+  },
+  {
+   "id": "key-1",
+   "fig": "KEY 1",
+   "type": "pad",
+   "label": "KEY 1",
+   "does": "Controller pad 1; hold A/B for deck 2",
+   "x": 125.0,
+   "y": 20.0,
+   "w": 15.0,
+   "h": 8.0,
+   "section": "performance",
+   "midi": {
+    "ch": 1,
+    "kind": "note",
+    "id": 3
+   },
+   "shift_midi": null
+  },
+  {
+   "id": "key-2",
+   "fig": "KEY 2",
+   "type": "pad",
+   "label": "KEY 2",
+   "does": "Controller pad 2; hold A/B for deck 2",
+   "x": 177.0,
+   "y": 20.0,
+   "w": 15.0,
+   "h": 8.0,
+   "section": "performance",
+   "midi": {
+    "ch": 1,
+    "kind": "note",
+    "id": 4
+   },
+   "shift_midi": null
+  },
+  {
+   "id": "mode-sampler",
+   "fig": "MODE",
+   "type": "button",
+   "label": "SAMPLER",
+   "does": "Sampler pad mode; hold A/B for deck 2",
+   "x": 191.0,
+   "y": 25.5,
+   "w": 11.0,
+   "h": 6.0,
+   "section": "performance",
+   "midi": {
+    "ch": 1,
+    "kind": "note",
+    "id": 17
+   },
+   "shift_midi": null
+  },
+  {
+   "id": "mode-loop",
+   "fig": "MODE",
+   "type": "button",
+   "label": "LOOP",
+   "does": "Auto-loop pad mode; hold A/B for deck 2",
+   "x": 191.0,
+   "y": 29.0,
+   "w": 11.0,
+   "h": 6.0,
+   "section": "performance",
+   "midi": {
+    "ch": 1,
+    "kind": "note",
+    "id": 18
+   },
+   "shift_midi": null
+  },
+  {
+   "id": "mode-fx",
+   "fig": "MODE",
+   "type": "button",
+   "label": "FX",
+   "does": "Instant FX pad mode; hold A/B for deck 2",
+   "x": 191.0,
+   "y": 33.0,
+   "w": 11.0,
+   "h": 6.0,
+   "section": "performance",
+   "midi": {
+    "ch": 1,
+    "kind": "note",
+    "id": 19
+   },
+   "shift_midi": null
+  },
+  {
+   "id": "mode-cue-vinyl",
+   "fig": "MODE",
+   "type": "button",
+   "label": "CUE/VINYL",
+   "does": "Hot-cue pad mode; hold A/B for deck 2",
+   "x": 191.0,
+   "y": 36.5,
+   "w": 11.0,
+   "h": 6.0,
+   "section": "performance",
+   "midi": {
+    "ch": 1,
+    "kind": "note",
+    "id": 20
+   },
+   "shift_midi": null
+  },
+  {
+   "id": "jog",
+   "fig": "JOG",
+   "type": "jog",
+   "label": "JOG",
+   "does": "Scratch or nudge; hold A/B for deck 2",
+   "x": 131.0,
+   "y": 29.5,
+   "w": 55.0,
+   "h": 29.0,
+   "section": "deck",
+   "midi": {
+    "ch": 1,
+    "kind": "cc",
+    "id": 19
+   },
+   "shift_midi": null
+  },
+  {
+   "id": "load",
+   "fig": "LOAD",
+   "type": "button",
+   "label": "LOAD",
+   "does": "Load the browsed track; hold A/B for deck 2",
+   "x": 152.5,
+   "y": 10.0,
+   "w": 11.0,
+   "h": 6.0,
+   "section": "browse",
+   "midi": {
+    "ch": 1,
+    "kind": "note",
+    "id": 12
+   },
+   "shift_midi": null
+  },
+  {
+   "id": "browse-encoder",
+   "fig": "BROWSE",
+   "type": "encoder",
+   "label": "BROWSE",
+   "does": "Scroll the library",
+   "x": 151.0,
+   "y": 6.5,
+   "w": 15.0,
+   "h": 8.0,
+   "section": "browse",
+   "midi": {
+    "ch": 1,
+    "kind": "cc",
+    "id": 17
+   },
+   "shift_midi": null
+  },
+  {
+   "id": "ch1-pfl",
+   "fig": "PFL",
+   "type": "button",
+   "label": "CH A PFL",
+   "does": "Cue channel A in headphones",
+   "x": 37.0,
+   "y": 5.5,
+   "w": 13.0,
+   "h": 7.0,
+   "section": "mixer",
+   "midi": {
+    "ch": 1,
+    "kind": "note",
+    "id": 1
+   },
+   "shift_midi": null
+  },
+  {
+   "id": "ch2-pfl",
+   "fig": "PFL",
+   "type": "button",
+   "label": "CH B PFL",
+   "does": "Cue channel B in headphones",
+   "x": 69.5,
+   "y": 5.5,
+   "w": 13.0,
+   "h": 7.0,
+   "section": "mixer",
+   "midi": {
+    "ch": 1,
+    "kind": "note",
+    "id": 2
+   },
+   "shift_midi": null
+  },
+  {
+   "id": "ch1-trim",
+   "fig": "GAIN",
+   "type": "knob",
+   "label": "CH A TRIM",
+   "does": "Channel A gain",
+   "x": 16.0,
+   "y": 7.0,
+   "w": 13.0,
+   "h": 7.0,
+   "section": "mixer",
+   "midi": {
+    "ch": 1,
+    "kind": "cc",
+    "id": 36
+   },
+   "shift_midi": null
+  },
+  {
+   "id": "ch1-eq-high",
+   "fig": "EQ",
+   "type": "knob",
+   "label": "CH A HI",
+   "does": "Channel A EQ high",
+   "x": 16.0,
+   "y": 20.0,
+   "w": 13.0,
+   "h": 7.0,
+   "section": "mixer",
+   "midi": {
+    "ch": 1,
+    "kind": "cc",
+    "id": 38
+   },
+   "shift_midi": null
+  },
+  {
+   "id": "ch1-eq-mid",
+   "fig": "EQ",
+   "type": "knob",
+   "label": "CH A MID",
+   "does": "Channel A EQ mid",
+   "x": 16.0,
+   "y": 33.5,
+   "w": 13.0,
+   "h": 7.0,
+   "section": "mixer",
+   "midi": {
+    "ch": 1,
+    "kind": "cc",
+    "id": 40
+   },
+   "shift_midi": null
+  },
+  {
+   "id": "ch1-eq-low",
+   "fig": "EQ",
+   "type": "knob",
+   "label": "CH A LOW",
+   "does": "Channel A EQ low",
+   "x": 16.0,
+   "y": 46.5,
+   "w": 13.0,
+   "h": 7.0,
+   "section": "mixer",
+   "midi": {
+    "ch": 1,
+    "kind": "cc",
+    "id": 42
+   },
+   "shift_midi": null
+  },
+  {
+   "id": "ch1-fader",
+   "fig": "FADER",
+   "type": "fader",
+   "label": "CH A",
+   "does": "Channel A level",
+   "x": 34.5,
+   "y": 21.5,
+   "w": 9.0,
+   "h": 31.0,
+   "section": "mixer",
+   "midi": {
+    "ch": 1,
+    "kind": "cc",
+    "id": 33
+   },
+   "shift_midi": null
+  },
+  {
+   "id": "ch2-trim",
+   "fig": "GAIN",
+   "type": "knob",
+   "label": "CH B TRIM",
+   "does": "Channel B gain",
+   "x": 91.5,
+   "y": 7.0,
+   "w": 13.0,
+   "h": 7.0,
+   "section": "mixer",
+   "midi": {
+    "ch": 1,
+    "kind": "cc",
+    "id": 37
+   },
+   "shift_midi": null
+  },
+  {
+   "id": "ch2-eq-high",
+   "fig": "EQ",
+   "type": "knob",
+   "label": "CH B HI",
+   "does": "Channel B EQ high",
+   "x": 91.5,
+   "y": 20.0,
+   "w": 13.0,
+   "h": 7.0,
+   "section": "mixer",
+   "midi": {
+    "ch": 1,
+    "kind": "cc",
+    "id": 39
+   },
+   "shift_midi": null
+  },
+  {
+   "id": "ch2-eq-mid",
+   "fig": "EQ",
+   "type": "knob",
+   "label": "CH B MID",
+   "does": "Channel B EQ mid",
+   "x": 91.5,
+   "y": 33.5,
+   "w": 13.0,
+   "h": 7.0,
+   "section": "mixer",
+   "midi": {
+    "ch": 1,
+    "kind": "cc",
+    "id": 41
+   },
+   "shift_midi": null
+  },
+  {
+   "id": "ch2-eq-low",
+   "fig": "EQ",
+   "type": "knob",
+   "label": "CH B LOW",
+   "does": "Channel B EQ low",
+   "x": 91.5,
+   "y": 46.5,
+   "w": 13.0,
+   "h": 7.0,
+   "section": "mixer",
+   "midi": {
+    "ch": 1,
+    "kind": "cc",
+    "id": 43
+   },
+   "shift_midi": null
+  },
+  {
+   "id": "ch2-fader",
+   "fig": "FADER",
+   "type": "fader",
+   "label": "CH B",
+   "does": "Channel B level",
+   "x": 76.0,
+   "y": 21.5,
+   "w": 9.0,
+   "h": 31.0,
+   "section": "mixer",
+   "midi": {
+    "ch": 1,
+    "kind": "cc",
+    "id": 34
+   },
+   "shift_midi": null
+  },
+  {
+   "id": "crossfader",
+   "fig": "XFADER",
+   "type": "crossfader",
+   "label": "CROSSFADER",
+   "does": "Blend channels A and B",
+   "x": 40.0,
+   "y": 57.5,
+   "w": 42.0,
+   "h": 6.0,
+   "section": "mixer",
+   "midi": {
+    "ch": 1,
+    "kind": "cc",
+    "id": 35
+   },
+   "shift_midi": null
+  }
+ ]
+}

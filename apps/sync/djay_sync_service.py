@@ -2,6 +2,11 @@
 
 HTTP routes under ``/api/v1/rb-djay-sync`` and ``python -m apps.sync`` call
 these functions directly. Nothing here shells out to a CLI.
+
+Writeback classification for plan/diff ``open_db()`` paths lives in
+``(private path)`` (``READ_ONLY_DB_HANDLES`` and
+``IMPORT_DIRECTION_ONLY``); live apply surfaces guard here via
+``rekordbox_writeback.WRITE_SURFACES``.
 """
 from __future__ import annotations
 

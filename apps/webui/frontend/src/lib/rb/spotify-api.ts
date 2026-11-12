@@ -4,7 +4,7 @@
  * never derives a purchase URL or infers a missing track from playlist counts.
  */
 
-import { ApiError, api, unwrap } from '$lib/api/client';
+import { ApiError, api, readApiErrorCode, unwrap } from '$lib/api/rb-http';
 
 /** Re-exported for spotify-account-api.ts, so the Spotify modules add one importer of the client, not two. */
 export { api, unwrap };
@@ -125,4 +125,87 @@ export async function getSpotifyPendingTracks(playlistId: string): Promise<Spoti
 		throw new Error('Spotify pending-track contract violation: expected a top-level list');
 	}
 	return body.map(_pendingTrack);
+}
+
+const IMPORT_PHASES = ['idle', 'running', 'done', 'error'] as const;
+export type SpotifyImportPhase = (typeof IMPORT_PHASES)[number];
+
+export interface SpotifyImportJob {
+	running: boolean;
+	phase: SpotifyImportPhase;
+	playlist_id: string | null;
+	started_at: number | null;
+	finished_at: number | null;
+	error: string | null;
+	error_code: string | null;
+	matched_count: number | null;
+	pending_count: number | null;
+	track_count: number | null;
+	playlist_name: string | null;
+}
+
+/** Thrown when a read-only share host rejects the import POST. */
+export class SpotifyShareReadOnlyError extends Error {
+	constructor() {
+		super('This share host is read-only');
+		this.name = 'SpotifyShareReadOnlyError';
+	}
+}
+
+function _nullableNumber(value: unknown, field: string): number | null {
+	if (value === null) return null;
+	return _expectNumber(value, field);
+}
+
+function _importJob(value: unknown): SpotifyImportJob {
+	if (!_isRecord(value)) throw new Error('Spotify import job contract violation: body');
+	const phaseRaw = _expectString(value.phase, 'phase');
+	if (!IMPORT_PHASES.includes(phaseRaw as SpotifyImportPhase)) {
+		throw new Error('Spotify import job contract violation: phase');
+	}
+	return {
+		running: value.running === true,
+		phase: phaseRaw as SpotifyImportPhase,
+		playlist_id: _expectNullableString(value.playlist_id, 'playlist_id'),
+		started_at: _nullableNumber(value.started_at, 'started_at'),
+		finished_at: _nullableNumber(value.finished_at, 'finished_at'),
+		error: _expectNullableString(value.error, 'error'),
+		error_code: _expectNullableString(value.error_code, 'error_code'),
+		matched_count: _nullableNumber(value.matched_count, 'matched_count'),
+		pending_count: _nullableNumber(value.pending_count, 'pending_count'),
+		track_count: _nullableNumber(value.track_count, 'track_count'),
+		playlist_name: _expectNullableString(value.playlist_name, 'playlist_name')
+	};
+}
+
+/** POST a live import; returns the running job (202). */
+export async function startSpotifyImport(
+	playlistId: string,
+	body: { confirm_playlist_id: string; force?: boolean }
+): Promise<SpotifyImportJob> {
+	if (playlistId.trim() === '') throw new Error('Spotify playlist id must not be empty');
+	try {
+		const response = await api.POST('/api/v1/spotify/playlists/{playlist_id}:import', {
+			params: { path: { playlist_id: playlistId } },
+			body: {
+				confirm_playlist_id: body.confirm_playlist_id,
+				force: body.force ?? false
+			}
+		});
+		return _importJob(response.data);
+	} catch (exc) {
+		if (
+			exc instanceof ApiError &&
+			exc.status === 403 &&
+			readApiErrorCode(exc) === 'SHARE_READ_ONLY'
+		) {
+			throw new SpotifyShareReadOnlyError();
+		}
+		throw exc;
+	}
+}
+
+/** Poll the one-slot import job. */
+export async function getSpotifyImportStatus(): Promise<SpotifyImportJob> {
+	return _importJob(await unwrap(api.GET('/api/v1/spotify/imports/status')));
 }

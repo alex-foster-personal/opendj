@@ -19,8 +19,9 @@
 		undoPlaylistFromChrome
 	} from '$lib/rb/playlist-history-chrome.svelte';
 	import LibrarySourceMenu from './LibrarySourceMenu.svelte';
+	import { libraryRecordingsTabEnabled } from '$lib/sets/recording-flag';
 
-	export type LibrarySourceTab = 'playlists' | 'taglists' | 'autolists' | 'usbs';
+	export type LibrarySourceTab = 'playlists' | 'taglists' | 'autolists' | 'usbs' | 'recordings';
 
 	let {
 		active,
@@ -36,12 +37,18 @@
 		showPlaylistTools?: boolean;
 	} = $props();
 
-	const tabs: { id: LibrarySourceTab; label: string; testid: string }[] = [
-		{ id: 'playlists', label: 'Playlists', testid: 'library-source-playlists' },
-		{ id: 'taglists', label: 'Taglists', testid: 'library-source-taglists' },
-		{ id: 'autolists', label: 'Autolists', testid: 'library-source-autolists' },
-		{ id: 'usbs', label: 'USBs', testid: 'library-source-usbs' }
-	];
+	const tabs: { id: LibrarySourceTab; label: string; testid: string }[] = $derived.by(() => {
+		const base: { id: LibrarySourceTab; label: string; testid: string }[] = [
+			{ id: 'playlists', label: 'Playlists', testid: 'library-source-playlists' },
+			{ id: 'taglists', label: 'Taglists', testid: 'library-source-taglists' },
+			{ id: 'autolists', label: 'Autolists', testid: 'library-source-autolists' },
+			{ id: 'usbs', label: 'USBs', testid: 'library-source-usbs' }
+		];
+		if (libraryRecordingsTabEnabled()) {
+			base.push({ id: 'recordings', label: 'Recordings', testid: 'library-source-recordings' });
+		}
+		return base;
+	});
 
 	let historyOpen = $state(false);
 	let historyAnchor = $state<HTMLButtonElement | null>(null);
@@ -105,7 +112,8 @@
 
 	function releaseHistoryOnBlur(event: FocusEvent): void {
 		const next = event.relatedTarget;
-		if (next instanceof Node && (historyAnchor?.contains(next) || historyPopover?.contains(next))) return;
+		if (next instanceof Node && (historyAnchor?.contains(next) || historyPopover?.contains(next)))
+			return;
 		releaseHistory();
 	}
 
@@ -147,7 +155,11 @@
 	);
 
 	const undoTitle: string = $derived(
-		undoButtonTitle(playlistHistoryChrome.entries, playlistHistoryChrome.cursor, playlistHistoryChrome.canUndo)
+		undoButtonTitle(
+			playlistHistoryChrome.entries,
+			playlistHistoryChrome.cursor,
+			playlistHistoryChrome.canUndo
+		)
 	);
 
 	const treeToggleTitle: string = $derived(
@@ -216,7 +228,14 @@
 			onkeydown={closeHistoryOnEscape}
 		>
 			<svg viewBox="0 0 24 24" width="12" height="12" aria-hidden="true">
-				<path d={UNDO_PATH} fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
+				<path
+					d={UNDO_PATH}
+					fill="none"
+					stroke="currentColor"
+					stroke-width="2"
+					stroke-linecap="round"
+					stroke-linejoin="round"
+				/>
 			</svg>
 		</button>
 		<!-- LIBUX-51: inside .source-toolbar (position: relative) so top: 100% anchors
@@ -276,7 +295,14 @@
 			onclick={() => redoPlaylistFromChrome()}
 		>
 			<svg viewBox="0 0 24 24" width="12" height="12" aria-hidden="true">
-				<path d={REDO_PATH} fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
+				<path
+					d={REDO_PATH}
+					fill="none"
+					stroke="currentColor"
+					stroke-width="2"
+					stroke-linecap="round"
+					stroke-linejoin="round"
+				/>
 			</svg>
 		</button>
 	</div>

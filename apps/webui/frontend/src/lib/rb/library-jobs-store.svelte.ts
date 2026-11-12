@@ -3,6 +3,7 @@
  * Hydrates GET /library-jobs; refetches on library_jobs invalidation.
  * Upserts real progress into job-progress (no asymptotic fake bar).
  */
+import { isPageGoingAway } from '$lib/api/lifecycle-abort';
 import { subscribeKind, subscribeResync } from '$lib/api/events-bus';
 import { jobProgress, type JobPhase } from '$lib/rb/job-progress.svelte';
 import {
@@ -46,7 +47,7 @@ async function hydrate(lane: LibraryJobLane): Promise<void> {
 		else lyrics = listing.items;
 		for (const item of listing.items) upsertReal(item);
 	} catch (exc) {
-		console.error('[library-jobs-store] hydrate failed', exc);
+		if (!isPageGoingAway()) console.error('[library-jobs-store] hydrate failed', exc);
 	}
 }
 

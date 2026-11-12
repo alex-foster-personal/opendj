@@ -12,7 +12,8 @@ the playlist writes (insert, membership replace, tombstone) moved to
 :mod:`apps.shared.state.writer_tracks` and
 :mod:`apps.shared.state.writer_playlists` (quality-gate file_size ratchet,
 round 4), as mixins :class:`StateWriter` composes below; pairing edge
-upsert/delete lives in :mod:`apps.shared.state.writer_pairings`. Both assume the
+upsert/delete lives in :mod:`apps.shared.state.writer_pairings`; play-order
+change events live in :mod:`apps.shared.state.writer_play_orders`. Both assume the
 infrastructure this class defines -- ``_tx``, ``_stamp``, ``_now_iso``,
 ``machine_id``, ``bus`` -- so neither is usable on its own. The constants
 and free helpers both mixins ALSO need (table names,
@@ -50,6 +51,7 @@ from .writer_common import (
     next_playlist_revision,
 )
 from .writer_pairings import _PairingWriterMixin
+from .writer_play_orders import _PlayOrderWriterMixin
 from .writer_playlists import _PlaylistWriterMixin
 from .writer_tracks import _TrackWriterMixin
 
@@ -91,6 +93,7 @@ class StateWriter(
     _PlaylistWriterMixin,
     _AvailabilityWriterMixin,
     _PairingWriterMixin,
+    _PlayOrderWriterMixin,
 ):
     """Write-serialised facade over the state DB.
 

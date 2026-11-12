@@ -615,6 +615,73 @@ test('null artwork availability identifies an unavailable reader without request
 			}
 		})
 	);
+	// TrackContextMenu loads tag catalog/types/assignments on mount
+	// (library-tags.svelte.ts `ensureTagsLoaded`). Same empty shapes as
+	// TrackTable.stories.ts.
+	await page.route('**/api/v1/mytags/catalog', (route) => route.fulfill({ json: { tags: [] } }));
+	await page.route('**/api/v1/tag-types', (route) => route.fulfill({ json: { rows: [] } }));
+	await page.route('**/api/v1/mytags/assignments', (route) => route.fulfill({ json: { tracks: {} } }));
+	// TrackTable starts the works overlay on mount (works-overlay.svelte.ts).
+	await page.route('**/api/v1/works/overlay', (route) =>
+		route.fulfill({ json: { works: {}, members: {}, classical: {} } })
+	);
+	await page.route('**/api/v1/works/suggestion-flags', (route) =>
+		route.fulfill({ json: { member_ids: [] } })
+	);
+	// RestartToUpdate polls app-update status every second (app-update.ts).
+	await page.route('**/api/v1/app-update/status', (route) =>
+		route.fulfill({
+			json: {
+				state: 'none',
+				pending: null,
+				running_git_sha_full: null,
+				running_app_version: null,
+				detail: null,
+				install: null
+			}
+		})
+	);
+	// ConnDotsStrip polls rekordbox detection and Spotify connect on mount.
+	const absentPath = { path: '', exists: false, size_bytes: null, modified_at: null };
+	await page.route('**/api/v1/setup/detect/rekordbox', (route) =>
+		route.fulfill({
+			json: {
+				installed: false,
+				live_db: absentPath,
+				share_dir: absentPath,
+				working_copy: absentPath,
+				plain_copy: absentPath,
+				key_available: false,
+				key_detail: 'not measured in the e2e gate',
+				blockers: [],
+				rekordbox_running: false,
+				import_source: null,
+				import_source_encrypted: null
+			}
+		})
+	);
+	await page.route('**/api/v1/spotify/account/connect', (route) =>
+		route.fulfill({ json: { phase: 'idle', detail: null } })
+	);
+	// BrowserPanel records session played on boot (session-played.svelte.ts).
+	await page.route('**/api/v1/session/played**', (route) => {
+		if (route.request().method() === 'GET') {
+			return route.fulfill({
+				json: {
+					session_id: null,
+					started_at_ms: null,
+					last_activity_ms: null,
+					idle_ms: 0,
+					expired: false,
+					expiry_ms: 3_600_000,
+					count: 0,
+					played_ids: [],
+					played: []
+				}
+			});
+		}
+		return route.fulfill({ json: { ok: true } });
+	});
 	// RecentlyDeletedFolder.svelte constructs a TreeRecentlyDeleted on mount,
 	// which fetches this eagerly in its constructor
 	// (tree-recently-deleted.svelte.ts -> playlist-deleted.ts, LIBMX-03). The

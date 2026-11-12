@@ -22,6 +22,7 @@ import { readJsHeapMB } from '$lib/rb/js-heap-reading';
 import { readPerfEvents } from '$lib/rb/perf-event-log';
 import { frameProbeRequested } from '$lib/rb/frame-probe-flag';
 import type { FrameProbe, FrameProbeWindow } from '$lib/rb/frame-probe';
+import type { LiveHandlesTotals, LiveHandlesWindow } from '$lib/rb/live-handles-probe';
 import type { DeckId } from '$lib/rb/deck-slots';
 
 export const SAMPLE_INTERVAL_MS = 10_000;
@@ -72,7 +73,8 @@ export function buildDeckSamples() {
 export function buildClientPerformanceSamplePayload(
 	clientSessionId: string,
 	clientSampleId: string,
-	frameProbe: FrameProbeWindow | null = null
+	frameProbe: FrameProbeWindow | null = null,
+	liveHandles: LiveHandlesTotals | null = null
 ): Record<string, unknown> {
 	return {
 		client_sample_id: clientSampleId,
@@ -90,8 +92,22 @@ export function buildClientPerformanceSamplePayload(
 		audio_health_level: audioHealthLevel(),
 		perf_event_count: readPerfEvents().length,
 		decks: buildDeckSamples(),
-		frame_probe: frameProbe
+		frame_probe: frameProbe,
+		// PERF-LEAK-11789: null unless ?perfprobe=1 armed the live handles probe.
+		live_handles: liveHandles
 	};
+}
+
+/** The four live handle totals (no by_site), or null when the probe is off. */
+export function readLiveHandleTotals(): LiveHandlesTotals | null {
+	try {
+		const snap = (window as unknown as LiveHandlesWindow).__mdtLiveHandles?.();
+		if (!snap) return null;
+		const { intervals, long_timeouts, window_listeners, rafs } = snap;
+		return { intervals, long_timeouts, window_listeners, rafs };
+	} catch {
+		return null;
+	}
 }
 
 function storageOrNull(): Pick<Storage, 'getItem'> | null {
@@ -137,7 +153,8 @@ export function startClientPerformanceSampling(
 		const body = buildClientPerformanceSamplePayload(
 			clientSessionId,
 			crypto.randomUUID(),
-			frameProbe?.take() ?? null
+			frameProbe?.take() ?? null,
+			readLiveHandleTotals()
 		);
 		void fetch(`${API_BASE}${SAMPLE_PATH}`, {
 			method: 'POST',

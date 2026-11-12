@@ -174,6 +174,7 @@ test('BrowserPanel routes keystrokes through the filter debounce', () => {
 	for (const call of [
 		"recordLibraryLoadTiming('all-tracks'",
 		"recordLibraryLoadTiming('playlist'",
+		"recordLibraryLoadTiming('smartlist'",
 		'recordPlaylistTreeReadyMs(',
 		'recordPlaylistSwitchFirstRowsMs(',
 		'recordCollectionSearchTiming(',

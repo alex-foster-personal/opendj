@@ -1,0 +1,9 @@
+{
+  "bytes": 1024,
+  "measured_main": 346364,
+  "measured_with_pr": 346588,
+  "sha": "e5749425",
+  "date": "Tue 10 Nov 2026",
+  "reason": "Issue #10807 adds XONE_K2_MAP (apps/webui/frontend/src/lib/rb/midi/maps/allen-and-heath-xone-k2.ts) through DEVICE_MAP_ENTRIES live glob, so the library graph carries the map module. Measured: same-host vite build of merge base 0fc9a31202 and this branch, +224 B gzip on library; ceiled to KiB",
+  "payback": "none planned; the growth is the device map's own code"
+}

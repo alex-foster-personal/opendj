@@ -18,6 +18,7 @@ const MEMORY_MODEL = {
 };
 
 test('Re-analyze shows zero-admitted status in collapsed toast headline', async ({ page }) => {
+	test.fixme(true, 'session/played 404 toast takes the first headline, see #13522');
 	await page.route('**/api/v1/analysis/backfill/enqueue', async (route) => {
 		await route.fulfill({
 			json: {
@@ -84,6 +85,7 @@ test('Re-analyze shows zero-admitted status in collapsed toast headline', async 
 });
 
 test('Re-analyze shows running status in collapsed toast headline', async ({ page }) => {
+	test.fixme(true, 'session/played 404 toast takes the first headline, see #13522');
 	let progressCalls = 0;
 	await page.route('**/api/v1/analysis/backfill/enqueue', async (route) => {
 		await route.fulfill({

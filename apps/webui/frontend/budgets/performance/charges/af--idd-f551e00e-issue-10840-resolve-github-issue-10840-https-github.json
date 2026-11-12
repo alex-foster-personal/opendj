@@ -1,0 +1,9 @@
+{
+  "bytes": 1024,
+  "measured_main": 425311,
+  "measured_with_pr": 425323,
+  "sha": "8d17653d93",
+  "date": "Tue 10 Nov 2026",
+  "reason": "Issue #10840 adds HERCULES_MP3_E2_MAP (hercules-dj-control-mp3-e2.ts) on the performance surface via eager midi map glob. Measured locally on 8d17653d93 vs the same tree without the map file: +12 B gzip on performance; ceiled to KiB",
+  "payback": "none planned; the growth is the device map on this surface"
+}

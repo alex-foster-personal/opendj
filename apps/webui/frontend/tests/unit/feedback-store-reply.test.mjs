@@ -51,9 +51,11 @@ test('addReply POSTs the replies path with operator author', async () => {
 	};
 	let seen;
 	let summaryGets = 0;
-	globalThis.fetch = async (request) => {
+	globalThis.fetch = async (request, init) => {
+		const url = typeof request === 'string' ? request : request.url;
+		const method = init?.method ?? (typeof request === 'string' ? 'GET' : request.method);
 		// A successful reply also refreshes the operator summary (PR #4094 Sol P2).
-		if (new URL(request.url).pathname === '/api/v1/feedback/comments/summary') {
+		if (new URL(url).pathname === '/api/v1/feedback/comments/summary') {
 			summaryGets++;
 			const zero = { total: 0, blocked: 0, fixed: 0, merged: 0, harvested: 0 };
 			return jsonResponse({
@@ -62,7 +64,7 @@ test('addReply POSTs the replies path with operator author', async () => {
 				fleet_correlation: 'ok'
 			});
 		}
-		seen = request;
+		seen = { url, method, json: async () => JSON.parse(String(init?.body ?? '{}')) };
 		return jsonResponse(pin);
 	};
 

@@ -97,8 +97,7 @@ function markedArtworkImg(src) {
 	return {
 		tagName: 'IMG',
 		src,
-		getAttribute: (name) =>
-			name === 'data-expected-resource-error' ? ARTWORK_404_MARK : null
+		getAttribute: (name) => (name === 'data-expected-resource-error' ? ARTWORK_404_MARK : null)
 	};
 }
 
@@ -375,11 +374,13 @@ test('a report raised during an in-flight POST is not erased by the flush', asyn
 
 test('valued artwork-404 mark skips resource-error only when confirm GET is ARTWORK_NOT_FOUND 404 (issue #8025)', async () => {
 	const posted = [];
-	globalThis.fetch = fetchWithArtworkConfirm(posted, () =>
-		new Response(
-			JSON.stringify({ detail: { code: 'ARTWORK_NOT_FOUND', message: 'no cover' } }),
-			{ status: 404, headers: { 'content-type': 'application/json' } }
-		)
+	globalThis.fetch = fetchWithArtworkConfirm(
+		posted,
+		() =>
+			new Response(JSON.stringify({ detail: { code: 'ARTWORK_NOT_FOUND', message: 'no cover' } }), {
+				status: 404,
+				headers: { 'content-type': 'application/json' }
+			})
 	);
 	reporting.installClientErrorReporting();
 	fire(
@@ -404,11 +405,13 @@ test('valued artwork-404 mark skips resource-error only when confirm GET is ARTW
 
 test('valued artwork-404 mark still POSTs when confirm GET is 500 (issue #8025)', async () => {
 	const posted = [];
-	globalThis.fetch = fetchWithArtworkConfirm(posted, () =>
-		new Response(JSON.stringify({ detail: 'boom' }), {
-			status: 500,
-			headers: { 'content-type': 'application/json' }
-		})
+	globalThis.fetch = fetchWithArtworkConfirm(
+		posted,
+		() =>
+			new Response(JSON.stringify({ detail: 'boom' }), {
+				status: 500,
+				headers: { 'content-type': 'application/json' }
+			})
 	);
 	reporting.installClientErrorReporting();
 	fire(
@@ -416,20 +419,28 @@ test('valued artwork-404 mark still POSTs when confirm GET is 500 (issue #8025)'
 		{ target: markedArtworkImg(MARKED_ARTWORK_URL), message: 'Failed to load resource' },
 		true
 	);
-	await waitFor(() => posted.some((row) => row.context?.resource === MARKED_ARTWORK_URL), '500 POST');
+	await waitFor(
+		() => posted.some((row) => row.context?.resource === MARKED_ARTWORK_URL),
+		'500 POST'
+	);
 	assert.equal(posted[0].kind, 'resource-error');
 });
 
 test('valued artwork-404 mark still POSTs when confirm GET rejects (issue #8025)', async () => {
 	const posted = [];
-	globalThis.fetch = fetchWithArtworkConfirm(posted, () => Promise.reject(new Error('network down')));
+	globalThis.fetch = fetchWithArtworkConfirm(posted, () =>
+		Promise.reject(new Error('network down'))
+	);
 	reporting.installClientErrorReporting();
 	fire(
 		'error',
 		{ target: markedArtworkImg(MARKED_ARTWORK_URL), message: 'Failed to load resource' },
 		true
 	);
-	await waitFor(() => posted.some((row) => row.context?.resource === MARKED_ARTWORK_URL), 'network POST');
+	await waitFor(
+		() => posted.some((row) => row.context?.resource === MARKED_ARTWORK_URL),
+		'network POST'
+	);
 	assert.equal(posted[0].kind, 'resource-error');
 });
 
@@ -452,4 +463,11 @@ test('presence-only expected-resource-error mark still POSTs resource-error (iss
 	fire('error', { target: presenceOnly, message: 'Failed to load resource' }, true);
 	await waitFor(() => posted.length === 1, 'presence-only POST');
 	assert.equal(posted[0].context.resource, MARKED_ARTWORK_URL);
+});
+
+test('BUG_REPORT_TEXT_MAX_BYTES matches engine scrub cap (issue #11173)', async () => {
+	const { BUG_REPORT_TEXT_MAX_BYTES } = await loadTypeScriptModule(
+		'src/lib/client-error-reporting.ts'
+	);
+	assert.equal(BUG_REPORT_TEXT_MAX_BYTES, 256 * 1024);
 });

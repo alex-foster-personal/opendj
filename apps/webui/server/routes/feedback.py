@@ -48,21 +48,24 @@ import uuid
 from datetime import UTC, datetime
 from functools import lru_cache
 from pathlib import Path
-from typing import Any, Literal
+from typing import Any
 
 from fastapi import APIRouter, HTTPException, Request
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field
 
+# AttachmentOut and CommentReplyIn are re-exported: feedback_attachments and
+# feedback_replies import them from here.
+from apps.opendj_pins.http import (
+    AttachmentOut,  # noqa: F401
+    BuildStampOut,
+    CommentCreateIn,
+    CommentListOut,
+    CommentOut,
+    CommentReplyIn,  # noqa: F401
+    PinEnvironmentOut,
+)
 from apps.shared.paths import DATA_DIR, PROJECT_ROOT
 from apps.webui.server.routes.auth import signed_in_user
-from apps.webui.server.routes.feedback_pin_ui_config import PinUiConfig
-
-from .feedback_pin_placement import (
-    MAX_NEARBY_ANCHORS,
-    PinElementOffset,
-    PinNearbyAnchor,
-    require_anchor_for_offset,
-)
 
 # Re-exported: the sibling feedback modules import these from here.
 from .feedback_storage import (  # noqa: F401
@@ -99,21 +102,6 @@ _BUILD_IDENTITY_ATTR = "build_identity"
 
 
 # ----- models -------------------------------------------------------------
-class BuildStampOut(BaseModel):
-    """Provenance of the build that recorded a piece of feedback.
-
-    Exactly one of the two shapes: a resolved (git_sha, built_at_utc, source)
-    triple, or an explicit error naming why resolution failed. Never blank.
-    """
-
-    model_config = ConfigDict(frozen=True)
-
-    git_sha: str | None = None
-    built_at_utc: str | None = None
-    source: str | None = None
-    error: str | None = None
-
-
 class TodoOut(BaseModel):
     """Response model: every field required, so the generated client types
     say what the server always sends (no `possibly undefined` on the UI)."""
@@ -155,146 +143,6 @@ class TodoPatchIn(BaseModel):
     done: bool | None = None
     chosen_option: str | None = None
     feedback: str | None = None
-
-
-class AttachmentOut(BaseModel):
-    """A screenshot pasted into a comment pin (issue #1333, part 2 of #928).
-
-    ``url`` is the GET route that streams the stored bytes back (relative,
-    same convention as ``issue_url`` on ``CommentOut``); ``content_type``,
-    ``size_bytes``, and ``content_hash`` are recorded once, at upload time, so
-    a caller can decide whether to fetch the bytes without a HEAD round trip
-    first. ``content_hash`` is a lowercase hex SHA-256 of the stored bytes for
-    a later asset-tier push; it is absent on attachments uploaded before issue
-    #11234. The bytes themselves live under
-    ``<data-dir>/feedback/attachments/`` - see ``feedback_attachments.py``, the
-    module that actually writes and serves them; this file only owns the small
-    record ``comments.json`` carries.
-    """
-
-    model_config = ConfigDict(frozen=True)
-
-    id: str
-    content_type: str
-    size_bytes: int
-    url: str
-    content_hash: str | None = None
-
-
-class CommentReplyOut(BaseModel):
-    model_config = ConfigDict(frozen=True)
-
-    id: str
-    author: Literal["operator", "agent"]
-    text: str
-    created_at: str
-    agent_kind: str | None = None
-
-
-class CommentReplyIn(BaseModel):
-    model_config = ConfigDict(frozen=True)
-
-    text: str = Field(min_length=1)
-    author: Literal["operator", "agent"] = "operator"
-    agent_kind: str | None = None
-
-
-class CommentOut(BaseModel):
-    model_config = ConfigDict(frozen=True)
-
-    id: str
-    x_pct: float
-    y_pct: float
-    anchor: str | None
-    page: str
-    text: str
-    created_at: str
-    build: BuildStampOut
-    # Pins created before issue #904 have no environment record.
-    environment: PinEnvironmentOut | None = None
-    # Pin lifecycle (issue #858): absent on pins created before Wed 2 Sep 2026.
-    # `blocked` is ONLY for credentials/auth, a destructive-action decision,
-    # or a genuine product fork that needs the maintainer. Unclear instructions are a
-    # question in agent_note, never blocked. Its agent_note starts with
-    # `auth: the maintainer must ...`, `destructive-action: the maintainer must ...`, or
-    # `product-fork: the maintainer must ...` to say what the maintainer must provide.
-    status: str | None = None  # open | issued | blocked | fixed | merged | harvested | archived
-    issue_url: str | None = None
-    agent_note: str | None = None
-    updated_at: str | None = None
-    fixed_in_sha: str | None = None
-    fixed_at: str | None = None
-    harvested_at: str | None = None
-    # Set when an agent bulk-harvest snapshots the pin without UI archive (#3981).
-    agent_snapshot_at: str | None = None
-    # PIN-AGENT-01: older operator pins retain their original identity when
-    # read through this newer contract.
-    author: Literal["operator", "agent"] = Field(default_factory=lambda: "operator")
-    agent_kind: str | None = None
-    # Screenshot pasted into the pin (issue #1333): absent until one is
-    # uploaded through POST /feedback/comments/{id}/attachment.
-    attachment: AttachmentOut | None = None
-    # Pin follow-up thread (issue #905): absent or empty on pins before FB-13.
-    replies: list[CommentReplyOut] = Field(default_factory=list)
-    # Placement against the UI (feedback_pin_placement.py): absent on older pins.
-    element_offset: PinElementOffset | None = None
-    nearby_anchors: list[PinNearbyAnchor] = Field(default_factory=list)
-
-
-class CommentListOut(BaseModel):
-    model_config = ConfigDict(frozen=True)
-
-    comments: list[CommentOut]
-
-
-class CommentCreateIn(BaseModel):
-    model_config = ConfigDict(frozen=True)
-
-    x_pct: float = Field(ge=0, le=100)
-    y_pct: float = Field(ge=0, le=100)
-    anchor: str | None = None
-    page: str = Field(min_length=1)
-    text: str = Field(min_length=1)
-    ui: Literal["chrome-loop", "packaged-app"]
-    viewport_width: int = Field(ge=1, le=100_000)
-    viewport_height: int = Field(ge=1, le=100_000)
-    author: Literal["operator", "agent"] = Field(default_factory=lambda: "operator")
-    agent_kind: str | None = None
-    # Pin 49f9d217: optional so an agent posting a pin over HTTP need not
-    # invent a UI it does not have.
-    ui_config: PinUiConfig | None = None
-    element_offset: PinElementOffset | None = None
-    nearby_anchors: list[PinNearbyAnchor] = Field(default_factory=list, max_length=MAX_NEARBY_ANCHORS)
-
-    @model_validator(mode="after")
-    def _offset_has_anchor(self) -> CommentCreateIn:
-        require_anchor_for_offset(self.anchor, self.element_offset)
-        return self
-
-
-class PinEnvironmentOut(BaseModel):
-    """Runtime facts needed to reproduce a pinned UI defect.
-
-    ``machine`` and ``release_version`` are already exposed by the running
-    daemon's settings/health surfaces. The browser contributes its UI kind,
-    viewport dimensions and a closed ``ui_config`` snapshot (see
-    ``PinUiConfig``): no user agent, URL query, file path or track title.
-
-    ``user_email`` is the one personal field (pin 49f9d217). The daemon stamps
-    it from the session cookie, the same identity ``GET /api/v1/auth/me``
-    already returns to this browser; a request body cannot set it. It is null
-    when nobody is signed in, and absent on pins older than this field.
-    """
-
-    model_config = ConfigDict(frozen=True)
-
-    ui: Literal["chrome-loop", "packaged-app"]
-    viewport_width: int
-    viewport_height: int
-    machine: str
-    release_version: str
-    user_email: str | None = None
-    ui_config: PinUiConfig | None = None
 
 
 class GeneralNoteOut(BaseModel):

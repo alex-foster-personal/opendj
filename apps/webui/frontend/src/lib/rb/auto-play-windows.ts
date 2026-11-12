@@ -1,9 +1,11 @@
 /**
  * Phrase-ranked mix-out / mix-in windows for AutoPlay Next (issue #11180).
  *
- * Mirrors ``apps/autodj/windows.py`` at the ANLZ layer: phrase starts only,
- * never invented when ``phrases`` is empty. Callers keep the B-16 / 8-beat
- * loop fallback from ``auto-play-next.ts`` when this module offers nothing.
+ * Aligns with ``apps/autodj/windows.py`` at the ANLZ layer: phrase starts only,
+ * never invented when ``phrases`` is empty. Zehren mix-in salience (0.4 x peak
+ * over the next 4 bars) is applied in Python only until per-bar energy is wired
+ * here. Callers keep the B-16 / 8-beat loop fallback from ``auto-play-next.ts``
+ * when this module offers nothing.
  */
 
 import type { AnlzBeat, AnlzPhrase, AnlzVocals } from '$lib/rb/anlz-types';

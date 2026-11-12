@@ -68,9 +68,7 @@ def _retry_swaps(attempt: Callable[[], dict[str, Any]]) -> dict[str, Any]:
     return attempt()
 
 
-def _resolve_waveform_inputs(
-    stable_id: str, part: str, request: Request
-) -> _ResolvedWaveform:
+def _resolve_waveform_inputs(stable_id: str, part: str, request: Request) -> _ResolvedWaveform:
     """Resolve the bundle and pin the parts the decode reads, under :func:`_read_barrier`.
 
     Where the parts cannot be pinned the envelope is built here, still

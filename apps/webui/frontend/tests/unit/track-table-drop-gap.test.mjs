@@ -18,7 +18,7 @@ before(async () => {
 		// Load the DOM-free gap helpers plus playlist-sections only; `track-table-support.ts`
 		// re-exports them but bundles analysis-issues and pulls job-progress.svelte, which breaks
 		// Node unit bundling for these assertions.
-		support = await loadTypeScriptModule('src/lib/components/rb/browser/track-table-drop-gap.ts');
+		support = await loadTypeScriptModule('src/lib/motion/row-insert-gap.ts');
 	} finally {
 		delete globalThis.$derived;
 	}

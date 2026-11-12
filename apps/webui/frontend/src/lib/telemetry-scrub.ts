@@ -28,6 +28,40 @@ const TOKENISH_RE =
 	/(?:bearer\s+)[a-z0-9._\-+=/]{8,}|sk-[a-z0-9]{10,}|ghp_[a-z0-9]{10,}|xox[baprs]-[a-z0-9-]{10,}|(?:api[_-]?key|access[_-]?token|refresh[_-]?token|secret|password|passwd|authorization)\s*[:=]\s*['"]?[^\s'"]{8,}/gi;
 export const FILTERED = '[filtered]';
 export const REDACTED = '[redacted]';
+/** Mirrors apps/shared/telemetry/scrub.py EXCEPTION_VALUE_WITHHELD. */
+export const EXCEPTION_VALUE_WITHHELD = '[exception message withheld]';
+/** Mirrors apps/shared/telemetry/scrub.py SAFE_EXCEPTION_TYPES (empty until audited). */
+/** Mirrors apps/shared/telemetry/scrub.py BREADCRUMB_TEXT_WITHHELD. */
+export const BREADCRUMB_TEXT_WITHHELD = '[breadcrumb text withheld]';
+/** Mirrors scrub.py LOG_TEXT_WITHHELD: the browser cannot prove message provenance, so it never travels. */
+export const LOG_TEXT_WITHHELD = '[log text withheld: template not proven a source literal]';
+/** Mirrors scrub.py LOG_ARG_WITHHELD: a log parameter travels only as a plain number or boolean. */
+export const LOG_ARG_WITHHELD = '<arg>';
+/** Mirrors scrub.py _FRAME_FIELDS: source context, abs_path and locals never travel. */
+const FRAME_FIELDS: ReadonlySet<string> = new Set([
+	'filename', 'module', 'function', 'lineno', 'colno', 'in_app', 'platform'
+]);
+/** Mirrors scrub.py _EXCEPTION_FIELDS and _MECHANISM_FIELDS: anything else is free text and is dropped. */
+const EXCEPTION_FIELDS: ReadonlySet<string> = new Set([
+	'type', 'module', 'value', 'stacktrace', 'raw_stacktrace', 'mechanism', 'thread_id'
+]);
+const MECHANISM_FIELDS: ReadonlySet<string> = new Set([
+	'type', 'handled', 'synthetic', 'exception_id', 'parent_id', 'is_exception_group', 'source'
+]);
+export const SAFE_EXCEPTION_TYPES: ReadonlySet<string> = new Set([]);
+/**
+ * Mirrors apps/shared/telemetry/__init__.py BROWSER_ERROR_NAMES: JavaScript's and
+ * the DOM's own error types. Any other `Error.name` is set by page code and may
+ * carry anything, so it travels only as BROWSER_ERROR_NAME_WITHHELD.
+ */
+export const BROWSER_ERROR_NAMES: ReadonlySet<string> = new Set([
+	'Error', 'TypeError', 'RangeError', 'ReferenceError', 'SyntaxError', 'EvalError',
+	'URIError', 'AggregateError', 'DOMException', 'AbortError', 'NotAllowedError',
+	'NotFoundError', 'NotSupportedError', 'InvalidStateError', 'SecurityError',
+	'QuotaExceededError', 'NetworkError', 'TimeoutError', 'EncodingError', 'DataError'
+]);
+/** Mirrors apps/shared/telemetry/__init__.py BROWSER_ERROR_NAME_WITHHELD. */
+export const BROWSER_ERROR_NAME_WITHHELD = '[error name withheld]';
 
 /** Context keys that may travel verbatim (scrub.py ALLOWED_CONTEXT_KEYS). */
 export const ALLOWED_CONTEXT_KEYS: ReadonlySet<string> = new Set([
@@ -47,7 +81,6 @@ export const ALLOWED_CONTEXT_KEYS: ReadonlySet<string> = new Set([
 	'engine_version',
 	'error_code',
 	'error_id',
-	'fallback_message',
 	'host',
 	'http_status',
 	'job_id',
@@ -137,28 +170,27 @@ function scrubContexts(contexts: Json): Json {
 	return out;
 }
 
-interface Frame {
-	filename?: unknown;
-	abs_path?: unknown;
-	vars?: unknown;
-	[key: string]: unknown;
+/** Each frame is rebuilt from FRAME_FIELDS, nothing else (scrub.py `_scrub_frames`). */
+function scrubFrames(stacktrace: unknown): void {
+	if (!isRecord(stacktrace)) return;
+	const frames = Array.isArray(stacktrace.frames) ? stacktrace.frames : [];
+	stacktrace.frames = frames.filter(isRecord).map((frame) => {
+		const out: Record<string, unknown> = {};
+		for (const key of Object.keys(frame)) if (FRAME_FIELDS.has(key)) out[key] = frame[key];
+		if (typeof out.filename === 'string') out.filename = scrubString(out.filename);
+		return out;
+	});
 }
 
-function scrubFrames(stacktrace: unknown): void {
-	if (!isRecord(stacktrace) || !Array.isArray(stacktrace.frames)) return;
-	for (const frame of stacktrace.frames as Frame[]) {
-		if (!isRecord(frame)) continue;
-		delete frame.vars;
-		if (typeof frame.filename === 'string') frame.filename = scrubString(frame.filename);
-		if (typeof frame.abs_path === 'string') frame.abs_path = scrubString(frame.abs_path);
-	}
+function isPlainParam(value: unknown): boolean {
+	return typeof value === 'number' || typeof value === 'boolean';
 }
 
 export interface ScrubbableEvent {
 	message?: unknown;
 	logentry?: unknown;
 	transaction?: unknown;
-	exception?: { values?: Array<{ value?: unknown; stacktrace?: unknown }> };
+	exception?: { values?: Array<{ type?: unknown; value?: unknown; stacktrace?: unknown; [key: string]: unknown }> };
 	breadcrumbs?: unknown;
 	request?: unknown;
 	user?: unknown;
@@ -258,7 +290,7 @@ export function scrubBreadcrumb<T extends Breadcrumb>(crumb: T): T {
 	if (typeof crumb.message === 'string') {
 		crumb.message = isDomBreadcrumb(crumb.category)
 			? scrubSelector(crumb.message)
-			: scrubString(crumb.message);
+			: BREADCRUMB_TEXT_WITHHELD;
 	}
 	if (crumb.data !== undefined && crumb.data !== null) crumb.data = allowlist(crumb.data);
 	return crumb;
@@ -274,7 +306,8 @@ interface RecordingEvent {
  * (type 5: the replay's own breadcrumbs and performance spans) passes here
  * before it is buffered. DOM breadcrumb messages get the selector scrub,
  * other messages the string scrub, recorded node attributes the attribute
- * scrub; an event that cannot be scrubbed is dropped (null), the same
+ * scrub (non-DOM text is withheld: no loader breadcrumb proves its text
+ * is code, so the fixed placeholder travels); an event that cannot be scrubbed is dropped (null), the same
  * fail-closed answer as `scrubEvent`.
  */
 export function scrubRecordingEvent<T extends RecordingEvent>(event: T): T | null {
@@ -285,7 +318,7 @@ export function scrubRecordingEvent<T extends RecordingEvent>(event: T): T | nul
 		if (typeof payload.message === 'string') {
 			payload.message = isDomBreadcrumb(payload.category)
 				? scrubSelector(payload.message)
-				: scrubString(payload.message);
+				: BREADCRUMB_TEXT_WITHHELD;
 		}
 		if (isRecord(payload.data)) scrubNodeAttributes(payload.data.node);
 		return event;
@@ -301,22 +334,42 @@ export function scrubRecordingEvent<T extends RecordingEvent>(event: T): T | nul
  */
 export function scrubEvent<T extends ScrubbableEvent>(event: T): T | null {
 	try {
-		if (typeof event.message === 'string') event.message = scrubString(event.message);
-		else if (isRecord(event.message) && typeof event.message.formatted === 'string')
-			event.message.formatted = scrubString(event.message.formatted);
+		// No loader message carries provenance, so the fixed placeholders travel
+		// (scrub.py `_scrub_message` / `_scrub_logentry` with nothing proven).
+		if (typeof event.message === 'string') event.message = LOG_TEXT_WITHHELD;
+		else if (isRecord(event.message)) event.message = { formatted: LOG_TEXT_WITHHELD };
 		if (isRecord(event.logentry)) {
-			for (const key of ['message', 'formatted']) {
-				if (typeof event.logentry[key] === 'string')
-					event.logentry[key] = scrubString(event.logentry[key] as string);
-			}
-			if (Array.isArray(event.logentry.params))
-				event.logentry.params = event.logentry.params.map((v) =>
-					typeof v === 'string' ? scrubString(v) : v
-				);
+			const logentry = event.logentry;
+			if ('message' in logentry || 'formatted' in logentry) logentry.message = LOG_TEXT_WITHHELD;
+			delete logentry.formatted;
+			if (Array.isArray(logentry.params))
+				logentry.params = logentry.params.map((v) => (isPlainParam(v) ? v : LOG_ARG_WITHHELD));
+			else if (logentry.params !== undefined && logentry.params !== null)
+				logentry.params = LOG_ARG_WITHHELD;
 		}
 		if (typeof event.transaction === 'string') event.transaction = scrubString(event.transaction);
 		for (const value of event.exception?.values ?? []) {
-			if (typeof value.value === 'string') value.value = scrubString(value.value);
+			const entry = value as Record<string, unknown>;
+			for (const key of Object.keys(entry)) if (!EXCEPTION_FIELDS.has(key)) delete entry[key];
+			if (isRecord(entry.mechanism)) {
+				const mechanism = entry.mechanism;
+				entry.mechanism = Object.fromEntries(
+					Object.entries(mechanism).filter(([key]) => MECHANISM_FIELDS.has(key))
+				);
+			}
+			if (entry.raw_stacktrace !== undefined) scrubFrames(entry.raw_stacktrace);
+			const excType = typeof value.type === 'string' ? value.type : '';
+			if (
+				SAFE_EXCEPTION_TYPES.has(excType) &&
+				typeof value.value === 'string'
+			) {
+				value.value = scrubString(value.value);
+			} else if (value.value !== undefined && value.value !== null) {
+				value.value = EXCEPTION_VALUE_WITHHELD;
+			}
+			// Error.name is page-chosen: only the platform's own names travel.
+			if (value.type !== undefined && !BROWSER_ERROR_NAMES.has(excType))
+				value.type = BROWSER_ERROR_NAME_WITHHELD;
 			scrubFrames(value.stacktrace);
 		}
 		const crumbs = isRecord(event.breadcrumbs) ? event.breadcrumbs.values : event.breadcrumbs;

@@ -47,6 +47,8 @@ export interface BeatGrid {
 export interface Signal {
 	left: Float32Array;
 	right: Float32Array;
+	/** When left and right share one buffer, how many channels signalBytes encodes. */
+	channels?: 1 | 2;
 	grid?: BeatGrid;
 }
 
@@ -287,6 +289,28 @@ function renderSnareTemplate(sampleRate: number, seed: number): Float64Array {
 	return tpl;
 }
 
+const kickTplByRate = new Map<number, Float64Array>();
+const hatTplByRateSeed = new Map<string, Float64Array>();
+
+function cachedKickTemplate(sampleRate: number): Float64Array {
+	let tpl = kickTplByRate.get(sampleRate);
+	if (tpl === undefined) {
+		tpl = renderKickTemplate(sampleRate);
+		kickTplByRate.set(sampleRate, tpl);
+	}
+	return tpl;
+}
+
+function cachedHatTemplate(sampleRate: number, seed: number): Float64Array {
+	const key = `${sampleRate}:${seed >>> 0}`;
+	let tpl = hatTplByRateSeed.get(key);
+	if (tpl === undefined) {
+		tpl = renderHatTemplate(sampleRate, seed);
+		hatTplByRateSeed.set(key, tpl);
+	}
+	return tpl;
+}
+
 function renderHatTemplate(sampleRate: number, seed: number): Float64Array {
 	const frames = Math.max(1, Math.round((HAT_MS * sampleRate) / 1000));
 	const tpl = new Float64Array(frames);
@@ -418,15 +442,16 @@ export function makeSignal(recipe: SignalRecipe): Signal {
 		case 'loop': {
 			const mix = new Float64Array(n);
 			grid = buildBeatGrid(n, sr, bpm, bars);
-			const kickTpl = renderKickTemplate(sr);
-			const hatTpl = renderHatTemplate(sr, seed);
+			const kickTpl = cachedKickTemplate(sr);
+			const hatTpl = cachedHatTemplate(sr, seed);
 			const downGain = 1;
 			const upGain = dbToGain(-accentDb);
-			const downSet = new Set(grid.downbeats_ms);
+			let beatIndex = 0;
 			for (const ms of grid.beats_ms) {
 				const at = hitIndex(ms, sr);
-				const g = downSet.has(ms) ? downGain : upGain;
+				const g = beatIndex % 4 === 0 ? downGain : upGain;
 				addTemplate(mix, kickTpl, at, g);
+				beatIndex += 1;
 			}
 			const eighthMs = 30000 / bpm;
 			const maxBeats = bars !== undefined ? bars * 4 : grid.beats_ms.length;
@@ -436,11 +461,16 @@ export function makeSignal(recipe: SignalRecipe): Signal {
 				if (idx >= n) break;
 				addTemplate(mix, hatTpl, idx, HAT_GAIN);
 			}
-			for (let i = 0; i < n; i++) store(left, i, mix[i]);
 			if (recipe.channels === 1) {
+				for (let i = 0; i < n; i++) store(left, i, mix[i]);
 				right = left;
 			} else {
-				right = left.slice();
+				right = new Float32Array(n);
+				for (let i = 0; i < n; i++) {
+					const v = mix[i];
+					store(left, i, v);
+					store(right, i, v);
+				}
 			}
 			break;
 		}
@@ -488,7 +518,7 @@ export function makeSignal(recipe: SignalRecipe): Signal {
 
 	assertPeak(recipe.kind, left, right);
 
-	const signal: Signal = { left, right };
+	const signal: Signal = { left, right, channels: recipe.channels };
 	if (grid !== undefined) {
 		signal.grid = grid;
 	}
@@ -497,8 +527,18 @@ export function makeSignal(recipe: SignalRecipe): Signal {
 
 export function signalBytes(signal: Signal): Uint8Array {
 	if (signal.left === signal.right) {
-		const { buffer, byteOffset, byteLength } = signal.left;
-		return new Uint8Array(buffer, byteOffset, byteLength).slice();
+		const leftBytes = new Uint8Array(
+			signal.left.buffer,
+			signal.left.byteOffset,
+			signal.left.byteLength
+		);
+		if (signal.channels === 2) {
+			const out = new Uint8Array(leftBytes.byteLength * 2);
+			out.set(leftBytes, 0);
+			out.set(leftBytes, leftBytes.byteLength);
+			return out;
+		}
+		return leftBytes.slice();
 	}
 	const out = new Uint8Array(signal.left.byteLength + signal.right.byteLength);
 	out.set(new Uint8Array(signal.left.buffer, signal.left.byteOffset, signal.left.byteLength), 0);

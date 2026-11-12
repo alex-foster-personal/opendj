@@ -44,10 +44,15 @@ from __future__ import annotations
 
 import bisect
 import itertools
+import math
 from collections.abc import Sequence
 from dataclasses import dataclass
+from typing import TYPE_CHECKING
 
 from apps.analysis_beatgrid.flags import REASON_NO_DOWNBEAT_ANCHOR
+
+if TYPE_CHECKING:
+    from apps.analysis_key.segments import BarGrid
 
 # ----- Named constants ----------------------------------------------------
 
@@ -85,6 +90,7 @@ __all__ = [
     "PhaseVote",
     "assign_bar_phase",
     "closed_bar_beat_lengths",
+    "distance_to_bar_line_bars",
     "downbeat_anchor_indices",
     "lock_bar_phase",
     "vote_bar_phase",
@@ -297,6 +303,19 @@ def vote_bar_phase(anchors: Sequence[int], bar_beats: int = BAR_BEATS) -> PhaseV
 def _lock_numbers(n_beats: int, chosen: int, bar_beats: int) -> list[int]:
     """Every beat numbered from the chosen phase anchor."""
     return [(index - chosen) % bar_beats + 1 for index in range(n_beats)]
+
+
+def distance_to_bar_line_bars(grid: BarGrid, t: float) -> float:
+    """Bar-coordinate distance from ``t`` to the nearest downbeat bar line.
+
+    Reuses ``giantsteps_scoring.bar_position_at`` so variable-tempo grids measure
+    phase in bar units, not seconds (segment coverage vs phase scoring, #11363).
+    """
+    from apps.analysis_key.giantsteps_scoring import bar_position_at
+
+    pos = bar_position_at(grid, t)
+    frac = pos - math.floor(pos)
+    return min(frac, 1.0 - frac)
 
 
 def lock_bar_phase(

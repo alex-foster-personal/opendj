@@ -74,6 +74,7 @@
 		segmentPath,
 		describeAutoPlayMode,
 		installTrackDragGhost,
+		libraryWheelScroll,
 		removeTrackDragGhost,
 		trackDragRefusal,
 		bpmHeatLabel,
@@ -109,15 +110,16 @@
 		rowWindow,
 		slotCountOf,
 		slotOfRow,
-		trackDropGapFromPointer,
-		trackDropGapTransform,
 		type EntriesMove,
 		type SectionHeader,
-		type TrackDropGap,
 		OPTIONAL_COLUMNS as OPTIONAL_COLUMN_IDS,
 		OPTIONAL_COLUMN_LABELS,
 		VersionStackPanel,
 		WorksModals,
+		applyTrackTableColumnFilters,
+		ColourColumnFunnelPopover,
+		trackColourSwatch,
+		trackTableFunnelStore,
 		classicalArtist,
 		classicalTitle,
 		composerOf,
@@ -137,16 +139,24 @@
 		type OptionalColumn
 	} from './track-table-support';
 	import { tagsCellFor } from '$lib/rb/library-tags.svelte';
+	import { filePathCellsFor } from '$lib/rb/file-path-cells';
+	import { revealTrack } from '$lib/rb/api-track-reveal';
+	import { isStreamingAvailability } from './streaming-availability';
 	import { classifyBpmCompatibility } from '$lib/rb/bpm-heat';
-	import { audioQualityHover, ensureLibraryScans, setGridFlagDismissed } from '$lib/rb/library-scans';
-	import { camelotKeysAreCompatible, DECK_IDS, deckStates, pitchRanges } from '$lib/rb/audio-engine.svelte';
+	import {
+		audioQualityHover,
+		ensureLibraryScans,
+		setGridFlagDismissed
+	} from '$lib/rb/library-scans';
+	import {
+		camelotKeysAreCompatible,
+		DECK_IDS,
+		deckStates,
+		pitchRanges
+	} from '$lib/rb/audio-engine.svelte';
 	import { KEY_SOURCE_HINT } from '$lib/player/key/camelot';
 	import { plannedTitle } from '$lib/rb/planned-explainers';
-	import {
-		previewCue,
-		previewCueRatioFor,
-		stopPreviewCue
-	} from '$lib/player/preview-cue.svelte';
+	import { previewCue, previewCueRatioFor, stopPreviewCue } from '$lib/player/preview-cue.svelte';
 	import type { AnlzData } from '$lib/rb/anlz-types';
 	import { autoPlayOrder } from '$lib/rb/auto-play.svelte';
 	import { autoPlayQueue } from '$lib/rb/autoplay-queue.svelte';
@@ -162,7 +172,12 @@
 	} from '$lib/rb/prefs.svelte';
 	import { quickDrawUi } from '$lib/rb/quick-draw-ui.svelte';
 	import { beginTrackDrag, endTrackDrag, TRACK_STABLE_MIME } from '$lib/rb/track-drag.svelte';
-	import { collapseDuration } from '$lib/motion/collapse';
+	import {
+		rowInsertGapDuration,
+		rowInsertGapFromPointer,
+		rowInsertGapTransform,
+		type RowInsertGap
+	} from '$lib/motion/row-insert-gap';
 	import TrackSectionRow from './TrackSectionRow.svelte';
 	import {
 		computeVirtualWindow,
@@ -172,8 +187,14 @@
 		scrollTopForRowIndex,
 		scrollTopForDeckLayoutAnchor
 	} from './virtual-window';
-	import { browseScrollTarget, nextMeasuredViewportHeight, shouldApplyBrowseScroll, shouldRestorePaneScroll } from './browse-scroll';
+	import {
+		browseScrollTarget,
+		nextMeasuredViewportHeight,
+		shouldApplyBrowseScroll,
+		shouldRestorePaneScroll
+	} from './browse-scroll';
 	import type { BrowserRow, RowProvider, SortDir, SortKey } from './pane-contract.svelte';
+	import { smartlistTruncationNote } from '$lib/rb/smartlist-preview';
 	import AutoPlayExplainer from './AutoPlayExplainer.svelte';
 	import AutoPlayRankCell from './AutoPlayRankCell.svelte';
 	import AutoPlayWalkthrough from './AutoPlayWalkthrough.svelte';
@@ -187,6 +208,8 @@
 		PreviewStripFiller,
 		stripLessIdsNear
 	} from '$lib/rb/preview-strip-fill';
+	import { applyRowAssetsRefresh } from '$lib/rb/library-row-assets-refresh';
+	import { subscribeLibraryRowAssetsRefreshRequest } from '$lib/rb/library-row-assets-refresh-request';
 	import QualityBadge from '../QualityBadge.svelte';
 	import RatingStars from './RatingStars.svelte';
 	import CommentCellEditor from './CommentCellEditor.svelte';
@@ -211,7 +234,10 @@
 		toggleTagTypeColumn,
 		toggleTagTypeInTags
 	} from './TrackContextMenu.svelte';
-	import TrackRowPopovers, { type PlaylistsMenuAnchor, type RelocateMenuAnchor } from './TrackRowPopovers.svelte';
+	import TrackRowPopovers, {
+		type PlaylistsMenuAnchor,
+		type RelocateMenuAnchor
+	} from './TrackRowPopovers.svelte';
 	import { trackCloudView } from './track-cloud-state';
 	import { libraryRowHoverTitle, rowRendersUnavailable } from './browser-row-wire';
 	import CloudStatusIcon from './CloudStatusIcon.svelte';
@@ -301,7 +327,9 @@
 	let cellEdit = $state<CellEditTarget | null>(null);
 
 	// The editor is fetched on first use, so the /performance bundle does not carry it.
-	let BpmKeyEditPopover = $state<Awaited<ReturnType<typeof loadBpmKeyEditPopover>>['default'] | null>(null);
+	let BpmKeyEditPopover = $state<
+		Awaited<ReturnType<typeof loadBpmKeyEditPopover>>['default'] | null
+	>(null);
 
 	function showCellEdit(target: CellEditTarget): void {
 		cellEdit = target;
@@ -436,10 +464,15 @@
 		const cached = keyMatchCache.get(key);
 		if (cached !== undefined) return cached;
 		let match: CompatibleKeyShift | null;
-		if (uiPrefs.next_only_filter && compatibleReferenceKey !== null && compatibleKeyChecked(uiPrefs.compatible_filter)) {
+		if (
+			uiPrefs.next_only_filter &&
+			compatibleReferenceKey !== null &&
+			compatibleKeyChecked(uiPrefs.compatible_filter)
+		) {
 			match = compatibleRowKeyShift(key, compatibleReferenceKey, uiPrefs.compatible_filter);
 		} else {
-			match = camelotKeysAreCompatible(key, keyCompatRef) && key !== null ? { shift: 0, key } : null;
+			match =
+				camelotKeysAreCompatible(key, keyCompatRef) && key !== null ? { shift: 0, key } : null;
 		}
 		keyMatchCache.set(key, match);
 		return match;
@@ -508,7 +541,10 @@
 	function openBpmDispute(e: MouseEvent, row: BrowserRow): void {
 		cancelBpmDisputeClose();
 		const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
-		bpmDispute = { row, anchor: { left: rect.left, top: rect.top, width: rect.width, height: rect.height } };
+		bpmDispute = {
+			row,
+			anchor: { left: rect.left, top: rect.top, width: rect.width, height: rect.height }
+		};
 	}
 
 	async function pickBpmAlternative(row: BrowserRow, alt: BpmAlternative): Promise<void> {
@@ -527,7 +563,10 @@
 	}
 
 	function keyCellInert(row: BrowserRow): boolean {
-		return (row.key === null || row.key === undefined) && (row.key_status === 'failed' || row.key_status === 'missing');
+		return (
+			(row.key === null || row.key === undefined) &&
+			(row.key_status === 'failed' || row.key_status === 'missing')
+		);
 	}
 
 	/** ONE notation for every row (ui-prefs key_notation), never the stored spelling. */
@@ -544,13 +583,22 @@
 	// The key cell is a hover-card host (one explainer per control), so the
 	// LIBUX-8682 clash reason rides the card note beside the KEY-CELL-01 reason.
 	function keyHoverNote(row: BrowserRow): string | null {
-		const parts = [keyCellInert(row) ? keyCellTitle(row) : null, clashEdges.get(row.stable_id) ?? null];
+		const parts = [
+			keyCellInert(row) ? keyCellTitle(row) : null,
+			clashEdges.get(row.stable_id) ?? null
+		];
 		const present = parts.filter((part): part is string => part !== null);
 		return present.length === 0 ? null : present.join('\n');
 	}
 
 	function keyCellTitle(row: BrowserRow): string {
-		if (row.key !== null && row.key !== undefined && row.key_source && KEY_SOURCE_HINT[row.key_source] && row.key_status !== 'ok') {
+		if (
+			row.key !== null &&
+			row.key !== undefined &&
+			row.key_source &&
+			KEY_SOURCE_HINT[row.key_source] &&
+			row.key_status !== 'ok'
+		) {
 			return `${camelotKeyHoverLabel(row.key) ?? row.key} (${KEY_SOURCE_HINT[row.key_source]}; our analysis: ${row.key_reason ?? row.key_status})`;
 		}
 		if (row.key_status === 'failed') {
@@ -661,8 +709,13 @@
 	 * failure rejects, and the popover that asked reports it. */
 	async function _setGridFlagDismissed(row: BrowserRow, dismissed: boolean): Promise<void> {
 		const result = await setGridFlagDismissed(row.stable_id, dismissed);
-		if (row.grid_quality) row.grid_quality = { ...row.grid_quality, dismissed: result.dismissed };
-		if (row.etag !== '') row.etag = result.etag;
+		onpatchrow?.(row.stable_id, (held) => ({
+			...held,
+			...(held.grid_quality
+				? { grid_quality: { ...held.grid_quality, dismissed: result.dismissed } }
+				: {}),
+			...(held.etag !== '' ? { etag: result.etag } : {})
+		}));
 	}
 
 	function _jobRowStyle(stableId: string): string | undefined {
@@ -719,6 +772,7 @@
 		onpreviewseek,
 		onrate,
 		oncomment = undefined,
+		onpatchrow = undefined,
 		onrefused,
 		onrowvisible,
 		onremoverow,
@@ -752,7 +806,8 @@
 		onremovefromlibrary = undefined,
 		onrelocated = undefined,
 		oneditrefresh = undefined,
-		onaddtoplaylist = undefined
+		onaddtoplaylist = undefined,
+		shuffleDeps = null
 	}: {
 		/** Read contract: { rows, total, truncated, fetchWindow } - see
 		 * pane-contract.svelte.ts. */
@@ -859,6 +914,8 @@
 		onrate: (row: BrowserRow, next: number) => void;
 		/** LIBUX-56: save the Comment cell editor's text; absent means the comment is read only. */
 		oncomment?: ((row: BrowserRow, next: string) => Promise<void>) | undefined;
+		/** Publish a whole-row replacement into pane raw row arrays. */
+		onpatchrow?: (stable_id: string, map: (row: BrowserRow) => BrowserRow) => void;
 		onrowvisible: (row: BrowserRow) => void;
 		/** Remove this row's membership position from the playlist. */
 		onremoverow?: (row: BrowserRow) => void;
@@ -887,6 +944,8 @@
 		oneditrefresh?: (() => void) | undefined;
 		/** Open the add-to-playlist picker for the selected tracks. */
 		onaddtoplaylist?: (stableIds: string[]) => void;
+		/** Playlist # header Shuffle (issue #11325). */
+		shuffleDeps?: import('./track-context-menu').PlaylistShuffleDeps | null;
 		/** Genre chip / post-filter gestures. */
 		ongenrefilter?: (mode: 'strict' | 'loose' | 'clear' | 'undo', tag?: string) => void;
 		/** Epoch ms until which library dbl/triple remap to clear/undo. */
@@ -920,9 +979,7 @@
 	} = $props();
 
 	const keyCompatRef = $derived(
-		uiPrefs.next_only_filter && compatibleReferenceKey !== null
-			? compatibleReferenceKey
-			: masterKey
+		uiPrefs.next_only_filter && compatibleReferenceKey !== null ? compatibleReferenceKey : masterKey
 	);
 	const masterKeyColor = $derived(camelotKeyColor(keyCompatRef));
 
@@ -1047,13 +1104,21 @@
 			: Object.keys(row.fx).sort().join(',');
 	}
 
-	async function editRequest(path: string, method: 'POST' | 'PATCH' | 'DELETE', body?: object): Promise<void> {
+	async function editRequest(
+		path: string,
+		method: 'POST' | 'PATCH' | 'DELETE',
+		body?: object
+	): Promise<void> {
 		const response = await fetch(path, {
 			method,
-			headers: { 'X-Undo-Session': 'webui-edits', ...(body === undefined ? {} : { 'Content-Type': 'application/json' }) },
+			headers: {
+				'X-Undo-Session': 'webui-edits',
+				...(body === undefined ? {} : { 'Content-Type': 'application/json' })
+			},
 			...(body === undefined ? {} : { body: JSON.stringify(body) })
 		});
-		if (!response.ok) throw new Error(`${method} ${path}: ${response.status} ${await response.text()}`);
+		if (!response.ok)
+			throw new Error(`${method} ${path}: ${response.status} ${await response.text()}`);
 		oneditrefresh?.();
 	}
 
@@ -1068,7 +1133,8 @@
 		if (fxText === null) return;
 		try {
 			const fx = JSON.parse(fxText) as unknown;
-			if (typeof fx !== 'object' || fx === null || Array.isArray(fx)) throw new Error('FX must be a JSON object');
+			if (typeof fx !== 'object' || fx === null || Array.isArray(fx))
+				throw new Error('FX must be a JSON object');
 			await editRequest('/api/v1/edits', 'POST', {
 				source_track_id: row.stable_id,
 				label,
@@ -1096,9 +1162,13 @@
 		if (fxText === null) return;
 		try {
 			const fx = JSON.parse(fxText) as unknown;
-			if (typeof fx !== 'object' || fx === null || Array.isArray(fx)) throw new Error('FX must be a JSON object');
+			if (typeof fx !== 'object' || fx === null || Array.isArray(fx))
+				throw new Error('FX must be a JSON object');
 			await editRequest(`/api/v1/edits/${encodeURIComponent(editId)}`, 'PATCH', {
-				label, in_ms: Number(inText), out_ms: Number(outText), fx
+				label,
+				in_ms: Number(inText),
+				out_ms: Number(outText),
+				fx
 			});
 		} catch (error) {
 			onrefused?.(error instanceof Error ? error.message : String(error));
@@ -1107,14 +1177,14 @@
 
 	async function deleteVirtualEdit(row: BrowserRow): Promise<void> {
 		const editId = row.edit_id;
-		if (!editId || !window.confirm(`Delete virtual edit "${row.edit_label ?? row.title ?? ''}"?`)) return;
+		if (!editId || !window.confirm(`Delete virtual edit "${row.edit_label ?? row.title ?? ''}"?`))
+			return;
 		try {
 			await editRequest(`/api/v1/edits/${encodeURIComponent(editId)}`, 'DELETE');
 		} catch (error) {
 			onrefused?.(error instanceof Error ? error.message : String(error));
 		}
 	}
-
 
 	function genreTagStyle(row: BrowserRow, tag: string): string | undefined {
 		const color = row.genre_family_color ?? genreHoverColor(tag);
@@ -1246,7 +1316,8 @@
 		return highlightSpans(text ?? '', findQuery);
 	}
 
-	const rows = $derived(provider.rows);
+	const paneColumnFilters = $derived(trackTableFunnelStore.get(String(restoreKey)));
+	const rows = $derived(applyTrackTableColumnFilters(provider.rows, paneColumnFilters));
 	const maxRowOrder = $derived(rows.reduce((max, row) => Math.max(max, row.order), 0));
 	$effect(() => {
 		const compact = compactUtilityWidths(maxRowOrder);
@@ -1273,6 +1344,7 @@
 		};
 	});
 	const selectedOrderSet = $derived(new Set(selectedOrders));
+	const multiRowSelection = $derived(selectedOrderSet.size > 1);
 	const rowHeight = $derived(
 		uiPrefs.library_density === 'cosy' ? ROW_HEIGHT_COSY : ROW_HEIGHT_COMPACT
 	);
@@ -1286,11 +1358,17 @@
 		) {
 			return;
 		}
-		if (isSetSkipShortcut(event) && setTargetState.playlistId !== null && event.target === event.currentTarget) {
+		if (
+			isSetSkipShortcut(event) &&
+			setTargetState.playlistId !== null &&
+			event.target === event.currentTarget
+		) {
 			// LIBUX-8679: Cmd/Ctrl+Shift+X toggles "Skip in set" on the row (or its selection).
 			event.preventDefault();
 			event.stopPropagation();
-			void setTargetState.toggleSkip(selectedOrders.includes(row.order) ? [...selectedIds] : [row.stable_id]);
+			void setTargetState.toggleSkip(
+				selectedOrders.includes(row.order) ? [...selectedIds] : [row.stable_id]
+			);
 			return;
 		}
 		const action = trackTableKeyAction(event);
@@ -1445,9 +1523,7 @@
 	// ----- LIBUX-54 hidden columns (chooser lives in ColumnChooserMenu) -----
 	const hiddenCols = $derived(new Set(uiPrefs.library_hidden_columns));
 	const optionalCols = $derived(worksView.optionalColumns);
-	const optionalOff = $derived(
-		OPTIONAL_COLUMN_IDS.filter((col) => !optionalCols.includes(col))
-	);
+	const optionalOff = $derived(OPTIONAL_COLUMN_IDS.filter((col) => !optionalCols.includes(col)));
 	/** colWidths with hidden columns at 0: what the table width and the
 	 * MASTER fold badge are summed from. */
 	const shownWidths = $derived(
@@ -1539,8 +1615,7 @@
 		const el = wrapEl;
 		const anchor = deckLayoutAnchor;
 		if (el === null || anchor === null) return;
-		const effectiveViewportHeight =
-			viewportHeight > 0 ? viewportHeight : el.clientHeight;
+		const effectiveViewportHeight = viewportHeight > 0 ? viewportHeight : el.clientHeight;
 		if (effectiveViewportHeight <= 0) return;
 		const next = scrollTopForDeckLayoutAnchor({
 			rowIndex: anchor.rowIndex,
@@ -1586,11 +1661,19 @@
 	// IOPIN-01 keep-in-view: apply only on new browseScroll.revision (LIBUX-2606).
 	$effect(() => {
 		const request = browseScroll;
-		if (request === null || !shouldApplyBrowseScroll(request, lastAppliedBrowseScrollRevision)) return;
+		if (request === null || !shouldApplyBrowseScroll(request, lastAppliedBrowseScrollRevision))
+			return;
 		const el = wrapEl;
 		if (el === null) return;
 		const target = untrack(() =>
-			browseScrollTarget({ request, rows, viewportHeight, rowHeight, headerOffsetPx: TRACK_TABLE_THEAD_PX, slotOfRow: (index) => slotOfRow(sectionHeaders, index) })
+			browseScrollTarget({
+				request,
+				rows,
+				viewportHeight,
+				rowHeight,
+				headerOffsetPx: TRACK_TABLE_THEAD_PX,
+				slotOfRow: (index) => slotOfRow(sectionHeaders, index)
+			})
 		);
 		if (target === null) return;
 		el.scrollTop = target;
@@ -1670,7 +1753,11 @@
 	const clashEdges = $derived(
 		setTargetState.summary === null
 			? new Map<string, string>()
-			: grossClashEdges(rows.map((r) => r.stable_id), setTargetState.skipIds, setTargetState.summary.clashes)
+			: grossClashEdges(
+					rows.map((r) => r.stable_id),
+					setTargetState.skipIds,
+					setTargetState.summary.clashes
+				)
 	);
 	const renderedRowCapacity = $derived(
 		Math.min(
@@ -1706,7 +1793,8 @@
 		onStrip: (id, wire) => {
 			filledStrips[id] = decodePreviewStrip(wire.preview_b64, wire.preview_max);
 		},
-		onError: (error) => console.warn('[preview-strips] batch read failed; retrying with backoff', error),
+		onError: (error) =>
+			console.warn('[preview-strips] batch read failed; retrying with backoff', error),
 		now: () => Date.now(),
 		setTimer: (fn, ms) => setTimeout(fn, ms),
 		clearTimer: (handle) => clearTimeout(handle as ReturnType<typeof setTimeout>)
@@ -1723,6 +1811,16 @@
 		untrack(() => {
 			stripFiller.reopen(missing);
 			stripFiller.setVisible(missing);
+		});
+	});
+	$effect(() => {
+		return subscribeLibraryRowAssetsRefreshRequest((ids) => {
+			applyRowAssetsRefresh(
+				ids,
+				untrack(() => rows),
+				rowAssetsSettled,
+				(stable_ids) => stripFiller.nudgeRowAssets(stable_ids)
+			);
 		});
 	});
 
@@ -1786,7 +1884,12 @@
 	/** MASTER badge centre. Beside the PAIR arrow it moves as one group with the arrow,
 	 * so the arrow keeps its 6px gap to MASTER's right at the wrap's right edge (PAIR-09). */
 	const masterFoldLeftPx = $derived.by(() => {
-		const centre = masterFoldCenterPx(shownWidths, liveScrollLeft, wrapWidth, masterFoldBadgeWidth / 2);
+		const centre = masterFoldCenterPx(
+			shownWidths,
+			liveScrollLeft,
+			wrapWidth,
+			masterFoldBadgeWidth / 2
+		);
 		if (!masterFoldSameEdge || wrapWidth <= 0) return centre;
 		return pairFoldGroupMasterCenterPx({
 			masterCenterPx: centre,
@@ -1942,14 +2045,14 @@
 	// so no row re-lays-out on a frame. The gap stores the drop target computed
 	// from the same slot, so preview and drop cannot diverge.
 	let dragBlock = $state<{ item_ids: string[]; section_ids: string[] } | null>(null);
-	let dropGap = $state<TrackDropGap | null>(null);
+	let dropGap = $state<RowInsertGap | null>(null);
 	/** Keep the last gap's policy while its transform animates closed. */
 	let gapMotionRows = $state(1);
 	let tbodyEl = $state<HTMLTableSectionElement | null>(null);
 	const draggedItems = $derived(new Set(dragBlock?.item_ids ?? []));
 
 	function _slotShift(slot: number): string | undefined {
-		return dropGap === null ? undefined : trackDropGapTransform(slot, dropGap);
+		return dropGap === null ? undefined : rowInsertGapTransform(slot, dropGap);
 	}
 
 	function _dragGapCount(block: { item_ids: string[]; section_ids: string[] }): number {
@@ -1994,7 +2097,7 @@
 		const bodyTop = tbodyEl.getBoundingClientRect().top;
 		const draggedTrackCount = _dragGapCount(dragBlock);
 		gapMotionRows = draggedTrackCount;
-		dropGap = trackDropGapFromPointer({
+		dropGap = rowInsertGapFromPointer({
 			pointerY: event.clientY - bodyTop,
 			rowHeight,
 			slotCount,
@@ -2133,10 +2236,8 @@
 	}
 
 	function _stackOnto(dragged: string[], row: BrowserRow): void {
-		const action = shiftDropAction(
-			dragged,
-			row.stable_id,
-			(id) => primaryWorkId(worksView.overlay, id)
+		const action = shiftDropAction(dragged, row.stable_id, (id) =>
+			primaryWorkId(worksView.overlay, id)
 		);
 		if (action === 'nothing') return;
 		if (action === 'already') {
@@ -2144,9 +2245,9 @@
 			return;
 		}
 		const stacked = [...new Set([...dragged, row.stable_id])];
-		worksModals?.stackTracks(stacked, row.title ?? '').catch((exc: unknown) =>
-			reportWorksFailure('link failed', exc)
-		);
+		worksModals
+			?.stackTracks(stacked, row.title ?? '')
+			.catch((exc: unknown) => reportWorksFailure('link failed', exc));
 	}
 
 	function onRowDragStart(event: DragEvent, row: BrowserRow): void {
@@ -2169,9 +2270,7 @@
 			return;
 		}
 		const ids =
-			selectedOrderSet.has(row.order) && selectedIds.length > 1
-				? selectedIds
-				: [row.stable_id];
+			selectedOrderSet.has(row.order) && selectedIds.length > 1 ? selectedIds : [row.stable_id];
 		_dragTrackIds = [...ids];
 		// The MIME is still set for cross-app interop; drop targets accept on
 		// the in-app state because WKWebView hides it during dragover.
@@ -2194,7 +2293,10 @@
 		// with the drag, so a drop onto a deck loads it shifted like a double-click.
 		// Every selected id gets an entry: a multi-row drop loads the first of them.
 		if (reorderBlocked !== null) _showReorderHint();
-		beginTrackDrag(ids, draggedDeckRows(ids, rows, (r) => keyMatch(r.key)?.shift ?? 0, row));
+		beginTrackDrag(
+			ids,
+			draggedDeckRows(ids, rows, (r) => keyMatch(r.key)?.shift ?? 0, row)
+		);
 	}
 
 	/** LIBUX-8676: the last plain press on a row (row-click-intent.ts). */
@@ -2226,7 +2328,6 @@
 		}
 		_rowPress = null;
 	}
-
 
 	function onGripDragStart(event: DragEvent, row: BrowserRow): void {
 		event.stopPropagation();
@@ -2309,11 +2410,19 @@
 	<th
 		class={`h-${key} sortable`}
 		style={`width:${colWidths[col]}px`}
-		use:columnExplainer={{ text: columnHeaderTitle(col, `Sort by ${label} (asc -> desc -> clear)`) }}
+		use:columnExplainer={{
+			text: columnHeaderTitle(col, `Sort by ${label} (asc -> desc -> clear)`)
+		}}
 		onclick={(e) => {
 			if ((e.target as HTMLElement).closest('.col-resize')) return;
 			onsort(key);
 		}}
+		oncontextmenu={col === 'order'
+			? (e) => {
+					e.stopPropagation();
+					trackContextMenu?.openOrderHeaderMenu(e);
+				}
+			: undefined}
 	>
 		<span class="th-label">
 			<span>{label}</span>
@@ -2384,6 +2493,7 @@
 			relocateMenu = { x, y, stableId: row.stable_id, title: row.title };
 		}}
 		oneditcomment={oncomment ? (row) => openCommentEdit(null, row) : undefined}
+		{shuffleDeps}
 	/>
 	<!-- TrackPlaylistsPopover and RelocatePopover, fetched by the pick that opens them. -->
 	<TrackRowPopovers bind:playlistsMenu bind:relocateMenu {onrelocated} />
@@ -2454,8 +2564,9 @@
 	{/if}
 	<div
 		class="table-wrap"
-		style:--tt-gap-ms={`${collapseDuration(gapMotionRows, false)}ms`}
+		style:--tt-gap-ms={`${rowInsertGapDuration(gapMotionRows, false)}ms`}
 		bind:this={wrapEl}
+		use:libraryWheelScroll
 		onscroll={(e) => {
 			const top = e.currentTarget.scrollTop;
 			liveScrollTop = top;
@@ -2471,7 +2582,7 @@
 			data-testid="track-table"
 			class={hiddenColumnClasses(uiPrefs.library_hidden_columns)}
 			class:rb-pair-pulses={pairPulses}
-			class:rb-multi-selected={selectedOrderSet.size > 1}
+			class:rb-multi-selected={multiRowSelection}
 			style={`width:${tableWidthPx}px`}
 			role="grid"
 			aria-label="Tracks"
@@ -2494,6 +2605,7 @@
 				{#if !hiddenCols.has('plays')}<col style={`width:${colWidths.plays}px`} />{/if}
 				<col style={`width:${colWidths.last}px`} />
 				{#if !hiddenCols.has('rating')}<col style={`width:${colWidths.rating}px`} />{/if}
+				{#if !hiddenCols.has('colour')}<col style={`width:${colWidths.colour}px`} />{/if}
 				{#if !hiddenCols.has('comments')}<col style={`width:${colWidths.comments}px`} />{/if}
 				{#if !hiddenCols.has('time')}<col style={`width:${colWidths.time}px`} />{/if}
 				{#if !hiddenCols.has('quality')}<col style={`width:${colWidths.quality}px`} />{/if}
@@ -2501,13 +2613,21 @@
 				{#if !hiddenCols.has('genre')}<col style={`width:${colWidths.genre}px`} />{/if}
 				{#if !hiddenCols.has('stems')}<col style={`width:${colWidths.stems}px`} />{/if}
 				{#if !hiddenCols.has('tags')}<col style={`width:${colWidths.tags}px`} />{/if}
+				{#if !hiddenCols.has('filename')}<col style={`width:${colWidths.filename}px`} />{/if}
+				{#if !hiddenCols.has('location')}<col style={`width:${colWidths.location}px`} />{/if}
 				{#each typeCols as col (col.id)}<col style={`width:${col.width}px`} />{/each}
 				{#if showLyricsCol}
 					<col style={`width:${colWidths.lyrics}px`} />
 				{/if}
 				{#each optionalCols as col (col)}<col style={`width:${colWidths[col]}px`} />{/each}
 			</colgroup>
-			<thead bind:clientHeight={theadHeightPx} oncontextmenu={(e) => trackContextMenu?.openColumnChooser(e, columnChooserPrefs)}>
+			<thead
+				bind:clientHeight={theadHeightPx}
+				oncontextmenu={(e) => {
+					if ((e.target as HTMLElement).closest('th.h-order')) return;
+					trackContextMenu?.openColumnChooser(e, columnChooserPrefs);
+				}}
+			>
 				<tr aria-rowindex={1}>
 					<th
 						class="h-icon"
@@ -2581,12 +2701,16 @@
 						>
 							<AutoPlayExplainer queue={autoPlayQueue.entries}>
 								{#snippet demo()}
-									{#if autoPlayMode === 'greedy' || autoPlayMode === 'reach' || autoPlayMode === 'enforce'}<AutoPlayWalkthrough mode={autoPlayMode} />{/if}
+									{#if autoPlayMode === 'greedy' || autoPlayMode === 'reach' || autoPlayMode === 'enforce'}<AutoPlayWalkthrough
+											mode={autoPlayMode}
+										/>{/if}
 								{/snippet}
 								<button
 									class="autoplay-sort"
 									aria-pressed={sortKey === 'autoplay'}
-									aria-label={sortKey === 'autoplay' ? 'AutoPlay order, sorted 1 to n - activate to restore pane order' : 'AutoPlay order - activate to sort 1 to n'}
+									aria-label={sortKey === 'autoplay'
+										? 'AutoPlay order, sorted 1 to n - activate to restore pane order'
+										: 'AutoPlay order - activate to sort 1 to n'}
 									onclick={() => onsort('autoplay')}
 								>
 									<svg
@@ -2650,10 +2774,7 @@
 						class="h-key sortable"
 						style={`width:${colWidths.key}px`}
 						use:columnExplainer={{
-							text: columnHeaderTitle(
-								'key',
-								'Key - sort by key (asc -> desc -> clear)'
-							)
+							text: columnHeaderTitle('key', 'Key - sort by key (asc -> desc -> clear)')
 						}}
 						onclick={(e) => {
 							if ((e.target as HTMLElement).closest('.col-resize')) return;
@@ -2682,10 +2803,7 @@
 						class="h-bpm sortable"
 						style={`width:${colWidths.bpm}px`}
 						use:columnExplainer={{
-							text: columnHeaderTitle(
-								'bpm',
-								'BPM - sort by BPM (asc -> desc -> clear)'
-							)
+							text: columnHeaderTitle('bpm', 'BPM - sort by BPM (asc -> desc -> clear)')
 						}}
 						onclick={(e) => {
 							if ((e.target as HTMLElement).closest('.col-resize')) return;
@@ -2730,7 +2848,9 @@
 						class:h-icon={true}
 						class:sortable={true}
 						style={`width:${colWidths.plays}px`}
-						use:columnExplainer={{ text: columnHeaderTitle('plays', 'Sort by plays (asc -> desc -> clear)') }}
+						use:columnExplainer={{
+							text: columnHeaderTitle('plays', 'Sort by plays (asc -> desc -> clear)')
+						}}
 						onclick={(e) => {
 							if ((e.target as HTMLElement).closest('.col-resize')) return;
 							onsort('plays');
@@ -2768,12 +2888,28 @@
 						></span>
 					</th>
 					{@render sortableTh('rating', 'Rating', 'rating')}
+					<th class="h-colour" style={`width:${colWidths.colour}px`}>
+						<ColourColumnFunnelPopover
+							filter={paneColumnFilters.colour}
+							onpatch={(colour) => trackTableFunnelStore.patchColour(String(restoreKey), colour)}
+						/>
+						<!-- svelte-ignore a11y_no_static_element_interactions -->
+						<span
+							class="col-resize"
+							onpointerdown={(e) => onColResizeStart(e, 'colour')}
+							onpointermove={onColResizeMove}
+							onpointerup={onColResizeEnd}
+							onpointercancel={onColResizeEnd}
+						></span>
+					</th>
 					{@render sortableTh('comments', 'Comments', 'comments')}
 					{@render sortableTh('time', 'Time', 'time')}
 					<th
 						class="h-quality"
 						style={`width:${colWidths.quality}px`}
-						use:columnExplainer={{ text: "QLT - audio quality as a letter: A safe on any system, B good on a club system, C thin on a big rig, D rough. It starts from bitrate and container and drops when a scan finds a lossy source behind the file (a brick-wall cut-off) or damage. A hollow letter is not checked yet; a dot means the scan found an issue. Hover a badge for the measurements" }}
+						use:columnExplainer={{
+							text: 'QLT - audio quality as a letter: A safe on any system, B good on a club system, C thin on a big rig, D rough. It starts from bitrate and container and drops when a scan finds a lossy source behind the file (a brick-wall cut-off) or damage. A hollow letter is not checked yet; a dot means the scan found an issue. Hover a badge for the measurements'
+						}}
 					>
 						<span class="th-label"><span>QLT</span></span>
 						<!-- svelte-ignore a11y_no_static_element_interactions -->
@@ -2799,7 +2935,11 @@
 						title="Energy 1-9, from Mixed In Key - sort ascending, descending, then clear"
 						aria-label="Energy 1-9, from Mixed In Key"
 					>
-						<span class="th-label"><svg class="energy-icon" aria-hidden="true" viewBox="0 0 24 24"><path d="M13 2 3 14h7l-1 8 10-12h-7z" /></svg>{#if sortKey === 'energy'}<SortArrowIcon asc={sortDir === 1} />{/if}</span>
+						<span class="th-label"
+							><svg class="energy-icon" aria-hidden="true" viewBox="0 0 24 24"
+								><path d="M13 2 3 14h7l-1 8 10-12h-7z" /></svg
+							>{#if sortKey === 'energy'}<SortArrowIcon asc={sortDir === 1} />{/if}</span
+						>
 						<!-- svelte-ignore a11y_no_static_element_interactions -->
 						<span
 							class="col-resize"
@@ -2813,7 +2953,9 @@
 					<th
 						class="h-stems"
 						style={`width:${colWidths.stems}px`}
-						use:columnExplainer={{ text: 'Stems - [V] vocals, [I] instruments (bass+other), [D] drums. Hover for model, overlap, format, sizes' }}
+						use:columnExplainer={{
+							text: 'Stems - [V] vocals, [I] instruments (bass+other), [D] drums. Hover for model, overlap, format, sizes'
+						}}
 					>
 						<span class="th-label"><span>Stems</span></span>
 						<!-- svelte-ignore a11y_no_static_element_interactions -->
@@ -2836,6 +2978,8 @@
 							onpointercancel={onColResizeEnd}
 						></span>
 					</th>
+					{@render sortableTh('filename', 'File name', 'filename')}
+					{@render sortableTh('location', 'Location', 'location')}
 					{#each typeCols as col (col.id)}
 						<th class="h-tagtype" style={`width:${col.width}px`}>
 							<span class="th-label"><span>{col.label}</span></span>
@@ -2895,7 +3039,9 @@
 					{@const cellBpm = editedBpm(row.stable_id, row.bpm)}
 					{@const cellKey = editedKey(row.stable_id, row.key)}
 					{@const bpmEdited = hasBpmEdit(row.stable_id)}
-					{@const keyEdited = hasKeyEdit(row.stable_id)}
+					{@const keyEdited = hasKeyEdit(row.stable_id) || row.key_source === 'edit'}
+					{@const pathCells = filePathCellsFor(row)}
+					{@const colourSwatch = trackColourSwatch(row.color_id)}
 					{#each sectionHeaders.filter((h) => h.beforeIndex === rowIndex) as header (header.section.id)}
 						{@render sectionRow(header)}
 					{/each}
@@ -2912,8 +3058,7 @@
 						aria-rowindex={rowSlot + 2}
 						aria-selected={selectedOrderSet.has(row.order)}
 						tabindex={rowIndex === activeRowIndex ||
-						((activeRowIndex < windowInfo.startIndex ||
-							activeRowIndex >= windowInfo.endIndex) &&
+						((activeRowIndex < windowInfo.startIndex || activeRowIndex >= windowInfo.endIndex) &&
 							i === 0)
 							? 0
 							: -1}
@@ -2935,15 +3080,12 @@
 							row.stable_id.startsWith('spotify-pending:')}
 						class:loaded={loadedIds.has(row.stable_id)}
 						class:rb-row-master={masterOrder !== null && row.order === masterOrder}
-						class:rb-row-deck-hover={hoverStableId !== null &&
-							row.stable_id === hoverStableId}
-						class:rb-row-suggest-hover={suggestHoverId !== null &&
-							row.stable_id === suggestHoverId}
+						class:rb-row-deck-hover={hoverStableId !== null && row.stable_id === hoverStableId}
+						class:rb-row-suggest-hover={suggestHoverId !== null && row.stable_id === suggestHoverId}
 						class:rb-row-find={findQuery !== '' && rowMatchesFind(row, findQuery)}
 						class:broken={rowRendersUnavailable(row)}
 						class:rb-row-offloaded={cloudView.kind === 'offloaded'}
-						class:rb-row-availability-pending={row.file_availability ===
-							'AVAILABILITY_PENDING'}
+						class:rb-row-availability-pending={row.file_availability === 'AVAILABILITY_PENDING'}
 						title={libraryRowHoverTitle(row)}
 						class:rb-row-job={jobProgress.activeFor(row.stable_id) !== null}
 						class:rb-row-set-skip={setTargetState.skipIds.has(row.stable_id)}
@@ -2970,14 +3112,10 @@
 								<span
 									class="audio-cache-chevron"
 									title="Audio cached for fast deck load"
-									aria-hidden="true"
-								>&gt;</span>
+									aria-hidden="true">&gt;</span
+								>
 							{:else if audioPrefetchStatus(row.stable_id) === 'loading'}
-								<span
-									class="audio-cache-dot"
-									title="Prefetching audio"
-									aria-hidden="true"
-								></span>
+								<span class="audio-cache-dot" title="Prefetching audio" aria-hidden="true"></span>
 							{/if}
 							<AnalysisDotsPopover badge={_badgeFor(row)} stableId={row.stable_id} />
 						</td>
@@ -3075,7 +3213,10 @@
 						{/if}
 						<td class="c-preview">
 							<PreviewStrip
-								strip={row.strip ?? previewStripById[row.stable_id] ?? filledStrips[row.stable_id] ?? null}
+								strip={row.strip ??
+									previewStripById[row.stable_id] ??
+									filledStrips[row.stable_id] ??
+									null}
 								stripLoading={stripLoadingById[row.stable_id] ?? false}
 								vocals={vocalsById[row.stable_id] ?? null}
 								markerAnlz={markerAnlzById[row.stable_id] ?? null}
@@ -3096,8 +3237,7 @@
 							title={row.artwork_available !== true
 								? row.artwork_available === null
 									? 'artwork could not be checked (tag reader not installed in this build)'
-									: (artworkStatusLabel(row.artwork_status) ??
-										'artwork unavailable')
+									: (artworkStatusLabel(row.artwork_status) ?? 'artwork unavailable')
 								: undefined}
 							onpointerleave={(e) => _onDeckTriggerPointerLeave(e, row)}
 						>
@@ -3115,7 +3255,11 @@
 								{/if}
 							{/if}
 						</td>
-						<td class="c-title" class:rb-row-loaded={playedIds.has(row.stable_id)} onpointerleave={(e) => _onDeckTriggerPointerLeave(e, row)}>
+						<td
+							class="c-title"
+							class:rb-row-loaded={playedIds.has(row.stable_id)}
+							onpointerleave={(e) => _onDeckTriggerPointerLeave(e, row)}
+						>
 							<!-- Pin 27f889893790: the quick-load box is anchored here (not
 							     .c-preview) so its hitbox can never sit over the mini preview
 							     strip (.preview-hit) - hovering it must never block the
@@ -3163,42 +3307,73 @@
 								{/if}
 							</span>
 							<!-- LIBUX-57: the full title shows on hover only when it is cut off. -->
-							<span class="title-line"><span class="title-text" data-custom-tip="" use:truncationTip={shownTitle(row)}
-								>{#each hl(shownTitle(row)) as part, i (i)}{#if part.hit}<mark
-											class="find-hit">{part.text}</mark
-										>{:else}{part.text}{/if}{/each}</span
-							>
-							{#if row.is_edit}
-								<span class="edit-badge" data-testid="edit-badge" title={row.edit_label ?? 'Virtual edit'}>
-									{editTime(row.in_ms)}-{editTime(row.out_ms)} / {editFx(row)}
-								</span>
-								<button class="edit-action" title="Edit virtual edit" onclick={(e) => { e.stopPropagation(); void updateVirtualEdit(row); }}>E</button>
-								<button class="edit-action" title="Delete virtual edit" onclick={(e) => { e.stopPropagation(); void deleteVirtualEdit(row); }}>x</button>
-							{:else}
-								<button class="edit-action create-edit" title="Create virtual edit" onclick={(e) => { e.stopPropagation(); void createVirtualEdit(row); }}>cut</button>
-							{/if}
-							{#if indicatorFor(row) !== null}
-								<button
-									type="button"
-									class="stack-indicator"
-									data-testid="stack-indicator"
-									aria-expanded={stackOpenId === row.stable_id}
-									aria-label="Versions"
-									onclick={(e) => {
-										e.stopPropagation();
-										stackOpenId = stackOpenId === row.stable_id ? null : row.stable_id;
-									}}
-									ondblclick={(e) => e.stopPropagation()}
-								>{indicatorFor(row)}</button>
-							{/if}
-							{#if viaWork !== null && viaWork.has(row.stable_id)}
-								<span class="filed-under" data-testid="via-work">via work</span>
-							{:else if !optionalCols.includes('work')}
-								<span class="filed-under">{filedUnderText(worksView.overlay, row.stable_id)}</span>
-							{/if}
+							<span class="title-line"
+								><span class="title-text" data-custom-tip="" use:truncationTip={shownTitle(row)}
+									>{#each hl(shownTitle(row)) as part, i (i)}{#if part.hit}<mark class="find-hit"
+												>{part.text}</mark
+											>{:else}{part.text}{/if}{/each}</span
+								>
+								{#if row.is_edit}
+									<span
+										class="edit-badge"
+										data-testid="edit-badge"
+										title={row.edit_label ?? 'Virtual edit'}
+									>
+										{editTime(row.in_ms)}-{editTime(row.out_ms)} / {editFx(row)}
+									</span>
+									<button
+										class="edit-action"
+										title="Edit virtual edit"
+										onclick={(e) => {
+											e.stopPropagation();
+											void updateVirtualEdit(row);
+										}}>E</button
+									>
+									<button
+										class="edit-action"
+										title="Delete virtual edit"
+										onclick={(e) => {
+											e.stopPropagation();
+											void deleteVirtualEdit(row);
+										}}>x</button
+									>
+								{:else}
+									<button
+										class="edit-action create-edit"
+										title="Create virtual edit"
+										onclick={(e) => {
+											e.stopPropagation();
+											void createVirtualEdit(row);
+										}}>cut</button
+									>
+								{/if}
+								{#if indicatorFor(row) !== null}
+									<button
+										type="button"
+										class="stack-indicator"
+										data-testid="stack-indicator"
+										aria-expanded={stackOpenId === row.stable_id}
+										aria-label="Versions"
+										onclick={(e) => {
+											e.stopPropagation();
+											stackOpenId = stackOpenId === row.stable_id ? null : row.stable_id;
+										}}
+										ondblclick={(e) => e.stopPropagation()}>{indicatorFor(row)}</button
+									>
+								{/if}
+								{#if viaWork !== null && viaWork.has(row.stable_id)}
+									<span class="filed-under" data-testid="via-work">via work</span>
+								{:else if !optionalCols.includes('work')}
+									<span class="filed-under">{filedUnderText(worksView.overlay, row.stable_id)}</span
+									>
+								{/if}
 							</span>
 						</td>
-						<td class="c-artist" class:rb-row-loaded={playedIds.has(row.stable_id)} title={row.artist ?? ''}>
+						<td
+							class="c-artist"
+							class:rb-row-loaded={playedIds.has(row.stable_id)}
+							title={row.artist ?? ''}
+						>
 							{#each hl(shownArtist(row)) as part, i (i)}
 								{#if part.hit}<mark class="find-hit">{part.text}</mark>{:else}{part.text}{/if}
 							{/each}
@@ -3217,24 +3392,33 @@
 							ondblclick={(e) => openCellEdit(e, row, 'key')}
 							oncontextmenu={(e) => openCellEditMenu(e, row, 'key')}
 						>
-							{#if clashEdges.has(row.stable_id)}<span class="set-clash-edge" aria-hidden="true"></span>{/if}
+							{#if clashEdges.has(row.stable_id)}<span class="set-clash-edge" aria-hidden="true"
+								></span>{/if}
 							{#if !keyEdited && (row.key === null || row.key === undefined) && row.key_status === 'failed' && row.key_guess}
 								<!-- KEY-GUESS-01: the analyzer's best candidate, dimmed, never a confirmed key. -->
-								<span class="key-guess">{displayKey(row.key_guess, uiPrefs.key_notation)?.text ?? row.key_guess}?</span>
+								<span class="key-guess"
+									>{displayKey(row.key_guess, uiPrefs.key_notation)?.text ?? row.key_guess}?</span
+								>
 							{:else if !keyEdited && (row.key === null || row.key === undefined) && (row.key_status === 'failed' || row.key_status === 'missing')}
 								<!-- KEY-CELL-01: no status word in the cell; the reason is on the hover and in the Err column. -->
 								<span class="key-status" aria-hidden="true"></span>
 							{:else}
 								{#snippet keyCharacters(text: string)}
-									{#each text as character}<span class:camelot-suffix={uiPrefs.key_notation === 'camelot' && (character === 'A' || character === 'B')}>{character}</span>{/each}
+									{#each text as character}<span
+											class:camelot-suffix={uiPrefs.key_notation === 'camelot' &&
+												(character === 'A' || character === 'B')}>{character}</span
+										>{/each}
 								{/snippet}
 								{@const match = keyMatch(cellKey)}
 								{#if match !== null && match.shift !== 0}
 									<!-- KEYSHIFT-03: the key it will play in (in the chosen notation), plus the load shift. -->
-									{@render keyCharacters(shiftedKeyText(match.key, uiPrefs.key_notation))}<sup class="key-shift-sup">{keyShiftSuperscript(match.shift)}</sup>
+									{@render keyCharacters(shiftedKeyText(match.key, uiPrefs.key_notation))}<sup
+										class="key-shift-sup">{keyShiftSuperscript(match.shift)}</sup
+									>
 								{:else}
 									{#each keyCellSpans(cellKey, uiPrefs.key_notation, findQuery) as part, i (i)}
-										{#if part.hit}<mark class="find-hit">{@render keyCharacters(part.text)}</mark>{:else}{@render keyCharacters(part.text)}{/if}
+										{#if part.hit}<mark class="find-hit">{@render keyCharacters(part.text)}</mark
+											>{:else}{@render keyCharacters(part.text)}{/if}
 									{/each}
 								{/if}
 							{/if}
@@ -3251,7 +3435,9 @@
 							class:bpm-far={bpmCellHeat(cellBpm)?.lane === 'far'}
 							class:bpm-inert={bpmCellInert(row) && !bpmEdited}
 							style={bpmCellStyle(cellBpm)}
-							title={row.bpm_disputed ? undefined : `${bpmCellTitle(row)} Double-click, or right-click and choose Edit, to change it.`}
+							title={row.bpm_disputed
+								? undefined
+								: `${bpmCellTitle(row)} Double-click, or right-click and choose Edit, to change it.`}
 							onpointerenter={() => requestGridProvenance(row.stable_id)}
 							ondblclick={(e) => openCellEdit(e, row, 'bpm')}
 							oncontextmenu={(e) => openCellEditMenu(e, row, 'bpm')}
@@ -3260,25 +3446,29 @@
 							{#if bpmEdited}
 								{bpmCellText({ bpm: cellBpm, bpm_status: 'ok' }).text}
 							{:else if bpmCellText(row).kind === 'value'}
-								{bpmCellText(row).text}{#if row.bpm_disputed}<!-- svelte-ignore a11y_no_static_element_interactions --><span
+								{bpmCellText(row)
+									.text}{#if row.bpm_disputed}<!-- svelte-ignore a11y_no_static_element_interactions --><span
 										class="bpm-dispute"
 										data-custom-tip=""
 										data-testid="bpm-dispute-marker"
 										role="img"
 										aria-label="tempo disputed with Mixed In Key"
 										onmouseenter={(e) => openBpmDispute(e, row)}
-										onmouseleave={scheduleBpmDisputeClose}
-									><BpmDisputeMarker /></span>{/if}
+										onmouseleave={scheduleBpmDisputeClose}><BpmDisputeMarker /></span
+									>{/if}
 							{:else}
 								<!-- KEY-CELL-01: no status word in the cell; the reason is on the hover and in the Err column. -->
 								<span class="bpm-status" title={bpmCellTitle(row)} aria-hidden="true"></span>
 							{/if}
 						</td>
-						<td class="c-tempostab" title={bpmStabilityTitle(row.grid_quality)}><BpmStabilityCell grid={row.grid_quality} /></td>
+						<td class="c-tempostab" title={bpmStabilityTitle(row.grid_quality)}
+							><BpmStabilityCell grid={row.grid_quality} /></td
+						>
 						<td
 							class="c-plays"
 							title="play count: rekordbox plays plus Open DJ plays heard for 60 s or more"
-						>{row.play_count > 0 ? String(row.play_count) : ''}</td>
+							>{row.play_count > 0 ? String(row.play_count) : ''}</td
+						>
 						<td class="c-last">
 							<LastPlayedCell
 								stableId={row.stable_id}
@@ -3290,6 +3480,15 @@
 						     tighten then shrink to fit it (pin 8f60606750c6). -->
 						<td class="c-rating" style={`--rating-w:${colWidths.rating}px`}>
 							<RatingStars rating={row.rating} onrate={(n) => onrate(row, n)} />
+						</td>
+						<td class="c-colour" title={row.color_id ? `Colour ${row.color_id}` : 'No colour'}>
+							{#if colourSwatch}
+								<span
+									class="colour-swatch"
+									style={`background:${colourSwatch}`}
+									aria-hidden="true"
+								></span>
+							{/if}
 						</td>
 						<td
 							class="c-comments"
@@ -3311,14 +3510,18 @@
 								{/each}
 							{/if}
 						</td>
-						<td class="c-time" title={timeCellTitle(row.duration_ms, lengthFlagText(row))}>{_fmtTime(row.duration_ms)}</td>
+						<td class="c-time" title={timeCellTitle(row.duration_ms, lengthFlagText(row))}
+							>{_fmtTime(row.duration_ms)}</td
+						>
 						<td class="c-quality">
 							<QualityBadge
 								quality={row.quality}
 								trackKey={row.stable_id}
 								compact
 								showContainer={false}
-								loadHover={row.quality?.grade?.letter ? () => audioQualityHover(row.stable_id, JSON.stringify(row.quality?.grade)) : undefined}
+								loadHover={row.quality?.grade?.letter
+									? () => audioQualityHover(row.stable_id, JSON.stringify(row.quality?.grade))
+									: undefined}
 							/>
 						</td>
 						<td class="c-energy" class:energy-unset={row.energy === null} title={row.energy_reason}>
@@ -3371,6 +3574,28 @@
 						<td class="c-tags">
 							<span class="tags-cell-text">{formatTagsCell(tagsCellFor(row.stable_id))}</span>
 						</td>
+						<td class="c-filename c-path" title={pathCells.fileName}>
+							<span class="path-cell-text">{pathCells.fileName}</span>
+						</td>
+						<!-- svelte-ignore a11y_click_events_have_key_events -->
+						<!-- svelte-ignore a11y_no_static_element_interactions -->
+						<td
+							class="c-location c-path"
+							title={isStreamingAvailability(row)
+								? pathCells.location
+								: 'Alt+click reveals the folder in the file manager'}
+							onclick={async (e) => {
+								if (!e.altKey || isStreamingAvailability(row)) return;
+								e.stopPropagation();
+								try {
+									await revealTrack(row.stable_id);
+								} catch (err) {
+									console.error(err);
+								}
+							}}
+						>
+							<span class="path-cell-text">{pathCells.location}</span>
+						</td>
 						{#each typeCols as col (col.id)}
 							<td class="c-tagtype">
 								<TagCell stableId={row.stable_id} {selectedIds} typeId={col.id} />
@@ -3380,7 +3605,9 @@
 							<LyricColumn {row} />
 						{/if}
 						{#each optionalCols as col (col)}
-							<td class={`c-optional c-${col}`} title={optionalCell(row, col)}>{optionalCell(row, col)}</td>
+							<td class={`c-optional c-${col}`} title={optionalCell(row, col)}
+								>{optionalCell(row, col)}</td
+							>
 						{/each}
 					</tr>
 				{/each}
@@ -3457,7 +3684,11 @@
 	</div>
 	{#if provider.truncated}
 		<div class="truncated-note">
-			list truncated - the source fetch hit its safety cap before completing
+			{#if provider.matchSnapshot !== null && provider.matchSnapshot.total > provider.matchSnapshot.loaded}
+				{smartlistTruncationNote(provider.matchSnapshot.loaded, provider.matchSnapshot.total)}
+			{:else}
+				list truncated - the source fetch hit its safety cap before completing
+			{/if}
 		</div>
 	{/if}
 </div>
@@ -3571,9 +3802,13 @@
 		cursor: pointer;
 		font: inherit;
 	}
-	.create-edit { opacity: 0; }
+	.create-edit {
+		opacity: 0;
+	}
 	.c-title:hover .create-edit,
-	.create-edit:focus-visible { opacity: 1; }
+	.create-edit:focus-visible {
+		opacity: 1;
+	}
 	.stack-indicator {
 		flex: none;
 		background: none;
@@ -4052,7 +4287,8 @@
 	 * follows tbody tr.rb-row-job, which zeroes the shadow with !important at the
 	 * same specificity, so the later rule wins. */
 	tbody tr.rb-row-deck-hover {
-		box-shadow: var(--rb-deck-link-tick), var(--rb-row-master-edge, inset 0 0 0 transparent) !important;
+		box-shadow:
+			var(--rb-deck-link-tick), var(--rb-row-master-edge, inset 0 0 0 transparent) !important;
 	}
 	/* IOPIN-11 + LIBM-186: a row is marked only when both Camelot key and the
 	 * closest raw/half/double BPM relationship are compatible. LIBM-186 (the maintainer,
@@ -4069,9 +4305,11 @@
 	 * positioned, so every compatible row rendered one column right: the order
 	 * number under Preview, the strip under artwork, the cover stretched over
 	 * the title (the PAIR-09 bug, 9f1ba66f9e, back through this rule). */
-	tbody tr.rb-row-mix-compatible:not(.rb-row-selected):not(.rb-row-menu):not(.loaded):not(.rb-row-master):not(
-			.rb-row-spotify-pending
-		):not(.rb-row-deck-hover):not(.rb-row-job) > td.c-funnel::before {
+	tbody
+		tr.rb-row-mix-compatible:not(.rb-row-selected):not(.rb-row-menu):not(.loaded):not(
+			.rb-row-master
+		):not(.rb-row-spotify-pending):not(.rb-row-deck-hover):not(.rb-row-job)
+		> td.c-funnel::before {
 		content: '';
 		position: absolute;
 		left: 0;
@@ -4080,18 +4318,23 @@
 		height: 75%;
 		z-index: 3;
 		border-radius: 0 1.5px 1.5px 0;
-		background: var(--rb-mix-compat-bar, color-mix(in srgb, var(--rb-green) 55%, var(--rb-text-dim)));
+		background: var(
+			--rb-mix-compat-bar,
+			color-mix(in srgb, var(--rb-green) 55%, var(--rb-text-dim))
+		);
 		pointer-events: none;
 	}
 	/* Spotify unmatched / pending acquisition: light green tint (stronger than
 	 * Camelot-compat so the missing-local rows read as intentional placeholders). */
-	tbody tr.rb-row-spotify-pending:not(.rb-row-selected):not(.rb-row-menu):not(.loaded):not(
+	tbody
+		tr.rb-row-spotify-pending:not(.rb-row-selected):not(.rb-row-menu):not(.loaded):not(
 			.rb-row-master
 		) {
 		background: color-mix(in srgb, var(--rb-green) 18%, transparent);
 		box-shadow: inset 3px 0 0 color-mix(in srgb, var(--rb-green) 55%, transparent);
 	}
-	tbody tr.rb-row-spotify-pending:hover:not(.rb-row-selected):not(.rb-row-menu):not(.loaded):not(
+	tbody
+		tr.rb-row-spotify-pending:hover:not(.rb-row-selected):not(.rb-row-menu):not(.loaded):not(
 			.rb-row-master
 		) {
 		background: color-mix(in srgb, var(--rb-green) 26%, var(--rb-panel-raised));
@@ -4255,7 +4498,9 @@
 		height: 11px;
 		fill: currentColor;
 	}
-	.energy-glyph { display: none; }
+	.energy-glyph {
+		display: none;
+	}
 	/* At the compact 34px default the base 6-8px td/th padding plus
 	 * .th-label's own inner padding leaves too little room for the "QLT"
 	 * label and clips the compact badge's border (the maintainer, review thread on
@@ -4314,7 +4559,9 @@
 	.c-bpm {
 		text-overflow: clip;
 	}
-	.camelot-suffix { font-size: 0.67em; }
+	.camelot-suffix {
+		font-size: 0.67em;
+	}
 	.key-shift-sup {
 		margin-left: 1px;
 		font-size: 0.68em;
@@ -4382,7 +4629,9 @@
 		border-radius: 2px;
 		background: color-mix(in srgb, #a855f7 12%, transparent);
 	}
-	.c-bpm.bpm-compatible { box-shadow: inset 0 0 0 1px var(--rb-green); }
+	.c-bpm.bpm-compatible {
+		box-shadow: inset 0 0 0 1px var(--rb-green);
+	}
 	/* Skin hook: Gothic (mono-dev) drops the red ring (--rb-bpm-mismatch-ring,
 	 * theme.css); the inline heat colour already dims an off-tempo number. */
 	.c-bpm.bpm-warn { box-shadow: inset 0 0 0 1px var(--rb-bpm-mismatch-ring, #d45a4f); }
@@ -4454,19 +4703,59 @@
 		background-color: var(--pz-base);
 		mask-image: var(--pz-h), var(--pz-h), var(--pz-v), var(--pz-v);
 		mask-repeat: repeat-x, repeat-x, repeat-y, repeat-y;
-		mask-size: 10px 3px, 10px 3px, 3px 10px, 3px 10px;
-		mask-position: left 0 top 0, left 0 bottom 0, left 0 top 0, right 0 top 0;
+		mask-size:
+			10px 3px,
+			10px 3px,
+			3px 10px,
+			3px 10px;
+		mask-position:
+			left 0 top 0,
+			left 0 bottom 0,
+			left 0 top 0,
+			right 0 top 0;
 		/* The comet head, one layer per side; --pz-e is its fade envelope. */
 		--pz-head: color-mix(in srgb, var(--pz-ink) calc(var(--pz-e) * 0.95), transparent);
 		--pz-tail: color-mix(in srgb, var(--pz-ink) calc(var(--pz-e) * 0.35), transparent);
 		background-image:
-			linear-gradient(90deg, transparent calc(var(--pz-t) - 40%), var(--pz-tail) calc(var(--pz-t) - 14%), var(--pz-head) var(--pz-t), transparent var(--pz-t)),
-			linear-gradient(180deg, transparent calc(var(--pz-r) - 40%), var(--pz-tail) calc(var(--pz-r) - 14%), var(--pz-head) var(--pz-r), transparent var(--pz-r)),
-			linear-gradient(270deg, transparent calc(var(--pz-b) - 40%), var(--pz-tail) calc(var(--pz-b) - 14%), var(--pz-head) var(--pz-b), transparent var(--pz-b)),
-			linear-gradient(0deg, transparent calc(var(--pz-l) - 40%), var(--pz-tail) calc(var(--pz-l) - 14%), var(--pz-head) var(--pz-l), transparent var(--pz-l));
-		background-size: 100% 50%, 50% 100%, 100% 50%, 50% 100%;
+			linear-gradient(
+				90deg,
+				transparent calc(var(--pz-t) - 40%),
+				var(--pz-tail) calc(var(--pz-t) - 14%),
+				var(--pz-head) var(--pz-t),
+				transparent var(--pz-t)
+			),
+			linear-gradient(
+				180deg,
+				transparent calc(var(--pz-r) - 40%),
+				var(--pz-tail) calc(var(--pz-r) - 14%),
+				var(--pz-head) var(--pz-r),
+				transparent var(--pz-r)
+			),
+			linear-gradient(
+				270deg,
+				transparent calc(var(--pz-b) - 40%),
+				var(--pz-tail) calc(var(--pz-b) - 14%),
+				var(--pz-head) var(--pz-b),
+				transparent var(--pz-b)
+			),
+			linear-gradient(
+				0deg,
+				transparent calc(var(--pz-l) - 40%),
+				var(--pz-tail) calc(var(--pz-l) - 14%),
+				var(--pz-head) var(--pz-l),
+				transparent var(--pz-l)
+			);
+		background-size:
+			100% 50%,
+			50% 100%,
+			100% 50%,
+			50% 100%;
 		background-repeat: no-repeat;
-		background-position: left top, right top, left bottom, left top;
+		background-position:
+			left top,
+			right top,
+			left bottom,
+			left top;
 		animation: pair-comet 0.85s linear;
 	}
 	/* Entering the row adds a second, identical run; the first one keeps its
@@ -4481,24 +4770,82 @@
 	 * lap on each and 2% on each end. Each side's head runs on past its end
 	 * so the trail drains out, and sin(pi p) is the fade envelope. */
 	@keyframes pair-comet {
-		0% { --pz-t: 0%; --pz-r: -50%; --pz-b: -50%; --pz-l: -50%; --pz-e: 0%; }
-		25% { --pz-e: 71%; }
-		48% { --pz-t: 100%; --pz-r: 0%; }
-		50% { --pz-r: 100%; --pz-b: 0%; --pz-e: 100%; }
-		62% { --pz-t: 145%; --pz-r: 145%; }
-		75% { --pz-e: 71%; }
-		98% { --pz-b: 100%; --pz-l: 0%; }
-		100% { --pz-t: 145%; --pz-r: 145%; --pz-b: 104%; --pz-l: 100%; --pz-e: 0%; }
+		0% {
+			--pz-t: 0%;
+			--pz-r: -50%;
+			--pz-b: -50%;
+			--pz-l: -50%;
+			--pz-e: 0%;
+		}
+		25% {
+			--pz-e: 71%;
+		}
+		48% {
+			--pz-t: 100%;
+			--pz-r: 0%;
+		}
+		50% {
+			--pz-r: 100%;
+			--pz-b: 0%;
+			--pz-e: 100%;
+		}
+		62% {
+			--pz-t: 145%;
+			--pz-r: 145%;
+		}
+		75% {
+			--pz-e: 71%;
+		}
+		98% {
+			--pz-b: 100%;
+			--pz-l: 0%;
+		}
+		100% {
+			--pz-t: 145%;
+			--pz-r: 145%;
+			--pz-b: 104%;
+			--pz-l: 100%;
+			--pz-e: 0%;
+		}
 	}
 	@keyframes pair-comet-again {
-		0% { --pz-t: 0%; --pz-r: -50%; --pz-b: -50%; --pz-l: -50%; --pz-e: 0%; }
-		25% { --pz-e: 71%; }
-		48% { --pz-t: 100%; --pz-r: 0%; }
-		50% { --pz-r: 100%; --pz-b: 0%; --pz-e: 100%; }
-		62% { --pz-t: 145%; --pz-r: 145%; }
-		75% { --pz-e: 71%; }
-		98% { --pz-b: 100%; --pz-l: 0%; }
-		100% { --pz-t: 145%; --pz-r: 145%; --pz-b: 104%; --pz-l: 100%; --pz-e: 0%; }
+		0% {
+			--pz-t: 0%;
+			--pz-r: -50%;
+			--pz-b: -50%;
+			--pz-l: -50%;
+			--pz-e: 0%;
+		}
+		25% {
+			--pz-e: 71%;
+		}
+		48% {
+			--pz-t: 100%;
+			--pz-r: 0%;
+		}
+		50% {
+			--pz-r: 100%;
+			--pz-b: 0%;
+			--pz-e: 100%;
+		}
+		62% {
+			--pz-t: 145%;
+			--pz-r: 145%;
+		}
+		75% {
+			--pz-e: 71%;
+		}
+		98% {
+			--pz-b: 100%;
+			--pz-l: 0%;
+		}
+		100% {
+			--pz-t: 145%;
+			--pz-r: 145%;
+			--pz-b: 104%;
+			--pz-l: 100%;
+			--pz-e: 0%;
+		}
 	}
 	/* library.pair_edge_pulses: the earlier looping pulses on live rows (a
 	 * partner on a deck), three 85% pulses about 80px long, 443px apart,
@@ -4510,15 +4857,51 @@
 			linear-gradient(270deg, transparent 363px, var(--pz-hot) 363px 443px),
 			linear-gradient(180deg, transparent 363px, var(--pz-hot) 363px 443px),
 			linear-gradient(0deg, transparent 363px, var(--pz-hot) 363px 443px);
-		background-size: 443px 50%, 443px 50%, 50% 443px, 50% 443px;
+		background-size:
+			443px 50%,
+			443px 50%,
+			50% 443px,
+			50% 443px;
 		background-repeat: repeat-x, repeat-x, repeat-y, repeat-y;
-		background-position: left 0 top 0, left 0 bottom 0, left 0 top 0, right 0 top 0;
+		background-position:
+			left 0 top 0,
+			left 0 bottom 0,
+			left 0 top 0,
+			right 0 top 0;
 		animation: pair-pulse 1.7s linear infinite;
 	}
 	@keyframes pair-pulse {
-		0% { background-position: left 0 top 0, left 0 bottom 0, left 0 top 0, right 0 top 0; mask-size: 10px 3px, 10px 3px, 3px 10px, 3px 10px; }
-		50% { mask-size: 10px 3.6px, 10px 3.6px, 3.6px 10px, 3.6px 10px; }
-		100% { background-position: left 443px top 0, left -443px bottom 0, left 0 top -443px, right 0 top 443px; mask-size: 10px 3px, 10px 3px, 3px 10px, 3px 10px; }
+		0% {
+			background-position:
+				left 0 top 0,
+				left 0 bottom 0,
+				left 0 top 0,
+				right 0 top 0;
+			mask-size:
+				10px 3px,
+				10px 3px,
+				3px 10px,
+				3px 10px;
+		}
+		50% {
+			mask-size:
+				10px 3.6px,
+				10px 3.6px,
+				3.6px 10px,
+				3.6px 10px;
+		}
+		100% {
+			background-position:
+				left 443px top 0,
+				left -443px bottom 0,
+				left 0 top -443px,
+				right 0 top 443px;
+			mask-size:
+				10px 3px,
+				10px 3px,
+				3px 10px,
+				3px 10px;
+		}
 	}
 	@media (prefers-reduced-motion: reduce) {
 		tbody tr.rb-row-pair::after,
@@ -4636,8 +5019,12 @@
 		animation: cloud-transfer-slide 850ms linear infinite;
 	}
 	@keyframes cloud-transfer-slide {
-		from { transform: translateX(-110%); }
-		to { transform: translateX(245%); }
+		from {
+			transform: translateX(-110%);
+		}
+		to {
+			transform: translateX(245%);
+		}
 	}
 	@media (prefers-reduced-motion: reduce) {
 		.cloud-transfer-indicator.indeterminate {
@@ -4915,7 +5302,9 @@
 	 * `.deck-btns:hover`/`:focus-within` below are the corridor-travel and
 	 * keyboard-focus cases (the box is already open), so those stay instant;
 	 * only the SELECT-driven reveal needs the guard. */
-	tr.rb-row-selected:not(.dblclick-guard-active):has(.c-art:hover, .c-title:hover) .deck-btns button {
+	tr.rb-row-selected:not(.dblclick-guard-active):has(.c-art:hover, .c-title:hover)
+		.deck-btns
+		button {
 		pointer-events: auto;
 	}
 	tr.corridor-grace-active:not(.dblclick-guard-active) .deck-btns button {
@@ -5140,6 +5529,23 @@
 	table.hide-plays :is(th.h-plays, td.c-plays) {
 		display: none;
 	}
+	table.hide-colour :is(th.h-colour, td.c-colour) {
+		display: none;
+	}
+
+	.c-colour {
+		text-align: center;
+		vertical-align: middle;
+	}
+
+	.colour-swatch {
+		display: inline-block;
+		width: 12px;
+		height: 12px;
+		border: 1px solid var(--rb-border, #666);
+		border-radius: 2px;
+	}
+
 	table.hide-rating :is(th.h-rating, td.c-rating) {
 		display: none;
 	}
@@ -5167,6 +5573,18 @@
 	}
 	table.hide-tags :is(th.h-tags, td.c-tags) {
 		display: none;
+	}
+	table.hide-filename :is(th.h-filename, td.c-filename) {
+		display: none;
+	}
+	table.hide-location :is(th.h-location, td.c-location) {
+		display: none;
+	}
+	.path-cell-text {
+		display: block;
+		white-space: nowrap;
+		overflow: hidden;
+		text-overflow: ellipsis;
 	}
 	table.hide-stems :is(th.h-stems, td.c-stems) {
 		display: none;

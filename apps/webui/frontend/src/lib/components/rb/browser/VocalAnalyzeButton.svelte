@@ -5,13 +5,22 @@
 	issue #1038 -- the agent-native parity hole left by closing #377).
 -->
 <script lang="ts">
-	import { analyzeVocalsFromStems, RbApiError, type StemSummary } from '$lib/rb/api-rb';
+	import {
+		analyzeVocalsFromStems,
+		getVocalStatus,
+		RbApiError,
+		type StemSummary
+	} from '$lib/rb/api-rb';
 	import {
 		isStableIdOnLoadedDeck,
 		refreshLoadedDeckVocalsFromServer
 	} from '$lib/rb/loaded-deck-vocals-refresh';
 	import { pushToast } from '$lib/stores.svelte';
-	import { vocalsAnalyzeOutcome, vocalsAnalyzeRefusal } from '$lib/rb/vocals-analyze-refusal';
+	import {
+		vocalsAnalyzeOutcome,
+		vocalsAnalyzeRefusal,
+		vocalsStatusHasRegions
+	} from '$lib/rb/vocals-analyze-refusal';
 	import { requestTracksRefresh } from '$lib/rb/tracks-refresh-request';
 
 	interface Props {
@@ -33,7 +42,10 @@
 		if (disabled) return;
 		busy = true;
 		try {
-			const result = await analyzeVocalsFromStems(stableId);
+			const live = await getVocalStatus(stableId);
+			const result = vocalsStatusHasRegions(live)
+				? { claimed: [] as const, refused: { [stableId]: 'cached_demucs' } as const }
+				: await analyzeVocalsFromStems(stableId);
 			const outcome = vocalsAnalyzeOutcome(stableId, result);
 			serverRefusal = outcome.category;
 			pushToast(outcome.message, outcome.toastKind);

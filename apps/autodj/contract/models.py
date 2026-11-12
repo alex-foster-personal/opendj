@@ -11,6 +11,7 @@ import json as _json
 import math as _math
 import statistics as _statistics
 from dataclasses import dataclass
+from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, JsonValue
 
@@ -31,7 +32,7 @@ class StyleParamsWire(_Wire):
     """AGENT-34: a parametric style's settings, as ``list_styles`` reports them."""
 
     volume: str
-    fade_shape: str  # legal values: ``FADE_SHAPES`` in ``apps.autodj.styles`` (equal_power, linear, smooth).
+    fade_shape: str  # legal values: ``FADE_SHAPES`` in ``apps.autodj.styles`` (equal_power, linear, smooth, dipped).
     swap_position: str | None
     filter: str | None
     stems: str | None
@@ -68,6 +69,13 @@ WIND_DOWN = "wind_down"
 SHOWY = "showy"
 VOCALS_CLEAN = "vocals_clean"
 INTENTS: tuple[str, ...] = (SMOOTH, ENERGY_UP, WIND_DOWN, SHOWY, VOCALS_CLEAN)
+
+#: Gates named on ``rejected`` rows from ``propose_transition`` (spec 05 section 3).
+ProposeGate = Literal["vocal", "grid", "length", "tempo", "key", "windows"]
+#: Terms in the planner confidence product; ``weakest_factor`` names the lowest.
+ConfidenceFactor = Literal["grid", "structure", "vocal", "gap"]
+CONFIDENCE_FACTOR_NAMES: tuple[ConfidenceFactor, ...] = ("grid", "structure", "vocal", "gap")
+PROPOSE_GATES: tuple[ProposeGate, ...] = ("vocal", "grid", "length", "tempo", "key", "windows")
 
 
 class ProfileError(ValueError):

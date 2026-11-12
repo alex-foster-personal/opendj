@@ -26,6 +26,7 @@
 		useBestTarget,
 		shortcutsYieldTo,
 		createAuditioner,
+		tryCandidatePlannerReadout,
 		type TryCandidate,
 		type TryJob
 	} from './tryer-model';
@@ -338,6 +339,7 @@
 							{/if}
 						</button>
 						{#if blindOrder === null}
+							{@const planner = tryCandidatePlannerReadout(chip)}
 							<div class="score">
 								{#if bar === null}
 									<span title="Fewer than 4 of 7 core factors were measured, so no score is given"
@@ -352,6 +354,11 @@
 								<span title="Core quality factors the scorer measured, out of all core factors">
 									{chip.measured.k} of {chip.measured.n} measured
 								</span>
+								{#if planner.label}
+									<span title={chip.planner_confidence_title ?? planner.title ?? ''}
+										>{planner.label}</span
+									>
+								{/if}
 							</div>
 							{#if isVetoed(chip)}<span
 									class="veto"

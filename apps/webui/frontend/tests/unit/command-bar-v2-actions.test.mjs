@@ -35,6 +35,7 @@ import { loadTypeScriptModule } from './load-typescript.mjs';
  */
 
 const SRC = new URL('../../src/', import.meta.url).pathname;
+const CMDK_HOST = `${SRC}lib/components/rb/CommandPaletteHost.svelte`;
 let actions;
 let search;
 let catalog;
@@ -200,13 +201,13 @@ test('CMDK-12: booleans flip, links open, and unbuilt or slider rows are not off
 
 test('CMDK-9465: command rows rank through rankCommands; frecency notes come from the page prop', () => {
 	const bar = readFileSync(`${SRC}lib/components/rb/CommandBarV2.svelte`, 'utf8');
-	const page = readFileSync(`${SRC}routes/performance/+page.svelte`, 'utf8');
+	const host = readFileSync(CMDK_HOST, 'utf8');
 	assert.match(bar, /rankCommands\(commandActions, query/);
 	assert.match(bar, /commandsRanked: true/);
 	assert.match(bar, /return rankSettings\(out, query\);/);
 	assert.match(bar, /noteCommandPick\(commandKey\(/);
 	assert.doesNotMatch(bar, /from '\$lib\/rb\/prefs\.svelte'/);
-	assert.match(page, /noteCommandPick=\{noteCmdkCommandPick\}/);
+	assert.match(host, /noteCommandPick=\{noteCmdkCommandPick\}/);
 });
 
 test('CMDK-12: the bar renders the hint only on the highlighted or hovered row', () => {
@@ -220,10 +221,11 @@ test('CMDK-12: the bar renders the hint only on the highlighted or hovered row',
 	assert.match(bar, /return rankSettings\(out, query\);/);
 	// The dispatcher reaches the bar through the page, so the bar adds no importer to it.
 	assert.doesNotMatch(bar, /from '\$lib\/rb\/performance-ipc\.svelte'/);
-	const page = readFileSync(`${SRC}routes/performance/+page.svelte`, 'utf8');
+	const host = readFileSync(CMDK_HOST, 'utf8');
+	const v2 = host.slice(host.indexOf('<CommandBarV2'));
 	assert.match(
-		page,
-		/runCommand=\{\(command, source\) => runPerformanceCommandFromUi\(command, performance\.now\(\), undefined, source\)\}\s*runCoordinated=\{runCoordinatedFromUi\}\s*deckLoadDispatches=\{deckLoadDispatchCount\}\s*faderWrites=\{deckFaderWriteCount\}\s*deckCommands=\{deckCommandDispatchCount\}\s*deckPending=\{\(deck\) => performanceCommandStatus\.deck_pending\[deck\]\}\s*registerAdapter=\{registerCmdkAdapter\}/
+		v2,
+		/runCommand=\{\(command, source\) =>\s*runPerformanceCommandFromUi\(command, performance\.now\(\), undefined, source\)\}\s*runCoordinated=\{runCoordinatedFromUi\}\s*deckLoadDispatches=\{deckLoadDispatchCount\}\s*faderWrites=\{deckFaderWriteCount\}\s*deckCommands=\{deckCommandDispatchCount\}\s*deckPending=\{\(deck\) => performanceCommandStatus\.deck_pending\[deck\]\}\s*registerAdapter=\{registerCmdkAdapter\}\s*aiToast=\{\(message\) => pushToast\(message, 'error'\)\}\s*noteCommandPick=\{noteCmdkCommandPick\}/
 	);
 });
 
@@ -1032,3 +1034,17 @@ test('CMDK-9600: CommandBarV2 wires palette rows without static performance-ipc 
 	assert.ok(!src.includes("from '$lib/rb/performance-ipc.svelte'"));
 });
 
+
+test('SECONDSCREEN-11715: the second-screen row is offered only when the shell can open it', () => {
+	const ids = (opts) => actions.commandCandidates(DECKS, 'second', opts).map((c) => c.id);
+	assert.ok(!ids(undefined).includes('open-second-screen'), 'if a browser tab offers the window then broken');
+	assert.ok(!ids({ secondScreen: false }).includes('open-second-screen'));
+	const cmds = actions.commandCandidates(DECKS, 'second', { secondScreen: true });
+	const row = cmds.find((c) => c.id === 'open-second-screen');
+	assert.ok(row, 'if the Tauri shell has no second-screen row then broken');
+	assert.deepEqual(row.command, { type: 'open_second_screen' });
+	assert.equal(row.hint, 'Cmd Shift L');
+	assert.equal(cmds.at(-1).id, 'open-settings');
+	assert.equal(actions.actionRows('second', cmds, [])[0].id, 'open-second-screen');
+	assert.equal(actions.actionRows('monitor', cmds, [])[0].id, 'open-second-screen');
+});

@@ -40,6 +40,39 @@ class Invocation:
     values: dict[str, Any] = field(default_factory=dict)
 
 
+# The CLI's own global flags; a verb argument with the same key keeps its
+# positional or key=value form so the global flag is never shadowed.
+_GLOBAL_FLAGS = frozenset({"json", "list-verbs", "lock", "timeout", "settle", "over", "anchor", "clock", "state-db"})
+
+
+def fold_verb_flags(tokens: Sequence[str]) -> list[str]:
+    """Rewrite ``--key value`` / ``--key=value`` after a verb into ``key=value``.
+
+    Only keys that name a one-token argument of the first verb in ``tokens`` are
+    folded (so ``opendj stem_fx_send --deck 1 --stem vocal --value 0.7`` reads
+    like ``deck=1 stem=vocal value=0.7``); every other token is left alone.
+    """
+    out = list(tokens)
+    start = next((index for index, token in enumerate(out) if token in VERBS), None)
+    if start is None:
+        return out
+    keys = {argument.key for argument in VERBS[out[start]].args if argument.arity == 1} - _GLOBAL_FLAGS
+    folded: list[str] = out[: start + 1]
+    index = start + 1
+    while index < len(out):
+        token = out[index]
+        key, separator, value = token[2:].partition("=") if token.startswith("--") else ("", "", "")
+        if key in keys and separator:
+            folded.append(f"{key}={value}")
+        elif key in keys and index + 1 < len(out):
+            folded.append(f"{key}={out[index + 1]}")
+            index += 1
+        else:
+            folded.append(token)
+        index += 1
+    return folded
+
+
 def _named_tokens(args: Sequence[Arg], rest: Sequence[str]) -> tuple[dict[str, str], list[str]]:
     """Split out ``key=value`` tokens that name a one-token argument of the verb.
 
@@ -220,7 +253,7 @@ def parse_invocation(tokens: Sequence[str], deck_scope: int | None = None) -> In
         scoped = deck_scope
     if not rest:
         raise InvocationError("no verb given; run opendj --list-verbs")
-    name, *positionals = rest
+    name, *positionals = fold_verb_flags(rest)
     positionals = _drop_named_deck_matching_scope(scoped, positionals)
     if name == "track_info_open":
         return _parse_track_info_open(scoped, positionals)
@@ -229,8 +262,10 @@ def parse_invocation(tokens: Sequence[str], deck_scope: int | None = None) -> In
     values, leftover = _consume(verb.args, positionals, named)
     _reject_leftover(verb, values, leftover, any(a.key == "deck" for a in verb.args))
     command = verb.build(values)
-    if "deck" in command and command["deck"] not in DECK_VALUES:
-        raise InvocationError(f"deck must be one of 1, 2, 3, 4; got {command['deck']!r}")
+    allowed = (*DECK_VALUES, "all") if verb.command_type == "color_fx" else DECK_VALUES
+    if "deck" in command and command["deck"] not in allowed:
+        domain = "1, 2, 3, 4, all" if verb.command_type == "color_fx" else "1, 2, 3, 4"
+        raise InvocationError(f"deck must be one of {domain}; got {command['deck']!r}")
     return Invocation(verb=verb, command=command, values=values)
 
 

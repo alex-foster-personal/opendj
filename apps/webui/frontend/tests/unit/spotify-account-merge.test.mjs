@@ -5,8 +5,10 @@ import { before, test } from 'node:test';
 import { loadTypeScriptModule } from './load-typescript.mjs';
 
 let mod;
+let rank;
 before(async () => {
 	mod = await loadTypeScriptModule('src/lib/rb/spotify-account-merge.ts');
+	rank = await loadTypeScriptModule('src/lib/rb/spotify-playlist-rank.ts');
 });
 
 const acct = (id, extra = {}) => ({
@@ -40,6 +42,10 @@ test('every account playlist becomes a row; an imported one keeps its state.db i
 	assert.equal(rows[1].imported.playlist_id, 'spotify:bbb');
 	assert.equal(rows[0].imported, null);
 	assert.equal(rows[0].open_url, 'https://open.spotify.com/playlist/aaa');
+	assert.deepEqual(
+		rows.map((r) => r.pref_key),
+		['spotify:aaa', 'spotify:bbb']
+	);
 });
 
 test('imported playlists the account does not list stay, after the account rows', () => {
@@ -105,4 +111,89 @@ test('a vendor_pl_id the side player would refuse gives no player URL', () => {
 		mod.mergeSpotifyPlaylists(null, [imp('spotify:abc123', 'Zz09')])[0].open_url,
 		'https://open.spotify.com/playlist/Zz09'
 	);
+});
+
+test('#9685: a pinned account-only row stays pinned and keeps its recent rank once imported', () => {
+	const before = mod.mergeSpotifyPlaylists([acct('aaa'), acct('bbb'), acct('ccc')], []);
+	const pinned = rank.togglePinnedId([], before[1].pref_key);
+	const recent = rank.prependRecentId(
+		rank.prependRecentId([], before[2].pref_key),
+		before[0].pref_key
+	);
+	assert.equal(before[1].pref_key, 'spotify:bbb');
+	assert.equal(before[1].playlist_id, 'spotify-account:bbb');
+	const after = mod.mergeSpotifyPlaylists(
+		[acct('aaa'), acct('bbb'), acct('ccc')],
+		[imp('spotify:bbb', undefined), imp('spotify:ccc', 'ccc')]
+	);
+	assert.equal(after[1].playlist_id, 'spotify:bbb');
+	assert.equal(after[1].pref_key, before[1].pref_key);
+	const rankArgs = { query: '', pinnedIds: pinned, recentIds: recent };
+	const order = (rows) => rank.rankSpotifyPlaylists(rows, rankArgs).map((r) => r.pref_key);
+	assert.deepEqual(order(before), ['spotify:bbb', 'spotify:aaa', 'spotify:ccc']);
+	assert.deepEqual(order(after), ['spotify:bbb', 'spotify:aaa', 'spotify:ccc']);
+});
+
+test('pref_key falls back to the state.db id only when no Spotify id is known', () => {
+	const rows = mod.mergeSpotifyPlaylists(null, [
+		imp('local-pl-1', undefined),
+		imp('spotify:zzz', 'not a valid id')
+	]);
+	assert.equal(rows[0].pref_key, 'local-pl-1');
+	assert.equal(rows[0].open_url, null);
+	assert.equal(rows[1].pref_key, 'spotify:zzz');
+	assert.equal(rows[1].open_url, null);
+});
+
+test('spotifyPreferenceKey maps old forms and leaves the rest byte-identical', () => {
+	const cases = [
+		['spotify-account:aaa', 'spotify:aaa'],
+		['spotify:aaa', 'spotify:aaa'],
+		['spotify:playlist:aaa', 'spotify:aaa'],
+		['spotify:user:me:playlist:aaa', 'spotify:aaa'],
+		['pl-1', 'pl-1'],
+		['spotify-account:not base62!', 'spotify-account:not base62!'],
+		['spotify:a:b:c', 'spotify:a:b:c']
+	];
+	for (const [input, expected] of cases) {
+		assert.equal(rank.spotifyPreferenceKey(input), expected, input);
+	}
+});
+
+test('playSpotifyRow records the row only after the player opened', async () => {
+	const row = {
+		open_url: 'https://open.spotify.com/playlist/aaa',
+		pref_key: 'spotify:aaa'
+	};
+	let openUrl = null;
+	const rememberCalls = [];
+	const open = async (url) => {
+		openUrl = url;
+	};
+	const remember = (key) => {
+		rememberCalls.push(key);
+	};
+	await mod.playSpotifyRow(row, open, remember);
+	assert.equal(openUrl, row.open_url);
+	assert.deepEqual(rememberCalls, ['spotify:aaa']);
+
+	rememberCalls.length = 0;
+	await assert.rejects(
+		async () =>
+			mod.playSpotifyRow(
+				row,
+				async () => {
+					throw new Error('blocked');
+				},
+				remember
+			),
+		/blocked/
+	);
+	assert.equal(rememberCalls.length, 0);
+
+	rememberCalls.length = 0;
+	openUrl = null;
+	await mod.playSpotifyRow({ ...row, open_url: null }, open, remember);
+	assert.equal(openUrl, null);
+	assert.equal(rememberCalls.length, 0);
 });

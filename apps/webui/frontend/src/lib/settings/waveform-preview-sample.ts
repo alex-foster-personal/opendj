@@ -1,18 +1,14 @@
 /**
- * The Settings waveform preview's sample: a REAL rekordbox detail waveform, so
- * the thumbnail shows what each design x palette looks like on music (the maintainer,
- * Tue 6 Oct 2026: "can the example be a more realistic audio sample so user
- * gets a better idea what they're choosing").
+ * The Settings waveform preview's sample: a synthetic tri-band detail slice from
+ * tests/unit/fixtures/blocks-variance-anlz-window.json, so the thumbnail shows
+ * what each design x palette looks like on music (the maintainer, Tue 6 Oct 2026).
  *
  * Source: seconds 8..20 of the 24 s deck-row window in
- * tests/unit/fixtures/blocks-variance-anlz-window.json (128 BPM, so about 25
- * beats, including a section change; provenance in its manifest), window
- * points 1201..3003, each band downsampled by per-bucket max over 2 points
- * (as the server downsamples detail; it keeps the library route's initial
- * load inside its gzip budget). 12 s rather than 24 s so a
- * card-wide preview shows single beats the way a deck row does. Stored as the
- * PWV byte values (0..127, value = byte / 127), base64.
- * Regenerate from that fixture, never hand-edit.
+ * tests/unit/fixtures/blocks-variance-anlz-window.json, each band downsampled by
+ * per-bucket max over 2 points (as the server downsamples detail). 12 s
+ * rather than 24 s so a card-wide preview shows single beats the way a deck row does.
+ * Stored as PWV bytes (0..127, value = byte / 127), base64.
+ * Regenerate from that fixture via scripts/write-deck-window-derived.mjs, never hand-edit.
  */
 import type { AnlzWaveform } from '$lib/rb/anlz-types';
 

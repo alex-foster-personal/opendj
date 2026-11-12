@@ -45,6 +45,7 @@ _LISTED = "listed"
 class HeadphoneReport:
     client_id: str
     headphones: dict[str, Any]
+    booth: dict[str, Any]
     received_monotonic_s: float
 
 
@@ -76,9 +77,10 @@ class HeadphoneReports:
         self._now = now
         self._reports: dict[str, HeadphoneReport] = {}
 
-    def record(self, client_id: str, headphones: dict[str, Any]) -> None:
+    def record(self, client_id: str, headphones: dict[str, Any], booth: dict[str, Any] | None = None) -> None:
         """Store this client's report, replacing its earlier one."""
-        self._reports[client_id] = HeadphoneReport(client_id, deepcopy(headphones), self._now())
+        booth_state = deepcopy(booth) if isinstance(booth, dict) else {}
+        self._reports[client_id] = HeadphoneReport(client_id, deepcopy(headphones), booth_state, self._now())
 
     def merge(self, client_id: str, changes: dict[str, Any]) -> None:
         """Apply a command's headphone delta to a client already on record."""
@@ -86,6 +88,14 @@ class HeadphoneReports:
         if report is None:
             return
         report.headphones = _deep_merge(report.headphones, changes)
+        report.received_monotonic_s = self._now()
+
+    def merge_booth(self, client_id: str, changes: dict[str, Any]) -> None:
+        """Apply a command's booth delta to a client already on record."""
+        report = self._reports.get(client_id)
+        if report is None:
+            return
+        report.booth = _deep_merge(report.booth, changes)
         report.received_monotonic_s = self._now()
 
     def forget(self, client_id: str | None) -> None:

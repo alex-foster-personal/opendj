@@ -280,6 +280,44 @@ def load_look_ids(path: Path = DEFAULT_LOOKS_PATH) -> frozenset[str]:
     return _parse_look_ids(_read_json(path), str(path))
 
 
+def list_scene_catalog(path: Path = DEFAULT_LOOKS_PATH) -> list[dict[str, str]]:
+    """Scene id and display name from the looks catalog, sorted by id (GET /lighting/scenes)."""
+    data = _read_json(path)
+    source = str(path)
+    errors = _Errors()
+    obj = _object_keys(data, "$", frozenset({"version", "note", "looks"}), errors)
+    if obj is None:
+        raise ShowMapError(source, errors.items)
+    if obj.get("version") != 1:
+        errors.add("$.version", f"must be 1, got {obj.get('version')!r}")
+    raw_looks = obj.get("looks")
+    if not isinstance(raw_looks, list):
+        errors.add("$.looks", "must be a list")
+    rows: list[dict[str, str]] = []
+    seen: set[str] = set()
+    if isinstance(raw_looks, list):
+        for index, item in enumerate(raw_looks):
+            item_path = f"$.looks[{index}]"
+            if not isinstance(item, dict):
+                errors.add(item_path, f"must be an object, got {type(item).__name__}")
+                continue
+            look_id = item.get("id")
+            if not isinstance(look_id, str) or not look_id.strip():
+                errors.add(f"{item_path}.id", "must be a non-empty string")
+                continue
+            if look_id in seen:
+                errors.add(f"{item_path}.id", f"duplicate look id {look_id!r}")
+            seen.add(look_id)
+            name = item.get("name")
+            if not isinstance(name, str) or not name.strip():
+                errors.add(f"{item_path}.name", "must be a non-empty string")
+                continue
+            rows.append({"id": look_id, "name": name.strip()})
+    if errors.items:
+        raise ShowMapError(source, errors.items)
+    return sorted(rows, key=lambda row: row["id"])
+
+
 def load_show_map(path: Path = DEFAULT_MAP_PATH, looks_path: Path | None = None) -> ShowMap:
     """Read and validate the section-to-look map and its looks file."""
     map_path = Path(path)

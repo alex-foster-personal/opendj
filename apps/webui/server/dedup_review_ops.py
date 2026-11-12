@@ -16,7 +16,6 @@ from apps.dedup.contract import (
     DEFAULT_MAX_CLUSTER,
 )
 from apps.shared import fs_residency
-from apps.shared import paths as dedup_paths
 
 from .backend import BackendError, ConflictError, NotFoundError, StateBackend
 from .dedup_cue_presence import CuePresence, bulk_cue_presence
@@ -71,7 +70,13 @@ def now_iso() -> str:
 
 
 def dedup_db_path() -> Path:
-    return dedup_paths.DEDUP_FALLBACK_DB
+    """Dedup DB beside the active ``MDT_DATA_DIR``, not the import-time ``paths`` snapshot."""
+    import os
+
+    from apps.shared import platform_paths
+
+    data_dir = Path(os.environ.get(platform_paths.DATA_DIR_ENV, platform_paths.PROJECT_ROOT / "data"))
+    return data_dir / "dedup" / "phase7.sqlite"
 
 
 def read_raw_clusters(db_path: Path) -> list[dict[str, Any]] | None:
@@ -86,6 +91,9 @@ def read_raw_clusters(db_path: Path) -> list[dict[str, Any]] | None:
         flag_expression = (
             "flagged_manual_review" if "flagged_manual_review" in cluster_columns else "0 AS flagged_manual_review"
         )
+        basis_expression = (
+            "COALESCE(basis, 'fingerprint') AS basis" if "basis" in cluster_columns else "'fingerprint' AS basis"
+        )
         canonical_duration_expression = (
             "(SELECT duration FROM fingerprints WHERE path = duplicate_clusters.canonical_path) AS canonical_duration"
             if "fingerprints" in table_names
@@ -93,7 +101,7 @@ def read_raw_clusters(db_path: Path) -> list[dict[str, Any]] | None:
         )
         cluster_rows = connection.execute(
             "SELECT cluster_id, canonical_stable_id, canonical_path, rationale, "
-            f"{flag_expression}, {canonical_duration_expression} "
+            f"{flag_expression}, {basis_expression}, {canonical_duration_expression} "
             "FROM duplicate_clusters ORDER BY cluster_id"
         ).fetchall()
         clusters: list[dict[str, Any]] = []
@@ -146,6 +154,8 @@ def cluster_key(member_stable_ids: list[str]) -> str:
 
 
 def cluster_needs_manual_review(cluster: dict[str, Any]) -> bool:
+    if str(cluster.get("basis", "fingerprint")) == "tags":
+        return True
     if bool(cluster["flagged_manual_review"]):
         return True
     if len(cluster["aliases"]) + 1 > DEFAULT_MAX_CLUSTER:

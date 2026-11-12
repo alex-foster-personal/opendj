@@ -14,6 +14,8 @@
  * processor per stem part.
  */
 export interface RecordedStretchProcessor {
+	/** The AudioContext the engine created this processor in; real-engine-rig.mjs scopes `processors()` to its own contexts with it. */
+	context: unknown;
 	options: { onProcessorError: (error: unknown) => void };
 	connected: boolean;
 	disposed: boolean;
@@ -40,10 +42,11 @@ function registry(): RecordedStretchProcessor[] {
 
 export class StretchDeckProcessor {
 	static async create(
-		_context: AudioContext,
+		context: AudioContext,
 		options: { onProcessorError: (error: unknown) => void }
 	) {
 		const record: RecordedStretchProcessor = {
+			context,
 			options,
 			connected: false,
 			disposed: false,

@@ -26,7 +26,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from apps.autodj.plan import STRONG_BASS, _overlaps, beat_sync_reach_pct, bpm_gap_pct, pair_beat_sync_fold
-from apps.autodj.profile import VOCAL_BAR_THRESHOLD, TrackProfile
+from apps.autodj.profile import VOCAL_BAR_THRESHOLD, TrackProfile, resolve_key_at_bar
 from apps.autodj.windows import MixWindow, mix_windows
 from apps.shared.harmonic import CamelotKey, camelot_distance, key_compat
 
@@ -144,6 +144,63 @@ def _vocal_term(vocal_clash: int | None, bass_clash: int | None, bars: int, reas
     return None if vocal_clash is None else 1.0 - vocal_clash / bars
 
 
+def _append_region_sources(
+    out_profile: TrackProfile,
+    in_profile: TrackProfile,
+    out_sources: set[str],
+    in_sources: set[str],
+    reasons: list[str],
+) -> None:
+    for label, profile, sources in (
+        ("out", out_profile, out_sources),
+        ("in", in_profile, in_sources),
+    ):
+        if not profile.key_segments:
+            reasons.append(f"{label} region.source global")
+        elif "segment" in sources:
+            reasons.append(f"{label} region.source segment")
+        else:
+            reasons.append(f"{label} region.source global")
+
+
+def _harmony_over_overlap_span(
+    out_profile: TrackProfile,
+    in_profile: TrackProfile,
+    out_start: int,
+    in_start: int,
+    bars: int,
+    fold: float,
+    reasons: list[str],
+) -> tuple[int | None, str | None, float | None, str | None, str | None]:
+    worst_term: float | None = None
+    worst_out: str | None = None
+    worst_in: str | None = None
+    out_sources: set[str] = set()
+    in_sources: set[str] = set()
+    for offset in range(bars):
+        out_bar = out_start + offset
+        in_bar = in_start + math.floor(offset * fold)
+        resolved_out = resolve_key_at_bar(out_profile, out_bar)
+        resolved_in = resolve_key_at_bar(in_profile, in_bar)
+        if resolved_out.unscored or resolved_in.unscored:
+            reasons.append("a key is unknown: harmony not scored")
+            return None, None, None, None, None
+        assert resolved_out.key and resolved_in.key
+        assert resolved_out.source and resolved_in.source
+        out_sources.add(resolved_out.source)
+        in_sources.add(resolved_in.source)
+        compat = key_compat(resolved_out.key, resolved_in.key)
+        if worst_term is None or compat.score < worst_term:
+            worst_term = compat.score
+            worst_out, worst_in = resolved_out.key, resolved_in.key
+    if worst_out is None or worst_in is None:
+        reasons.append("a key is unknown: harmony not scored")
+        return None, None, None, None, None
+    key_distance, key_relation, key_term = _key_term(worst_out, worst_in, reasons)
+    _append_region_sources(out_profile, in_profile, out_sources, in_sources, reasons)
+    return key_distance, key_relation, key_term, worst_out, worst_in
+
+
 def _key_term(
     key_out: str | None, key_in: str | None, reasons: list[str]
 ) -> tuple[int | None, str | None, float | None]:
@@ -172,11 +229,18 @@ def score_windows(
     bars = min(overlap_bars or DEFAULT_OVERLAP_BARS, out_window.max_bars, in_window.max_bars)
     bars = max(1, bars)
     reasons: list[str] = []
-    key_out = key_at(out_profile, out_window.start_bar + bars - 1)
-    key_in = key_at(in_profile, in_window.start_bar)
-    key_distance, key_relation, key_term = _key_term(key_out, key_in, reasons)
     gap = bpm_gap_pct(out_profile.judged_bpm, in_profile.judged_bpm)
     reach = beat_sync_reach_pct(in_profile)
+    fold = pair_beat_sync_fold(out_profile.judged_bpm, in_profile.judged_bpm, reach)
+    key_distance, key_relation, key_term, key_out, key_in = _harmony_over_overlap_span(
+        out_profile,
+        in_profile,
+        out_window.start_bar,
+        in_window.start_bar,
+        bars,
+        fold,
+        reasons,
+    )
     beatmatchable, tempo_term = _tempo_term(gap, reasons, reach)
     vocal_clash, bass_clash = _clashes(
         out_profile,
@@ -184,7 +248,7 @@ def score_windows(
         out_window.start_bar,
         in_window.start_bar,
         bars,
-        pair_beat_sync_fold(out_profile.judged_bpm, in_profile.judged_bpm, reach),
+        fold,
     )
     vocal_term = _vocal_term(vocal_clash, bass_clash, bars, reasons)
     energy_delta = None

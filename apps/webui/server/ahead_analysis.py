@@ -957,6 +957,11 @@ class AheadDrain:
                 # about the moment, not the track: the next tick retries it.
                 log.info("ahead analysis: tags for %s deferred, state db busy: %s", sid, exc)
                 continue
+            except StateStoreBusyError as exc:
+                # :func:`write_unit` wraps SQLITE_BUSY after busy_timeout as
+                # StateStoreBusyError; classify like raw OperationalError above.
+                log.info("ahead analysis: tags for %s deferred, state db busy: %s", sid, exc)
+                continue
             except Exception as exc:  # noqa: BLE001 - recorded per track, surfaced in coverage
                 errors[sid] = f"{type(exc).__name__}: {exc}"
                 continue

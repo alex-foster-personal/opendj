@@ -76,3 +76,21 @@ test('the Rust load path runs the reset for the load it started', async () => {
 	assert.match(load, /const generation = deckStates\[deck\]\.load_generation;/);
 	assert.match(load, /await resetRustChannelOnLoad\(deck, generation, stable_id\);/);
 });
+
+// OPEN-DJ-BE-E2: the auto-gain wait yields to Svelte, so a deck must never sit
+// there with a stable_id but no title (WaveTrackSummary throws on that).
+test('the Rust load path publishes the title with stable_id, before the auto-gain wait', async () => {
+	const src = await readFile('src/lib/audio-engine/rust-engine.ts', 'utf8');
+	const load = src.slice(
+		src.indexOf('export async function loadRustDeck('),
+		src.indexOf('export async function resetRustChannelOnLoad(')
+	);
+	const stableId = load.indexOf('st.stable_id = stable_id;');
+	const title = load.indexOf('st.title = track.title ?? null;');
+	const wait = load.indexOf('await deckAutoGainApplied(deck);');
+	assert.ok(stableId >= 0 && title >= 0 && wait >= 0, 'loadRustDeck shape changed');
+	assert.ok(
+		stableId < title && title < wait,
+		'title is set after stable_id and before the auto-gain await'
+	);
+});

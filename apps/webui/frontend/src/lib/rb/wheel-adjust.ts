@@ -1,4 +1,5 @@
-import { api } from '../api/client';
+import { api } from '../api/rb-http';
+import type { components } from '../api-types';
 import { makeDiskWriteChain } from './disk-write-chain';
 
 /**
@@ -300,10 +301,12 @@ function _loadSensitivity(): Record<WheelInputKind, number> {
 
 let _sensitivity: Record<WheelInputKind, number> = _loadSensitivity();
 
-export type WheelSensitivityDisk = Partial<Record<WheelInputKind, number>>;
+export type WheelSensitivityDiskKey = WheelInputKind | 'library_mouse' | 'library_trackpad';
+
+export type WheelSensitivityDisk = Partial<Record<WheelSensitivityDiskKey, number>>;
 
 const _syncWheelSensitivityDisk = makeDiskWriteChain(
-	async (patch: { wheel_sensitivity: Record<WheelInputKind, number> }) => {
+	async (patch: components['schemas']['UiPrefsPatch']) => {
 		try {
 			await api.PUT('/api/v1/ui-prefs', { body: patch });
 		} catch {
@@ -319,7 +322,7 @@ function _persistSensitivity(): void {
 function _syncWheelSensitivityToDisk(): void {
 	void _syncWheelSensitivityDisk({
 		wheel_sensitivity: { mouse: _sensitivity.mouse, trackpad: _sensitivity.trackpad }
-	});
+	} as components['schemas']['UiPrefsPatch']);
 }
 
 /** Apply disk-backed wheel factors from GET /api/v1/ui-prefs (issue #2854). */

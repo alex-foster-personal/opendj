@@ -1,8 +1,8 @@
 /**
  * Browser search query grammar (pin 7ca47b21ead7, issue #936):
  * `field:operator:value` predicates over BPM, rating and key, layered on
- * top of the browser's existing plain substring search and `genre:` /
- * `genre:~` tag filters (pane-contract.svelte.ts's filterRows).
+ * top of the browser's existing plain substring search, `album:` filters and
+ * `genre:` / `genre:~` tag filters (pane-contract.svelte.ts's filterRows).
  *
  * Pure, dependency-free module - no BrowserRow import, no DOM - so every
  * edge case (malformed input, unknown fields, multi-term AND) is pinned in
@@ -16,7 +16,8 @@
  *   preserved byte-for-byte so a multi-word tag (`genre:Deep House`) still
  *   works. This is checked BEFORE tokenizing.
  * - Otherwise the query is split on whitespace into terms, each either a
- *   recognized field predicate (`bpm:`, `rating:`, `key:`, `genre:`) or a
+ *   recognized field predicate (`bpm:`, `rating:`, `key:`, `album:`, `genre:`)
+ *   or a
  *   plain substring term. All terms AND together.
  * - If NO term parses as a field predicate, the plain-substring path is
  *   applied to the WHOLE raw string (not the rejoined tokens), which is
@@ -39,13 +40,14 @@ export interface SearchableTrack {
 	/** Caller resolves any rb_meta fallback before calling - this module
 	 * only sees the one string it should search. */
 	genre: string | null;
+	album: string | null;
 	bpm: number | null;
 	rating: number | null;
 }
 
 /** Fallback fields for a plain (unprefixed) substring term - identical set
  * pre-pin filterRows always searched. */
-const _PLAIN_FIELDS = ['title', 'artist', 'comments', 'genre'] as const;
+const _PLAIN_FIELDS = ['title', 'artist', 'album', 'comments', 'genre'] as const;
 
 type NumericField = 'bpm' | 'rating';
 type NumericOp = 'eq' | 'gte' | 'lte' | 'gt' | 'lt' | 'range';
@@ -69,20 +71,48 @@ interface GenrePredicate {
 	tag: string;
 }
 
+interface AlbumPredicate {
+	kind: 'album';
+	loose: boolean;
+	/** Lower-case tag; quoted inputs keep their interior spacing. */
+	tag: string;
+}
+
 interface PlainTerm {
 	kind: 'plain';
 	text: string;
 }
 
-type Term = NumericPredicate | KeyPredicate | GenrePredicate | PlainTerm;
+type Term = NumericPredicate | KeyPredicate | GenrePredicate | AlbumPredicate | PlainTerm;
 
 const _WHOLE_GENRE_STRICT = /^genre:(?!~)(.+)$/i;
 const _WHOLE_GENRE_LOOSE = /^genre:~(.+)$/i;
+const _WHOLE_ALBUM_STRICT = /^album:(?!~)(.+)$/i;
+const _WHOLE_ALBUM_LOOSE = /^album:~(.+)$/i;
 const _NUMERIC_FIELD_TOKEN = /^(bpm|rating):(.*)$/i;
 const _KEY_FIELD_TOKEN = /^key:(.*)$/i;
+const _ALBUM_FIELD_TOKEN = /^album:(~)?(.*)$/i;
 const _GENRE_FIELD_TOKEN = /^genre:(~)?(.*)$/i;
 const _RANGE_VALUE = /^(-?\d+(?:\.\d+)?)-(-?\d+(?:\.\d+)?)$/;
 const _COMPARATOR_VALUE = /^(>=|<=|>|<|=)?(-?\d+(?:\.\d+)?)$/;
+
+function _parseQuotedFieldTag(raw: string): { loose: boolean; tag: string } | null {
+	const trimmed = raw.trim();
+	if (trimmed === '') return null;
+	if (trimmed.startsWith('~')) {
+		const tag = trimmed.slice(1).trim().toLowerCase();
+		return tag === '' ? null : { loose: true, tag };
+	}
+	if (trimmed.startsWith('"')) {
+		const end = trimmed.lastIndexOf('"');
+		if (end > 0) {
+			const tag = trimmed.slice(1, end).trim().toLowerCase();
+			return tag === '' ? null : { loose: false, tag };
+		}
+	}
+	const tag = trimmed.toLowerCase();
+	return tag === '' ? null : { loose: false, tag };
+}
 
 function _parseNumericValue(field: NumericField, raw: string): NumericPredicate | null {
 	const range = _RANGE_VALUE.exec(raw);
@@ -104,6 +134,12 @@ function _parseNumericValue(field: NumericField, raw: string): NumericPredicate 
 /** One search term, parsed to a structured predicate or left as a plain
  * substring term (unrecognized field name or unparseable value). */
 function _parseTerm(token: string): Term {
+	const album = _ALBUM_FIELD_TOKEN.exec(token);
+	if (album !== null) {
+		const parsed = _parseQuotedFieldTag(album[2]);
+		if (parsed !== null) return { kind: 'album', loose: album[1] !== undefined || parsed.loose, tag: parsed.tag };
+		return { kind: 'plain', text: token };
+	}
 	const genre = _GENRE_FIELD_TOKEN.exec(token);
 	if (genre !== null) {
 		const tag = genre[2].trim().toLowerCase();
@@ -165,10 +201,18 @@ function _matchesGenre(track: SearchableTrack, p: GenrePredicate): boolean {
 	return _genreTokens(track).some((t) => t === p.tag);
 }
 
+function _matchesAlbum(track: SearchableTrack, p: AlbumPredicate): boolean {
+	const album = (track.album ?? '').toLowerCase();
+	if (album === '') return false;
+	if (p.loose) return album.includes(p.tag);
+	return album === p.tag;
+}
+
 function _matchesTerm(track: SearchableTrack, term: Term): boolean {
 	if (term.kind === 'numeric') return _matchesNumeric(track, term);
 	else if (term.kind === 'key') return _matchesKey(track, term);
 	else if (term.kind === 'genre') return _matchesGenre(track, term);
+	else if (term.kind === 'album') return _matchesAlbum(track, term);
 	else return _matchesPlain(track, term.text);
 }
 
@@ -189,6 +233,18 @@ export function matchesSearchQuery(track: SearchableTrack, query: string): boole
 	if (looseWhole !== null) {
 		const tag = looseWhole[1].trim().toLowerCase();
 		return tag === '' ? true : (track.genre ?? '').toLowerCase().includes(tag);
+	}
+
+	const strictAlbumWhole = _WHOLE_ALBUM_STRICT.exec(raw);
+	if (strictAlbumWhole !== null) {
+		const parsed = _parseQuotedFieldTag(strictAlbumWhole[1]);
+		if (parsed === null) return true;
+		return _matchesAlbum(track, { kind: 'album', loose: parsed.loose, tag: parsed.tag });
+	}
+	const looseAlbumWhole = _WHOLE_ALBUM_LOOSE.exec(raw);
+	if (looseAlbumWhole !== null) {
+		const tag = looseAlbumWhole[1].trim().toLowerCase();
+		return tag === '' ? true : (track.album ?? '').toLowerCase().includes(tag);
 	}
 
 	const terms = raw.split(/\s+/).map(_parseTerm);
@@ -213,5 +269,7 @@ export const SEARCH_QUERY_HELP: ReadonlyArray<{ example: string; hint: string }>
 	{ example: 'rating:>=4', hint: 'Star rating at or above (1-5)' },
 	{ example: 'key:8A', hint: 'Camelot key' },
 	{ example: 'genre:house', hint: 'Genre, exact tag match' },
-	{ example: 'genre:~house', hint: 'Genre, loose substring match' }
+	{ example: 'genre:~house', hint: 'Genre, loose substring match' },
+	{ example: 'album:~night', hint: 'Album, loose substring match' },
+	{ example: 'album:"Exact Name"', hint: 'Album, exact match (quoted)' }
 ];

@@ -1,12 +1,15 @@
 import { expect, userEvent, waitFor, within } from 'storybook/test';
 
+import { BEAT_FX_UNIT_NOT_WIRED_REASON } from '$lib/rb/beat-fx-unit-port.svelte';
+
 /**
  * PadModeMenu UI contract, shared by the Svelte story (PadModeMenu.stories.ts)
  * and its React twin (PadModeMenu.stories.tsx), both titled
  * 'Contracts/Deck/PadModeMenu'. See src/react/README.md.
  *
- * Only Hot Cue is built; every other mode is listed for hardware parity and
- * renders inert with the shared not-built tooltip.
+ * Hot Cue, Beat Jump (DECKUX-9956) and Pad FX 1/2 are built. Pad FX is disabled with the not-wired
+ * reason when no beat FX unit port is installed (as in Storybook); every other
+ * mode is listed for hardware parity and renders inert with the not-built tooltip.
  */
 
 type Args = { deckId: 1 | 2 | 3 | 4; stacked?: boolean };
@@ -19,10 +22,10 @@ const NOT_BUILT_TIP =
 const LABELS = [
 	'Hot Cue',
 	'Beat Loop / Roll (not-built-yet)',
-	'Beat Jump (not-built-yet)',
+	'Beat Jump',
 	'Sampler (not-built-yet)',
-	'Pad FX 1 (not-built-yet)',
-	'Pad FX 2 (not-built-yet)',
+	'Pad FX 1',
+	'Pad FX 2',
 	'Key Shift (not-built-yet)',
 	'Keyboard (not-built-yet)'
 ];
@@ -44,7 +47,7 @@ export const contracts = {
 			await expect(menu(canvasElement)).toBeNull();
 		}
 	},
-	/** Open: eight modes, Hot Cue live, the rest inert with the not-built tip, placed fixed below the trigger. */
+	/** Open: eight modes, Hot Cue live, Pad FX inert with the not-wired reason, the rest with the not-built tip, placed fixed below the trigger. */
 	Open: {
 		args: { deckId: 3, stacked: false } satisfies Args,
 		play: async ({ canvasElement }: Ctx) => {
@@ -59,11 +62,15 @@ export const contracts = {
 			await expect(items[0]).not.toHaveAttribute('title');
 			await expect(items[0]).toHaveAttribute('data-built', 'true');
 			await expect(items[0]).not.toHaveClass('rb-inert');
-			for (const item of items.slice(1)) {
+			await expect(items[2]).toBeEnabled();
+			await expect(items[2]).toHaveAttribute('data-built', 'true');
+			for (const [i, item] of items.entries()) {
+				if (i === 0 || i === 2) continue;
+				const padFx = i === 4 || i === 5;
 				await expect(item).toBeDisabled();
 				await expect(item).toHaveClass('pad-menu-item', 'rb-inert');
-				await expect(item).toHaveAttribute('data-built', 'false');
-				await expect(item).toHaveAttribute('title', NOT_BUILT_TIP);
+				await expect(item).toHaveAttribute('data-built', padFx ? 'true' : 'false');
+				await expect(item).toHaveAttribute('title', padFx ? BEAT_FX_UNIT_NOT_WIRED_REASON : NOT_BUILT_TIP);
 			}
 			await expect(items[2]).toHaveAttribute('data-pad-mode', 'beat-jump');
 			await waitFor(() => expect(list.style.position).toBe('fixed'));

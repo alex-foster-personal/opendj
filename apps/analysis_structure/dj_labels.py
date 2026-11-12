@@ -63,6 +63,7 @@ from typing import Any
 
 RULES = "raveform-energy-v1"
 DJ_LABELS = ("intro", "buildup", "drop", "breakdown", "cooldown", "outro")
+NO_ENERGY_CONTRAST = "no_energy_contrast"
 
 REF_PERCENTILE = 0.95
 REF_WINDOW_S = 1.0
@@ -205,7 +206,7 @@ def _apply_rules(energies: list[dict[str, float]], refs: dict[str, float]) -> di
         e for e in energies if e["score_db"] <= WITHDRAWN_DB and e["seconds"] >= CONTRAST_MIN_S
     ]
     if not drops or not withdrawn:
-        return _unlabeled("no_energy_contrast", reference_db=_rounded(refs))
+        return _unlabeled(NO_ENERGY_CONTRAST, reference_db=_rounded(refs))
     out = []
     for i, e in enumerate(energies):
         label = _label(i, drops, energies)
@@ -253,10 +254,19 @@ def structure_niche_suggestions(
     return out
 
 
+def own_fast_abstain_reason(dj_summary: dict[str, Any]) -> str | None:
+    """When ``label_sections`` names flat energy, own-fast abstains instead of cutting sections."""
+    if dj_summary.get("status") == "unlabeled" and dj_summary.get("reason") == NO_ENERGY_CONTRAST:
+        return NO_ENERGY_CONTRAST
+    return None
+
+
 __all__ = [
     "DJ_LABELS",
+    "NO_ENERGY_CONTRAST",
     "RULES",
     "label_sections",
+    "own_fast_abstain_reason",
     "structure_niche_suggestions",
     "structure_suggestion_id",
 ]

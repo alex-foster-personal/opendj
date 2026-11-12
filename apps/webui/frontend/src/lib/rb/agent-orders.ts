@@ -123,7 +123,7 @@ async function _planStep(run: () => Promise<Record<string, unknown>>): Promise<A
 }
 
 /** The control values a ramp reads its start from and travels in. */
-const RAMP_TYPES = new Set(['eq', 'fader', 'trim', 'filter', 'stem_gain', 'crossfader', 'tempo']);
+const RAMP_TYPES = new Set(['eq', 'fader', 'trim', 'filter', 'stem_gain', 'stem_fx_send', 'crossfader', 'tempo']);
 
 /**
  * DECKUX-39: the command types whose OFF only a person may ask for. An agent
@@ -312,9 +312,10 @@ async function _one(command: unknown): Promise<AgentStepResult> {
 }
 
 /** The live value a ramp travels from, in the unit its command carries. */
-function _rampStart(state: ReturnType<typeof queryPerformanceState>, command: PerformanceCommand): number {
+export function rampStartValue(state: ReturnType<typeof queryPerformanceState>, command: PerformanceCommand): number {
 	if (command.type === 'eq') return state.mixer.channels[command.deck][`eq_${command.band}`];
 	if (command.type === 'stem_gain') return state.decks[command.deck].stems.controls[command.stem].gain;
+	if (command.type === 'stem_fx_send') return state.decks[command.deck].stems.controls[command.stem].fx_send ?? 0;
 	if (command.type === 'crossfader') return state.mixer.crossfader;
 	if (command.type === 'tempo') return state.decks[command.deck].pitch;
 	if (command.type === 'fader' || command.type === 'trim' || command.type === 'filter') {
@@ -358,7 +359,7 @@ export async function runRamp(payload: unknown, options: RampRunOptions = {}): P
 	const ramp = payload as Record<string, unknown>;
 	const command = _command(ramp.command);
 	if (!RAMP_TYPES.has(command.type)) {
-		throw new TypeError('ramp command must be eq, fader, trim, filter, stem_gain, crossfader, or tempo');
+		throw new TypeError('ramp command must be eq, fader, trim, filter, stem_gain, stem_fx_send, crossfader, or tempo');
 	}
 	if (typeof ramp.to !== 'number' || !Number.isFinite(ramp.to)) {
 		throw new RangeError('ramp to must be a finite number');
@@ -393,7 +394,7 @@ export async function runRamp(payload: unknown, options: RampRunOptions = {}): P
 		phrases: clock.phrases
 	});
 	if (over.unit !== 'ms' && !clock.playing) throw new Error('clock_not_playing');
-	const start = _rampStart(before, command);
+	const start = rampStartValue(before, command);
 	const to = ramp.to;
 	const key = animationKeyOf(command as unknown as Record<string, unknown>);
 	let stopped: string | null = null;
@@ -408,7 +409,7 @@ export async function runRamp(payload: unknown, options: RampRunOptions = {}): P
 		let sent: number | null = null;
 		while (true) {
 			if (stopped !== null) return { status: 'failed', error: `animation stopped: ${stopped}` };
-			if (sent !== null && Math.abs(_rampStart(queryPerformanceState(), command) - sent) > RAMP_TAKEOVER_TOLERANCE) {
+			if (sent !== null && Math.abs(rampStartValue(queryPerformanceState(), command) - sent) > RAMP_TAKEOVER_TOLERANCE) {
 				return { status: 'failed', error: `animation stopped: ${command.type} was moved by hand (take-over)` };
 			}
 			const progress = over.unit === 'ms'
@@ -418,7 +419,7 @@ export async function runRamp(payload: unknown, options: RampRunOptions = {}): P
 			// The operator may narrow the pitch range mid-ramp, so each tempo step is checked against the live range, not the one read at order time.
 			if (command.type === 'tempo') _tempoStepRefusal(command.deck, value);
 			const step = (command.type === 'tempo' ? { ...command, ratio: value } : { ...command, value }) as PerformanceCommand;
-			sent = _rampStart(await dispatchPerformanceCommand(step, undefined, options.source ?? 'agent-command'), command);
+			sent = rampStartValue(await dispatchPerformanceCommand(step, undefined, options.source ?? 'agent-command'), command);
 			if (progress === 1) break;
 			await new Promise<void>((resolve) => window.setTimeout(resolve, 16));
 		}

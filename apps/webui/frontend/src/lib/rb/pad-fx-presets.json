@@ -1,0 +1,26 @@
+{
+	"version": 1,
+	"note": "House picks, mimicked from the rekordbox 7.2.8 manual pp. 182-183 layout (two banks); 8 pads per bank because the Open DJ bank has 8. The sounds themselves are reviewed in #9784. Beats are numbers: 0.5 is 1/2.",
+	"banks": {
+		"pad-fx-1": [
+			{ "label": "ECHO 1/2", "kind": "beat", "effect": "echo", "beats": 0.5 },
+			{ "label": "ECHO 1/4", "kind": "beat", "effect": "echo", "beats": 0.25 },
+			{ "label": "ROLL 1/4", "kind": "beat", "effect": "roll", "beats": 0.25 },
+			{ "label": "ROLL 1/8", "kind": "beat", "effect": "roll", "beats": 0.125 },
+			{ "label": "TRANS 1/8", "kind": "beat", "effect": "trans", "beats": 0.125 },
+			{ "label": "FILTER 4", "kind": "beat", "effect": "filter", "beats": 4 },
+			{ "label": "REVERB 50", "kind": "beat", "effect": "reverb", "amount": 50 },
+			{ "label": "REL ECHO 2", "kind": "release", "release": "echo", "beats": 2, "hold": true }
+		],
+		"pad-fx-2": [
+			{ "label": "ECHO 1", "kind": "beat", "effect": "echo", "beats": 1 },
+			{ "label": "ECHO 3/4", "kind": "beat", "effect": "echo", "beats": 0.75 },
+			{ "label": "ROLL 1/16", "kind": "beat", "effect": "roll", "beats": 0.0625 },
+			{ "label": "ROLL 1/2", "kind": "beat", "effect": "roll", "beats": 0.5 },
+			{ "label": "TRANS 1/4", "kind": "beat", "effect": "trans", "beats": 0.25 },
+			{ "label": "FILTER 8", "kind": "beat", "effect": "filter", "beats": 8 },
+			{ "label": "REVERB 25", "kind": "beat", "effect": "reverb", "amount": 25 },
+			{ "label": "REL ECHO 1", "kind": "release", "release": "echo", "beats": 1, "hold": false }
+		]
+	}
+}

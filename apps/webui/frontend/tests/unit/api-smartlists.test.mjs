@@ -111,7 +111,8 @@ test('getSmartlistTracks sends the limit when given', async () => {
 			rule_summary: 'rating >= 4',
 			order_by: 'bpm asc',
 			items: ['t-1'],
-			tracks: []
+			tracks: [],
+			total: 1
 		});
 	};
 
@@ -131,7 +132,8 @@ test('getSmartlistTracks omits the query string when limit is not given', async 
 			rule_summary: 'rating >= 4',
 			order_by: 'bpm asc',
 			items: [],
-			tracks: []
+			tracks: [],
+			total: 0
 		});
 	};
 

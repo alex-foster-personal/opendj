@@ -4,7 +4,7 @@ import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { test } from 'node:test';
 
-import { scratchDir } from './helpers';
+import { REPO_ROOT, scratchDir } from './helpers';
 
 const packageRoot = path.join(__dirname, '..', '..');
 const pkg = JSON.parse(fs.readFileSync(path.join(packageRoot, 'package.json'), 'utf8')) as {
@@ -21,6 +21,11 @@ const pkg = JSON.parse(fs.readFileSync(path.join(packageRoot, 'package.json'), '
 			category?: string;
 			bundleShortVersion?: string;
 			bundleVersion?: string;
+			extendInfo?: {
+				NSMicrophoneUsageDescription?: string;
+				NSLocalNetworkUsageDescription?: string;
+				NSBonjourServices?: string[];
+			};
 		};
 		win: { appId?: string; icon?: unknown; target: { target: string; arch: string[] }[] };
 	};
@@ -233,4 +238,31 @@ test('if read-fuses meets a hardened wire it passes, and if runAsNode is on it f
 	assert.notEqual(bad.status, 0);
 	assert.match(bad.stderr, /runAsNode is enabled, expected disabled/);
 	assert.doesNotMatch(bad.stderr, /resetAdHocDarwinSignature/);
+});
+
+const LINK125_LOCAL_NETWORK =
+	"Open DJ finds your B2B partner's laptop and shares tempo and beat with Ableton Link apps on your local network. Nothing leaves your network.";
+const ROW45_MICROPHONE =
+	'Open DJ lists your audio devices, briefly listens to auto-calibrate headphone cue latency, and records your set from the input you pick when you press Record. Audio stays on this Mac and is never sent anywhere.';
+
+test('if NSBonjourServices omits DEFAULT_SERVICE_TYPE from b2b_mdns.py then macOS 15 denies B2B Nearby with no prompt (LINK-125)', () => {
+	const mdnsSrc = fs.readFileSync(path.join(REPO_ROOT, 'apps', 'b2b_pairing', 'b2b_mdns.py'), 'utf8');
+	const serviceType = mdnsSrc.match(/^DEFAULT_SERVICE_TYPE = "([^"]+)"/m)?.[1];
+	assert.ok(serviceType, 'DEFAULT_SERVICE_TYPE missing from apps/b2b_pairing/b2b_mdns.py');
+	const services = pkg.build.mac.extendInfo?.NSBonjourServices;
+	assert.ok(Array.isArray(services), 'build.mac.extendInfo.NSBonjourServices must be an array of Bonjour types');
+	assert.ok(services.includes(serviceType), `NSBonjourServices ${JSON.stringify(services)} omits ${serviceType} from b2b_mdns.py`);
+});
+
+test('if NSLocalNetworkUsageDescription drifts from the LINK-125 text then macOS 15 silently denies local network', () => {
+	assert.equal(pkg.build.mac.extendInfo?.NSLocalNetworkUsageDescription, LINK125_LOCAL_NETWORK);
+});
+
+test('if NSMicrophoneUsageDescription is missing then a hardened app with audio-input records silence (row 45)', () => {
+	assert.equal(pkg.build.mac.extendInfo?.NSMicrophoneUsageDescription, ROW45_MICROPHONE);
+});
+
+test('if entitlements.mac.plist drops allow-jit then V8 cannot MAP_JIT because a custom plist replaces osx-sign defaults (EL-10)', () => {
+	const plist = fs.readFileSync(path.join(packageRoot, 'entitlements.mac.plist'), 'utf8');
+	assert.match(plist, /<key>com\.apple\.security\.cs\.allow-jit<\/key>\s*<true\/>/);
 });

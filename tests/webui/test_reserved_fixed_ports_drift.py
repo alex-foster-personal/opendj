@@ -170,6 +170,16 @@ KNOWN_FIXED_PORTS: tuple[tuple[str, str, int], ...] = (
         5331,
     ),
     (
+        "apps/webui/frontend/tests/e2e/vite.cmdk-ttx.config.ts",
+        "export const CMDK_TTX_FRONTEND_PORT = 5338;",
+        5338,
+    ),
+    (
+        "apps/webui/frontend/tests/e2e/vite.cmdk-ttx.config.ts",
+        "export const CMDK_TTX_API_PORT = 8718;",
+        8718,
+    ),
+    (
         "apps/webui/frontend/tests/e2e/vite.cmdk-pick-race.config.ts",
         "export const CMDK_PICK_RACE_FRONTEND_PORT = 5336;",
         5336,

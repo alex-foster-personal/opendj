@@ -1,0 +1,9 @@
+{
+  "bytes": 3072,
+  "measured_main": 17015,
+  "measured_with_pr": 18636,
+  "sha": "fc67adcd3d",
+  "date": "Sun 8 Nov 2026",
+  "reason": "PR #10482 (XDJ-RX3 practice replica) grows the practice-replica surface: the RX3 hint table and LED rules in pioneer-xdj.ts ride the lazy practice chunk. Measured on agentbox: 18636 B gzip on fc67adcd3d against 17015 B, the latest committed main measurement (charges/9564.json); +1621 B, ceiled to KiB plus 1 KiB.",
+  "payback": "none planned; the growth is the device map rows the replica needs on this surface"
+}

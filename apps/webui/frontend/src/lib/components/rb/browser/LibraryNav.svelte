@@ -46,10 +46,18 @@
 		} catch (err) {
 			console.error('[usb] could not read the remembered stick jobs:', err);
 			const why = err instanceof Error ? err.message : String(err);
-			pushToast(`Sticks opened before the reload could not be read back, so their analysis did not resume: ${why}`, 'error', undefined, err, {}, 'usb-resume-read', {
-				label: 'Retry',
-				handler: resumeUsbAnalysisIfPending
-			});
+			pushToast(
+				`Sticks opened before the reload could not be read back, so their analysis did not resume: ${why}`,
+				'error',
+				undefined,
+				err,
+				{},
+				'usb-resume-read',
+				{
+					label: 'Retry',
+					handler: resumeUsbAnalysisIfPending
+				}
+			);
 			return;
 		}
 		if (pending === null) return;
@@ -58,10 +66,18 @@
 			(exc: unknown) => {
 				console.error('[usb] could not load the stick module to resume analysis:', exc);
 				const why = exc instanceof Error ? exc.message : String(exc);
-				pushToast(`Analysis of a stick from before the reload did not resume: ${why}`, 'error', undefined, exc, {}, 'usb-resume-load', {
-					label: 'Retry',
-					handler: resumeUsbAnalysisIfPending
-				});
+				pushToast(
+					`Analysis of a stick from before the reload did not resume: ${why}`,
+					'error',
+					undefined,
+					exc,
+					{},
+					'usb-resume-load',
+					{
+						label: 'Retry',
+						handler: resumeUsbAnalysisIfPending
+					}
+				);
 			}
 		);
 	}
@@ -79,10 +95,18 @@
 				onfail();
 				console.error('[usb] USB panel failed to load:', exc);
 				const why = exc instanceof Error ? exc.message : String(exc);
-				pushToast(`The USB panel did not load: ${why}`, 'error', undefined, exc, {}, 'usb-panel-load', {
-					label: 'Retry',
-					handler: retry
-				});
+				pushToast(
+					`The USB panel did not load: ${why}`,
+					'error',
+					undefined,
+					exc,
+					{},
+					'usb-panel-load',
+					{
+						label: 'Retry',
+						handler: retry
+					}
+				);
 			}
 		);
 	}
@@ -98,23 +122,58 @@
 	import TreeContextMenu from './TreeContextMenu.svelte';
 	import AutolistBrowser from './AutolistBrowser.svelte';
 	import PlaylistHistoryPanel from './PlaylistHistoryPanel.svelte';
-	import { startUsbWatch, stopUsbWatch, usbTracker } from '$lib/rb/usb-tracker.svelte';
+	import {
+		openUsbPanel,
+		presentNonForgotten,
+		startUsbWatch,
+		stopUsbWatch,
+		usbDetectPulseActive,
+		usbTracker
+	} from '$lib/rb/usb-tracker.svelte';
 	import { uiPrefs, setPlaylistTreeView } from '$lib/rb/prefs.svelte';
 	import type { PlaylistTreeViewMode } from '$lib/rb/playlist-tree-view-prefs';
 	import { playlistReveal } from '$lib/rb/playlist-reveal.svelte';
 	import { libraryWorkspace } from '$lib/library/library-workspace.svelte';
 	import { effectiveLibraryLayout, filterTreeByName } from '$lib/rb/skin-layout';
+	import { getRecorderStatus, getSession, listSessions } from '../../../../routes/sets/sets-api';
+	import { recordingRowsFromSegments, type RecordingFileRow } from '$lib/sets/performance-recorder';
+	import { libraryRecordingsTabEnabled } from '$lib/sets/recording-flag';
 
-	let {
-		onautolistchange,
-		...playlistTreeProps
-	}: PlaylistTreeProps = $props();
+	let { onautolistchange, ...playlistTreeProps }: PlaylistTreeProps = $props();
 
 	let activeTab = $state<LibrarySourceTab>('playlists');
 	let treeContextMenu = $state<TreeContextMenu | null>(null);
 	let treeSmartlistSection = $state<TreeSmartlistSection | null>(null);
 	let deleteSmartlistUi: ((sl: { id: string; name: string }) => void) | undefined;
 	let autolistsMounted = $state(false);
+	let recordingRows = $state<RecordingFileRow[]>([]);
+	let recordingsDir = $state<string | null>(null);
+	let recordingsLoading = $state(false);
+	let recordingsError = $state<string | null>(null);
+	let recordingsLoaded = $state(false);
+
+	async function loadRecordingsTab(): Promise<void> {
+		if (!libraryRecordingsTabEnabled()) return;
+		recordingsLoading = true;
+		recordingsError = null;
+		try {
+			const [sessions, status] = await Promise.all([listSessions(), getRecorderStatus()]);
+			const segmentsBySession = new Map<string, { name: string; size_bytes: number }[]>();
+			await Promise.all(
+				sessions.map(async (session) => {
+					const detail = await getSession(session.session_id);
+					segmentsBySession.set(session.session_id, detail.segments);
+				})
+			);
+			recordingRows = recordingRowsFromSegments(sessions, segmentsBySession);
+			recordingsDir = status.recordings_dir ?? null;
+			recordingsLoaded = true;
+		} catch (error) {
+			recordingsError = error instanceof Error ? error.message : String(error);
+		} finally {
+			recordingsLoading = false;
+		}
+	}
 
 	$effect(() => {
 		if (usbTracker.panelOpen) {
@@ -138,7 +197,11 @@
 	let treeQuery = $state('');
 	// The search filters the tree view only; column view keeps its own drill-down (Codex P2, PR #8869).
 	const treeSearch = $derived(yourLibrary && playlistTreeView === 'tree');
-	const shownNodes = $derived(treeSearch ? filterTreeByName(playlistTreeProps.nodes, treeQuery) : playlistTreeProps.nodes);
+	const shownNodes = $derived(
+		treeSearch ? filterTreeByName(playlistTreeProps.nodes, treeQuery) : playlistTreeProps.nodes
+	);
+	const usbStickCount = $derived(presentNonForgotten().length);
+	const usbDetectPulse = $derived(usbDetectPulseActive());
 
 	onMount(() => {
 		startUsbWatch();
@@ -152,6 +215,8 @@
 	$effect(() => {
 		if (activeTab === 'autolists') autolistsMounted = true;
 		else if (activeTab === 'usbs') loadUsbList();
+		else if (activeTab === 'recordings' && !recordingsLoaded && !recordingsLoading)
+			void loadRecordingsTab();
 	});
 
 	/** CMDK-6848: a playlist row asked into view lives on the Playlists tab. */
@@ -176,6 +241,18 @@
 		<h2 class="your-library-title">Your Library</h2>
 	{/if}
 	<PlaylistHistoryPanel />
+	{#if usbStickCount > 0 || usbDetectPulse}
+		<button
+			type="button"
+			class="usb-lhs-entry"
+			class:usb-detect-pulse={usbDetectPulse}
+			data-testid="library-usb-panel-entry"
+			title="USB sticks - open panel"
+			onclick={() => openUsbPanel()}
+		>
+			USB sticks{usbStickCount > 0 ? ` (${usbStickCount})` : ''}
+		</button>
+	{/if}
 	<LibrarySourceTabs
 		active={activeTab}
 		onchange={(tab) => (activeTab = tab)}
@@ -236,9 +313,42 @@
 		/>
 	{:else if activeTab === 'taglists'}
 		<TaglistTree selectedId={playlistTreeProps.selectedId} onselect={playlistTreeProps.onselect} />
+	{:else if activeTab === 'recordings'}
+		<div class="recordings-body" data-testid="library-recordings-body">
+			{#if recordingsDir !== null}
+				<p class="recordings-dir" data-testid="library-recordings-dir" title={recordingsDir}>
+					Saved under {recordingsDir}
+				</p>
+			{/if}
+			{#if recordingsLoading}
+				<p class="recordings-state" data-testid="library-recordings-loading">
+					Loading recordings...
+				</p>
+			{:else if recordingsError !== null}
+				<p class="recordings-state failed" data-testid="library-recordings-failed">
+					{recordingsError}
+				</p>
+			{:else if recordingRows.length === 0}
+				<p class="recordings-state" data-testid="library-recordings-empty">
+					No audio segments yet.
+				</p>
+			{:else}
+				<ul class="recordings-list" data-testid="library-recordings-list">
+					{#each recordingRows as row (row.session_id + row.file_name)}
+						<li data-testid="library-recording-row" data-session-id={row.session_id}>
+							<span class="rec-file" title={row.file_name}>{row.file_name}</span>
+							<span class="rec-session" title={`Session ${row.session_id}`}>{row.session_id}</span>
+						</li>
+					{/each}
+				</ul>
+			{/if}
+		</div>
 	{:else if activeTab !== 'autolists'}
 		{#if UsbListView !== null}
-			<UsbListView selectedId={playlistTreeProps.selectedId} onselect={playlistTreeProps.onselect} />
+			<UsbListView
+				selectedId={playlistTreeProps.selectedId}
+				onselect={playlistTreeProps.onselect}
+			/>
 		{:else if usbListError !== null}
 			<div class="usb-list-state failed" data-testid="usb-list-failed" title={usbListError}>
 				USB list failed to load: open the tab again to retry
@@ -259,6 +369,39 @@
 		flex-direction: column;
 		min-height: 0;
 		height: 100%;
+	}
+	.usb-lhs-entry {
+		flex: none;
+		margin: 2px 6px 0;
+		padding: 2px 6px;
+		border: 1px solid var(--rb-border);
+		border-radius: 2px;
+		background: var(--rb-panel-raised);
+		color: var(--rb-text);
+		font-family: var(--rb-font);
+		font-size: var(--rb-fs-label);
+		text-align: left;
+		cursor: pointer;
+	}
+	.usb-lhs-entry.usb-detect-pulse {
+		border-color: color-mix(in srgb, var(--rb-orange) 70%, var(--rb-border));
+		color: var(--rb-orange);
+		animation: usb-lhs-detect-pulse 1.2s ease-in-out infinite;
+	}
+	@keyframes usb-lhs-detect-pulse {
+		0%,
+		100% {
+			opacity: 0.55;
+		}
+		50% {
+			opacity: 1;
+		}
+	}
+	/* A11Y-11811: under reduce motion the detected stick keeps its orange border and text, without the pulse. */
+	@media (prefers-reduced-motion: reduce) {
+		.usb-lhs-entry.usb-detect-pulse {
+			animation: none;
+		}
 	}
 	.your-library-title {
 		margin: 0;
@@ -287,6 +430,56 @@
 	}
 	.usb-list-state.failed {
 		color: var(--rb-red);
+	}
+	.recordings-body {
+		flex: 1 1 0;
+		min-height: 0;
+		overflow-y: auto;
+		padding: 6px 8px;
+		font-size: 11px;
+	}
+	.recordings-dir {
+		margin: 0 0 8px;
+		color: var(--rb-text-dim);
+		overflow: hidden;
+		text-overflow: ellipsis;
+		white-space: nowrap;
+	}
+	.recordings-state {
+		margin: 0;
+		color: var(--rb-text-dim);
+	}
+	.recordings-state.failed {
+		color: var(--rb-red);
+	}
+	.recordings-list {
+		margin: 0;
+		padding: 0;
+		list-style: none;
+		display: flex;
+		flex-direction: column;
+		gap: 4px;
+	}
+	.recordings-list li {
+		display: flex;
+		flex-direction: column;
+		gap: 2px;
+		padding: 4px 6px;
+		border-radius: 4px;
+		background: var(--rb-bg);
+	}
+	.rec-file {
+		color: var(--rb-text);
+		overflow: hidden;
+		text-overflow: ellipsis;
+		white-space: nowrap;
+	}
+	.rec-session {
+		color: var(--rb-text-dim);
+		font-size: 10px;
+		overflow: hidden;
+		text-overflow: ellipsis;
+		white-space: nowrap;
 	}
 	.autolists-body {
 		flex: 1 1 0;

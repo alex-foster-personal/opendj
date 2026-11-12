@@ -58,11 +58,6 @@ const ALLOWLIST = {
 	},
 	'src/lib/ui/clamp-to-viewport.ts': { references: 2, why: 'popover placement after layout: paint only' },
 	'src/lib/player/io-device-test-audio.ts': { references: 2, why: 'Audio I/O input meter: samples the mic level only to paint the meter, nothing reads it' },
-	'src/lib/rb/mixer-performance-listeners.ts': { references: 2, why: 'fader ghost guidance: when to SHOW a hint, paint only' },
-	'src/lib/player/headphones.ts': {
-		references: 4,
-		why: 'signal meters: sampled for display. KNOWN GAP: the IPC snapshot also carries them, stale while hidden but stamped with measured_at'
-	},
 	'src/lib/rb/performance-ipc.svelte.ts': { references: 1, why: 'preset settle poll: each frame wait is raced against a timer deadline, so it is bounded' },
 	'src/lib/rb/performance-rescue-restore.svelte.ts': {
 		references: 4,
@@ -71,6 +66,10 @@ const ALLOWLIST = {
 	'src/lib/rb/frame-probe.ts': {
 		references: 1,
 		why: 'PERFPROBE-01 opt-in frame-time probe: it measures the paint clock itself, so a timer backstop would falsify it; it publishes nothing other logic reads, and its window is posted only while the page is visible'
+	},
+	'src/lib/rb/live-handles-probe.ts': {
+		references: 5,
+		why: 'PERF-LEAK-11789 opt-in handle probe: wraps requestAnimationFrame to count pending callbacks only; it publishes nothing other logic reads and arms only with ?perfprobe=1'
 	}
 };
 

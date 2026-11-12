@@ -193,8 +193,6 @@ APPROVED_READS: dict[str, tuple[str, ...]] = {
     "tests/scripts/test_runner_toolset_cargo.py": ("./**",),
     "(private path)": ("tests/**",),
     "(private path)": ("tests/**",),
-    "tests/scripts/test_runner_toolset_js.py": ("tests/**",),
-    "tests/scripts/test_runner_toolset_js.py": ("tests/**",),
     "tests/scripts/test_savepoint_gate.py": ("apps/webui/frontend/tests/unit",),
     "tests/shared/state/test_ingest_rekordbox_encrypted_source.py": (".",),
     "tests/shared/test_rekordbox_open_db_encryption.py": (".",),

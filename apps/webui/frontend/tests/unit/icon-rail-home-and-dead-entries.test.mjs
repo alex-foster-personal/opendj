@@ -56,6 +56,12 @@ test('the top-left rail entry is a live way back to the whole collection', () =>
 	}
 });
 
+test('the second rail button is the live Spotify source with a discoverable tooltip', () => {
+	const second = buttons(renderRail())[1];
+	assert.equal(isDisabled(second), false);
+	assert.match(titleOf(second), /Spotify playlists/);
+});
+
 test('every inert rail entry is a planned feature, and only the planned ones are inert', () => {
 	const inertTitles = buttons(renderRail())
 		.filter(isDisabled)

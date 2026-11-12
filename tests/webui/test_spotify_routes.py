@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import socket
 import sqlite3
 from pathlib import Path
 
@@ -483,6 +484,104 @@ def test_put_client_id_reports_cache_delete_failure(tmp_path: Path) -> None:
         assert token.is_dir()
     finally:
         client.close()
+
+
+@pytest.mark.requirement("SPOT-9359")
+def test_connect_token_cache_parent_unwritable_is_not_redirect_port_busy(tmp_path: Path) -> None:
+    """[if] the token cache parent cannot be created [then] Connect reports storage failure and closes the listener,
+    [else stop]."""
+    pytest.importorskip("spotipy", reason="the spotify extra builds the PKCE client before the cache dir")
+    from http.server import HTTPServer
+
+    from apps.spotify import account
+
+    captured: dict[str, object] = {}
+
+    def factory(_addr: tuple[str, int], handler: type) -> HTTPServer:
+        server = HTTPServer(("127.0.0.1", 0), handler)
+        captured["server"] = server
+        captured["port"] = server.server_address[1]
+        return server
+
+    blocker = tmp_path / "not-a-dir"
+    blocker.write_text("x", encoding="utf-8", newline="\n")
+    token = blocker / "token.json"
+
+    cid = tmp_path / "cid.json"
+    cid.write_text(
+        json.dumps({"client_id": "0123456789abcdef0123456789abcdef"}),
+        encoding="utf-8",
+        newline="\n",
+    )
+    app = FastAPI()
+    app.state.spotify_client_id_path = cid
+    app.state.spotify_account_opener = lambda: account.open_account_client(env={}, token_path=token, client_id_path=cid)
+    app.state.spotify_connect_flow = account.ConnectFlow(
+        token_path=token, client_id_path=cid, server_factory=factory, timeout_s=1, env={}
+    )
+    app.include_router(router, prefix="/api/v1")
+    client = TestClient(app)
+
+    resp = client.post("/api/v1/spotify/account/connect")
+    assert resp.status_code == 500
+    detail = resp.json()["detail"]
+    assert detail["code"] == "SPOTIFY_TOKEN_CACHE_UNWRITABLE"
+    assert detail["code"] != "SPOTIFY_REDIRECT_PORT_BUSY"
+    assert str(blocker) in detail["message"]
+
+    port = captured["port"]
+    server = captured["server"]
+    assert isinstance(port, int) and isinstance(server, HTTPServer)
+    reuse = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    reuse.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+    try:
+        reuse.bind(("127.0.0.1", port))
+    finally:
+        reuse.close()
+
+
+@pytest.mark.requirement("SPOT-9359")
+def test_connect_redirect_port_still_busy_reports_port_code(tmp_path: Path) -> None:
+    """[if] the redirect listener cannot bind [then] Connect still reports SPOTIFY_REDIRECT_PORT_BUSY,
+    [else stop]."""
+    from http.server import HTTPServer
+
+    from apps.spotify import account
+
+    holder = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    holder.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+    holder.bind(("127.0.0.1", 0))
+    holder.listen()
+    occupied_port = holder.getsockname()[1]
+
+    try:
+
+        def factory(_addr: tuple[str, int], handler: type) -> HTTPServer:
+            return HTTPServer(("127.0.0.1", occupied_port), handler)
+
+        cid = tmp_path / "cid.json"
+        cid.write_text(
+            json.dumps({"client_id": "0123456789abcdef0123456789abcdef"}),
+            encoding="utf-8",
+            newline="\n",
+        )
+        token = tmp_path / "spotify" / "token.json"
+        app = FastAPI()
+        app.state.spotify_client_id_path = cid
+        app.state.spotify_account_opener = lambda: account.open_account_client(
+            env={}, token_path=token, client_id_path=cid
+        )
+        app.state.spotify_connect_flow = account.ConnectFlow(
+            token_path=token, client_id_path=cid, server_factory=factory, timeout_s=1, env={}
+        )
+        app.include_router(router, prefix="/api/v1")
+        client = TestClient(app)
+
+        resp = client.post("/api/v1/spotify/account/connect")
+        assert resp.status_code == 409
+        assert resp.json()["detail"]["code"] == "SPOTIFY_REDIRECT_PORT_BUSY"
+    finally:
+        holder.close()
 
 
 def _playlist_out(**extra: object) -> dict[str, object]:

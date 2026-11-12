@@ -24,8 +24,13 @@ const SNAP_GRID = [
 ];
 
 before(async () => {
-	({ createLatestSeekDispatcher, waveClickTargetMs, waveDragTargetMs, snapWaveTargetMs, waveSnapModeFromModifiers } =
-		await loadTypeScriptModule('src/lib/components/rb/wave/wave-scrub.ts'));
+	({
+		createLatestSeekDispatcher,
+		waveClickTargetMs,
+		waveDragTargetMs,
+		snapWaveTargetMs,
+		waveSnapModeFromModifiers
+	} = await loadTypeScriptModule('src/lib/components/rb/wave/wave-scrub.ts'));
 });
 
 // ------------------------------------------------------------------ snap modes
@@ -59,7 +64,11 @@ test('snapWaveTargetMs "beat" (Cmd+Shift held) snaps to any real beat, not only 
 test('snapWaveTargetMs falls back to the raw target rather than throwing when no usable beatgrid exists', () => {
 	assert.equal(snapWaveTargetMs(1000, null, 'downbeat'), 1000);
 	assert.equal(snapWaveTargetMs(1000, undefined, 'downbeat'), 1000);
-	assert.equal(snapWaveTargetMs(1000, [], 'downbeat'), 1000, 'an empty grid fails validateBeatGrid gracefully');
+	assert.equal(
+		snapWaveTargetMs(1000, [], 'downbeat'),
+		1000,
+		'an empty grid fails validateBeatGrid gracefully'
+	);
 	// No n===1 downbeat at all in this (otherwise valid) grid.
 	const noDownbeat = [
 		{ n: 2, bpm: 128, t: 0.1 },
@@ -131,6 +140,19 @@ test('waveform seek targets clamp to the real track boundaries and reject invali
 	);
 });
 
+test('[if] drag coalescing only stamps the release [then] dispatcher forwards pressT0Ms once [else stop]', async () => {
+	const stamps = [];
+	const dispatcher = createLatestSeekDispatcher(async (positionMs, pressT0Ms) => {
+		stamps.push({ positionMs, pressT0Ms });
+	});
+	await dispatcher.request(12_000);
+	await dispatcher.request(24_000, 99);
+	assert.deepEqual(stamps, [
+		{ positionMs: 12_000, pressT0Ms: undefined },
+		{ positionMs: 24_000, pressT0Ms: 99 }
+	]);
+});
+
 test('latest seek dispatcher never drops the release target while an earlier seek is in flight', async () => {
 	const calls = [];
 	const releases = [];
@@ -150,5 +172,33 @@ test('latest seek dispatcher never drops the release target while an earlier see
 
 	releases.shift()();
 	await Promise.all([first, release]);
+	assert.equal(dispatcher.pending, false);
+});
+
+test('latest seek dispatcher clears pending after rejection and accepts a later request', async () => {
+	const calls = [];
+	const releases = [];
+	let dispatchCount = 0;
+	const dispatcher = createLatestSeekDispatcher(async (positionMs) => {
+		calls.push(positionMs);
+		dispatchCount += 1;
+		if (dispatchCount === 1) {
+			await new Promise((resolve) => releases.push(resolve));
+			throw new Error('seek rejected');
+		}
+	});
+	const first = dispatcher.request(60_000);
+	assert.equal(dispatcher.pending, true);
+
+	dispatcher.request(48_000);
+	assert.equal(dispatcher.pending, true);
+
+	releases.shift()();
+	await assert.rejects(first, /seek rejected/);
+	assert.equal(dispatcher.pending, false);
+
+	const retryRelease = dispatcher.request(42_000);
+	await retryRelease;
+	assert.deepEqual(calls, [60_000, 42_000]);
 	assert.equal(dispatcher.pending, false);
 });

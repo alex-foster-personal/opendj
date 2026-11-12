@@ -189,8 +189,16 @@ test('[if] same seed writes different bytes or CLI needs the app [then] offline 
 	});
 	assert.equal(unavail.status, 2);
 	assert.match(unavail.stderr, /^\[UNAVAILABLE\]/);
-	for (const issue of REAL_PATH_DEPENDENCIES.map((d) => d.issue))
-		assert.ok(unavail.stderr.includes(issue));
+	// The CLI names exactly the dependencies still missing from this checkout
+	// (PITCH #10558 and STUTTER #10579 kernels have landed; the rest have not).
+	const repoRoot = fileURLToPath(new URL('../../../../../', import.meta.url));
+	const stillMissing = REAL_PATH_DEPENDENCIES.filter((d) => !existsSync(join(repoRoot, d.path)));
+	assert.ok(
+		stillMissing.length > 0,
+		'every dependency landed: the script now needs its adapter wired'
+	);
+	for (const dep of REAL_PATH_DEPENDENCIES)
+		assert.equal(unavail.stderr.includes(dep.path), stillMissing.includes(dep), dep.issue);
 	assert.equal(existsSync(out), false);
 	assert.throws(
 		() => resolveRealRenderer(freshDir()),

@@ -1,0 +1,9 @@
+control,deck,shift,message,channel,number
+PLAY/PAUSE,1,0,Note,1,0x0B
+CUE,1,0,Note,1,0x0C
+HOT CUE A,1,0,Note,8,0
+CHANNEL FADER,1,0,CC,1,19
+EQ HI,1,0,CC,1,7
+CROSSFADER,,0,CC,7,31
+PLAY/PAUSE,2,0,Note,2,11
+BEAT FX ON,,0,Note,5,71

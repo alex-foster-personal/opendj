@@ -14,7 +14,10 @@ Single-line intent:
 
 from __future__ import annotations
 
+import os
+import sqlite3
 import shutil
+import time
 from pathlib import Path
 
 import pytest
@@ -29,6 +32,25 @@ def data_dir(tmp_path: Path) -> Path:
     target = tmp_path / "data"
     target.mkdir()
     return target
+
+
+def _write_plain_sqlite(path: Path) -> Path:
+    conn = sqlite3.connect(path)
+    conn.execute("CREATE TABLE IF NOT EXISTS djmdContent (ID TEXT)")
+    conn.commit()
+    conn.close()
+    return path
+
+
+def _install_live_db(tmp_path: Path) -> Path:
+    """Fake rekordbox install dir holding a readable master.db."""
+    rb_dir = tmp_path / "rekordbox"
+    rb_dir.mkdir()
+    return _write_plain_sqlite(rb_dir / "master.db")
+
+
+def _set_mtime(path: Path, when: float) -> None:
+    os.utime(path, (when, when))
 
 
 def _with_plain_copy(data_dir: Path, source: Path) -> Path:
@@ -89,12 +111,58 @@ def test_probe_reports_size_and_mtime_for_a_real_file(data_dir: Path, rb_plain_d
 # ----- source selection ---------------------------------------------------
 def test_an_existing_plain_copy_is_preferred_over_the_live_db(
     data_dir: Path,
-    rb_plain_db_path: Path,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    plain = _with_plain_copy(data_dir, rb_plain_db_path)
+    """[if] plain is newer than live [then] detect picks plain, [else stop]."""
+    live = _install_live_db(tmp_path)
+    now = time.time()
+    _set_mtime(live, now)
+    monkeypatch.setattr(
+        "apps.shared.platform_paths.rekordbox_app_dir",
+        lambda: live.parent,
+    )
+    plain = _write_plain_sqlite(data_dir / detect.PLAIN_COPY_NAME)
+    _set_mtime(plain, now)
     found = detect.detect_rekordbox(data_dir)
     assert found.import_source == str(plain)
     assert found.import_source_encrypted is False
+
+
+@pytest.mark.requirement("SETUP-12782")
+def test_stale_plain_copy_is_skipped_for_auto_detect(
+    data_dir: Path,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """[if] plain is older than live [then] detect names live, [else stop]."""
+    live = _install_live_db(tmp_path)
+    now = time.time()
+    _set_mtime(live, now)
+    monkeypatch.setattr(
+        "apps.shared.platform_paths.rekordbox_app_dir",
+        lambda: live.parent,
+    )
+    plain = _write_plain_sqlite(data_dir / detect.PLAIN_COPY_NAME)
+    _set_mtime(plain, now - 120.0)
+    found = detect.detect_rekordbox(data_dir)
+    assert found.import_source == str(live)
+
+
+@pytest.mark.requirement("SETUP-12782")
+def test_copy_stale_vs_live_honours_the_ingest_slack(tmp_path: Path) -> None:
+    """[if] live is 61s newer than plain [then] copy is stale, [else stop]."""
+    live = _write_plain_sqlite(tmp_path / "live.db")
+    plain = _write_plain_sqlite(tmp_path / "older-plain.db")
+    now = time.time()
+    _set_mtime(live, now)
+    _set_mtime(plain, now - 61.0)
+    live_probe = detect.probe(live)
+    plain_probe = detect.probe(plain)
+    assert detect.copy_stale_vs_live(copy=plain_probe, live_db=live_probe) is True
+    _set_mtime(plain, now - 30.0)
+    plain_probe = detect.probe(plain)
+    assert detect.copy_stale_vs_live(copy=plain_probe, live_db=live_probe) is False
 
 
 def test_no_rekordbox_anywhere_is_its_own_blocker(

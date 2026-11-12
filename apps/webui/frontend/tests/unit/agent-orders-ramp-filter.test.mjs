@@ -103,7 +103,7 @@ test('agent ramp still rejects a control that is not rampable', async () => {
 						over: { unit: 'ms', n: 20 }
 					}
 				}),
-			/ramp command must be eq, fader, trim, filter, stem_gain, crossfader, or tempo/
+			/ramp command must be eq, fader, trim, filter, stem_gain, stem_fx_send, crossfader, or tempo/
 		);
 	} finally {
 		uninstall();

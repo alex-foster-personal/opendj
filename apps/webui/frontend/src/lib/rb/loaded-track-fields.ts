@@ -33,5 +33,6 @@ export function clearLoadedTrackFields(st: DeckState): void {
 	st.last_loop = null; // DECKUX-10478
 	st.hot_cues = [];
 	st.anlz = null;
+	st.warp_map = null;
 	st.anlz_error = null;
 }

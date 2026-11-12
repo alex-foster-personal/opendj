@@ -82,7 +82,7 @@ def search_lyrics(
         snippet = matched_snippet(data_dir, stable_id, q)
         if snippet is None:
             continue
-        items.append(SearchHit(**row, match_context=snippet))
+        items.append(SearchHit(**row, match_context=snippet, match_provenance="lyrics"))
 
     next_offset = offset + len(stable_ids) if offset + len(stable_ids) < total else None
     return SearchResults(query=q, items=items, total=total, next_offset=next_offset)

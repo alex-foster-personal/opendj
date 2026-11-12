@@ -38,10 +38,12 @@ from apps.autodj.plan import (
     FX_CONTROLS,
     PlanEvent,
     TransitionPlan,
+    _transport_steps,
     beat_sync_reach_pct,
     hoistable,
     pair_beat_sync_fold,
     play_start_bar,
+    surviving_transport,
 )
 from apps.autodj.profile import DECK_LOAD_TRIM_DB, TrackProfile, trim_knob
 
@@ -219,16 +221,10 @@ def _value(event: PlanEvent) -> float:
 
 
 def incoming_played_bars(plan: TransitionPlan) -> float:
-    """Plan bars the incoming deck actually plays: from each effective play (``effective_bars``, its quantized launch)
+    """Plan bars the incoming deck actually plays: from each surviving play's quantized launch
     to the next stop or the plan's end, so a late launch or a pause never asks for audio the deck does not play."""
-    bars = effective_bars(plan)
-    steps = sorted(
-        (bars[i], e.name == "play")
-        for i, e in enumerate(plan.events)
-        if e.kind == "do" and e.deck == plan.in_.deck and e.name in ("play", "stop")
-    )
     played, since = 0.0, None
-    for raw_at, playing in steps:
+    for raw_at, playing in _transport_steps(plan.events, plan.in_.deck):
         at = min(raw_at, plan.bars)
         if playing and since is None:
             since = at
@@ -281,6 +277,14 @@ def renders_at_start(event: PlanEvent, plan: TransitionPlan, layout: RenderLayou
     return plan.out.start_bar + event.at_bar <= layout.start_out_bar or hoistable(event, plan)
 
 
+def _require_absolute_audio_paths(*audio: Path) -> None:
+    for path in audio:
+        if not path.is_absolute():
+            # The renderer resolves a relative load against the plan file's own directory (offline.rs), not the
+            # caller's, so it would decode a different file from the one the caller named.
+            raise RenderPlanError(f"audio path {path} must be absolute")
+
+
 def compile_render_plan(
     plan: TransitionPlan,
     out_profile: TrackProfile,
@@ -295,11 +299,7 @@ def compile_render_plan(
     _refuse_controls_the_render_cannot_apply(plan)
     _refuse_follower_tempo_moves(plan)
     layout = layout_of(plan, out_profile, in_profile, context_bars, start_out_bar=start_out_bar)
-    for audio in (out_audio, in_audio):
-        if not audio.is_absolute():
-            # The renderer resolves a relative load against the plan file's own directory (offline.rs), not the
-            # caller's, so it would decode a different file from the one the caller named.
-            raise RenderPlanError(f"audio path {audio} must be absolute")
+    _require_absolute_audio_paths(out_audio, in_audio)
     out_deck, in_deck = plan.out.deck, plan.in_.deck
     at0 = {"ms": 0}
     events: list[dict[str, Any]] = [
@@ -365,8 +365,11 @@ def compile_render_plan(
         )
     timed: list[tuple[float, int, dict[str, Any]]] = []
     bars = effective_bars(plan)
+    kept = {id(event) for deck in (plan.out.deck, plan.in_.deck) for event in surviving_transport(plan.events, deck)}
     for index, event in enumerate(plan.events):
         if event.kind == "do" and event.name == "master":
+            continue
+        if event.kind == "do" and event.name in ("play", "stop") and id(event) not in kept:
             continue
         out_bar = plan.out.start_bar + bars[index]
         # Live compile runs a hoistable incoming set in ``prepare``, before anything plays; here that is render

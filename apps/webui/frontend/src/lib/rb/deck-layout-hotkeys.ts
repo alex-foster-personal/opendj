@@ -27,6 +27,10 @@ import {
 import { isTextEntryTarget } from '$lib/keyboard/text-entry-target';
 import { setDeckLayoutMode, type DeckLayoutMode } from '$lib/rb/prefs.svelte';
 import { isSettingsOpen } from '$lib/settings/overlay.svelte';
+import {
+	activeKeyboardPreset,
+	legacyPerformanceChordsActive
+} from '$lib/keyboard/keymap-runtime.svelte';
 
 export interface DeckLayoutHotkeyEvent {
 	key: string;
@@ -61,6 +65,7 @@ export function resolveDeckLayoutHotkeyMode(
 
 export function installDeckLayoutHotkeys(): () => void {
 	const onKey = (e: KeyboardEvent): void => {
+		if (!legacyPerformanceChordsActive(activeKeyboardPreset())) return;
 		const mode = resolveDeckLayoutHotkeyMode(e, { settingsOpen: isSettingsOpen() });
 		if (mode === null) return;
 		e.preventDefault();

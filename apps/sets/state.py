@@ -484,6 +484,66 @@ class SetsState:
             out.append(parse_control_event_v2(payload))
         return out
 
+    def import_session(
+        self,
+        session_id: str,
+        *,
+        started_at: str,
+        ended_at: str | None,
+        capture_device: str,
+        notes: str | None,
+        events: list[Event],
+    ) -> None:
+        """Insert one private session and all its events in a single transaction.
+
+        Raises :class:`sqlite3.IntegrityError` when ``session_id`` already exists.
+        Used by portable import so a half-written session never leaves a stray row.
+        """
+        tbl = self._events_table
+        with self._rw() as conn:
+            conn.execute("BEGIN")
+            try:
+                conn.execute(
+                    """
+                    INSERT INTO sets(session_id, started_at, ended_at, capture_device,
+                                     share_state, notes)
+                    VALUES (?, ?, ?, ?, 'private', ?)
+                    """,
+                    (session_id, started_at, ended_at, capture_device, notes),
+                )
+                conn.executemany(
+                    f"""
+                    INSERT INTO {tbl}(session_id, timestamp_s, wall_clock, deck,
+                                       track_stable_id, action, value_json, source)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    [
+                        (
+                            session_id,
+                            ev.timestamp_s,
+                            ev.wall_clock,
+                            ev.deck,
+                            ev.track_stable_id,
+                            ev.action,
+                            _value_json(ev.value),
+                            ev.source,
+                        )
+                        for ev in events
+                    ],
+                )
+                conn.execute("COMMIT")
+            except Exception:
+                conn.execute("ROLLBACK")
+                raise
+
+    def delete_session(self, session_id: str) -> None:
+        """Remove a session row; timeline events cascade via foreign key.
+
+        Used only for portable-import rollback when filesystem writes fail.
+        """
+        with self._rw() as conn:
+            conn.execute("DELETE FROM sets WHERE session_id = ?", (session_id,))
+
 
 def _row_to_event(row: tuple[Any, ...]) -> Event:
     (session_id, timestamp_s, wall_clock, deck, track_stable_id, action, value_json, source) = row

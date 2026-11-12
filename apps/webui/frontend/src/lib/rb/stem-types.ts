@@ -15,6 +15,8 @@ export interface StemControlState {
 	solo: boolean;
 	/** 0..1 knob. 0.5 = unity. Independent of mute/solo. */
 	gain: number;
+	/** 0..1 linear send into the channel's colour FX input. 0 = no send. Independent of mute/solo/gain. */
+	fx_send: number;
 }
 
 export interface StemAlignment {

@@ -14,7 +14,7 @@ import { shouldRouteHorizontalWheel, knobCommandType } from './mixer-horizontal-
 import { getSelectedDecks, onMixerSelectionChange, resetToSingle } from './mixer-selection.svelte';
 import { uiPrefs } from './prefs.svelte';
 import { runPerformanceCommandFromUi } from './performance-ipc.svelte';
-import { tickFaderGhostIdle } from './fader-ghost.svelte';
+import { installFaderGhostIdleTicker } from './fader-ghost.svelte';
 
 function _clamp01(value: number): number {
 	return Math.min(1, Math.max(0, value));
@@ -58,12 +58,9 @@ export function installMixerPerformanceListeners(): () => void {
 		}
 	}
 
-	let ghostIdleRaf = 0;
-	function ghostIdleLoop(): void {
-		tickFaderGhostIdle(performance.now());
-		ghostIdleRaf = requestAnimationFrame(ghostIdleLoop);
-	}
-	ghostIdleRaf = requestAnimationFrame(ghostIdleLoop);
+	// Fader ghost idle guidance: a one-shot timer armed only while a ghost is
+	// diverged and waiting on its idle threshold (no always-on frame loop).
+	const uninstallGhostIdle = installFaderGhostIdleTicker();
 
 	// The wheel is passive: false so it can preventDefault, and a non-passive
 	// wheel on window makes Chromium wait on the main thread before scrolling
@@ -88,7 +85,7 @@ export function installMixerPerformanceListeners(): () => void {
 
 	return () => {
 		offSelectionChange();
-		cancelAnimationFrame(ghostIdleRaf);
+		uninstallGhostIdle();
 		window.removeEventListener('keydown', onKeyDown, true);
 		window.removeEventListener('pointerdown', onPointerDown, true);
 		if (wheelBound) {

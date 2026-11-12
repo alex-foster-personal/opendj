@@ -52,7 +52,7 @@
 import { mkdirSync, readFileSync, readdirSync, statSync, writeFileSync } from 'node:fs';
 import { gzipSync } from 'node:zlib';
 import { join, dirname, normalize, relative } from 'node:path';
-import { BudgetError, BUDGETS_DIR, loadBudgets } from './bundle-budget-load.mjs';
+import { BudgetError, BUDGETS_DIR, chargeBranchId, loadBudgets } from './bundle-budget-load.mjs';
 
 // ---------------------------------------------------------------- budgets ---
 
@@ -187,10 +187,15 @@ function main() {
     return value;
   };
   const baselinePath = _value('--baseline');
-  const ownIds = (_value('--own') ?? '')
-    .split(',')
-    .map((id) => id.trim())
-    .filter(Boolean);
+  const ownIds = [
+    ...new Set(
+      (_value('--own') ?? '')
+        .split(',')
+        .map((id) => id.trim())
+        .filter(Boolean)
+        .map((id) => chargeBranchId(id))
+    )
+  ];
   const reportOnly = args.includes('--report-only');
   const measurePath = _value('--measure');
   const sha = _value('--sha');

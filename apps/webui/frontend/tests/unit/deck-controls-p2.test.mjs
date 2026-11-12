@@ -304,8 +304,14 @@ describe('DECKCTL-6235d loop source', () => {
 		// The provenance this rests on: a stored range engages through setLoop,
 		// which leaves beat_length null; INT engages with its beat count.
 		const engine = read('lib/rb/audio-engine.svelte.ts');
-		assert.match(engine, /async setLoop\(deck: DeckId, loop: \{ in_ms: number; out_ms: number \} \| null, quantize = true\): Promise<void> \{\n\t\tawait this\._setLoop\(deck, loop, null, quantize\);/);
-		assert.match(engine, /await this\._setLoop\(deck, range, beats\);/);
+		assert.match(
+			engine,
+			/async setLoop\(deck: DeckId, loop: \{ in_ms: number; out_ms: number \} \| null, quantize = true\): Promise<void> \{\n\t\t(?:_abandonRoll\(deck\);\n\t\t)?await this\._setLoop\(deck, loop, null, quantize\);/
+		);
+		assert.match(
+			engine,
+			/(?:_abandonRoll\(deck\);\n\t\t)?await this\._setLoop\(deck, range, beats\);/
+		);
 	});
 
 	// Codex P2 on PR #6235: a refused engage (a preset owns the controls) must
@@ -565,7 +571,7 @@ describe('DECKCTL-6235 agent preference writes reach an open page', () => {
 		// Codex P2 on PR #6235: a resync replays nothing, so it must re-read too.
 		assert.match(jog, /const offResync = subscribeResync\(\(\) => void refreshAutoCueFromDisk\(\)\);/);
 		const prefs = read('lib/rb/prefs.svelte.ts');
-		assert.match(prefs, /export const refreshAutoCueFromDisk = makeAutoCueRefresher\(uiPrefs, _persist, reportSettingSaveError\);/);
+		assert.match(prefs, /export const refreshAutoCueFromDisk = makeAutoCueRefresher\(\s*uiPrefs,\s*_persist,\s*reportSettingSaveError\s*\);/);
 	});
 });
 

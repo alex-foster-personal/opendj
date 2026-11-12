@@ -101,6 +101,7 @@ import {
 	recordDeckLoad,
 	rethrowLibraryTrackLookupError,
 	reportDeckLoadFailure,
+	splitDeckLoadStageMap,
 	warnShortDurationOnLoad
 } from '$lib/rb/deck-load-context';
 import { recordPerfEvent, recordPerfTiming, stageTimer } from '$lib/rb/perf-event-log';
@@ -125,7 +126,7 @@ import {
 } from '$lib/rb/unexpected-pause-report';
 import { notifyPerformanceArmedContextReset } from '$lib/rb/performance-armed-context-reset';
 import { buildDeckChannelGraph, recreateFromEngineAccess, type DeckChannelNodes as _ChannelNodes, masterSilenceIsCommanded, masterBusSilenceIsCommanded, masterBusPathGain, autoGainLinear, parseDjOutputProfile, resolveDjOutputProfile, wireAudioOutputTopology, type DjOutputProfile, clearDjOutputResolution, publishDjOutputResolution, ENGINE_RECOVERED_PRESS_PLAY, GRAPH_REBUILD_EXHAUSTED_MESSAGE, GRAPH_REBUILD_RETRY_DELAYS_MS, planResumeAfterRebuild, rebuildGraphWithRetries, reattachingDeckMessage, markEngineRecoveryStop , applyColorKnob, applyTrimStage, publishDeckAutoGain, registerAutoGainApplier, settleTrackAutoGain , setDeckAutoGainUserOffset , setAutoGainLiveGuard, deckAutoGain, freshTrackAutoGain } from '$lib/rb/deck-channel-graph';
-import { FILTER_APPLY_KIND, FADER_APPLY_KIND, XFADER_APPLY_KIND, STEM_MUTE_APPLY_KIND, STEM_SOLO_APPLY_KIND, applyEqRamp, logEqApply, logMixerApply, measurePressToScheduleMs, outputLatencyIfDevice, scheduleRowFacts, watchOutputDevice } from '$lib/rb/press-stamp';
+import { FILTER_APPLY_KIND, FADER_APPLY_KIND, XFADER_APPLY_KIND, STEM_MUTE_APPLY_KIND, STEM_SOLO_APPLY_KIND, applyEqRamp, armSeekPresentedFromPressMark, logEqApply, logMixerApply, measurePressToScheduleMs, outputLatencyIfDevice, scheduleRowFacts, watchOutputDevice } from '$lib/rb/press-stamp';
 import {
 	ConflictError,
 	fetchAnlz,
@@ -227,7 +228,7 @@ import {
 	playingStemsIntentionallySilent,
 	STEM_CONTROLS,
 	unavailableStemDeckState,
-	type StemBuffers
+	connectStemFxSend, type StemBuffers
 } from '$lib/rb/stem-graph';
 import { applyStemControl, applyStemEqMode } from '$lib/rb/stem-engine-controls';
 import { createFidelityGuard, startFidelityGuardLoop } from '$lib/rb/fidelity-guard-runtime';
@@ -237,6 +238,8 @@ import { applyTrackLoadChannelReset, captureStemCarry } from '$lib/rb/track-load
 import { clearLoadedTrackFields } from '$lib/rb/loaded-track-fields';
 import type { AnlzBeat, AnlzData } from '$lib/rb/anlz-types';
 import type { AudioEngine, DeckLoadOptions, MasterMode, MasterReason } from '$lib/rb/audio-engine-types';
+import type { EngineDeckId } from '$lib/rb/deck-id';
+import { isShadowDeck } from '$lib/rb/deck-id';
 import { markSyncJoinPress, parseExternalRouting, type DeckId } from '$lib/rb/deck-slots';
 import { buildDeckAudioSnapshot, estimateDeckPcmBytes } from '$lib/rb/deck-audio-snapshot';
 import type { DeckAudioSnapshot, DeckState, LoopState, QuantizeGrid, SyncMode } from '$lib/rb/deck-state-types';
@@ -250,6 +253,8 @@ import {
 	assertUnitRange,
 	AUDIO_CONTEXT_OPTIONS,
 	DECK_IDS,
+	ENGINE_DECK_IDS,
+	SHADOW_DECK_IDS,
 	eqDbFromKnob,
 	masterDelaySeconds,
 	PARAM_SMOOTH_S,
@@ -258,7 +263,7 @@ import {
 import type { PitchRange } from '$lib/player/constants';
 import {
 	_defaultChannel,
-	_defaultHeadphones, recordMasterWrite,
+	_defaultBooth, _defaultHeadphones, recordMasterWrite,
 	_emptyDeckState,
 	_hotCueRevisionsFrom,
 	deckEffectiveBpm,
@@ -287,6 +292,8 @@ import {
 	selectBoothOutput as selectMonitorBoothOutput,
 	selectMasterOutput as selectMonitorMasterOutput,
 	setBoothLevel as setMonitorBoothLevel,
+	setBoothSignalMode as setMonitorBoothSignalMode,
+	reapplyBoothGainFromMaster,
 	setAlignmentMode as setMonitorAlignmentMode,
 	setHeadDelayMs as setMonitorHeadDelay,
 	setHeadphoneOutputMode as setMonitorOutputMode,
@@ -318,6 +325,8 @@ import {
 	refineKeySyncStatus
 } from '$lib/player/key/camelot';
 import type { CamelotKey, KeyLadderRow, KeySyncMode, KeySyncStatus } from '$lib/player/key/camelot';
+import { abandonDeckRoll, clearDeckRoll, executeDeckRoll } from '$lib/rb/deck-roll-commands';
+import { createDeckRollPortForAudioEngine, type DeckRollPort } from '$lib/rb/deck-roll-engine-port';
 import {
 	disarmSafetyLoopOnExplicitExit,
 	exactBeatLoopRangeMs,
@@ -407,7 +416,7 @@ export { upgradeDeckStemsForTest };
 // is re-exported below, so every existing importer of
 // $lib/rb/audio-engine.svelte keeps working unchanged.
 
-export { DECK_IDS, PITCH_RANGES, detachProcessorForDisposal };
+export { DECK_IDS, ENGINE_DECK_IDS, SHADOW_DECK_IDS, PITCH_RANGES, detachProcessorForDisposal };
 export { beatSyncMaxFollowers, planSeekSync, seekSyncMaster, syncChangeRequiresReschedule, syncMayWriteTempo, type SeekSyncPlan };
 export type { PitchRange };
 export {
@@ -511,6 +520,10 @@ const _rt: Record<DeckId, _DeckRuntime> = {
 	3: _emptyRuntime(),
 	4: _emptyRuntime()
 };
+
+function _abandonRoll(deck: DeckId): void { abandonDeckRoll(_deckRollPort, deck); }
+
+let _deckRollPort: DeckRollPort;
 
 /**
  * Channel level meter reading, taken POST-TRIM, POST-EQ, POST-FADER (issue
@@ -1262,7 +1275,7 @@ function _setPausedPosition(deck: DeckId, positionMs: number): void {
 	}
 	const clock = pausedSeekClock(positionMs, rt.durationSec * 1000);
 	setPausedTransportTimelineCursor(rt.presentation, clock.start_offset_sec, rt.durationSec);
-	st.position_ms = clock.position_ms;
+	st.position_ms = clock.position_ms; notePositionSample(deck, st, performance.now());
 	rt.startOffsetSec = clock.start_offset_sec;
 	rt.startCtxTime = _ctx?.currentTime ?? 0;
 }
@@ -1937,6 +1950,7 @@ function _clearSlip(deck: DeckId): void {
 	st.slip_position_ms = null;
 	_rt[deck].slipAnchor = null;
 	_rt[deck].slipTempoBoundaries = [];
+	_abandonRoll(deck);
 }
 
 function _slipHiddenPositionAt(rt: _DeckRuntime, contextTime: number): number {
@@ -2002,6 +2016,9 @@ async function _resumeSlip(deck: DeckId): Promise<void> {
 	if (blendOutcome !== 'blended' && blendOutcome !== 'hard:processor-crossfades') console.warn(`deck ${deck} slip return hard seek: ${String(blendOutcome)}`);
 	_clearSlip(deck);
 }
+
+_deckRollPort = createDeckRollPortForAudioEngine({ deckStates, requireLoaded: _requireLoaded, phaseGrid: requirePhaseCapableBeatGrid, currentPosSec: _currentPosSec, getCtx: () => _ctx, futureScheduleTime: _futureScheduleTime, scheduleDeck: _scheduleDeck, slipHiddenPositionAt: (rt, t) => _slipHiddenPositionAt(rt as _DeckRuntime, t), clearSlip: _clearSlip, resumeSlip: _resumeSlip });
+
 function _commitPendingIfDue(deck: DeckId): void {
 	if (_ctx === null) return;
 	const rt = _rt[deck];
@@ -2413,6 +2430,7 @@ function _clearLoadedTrackState(st: DeckState): void {
 	clearLoadedTrackFields(st);
 	_rt[st.deck_id].metadataDurationMs = null;
 	st.stems = unavailableStemDeckState();
+	clearDeckRoll(st.deck_id);
 	_rt[st.deck_id].slipAnchor = null;
 	_rt[st.deck_id].slipTempoBoundaries = [];
 	_rt[st.deck_id].keySyncBaselineSemitones = null;
@@ -3195,7 +3213,9 @@ class RbAudioEngine implements AudioEngine {
 			mixerState.channels[deck] = _defaultChannel(deck); _resyncTracking.clearForDeck(deck); // singleton - reused ids must not inherit stale state (r3912757819)
 		}
 		mixerState.crossfader = 0.5;
-		mixerState.master = 1; mixerState.headphones = _defaultHeadphones();
+		mixerState.master = 1;
+		mixerState.headphones = _defaultHeadphones();
+		mixerState.booth = _defaultBooth();
 		await closing;
 	}
 
@@ -3306,7 +3326,7 @@ class RbAudioEngine implements AudioEngine {
 			stages.totalBeforeSwap = perfMs();
 		} catch (exc) {
 			stages.failedAt = perfMs();
-			st.last_load_stages = { ...stages };
+			st.last_load_stages = { ...splitDeckLoadStageMap(stages).stagesMs };
 			recordDeckLoad('deck-load-fail', stages, deck, candidateStemState, spanId);
 			if (processor !== null) {
 				try {
@@ -3354,6 +3374,7 @@ class RbAudioEngine implements AudioEngine {
 			const incumbentProcessor = rt.processor;
 			try {
 				candidateProcessor.connect(rt.nodes.analyser);
+				connectStemFxSend(candidateProcessor, rt.nodes);
 			} catch (error) {
 				await candidateProcessor.dispose();
 				if (loadCandidateCanPublish(token, rt.loadToken)) {
@@ -3455,7 +3476,7 @@ class RbAudioEngine implements AudioEngine {
 		stages.total = perfMs();
 		st.last_load_latency_ms = stages.total;
 		st.load_generation += 1;
-		st.last_load_stages = { ...stages };
+		st.last_load_stages = { ...splitDeckLoadStageMap(stages).stagesMs };
 		if (rt.loadToken === token && st.stable_id === stable_id) applyTrackLoadChannelReset(mixerState.channels[deck], { setFader: (v) => this.setFader(deck, v), setTrim: (v) => this.setTrim(deck, v), setFilter: (v) => this.setFilter(deck, v), setEq: (band, v) => this.setEq(deck, band, v) }); // DECKGAP-7691: only for the load that won
 		recordDeckLoad(`deck-load sid=${stable_id.slice(0, 12)}`, stages, deck, candidateStemState, spanId);
 		warnShortDurationOnLoad(deck, candidateTrack, candidateAnlz, candidateBuffer);
@@ -3639,7 +3660,7 @@ class RbAudioEngine implements AudioEngine {
 		const durMs = _durationSec(deck) * 1000;
 		ms = clampSeekTargetMs(ms, durMs, 'cueJump');
 		const seekBeats = _quantizeGrid(st);
-		const { targetMs, exitLoop } = gridSeekDecisionMs(seekBeats, st.anlz?.phrases, ms, st.quantize_grid_beats, skipGridQuantize, st.loop);
+		const { targetMs, exitLoop } = gridSeekDecisionMs(seekBeats, st.anlz?.phrases, ms, st.quantize_grid_beats, skipGridQuantize, st.loop); armSeekPresentedFromPressMark(deck, targetMs);
 		if (targetMs > durMs) {
 			throw new RangeError(`cueJump: quantized target ${targetMs} exceeds duration ${durMs}`);
 		}
@@ -3928,6 +3949,7 @@ class RbAudioEngine implements AudioEngine {
 	}
 
 	async setLoop(deck: DeckId, loop: { in_ms: number; out_ms: number } | null, quantize = true): Promise<void> {
+		_abandonRoll(deck);
 		await this._setLoop(deck, loop, null, quantize);
 	}
 
@@ -4001,8 +4023,7 @@ class RbAudioEngine implements AudioEngine {
 		st.last_loop = rememberedLoop(nextLoop, st.last_loop);
 	}
 
-	/** Engage `loop` with the playhead at its in point in one engine transaction (DECKUX-10478 RELOOP; same shape as
-	 * engageBeatLoop's RESTART). Paused decks publish loop-in immediately. */
+	/** DECKUX-10478 RELOOP: engage `loop` at its in point in one transaction. */
 	async jumpIntoLoop(deck: DeckId, loop: LoopState, op = 'jumpIntoLoop'): Promise<void> {
 		const { st } = _requireLoaded(deck, op);
 		if (!st.playing) {
@@ -4014,21 +4035,9 @@ class RbAudioEngine implements AudioEngine {
 		await _scheduleDeck(deck, _futureScheduleTime(deck), loop.in_ms / 1000, true, undefined, undefined, loop);
 	}
 
-	/** Engage a beat loop using exact consecutive PQTZ timestamps.
-	 *
-	 * A fresh (no explicit start_ms) four-beat loop anchors on the preceding
-	 * PQTZ downbeat rather than the nearest beat, so timing is forgiving of a
-	 * click that landed slightly late. An untrusted bar phase has no downbeat,
-	 * so that loop uses the nearest beat. Every other length, or an explicit
-	 * start_ms, keeps the ordinary nearest-beat anchor.
-	 *
-	 * Reissuing the exact same beats + resulting range as the already-engaged
-	 * loop is a RESTART, not a re-engage: instead of leaving the playhead
-	 * running wherever it is (setLoop's ordinary behaviour), it schedules the
-	 * playhead back to loop-in while retaining the same loop object, in one
-	 * engine transaction. Paused decks publish loop-in immediately.
-	 */
+	/** Beat loop from PQTZ; four beats without start_ms anchor on the prior downbeat; same range re-issue is RESTART. */
 	async engageBeatLoop(deck: DeckId, beats: number, startMs?: number): Promise<void> {
+		_abandonRoll(deck);
 		const { st } = _requireLoaded(deck, 'engageBeatLoop');
 		const grid = requirePhaseCapableBeatGrid(st, 'engageBeatLoop');
 		const currentMs = st.position_ms;
@@ -4301,8 +4310,13 @@ class RbAudioEngine implements AudioEngine {
 		);
 	}
 
+	async roll(deck: DeckId, beats: number | null): Promise<void> {
+		await executeDeckRoll(_deckRollPort, (d, loop, beatLength) => this._setLoop(d, loop, beatLength), deck, beats);
+	}
+
 	async setSlip(deck: DeckId, enabled: boolean): Promise<void> {
 		if (typeof enabled !== 'boolean') throw new TypeError('setSlip: enabled must be boolean');
+		_abandonRoll(deck);
 		const st = deckStates[deck];
 		if (enabled) {
 			if (st.playing && !st.slip_active) {
@@ -4542,10 +4556,9 @@ class RbAudioEngine implements AudioEngine {
 		if (_ctx !== null) logMixerApply(STEM_SOLO_APPLY_KIND, deck, pressT0Ms, _ctx.currentTime);
 	}
 
-	setStemGain(deck: DeckId, stem: StemControl, value: number): void {
-		assertUnitRange('setStemGain', value);
-		applyStemControl(deck, stem, 'gain', value, _stemControlDeps);
-	}
+	setStemGain(deck: DeckId, stem: StemControl, value: number): void { assertUnitRange('setStemGain', value); applyStemControl(deck, stem, 'gain', value, _stemControlDeps); }
+	/** STEMPERF-11663: per-stem send (0..1 linear) into the channel's colour FX input. */
+	setStemFxSend(deck: DeckId, stem: StemControl, value: number): void { assertUnitRange('setStemFxSend', value); applyStemControl(deck, stem, 'fx_send', value, _stemControlDeps); }
 
 	setStemEqMode(deck: DeckId, enabled: boolean): void {
 		applyStemEqMode(deck, enabled, (d) => mixerState.channels[d]);
@@ -4691,6 +4704,7 @@ class RbAudioEngine implements AudioEngine {
 	}
 
 	setBoothLevel = setMonitorBoothLevel;
+	setBoothSignalMode = setMonitorBoothSignalMode;
 
 	setHeadphoneOutputMode = setMonitorOutputMode;
 	setHeadDelayMs = setMonitorHeadDelay;
@@ -4715,6 +4729,7 @@ class RbAudioEngine implements AudioEngine {
 		assertUnitRange('setMaster value', value);
 		recordMasterWrite(); mixerState.master = value;
 		if (_masterGain !== null) _setParam(_masterGain.gain, value * _ceilingGainMultiplier());
+		reapplyBoothGainFromMaster();
 	}
 
 	/** #1475 M enforcement: primitives only, no prefs import here on purpose -
@@ -4767,6 +4782,33 @@ class RbAudioEngine implements AudioEngine {
 			_scheduleDeck(deck, sharedWhen, (effectiveWhen) => _projectPositionAt(deck, effectiveWhen), false);
 		await withPauseOrigin('command', () => Promise.all(decks.map(stop)));
 	}
+}
+
+export interface EngineAddressingRow {
+	deck: EngineDeckId;
+	/** True when this slot is shown on the performance mixer (1-4 only). */
+	visible: boolean;
+	loaded: boolean;
+	playing: boolean;
+	position_ms: number;
+}
+
+/** Read model for agents and Rust mode: all engine slots, shadow rows stay inaudible on the UI. */
+export function query(): { decks: EngineAddressingRow[]; live_decks: readonly DeckId[]; engine_decks: readonly EngineDeckId[] } {
+	const decks: EngineAddressingRow[] = ENGINE_DECK_IDS.map((deck) => {
+		if (isShadowDeck(deck)) {
+			return { deck, visible: false, loaded: false, playing: false, position_ms: 0 };
+		}
+		const st = deckStates[deck];
+		return {
+			deck,
+			visible: true,
+			loaded: st.stable_id !== null,
+			playing: st.playing,
+			position_ms: st.position_ms
+		};
+	});
+	return { decks, live_decks: DECK_IDS, engine_decks: ENGINE_DECK_IDS };
 }
 
 /** The singleton engine every /performance unit imports. */

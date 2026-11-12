@@ -77,6 +77,9 @@ export interface UsbLibraryWire {
 	history: UsbHistoryWire[];
 	counts: UsbLibraryCounts;
 	read_ms: number;
+	has_pdb: boolean;
+	has_onelibrary: boolean;
+	browse_source: 'export.pdb';
 }
 
 /** Typed failure for everything stick-side, keyed like the backend's
@@ -166,6 +169,7 @@ export function rowFromUsbTrack(
 		is_streaming: false,
 		is_remote: false,
 		has_remote_copy: false,
+		remote_stem_status: 'unknown',
 		cloud_transfer: null,
 		spotify_pending: false,
 		strip: null,
@@ -496,6 +500,17 @@ export function parseUsbLibraryWire(raw: unknown): UsbLibraryWire {
 			playlist_entries: _num(counts, 'playlist_entries', 'counts'),
 			history_playlists: _num(counts, 'history_playlists', 'counts')
 		},
-		read_ms: _num(o, 'read_ms', 'library')
+		read_ms: _num(o, 'read_ms', 'library'),
+		has_pdb: _bool(o, 'has_pdb', 'library'),
+		has_onelibrary: _bool(o, 'has_onelibrary', 'library'),
+		browse_source: _browseSource(o)
 	};
+}
+
+function _browseSource(o: Record<string, unknown>): 'export.pdb' {
+	const value = _str(o, 'browse_source', 'library');
+	if (value !== 'export.pdb') {
+		throw new UsbLibraryError('USB_LIBRARY_MALFORMED', `library.browse_source must be export.pdb, got ${value}`);
+	}
+	return 'export.pdb';
 }

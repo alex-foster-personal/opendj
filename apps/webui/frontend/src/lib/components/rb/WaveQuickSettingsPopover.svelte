@@ -22,28 +22,36 @@
 	import {
 		WAVE_QS_GROUPS,
 		WAVE_QS_INERT_TITLE,
+		resolveWaveQsInertDisplay,
 		resolveWaveQsSetting,
 		waveQsRowTitle,
 		type WaveQsRow
-	} from '$lib/settings/waveform-quick-settings';
+	} from '$lib/components/settings/settings-catalog';
 
 	let { anchor, onclose }: { anchor: HTMLElement; onclose: () => void } = $props();
 
 	let panelEl: HTMLDivElement | undefined = $state();
 	let panelStyle = $state('visibility:hidden');
 
+	type ResolvedInert = { label: string; detail: string };
+
 	/** Resolved once: a row naming a missing or unimplemented entry throws here, loudly. */
 	const groups = WAVE_QS_GROUPS.map((group) => ({
 		...group,
-		rows: group.rows.map((row) => ({ row, def: _defFor(row) }))
+		rows: group.rows.map((row) => ({ row, ..._resolveRow(row) }))
 	}));
 
-	function _defFor(row: WaveQsRow): SettingDef | null {
-		if (row.kind === 'inert') return null;
+	function _resolveRow(row: WaveQsRow): { def: SettingDef | null; display: ResolvedInert | null } {
+		if (row.kind === 'inert') {
+			return {
+				def: null,
+				display: resolveWaveQsInertDisplay(SETTINGS_CATALOG, row.id)
+			};
+		}
 		const def = resolveWaveQsSetting(SETTINGS_CATALOG, row.id);
 		if (!isAllowedSettingKey(def.id))
 			throw new Error(`waveform quick settings: ${def.id} is not an allowed setting key`);
-		return def;
+		return { def, display: null };
 	}
 
 	function _value(def: SettingDef): boolean | string {
@@ -146,18 +154,18 @@
 		<section class="wqs-group" aria-label={group.label}>
 			<h3 class="wqs-group-label">{group.label}</h3>
 			<ul>
-				{#each group.rows as { row, def } (row.id)}
-					{#if def === null && row.kind === 'inert'}
+				{#each group.rows as { row, def, display } (row.id)}
+					{#if def === null && row.kind === 'inert' && display !== null}
 						<li class="wqs-row inert" data-wqs-row={row.id} title={WAVE_QS_INERT_TITLE}>
-							<span class="wqs-label">{row.label}</span>
+							<span class="wqs-label">{display.label}</span>
 							<input
 								type="checkbox"
 								checked
 								disabled
-								aria-label={row.label}
+								aria-label={display.label}
 								title={WAVE_QS_INERT_TITLE}
 							/>
-							<p class="wqs-detail">{row.detail}</p>
+							<p class="wqs-detail">{display.detail}</p>
 						</li>
 					{:else if def !== null}
 						<li class="wqs-row" data-wqs-row={def.id}>

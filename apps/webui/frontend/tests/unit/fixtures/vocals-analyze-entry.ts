@@ -7,3 +7,4 @@
 export * from '$lib/rb/api-rb';
 export * from '$lib/rb/vocals-analyze-refusal';
 export * from '$lib/rb/tracks-refresh-request';
+export * from '$lib/rb/library-row-assets-refresh-request';

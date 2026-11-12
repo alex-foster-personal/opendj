@@ -77,6 +77,27 @@ function harness({ post, retryLater } = {}) {
 
 const settle = () => new Promise((resolve) => setImmediate(resolve));
 
+test('fetchOpenDjPlayCounts POSTs plays:lookup and maps counts', async () => {
+	let seen;
+	globalThis.fetch = async (request) => {
+		seen = request;
+		return new Response(
+			JSON.stringify({
+				rows: [
+					{ stable_id: 'sid-a', opendj_play_count: 3 },
+					{ stable_id: 'sid-b', opendj_play_count: 0 }
+				]
+			}),
+			{ status: 200, headers: { 'content-type': 'application/json' } }
+		);
+	};
+	const map = await mod.fetchOpenDjPlayCounts(['sid-a', 'sid-b', 'sid-a']);
+	assert.equal(seen.method, 'POST');
+	assert.ok(seen.url.endsWith('/api/v1/tracks/plays:lookup'));
+	assert.equal(map.get('sid-a'), 3);
+	assert.equal(map.get('sid-b'), 0);
+});
+
 test('a load posts exactly once, only after PLAY_THRESHOLD_S heard seconds', async () => {
 	const h = harness();
 	h.counter.tick(); // first sample opens the load; nothing credited yet

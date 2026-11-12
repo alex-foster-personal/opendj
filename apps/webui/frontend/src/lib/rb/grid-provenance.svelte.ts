@@ -10,7 +10,7 @@
  *     [if] a failed read leaves the hover saying "loading" forever [then ⛔️] broken
  */
 
-import { api } from '../api/client';
+import { api } from '../api/rb-http';
 import {
 	gridProvenanceNeedsFetch,
 	type GridProvenanceEntry,

@@ -34,7 +34,6 @@ export const NOT_BUILT_MARK = 'Not built yet';
  * carry.
  */
 export const PLANNED_CONTROLS: Record<string, string> = {
-	'remote-control': 'Remote control - uses another Open DJ machine on your network as the speaker output, the way Spotify Connect plays on another device, while this machine stays the controller.',
 	fx: 'FX panel - opens the beat-effects rack - delay, echo, reverb, roll - synced to the deck tempo. Separate from the per-channel Sound Color FX dial on the mixer.',
 	'split-view': 'Split view - splits the window so the browser and the decks each get half, instead of the decks owning the top and the browser the bottom.',
 	'2-deck-view': '2-deck view - hides decks 3 and 4 and gives decks 1 and 2 the full width, for a two-deck set.',

@@ -18,6 +18,8 @@
 //   PRs' charges no longer add under merge skew
 // - if a malformed, padded or stray charge file stops failing then a charge nobody checks can
 //   widen a budget
+// - if a non-bundle ratchet under budgets/ (story-coverage) starts being loaded as a surface then
+//   the bundle gate reds on a file it cannot read
 // - if a surface budget stops failing when its own chunk grows past the limit
 //   then that budget is decorative
 // - if an emitted chunk reachable from nothing stops failing the run then the

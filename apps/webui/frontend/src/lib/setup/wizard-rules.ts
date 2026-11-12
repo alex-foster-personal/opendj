@@ -6,7 +6,7 @@
 import type { Job } from '../rb/jobs-store.svelte';
 import { isFatalBlocker, type RekordboxDetection } from './setup-api';
 import { folderAdvanceRefusal, type FolderRow } from './folder-rows';
-import { humanAdvanceRefusal } from './present';
+import { humanAdvanceRefusal, humanBackRefusalSentence } from './present';
 
 export const WIZARD_STEPS = ['welcome', 'detect', 'confirm', 'progress', 'stems', 'done'] as const;
 
@@ -75,6 +75,35 @@ export function stepPosition(step: WizardStep, source: ImportSourceSelection): n
 /** How many steps this branch has in total. */
 export function stepCount(source: ImportSourceSelection): number {
 	return visibleSteps(source).length;
+}
+
+/** What the polite announcer says on arriving at `step`: "Find your music, step 2 of 5". */
+export function stepAnnouncement(step: WizardStep, source: ImportSourceSelection): string {
+	return `${STEP_TITLES[step]}, step ${stepPosition(step, source)} of ${stepCount(source)}`;
+}
+
+/** The facts the announcer reacts to. `refusal` is the NON-fatal advance refusal only. */
+export type AnnouncerState = {
+	step: WizardStep;
+	source: ImportSourceSelection;
+	refusal: string | null;
+};
+
+/**
+ * The new announcer text for the move from `previous` to `current`, or null to leave it alone.
+ * Same refusal re-rendered, refusal cleared, or source change with the same refusal -> null.
+ */
+export function wizardAnnouncement(
+	previous: AnnouncerState | null,
+	current: AnnouncerState
+): string | null {
+	if (previous === null || previous.step !== current.step) {
+		return stepAnnouncement(current.step, current.source);
+	}
+	if (current.refusal !== null && current.refusal !== previous.refusal) {
+		return current.refusal;
+	}
+	return null;
 }
 
 export function nextStepFor(step: WizardStep, source: ImportSourceSelection): WizardStep {
@@ -180,6 +209,12 @@ export function advanceRefusal(step: WizardStep, ctx: AdvanceContext): string | 
  * sentence still gates the button and rides on data-agent-refusal. */
 export function humanRefusal(step: WizardStep, ctx: AdvanceContext): string | null {
 	return humanAdvanceRefusal(step, ctx, advanceRefusal(step, ctx));
+}
+
+/** Operator-safe Back refusal. The raw backRefusal() sentence still gates the
+ * control and rides on data-agent-refusal / errorDiagnostic. */
+export function humanBackRefusal(step: WizardStep, ctx: AdvanceContext): string | null {
+	return humanBackRefusalSentence(backRefusal(step, ctx));
 }
 
 /** Percent for a progress bar, clamped. Mirrors progressPct in jobs-store, but

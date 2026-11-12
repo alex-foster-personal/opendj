@@ -5,6 +5,7 @@
 	import { goto } from '$app/navigation';
 	import { page } from '$app/stores';
 	import ToastStack from '$lib/components/rb/ToastStack.svelte';
+	import { announcer } from '$lib/a11y/announce';
 	import { health, pushToast, refreshHealth, TOAST_DEFAULT_MS, toasts } from '$lib/stores.svelte';
 	import { selectVisibleToasts } from '$lib/toast-tray-policy';
 	import BannerWarning from '$lib/components/BannerWarning.svelte';
@@ -54,10 +55,17 @@
 	import { readBootStampMirror, touchLastGigAt } from '$lib/rb/last-gig-stamp';
 	import {
 		isLibraryWorkspaceRoutePath,
+		isSecondScreenRoutePath,
 		isPerformanceRoutePath,
-		isTrackifyRoutePath
+		isTrackifyRoutePath,
+		rootLayoutRunsMainWindowLoops
 	} from '$lib/rb/performance-preset';
-	import { setAppMode, uiPrefs } from '$lib/rb/prefs.svelte';
+	import { refreshReduceMotionFromDisk, setAppMode, uiPrefs } from '$lib/rb/prefs.svelte';
+	import {
+		applyReducedMotionAttr,
+		setReduceMotionPref,
+		watchReducedMotionMedia
+	} from '$lib/motion/reduced-motion';
 	import {
 		headerPlaylistCountTitle,
 		headerTrackCountTitle,
@@ -70,13 +78,15 @@
 	import { installShellCommandPoll } from '$lib/rb/shell-commands';
 	import { installShellNavigationPoll } from '$lib/rb/shell-navigation';
 	import { backstageEnabled } from '$lib/shell/backstage-flag';
+	import { buildFlags } from '$lib/api/store-build.svelte';
+	import { cmdkV2Enabled } from '$lib/rb/cmdk-flag';
 	import { installSettingsHotkeys } from '$lib/settings/hotkeys';
 	import {
 		isRunButtonActionPending,
 		runButtonAction,
 		runButtonActionGate
 	} from '$lib/ui/run-button-action';
-	import { connect as connectEventsBus } from '$lib/api/events-bus';
+	import { connect as connectEventsBus, subscribeKind } from '$lib/api/events-bus';
 	import { capabilities, progressRefusal } from '$lib/api/capabilities.svelte';
 	import { entitlements } from '$lib/api/entitlements.svelte';
 	import BuildIdentity from '$lib/components/rb/BuildIdentity.svelte';
@@ -118,6 +128,24 @@
 	$effect(() => {
 		if (backstageOn) void import('$lib/shell/BackstageNav.svelte').then((m) => (BackstageNav = m.default));
 	});
+	// #9467: the v2 Cmd K palette on every route. Lazy so neither the bar nor its
+	// wiring is charged to any route's first load; loads only once cmdk.v2 is declared on.
+	let CommandPaletteHost = $state<
+		typeof import('$lib/components/rb/CommandPaletteHost.svelte').default | null
+	>(null);
+	let commandPaletteRequested = false;
+	$effect(() => {
+		if (commandPaletteRequested || (buildFlags.loaded && !cmdkV2Enabled())) return;
+		commandPaletteRequested = true;
+		void import('$lib/components/rb/CommandPaletteHost.svelte').then(
+			(m) => {
+				CommandPaletteHost = m.default;
+			},
+			(error: unknown) => {
+				console.warn('[cmdk] palette failed to load', error);
+			}
+		);
+	});
 	setContext<ShellNav>(SHELL_NAV_CONTEXT, {
 		get links() {
 			return navLinks;
@@ -133,7 +161,8 @@
 	// LIBWS-01: Library mode's Crate Desk is full-window too, on the same
 	// browser chrome as Gig.
 	const isLibraryWorkspace = $derived(isLibraryWorkspaceRoutePath($page.url.pathname));
-	const isFullBleedRoute = $derived(isPerformance || isTrackify || isLibraryWorkspace);
+	const isSecondScreen = $derived(isSecondScreenRoutePath($page.url.pathname));
+	const isFullBleedRoute = $derived(isPerformance || isTrackify || isLibraryWorkspace || isSecondScreen);
 
 	/** The assistant's door, loaded by a deferred boot task; see the template note. */
 	let AgentSidebarMount: typeof import('$lib/components/assistant/AgentSidebarMount.svelte').default | null =
@@ -237,6 +266,19 @@
 		document.documentElement.style.colorScheme = uiPrefs.theme;
 	});
 
+	// A11Y-11811: html[data-reduce-motion] follows the OS media query OR the Appearance pref.
+	$effect(() => {
+		if (typeof document === 'undefined') return;
+		setReduceMotionPref(uiPrefs.reduce_motion);
+		applyReducedMotionAttr(document.documentElement);
+		const offMedia = watchReducedMotionMedia(() => applyReducedMotionAttr(document.documentElement));
+		const offPrefs = subscribeKind('ui_prefs', () => void refreshReduceMotionFromDisk());
+		return () => {
+			offMedia();
+			offPrefs();
+		};
+	});
+
 	// The events socket exists on the engine only. Connecting against a legacy
 	// boot buys nothing but a reconnect loop against a route that is not there,
 	// so the bus waits for the probe. connect() is idempotent, and this effect
@@ -287,6 +329,7 @@
 	// Empty-library auto-open. holdEmptyReopen blocks the stale `fail` that
 	// is still on screen for one poll after Skip or Start playing (#3422).
 	$effect(() => {
+		if (isSecondScreen) return;
 		const open = shouldAutoOpenEmptyLibrarySetup(
 			preflightGate.checks,
 			setupOpen,
@@ -323,19 +366,21 @@
 		// read synchronously by controls all over the app, so the one request
 		// behind it fires here rather than per surface. Memoized on success.
 		void entitlements.load();
-		raiseSetupOnFirstRun();
+		// SECONDSCREEN-11713: rootLayoutRunsMainWindowLoops gates shell polls, instruments, quit, setup.
+		const mainWindow = rootLayoutRunsMainWindowLoops($page.url.pathname);
+		if (mainWindow) raiseSetupOnFirstRun();
 		refreshHealth();
 		const uninstallSettings = installSettingsHotkeys();
 		const uninstallHotkeysOverlay = installHotkeysOverlayHotkeys();
 		prefetchHotkeysOverlay(reportHotkeysOverlayLoadFailure);
 		prefetchStageOverlay(reportStageOverlayLoadFailure);
 		prefetchSettingsOverlay(reportSettingsOverlayLoadFailure);
-		const uninstallQuitGate = installQuitGate();
+		const uninstallQuitGate = mainWindow ? installQuitGate() : () => {};
 		// Page-lifetime instruments: usage heartbeat + the DevTools perf log
 		// globals the e2e latency floor reads. See $lib/rb/app-init.
-		const stopInstruments = startAppInstruments();
-		const uninstallShellNavigation = installShellNavigationPoll();
-		const uninstallShellCommands = installShellCommandPoll();
+		const stopInstruments = mainWindow ? startAppInstruments() : () => {};
+		const uninstallShellNavigation = mainWindow ? installShellNavigationPoll() : () => {};
+		const uninstallShellCommands = mainWindow ? installShellCommandPoll() : () => {};
 		let unmounted = false;
 		let uninstallCommentPinHotkeys: (() => void) | null = null;
 		deferFeedbackPinShell(
@@ -394,7 +439,13 @@
 	     `pass` arrives from GET /api/v1/preflight -- no skip/continue-anyway,
 	     see PreflightScreen.svelte for the polling policy. While first-run
 	     setup is open the gate yields so the wizard is not buried. -->
-	<PreflightScreen mode="boot" blocking navigate={goto} hideCheckIds={hideCheckIds} />
+	<PreflightScreen
+		mode="boot"
+		blocking
+		navigate={goto}
+		pathname={$page.url.pathname}
+		hideCheckIds={hideCheckIds}
+	/>
 {:else}
 
 {#if health.bindWarning}
@@ -505,7 +556,13 @@
 {/if}
 
 {#if showPreflightIndicator}
-	<PreflightScreen mode="boot" blocking={false} navigate={goto} hideCheckIds={hideCheckIds} />
+	<PreflightScreen
+		mode="boot"
+		blocking={false}
+		navigate={goto}
+		pathname={$page.url.pathname}
+		hideCheckIds={hideCheckIds}
+	/>
 {/if}
 
 <!-- Settings: mounted at the root so it works on /performance too, but only
@@ -589,6 +646,10 @@
 	{/await}
 {/if}
 <QuitConfirmOverlay />
+<!-- At the root so every route, full-bleed or not, gets the v2 Cmd K palette (#9467). -->
+{#if CommandPaletteHost && cmdkV2Enabled() && !blockOnPreflight}
+	<CommandPaletteHost />
+{/if}
 <!-- The assistant (Cmd+I, AISIDE-7892j): at the root so full-bleed routes get it
      too. Imported by a deferred boot task, so it and its flag read cost first
      paint nothing; the mount shows nothing unless `assistant.sidebar` is on. -->
@@ -600,6 +661,13 @@
      first-paint path or in the library page's bundle budget. -->
 
 <ToastStack items={visibleToasts} />
+<div
+	class="a11y-announcer-sr-only"
+	aria-live="polite"
+	aria-atomic="true"
+	data-testid="a11y-announcer"
+	use:announcer
+></div>
 {#if FeedbackPinLayer}
 	<FeedbackPinLayer />
 {/if}
@@ -709,5 +777,16 @@
 		display: inline-flex;
 		flex: 0 0 22px;
 		height: 20px;
+	}
+	.a11y-announcer-sr-only {
+		position: absolute;
+		width: 1px;
+		height: 1px;
+		padding: 0;
+		margin: -1px;
+		overflow: hidden;
+		clip: rect(0, 0, 0, 0);
+		white-space: nowrap;
+		border: 0;
 	}
 </style>

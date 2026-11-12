@@ -18,7 +18,7 @@ import { fileURLToPath } from 'node:url';
 import { after, before, describe, it } from 'node:test';
 
 import { loadTypeScriptModule } from './load-typescript.mjs';
-import { resolveUv } from './fixtures/resolve-uv.mjs';
+import { fixtureServerLaunch } from '../../scripts/fixture-server.mjs';
 import { stopFixtureServer } from './fixtures/stop-fixture-server.mjs';
 
 const REPOSITORY_ROOT = fileURLToPath(new URL('../../../../..', import.meta.url));
@@ -42,9 +42,10 @@ let usbImport;
 let setupApi;
 
 before(async () => {
-	serverProcess = spawn(resolveUv(), ['run', '--no-sync', 'python', SERVER_SCRIPT], {
-		cwd: REPOSITORY_ROOT,
-		env: { ...process.env, PYTHONPATH: REPOSITORY_ROOT },
+	const launch = fixtureServerLaunch({ repoRoot: REPOSITORY_ROOT, pythonTarget: SERVER_SCRIPT });
+	serverProcess = spawn(launch.command, launch.args, {
+		cwd: launch.cwd,
+		env: launch.env,
 		stdio: ['ignore', 'pipe', 'pipe']
 	});
 	let stderr = '';
@@ -68,9 +69,9 @@ before(async () => {
 });
 
 after(async () => {
-	// The server waits up to 120 s (_DRAIN_SETTLE_S) for the real drain it
-	// started to finish before exiting, so a 15 s stop bound fails a loaded
-	// runner while the server is doing exactly what it should.
+	// The server stops the real drain's CLIs on shutdown, then waits up to
+	// _DRAIN_SETTLE_S for the job to settle; with this 15 s margin the whole
+	// teardown stays under the runner's 120 s file timeout.
 	if (serverProcess)
 		await stopFixtureServer(serverProcess, apiBase, { timeoutMs: DRAIN_SETTLE_MS + 15_000 });
 });

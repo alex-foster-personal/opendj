@@ -19,9 +19,7 @@ from scripts.review_lane import BLOCKING_SEVERITIES, CARRIED_FINDINGS_HEADER
 from scripts.review_sol import SOL, is_sol_thread
 from scripts.review_subscription import subscription_lane_of_thread
 
-CARRIED_LINE = re.compile(
-    r"^- (BLOCKING|NON-BLOCKING) (P[0-3]): (.+?) -- (.*)$"
-)
+CARRIED_LINE = re.compile(r"^- (BLOCKING|NON-BLOCKING) (P[0-3]): (.+?) -- (.*)$")
 
 
 @dataclass(frozen=True)
@@ -110,9 +108,7 @@ def parse_carried(body: str) -> tuple[list[CarriedFindingDraft], bool]:
     return found, False
 
 
-def blocking_from(
-    reviews: Sequence[Mapping], pr_url: str
-) -> tuple[list[CarriedFinding], str | None]:
+def blocking_from(reviews: Sequence[Mapping], pr_url: str) -> tuple[list[CarriedFinding], str | None]:
     """Union of blocking carried findings on each lane's latest review."""
     blocking: list[CarriedFinding] = []
     for lane, review in sorted(latest_lane_reviews(reviews).items()):

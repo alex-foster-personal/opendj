@@ -1,8 +1,9 @@
 /**
- * UI-mirror control addressability (#3196).
+ * UI-mirror control addressability (AGENT-14, issues #3196 and #13114).
  *
  * Regression lines:
  * - if two controls share a preferred name then both survive in the map with distinct keys
+ * - if a deck-one vocal stem is mirrored then stem-vocal-deck-1 maps to one control id
  * - if a generated suffix is already taken then the next free suffix is used
  * - if N controls are scanned then the map holds N entries
  */
@@ -51,6 +52,12 @@ test('duplicate preferred names receive deterministic suffixes and keep both sta
 		'restart loop': 'inert',
 		'restart loop#2': 'available'
 	});
+});
+
+test('stem-vocal-deck-1 data-testid resolves to one addressable control', () => {
+	const elements = [_element({ 'data-testid': 'stem-vocal-deck-1' })];
+	const map = controls.buildControlsMap(elements);
+	assert.deepEqual(map, { 'stem-vocal-deck-1': 'available' });
 });
 
 test('uniqueControlKey skips a suffix already claimed by another control', () => {

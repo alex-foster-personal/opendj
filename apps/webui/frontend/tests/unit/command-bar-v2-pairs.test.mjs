@@ -34,6 +34,7 @@ import { loadTypeScriptModule } from './load-typescript.mjs';
  */
 
 const SRC = new URL('../../src/', import.meta.url).pathname;
+const CMDK_HOST = `${SRC}lib/components/rb/CommandPaletteHost.svelte`;
 let pairs;
 let edge;
 let actions;
@@ -182,7 +183,7 @@ test('CMDK-19: an aligned seek is exact: quantize never snaps the captured offse
 	assert.throws(() => ipc.parsePerformanceCommandForTest({ type: 'seek', deck: 2, position_ms: 1_000, exact: 'yes' }), /exact/);
 	// The handler skips the grid only when asked.
 	const src = readFileSync(`${SRC}lib/rb/performance-ipc.svelte.ts`, 'utf8');
-	assert.match(src, /engine\.quantizedSeek\(command\.deck, command\.position_ms, command\.exact === true\)/);
+	assert.match(src, /engine\.quantizedSeek\(command\.deck, command\.position_ms, command\.exact === true, pressT0Ms\)/);
 	// Every seek the aligned load sends goes through alignedSeek, the first and each correction.
 	const bar = readFileSync(`${SRC}lib/components/rb/CommandBarV2.svelte`, 'utf8');
 	const start = bar.indexOf('async function loadAligned');
@@ -290,7 +291,7 @@ test('CMDK-19: the bar sends the fader before pickLoad and the rest after it, an
 	assert.match(bar, /if \(pair\?\.aligned === true\) return await loadAligned\(row, deck, confirmed, pair\.basis, vocalsOnly\);/);
 	// Pairs are read only behind their own flag.
 	assert.match(bar, /const pairsOn = \$derived\(actionsOn && cmdkPairsEnabled\(\)\)/);
-	assert.match(bar, /if \(pairsOn\) requestCmdkPairs\(/);
+	assert.match(bar, /if \(pairsActive\) requestCmdkPairs\(/);
 });
 
 test('CMDK-18: the Comet pulse runs one lap, fades in and out, and is invisible outside it', () => {
@@ -452,8 +453,8 @@ test('CMDK-19: the aligned steps run in one hold of both decks plus sync; a mast
 	assert.ok(aligned.indexOf('afterAlignedLoad(deck, plan)') > coordinated && aligned.indexOf('SEEK_CORRECTIONS') > coordinated);
 	assert.match(aligned, /via = run;/);
 	assert.match(aligned, /return await via\(command\);/);
-	const page = readFileSync(`${SRC}routes/performance/+page.svelte`, 'utf8');
-	assert.match(page, /runCoordinated=\{runCoordinatedFromUi\}/);
+	const host = readFileSync(CMDK_HOST, 'utf8');
+	assert.match(host, /runCoordinated=\{runCoordinatedFromUi\}/);
 	const dispatcher = readFileSync(`${SRC}lib/rb/performance-ipc.svelte.ts`, 'utf8');
 	assert.match(dispatcher, /const queueScopes = performanceCommandQueueScopes\(command\);\s*const scopes = scopesOutsideHold\(command\.type, queueScopes, hold\);/);
 	assert.match(dispatcher, /await _commandScheduler\.run\(\[\.\.\.hold\.scopes\], \(\) =>\s*work\(\(command\) => runPerformanceCommandFromUi\(command, performance\.now\(\), hold\)\)/);
@@ -577,8 +578,8 @@ test('CMDK-19: a command sent to the partner during the load stops the pair befo
 	assert.match(body, /const masterAt = deckCommands\(master\.deck\);\s*const syncAt = deckCommands\(deck, 'beat_sync'\);\s*await runCoordinated\(\[deck, master\.deck\], async \(run\) => \{\s*via = run;\s*if \(taken\(\)\) throw new Error\(/);
 	// And before every send, so one sent mid-hold also stops it.
 	assert.match(body, /if \(via === null\) throw new Error\([^\n]+\);\s*if \(taken\(\)\) throw new Error\(`stopped: deck \$\{deck\} was sent another command`\);/);
-	const page = readFileSync(`${SRC}routes/performance/+page.svelte`, 'utf8');
-	assert.match(page, /deckCommands=\{deckCommandDispatchCount\}/);
+	const host = readFileSync(CMDK_HOST, 'utf8');
+	assert.match(host, /deckCommands=\{deckCommandDispatchCount\}/);
 });
 
 test('CMDK-19: corrective seeks wait with both decks released and stop once the deck is sent anything (Codex r4277100150)', () => {

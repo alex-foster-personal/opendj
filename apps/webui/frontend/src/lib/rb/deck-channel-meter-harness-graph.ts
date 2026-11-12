@@ -77,6 +77,7 @@ export function buildDeckChannelMeterHarnessGraph(deps: {
 		const filterHpWet = deps.ctx.createGain();
 		filterHpWet.gain.value = hpWetGain;
 		const colorBus = deps.ctx.createGain();
+		const stemFxSend = deps.ctx.createGain();
 		const cue = deps.ctx.createGain();
 		cue.gain.value = ch.cue_enabled ? 1 : 0;
 		const fader = deps.ctx.createGain();
@@ -117,6 +118,7 @@ export function buildDeckChannelMeterHarnessGraph(deps: {
 			filterLpWet,
 			filterHpWet,
 			colorBus,
+			stemFxSend,
 			cue,
 			fader,
 			xf,

@@ -13,9 +13,10 @@ Endpoints (all under /api/v1/feedback):
 from __future__ import annotations
 
 import uuid
-from typing import Any
 
 from fastapi import APIRouter, HTTPException, Request
+
+from apps.opendj_pins.http import seed_replies_from_agent_note
 
 from .feedback import (
     _COMMENTS_FILE,
@@ -30,49 +31,6 @@ from .feedback import (
 
 router = APIRouter(prefix="/feedback", tags=["feedback"])
 MOUNT_UNDER_API_PREFIX = True
-
-
-def _seed_replies_from_agent_note(item: dict[str, Any], now: str) -> None:
-    """If replies is empty and agent_note is set, seed with one agent turn."""
-    replies = item.get("replies")
-    if isinstance(replies, list) and len(replies) > 0:
-        return
-    agent_note = item.get("agent_note")
-    if not isinstance(agent_note, str) or agent_note.strip() == "":
-        return
-    item["replies"] = [
-        {
-            "id": uuid.uuid4().hex[:12],
-            "author": "agent",
-            "text": agent_note,
-            "created_at": item.get("updated_at") or item.get("created_at") or now,
-            "agent_kind": item.get("agent_kind"),
-        }
-    ]
-
-
-def append_agent_note_to_replies(item: dict[str, Any], note: str, now: str) -> None:
-    """Mutate item['replies'] in place. No-op if the last agent reply text == note."""
-    if not isinstance(note, str) or note.strip() == "":
-        return
-    _seed_replies_from_agent_note(item, now)
-    replies = item.setdefault("replies", [])
-    last_agent_text: str | None = None
-    for reply in reversed(replies):
-        if reply.get("author") == "agent":
-            last_agent_text = reply.get("text")
-            break
-    if last_agent_text == note:
-        return
-    replies.append(
-        {
-            "id": uuid.uuid4().hex[:12],
-            "author": "agent",
-            "text": note,
-            "created_at": now,
-            "agent_kind": item.get("agent_kind"),
-        }
-    )
 
 
 @router.post(
@@ -104,7 +62,7 @@ def add_reply(comment_id: str, body: CommentReplyIn, request: Request) -> Commen
                 continue
             now = _now()
             merged = dict(item)
-            _seed_replies_from_agent_note(merged, now)
+            seed_replies_from_agent_note(merged, now)
             replies = list(merged.get("replies") or [])
             replies.append(
                 {

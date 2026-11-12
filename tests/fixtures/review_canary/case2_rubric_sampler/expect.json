@@ -1,0 +1,26 @@
+{
+  "schema": 1,
+  "case": "case2_rubric_sampler",
+  "recall_min": 0.667,
+  "must_flag": [
+    {
+      "path": "tests/scripts/_review_canary_case2_plant.py",
+      "line_range": [6, 7],
+      "class": "utc_labeled_local",
+      "min_severity": "P1"
+    },
+    {
+      "path": "tests/scripts/_review_canary_case2_plant.py",
+      "line_range": [18, 20],
+      "class": "unfailable_test",
+      "min_severity": "P1"
+    },
+    {
+      "path": "tests/scripts/_review_canary_case2_plant.py",
+      "line_range": [13, 14],
+      "class": "silent_except_pass",
+      "min_severity": "P1"
+    }
+  ],
+  "must_not_flag": []
+}

@@ -49,6 +49,15 @@ import type { DeckLoadOptions } from '$lib/rb/audio-engine-types';
 import { concurrencyLabels, type DeckLoadSpan } from '$lib/rb/deck-load-concurrency';
 import { pressureLabels, readMachinePressure } from '$lib/rb/machine-pressure';
 import { foldedLaunchNotices, shortDurationFlag } from '$lib/rb/beat-sync-math';
+import { splitDeckLoadStageMap } from '$lib/rb/deck-load-stage-units';
+export {
+	DECK_LOAD_STAGE_FACT_KEYS,
+	parseDeckLoadPerfConsoleLine,
+	splitDeckLoadStageMap,
+	type DeckLoadStageFactKey,
+	type DeckLoadStageFacts,
+	type DeckLoadStagesMs
+} from '$lib/rb/deck-load-stage-units';
 import { recordDeckLoadTiming, recordPerfEvent, type StemLoadFacts } from '$lib/rb/perf-event-log';
 import { pushToast } from '$lib/stores.svelte';
 
@@ -211,11 +220,19 @@ export function recordDeckLoad(
 	spanId: number
 ): void {
 	const nowMs = performance.now();
-	const subject = _closeSpan(deck, spanId, _durationMsOf(stages), nowMs);
-	recordDeckLoadTiming(kind, stages, deck, stems, {
-		...concurrencyLabels(subject, _spans, nowMs),
-		...pressureLabels(readMachinePressure(), Date.now())
-	});
+	const { stagesMs, facts } = splitDeckLoadStageMap(stages);
+	const subject = _closeSpan(deck, spanId, _durationMsOf(stagesMs), nowMs);
+	recordDeckLoadTiming(
+		kind,
+		stagesMs,
+		deck,
+		stems,
+		{
+			...concurrencyLabels(subject, _spans, nowMs),
+			...pressureLabels(readMachinePressure(), Date.now())
+		},
+		facts
+	);
 }
 
 // --------------------------------------------- failed loads: the report
@@ -379,7 +396,8 @@ const STICK_LOAD_FAILURE_WORDS: ReadonlyMap<string, string> = new Map([
  * stick refusal. Reads `code` off either error class a load can reject with
  * (ApiError from getTrack, RbApiError from audio, anlz and hot cues). */
 export function stickLoadFailureWords(cause: unknown): string | null {
-	const code = typeof cause === 'object' && cause !== null ? (cause as { code?: unknown }).code : null;
+	const code =
+		typeof cause === 'object' && cause !== null ? (cause as { code?: unknown }).code : null;
 	return typeof code === 'string' ? (STICK_LOAD_FAILURE_WORDS.get(code) ?? null) : null;
 }
 
@@ -437,7 +455,8 @@ function _causeText(cause: unknown): string {
 
 /** A library failure code from `cause.code`, else from the load message text. */
 function _libraryFailureCode(cause: unknown, loadMessage: string | undefined): string | undefined {
-	const direct = typeof cause === 'object' && cause !== null ? (cause as { code?: unknown }).code : null;
+	const direct =
+		typeof cause === 'object' && cause !== null ? (cause as { code?: unknown }).code : null;
 	if (typeof direct === 'string' && LIBRARY_LOAD_FAILURE_WORDS.has(direct)) return direct;
 	return libraryFailureCodeInText(loadMessage ?? '') ?? libraryFailureCodeInText(_causeText(cause));
 }
@@ -456,7 +475,14 @@ export function deckLoadFailureHeadline(
 	if (stickWords !== null) return stickWords;
 	const code = _libraryFailureCode(cause, loadMessage);
 	if (code !== undefined) {
-		const source = [loadMessage, _causeText(cause)].filter((part) => part !== '').join('\n');
+		const causeText = _causeText(cause).trim();
+		const loadPart = (loadMessage ?? '').trim();
+		const source =
+			loadPart === ''
+				? causeText
+				: causeText === '' || causeText === loadPart
+					? loadPart
+					: `${loadPart}\n${causeText}`;
 		const title = trackTitleBeforeCode(source, code);
 		const plain = deckLoadPlainHeadline(deck, title, code, source);
 		if (plain !== null) return plain;
@@ -523,11 +549,21 @@ export function reportDeckLoadFailure(
  * before it reached the engine (another owner holds the controls, the deck is
  * not stopped) is reported here, as a load, with its reason.
  */
-export function reportDeckLoadCommandFailure(deck: 1 | 2 | 3 | 4, message: string, cause: unknown): void {
+export function reportDeckLoadCommandFailure(
+	deck: 1 | 2 | 3 | 4,
+	message: string,
+	cause: unknown
+): void {
 	if (typeof cause === 'object' && cause !== null && _toastedLoadFailures.has(cause)) return;
 	// Grouped per deck, as the dispatcher groups every other command failure:
 	// a refusal repeated by a held key is one toast with a count, not a stack.
-	_pushDeckLoadFailureToast(deck, message, cause, { source: 'deck-load', deck }, `performance:${deck}:load:`);
+	_pushDeckLoadFailureToast(
+		deck,
+		message,
+		cause,
+		{ source: 'deck-load', deck },
+		`performance:${deck}:load:`
+	);
 }
 
 export function warnShortDurationOnLoad(
@@ -538,8 +574,7 @@ export function warnShortDurationOnLoad(
 ): void {
 	const beats = anlz?.beatgrid?.beats;
 	const last = Array.isArray(beats) && beats.length > 0 ? beats[beats.length - 1] : undefined;
-	const gridLastBeatMs =
-		last != null && Number.isFinite(last.t) ? last.t * 1000 : null;
+	const gridLastBeatMs = last != null && Number.isFinite(last.t) ? last.t * 1000 : null;
 	const decodedMs = buffer.duration * 1000;
 	if (!shortDurationFlag(track.duration_ms, gridLastBeatMs, decodedMs)) return;
 	recordPerfEvent(
@@ -551,7 +586,11 @@ export function warnShortDurationOnLoad(
 }
 
 /** The orange fold notice and its perf rows for a folded sync launch. The paused incoming deck never reaches the engine's own notice path, so the page raises them here. */
-export function reportFoldedLaunch(deck: 1 | 2 | 3 | 4, master: 1 | 2 | 3 | 4, normalization: 0.5 | 2): void {
+export function reportFoldedLaunch(
+	deck: 1 | 2 | 3 | 4,
+	master: 1 | 2 | 3 | 4,
+	normalization: 0.5 | 2
+): void {
 	for (const notice of foldedLaunchNotices(deck, master, normalization)) {
 		pushToast(notice.message, notice.kind, undefined, undefined, {}, notice.groupKey);
 		for (const event of notice.events) {

@@ -1,0 +1,9 @@
+{
+  "bytes": 1024,
+  "measured_main": 515233,
+  "measured_with_pr": 515376,
+  "sha": "c84122929d",
+  "date": "Wed 11 Nov 2026",
+  "reason": "branch af--cloud-10041--library-colour-filter-on-the-colour-colu grows the other-lazy surface; measured +143 B gzip over main; ceiled to KiB.",
+  "payback": "none planned; the growth is the feature's own code on this surface"
+}

@@ -74,12 +74,15 @@ from pathlib import Path
 from typing import Literal, TypeAlias
 
 from scripts.ci_failure_ids import failed_identities, failure_beyond_tests
+from scripts.ci_wait_workflows import WORKFLOW_RUN_OPT_IN_LABELS
 from scripts.gh_version_guard import MIN_GH_VERSION, GhVersionError, parse_gh_version
 from scripts.quality_gate import HARD_ZERO
 
 REPO = "private_owner/music-dj-tools"
 TRUNK_BOT = "trunk-io[bot]"
 WORKFLOWS = ("ci.yml", "e2e.yml")
+# Pull-request workflows the scorecard always requires when they ran to completion.
+REQUIRED_CI_WORKFLOW = "ci.yml"
 # Jobs that only aggregate, record or feed other jobs. Their failure is never a gate of its
 # own: `ci gate` and `e2e verdict` restate the jobs they need, CI Insights and the Trunk
 # uploads are telemetry, and the quarantine list fails closed into the shards it feeds.
@@ -625,6 +628,9 @@ class Head:
     # independent one and the file at the executed revision could not be read. Its skip
     # evidence is unproven, so the run is unmeasured rather than silently read as independent.
     guard_unread: bool = False
+    # Whether e2e.yml must finish for this PR head's verdict (opt-in `e2e` label). True for
+    # main pushes and fail-closed when labels are unknown; False when the head opted out.
+    e2e_required: bool = True
     # The entries of `skipped` a failure earlier in the same job caused (GitHub runs a job's
     # later steps only on `success()`). The gate behind such a step went unjudged, but the
     # skip is the named red's shadow: clearing that red re-runs the step, so `_sole_red`
@@ -726,14 +732,70 @@ def _cleared_at(
 
 
 def verdict_at(runs: Mapping[str, Head]) -> dt.datetime:
-    """When a sha's verdict was complete: its last workflow's finish."""
-    return max(h.at for h in runs.values())
+    """When a sha's verdict was complete: its last required workflow's finish."""
+    return max(h.at for h in runs.values() if h.workflow in required_workflows(runs))
+
+
+def pr_e2e_required(labels: frozenset[str] | None) -> bool:
+    """Whether a pull request head owes an e2e.yml verdict (ADR-NEW-e2e-opt-in-by-label).
+
+    Labels unknown fail closed: without them the card cannot tell an opted-out head from a
+    missing e2e run.
+    """
+    opt_in = WORKFLOW_RUN_OPT_IN_LABELS.get("e2e.yml", "")
+    if not opt_in:
+        return True
+    if labels is None:
+        return True
+    return opt_in in labels
+
+
+def required_workflows(runs: Mapping[str, Head]) -> frozenset[str]:
+    """Workflows a sha must finish before the scorecard scores it.
+
+    ci.yml always; e2e.yml when the pull request opted in (`e2e` label), when an e2e run
+    exists for the sha (it was triggered), or when labels are unknown.
+    """
+    required = frozenset({REQUIRED_CI_WORKFLOW})
+    if "e2e.yml" in runs or any(h.e2e_required for h in runs.values()):
+        return required | frozenset({"e2e.yml"})
+    return required
+
+
+def _deliberate_out_of_scope_verdict(h: Head) -> bool:
+    """A workflow run that ended green and withheld only gates the aggregate put out of scope.
+
+    Path filters, carry clauses and an opted-out e2e publish skipped as not-run; those are
+    measured decisions, not a missing job.
+    """
+    return (
+        not h.measured
+        and not h.cancelled
+        and not h.zero_jobs
+        and not h.guard_unread
+        and h.unread_logs == 0
+        and not h.unread_jobs
+        and not h.red
+        and h.aggregate == AGGREGATE_SUCCESS
+        and h.conclusion in ("success", "skipped")
+    )
+
+
+def workflow_verdict_satisfied(h: Head) -> bool:
+    """Whether one workflow run supplied its part of a head verdict."""
+    return h.measured or _deliberate_out_of_scope_verdict(h)
 
 
 def full_verdict(runs: Mapping[str, Head]) -> bool:
-    """Both workflows run on every PR; a sha missing one (cancelled when superseded) or with
-    an unmeasured run has no full verdict."""
-    return set(WORKFLOWS) <= runs.keys() and all(h.measured for h in runs.values())
+    """Every workflow this head owes ran and measured (or deliberately skipped in scope).
+
+    A sha missing a required workflow (cancelled when superseded, e2e-labelled with no e2e
+    run) or with an unmeasured run has no full verdict.
+    """
+    owed = required_workflows(runs)
+    if not owed <= runs.keys():
+        return False
+    return all(workflow_verdict_satisfied(h) for h in runs.values() if h.workflow in owed)
 
 
 def _owned(runs: Mapping[str, Head], window: tuple[dt.datetime, dt.datetime] | None) -> bool:
@@ -1010,7 +1072,7 @@ def unread_head_reasons(
         for sha, runs in shas.items():
             if full_verdict(runs) or not _owned(runs, window):
                 continue
-            missing_workflows = set(WORKFLOWS) - set(runs)
+            missing_workflows = set(required_workflows(runs)) - set(runs)
             superseded = sha != newest and all(h.cancelled for h in runs.values() if not h.measured)
             if superseded:
                 sample = next(iter(runs.values()))
@@ -1038,7 +1100,7 @@ def unread_head_reasons(
                     for workflow in sorted(missing_workflows)
                 )
             for sample in runs.values():
-                if sample.measured:
+                if workflow_verdict_satisfied(sample):
                     continue
                 if sample.cancelled:
                     reason = "cancelled"
@@ -1172,7 +1234,7 @@ def unread_gate_scope(heads: Sequence[Head], window: tuple[dt.datetime, dt.datet
             # A workflow with no run at all for this sha (not dispatched yet, or never
             # collected) is the same loss with no run to read: it could have failed any gate
             # it declares, so its families are scoped rather than leaving the head silent.
-            for workflow in set(WORKFLOWS) - set(present):
+            for workflow in set(required_workflows(present)) - set(present):
                 jobs |= WORKFLOW_GATE_JOBS.get(workflow, frozenset())
             observed.append((named, frozenset(jobs)))
         # A head that measured can still have withheld a family: its own aggregate is not a
@@ -1244,7 +1306,8 @@ def render_markdown(scores: Mapping[str, GateScore], meta: Mapping[str, object])
         "",
         f"Window: {meta['since']} to {meta['until']} (UTC); a fix counts when it lands within "
         f"{LOOKAHEAD.total_seconds() / 3600:g} h of its red. "
-        f"{meta['heads']} PR heads finished their verdict in it, across {', '.join(WORKFLOWS)}; {meta['red_heads']} PR heads red with a named gate, "
+        f"{meta['heads']} PR heads finished their verdict in it (ci.yml, plus e2e.yml when triggered); "
+        f"{meta['red_heads']} PR heads red with a named gate, "
         f"{meta['ratchet_only_heads']} of them red on ratchets alone. Heads not scored for want of a full "
         f"verdict: {meta['incomplete_heads']}. Logs unreadable: "
         f"{meta['unreadable_logs']}. Workflow reads unreadable: {meta['guard_reads_unread']}.",
@@ -2079,6 +2142,42 @@ def _selection_branches(
     }
 
 
+def _run_pr_number(run: Mapping) -> int | None:
+    pulls = run.get("pull_requests") or []
+    if len(pulls) != 1:
+        return None
+    number = pulls[0].get("number")
+    return int(number) if number is not None else None
+
+
+def _pull_labels(api: Api, numbers: set[int]) -> dict[int, frozenset[str] | None]:
+    """Each PR's labels, None when unreadable (the caller fails closed on None).
+
+    Read from the issue view of the PR, never `pulls/{n}`: the pull object carries
+    `merge_commit_sha`, which no verdict may borrow (see `collect`'s step-guard reads)."""
+    labels: dict[int, frozenset[str] | None] = {}
+    for number in numbers:
+        try:
+            body = _api_json(api, f"repos/{REPO}/issues/{number}")
+        except (RuntimeError, KeyError, TypeError, json.JSONDecodeError):
+            labels[number] = None
+            continue
+        names = body.get("labels") or []
+        labels[number] = frozenset(str(item.get("name", "")) for item in names if item.get("name"))
+    return labels
+
+
+def _e2e_required_for_run(workflow: str, run: Mapping, pr_labels: Mapping[int, frozenset[str] | None]) -> bool:
+    if run["event"] != "pull_request":
+        return True
+    if workflow == "e2e.yml":
+        return True
+    number = _run_pr_number(run)
+    if number is None:
+        return True
+    return pr_e2e_required(pr_labels.get(number))
+
+
 def _selection_logs(
     api: Api,
     wanted: Sequence[tuple[str, dict]],
@@ -2133,6 +2232,13 @@ def collect(
         if r["event"] == "pull_request"
         or (r["event"] == "push" and r["head_branch"] == "main" and r["conclusion"] != "cancelled")
     ]
+    pr_numbers: set[int] = set()
+    for _, run in wanted:
+        if run["event"] != "pull_request":
+            continue
+        if (number := _run_pr_number(run)) is not None:
+            pr_numbers.add(number)
+    pr_labels = _pull_labels(api, pr_numbers)
     # A cancelled main push leaves no report, and its per-sha concurrency group means no
     # rerun replaces it. The quality gate measures main's whole tree against the committed
     # baseline, so a later main push that did report covers it; one with none after it is
@@ -2258,6 +2364,7 @@ def collect(
                 zero_jobs=read_zero_jobs(run, jobs),
                 aggregate=run_aggregate_verdict(jobs.get(run["id"], [])),
                 guard_unread=guard_unread,
+                e2e_required=_e2e_required_for_run(workflow, run, pr_labels),
                 skipped_behind_failure=skips_behind_a_failure(jobs.get(run["id"], []), step_guards.get(run["id"])),
             )
         )
@@ -2492,7 +2599,7 @@ def unmeasured_window(data: Collected, window: tuple[dt.datetime, dt.datetime] |
     An unreadable *PR* log is no longer a window-wide outage: it is scoped per gate by
     `unread_scopes`, and the gates it cannot touch are scored as usual."""
     if not owned_shas(data.heads, window):
-        return "no PR head in the window has a measured verdict from every workflow"
+        return "no PR head in the window has a measured verdict from every required workflow"
     if data.main_unread_logs:
         return f"{data.main_unread_logs} main pytest/quality job log(s) in the window were unreadable"
     return None

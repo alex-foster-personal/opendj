@@ -6,6 +6,7 @@ import * as path from 'node:path';
 import { after, test } from 'node:test';
 
 import { type BootDeps, defaultBootDeps, startEngine } from '../src/boot';
+import { freeLoopbackPort } from '../src/engine';
 import { makeLockProbe } from '../src/launch';
 import { PARENT_FILE, shutdownSupervised } from '../src/supervisor';
 import { fakePayload, HOLD_LOCK_SCRIPT, POSIX_ONLY, PYTHON, scratchDir } from './helpers';
@@ -19,6 +20,8 @@ function deps(answer: boolean, asked: string[] = []): BootDeps {
 			asked.push(`${pid}: ${detail}`);
 			return answer;
 		}),
+		// An OS-assigned port: the shared preferred port can be answered by a sibling test's engine.
+		freePort: freeLoopbackPort,
 		bootTimeoutMs: 5_000
 	};
 }

@@ -68,7 +68,7 @@ function _writeAndRead(mod, log, stems, stages = { total: 3813, probeStem: 1990 
 test('a stemmed load records stemmed=1 plus the layout that actually played', async () => {
 	const { mod, log } = await _load();
 	const row = _writeAndRead(mod, log, READY_ROFORMER);
-	assert.equal(row.stages.stemmed, 1);
+	assert.equal(row.facts?.stemmed, 1);
 	assert.deepEqual(row.labels, {
 		stemLayout: 'roformer2',
 		stemSource: 'roformer',
@@ -83,7 +83,7 @@ test('a stemmed load records stemmed=1 plus the layout that actually played', as
 test('a mix-only load records stemmed=0 and an explicit layout of none', async () => {
 	const { mod, log } = await _load();
 	const row = _writeAndRead(mod, log, MIX_ONLY);
-	assert.equal(row.stages.stemmed, 0);
+	assert.equal(row.facts?.stemmed, 0);
 	// Explicit 'none', not an absent key: that is what lets a reader tell a
 	// mix-only load apart from a row written before this field existed.
 	assert.deepEqual(row.labels, { stemLayout: 'none' });
@@ -94,7 +94,7 @@ test('a load that failed before the probe answered withholds the flag', async ()
 	// error === null is the deck's initial stem state: the probe never
 	// resolved, so there is no stemmed answer to record.
 	const row = _writeAndRead(mod, log, { ...MIX_ONLY, error: null });
-	assert.equal('stemmed' in row.stages, false, 'an unmeasured verdict must not be fabricated');
+	assert.equal(row.facts?.stemmed, undefined, 'an unmeasured verdict must not be fabricated');
 	assert.deepEqual(row.labels, { stemLayout: 'unresolved' });
 });
 
@@ -105,7 +105,7 @@ test('a broken stem bundle records mix-only playback and says why', async () => 
 		status: 'error',
 		error: 'alignment mismatch'
 	});
-	assert.equal(row.stages.stemmed, 0);
+	assert.equal(row.facts?.stemmed, 0);
 	assert.deepEqual(row.labels, { stemLayout: 'error' });
 });
 
@@ -115,7 +115,7 @@ test('a mix-first load withholds the flag while the stem bundle is still in flig
 	// the stem verdict genuinely is not known yet. Recording 0 here would make
 	// every mix-first load masquerade as a measured mix-only load.
 	const row = _writeAndRead(mod, log, { ...MIX_ONLY, status: 'loading', error: null });
-	assert.equal('stemmed' in row.stages, false, 'a pending verdict must not be fabricated');
+	assert.equal(row.facts?.stemmed, undefined, 'a pending verdict must not be fabricated');
 	assert.deepEqual(row.labels, { stemLayout: 'pending' });
 });
 
@@ -131,9 +131,9 @@ test('an unrecognized stem status throws instead of defaulting to mix-only', asy
 test('labels stay out of stages, and rows written without them keep their shape', async () => {
 	const { mod, log } = await _load();
 	const row = _writeAndRead(mod, log, READY_ROFORMER);
-	// stages stays a pure ms-per-stage map (plus the numeric stemmed flag), so
-	// anything summing or charting it is safe.
-	assert.deepEqual(row.stages, { total: 3813, probeStem: 1990, stemmed: 1 });
+	// stages stays a pure ms-per-stage map; stemmed lives in facts so summing stages is safe.
+	assert.deepEqual(row.stages, { total: 3813, probeStem: 1990 });
+	assert.equal(row.facts?.stemmed, 1);
 
 	// Additive: a caller that passes no labels writes the row it always did.
 	const realInfo = console.info;

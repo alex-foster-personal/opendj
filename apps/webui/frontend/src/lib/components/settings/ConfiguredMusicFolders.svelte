@@ -105,6 +105,7 @@
 	nativeFolderPicker={nativeShellKind() !== null}
 	onPick={(id) => void pick(id)}
 	onCheck={(id) => void check(id)}
+	onCommit={() => {}}
 	onRemove={remove}
 	onAdd={() => rows = [...rows, newFolderRow()]}
 	onSuggestion={(path) => rows = [...rows, { ...newFolderRow(), path }]}

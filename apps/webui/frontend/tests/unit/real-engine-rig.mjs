@@ -258,10 +258,15 @@ export async function startRealEngine(bundleText, { tracks }) {
 		return nextFrameId++;
 	});
 	defineGlobal('cancelAnimationFrame', () => {});
+	// An engine stopped by an earlier test can still finish a stem decode and create
+	// processors after this rig reset __stretchStubProcessors; they carry that engine's
+	// context, not one of this rig's (STEM-4806 control flake on PR #10572).
+	const ownContexts = new WeakSet();
 	defineGlobal(
 		'AudioContext',
 		class AudioContext {
 			constructor() {
+				ownContexts.add(this);
 				this.state = 'running';
 				this.sampleRate = SAMPLE_RATE_HZ;
 				this.baseLatency = 128 / SAMPLE_RATE_HZ;
@@ -422,9 +427,18 @@ export async function startRealEngine(bundleText, { tracks }) {
 		for (let i = 0; i < count; i += 1) await stepFrame();
 	}
 
-	/** Step frames until the deck's presented state matches, as a real display would. */
+	/**
+	 * Step frames until the deck's presented state matches, as a real display would.
+	 *
+	 * 240 frames is the budget, but a frame here costs about a millisecond, so on a loaded CI runner all 240
+	 * can pass in under 100 ms while the stem decode's own async work is still queued behind other test
+	 * processes (seen on #13607: "never reached: track B's stems to read ready" after 94 ms). A display runs
+	 * on wall-clock time, so the wait also lasts at least WAIT_FOR_MIN_MS before it gives up, the same floor
+	 * waitFor already has. A state that is reached returns at once either way; only a failing wait gets slower.
+	 */
 	async function stepUntil(predicate, what) {
-		for (let i = 0; i < 240 && !predicate(); i += 1) await stepFrame();
+		const giveUpAt = performance.now() + WAIT_FOR_MIN_MS;
+		for (let i = 0; !predicate() && (i < 240 || performance.now() < giveUpAt); i += 1) await stepFrame();
 		assert.ok(predicate(), `the deck never reached: ${what}`);
 	}
 
@@ -444,8 +458,9 @@ export async function startRealEngine(bundleText, { tracks }) {
 		advanceClock(seconds) {
 			contextNowSec += seconds;
 		},
-		/** Every processor the engine created, in creation order. */
-		processors: () => globalThis.__stretchStubProcessors,
+		/** Every processor THIS rig's engine created, in creation order. */
+		processors: () =>
+			globalThis.__stretchStubProcessors.filter((record) => ownContexts.has(record.context)),
 		/** Make the NEXT processor the engine creates throw at its swap's connect,
 		 * and hold its dispose until released: a load whose swap fails on a deck
 		 * that is not playing, with the window that failure leaves open held. */

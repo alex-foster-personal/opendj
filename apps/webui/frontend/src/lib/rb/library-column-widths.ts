@@ -20,6 +20,7 @@ export const COL_DEFAULTS = {
 	// "128 days ago" at the table's 10px tabular size, plus cell padding.
 	last: 96,
 	rating: 80,
+	colour: 28,
 	comments: 110,
 	time: 48,
 	quality: 34,
@@ -27,6 +28,8 @@ export const COL_DEFAULTS = {
 	genre: 90,
 	stems: 148,
 	tags: 140,
+	filename: 140,
+	location: 180,
 	lyrics: 64,
 	// 12px robot icon with 8px breathing room on each side.
 	autoplay: 28,
@@ -42,7 +45,10 @@ export type ColId = keyof typeof COL_DEFAULTS;
 /** LIBUX-54: column widths with every hidden column at 0, for the sums that
  * place the table width and the MASTER fold badge. `hidden` is ui-prefs
  * `library_hidden_columns` (see library-columns.ts for which ids may appear). */
-export function shownColumnWidths<W extends Record<ColId, number>>(widths: W, hidden: readonly ColId[]): W {
+export function shownColumnWidths<W extends Record<ColId, number>>(
+	widths: W,
+	hidden: readonly ColId[]
+): W {
 	const out = { ...widths };
 	for (const col of hidden) out[col] = 0 as W[typeof col];
 	return out;

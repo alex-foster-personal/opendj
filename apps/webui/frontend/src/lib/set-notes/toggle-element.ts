@@ -4,6 +4,10 @@
  * deferred host loads, this defines the element, and the browser upgrades
  * every instance, now and on later routes, with no DOM observer. Before
  * that the tag is an empty placeholder the top bar sizes.
+ *
+ * Comment pins follow the same bootstrap pattern in
+ * `components/comment-pins/comment-pins.ts` (`COMMENT_PINS_TAG`), registered
+ * from `feedback-pin-shell-boot.ts` for Open DJ and usable standalone elsewhere.
  */
 import { mount, unmount } from 'svelte';
 import SetNotesToggle from './SetNotesToggle.svelte';

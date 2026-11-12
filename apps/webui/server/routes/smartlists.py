@@ -17,7 +17,8 @@ The rule editor and agents share this router's contract:
   * ``POST /api/v1/smartlists/{id}/duplicate`` -- clone rule under a new id.
   * ``GET  /api/v1/smartlists/{id}/tracks``    -- live evaluation:
     ordered ``items`` (stable_ids) + hydrated ``tracks`` rows shaped
-    exactly like playlist detail (:class:`..models.TrackRowOut`).
+    exactly like playlist detail (:class:`..models.TrackRowOut`),
+    plus ``total`` matching track count (honest when ``limit`` caps the page).
 
 Error contract (explicit ``{"detail": {code, message}}`` like the rest of
 the daemon):
@@ -53,7 +54,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response,
 from apps.shared.events import publish
 from apps.shared.pairings.schema_sql import migrate_smartlists_deleted_at
 from apps.shared.smartlists import SmartlistRow, SmartlistRuleError
-from apps.smartlists.evaluator import EvaluatorError, evaluate
+from apps.smartlists.evaluator import EvaluatorError, count_matching, evaluate
 from apps.smartlists.repo import (
     SmartlistRevisionConflict,
     SmartlistsRepo,
@@ -485,6 +486,17 @@ def get_smartlist_tracks(
             "message": str(exc),
         }) from exc
 
+    if limit is None or len(stable_ids) < limit:
+        match_total = len(stable_ids)
+    else:
+        try:
+            match_total = count_matching(row.rule, conn, validate=False)
+        except EvaluatorError as exc:
+            raise HTTPException(status_code=503, detail={
+                "code": "SMARTLIST_EVAL_UNAVAILABLE",
+                "message": str(exc),
+            }) from exc
+
     tracks_map = backend.get_tracks_bulk(stable_ids)
     missing = [sid for sid in stable_ids if sid not in tracks_map]
     if missing:
@@ -503,6 +515,7 @@ def get_smartlist_tracks(
         order_by=row.order_by,
         items=list(stable_ids),
         tracks=[TrackRowOut(**r) for r in rows],
+        total=match_total,
     )
 
 

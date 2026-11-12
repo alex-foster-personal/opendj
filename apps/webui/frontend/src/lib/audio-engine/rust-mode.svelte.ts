@@ -112,6 +112,8 @@ export const ENGINE_COMMANDS: ReadonlySet<string> = new Set(['load', ...FORWARDE
 export const WEB_AUDIO_ONLY: ReadonlySet<string> = new Set([
 	// DECKMOVE-01: the audio-clock start and fader handover are Web Audio automation (native follow-up).
 	'deck_move',
+	// STEMPERF-11663: the per-stem FX send is a Web Audio graph feature, like colour FX.
+	'stem_fx_send',
 	'loop_interval_mode',
 	'loop_interval_base',
 	'safety_loop_save',
@@ -147,7 +149,12 @@ export const WEB_AUDIO_ONLY: ReadonlySet<string> = new Set([
 	// live edit would move the waveform but not beat jump or beat loops.
 	'grid_edit',
 	// COLORFX-05: SPACE / ECHO are Web Audio nodes; the engine has the FILTER only.
-	'color_fx'
+	'color_fx',
+	// FXROLL-01: a roll forces SLIP, which the Rust engine has not built (protocol.rs LATER).
+	'roll',
+	// BEATFX-13: beat FX kernels play in Web Audio only (issue #9783).
+	'beat_fx',
+	'beat_fx_release'
 ]);
 
 export type EngineChoice = 'webaudio' | 'rust';

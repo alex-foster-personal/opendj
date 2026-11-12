@@ -1,0 +1,53 @@
+name: up-to-date-rows
+description: >
+  After the hub answers not_newer for every row once, the next sync must
+  not push those rows again until one of them changes locally.
+
+machines:
+  - id: hub
+    role: hub
+  - id: spoke-a
+    role: spoke
+  - id: spoke-b
+    role: spoke
+
+seed:
+  tracks:
+    - stable_id: trk-synced
+      title: same
+      "on": [spoke-a, spoke-b]
+
+steps:
+  - "on": spoke-a
+    action: sync
+    args:
+      expect: { accepted: 1 }
+
+  - "on": spoke-b
+    action: sync
+    args:
+      expect: { rejected: 1, accepted: 0 }
+
+  - "on": spoke-b
+    action: sync
+    args:
+      expect: { pushed: 0, rejected: 0, accepted: 0 }
+
+  - "on": spoke-b
+    action: edit
+    args:
+      table: tracks
+      stable_id: trk-synced
+      set:
+        title: changed
+
+  - "on": spoke-b
+    action: sync
+    args:
+      expect: { accepted: 1, pushed: 1 }
+
+  - "on": spoke-a
+    action: sync
+
+expected:
+  digest_converged: true

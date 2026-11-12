@@ -2,6 +2,10 @@
 	"_comment": "Unit tests allowed to read a .svelte component as text without rendering one. Checked by tests/unit/source-regex-test-ratchet.test.mjs (GUARD-15). This list may only shrink: convert a test to a rendered one (see setup-overlay-render.test.mjs) and delete its entry. A new entry needs a specific reason.",
 	"entries": [
 		{
+			"file": "beat-jump-pad-mode.test.mjs",
+			"reason": "DECKUX-9956: pins that Deck.svelte swaps the cue bank for BeatJumpPads only in Beat Jump pad mode and that the pads send the typed beat_jump command; the pad logic itself is exercised as a real module. Wiring checks, not rendered UI acceptance."
+		},
+		{
 			"file": "vocals-filter-explainer.test.mjs",
 			"reason": "Issue #12369 tests BrowserPanel's actual extracted empty-state selector and shared filter helpers; source assertions trace pre-filter counts into its checkbox and TrackTable prop. These wiring checks do not claim rendered or live UI acceptance."
 		},
@@ -264,6 +268,10 @@
 		{
 			"file": "comment-pin-hotkey-routing.test.mjs",
 			"reason": "pre-existing (on main before the ratchet merged in #5857, Sat 31 Oct 2026; its seed predated them)"
+		},
+		{
+			"file": "compositor-only-pulses.test.mjs",
+			"reason": "CSS @keyframes bodies and the animation shorthand are stylesheet text: an SSR render emits markup, not computed animations, so it cannot show whether a pulse animates a paint property (box-shadow, background) or only opacity. The keyframe text is the instrument (perf, #6584)."
 		},
 		{
 			"file": "compat-panel-placement.test.mjs",
@@ -774,10 +782,6 @@
 			"reason": "pre-existing (on main before the ratchet merged in #5857, Sat 31 Oct 2026; its seed predated them)"
 		},
 		{
-			"file": "master-mix-capture.test.mjs",
-			"reason": "pre-existing (ratchet seed 2026-10-07)"
-		},
-		{
 			"file": "master-output-meter.test.mjs",
 			"reason": "pre-existing (ratchet seed 2026-10-07)"
 		},
@@ -904,6 +908,10 @@
 		{
 			"file": "performance-preset.test.mjs",
 			"reason": "pre-existing (ratchet seed 2026-10-07)"
+		},
+		{
+			"file": "performance-record-control-pins.test.mjs",
+			"reason": "Issue #11326 acceptance pins: assert idle-click opens chrome.openRecordPanel without startPerformanceRecorder in AppPostureChip, stay dismiss on ControlExplainer, and recordings tab wiring in LibraryNav/SourceTabs without a full library shell render."
 		},
 		{
 			"file": "performance-recorder.test.mjs",
@@ -1170,6 +1178,10 @@
 			"reason": "pre-existing (ratchet seed 2026-10-07)"
 		},
 		{
+			"file": "row-insert-gap.test.mjs",
+			"reason": "LIBUX-12871 / issue #11504 and #13263: pins onBodyDragOver, onBodyDragLeave reversibility, and onBodyDrop gap-before-clear; TrackTable needs the library store and daemon to render, and drag handlers do not run under SSR."
+		},
+		{
 			"file": "rust-inert.test.mjs",
 			"reason": "pre-existing (ratchet seed 2026-10-07)"
 		},
@@ -1344,6 +1356,10 @@
 		{
 			"file": "topbar-clock-login-order.test.mjs",
 			"reason": "pre-existing (ratchet seed 2026-10-07)"
+		},
+		{
+			"file": "topbar-feature-menu-escape-focus.test.mjs",
+			"reason": "extracts and executes the real feature-menu dismiss handlers against a fake trigger; SSR cannot dispatch a window keydown or observe focus, and the unit lane has no client DOM"
 		},
 		{
 			"file": "topbar-feature-rows-follow-cluster.test.mjs",
@@ -1635,7 +1651,7 @@
 		},
 		{
 			"file": "track-load-reset-now.test.mjs",
-			"reason": "One test pins TrackLoadResetPanel (testid, resetDeckNowCommand dispatch, secondary-button CSS with no accent) and that Deck and ChannelStrip toggle the panel; the click dispatch and scoped CSS are not exercised by an SSR render, while the command parsing and dispatch are tested through the real performance-ipc module in the same file"
+			"reason": "source-shape pin (DECKGAP-7691h, #8416): pins the Reset now button wiring and its secondary styling in TrackLoadResetPanel, StemRow, Deck and ChannelStrip, and that _resetDeckNow reuses applyTrackLoadChannelReset; the command parsing and dispatch are exercised through the real performance-ipc module in the same file"
 		},
 		{
 			"file": "key-bpm-cell-no-status-word.test.mjs",
@@ -1668,6 +1684,42 @@
 		{
 			"file": "presentation-tick-failure-reactive.test.mjs",
 			"reason": "PERF-GRID-12026: the reactive cell is tested by running the real Svelte runtime; the one source read is a negative guard that Deck.svelte's controlError $derived does not call queryPerformanceState, which rendering Deck cannot observe (it would only show the banner text, not which dependency the derived tracks)"
+		},
+		{
+			"file": "other-lazy-settings-defer.test.mjs",
+			"reason": "Issue #11467 / F03: bundle budgets are computed from static import() shapes on route entries and the overlay loader; source regex pins lazy settings and admin tab boundaries the way click-gated-lazy-ui.test.mjs does for performance boot, without claiming SSR render covers dynamic import() syntax."
+		},
+		{
+			"file": "focus-trap.test.mjs",
+			"reason": "A11Y issue #10364 (Tue 10 Nov 2026): pins use:focusTrap on all four overlay dialogs, Hotkeys DOM tab order, TrackInfo panelEl focus removal, and Setup onPanelKeydown; SSR render of each overlay does not mount the trap action or the Hotkeys open branch"
+		},
+		{
+			"file": "backstage-kpi-table.test.mjs",
+			"reason": "PR #6533 (backstage KPI table): the ordering, fold, filter and staleness logic run as a real module; the one KpiTable.svelte read pins that W/A/S/D key handling routes through moveRowFocus, the shared admin-state.css import and no player or engine import, none of which a static SSR render can show."
+		},
+		{
+			"file": "backstage-review.test.mjs",
+			"reason": "PR #6533 (backstage review queue): the label, key-map and skip logic run as a real module; the ReviewPanel.svelte and admin +page.svelte reads pin the lazy preview-cue import(), the suspect-order fetch and which tab mounts ReviewPanel or LyricTriage, which an SSR render of the default tab does not reach."
+		},
+		{
+			"file": "backstage-status.test.mjs",
+			"reason": "PR #6533 (backstage Status overview): the area verdicts run as a real module; the StatusOverview.svelte read pins disabled-row titles, moveRowFocus arrow handling and the admin-state.css import, which need key events and a client mount that SSR render does not give."
+		},
+		{
+			"file": "pad-mode-ipc.test.mjs",
+			"reason": "PR #11718 (Pad FX banks): the pad_mode IPC runs as a real module; the source read pins that both PadModeMenu twins (Svelte and React) dispatch the typed pad_mode command through runPerformanceCommandFromUi on a menu click, which an SSR render of the closed menu never fires."
+		},
+		{
+			"file": "smartlist-preview-wiring.test.mjs",
+			"reason": "PR #9217 (smartlist preview cap): pins that BrowserPanel.svelte forwards match_total from the load and quiet-refresh fetch results into the pane, script-side wiring that no SSR render of the panel exercises without a live fetch."
+		},
+		{
+			"file": "track-table-lazy-panels.test.mjs",
+			"reason": "PR #11722 (lazy version stack and works modals): the loader replay runs as a real module; the source reads pin that the seam re-exports the loaders and that no source file statically imports either real component, a bundle-shape property a render cannot observe."
+		},
+		{
+			"file": "usb-detect-surfaces.test.mjs",
+			"reason": "PR #11997 (USB detect toast and pulse): the toast and prefs logic run as real modules; the BrowserPanel.svelte and LibraryNav.svelte reads pin the openUsbPanel wiring from the detect toast and the per-stick pulse, which only fires on a live usb_stick event a static render cannot raise."
 		}
 	]
 }

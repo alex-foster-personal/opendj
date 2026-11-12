@@ -14,6 +14,12 @@
  *
  * Both directions now take the measured height, and the round trip between
  * them is what the test asserts.
+ *
+ * Issue #11465 (F21): scaling pointer travel by the full track height on a
+ * 64px min-height fader (ignoring THUMB_H) aimed a 0.625 drag at value 17/26,
+ * tempo ratio 1.307692 at range 100 instead of 1.25. Production mapping always
+ * uses `_travel(trackH)` in both directions; stale full-height scaling is a
+ * test-helper mistake, not engine drift.
  */
 
 /** Thumb height, matching `.rb-fader-thumb` in theme.css. This one is a real

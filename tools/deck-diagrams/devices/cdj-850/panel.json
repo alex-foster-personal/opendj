@@ -1,0 +1,637 @@
+{
+ "format": "opendj-panel-layout/1",
+ "device": "cdj-850",
+ "display_name": "Professional DJ media player",
+ "units": "mm",
+ "panel": {
+  "w": 305.0,
+  "d": 364.4
+ },
+ "device_map": "CDJ850_MAP",
+ "sources": {
+  "panel_size": "CDJ-850 Operating Instructions DRB1646A, Specifications: 305 mm (W) x 364.4 mm (D) x 105.5 mm (H)",
+  "wire": "apps/webui/frontend/src/lib/rb/midi/maps/cdj-850.ts (List of MIDI Messages, p26 to p27)",
+  "positions": "measured trace of the Part names drawing (printed p12); reference: devices/cdj-850/panel.reference.json (ADR-0137)"
+ },
+ "out_of_scope": [
+  "one player: channel 1 wires; players 2 to 4 are channels 2 to 4 in CDJ850_MAP",
+  "no SHIFT layer on this player",
+  "SOURCE, USB STOP, PC/DISC/USB source selectors and the LCD (no chart wire)",
+  "SELECT PUSH press (note 51, browse load) and jog outer ring (CC 48) are bound but not placed",
+  "power, USB port flap, standby and link indicators"
+ ],
+ "controls": [
+  {
+   "id": "play-pause",
+   "fig": "1",
+   "type": "button",
+   "label": "PLAY/PAUSE",
+   "does": "Start or pause playback",
+   "x": 19.0,
+   "y": 304.0,
+   "w": 40.0,
+   "h": 42.0,
+   "section": "deck",
+   "midi": {
+    "ch": 1,
+    "kind": "note",
+    "id": 0
+   },
+   "shift_midi": null
+  },
+  {
+   "id": "cue",
+   "fig": "2",
+   "type": "button",
+   "label": "CUE",
+   "does": "Set or return to the cue point",
+   "x": 19.0,
+   "y": 246.5,
+   "w": 40.0,
+   "h": 42.0,
+   "section": "deck",
+   "midi": {
+    "ch": 1,
+    "kind": "note",
+    "id": 1
+   },
+   "shift_midi": null
+  },
+  {
+   "id": "search-fwd",
+   "fig": "3",
+   "type": "button",
+   "label": "SEARCH >",
+   "does": "Fast forward",
+   "x": 38.0,
+   "y": 208.5,
+   "w": 14.0,
+   "h": 15.0,
+   "section": "deck",
+   "midi": {
+    "ch": 1,
+    "kind": "note",
+    "id": 2
+   },
+   "shift_midi": null
+  },
+  {
+   "id": "search-rev",
+   "fig": "3",
+   "type": "button",
+   "label": "SEARCH <",
+   "does": "Fast reverse",
+   "x": 8.5,
+   "y": 208.5,
+   "w": 14.0,
+   "h": 15.0,
+   "section": "deck",
+   "midi": {
+    "ch": 1,
+    "kind": "note",
+    "id": 3
+   },
+   "shift_midi": null
+  },
+  {
+   "id": "track-search-next",
+   "fig": "4",
+   "type": "button",
+   "label": "TRACK SEARCH >",
+   "does": "Next track",
+   "x": 38.0,
+   "y": 187.5,
+   "w": 14.0,
+   "h": 15.0,
+   "section": "deck",
+   "midi": {
+    "ch": 1,
+    "kind": "note",
+    "id": 4
+   },
+   "shift_midi": null
+  },
+  {
+   "id": "track-search-prev",
+   "fig": "4",
+   "type": "button",
+   "label": "TRACK SEARCH <",
+   "does": "Previous track",
+   "x": 8.5,
+   "y": 187.5,
+   "w": 14.0,
+   "h": 15.0,
+   "section": "deck",
+   "midi": {
+    "ch": 1,
+    "kind": "note",
+    "id": 5
+   },
+   "shift_midi": null
+  },
+  {
+   "id": "direction-rev",
+   "fig": "5",
+   "type": "button",
+   "label": "DIRECTION REV",
+   "does": "Reverse playback direction",
+   "x": 29.5,
+   "y": 175.5,
+   "w": 21.0,
+   "h": 17.0,
+   "section": "deck",
+   "midi": {
+    "ch": 1,
+    "kind": "note",
+    "id": 33
+   },
+   "shift_midi": null
+  },
+  {
+   "id": "reloop-exit",
+   "fig": "6",
+   "type": "button",
+   "label": "RELOOP/EXIT",
+   "does": "Exit or re-enter the loop",
+   "x": 101.0,
+   "y": 158.5,
+   "w": 23.0,
+   "h": 26.0,
+   "section": "deck",
+   "midi": {
+    "ch": 1,
+    "kind": "note",
+    "id": 8
+   },
+   "shift_midi": null
+  },
+  {
+   "id": "loop-out",
+   "fig": "7",
+   "type": "button",
+   "label": "LOOP OUT",
+   "does": "Set the loop out point (hold: adjust)",
+   "x": 74.5,
+   "y": 158.5,
+   "w": 23.0,
+   "h": 26.0,
+   "section": "deck",
+   "midi": {
+    "ch": 1,
+    "kind": "note",
+    "id": 7
+   },
+   "shift_midi": null
+  },
+  {
+   "id": "loop-in",
+   "fig": "8",
+   "type": "button",
+   "label": "LOOP IN/CUE",
+   "does": "Set the loop in point (hold: adjust)",
+   "x": 52.5,
+   "y": 158.5,
+   "w": 23.0,
+   "h": 26.0,
+   "section": "deck",
+   "midi": {
+    "ch": 1,
+    "kind": "note",
+    "id": 6
+   },
+   "shift_midi": null
+  },
+  {
+   "id": "beat-select",
+   "fig": "9",
+   "type": "button",
+   "label": "BEAT SELECT",
+   "does": "Beat grid for auto loops",
+   "x": 8.5,
+   "y": 163.0,
+   "w": 18.0,
+   "h": 17.0,
+   "section": "deck",
+   "midi": {
+    "ch": 1,
+    "kind": "note",
+    "id": 45
+   },
+   "shift_midi": null
+  },
+  {
+   "id": "beat-loop-1",
+   "fig": "10",
+   "type": "button",
+   "label": "AUTO BEAT LOOP 1",
+   "does": "One-beat auto loop",
+   "x": 8.5,
+   "y": 96.0,
+   "w": 18.0,
+   "h": 17.0,
+   "section": "deck",
+   "midi": {
+    "ch": 1,
+    "kind": "note",
+    "id": 40
+   },
+   "shift_midi": null
+  },
+  {
+   "id": "beat-loop-2",
+   "fig": "10",
+   "type": "button",
+   "label": "AUTO BEAT LOOP 2",
+   "does": "Two-beat auto loop",
+   "x": 8.5,
+   "y": 112.5,
+   "w": 18.0,
+   "h": 17.0,
+   "section": "deck",
+   "midi": {
+    "ch": 1,
+    "kind": "note",
+    "id": 41
+   },
+   "shift_midi": null
+  },
+  {
+   "id": "beat-loop-4",
+   "fig": "10",
+   "type": "button",
+   "label": "AUTO BEAT LOOP 4",
+   "does": "Four-beat auto loop",
+   "x": 8.5,
+   "y": 129.5,
+   "w": 18.0,
+   "h": 17.0,
+   "section": "deck",
+   "midi": {
+    "ch": 1,
+    "kind": "note",
+    "id": 42
+   },
+   "shift_midi": null
+  },
+  {
+   "id": "beat-loop-8",
+   "fig": "10",
+   "type": "button",
+   "label": "AUTO BEAT LOOP 8",
+   "does": "Eight-beat auto loop",
+   "x": 8.5,
+   "y": 146.0,
+   "w": 18.0,
+   "h": 17.0,
+   "section": "deck",
+   "midi": {
+    "ch": 1,
+    "kind": "note",
+    "id": 43
+   },
+   "shift_midi": null
+  },
+  {
+   "id": "time-mode",
+   "fig": "17",
+   "type": "button",
+   "label": "TIME MODE/AUTO CUE",
+   "does": "Elapsed or remaining time (hold: auto cue)",
+   "x": 74.5,
+   "y": 51.5,
+   "w": 27.0,
+   "h": 20.0,
+   "section": "deck",
+   "midi": {
+    "ch": 1,
+    "kind": "note",
+    "id": 14
+   },
+   "shift_midi": null
+  },
+  {
+   "id": "browse",
+   "fig": "18",
+   "type": "button",
+   "label": "BROWSE",
+   "does": "Enter the browse screen",
+   "x": 124.0,
+   "y": 9.5,
+   "w": 34.0,
+   "h": 16.0,
+   "section": "browse",
+   "midi": {
+    "ch": 1,
+    "kind": "note",
+    "id": 54
+   },
+   "shift_midi": null
+  },
+  {
+   "id": "tag-list",
+   "fig": "19",
+   "type": "button",
+   "label": "TAG LIST",
+   "does": "Open the tag list",
+   "x": 161.5,
+   "y": 9.5,
+   "w": 30.0,
+   "h": 16.0,
+   "section": "browse",
+   "midi": {
+    "ch": 1,
+    "kind": "note",
+    "id": 55
+   },
+   "shift_midi": null
+  },
+  {
+   "id": "info",
+   "fig": "20",
+   "type": "button",
+   "label": "INFO",
+   "does": "Show track information",
+   "x": 197.0,
+   "y": 9.5,
+   "w": 29.0,
+   "h": 16.0,
+   "section": "browse",
+   "midi": {
+    "ch": 1,
+    "kind": "note",
+    "id": 56
+   },
+   "shift_midi": null
+  },
+  {
+   "id": "menu",
+   "fig": "21",
+   "type": "button",
+   "label": "MENU/UTILITY",
+   "does": "Utility and settings",
+   "x": 235.5,
+   "y": 9.5,
+   "w": 30.0,
+   "h": 16.0,
+   "section": "browse",
+   "midi": {
+    "ch": 1,
+    "kind": "note",
+    "id": 63
+   },
+   "shift_midi": null
+  },
+  {
+   "id": "back",
+   "fig": "22",
+   "type": "button",
+   "label": "BACK",
+   "does": "Back one browse level",
+   "x": 263.0,
+   "y": 51.5,
+   "w": 23.0,
+   "h": 17.0,
+   "section": "browse",
+   "midi": {
+    "ch": 1,
+    "kind": "note",
+    "id": 50
+   },
+   "shift_midi": null
+  },
+  {
+   "id": "tag-track",
+   "fig": "23",
+   "type": "button",
+   "label": "TAG TRACK/REMOVE",
+   "does": "Tag or untag the selected track",
+   "x": 263.0,
+   "y": 75.0,
+   "w": 23.0,
+   "h": 17.0,
+   "section": "browse",
+   "midi": {
+    "ch": 1,
+    "kind": "note",
+    "id": 48
+   },
+   "shift_midi": null
+  },
+  {
+   "id": "browse-encoder",
+   "fig": "24",
+   "type": "encoder",
+   "label": "SELECT PUSH",
+   "does": "Scroll the library (press loads the track, note 51)",
+   "x": 214.0,
+   "y": 76.5,
+   "w": 34.0,
+   "h": 38.0,
+   "section": "browse",
+   "midi": {
+    "ch": 1,
+    "kind": "cc",
+    "id": 79
+   },
+   "shift_midi": null
+  },
+  {
+   "id": "disc-eject",
+   "fig": "27",
+   "type": "button",
+   "label": "DISC EJECT",
+   "does": "Eject the disc",
+   "x": 272.0,
+   "y": 24.5,
+   "w": 21.0,
+   "h": 19.0,
+   "section": "deck",
+   "midi": {
+    "ch": 1,
+    "kind": "note",
+    "id": 47
+   },
+   "shift_midi": null
+  },
+  {
+   "id": "call-prev",
+   "fig": "28",
+   "type": "button",
+   "label": "CALL <",
+   "does": "Call the previous cue or loop",
+   "x": 167.0,
+   "y": 158.5,
+   "w": 21.0,
+   "h": 26.0,
+   "section": "deck",
+   "midi": {
+    "ch": 1,
+    "kind": "note",
+    "id": 12
+   },
+   "shift_midi": null
+  },
+  {
+   "id": "call-next",
+   "fig": "28",
+   "type": "button",
+   "label": "CALL >",
+   "does": "Call the next cue or loop",
+   "x": 189.5,
+   "y": 158.5,
+   "w": 21.0,
+   "h": 26.0,
+   "section": "deck",
+   "midi": {
+    "ch": 1,
+    "kind": "note",
+    "id": 11
+   },
+   "shift_midi": null
+  },
+  {
+   "id": "delete",
+   "fig": "29",
+   "type": "button",
+   "label": "DELETE",
+   "does": "Delete the called cue or loop",
+   "x": 212.0,
+   "y": 158.5,
+   "w": 21.0,
+   "h": 26.0,
+   "section": "deck",
+   "midi": {
+    "ch": 1,
+    "kind": "note",
+    "id": 13
+   },
+   "shift_midi": null
+  },
+  {
+   "id": "memory",
+   "fig": "30",
+   "type": "button",
+   "label": "MEMORY",
+   "does": "Store the cue or loop",
+   "x": 234.5,
+   "y": 158.5,
+   "w": 21.0,
+   "h": 26.0,
+   "section": "deck",
+   "midi": {
+    "ch": 1,
+    "kind": "note",
+    "id": 10
+   },
+   "shift_midi": null
+  },
+  {
+   "id": "vinyl-speed",
+   "fig": "31",
+   "type": "knob",
+   "label": "VINYL SPEED ADJ.",
+   "does": "Vinyl mode touch and brake speed",
+   "x": 263.0,
+   "y": 183.5,
+   "w": 19.0,
+   "h": 26.0,
+   "section": "deck",
+   "midi": {
+    "ch": 1,
+    "kind": "cc",
+    "id": 30
+   },
+   "shift_midi": null
+  },
+  {
+   "id": "jog-mode",
+   "fig": "32",
+   "type": "button",
+   "label": "JOG MODE VINYL",
+   "does": "Vinyl or CDJ jog mode",
+   "x": 263.0,
+   "y": 213.0,
+   "w": 23.0,
+   "h": 17.0,
+   "section": "deck",
+   "midi": {
+    "ch": 1,
+    "kind": "note",
+    "id": 18
+   },
+   "shift_midi": null
+  },
+  {
+   "id": "tempo-range",
+   "fig": "33",
+   "type": "button",
+   "label": "TEMPO RANGE",
+   "does": "Tempo slider range (6, 10, 16, WIDE)",
+   "x": 270.5,
+   "y": 238.0,
+   "w": 19.0,
+   "h": 15.0,
+   "section": "deck",
+   "midi": {
+    "ch": 1,
+    "kind": "note",
+    "id": 16
+   },
+   "shift_midi": null
+  },
+  {
+   "id": "master-tempo",
+   "fig": "34",
+   "type": "button",
+   "label": "MASTER TEMPO",
+   "does": "Key lock on or off",
+   "x": 270.5,
+   "y": 259.0,
+   "w": 19.0,
+   "h": 15.0,
+   "section": "deck",
+   "midi": {
+    "ch": 1,
+    "kind": "note",
+    "id": 17
+   },
+   "shift_midi": null
+  },
+  {
+   "id": "tempo",
+   "fig": "35",
+   "type": "fader",
+   "label": "TEMPO",
+   "does": "Tempo slider",
+   "x": 249.5,
+   "y": 110.0,
+   "w": 23.0,
+   "h": 229.0,
+   "section": "deck",
+   "midi": {
+    "ch": 1,
+    "kind": "cc",
+    "id": 29
+   },
+   "shift_midi": null
+  },
+  {
+   "id": "jog",
+   "fig": "36",
+   "type": "jog",
+   "label": "JOG",
+   "does": "Scratch, nudge or search the track (platter top; outer ring is CC 48)",
+   "x": 52.5,
+   "y": 184.0,
+   "w": 188.0,
+   "h": 148.0,
+   "section": "deck",
+   "midi": {
+    "ch": 1,
+    "kind": "cc",
+    "id": 16
+   },
+   "shift_midi": null
+  }
+ ]
+}

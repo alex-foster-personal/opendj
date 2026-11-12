@@ -341,7 +341,7 @@ test('_hydrateRowMeta does not skip the round-trip for unmapped rows', () => {
 test('artwork renders from its inline row verdict, not rb-meta hydration', () => {
 	const table = readFileSync(TRACK_TABLE, 'utf8');
 	const artStart = table.indexOf('class="c-art"');
-	const artEnd = table.indexOf('<td class="c-title"', artStart);
+	const artEnd = table.search(/<td\s+class="c-title"/);
 	assert.ok(artStart >= 0 && artEnd > artStart, 'artwork cell not found in TrackTable.svelte');
 	const artCell = table.slice(artStart, artEnd);
 	assert.match(

@@ -16,6 +16,7 @@ pub mod device;
 pub mod dsp;
 pub mod engine;
 pub mod fingerprint;
+pub mod lighting;
 pub mod midi;
 pub mod mic_permission;
 #[cfg(feature = "midi")]

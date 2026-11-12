@@ -15,6 +15,7 @@
     "deck_sources":     {"type": "array", "items": {"type": "string"}},
     "watermark":        {"type": "string"},
     "schema_version":   {"type": "integer", "minimum": 1},
+    "audio":            {"type": "string", "enum": ["absent"]},
     "audio_peak_dbfs":  {"type": ["number", "null"], "maximum": 0},
     "clipped_samples":  {"type": ["integer", "null"], "minimum": 0},
     "clip_events":      {"type": ["integer", "null"], "minimum": 0},
@@ -27,6 +28,21 @@
           "name":       {"type": "string"},
           "start_t_s":  {"type": "number", "minimum": 0},
           "duration_s": {"type": ["number", "null"]},
+          "size_bytes": {"type": "integer", "minimum": 0}
+        }
+      }
+    },
+    "track_files": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["name", "path", "start_t_s", "duration_s", "size_bytes"],
+        "additionalProperties": false,
+        "properties": {
+          "name":       {"type": "string", "minLength": 1},
+          "path":       {"type": "string", "minLength": 1},
+          "start_t_s":  {"type": "number", "minimum": 0},
+          "duration_s": {"type": "number", "minimum": 0},
           "size_bytes": {"type": "integer", "minimum": 0}
         }
       }

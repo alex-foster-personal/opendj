@@ -28,166 +28,165 @@ export const STRIP_FILL_FIRST_RETRY_MS = 2000;
 export const STRIP_FILL_MAX_RETRY_MS = 15000;
 
 export interface StripWire {
-  preview_b64: string;
-  preview_max: number;
+	preview_b64: string;
+	preview_max: number;
 }
 
 export interface PreviewStripBatch {
-  strips: Record<string, StripWire | null>;
-  pending: string[];
+	strips: Record<string, StripWire | null>;
+	pending: string[];
 }
 
 export interface StripFillState {
-  /** Pending answers so far; drives the backoff. */
-  attempts: number;
-  /** Earliest time (ms) the id may be asked again. */
-  dueAt: number;
-  /** Filled, or null and not pending: never asked again while in view. */
-  settled: boolean;
+	/** Pending answers so far; drives the backoff. */
+	attempts: number;
+	/** Earliest time (ms) the id may be asked again. */
+	dueAt: number;
+	/** Filled, or null and not pending: never asked again while in view. */
+	settled: boolean;
 }
 
 export interface StripFillDeps {
-  fetchBatch(ids: string[]): Promise<PreviewStripBatch>;
-  onStrip(stable_id: string, strip: StripWire): void;
-  onError(error: unknown): void;
-  now(): number;
-  setTimer(fn: () => void, ms: number): unknown;
-  clearTimer(handle: unknown): void;
+	fetchBatch(ids: string[]): Promise<PreviewStripBatch>;
+	onStrip(stable_id: string, strip: StripWire): void;
+	onError(error: unknown): void;
+	now(): number;
+	setTimer(fn: () => void, ms: number): unknown;
+	clearTimer(handle: unknown): void;
 }
 
 /** Backoff before re-asking a pending id: 2 s, 4 s, 8 s, then 15 s. */
 export function stripRetryDelayMs(attempts: number): number {
-  return Math.min(
-    STRIP_FILL_MAX_RETRY_MS,
-    STRIP_FILL_FIRST_RETRY_MS * 2 ** Math.max(0, attempts - 1),
-  );
+	return Math.min(
+		STRIP_FILL_MAX_RETRY_MS,
+		STRIP_FILL_FIRST_RETRY_MS * 2 ** Math.max(0, attempts - 1)
+	);
 }
 
 /** Pure: the visible ids to ask for now, in view order, capped at one batch. */
 export function idsDueForStrip(
-  visible: readonly string[],
-  state: ReadonlyMap<string, StripFillState>,
-  inFlight: ReadonlySet<string>,
-  now: number,
+	visible: readonly string[],
+	state: ReadonlyMap<string, StripFillState>,
+	inFlight: ReadonlySet<string>,
+	now: number
 ): string[] {
-  const out: string[] = [];
-  for (const id of new Set(visible)) {
-    if (out.length === STRIP_FILL_MAX_IDS) break;
-    if (inFlight.has(id)) continue;
-    const s = state.get(id);
-    if (s === undefined || (!s.settled && s.dueAt <= now)) out.push(id);
-  }
-  return out;
+	const out: string[] = [];
+	for (const id of new Set(visible)) {
+		if (out.length === STRIP_FILL_MAX_IDS) break;
+		if (inFlight.has(id)) continue;
+		const s = state.get(id);
+		if (s === undefined || (!s.settled && s.dueAt <= now)) out.push(id);
+	}
+	return out;
 }
 
 /** Pure: an id's state after one answer (or a failed request, `answer` undefined). */
 export function nextStripFillState(
-  prev: StripFillState | undefined,
-  answer: { filled: boolean; pending: boolean } | undefined,
-  now: number,
+	prev: StripFillState | undefined,
+	answer: { filled: boolean; pending: boolean } | undefined,
+	now: number
 ): StripFillState {
-  const attempts = (prev?.attempts ?? 0) + 1;
-  if (answer !== undefined && (answer.filled || !answer.pending)) {
-    return { attempts, dueAt: Number.POSITIVE_INFINITY, settled: true };
-  }
-  return { attempts, dueAt: now + stripRetryDelayMs(attempts), settled: false };
+	const attempts = (prev?.attempts ?? 0) + 1;
+	if (answer !== undefined && (answer.filled || !answer.pending)) {
+		return { attempts, dueAt: Number.POSITIVE_INFINITY, settled: true };
+	}
+	return { attempts, dueAt: now + stripRetryDelayMs(attempts), settled: false };
 }
 
 export class PreviewStripFiller {
-  readonly #deps: StripFillDeps;
-  #visible: string[] = [];
-  readonly #state = new Map<string, StripFillState>();
-  readonly #inFlight = new Set<string>();
-  #timer: unknown = null;
-  #disposed = false;
+	readonly #deps: StripFillDeps;
+	#visible: string[] = [];
+	readonly #state = new Map<string, StripFillState>();
+	readonly #inFlight = new Set<string>();
+	#timer: unknown = null;
+	#disposed = false;
 
-  constructor(deps: StripFillDeps) {
-    this.#deps = deps;
-  }
+	constructor(deps: StripFillDeps) {
+		this.#deps = deps;
+	}
 
-  /** The strip-less ids in view (plus margin). Debounced. */
-  setVisible(ids: readonly string[]): void {
-    this.#visible = [...new Set(ids)];
-    const keep = new Set(this.#visible);
-    for (const id of [...this.#state.keys()]) {
-      if (!keep.has(id)) this.#state.delete(id);
-    }
-    this.#schedule(STRIP_FILL_DEBOUNCE_MS);
-  }
+	/** The strip-less ids in view (plus margin). Debounced. */
+	setVisible(ids: readonly string[]): void {
+		this.#visible = [...new Set(ids)];
+		const keep = new Set(this.#visible);
+		for (const id of [...this.#state.keys()]) {
+			if (!keep.has(id)) this.#state.delete(id);
+		}
+		this.#schedule(STRIP_FILL_DEBOUNCE_MS);
+	}
 
-  /** Forget the settled verdict for these ids so they are asked again. Their
-   * rows were replaced (a library refresh hands out new row objects without
-   * the assets the old ones received); pending backoff and in-flight asks are
-   * left as they are. */
-  reopen(ids: readonly string[]): void {
-    for (const id of ids) {
-      if (this.#state.get(id)?.settled === true) this.#state.delete(id);
-    }
-  }
+	/** Forget the settled verdict for these ids so they are asked again. Their
+	 * rows were replaced (a library refresh hands out new row objects without
+	 * the assets the old ones received); pending backoff and in-flight asks are
+	 * left as they are. */
+	reopen(ids: readonly string[]): void {
+		for (const id of ids) {
+			if (this.#state.get(id)?.settled === true) this.#state.delete(id);
+		}
+	}
 
-  dispose(): void {
-    this.#disposed = true;
-    if (this.#timer !== null) this.#deps.clearTimer(this.#timer);
-    this.#timer = null;
-  }
+	/** Re-ask row-assets for ids that may already have a strip (issue #11422). */
+	nudgeRowAssets(ids: readonly string[]): void {
+		this.reopen(ids);
+		const keep = new Set(this.#visible);
+		for (const id of ids) keep.add(id);
+		this.#visible = [...keep];
+		this.#schedule(STRIP_FILL_DEBOUNCE_MS);
+	}
 
-  #schedule(ms: number): void {
-    if (this.#disposed) return;
-    if (this.#timer !== null) this.#deps.clearTimer(this.#timer);
-    this.#timer = this.#deps.setTimer(() => {
-      this.#timer = null;
-      void this.#run();
-    }, ms);
-  }
+	dispose(): void {
+		this.#disposed = true;
+		if (this.#timer !== null) this.#deps.clearTimer(this.#timer);
+		this.#timer = null;
+	}
 
-  async #run(): Promise<void> {
-    const ids = idsDueForStrip(
-      this.#visible,
-      this.#state,
-      this.#inFlight,
-      this.#deps.now(),
-    );
-    if (ids.length > 0) {
-      for (const id of ids) this.#inFlight.add(id);
-      let batch: PreviewStripBatch | undefined;
-      try {
-        batch = await this.#deps.fetchBatch(ids);
-      } catch (error) {
-        this.#deps.onError(error);
-      } finally {
-        for (const id of ids) this.#inFlight.delete(id);
-      }
-      if (this.#disposed) return;
-      const now = this.#deps.now();
-      const pending = new Set(batch?.pending ?? []);
-      const visible = new Set(this.#visible);
-      for (const id of ids) {
-        const strip = batch?.strips[id] ?? null;
-        if (strip !== null) this.#deps.onStrip(id, strip);
-        if (!visible.has(id)) continue;
-        const answer =
-          batch === undefined
-            ? undefined
-            : { filled: strip !== null, pending: pending.has(id) };
-        this.#state.set(
-          id,
-          nextStripFillState(this.#state.get(id), answer, now),
-        );
-      }
-    }
-    this.#scheduleNextDue();
-  }
+	#schedule(ms: number): void {
+		if (this.#disposed) return;
+		if (this.#timer !== null) this.#deps.clearTimer(this.#timer);
+		this.#timer = this.#deps.setTimer(() => {
+			this.#timer = null;
+			void this.#run();
+		}, ms);
+	}
 
-  #scheduleNextDue(): void {
-    let due = Number.POSITIVE_INFINITY;
-    for (const id of this.#visible) {
-      const s = this.#state.get(id);
-      if (s === undefined && !this.#inFlight.has(id)) due = Math.min(due, 0);
-      else if (s !== undefined && !s.settled) due = Math.min(due, s.dueAt);
-    }
-    if (due === Number.POSITIVE_INFINITY) return;
-    this.#schedule(Math.max(0, due - this.#deps.now()));
-  }
+	async #run(): Promise<void> {
+		const ids = idsDueForStrip(this.#visible, this.#state, this.#inFlight, this.#deps.now());
+		if (ids.length > 0) {
+			for (const id of ids) this.#inFlight.add(id);
+			let batch: PreviewStripBatch | undefined;
+			try {
+				batch = await this.#deps.fetchBatch(ids);
+			} catch (error) {
+				this.#deps.onError(error);
+			} finally {
+				for (const id of ids) this.#inFlight.delete(id);
+			}
+			if (this.#disposed) return;
+			const now = this.#deps.now();
+			const pending = new Set(batch?.pending ?? []);
+			const visible = new Set(this.#visible);
+			for (const id of ids) {
+				const strip = batch?.strips[id] ?? null;
+				if (strip !== null) this.#deps.onStrip(id, strip);
+				if (!visible.has(id)) continue;
+				const answer =
+					batch === undefined ? undefined : { filled: strip !== null, pending: pending.has(id) };
+				this.#state.set(id, nextStripFillState(this.#state.get(id), answer, now));
+			}
+		}
+		this.#scheduleNextDue();
+	}
+
+	#scheduleNextDue(): void {
+		let due = Number.POSITIVE_INFINITY;
+		for (const id of this.#visible) {
+			const s = this.#state.get(id);
+			if (s === undefined && !this.#inFlight.has(id)) due = Math.min(due, 0);
+			else if (s !== undefined && !s.settled) due = Math.min(due, s.dueAt);
+		}
+		if (due === Number.POSITIVE_INFINITY) return;
+		this.#schedule(Math.max(0, due - this.#deps.now()));
+	}
 }
 
 /**
@@ -200,27 +199,27 @@ export class PreviewStripFiller {
  * an id-keyed check left those rows blank for the rest of the session.
  */
 export function stripLessIdsNear<Row extends { stable_id: string; strip: unknown }>(
-  rows: readonly Row[],
-  startIndex: number,
-  endIndex: number,
-  margin: number,
-  hasAssets: (row: Row) => boolean,
+	rows: readonly Row[],
+	startIndex: number,
+	endIndex: number,
+	margin: number,
+	hasAssets: (row: Row) => boolean
 ): string[] {
-  return rows
-    .slice(Math.max(0, startIndex - margin), endIndex + margin)
-    .filter((r) => r.strip === null && !hasAssets(r))
-    .map((r) => r.stable_id);
+	return rows
+		.slice(Math.max(0, startIndex - margin), endIndex + margin)
+		.filter((r) => r.strip === null && !hasAssets(r))
+		.map((r) => r.stable_id);
 }
 
 /** The filler's batch for library rows (LIBM-172): `POST /library/row-assets`, with the
  * module that applies it loaded on first use so it stays off the eager route bundle.
  * `rows` is read after the answer lands, so a refresh mid-request fills the new rows. */
 export async function fetchRowAssetsLazily(
-  ids: string[],
-  rows: () => readonly RowAssetTarget[],
-  settled?: WeakSet<object>,
+	ids: string[],
+	rows: () => readonly RowAssetTarget[],
+	settled?: WeakSet<object>
 ): Promise<PreviewStripBatch> {
-  return (await import('./row-assets-fill')).fetchAndApplyRowAssets(ids, rows, settled);
+	return (await import('./row-assets-fill')).fetchAndApplyRowAssets(ids, rows, settled);
 }
 
 /**
@@ -231,15 +230,15 @@ export async function fetchRowAssetsLazily(
  * queue's own ceiling means it never strands them.
  */
 export function holdArtworkForBoot(
-  release: () => void,
-  scheduler: Pick<BootScheduler, 'defer'> = bootScheduler,
+	release: () => void,
+	scheduler: Pick<BootScheduler, 'defer'> = bootScheduler
 ): boolean {
-  let returned = false;
-  let ranAtOnce = false;
-  scheduler.defer('track-table:artwork', () => {
-    if (returned) release();
-    else ranAtOnce = true;
-  });
-  returned = true;
-  return ranAtOnce;
+	let returned = false;
+	let ranAtOnce = false;
+	scheduler.defer('track-table:artwork', () => {
+		if (returned) release();
+		else ranAtOnce = true;
+	});
+	returned = true;
+	return ranAtOnce;
 }

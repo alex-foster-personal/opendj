@@ -6,6 +6,8 @@ Subcommands
 * ``python -m apps.sync.usb.plan``    -- dry-run diff report.
 * ``python -m apps.sync.usb.apply``   -- cautious / bulk apply.
 * ``python -m apps.sync.usb.verify``  -- post-apply hash verify.
+* ``python -m apps.sync.usb restore`` -- restore a stick snapshot into an
+  empty root, then byte-compare it.
 
 Modules
 -------
@@ -19,6 +21,7 @@ Modules
 * ``playlist_writer``  -- M3U8 emitter.
 * ``apply``            -- cautious / bulk / remediate-drift CLI.
 * ``verify``           -- hash-compare engine + CLI.
+* ``snapshot_restore`` -- manifest-checked snapshot restore + byte compare.
 
 See ``(private path)/`` for context + plans.
 """

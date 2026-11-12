@@ -39,6 +39,11 @@ def deck_or_master_value(key: str, raw: str) -> int | str:
     return "master" if raw == "master" else deck_value(key, raw)
 
 
+def deck_or_all_value(key: str, raw: str) -> int | str:
+    """COLORFX-13: a deck number 1..4, or ``all`` (every channel)."""
+    return "all" if raw == "all" else deck_value(key, raw)
+
+
 def int_value(key: str, raw: str) -> int:
     try:
         return int(raw)
@@ -79,6 +84,30 @@ def beat_jump_beats_value(key: str, raw: str) -> int | float:
     if parsed == 0 or not parsed.is_integer():
         raise ValueError(f"{key} must be a non-zero whole number or +-0.5, got {raw!r}")
     return int(parsed)
+
+
+ROLL_BEATS_VALUES: tuple[float, ...] = (1 / 32, 1 / 16, 1 / 8, 1 / 4, 1 / 2, 1, 2, 4, 8, 16, 32)
+
+
+def roll_beats_value(key: str, raw: str) -> int | float:
+    """One of ROLL_BEATS_VALUES; accepts a decimal or a/b fraction (FXROLL-01)."""
+    if "/" in raw:
+        parts = raw.split("/", 1)
+        if len(parts) != 2:
+            raise ValueError(f"{key} must be one of 1/32|1/16|1/8|1/4|1/2|1|2|4|8|16|32, got {raw!r}")
+        try:
+            numer = float(parts[0].strip())
+            denom = float(parts[1].strip())
+        except ValueError:
+            raise ValueError(f"{key} must be one of 1/32|1/16|1/8|1/4|1/2|1|2|4|8|16|32, got {raw!r}") from None
+        if not math.isfinite(numer) or not math.isfinite(denom) or denom == 0:
+            raise ValueError(f"{key} must be one of 1/32|1/16|1/8|1/4|1/2|1|2|4|8|16|32, got {raw!r}")
+        parsed = numer / denom
+    else:
+        parsed = number_value(key, raw)
+    if parsed not in ROLL_BEATS_VALUES:
+        raise ValueError(f"{key} must be one of 1/32|1/16|1/8|1/4|1/2|1|2|4|8|16|32, got {raw!r}")
+    return int(parsed) if parsed.is_integer() else parsed
 
 
 def beat_jump_size_value(choices: Sequence[float]) -> Callable[[str, str], Any]:
@@ -303,9 +332,15 @@ GRID_EDIT_MAX_OFFSET_MS = 500.0
 GRID_EDIT_MAX_STEP_BEATS = 3
 
 
+def grid_bpm_override_parts(bpm_raw: str, anchor_raw: str) -> tuple[float, float]:
+    """``bpm`` and ``anchor_t`` for PUT ``/api/v1/tracks/{id}/grid-edit`` (BEATGRID-13519)."""
+    return positive_number_value("bpm", bpm_raw), number_value("anchor_t", anchor_raw)
+
+
 def grid_edit_value(key: str, raw: str) -> dict[str, Any]:
     """``adjust|shift`` resets that part, ``undo`` steps back one stored edit
-    (GRIDEDIT-10215); ``<offset_ms>[:<beats>]`` nudges the grid."""
+    (GRIDEDIT-10215); ``<offset_ms>[:<beats>]`` nudges the grid. Constant-tempo
+    overrides use ``opendj track grid-edit <id> bpm <bpm> <anchor_t>`` (HTTP PUT)."""
     token = raw.strip()
     if token == "undo":
         return {"kind": "undo"}

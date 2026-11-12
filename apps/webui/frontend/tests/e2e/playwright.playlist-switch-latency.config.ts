@@ -8,6 +8,8 @@
  * Run::
  *
  *     pnpm exec playwright test --config tests/e2e/playwright.playlist-switch-latency.config.ts
+ *
+ * Also hosts the library scroll frame bench (library-scroll-frames.spec.ts, PERF-CAPTURE-04).
  */
 import { defineConfig, devices } from '@playwright/test';
 import { existsSync, mkdirSync } from 'node:fs';
@@ -78,7 +80,11 @@ export default defineConfig({
 	// Off: on a pull_request CI run the default git fetch stalls webServer start (#4419).
 	captureGitInfo: { commit: false, diff: false },
 	testDir: '.',
-	testMatch: ['library-playlist-switch-latency.spec.ts', 'library-playlist-fill-pages.spec.ts'],
+	testMatch: [
+		'library-playlist-switch-latency.spec.ts',
+		'library-playlist-fill-pages.spec.ts',
+		'library-scroll-frames.spec.ts'
+	],
 	fullyParallel: false,
 	workers: 1,
 	retries: 0,

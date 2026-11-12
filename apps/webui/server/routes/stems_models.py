@@ -24,7 +24,7 @@ STEM_HYDRATION_ERROR_RESPONSES: dict[int | str, dict[str, Any]] = {
             "UTC month. The allowance resets at the start of the next month; "
             "retrying before then only repeats the refusal. Bundles already "
             "taken this month keep serving."
-        )
+        ),
     },
     502: {
         "description": (
@@ -52,7 +52,7 @@ STEM_HYDRATION_ERROR_RESPONSES: dict[int | str, dict[str, Any]] = {
             "and underlying error), or the hub refused with "
             "CLOUDSTEMS_MONTHLY_CAP_UNSET because it meters CloudStems but was "
             "never given MDT_CLOUDSTEMS_MONTHLY_CAP"
-        )
+        ),
     },
 }
 
@@ -68,7 +68,7 @@ STEM_PART_RESPONSES: dict[int | str, dict[str, Any]] = {
             f"{STEM_HYDRATION_ERROR_RESPONSES[503]['description']}; or "
             "STEM_BUNDLE_HYDRATING: a fresh R2 hydration did not finish within "
             "STEM_PART_HYDRATE_WAIT_S; retry the request"
-        )
+        ),
     },
 }
 

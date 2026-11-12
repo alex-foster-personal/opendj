@@ -1,4 +1,4 @@
-"""Enforce reviewer:* label leases before a PR branch is updated (issue #272).
+"""Enforce branch-update safety before a PR branch moves (issues #272 and #671).
 
 A `reviewer:codex` or `reviewer:claude` label is a short-lived lease while a
 fleet actively gates, rebases, or merges. Builders and merge lanes must read
@@ -7,6 +7,10 @@ with the active reviewer and exact head SHA instead of colliding on
 `--force-with-lease` and replaying tests.
 
 Requirements (mini-PRD):
+  / Refuse updates when a stacked leaf inherits a human hold from its parent.
+    [if] parent has blocked:* [then] exit 1 with the live base [else stop].
+  / Fail closed when a stacked leaf's parent or reference frame is unmeasured.
+    [if] parent ownership is ambiguous [then] exit 3 and require retry [else stop].
   / Refuse non-owner branch updates when a reviewer lease is active.
     [if] PR has reviewer:codex and actor fleet is not codex [then] exit 1 [else stop].
   / Handoff releases reviewer:* and adds handoff:finished-no-merge.
@@ -18,7 +22,6 @@ Requirements (mini-PRD):
 from __future__ import annotations
 
 import argparse
-import json
 import os
 import subprocess
 import sys
@@ -30,6 +33,7 @@ from scripts.review_gh import TriageError, pr_edit_labels, pr_list_json, pr_post
 from scripts.review_lane import pinned_head
 
 REVIEWER_PREFIX = "reviewer:"
+PARENT_HOLD_LABEL = "needs-human-disposition"
 HANDOFF_LABEL = "handoff:finished-no-merge"
 FLEETS = frozenset({"codex", "claude"})
 ZERO_SHA = "0" * 40
@@ -39,12 +43,45 @@ class LeaseBlocked(RuntimeError):
     """A non-owner attempted to update a branch under an active reviewer lease."""
 
 
+class InheritedHoldBlocked(RuntimeError):
+    """A leaf attempted to move while its parent PR carried a human hold."""
+
+    def __init__(self, hold: ParentHoldResult) -> None:
+        self.hold = hold
+        super().__init__(format_parent_hold(hold))
+
+    @classmethod
+    def from_snapshots(cls, leaf: PRSafetySnapshot, parent: PRSafetySnapshot) -> InheritedHoldBlocked:
+        return cls(_parent_result(leaf, parent, blocking_parent_labels(parent.labels)))
+
+
 @dataclass(frozen=True)
 class ReviewerLease:
     pr: str
     fleet: str
     label: str
     head_sha: str
+
+
+@dataclass(frozen=True)
+class PRSafetySnapshot:
+    pr: str
+    head_branch: str
+    head_sha: str
+    base_branch: str
+    labels: tuple[str, ...]
+
+
+@dataclass(frozen=True)
+class ParentHoldResult:
+    leaf_pr: str
+    leaf_head: str
+    leaf_head_sha: str
+    base_branch: str
+    parent_pr: str | None
+    parent_head: str | None
+    parent_head_sha: str | None
+    inherited_labels: tuple[str, ...]
 
 
 # ----- pure helpers ---------------------------------------------------------
@@ -76,6 +113,11 @@ def active_reviewer(labels: Sequence[str]) -> str | None:
     return found[0] if found else None
 
 
+def blocking_parent_labels(labels: Sequence[str]) -> tuple[str, ...]:
+    """Return the labels that make a stacked leaf inherit its parent's hold."""
+    return tuple(sorted(label for label in labels if label.startswith("blocked:") or label == PARENT_HOLD_LABEL))
+
+
 def assert_update_allowed(lease: ReviewerLease | None, actor_fleet: str | None) -> None:
     if lease is None:
         return
@@ -104,7 +146,137 @@ def lease_from_pr_view(pr: str, labels: Sequence[Any], head_sha: str) -> Reviewe
     )
 
 
+def _required_snapshot_value(data: dict[str, Any], field: str) -> str:
+    value = data.get(field)
+    if not isinstance(value, (str, int)) or not str(value).strip():
+        raise TriageError(f"GitHub PR data has no valid {field}: {value!r}")
+    return str(value).strip()
+
+
+def _snapshot_from_data(data: dict[str, Any]) -> PRSafetySnapshot:
+    labels = data.get("labels")
+    if not isinstance(labels, list):
+        raise TriageError(f"GitHub PR data has no valid labels list: {labels!r}")
+    normalized_labels: list[str] = []
+    for label in labels:
+        name = label if isinstance(label, str) else label.get("name") if isinstance(label, dict) else None
+        if not isinstance(name, str) or not name.strip():
+            raise TriageError(f"GitHub PR data has a malformed label: {label!r}")
+        normalized_labels.append(name.strip())
+    return PRSafetySnapshot(
+        pr=_required_snapshot_value(data, "number"),
+        head_branch=_required_snapshot_value(data, "headRefName"),
+        head_sha=_required_snapshot_value(data, "headRefOid"),
+        base_branch=_required_snapshot_value(data, "baseRefName"),
+        labels=tuple(sorted(set(normalized_labels))),
+    )
+
+
+def _snapshot_fields() -> tuple[str, ...]:
+    return ("number", "headRefName", "headRefOid", "baseRefName", "labels")
+
+
+def _assert_same_snapshot(
+    before: PRSafetySnapshot,
+    after: PRSafetySnapshot,
+    *,
+    role: str,
+) -> None:
+    if before != after:
+        raise TriageError(
+            f"{role} safety state changed during parent-hold measurement; retry after it settles: "
+            f"before={before!r}, after={after!r}"
+        )
+
+
+def _parent_result(
+    leaf: PRSafetySnapshot,
+    parent: PRSafetySnapshot | None,
+    inherited_labels: tuple[str, ...],
+) -> ParentHoldResult:
+    return ParentHoldResult(
+        leaf_pr=leaf.pr,
+        leaf_head=leaf.head_branch,
+        leaf_head_sha=leaf.head_sha,
+        base_branch=leaf.base_branch,
+        parent_pr=parent.pr if parent else None,
+        parent_head=parent.head_branch if parent else None,
+        parent_head_sha=parent.head_sha if parent else None,
+        inherited_labels=inherited_labels,
+    )
+
+
+def format_parent_hold(hold: ParentHoldResult) -> str:
+    labels = ",".join(hold.inherited_labels) or "none"
+    parent = f"#{hold.parent_pr}" if hold.parent_pr else "none"
+    parent_head = hold.parent_head or "none"
+    parent_head_sha = hold.parent_head_sha or "none"
+    outcome = "blocked" if hold.inherited_labels else "clear"
+    return (
+        f"branch-safety: leaf=#{hold.leaf_pr} leaf-head={hold.leaf_head} "
+        f"leaf-sha={hold.leaf_head_sha} base={hold.base_branch} parent={parent} "
+        f"parent-head={parent_head} parent-sha={parent_head_sha} "
+        f"inherited-holds={labels} outcome={outcome}"
+    )
+
+
 # ----- live fetch -----------------------------------------------------------
+
+
+def fetch_snapshot(pr: str) -> PRSafetySnapshot:
+    return _snapshot_from_data(pr_view_json(pr, _snapshot_fields()))
+
+
+def fetch_snapshot_for_branch(branch: str) -> PRSafetySnapshot | None:
+    rows = pr_list_json(head=branch, state="open", fields=_snapshot_fields())
+    if not rows:
+        return None
+    if len(rows) > 1:
+        raise TriageError(f"ambiguous branch safety state: {len(rows)} open PRs for head branch {branch!r}")
+    return _snapshot_from_data(rows[0])
+
+
+def _fetch_parent_snapshot(leaf: PRSafetySnapshot) -> PRSafetySnapshot:
+    rows = pr_list_json(head=leaf.base_branch, state="open", fields=_snapshot_fields())
+    if len(rows) != 1:
+        raise TriageError(
+            f"base {leaf.base_branch!r} for leaf PR #{leaf.pr} must have exactly one open parent PR; found {len(rows)}"
+        )
+    parent = _snapshot_from_data(rows[0])
+    if parent.head_branch != leaf.base_branch:
+        raise TriageError(
+            f"parent PR #{parent.pr} reports head {parent.head_branch!r}, "
+            f"not leaf PR #{leaf.pr}'s base {leaf.base_branch!r}"
+        )
+    return parent
+
+
+def evaluate_parent_hold(leaf: PRSafetySnapshot) -> ParentHoldResult:
+    """Measure and enforce the hold inherited through the leaf's live base."""
+    if leaf.base_branch in {"main", "master"}:
+        _assert_same_snapshot(leaf, fetch_snapshot(leaf.pr), role="leaf")
+        return _parent_result(leaf, None, ())
+
+    parent = _fetch_parent_snapshot(leaf)
+    _assert_same_snapshot(leaf, fetch_snapshot(leaf.pr), role="leaf")
+
+    inherited = blocking_parent_labels(parent.labels)
+    result = _parent_result(leaf, parent, inherited)
+    if inherited:
+        raise InheritedHoldBlocked(result)
+
+    _assert_same_snapshot(parent, _fetch_parent_snapshot(leaf), role="parent")
+    return result
+
+
+def _lease_for_snapshot(snapshot: PRSafetySnapshot) -> ReviewerLease | None:
+    pinned = pinned_head(snapshot.pr)
+    if pinned != snapshot.head_sha:
+        raise TriageError(
+            f"leaf PR #{snapshot.pr} head moved from {snapshot.head_sha} to {pinned} "
+            "during branch-safety check; retry after it settles"
+        )
+    return lease_from_pr_view(snapshot.pr, snapshot.labels, pinned)
 
 
 def fetch_lease(pr: str) -> ReviewerLease | None:
@@ -205,7 +377,9 @@ def handoff(pr: str, fleet: str, comment_file: str | None) -> None:
 
 
 def check_pr(pr: str, fleet: str | None, emergency: bool) -> None:
-    lease = fetch_lease(pr)
+    snapshot = fetch_snapshot(pr)
+    print(format_parent_hold(evaluate_parent_hold(snapshot)))
+    lease = _lease_for_snapshot(snapshot)
     if lease is None:
         return
     if emergency and os.environ.get("MDT_REVIEWER_LEASE_EMERGENCY") == "1":
@@ -215,7 +389,11 @@ def check_pr(pr: str, fleet: str | None, emergency: bool) -> None:
 
 
 def check_branch(branch: str, fleet: str | None, emergency: bool) -> None:
-    lease = fetch_lease_for_branch(branch)
+    snapshot = fetch_snapshot_for_branch(branch)
+    if snapshot is None:
+        return
+    print(format_parent_hold(evaluate_parent_hold(snapshot)))
+    lease = _lease_for_snapshot(snapshot)
     if lease is None:
         return
     if emergency and os.environ.get("MDT_REVIEWER_LEASE_EMERGENCY") == "1":
@@ -237,32 +415,32 @@ def check_push(emergency: bool) -> None:
         branch = local_ref.removeprefix("refs/heads/")
         if branch in {"main", "master"}:
             continue
-        lease = fetch_lease_for_branch(branch)
-        if lease is None:
+        snapshot = fetch_snapshot_for_branch(branch)
+        if snapshot is None:
             continue
+        print(format_parent_hold(evaluate_parent_hold(snapshot)))
+        lease = _lease_for_snapshot(snapshot)
         intended_head = local_sha
-        if remote_sha != ZERO_SHA and remote_sha != lease.head_sha:
+        if remote_sha not in (ZERO_SHA, snapshot.head_sha):
             raise TriageError(
-                f"remote tip {remote_sha} disagrees with lease head {lease.head_sha} "
-                f"for PR #{lease.pr}; re-fetch and reconcile before push"
+                f"remote tip {remote_sha} disagrees with measured head {snapshot.head_sha} "
+                f"for PR #{snapshot.pr}; re-fetch and reconcile before push"
             )
-        if emergency and os.environ.get("MDT_REVIEWER_LEASE_EMERGENCY") == "1":
+        if lease is not None and emergency and os.environ.get("MDT_REVIEWER_LEASE_EMERGENCY") == "1":
             emergency_notify(lease.pr, lease, intended_head)
             continue
         assert_update_allowed(lease, actor_fleet(None))
-        after = fetch_lease_for_branch(branch)
-        if after is not None and after.head_sha != lease.head_sha:
-            raise TriageError(
-                f"PR #{lease.pr} head moved from {lease.head_sha} to {after.head_sha} "
-                "during reviewer-lease check; re-run after it settles"
-            )
+        after = fetch_snapshot_for_branch(branch)
+        if after is None:
+            raise TriageError(f"PR #{snapshot.pr} disappeared during branch-safety check; retry")
+        _assert_same_snapshot(snapshot, after, role="leaf")
 
 
 # ----- CLI ------------------------------------------------------------------
 
 
 def _build_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(description="Enforce reviewer label leases before branch updates.")
+    parser = argparse.ArgumentParser(description="Enforce reviewer leases and inherited holds before updates.")
     sub = parser.add_subparsers(dest="command", required=True)
 
     check = sub.add_parser("check", help="Check lease before updating a PR branch")
@@ -311,7 +489,7 @@ def main(argv: list[str] | None = None) -> int:
             emergency_notify(args.pr, lease, args.head_sha)
         else:
             raise TriageError(f"unknown command {args.command!r}")
-    except LeaseBlocked as exc:
+    except (InheritedHoldBlocked, LeaseBlocked) as exc:
         print(str(exc), file=sys.stderr)
         return 1
     except TriageError as exc:

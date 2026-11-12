@@ -38,17 +38,17 @@ before(async () => {
 	// The snapper is a lazy chunk in the app (off the "/" first paint); load it
 	// up front so every row below paints the production default.
 	await render.__test_loadBlockSnap();
-	// Real captures (provenance in each manifest). Window start and span from
-	// the manifests: the clip window is points 3072..6144 of 38400 over 305 s,
-	// the dense-mix window points 14419..18023 of 32292 over 215 s.
-	for (const [file, t0, durS] of [
-		['gothic-blocks-clip-window.json', (3072 * 305) / 38400, (3072 * 305) / 38400],
-		['blocks-variance-anlz-window.json', (14419 * 215) / 32292, (3604 * 215) / 32292]
-	]) {
+	// Synthetic detail windows (provenance in each manifest). t0 and span follow
+	// window_s when present, else point_range over detail_length.
+	for (const file of ['gothic-blocks-clip-window.json', 'blocks-variance-anlz-window.json']) {
 		const fx = JSON.parse(readFileSync(new URL(`./fixtures/${file}`, import.meta.url), 'utf8'));
 		const d = fx.detail;
 		const detail = { low: d.low, mid: d.mid, high: d.high, length: d.low.length };
-		// Beat times relative to the window, as a whole-track image would hold them.
+		const t0 = fx.window_s?.[0] ?? (fx.point_range[0] * fx.duration_ms) / fx.detail_length / 1000;
+		const durS =
+			fx.window_s != null
+				? fx.window_s[1] - fx.window_s[0]
+				: ((fx.point_range[1] - fx.point_range[0]) * fx.duration_ms) / fx.detail_length / 1000;
 		const beats = fx.beats.map((b) => ({ n: b.n ?? 1, bpm: b.bpm ?? 120, t: b.t - t0 }));
 		windows.push({ file, durS, detail, beats });
 	}
@@ -747,4 +747,12 @@ test('variable-tempo slow window snaps every painted beat line (issue #8335)', a
 			fastEdges.has(l.x + Math.round(fastLeft * pxPerS)),
 			`thinned line at ${l.x} px has an edge`
 		);
+});
+
+test('[if] synthetic ANLZ windows fail to load for snap tests [then stop], [else stop].', () => {
+	assert.equal(windows.length, 2, 'gothic and blocks-variance windows');
+	for (const w of windows) {
+		assert.equal(w.detail.length, w.detail.low.length);
+		assert.ok(w.durS > 0 && w.durS <= 30);
+	}
 });

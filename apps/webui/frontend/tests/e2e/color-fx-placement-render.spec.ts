@@ -173,6 +173,7 @@ async function render(page: Page, opts: RenderOpts): Promise<number[][]> {
 			// the returns land past the real fader.
 			const rt = {
 				nodes: {
+					high,
 					filterLp,
 					filterHp,
 					filterDry,
@@ -183,9 +184,10 @@ async function render(page: Page, opts: RenderOpts): Promise<number[][]> {
 					fader: opts.postFader ? xf : fader
 				},
 				graph: null,
+				crush: null,
 				spaceQuietSince: null
 			};
-			mod.driveColorChannel(rt, { effect: 'echo', echo_beats: 0.5 }, bpm, 1);
+			mod.driveColorChannel(rt, { effect: 'echo', echo_beats: 0.5 }, bpm, 1, 0.5);
 			const fx = rt.graph as unknown as {
 				echoIn: GainNode;
 				echoReturn: GainNode;

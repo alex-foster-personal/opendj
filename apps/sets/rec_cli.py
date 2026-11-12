@@ -8,11 +8,17 @@ explicit ``--source``, so a script and the button cannot disagree.
     python -m apps.sets rec start --base-url http://127.0.0.1:8702 --source master
     python -m apps.sets rec start --base-url URL --source loopback --device-name "BlackHole 2ch"
     python -m apps.sets rec status --base-url URL
+    python -m apps.sets rec remembered-input --base-url URL
     python -m apps.sets rec stop --base-url URL
+    python -m apps.sets rec observations --base-url URL
     python -m apps.sets rec list --base-url URL
     python -m apps.sets rec sessions --base-url URL
     python -m apps.sets rec timeline --base-url URL --session-id SESSION
-    python -m apps.sets rec recover --base-url URL --session-id SESSION --expected-pid PID
+    python -m apps.sets rec transitions --base-url URL --session-id SESSION
+    python -m apps.sets rec recover --base-url URL
+    python -m apps.sets rec share get --base-url URL --session-id SESSION
+    python -m apps.sets rec share publish --base-url URL --session-id SESSION
+    python -m apps.sets rec split SESSION_ID --base-url URL [--out DIR]
 
 A master start is pushed to the open /performance page, which connects its tap
 before the start answers; `rec start` returns once audio is really written.
@@ -25,11 +31,14 @@ import json
 import sys
 import time
 import urllib.error
+import urllib.parse
 import urllib.request
+from collections.abc import Mapping
+from pathlib import Path
 from typing import Any
 
 from .master_mix import ATTACH_TIMEOUT_S
-from .recorder_service import RECORD_SOURCES
+from .recorder_service import RECORD_SOURCES, recorded_duration_within, session_wav_duration_s
 
 _TIMEOUT_S = 30.0
 
@@ -103,6 +112,30 @@ def wait_until_recording(
     return status
 
 
+def session_dir(status: Mapping[str, Any]) -> Path:
+    """The directory that holds a recording's WAV segments."""
+    session_id = status.get("session_id")
+    root = status.get("recordings_dir")
+    if not isinstance(session_id, str) or not session_id:
+        raise RecCommandFailed("the recorder status has no session_id")
+    if not isinstance(root, str) or not root:
+        raise RecCommandFailed("the recorder status has no recordings_dir")
+    return Path(root) / session_id
+
+
+def verify_recorded_duration(
+    status: Mapping[str, Any],
+    *,
+    expected_s: float,
+    tolerance_s: float = 0.1,
+) -> float:
+    """Return the measured WAV duration or raise when outside ``tolerance_s``."""
+    measured = session_wav_duration_s(session_dir(status))
+    if not recorded_duration_within(session_dir(status), expected_s=expected_s, tolerance_s=tolerance_s):
+        raise RecCommandFailed(f"recorded {measured:.3f} s of audio, expected {expected_s:.3f} s ± {tolerance_s:g} s")
+    return measured
+
+
 def _session_id_for_stop(base_url: str, session_id: str | None) -> str:
     if session_id is not None:
         return session_id
@@ -135,7 +168,47 @@ def _unknown_rec_command(rec_cmd: str) -> None:
     raise RecCommandFailed(f"unknown rec command {rec_cmd!r}")
 
 
+def recover(base_url: str) -> dict[str, Any]:
+    """Recover only the stale session and PID reported by the running daemon."""
+    current = _call(base_url, "GET", "/api/sets/recorder")
+    if not current["active"]:
+        raise RecCommandFailed("nothing to recover")
+    if current.get("recoverable") is not True:
+        raise RecCommandFailed(
+            f"recorder session {current.get('session_id')} owner PID {current.get('pid')} "
+            "is still active; cannot recover"
+        )
+    session_id, pid = current.get("session_id"), current.get("pid")
+    if not isinstance(session_id, str) or not session_id.strip() or type(pid) is not int or pid <= 0:
+        raise RecCommandFailed(f"invalid recoverable recorder identity: session_id={session_id!r}, pid={pid!r}")
+    return _call(base_url, "POST", f"/api/sets/recorder/{session_id}/recover", {"expected_pid": pid})
+
+
+def _unknown_share_command(share_cmd: str) -> None:
+    raise RecCommandFailed(f"unknown rec share command {share_cmd!r}")
+
+
+def _split(args: argparse.Namespace) -> int:
+    body: dict[str, Any] = {}
+    if args.out is not None:
+        body["out_dir"] = str(Path(args.out).expanduser().resolve())
+    session_id = urllib.parse.quote(args.session_id, safe="")
+    payload = _call(
+        args.base_url,
+        "POST",
+        f"/api/sets/{session_id}/split",
+        body or {},
+    )
+    if not isinstance(payload, dict):
+        raise RecCommandFailed(f"unexpected split response type: {type(payload).__name__}")
+    for entry in payload.get("track_files", []):
+        print(f"{entry['path']}\t{entry['start_t_s']:.3f}\t{entry['duration_s']:.3f}\t{entry['size_bytes']}")
+    return 0
+
+
 def dispatch(args: argparse.Namespace) -> int:
+    if args.rec_cmd == "split":
+        return _split(args)
     try:
         if args.rec_cmd == "start":
             status = _call(
@@ -147,6 +220,10 @@ def dispatch(args: argparse.Namespace) -> int:
             status = wait_until_recording(args.base_url, status)
         elif args.rec_cmd == "status":
             status = _call(args.base_url, "GET", "/api/sets/recorder")
+        elif args.rec_cmd == "observations":
+            status = _call(args.base_url, "GET", "/api/sets/deck-observations")
+        elif args.rec_cmd == "remembered-input":
+            status = _call(args.base_url, "GET", "/api/sets/recorder/remembered-input")
         elif args.rec_cmd == "stop":
             session_id = _session_id_for_stop(args.base_url, args.session_id)
             status = _call(args.base_url, "POST", f"/api/sets/recorder/{session_id}/stop")
@@ -162,13 +239,30 @@ def dispatch(args: argparse.Namespace) -> int:
             _validate_timeline_ndjson(payload)
             sys.stdout.buffer.write(payload)
             return 0
-        elif args.rec_cmd == "recover":
-            status = _call(
+        elif args.rec_cmd == "transitions":
+            payload = _call(
                 args.base_url,
-                "POST",
-                f"/api/sets/recorder/{args.session_id}/recover",
-                {"expected_pid": args.expected_pid},
+                "GET",
+                f"/api/sets/{args.session_id}/transitions",
+                parse_json=False,
             )
+            sys.stdout.buffer.write(payload)
+            return 0
+        elif args.rec_cmd == "recover":
+            status = recover(args.base_url)
+        elif args.rec_cmd == "share":
+            path = f"/api/sets/{args.session_id}/share"
+            if args.share_cmd == "get":
+                status = _call(args.base_url, "GET", path)
+            elif args.share_cmd == "publish":
+                status = _call(
+                    args.base_url,
+                    "POST",
+                    path,
+                    {"confirm_metadata_only": True},
+                )
+            else:
+                _unknown_share_command(args.share_cmd)
         else:
             _unknown_rec_command(args.rec_cmd)
     except RecCommandFailed as exc:
@@ -184,15 +278,22 @@ def add_parser(sub: Any) -> None:
     for name, text in (
         ("start", "start recording"),
         ("status", "print the recorder status"),
+        ("observations", "print Open DJ deck-observation status"),
+        ("remembered-input", "print the last REC input choice"),
         ("stop", "stop the active recording"),
         ("list", "list recorded sessions"),
         ("sessions", "list recorded sessions"),
         ("timeline", "print session timeline NDJSON"),
+        ("transitions", "print session transitions JSON array"),
         ("recover", "recover a stale external recorder PID"),
+        ("split", "cut the session recording into one WAV per track"),
     ):
         cmd = rec_sub.add_parser(name, help=text)
         cmd.add_argument("--base-url", required=True, help="the app daemon, e.g. http://127.0.0.1:8702")
-        if name == "start":
+        if name == "split":
+            cmd.add_argument("session_id", help="recorded session id")
+            cmd.add_argument("--out", default=None, help="absolute output directory")
+        elif name == "start":
             cmd.add_argument("--source", required=True, choices=RECORD_SOURCES)
             cmd.add_argument("--device-name", default=None)
             cmd.add_argument(
@@ -207,12 +308,27 @@ def add_parser(sub: Any) -> None:
                 default=None,
                 help="stop this session id (skip idle guard; daemon validates ownership)",
             )
-        elif name == "timeline":
+        elif name in ("timeline", "transitions"):
             cmd.add_argument("--session-id", required=True)
-        elif name == "recover":
-            cmd.add_argument("--session-id", required=True)
-            cmd.add_argument("--expected-pid", type=int, required=True)
+    share = rec_sub.add_parser("share", help="read or publish metadata-only share links (SET-08)")
+    share_sub = share.add_subparsers(dest="share_cmd", required=True)
+    for share_name, share_text in (
+        ("get", "print the metadata share JSON for a published set"),
+        ("publish", "publish metadata-only sharing for a finalized set"),
+    ):
+        share_cmd = share_sub.add_parser(share_name, help=share_text)
+        share_cmd.add_argument("--base-url", required=True, help="the app daemon, e.g. http://127.0.0.1:8702")
+        share_cmd.add_argument("--session-id", required=True)
     rec.set_defaults(func=dispatch)
 
 
-__all__ = ["RecCommandFailed", "add_parser", "dispatch", "start_body", "wait_until_recording"]
+__all__ = [
+    "RecCommandFailed",
+    "add_parser",
+    "dispatch",
+    "recover",
+    "session_dir",
+    "start_body",
+    "verify_recorded_duration",
+    "wait_until_recording",
+]

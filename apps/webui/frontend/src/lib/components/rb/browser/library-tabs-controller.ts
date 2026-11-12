@@ -5,7 +5,7 @@
  * the panes and injects how to load one; the pure rules live in
  * $lib/rb/library-tabs.
  */
-import { api, unwrap } from '$lib/api/client';
+import { api, unwrap } from '$lib/api/rb-http';
 import { isPageGoingAway } from '$lib/api/lifecycle-abort';
 import type { PlaylistNode } from '$lib/rb/library-types';
 import {

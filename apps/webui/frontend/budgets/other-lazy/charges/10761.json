@@ -1,0 +1,9 @@
+{
+  "bytes": 1024,
+  "measured_main": 514396,
+  "measured_with_pr": 514558,
+  "sha": "f4d6a54ed4",
+  "date": "Wed 11 Nov 2026",
+  "reason": "PR #10761 (#10448) adds the paired-phone remote Requests tab; +162 B gzip on other-lazy from the remote tab shell and polling UI wired into deferred routes.",
+  "payback": "none planned; the growth is the feature's own lazy remote UI on this surface"
+}

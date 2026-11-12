@@ -538,8 +538,17 @@ describe('section bands on the deck overview strip', () => {
 });
 
 describe('show_sections pref', () => {
-	it('defaults OFF', () => {
-		assert.equal(prefsMod.SECTION_OVERLAY_PREF_DEFAULTS.show_sections, false);
+	it('defaults OFF with M1/O1/hide structui styles', () => {
+		assert.deepEqual(prefsMod.SECTION_OVERLAY_PREF_DEFAULTS, {
+			show_sections: false,
+			sections_main_style: 'm1_tint',
+			sections_sticky_title: true,
+			sections_next_countdown: true,
+			sections_overview_style: 'o1_strip',
+			sections_library_structure_column: true,
+			sections_preview_cursor_label: true,
+			sections_uncertain: 'hide'
+		});
 	});
 
 	it('the setter writes state, persists and PUTs the same key', () => {

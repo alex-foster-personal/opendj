@@ -101,13 +101,15 @@
 			<p class="muted">Loading status...</p>
 		{:else}
 			{#if backlogNote !== null}
-				<p
-					class="headline warn"
-					data-testid="cloudsync-identity-backlog-note"
-					title="apps/sync_hub/sync_set.py::count_hash_pending, live tracks offered as hash_pending on the hub"
-				>
-					{backlogNote}
-				</p>
+				<div class="secondary-item" data-testid="cloudsync-hash-backfill-secondary">
+					<p
+						class="secondary-copy"
+						data-testid="cloudsync-identity-backlog-note"
+						title="apps/sync_hub/sync_set.py::count_hash_pending, live tracks offered as hash_pending on the hub"
+					>
+						{backlogNote}
+					</p>
+				</div>
 			{/if}
 			<details class="tech-detail">
 				<summary>Technical detail</summary>
@@ -127,9 +129,13 @@
 						{yesNo(status.running)}
 					</dd>
 					<dt>Heartbeat</dt>
-					<dd title="UTC time of the last scheduler beat, fresh or stale">{status.heartbeat_at ?? 'none'}</dd>
+					<dd title="UTC time of the last scheduler beat, fresh or stale">
+						{status.heartbeat_at ?? 'none'}
+					</dd>
 					<dt>Hub</dt>
-					<dd title={`Effective hub URL, from ${status.endpoint_source}`}>{status.endpoint ?? 'none'}</dd>
+					<dd title={`Effective hub URL, from ${status.endpoint_source}`}>
+						{status.endpoint ?? 'none'}
+					</dd>
 					<dt>Last result</dt>
 					<dd data-testid="cloudsync-status-last-result">
 						{#if status.last_result === null}
@@ -201,7 +207,11 @@
 					{syncing ? 'Syncing...' : forceSyncLabel}
 				</button>
 			{/if}
-			<button type="button" title="Re-read status and config from the daemon" onclick={() => refresh()}>
+			<button
+				type="button"
+				title="Re-read status and config from the daemon"
+				onclick={() => refresh()}
+			>
 				Refresh
 			</button>
 		</div>
@@ -311,6 +321,20 @@
 		gap: 4px 12px;
 		margin: 0.5rem 0 0;
 		font-size: 0.85rem;
+	}
+	.secondary-item {
+		margin: 0.35rem 0 0.6rem;
+		padding: 0.5rem 0.65rem;
+		border: 1px solid var(--border);
+		border-radius: 6px;
+		background: var(--bg);
+	}
+	.secondary-copy {
+		margin: 0;
+		font-size: 0.85rem;
+		font-weight: 400;
+		color: var(--muted);
+		line-height: 1.45;
 	}
 	.headline {
 		margin: 0;

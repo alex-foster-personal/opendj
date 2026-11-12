@@ -39,20 +39,27 @@ cap: hard
 
 # Cost model: shard runner minutes = shards x overhead + ledger minutes x per_ledger_minute.
 # First fitted on 258 PR-head runs (R2 0.885) by fleet-af ci--whatif (src/ci_whatif/cost.py) at
-# 0.52 and 0.80. Refitted Mon 9 Nov 2026 against REAL minutes, because the old price let the
-# cap leak: on the last 70 PR-head ci.yml runs with a hard-cap selection, the pytest fast lane
-# jobs' summed started_at..completed_at ran median 7.8, p90 10.45 runner-min, 9 of 70 over 10,
-# against a planned median of 8.5 and none planned over 10. Real/planned was median 0.89, p75
-# 1.03, p90 1.22. A cap fills every selection to near the budget (ledger 7.2 to 9.2 min), so the
-# slope and intercept cannot be separated on these runs (least squares R2 0.14); both old
-# coefficients are scaled by the p90 ratio 1.22 instead, so a run planned at the cap lands at or
-# under it nine times in ten. Five shards now cost 3.17 of the 10 before a test runs, which
-# leaves 6.97 ledger-minutes of tests per run (was 9.25). `shards` stays the runtime --shards
-# value the selector checks; CI-DYNSHARD launches fewer, which the fitted overhead absorbs.
-# Refit with the same measure once round 6 (two shards) lands. ci/test-budget-main-hourly.yml
+# 0.52 and 0.80, refitted Mon 9 Nov 2026 to 0.634 and 0.976 (both scaled by the p90 real/planned
+# ratio 1.22, so a run planned at the cap lands at or under it nine times in ten).
+# Refitted Thu 12 Nov 2026 (CIPAR-12899) because the price SOURCE changed, not the policy. The
+# ledger was one nightly full run on loaded hosts, which timed the 76 always-run modules at 1260
+# ledger-s against about 300 a PR run pays, while the scope job priced from the committed seed:
+# one selection planned 13.02 in scope, 23.66 in the shards, and ran in 7.6. The ledger now holds
+# the median JUnit seconds of each test over the newest 100 green PR runs
+# (scripts/ci_durations_ledger.py `reprice`), and the scope installs it too, so both price one
+# selection alike. Slope kept at 0.976; overhead refitted the same p90 way on 72 green PR-head
+# runs (Wed 11 Nov 14:30Z to 19:23Z): the p90 of (real shard minutes - 0.976 x repriced ledger
+# minutes) / 5 is 1.311 per shard. On the 73 runs after them (19:23Z to 23:59Z) that plans a
+# median +42% over real (61 of 73 at or over it, 26 within 25%), against +62% (seed) and +88%
+# (ledger) before. Real minutes for one unchanged 77-module selection ran 5.5 to 13.6 on loaded
+# hosts, so nothing priced per test closes the rest. Five shards now cost 6.56 of the 13 before
+# a test runs, which leaves 6.6 ledger-minutes of real PR-run test seconds; the always-run set
+# plans at about 10.7, so it no longer fills the cap by itself.
+# `shards` stays the runtime --shards value the selector checks; CI-DYNSHARD launches fewer
+# (3 in every sampled run), which the fitted overhead absorbs. ci/test-budget-main-hourly.yml
 # keeps its own model.
 model:
-  overhead_min_per_shard: 0.634
+  overhead_min_per_shard: 1.311
   min_per_ledger_minute: 0.976
   shards: 5
 

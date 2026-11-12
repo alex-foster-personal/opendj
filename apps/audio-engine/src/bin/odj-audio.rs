@@ -7,6 +7,8 @@
 //!   odj-audio waveform --in AUDIO --out PEAKS [--low-hz 200] [--high-hz 4000] [--sections 2] [--columns-per-s 150]
 //!   odj-audio fingerprint FILE... [--length SECONDS]
 //!   odj-audio decode --in SOURCE --out OUT.wav
+//!   odj-audio track-render --in SOURCE.wav --out OUT.wav [--tempo-ratio R] [--key-shift N]
+//!                            [--master-tempo] [--key-lock] [--source-hz HZ]
 //!   odj-audio decode PATH [--rate HZ] [--mono] [--format f32le|s16le]
 //!   odj-audio probe PATH
 //!   odj-audio input-devices
@@ -68,6 +70,8 @@ const USAGE: &str = "usage:
   odj-audio waveform --in AUDIO --out PEAKS [--low-hz HZ] [--high-hz HZ] [--sections N] [--columns-per-s N]
   odj-audio fingerprint FILE... [--length SECONDS]   (0 = whole file; default 120, as fpcalc)
   odj-audio decode --in SOURCE --out OUT.wav   (OUT must not exist)
+  odj-audio track-render --in SOURCE.wav --out OUT.wav [--tempo-ratio R] [--key-shift N]
+                         [--master-tempo] [--key-lock] [--source-hz HZ]   (OUT must not exist)
   odj-audio decode PATH [--rate HZ] [--mono] [--format f32le|s16le]
   odj-audio probe PATH
   odj-audio input-devices
@@ -928,6 +932,7 @@ fn main() -> ExitCode {
         "waveform" => waveform_cmd(args),
         "fingerprint" => fingerprint_cmd(args),
         "decode" => decode_cmd(args),
+        "track-render" => odj_audio::stretch::track_render_command(args.rest),
         "probe" => probe_cmd(args),
         "input-devices" => input_devices_cmd(args),
         "record" => record_cmd(args),
@@ -938,7 +943,7 @@ fn main() -> ExitCode {
             let v = json!({
                 "engine": concat!("odj-audio ", env!("CARGO_PKG_VERSION")),
                 "protocol": protocol::PROTOCOL_VERSION,
-                "commands": ["decode", "fingerprint", "probe", "render", "serve", "waveform", "input-devices", "record", "version"],
+                "commands": ["decode", "fingerprint", "probe", "render", "serve", "track-render", "waveform", "input-devices", "record", "version"],
                 "capture": cfg!(feature = "device"),
             });
             println!("{v}");

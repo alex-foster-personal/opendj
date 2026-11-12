@@ -508,7 +508,7 @@ test('an idle deck repaints when its band gains move (pinned in the static-repai
 	);
 	assert.match(
 		src,
-		/\t\t\tbandGains,\n[\s\S]*?\t\t\tpartnerGains,\n[\s\S]*?\t\t\] as const;/,
+		/writeVisualInputs\(\s*_paintScheduleState,[\s\S]*?\t\t\tbandGains,\n[\s\S]*?\t\t\tpartnerGains,\n[\s\S]*?\t\t\);/,
 		'own and split-partner gains are repaint inputs'
 	);
 });

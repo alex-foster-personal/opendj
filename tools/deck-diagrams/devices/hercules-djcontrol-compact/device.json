@@ -1,0 +1,9 @@
+{
+  "map_name": "DJControl Compact",
+  "map_const": "HERCULES_DJCONTROL_COMPACT_MAP",
+  "map_ts": "apps/webui/frontend/src/lib/rb/midi/maps/hercules-djcontrol-compact.ts",
+  "panel_w": 340.0,
+  "panel_d": 100.0,
+  "panel_size_source": "Hercules DJControl Compact product specifications: 13.4 x 3.9 in / 340 x 100 mm (W x D)",
+  "display_name": "2-channel portable DJ controller"
+}

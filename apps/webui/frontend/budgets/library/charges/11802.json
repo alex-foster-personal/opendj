@@ -1,0 +1,9 @@
+{
+  "bytes": 1024,
+  "measured_main": 349150,
+  "measured_with_pr": 349402,
+  "sha": "2b74f1c8e4",
+  "date": "Wed 11 Nov 2026",
+  "reason": "PR #11802 (SETREC-11802b) lazy-loads auto-rec from performance-ipc; +252 B gzip on library vs merge base; ceiled to KiB.",
+  "payback": "none planned; the growth is the change's own code on this surface"
+}

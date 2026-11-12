@@ -223,6 +223,19 @@ def score_seconds_track(
     )
 
 
+def max_cardinality_boundary_matches(
+    annotated_boundaries_s: Sequence[float],
+    detected_boundaries_s: Sequence[float],
+    grid: BarGrid,
+    *,
+    tolerance_bars: float,
+) -> int:
+    """Public wrapper for maximum one-to-one boundary matching (#11363)."""
+    return _max_cardinality_matched_count(
+        annotated_boundaries_s, detected_boundaries_s, grid, tolerance_bars=tolerance_bars
+    )
+
+
 def _max_cardinality_matched_count(
     annotated_boundaries_s: Sequence[float],
     detected_boundaries_s: Sequence[float],
@@ -308,6 +321,7 @@ __all__ = [
     "bar_position_at",
     "boundary_within_seconds",
     "boundary_within_tolerance",
+    "max_cardinality_boundary_matches",
     "score_seconds_track",
     "score_segment_block",
     "score_track",

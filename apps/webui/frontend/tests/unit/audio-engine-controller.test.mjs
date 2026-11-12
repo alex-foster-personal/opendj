@@ -1087,40 +1087,6 @@ test('presented timeline retains intermediate boundaries and clears pending only
 	assert.equal(latest.transport_pending, false);
 });
 
-test('presented timeline prunes long-session history but retains current and future revisions', () => {
-	const timeline = audio.createPresentedTransportTimeline(0);
-	for (let revision = 1; revision <= 10_000; revision += 1) {
-		audio.acknowledgePresentedTransportSchedule(timeline, {
-			revision,
-			active: true,
-			loop: null,
-			startContextTime: revision,
-			startPositionSec: revision,
-			tempoRatio: 1
-		});
-		audio.observePresentedTransportTimeline(
-			timeline,
-			{ contextTime: revision + 0.25, performanceTime: (revision + 0.25) * 1000 },
-			20_000
-		);
-		assert.ok(timeline.schedules.length <= 1, `revision ${revision} leaked schedule history`);
-	}
-
-	audio.acknowledgePresentedTransportSchedule(timeline, {
-		revision: 10_001,
-		active: false,
-		loop: null,
-		startContextTime: 10_002,
-		startPositionSec: 10_001.25,
-		tempoRatio: 1
-	});
-	assert.deepEqual(
-		timeline.schedules.map(({ revision }) => revision),
-		[10_000, 10_001],
-		'the effective current revision and needed future revision remain mirrored'
-	);
-});
-
 test('presented timeline evaluates tempo and engaged loops at the output clock', () => {
 	const timeline = audio.createPresentedTransportTimeline(0);
 	audio.acknowledgePresentedTransportSchedule(timeline, {

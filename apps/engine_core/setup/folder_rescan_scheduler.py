@@ -43,7 +43,7 @@ from typing import Any, Literal
 
 from apps.engine_core.setup import detect
 from apps.engine_core.setup import record as setup_record
-from apps.shared.async_scheduler import launch_scheduler_loop, sleep_until_stop
+from apps.shared.async_scheduler import drain_shielded_in_flight, launch_scheduler_loop, sleep_until_stop
 from apps.shared.shutdown_bound import STOP_STEPS_DEADLINE_S
 from apps.shared.state import db as state_db
 from apps.shared.state.ingest.folder_rescan import FolderRescanReport, reconcile_folders
@@ -271,19 +271,16 @@ class FolderRescanScheduler:
                 await sleep_until_stop(self._stopping, self._cfg.BEAT_INTERVAL_S)
         finally:
             if in_flight is not None:
-                await self._drain(in_flight)
+                await drain_shielded_in_flight(
+                    in_flight,
+                    stop_timeout_s=self._cfg.STOP_TIMEOUT_S,
+                    timeout_warning=(
+                        "folder-rescan round still in flight after %ss; its thread finishes on its own"
+                    ),
+                )
 
     def _stopped(self) -> bool:
         return self._stopping is not None and self._stopping.is_set()
-
-    async def _drain(self, in_flight: asyncio.Task[RoundOutcome]) -> None:
-        try:
-            await asyncio.wait_for(asyncio.shield(in_flight), timeout=self._cfg.STOP_TIMEOUT_S)
-        except TimeoutError:
-            log.warning(
-                "folder-rescan round still in flight after %ss; its thread finishes on its own",
-                self._cfg.STOP_TIMEOUT_S,
-            )
 
     def status(self) -> dict[str, Any]:
         """The shape ``GET /api/v1/setup/status`` surfaces as ``folder_watch``."""

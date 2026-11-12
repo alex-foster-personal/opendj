@@ -36,6 +36,7 @@ from apps.webui.server.playlist_history import (
     snapshots_match,
 )
 from apps.webui.server.playlist_store import PlaylistStore
+from apps.webui.server.sqlite_backend import SqliteBackend
 
 TRACK_IDS: list[str] = ["t-001", "t-002", "t-003", "t-004"]
 
@@ -121,6 +122,20 @@ def _history_kinds(db_path: Path) -> list[str]:
                 "SELECT kind FROM events WHERE kind IN ('playlist.edit','playlist.undo','playlist.redo') ORDER BY id"
             )
         ]
+    finally:
+        conn.close()
+
+
+def _live_playlist_ids(db_path: Path) -> set[str]:
+    backend = SqliteBackend(db_path)
+    return {pl.playlist_id for pl in backend.list_playlists()}
+
+
+def _deleted_playlist_ids(db_path: Path) -> set[str]:
+    conn = sqlite3.connect(str(db_path))
+    try:
+        rows = conn.execute("SELECT playlist_id FROM playlists WHERE deleted_at IS NOT NULL").fetchall()
+        return {row[0] for row in rows}
     finally:
         conn.close()
 
@@ -455,3 +470,61 @@ def test_empty_undo_and_redo_raise(db_path: Path) -> None:
             store.redo()
         assert redo_err.value.error_code == "nothing_to_redo"
         assert row.name == "Only"
+
+
+def test_history_undo_after_delete_lists_playlist_in_live_tree(db_path: Path) -> None:
+    """[if] delete is undone via history [then] live tree lists the playlist, [else stop]."""
+    with PlaylistStore(db_path, bus=FakeEventBus()) as store:
+        row = store.create_playlist("Recover Me")
+        row = store.replace_memberships(
+            row.playlist_id,
+            ["t-001", "t-002"],
+            expected_etag=row.etag,
+        )
+        playlist_id = row.playlist_id
+        etag = row.etag
+        store.delete_playlist(playlist_id, expected_etag=etag)
+
+        assert playlist_id not in _live_playlist_ids(db_path)
+        assert playlist_id in _deleted_playlist_ids(db_path)
+        with pytest.raises(NotFoundError):
+            store.get_playlist_row(playlist_id)
+
+        store.undo()
+
+        assert playlist_id in _live_playlist_ids(db_path)
+        assert playlist_id not in _deleted_playlist_ids(db_path)
+        restored = store.get_playlist_row(playlist_id)
+        assert restored.name == "Recover Me"
+        assert restored.items == ["t-001", "t-002"]
+
+
+def test_store_undelete_restores_deleted_playlist(db_path: Path) -> None:
+    """[if] a tombstoned playlist is undeleted via store [then] it is live again, [else stop]."""
+    with PlaylistStore(db_path, bus=FakeEventBus()) as store:
+        row = store.create_playlist("Store Restore")
+        row = store.replace_memberships(
+            row.playlist_id,
+            ["t-001", "t-002"],
+            expected_etag=row.etag,
+        )
+        playlist_id = row.playlist_id
+        etag = row.etag
+        store.delete_playlist(playlist_id, expected_etag=etag)
+
+        assert playlist_id not in _live_playlist_ids(db_path)
+        assert playlist_id in _deleted_playlist_ids(db_path)
+
+        store.undelete_playlist(playlist_id)
+
+        assert playlist_id in _live_playlist_ids(db_path)
+        assert playlist_id not in _deleted_playlist_ids(db_path)
+        restored = store.get_playlist_row(playlist_id)
+        assert restored.name == "Store Restore"
+        assert restored.items == ["t-001", "t-002"]
+
+
+def test_store_undelete_unknown_playlist_raises_not_found(db_path: Path) -> None:
+    """[if] undelete targets a missing playlist id [then] NotFoundError is raised, [else stop]."""
+    with PlaylistStore(db_path, bus=FakeEventBus()) as store, pytest.raises(NotFoundError):
+        store.undelete_playlist("pl-does-not-exist")

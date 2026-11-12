@@ -9,7 +9,8 @@
 	// Kind 1-8 write path); the x on a filled slot clears it. Kind 9-11
 	// (beyond H) is unverified and never exposed (PARITY-TODO.md). The HOT CUE
 	// pad-mode dropdown (PadModeMenu.svelte, CHROME-11) is mounted by Deck.svelte
-	// in the left grid column, not here (LYR-14).
+	// in the left grid column, not here (LYR-14). When the deck's pad mode is
+	// Pad FX 1 or 2 (pad-mode-state.svelte.ts) the bank renders PadFxBank instead (PADFX-11718).
 	//
 	// A locally imported track has no djmdContent row for djmdCue to key
 	// off, so SAVE has nowhere to write (PARITY-TODO v1 blocker, issue
@@ -39,6 +40,10 @@
 	import { reactDeckEnabled } from '$lib/react/react-deck-flag';
 	import { createLyricsFetchState } from '../wave/lyrics-fetch.svelte';
 	import { isUsbTrackId } from '$lib/rb/track-source';
+	import { announce } from '$lib/a11y/announce';
+	import { padModeFor } from '$lib/rb/pad-mode-state.svelte';
+	import { isPadFxModeId } from '$lib/rb/pad-fx-presets';
+	import PadFxBank from './PadFxBank.svelte';
 
 	const NOT_LOADED_TIP = 'no track loaded - nothing to save';
 	const SESSION_TIP = ' (this session only - the stick is never written)';
@@ -68,6 +73,8 @@
 	// REACT-01 (`ui.react.deck`, default OFF): the proposal caption renders
 	// through its React twin only when the daemon declares the flag on.
 	const reactDeck: boolean = $derived(reactDeckEnabled());
+
+	const padMode = $derived(padModeFor(deck.deck_id));
 
 	const SLOTS: HotCueSlot[] = ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H'];
 
@@ -206,6 +213,9 @@
 				renameStableId = null;
 				renameInputEl = null;
 			}
+			if (newCueAtMs !== null) {
+				announce(`Hot cue ${entry.slot} set`);
+			}
 		} finally {
 			release();
 		}
@@ -229,6 +239,7 @@
 		const release = await acquireBusySlot(slot);
 		try {
 			setUndo(slot, await onDelete(slot));
+			announce(`Hot cue ${slot} cleared`);
 		} finally {
 			release();
 		}
@@ -256,6 +267,9 @@
 	}
 </script>
 
+{#if isPadFxModeId(padMode)}
+	<PadFxBank deckId={deck.deck_id} mode={padMode} />
+{:else}
 <div class="cue-area" role="group" aria-label={`hot cues deck ${deck.deck_id}`}>
 	<div class="bank" role="group" aria-label={`hot cue pads deck ${deck.deck_id}`}>
 		<!-- DECKUX-03 (pin c20eeb07cae0): the two hot-cue columns (A-D, E-H)
@@ -430,6 +444,7 @@
 		</button>
 	{/if}
 </div>
+{/if}
 
 <style>
 	.cue-area {

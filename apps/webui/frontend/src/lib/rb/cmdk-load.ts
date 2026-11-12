@@ -47,9 +47,7 @@ export async function settleForLoad<R extends SettleRow>(
 		console.error(`Cmd K: rb-meta for ${row.stable_id} failed; the row stays pending`, exc);
 		return row;
 	}
-	const copy = { ...row, rb_meta: meta };
-	applySettledAvailability(copy);
-	return copy;
+	return applySettledAvailability({ ...row, rb_meta: meta });
 }
 
 /**

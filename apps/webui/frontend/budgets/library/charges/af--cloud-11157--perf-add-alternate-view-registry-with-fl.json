@@ -1,0 +1,9 @@
+{
+  "bytes": 1024,
+  "measured_main": 352207,
+  "measured_with_pr": 352552,
+  "sha": "63b5810aa4",
+  "date": "Thu 12 Nov 2026",
+  "reason": "Issue #11157 (PR #11995) adds view-registry.ts and ui-skin re-exports of SKIN_PACK_REGISTRY, so library routes that import ui-skin pull the registry and skin-layout into the library surface. Measured +345 B gzip vs merge-base 636c410e39; ceiled to KiB.",
+  "payback": "none planned; shared registry metadata on the library import path until a lazy split follow-up"
+}

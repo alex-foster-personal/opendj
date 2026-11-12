@@ -1,4 +1,4 @@
-"""``opendj track <verb>``: the CLI's track-analysis surface.
+"""``opendj track <verb>``: track analysis and library tag mutations.
 
 Unlike every other ``opendj`` head, ``track`` never touches the AGENT-03
 engine bus. ``key-segments`` reads straight from the state store, the same
@@ -6,7 +6,8 @@ read `/anlz` does, so an agent (or a human) can inspect one track's analysis
 without a running deck engine. The ``grid-*`` verbs (GRIDFLAG-03) are the
 exception to "no engine": they are the CLI twin of ``/api/v1/beatgrid-flags``
 and call the running engine over HTTP, because the scan and the dismissal
-write state the engine owns.
+write state the engine owns. ``mytag-rename`` and ``mytag-delete`` likewise
+call the modal's existing HTTP routes, including its undo-session contract.
 
 ``opendj track key-segments <stable_id>`` is nav1-key-record's own scope-lock
 line ((private path) item 3): it must
@@ -25,15 +26,18 @@ never folded into "track not found". See ``_resolve_state_db``.
 
 from __future__ import annotations
 
+import argparse
 import json
 import os
 import sys
 from collections.abc import Callable, Sequence
 from pathlib import Path
+from urllib.parse import quote
 
 import httpx
 
 from apps.opendj_cli import EXIT_FAILED, EXIT_NO_ENGINE, api_cli
+from apps.opendj_cli.kinds import grid_bpm_override_parts
 from apps.opendj_cli.origin import EngineNotRunning
 from apps.opendj_cli.refusal import fail as _fail
 from apps.opendj_cli.track_comment import TrackCommentError, engine_client, set_track_comment
@@ -41,6 +45,8 @@ from apps.opendj_cli.track_tracklist_hidden import set_tracklist_hidden
 from apps.webui.server.rb_vendor_pkg.own_lane_store import state_conn_ro
 
 KEY_SEGMENTS_VERB = "key-segments"
+MYTAG_RENAME_VERB = "mytag-rename"
+MYTAG_DELETE_VERB = "mytag-delete"
 #: GRIDFLAG-03: the CLI twin of `/api/v1/beatgrid-flags` (the Err column's
 #: beatgrid flag). These three talk to the running engine over HTTP, because
 #: the scan and the dismissal are the engine's to do; they print its JSON.
@@ -54,6 +60,9 @@ _GRID_EDIT_SOURCES = ("rekordbox", "own")
 #: GRID-OCTAVE-02: the CLI twin of the BPM hover card's "use the other tempo",
 #: over `/api/v1/tracks/{id}/bpm-pick`.
 BPM_PICK_VERB = "bpm-pick"
+#: KEY-10229: the CLI twin of the library key cell's edit, over
+#: `/api/v1/tracks/{id}/key-edit`.
+KEY_EDIT_VERB = "key-edit"
 _GRID_FLAGS_PATH = "/api/v1/beatgrid-flags"
 #: SRCFLAG-01..03: the CLI twin of `/api/v1/source-flags` (flag-only source checks).
 SOURCE_FLAGS_VERB = "source-flags"
@@ -79,6 +88,7 @@ COMMENT_VERB = "comment"
 TRACKLIST_HIDDEN_VERB = "hide-in-tracklists"
 #: LIBUX-10046: the CLI twin of the library's Related tab and its criteria cog.
 RELATED_VERB = "related"
+FIND_REPLACE_VERB = "find-replace"
 _RELATED_FLAGS = ("key", "genre", "color", "rating", "mytag", "artist")
 _GRID_CLASSES = ("flagged", "suspect", "variable_tempo", "unknown", "ok", "all")
 #: QLTSCAN-04: the CLI twin of `/api/v1/audio-quality` (the QLT column's
@@ -99,9 +109,11 @@ _USAGE = (
     "       opendj track source-flags [all|length_mismatch|stems_other_recording|\n"
     "                                 hardlinked_write | <stable_id> | scan]\n"
     "       opendj track grid-edit <stable_id> [show | anchors | nudge MS | shift BEATS |\n"
-    "                              set MS BEATS | reset | undo | anchor T_S BPM |\n"
-    "                              unanchor T_S] [rekordbox|own]\n"
+    "                              set MS BEATS | bpm BPM ANCHOR_T | reset | undo |\n"
+    "                              anchor T_S BPM | unanchor T_S] [rekordbox|own]\n"
     "       opendj track bpm-pick <stable_id> own|mik|clear\n"
+    "       opendj track key-edit <stable_id> [show | set KEY | clear]\n"
+    "       opendj track analysis-range <stable_id> show|set <range>|clear|reanalyze\n"
     "       opendj track grid-fit [findings|wrong_bpm|off_beat|shifted|no_verdict|fit|unknown|all] [limit N]\n"
     "       opendj track grid-fit <stable_id> [force]\n"
     "       opendj track grid-fit-scan [no-wait]\n"
@@ -114,7 +126,10 @@ _USAGE = (
     "       opendj track played-length <stable_id>...\n"
     "       opendj track list-totals <stable_id>...\n"
     "       opendj track comment <stable_id> set <text> | clear\n"
+    "       opendj track mytag-rename OLD NEW [--merge] [--undo-session SESSION] [--json]\n"
+    "       opendj track mytag-delete NAME --confirm [--undo-session SESSION] [--json]\n"
     "       opendj track hide-in-tracklists <stable_id> on|off\n"
+    "       opendj track find-replace apply <request JSON>\n"
     "       opendj track related <stable_id> [limit N] [bpm-percent N]\n"
     "                            [key|genre|color|rating|mytag|artist 0|1]..."
 )
@@ -125,6 +140,7 @@ def run(
     *,
     as_json: bool,
     state_db: Path | None = None,
+    lock: Path | None = None,
 ) -> int:
     if not rest:
         print(_USAGE, file=sys.stderr)
@@ -132,6 +148,8 @@ def run(
     verb, *args = rest
     if verb == KEY_SEGMENTS_VERB:
         return _key_segments(args, as_json=as_json, default_state_db=state_db)
+    if verb in (MYTAG_RENAME_VERB, MYTAG_DELETE_VERB):
+        return _mytag_mutation(verb, args, as_json=as_json, lock=lock)
     handler = _API_VERBS.get(verb)
     if handler is not None:
         return handler(args)
@@ -139,9 +157,48 @@ def run(
     return 1
 
 
+def _mytag_mutation(verb: str, args: Sequence[str], *, as_json: bool, lock: Path | None) -> int:
+    """Use the modal's undoable routes; deletion requires the literal --confirm flag."""
+    parser = argparse.ArgumentParser(prog=f"opendj track {verb}", allow_abbrev=False)
+    parser.add_argument("name")
+    parser.add_argument("--undo-session", default="opendj-cli")
+    parser.add_argument("--json", action="store_true")
+    if verb == MYTAG_RENAME_VERB:
+        parser.add_argument("new_name")
+        parser.add_argument("--merge", action="store_true")
+    elif verb == MYTAG_DELETE_VERB:
+        parser.add_argument(
+            "--confirm",
+            action="store_true",
+            required=True,
+            help="remove this tag from every track",
+        )
+    try:
+        parsed = parser.parse_args(list(args))
+        if not parsed.undo_session.strip():
+            parser.error("--undo-session must not be empty")
+    except SystemExit as error:
+        return 0 if error.code == 0 else EXIT_FAILED
+    method = "PATCH" if verb == MYTAG_RENAME_VERB else "DELETE"
+    tokens = [method, f"/api/v1/mytags/{quote(parsed.name, safe='')}", "-H", f"X-Undo-Session:{parsed.undo_session}"]
+    if verb == MYTAG_RENAME_VERB:
+        tokens += ["--json", json.dumps({"name": parsed.new_name, "merge": parsed.merge})]
+    return api_cli.run(tokens, as_json=as_json or parsed.json, lock=lock)
+
+
 def _usage_error() -> int:
     print(_USAGE, file=sys.stderr)
     return 1
+
+
+def _find_replace(args: Sequence[str]) -> int:
+    """Apply the modal's request through the existing validated engine route."""
+    if len(args) != 2 or args[0] != "apply":
+        return _usage_error()
+    return api_cli.run(
+        ["POST", "/api/v1/find-replace/apply", "--json", args[1]],
+        as_json=True,
+    )
 
 
 def _grid_flags(args: Sequence[str]) -> int:
@@ -227,6 +284,12 @@ def _grid_edit_write(action: str, values: Sequence[str]) -> tuple[str, str, dict
         if at_s is None or bpm is None:
             return None
         return ("POST", "/anchors", {"at_s": at_s, "bpm": bpm})
+    if action == "bpm" and len(values) == 2:
+        try:
+            bpm, anchor_t = grid_bpm_override_parts(values[0], values[1])
+        except ValueError:
+            return None
+        return ("PUT", "", {"offset_ms": 0, "beat_shift": 0, "bpm": bpm, "anchor_t": anchor_t})
     return None
 
 
@@ -236,9 +299,11 @@ def _grid_edit(args: Sequence[str]) -> int:
     `nudge MS` is grid adjust (ms, later when positive), `shift BEATS` is grid
     shift (whole beats, later when positive), `set MS BEATS` writes absolute
     values, `reset` returns to the measured grid, `undo` steps back one stored
-    edit (GRIDEDIT-10215). `anchor T_S BPM` changes tempo from the grid line
-    nearest T_S on, `unanchor T_S` removes that anchor and `anchors` lists them
-    (GRIDEDIT-10220). A trailing `rekordbox` or
+    edit (GRIDEDIT-10215). `bpm BPM ANCHOR_T` sets a constant-tempo override at a
+    served-time anchor (BEATGRID-13519, the same PUT as the persist routes).
+    `anchor T_S BPM` changes tempo from the grid line nearest T_S on,
+    `unanchor T_S` removes that anchor and `anchors` lists them (GRIDEDIT-10220).
+    A trailing `rekordbox` or
     `own` picks the grid; omitted, it is the one the deck is drawing.
     """
     if not args:
@@ -273,6 +338,34 @@ def _bpm_pick(args: Sequence[str]) -> int:
     if pick == "clear":
         return api_cli.run(["DELETE", path], as_json=True)
     return api_cli.run(["PUT", path, "--json", json.dumps({"source": pick})], as_json=True)
+
+
+def _key_edit(args: Sequence[str]) -> int:
+    """Store, clear or show the track's own key (any notation; the engine stores Camelot)."""
+    path = f"/api/v1/tracks/{args[0]}/key-edit" if args else ""
+    if len(args) == 3 and args[1] == "set":
+        return api_cli.run(["PUT", path, "--json", json.dumps({"key": args[2]})], as_json=True)
+    if len(args) == 2 and args[1] == "clear":
+        return api_cli.run(["DELETE", path], as_json=True)
+    if len(args) == 1 or (len(args) == 2 and args[1] == "show"):
+        return api_cli.run(["GET", path], as_json=True)
+    return _usage_error()
+
+
+def _analysis_range(args: Sequence[str]) -> int:
+    """The track's own BPM range (ANALYSIS-11723); `reanalyze` orders its beatgrid re-run."""
+    path = f"/api/v1/tracks/{args[0]}/analysis-range" if args else ""
+    match list(args[1:]):
+        case ["show"]:
+            return api_cli.run(["GET", path], as_json=True)
+        case ["set", bpm_range]:
+            return api_cli.run(["PUT", path, "--json", json.dumps({"range": bpm_range})], as_json=True)
+        case ["clear"]:
+            return api_cli.run(["DELETE", path], as_json=True)
+        case ["reanalyze"]:
+            return api_cli.run(["POST", f"/api/v1/analysis-queue/orders/{args[0]}/beatgrid"], as_json=True)
+        case _:
+            return _usage_error()
 
 
 def _is_stable_id(token: str) -> bool:
@@ -613,6 +706,7 @@ __all__ = [
     "GRID_FLAGS_VERB",
     "GRID_FLAG_VERB",
     "GRID_SCAN_VERB",
+    "KEY_EDIT_VERB",
     "KEY_SEGMENTS_VERB",
     "SOURCE_FLAGS_VERB",
     "TEMPO_VERB",
@@ -625,6 +719,7 @@ __all__ = [
 #: Verbs that only wrap an engine route. `run` looks them up here, so a new
 #: verb is one line rather than another branch.
 _API_VERBS: dict[str, Callable[[Sequence[str]], int]] = {
+    FIND_REPLACE_VERB: _find_replace,
     GRID_FLAGS_VERB: _grid_flags,
     SOURCE_FLAGS_VERB: _source_flags,
     GRID_SCAN_VERB: _grid_scan,
@@ -637,6 +732,8 @@ _API_VERBS: dict[str, Callable[[Sequence[str]], int]] = {
     AUTO_GAIN_VERB: _auto_gain,
     GRID_EDIT_VERB: _grid_edit,
     BPM_PICK_VERB: _bpm_pick,
+    KEY_EDIT_VERB: _key_edit,
+    "analysis-range": _analysis_range,
     TRANSITION_IN_VERB: _transition_in,
     TEMPO_VERB: _tempo,
     "played-length": _played_length,

@@ -91,11 +91,7 @@ export function cssRgb(rgb: Rgb, intensity: number): string {
 	return `rgb(${r}, ${g}, ${b})`;
 }
 
-export function stageToCanvas(
-	x: number,
-	y: number,
-	size: StageSize
-): { x: number; y: number } {
+export function stageToCanvas(x: number, y: number, size: StageSize): { x: number; y: number } {
 	const margin = size.margin ?? STAGE_MARGIN_PX;
 	const innerW = size.width - 2 * margin;
 	const innerH = size.height - 2 * margin;
@@ -257,12 +253,8 @@ export function renderStage(
 
 	beams.sort((a, b) => (a.kind === 'beam' && b.kind === 'beam' ? a.id.localeCompare(b.id) : 0));
 	discs.sort((a, b) => (a.kind === 'disc' && b.kind === 'disc' ? a.id.localeCompare(b.id) : 0));
-	flashes.sort((a, b) =>
-		a.kind === 'flash' && b.kind === 'flash' ? a.id.localeCompare(b.id) : 0
-	);
-	labels.sort((a, b) =>
-		a.kind === 'label' && b.kind === 'label' ? a.id.localeCompare(b.id) : 0
-	);
+	flashes.sort((a, b) => (a.kind === 'flash' && b.kind === 'flash' ? a.id.localeCompare(b.id) : 0));
+	labels.sort((a, b) => (a.kind === 'label' && b.kind === 'label' ? a.id.localeCompare(b.id) : 0));
 
 	return [
 		{ kind: 'clear', width: w, height: h, color: STAGE_BACKGROUND },

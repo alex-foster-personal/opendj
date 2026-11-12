@@ -1,0 +1,9 @@
+{
+ "map_name": "CDMP-7000 L",
+ "map_const": "GEMINI_CDMP7000_L_MAP",
+ "map_ts": "apps/webui/frontend/src/lib/rb/midi/maps/gemini-cdmp-7000-l-audio.ts",
+ "panel_w": 720.0,
+ "panel_d": 315.0,
+ "panel_size_source": "Gemini CDMP-7000 user manual, Specifications (page 46 English): Dimensions 720 x 315 x 100 mm (W x D x H)",
+ "display_name": "Dual-deck media workstation (Deck 1 / L port)"
+}

@@ -20,6 +20,9 @@ from apps.sync_hub.protocol_common import SyncProtocolError
 
 log = logging.getLogger("apps.sync_hub.client")
 
+#: First ``not_newer`` row per sync tick logs at INFO; the rest at DEBUG.
+_not_newer_info_logged: bool = False
+
 #: Most rejected rows one push answer names. The count stays exact; this
 #: caps only the list, so one large stale offer cannot bloat the answer.
 MAX_REJECTED_ROWS_NAMED: int = 100
@@ -62,6 +65,12 @@ class RejectedRow:
         return f"{self.table} {list(self.pk)} ({self.reason})"
 
 
+def begin_answer_log_tick() -> None:
+    """Start a new sync tick for hub-answered rejection logging."""
+    global _not_newer_info_logged
+    _not_newer_info_logged = False
+
+
 def from_push_answer(payload: Mapping[str, object], *, confirming: bool = False) -> list[RejectedRow]:
     """The rows one push answer names as rejected, each logged on this machine.
 
@@ -78,9 +87,21 @@ def from_push_answer(payload: Mapping[str, object], *, confirming: bool = False)
     for row in rows:
         if confirming:
             log.info("hub confirmed the identity collapse of %s", row.describe())
+        elif row.reason == REASON_NOT_NEWER:
+            _log_not_newer(row)
         else:
             log.warning("hub rejected %s", row.describe())
     return rows
+
+
+def _log_not_newer(row: RejectedRow) -> None:
+    global _not_newer_info_logged
+    line = f"hub already has {row.describe()}"
+    if not _not_newer_info_logged:
+        log.info(line)
+        _not_newer_info_logged = True
+    else:
+        log.debug(line)
 
 
 def summarize(rows: Sequence[RejectedRow], *, limit: int = 5) -> str:
@@ -97,6 +118,7 @@ __all__ = [
     "REASON_NOT_NEWER",
     "REASON_REMOVED_ON_HUB",
     "RejectedRow",
+    "begin_answer_log_tick",
     "from_push_answer",
     "summarize",
 ]

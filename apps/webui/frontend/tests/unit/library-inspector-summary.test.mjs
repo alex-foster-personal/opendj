@@ -235,11 +235,13 @@ test('Library mode mounts no recorder and no MIDI audio entry', () => {
 	const tray = panel.slice(panel.indexOf('{#if library === null}\n\t\t\t\t<button\n\t\t\t\t\ttype="button"\n\t\t\t\t\tclass="tray-midi"'));
 	assert.ok(tray.length > 0 && tray.indexOf('headphone_output_acquire') < tray.indexOf('{/if}'), 'the MIDI entry is not gated');
 	const rail = readFileSync(`${SRC}/lib/components/rb/browser/PerformanceRecorderRail.svelte`, 'utf8');
-	assert.match(rail, /if \(recordable\) void refreshRecorderStatus\(\);/);
+	const chrome = readFileSync(`${SRC}/lib/sets/performance-recorder-chrome.svelte.ts`, 'utf8');
+	assert.match(rail, /chrome\.mount\(\)/);
 	assert.match(rail, /^\t\{recordable\}$/m);
 	const icons = readFileSync(`${SRC}/lib/components/rb/browser/IconRail.svelte`, 'utf8');
 	assert.match(icons, /entry\.action !== 'record' \|\| \(recordable && recordingAvailable\)/);
 	assert.match(rail, /recordingAvailable=\{setRecordingEnabled\(\)\}/);
+	assert.match(chrome, /if \(recordable\(\)\) void refreshRecorderStatus\(\)/);
 });
 
 test('every selection change, to none or several tracks too, invalidates saves in flight', () => {
@@ -269,7 +271,10 @@ test('Library mode starts no grid scan or recorder polling, and previews rows wi
 	// LIBWS-04: row strip clicks play through the Library's own preview player.
 	assert.match(panel, /onpreviewseek=\{library === null \? previewSeek : library\.preview\}/);
 	assert.match(table, /if \(libraryMode\) \{\s*onpreviewseek\?\.\(row, 0\);\s*return;/);
-	const rail = readFileSync(`${SRC}/lib/components/rb/browser/PerformanceRecorderRail.svelte`, 'utf8');
-	assert.match(rail, /if \(after === null \|\| !recordable\) return;\s*const timer = setTimeout\(\(\) => void refreshRecorderStatus\(\), after\);/);
-	assert.equal(rail.split('void refreshRecorderStatus()').length, 3, 'a third recorder status read is ungated');
+	const chrome = readFileSync(`${SRC}/lib/sets/performance-recorder-chrome.svelte.ts`, 'utf8');
+	assert.match(
+		chrome,
+		/if \(after === null \|\| !recordable\(\)\) return;\s*const timer = setTimeout\(\(\) => void refreshRecorderStatus\(\), after\);/
+	);
+	assert.ok(chrome.split('refreshRecorderStatus').length >= 4, 'status reads stay gated on recordable');
 });

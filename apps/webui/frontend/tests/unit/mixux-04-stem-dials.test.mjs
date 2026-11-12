@@ -1,4 +1,4 @@
-// REQ: MIXUX-04 (on-screen swap superseded by MIXUX-14, Mon 2 Nov 2026; the
+// REQ: MIXUX-04 (on-screen swap superseded by MIXUX-8244, Mon 2 Nov 2026; the
 // fixed map below now drives only a MIDI controller's EQ knobs in stem_eq_mode)
 // [if] only vocal and non-vocal stems are available [then] HI -> vocal, MED -> non-vocal, and LO stays LO (any dial with no stem available keeps its EQ function).
 // [if] a dial is a stem dial [then] it is color coded per the repo's stem color rules (eg vocals blue) [⛔️ if STEM dials render indistinguishable from EQ dials].
@@ -15,7 +15,7 @@ async function source(relative) {
 	return readFile(`src/lib/components/rb/${relative}`, 'utf8');
 }
 
-test('MIXUX-14 supersedes the on-screen swap: the mixer sends stem_gain and no strip carries a STEM mode button', async () => {
+test('MIXUX-8244 supersedes the on-screen swap: the mixer sends stem_gain and no strip carries a STEM mode button', async () => {
 	const strip = await source('mixer/ChannelStrip.svelte');
 	assert.doesNotThrow(() => compile(strip, { filename: 'ChannelStrip.svelte', generate: 'server' }));
 	assert.doesNotMatch(strip, /stem-mode-channel-/);
@@ -73,7 +73,7 @@ test('STEM dials use stem colors distinct from default EQ accent', async () => {
 	assert.match(knob, /if \(accentColor\) return 'none'/);
 
 	const strip = await source('mixer/ChannelStrip.svelte');
-	// Every stem dial is drawn in its stem's colour (MIXUX-14 snippet).
+	// Every stem dial is drawn in its stem's colour (MIXUX-8244 snippet).
 	assert.match(strip, /accentColor=\{stemCssColor\(stem\)\}/);
 	assert.match(strip, /stemCssColor\(stem\)/);
 });

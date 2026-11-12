@@ -45,6 +45,9 @@
  *   ✔︎ MIDI learn: a cc source collects 600 ms and binding flags come from
  *     inference; a note binds on the first message.
  *     [if] ambiguous learn calls onBind [then ⛔️] broken
+ *   ✔︎ 🎯 first-run setup prompt (#10076): one prompt per unmapped port per session.
+ *     [if] a replugged unmapped device prompts twice in one session [then ⛔️] broken
+ *     [if] Not now or completed setup does not persist the port name [then ⛔️] broken
  */
 
 import {
@@ -53,10 +56,13 @@ import {
 	type InferredControl,
 	type InferredControlKind
 } from '$lib/rb/midi/learn-infer';
+import { registerMidiLearnIpc, type MidiLearnSnapshot } from '$lib/rb/midi/learn-ipc';
 import type { LearnLogEntry, MidiAction, MidiBinding, MidiSource } from '$lib/rb/midi/midi-types';
 import { subscribeKind, subscribeResync } from '$lib/api/events-bus';
+import { addMidiSetupDismissedPort } from '$lib/rb/prefs.svelte';
+import type { MidiDeviceInfo } from '$lib/rb/midi/midi-state.svelte';
 import { coalesce } from '$lib/rb/coalesce';
-import { api } from '$lib/api/client';
+import { api } from '$lib/api/rb-http';
 import { makeDiskWriteChain } from '$lib/rb/disk-write-chain';
 import {
 	midiEnabledPersisted,
@@ -161,6 +167,10 @@ export const midiUi: {
 	 * degraded state to show, not a failed permission request. */
 	installedMapsError: string | null;
 	learn: MidiLearnState;
+	/** Port name shown in the first-run setup prompt; null when hidden (#10076). */
+	firstRunPromptPort: string | null;
+	/** Port the guided setup was opened for; read by #10071 wizard. */
+	setupPortName: string | null;
 } = $state({
 	panelOpen: false,
 	widthMode: 'compact' as MidiPanelWidthMode,
@@ -169,8 +179,117 @@ export const midiUi: {
 	logPopoutOpen: false,
 	logPopoutMinimized: false,
 	installedMapsError: null,
-	learn: { phase: 'idle' } as MidiLearnState
+	learn: { phase: 'idle' } as MidiLearnState,
+	firstRunPromptPort: null,
+	setupPortName: null
 });
+
+// -------------------------------------------------------- first-run setup prompt (#10076)
+
+const _promptedThisSession = new Set<string>();
+const _promptQueue: string[] = [];
+const _setupRequested = new Set<string>();
+let _lastDismissedForFirstRun: readonly string[] = [];
+
+function _dismissedHas(dismissed: readonly string[], port: string): boolean {
+	return dismissed.includes(port);
+}
+
+function _advanceFirstRunQueue(dismissed: readonly string[]): void {
+	while (midiUi.firstRunPromptPort === null && _promptQueue.length > 0) {
+		const next = _promptQueue.shift()!;
+		if (_dismissedHas(dismissed, next)) continue;
+		midiUi.firstRunPromptPort = next;
+		return;
+	}
+}
+
+function _deviceByName(
+	devices: readonly Pick<MidiDeviceInfo, 'name' | 'mapVendor'>[],
+	name: string
+): Pick<MidiDeviceInfo, 'name' | 'mapVendor'> | undefined {
+	return devices.find((d) => d.name === name);
+}
+
+/** Reconcile unmapped MIDI devices with session prompt state and dismissal prefs. */
+export function noteMidiDevicesForFirstRun(
+	devices: readonly Pick<MidiDeviceInfo, 'name' | 'mapVendor'>[],
+	dismissed: readonly string[]
+): void {
+	_lastDismissedForFirstRun = dismissed;
+	for (const device of devices) {
+		if (device.mapVendor !== null && _setupRequested.has(device.name)) {
+			completeControllerSetup(device.name);
+		}
+	}
+	const showing = midiUi.firstRunPromptPort;
+	if (showing !== null) {
+		const current = _deviceByName(devices, showing);
+		if (current !== undefined && current.mapVendor !== null) {
+			midiUi.firstRunPromptPort = null;
+		}
+	}
+	const seenInList = new Set<string>();
+	for (const device of devices) {
+		if (device.mapVendor !== null) continue;
+		if (seenInList.has(device.name)) continue;
+		seenInList.add(device.name);
+		if (_dismissedHas(dismissed, device.name)) continue;
+		if (_promptedThisSession.has(device.name)) continue;
+		_promptedThisSession.add(device.name);
+		if (!_promptQueue.includes(device.name)) {
+			_promptQueue.push(device.name);
+		}
+	}
+	_advanceFirstRunQueue(dismissed);
+}
+
+/** "Not now" on the first-run prompt: persist dismissal and offer the next queued port. */
+export function dismissFirstRunPrompt(): void {
+	const port = midiUi.firstRunPromptPort;
+	if (port === null) {
+		throw new Error('dismissFirstRunPrompt: no prompt is showing');
+	}
+	_lastDismissedForFirstRun = addMidiSetupDismissedPort(port);
+	midiUi.firstRunPromptPort = null;
+	_advanceFirstRunQueue(_lastDismissedForFirstRun);
+}
+
+/** "Set up" on the first-run prompt: open the MIDI panel for this port. */
+export function startFirstRunSetup(): void {
+	const port = midiUi.firstRunPromptPort;
+	if (port === null) {
+		throw new Error('startFirstRunSetup: no prompt is showing');
+	}
+	openControllerSetup(port);
+	midiUi.firstRunPromptPort = null;
+	_advanceFirstRunQueue(_lastDismissedForFirstRun);
+}
+
+/** Open guided setup for a port (#10071 wizard reads setupPortName). */
+export function openControllerSetup(portName: string): void {
+	midiUi.setupPortName = portName;
+	_setupRequested.add(portName);
+	midiUi.panelOpen = true;
+}
+
+/** Call when setup saved or device list shows the port mapped (#10076). */
+export function completeControllerSetup(portName: string): void {
+	_lastDismissedForFirstRun = addMidiSetupDismissedPort(portName);
+	_setupRequested.delete(portName);
+	if (midiUi.setupPortName === portName) {
+		midiUi.setupPortName = null;
+	}
+}
+
+export function _resetFirstRunPromptForTests(): void {
+	_promptedThisSession.clear();
+	_promptQueue.length = 0;
+	_setupRequested.clear();
+	_lastDismissedForFirstRun = [];
+	midiUi.firstRunPromptPort = null;
+	midiUi.setupPortName = null;
+}
 
 export function toggleMidiPanel(): void {
 	midiUi.panelOpen = !midiUi.panelOpen;
@@ -462,6 +581,58 @@ export function cancelMidiLearn(): void {
 	void _loadedMidiEngine?.registerLearnTap(null);
 	midiUi.learn = { phase: 'idle' };
 }
+
+function _projectMidiLearnForIpc(): MidiLearnSnapshot {
+	const learn = $state.snapshot(midiUi.learn);
+	if (learn.phase === 'idle') {
+		return {
+			phase: 'idle',
+			target: null,
+			reason: null,
+			kind: null,
+			device_id: null,
+			binding: null
+		};
+	}
+	const target = {
+		action: structuredClone(learn.target.action),
+		shift: learn.target.shift ?? false
+	};
+	if (learn.phase === 'ambiguous') {
+		return {
+			phase: 'ambiguous',
+			target,
+			reason: learn.reason,
+			kind: null,
+			device_id: null,
+			binding: null
+		};
+	}
+	if (learn.phase === 'bound') {
+		return {
+			phase: 'bound',
+			target,
+			reason: null,
+			kind: learn.kind,
+			device_id: learn.deviceId,
+			binding: structuredClone(learn.binding)
+		};
+	}
+	return {
+		phase: learn.phase,
+		target,
+		reason: null,
+		kind: null,
+		device_id: null,
+		binding: null
+	};
+}
+
+registerMidiLearnIpc({
+	read: _projectMidiLearnForIpc,
+	retry: () => retryMidiLearn(),
+	cancel: () => cancelMidiLearn()
+});
 
 /** The rb.midi_enabled setting, runtime-aware (settings/apply.ts). Enabling
  * persists the choice and then goes through the same request path as the

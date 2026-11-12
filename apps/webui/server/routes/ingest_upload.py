@@ -260,6 +260,19 @@ def _hold_duration(hold: Path, rel_name: str) -> float | None:
         raise HTTPException(422, f"damaged audio: {rel_name}: {exc}") from exc
 
 
+def stage_path_upload(
+    dest_dir: Path,
+    source: Path,
+    rel_name: str,
+    batch: str,
+    force: bool,
+) -> UploadFileResult:
+    """Stage bytes already on disk through the same door as multipart upload."""
+    with source.open("rb") as fh:
+        up = UploadFile(filename=rel_name, file=fh)
+        return _stage_one_upload(dest_dir, up, batch, force)
+
+
 def _stage_one_upload(
     dest_dir: Path, up: UploadFile, batch: str, force: bool
 ) -> UploadFileResult:

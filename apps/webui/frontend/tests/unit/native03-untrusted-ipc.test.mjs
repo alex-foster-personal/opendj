@@ -25,7 +25,14 @@ test('hot_cue_save gates BeatSyncMax snap on hasTrustedBeatGrid', () => {
 });
 
 test('hot_cue_trigger gates planHotCueTrigger on hasTrustedBeatGrid', () => {
-	const triggerArm = sliceAfter(IPC_SRC, "} else if (command.type === 'hot_cue_trigger')", 600);
+	// The whole arm, up to the next command branch: PR #12158 put the SETREC-07
+	// capture call ahead of the plan, so a fixed-length window no longer reached it.
+	const triggerArm = sliceAfter(
+		IPC_SRC,
+		"} else if (command.type === 'hot_cue_trigger')",
+		4000
+	).split(/\n\t\} else if \(command\.type === /)[0];
+	assert.ok(triggerArm, 'hot_cue_trigger arm');
 	assert.match(triggerArm, /planHotCueTrigger\(/);
 	assert.match(triggerArm, /hasTrustedBeatGrid\(/);
 	assert.match(triggerArm, /hasPhaseCapableBeatGrid\(/);

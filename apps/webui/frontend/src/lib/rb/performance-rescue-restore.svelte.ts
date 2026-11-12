@@ -39,7 +39,8 @@ export const rescueRestoreStatus = $state<RescueRestoreStatus>({
 /**
  * RESCUE-07: the reload "Resume N decks" offer. reload-resume.svelte.ts owns its
  * behaviour; the state lives beside the RESCUE-02 status so the performance IPC
- * reads both through one import.
+ * reads both through one import. SETUP-12768 clears a stale offer when setup
+ * finish stays on the host route without remounting /performance.
  */
 export const reloadResume = $state<{
 	offer: ReloadResumeOffer | null;

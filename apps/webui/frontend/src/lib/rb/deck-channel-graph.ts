@@ -33,6 +33,8 @@ export interface DeckChannelNodes {
 	cue: GainNode;
 	fader: GainNode;
 	xf: GainNode;
+	/** STEMPERF-11663: unity sum of the deck's per-stem FX sends; the colour FX graph feeds it into fxIn when spliced. */
+	stemFxSend: GainNode;
 	extsplit: ChannelSplitterNode | null;
 }
 
@@ -117,6 +119,7 @@ export function buildDeckChannelGraph(deps: {
 		const filterHpWet = deps.ctx.createGain();
 		filterHpWet.gain.value = hpWetGain;
 		const colorBus = deps.ctx.createGain();
+		const stemFxSend = deps.ctx.createGain();
 		const cue = deps.ctx.createGain();
 		cue.gain.value = ch.cue_enabled ? 1 : 0;
 		const fader = deps.ctx.createGain();
@@ -160,6 +163,7 @@ export function buildDeckChannelGraph(deps: {
 			cue,
 			fader,
 			xf,
+			stemFxSend,
 			extsplit
 		};
 		const tap = createMeterTap();

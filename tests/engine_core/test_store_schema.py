@@ -29,6 +29,7 @@ import pytest
 
 # Everything below ``consolidated`` is a LEGACY bootstrap, imported from the
 # module that owns it today. The test calls each one the way production does.
+from apps.analysis.analysis_records_tables_sql import ANALYSIS_RECORDS_TABLES_SQL
 from apps.analysis.native_tables_sql import NATIVE_ANALYSIS_V1_SQL
 from apps.analysis.queue_store import QUEUE_TABLES_SQL
 from apps.analysis.store import _ANALYSIS_TABLES_SQL, _ensure_analysis_tables
@@ -180,6 +181,13 @@ def build_legacy_caches(tmp_path: Path) -> dict[str, str]:
     hashes.close()
 
     return merged
+
+
+def test_analysis_records_tables_sql_matches_consolidated() -> None:
+    """Legacy analysis record DDL has one owner tuple; store and consolidated match."""
+    assert consolidated._ANALYSIS == ANALYSIS_RECORDS_TABLES_SQL
+    head = _ANALYSIS_TABLES_SQL[: len(ANALYSIS_RECORDS_TABLES_SQL)]
+    assert head == list(ANALYSIS_RECORDS_TABLES_SQL)
 
 
 def test_native_analysis_v1_sql_splice_matches_consolidated() -> None:

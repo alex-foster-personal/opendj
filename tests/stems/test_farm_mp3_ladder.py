@@ -39,6 +39,7 @@ from __future__ import annotations
 import ast
 import importlib.util
 import json
+import sys
 import time
 from pathlib import Path
 from typing import Any
@@ -87,7 +88,13 @@ def _farm() -> dict[str, Any]:
     spec = importlib.util.spec_from_file_location("farm_stem_encode_under_test", ENCODER)
     assert spec is not None and spec.loader is not None
     module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
+    # dataclasses resolves a class's string annotations through sys.modules[cls.__module__], so the
+    # module has to be registered while its body runs. It is dropped again so the next call is fresh.
+    sys.modules[spec.name] = module
+    try:
+        spec.loader.exec_module(module)
+    finally:
+        sys.modules.pop(spec.name, None)
     namespace = vars(module)
     namespace.update({"json": json, "time": time})
     wanted = set(FARM_CONSTANTS) | set(FARM_FUNCTIONS)

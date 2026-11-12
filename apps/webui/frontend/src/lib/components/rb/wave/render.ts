@@ -53,7 +53,9 @@ import {
 	drawLoopCueBands,
 	drawPhraseMarkers,
 	drawPointCueMarkers,
+	ALL_CUE_MARKERS_VISIBLE,
 	MARKER_BAND_PX,
+	type CueMarkerVisibility,
 	type WavePalette
 } from './cues';
 import type { SectionSpan } from './sections';
@@ -374,6 +376,8 @@ export interface WaveRowFrame {
 	tempoScale?: TempoLaneScale;
 	/** `show_tempo_lane` off: no tempo marks at all on this row. */
 	hideTempo?: boolean;
+	/** Issue #10248: which cue-marker kinds paint on this row; absent = all. A hidden 'loop' also hides the engaged-loop band. */
+	cueMarkers?: CueMarkerVisibility;
 	/** issue #10238 `show_vocal_lane` off: no vocal bars on this row. */
 	hideVocals?: boolean;
 	/** issue #10244 `wave_grid_lines`; default beats_bars. */
@@ -471,11 +475,14 @@ export function drawWaveRow(ctx: CanvasRenderingContext2D, frame: WaveRowFrame):
 		if (sectionsApi !== null && spans !== null && frame.sectionLabels !== false) {
 			sectionsApi.drawSectionLabels(ctx, spans, tLeft, pxPerS, w, palette.sections, MARKER_BAND_PX);
 		}
-		drawLoopRegion(ctx, frame.loop, (ms) => (ms / 1000 - tLeft) * pxPerS, w, h);
+		const cueMarkers = frame.cueMarkers ?? ALL_CUE_MARKERS_VISIBLE;
+		if (cueMarkers.loop) {
+			drawLoopRegion(ctx, frame.loop, (ms) => (ms / 1000 - tLeft) * pxPerS, w, h);
+		}
 		// Loop cue bands paint as background, before the beat grid/phrases they
 		// would otherwise blank out for their span; point cue markers stay in
 		// the foreground, after them (discussion_r3918219289).
-		drawLoopCueBands(ctx, frame.anlz.cues, tLeft, pxPerS, w, palette);
+		drawLoopCueBands(ctx, frame.anlz.cues, tLeft, pxPerS, w, palette, MARKER_BAND_PX, cueMarkers);
 		if (shouldPaintBeatGrid(frame.anlz)) {
 			_drawBeatGrid(
 				ctx,
@@ -507,7 +514,7 @@ export function drawWaveRow(ctx: CanvasRenderingContext2D, frame: WaveRowFrame):
 			}
 		}
 		drawPhraseMarkers(ctx, frame.anlz.phrases, tLeft, pxPerS, w, palette);
-		drawPointCueMarkers(ctx, frame.anlz.cues, tLeft, pxPerS, w, palette);
+		drawPointCueMarkers(ctx, frame.anlz.cues, tLeft, pxPerS, w, palette, cueMarkers);
 		if (frame.hideVocals !== true) {
 			_drawVocals(ctx, frame.anlz, tLeft, pxPerS, w, frame.palette.vocal);
 		}
@@ -544,18 +551,24 @@ export interface StemWaveRowFrame {
 	width: number;
 	height: number;
 	color: string;
+	/** Paint alpha 0..1: 1 audible, STEM_WAVE_ROW_SILENT_ALPHA muted or silenced (issue #10318). */
+	alpha: number;
 }
 
 /** Paint one stem mini-waveform row synced to the main wavestack scroll model.
  * The envelope spans the WHOLE track, so one point is durationS / points of
  * track time, drawn at the main row's px-per-second (Codex P1 on #3645). */
 export function drawStemWaveRow(ctx: CanvasRenderingContext2D, frame: StemWaveRowFrame): void {
-	const { envelope, scrollPx, durationMs, pitch, width, height, color, windowS, playheadFrac } = frame;
+	const { envelope, scrollPx, durationMs, pitch, width, height, color, windowS, playheadFrac, alpha } =
+		frame;
 	if (!Number.isFinite(windowS) || windowS <= 0) {
 		throw new RangeError(`drawStemWaveRow: windowS must be finite and > 0, got ${windowS}`);
 	}
 	if (!Number.isFinite(playheadFrac) || playheadFrac < 0 || playheadFrac > 1) {
 		throw new RangeError(`drawStemWaveRow: playheadFrac must be within 0..1, got ${playheadFrac}`);
+	}
+	if (!Number.isFinite(alpha) || alpha < 0 || alpha > 1) {
+		throw new RangeError(`drawStemWaveRow: alpha must be within 0..1, got ${alpha}`);
 	}
 	ctx.clearRect(0, 0, width, height);
 	if (envelope.length === 0 || width <= 0 || height <= 0) return;
@@ -566,6 +579,8 @@ export function drawStemWaveRow(ctx: CanvasRenderingContext2D, frame: StemWaveRo
 	const pxPerPoint = ((durationMs / 1000) * pxPerS) / points;
 	const startPx = scrollPx - width * playheadFrac;
 
+	const prevAlpha = ctx.globalAlpha;
+	ctx.globalAlpha = alpha;
 	ctx.fillStyle = color;
 	for (let x = 0; x < width; x++) {
 		const trackPx = startPx + x;
@@ -577,6 +592,7 @@ export function drawStemWaveRow(ctx: CanvasRenderingContext2D, frame: StemWaveRo
 		const y = Math.round((height - barH) / 2);
 		ctx.fillRect(x, y, 1, barH);
 	}
+	ctx.globalAlpha = prevAlpha;
 }
 
 // ----------------------------------------------------------- _helpers

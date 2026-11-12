@@ -3107,6 +3107,12 @@ wheels = [
 ]
 
 [[packages]]
+name = "segno"
+version = "1.6.6"
+sdist = { url = "https://files.pythonhosted.org/packages/1c/2e/b396f750c53f570055bf5a9fc1ace09bed2dff013c73b7afec5702a581ba/segno-1.6.6.tar.gz", upload-time = 2025-03-12T22:12:53Z, size = 1628586, hashes = { sha256 = "e60933afc4b52137d323a4434c8340e0ce1e58cec71439e46680d4db188f11b3" } }
+wheels = [{ url = "https://files.pythonhosted.org/packages/d6/02/12c73fd423eb9577b97fc1924966b929eff7074ae6b2e15dd3d30cb9e4ae/segno-1.6.6-py3-none-any.whl", upload-time = 2025-03-12T22:12:48Z, size = 76503, hashes = { sha256 = "28c7d081ed0cf935e0411293a465efd4d500704072cdb039778a2ab8736190c7" } }]
+
+[[packages]]
 name = "sentry-sdk"
 version = "2.71.0"
 sdist = { url = "https://files.pythonhosted.org/packages/67/93/9ef70bfb7346c778caf09b7cd10c17c33f601f2d17019fa1aedcda738b5f/sentry_sdk-2.71.0.tar.gz", upload-time = 2026-09-28T14:04:00Z, size = 1052358, hashes = { sha256 = "7beb27a22f06396f3a05510c3da6ea10e1c79e02e859993c27ce4ff074e296d6" } }
@@ -3963,4 +3969,4 @@ wheels = [
 ]
 
 [tool.music-dj-tools]
-source-sha256 = "61b3314c4a0927a499c14dba4645e297e2c1ef56f1d1c655a1ac3df7faa2182e"
+source-sha256 = "314d93dc33f6bfb6978ee1f61904c42b63546c3c7c789d93b6fbca941724a258"

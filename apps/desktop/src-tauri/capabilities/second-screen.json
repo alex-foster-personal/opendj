@@ -1,0 +1,14 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "second-screen",
+  "description": "SECONDSCREEN: lets the main UI's Cmd K row open or focus the second-screen library window. Grants nothing else; inside the library window the Cmd+Shift+L press is handled by the native menu accelerator, so that window does not get it.",
+  "windows": ["main"],
+  "remote": { "urls": ["http://127.0.0.1:*/*", "http://localhost:*/*"] },
+  "permissions": [
+    "allow-open-second-screen",
+    "allow-control-shell-window",
+    "allow-query-shell-window-labels",
+    "core:event:allow-listen",
+    "core:event:allow-unlisten"
+  ]
+}

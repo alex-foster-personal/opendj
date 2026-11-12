@@ -35,6 +35,43 @@ test.describe('preflight boot gate', () => {
 		await expect(page.locator('[data-preflight-mode="boot"]')).toHaveCount(0);
 	});
 
+	// REQ: PREFLIGHT-01
+	// [if] the preflight endpoint returns a non-JSON 503 response [then ⛔️]
+	// [if] the boot gate polls or the user clicks Re-check [then ⛔️]
+	// [if] the response cannot be parsed as the normal contract [then ⛔️]
+	test('a non-JSON 503 from preflight shows the engine banner and keeps polling', async ({
+		page
+	}) => {
+		let preflightHits = 0;
+		await page.route('**/api/v1/preflight', async (route) => {
+			preflightHits += 1;
+			await route.fulfill({
+				status: 503,
+				contentType: 'text/html',
+				body: '<html><body>Service Unavailable</body></html>'
+			});
+		});
+
+		await page.goto(`${PREFLIGHT_GATE_HEALTHY_ORIGIN}/`);
+
+		const gate = page.locator('[data-preflight-mode="boot"]');
+		await expect(page.getByText(/Could not reach the engine:/)).toBeVisible({ timeout: 15_000 });
+		await expect(gate).toHaveCount(1);
+		await expect(gate).toHaveAttribute('data-preflight-status', 'unknown');
+		await expect(gate).toHaveAttribute('data-preflight-blocking', 'true');
+
+		await expect.poll(() => preflightHits, { timeout: 10_000 }).toBeGreaterThanOrEqual(2);
+
+		const recheck = page.getByTestId('preflight-action-recheck');
+		await expect(recheck).toBeEnabled();
+		const hitsBeforeRecheck = preflightHits;
+		await recheck.click();
+		await expect.poll(() => preflightHits).toBeGreaterThan(hitsBeforeRecheck);
+		await expect(page.getByTestId('preflight-action-status')).toContainText(
+			/could not reach the engine/i
+		);
+	});
+
 	test('a library with nothing imported auto-opens setup instead of trapping the user', async ({
 		page
 	}) => {

@@ -126,7 +126,33 @@ test('without ?perfprobe=1 the sample carries frame_probe null and no probe star
 	await Promise.resolve();
 	assert.equal(started, 0);
 	assert.equal(posted[0].body.frame_probe, null);
+	// PERF-LEAK-11789: no live handles probe, no totals.
+	assert.equal(posted[0].body.live_handles, null);
 	stop();
+});
+
+// PERF-LEAK-11789: the armed probe's four totals ride the sample, without by_site.
+test('with the live handles probe armed the sample carries its four totals', async () => {
+	globalThis.window.__mdtLiveHandles = () => ({
+		intervals: 3,
+		long_timeouts: 1,
+		window_listeners: 7,
+		rafs: 2,
+		by_site: { a: 1 }
+	});
+	const stop = samples.startClientPerformanceSampling(immediateBootScheduler());
+	await Promise.resolve();
+	assert.deepEqual(posted[0].body.live_handles, {
+		intervals: 3,
+		long_timeouts: 1,
+		window_listeners: 7,
+		rafs: 2
+	});
+	stop();
+});
+
+test('the payload builder defaults live_handles to null', () => {
+	assert.equal(samples.buildClientPerformanceSamplePayload('s', 'id').live_handles, null);
 });
 
 test('with ?perfprobe=1 each sample carries the probe window and stop stops the probe', async () => {

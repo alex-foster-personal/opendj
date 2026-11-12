@@ -3,7 +3,8 @@
 All helpers take an open ``sqlite3.Connection``. Callers own the
 transaction boundary; the helpers rely on the connection's autocommit /
 isolation setting to flush writes. Every mutation fires a
-``play_order_changed`` event via :mod:`events`.
+``play_order_changed`` event through :class:`apps.shared.state.writer.StateWriter`
+via :func:`events.emit_play_order_changed`.
 
 The virtual ``"default"`` play-order is not persisted -- it is a read-
 through alias for the playlist's native ``TrackNo`` sequence, materialised

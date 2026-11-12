@@ -1,0 +1,9 @@
+{
+  "bytes": 1024,
+  "measured_main": 479024,
+  "measured_with_pr": 479187,
+  "sha": "454656b062",
+  "date": "Mon 9 Nov 2026",
+  "reason": "PR #10504 resolves #10216 in the webui perf slice. Measured: CI bundle check of 454656b062, +163 B gzip on other-lazy; ceiled to KiB",
+  "payback": "none planned; the growth is the feature's own code"
+}

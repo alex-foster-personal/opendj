@@ -152,6 +152,14 @@ class MembershipMoveIn(BaseModel):
     after_item_id: str | None = None
 
 
+class SaveOrderIn(BaseModel):
+    """Exactly one of ``item_ids`` (the displayed order) or ``by`` (agents: sort by a field)."""
+
+    item_ids: list[str] | None = None
+    by: Literal["bpm", "key", "title", "artist", "duration", "rating", "genre"] | None = None
+    descending: bool = False
+
+
 class MembershipTransferOut(BaseModel):
     dest: PlaylistWriteOut
     source: PlaylistWriteOut | None = None
@@ -499,6 +507,42 @@ def move_playlist_items(
     if not result.no_op:
         publish("library.changed", {"kind": "playlists", "ids": [playlist_id]})
     return _move_out(result.row, response, renumbered=result.renumbered)
+
+
+@router.post(
+    "/{playlist_id}/items:save-order",
+    response_model=PlaylistWriteOut,
+    operation_id="save_playlist_order",
+)
+def save_playlist_order(
+    playlist_id: str,
+    body: SaveOrderIn,
+    response: Response,
+    if_match: str | None = Header(None, alias="If-Match"),
+    backend: StateBackend = Depends(get_write_state),  # noqa: B008  # FastAPI DI
+    store: PlaylistStore = Depends(get_playlist_store),  # noqa: B008  # FastAPI DI
+):
+    """"Save this order" (LIBUX-8678): the given order becomes the stored one, one undo step."""
+    from ..playlist_save_order import SaveOrderError, item_ids_sorted_by
+
+    if not if_match:
+        return precondition_required(
+            "POST /playlists/{playlist_id}/items:save-order requires If-Match header"
+        )
+    if (body.item_ids is None) == (body.by is None):
+        raise HTTPException(status_code=422, detail="send exactly one of item_ids or by")
+    item_ids = body.item_ids
+    if body.by is not None:
+        item_ids = item_ids_sorted_by(
+            store, playlist_id, body.by, descending=body.descending,
+            tracks=backend.get_tracks_bulk,
+        )
+    try:
+        row = store.save_order(playlist_id, list(item_ids or []), expected_etag=if_match)
+    except SaveOrderError as error:
+        raise HTTPException(status_code=422, detail=str(error)) from error
+    publish("library.changed", {"kind": "playlists", "ids": [playlist_id]})
+    return _out(row, response)
 
 
 @router.put("/{playlist_id}/tracks", response_model=PlaylistWriteOut)

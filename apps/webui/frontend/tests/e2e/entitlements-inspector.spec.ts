@@ -32,5 +32,6 @@ test('admin entitlements inspector lists capabilities and live refusals', async 
 	await expect(ledgerRow.locator('.refusal')).toHaveCount(0);
 	await expect(ledgerRow).toHaveAttribute('title', 'progressLedger: true. Offered.');
 	await expect(panel.locator('.fatal')).toHaveCount(0);
-	await expect(page.locator('#lyrics-generator')).toBeVisible();
+	await expect(page.getByRole('heading', { name: 'Demucs farm KPI ledger' })).toBeVisible();
+	await expect(page.locator('#lyrics-generator')).toHaveCount(0);
 });

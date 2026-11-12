@@ -63,3 +63,21 @@ export const DecksRightMirrorToggle: Story = {
 		expect(toggle).toHaveProperty('checked', before);
 	}
 };
+
+const MIXER = customiseScreenDef('mixer');
+
+/** #9442: toggling the stem dials row flips `uiPrefs.mixer_stems`, and back. */
+export const MixerStemsToggle: Story = {
+	args: { def: MIXER },
+	play: async ({ canvasElement }) => {
+		expect(canvasElement.querySelector('[data-customise-screen="mixer"]')).not.toBeNull();
+		const before = uiPrefs.mixer_stems;
+		const stemsEntry = SETTINGS_CATALOG.find((d) => d.id === 'mixer_stems');
+		expect(stemsEntry).toBeDefined();
+		const toggle = within(canvasElement).getByRole('switch', { name: stemsEntry!.label });
+		await userEvent.click(toggle);
+		await waitFor(() => expect(uiPrefs.mixer_stems).toBe(!before));
+		await userEvent.click(toggle);
+		await waitFor(() => expect(uiPrefs.mixer_stems).toBe(before));
+	}
+};

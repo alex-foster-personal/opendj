@@ -13,6 +13,14 @@
 //   that retry: one hydrate, one reload
 // [if] the deck loads another track while the hydrate request is out [then]
 //   the old track is never reloaded onto it
+// [if] hydrate returns JSON detail code and message [then] RbApiError carries them
+// [if] hydrate returns malformed JSON on non-2xx [then] bounded HTTP status error
+// [if] hydrate returns empty non-2xx body [then] error names HTTP status
+// [if] network rejects before HTTP [then] original rejection surfaces
+// [if] two retries arrive while one hydration is pending [then ⛔️] they join one run
+// [if] the shared hydration rejects [then ⛔️] the failure is reported, no reload
+// [if] a later retry uses the same deck and track key [then ⛔️] a new hydrate runs
+// [if] a later retry belongs to a different track [then ⛔️] it does not join the prior key
 import assert from 'node:assert/strict';
 import { before, test } from 'node:test';
 
@@ -48,6 +56,56 @@ function port(overrides = {}) {
 
 const ALIGNMENT = { sample_rate_hz: 44100, frame_count: 100, channel_count: 2, duration_ms: 2 };
 const loading = (phase) => graph.loadingStemDeckState({ phase, progress: null, reason: null });
+
+// --- requestStemHydration failure shapes (#12459)
+
+test('hydrate POST resolves when the engine answers 200', async () => {
+	await mod.requestStemHydration('sid-1', async () => Response.json({ state: 'fetching' }));
+});
+
+test('structured non-2xx hydrate refusal preserves server detail', async () => {
+	const serverMsg = 'bundle fetch refused upstream';
+	const fetcher = async () =>
+		Response.json(
+			{ detail: { code: 'STEM_BUNDLE_HYDRATION_FAILED', message: serverMsg } },
+			{ status: 502 }
+		);
+	await assert.rejects(
+		mod.requestStemHydration('sid-1', fetcher),
+		(err) =>
+			err?.status === 502 &&
+			err?.code === 'STEM_BUNDLE_HYDRATION_FAILED' &&
+			typeof err?.message === 'string' &&
+			err.message.includes(serverMsg)
+	);
+});
+
+test('malformed JSON on non-2xx hydrate answers with bounded HTTP error', async () => {
+	const fetcher = async () =>
+		new Response('not-json{', { status: 502, headers: { 'Content-Type': 'application/json' } });
+	await assert.rejects(mod.requestStemHydration('sid-1', fetcher), (err) => {
+		if (err?.name === 'SyntaxError') return false;
+		return err?.status === 502 && err?.code === 'HTTP_502';
+	});
+});
+
+test('empty non-2xx hydrate body names HTTP status', async () => {
+	const fetcher = async () => new Response('', { status: 503 });
+	await assert.rejects(
+		mod.requestStemHydration('sid-1', fetcher),
+		(err) => err?.status === 503 && err?.code === 'HTTP_503' && typeof err?.message === 'string'
+	);
+});
+
+test('network rejection before any hydrate response is unchanged', async () => {
+	const fetcher = async () => {
+		throw new TypeError('fetch failed');
+	};
+	await assert.rejects(
+		mod.requestStemHydration('sid-1', fetcher),
+		(err) => err?.name === 'TypeError'
+	);
+});
 
 test('ready stems are left alone', async () => {
 	const { port: p, log } = port();
@@ -119,6 +177,57 @@ test('a failed hydrate request is reported, and no reload hides it', async () =>
 	const failed = { ...graph.unavailableStemDeckState('x'), status: 'error' };
 	await assert.rejects(mod.retryDeckStems(2, 'sid', failed, p), /HTTP 500/);
 	assert.deepEqual(log, []);
+});
+
+test('a rejected hydration releases the single-flight key so the same deck and track can retry again', async () => {
+	let release;
+	const gate = new Promise((resolve) => (release = resolve));
+	const pA = port({
+		requestHydration: async (stableId) => {
+			pA.log.push(`hydrate:${stableId}`);
+			await gate;
+			throw new Error('engine answered HTTP 500');
+		}
+	});
+	const failed = { ...graph.unavailableStemDeckState('boom'), status: 'error' };
+	const first = mod.retryDeckStems(4, 'sid', failed, pA.port);
+	const second = mod.retryDeckStems(4, 'sid', failed, pA.port);
+	assert.equal(second, first, 'a second retry while hydration is pending joins the same run');
+	assert.deepEqual(pA.log, ['hydrate:sid']);
+	release();
+	await assert.rejects(first, /HTTP 500/);
+	assert.deepEqual(pA.log, ['hydrate:sid'], 'a rejected hydrate does not reload');
+
+	const pB = port({
+		requestHydration: async (stableId) => {
+			pB.log.push(`hydrate:${stableId}`);
+		}
+	});
+	const third = mod.retryDeckStems(4, 'sid', failed, pB.port);
+	assert.notEqual(third, first, 'after reject, same deck and track starts a new run');
+	await third;
+	assert.deepEqual(pB.log, ['hydrate:sid', 'reload']);
+
+	let releaseC;
+	const gateC = new Promise((resolve) => (releaseC = resolve));
+	const pC = port({
+		requestHydration: async (stableId) => {
+			pC.log.push(`hydrate:${stableId}`);
+			await gateC;
+		}
+	});
+	const pD = port({
+		requestHydration: async (stableId) => {
+			pD.log.push(`hydrate:${stableId}`);
+		}
+	});
+	const sidInFlight = mod.retryDeckStems(4, 'sid', failed, pC.port);
+	const otherTrack = mod.retryDeckStems(4, 'other-track', failed, pD.port);
+	assert.notEqual(otherTrack, sidInFlight, 'a different track does not join the in-flight retry');
+	releaseC();
+	await Promise.all([sidInFlight, otherTrack]);
+	assert.deepEqual(pD.log, ['hydrate:other-track', 'reload']);
+	assert.deepEqual(pC.log, ['hydrate:sid', 'reload']);
 });
 
 test('a track reported without stems is probed again, with no hydrate request', async () => {

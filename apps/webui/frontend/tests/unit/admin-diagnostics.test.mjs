@@ -25,7 +25,7 @@ function engineHealth(overrides = {}) {
 	return {
 		status: 'ok',
 		state_db: {
-			path: 'data/state/state.db',
+			path: '(private path)',
 			tracks: 100,
 			playlists: 5,
 			pairings: 0,
@@ -69,6 +69,14 @@ test('tab=diagnostics resolves to diagnostics', () => {
 		adminTab.adminTabFromUrl(new URL('https://x.test/admin?tab=diagnostics')),
 		'diagnostics'
 	);
+});
+
+test('tab=lyrics resolves to lyrics', () => {
+	assert.equal(adminTab.adminTabFromUrl(new URL('https://x.test/admin?tab=lyrics')), 'lyrics');
+});
+
+test('tab=quality resolves to quality', () => {
+	assert.equal(adminTab.adminTabFromUrl(new URL('https://x.test/admin?tab=quality')), 'quality');
 });
 
 test('pushHistory caps at 20 and keeps the newest', () => {

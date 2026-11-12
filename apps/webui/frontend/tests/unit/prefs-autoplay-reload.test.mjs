@@ -12,7 +12,7 @@ import { createInterface } from 'node:readline';
 import { after, afterEach, before, test } from 'node:test';
 import { fileURLToPath } from 'node:url';
 
-import { resolveUv } from './fixtures/resolve-uv.mjs';
+import { midiMapsFixtureLaunch } from './midi-maps-test-server.mjs';
 import { loadTypeScriptModule } from './load-typescript.mjs';
 
 const STORAGE_KEY = 'mdt.rb.ui-prefs.v1';
@@ -40,21 +40,12 @@ let getStatuses = [];
 
 function startBackend() {
 	return new Promise((resolvePort, reject) => {
-		const proc = spawn(
-			resolveUv(),
-			[
-				'run',
-				'--no-sync',
-				'python',
-				'-m',
-				'scripts.testing.midi_maps_test_server',
-				'--port',
-				'0',
-				'--data-dir',
-				dataDir
-			],
-			{ cwd: REPO_ROOT, stdio: ['ignore', 'pipe', 'pipe'] }
-		);
+		const launch = midiMapsFixtureLaunch(REPO_ROOT, ['--data-dir', dataDir]);
+		const proc = spawn(launch.command, launch.args, {
+			cwd: launch.cwd,
+			env: launch.env,
+			stdio: ['ignore', 'pipe', 'pipe']
+		});
 		const timer = setTimeout(() => {
 			proc.kill();
 			reject(new Error(`test server did not report LISTENING within ${START_TIMEOUT_MS}ms`));

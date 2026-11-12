@@ -19,7 +19,7 @@ from typing import Literal, Protocol, runtime_checkable
 
 from pydantic import BaseModel, ConfigDict, JsonValue
 
-CONTRACT_VERSION = "analysis_structure/3"  # /3: the payload is typed JSON, not Any; /2: "own-fast" (STRUCT-06)
+CONTRACT_VERSION = "analysis_structure/4"  # /4: own_phrases abstain_reason (STRUCT-12785); /3: typed JSON
 
 PhraseSourceLane = Literal["rbx", "own"]
 """The PARITY-02 phrase selection lane a request asks for."""
@@ -37,6 +37,7 @@ class OwnPhrasesStatus(BaseModel):
 
     status: str
     reason: str | None = None
+    abstain_reason: str | None = None
     producer: str | None = None
     producer_version: str | None = None
 

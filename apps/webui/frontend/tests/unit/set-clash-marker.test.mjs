@@ -49,7 +49,7 @@ test('TrackTable draws the edge in the Key and BPM cells only', () => {
 	// The Key cell is a hover-card host, so its clash reason rides the card note (no title=);
 	// the BPM cell keeps the reason on its own title.
 	assert.equal(uses.filter((span) => span.includes('title={clashEdges.get(row.stable_id)}')).length, 1);
-	assert.match(table, /clashEdges\.get\(row\.stable_id\) \?\? null\]/);
+	assert.match(table, /clashEdges\.get\(row\.stable_id\) \?\? null,?\s*\]/);
 	const rule = /\.set-clash-edge\s*\{([^}]*)\}/.exec(table);
 	assert.ok(rule, 'set-clash-edge style rule');
 	assert.match(rule[1], /top:/);

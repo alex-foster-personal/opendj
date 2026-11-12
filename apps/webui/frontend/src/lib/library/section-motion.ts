@@ -9,13 +9,10 @@
  * no animation, because nobody can see them.
  */
 import { collapseDuration } from '$lib/motion/collapse';
+import { prefersReducedMotion } from '$lib/motion/reduced-motion';
 import type { SectionHeader } from './playlist-sections';
 
 const EASE_OUT = 'cubic-bezier(0.33, 1, 0.68, 1)';
-
-function _prefersReducedMotion(): boolean {
-	return window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-}
 
 /** Pixels the rows below the divider travel: never more than one screen. */
 export function sectionSlideDistance(params: {
@@ -37,7 +34,7 @@ export function animateSectionToggle(
 	}
 ): void {
 	const { header, collapsing, rowHeight, viewportHeight } = params;
-	const duration = collapseDuration(header.trackCount, _prefersReducedMotion());
+	const duration = collapseDuration(header.trackCount, prefersReducedMotion());
 	if (duration === 0) return;
 	const divider = tbody.querySelector(`[data-section-id="${CSS.escape(header.section.id)}"]`);
 	if (divider === null) return;

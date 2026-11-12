@@ -71,9 +71,12 @@ test('one-button mode makes every strip icon inert, so the cluster is the only c
 	assert.ok(buttons.length >= 6, `expected the strip's icon buttons, found ${buttons.length}`);
 	assert.ok(buttons.some((b) => /class="tb-icon fx rb-inert"/.test(b)), 'FX is one of the checked buttons');
 	for (const button of buttons) {
+		// PR #13576 (PERF-UI-06): the 2-deck toggle stays a real control in one-button mode.
+		if (/tb-deck-layout/.test(button)) continue;
 		// FX is disabled too (no panel yet), but disabled alone still leaves it
 		// in screen-reader browse order, so it must be inert like the rest.
 		assert.match(button, /inert=\{!featureIconSingleClick\(\)\}/, `not inert in one-button mode: ${button}`);
 	}
 	assert.doesNotMatch(strip, /tabindex=\{featureIconSingleClick\(\) \? undefined : -1\}/);
+	assert.match(TOPBAR, /\.feature-icons:not\(\.single-click\) \.icon-cluster \.tb-deck-layout \{\s*pointer-events: auto;/);
 });

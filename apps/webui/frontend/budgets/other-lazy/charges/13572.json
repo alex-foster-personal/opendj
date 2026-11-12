@@ -1,0 +1,9 @@
+{
+  "bytes": 1024,
+  "measured_main": 519240,
+  "measured_with_pr": 519542,
+  "sha": "6440425e20",
+  "date": "Thu 12 Nov 2026",
+  "reason": "PR #13572 regenerates api-types.ts and openapi.json for label-tasks A/B/C rank HTTP routes; +302 B gzip on other-lazy (CI bundle budgets step)",
+  "payback": "none planned; OpenAPI contract types live on the shared client surface"
+}

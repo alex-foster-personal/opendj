@@ -16,6 +16,7 @@ from apps.webui.server.backend import (
     Track,
 )
 from apps.webui.server.etag import compute_etag
+from tests.fixtures_state import state_db  # noqa: F401  (shared throwaway state DB, PR #10616)
 from tests.webui.testclient_host import TEST_HOST_BASE_URL  # noqa: F401  (re-exported for test modules)
 
 # SEC-01 (issue #2689): the TestClient host-allowlist default lives once in

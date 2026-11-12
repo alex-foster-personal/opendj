@@ -643,20 +643,49 @@ test('the folder picker guards on a desktop shell and opens a directory dialog',
 
 // REQ: SETUP-29
 test('a chosen folder is checked without pressing Check this folder', () => {
-	const overlay = read('src/lib/components/setup/SetupOverlay.svelte');
-	const input = overlay.match(/<input\s(?:(?!\/>)[\s\S])*aria-label="Folder to import"\s*\/>/)?.[0] ?? '';
+	const overlay = read('src/lib/components/setup/SetupOverlay.svelte').replace(
+		/<!--[\s\S]*?-->/g,
+		''
+	);
+	const rows = read('src/lib/components/setup/MusicFolderRows.svelte');
+	const input =
+		rows.match(/<input\s(?:(?!\/>)[\s\S])*aria-label="Folder to import"[\s\S]*?\/>/)?.[0] ?? '';
 	assert.notEqual(input, '', 'the folder path input was not found');
-	// a typed path is checked when it is COMMITTED (change covers blur and Enter)
-	assert.match(input, /onchange=\{\(\) => setupWizard\.commitFolderRow\(row\.id\)\}/);
-	// never per keystroke
-	assert.doesNotMatch(input, /oninput|onkeyup|onkeydown|onkeypress/);
-	// the picker hands its result to the store method that checks it
+	assert.match(input, /onchange=\{\(\) => onCommit\(row\.id\)\}/);
+	assert.match(input, /onkeydown=\{(?:\(event\) =>|\s*\(event\)\s*=>)\s*onPathKeydown\(event, row\.id\)\}/);
+	assert.match(rows, /function onPathKeydown/);
+	assert.match(rows, /event\.key !== 'Enter'/);
+	assert.match(rows, /stopPropagation\(\)/);
+	assert.match(rows, /onCheck\(id\)/);
+	assert.doesNotMatch(input, /oninput|onkeyup|onkeypress/);
+	assert.match(overlay, /onCommit=\{\(id\) => setupWizard\.commitFolderRow\(id\)\}/);
 	assert.match(overlay, /setupWizard\.chooseFolderForRow\(rowId, selected\)/);
-	// control: the button is still there as the manual re-check
+	assert.match(rows, /onclick=\{\(\) => onCheck\(row\.id\)\}[\s\S]{0,200}?Check this folder/);
+});
+
+// REQ: SETUP-12014
+test('the setup overlay exposes keyboard step chrome and one polite announcer', () => {
+	const overlay = read('src/lib/components/setup/SetupOverlay.svelte').replace(
+		/<!--[\s\S]*?-->/g,
+		''
+	);
+	assert.equal((overlay.match(/<button[^>]*data-step-primary/g) ?? []).length, 8);
+	const headings = overlay.match(/<h3[^>]*data-step-heading[^>]*>/g) ?? [];
+	assert.equal(headings.length, 8);
+	for (const heading of headings) {
+		assert.match(heading, /tabindex="-1"/);
+	}
 	assert.match(
 		overlay,
-		/type="submit"\s*\n\s*onclick=\{\(\) => setupWizard\.checkFolderRow\(row\.id\)\}[\s\S]{0,400}?Check this folder/
+		/<p[\s\S]*class="su-announce"[\s\S]*aria-live="polite"[\s\S]*aria-atomic="true"[\s\S]*data-testid="setup-announcer"/
 	);
+	assert.doesNotMatch(overlay, /class="step-counter"[^>]*role=/);
+	assert.doesNotMatch(overlay, /class="why"[^>]*role="status"/);
+	const onPanelKeydown =
+		overlay.match(/function onPanelKeydown\(event: KeyboardEvent\): void \{[\s\S]*?\n\t\}/)?.[0] ??
+		'';
+	assert.match(onPanelKeydown, /event\.key !== 'Escape'/);
+	assert.match(onPanelKeydown, /collapseSetupOverlay\(\)/);
 });
 
 test('the folder step can add and remove rows once a path is entered', () => {
@@ -736,10 +765,12 @@ test('every step panel renders a Back control', () => {
 
 test('Back is gated by backRefusal, and says why in the same breath', () => {
 	const overlay = read('src/lib/components/setup/SetupOverlay.svelte');
-	assert.match(overlay, /const backWhy = \$derived\(backRefusal\(/);
+	assert.match(overlay, /const backWhyAgent = \$derived\(backRefusal\(/);
+	assert.match(overlay, /const backWhyHuman = \$derived\(humanBackRefusal\(/);
 	const snippet = overlay.match(/\{#snippet backButton\(\)\}[\s\S]*?\{\/snippet\}/)?.[0] ?? '';
-	assert.match(snippet, /disabled=\{backWhy !== null/, 'Back must be disabled by the refusal');
-	assert.match(snippet, /title=\{backWhy \?\?/, 'the refusal must be the tooltip, not a separate string');
+	assert.match(snippet, /disabled=\{backWhyAgent !== null/, 'Back must be disabled by the raw refusal');
+	assert.match(snippet, /title=\{backWhyHuman \?\?/, 'the human refusal must be the tooltip');
+	assert.match(snippet, /data-agent-refusal=\{backWhyAgent/);
 });
 
 test('Back hands the live job to the rule instead of guessing', () => {

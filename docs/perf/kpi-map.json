@@ -309,7 +309,7 @@
         "all_tracks_time_to_interactive_s",
         "all_tracks_walk_warm_s_per_poll"
       ],
-      "missing_kpi": "The walk time is a SERVER-side cost per poll, not the pane's time to interactive, which is what a user waits on. Scoring one against the other would flatter the app.",
+      "missing_kpi": "Measured by `python -m scripts.perf.capture_first_browse` (Playwright, /performance): first track row paint (open-to-library-rows perf-span) to the first row click the pane accepts (aria-selected=\"true\"). The shell launch before navigationStart is not included. all_tracks_walk_warm_s_per_poll is a SERVER-side cost per poll and stays context only.",
       "lower_is_better": true,
       "budget": 1.5,
       "acceptable": 3,
@@ -356,7 +356,7 @@
       "kpis": [
         "cold_start_to_first_browse_s"
       ],
-      "missing_kpi": "Nothing measures launch to usable. This is the composite a first-time user actually meets, and the 8038ms boot-window fetch wall says it is likely the worst number in the app.",
+      "missing_kpi": "Measured by `python -m scripts.perf.capture_first_browse` (Playwright, /performance): navigationStart to the first row click the pane accepts (aria-selected=\"true\"). The shell launch before navigationStart is not included, so a packaged-app cold start is longer than this number by the host launch time.",
       "lower_is_better": true,
       "budget": 3,
       "acceptable": 6,

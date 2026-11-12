@@ -28,6 +28,7 @@ import { createInterface } from 'node:readline';
 import { fileURLToPath } from 'node:url';
 import { after, before, beforeEach, test } from 'node:test';
 
+import { fixtureServerLaunch } from '../../scripts/fixture-server.mjs';
 import { loadTypeScriptModule } from './load-typescript.mjs';
 import { stopFixtureServer } from './fixtures/stop-fixture-server.mjs';
 
@@ -198,16 +199,13 @@ async function daemonSelect(toggle) {
 }
 
 before(async () => {
-	serverProcess = spawn('uv', ['run', '--no-sync', 'python', SERVER_SCRIPT], {
-		cwd: REPOSITORY_ROOT,
+	const launch = fixtureServerLaunch({ repoRoot: REPOSITORY_ROOT, pythonTarget: SERVER_SCRIPT });
+	serverProcess = spawn(launch.command, launch.args, {
+		cwd: launch.cwd,
 		// PYTHONPATH, not an editable install: CI's frontend job provisions only
 		// requirements.txt (no setuptools-rust build) for this one fixture, so
 		// `apps` must resolve from the tree rather than from site-packages.
-		env: {
-			...process.env,
-			MDT_LIBRARY_MODE: 'local',
-			PYTHONPATH: REPOSITORY_ROOT
-		},
+		env: launch.env,
 		stdio: ['ignore', 'pipe', 'inherit']
 	});
 	const port = await new Promise((resolve, reject) => {

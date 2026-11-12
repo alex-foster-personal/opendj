@@ -35,6 +35,7 @@ from apps.webui.server.routes import cloudsync_status as cloudsync_status_routes
 from apps.webui.server.routes import ui_prefs as ui_prefs_routes
 from apps.webui.server.routes.playlists import router as playlists_router
 from apps.webui.server.routes.tracks import router as tracks_router
+from apps.webui.server.shell_commands import install_shell_command_broker
 from apps.webui.server.sqlite_backend import SqliteBackend
 
 
@@ -224,6 +225,8 @@ def create_app(db_path: Path) -> FastAPI:
     # After build-info so GET /api/v1/app-update/status can read the mounted
     # identity. The shell polls this on every page; a 404 fails the spec.
     add_app_update_routes(app, data_dir=db_path.parent)
+    # The real app installs its broker in create_app; the status route reads it.
+    install_shell_command_broker(app)
 
     # Real check logic (apps.webui.server.preflight_checks.run_preflight),
     # not a hand-stub -- the shipped route wrapper reads a module-level

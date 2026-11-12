@@ -1,4 +1,5 @@
 """Health endpoint (CAT-05)."""
+
 from __future__ import annotations
 
 import os
@@ -92,7 +93,8 @@ async def health(
     try:
         with anyio.fail_after(_HEALTH_DB_TIMEOUT_S):
             stats = await to_thread.run_sync(
-                backend.stats, limiter=_HEALTH_THREAD_LIMITER,
+                backend.stats,
+                limiter=_HEALTH_THREAD_LIMITER,
             )
     except TimeoutError as exc:
         raise HTTPException(
@@ -109,32 +111,27 @@ async def health(
     bind_host = getattr(request.app.state, "bind_host", "127.0.0.1")
     version = getattr(request.app.state, "version", APP_VERSION)
 
-    lock_fn: Callable[[], Any] | None = getattr(
-        request.app.state, "lock_status_fn", None
-    )
+    lock_fn: Callable[[], Any] | None = getattr(request.app.state, "lock_status_fn", None)
     lock_holder = await _call_optional_status_fn(lock_fn)
     cloud = HealthCloud(lock_holder=lock_holder)
 
-    syncthing_fn: Callable[[], Any] | None = getattr(
-        request.app.state, "syncthing_status_fn", None
-    )
+    syncthing_fn: Callable[[], Any] | None = getattr(request.app.state, "syncthing_status_fn", None)
     syncthing = await _call_optional_status_fn(syncthing_fn)
 
     return HealthOut(
         status="ok",
         state_db=HealthStateDb(
-            path=str(db_path), tracks=stats["tracks"],
+            path=str(db_path),
+            tracks=stats["tracks"],
             tracks_playable=int(stats.get("tracks_playable", 0)),
-            playlists=stats["playlists"], pairings=stats["pairings"],
+            playlists=stats["playlists"],
+            pairings=stats["pairings"],
             last_writer_hostname=last_writer[0] if last_writer else None,
             last_writer_at=last_writer[1] if last_writer else None,
         ),
         cloud=cloud,
-        syncthing=(HealthSyncthing(**syncthing)
-                   if isinstance(syncthing, dict) else None),
-        waveform_materialization=HealthWaveformMaterialization(
-            **rb_vendor.waveform_materialization_status()
-        ),
+        syncthing=(HealthSyncthing(**syncthing) if isinstance(syncthing, dict) else None),
+        waveform_materialization=HealthWaveformMaterialization(**rb_vendor.waveform_materialization_status()),
         bind_host=bind_host,
         version=version,
         ui_url=await _ui_url(request),
@@ -146,11 +143,33 @@ async def health(
         # cloudflared can probe it pre-auth (apps/webui/server/share_gate.py
         # EXEMPT_SUFFIXES). Names only, never values, and never the harmless
         # majority of the environment.
-        process_env_forbidden_keys=sorted(
-            key for key in os.environ if key.startswith(OPS32_FORBIDDEN_ENV_PREFIXES)
-        ),
+        process_env_forbidden_keys=sorted(key for key in os.environ if key.startswith(OPS32_FORBIDDEN_ENV_PREFIXES)),
         process_env_home_present=OPS32_HOME_ENV_VAR in os.environ,
     )
+
+
+def bug_report_health_summary(health: HealthOut) -> dict[str, object]:
+    """Counts and flags only: never the state-db path (issue #11173)."""
+    return {
+        "status": health.status,
+        "state_db": {
+            "tracks": health.state_db.tracks,
+            "tracks_playable": health.state_db.tracks_playable,
+            "playlists": health.state_db.playlists,
+            "pairings": health.state_db.pairings,
+            "last_writer_hostname": health.state_db.last_writer_hostname,
+            "last_writer_at": health.state_db.last_writer_at,
+        },
+        "bind_host": health.bind_host,
+        "version": health.version,
+        "ui_url": health.ui_url,
+        "google_oauth_configured": health.google_oauth_configured,
+        "process_env_home_present": health.process_env_home_present,
+        "process_env_forbidden_key_count": len(health.process_env_forbidden_keys),
+        "waveform_materialization": health.waveform_materialization.model_dump(),
+        "cloud_lock_holder_present": health.cloud.lock_holder is not None,
+        "syncthing": (health.syncthing.model_dump() if health.syncthing is not None else None),
+    }
 
 
 async def _ui_url(request: Request) -> str | None:

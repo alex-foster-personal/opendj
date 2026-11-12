@@ -8,6 +8,7 @@ import {
 	assertHeadphoneAlignmentMode,
 	assertMasterDelayMs
 } from '$lib/player/constants';
+import { assertBoothSignalMode } from '$lib/player/booth-output';
 import { assertHeadphoneOutputMode } from '$lib/player/headphones';
 import {
 	COMPATIBLE_KEY_SHIFT_MAX,
@@ -23,6 +24,7 @@ import {
 	ANALYSIS_SOURCE_FEATURES,
 	type AnalysisSourceFeature
 } from '$lib/rb/analysis-source-state.svelte';
+import { parseBeatFxCommand } from '$lib/rb/beat-fx';
 import { parseColorFxCommand } from '$lib/rb/color-fx';
 import { type DeckId } from '$lib/rb/deck-slots';
 import type { HotCueSlot } from '$lib/rb/deck-state-types';
@@ -31,10 +33,10 @@ import { parseGridEditIntent } from '$lib/rb/grid-edit-command';
 import { parseLayoutPx, parseLayoutRegion } from '$lib/rb/layout-regions';
 import { parseLayoutPreset, parseLayoutSurface } from '$lib/rb/skin-layout';
 import { assertBeatJumpSize } from '$lib/rb/beat-jump-size.svelte';
+import { isPadModeId, PAD_MODE_IDS } from '$lib/rb/pad-mode-catalog';
 import { assertLoopGridBase } from '$lib/rb/loop-interval-view.svelte';
+import { PERF_VIEW_IDS, isPerfViewId } from '$lib/rb/view-registry';
 import {
-	PERF_VIEWS,
-	isPerfView,
 	parseWavePlayheadMode,
 	parseWaveZoom,
 	requireDeckNumberArt
@@ -49,6 +51,8 @@ import { parseWaveformBoolOverlay } from '$lib/rb/waveform-overlay-command';
 import { requireWaveGridLines } from '$lib/rb/wave-grid-lines';
 import { TRACK_LOAD_RESET_IDS, type TrackLoadResetId } from '$lib/rb/track-load-reset';
 import { WINDOW_LABELS } from '$lib/shell/native-shell';
+import { isMixerPlacement } from '$lib/rb/prefs.svelte';
+import { assertRollBeats, ROLL_BEATS_LABEL } from '$lib/player/transport/roll-state';
 import { MEMORY_CUE_CALL_DIRECTIONS, type MemoryCueCallDirection } from '$lib/rb/memory-cue-call';
 
 import type { PerformanceCommand } from './performance-ipc-types';
@@ -237,7 +241,8 @@ export function _parseCommand(message: unknown): PerformanceCommand {
 		type === 'master_volume' ||
 		type === 'headphone_mix' ||
 		type === 'headphone_level' ||
-		type === 'headphone_booth_level'
+		type === 'headphone_booth_level' ||
+		type === 'booth_level'
 	) {
 		_exactKeys(record, ['type', 'value']);
 		return { type, value: _unit('value', record.value) };
@@ -287,7 +292,16 @@ export function _parseCommand(message: unknown): PerformanceCommand {
 		return { type, active: record.active };
 	}
 	if (type === 'browser_related_criteria') {
-		_exactKeys(record, ['type', 'bpm_percent', 'key', 'genre', 'color', 'rating', 'mytag', 'artist']);
+		_exactKeys(record, [
+			'type',
+			'bpm_percent',
+			'key',
+			'genre',
+			'color',
+			'rating',
+			'mytag',
+			'artist'
+		]);
 		const out: Extract<PerformanceCommand, { type: 'browser_related_criteria' }> = { type };
 		let any = false;
 		if (record.bpm_percent !== undefined) {
@@ -328,6 +342,10 @@ export function _parseCommand(message: unknown): PerformanceCommand {
 		}
 		return { type, mode: record.mode };
 	}
+	if (type === 'midi_learn_retry' || type === 'midi_learn_cancel') {
+		_exactKeys(record, ['type']);
+		return { type };
+	}
 	if (type === 'headphone_outputs_refresh') {
 		_exactKeys(record, ['type']);
 		return { type };
@@ -350,7 +368,7 @@ export function _parseCommand(message: unknown): PerformanceCommand {
 		}
 		return { type, device_id: record.device_id };
 	}
-	if (type === 'headphone_booth_select') {
+	if (type === 'headphone_booth_select' || type === 'booth_select') {
 		_exactKeys(record, ['type', 'device_id']);
 		if (
 			typeof record.device_id !== 'string' ||
@@ -359,6 +377,11 @@ export function _parseCommand(message: unknown): PerformanceCommand {
 			throw new TypeError('device_id must be empty or a non-blank string');
 		}
 		return { type, device_id: record.device_id };
+	}
+	if (type === 'booth_signal_mode') {
+		_exactKeys(record, ['type', 'mode']);
+		assertBoothSignalMode(record.mode);
+		return { type, mode: record.mode };
 	}
 	if (type === 'headphone_input_select') {
 		_exactKeys(record, ['type', 'device_id']);
@@ -423,9 +446,9 @@ export function _parseCommand(message: unknown): PerformanceCommand {
 	}
 	if (type === 'set_perf_view') {
 		_exactKeys(record, ['type', 'view']);
-		if (!isPerfView(record.view)) {
+		if (!isPerfViewId(record.view)) {
 			throw new TypeError(
-				`set_perf_view view must be one of ${PERF_VIEWS.join(', ')}; got ${String(record.view)}`
+				`set_perf_view view must be one of ${PERF_VIEW_IDS.join(', ')}; got ${String(record.view)}`
 			);
 		}
 		return { type, view: record.view };
@@ -533,7 +556,12 @@ export function _parseCommand(message: unknown): PerformanceCommand {
 		_exactKeys(record, ['type']);
 		return { type };
 	}
-	if (type === 'tech_mode_toggle' || type === 'track_info_toggle' || type === 'track_info_close' || type === 'oj_toggle') {
+	if (
+		type === 'tech_mode_toggle' ||
+		type === 'track_info_toggle' ||
+		type === 'track_info_close' ||
+		type === 'oj_toggle'
+	) {
 		_exactKeys(record, ['type']);
 		return { type };
 	}
@@ -717,7 +745,15 @@ export function _parseCommand(message: unknown): PerformanceCommand {
 				: { collapsed: _boolean('collapsed', record.collapsed) })
 		};
 	}
+	if (type === 'mixer_placement') {
+		_exactKeys(record, ['type', 'placement']);
+		if (!isMixerPlacement(record.placement)) {
+			throw new TypeError(`mixer_placement placement must be center|sides, got ${String(record.placement)}`);
+		}
+		return { type, placement: record.placement };
+	}
 	if (type === 'color_fx') return parseColorFxCommand(record);
+	if (type === 'beat_fx') return parseBeatFxCommand(record);
 	if (
 		type === 'show_stems' ||
 		type === 'wave_eq_reflect' ||
@@ -1046,6 +1082,11 @@ export function _parseCommand(message: unknown): PerformanceCommand {
 	} else if (type === 'loop_interval_mode') {
 		_exactKeys(record, ['type', 'deck', 'enabled']);
 		return { type, deck, enabled: _boolean('enabled', record.enabled) };
+	} else if (type === 'pad_mode') {
+		_exactKeys(record, ['type', 'deck', 'mode']);
+		if (!isPadModeId(record.mode))
+			throw new TypeError(`pad mode must be one of ${PAD_MODE_IDS.join('|')}; got ${String(record.mode)}`);
+		return { type, deck, mode: record.mode };
 	} else if (type === 'loop_interval_base') {
 		_exactKeys(record, ['type', 'deck', 'base']);
 		const base = _finite('base', record.base);
@@ -1091,6 +1132,13 @@ export function _parseCommand(message: unknown): PerformanceCommand {
 	) {
 		_exactKeys(record, ['type', 'deck', 'enabled']);
 		return { type, deck, enabled: _boolean('enabled', record.enabled) } as PerformanceCommand;
+	} else if (type === 'roll') {
+		_exactKeys(record, ['type', 'deck', 'beats']);
+		if (!('beats' in record)) {
+			throw new TypeError(`roll beats is required: one of ${ROLL_BEATS_LABEL}, or null to release`);
+		}
+		if (record.beats === null) return { type, deck, beats: null };
+		return { type, deck, beats: assertRollBeats(record.beats) };
 	} else if (type === 'quantize_grid') {
 		_exactKeys(record, ['type', 'deck', 'beats']);
 		if (
@@ -1127,6 +1175,9 @@ export function _parseCommand(message: unknown): PerformanceCommand {
 		}
 		return { type, deck, stable_id: record.stable_id };
 	} else if (type === 'stem_gain') {
+		_exactKeys(record, ['type', 'deck', 'stem', 'value']);
+		return { type, deck, stem: _stem(record.stem), value: _unit('value', record.value) };
+	} else if (type === 'stem_fx_send') {
 		_exactKeys(record, ['type', 'deck', 'stem', 'value']);
 		return { type, deck, stem: _stem(record.stem), value: _unit('value', record.value) };
 	} else if (type === 'key_shift') {
@@ -1233,6 +1284,15 @@ export function _parseCommand(message: unknown): PerformanceCommand {
 			slot: _hotCueSlot(record.slot),
 			revision: _revision('revision', record.revision)
 		};
+	} else if (type === 'active_memory_loop') {
+		_exactKeys(record, ['type', 'deck', 'in_ms', 'out_ms', 'active']);
+		const in_ms = _finite('in_ms', record.in_ms);
+		const out_ms = _finite('out_ms', record.out_ms);
+		if (!Number.isInteger(in_ms) || in_ms < 0) throw new RangeError('in_ms must be a non-negative integer');
+		if (!Number.isInteger(out_ms) || out_ms <= in_ms) {
+			throw new RangeError(`out_ms must be an integer after in_ms ${in_ms}, got ${out_ms}`);
+		}
+		return { type, deck, in_ms, out_ms, active: _boolean('active', record.active) };
 	} else if (type === 'hot_cue_restore') {
 		_exactKeys(record, ['type', 'deck', 'slot', 'revision', 'reversal_id']);
 		return {

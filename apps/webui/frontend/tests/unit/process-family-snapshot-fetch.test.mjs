@@ -46,29 +46,17 @@
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
 import { existsSync } from 'node:fs';
-import { join } from 'node:path';
 import { createInterface } from 'node:readline';
 import { fileURLToPath } from 'node:url';
 import { after, before, test } from 'node:test';
 
+import { fixtureServerLaunch } from '../../scripts/fixture-server.mjs';
 import { loadTypeScriptModule } from './load-typescript.mjs';
-import { resolveExecutable } from './fixtures/resolve-executable.mjs';
 import { stopFixtureServer } from './fixtures/stop-fixture-server.mjs';
 
 const REPOSITORY_ROOT = fileURLToPath(new URL('../../../../..', import.meta.url));
 const SERVER_SCRIPT = fileURLToPath(
 	new URL('./fixtures/process_family_server.py', import.meta.url)
-);
-/**
- * The project venv's own interpreter. Passed to `uv run --python` when it exists, so uv reuses
- * the venv CI provisioned (pylock.ci.toml, with pytest) instead of deleting and rebuilding it
- * with base deps only whenever its patch release differs from .python-version (3.11.16 on a
- * runner vs the 3.11.15 pin: the server then dies importing pytest).
- */
-const VENV_PYTHON = join(
-	REPOSITORY_ROOT,
-	'.venv',
-	process.platform === 'win32' ? join('Scripts', 'python.exe') : join('bin', 'python')
 );
 /** Timestamp of the LAST sample in the locked capture: the one the route's reader returns. */
 const CAPTURED_LAST_SAMPLE = '2026-09-01T15:33:06.876Z';
@@ -132,22 +120,10 @@ async function releaseHeld(pending) {
 }
 
 before(async () => {
-	// Launched by resolved path; a missing uv fails here, by name.
-	// When .venv exists: --no-sync reuses the CI-provisioned venv without exact-syncing back to
-	// uv.lock; a syncing `uv run` uninstalls packages while --test-concurrency=4 siblings import
-	// from the same `.venv` (quit-gate's engine once failed: No module named '_cffi_backend').
-	// --python <venv interpreter> stops uv from rebuilding that venv when the runner patch
-	// release differs from .python-version (the server dies importing pytest).
-	// Cold checkout: --locked --extra dev so uvicorn and pytest exist before READY; --locked never
-	// rewrites uv.lock (AGENTS.md). CI provisions the venv with scripts/ci_venv.sh --lock
-	// pylock.ci.toml; locally use uv sync --locked --extra dev.
-	const hasVenv = existsSync(VENV_PYTHON);
-	const uvArgs = hasVenv
-		? ['run', '--no-sync', '--python', VENV_PYTHON]
-		: ['run', '--locked', '--extra', 'dev'];
-	serverProcess = spawn(resolveExecutable('uv'), [...uvArgs, 'python', SERVER_SCRIPT], {
-		cwd: REPOSITORY_ROOT,
-		env: { ...process.env, MDT_LIBRARY_MODE: 'local', PYTHONPATH: REPOSITORY_ROOT },
+	const launch = fixtureServerLaunch({ repoRoot: REPOSITORY_ROOT, pythonTarget: SERVER_SCRIPT });
+	serverProcess = spawn(launch.command, launch.args, {
+		cwd: launch.cwd,
+		env: launch.env,
 		stdio: ['ignore', 'pipe', 'inherit']
 	});
 	const port = await new Promise((resolve, reject) => {

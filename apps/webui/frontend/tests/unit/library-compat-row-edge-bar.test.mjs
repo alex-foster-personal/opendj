@@ -43,15 +43,15 @@ test('the bar stays off every row state that owns the left edge or row fill', ()
 });
 
 test('the bar uses a muted theme token in every skin', () => {
-	assert.match(bar[0].body, /background:\s*var\(--rb-mix-compat-bar, color-mix\(in srgb, var\(--rb-green\) \d+%, var\(--rb-text-dim\)\)\);/);
+	assert.match(bar[0].body, /background:\s*var\(\s*--rb-mix-compat-bar,\s*color-mix\(in srgb, var\(--rb-green\) \d+%, var\(--rb-text-dim\)\)\s*\);/);
 	assert.match(THEME, /--rb-mix-compat-bar:\s*initial;/);
 	assert.doesNotMatch(THEME, /--rb-mix-compat-row-(tint|hover)/, 'the old wash tokens are gone');
 });
 
 test('control: key ring and BPM verdict styling are unchanged', () => {
 	assert.match(STYLE, /\.c-key\.key-compat::after[\s\S]*?border: 1px solid var\(--rb-key-compat-border, var\(--key-compat-color\)\)/);
-	assert.match(STYLE, /\.c-bpm\.bpm-compatible \{ box-shadow: inset 0 0 0 1px var\(--rb-green\); \}/);
-	assert.match(STYLE, /\.c-bpm\.bpm-danger \{ box-shadow: inset 0 0 0 1px var\(--rb-bpm-mismatch-ring, #e14238\); \}/);
+	assert.match(STYLE, /\.c-bpm\.bpm-compatible \{\s*box-shadow: inset 0 0 0 1px var\(--rb-green\);\s*\}/);
+	assert.match(STYLE, /\.c-bpm\.bpm-danger \{\s*box-shadow: inset 0 0 0 1px var\(--rb-bpm-mismatch-ring, #e14238\);\s*\}/);
 });
 
 /** The last compound of every comma part of every rule, e.g. `tr.x:not(.y)::before`. */

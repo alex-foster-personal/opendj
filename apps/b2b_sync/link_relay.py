@@ -105,6 +105,7 @@ HOLD_VERDICTS: frozenset[str] = frozenset({"multicast_blocked", "waiting", "peer
 
 Mode = Literal["idle", "lead", "follow", "clash", "no_on_air"]
 Sync = Literal["none", "locking", "locked", "drifting", "holding"]
+WriteOutcome = Literal["acknowledged", "rejected", "timeout", "refused"]
 
 
 class RelayWireError(RuntimeError):
@@ -274,11 +275,26 @@ def plan_alignment(
     )
 
 
-def sync_state(*, mode: Mode, estimate_ready: bool, leader_fresh: bool, phase_error_ms: float | None) -> Sync:
+def _classify_carabiner_failure(exc: CarabinerUnavailable) -> WriteOutcome:
+    if "did not answer" in str(exc):
+        return "timeout"
+    return "rejected"
+
+
+def sync_state(
+    *,
+    mode: Mode,
+    estimate_ready: bool,
+    leader_fresh: bool,
+    phase_error_ms: float | None,
+    last_write_outcome: WriteOutcome | None = None,
+) -> Sync:
     if mode != "follow":
         return "none"
     if not leader_fresh:
         return "holding"
+    if last_write_outcome in ("rejected", "timeout", "refused"):
+        return "locking"
     if not estimate_ready or phase_error_ms is None:
         return "locking"
     return "locked" if abs(phase_error_ms) <= CFG.LOCKED_MS else "drifting"
@@ -359,6 +375,8 @@ class LinkRelay:
         self._leader: LeaderState | None = None
         self._plan: AlignPlan | None = None
         self._last_sync_at: float | None = None
+        self._last_write_outcome: WriteOutcome | None = None
+        self._last_write_at: float | None = None
         self._last_error: str | None = None
         self._counts = {"pings": 0, "ping_failures": 0, "watch_answers": 0, "watch_failures": 0,
                         "forces": 0, "tempo_sets": 0, "refused_writes": 0, "engagements": 0}
@@ -621,6 +639,9 @@ class LinkRelay:
             return
         refusal = self._write_refusal(client, leader)
         if refusal is not None:
+            with self._lock:
+                self._last_write_outcome = "refused"
+                self._last_write_at = time.monotonic()
             self._note_failure("refused_writes", f"write refused: {refusal}")
             return
         try:
@@ -632,10 +653,21 @@ class LinkRelay:
                 client.set_beat_at_time(plan.force_beat, int(plan.at_us), DEFAULT_QUANTUM, force=True)
                 with self._lock:
                     self._counts["forces"] += 1
-        except (CarabinerUnavailable, ValueError) as exc:
+        except CarabinerUnavailable as exc:
+            with self._lock:
+                self._last_write_outcome = _classify_carabiner_failure(exc)
+                self._last_write_at = time.monotonic()
+            self._note_failure("refused_writes", f"Carabiner refused the alignment: {exc}")
+            return
+        except ValueError as exc:
+            with self._lock:
+                self._last_write_outcome = "rejected"
+                self._last_write_at = time.monotonic()
             self._note_failure("refused_writes", f"Carabiner refused the alignment: {exc}")
             return
         with self._lock:
+            self._last_write_outcome = "acknowledged"
+            self._last_write_at = time.monotonic()
             self._last_sync_at = time.monotonic()
 
     def _write_refusal(self, client: CarabinerClient, leader: LeaderState) -> str | None:
@@ -684,8 +716,13 @@ class LinkRelay:
                 "reason": self.reason,
                 "engaged_for_s": None if self._engaged_since is None else round(now_mono - self._engaged_since, 2),
                 "mode": mode,
-                "sync": sync_state(mode=mode, estimate_ready=estimate is not None, leader_fresh=fresh,
-                                   phase_error_ms=plan.phase_error_ms if plan is not None else None),
+                "sync": sync_state(
+                    mode=mode,
+                    estimate_ready=estimate is not None,
+                    leader_fresh=fresh,
+                    phase_error_ms=plan.phase_error_ms if plan is not None else None,
+                    last_write_outcome=self._last_write_outcome,
+                ),
                 "verdict": None if self._verdict is None else {
                     "state": self._verdict[0], "reason": self._verdict[1],
                     "age_s": round(now_mono - (self._verdict_at or now_mono), 2),
@@ -712,6 +749,15 @@ class LinkRelay:
                 "phase_error_ms": None if plan is None else round(plan.phase_error_ms, 3),
                 "target_bpm": None if plan is None else round(plan.target_bpm, 6),
                 "last_sync_age_s": None if self._last_sync_at is None else round(now_mono - self._last_sync_at, 2),
+                "last_alignment": None
+                if self._last_write_outcome is None or self._last_write_at is None
+                else {
+                    "outcome": self._last_write_outcome,
+                    "age_s": round(now_mono - self._last_write_at, 2),
+                    "error": None
+                    if self._last_write_outcome == "acknowledged"
+                    else self._last_error,
+                },
                 "counts": dict(self._counts),
                 "last_error": self._last_error,
                 "injected_clock": None if not self.wire.injected else {

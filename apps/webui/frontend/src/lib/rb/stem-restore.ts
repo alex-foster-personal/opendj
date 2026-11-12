@@ -31,7 +31,7 @@ export async function restoreStemControls(
 	dispatch: (command: PerformanceCommand) => Promise<PerformanceState>,
 	query: () => PerformanceState,
 	deck: DeckId,
-	controls: Partial<Record<StemControl, Omit<StemControlState, 'gain'> & { gain?: number }>>,
+	controls: Partial<Record<StemControl, Omit<StemControlState, 'gain' | 'fx_send'> & { gain?: number; fx_send?: number }>>,
 	clock: RestoreStemControlsClock = _wallClock
 ): Promise<void> {
 	const initial = query().decks[deck];
@@ -62,7 +62,7 @@ export async function restoreStemControls(
 		if (!stems.available_controls.includes(stem)) {
 			// Legacy snapshots include neutral DRUMS even for two-part/no-stem tracks.
 			// A real saved effect must never disappear silently when capability is lost.
-			if (control.muted || control.solo || (control.gain !== undefined && control.gain !== 0.5)) {
+			if (control.muted || control.solo || (control.gain !== undefined && control.gain !== 0.5) || (control.fx_send ?? 0) > 0) {
 				throw new Error(`deck ${deck} cannot restore unavailable ${stem} control`);
 			}
 			continue;
@@ -73,6 +73,8 @@ export async function restoreStemControls(
 		];
 		if (control.gain !== undefined)
 			commands.push({ type: 'stem_gain', deck, stem, value: control.gain });
+		if (control.fx_send !== undefined && control.fx_send > 0)
+			commands.push({ type: 'stem_fx_send', deck, stem, value: control.fx_send });
 		for (const command of commands) {
 			await awaitReady();
 			current();

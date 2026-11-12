@@ -258,7 +258,7 @@ describe('UI wiring (source)', () => {
 
 	it("a shifted row renders its superscript and the hover card replaces the native title", async () => {
 		const table = await read('components/rb/browser/TrackTable.svelte');
-		assert.match(table, /<sup class="key-shift-sup">\{keyShiftSuperscript\(match\.shift\)\}<\/sup>/);
+		assert.match(table, /<sup\s+class="key-shift-sup">\{keyShiftSuperscript\(match\.shift\)\}<\/sup\s*>/);
 		assert.match(table, /<KeyHoverCard/);
 		const cell = table.slice(table.indexOf('class="c-key"'), table.indexOf('class="c-key"') + 600);
 		assert.doesNotMatch(cell.slice(0, cell.indexOf('>')), /\btitle=/);

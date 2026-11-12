@@ -1,0 +1,9 @@
+{
+  "bytes": 1024,
+  "measured_main": 35138,
+  "measured_with_pr": 35598,
+  "sha": "d27c2af0fa",
+  "date": "Thu 12 Nov 2026",
+  "reason": "branch af--cloud-10875--skins-numark-mixtrack-platinum-fx-practi--work grows the practice-replica surface; measured +460 B gzip over main; ceiled to KiB.",
+  "payback": "none planned; the growth is the change's own code on this surface"
+}

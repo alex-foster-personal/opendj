@@ -182,6 +182,11 @@ def _iter_kept_plays(
         have_last = True
 
 
+def iter_kept_plays(events: Iterator[dict[str, Any]]) -> Iterator[SoundcloudTracklistRow]:
+    """Kept plays from timeline events without tracklist-hidden redaction."""
+    yield from _iter_kept_plays(events, frozenset())
+
+
 def _comment_from(rows: list[SoundcloudTracklistRow]) -> str:
     if not rows:
         return ""
@@ -221,4 +226,5 @@ __all__ = [
     "SoundcloudTracklistRow",
     "build_soundcloud_export",
     "format_soundcloud_timestamp",
+    "iter_kept_plays",
 ]

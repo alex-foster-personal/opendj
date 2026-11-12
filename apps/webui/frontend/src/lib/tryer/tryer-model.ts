@@ -7,6 +7,7 @@
  * never "best".
  */
 
+import { proposalConfidenceReadout } from '$lib/autodj/propose-confidence';
 import type { components } from '$lib/api-types';
 
 export const TRYER_FLAG_ID = 'dj.tryer';
@@ -16,8 +17,15 @@ export const NOT_IMPLEMENTED_TITLE = 'not implemented - see PARITY-TODO';
 
 export const RANK_MEASURED = 'measured';
 
+/** Planner confidence fields on try candidates (TRANSAI-10667, issue #10150). */
+export type TryCandidatePlanner = {
+	planner_confidence?: number | null;
+	planner_weakest_factor?: string | null;
+	planner_confidence_title?: string | null;
+};
+
 /** The generated OpenAPI shapes (TRYER-10/15): the server's TryJobOut, never a hand copy. */
-export type TryCandidate = components['schemas']['CandidateOut'];
+export type TryCandidate = components['schemas']['CandidateOut'] & TryCandidatePlanner;
 export type TryJob = components['schemas']['TryJobOut'];
 
 export type TryEnergyNumber = { value: string; title: string };
@@ -81,6 +89,17 @@ export function energyLineSegments(
 /** Whether the strip can draw (both sides hold MIK levels over their windows). */
 export function energyStripReady(block: TryEnergyBlock): boolean {
 	return !block.unscored && block.out !== null && block.in !== null;
+}
+
+/** Try-er card readout from planner confidence on the candidate document. */
+export function tryCandidatePlannerReadout(
+	candidate: TryCandidate
+): ReturnType<typeof proposalConfidenceReadout> {
+	return proposalConfidenceReadout(
+		candidate.planner_confidence,
+		candidate.planner_weakest_factor,
+		null
+	);
 }
 
 export type TryerAction =

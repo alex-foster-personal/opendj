@@ -83,6 +83,21 @@ class TrackPlaysOut(BaseModel):
     )
 
 
+class TrackPlaysLookupIn(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    stable_ids: list[str] = Field(min_length=1, max_length=2_000)
+
+
+class TrackPlaysLookupRow(BaseModel):
+    stable_id: str
+    opendj_play_count: int
+
+
+class TrackPlaysLookupOut(BaseModel):
+    rows: list[TrackPlaysLookupRow]
+
+
 def _state_db_path(request: Request) -> Path:
     path = getattr(request.app.state, "state_db_path", None)
     return Path(path) if path is not None else rb_config.STATE_DB
@@ -181,6 +196,59 @@ def _plays_out(
     )
 
 
+@router.post("/plays:lookup", response_model=TrackPlaysLookupOut)
+def lookup_track_plays(
+    body: TrackPlaysLookupIn,
+    request: Request,
+    _backend: StateBackend = Depends(get_read_state),  # noqa: B008  # FastAPI DI
+) -> TrackPlaysLookupOut:
+    """Open DJ play counts for shuffle weighting (#11325); rekordbox-only ids are zero."""
+    state_path = _state_db_path(request)
+    unique = list(dict.fromkeys(body.stable_ids))
+    conn = state_db.open_ro(state_path)
+    try:
+        missing = [
+            sid
+            for sid in unique
+            if conn.execute(
+                "SELECT 1 FROM tracks WHERE stable_id = ? AND deleted_at IS NULL",
+                (sid,),
+            ).fetchone()
+            is None
+        ]
+        if missing:
+            raise HTTPException(
+                status_code=404,
+                detail={
+                    "code": "TRACK_NOT_FOUND",
+                    "message": f"no track {missing[0]!r}",
+                },
+            )
+        counts: dict[str, int] = {}
+        for chunk_start in range(0, len(unique), 500):
+            chunk = unique[chunk_start : chunk_start + 500]
+            placeholders = ",".join("?" * len(chunk))
+            for sid, count in conn.execute(
+                "SELECT stable_id, COUNT(*) FROM events "
+                f"WHERE kind = ? AND stable_id IN ({placeholders}) "
+                "AND COALESCE(json_extract(payload_json, '$.source'), ?) = ? "
+                "GROUP BY stable_id",
+                (play_log.PLAY_KIND, *chunk, play_log.OPENDJ_SOURCE, play_log.OPENDJ_SOURCE),
+            ):
+                counts[str(sid)] = int(count)
+    finally:
+        conn.close()
+    rows: list[TrackPlaysLookupRow] = []
+    for sid in unique:
+        rows.append(
+            TrackPlaysLookupRow(
+                stable_id=sid,
+                opendj_play_count=counts.get(sid, 0),
+            )
+        )
+    return TrackPlaysLookupOut(rows=rows)
+
+
 @router.get("/{stable_id}/plays", response_model=TrackPlaysOut)
 def get_track_plays(
     stable_id: str,
@@ -256,4 +324,12 @@ def delete_track_play(
     return _plays_out(request, stable_id, None, deleted=True)
 
 
-__all__ = ["TrackPlayIn", "TrackPlaysOut", "_state_db_path", "router"]
+__all__ = [
+    "TrackPlayIn",
+    "TrackPlaysLookupIn",
+    "TrackPlaysLookupOut",
+    "TrackPlaysLookupRow",
+    "TrackPlaysOut",
+    "_state_db_path",
+    "router",
+]

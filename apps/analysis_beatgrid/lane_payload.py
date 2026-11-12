@@ -48,6 +48,7 @@ from __future__ import annotations
 
 import itertools
 import math
+import re
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
 from typing import Any, Literal
@@ -245,8 +246,8 @@ def _tempo_family_block(
 ) -> dict:
     """The `tempo_family` block: which genre hint was offered and whether it decided.
 
-    `rendered` is False when the grid ignores the policy's octave
-    (`const_regions` mode), so a family can never read as applied there.
+    `rendered` is False when a caller opts out of counting the policy's octave
+    as applied; the default is True.
     """
     return {
         "genre": genre,
@@ -262,6 +263,7 @@ def build_beatgrid_lane(
     threshold: float,
     grid_fit: str = GRID_FIT_RAW,
     genre: str | None = None,
+    bpm_range: tuple[float, float] | None = None,
 ) -> BeatgridLane:
     """One `beat_this_runner.py` result into one lane block.
 
@@ -275,14 +277,18 @@ def build_beatgrid_lane(
     (`tempo_family.py`), the octave policy publishes the octave inside that
     family's range, and the payload's `tempo_family` block records the hint and
     whether it decided.
+
+    ``bpm_range`` is the track's own BPM range (ANALYSIS-11723, the user's
+    choice, not rekordbox data). It replaces the genre family as the octave
+    range and is stamped on the payload as ``bpm_range`` so the queue can tell
+    a grid made under another range is not current.
     """
     if grid_fit not in GRID_FIT_MODES:
         raise LanePayloadError(f"grid_fit must be one of {GRID_FIT_MODES}, got {grid_fit!r}")
-    family = tempo_family_for_genre(genre)
+    family = _range_family(bpm_range) if bpm_range is not None else tempo_family_for_genre(genre)
     if grid_fit in (GRID_FIT_LINE, GRID_FIT_CONST_REGIONS):
-        return _build_line_lane(
-            result, threshold=threshold, mode=grid_fit, genre=genre, family=family
-        )
+        lane = _build_line_lane(result, threshold=threshold, mode=grid_fit, genre=genre, family=family)
+        return _stamp_range(lane, bpm_range)
     checked = _pulse_and_phase(result, threshold=threshold, family=family)
     if isinstance(checked, BeatgridLane):
         return checked
@@ -316,7 +322,19 @@ def build_beatgrid_lane(
     if genre is not None:
         payload["tempo_family"] = _tempo_family_block(genre, family, tempo)
     _stamp_activations(result, payload)
-    return BeatgridLane(status="ok", reason=None, confidence=tempo.confidence, payload=payload)
+    lane = BeatgridLane(status="ok", reason=None, confidence=tempo.confidence, payload=payload)
+    return _stamp_range(lane, bpm_range)
+
+
+def _range_family(bpm_range: tuple[float, float]) -> TempoFamily:
+    """The track's own range as a family no genre tag ever matches."""
+    return TempoFamily("track-range", re.compile(r"(?!)"), bpm_range[0], bpm_range[1])
+
+
+def _stamp_range(lane: BeatgridLane, bpm_range: tuple[float, float] | None) -> BeatgridLane:
+    if bpm_range is not None and lane.ok:
+        lane.payload["bpm_range"] = [bpm_range[0], bpm_range[1]]
+    return lane
 
 
 def _line_guards(
@@ -419,19 +437,18 @@ def _build_line_lane(
         return guarded
     beats, downbeats, tempo, n_filled = guarded
 
-    # Line mode renders at the octave policy's metrical level. Round 4
-    # measured this halving 163-175 BPM tracks (`line_round_offset_octave`)
-    # while the policy broke two-octave ties toward 112 BPM; the policy now
-    # keeps the model's own level in that case, so the multiple is 1 unless
-    # the model's level is outside [70, 180] or a genre tempo family picked
-    # another octave (`(private path)`, `tf_fold_policy`).
-    # `const_regions` takes no octave multiple and stays at the model's level,
-    # so its block records 1.0 and a family never counts as applied there.
+    # Both `line` and `const_regions` render at the octave policy's metrical
+    # level. Round 4 measured this halving 163-175 BPM tracks
+    # (`line_round_offset_octave`) while the policy broke two-octave ties
+    # toward 112 BPM; the policy now keeps the model's own level in that
+    # case, so the multiple is 1 unless the model's level is outside
+    # [70, 180] or a genre tempo family picked another octave
+    # (`(private path)`, `tf_fold_policy`).
+    # `const_regions` still chooses the line from the longest steady region.
+    multiple = tempo.octave_multiple
     if mode == GRID_FIT_CONST_REGIONS:
-        fit = fit_const_regions(beats, downbeats)
-        multiple = 1.0
+        fit = fit_const_regions(beats, downbeats, octave_multiple=multiple)
     else:
-        multiple = tempo.octave_multiple
         fit = fit_grid(beats, downbeats, octave_multiple=multiple)
     if fit.reason is not None:
         return _failed(fit.reason)
@@ -462,9 +479,7 @@ def _build_line_lane(
         },
     }
     if genre is not None:
-        payload["tempo_family"] = _tempo_family_block(
-            genre, family, tempo, rendered=mode != GRID_FIT_CONST_REGIONS
-        )
+        payload["tempo_family"] = _tempo_family_block(genre, family, tempo)
     if fit.phase_agreement is not None:
         payload["bar_phase_agreement"] = round(fit.phase_agreement, 4)
     if fit.bar_phase_untrusted:

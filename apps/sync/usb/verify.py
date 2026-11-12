@@ -63,6 +63,7 @@ from apps.sync.usb.diff import (
     enumerate_drive_files,
 )
 from apps.sync.usb.layout import dst_relpath
+from apps.sync.usb.marker import probe_volume_uuid
 from apps.sync.usb.playlist_writer import PLAYLISTS_DIRNAME
 from apps.sync.usb.preflight import ALL_CHECKS, preflight
 from apps.sync.usb.state import (
@@ -76,6 +77,9 @@ if TYPE_CHECKING:
     from apps.sync.usb.plan import ParallelCopyPlan
 
 console = Console(width=120)
+
+VolumeUuidLookup = Callable[[Path], "str | None"]
+"""Answer the volume UUID mounted at a path, or None when it cannot be read."""
 
 
 class FileStatus(enum.Enum):
@@ -101,7 +105,7 @@ class FileReport:
 class VerifyReport:
     profile_name: str
     drive_root: Path
-    drive_uuid: str | None  # Not bound yet: verify_drive always leaves this None. See #12742.
+    drive_uuid: str | None  # Volume UUID verified (uppercase, no ``vol:``); None when unreadable.
     files: list[FileReport] = field(default_factory=list)
     ok: int = 0
     missing: int = 0
@@ -192,6 +196,22 @@ def _expected_paths(
     return out
 
 
+def _normalise_uuid(value: object) -> str | None:
+    """``vol:``-free uppercase UUID text, or None for anything blank or not text."""
+    if not isinstance(value, str):
+        return None
+    text = value.strip().removeprefix("vol:").strip().upper()
+    return text or None
+
+
+def _read_volume_uuid(lookup: VolumeUuidLookup, drive_root: Path) -> str | None:
+    """The normalised UUID ``lookup`` reports for ``drive_root``; None when it fails (fail closed)."""
+    try:
+        return _normalise_uuid(lookup(drive_root))
+    except (OSError, ValueError):
+        return None
+
+
 def verify_drive(
     *,
     profile: profile_mod.Profile,
@@ -201,14 +221,20 @@ def verify_drive(
     skip_playlists: bool = False,
     detect_renames: bool = True,
     max_workers: int | None = None,
+    volume_uuid_lookup: VolumeUuidLookup | None = None,
 ) -> VerifyReport:
     """Build a :class:`VerifyReport` against the drive at ``drive_root``.
 
-    ``drive_uuid`` is always ``None`` today, so the report is not a check that
-    the same stick is still mounted. Volume UUID binding is tracked in
-    issue #12742 and ``(private path)``.
+    The report is bound to the volume it verified: ``drive_uuid`` is the
+    volume UUID read before and after hashing by ``volume_uuid_lookup``
+    (default :func:`apps.sync.usb.marker.probe_volume_uuid`, ``diskutil`` on
+    macOS). It is ``None`` when the UUID cannot be read or changed during the
+    run (a stick swapped mid-verify), and an unbound report never passes
+    :func:`require_successful_verification`.
     """
     t0 = time.monotonic()
+    lookup = probe_volume_uuid if volume_uuid_lookup is None else volume_uuid_lookup
+    uuid_before = _read_volume_uuid(lookup, drive_root)
 
     expected = _expected_paths(profile=profile, canonical=canonical)
     expected_hashes = {str(t.stable_id): t for t in canonical}
@@ -228,10 +254,11 @@ def verify_drive(
         drive_files, hash_cache, max_workers=max_workers
     )
 
+    uuid_after = _read_volume_uuid(lookup, drive_root)
     report = VerifyReport(
         profile_name=profile.name,
         drive_root=drive_root,
-        drive_uuid=None,  # not bound yet; see issue #12742
+        drive_uuid=uuid_before if uuid_before == uuid_after else None,
     )
 
     expected_rels = set(expected.keys())
@@ -505,7 +532,8 @@ class EjectRefused(RuntimeError):
 
     ``code`` is stable for callers: ``verification_absent``,
     ``verification_malformed``, ``verification_failed``,
-    ``verification_wrong_volume`` or ``volume_identity_missing``.
+    ``verification_wrong_volume``, ``verification_unbound`` (the receipt
+    names no volume UUID) or ``volume_identity_missing``.
     """
 
     def __init__(self, code: str, message: str) -> None:
@@ -586,11 +614,13 @@ def _checked_counts(parsed: _Receipt) -> dict[str, int]:
 
 
 def _check_volume(parsed: _Receipt, volume_root: Path, volume_identity: str | None) -> None:
-    """Refuse a receipt that verified another volume (path, or UUID when it carries one).
+    """Refuse a receipt that verified another volume: same mount path and same volume UUID.
 
-    When ``drive_uuid`` is ``None``, as ``verify_drive`` currently produces, the
-    UUID comparison is skipped and only the mount path is checked. That is not
-    a same-stick check. See issue #12742.
+    A receipt without a volume UUID (``drive_uuid`` absent, ``None`` or blank)
+    cannot prove the stick now mounted is the one that verified, so it is
+    refused as ``verification_unbound``. A UUID that differs from
+    ``volume_identity`` (``vol:<uuid>`` or a bare UUID, case-insensitive), or
+    a volume identity with no UUID, is ``verification_wrong_volume``.
     """
     if parsed.drive_uuid is not None and not isinstance(parsed.drive_uuid, str):
         raise _malformed(f"the receipt's drive_uuid is {parsed.drive_uuid!r}")
@@ -599,9 +629,20 @@ def _check_volume(parsed: _Receipt, volume_root: Path, volume_identity: str | No
         raise EjectRefused(
             "verification_wrong_volume", f"the receipt verified {root or 'no volume'}, not {volume_root}"
         )
-    if parsed.drive_uuid is None or volume_identity is None:
-        return
-    if parsed.drive_uuid.removeprefix("vol:") != volume_identity.removeprefix("vol:"):
+    verified_uuid = _normalise_uuid(parsed.drive_uuid)
+    if verified_uuid is None:
+        raise EjectRefused(
+            "verification_unbound",
+            "the receipt names no volume UUID, so it cannot prove this stick is the one that verified",
+        )
+    if not isinstance(volume_identity, str) or not volume_identity.strip():
+        raise EjectRefused("volume_identity_missing", "no volume identity to compare with the receipt's volume UUID")
+    current = volume_identity.strip()
+    if not current.startswith("vol:") and ":" in current:
+        raise EjectRefused(
+            "verification_wrong_volume", f"the receipt verified volume {parsed.drive_uuid}, but {current} has no UUID"
+        )
+    if verified_uuid != _normalise_uuid(current):
         raise EjectRefused(
             "verification_wrong_volume", f"the receipt verified volume {parsed.drive_uuid}, not {volume_identity}"
         )

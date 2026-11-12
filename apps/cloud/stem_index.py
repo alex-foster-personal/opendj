@@ -303,6 +303,22 @@ _memo_lock = threading.Lock()
 _memo: dict[Path, tuple[tuple[int, int] | None, StemAssetIndex]] = {}
 
 
+def bundled_stable_ids(data_dir: Path) -> frozenset[str] | None:
+    """Stable ids with a remote stem bundle manifest in the local index cache.
+
+    Returns ``None`` when the cache file is missing or unreadable (no fact).
+    Otherwise returns the set of ids whose index entry includes ``manifest.json``.
+    """
+    path = local_index_cache_path(data_dir)
+    if not path.is_file():
+        return None
+    try:
+        index = load_cached_index(data_dir)
+    except StemIndexError:
+        return None
+    return frozenset(sid for sid, files in index.items() if MANIFEST_FILENAME in files)
+
+
 def load_cached_index_memo(data_dir: Path) -> StemAssetIndex:
     """:func:`load_cached_index`, re-parsed only when the cache file changes.
 
@@ -621,6 +637,7 @@ __all__ = [
     "build_index_from_journal",
     "build_index_from_local_manifests",
     "build_parser",
+    "bundled_stable_ids",
     "entry_from_bundle_dir",
     "fetch_index",
     "is_allowed_stem_filename",

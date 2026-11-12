@@ -34,7 +34,13 @@ from scripts.bench.tryer_calibration.build_manifest import (
     session_dir_for,
     write_wav_pcm16,
 )
-from scripts.bench.tryer_calibration.pairs import FIXTURE_PATH, CalibrationPair, PairsError, load_pairs, pairs_checksum
+from scripts.bench.tryer_calibration.pairs import (
+    FIXTURE_PATH,
+    CalibrationPair,
+    PairsError,
+    load_pairs_verified,
+    pairs_checksum,
+)
 
 
 def _candidate(
@@ -64,7 +70,7 @@ def _candidate(
 @pytest.mark.requirement("TRYER-21")
 def test_committed_fixture_is_24_checksummed_stable_id_pairs(tmp_path: Path) -> None:
     """[if] the fixture is loaded [then] 24 pairs verify, and a tampered copy fails loud, [else stop]."""
-    pairs = load_pairs()
+    pairs, _ = load_pairs_verified()
     assert len(pairs) == 24
     assert len({p.stratum.split("-")[0] for p in pairs}) == 7
     document = json.loads(FIXTURE_PATH.read_text(encoding="utf-8"))
@@ -72,12 +78,12 @@ def test_committed_fixture_is_24_checksummed_stable_id_pairs(tmp_path: Path) -> 
     tampered = tmp_path / "pairs.json"
     tampered.write_text(json.dumps(document), encoding="utf-8", newline="\n")
     with pytest.raises(PairsError, match="sha256"):
-        load_pairs(tampered)
+        load_pairs_verified(tampered)
     document["pairs"][0]["in_id"] = "not-a-stable-id"
     document["sha256"] = pairs_checksum(document["pairs"])
     tampered.write_text(json.dumps(document), encoding="utf-8", newline="\n")
     with pytest.raises(PairsError, match="40-hex"):
-        load_pairs(tampered)
+        load_pairs_verified(tampered)
 
 
 @pytest.mark.requirement("TRYER-22")

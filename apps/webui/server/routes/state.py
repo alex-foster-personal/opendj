@@ -403,8 +403,11 @@ async def publish_ui_mirror(
     # also kept per reporting client, so one tab cannot overwrite another's.
     mixer = body.get("mixer")
     headphones = mixer.get("headphones") if isinstance(mixer, dict) else None
+    booth = mixer.get("booth") if isinstance(mixer, dict) else None
     if isinstance(headphones, dict):
-        headphone_reports(request.app).record(client_id_of(body), headphones)
+        headphone_reports(request.app).record(
+            client_id_of(body), headphones, booth if isinstance(booth, dict) else None
+        )
     return {"accepted": True}
 
 

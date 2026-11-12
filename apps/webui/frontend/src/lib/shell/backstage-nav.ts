@@ -12,6 +12,8 @@
  * keyboard movement are unit testable (tests/unit/backstage-nav.test.mjs).
  */
 
+import { isTextEntryTarget } from '$lib/keyboard/text-entry-target';
+
 export const NOT_IMPLEMENTED_TITLE = 'not implemented - see PARITY-TODO';
 
 export interface BackstageItem {
@@ -59,7 +61,15 @@ export const BACKSTAGE_GROUPS: readonly BackstageGroup[] = [
 	{
 		id: 'overview',
 		label: 'Overview',
-		items: [unbuilt('status', 'Status')]
+		items: [
+			{
+				id: 'farm-jobs',
+				label: 'Farm jobs',
+				href: admin('farm-jobs'),
+				title: 'Queued, running, and failed demucs, ANLZ cache, and cloud hydrate engine jobs'
+			},
+			{ id: 'status', label: 'Status', href: admin('status'), title: 'What needs a look across the app, from the live endpoints' }
+		]
 	},
 	{
 		id: 'library',
@@ -230,4 +240,24 @@ export function nextNavIndex(
 	if (modified) return back ? 0 : count - 1;
 	const from = current < 0 ? (back ? count : -1) : current;
 	return Math.min(count - 1, Math.max(0, from + (back ? -1 : 1)));
+}
+
+/**
+ * Shared row keyboard handler for the Backstage tables: W/A/S/D or the arrows
+ * move focus among the `rowSelector` matches inside `container`. Typing in a
+ * text field wins. Returns true when focus moved (the event is consumed).
+ */
+export function moveRowFocus(event: KeyboardEvent, container: HTMLElement, rowSelector: string): boolean {
+	if (isTextEntryTarget(event.target)) return false;
+	const arrow = navArrowKey(event.key);
+	if (arrow === null) return false;
+	const rows = Array.from(container.querySelectorAll<HTMLElement>(rowSelector));
+	const current = rows.indexOf(document.activeElement as HTMLElement);
+	const modified = event.shiftKey || event.ctrlKey || event.altKey || event.metaKey;
+	const next = nextNavIndex(current, rows.length, arrow, modified);
+	if (next < 0) return false;
+	event.preventDefault();
+	event.stopPropagation();
+	rows[next].focus();
+	return true;
 }

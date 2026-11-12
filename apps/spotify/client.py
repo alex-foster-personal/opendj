@@ -320,6 +320,53 @@ class SpotifyClient:
         sp = spotipy.Spotify(auth_manager=auth)
         return cls(sp, cache_dir=cache_dir, cache_ttl=cache_ttl)
 
+    @classmethod
+    def from_saved(
+        cls,
+        *,
+        cache_dir: Path = CACHE_DIR,
+        cache_ttl: int = _CACHE_TTL_SECONDS,
+        interactive: bool = True,
+        client_id_path: Path | None = None,
+        token_path: Path | None = None,
+    ) -> SpotifyClient:
+        """Build a client from the saved Client ID file or ``SPOTIFY_CLIENT_ID``.
+
+        Same PKCE and ``interactive`` semantics as :meth:`from_env`; only the
+        client-id source differs (``resolve_client_id`` instead of env-only).
+        """
+        from apps.spotify.account import resolve_client_id
+
+        client_id = resolve_client_id(client_id_path=client_id_path)
+        if client_id is None:
+            raise MissingCredentialsError(
+                "No Spotify Client ID is saved and SPOTIFY_CLIENT_ID is not set. "
+                "Paste your app's Client ID in the Spotify source panel, or export "
+                "SPOTIFY_CLIENT_ID for the daemon."
+            )
+        import spotipy
+        from spotipy.oauth2 import SpotifyPKCE
+
+        token_cache = token_path or TOKEN_CACHE_PATH
+        token_cache.parent.mkdir(parents=True, exist_ok=True)
+        auth = SpotifyPKCE(
+            client_id=client_id,
+            redirect_uri=DEFAULT_REDIRECT_URI,
+            scope=DEFAULT_SCOPES,
+            cache_path=str(token_cache),
+            open_browser=interactive,
+        )
+        if not interactive and auth.get_cached_token() is None:
+            raise ReauthorizationRequired(
+                "No usable cached Spotify token for scopes "
+                f"'{DEFAULT_SCOPES}'. Expected after a scope change. Run "
+                "`doppler run -p construct -c dev_af -- python -m apps.spotify "
+                "recent --limit 1` once in a terminal to complete the browser "
+                "sign-in, then retry."
+            )
+        sp = spotipy.Spotify(auth_manager=auth)
+        return cls(sp, cache_dir=cache_dir, cache_ttl=cache_ttl)
+
     def fetch_playlist(
         self,
         playlist_id: str,

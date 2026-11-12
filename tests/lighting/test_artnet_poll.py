@@ -9,7 +9,16 @@ from pathlib import Path
 
 import pytest
 
-from apps.lighting.artnet import ARTNET_ID, port_address
+from apps.lighting.artnet import (
+    ARTNET_ID,
+    PollReplyView,
+    decode_pollreply,
+    encode_artdmx,
+    port_address,
+)
+from apps.lighting.artnet import (
+    encode_artpoll as encode_artpoll_discovery,
+)
 from apps.lighting.artnet_poll import (
     ARTNET_PORT,
     ARTPOLL_LENGTH,
@@ -107,3 +116,41 @@ def test_poll_interval_outside_the_spec_range_is_refused() -> None:
     """[if] the poll interval is outside 2.5..3 s [then] ValueError names the range, [else stop]."""
     with pytest.raises(ValueError, match="2.5..3.0"):
         SubscriberTable(poll_interval_s=5.0)
+
+
+# --- issue #11776: discovery facade on apps.lighting.artnet (rename LIGHT id when PR is open)
+
+
+@pytest.mark.requirement("LIGHT-11776")
+def test_discovery_encode_artpoll_has_art_net_id_and_opcode_2000() -> None:
+    """[if] encode_artpoll runs on artnet [then] ID is Art-Net and opcode is 0x2000, [else stop]."""
+    packet = encode_artpoll_discovery()
+    assert packet[:8] == ARTNET_ID
+    assert int.from_bytes(packet[8:10], "little") == OPCODE_ARTPOLL
+
+
+@pytest.mark.requirement("LIGHT-11776")
+def test_discovery_decode_pollreply_matches_239_byte_fixture() -> None:
+    """[if] decode_pollreply gets the 239-byte fixture [then] ip, short_name and universe match, [else stop]."""
+    # Fixture: tests/lighting/fixtures/artpollreply_two_ports.bin (239 bytes); ip 10.0.0.7, ODJ-Node-1
+    view = decode_pollreply(FIXTURE.read_bytes())
+    assert view == PollReplyView(
+        ip="10.0.0.7",
+        short_name="ODJ-Node-1",
+        universe=port_address(1, 2, 3),
+    )
+
+
+@pytest.mark.requirement("LIGHT-11776")
+def test_discovery_decode_pollreply_returns_none_for_artdmx() -> None:
+    """[if] decode_pollreply gets ArtDmx [then] it returns None, [else stop]."""
+    artdmx = encode_artdmx(port_address(0, 0, 1), b"\x00\x01", sequence=0)
+    assert decode_pollreply(artdmx) is None
+
+
+@pytest.mark.requirement("LIGHT-11776")
+def test_discovery_decode_pollreply_returns_none_for_bad_id() -> None:
+    """[if] the ID is not Art-Net [then] decode_pollreply returns None, [else stop]."""
+    reply = bytearray(FIXTURE.read_bytes())
+    reply[0:8] = b"Not-Art\x00"
+    assert decode_pollreply(bytes(reply)) is None

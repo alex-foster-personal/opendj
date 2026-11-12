@@ -40,12 +40,27 @@ function track(overrides = {}) {
 		comments: null,
 		key: null,
 		genre: null,
+		album: null,
 		bpm: null,
 		rating: null,
 		...overrides,
 		key_forms: overrides.key_forms ?? (overrides.key ? [overrides.key] : [])
 	};
 }
+
+test('plain query matches album text like title and artist', () => {
+	const t = track({ album: 'Midnight Sessions' });
+	assert.equal(mod.matchesSearchQuery(t, 'midnight'), true);
+	assert.equal(mod.matchesSearchQuery(t, 'afternoon'), false);
+});
+
+test('album: loose substring and quoted exact match follow genre forms', () => {
+	const row = track({ album: 'Midnight Sessions' });
+	assert.equal(mod.matchesSearchQuery(row, 'album:~night'), true);
+	assert.equal(mod.matchesSearchQuery(row, 'album:"Midnight Sessions"'), true);
+	assert.equal(mod.matchesSearchQuery(row, 'album:"Wrong Name"'), false);
+	assert.equal(mod.matchesSearchQuery(track({ album: 'Sessions Only' }), 'album:night'), false);
+});
 
 test('plain query with no field prefix matches title/artist/comments/key/genre as a substring, case-insensitively', () => {
 	const t = track({ artist: 'Daft Punk' });
@@ -152,14 +167,18 @@ test('SEARCH_QUERY_HELP documents the grammar with runnable examples', () => {
 	for (const entry of mod.SEARCH_QUERY_HELP) {
 		assert.equal(typeof entry.example, 'string');
 		assert.equal(typeof entry.hint, 'string');
+		const base = { bpm: 124, rating: 5, key: '8A', genre: 'House' };
+		const sample = entry.example.startsWith('album:')
+			? track({
+					...base,
+					album: entry.example.includes('~') ? 'Midnight Night' : 'Exact Name'
+				})
+			: track({ ...base, album: 'Midnight Night' });
 		// Every documented example must actually parse as a predicate, not
 		// silently degrade to substring - the explainer must never teach a
 		// syntax the parser does not accept.
 		assert.equal(
-			mod.matchesSearchQuery(
-				track({ bpm: 124, rating: 5, key: '8A', genre: 'House' }),
-				entry.example
-			),
+			mod.matchesSearchQuery(sample, entry.example),
 			true,
 			`documented example "${entry.example}" should match a fully-populated track`
 		);

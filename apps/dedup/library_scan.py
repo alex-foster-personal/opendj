@@ -33,10 +33,15 @@ from apps.shared.fingerprints import (
     compute,
 )
 
-from . import find_clusters
+from . import find_clusters, tag_clusters
+from .find_clusters import _wipe_derived_cluster_tables
+from . import schema as dedup_schema
+
 # Each fingerprint is a child process decoding one file; a few at once keep
 # the cores busy without starving playback.
 DEFAULT_WORKERS = 3
+ScanBasis = Literal["fingerprint", "tags", "both"]
+DEFAULT_SCAN_BASIS: ScanBasis = "both"
 
 
 def library_tracks(state_db: Path) -> list[tuple[str, Path]]:
@@ -58,6 +63,7 @@ def library_tracks(state_db: Path) -> list[tuple[str, Path]]:
 @dataclass
 class LibraryScanProgress:
     state: Literal["idle", "running", "done", "failed"] = "idle"
+    basis: ScanBasis = DEFAULT_SCAN_BASIS
     total: int = 0
     done: int = 0
     computed: int = 0
@@ -67,6 +73,9 @@ class LibraryScanProgress:
     not_local: int = 0
     errors: int = 0
     clusters: int | None = None
+    clusters_fingerprint: int | None = None
+    clusters_tags: int | None = None
+    tag_precision: float | None = None
     error: str | None = None
     started_at: str | None = None
     finished_at: str | None = None
@@ -80,19 +89,62 @@ def _now() -> str:
     return datetime.now(UTC).isoformat(timespec="seconds")
 
 
+def _tag_precision(state_db: Path, db_path: Path) -> float | None:
+    """Share of tag clusters whose members also share one fingerprint cluster."""
+    from apps.mik.duplicates import artist_title_duration_groups
+    from apps.shared.state.db import open_ro
+
+    state_conn = open_ro(state_db)
+    dedup_conn = sqlite3.connect(db_path)
+    try:
+        fp_buckets: dict[frozenset[str], int] = {}
+        for cid, canon in dedup_conn.execute(
+            "SELECT cluster_id, canonical_stable_id FROM duplicate_clusters WHERE basis = 'fingerprint'"
+        ):
+            members = {str(canon)}
+            members.update(
+                str(row[0])
+                for row in dedup_conn.execute(
+                    "SELECT alias_stable_id FROM track_aliases WHERE cluster_id = ?", (cid,)
+                )
+            )
+            fp_buckets[frozenset(members)] = int(cid)
+
+        tag_groups = list(artist_title_duration_groups(state_conn))
+        if not tag_groups:
+            return None
+        matched = 0
+        eligible = 0
+        for group in tag_groups:
+            if len(group) < 2:
+                continue
+            eligible += 1
+            group_set = frozenset(group)
+            for fp_members in fp_buckets:
+                if group_set <= fp_members:
+                    matched += 1
+                    break
+        return matched / eligible if eligible else None
+    finally:
+        state_conn.close()
+        dedup_conn.close()
+
+
 def run_library_scan(
     *,
     state_db: Path | None = None,
     db_path: Path | None = None,
     workers: int = DEFAULT_WORKERS,
+    basis: ScanBasis = DEFAULT_SCAN_BASIS,
     progress: LibraryScanProgress | None = None,
     on_change: Callable[[LibraryScanProgress], None] | None = None,
 ) -> LibraryScanProgress:
-    """Fingerprint the library, then cluster. Raises ChromaprintMissing when
-    no fingerprint backend exists (nothing could be fingerprinted)."""
+    """Fingerprint and/or tag-cluster the library. Raises ChromaprintMissing when
+    the fingerprint pass needs a backend that does not exist."""
     use_state = state_db if state_db is not None else paths.STATE_DB
     use_db = resolve_dedup_db(db_path)
     prog = progress if progress is not None else LibraryScanProgress()
+    prog.basis = basis
     lock = threading.Lock()
 
     def bump(**kw: int) -> None:
@@ -102,62 +154,81 @@ def run_library_scan(
         if on_change is not None:
             on_change(prog)
 
-    tracks = library_tracks(use_state)
-    prog.total = len(tracks)
-    cache = FingerprintCache(use_db)
-    missing_backend: list[ChromaprintMissing] = []
-    results: list[Fingerprint] = []
+    fingerprint_clusters = 0
+    tag_cluster_count = 0
 
-    def one(item: tuple[str, Path]) -> None:
-        sid, path = item
-        with lock:
-            if missing_backend:
+    if basis in ("fingerprint", "both"):
+        tracks = library_tracks(use_state)
+        prog.total = len(tracks)
+        cache = FingerprintCache(use_db)
+        missing_backend: list[ChromaprintMissing] = []
+        results: list[Fingerprint] = []
+
+        def one(item: tuple[str, Path]) -> None:
+            sid, path = item
+            with lock:
+                if missing_backend:
+                    return
+            if not fs_residency.is_materialised(path):
+                bump(not_local=1, done=1)
                 return
-        if not fs_residency.is_materialised(path):
-            bump(not_local=1, done=1)
-            return
-        try:
-            hit = cache.get(path)
-            if hit is not None:
+            try:
+                hit = cache.get(path)
+                if hit is not None:
+                    with lock:
+                        results.append(hit)
+                    bump(cache_hits=1, done=1)
+                    return
+                fp = compute(path)
+                cache.put(fp, stable_id=sid)
                 with lock:
-                    results.append(hit)
-                bump(cache_hits=1, done=1)
-                return
-            fp = compute(path)
-            cache.put(fp, stable_id=sid)
-            with lock:
-                results.append(fp)
-            bump(computed=1, done=1)
-        except ChromaprintMissing as exc:
-            with lock:
-                missing_backend.append(exc)
-        except Exception as exc:  # noqa: BLE001 -- one bad file never stops the scan
-            with lock:
-                if len(prog.error_samples) < 5:
-                    prog.error_samples.append(f"{path.name}: {exc}"[:300])
-            bump(errors=1, done=1)
+                    results.append(fp)
+                bump(computed=1, done=1)
+            except ChromaprintMissing as exc:
+                with lock:
+                    missing_backend.append(exc)
+            except Exception as exc:  # noqa: BLE001 -- one bad file never stops the scan
+                with lock:
+                    if len(prog.error_samples) < 5:
+                        prog.error_samples.append(f"{path.name}: {exc}"[:300])
+                bump(errors=1, done=1)
 
-    with ThreadPoolExecutor(max_workers=max(1, workers)) as pool:
-        list(pool.map(one, tracks))
-    if missing_backend:
-        raise missing_backend[0]
+        with ThreadPoolExecutor(max_workers=max(1, workers)) as pool:
+            list(pool.map(one, tracks))
+        if missing_backend:
+            raise missing_backend[0]
 
-    # A cache hit keeps the stable_id it was stored with; re-key rows the
-    # library now knows under another id, so clusters name today's tracks.
-    by_path = {str(p): sid for sid, p in tracks}
-    conn = sqlite3.connect(use_db, timeout=5.0)
-    try:
-        conn.executemany(
-            "UPDATE fingerprints SET stable_id = ? WHERE path = ? "
-            "AND (stable_id IS NULL OR stable_id != ?)",
-            [(by_path[str(fp.path)], str(fp.path), by_path[str(fp.path)]) for fp in results],
-        )
-        conn.commit()
-    finally:
-        conn.close()
+        by_path = {str(p): sid for sid, p in tracks}
+        conn = sqlite3.connect(use_db, timeout=5.0)
+        try:
+            conn.executemany(
+                "UPDATE fingerprints SET stable_id = ? WHERE path = ? "
+                "AND (stable_id IS NULL OR stable_id != ?)",
+                [(by_path[str(fp.path)], str(fp.path), by_path[str(fp.path)]) for fp in results],
+            )
+            conn.commit()
+        finally:
+            conn.close()
 
-    outcomes = find_clusters.run_find_clusters(db_path=use_db, fingerprints=results)
-    prog.clusters = len(outcomes)
+        outcomes = find_clusters.run_find_clusters(db_path=use_db, fingerprints=results)
+        fingerprint_clusters = len(outcomes)
+
+    if basis in ("tags", "both"):
+        if basis == "tags":
+            conn = dedup_schema.ensure_schema(use_db)
+            try:
+                _wipe_derived_cluster_tables(conn)
+                conn.commit()
+            finally:
+                conn.close()
+            prog.total = len(library_tracks(use_state))
+        tag_stats = tag_clusters.run_tag_clusters(state_db=use_state, db_path=use_db)
+        tag_cluster_count = tag_stats.written
+        prog.tag_precision = _tag_precision(use_state, use_db)
+
+    prog.clusters_fingerprint = fingerprint_clusters if basis in ("fingerprint", "both") else 0
+    prog.clusters_tags = tag_cluster_count if basis in ("tags", "both") else 0
+    prog.clusters = (prog.clusters_fingerprint or 0) + (prog.clusters_tags or 0)
     return prog
 
 
@@ -179,7 +250,7 @@ class LibraryScanJob:
         with self._lock:
             if self._progress.state == "running":
                 return False
-            self._progress = LibraryScanProgress(state="running", started_at=_now())
+            self._progress = LibraryScanProgress(state="running", started_at=_now(), basis=kwargs.get("basis", DEFAULT_SCAN_BASIS))
             prog = self._progress
 
         def run() -> None:

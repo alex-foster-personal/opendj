@@ -201,6 +201,50 @@ const SPECS: readonly PaletteCommandSpec[] = [
 		available: targetNotMaster
 	},
 	{
+		id: 'deck.keyboard.cue',
+		title: 'Cue the keyboard deck',
+		keywords: ['cue', 'keyboard', 'recent'],
+		args: [],
+		menu: null,
+		hotkey: 'performance-cue',
+		run: null,
+		waits: 'Keyboard only for now: acts on the recent deck from /performance (KEYB-11383).',
+		available: () => true
+	},
+	{
+		id: 'deck.keyboard.beat_sync',
+		title: 'Toggle beat sync on the keyboard deck',
+		keywords: ['sync', 'beat', 'keyboard'],
+		args: [],
+		menu: null,
+		hotkey: 'performance-beat-sync',
+		run: null,
+		waits: 'Keyboard only for now: acts on the recent deck from /performance (KEYB-11383).',
+		available: () => true
+	},
+	{
+		id: 'deck.keyboard.master_tempo',
+		title: 'Toggle master tempo on the keyboard deck',
+		keywords: ['key lock', 'master tempo', 'keyboard'],
+		args: [],
+		menu: null,
+		hotkey: 'performance-master-tempo',
+		run: null,
+		waits: 'Keyboard only for now: acts on the recent deck from /performance (KEYB-11383).',
+		available: () => true
+	},
+	{
+		id: 'deck.keyboard.cycle',
+		title: 'Cycle the keyboard deck',
+		keywords: ['recent deck', 'next deck', 'keyboard'],
+		args: [],
+		menu: null,
+		hotkey: 'performance-cycle-deck',
+		run: null,
+		waits: 'Keyboard only for now: acts on the recent deck from /performance (KEYB-11383).',
+		available: () => true
+	},
+	{
 		id: 'hot_cue.trigger',
 		title: 'Trigger hot cue',
 		keywords: ['cue', 'jump', 'pad'],
@@ -483,6 +527,40 @@ const SPECS: readonly PaletteCommandSpec[] = [
 		run: null,
 		waits:
 			'Digits 1 through 0 fire tabs on the last edge used when the edge sampler is on (Electron).',
+		available: () => true
+	},
+	{
+		id: 'hot_cue.digit_trigger',
+		title: 'Trigger hot cue (digits 1-8)',
+		keywords: ['cue', 'digit', 'keyboard', 'jump', 'pad'],
+		args: [],
+		menu: null,
+		hotkey: 'performance-hot-cue-trigger',
+		run: null,
+		waits: 'Digits 1-8 on the transport deck; ignored while a dial or fader is selected.',
+		available: () => true
+	},
+	{
+		id: 'hot_cue.digit_save',
+		title: 'Save hot cue (Shift+digits)',
+		keywords: ['cue', 'digit', 'keyboard', 'store', 'shift'],
+		args: [],
+		menu: null,
+		hotkey: 'performance-hot-cue-save',
+		run: null,
+		waits:
+			'Shift+1-8 saves into an empty slot on the transport deck; does not overwrite a filled slot.',
+		available: () => true
+	},
+	{
+		id: 'hot_cue.digit_clear',
+		title: 'Clear hot cue (Cmd+Shift+digits)',
+		keywords: ['cue', 'digit', 'keyboard', 'delete', 'clear'],
+		args: [],
+		menu: null,
+		hotkey: 'performance-hot-cue-clear',
+		run: null,
+		waits: 'Cmd+Shift+1-8 clears the matching slot on the transport deck.',
 		available: () => true
 	},
 	{

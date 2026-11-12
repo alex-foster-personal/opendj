@@ -1,0 +1,9 @@
+{
+  "bytes": 1024,
+  "measured_main": 515691,
+  "measured_with_pr": 515897,
+  "sha": "9c78d42236",
+  "date": "Thu 12 Nov 2026",
+  "reason": "PR #13582 wires isPageGoingAway() into library boot catch sites (#13530); the shared lifecycle-abort helper is pulled into lazy other-lazy chunks (+206 B gzip vs merge-base).",
+  "payback": "none planned; growth is one small shared abort helper referenced from existing boot modules"
+}

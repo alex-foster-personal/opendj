@@ -107,6 +107,76 @@ def test_transition_schema_rejects_unknown_class():
     assert any("predicted_class" in str(e.path) or "mystery" in str(e) for e in errors)
 
 
+@pytest.mark.requirement("SET-12013")
+def test_set_document_schema_is_valid_draft_2020_12():
+    Draft202012Validator.check_schema(_load("set_document.schema.json"))
+
+
+@pytest.mark.requirement("SET-12013")
+def test_set_document_schema_accepts_canonical_sample():
+    schema = _load("set_document.schema.json")
+    validator = Draft202012Validator(schema)
+    sample = {
+        "kind": "open_dj.set_document",
+        "schema_version": 1,
+        "exported_at": "2026-11-08T22:00:00+00:00",
+        "audio": "absent",
+        "manifest": {
+            "session_id": "2026-11-08T21-00-00",
+            "started_at": "2026-11-08T21:00:00+00:00",
+            "ended_at": "2026-11-08T22:00:00+00:00",
+            "capture_device": "unknown",
+            "share_state": "private",
+            "event_count": 0,
+            "deck_sources": [],
+            "watermark": "w",
+            "notes": None,
+            "audio": "absent",
+        },
+        "events": [],
+        "tracklist": [],
+        "transitions": [],
+        "labels": [],
+    }
+    validator.validate(sample)
+    bad = dict(sample)
+    bad["manifest"] = dict(sample["manifest"], mp3_segments=[])
+    assert list(validator.iter_errors(bad))
+    hidden = dict(sample)
+    hidden["tracklist"] = [
+        {
+            "timestamp_s": 0.0,
+            "stable_id": "x",
+            "artist": "a",
+            "title": "t",
+            "hidden": True,
+            "deck": "1",
+            "source": "djay_monitor",
+        }
+    ]
+    assert list(validator.iter_errors(hidden))
+
+
+@pytest.mark.requirement("SET-12013")
+def test_session_manifest_schema_accepts_audio_absent():
+    schema = _load("session_manifest.schema.json")
+    Draft202012Validator(schema).validate(
+        {
+            "session_id": "s1",
+            "started_at": "2026-04-17T21:30:00+00:00",
+            "ended_at": None,
+            "capture_device": "x",
+            "share_state": "private",
+            "event_count": 0,
+            "deck_sources": [],
+            "mp3_segments": [],
+            "watermark": "w",
+            "schema_version": 1,
+            "audio": "absent",
+        }
+    )
+
+
 @pytest.mark.requirement("SET-03")
 def test_session_summary_schema_accepts_canonical_sample():
     schema = _load("session_summary.schema.json")

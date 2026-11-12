@@ -22,9 +22,14 @@ from ..models import (
     PlaylistDetail,
     PlaylistDiff,
     PlaylistSummary,
+    PlaylistSummaryBpmStats,
+    PlaylistSummaryEnergyStats,
+    PlaylistSummaryKeysStats,
+    PlaylistSummaryStats,
     PlaylistTracksPage,
     TrackRowOut,
 )
+from ..playlist_summary_stats import PlaylistSummaryStatsData
 from ..playlist_text_export import TEXT_EXPORT_MEDIA_TYPE, TextExportTrack, export_filename, playlist_text_export
 from .tracks import AvailableFilter, keep_by_availability
 
@@ -32,6 +37,29 @@ router = APIRouter(prefix="/playlists", tags=["playlists"])
 MOUNT_UNDER_API_PREFIX = True
 
 AvailabilitySummary = Literal["all", "skip"]
+
+
+def _stats_out(raw: PlaylistSummaryStatsData) -> PlaylistSummaryStats:
+    return PlaylistSummaryStats(
+        tracks=raw.tracks,
+        duration_s=raw.duration_s,
+        bpm=PlaylistSummaryBpmStats(
+            min=raw.bpm_min,
+            median=raw.bpm_median,
+            max=raw.bpm_max,
+            missing=raw.bpm_missing,
+        ),
+        energy=PlaylistSummaryEnergyStats(
+            min=raw.energy_min,
+            max=raw.energy_max,
+            missing=raw.energy_missing,
+        ),
+        keys=PlaylistSummaryKeysStats(
+            distinct=raw.keys_distinct,
+            missing=raw.keys_missing,
+        ),
+        unanalysed=raw.unanalysed,
+    )
 
 
 def _playlist_edit_map(
@@ -211,6 +239,18 @@ def list_deleted_playlists(
         )
         for row in rows
     ]
+
+
+@router.get("/{playlist_id}/summary", response_model=PlaylistSummaryStats)
+def get_playlist_summary(
+    playlist_id: str,
+    response: Response,
+    backend: StateBackend = Depends(get_read_state),  # noqa: B008  # FastAPI DI
+) -> PlaylistSummaryStats:
+    """Aggregate playlist stats: count, duration, bpm, energy, keys, unanalysed (SETPREP-10645)."""
+    pl = backend.get_playlist(playlist_id)
+    response.headers["ETag"] = compute_etag(pl.playlist_id, pl.updated_at)
+    return _stats_out(backend.get_playlist_summary_stats(playlist_id))
 
 
 @router.get("/{playlist_id}/tracks", response_model=PlaylistTracksPage)

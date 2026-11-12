@@ -64,6 +64,74 @@ test('MCP AX serialization includes pressed and numeric values', () => {
 	const mcp = source('../../desktop/mcp/webview-mcp.ts');
 	assert.ok(mcp.includes("el.getAttribute('aria-pressed')"), 'if stateOf omits aria-pressed then toggle state is invisible to MCP clients');
 	assert.ok(mcp.includes("el.getAttribute('aria-valuenow')"), 'if stateOf omits aria-valuenow then slider values are invisible to MCP clients');
+	assert.ok(
+		mcp.includes("el.getAttribute('aria-valuetext')"),
+		'if stateOf omits aria-valuetext then human slider values are invisible to MCP clients'
+	);
+	const valuetextPush =
+		"parts.push('valuetext=' + el.getAttribute('aria-valuetext'))";
+	const pushCount = (mcp.match(
+		new RegExp(valuetextPush.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'g')
+	) ?? []).length;
+	assert.strictEqual(
+		pushCount,
+		1,
+		'if stateOf pushes valuetext twice then MCP clients see duplicate state tokens'
+	);
+});
+
+// A11Y-11269
+test('mixer sliders expose aria-valuetext and the polite announcer is wired once', () => {
+	const knob = source('src/lib/components/rb/mixer/Knob.svelte');
+	const vfader = source('src/lib/components/rb/mixer/VFader.svelte');
+	const crossfader = source('src/lib/components/rb/mixer/Crossfader.svelte');
+	const pitch = source('src/lib/components/rb/deck/PitchFader.svelte');
+	const layout = source('src/routes/+layout.svelte');
+	const hotCues = source('src/lib/components/rb/deck/HotCueBank.svelte');
+	const recentDeck = source('src/lib/rb/recent-deck.ts');
+
+	for (const [name, src] of [
+		['Knob.svelte', knob],
+		['VFader.svelte', vfader],
+		['Crossfader.svelte', crossfader],
+		['PitchFader.svelte', pitch]
+	]) {
+		assert.ok(
+			src.includes('aria-valuetext={valueText('),
+			`if ${name} drops aria-valuetext then a screen reader reads raw aria-valuenow`
+		);
+	}
+	assert.ok(
+		knob.includes('knobValueKind(knobId)'),
+		'if Knob loses knobValueKind then EQ/trim/filter units are wrong by default'
+	);
+	assert.ok(
+		pitch.includes("valueText('pitch'"),
+		'if PitchFader loses pitch valueText then tempo percent is not human-readable'
+	);
+	const politeMatches = layout.match(/aria-live="polite"/g) ?? [];
+	assert.equal(
+		politeMatches.length,
+		1,
+		'if the root layout has zero or many polite announcers then announcements duplicate or vanish'
+	);
+	assert.ok(layout.includes('use:announcer'), 'if the root layout drops use:announcer then announce() has no target');
+	assert.ok(
+		hotCues.includes('Hot cue ${entry.slot} set'),
+		'if hot cue save drops the announcer call then set is silent to assistive tech'
+	);
+	assert.ok(
+		hotCues.includes('Hot cue ${slot} cleared'),
+		'if hot cue clear drops the announcer call then clear is silent to assistive tech'
+	);
+	assert.ok(
+		!hotCues.includes('pushToast'),
+		'if hot cue save/clear adds a toast then the announcement duplicates the tray'
+	);
+	assert.ok(
+		recentDeck.includes('Deck ${deck} selected'),
+		'if recent-deck stops announcing then deck selection is silent to assistive tech'
+	);
 });
 
 // AGENT-09 (issue #1035): the two a11y wins from closed PR #372 that never

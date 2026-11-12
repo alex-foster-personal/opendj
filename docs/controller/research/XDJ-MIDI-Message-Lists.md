@@ -20,3 +20,8 @@ Every binding was compared by wire against the maps rekordbox 7 ships for these 
 - RX3: 138 of 138 bindings found, each with the matching function.
 - AZ: 126 of 154 found. The other 28 are mixer wires on channel 5, which the AZ's rekordbox map omits, so only the vendor list backs them.
 - Jog: both maps read CC 34 as the platter and CC 33 as the wheel side. The rekordbox AZ channel fader row matches the RX3 one, with no invert option.
+
+## XDJ-RX3 practice replica trace (Sun 8 Nov 2026, epic #9366)
+
+- Positions in `tools/deck-diagrams/devices/xdj-rx3/panel.reference.json` were traced from the top-panel photo in the RX3 list above: page 1, embedded image 0, 1769 x 1181 px, sha256 `c0a5cb1f8df45f39992ec5e63e6fba5f85cc62174a1e0b9e7ead774ec883f539`. Neither the PDF nor the image is committed; only the traced numbers are.
+- Panel size: XDJ-RX3 product page, Specifications (https://www.pioneerdj.com/en/product/all-in-one-dj-systems/xdj-rx3/, read Sun 8 Nov 2026): Width 728.1 mm, Height 118.4 mm, Depth 469.5 mm, Weight 9.3 kg.

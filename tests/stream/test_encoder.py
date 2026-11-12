@@ -6,6 +6,7 @@
 from __future__ import annotations
 
 import asyncio
+import os
 import signal
 import sys
 import time
@@ -37,6 +38,41 @@ FAKE_ENCODER = Path(__file__).resolve().parent / "fake_encoder.py"
 RATE = 48_000
 SESSION = "2026-11-10T03-00-00"
 
+_SKIP_WIN32_STOP_SIGTERM = (
+    "the exit code a terminate leaves is POSIX's -SIGTERM (Windows TerminateProcess reports 1), "
+    "and under the ffmpeg.cmd handover terminate reaches cmd.exe while the EOF-ignoring fake keeps running"
+)
+_SKIP_WIN32_STALL_ORPHAN = (
+    "under the ffmpeg.cmd handover stop terminates cmd.exe only, "
+    "so the never-reading fake would outlive the test as an orphan"
+)
+
+
+def _write_fake_ffmpeg(bin_dir: Path, platform: str = sys.platform) -> Path:
+    """Put a fake ``ffmpeg`` in ``bin_dir`` that runs ``fake_encoder.py``; return its path.
+
+    POSIX: an executable Python script that execs the fake, so the fake IS the
+    encoder's direct child (stop's SIGTERM lands on it). Windows runs no shebang
+    scripts and PATH lookup only finds PATHEXT names, so there it is ``ffmpeg.cmd``
+    handing over to the interpreter, found the way the real ``ffmpeg.exe`` is.
+    """
+    if platform == "win32":
+        launcher = bin_dir / "ffmpeg.cmd"
+        launcher.write_bytes(f'@"{sys.executable}" "{FAKE_ENCODER}" %*\r\n'.encode())
+        return launcher
+    if any(c.isspace() for c in sys.executable):
+        pytest.skip("a #! line cannot carry an interpreter path containing whitespace")
+    launcher = bin_dir / "ffmpeg"
+    launcher.write_text(
+        f"#!{sys.executable}\n"
+        "import os, sys\n"
+        f"os.execv(sys.executable, [sys.executable, {str(FAKE_ENCODER)!r}, *sys.argv[1:]])\n",
+        encoding="utf-8",
+        newline="\n",
+    )
+    launcher.chmod(0o755)
+    return launcher
+
 
 def _pcm(n: int, salt: int = 0) -> bytes:
     raw = bytes((i + salt) % 256 for i in range(n))
@@ -66,9 +102,7 @@ def no_homebrew(tmp_path: Path, monkeypatch) -> tuple[str, str]:
 def fake_ffmpeg(tmp_path: Path, monkeypatch, no_homebrew) -> Path:
     bin_dir = tmp_path / "bin"
     bin_dir.mkdir()
-    wrapper = bin_dir / "ffmpeg"
-    wrapper.write_text(f'#!/bin/sh\nexec "{sys.executable}" "{FAKE_ENCODER}" "$@"\n')
-    wrapper.chmod(0o755)
+    wrapper = _write_fake_ffmpeg(bin_dir)
     monkeypatch.setenv("PATH", str(bin_dir))
     return wrapper
 
@@ -111,6 +145,25 @@ async def test_three_chunks_pass_through_byte_for_byte_and_the_wav_is_unchanged(
     [wav_b] = (tmp_path / "b").glob("*.wav")
     assert wav_a.read_bytes() == wav_b.read_bytes()
     assert enc.status().state == "stopped"
+
+
+@pytest.mark.parametrize("platform", ["win32", "linux", "darwin"])
+def test_the_fake_ffmpeg_launcher_is_found_and_run_the_platform_way(tmp_path: Path, platform: str) -> None:
+    """[if] the fake ffmpeg is written for a platform [then] it hands over to the fake encoder there, [else stop]."""
+    path = _write_fake_ffmpeg(tmp_path, platform=platform)
+    if platform == "win32":
+        assert path == tmp_path / "ffmpeg.cmd"
+        assert path.read_bytes() == f'@"{sys.executable}" "{FAKE_ENCODER}" %*\r\n'.encode()
+        assert b"/bin/sh" not in path.read_bytes()
+        return
+    assert path == tmp_path / "ffmpeg"
+    text = path.read_text(encoding="utf-8")
+    assert text.startswith(f"#!{sys.executable}\n")
+    assert "os.execv(" in text
+    assert repr(str(FAKE_ENCODER)) in text
+    assert "/bin/sh" not in text
+    if sys.platform != "win32":
+        assert os.access(path, os.X_OK)
 
 
 def test_no_encoder_anywhere_raises_naming_every_place_and_spawns_nothing(empty_path, monkeypatch) -> None:
@@ -178,6 +231,7 @@ async def test_an_encoder_that_exits_early_ends_the_iterator_with_its_code_and_s
         enc.stop()
 
 
+@pytest.mark.skipif(sys.platform == "win32", reason=_SKIP_WIN32_STOP_SIGTERM)
 def test_stop_closes_stdin_then_terminates_after_the_grace(fake_ffmpeg, monkeypatch) -> None:
     """[if] the encoder ignores stdin EOF [then] stop terminates it after the grace, [else stop]."""
     assert encoder_mod.STOP_GRACE_S == 2.0
@@ -203,6 +257,7 @@ def test_a_clean_encoder_stops_well_inside_the_grace(fake_ffmpeg) -> None:
     assert status.exit_code == 0
 
 
+@pytest.mark.skipif(sys.platform == "win32", reason=_SKIP_WIN32_STALL_ORPHAN)
 def test_a_consumer_that_never_reads_never_blocks_the_master_pcm_path(tmp_path, fake_ffmpeg, monkeypatch) -> None:
     """[if] nobody drains the encoder [then] appends stay fast and oldest chunks drop, [else stop]."""
     monkeypatch.setenv("FAKE_ENCODER_STALL", "1")

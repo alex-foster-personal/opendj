@@ -29,6 +29,7 @@ CREATE TABLE IF NOT EXISTS duplicate_clusters (
     canonical_path        TEXT NOT NULL,
     rationale             TEXT,
     flagged_manual_review INTEGER NOT NULL DEFAULT 0,
+    basis                 TEXT NOT NULL DEFAULT 'fingerprint',
     created_at            TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 CREATE INDEX IF NOT EXISTS idx_clusters_canonical
@@ -95,6 +96,8 @@ def ensure_schema(db_path: Path) -> None:
         cluster_columns = {str(row[1]) for row in conn.execute("PRAGMA table_info(duplicate_clusters)")}
         if "flagged_manual_review" not in cluster_columns:
             conn.execute("ALTER TABLE duplicate_clusters ADD COLUMN flagged_manual_review INTEGER NOT NULL DEFAULT 0")
+        if "basis" not in cluster_columns:
+            conn.execute("ALTER TABLE duplicate_clusters ADD COLUMN basis TEXT NOT NULL DEFAULT 'fingerprint'")
         conn.commit()
     finally:
         conn.close()

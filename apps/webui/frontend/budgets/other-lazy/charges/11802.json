@@ -1,0 +1,9 @@
+{
+  "bytes": 1024,
+  "measured_main": 513240,
+  "measured_with_pr": 513564,
+  "sha": "2b74f1c8e4",
+  "date": "Wed 11 Nov 2026",
+  "reason": "PR #11802 (SETREC-11802b) splits auto-rec into a lazy chunk; +324 B gzip on other-lazy vs merge base; ceiled to KiB.",
+  "payback": "none planned; the growth is the change's own code on this surface"
+}

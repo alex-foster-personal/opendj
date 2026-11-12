@@ -12,3 +12,17 @@
 	background: var(--accent, #4ea1ff);
 	transition: width 120ms linear;
 }
+
+/* A11Y-11811: reduced motion (OS or Appearance); mirrors app.css. */
+@media (prefers-reduced-motion: reduce) {
+	* {
+		animation-duration: 0.01ms;
+		animation-iteration-count: 1;
+		transition-duration: 0.01ms;
+	}
+}
+html[data-reduce-motion] * {
+	animation-duration: 0.01ms;
+	animation-iteration-count: 1;
+	transition-duration: 0.01ms;
+}

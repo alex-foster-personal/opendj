@@ -344,3 +344,66 @@ test('STEM-8302: a part at another sample rate is left for the alignment check t
 	assert.throws(() => stems.validateStemBufferAlignment(conformed), /alignment mismatch/);
 	assert.throws(() => stems.conformStemBuffersToFrameCount(fakeCtx, buffers, 0, 44_100), RangeError);
 });
+
+// STEMPERF-11663: one FX send per part, at 0, in parallel with the part gain.
+function fxFakeNode(value = 1) {
+	return {
+		gain: { value, calls: [], setTargetAtTime(v, t, c) { this.calls.push([v, t, c]); } },
+		connections: [],
+		disconnects: 0,
+		connect(node) { this.connections.push(node); },
+		disconnect() { this.disconnects += 1; }
+	};
+}
+
+function fxProcessor() {
+	const ctx = { currentTime: 0, createGain: () => fxFakeNode() };
+	const procs = {};
+	const gains = {};
+	const sends = {};
+	for (const part of ['vocals', 'drums', 'bass', 'other']) {
+		procs[part] = { connections: [], connect(n) { this.connections.push(n); }, disconnect() {}, dispose: async () => {} };
+		const bus = stems.createStemPartBus(ctx, procs[part]);
+		gains[part] = bus.gain;
+		sends[part] = bus.send;
+	}
+	return { p: new stems.AlignedStemDeckProcessor(ctx, procs, gains, sends, 0, 'demucs4', {}), procs, gains, sends };
+}
+
+test('createStemPartBus feeds a unity gain and a zero send from the source', () => {
+	const { procs, gains, sends } = fxProcessor();
+	assert.equal(gains.vocals.gain.value, 1);
+	assert.equal(sends.vocals.gain.value, 0);
+	assert.deepEqual(procs.vocals.connections, [gains.vocals, sends.vocals]);
+});
+
+test('a 4-part processor exposes one send per part, connectFxSend and teardown', async () => {
+	const { p, gains, sends } = fxProcessor();
+	assert.deepEqual(Object.keys(p.fxSends).sort(), ['bass', 'drums', 'other', 'vocals']);
+	for (const send of Object.values(p.fxSends)) assert.equal(send.gain.value, 0);
+	const dest = { name: 'fxIn' };
+	p.connectFxSend(dest);
+	for (const send of Object.values(sends)) assert.deepEqual(send.connections, [dest]);
+	p.disconnect();
+	for (const node of [...Object.values(sends), ...Object.values(gains)]) assert.equal(node.disconnects, 1);
+	await p.dispose();
+	for (const send of Object.values(sends)) assert.equal(send.disconnects, 2);
+});
+
+test('default controls carry fx_send 0 and the send mapping follows the layout', () => {
+	const controls = stems.createDefaultStemControls();
+	for (const state of Object.values(controls)) assert.equal(state.fx_send, 0);
+	controls.instrumental.fx_send = 0.4;
+	controls.bass.fx_send = 0.6;
+	assert.deepEqual(stems.stemPartSends(controls, 'demucs4'), { vocals: 0, drums: 0, bass: 0.6, other: 0.4 });
+	assert.deepEqual(stems.stemPartSends(controls, 'roformer2'), { vocals: 0, instrumental: 0.4 });
+});
+
+test('controls validate with and without fx_send and refuse an out-of-range send', () => {
+	const legacy = stems.createDefaultStemControls();
+	for (const state of Object.values(legacy)) delete state.fx_send;
+	assert.doesNotThrow(() => stems.stemPartGains(legacy));
+	const bad = stems.createDefaultStemControls();
+	bad.vocal.fx_send = 1.5;
+	assert.throws(() => stems.stemPartGains(bad));
+});

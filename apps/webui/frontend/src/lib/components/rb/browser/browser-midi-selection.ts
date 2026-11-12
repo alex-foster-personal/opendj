@@ -3,19 +3,17 @@
  * component stays within the file-size ratchet. A context menu owns arrow
  * and Enter while it is open (IOPIN-01), so both helpers no-op then.
  */
+import { browseWheelMayAdvance } from '$lib/rb/midi/browse-adapter';
 import type { BrowserRow } from './pane-contract.svelte';
-
-function contextMenuOpen(): boolean {
-	return typeof document !== 'undefined' && document.querySelector('[data-testid="context-menu"]') !== null;
-}
 
 export function nextMidiSelection(
 	visibleRows: readonly BrowserRow[],
 	selectedId: string | null,
 	delta: number
 ): BrowserRow | null {
-	if (contextMenuOpen() || visibleRows.length === 0 || delta === 0) return null;
-	const current = selectedId === null ? -1 : visibleRows.findIndex((row) => row.stable_id === selectedId);
+	if (!browseWheelMayAdvance() || visibleRows.length === 0 || delta === 0) return null;
+	const current =
+		selectedId === null ? -1 : visibleRows.findIndex((row) => row.stable_id === selectedId);
 	const next =
 		current === -1
 			? delta > 0
@@ -30,7 +28,7 @@ export function midiLoadRow(
 	visibleRows: readonly BrowserRow[],
 	selectedId: string | null
 ): BrowserRow | null | undefined {
-	if (contextMenuOpen()) return undefined;
+	if (!browseWheelMayAdvance()) return undefined;
 	if (selectedId === null) return null;
 	return visibleRows.find((candidate) => candidate.stable_id === selectedId) ?? null;
 }

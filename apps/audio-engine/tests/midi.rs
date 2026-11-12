@@ -213,6 +213,8 @@ const PAGE_ONLY_TYPES: &[&str] = &[
     "deck_auto_loop_toggle",
     "deck_sync_toggle",
     "deck_manual_loop_cycle",
+    "deck_loop_in",
+    "deck_loop_out",
     "deck_loop_scale",
     "deck_key_sync_toggle",
     "deck_stem_eq_toggle",
@@ -228,6 +230,7 @@ const PAGE_ONLY_TYPES: &[&str] = &[
     "headphone_level",
     "master_cue",
     "color_fx",
+    "mixer_deck_pair_select",
 ];
 
 #[test]
@@ -237,7 +240,7 @@ fn a_map_with_every_page_action_type_installs_and_page_only_ones_are_forwarded()
     let bindings = fixture["bindings"].as_array().unwrap();
     let types: std::collections::BTreeSet<&str> =
         bindings.iter().map(|b| b["action"]["type"].as_str().unwrap()).collect();
-    assert_eq!(types.len(), 28, "the fixture carries every page action type once: {types:?}");
+    assert_eq!(types.len(), 31, "the fixture carries every page action type once: {types:?}");
     for t in PAGE_ONLY_TYPES {
         assert!(types.contains(t), "fixture is missing page-only type {t}");
     }

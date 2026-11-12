@@ -1,6 +1,8 @@
 /**
  * Where a comment pin is drawn once the UI under it has changed (Thu 1 Oct
- * 2026). the maintainer keeps pins on the canvas as a record of what he asked for, and
+ * 2026). Shared with the framework-neutral `<comment-pins>` element
+ * (issue #11295, `components/comment-pins/comment-pins.ts`). the maintainer keeps pins
+ * on the canvas as a record of what he asked for, and
  * seeing them sit ON the UI they talk about is what lets him organise them.
  * A viewport percent alone drifts off its element the moment the layout
  * moves, so a pin now also records where it sits relative to the UI, and is

@@ -1,5 +1,8 @@
 //! WINSTATE-01: the main window reopens at the size and position last
 //! used on the monitor it opens on, across restarts AND app updates.
+//! SECONDSCREEN: the second-screen library window keeps its own geometry.
+//! The file (v2) holds one geometry per window LABEL, then per monitor; a v1
+//! file (one window) is migrated to the `main` label on load.
 //!
 //! WHY NOT `tauri-plugin-window-state`: the industry-standard plugin keeps ONE
 //! geometry per window label, so a laptop-then-desk-monitor user gets the last
@@ -29,7 +32,7 @@ use std::time::Duration;
 use serde::{Deserialize, Serialize};
 
 pub const WINDOW_STATE_FILE: &str = "window-state.json";
-pub const WINDOW_STATE_VERSION: u32 = 1;
+pub const WINDOW_STATE_VERSION: u32 = 2;
 /// Mirrors tauri-plugin-window-state's practical cadence: quiet for this long
 /// after the last move/resize event, then write once.
 const SAVE_DEBOUNCE: Duration = Duration::from_millis(500);
@@ -69,21 +72,45 @@ pub struct SavedGeometry {
     pub maximized: bool,
 }
 
+/// One window's saved geometry: per monitor, plus the monitor last used.
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+pub struct WindowGeometryState {
+    pub last_monitor: Option<String>,
+    pub monitors: BTreeMap<String, SavedGeometry>,
+}
+
+/// The v2 file: geometry keyed by window label.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct WindowStateFile {
     pub version: u32,
-    pub last_monitor: Option<String>,
-    pub monitors: BTreeMap<String, SavedGeometry>,
+    pub windows: BTreeMap<String, WindowGeometryState>,
 }
 
 impl Default for WindowStateFile {
     fn default() -> Self {
         Self {
             version: WINDOW_STATE_VERSION,
-            last_monitor: None,
-            monitors: BTreeMap::new(),
+            windows: BTreeMap::new(),
         }
     }
+}
+
+impl WindowStateFile {
+    /// A snapshot of one label's state, empty when nothing is saved for it.
+    pub fn window(&self, label: &str) -> WindowGeometryState {
+        self.windows.get(label).cloned().unwrap_or_default()
+    }
+
+    pub fn window_mut(&mut self, label: &str) -> &mut WindowGeometryState {
+        self.windows.entry(label.to_string()).or_default()
+    }
+}
+
+/// The v1 file, read only to migrate it to `windows["main"]`.
+#[derive(Deserialize)]
+struct WindowStateFileV1 {
+    last_monitor: Option<String>,
+    monitors: BTreeMap<String, SavedGeometry>,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -121,7 +148,7 @@ pub fn monitor_key(name: Option<&str>, width_px: u32, height_px: u32, scale: f64
 /// primary, else the first reported. Returns `None` only when no monitor is
 /// reported at all, in which case the caller opens unclamped.
 pub fn placement_for_launch(
-    saved: &WindowStateFile,
+    saved: &WindowGeometryState,
     monitors: &[MonitorInfo],
     default_size_pt: (f64, f64),
 ) -> Option<Placement> {
@@ -132,6 +159,16 @@ pub fn placement_for_launch(
     let target = last
         .or_else(|| monitors.iter().find(|m| m.is_primary))
         .or_else(|| monitors.first())?;
+    Some(placement_on(saved, target, default_size_pt))
+}
+
+/// The geometry to open with on one given monitor: the saved one clamped to
+/// its work area, else the default size centred.
+pub fn placement_on(
+    saved: &WindowGeometryState,
+    target: &MonitorInfo,
+    default_size_pt: (f64, f64),
+) -> Placement {
     let wa = target.work_area;
     match saved.monitors.get(&target.key) {
         Some(geometry) => {
@@ -141,12 +178,12 @@ pub fn placement_for_launch(
                 w: geometry.width_pt,
                 h: geometry.height_pt,
             };
-            Some(Placement {
+            Placement {
                 monitor_key: target.key.clone(),
                 rect: clamp_to_work_area(wanted, wa),
                 maximized: geometry.maximized,
                 source: PlacementSource::Saved,
-            })
+            }
         }
         None => {
             let (w, h) = default_size_pt;
@@ -156,14 +193,59 @@ pub fn placement_for_launch(
                 w,
                 h,
             };
-            Some(Placement {
+            Placement {
                 monitor_key: target.key.clone(),
                 rect: clamp_to_work_area(centred, wa),
                 maximized: false,
                 source: PlacementSource::Default,
-            })
+            }
         }
     }
+}
+
+fn contains(wa: Rect, x: f64, y: f64) -> bool {
+    wa.x <= x && x < wa.x + wa.w && wa.y <= y && y < wa.y + wa.h
+}
+
+/// The monitor the second-screen window opens on: the first reported monitor
+/// that is not the main window's monitor. The main window's monitor is the one
+/// whose work area contains the main window's centre, else the primary, else
+/// the first. With one monitor (or no other), that monitor itself. `None` only
+/// when no monitor is reported. Monitors are told apart by index, not key:
+/// two identical panels share a key.
+pub fn second_screen_monitor(
+    monitors: &[MonitorInfo],
+    main_window: Option<Rect>,
+) -> Option<&MonitorInfo> {
+    if monitors.is_empty() {
+        return None;
+    }
+    let by_centre = main_window.and_then(|r| {
+        let (cx, cy) = (r.x + r.w / 2.0, r.y + r.h / 2.0);
+        monitors.iter().position(|m| contains(m.work_area, cx, cy))
+    });
+    let main_index = by_centre
+        .or_else(|| monitors.iter().position(|m| m.is_primary))
+        .unwrap_or(0);
+    monitors
+        .iter()
+        .enumerate()
+        .find(|(i, _)| *i != main_index)
+        .map(|(_, m)| m)
+        .or_else(|| monitors.get(main_index))
+}
+
+/// Placement for the second-screen window. `last_monitor` is deliberately
+/// ignored: this window always goes to the other display, and each monitor
+/// still restores its own saved geometry.
+pub fn second_screen_placement(
+    saved: &WindowGeometryState,
+    monitors: &[MonitorInfo],
+    main_window: Option<Rect>,
+    default_size_pt: (f64, f64),
+) -> Option<Placement> {
+    second_screen_monitor(monitors, main_window)
+        .map(|target| placement_on(saved, target, default_size_pt))
 }
 
 /// Shrink to fit the work area (never below the minimum unless the work area
@@ -182,7 +264,7 @@ pub fn clamp_to_work_area(wanted: Rect, wa: Rect) -> Rect {
 /// kept (only the flag flips), so un-maximizing after a restart returns to the
 /// size the user actually chose.
 pub fn record_geometry(
-    state: &mut WindowStateFile,
+    state: &mut WindowGeometryState,
     monitor: &MonitorInfo,
     window: Rect,
     maximized: bool,
@@ -223,16 +305,31 @@ pub fn load_window_state(path: &Path) -> Result<Option<WindowStateFile>, String>
         Err(err) if err.kind() == std::io::ErrorKind::NotFound => return Ok(None),
         Err(err) => return Err(format!("{}: {err}", path.display())),
     };
-    let parsed: WindowStateFile =
-        serde_json::from_str(&text).map_err(|err| format!("{}: {err}", path.display()))?;
-    if parsed.version != WINDOW_STATE_VERSION {
-        return Err(format!(
+    let named = |err: serde_json::Error| format!("{}: {err}", path.display());
+    let value: serde_json::Value = serde_json::from_str(&text).map_err(named)?;
+    let version = value.get("version").and_then(serde_json::Value::as_u64);
+    match version {
+        Some(1) => {
+            let v1: WindowStateFileV1 = serde_json::from_value(value).map_err(named)?;
+            let mut state = WindowStateFile::default();
+            state.windows.insert(
+                crate::window::MAIN_WINDOW_LABEL.to_string(),
+                WindowGeometryState {
+                    last_monitor: v1.last_monitor,
+                    monitors: v1.monitors,
+                },
+            );
+            Ok(Some(state))
+        }
+        Some(v) if v == u64::from(WINDOW_STATE_VERSION) => {
+            Ok(Some(serde_json::from_value(value).map_err(named)?))
+        }
+        other => Err(format!(
             "{}: version {} is not the supported {WINDOW_STATE_VERSION}",
             path.display(),
-            parsed.version
-        ));
+            other.map_or_else(|| "missing".to_string(), |v| v.to_string())
+        )),
     }
-    Ok(Some(parsed))
 }
 
 /// Atomic write: temp file in the same directory, then rename.
@@ -284,9 +381,12 @@ impl WindowStateStore {
         }
     }
 
-    pub fn record(&self, monitor: &MonitorInfo, window: Rect, maximized: bool) {
+    pub fn record(&self, label: &str, monitor: &MonitorInfo, window: Rect, maximized: bool) {
         record_geometry(
-            &mut self.state.lock().expect("window state mutex"),
+            self.state
+                .lock()
+                .expect("window state mutex")
+                .window_mut(label),
             monitor,
             window,
             maximized,
@@ -294,6 +394,11 @@ impl WindowStateStore {
         // The writer only stops when this store is dropped, so a send failure
         // cannot happen while `self` is alive.
         let _ = self.changed.send(());
+    }
+
+    /// A snapshot of one window label's saved geometry.
+    pub fn window(&self, label: &str) -> WindowGeometryState {
+        self.state.lock().expect("window state mutex").window(label)
     }
 
     /// Synchronous write for the exit path, where the debounce may not fire.
@@ -330,7 +435,7 @@ pub fn monitor_info(monitor: &tauri::Monitor, is_primary: bool) -> MonitorInfo {
 
 /// Every connected monitor, primary flagged. Errors are returned, not hidden:
 /// the caller logs them and opens at the default size.
-pub fn connected_monitors(app: &tauri::AppHandle) -> Result<Vec<MonitorInfo>, String> {
+pub fn connected_monitors<R: tauri::Runtime>(app: &tauri::AppHandle<R>) -> Result<Vec<MonitorInfo>, String> {
     let primary_key = app
         .primary_monitor()
         .map_err(|err| format!("primary monitor: {err}"))?
@@ -350,7 +455,10 @@ pub fn connected_monitors(app: &tauri::AppHandle) -> Result<Vec<MonitorInfo>, St
 
 /// Snapshot the window's geometry and hand it to the store. Skipped while
 /// minimized or fullscreen: neither is a size the user wants back at launch.
-pub fn record_window(window: &tauri::Window, store: &WindowStateStore) -> Result<(), String> {
+pub fn record_window<R: tauri::Runtime>(
+    window: &tauri::Window<R>,
+    store: &WindowStateStore,
+) -> Result<(), String> {
     let minimized = window
         .is_minimized()
         .map_err(|err| format!("is minimized: {err}"))?;
@@ -366,6 +474,16 @@ pub fn record_window(window: &tauri::Window, store: &WindowStateStore) -> Result
     else {
         return Ok(());
     };
+    let rect = window_rect_pt(window)?;
+    let maximized = window
+        .is_maximized()
+        .map_err(|err| format!("is maximized: {err}"))?;
+    store.record(window.label(), &monitor_info(&monitor, false), rect, maximized);
+    Ok(())
+}
+
+/// The window's outer position and inner size in global logical points.
+pub fn window_rect_pt<R: tauri::Runtime>(window: &tauri::Window<R>) -> Result<Rect, String> {
     let scale = window
         .scale_factor()
         .map_err(|err| format!("scale factor: {err}"))?;
@@ -375,17 +493,12 @@ pub fn record_window(window: &tauri::Window, store: &WindowStateStore) -> Result
     let size = window
         .inner_size()
         .map_err(|err| format!("inner size: {err}"))?;
-    let maximized = window
-        .is_maximized()
-        .map_err(|err| format!("is maximized: {err}"))?;
-    let rect = Rect {
+    Ok(Rect {
         x: f64::from(position.x) / scale,
         y: f64::from(position.y) / scale,
         w: f64::from(size.width) / scale,
         h: f64::from(size.height) / scale,
-    };
-    store.record(&monitor_info(&monitor, false), rect, maximized);
-    Ok(())
+    })
 }
 
 // ----- tests -----------------------------------------------------------------
@@ -422,8 +535,8 @@ mod tests {
         }
     }
 
-    fn saved_on(monitor: &MonitorInfo, geometry: SavedGeometry) -> WindowStateFile {
-        let mut state = WindowStateFile::default();
+    fn saved_on(monitor: &MonitorInfo, geometry: SavedGeometry) -> WindowGeometryState {
+        let mut state = WindowGeometryState::default();
         state.monitors.insert(monitor.key.clone(), geometry);
         state.last_monitor = Some(monitor.key.clone());
         state
@@ -547,14 +660,14 @@ mod tests {
     #[test]
     fn no_monitors_means_no_placement() {
         assert_eq!(
-            placement_for_launch(&WindowStateFile::default(), &[], DEFAULT),
+            placement_for_launch(&WindowGeometryState::default(), &[], DEFAULT),
             None
         );
     }
 
     #[test]
     fn record_then_launch_round_trips() {
-        let mut state = WindowStateFile::default();
+        let mut state = WindowGeometryState::default();
         record_geometry(
             &mut state,
             &desk(),
@@ -583,7 +696,7 @@ mod tests {
 
     #[test]
     fn maximizing_keeps_the_normal_geometry() {
-        let mut state = WindowStateFile::default();
+        let mut state = WindowGeometryState::default();
         let normal = Rect {
             x: 100.0,
             y: 100.0,
@@ -626,7 +739,11 @@ mod tests {
             Ok(None),
             "if a first launch errors then broken"
         );
-        let state = saved_on(&desk(), geometry(1.0, 2.0, 1300.0, 900.0));
+        let mut state = WindowStateFile::default();
+        state.windows.insert(
+            "main".into(),
+            saved_on(&desk(), geometry(1.0, 2.0, 1300.0, 900.0)),
+        );
         save_window_state(&path, &state).expect("save");
         assert_eq!(load_window_state(&path), Ok(Some(state)));
     }
@@ -646,5 +763,125 @@ mod tests {
         assert!(load_window_state(&path)
             .expect_err("future")
             .contains("version 99"));
+    }
+
+    fn centred_on(m: &MonitorInfo) -> Rect {
+        let wa = m.work_area;
+        Rect {
+            x: wa.x + wa.w / 4.0,
+            y: wa.y + wa.h / 4.0,
+            w: wa.w / 2.0,
+            h: wa.h / 2.0,
+        }
+    }
+
+    #[test]
+    fn second_screen_monitor_is_the_one_without_the_main_window_centre() {
+        let monitors = [laptop(), desk()];
+        assert_eq!(
+            second_screen_monitor(&monitors, Some(centred_on(&laptop()))),
+            Some(&desk()),
+            "if the library window opens on the main window's display then broken"
+        );
+        assert_eq!(
+            second_screen_monitor(&monitors, Some(centred_on(&desk()))),
+            Some(&laptop())
+        );
+    }
+
+    #[test]
+    fn second_screen_monitor_with_one_monitor_is_that_monitor() {
+        assert_eq!(
+            second_screen_monitor(&[laptop()], Some(centred_on(&laptop()))),
+            Some(&laptop())
+        );
+        assert_eq!(second_screen_monitor(&[], None), None);
+    }
+
+    #[test]
+    fn second_screen_monitor_without_a_main_rect_avoids_the_primary() {
+        let monitors = [laptop(), desk()];
+        assert_eq!(second_screen_monitor(&monitors, None), Some(&desk()));
+        let nowhere = Rect {
+            x: -9000.0,
+            y: -9000.0,
+            w: 10.0,
+            h: 10.0,
+        };
+        assert_eq!(second_screen_monitor(&monitors, Some(nowhere)), Some(&desk()));
+    }
+
+    #[test]
+    fn second_screen_monitor_with_identical_panels_uses_position() {
+        let left = MonitorInfo {
+            is_primary: false,
+            ..desk()
+        };
+        let right = MonitorInfo {
+            work_area: Rect {
+                x: 4072.0,
+                ..desk().work_area
+            },
+            ..left.clone()
+        };
+        assert_eq!(left.key, right.key);
+        let monitors = [left.clone(), right.clone()];
+        assert_eq!(
+            second_screen_monitor(&monitors, Some(centred_on(&right))),
+            Some(&left)
+        );
+        assert_eq!(
+            second_screen_monitor(&monitors, Some(centred_on(&left))),
+            Some(&right)
+        );
+    }
+
+    #[test]
+    fn each_window_label_keeps_its_own_geometry() {
+        let mut file = WindowStateFile::default();
+        let main_rect = Rect {
+            x: 10.0,
+            y: 35.0,
+            w: 1200.0,
+            h: 800.0,
+        };
+        let second_rect = Rect {
+            x: 1600.0,
+            y: 40.0,
+            w: 1400.0,
+            h: 900.0,
+        };
+        record_geometry(file.window_mut("main"), &laptop(), main_rect, false);
+        record_geometry(file.window_mut("second-screen"), &desk(), second_rect, false);
+        let monitors = [laptop(), desk()];
+        let main = placement_for_launch(&file.window("main"), &monitors, DEFAULT).expect("main");
+        assert_eq!(main.rect, main_rect, "if labels share geometry then broken");
+        let second = second_screen_placement(
+            &file.window("second-screen"),
+            &monitors,
+            Some(main.rect),
+            DEFAULT,
+        )
+        .expect("second");
+        assert_eq!(second.source, PlacementSource::Saved);
+        assert_eq!(second.rect, second_rect);
+        assert!(file.window("main").monitors.get(&desk().key).is_none());
+    }
+
+    #[test]
+    fn a_version_1_file_migrates_to_the_main_window() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let path = window_state_path(dir.path());
+        std::fs::write(
+            &path,
+            r#"{"version":1,"last_monitor":"LG|3840x2160|@1.50","monitors":{"LG|3840x2160|@1.50":{"x_offset_pt":10.0,"y_offset_pt":20.0,"width_pt":1500.0,"height_pt":900.0,"maximized":false}}}"#,
+        )
+        .expect("write");
+        let state = load_window_state(&path).expect("load").expect("some");
+        assert_eq!(state.version, 2);
+        let main = state.window("main");
+        assert_eq!(main.last_monitor.as_deref(), Some("LG|3840x2160|@1.50"));
+        assert_eq!(main.monitors["LG|3840x2160|@1.50"].width_pt, 1500.0);
+        assert!(!state.windows.contains_key("second-screen"));
     }
 }

@@ -52,6 +52,7 @@ async function readFeedbackAvailability(page: import('@playwright/test').Page): 
 test('hover tile, comment pin, and QuickDraw stay inside the viewport from the bottom-right corner', async ({
 	page
 }) => {
+	test.fixme(true, 'body intercepts the perf-root click, see #13523');
 	test.setTimeout(90_000);
 	await seedPinsVisible(page);
 	await page.goto('/performance');

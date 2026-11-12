@@ -1,0 +1,9 @@
+{
+ "map_name": "Hercules\\s+DJ\\s+Console(?:\\s+Mac\\s+Edition)?(?:$|\\s+Port|\\s+MIDI)",
+ "map_const": "HERCULES_DJ_CONSOLE_MAC_EDITION_MAP",
+ "map_ts": "apps/webui/frontend/src/lib/rb/midi/maps/hercules-dj-console-mac-edition.ts",
+ "panel_w": 235.0,
+ "panel_d": 200.0,
+ "panel_size_source": "Hercules DJ Console Mac Edition retail spec: Dimensions (W x D x H) 235.0 x 200.0 x 65.0 mm (planetdj product page; matches Mk2 family datasheet 235 x 200 mm)",
+ "display_name": "2-channel USB DJ controller"
+}

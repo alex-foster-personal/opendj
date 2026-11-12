@@ -4,11 +4,12 @@
  *
  * Before this, the Spotify panel listed only imported playlists, so an
  * account with hundreds showed a handful. Now every account playlist is a
- * row; an imported one keeps its state.db id (so pins, recents and the Buy
- * list still work), and an imported playlist the account no longer follows
- * stays listed after them.
+ * row; an imported one keeps its state.db id, pins and recents use a stable
+ * pref_key (`spotify:<sid>` when known), and an imported playlist the account
+ * no longer follows stays listed after them.
  */
 import type { SpotifyAccountPlaylist } from './spotify-account-api';
+import { spotifyPreferenceKey } from './spotify-playlist-rank';
 
 export interface ImportedSpotifyPlaylist {
 	playlist_id: string;
@@ -19,8 +20,10 @@ export interface ImportedSpotifyPlaylist {
 }
 
 export interface SpotifyPanelRow<I extends ImportedSpotifyPlaylist = ImportedSpotifyPlaylist> {
-	/** Stable key for pins/recents: the state.db id when imported. */
+	/** Row identity: the state.db id when imported, else spotify-account:<sid>. */
 	playlist_id: string;
+	/** Pins and recents key (#9685): spotify:<sid> when the Spotify id is known, else playlist_id. Never changes on import. */
+	pref_key: string;
 	name: string;
 	track_count: number | null;
 	owned: boolean;
@@ -72,6 +75,7 @@ export function mergeSpotifyPlaylists<I extends ImportedSpotifyPlaylist>(
 		if (match !== null) usedImported.add(match.playlist_id);
 		rows.push({
 			playlist_id: match?.playlist_id ?? `${ACCOUNT_ROW_PREFIX}${playlist.spotify_id}`,
+			pref_key: `spotify:${playlist.spotify_id}`,
 			name: playlist.name,
 			track_count: playlist.track_count,
 			owned: playlist.owned,
@@ -86,6 +90,7 @@ export function mergeSpotifyPlaylists<I extends ImportedSpotifyPlaylist>(
 		const sid = importedSpotifyId(playlist);
 		rows.push({
 			playlist_id: playlist.playlist_id,
+			pref_key: sid !== null ? `spotify:${sid}` : spotifyPreferenceKey(playlist.playlist_id),
 			name: playlist.name,
 			track_count: playlist.track_count,
 			owned: false,
@@ -105,4 +110,16 @@ export function mergeSpotifyPlaylists<I extends ImportedSpotifyPlaylist>(
  */
 export function importedAccountCount(rows: readonly SpotifyPanelRow[]): number {
 	return rows.filter((row) => row.account !== null && row.imported !== null).length;
+}
+
+/** #9685: open a row in the side player, then count it as recent. A refused or
+ * blocked open throws before anything is recorded. */
+export async function playSpotifyRow(
+	row: Pick<SpotifyPanelRow, 'open_url' | 'pref_key'>,
+	open: (url: string) => Promise<void>,
+	remember: (prefKey: string) => void
+): Promise<void> {
+	if (row.open_url === null) return;
+	await open(row.open_url);
+	remember(row.pref_key);
 }

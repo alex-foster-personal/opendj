@@ -1,0 +1,9 @@
+{
+  "bytes": 2048,
+  "measured_main": 503929,
+  "measured_with_pr": 505629,
+  "sha": "7fca80eaa3",
+  "date": "Tue 10 Nov 2026",
+  "reason": "Issue #10275 adds the lazy live-handles-probe chunk (PERF-LEAK-11789), loaded only with ?perfprobe=1. Measured: local pnpm build against base 7fca80eaa3, +1700 B gzip on other-lazy; ceiled to KiB",
+  "payback": "none planned; the chunk never loads unless the probe is asked for"
+}

@@ -22,7 +22,14 @@ FileAvailabilityStatus = Literal[
     "awaiting_volume",
 ]
 
+LiveDeckId = Literal[1, 2, 3, 4]
+ShadowDeckId = Literal[5, 6, 7, 8]
+EngineDeckId = Literal[1, 2, 3, 4, 5, 6, 7, 8]
+LIVE_DECK_IDS: tuple[int, ...] = (1, 2, 3, 4)
+ENGINE_DECK_IDS: tuple[int, ...] = (1, 2, 3, 4, 5, 6, 7, 8)
 DeckLoadRefusal = Literal["streaming", "cloud_policy_unconfigured"]
+
+RemoteStemStatus = Literal["ready", "not-run", "unknown"]
 
 
 class BpmAlternative(BaseModel):
@@ -89,9 +96,10 @@ class TrackOut(BaseModel):
     # KEY-GUESS-01: a declined key's best candidate, shown dimmed as "8A?".
     key_guess: str | None = None
     key_guess_confidence: float | None = None
-    # KEY-FALLBACK-01: where the shown key came from (own, rekordbox, file_tag, mik_tag, guess).
-    key_source: Literal["own", "rekordbox", "file_tag", "mik_tag", "guess"] | None = None
+    # KEY-FALLBACK-01: where the shown key came from (edit, own, rekordbox, file_tag, mik_tag, guess); edit is KEY-10229.
+    key_source: Literal["edit", "own", "rekordbox", "file_tag", "mik_tag", "guess"] | None = None
     rating: int | None = None
+    color_id: int | None = None
     tags: list[str] = []
     notes: str | None = None
     #: Cmd+K and index listings use the user comment string (may duplicate ``notes``).
@@ -336,6 +344,11 @@ class TrackListItemOut(TrackOut):
     # LIBUX-13: a durable remote object is recorded even when local audio
     # also exists. Unlike is_remote, this does not collapse local+cloud.
     has_remote_copy: bool
+    # CHROME-03: remote stem bundle index membership (ADR-0024 cache). ready
+    # when manifest.json is indexed for this stable_id; not-run when the cache
+    # is readable but lacks the id; unknown when streaming, spotify-pending, or
+    # no readable cache.
+    remote_stem_status: RemoteStemStatus
     # Issue #11290: why this row cannot load onto a deck here before load is tried.
     deck_load_refusal: DeckLoadRefusal | None = None
     # LIBUX-13: only present while this server process is moving real bytes.
@@ -546,6 +559,35 @@ class TrackPlaylistOut(BaseModel):
     positions: list[int]
 
 
+class PlaylistSummaryBpmStats(BaseModel):
+    min: float | None = None
+    median: float | None = None
+    max: float | None = None
+    missing: int = 0
+
+
+class PlaylistSummaryEnergyStats(BaseModel):
+    min: int | None = None
+    max: int | None = None
+    missing: int = 0
+
+
+class PlaylistSummaryKeysStats(BaseModel):
+    distinct: int = 0
+    missing: int = 0
+
+
+class PlaylistSummaryStats(BaseModel):
+    """Aggregate counts for one playlist membership (SETPREP-10645)."""
+
+    tracks: int = 0
+    duration_s: float = 0
+    bpm: PlaylistSummaryBpmStats
+    energy: PlaylistSummaryEnergyStats
+    keys: PlaylistSummaryKeysStats
+    unanalysed: int = 0
+
+
 class PlaylistSummary(BaseModel):
     playlist_id: str
     name: str
@@ -623,6 +665,8 @@ class TrackRowOut(BaseModel):
     # LIBUX-13: true whenever track_locations records a live remote object,
     # including the local+cloud state that is_remote deliberately suppresses.
     has_remote_copy: bool
+    # CHROME-03: same tri-state as TrackListItemOut (stem bundle index cache).
+    remote_stem_status: RemoteStemStatus
     # Issue #11290: upfront deck-load refusal code, or null when loadable here.
     deck_load_refusal: DeckLoadRefusal | None = None
     # LIBUX-13: ephemeral operation state, distinct from durable presence.
@@ -649,8 +693,8 @@ class TrackRowOut(BaseModel):
     # KEY-GUESS-01: a declined key's best candidate (key stays null), shown dimmed as "8A?".
     key_guess: str | None = None
     key_guess_confidence: float | None = None
-    # KEY-FALLBACK-01: where the shown key came from (own, rekordbox, file_tag, mik_tag, guess).
-    key_source: Literal["own", "rekordbox", "file_tag", "mik_tag", "guess"] | None = None
+    # KEY-FALLBACK-01: where the shown key came from (edit, own, rekordbox, file_tag, mik_tag, guess); edit is KEY-10229.
+    key_source: Literal["edit", "own", "rekordbox", "file_tag", "mik_tag", "guess"] | None = None
     # too_short / no_pulse: analyzed, and no tempo was measured (issue #5986).
     bpm_status: Literal["ok", "failed", "missing", "available-not-selected", "too_short", "no_pulse"]
     bpm_reason: str | None = None
@@ -723,7 +767,7 @@ class PairingEqAdjust(BaseModel):
 
 
 class PairingDeckSnapshot(BaseModel):
-    deck_id: Literal[1, 2, 3, 4]
+    deck_id: LiveDeckId
     stable_id: str = Field(min_length=1)
     title: str = Field(min_length=1)
     position_ms: int = Field(ge=0)

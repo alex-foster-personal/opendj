@@ -13,6 +13,8 @@
  * [if] the incoming deck is paused after its play fired [then ⛔] the plan fails.
  * [if] an abort lands while the launch is in flight, or a finish_now dispatch fails
  *   [then ⛔] the launch is cancelled, or the plan ends failed.
+ * [if] a running bass_swap_blend is aborted mid-swap [then] both decks' eq_low, eq_mid, eq_high and filter are set
+ *   to 0.5 before status is aborted, [else stop].
  */
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
@@ -55,6 +57,7 @@ function rig({
 		deferred = deferred.filter((w) => keyOf(w) !== keyOf(command));
 		if (command.type === 'fader') state.mixer.channels[command.deck].fader = command.value;
 		if (command.type === 'eq') state.mixer.channels[command.deck][`eq_${command.band}`] = command.value;
+		if (command.type === 'filter') state.mixer.channels[command.deck].filter = command.value;
 	};
 	const state = {
 		master_deck: 1,
@@ -69,8 +72,8 @@ function rig({
 			crossfader: 0.5,
 			master: 1,
 			channels: {
-				1: { fader: 1, trim: 0.5, assign: 'THRU', eq_low: 0.5 },
-				2: { fader: 0, trim: 0.5, assign: 'THRU', eq_low: 0 },
+				1: { fader: 1, trim: 0.5, assign: 'THRU', eq_low: 0.5, eq_mid: 0.5, eq_high: 0.5, filter: 0.5 },
+				2: { fader: 0, trim: 0.5, assign: 'THRU', eq_low: 0, eq_mid: 0.5, eq_high: 0.5, filter: 0.5 },
 				3: {},
 				4: {}
 			}
@@ -99,7 +102,7 @@ function rig({
 			if (gate !== null && command.type === 'play' && command.quantize === true) await gate;
 			// The bus mirrors a scheduled step only when it lands (AGENT-30), so a step sent ahead leaves the mirror as is.
 			const lands = command.at_context_sec === undefined;
-			if ((command.type === 'fader' || command.type === 'eq') && lands) plainSet(command);
+			if ((command.type === 'fader' || command.type === 'eq' || command.type === 'filter') && lands) plainSet(command);
 			if ((command.type === 'fader' || command.type === 'eq') && !lands) {
 				deferred.push(command);
 				stepStates.set(command.step_id, 'waiting');
@@ -180,6 +183,37 @@ function order(overrides = {}) {
 		],
 		...overrides
 	};
+}
+
+/** Immediate neutral strip sets plan_amend abort emits on both plan decks before _end. */
+function abortFlattenCommands() {
+	const cmds = [];
+	for (const deck of [1, 2]) {
+		for (const band of ['low', 'mid', 'high']) cmds.push({ type: 'eq', deck, band, value: 0.5 });
+		cmds.push({ type: 'filter', deck, value: 0.5 });
+	}
+	return cmds;
+}
+
+/** Bus refuse hook that skips the eight abort-flatten plain sets so AGENT-30 revoke refusals target revokes only. */
+function refuseSkippingAbortFlatten(refuse) {
+	let skip = abortFlattenCommands().length;
+	return (command) => {
+		if (skip > 0 && command.at_context_sec === undefined && command.value === 0.5) {
+			const flat = abortFlattenCommands();
+			const i = flat.length - skip;
+			if (flat[i].type === command.type && flat[i].deck === command.deck && (flat[i].band ?? null) === (command.band ?? null)) {
+				skip--;
+				return false;
+			}
+		}
+		return refuse(command);
+	};
+}
+
+function plainRevokesAfterAbort(slice) {
+	const flat = abortFlattenCommands().length;
+	return slice.slice(flat).filter((c) => c.type === 'eq' && c.at_context_sec === undefined);
 }
 
 test('barAt counts 1-based bars on downbeats, like apps/autodj/profile.py', () => {
@@ -606,7 +640,7 @@ test('parsePlanOrder lets prepare set up the incoming deck and select the clock 
 	assert.throws(() => plan.parsePlanOrder(order({ prepare: [{ type: 'master', deck: 2 }] })), /select only the clock deck/);
 });
 
-test('abort stops a running plan and dispatches nothing more', async () => {
+test('abort flattens both strips then stops; later ticks dispatch nothing more', async () => {
 	const { runner, state, dispatched, at } = rig({ clockBar: 19 });
 	await runner.schedule(order());
 	at(20.5);
@@ -615,9 +649,17 @@ test('abort stops a running plan and dispatches nothing more', async () => {
 	const before = dispatched.length;
 	const result = await runner.amend({ id: 'plan-test', action: 'abort' });
 	assert.equal(result.status, 'aborted');
+	assert.deepEqual(dispatched.slice(before, before + abortFlattenCommands().length), abortFlattenCommands());
+	for (const deck of [1, 2]) {
+		assert.equal(state.mixer.channels[deck].eq_low, 0.5);
+		assert.equal(state.mixer.channels[deck].eq_mid, 0.5);
+		assert.equal(state.mixer.channels[deck].eq_high, 0.5);
+		assert.equal(state.mixer.channels[deck].filter, 0.5);
+	}
+	const afterAbort = dispatched.length;
 	at(28.5);
 	await runner.tick();
-	assert.equal(dispatched.length, before);
+	assert.equal(dispatched.length, afterAbort);
 	await assert.rejects(() => runner.amend({ id: 'plan-test', action: 'abort' }), /already aborted/);
 });
 
@@ -928,7 +970,13 @@ test('abort or a failure while the fired play waits for its downbeat cancels tha
 		assert.equal(runner.mirror().status, end === 'abort' ? 'aborted' : 'failed');
 		assert.equal(state.decks[2].quantized_launch_armed ?? null, null);
 		assert.equal(state.decks[2].playing, false);
-		assert.deepEqual(dispatched.slice(before), armed ? [{ type: 'play', deck: 2, playing: false }] : []);
+		const tail = dispatched.slice(before);
+		if (end === 'abort') {
+			assert.deepEqual(tail.slice(0, abortFlattenCommands().length), abortFlattenCommands());
+			if (armed) assert.deepEqual(tail.at(-1), { type: 'play', deck: 2, playing: false });
+		} else {
+			assert.deepEqual(tail, armed ? [{ type: 'play', deck: 2, playing: false }] : []);
+		}
 	}
 });
 
@@ -2116,9 +2164,11 @@ test('AGENT-30: an aborted plan revokes a step still waiting for its audio-clock
 	state.decks[1].position_ms = 23 * BAR_MS - 50;
 	await runner.tick();
 	assert.equal(dispatched.filter((c) => c.type === 'eq').length, 1, 'the kill is sent ahead');
+	const before = dispatched.length;
 	await runner.amend({ id: 'plan-test', action: 'abort' });
-	const eqs = dispatched.filter((c) => c.type === 'eq');
-	assert.deepEqual(eqs.at(-1), { type: 'eq', deck: 1, band: 'low', value: 0.5 }, 'a plain set of the old value revokes it');
+	const revokes = plainRevokesAfterAbort(dispatched.slice(before));
+	assert.equal(revokes.length, 0, 'abort flatten already neutralized the waiting kill with plain sets');
+	assert.equal(state.mixer.channels[1].eq_low, 0.5);
 });
 
 test('AGENT-30 control: a step that already landed is not revoked when the plan ends', async () => {
@@ -2132,8 +2182,10 @@ test('AGENT-30 control: a step that already landed is not revoked when the plan 
 	state.decks[1].position_ms = 23 * BAR_MS - 50;
 	await runner.tick();
 	advance(200); // past its time
+	const before = dispatched.length;
 	await runner.amend({ id: 'plan-test', action: 'abort' });
-	assert.equal(dispatched.filter((c) => c.type === 'eq').length, 1);
+	assert.equal(dispatched.filter((c) => c.type === 'eq' && c.at_context_sec !== undefined).length, 1, 'only the sent-ahead kill');
+	assert.equal(plainRevokesAfterAbort(dispatched.slice(before)).length, 0, 'a landed step is not revoked');
 });
 
 test('AGENT-30: a step on a control with a running ramp waits for its bar, so the ramp runs until it lands', async () => {
@@ -2191,20 +2243,29 @@ async function twoPendingSteps(rigOptions = {}, band = 'high') {
 test('AGENT-30: an abort revokes pending steps newest first, back to the value before each', async () => {
 	const { runner, dispatched, state } = await twoPendingSteps();
 	assert.equal(dispatched.filter((c) => c.type === 'eq' && c.at_context_sec !== undefined).length, 2);
+	const before = dispatched.length;
 	await runner.amend({ id: 'plan-test', action: 'abort' });
-	const plain = dispatched.filter((c) => c.type === 'eq' && c.at_context_sec === undefined);
-	assert.deepEqual(plain.map((c) => [c.band, c.value]), [['high', 0.5], ['low', 0.5]], 'newest first, each back to its original');
+	const revokes = plainRevokesAfterAbort(dispatched.slice(before));
+	assert.equal(revokes.length, 0, 'abort flatten plain sets cancel the waiting kills before revoke runs');
 	assert.equal(state.mixer.channels[1].eq_low, 0.5);
+	assert.equal(state.mixer.channels[1].eq_high, 0.5);
 });
 
 test('AGENT-30: one failed revoke does not abandon the others, and the failure is reported', async () => {
 	let refusals = 1;
 	const { runner, dispatched } = await twoPendingSteps({
-		refuse: (command) => command.type === 'eq' && command.at_context_sec === undefined && refusals-- > 0
+		refuse: (command) =>
+			command.type === 'eq' &&
+			command.band === 'high' &&
+			command.at_context_sec === undefined &&
+			command.value === 0 &&
+			refusals-- > 0
 	});
-	await runner.amend({ id: 'plan-test', action: 'abort' });
-	assert.equal(dispatched.filter((c) => c.type === 'eq' && c.at_context_sec === undefined).length, 2, 'both attempted');
-	assert.match(runner.mirror().reason, /could not be settled/);
+	await assert.rejects(() => runner.amend({ id: 'plan-test', action: 'finish_now' }), /could not be settled/);
+	assert.ok(
+		dispatched.filter((c) => c.type === 'eq' && c.band === 'low' && c.at_context_sec === undefined).length >= 1,
+		'low still applied after high apply was refused'
+	);
 });
 
 test('AGENT-30: finish_now lands a step still waiting for its audio-clock time at once', async () => {
@@ -2250,8 +2311,11 @@ test('AGENT-30: a step an operator already overrode is neither revoked nor reapp
 		plainSet({ type: 'eq', deck: 1, band: 'high', value: 0.8 });
 		const before = dispatched.length;
 		await runner.amend({ id: 'plan-test', action });
-		assert.equal(dispatched.slice(before).filter((c) => c.type === 'eq' && c.deck === 1).length, 0, action);
-		assert.equal(state.mixer.channels[1].eq_low, 0.8, action);
+		const tail = dispatched.slice(before);
+		const deckEq = action === 'abort' ? tail.slice(abortFlattenCommands().length) : tail;
+		assert.equal(deckEq.filter((c) => c.type === 'eq' && c.deck === 1).length, 0, action);
+		if (action === 'abort') assert.equal(state.mixer.channels[1].eq_low, 0.5, 'abort flatten resets operator overrides');
+		else assert.equal(state.mixer.channels[1].eq_low, 0.8, action);
 	}
 });
 
@@ -2319,7 +2383,11 @@ test('AGENT-30: a finished plan\'s steps are never revoked by the next plan\'s a
 	const before = dispatched.length;
 	await runner.schedule(order({ id: 'plan-two', start_bar: 40 }));
 	await runner.amend({ id: 'plan-two', action: 'abort' });
-	assert.equal(dispatched.slice(before).filter((c) => c.type === 'eq').length, 0);
+	assert.equal(
+		dispatched.slice(before).filter((c) => c.type === 'eq' && c.at_context_sec !== undefined).length,
+		0,
+		'only abort flatten, never the finished plan kill'
+	);
 });
 
 test('AGENT-30: a ramp whose end has passed counts as settled, so a step after it is still sent ahead', async () => {
@@ -2843,12 +2911,19 @@ for (const [path, end] of [
 	test(`AGENT-30 (Sol P1 #7594): a step left waiting by a refused revoke at ${path} is revoked before anything replaces the plan`, async () => {
 		let refusals = path === 'extend then abort' || path === 'finish_now' ? 2 : 1; // both of that path's tries are refused
 		const r = await twoPendingSteps({
-			refuse: (c) => c.type === 'eq' && c.band === 'high' && c.at_context_sec === undefined && refusals-- > 0
+			refuse: refuseSkippingAbortFlatten((c) => c.type === 'eq' && c.band === 'high' && c.at_context_sec === undefined && refusals-- > 0)
 		});
 		await end(r);
 		const highId = r.dispatched.find((c) => c.band === 'high' && c.step_id).step_id;
 		if (path === 'dispose') {
 			assert.ok(r.forgotten.includes(highId) && !r.stepStates.has(highId), 'dispose revokes it, then forgets it');
+			return;
+		}
+		if (path === 'abort' || path === 'extend then abort') {
+			assert.ok(
+				!r.stepStates.has(highId) || r.stepStates.get(highId) === 'cancelled',
+				'abort flatten plain sets cancel the waiting high step before revoke'
+			);
 			return;
 		}
 		assert.equal(r.stepStates.get(highId), 'waiting', 'the refused revoke left it armed');
@@ -2864,7 +2939,9 @@ for (const [path, end] of [
 
 test('AGENT-30 (Sol P1 #7594): an engine reset leaves nothing to revoke, and the next plan is accepted without a revoke', async () => {
 	let refusals = 1;
-	const r = await twoPendingSteps({ refuse: (c) => c.type === 'eq' && c.band === 'high' && c.at_context_sec === undefined && refusals-- > 0 });
+	const r = await twoPendingSteps({
+		refuse: refuseSkippingAbortFlatten((c) => c.type === 'eq' && c.band === 'high' && c.at_context_sec === undefined && refusals-- > 0)
+	});
 	await r.runner.amend({ id: 'plan-test', action: 'abort' });
 	r.state.decks[2].playing = false;
 	r.resetEngine();
@@ -2874,9 +2951,19 @@ test('AGENT-30 (Sol P1 #7594): an engine reset leaves nothing to revoke, and the
 });
 
 test('AGENT-30 (Sol P1 #7594): a refused revoke of the leftover refuses the new plan; control: the new plan steps land once it is revoked', async () => {
-	let refusals = 2;
-	const r = await twoPendingSteps({ refuse: (c) => c.type === 'eq' && c.band === 'high' && c.at_context_sec === undefined && refusals-- > 0 });
-	await r.runner.amend({ id: 'plan-test', action: 'abort' });
+	let applyRefusals = 1;
+	let highRevokeRefusals = 2; // once in failed finish_now's _end revoke, once at schedule before the next plan is accepted
+	const r = await twoPendingSteps({
+		refuse: (c) => {
+			if (c.type !== 'eq' || c.band !== 'high' || c.at_context_sec !== undefined) return false;
+			if (c.value === 0 && applyRefusals-- > 0) return true;
+			if (c.value === 0.5 && highRevokeRefusals-- > 0) return true;
+			return false;
+		}
+	});
+	await assert.rejects(() => r.runner.amend({ id: 'plan-test', action: 'finish_now' }), /could not be settled/);
+	const highId = r.dispatched.find((c) => c.band === 'high' && c.step_id).step_id;
+	assert.equal(r.stepStates.get(highId), 'waiting', 'the refused apply left the high step armed');
 	r.state.decks[2].playing = false;
 	await assert.rejects(r.runner.schedule(nextPlan()), /plan_unsettled/);
 	await r.runner.schedule(nextPlan());
@@ -3543,8 +3630,56 @@ test('[if] a plan aborts with the noise up [then] the NOISE level is cut and the
 	const before = dispatched.length;
 	await runner.amend({ id: 'plan-test', action: 'abort' });
 	const after = dispatched.slice(before);
-	assert.deepEqual(after.slice(0, 2), [
+	assert.deepEqual(after.slice(0, abortFlattenCommands().length), abortFlattenCommands());
+	const noise = after.slice(abortFlattenCommands().length, abortFlattenCommands().length + 2);
+	assert.deepEqual(noise, [
 		{ type: 'color_fx', deck: 1, effect: 'noise', param: 0 },
 		{ type: 'color_fx', deck: 1, effect: 'noise', value: 0.5 }
 	]);
+});
+
+test('[if] abort runs with no active plan [then] it throws and sends no flatten, [else stop]', async () => {
+	const { runner, dispatched } = rig({ clockBar: 19 });
+	await assert.rejects(() => runner.amend({ id: 'missing', action: 'abort' }), /no plan missing/);
+	assert.equal(dispatched.filter((c) => c.type === 'filter' && c.value === 0.5).length, 0);
+});
+
+test('[if] abort flatten dispatch fails [then] the plan still ends aborted with the error in reason, [else stop]', async () => {
+	let refused = 0;
+	const { runner, dispatched } = rig({
+		clockBar: 19,
+		refuse: (c) => c.type === 'filter' && c.deck === 2 && refused++ === 0
+	});
+	await runner.schedule(order());
+	await runner.amend({ id: 'plan-test', action: 'abort' });
+	assert.equal(runner.mirror().status, 'aborted');
+	assert.match(runner.mirror().reason, /filter on deck 2 could not flatten/);
+	assert.ok(dispatched.some((c) => c.type === 'eq' && c.deck === 1), 'other flatten commands still run');
+});
+
+test('[if] finish_now runs [then] it uses the existing finish path, not the abort flatten-only path, [else stop]', async () => {
+	const { runner, dispatched, at } = rig({ clockBar: 19 });
+	await runner.schedule(order());
+	at(21);
+	await runner.tick();
+	const before = dispatched.length;
+	await runner.amend({ id: 'plan-test', action: 'finish_now' });
+	const tail = dispatched.slice(before);
+	assert.equal(tail.filter((c) => c.type === 'filter' && c.value === 0.5).length, 0, 'no abort-style filter flatten');
+	assert.ok(tail.some((c) => c.type === 'master'), 'finish_now still runs terminal events');
+});
+
+test('[if] a running bass_swap_blend is aborted mid-swap [then] both decks strips flatten before status aborted, [else stop]', async () => {
+	const { runner, state, dispatched, at } = rig({ clockBar: 19 });
+	await runner.schedule(order());
+	at(20);
+	await runner.tick();
+	state.mixer.channels[1].eq_low = 0.1;
+	state.mixer.channels[2].filter = 0.2;
+	const before = dispatched.length;
+	await runner.amend({ id: 'plan-test', action: 'abort' });
+	assert.equal(runner.mirror().status, 'aborted');
+	assert.deepEqual(dispatched.slice(before, before + abortFlattenCommands().length), abortFlattenCommands());
+	assert.equal(state.mixer.channels[1].eq_low, 0.5);
+	assert.equal(state.mixer.channels[2].filter, 0.5);
 });

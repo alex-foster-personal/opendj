@@ -1,7 +1,13 @@
 import { isTextEntryTarget } from '$lib/keyboard/text-entry-target';
+import type { HotCueSlot } from '$lib/rb/hot-cue-types';
 import { resolveCommentPinHotkey } from './comment-pin-hotkey-routing';
+import { isLibraryTrackListTarget } from './library-track-list-target';
 import { isNativeInteractiveTarget } from './performance-hotkeys-target';
+import type { DeckId } from '$lib/player/constants';
 import type { TempoKeyAction } from './tempo-keys';
+
+/** KEYB-11383: the deck verbs C, V and K send for the recent deck. */
+export type RecentDeckVerb = 'cue' | 'beat-sync' | 'master-tempo';
 
 export type PerformanceShortcutAction =
 	| { kind: 'space'; quantize: boolean }
@@ -10,9 +16,14 @@ export type PerformanceShortcutAction =
 	| { kind: 'loop-exit' }
 	| { kind: 'wave-zoom'; direction: 'in' | 'out' }
 	| { kind: 'grid-jump'; bars: number; repeat: boolean }
+	| { kind: 'recent-deck'; verb: RecentDeckVerb; repeat: boolean }
+	| { kind: 'cycle-deck'; direction: 1 | -1; repeat: boolean }
 	| { kind: 'tempo-step'; direction: 1 | -1; coarse: boolean }
 	| { kind: 'tempo-reset'; repeat: boolean }
-	| { kind: 'pitch-range-cycle'; repeat: boolean };
+	| { kind: 'pitch-range-cycle'; repeat: boolean }
+	| { kind: 'hot-cue-trigger'; slot: HotCueSlot; repeat: boolean }
+	| { kind: 'hot-cue-save'; slot: HotCueSlot; repeat: boolean }
+	| { kind: 'hot-cue-clear'; slot: HotCueSlot; repeat: boolean };
 
 export interface PerformanceShortcutKeyEvent {
 	code: string;
@@ -35,6 +46,8 @@ export interface PerformanceShortcutContext {
 	/** The key's target is inside the library root; Cmd/Ctrl+Shift+arrow there
 	 * is the library's instant double (KEYB-11643), so the 8-bar grid jump yields. */
 	libraryFocus?: boolean;
+	/** #9453: a dial or fader selection owns the digit row. */
+	dialSelected?: boolean;
 }
 
 export interface PerformanceShortcutKeydownEvent extends PerformanceShortcutKeyEvent {
@@ -51,9 +64,22 @@ export interface PerformanceShortcutHandlers {
 	/** WAVEZOOM-6802b: one main-waveform zoom step. */
 	waveZoomStep: (direction: 'in' | 'out') => void;
 	gridJump?: (bars: number) => void;
+	/** KEYB-11383: C cue, V beat sync, K master tempo on the recent deck. */
+	recentDeckCommand?: (verb: RecentDeckVerb) => void;
+	/** KEYB-11383: Backquote moves the recent deck to the next loaded deck. */
+	cycleRecentDeck?: (direction: 1 | -1) => void;
 	/** #10357: tempo step, reset and pitch-range cycle on the recent deck. */
 	tempoKey?: (action: TempoKeyAction) => void;
+	hotCueTrigger?: (slot: HotCueSlot) => void;
+	hotCueSave?: (slot: HotCueSlot) => void;
+	hotCueClear?: (slot: HotCueSlot) => void;
 }
+
+const RECENT_DECK_LETTERS: Readonly<Record<string, RecentDeckVerb>> = {
+	c: 'cue',
+	v: 'beat-sync',
+	k: 'master-tempo'
+};
 
 /** Pure routing for /performance global shortcuts; null means leave the event alone. */
 export function resolvePerformanceShortcutAction(
@@ -83,6 +109,8 @@ export function resolvePerformanceShortcutAction(
 			? { kind: 'm' }
 			: null;
 	}
+	const hotCue = hotCueDigitAction(e, context.dialSelected === true);
+	if (hotCue !== null) return hotCue;
 	if (context.gridJump === true) {
 		const bars = gridJumpBars(e, context.deckFocus === true, context.libraryFocus === true);
 		if (bars !== null) return { kind: 'grid-jump', bars, repeat: e.repeat === true };
@@ -90,6 +118,18 @@ export function resolvePerformanceShortcutAction(
 	if (isTextEntryTarget(e.target) || e.metaKey || e.ctrlKey || e.altKey) return null;
 	// Tab always traverses focus, including from body and inert page chrome.
 	if (e.key === 'Tab') return null;
+	// KEYB-11383: Backquote by code (Shift turns the key into ~), C/V/K by letter.
+	if (e.code === 'Backquote')
+		return {
+			kind: 'cycle-deck',
+			direction: e.shiftKey === true ? -1 : 1,
+			repeat: e.repeat === true
+		};
+	const verb =
+		e.shiftKey === true || e.key.length !== 1
+			? undefined
+			: RECENT_DECK_LETTERS[e.key.toLowerCase()];
+	if (verb !== undefined) return { kind: 'recent-deck', verb, repeat: e.repeat === true };
 	if (e.key === '+' || e.key === '=') return { kind: 'loop-resize', factor: 2 };
 	if (e.key === '-' || e.key === '_') return { kind: 'loop-resize', factor: 0.5 };
 	if (e.key === ')') return { kind: 'loop-exit' };
@@ -113,6 +153,39 @@ export function resolvePerformanceShortcutAction(
 	return null;
 }
 
+const HOT_CUE_SLOTS = [
+	'A',
+	'B',
+	'C',
+	'D',
+	'E',
+	'F',
+	'G',
+	'H'
+] as const satisfies readonly HotCueSlot[];
+
+/**
+ * #10354: digits 1-8 on the transport deck's hot cue pads A-H (rekordbox 1-4,
+ * Serato digit cues). Match `event.code` Digit1..Digit8 so Shift+N is still N.
+ * Cmd+N without Shift falls through for deck layout / cmdk quick pick.
+ */
+function hotCueDigitAction(
+	e: PerformanceShortcutKeyEvent,
+	dialSelected: boolean
+): PerformanceShortcutAction | null {
+	const m = /^Digit([1-8])$/.exec(e.code);
+	if (m === null) return null;
+	if (dialSelected || e.altKey || isTextEntryTarget(e.target)) return null;
+	const slot = HOT_CUE_SLOTS[Number(m[1]) - 1];
+	const repeat = e.repeat === true;
+	const mod = e.metaKey || e.ctrlKey;
+	const shift = e.shiftKey === true;
+	if (!mod && !shift) return { kind: 'hot-cue-trigger', slot, repeat };
+	if (!mod && shift) return { kind: 'hot-cue-save', slot, repeat };
+	if (mod && shift) return { kind: 'hot-cue-clear', slot, repeat };
+	return null;
+}
+
 /**
  * DECKUX-6794: Cmd/Ctrl+Left and Right (A and D mirror them, the app-wide WASD
  * rule) jump the selected deck on the fixed bar grid, Shift for 8 bars.
@@ -132,7 +205,8 @@ function gridJumpBars(
 		return null;
 	let direction: 1 | -1;
 	if (key === 'ArrowRight' || key === 'd') direction = 1;
-	else if (key === 'ArrowLeft' || (key === 'a' && deckFocus)) direction = -1;
+	else if (key === 'ArrowLeft' || (key === 'a' && deckFocus && !isLibraryTrackListTarget(e.target)))
+		direction = -1;
 	else return null;
 	return direction * (e.shiftKey === true ? 8 : 4);
 }
@@ -170,6 +244,12 @@ export function handlePerformanceShortcutKeydown(
 			e.stopPropagation?.();
 			if (!action.repeat) handlers.gridJump?.(action.bars);
 			break;
+		case 'recent-deck':
+			if (!action.repeat) handlers.recentDeckCommand?.(action.verb);
+			break;
+		case 'cycle-deck':
+			if (!action.repeat) handlers.cycleRecentDeck?.(action.direction);
+			break;
 		case 'tempo-step':
 			handlers.tempoKey?.({
 				kind: 'tempo-step',
@@ -183,6 +263,47 @@ export function handlePerformanceShortcutKeydown(
 		case 'pitch-range-cycle':
 			if (!action.repeat) handlers.tempoKey?.({ kind: 'pitch-range-cycle' });
 			break;
+		case 'hot-cue-trigger':
+		case 'hot-cue-save':
+		case 'hot-cue-clear':
+			e.stopPropagation?.();
+			if (!action.repeat) {
+				if (action.kind === 'hot-cue-trigger') handlers.hotCueTrigger?.(action.slot);
+				else if (action.kind === 'hot-cue-save') handlers.hotCueSave?.(action.slot);
+				else handlers.hotCueClear?.(action.slot);
+			}
+			break;
 	}
 	return true;
+}
+
+export type RecentDeckCommand =
+	| { type: 'cue'; deck: DeckId }
+	| { type: 'beat_sync'; deck: DeckId; enabled: boolean }
+	| { type: 'master_tempo'; deck: DeckId; enabled: boolean };
+
+/** KEYB-11383: the bus command for a recent-deck chord, toggles flipped from
+ * the deck's state. An empty deck sends nothing (the Space rule). */
+export function buildRecentDeckCommand(
+	verb: RecentDeckVerb,
+	deck: DeckId | null,
+	state: {
+		stable_id: string | null;
+		beat_sync_enabled: boolean;
+		master_tempo_enabled: boolean;
+	} | null
+): RecentDeckCommand | null {
+	if (deck === null || state === null || state.stable_id === null) return null;
+	switch (verb) {
+		case 'cue':
+			return { type: 'cue', deck };
+		case 'beat-sync':
+			return { type: 'beat_sync', deck, enabled: !state.beat_sync_enabled };
+		case 'master-tempo':
+			return { type: 'master_tempo', deck, enabled: !state.master_tempo_enabled };
+		default: {
+			const _exhaustive: never = verb;
+			throw new Error(`Unhandled recent-deck verb: ${String(_exhaustive)}`);
+		}
+	}
 }

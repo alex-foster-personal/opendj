@@ -20,6 +20,9 @@ const OVERLAY_PREF = {
 	lyrics: 'lyrics_waveform_overlay',
 	lyrics_scrub: 'lyrics_hover_scrub',
 	jog_radial: 'jog_radial_waveform',
+	hot_cues: 'show_hot_cue_markers',
+	memory_cues: 'show_memory_cue_markers',
+	loop_cues: 'show_loop_markers',
 	vocal_lane: 'show_vocal_lane'
 };
 

@@ -1,0 +1,9 @@
+{
+ "map_name": "DJ\\s*Console\\s*RMX\\s*2",
+ "map_const": "HERCULES_DJ_CONSOLE_RMX_2_MAP",
+ "map_ts": "apps/webui/frontend/src/lib/rb/midi/maps/hercules-dj-console-rmx-2.ts",
+ "panel_w": 350.0,
+ "panel_d": 250.0,
+ "panel_size_source": "Hercules DJConsole Rmx2 product sheet (Especificaciones mecanicas: Envolvente 35 x 25 cm)",
+ "display_name": "2-deck controller with audio interface"
+}

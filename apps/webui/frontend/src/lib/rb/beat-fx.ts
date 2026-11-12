@@ -10,6 +10,7 @@
  * beats (DJM-A9 manual p. 52); 3/4 kept from main's color echo.
  */
 import { COLOR_FX_MAX_BPM, COLOR_FX_MIN_BPM } from './color-fx';
+import { TIME_FX_BUILT_EFFECT_NAMES } from './fx/time-fx-catalog';
 
 /** Channel select: one of decks 1 to 4, or the master bus. */
 export const BEAT_FX_TARGETS = ['1', '2', '3', '4', 'master'] as const;
@@ -20,9 +21,22 @@ export type BeatFxDeckTarget = Exclude<BeatFxTarget, 'master'>;
 export const BEAT_FX_BEATS = [1 / 16, 1 / 8, 1 / 4, 1 / 2, 3 / 4, 1, 2, 4, 8, 16] as const;
 export type BeatFxBeats = (typeof BEAT_FX_BEATS)[number];
 
-/** Kernels this round ships; later kernel PRs add their names here. */
-export const BEAT_FX_EFFECTS = ['echo'] as const;
+/** Effects with `builtOnMain: true` in `fx/time-fx-catalog.ts` (issues #9973, #10015). */
+export const BEAT_FX_EFFECTS = TIME_FX_BUILT_EFFECT_NAMES;
 export type BeatFxEffect = (typeof BEAT_FX_EFFECTS)[number];
+
+/**
+ * Shared beat FX kernel graph contract (issue #9782 hosts the unit that wires
+ * kernels into the rack). Each effect kernel exposes input/output nodes and
+ * depth/timing setters; PITCH adds percent and active on top of this shape.
+ */
+export interface BeatFxKernel {
+	readonly input: AudioNode;
+	readonly output: AudioNode;
+	setTiming(seconds: number, at: number): void;
+	setDepth(x: number, at: number): void;
+	dispose(): void;
+}
 
 /** Release FX kinds this round ships. */
 export const BEAT_FX_RELEASE_KINDS = ['echo'] as const;

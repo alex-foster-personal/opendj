@@ -57,6 +57,7 @@ from apps.autodj.http import (
     print_set_score,
     profile_from_payloads,
     propose_transition,
+    refresh_proposal_confidence,
     score_pair,
     score_windows,
     validate_plan,
@@ -448,6 +449,7 @@ class DjService:
         result["out_deck"], result["in_deck"] = int(out_deck), in_deck
         # Sol #7595: the recheck runs whether or not the first read had a playhead; only out_bar_now depends on one.
         self._recheck_proposals(result, (out_profile, in_profile), (int(out_deck), in_deck), in_id, top)
+        refresh_proposal_confidence(result, out_profile, in_profile)
         return result
 
     def _recheck_proposals(

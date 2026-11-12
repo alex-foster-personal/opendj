@@ -31,7 +31,10 @@ describe('usb import contracts (LIBMX-13)', () => {
 			/loadUsbPanel\(\s*\(\) => \(usbTracker\.panelOpen = false\),\s*\(\) => \(usbTracker\.panelOpen = true\)\s*\)/
 		);
 		// The failure is visible with a Retry, not only in the console (Sol P1, PR #6223).
-		assert.match(src, /onfail\(\);[\s\S]{0,200}pushToast\(`The USB panel did not load: \$\{why\}`, 'error'[\s\S]{0,120}label: 'Retry',\s*handler: retry/);
+		assert.match(
+			src,
+			/onfail\(\);[\s\S]{0,400}pushToast\(\s*`The USB panel did not load: \$\{why\}`,\s*'error'[\s\S]{0,400}label: 'Retry',\s*handler: retry/s
+		);
 		// A failed chunk closes the panel so the next open retries (Sol P2, PR #6223).
 		assert.match(src, /usbPanelLoad = null;\s*onfail\(\);/);
 		assert.match(src, /\{#if UsbPanelView\}\s*<UsbPanelView \/>/);

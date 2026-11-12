@@ -81,6 +81,57 @@ function _deck(deck: DeckId): FaderGhostDeckState {
 
 function _setDeck(deck: DeckId, next: FaderGhostDeckState): void {
 	faderGhostByDeck[deck] = next;
+	_scheduleIdleTick();
+}
+
+/** Idle-guidance timer. Armed only while some deck is diverged and still
+ * waiting for its idle threshold, so a page with no ghost runs no clock at all
+ * (it used to be a permanent 60 Hz requestAnimationFrame that kept Chromium
+ * producing BeginMainFrame at idle). Null ticker = not installed (unit tests,
+ * other routes): the state helpers still work, nothing is scheduled. */
+let _idleTickerInstalled = false;
+let _idleTimer: ReturnType<typeof setTimeout> | null = null;
+
+function _nextIdleDeadline(): number | null {
+	let earliest: number | null = null;
+	for (const deck of DECK_IDS) {
+		const state = faderGhostByDeck[deck];
+		if (!state.diverged || state.ghostValue === null || state.showGuidance) continue;
+		if (state.idleSince === null) continue;
+		const due = state.idleSince + FADER_IDLE_MS;
+		if (earliest === null || due < earliest) earliest = due;
+	}
+	return earliest;
+}
+
+function _scheduleIdleTick(): void {
+	if (_idleTimer !== null) {
+		clearTimeout(_idleTimer);
+		_idleTimer = null;
+	}
+	if (!_idleTickerInstalled) return;
+	const due = _nextIdleDeadline();
+	if (due === null) return;
+	const delay = Math.max(0, due - performance.now());
+	_idleTimer = setTimeout(() => {
+		_idleTimer = null;
+		tickFaderGhostIdle(performance.now());
+		// tick writes (and so reschedules) only when a deck crossed its
+		// threshold; reschedule here too for a deck that is not due yet.
+		if (_idleTimer === null) _scheduleIdleTick();
+	}, delay);
+}
+
+/** Start the idle-guidance timer for the /performance route. Returns the
+ * uninstaller. The timer is armed from the paths that set diverged/idleSince
+ * and disarmed when no deck is waiting on the idle threshold. */
+export function installFaderGhostIdleTicker(): () => void {
+	_idleTickerInstalled = true;
+	_scheduleIdleTick();
+	return () => {
+		_idleTickerInstalled = false;
+		_scheduleIdleTick();
+	};
 }
 
 export function clearGhost(deck: DeckId): void {
@@ -191,13 +242,13 @@ export function rejoinGlowActive(deck: DeckId): boolean {
 	return guidanceVisible(deck);
 }
 
-/** Advance idle guidance for all diverged decks (rAF or pointer tick). */
+/** Advance idle guidance for all diverged decks (idle timer or pointer tick). */
 export function tickFaderGhostIdle(now: number): void {
 	for (const deck of DECK_IDS) {
 		const state = _deck(deck);
 		if (!state.diverged || state.ghostValue === null) continue;
-		// Once only: this runs every animation frame, and a write here replaces the
-		// deck's $state object, re-running every ghost reader at 60 Hz.
+		// Once only: a write here replaces the deck's $state object and re-runs
+		// every ghost reader, so it must not repeat for an already-shown hint.
 		if (!state.showGuidance && shouldShowGuidanceAfterIdle(state.idleSince, now)) {
 			_setDeck(deck, { ...state, showGuidance: true });
 		}

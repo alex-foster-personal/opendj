@@ -57,7 +57,7 @@ STORAGE_KEY = "mdt.perfEventLog"
 STORAGE_TABLE = "ItemTable"
 """WebKit's localStorage table name."""
 
-NON_DURATION_STAGES = frozenset({"audioBytes", "audioPrefetchHit", "stemmed", "deferredToStop"})
+NON_DURATION_STAGES = frozenset({"audioBytes", "audioPrefetchHit", "stemmed", "deferredToStop", "decodedShareHit"})
 """Keys inside `stages` that are NOT milliseconds.
 
 `stages` is stringly overloaded today: `audioBytes` is a byte count,
@@ -319,6 +319,34 @@ def epoch_us(stamp: str, origin: str) -> int:
 
 
 # ------------------------------------------------------------- stage helpers
+
+
+def deck_load_stage_maps(row: dict[str, Any]) -> tuple[dict[str, Any], dict[str, Any]]:
+    """Split ms durations from non-duration facts for one perf ring row.
+
+    Rows written before the split kept every key in `stages`; those entries
+    are promoted into `facts` here. Rows that already carry a `facts` map
+    merge without duplicating.
+    """
+
+    raw_stages = row.get("stages")
+    stages: dict[str, Any] = dict(raw_stages) if isinstance(raw_stages, dict) else {}
+    raw_facts = row.get("facts")
+    facts: dict[str, Any] = dict(raw_facts) if isinstance(raw_facts, dict) else {}
+    for name in list(stages.keys()):
+        if name in NON_DURATION_STAGES:
+            facts.setdefault(name, stages.pop(name))
+    return stages, facts
+
+
+def sum_deck_stage_durations_ms(stages: dict[str, Any]) -> float:
+    """Blind sum of values in a stage map, excluding non-duration keys."""
+
+    return sum(
+        float(value)
+        for name, value in stages.items()
+        if name not in NON_DURATION_STAGES and isinstance(value, (int, float))
+    )
 
 
 def unclassified_deck_stages(stages: dict[str, Any], *, is_load: bool = False) -> set[str]:

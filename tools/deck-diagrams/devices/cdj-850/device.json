@@ -1,0 +1,9 @@
+{
+ "map_name": "CDJ-850",
+ "map_const": "CDJ850_MAP",
+ "map_ts": "apps/webui/frontend/src/lib/rb/midi/maps/cdj-850.ts",
+ "panel_w": 305.0,
+ "panel_d": 364.4,
+ "panel_size_source": "CDJ-850 Operating Instructions DRB1646A, Specifications: Max. dimensions 305 mm (W) x 364.4 mm (D) x 105.5 mm (H)",
+ "display_name": "Professional DJ media player"
+}

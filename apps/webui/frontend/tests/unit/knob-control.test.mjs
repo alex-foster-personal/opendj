@@ -126,7 +126,8 @@ function addDial(id, value) {
 	return id;
 }
 
-const wheelCalls = (kind) => globalThis.__listenerCalls.filter((c) => c[0] === kind && c[1] === 'wheel');
+const wheelCalls = (kind) =>
+	globalThis.__listenerCalls.filter((c) => c[0] === kind && c[1] === 'wheel');
 
 const valueOf = (id) => dials.get(id).value;
 
@@ -307,22 +308,50 @@ test('unregistering a shadowing registration (EqOverlay closing over a mixer kno
 
 test('PERF-UI-13: registering knobs binds no window wheel listener; selecting binds one non-passive; clearing removes it', () => {
 	for (const id of ['1:low', '2:low', '3:low', '1:mid']) addDial(id, 0.5);
-	assert.deepEqual(wheelCalls('add'), [], 'mounting four knobs bound a window wheel listener (the library then scrolls on the main thread)');
-	assert.deepEqual([...knobs._knobWindowListenersForTests()], [], 'the bound set is not empty at idle');
+	assert.deepEqual(
+		wheelCalls('add'),
+		[],
+		'mounting four knobs bound a window wheel listener (the library then scrolls on the main thread)'
+	);
+	assert.deepEqual(
+		[...knobs._knobWindowListenersForTests()],
+		[],
+		'the bound set is not empty at idle'
+	);
 	assert.equal(globalThis.__listeners.has('wheel'), false);
 
 	knobs.shiftClickKnob('1:low');
-	assert.equal(wheelCalls('add').length, 1, 'selecting one knob did not bind exactly one wheel listener');
-	assert.deepEqual(wheelCalls('add')[0][2], { passive: false }, 'the selection wheel must stay non-passive so it can preventDefault');
-	assert.deepEqual([...knobs._knobWindowListenersForTests()].sort(), ['keydown', 'pointerdown', 'wheel']);
+	assert.equal(
+		wheelCalls('add').length,
+		1,
+		'selecting one knob did not bind exactly one wheel listener'
+	);
+	assert.deepEqual(
+		wheelCalls('add')[0][2],
+		{ passive: false },
+		'the selection wheel must stay non-passive so it can preventDefault'
+	);
+	assert.deepEqual([...knobs._knobWindowListenersForTests()].sort(), [
+		'keydown',
+		'pointerdown',
+		'wheel'
+	]);
 
 	knobs.shiftClickKnob('2:low');
 	assert.equal(wheelCalls('add').length, 1, 'growing the selection re-bound the wheel');
 
 	knobs.clearKnobSelection();
-	assert.equal(wheelCalls('remove').length, 1, 'clearing the selection left the wheel listener bound');
+	assert.equal(
+		wheelCalls('remove').length,
+		1,
+		'clearing the selection left the wheel listener bound'
+	);
 	assert.deepEqual([...knobs._knobWindowListenersForTests()], []);
-	assert.equal(globalThis.__listeners.has('wheel'), false, 'the fake window still holds a wheel listener');
+	assert.equal(
+		globalThis.__listeners.has('wheel'),
+		false,
+		'the fake window still holds a wheel listener'
+	);
 	knobs.clearKnobSelection();
 	assert.equal(wheelCalls('remove').length, 1, 'a clear on an empty selection removed again');
 });
@@ -341,7 +370,11 @@ test('PERF-UI-13: setKnobSelection binds, and unmounting the last selected knob 
 	// The prune is deferred one microtask (MIXUX-13), so the unbind is too.
 	await new Promise((resolve) => queueMicrotask(resolve));
 	assert.deepEqual([...knobs.selectedKnobIds()], []);
-	assert.equal(wheelCalls('remove').length, 2, 'unmounting the last selected knob left the wheel bound');
+	assert.equal(
+		wheelCalls('remove').length,
+		2,
+		'unmounting the last selected knob left the wheel bound'
+	);
 	assert.deepEqual([...knobs._knobWindowListenersForTests()], []);
 });
 
@@ -1568,6 +1601,72 @@ test('noteKnobHandInput expands the Alt-link partner', () => {
 	knobs.onKnobHandInput((ids) => seen.push([...ids]));
 	knobs.noteKnobHandInput(a);
 	assert.ok(seen.some((batch) => batch.includes(a) && batch.includes(b)));
+});
+
+// ============================================ MIXUX-9832: LESS releases decks 3/4
+// requirement: MIXUX-9832
+// - if releaseDeckControls leaves a deck 3/4 dial selected then a hidden dial
+//   keeps answering the page wheel in LESS
+// - if it leaves a link to a deck 3/4 dial then nudging the visible partner
+//   moves a hidden dial
+
+test('MIXUX-9832: releasing decks 3/4 stops the wheel moving a hidden FILTER but not deck 1', () => {
+	const hidden = addDial('3:filter', 0.5);
+	addDial('4:filter', 0.5);
+	const live = addDial('1:filter', 0.5);
+	knobs.shiftClickKnob(hidden);
+	knobs.shiftClickKnob(live);
+	knobs.releaseDeckControls([3, 4]);
+	assert.equal(knobs.isKnobSelected(hidden), false, 'if 3:filter stays selected then broken');
+	wheelHandler(wheelEvent(-100));
+	assert.equal(valueOf(hidden), 0.5, 'if the wheel moves hidden 3:filter then broken');
+	assert.notEqual(valueOf(live), 0.5, 'if the wheel stops moving visible 1:filter then broken');
+});
+
+test('MIXUX-9832: with only a hidden dial selected, the wheel moves nothing after release', () => {
+	const hidden = addDial('4:filter', 0.5);
+	knobs.shiftClickKnob(hidden);
+	knobs.releaseDeckControls([3, 4]);
+	const event = wheelEvent(-100);
+	wheelHandler(event);
+	assert.equal(valueOf(hidden), 0.5, 'if the wheel moves hidden 4:filter then broken');
+	assert.equal(event.wasPrevented(), false, 'if the page wheel is still captured then broken');
+});
+
+test('MIXUX-9832: a link to a hidden dial is dropped, so nudging the partner leaves it alone', () => {
+	const hidden = addDial('3:filter', 0.5);
+	const live = addDial('1:filter', 0.5);
+	knobs.altClickKnob(hidden);
+	knobs.altClickKnob(live);
+	assert.equal(knobs.linkedPartnerId(live), hidden);
+	knobs.releaseDeckControls([3, 4]);
+	assert.equal(knobs.linkedPartnerId(live), null, 'if the link survives then broken');
+	knobs.nudgeKnob(live, 0.1);
+	assert.equal(valueOf(hidden), 0.5, 'if nudging 1:filter moves hidden 3:filter then broken');
+});
+
+test('MIXUX-9832: a pending link on a hidden dial is dropped', () => {
+	const hidden = addDial('3:filter', 0.5);
+	knobs.altClickKnob(hidden);
+	knobs.releaseDeckControls([3, 4]);
+	assert.equal(knobs.isKnobLinked(hidden), false, 'if the pending link survives then broken');
+});
+
+test('MIXUX-9832: release covers faders and keeps decks 1/2', () => {
+	knobs.setKnobSelection(['1:high', knobs.faderControlId(3)]);
+	knobs.releaseDeckControls([3, 4]);
+	assert.deepEqual(
+		[...knobs.knobUi.selectedIds],
+		['1:high'],
+		'if a deck 3 fader stays selected then broken'
+	);
+});
+
+test('MIXUX-9832: release with nothing held on 3/4 does not rewrite the selection', () => {
+	knobs.setKnobSelection(['1:high']);
+	const before = knobs.knobUi.selectedIds;
+	knobs.releaseDeckControls([3, 4]);
+	assert.equal(knobs.knobUi.selectedIds, before, 'if a no-op release writes state then broken');
 });
 
 // requirement: MIXUX-10355 (issue #9547)

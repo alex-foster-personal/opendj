@@ -145,7 +145,7 @@ def _artists_key(stable_id: str, artists_json: str | None) -> str | None:
     return "\x1f".join(keys) or None
 
 
-def _metadata_chunks(conn: sqlite3.Connection) -> Iterable[list[str]]:
+def artist_title_duration_groups(conn: sqlite3.Connection) -> Iterable[list[str]]:
     """Rows sharing artists + title, cut into runs no wider than the tolerance.
 
     A run starts at its shortest duration and closes at the first row more
@@ -231,7 +231,7 @@ def duplicate_groups(conn: sqlite3.Connection, *, by_metadata: bool) -> Duplicat
     for loser, survivor in identity_duplicate_remap(conn).items():
         union.union(loser, survivor, BASIS_IDENTITY)
     if by_metadata:
-        _union_each(union, _metadata_chunks(conn), BASIS_METADATA)
+        _union_each(union, artist_title_duration_groups(conn), BASIS_METADATA)
     groups = DuplicateGroups()
     members: dict[str, list[str]] = {}
     for stable_id in union.parent:
@@ -409,6 +409,9 @@ def binding_unchanged(
     return unchanged
 
 
+_metadata_chunks = artist_title_duration_groups
+
+
 __all__ = [
     "BASIS_IDENTITY",
     "BASIS_METADATA",
@@ -420,6 +423,7 @@ __all__ = [
     "DuplicateGroups",
     "Rebind",
     "ShareResult",
+    "artist_title_duration_groups",
     "binding_unchanged",
     "duplicate_groups",
     "plan_sharing",

@@ -9,8 +9,10 @@ addresses only, reusing the speaker's address rule).
 
 The main engine API stays loopback-only. This module owns a separate FastAPI app
 on ``0.0.0.0`` exposing ``POST /remote/pair``, ``GET /remote/ping``,
-public ``/request/api/*`` crowd-request routes while a session is open, and the
-public crowd page at ``GET /request``.
+public ``/request/api/*`` crowd-request routes while a session is open, the
+public crowd page at ``GET /request``, and the paired phone Requests tab, which
+forwards under ``/remote/api/requests``, and the now-playing TV page at
+``GET /now-playing``.
 
 Issue #10443: ``remote-devices.json`` also stores ``listening: {port} | null`` so a
 listener that was on at quit reopens at boot on the same port with a fresh code.
@@ -63,6 +65,13 @@ REQUEST_PAGE_ASSETS = {
     "request.js": "text/javascript; charset=utf-8",
     "request-render.js": "text/javascript; charset=utf-8",
     "request.css": "text/css; charset=utf-8",
+}
+NOW_PLAYING_PAGE_PATH = "/now-playing"
+NOW_PLAYING_PAGE_ASSETS = {
+    "index.html": "text/html; charset=utf-8",
+    "display.js": "text/javascript; charset=utf-8",
+    "display-render.js": "text/javascript; charset=utf-8",
+    "display.css": "text/css; charset=utf-8",
 }
 REMOTE_DEVICES_FILE = "remote-devices.json"
 MAX_WRONG_CODES = 5
@@ -120,6 +129,8 @@ class RemoteSession:
     _task: asyncio.Task[None] | None = None
     _socket: socket.socket | None = None
     _background: set[asyncio.Task[None]] = field(default_factory=set)
+    _command_windows: dict[str, list[float | int]] = field(default_factory=dict, repr=False)
+    _command_http: Any = field(default=None, repr=False)
 
     def __post_init__(self) -> None:
         if not self._canonical_code:
@@ -240,22 +251,23 @@ class RemoteSession:
         self._rotate_code()
         return record, token
 
-    def authenticate(self, token: str | None) -> DeviceRecord:
+    def authenticate(self, token: str | None, *, touch_last_seen: bool = True) -> DeviceRecord:
         if token is None or token == "":
             raise HTTPException(status_code=401, detail="missing bearer token")
         digest = hashlib.sha256(token.encode()).hexdigest()
         devices = self._load_devices()
         for record in devices.values():
             if hmac.compare_digest(record.token_sha256, digest):
-                record = DeviceRecord(
-                    device_id=record.device_id,
-                    device_name=record.device_name,
-                    token_sha256=record.token_sha256,
-                    paired_at=record.paired_at,
-                    last_seen=datetime.now(UTC).isoformat(),
-                )
-                devices[record.device_id] = record
-                self._save_devices(devices)
+                if touch_last_seen:
+                    record = DeviceRecord(
+                        device_id=record.device_id,
+                        device_name=record.device_name,
+                        token_sha256=record.token_sha256,
+                        paired_at=record.paired_at,
+                        last_seen=datetime.now(UTC).isoformat(),
+                    )
+                    devices[record.device_id] = record
+                    self._save_devices(devices)
                 return record
         raise HTTPException(status_code=401, detail="unknown or forgotten token")
 
@@ -349,26 +361,44 @@ class RemoteSession:
         task.add_done_callback(self._background.discard)
 
 
-def request_page_dir() -> Path:
+def _static_page_dir(slug: str) -> Path:
     """Serve built static files, falling back to the source tree before a frontend build."""
-    built = frontend_build_dir() / "request"
+    built = frontend_build_dir() / slug
     if (built / "index.html").is_file():
         return built
-    return Path(__file__).resolve().parents[1] / "frontend" / "static" / "request"
+    return Path(__file__).resolve().parents[1] / "frontend" / "static" / slug
 
 
-def serve_request_page_file(name: str) -> FileResponse:
-    """Return one allowlisted file from the crowd request page directory."""
-    if name not in REQUEST_PAGE_ASSETS:
+def _serve_static_page_file(slug: str, assets: dict[str, str], name: str) -> FileResponse:
+    """Return one allowlisted file from a static page directory."""
+    if name not in assets:
         raise HTTPException(status_code=404, detail="Not Found")
-    path = request_page_dir() / name
+    path = _static_page_dir(slug) / name
     if not path.is_file():
         raise HTTPException(status_code=404, detail="Not Found")
     return FileResponse(
         path,
-        media_type=REQUEST_PAGE_ASSETS[name],
+        media_type=assets[name],
         headers={"Cache-Control": "no-cache"},
     )
+
+
+def request_page_dir() -> Path:
+    return _static_page_dir("request")
+
+
+def serve_request_page_file(name: str) -> FileResponse:
+    """Return one allowlisted file from the crowd request page directory."""
+    return _serve_static_page_file("request", REQUEST_PAGE_ASSETS, name)
+
+
+def now_playing_page_dir() -> Path:
+    return _static_page_dir("now-playing")
+
+
+def serve_now_playing_page_file(name: str) -> FileResponse:
+    """Return one allowlisted file from the now-playing display page directory."""
+    return _serve_static_page_file("now-playing", NOW_PLAYING_PAGE_ASSETS, name)
 
 
 def _bearer_token(request: Request) -> str | None:
@@ -382,7 +412,8 @@ def _bearer_token(request: Request) -> str | None:
 
 
 def build_listener_app(session: RemoteSession, engine_url: str) -> FastAPI:
-    """The LAN remote-control app: pair, ping, public request routes, and the /request page."""
+    """LAN app: pair, ping, public request routes, the /request page, /now-playing, and the phone Requests tab."""
+    from apps.webui.server.remote_control_phone_requests import mount_phone_request_routes
     from apps.webui.server.remote_control_requests import mount_public_request_routes
 
     if session.port is None:
@@ -428,6 +459,19 @@ def build_listener_app(session: RemoteSession, engine_url: str) -> FastAPI:
     async def get_request_page_asset(name: str) -> FileResponse:
         return serve_request_page_file(name)
 
+    @app.get(NOW_PLAYING_PAGE_PATH)
+    @app.get(f"{NOW_PLAYING_PAGE_PATH}/")
+    async def get_now_playing_page() -> FileResponse:
+        return serve_now_playing_page_file("index.html")
+
+    @app.get(f"{NOW_PLAYING_PAGE_PATH}/{{name}}")
+    async def get_now_playing_page_asset(name: str) -> FileResponse:
+        return serve_now_playing_page_file(name)
+
+    mount_phone_request_routes(app, session, engine_url)
+    from apps.webui.server.remote_control_phone_commands import mount_phone_command_routes
+
+    mount_phone_command_routes(app, session, engine_url)
     return app
 
 
@@ -484,6 +528,26 @@ async def reopen_at_boot(state_dir: Path, engine_url: str = RemoteSession.engine
         logger.warning("%s", session.last_error)
         return session
     return session
+
+
+def encode_qr_url(*, target: str, address: str, port: int, code: str) -> str:
+    """The URL a phone QR encodes for ``target`` (remote | request | display)."""
+    base = f"http://{address}:{port}"
+    if target == "remote":
+        # Code in the fragment so it never appears on a request line or access log.
+        return f"{base}/remote#code={code}"
+    if target == "request":
+        return f"{base}/request"
+    if target == "display":
+        return f"{base}/now-playing"
+    raise ValueError(f"unknown QR target {target!r}")
+
+
+def qr_svg_payload(url: str) -> str:
+    """SVG markup for ``url`` via segno (pure Python, no native deps)."""
+    import segno
+
+    return segno.make(url, error="m").svg_inline(scale=4)
 
 
 def devices_file_is_owner_only(path: Path) -> bool:

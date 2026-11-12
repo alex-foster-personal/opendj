@@ -12,7 +12,7 @@ import {
 	NOISE_BYTES,
 	planCharges
 } from '../../scripts/bundle-charge.mjs';
-import { BUDGETS_DIR, loadBudgets } from '../../scripts/bundle-budget-load.mjs';
+import { BUDGETS_DIR, chargeBranchId, loadBudgets } from '../../scripts/bundle-budget-load.mjs';
 
 const BRANCH = 'af--test-branch';
 const totals = (entries) => ({
@@ -89,4 +89,11 @@ test("if the command edits any limit, base file or other PR's charge then broken
 test('if a branch name that is a bare PR number or has a slash is accepted then broken', () => {
 	for (const branch of ['1234', 'af/slash'])
 		assert.throws(() => applyCharges([], { budgetsDir: tmpdir(), branch }));
+});
+
+test('if a git branch with a slash is not mapped to a charge file id then broken', () => {
+	assert.equal(chargeBranchId('seer/fix-rust-deck-load-title'), 'seer--fix-rust-deck-load-title');
+	assert.doesNotThrow(() =>
+		applyCharges([], { budgetsDir: tmpdir(), branch: chargeBranchId('af/slash') })
+	);
 });

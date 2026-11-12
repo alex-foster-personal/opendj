@@ -38,11 +38,26 @@ prefixes = [
 # - apps/stems/live_capability.py, live_capability_api.py: install-time
 #   machine capability (LATENCY-04). Benchmarks once, persists a JSON record,
 #   exposes a read-only route. Not a throughput or latency pipeline.
+# - apps/stems/inventory.py, inventory_report.py: read-only bundle discovery
+#   and reporting for migration or coverage; never separates audio or changes
+#   farm throughput (issue #11402 default_roots is store lists only).
+# - apps/stems/live_worker.py: unused control-plane scheduling reservation only;
+#   no inference implementation or runtime callers. Remove this exemption
+#   before integrating a production caller or inference logic (issue #12448).
+# - apps/stems/live_plan.py: pure lookahead, deadline and supplied-RSS checks;
+#   contains no separation or throughput logic.
 # - apps/lyrics/register_stems.py: backward-compat kwarg restore only
 #   (``root=``); no throughput or latency change.
+# - apps/stems/stem_mp4.py: read-only NI ``.stem.mp4`` probe/decode; no
+#   separation farm or batch throughput (issue #12233).
 exempt = [
   "apps/stems/live_capability.py",
   "apps/stems/live_capability_api.py",
+  "apps/stems/inventory.py",
+  "apps/stems/inventory_report.py",
+  "apps/stems/live_plan.py",
+  "apps/stems/live_worker.py",
+  "apps/stems/stem_mp4.py",
   "apps/lyrics/register_stems.py",
 ]
 

@@ -1,0 +1,9 @@
+{
+ "map_name": "XDJ-RX3",
+ "map_const": "XDJ_RX3_MAP",
+ "map_ts": "apps/webui/frontend/src/lib/rb/midi/maps/pioneer-xdj.ts",
+ "panel_w": 728.1,
+ "panel_d": 469.5,
+ "panel_size_source": "XDJ-RX3 product page, Specifications: Width 728.1 mm, Depth 469.5 mm, Height 118.4 mm; the top plate the controls sit on is the front 389 mm of that depth, the rest is the display housing",
+ "display_name": "2-channel all-in-one system"
+}

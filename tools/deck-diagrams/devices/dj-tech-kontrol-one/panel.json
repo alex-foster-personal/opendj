@@ -1,0 +1,543 @@
+{
+ "format": "opendj-panel-layout/1",
+ "device": "dj-tech-kontrol-one",
+ "display_name": "single-deck modular controller",
+ "units": "mm",
+ "panel": {
+  "w": 160.0,
+  "d": 289.0
+ },
+ "device_map": "DJ_TECH_KONTROL_ONE_MAP",
+ "sources": {
+  "panel_size": "DJ-Tech Kontrol One User Manual, Specifications: 160 (W) x 289 (D) x 107.5 (H) mm",
+  "wire": "apps/webui/frontend/src/lib/rb/midi/maps/dj-tech-kontrol-one.ts (Mixxx hints only, Path B)",
+  "positions": "measured product photo trace; reference devices/dj-tech-kontrol-one/panel.reference.json"
+ },
+ "out_of_scope": [
+  "decks 2-4: panel carries channel 1 wires; DECK SELECT chooses the active channel",
+  "knob push (notes 0x01..0x04): hinted on the map, no separate panel control",
+  "jog touch (note 0x1F): hinted on the map, shares the jog platter",
+  "LED rings and pad backlight feedback",
+  "Mixxx modifier layers beyond the vendor MIDI MAP"
+ ],
+ "controls": [
+  {
+   "id": "deck-select",
+   "fig": "1",
+   "type": "encoder",
+   "label": "DECK SELECT",
+   "does": "Choose active deck channel 1-4",
+   "x": 6.5,
+   "y": 9.5,
+   "w": 19.0,
+   "h": 19.0,
+   "section": "deck",
+   "midi": null,
+   "shift_midi": null
+  },
+  {
+   "id": "knob-1",
+   "fig": "2",
+   "type": "encoder",
+   "label": "KNOB 1",
+   "does": "FX or filter encoder (LED ring)",
+   "x": 41.0,
+   "y": 7.5,
+   "w": 27.0,
+   "h": 28.0,
+   "section": "effect",
+   "midi": {
+    "ch": 1,
+    "kind": "cc",
+    "id": 55
+   },
+   "shift_midi": null
+  },
+  {
+   "id": "knob-2",
+   "fig": "3",
+   "type": "encoder",
+   "label": "KNOB 2",
+   "does": "FX or filter encoder (LED ring)",
+   "x": 72.5,
+   "y": 7.5,
+   "w": 27.0,
+   "h": 28.0,
+   "section": "effect",
+   "midi": {
+    "ch": 1,
+    "kind": "cc",
+    "id": 54
+   },
+   "shift_midi": null
+  },
+  {
+   "id": "knob-3",
+   "fig": "4",
+   "type": "encoder",
+   "label": "KNOB 3",
+   "does": "FX or filter encoder (LED ring)",
+   "x": 103.5,
+   "y": 7.5,
+   "w": 27.0,
+   "h": 28.0,
+   "section": "effect",
+   "midi": {
+    "ch": 1,
+    "kind": "cc",
+    "id": 53
+   },
+   "shift_midi": null
+  },
+  {
+   "id": "knob-4",
+   "fig": "5",
+   "type": "encoder",
+   "label": "KNOB 4",
+   "does": "FX or filter encoder (LED ring)",
+   "x": 131.5,
+   "y": 7.5,
+   "w": 27.0,
+   "h": 28.0,
+   "section": "effect",
+   "midi": {
+    "ch": 1,
+    "kind": "cc",
+    "id": 52
+   },
+   "shift_midi": null
+  },
+  {
+   "id": "pad-1",
+   "fig": "10",
+   "type": "pad",
+   "label": "REC1",
+   "does": "Record row pad 1",
+   "x": 30.5,
+   "y": 42.0,
+   "w": 22.0,
+   "h": 19.0,
+   "section": "performance",
+   "midi": {
+    "ch": 1,
+    "kind": "note",
+    "id": 9
+   },
+   "shift_midi": null
+  },
+  {
+   "id": "pad-2",
+   "fig": "11",
+   "type": "pad",
+   "label": "REC2",
+   "does": "Record row pad 2",
+   "x": 60.0,
+   "y": 42.0,
+   "w": 22.0,
+   "h": 19.0,
+   "section": "performance",
+   "midi": {
+    "ch": 1,
+    "kind": "note",
+    "id": 8
+   },
+   "shift_midi": null
+  },
+  {
+   "id": "pad-3",
+   "fig": "12",
+   "type": "pad",
+   "label": "REC3",
+   "does": "Record row pad 3",
+   "x": 89.5,
+   "y": 42.0,
+   "w": 22.0,
+   "h": 19.0,
+   "section": "performance",
+   "midi": {
+    "ch": 1,
+    "kind": "note",
+    "id": 7
+   },
+   "shift_midi": null
+  },
+  {
+   "id": "pad-4",
+   "fig": "13",
+   "type": "pad",
+   "label": "REC4",
+   "does": "Record row pad 4",
+   "x": 119.0,
+   "y": 42.0,
+   "w": 22.0,
+   "h": 19.0,
+   "section": "performance",
+   "midi": {
+    "ch": 1,
+    "kind": "note",
+    "id": 6
+   },
+   "shift_midi": null
+  },
+  {
+   "id": "pad-5",
+   "fig": "14",
+   "type": "pad",
+   "label": "SAMPLE1",
+   "does": "Sampler row pad 1",
+   "x": 30.5,
+   "y": 67.0,
+   "w": 22.0,
+   "h": 19.0,
+   "section": "performance",
+   "midi": {
+    "ch": 1,
+    "kind": "note",
+    "id": 14
+   },
+   "shift_midi": null
+  },
+  {
+   "id": "pad-6",
+   "fig": "15",
+   "type": "pad",
+   "label": "SAMPLE2",
+   "does": "Sampler row pad 2",
+   "x": 60.0,
+   "y": 67.0,
+   "w": 22.0,
+   "h": 19.0,
+   "section": "performance",
+   "midi": {
+    "ch": 1,
+    "kind": "note",
+    "id": 13
+   },
+   "shift_midi": null
+  },
+  {
+   "id": "pad-7",
+   "fig": "16",
+   "type": "pad",
+   "label": "SAMPLE3",
+   "does": "Sampler row pad 3",
+   "x": 89.5,
+   "y": 67.0,
+   "w": 22.0,
+   "h": 19.0,
+   "section": "performance",
+   "midi": {
+    "ch": 1,
+    "kind": "note",
+    "id": 12
+   },
+   "shift_midi": null
+  },
+  {
+   "id": "pad-8",
+   "fig": "17",
+   "type": "pad",
+   "label": "SAMPLE4",
+   "does": "Sampler row pad 4",
+   "x": 119.0,
+   "y": 67.0,
+   "w": 22.0,
+   "h": 19.0,
+   "section": "performance",
+   "midi": {
+    "ch": 1,
+    "kind": "note",
+    "id": 11
+   },
+   "shift_midi": null
+  },
+  {
+   "id": "pad-9",
+   "fig": "18",
+   "type": "pad",
+   "label": "CUE1",
+   "does": "Hot cue row pad 1",
+   "x": 30.5,
+   "y": 92.5,
+   "w": 22.0,
+   "h": 19.0,
+   "section": "performance",
+   "midi": {
+    "ch": 1,
+    "kind": "note",
+    "id": 19
+   },
+   "shift_midi": null
+  },
+  {
+   "id": "pad-10",
+   "fig": "19",
+   "type": "pad",
+   "label": "CUE2",
+   "does": "Hot cue row pad 2",
+   "x": 60.0,
+   "y": 92.5,
+   "w": 22.0,
+   "h": 19.0,
+   "section": "performance",
+   "midi": {
+    "ch": 1,
+    "kind": "note",
+    "id": 18
+   },
+   "shift_midi": null
+  },
+  {
+   "id": "pad-11",
+   "fig": "20",
+   "type": "pad",
+   "label": "CUE3",
+   "does": "Hot cue row pad 3",
+   "x": 89.5,
+   "y": 92.5,
+   "w": 22.0,
+   "h": 19.0,
+   "section": "performance",
+   "midi": {
+    "ch": 1,
+    "kind": "note",
+    "id": 17
+   },
+   "shift_midi": null
+  },
+  {
+   "id": "pad-12",
+   "fig": "21",
+   "type": "pad",
+   "label": "CUE4",
+   "does": "Hot cue row pad 4",
+   "x": 119.0,
+   "y": 92.5,
+   "w": 22.0,
+   "h": 19.0,
+   "section": "performance",
+   "midi": {
+    "ch": 1,
+    "kind": "note",
+    "id": 16
+   },
+   "shift_midi": null
+  },
+  {
+   "id": "pad-13",
+   "fig": "22",
+   "type": "pad",
+   "label": "LOOP1",
+   "does": "Loop row pad 1",
+   "x": 30.5,
+   "y": 117.5,
+   "w": 22.0,
+   "h": 19.0,
+   "section": "performance",
+   "midi": {
+    "ch": 1,
+    "kind": "note",
+    "id": 24
+   },
+   "shift_midi": null
+  },
+  {
+   "id": "pad-14",
+   "fig": "23",
+   "type": "pad",
+   "label": "LOOP2",
+   "does": "Loop row pad 2",
+   "x": 60.0,
+   "y": 117.5,
+   "w": 22.0,
+   "h": 19.0,
+   "section": "performance",
+   "midi": {
+    "ch": 1,
+    "kind": "note",
+    "id": 23
+   },
+   "shift_midi": null
+  },
+  {
+   "id": "pad-15",
+   "fig": "24",
+   "type": "pad",
+   "label": "LOOP3",
+   "does": "Loop row pad 3",
+   "x": 89.5,
+   "y": 117.5,
+   "w": 22.0,
+   "h": 19.0,
+   "section": "performance",
+   "midi": {
+    "ch": 1,
+    "kind": "note",
+    "id": 22
+   },
+   "shift_midi": null
+  },
+  {
+   "id": "pad-16",
+   "fig": "25",
+   "type": "pad",
+   "label": "LOOP4",
+   "does": "Loop row pad 4",
+   "x": 119.0,
+   "y": 117.5,
+   "w": 22.0,
+   "h": 19.0,
+   "section": "performance",
+   "midi": {
+    "ch": 1,
+    "kind": "note",
+    "id": 21
+   },
+   "shift_midi": null
+  },
+  {
+   "id": "pitch-minus",
+   "fig": "30",
+   "type": "button",
+   "label": "PITCH -",
+   "does": "Momentary pitch nudge down",
+   "x": 26.0,
+   "y": 226.5,
+   "w": 24.0,
+   "h": 19.0,
+   "section": "deck",
+   "midi": {
+    "ch": 1,
+    "kind": "note",
+    "id": 25
+   },
+   "shift_midi": null
+  },
+  {
+   "id": "pitch-plus",
+   "fig": "31",
+   "type": "button",
+   "label": "PITCH +",
+   "does": "Momentary pitch nudge up",
+   "x": 115.0,
+   "y": 226.5,
+   "w": 24.0,
+   "h": 19.0,
+   "section": "deck",
+   "midi": {
+    "ch": 1,
+    "kind": "note",
+    "id": 30
+   },
+   "shift_midi": null
+  },
+  {
+   "id": "shift",
+   "fig": "32",
+   "type": "button",
+   "label": "SHIFT",
+   "does": "Modifier for secondary pad or knob functions",
+   "x": 40.5,
+   "y": 251.5,
+   "w": 25.0,
+   "h": 19.0,
+   "section": "deck",
+   "midi": {
+    "ch": 1,
+    "kind": "note",
+    "id": 26
+   },
+   "shift_midi": null
+  },
+  {
+   "id": "cue",
+   "fig": "33",
+   "type": "button",
+   "label": "CUE",
+   "does": "Return to cue point or set cue",
+   "x": 65.0,
+   "y": 251.5,
+   "w": 25.0,
+   "h": 19.0,
+   "section": "deck",
+   "midi": {
+    "ch": 1,
+    "kind": "note",
+    "id": 28
+   },
+   "shift_midi": null
+  },
+  {
+   "id": "play",
+   "fig": "34",
+   "type": "button",
+   "label": "PLAY",
+   "does": "Start or pause playback",
+   "x": 89.5,
+   "y": 251.5,
+   "w": 25.0,
+   "h": 19.0,
+   "section": "deck",
+   "midi": {
+    "ch": 1,
+    "kind": "note",
+    "id": 27
+   },
+   "shift_midi": null
+  },
+  {
+   "id": "sync",
+   "fig": "35",
+   "type": "button",
+   "label": "SYNC",
+   "does": "Match tempo to master or other deck",
+   "x": 114.5,
+   "y": 251.5,
+   "w": 25.0,
+   "h": 19.0,
+   "section": "deck",
+   "midi": {
+    "ch": 1,
+    "kind": "note",
+    "id": 29
+   },
+   "shift_midi": null
+  },
+  {
+   "id": "jog",
+   "fig": "36",
+   "type": "jog",
+   "label": "JOG",
+   "does": "Scratch or bend tempo via touch-sensitive platter",
+   "x": 37.0,
+   "y": 147.5,
+   "w": 91.0,
+   "h": 93.0,
+   "section": "deck",
+   "midi": {
+    "ch": 1,
+    "kind": "cc",
+    "id": 32
+   },
+   "shift_midi": null
+  },
+  {
+   "id": "pitch-slider",
+   "fig": "37",
+   "type": "fader",
+   "label": "PITCH",
+   "does": "Absolute tempo slider",
+   "x": 139.0,
+   "y": 107.0,
+   "w": 12.0,
+   "h": 110.0,
+   "section": "deck",
+   "midi": {
+    "ch": 1,
+    "kind": "cc",
+    "id": 33
+   },
+   "shift_midi": null
+  }
+ ]
+}

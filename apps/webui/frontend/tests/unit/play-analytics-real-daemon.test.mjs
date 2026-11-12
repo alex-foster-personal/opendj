@@ -38,7 +38,7 @@ after(async () => {
 test('a never-created event store reaches the client as NoEventStoreError', async () => {
 	await assert.rejects(analyticsApi.fetchPlayAnalytics(null, 50), (error) => {
 		assert.ok(
-			error instanceof analyticsApi.NoEventStoreError,
+			analyticsApi.isNoEventStoreError(error),
 			`expected the empty state, got ${error?.constructor?.name}: ${error?.message}`
 		);
 		return true;
@@ -52,10 +52,7 @@ test('an event store that exists without its schema stays a loud failure', async
 	writeFileSync(join(setsDir, 'sets.db'), '');
 	try {
 		await assert.rejects(analyticsApi.fetchPlayAnalytics(null, 50), (error) => {
-			assert.ok(
-				!(error instanceof analyticsApi.NoEventStoreError),
-				'a broken store is not an empty one'
-			);
+			assert.ok(!analyticsApi.isNoEventStoreError(error), 'a broken store is not an empty one');
 			assert.match(
 				error.message,
 				/GET \/api\/play-analytics failed: 503 .*required table 'sets' is missing/

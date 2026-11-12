@@ -40,18 +40,20 @@ test('installed-shell MIDI is a bounded CoreMIDI transport into the shared runti
 });
 
 test('remote shell authority exposes only the bounded MIDI commands and event listener', async () => {
-	const [buildScript, capabilityText, updaterText] = await Promise.all([
+	const [buildScript, capabilityText, updaterText, secondScreenText] = await Promise.all([
 		read('../../desktop/src-tauri/build.rs'),
 		read('../../desktop/src-tauri/capabilities/midi.json'),
-		read('../../desktop/src-tauri/capabilities/updater.json')
+		read('../../desktop/src-tauri/capabilities/updater.json'),
+		read('../../desktop/src-tauri/capabilities/second-screen.json')
 	]);
 	const capability = JSON.parse(capabilityText);
-	// The app command list is exactly the two MIDI commands plus INSTALL-40's
-	// install_local_update (loopback-only manifest, signature-verified install).
-	// Any further command widens the remote-origin authority and must fail here.
+	// The app command list is the two MIDI commands, INSTALL-40's install_local_update
+	// (loopback-only manifest, signature-verified install), and SECONDSCREEN's
+	// open_second_screen (its own capability, no event listener). Any further command
+	// widens the remote-origin authority and must fail here.
 	assert.match(
 		buildScript,
-		/commands\(&\[\s*"native_midi_snapshot",\s*"native_midi_send",\s*"install_local_update",?\s*\]\)/
+		/commands\(&\[\s*"native_midi_snapshot",\s*"native_midi_send",\s*"install_local_update",\s*"open_second_screen",\s*"control_shell_window",\s*"query_shell_window_labels",?\s*\]\)/
 	);
 	// install_local_update is granted by the updater capability alone, never by MIDI.
 	assert.deepEqual(JSON.parse(updaterText).permissions, [
@@ -59,6 +61,13 @@ test('remote shell authority exposes only the bounded MIDI commands and event li
 		'process:allow-restart',
 		'process:allow-exit',
 		'allow-install-local-update'
+	]);
+	assert.deepEqual(JSON.parse(secondScreenText).permissions, [
+		'allow-open-second-screen',
+		'allow-control-shell-window',
+		'allow-query-shell-window-labels',
+		'core:event:allow-listen',
+		'core:event:allow-unlisten'
 	]);
 	assert.deepEqual(capability.permissions, [
 		'allow-native-midi-snapshot',

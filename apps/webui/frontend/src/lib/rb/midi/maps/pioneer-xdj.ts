@@ -95,8 +95,8 @@ function _deckBindings(deck: DeckId): MidiBinding[] {
 		{ source: pioneerNote(ch, 1), action: { type: 'deck_cue', deck } },
 		{ source: pioneerCc(ch, 0), action: { type: 'deck_pitch', deck, lsbOffset: 32 } },
 		{ source: pioneerNote(ch, 31), action: { type: 'deck_sync_toggle', deck } },
-		{ source: pioneerNote(ch, 6), action: { type: 'deck_manual_loop_cycle', deck } },
-		{ source: pioneerNote(ch, 7), action: { type: 'deck_manual_loop_cycle', deck } },
+		{ source: pioneerNote(ch, 6), action: { type: 'deck_loop_in', deck } },
+		{ source: pioneerNote(ch, 7), action: { type: 'deck_loop_out', deck } },
 		{ source: pioneerNote(ch, 8), action: { type: 'deck_loop_exit', deck } },
 		{ source: pioneerNote(ch, 81), action: { type: 'browse_load', deck } },
 		{
@@ -401,10 +401,176 @@ const _AZ_GLOBAL_HINTS: ControlHint[] = [
 	{ source: pioneerNote(BROWSER_CH, 49), label: 'TRACK FILTER' }
 ];
 
+/**
+ * RX3 rows the list documents but no MidiAction covers, so the practice replica can place
+ * every top-panel control as a hint (inert, PARITY-TODO) and never a fake binding. Every
+ * number is a row of the RX3 list; fig numbers are the list's. The AZ list is a different
+ * document and gets none of these.
+ */
+function _rx3DeckHints(deck: DeckId): ControlHint[] {
+	const ch = pioneerDeckChannel(deck);
+	const label = (name: string): string => `${name} (deck ${deck})`;
+	const notes: [number, string][] = [
+		// 1-1 jog touch + SHIFT
+		[72, 'JOG touch + SHIFT'],
+		// 1-4 TEMPO RANGE, 1-6 MASTER, 1-7 JOG MODE, 1-8-1 VINYL SPEED ADJUST
+		[16, 'TEMPO RANGE'],
+		[30, 'MASTER'],
+		[18, 'JOG MODE'],
+		[42, 'VINYL SPEED ADJUST'],
+		// 1-5 SYNC long press, 1-14 LOOP IN long press
+		[71, 'SYNC long press'],
+		[69, 'LOOP IN long press'],
+		// 1-17 CUE/LOOP CALL, 1-18 CUE/LOOP DELETE, 1-19 CUE/LOOP MEMORY, 1-25 QUANTIZE
+		[11, 'CUE/LOOP CALL NEXT'],
+		[12, 'CUE/LOOP CALL PREV'],
+		[13, 'CUE/LOOP DELETE'],
+		[10, 'CUE/LOOP MEMORY'],
+		[9, 'QUANTIZE'],
+		// 5-1..5-4 pad mode buttons (deck channel, not the pad channel) and their +SHIFT rows
+		[34, 'HOT CUE mode'],
+		[38, 'HOT CUE mode + SHIFT'],
+		[35, 'BEAT LOOP mode'],
+		[39, 'BEAT LOOP mode + SHIFT'],
+		[36, 'SLIP LOOP mode'],
+		[40, 'SLIP LOOP mode + SHIFT'],
+		[37, 'BEAT JUMP mode'],
+		[41, 'BEAT JUMP mode + SHIFT']
+	];
+	return [
+		...notes.map(([note, name]): ControlHint => ({
+			source: pioneerNote(ch, note),
+			label: label(name)
+		})),
+		// 1-1 jog platter and wheel side + SHIFT, 3-13 INPUT SWITCH (deck channel, CC 99)
+		{ source: pioneerCc(ch, 41), label: label('JOG platter + SHIFT') },
+		{ source: pioneerCc(ch, 38), label: label('JOG wheel side + SHIFT') },
+		{ source: pioneerCc(ch, 99), label: label('INPUT SWITCH') }
+	];
+}
+
+/** 5-5..5-12 shifted pad rows on the pad channel (HOT CUE mode + SHIFT = GATE CUE). */
+function _rx3PadHints(deck: DeckId): ControlHint[] {
+	return HOT_CUE_SLOTS.map((_slot, pad): ControlHint => {
+		const wire = rx3PadWire(deck, pad);
+		return {
+			source: pioneerNote(wire.ch, 8 + pad),
+			label: `PAD ${pad + 1} + SHIFT (deck ${deck})`
+		};
+	});
+}
+
+/** 2-3 EFFECT SELECT rotary: one CC per detent, in the list's order. */
+const RX3_EFFECT_SELECT_CC: readonly (readonly [number, string])[] = [
+	[42, 'DELAY'],
+	[55, 'ECHO'],
+	[51, 'PING PONG'],
+	[43, 'SPIRAL'],
+	[54, 'REVERB'],
+	[53, 'TRANS'],
+	[59, 'FILTER'],
+	[50, 'FLANGER'],
+	[57, 'PHASER'],
+	[63, 'PITCH'],
+	[58, 'SLIP ROLL'],
+	[46, 'ROLL'],
+	[61, 'VINYL BRAKE'],
+	[62, 'HELIX']
+];
+
+/** 2-4 CH SELECT rotary: one CC per detent, in the list's order. */
+const RX3_CH_SELECT_CC: readonly (readonly [number, string])[] = [
+	[39, 'CF.A'],
+	[40, 'CF.B'],
+	[28, 'MIC'],
+	[32, 'AUX'],
+	[34, 'CH1'],
+	[35, 'CH2'],
+	[41, 'MASTER']
+];
+
+/** Documented RX3 effect, mixer and browser rows with no MidiAction (groups 2, 3, 4). */
+function _rx3GlobalHints(): ControlHint[] {
+	const mixer: [number, string][] = [
+		// 2-1 BEAT, 2-2 TAP (+SHIFT), 2-5 TIME, 2-6 LEVEL DEPTH, 2-7 BEAT EFFECT ON/OFF (+SHIFT)
+		[76, 'BEAT LEFT'],
+		[77, 'BEAT RIGHT'],
+		[78, 'TAP'],
+		[126, 'TAP + SHIFT'],
+		[45, 'BEAT FX TIME'],
+		[91, 'BEAT FX LEVEL/DEPTH'],
+		[114, 'BEAT FX ON/OFF'],
+		[52, 'BEAT FX ON/OFF + SHIFT'],
+		// 2-9 PARAMETER, 2-10..2-15 SOUND COLOR FX buttons
+		[108, 'SOUND COLOR FX PARAMETER'],
+		[105, 'SOUND COLOR FX SPACE'],
+		[107, 'SOUND COLOR FX DUB ECHO'],
+		[106, 'SOUND COLOR FX SWEEP'],
+		[85, 'SOUND COLOR FX NOISE'],
+		[86, 'SOUND COLOR FX CRUSH'],
+		[87, 'SOUND COLOR FX FILTER'],
+		// 3-3 CROSSFADER curve switch, 3-12 LINK CUE, 3-15 BOOTH, 3-17 AUX SELECT, 3-18 AUX TRIM
+		[95, 'CROSSFADER CURVE'],
+		[75, 'LINK CUE'],
+		[25, 'BOOTH MONITOR LEVEL'],
+		[119, 'AUX SELECT OFF'],
+		[120, 'AUX SELECT LINE'],
+		[121, 'AUX SELECT PORTABLE'],
+		[122, 'AUX TRIM']
+	];
+	return [
+		...mixer.map(([cc, label]): ControlHint => ({ source: pioneerCc(MIXER_CH, cc), label })),
+		...RX3_EFFECT_SELECT_CC.map(([cc, name]): ControlHint => ({
+			source: pioneerCc(MIXER_CH, cc),
+			label: `EFFECT SELECT ${name}`
+		})),
+		...RX3_CH_SELECT_CC.map(([cc, name]): ControlHint => ({
+			source: pioneerCc(MIXER_CH, cc),
+			label: `CH SELECT ${name}`
+		})),
+		// 4-1 ROTARY SELECTOR +SHIFT and press, 4-2 BACK, 4-3 TAG TRACK/REMOVE, 4-4 TRACK FILTER
+		{ source: pioneerCc(BROWSER_CH, 96), label: 'ROTARY SELECTOR + SHIFT' },
+		{ source: pioneerNote(BROWSER_CH, 51), label: 'ROTARY SELECTOR press' },
+		{ source: pioneerNote(BROWSER_CH, 97), label: 'ROTARY SELECTOR press + SHIFT' },
+		{ source: pioneerNote(BROWSER_CH, 50), label: 'BACK' },
+		{ source: pioneerNote(BROWSER_CH, 95), label: 'BACK + SHIFT' },
+		{ source: pioneerNote(BROWSER_CH, 48), label: 'TAG TRACK/REMOVE' },
+		{ source: pioneerNote(BROWSER_CH, 98), label: 'TAG TRACK/REMOVE + SHIFT' },
+		{ source: pioneerNote(BROWSER_CH, 49), label: 'TRACK FILTER' },
+		{ source: pioneerNote(BROWSER_CH, 93), label: 'TRACK FILTER + SHIFT' }
+	];
+}
+
+/**
+ * RX3 MIDI-OUT rows ("<- same as MIDI IN") an existing LedTrigger can drive: 1-21 CUE
+ * lights when a track is loaded, 5-1 HOT CUE mode lights while that pad mode is selected.
+ * PLAY, SYNC, RELOOP/EXIT and the hot-cue pads are already in _ledRules. The other OUT
+ * rows (MASTER TEMPO, MASTER, JOG MODE, REVERSE, SLIP, LOOP IN/OUT, LOAD, QUANTIZE, the
+ * other pad modes) have no trigger kind yet, and the CC-status rows (CH CUE, TAP, BEAT FX
+ * ON/OFF, SOUND COLOR FX) cannot be a Note On LedRule; PARITY-TODO.
+ */
+function _rx3Leds(deck: DeckId): LedRule[] {
+	const ch = pioneerDeckChannel(deck);
+	return [
+		{
+			trigger: { kind: 'deck_loaded', deck },
+			out: { ch, note: 1, velocityOn: 0x7f, velocityOff: 0x00 }
+		},
+		{
+			trigger: { kind: 'pad_mode_selected', deck, mode: 'hot_cue' },
+			out: { ch, note: 34, velocityOn: 0x7f, velocityOff: 0x00 }
+		}
+	];
+}
+
 export const XDJ_RX3_MAP: DeviceMap = _xdjMap('XDJ-RX3', rx3PadWire, {
 	bindings: [],
-	leds: [],
-	hints: []
+	leds: DECKS.flatMap((deck) => _rx3Leds(deck)),
+	hints: [
+		...DECKS.flatMap((deck) => _rx3DeckHints(deck)),
+		...DECKS.flatMap((deck) => _rx3PadHints(deck)),
+		..._rx3GlobalHints()
+	]
 });
 export const XDJ_AZ_MAP: DeviceMap = _xdjMap('XDJ-AZ', azPadWire, {
 	bindings: DECKS.flatMap((deck) => _azOnlyBindings(deck)),

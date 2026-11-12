@@ -13,8 +13,11 @@ import contextlib
 import socket
 import threading
 from collections.abc import Callable
+from typing import Literal
 
 from apps.ableton_link.link_clock import beat_at_time, link_now_us
+
+WriteMode = Literal["normal", "reject", "silent"]
 
 
 class SimCarabiner:
@@ -25,6 +28,7 @@ class SimCarabiner:
         start_us: float | None = None,
         port: int = 0,
         now_us: Callable[[], float] = link_now_us,
+        write_mode: WriteMode = "normal",
     ) -> None:
         self.bpm = bpm
         self.peers = peers
@@ -41,6 +45,7 @@ class SimCarabiner:
         #: Client connections accepted so far (a re-dial shows up here).
         self.accepted = 0
         self._closed = False
+        self.write_mode = write_mode
         threading.Thread(target=self._accept, daemon=True).start()
 
     def beat_now(self) -> float:
@@ -59,14 +64,15 @@ class SimCarabiner:
             with contextlib.suppress(OSError):  # a closed client is not this sim's concern
                 conn.sendall(line)
 
-    def set_tempo(self, bpm: float) -> None:
+    def set_tempo(self, bpm: float, *, notify: bool = True) -> None:
         """What a DJ app does on this laptop's session: keep the beat, change the tempo."""
         with self._lock:
             now = self._now_us()
             beat = beat_at_time(self.start_us, self.bpm, now)
             self.bpm = bpm
             self.start_us = now - beat * 60e6 / bpm
-        self.push()
+        if notify:
+            self.push()
 
     def _accept(self) -> None:
         while not self._closed:
@@ -97,13 +103,25 @@ class SimCarabiner:
         parts = line.split()
         if not parts:
             return
+        if parts[0] == "status":
+            conn.sendall(self.status_line())
+            return
+        if self.write_mode == "reject":
+            conn.sendall(b"bad-request\n")
+            return
         if parts[0] == "bpm":
-            self.set_tempo(float(parts[1]))
+            silent = self.write_mode == "silent"
+            self.set_tempo(float(parts[1]), notify=not silent)
+            if silent:
+                return
+            conn.sendall(self.status_line())
             return
         if parts[0] in ("force-beat-at-time", "request-beat-at-time"):
             beat, at_us = float(parts[1]), float(parts[2])
             with self._lock:
                 self.start_us = at_us - beat * 60e6 / self.bpm
+            if self.write_mode == "silent":
+                return
         conn.sendall(self.status_line())
 
     def close(self) -> None:

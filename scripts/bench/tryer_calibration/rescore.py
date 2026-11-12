@@ -42,7 +42,8 @@ from typing import Any
 
 import numpy as np
 
-from apps.autodj.http import RenderLayout, TrackProfile, TransitionPlan, build_service
+from apps.autodj.contract import RenderLayout
+from apps.autodj.http import TrackProfile, TransitionPlan, build_service
 from apps.transition_score.contract import SCORER_VERSION, ScoreResult
 from apps.transition_score.http import (
     PRIOR_WEIGHTS,

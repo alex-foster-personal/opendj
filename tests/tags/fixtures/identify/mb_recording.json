@@ -1,0 +1,7 @@
+{
+  "id": "rec-mbid-1",
+  "title": "Test Track",
+  "first-release-date": "1998-01-01",
+  "artist-credit": [{"name": "Test Artist", "joinphrase": ""}],
+  "releases": [{"id": "rel-1", "date": "1998-03-01", "title": "Test Album"}]
+}

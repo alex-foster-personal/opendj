@@ -73,9 +73,17 @@ WRAPPED_FIELDS: frozenset[str] = frozenset(
         # {"offset_ms", "beat_shift"} per grid source, applied when /anlz
         # serves the grid (apps/shared/state/grid_edit.py).
         "beatgrid_edit",
+        # Issue #11199: variable-tempo warp map (apps/shared/state/grid_edit.py).
+        "warp_map",
         # GRID-OCTAVE-02: {"v": 1, "source": "own"|"mik"|null}, the user's pick
         # where our tempo and Mixed In Key's disagree (apps/shared/state/tempo_pick.py).
         "grid_tempo_pick",
+        # KEY-10229: {"v": 1, "key": "6A"|null}, the user's typed key from the
+        # library cell (apps/shared/state/key_edit.py).
+        "key_edit",
+        # ANALYSIS-11723: {"v": 1, "range": "93-186"|...|null}, the track's own BPM
+        # range for the beatgrid analysis (apps/shared/state/analysis_range.py).
+        "analysis_bpm_range",
         # AUTOGAIN-04: the user's own auto gain offset in dB (a float), set
         # from the deck's AG readout or PUT /auto-gain/tracks/{id}/user-offset.
         "auto_gain_user_db",

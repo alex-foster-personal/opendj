@@ -1,3 +1,5 @@
+import { proposalConfidenceReadout } from '$lib/autodj/propose-confidence';
+
 /**
  * AutoPlay Next's planner call (AGENT-48): ask the Python chooser for a transition, and decide which path runs.
  *
@@ -48,6 +50,9 @@ export interface PlannerPick {
 	score: number | null;
 	out_start_bar: number;
 	rationale: string;
+	planner_confidence?: number | null;
+	planner_weakest_factor?: string | null;
+	planner_confidence_title?: string | null;
 }
 
 export interface PlannerAnswer {
@@ -242,12 +247,24 @@ export interface AutoPlayNextRun {
 	rendered: number | null;
 	planning_ms: number;
 	saved: boolean;
+	planner_confidence: number | null;
+	planner_weakest_factor: string | null;
+	planner_confidence_title: string | null;
 }
 
 export function planRunOf(choice: TransitionChoice, planningMs: number): AutoPlayNextRun {
 	const ms = Math.round(planningMs);
 	if (choice.path === 'featurette') {
-		const empty = { style: null, bars: null, score: null, out_start_bar: null, rendered: null };
+		const empty = {
+			style: null,
+			bars: null,
+			score: null,
+			out_start_bar: null,
+			rendered: null,
+			planner_confidence: null,
+			planner_weakest_factor: null,
+			planner_confidence_title: null
+		};
 		return { path: 'featurette', reason: choice.reason, planning_ms: ms, saved: false, ...empty };
 	}
 	const { style, bars, score, out_start_bar } = choice.pick;
@@ -260,14 +277,23 @@ export function planRunOf(choice: TransitionChoice, planningMs: number): AutoPla
 		out_start_bar,
 		rendered: choice.rendered,
 		planning_ms: ms,
-		saved: choice.saved
+		saved: choice.saved,
+		planner_confidence: choice.pick.planner_confidence ?? null,
+		planner_weakest_factor: choice.pick.planner_weakest_factor ?? null,
+		planner_confidence_title: choice.pick.planner_confidence_title ?? null
 	};
 }
 
 export function runLabel(run: AutoPlayNextRun): string {
-	if (run.saved) return `saved: ${run.style} ${run.bars}`;
+	const confidence = proposalConfidenceReadout(
+		run.planner_confidence,
+		run.planner_weakest_factor,
+		null
+	).label;
+	const suffix = confidence ? `; ${confidence}` : '';
+	if (run.saved) return `saved: ${run.style} ${run.bars}${suffix}`;
 	if (run.path === 'planner')
-		return `plan: ${run.style} ${run.bars}${run.score === null ? ' (unscored)' : ''}`;
+		return `plan: ${run.style} ${run.bars}${run.score === null ? ' (unscored)' : ''}${suffix}`;
 	return run.path === 'featurette' ? 'fixed loop' : 'no plan';
 }
 
@@ -282,5 +308,25 @@ export function runTitle(run: AutoPlayNextRun): string {
 		run.score === null
 			? 'from the track analysis, not yet scored'
 			: `from ${run.rendered} scored candidates`;
-	return `Planned transition starting at outgoing bar ${run.out_start_bar}. ${run.reason}. Chose ${from} (${took}). M is the 0..1 transition quality score.`;
+	const conf = proposalConfidenceReadout(
+		run.planner_confidence,
+		run.planner_weakest_factor,
+		parseConfidenceTitle(run.planner_confidence_title)
+	);
+	const confPart = conf.title ? ` Planner ${conf.label ?? ''}. ${conf.title}.` : '';
+	return `Planned transition starting at outgoing bar ${run.out_start_bar}. ${run.reason}. Chose ${from} (${took}). M is the 0..1 transition quality score.${confPart}`;
+}
+
+function parseConfidenceTitle(title: string | null): Record<string, number> | null {
+	if (!title) return null;
+	const factors: Record<string, number> = {};
+	for (const part of title.split(';')) {
+		const trimmed = part.trim();
+		const space = trimmed.lastIndexOf(' ');
+		if (space <= 0) continue;
+		const key = trimmed.slice(0, space);
+		const value = Number(trimmed.slice(space + 1));
+		if (Number.isFinite(value)) factors[key] = value;
+	}
+	return Object.keys(factors).length ? factors : null;
 }

@@ -154,7 +154,7 @@ test('SOURCE: the Err cell, the sort key and the dismiss control are wired', () 
 	assert.doesNotMatch(popover, /disabled=\{ongridflagdismiss === undefined\}/, 'no inert dismiss button');
 	assert.match(
 		table,
-		/const result = await setGridFlagDismissed\(row\.stable_id, dismissed\);\s*if \(row\.grid_quality\) row\.grid_quality = \{ \.\.\.row\.grid_quality, dismissed: result\.dismissed \}/,
+		/const result = await setGridFlagDismissed\(row\.stable_id, dismissed\);\s*onpatchrow\?\.\(row\.stable_id, \(held\) => \(\{\s*\.\.\.held,\s*\.\.\.\(held\.grid_quality\s*\?\s*\{ grid_quality: \{ \.\.\.held\.grid_quality, dismissed: result\.dismissed \} \}/,
 		'the row (and so the button label) flips only after the engine confirmed'
 	);
 	const dots = read('components/rb/browser/AnalysisDots.svelte');

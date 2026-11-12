@@ -45,6 +45,7 @@ from dataclasses import dataclass, field
 
 from apps.analysis_key import key_guess
 from apps.shared.events import publish as publish_engine_event
+from apps.shared.state import analysis_range
 
 from . import queue_store
 from ._warmup_lock import ensure_owned_numba_cache_dir
@@ -117,6 +118,9 @@ def _already_current(
     matches the canonical beatgrid. Rows written before the cascade marked
     them (NATIVE-36) carry no marker, and skipping them left 20 of 31 tracks
     of one playlist with a blank key after their grids were re-analyzed.
+
+    A fourth: a beatgrid made under another BPM range than the track's own
+    (ANALYSIS-11723), so a "Re-analyze grid" order is not skipped.
     """
     row = conn.execute(
         "SELECT record_json FROM analysis WHERE stable_id = ? AND backend = ? "
@@ -129,6 +133,8 @@ def _already_current(
         return False
     if key_guess.needs_guess_rerun(item.lane, row[0]):
         return False  # KEY-GUESS-01: a pre-guess decline re-runs once to gain its guess
+    if analysis_range.needs_range_rerun(conn, item.stable_id, item.lane, row[0]):
+        return False  # ANALYSIS-11723: the track's BPM range changed since this grid was made
     return not dependency_stale_row(conn, item.stable_id, item.lane, row[0])
 
 

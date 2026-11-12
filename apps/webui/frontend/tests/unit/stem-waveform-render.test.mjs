@@ -11,18 +11,15 @@ before(async () => {
 
 function recordingCtx(width, height) {
 	const fills = [];
-	return {
-		fills,
-		ctx: {
-			fillStyle: '#000',
-			clearRect() {},
-			fillRect(x, y, w, h) {
-				fills.push({ x, y, w, h, fillStyle: this.fillStyle });
-			}
-		},
-		width,
-		height
+	const ctx = {
+		fillStyle: '#000',
+		globalAlpha: 1,
+		clearRect() {},
+		fillRect(x, y, w, h) {
+			fills.push({ x, y, w, h, fillStyle: this.fillStyle, globalAlpha: this.globalAlpha });
+		}
 	};
+	return { fills, ctx, width, height };
 }
 
 test('the stem row requires the main row geometry instead of drawing at a guessed scale', () => {
@@ -34,7 +31,8 @@ test('the stem row requires the main row geometry instead of drawing at a guesse
 		pitch: 1,
 		width: rec.width,
 		height: rec.height,
-		color: '#fff'
+		color: '#fff',
+		alpha: 1
 	};
 	assert.throws(
 		() => render.drawStemWaveRow(rec.ctx, { ...frame, playheadFrac: 0.5 }),
@@ -64,7 +62,8 @@ test('drawStemWaveRow paints non-empty bars from a fixture envelope', () => {
 		pitch: 1,
 		width: rec.width,
 		height: rec.height,
-		color: '#4fb2ff'
+		color: '#4fb2ff',
+		alpha: 1
 	});
 	assert.ok(rec.fills.length > 0, 'fixture envelope must paint at least one bar');
 	assert.ok(
@@ -98,7 +97,8 @@ function paintedColumns({ positionS, spikeS, pitch = 1, durationS = 180 }) {
 		pitch,
 		width: rec.width,
 		height: rec.height,
-		color: '#4fb2ff'
+		color: '#4fb2ff',
+		alpha: 1
 	});
 	return rec.fills.map((f) => f.x);
 }
@@ -154,7 +154,8 @@ test('stem row paints nothing without a positive track duration or pitch', () =>
 			pitch,
 			width: rec.width,
 			height: rec.height,
-			color: '#4fb2ff'
+			color: '#4fb2ff',
+			alpha: 1
 		});
 		assert.equal(
 			rec.fills.length,
@@ -173,9 +174,52 @@ test('stem row paints nothing without a positive track duration or pitch', () =>
 		pitch: 1,
 		width: rec.width,
 		height: rec.height,
-		color: '#4fb2ff'
+		color: '#4fb2ff',
+		alpha: 1
 	});
 	assert.equal(rec.fills.length, 100, 'track seconds 0..10 sit right of center at 10 px/s');
+});
+
+test('if drawStemWaveRow paints at alpha 0.3 then every fill uses that globalAlpha and it is restored', () => {
+	const rec = recordingCtx(100, 12);
+	const priorAlpha = rec.ctx.globalAlpha;
+	const envelope = Array.from({ length: 100 }, (_, i) => (i === 50 ? 1 : 0));
+	render.drawStemWaveRow(rec.ctx, {
+		envelope,
+		scrollPx: 50,
+		windowS: 24,
+		playheadFrac: 0.5,
+		durationMs: 100 * 240,
+		pitch: 1,
+		width: rec.width,
+		height: rec.height,
+		color: '#4fb2ff',
+		alpha: 0.3
+	});
+	assert.ok(rec.fills.length > 0);
+	for (const fill of rec.fills) {
+		assert.equal(fill.globalAlpha, 0.3);
+	}
+	assert.equal(rec.ctx.globalAlpha, priorAlpha, 'globalAlpha must be restored after paint');
+});
+
+test('if drawStemWaveRow gets a bad alpha then it throws RangeError', () => {
+	const rec = recordingCtx(100, 12);
+	const base = {
+		envelope: [1],
+		scrollPx: 0,
+		windowS: 24,
+		playheadFrac: 0.5,
+		durationMs: 10_000,
+		pitch: 1,
+		width: rec.width,
+		height: rec.height,
+		color: '#fff'
+	};
+	for (const alpha of [Number.NaN, -0.1, 1.5]) {
+		assert.throws(() => render.drawStemWaveRow(rec.ctx, { ...base, alpha }), RangeError);
+	}
+	assert.throws(() => render.drawStemWaveRow(rec.ctx, base), RangeError);
 });
 
 // PERF-PAINT-02 (issue #10221): StemWaveRow reads its --rb-stem-<id> token once

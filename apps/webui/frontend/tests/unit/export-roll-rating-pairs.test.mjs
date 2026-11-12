@@ -317,16 +317,26 @@ test('CLI without --out exits 1 with [ERROR]', () => {
 	assert.match(r.stderr, /^\[ERROR\].*--out/);
 });
 
-// Holds only while the real render path (#9774, #9793, #9840) is absent from the repo.
+// Names exactly the real render path dependencies still absent from the repo (#9793 landed the ROLL kernel).
 test('CLI with --out exits 2 with [UNAVAILABLE] and creates nothing', () => {
+	const repoRoot = fileURLToPath(new URL('../../../../../', import.meta.url));
+	assert.ok(existsSync(join(repoRoot, 'apps/webui/frontend')));
+	const missing = REAL_PATH_DEPENDENCIES.filter((d) => !existsSync(join(repoRoot, d.path)));
 	const out = join(freshDir(), 'not-created');
 	const r = spawnSync(process.execPath, [fileURLToPath(SCRIPT_URL), '--out', out], {
 		encoding: 'utf8'
 	});
 	assert.equal(r.status, 2);
 	assert.match(r.stderr, /^\[UNAVAILABLE\]/);
-	for (const issue of ['#9774', '#9793', '#9840']) assert.ok(r.stderr.includes(issue), issue);
 	assert.equal(existsSync(out), false);
+	assert.ok(!missing.some((d) => d.issue === '#9793'));
+	for (const dep of REAL_PATH_DEPENDENCIES) {
+		if (missing.some((d) => d.issue === dep.issue)) {
+			assert.ok(r.stderr.includes(dep.issue), dep.issue);
+		} else {
+			assert.ok(!r.stderr.includes(dep.issue), `must not name present ${dep.issue}`);
+		}
+	}
 });
 
 test('resolveRealRenderer names each missing dependency, then has no adapter', () => {

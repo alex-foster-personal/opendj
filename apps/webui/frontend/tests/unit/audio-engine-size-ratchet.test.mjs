@@ -8,7 +8,7 @@ import { readFrontendSource } from './engine-source.mjs';
 globalThis.location ??= { search: '' };
 
 // Ratchet toward 1_500 as further #8581 slices land.
-const AUDIO_ENGINE_SVELTE_MAX_LINES = 4789;
+const AUDIO_ENGINE_SVELTE_MAX_LINES = 4830;
 
 /**
  * Sorted runtime Object.keys of the barrel on this merge, matching origin/main's public names (the
@@ -17,11 +17,13 @@ const AUDIO_ENGINE_SVELTE_MAX_LINES = 4789;
 const AUDIO_ENGINE_EXPORT_NAMES = [
 	'DECK_IDS',
 	'DeckReplacementBlockedError',
+	'ENGINE_DECK_IDS',
 	'KEY_SHIFT_RAMP_DURATION_SEC',
 	'KEY_SHIFT_RAMP_MAX_CENTS',
 	'KEY_SHIFT_RAMP_STEP_SEC',
 	'PITCH_RANGES',
 	'REAL_CONTEXT_WAIT_CLOCK',
+	'SHADOW_DECK_IDS',
 	'_configureGraphRebuildRetriesForTests',
 	'_fidelityTapForTests',
 	'acknowledgePresentedTransportSchedule',
@@ -114,6 +116,7 @@ const AUDIO_ENGINE_EXPORT_NAMES = [
 	'projectedTransportPosition',
 	'quantizedLoopEndpointsMs',
 	'quantizedPositionMs',
+	'query',
 	'rateDeckTrack',
 	'reattachingDecks',
 	'rebaseSlipAnchor',

@@ -19,6 +19,10 @@ import { test } from 'node:test';
 
 import { loadTypeScriptModule } from './load-typescript.mjs';
 
+// Node fires setTimeout on libuv's millisecond clock, which can lag Date.now()
+// by a few ms, so a full quiet period can measure as 2999 ms.
+const TIMER_CLOCK_SLACK_MS = 25;
+
 test('[if] boot loads the library index [then] deferred boot work runs well before the ceiling, [else stop].', async () => {
 	const boot = await loadTypeScriptModule('tests/unit/fixtures/boot-walk-settle-entry.ts');
 	const warnings = [];
@@ -44,7 +48,10 @@ test('[if] boot loads the library index [then] deferred boot work runs well befo
 			null,
 			`feedback:hydrate did not run within ${budgetMs} ms of boot (ceiling ${boot.DECK_LOAD_YIELD_MAX_MS} ms): the boot walk never settled`
 		);
-		assert.ok(ranAt >= boot.BOOT_QUIET_MS, 'the boot window still holds deferred work for its quiet period');
+		assert.ok(
+			ranAt >= boot.BOOT_QUIET_MS - TIMER_CLOCK_SLACK_MS,
+			`the boot window still holds deferred work for its quiet period (ran at ${ranAt} ms, quiet ${boot.BOOT_QUIET_MS} ms)`
+		);
 		assert.deepEqual(warnings, [], 'the scheduler ceiling fired');
 	} finally {
 		console.warn = realWarn;

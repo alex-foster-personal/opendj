@@ -24,6 +24,7 @@ from apps.sets.share import SetShareConfig
 from apps.sets.share_page import router as set_share_page_router
 from apps.shared.app_version import APP_VERSION
 from apps.shared.bounded_file_open import AUDIO_ACCESS_TIMEOUT_S
+from apps.webui.server.session_played import add_session_played_routes
 
 from . import (
     analysis_serving_bootstrap,  # noqa: F401 - PARITY-02 lane registration
@@ -197,6 +198,12 @@ def create_app(  # noqa: PLR0913
         _configure_cors(app)
     _configure_http_middleware(app, bind_host)
     _mount_api_routers(app)
+    # Issue #13522: the e2e configs boot this server directly, and the frontend
+    # polls the played set on every boot.
+    add_session_played_routes(app, data_dir=Path(state_db_path).resolve().parent.parent)
+    from apps.webui.server.shell_commands import install_shell_command_broker
+
+    install_shell_command_broker(app)
     app.include_router(set_share_page_router)
     _mount_frontend_or_placeholder(app, mount_frontend, FRONTEND_BUILD_DIR)
     return app

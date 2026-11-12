@@ -62,13 +62,17 @@ function neutralMixerState(fader: number): MixerState {
 		},
 		crossfader: 0.5,
 		master: 1,
+		booth: {
+			level: 0.5,
+			selected_output_device_id: null,
+			signal_mode: 'independent',
+			route: { state: 'default', selected: false }
+		},
 		headphones: {
 			mix: 0,
 			level: 0.5,
-			booth_level: 0.5,
 			selected_output_device_id: null,
 			selected_master_output_device_id: null,
-			selected_booth_output_device_id: null,
 			selected_input_device_id: null,
 			output_mode: 'practice',
 			head_delay_ms: 0,
@@ -98,8 +102,7 @@ function neutralMixerState(fader: number): MixerState {
 			},
 			routes: {
 				master: { state: 'default', selected: false },
-				cue: { state: 'default', selected: false },
-				booth: { state: 'default', selected: false }
+				cue: { state: 'default', selected: false }
 			},
 			outputs: [],
 			inputs: [],

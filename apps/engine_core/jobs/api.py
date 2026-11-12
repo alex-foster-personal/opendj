@@ -14,6 +14,7 @@ from typing import Annotated, Any, Literal
 from fastapi import APIRouter, HTTPException, Query, Request, status
 from pydantic import BaseModel, Field
 
+from apps.cloud import job as cloud_job
 from apps.engine_core.jobs.runner import (
     UnknownJobKind,
     known_kinds,
@@ -33,9 +34,19 @@ from apps.shared.engine_app_state import (
     jobs_runner_from_engine_request,
     jobs_store_from_engine_request,
 )
+from apps.stems import job as stems_job
 from apps.webui.server.routes import ingest as ingest_routes
 
 router = APIRouter(prefix="/jobs", tags=["jobs"])
+
+ANLZ_CACHE_REBUILD_KIND: str = "anlz.cache-rebuild"
+"""Reserved kind for the ANLZ cache rebuild worker once it registers."""
+
+FARM_JOB_KINDS: tuple[str, ...] = (
+    stems_job.JOB_KIND,
+    cloud_job.JOB_KIND,
+    ANLZ_CACHE_REBUILD_KIND,
+)
 
 DEFAULT_LIST_LIMIT: int = 200
 # An unbounded limit is a request to serialise the whole table into one
@@ -160,6 +171,8 @@ def _resolved_stems_payload(request: Request, payload: dict[str, Any]) -> dict[s
         payload = canonical_stems_payload(payload)
     except ValueError as exc:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+    if "data_dir" not in payload:
+        payload = {**payload, "data_dir": str(data_dir_from_engine_request(request))}
     if "scope" not in payload:
         try:
             worker_argv("stems.separate", payload)
@@ -287,6 +300,10 @@ def enqueue_job(request: Request, body: JobIn) -> dict[str, Any]:
         if not created:
             raise _anlz_job_active(job, "not enqueued again")
         return job
+    try:
+        worker_argv(body.kind, payload)
+    except UnknownJobKind as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
     return jobs_store_from_engine_request(request).enqueue(
         body.kind, payload, external_ref=body.external_ref
     )
@@ -408,7 +425,9 @@ def reenqueue_job(request: Request, job_id: str) -> dict[str, Any]:
 
 
 __all__ = [
+    "ANLZ_CACHE_REBUILD_KIND",
     "DEFAULT_LIST_LIMIT",
+    "FARM_JOB_KINDS",
     "MAX_LIST_LIMIT",
     "JobIn",
     "AnlzJobActiveDetail",

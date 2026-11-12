@@ -291,12 +291,26 @@ test('SSR: entitlements error still lists flags', async () => {
 	assert.ok(bundle.entitlements.error !== null);
 });
 
-test('+page.svelte mounts EntitlementsInspector before lyrics-generator', () => {
+test('+page.svelte KPI tab renders farmPanel before EntitlementsInspector and not lyricsPanel', () => {
 	const source = readFileSync(PAGE_PATH, 'utf8');
 	assert.match(source, /import EntitlementsInspector from '\.\/EntitlementsInspector\.svelte'/);
-	const inspectorPos = source.indexOf('<EntitlementsInspector />');
-	const lyricsPos = source.indexOf('id="lyrics-generator"');
-	assert.ok(inspectorPos >= 0 && lyricsPos > inspectorPos);
+	const kpiBranchStart = source.indexOf("{#if tab === 'kpi'}");
+	assert.ok(kpiBranchStart >= 0, 'KPI tab branch must exist');
+	const kpiBranchEnd = source.indexOf('{:else if tab ===', kpiBranchStart);
+	assert.ok(kpiBranchEnd > kpiBranchStart);
+	const kpiBranch = source.slice(kpiBranchStart, kpiBranchEnd);
+	assert.match(kpiBranch, /\{@render farmPanel\(\)\}/);
+	const farmPos = kpiBranch.indexOf('{@render farmPanel()}');
+	const inspectorPos = kpiBranch.indexOf('<EntitlementsInspector />');
+	assert.ok(
+		farmPos >= 0 && inspectorPos > farmPos,
+		'farmPanel must precede EntitlementsInspector on KPI tab'
+	);
+	assert.doesNotMatch(
+		kpiBranch,
+		/\{@render lyricsPanel\(\)\}/,
+		'lyricsPanel must not be on KPI tab'
+	);
 });
 
 test('helper calls every refusal function by name', () => {

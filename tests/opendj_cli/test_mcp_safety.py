@@ -177,7 +177,7 @@ def test_validate_sets_refuses_unsafe_paths(method: str, path: str) -> None:
 
 
 @pytest.mark.requirement("SET-12315")
-@pytest.mark.parametrize("method", [None, "POST", "PUT", "PATCH", "DELETE", "OPTIONS"])
+@pytest.mark.parametrize("method", [None, "PUT", "PATCH", "DELETE", "OPTIONS"])
 @pytest.mark.parametrize("path", ["/api/sets", "/api/sets/recorder/start"])
 def test_validate_sets_refuses_writes_and_legacy_calls(method: str | None, path: str) -> None:
     """[if] sets has no read method [then] invalid_path is raised, [else stop]."""
@@ -186,6 +186,44 @@ def test_validate_sets_refuses_writes_and_legacy_calls(method: str | None, path:
             validate_api_path(path)
         else:
             validate_api_path(path, method=method)
+    assert error.value.code == "invalid_path"
+
+
+@pytest.mark.requirement("SETREC-12874")
+@pytest.mark.parametrize("method", ["POST", "post"])
+@pytest.mark.parametrize("path", [
+    "/api/sets/recorder/start",
+    "/api/sets/recorder/2026-11-11T22-00-00/stop",
+    "/api/sets/recorder/2026-11-11T22-00-00_2/recover",
+])
+def test_validate_recorder_lifecycle_writes(method: str, path: str) -> None:
+    """[if] REC uses its lifecycle POST routes [then] the guard admits them, [else stop]."""
+    assert validate_api_path(path, method=method) == path
+    guard_library_request(method, path, environ={})
+
+
+@pytest.mark.requirement("SETREC-12874")
+@pytest.mark.parametrize("path", [
+    "/api/sets",
+    "/api/sets/recorder",
+    "/api/sets/recorder/start/extra",
+    "/api/sets/recorder/start/",
+    "/api/sets/recorder/2026-11-11T22-00-00/master-pcm",
+    "/api/sets/recorder/2026-11-11T22-00-00/stop/extra",
+    "/api/sets/recorder/2026-11-11T22-00-00/stream-encoder",
+    "/api/sets/session/transitions/0/label",
+    "/api/setsfoo/recorder/start",
+    "/api/sets%2frecorder/start",
+    "/api/sets/recorder/x/../start",
+    "/api/sets/recorder/x/%2e%2e/start",
+    "/api/sets/recorder/2026-11-11T22-00-00%2fstop/recover",
+    "/api/sets/recorder/2026-11-11T22-00-00%252fstop/recover",
+    "/api/sets/recorder/invalid/stop",
+])
+def test_validate_recorder_rejects_other_writes(path: str) -> None:
+    """[if] a POST is outside REC lifecycle [then] invalid_path is raised, [else stop]."""
+    with pytest.raises(SafetyRefusal) as error:
+        validate_api_path(path, method="POST")
     assert error.value.code == "invalid_path"
 
 

@@ -3,20 +3,38 @@
 // (engage/resize/hover >250ms on a deck's loop cluster). Space toggles play
 // on the most recent channel (load / play / loop target), except while a
 // keyboard-interactive control owns focus. Tab always moves browser focus.
+// C cues, V toggles beat sync and K master tempo on that same recent deck;
+// Backquote (Shift reverses) moves it to the next loaded deck (KEYB-11383).
 // Cmd+, / Ctrl+, is owned by settings/hotkeys.ts (meta/ctrl ignored here).
+// Digits 1-8 are the transport deck's hot cues (#10354); Shift saves an empty
+// slot, Cmd+Shift clears.
 // #10357: , . (Shift coarse) step tempo; Shift+K reset; P cycles pitch range.
 import { DECK_IDS, getDeckState, pitchRanges } from '$lib/rb/audio-engine.svelte';
 import { runPerformanceCommandFromUi, uiPrefs } from '$lib/rb/performance-ipc.svelte';
-import { getRecentDeck, noteRecentDeck } from '$lib/rb/recent-deck';
+import {
+	cycleRecentDeck,
+	getRecentDeck,
+	noteRecentDeck,
+	resolveKeyboardDeck,
+	type DeckPresence
+} from '$lib/rb/recent-deck';
 import {
 	mostRecentPendingLoadPlay,
 	setPendingLoadPlayIntent,
 	type DeckId
 } from '$lib/rb/deck-slots';
+import { createDeckHotCueActions } from '$lib/rb/deck-hot-cue-actions';
+import type { HotCueSlot } from '$lib/rb/hot-cue-types';
+import { selectedKnobIds } from '$lib/rb/knob-control.svelte';
 import { isSettingsOpen } from '$lib/settings/overlay.svelte';
 import { deckHoverUi } from '$lib/rb/deck-hover.svelte';
 import { armPinPlacement } from './feedback-store.svelte';
-import { handlePerformanceShortcutKeydown } from './performance-shortcut-routing';
+import {
+	buildRecentDeckCommand,
+	handlePerformanceShortcutKeydown,
+	type PerformanceShortcutHandlers,
+	type RecentDeckVerb
+} from './performance-shortcut-routing';
 import { gridJumpEnabled } from './grid-jump-flag';
 import { isTextEntryTarget } from '$lib/keyboard/text-entry-target';
 import {
@@ -27,6 +45,11 @@ import {
 } from '$lib/player/sampler/edge-sampler-ui.svelte';
 import { nativeShellKind } from '$lib/shell/native-shell';
 import { tempoKeyCommand, type TempoKeyAction } from './tempo-keys';
+import {
+	activeKeyboardPreset,
+	handleKeymapKeydown,
+	legacyPerformanceChordsActive
+} from '$lib/keyboard/keymap-runtime.svelte';
 
 // Re-exported so noteLoopInteraction's callers (e.g. LoopSafetyControls.svelte)
 // can take DeckId from here instead of a fresh direct import of deck-slots.ts,
@@ -67,22 +90,18 @@ export function clearLoopHover(deck: DeckId): void {
 	}
 }
 
+function _deckPresence(): DeckPresence[] {
+	return DECK_IDS.map((id) => ({
+		id,
+		loaded: getDeckState(id).stable_id !== null,
+		playing: getDeckState(id).playing
+	}));
+}
+
 function _resolveTransportDeck(): DeckId | null {
-	const recent = getRecentDeck();
-	if (recent !== null && getDeckState(recent).stable_id !== null) return recent;
-	for (const d of DECK_IDS) {
-		if (getDeckState(d).playing && getDeckState(d).stable_id !== null) {
-			noteRecentDeck(d);
-			return d;
-		}
-	}
-	for (const d of DECK_IDS) {
-		if (getDeckState(d).stable_id !== null) {
-			noteRecentDeck(d);
-			return d;
-		}
-	}
-	return null;
+	const deck = resolveKeyboardDeck(getRecentDeck(), _deckPresence());
+	if (deck !== null && deck !== getRecentDeck()) noteRecentDeck(deck);
+	return deck;
 }
 
 /**
@@ -170,6 +189,21 @@ async function _gridJump(bars: number): Promise<void> {
 	await runPerformanceCommandFromUi({ type: 'grid_jump', deck, bars });
 }
 
+/** KEYB-11383: C, V and K act on the transport deck; an empty deck sends nothing. */
+async function _recentDeckCommand(verb: RecentDeckVerb): Promise<void> {
+	const deck = _resolveTransportDeck();
+	const command = buildRecentDeckCommand(verb, deck, deck === null ? null : getDeckState(deck));
+	if (command !== null) await runPerformanceCommandFromUi(command);
+}
+
+/** KEYB-11383: Backquote moves the recent deck (UI focus state, no bus command). */
+function _cycleRecentDeck(direction: 1 | -1): void {
+	const presence = _deckPresence();
+	const loaded = presence.filter((d) => d.loaded).map((d) => d.id);
+	const next = cycleRecentDeck(resolveKeyboardDeck(getRecentDeck(), presence), direction, loaded);
+	if (next !== null) noteRecentDeck(next);
+}
+
 /** #10357: tempo keys act on the recent deck only; an empty or unset recent deck sends nothing. */
 async function _tempoKey(action: TempoKeyAction): Promise<void> {
 	const deck = getRecentDeck();
@@ -181,6 +215,34 @@ async function _tempoKey(action: TempoKeyAction): Promise<void> {
 			: { deck, loaded: st.stable_id !== null, pitch: st.pitch, range: pitchRanges[deck] }
 	);
 	if (command !== null) await runPerformanceCommandFromUi(command);
+}
+
+function _flashHotCuePad(deck: DeckId, slot: HotCueSlot): void {
+	document
+		.querySelector<HTMLElement>(`[data-testid="hot-cue-${deck}-${slot}"]`)
+		?.animate([{ filter: 'brightness(1.8)' }, { filter: 'none' }], { duration: 250 });
+}
+
+/** #10354: digit N on the transport deck's hot cue pad N. An empty deck sends nothing. */
+async function _hotCueKey(kind: 'trigger' | 'save' | 'clear', slot: HotCueSlot): Promise<void> {
+	const deck = _resolveTransportDeck();
+	if (deck === null) return;
+	const st = getDeckState(deck);
+	const filled = st.hot_cues.some((c) => c.slot === slot);
+	if (kind === 'trigger') {
+		if (filled) await runPerformanceCommandFromUi({ type: 'hot_cue_trigger', deck, slot });
+		return;
+	}
+	if (kind === 'save' && filled) {
+		_flashHotCuePad(deck, slot);
+		return;
+	}
+	if (kind === 'clear' && !filled) return;
+	const actions = createDeckHotCueActions(
+		() => deck,
+		() => getDeckState(deck)
+	);
+	await (kind === 'save' ? actions.saveHotCueAt(slot) : actions.clearHotCueAt(slot));
 }
 
 /** True when a pointer press landed on a deck or mixer channel rather than
@@ -222,45 +284,57 @@ export function installPerformanceHotkeys(): () => void {
 
 	const onKey = (e: KeyboardEvent): void => {
 		if (tryEdgeSamplerHotkey(e)) return;
-		handlePerformanceShortcutKeydown(
-			e,
-			{
-				toggleRecentPlay: (pressT0Ms, quantize) => {
-					void _toggleRecentPlay(pressT0Ms, quantize || undefined);
-				},
-				resizeLast: (factor) => {
-					void _resizeLast(factor);
-				},
-				exitLast: () => {
-					void _exitLast();
-				},
-				armPinPlacement,
-				// Linked zoom moves every deck; unlinked, the deck under the pointer,
-				// so with no deck hovered the key does nothing rather than move them all.
-				waveZoomStep: (direction) => {
-					const deck = uiPrefs.wave_zoom_linked ? null : deckHoverUi.deckId;
-					if (deck === null && !uiPrefs.wave_zoom_linked) return;
-					void runPerformanceCommandFromUi(
-						deck === null
-							? { type: 'wave_zoom_step', direction }
-							: { type: 'wave_zoom_step', direction, deck }
-					);
-				},
-				gridJump: (bars) => {
-					void _gridJump(bars);
-				},
-				tempoKey: (action) => {
-					void _tempoKey(action);
-				}
+		const handlers: PerformanceShortcutHandlers = {
+			toggleRecentPlay: (pressT0Ms, quantize) => {
+				void _toggleRecentPlay(pressT0Ms, quantize || undefined);
 			},
-			{
-				settingsOpen: isSettingsOpen(),
-				gridJump: gridJumpEnabled(),
-				deckFocus,
-				libraryFocus:
-					e.target instanceof Element && e.target.closest('[data-library-root]') !== null
+			resizeLast: (factor) => {
+				void _resizeLast(factor);
+			},
+			exitLast: () => {
+				void _exitLast();
+			},
+			armPinPlacement,
+			// Linked zoom moves every deck; unlinked, the deck under the pointer,
+			// so with no deck hovered the key does nothing rather than move them all.
+			waveZoomStep: (direction) => {
+				const deck = uiPrefs.wave_zoom_linked ? null : deckHoverUi.deckId;
+				if (deck === null && !uiPrefs.wave_zoom_linked) return;
+				void runPerformanceCommandFromUi(
+					deck === null
+						? { type: 'wave_zoom_step', direction }
+						: { type: 'wave_zoom_step', direction, deck }
+				);
+			},
+			gridJump: (bars) => {
+				void _gridJump(bars);
+			},
+			recentDeckCommand: (verb) => {
+				void _recentDeckCommand(verb);
+			},
+			cycleRecentDeck: _cycleRecentDeck,
+			tempoKey: (action) => {
+				void _tempoKey(action);
+			},
+			hotCueTrigger: (slot) => {
+				void _hotCueKey('trigger', slot).catch(() => {});
+			},
+			hotCueSave: (slot) => {
+				void _hotCueKey('save', slot).catch(() => {});
+			},
+			hotCueClear: (slot) => {
+				void _hotCueKey('clear', slot).catch(() => {});
 			}
-		);
+		};
+		if (handleKeymapKeydown(e, handlers)) return;
+		if (!legacyPerformanceChordsActive(activeKeyboardPreset())) return;
+		handlePerformanceShortcutKeydown(e, handlers, {
+			settingsOpen: isSettingsOpen(),
+			gridJump: gridJumpEnabled(),
+			deckFocus,
+			libraryFocus: e.target instanceof Element && e.target.closest('[data-library-root]') !== null,
+			dialSelected: selectedKnobIds().length > 0
+		});
 	};
 	window.addEventListener('pointerdown', onPointer, { capture: true });
 	window.addEventListener('keydown', onKey, { capture: true });

@@ -1,0 +1,9 @@
+{
+  "bytes": 7168,
+  "measured_main": 416054,
+  "measured_with_pr": 421662,
+  "sha": "eaa69f0eb1",
+  "date": "Tue 10 Nov 2026",
+  "reason": "PERF-11204 splits deck-load perf ms vs facts on the performance surface (deck-load-stage-units + perf-event ring write).",
+  "payback": "none planned; telemetry contract code belongs on the performance route"
+}

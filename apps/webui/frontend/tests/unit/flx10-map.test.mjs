@@ -232,6 +232,17 @@ test('flx10PadColorVelocity stays inside the 1-127 colour range', () => {
 	}
 });
 
+test('deck pair select binds ch3/ch4 note 114 to mixer_deck_pair_select', () => {
+	const hits = findBindings(
+		(b) =>
+			b.action.type === 'mixer_deck_pair_select' && b.source.kind === 'note' && b.source.id === 0x72
+	);
+	assert.equal(hits.length, 2);
+	const byCh = Object.fromEntries(hits.map((b) => [b.source.ch, b.action.pair]));
+	assert.equal(byCh[3], '1-3');
+	assert.equal(byCh[4], '2-4');
+});
+
 // ---------------------------------------------------------------- registry
 
 test('registry includes the FLX10 map and registerAllDeviceMaps is idempotent', () => {

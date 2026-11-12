@@ -10,7 +10,7 @@ from __future__ import annotations
 from dataclasses import asdict, dataclass
 from typing import Any, Literal
 
-from apps.autodj.contract.models import ENERGY_UP, SHOWY, SMOOTH, VOCALS_CLEAN, WIND_DOWN, TrackProfile, TransitionPlan
+from apps.autodj.contract import ENERGY_UP, SHOWY, SMOOTH, VOCALS_CLEAN, WIND_DOWN, TrackProfile, TransitionPlan
 
 GRID_WARNING = "MIK boundaries sit half a bar off this grid"
 UNSCORED_LINE = "energy unscored (no MIK series)"

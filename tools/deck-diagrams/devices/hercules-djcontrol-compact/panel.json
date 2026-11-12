@@ -1,0 +1,918 @@
+{
+ "format": "opendj-panel-layout/1",
+ "device": "hercules-djcontrol-compact",
+ "display_name": "2-channel portable DJ controller",
+ "units": "mm",
+ "panel": {
+  "w": 340.0,
+  "d": 100.0
+ },
+ "device_map": "HERCULES_DJCONTROL_COMPACT_MAP",
+ "sources": {
+  "panel_size": "Hercules DJControl Compact product specifications: 13.4 x 3.9 in / 340 x 100 mm (W x D)",
+  "wire": "apps/webui/frontend/src/lib/rb/midi/maps/hercules-djcontrol-compact.ts",
+  "positions": "measured trace of the official schematic, normalised for the renderer; reference: devices/hercules-djcontrol-compact/panel.reference.json"
+ },
+ "out_of_scope": [
+  "MODE, RECORD and AUTO are physical but hint-only in the live map",
+  "SAMPLER pad MIDI rows are hints; pads render inert in SAMPLER layer",
+  "shifted FX pad rows are hints",
+  "shifted transport on PLAY/CUE/SYNC is hardware-encoded on other notes and stays hint-only"
+ ],
+ "pad_layer_groups": {
+  "d1": {
+   "label": "Deck 1 pad layer",
+   "default_mode": "hot_cue",
+   "modes": [
+    {
+     "id": "hot_cue",
+     "label": "HOT CUE"
+    },
+    {
+     "id": "instant_fx",
+     "label": "FX"
+    },
+    {
+     "id": "sampler",
+     "label": "SAMPLER"
+    },
+    {
+     "id": "beat_loop",
+     "label": "LOOP"
+    }
+   ]
+  },
+  "d2": {
+   "label": "Deck 2 pad layer",
+   "default_mode": "hot_cue",
+   "modes": [
+    {
+     "id": "hot_cue",
+     "label": "HOT CUE"
+    },
+    {
+     "id": "instant_fx",
+     "label": "FX"
+    },
+    {
+     "id": "sampler",
+     "label": "SAMPLER"
+    },
+    {
+     "id": "beat_loop",
+     "label": "LOOP"
+    }
+   ]
+  }
+ },
+ "controls": [
+  {
+   "id": "d1-jog",
+   "fig": "JOG",
+   "type": "jog",
+   "label": "JOG",
+   "does": "Scratch or nudge; shifted jog is browse (deck 1)",
+   "x": 6.5,
+   "y": 25.5,
+   "w": 61.0,
+   "h": 54.0,
+   "section": "deck",
+   "midi": {
+    "ch": 1,
+    "kind": "cc",
+    "id": 48
+   },
+   "shift_midi": {
+    "ch": 1,
+    "kind": "cc",
+    "id": 55
+   }
+  },
+  {
+   "id": "d1-sync-toggle",
+   "fig": "SYNC",
+   "type": "button",
+   "label": "SYNC",
+   "does": "Beat sync on/off (deck 1)",
+   "x": 12.5,
+   "y": 76.5,
+   "w": 17.0,
+   "h": 17.0,
+   "section": "deck",
+   "midi": {
+    "ch": 1,
+    "kind": "note",
+    "id": 35
+   },
+   "shift_midi": null
+  },
+  {
+   "id": "d1-cue",
+   "fig": "CUE",
+   "type": "button",
+   "label": "CUE",
+   "does": "Cue point (deck 1)",
+   "x": 29.5,
+   "y": 76.5,
+   "w": 17.0,
+   "h": 17.0,
+   "section": "deck",
+   "midi": {
+    "ch": 1,
+    "kind": "note",
+    "id": 34
+   },
+   "shift_midi": null
+  },
+  {
+   "id": "d1-play-toggle",
+   "fig": "PLAY",
+   "type": "button",
+   "label": "PLAY/PAUSE",
+   "does": "Start or pause (deck 1)",
+   "x": 47.0,
+   "y": 76.5,
+   "w": 17.0,
+   "h": 17.0,
+   "section": "deck",
+   "midi": {
+    "ch": 1,
+    "kind": "note",
+    "id": 33
+   },
+   "shift_midi": null
+  },
+  {
+   "id": "d1-pad-1",
+   "fig": "1",
+   "type": "pad",
+   "label": "PAD 1",
+   "does": "Performance pad 1 (deck 1; MODE selects CUE/FX/SAM/LOOP)",
+   "x": 93.5,
+   "y": 60.0,
+   "w": 10.0,
+   "h": 6.0,
+   "section": "performance",
+   "midi": {
+    "ch": 1,
+    "kind": "note",
+    "id": 1
+   },
+   "shift_midi": {
+    "ch": 1,
+    "kind": "note",
+    "id": 5
+   },
+   "pad_layer_group": "d1",
+   "pad_layers": {
+    "hot_cue": {
+     "label": "HOT CUE PAD 1",
+     "does": "HOT CUE pad 1 (deck 1)",
+     "midi": {
+      "ch": 1,
+      "kind": "note",
+      "id": 1
+     },
+     "shift_midi": {
+      "ch": 1,
+      "kind": "note",
+      "id": 5
+     }
+    },
+    "instant_fx": {
+     "label": "FX PAD 1",
+     "does": "FX pad 1 (deck 1)",
+     "midi": {
+      "ch": 1,
+      "kind": "note",
+      "id": 9
+     },
+     "shift_midi": null
+    },
+    "sampler": {
+     "label": "SAMPLER PAD 1",
+     "does": "SAMPLER pad 1 (deck 1)",
+     "midi": null,
+     "shift_midi": null
+    },
+    "beat_loop": {
+     "label": "LOOP PAD 1",
+     "does": "LOOP pad 1 (deck 1)",
+     "midi": {
+      "ch": 1,
+      "kind": "note",
+      "id": 25
+     },
+     "shift_midi": {
+      "ch": 1,
+      "kind": "note",
+      "id": 29
+     }
+    }
+   }
+  },
+  {
+   "id": "d1-pad-2",
+   "fig": "2",
+   "type": "pad",
+   "label": "PAD 2",
+   "does": "Performance pad 2 (deck 1; MODE selects CUE/FX/SAM/LOOP)",
+   "x": 108.5,
+   "y": 60.0,
+   "w": 12.0,
+   "h": 6.0,
+   "section": "performance",
+   "midi": {
+    "ch": 1,
+    "kind": "note",
+    "id": 2
+   },
+   "shift_midi": {
+    "ch": 1,
+    "kind": "note",
+    "id": 6
+   },
+   "pad_layer_group": "d1",
+   "pad_layers": {
+    "hot_cue": {
+     "label": "HOT CUE PAD 2",
+     "does": "HOT CUE pad 2 (deck 1)",
+     "midi": {
+      "ch": 1,
+      "kind": "note",
+      "id": 2
+     },
+     "shift_midi": {
+      "ch": 1,
+      "kind": "note",
+      "id": 6
+     }
+    },
+    "instant_fx": {
+     "label": "FX PAD 2",
+     "does": "FX pad 2 (deck 1)",
+     "midi": {
+      "ch": 1,
+      "kind": "note",
+      "id": 10
+     },
+     "shift_midi": null
+    },
+    "sampler": {
+     "label": "SAMPLER PAD 2",
+     "does": "SAMPLER pad 2 (deck 1)",
+     "midi": null,
+     "shift_midi": null
+    },
+    "beat_loop": {
+     "label": "LOOP PAD 2",
+     "does": "LOOP pad 2 (deck 1)",
+     "midi": {
+      "ch": 1,
+      "kind": "note",
+      "id": 26
+     },
+     "shift_midi": {
+      "ch": 1,
+      "kind": "note",
+      "id": 30
+     }
+    }
+   }
+  },
+  {
+   "id": "d1-pad-3",
+   "fig": "3",
+   "type": "pad",
+   "label": "PAD 3",
+   "does": "Performance pad 3 (deck 1; MODE selects CUE/FX/SAM/LOOP)",
+   "x": 93.5,
+   "y": 68.5,
+   "w": 13.0,
+   "h": 9.0,
+   "section": "performance",
+   "midi": {
+    "ch": 1,
+    "kind": "note",
+    "id": 3
+   },
+   "shift_midi": {
+    "ch": 1,
+    "kind": "note",
+    "id": 7
+   },
+   "pad_layer_group": "d1",
+   "pad_layers": {
+    "hot_cue": {
+     "label": "HOT CUE PAD 3",
+     "does": "HOT CUE pad 3 (deck 1)",
+     "midi": {
+      "ch": 1,
+      "kind": "note",
+      "id": 3
+     },
+     "shift_midi": {
+      "ch": 1,
+      "kind": "note",
+      "id": 7
+     }
+    },
+    "instant_fx": {
+     "label": "FX PAD 3",
+     "does": "FX pad 3 (deck 1)",
+     "midi": {
+      "ch": 1,
+      "kind": "note",
+      "id": 11
+     },
+     "shift_midi": null
+    },
+    "sampler": {
+     "label": "SAMPLER PAD 3",
+     "does": "SAMPLER pad 3 (deck 1)",
+     "midi": null,
+     "shift_midi": null
+    },
+    "beat_loop": {
+     "label": "LOOP PAD 3",
+     "does": "LOOP pad 3 (deck 1)",
+     "midi": {
+      "ch": 1,
+      "kind": "note",
+      "id": 27
+     },
+     "shift_midi": {
+      "ch": 1,
+      "kind": "note",
+      "id": 31
+     }
+    }
+   }
+  },
+  {
+   "id": "d1-pad-4",
+   "fig": "4",
+   "type": "pad",
+   "label": "PAD 4",
+   "does": "Performance pad 4 (deck 1; MODE selects CUE/FX/SAM/LOOP)",
+   "x": 108.0,
+   "y": 68.5,
+   "w": 13.0,
+   "h": 9.0,
+   "section": "performance",
+   "midi": {
+    "ch": 1,
+    "kind": "note",
+    "id": 4
+   },
+   "shift_midi": {
+    "ch": 1,
+    "kind": "note",
+    "id": 8
+   },
+   "pad_layer_group": "d1",
+   "pad_layers": {
+    "hot_cue": {
+     "label": "HOT CUE PAD 4",
+     "does": "HOT CUE pad 4 (deck 1)",
+     "midi": {
+      "ch": 1,
+      "kind": "note",
+      "id": 4
+     },
+     "shift_midi": {
+      "ch": 1,
+      "kind": "note",
+      "id": 8
+     }
+    },
+    "instant_fx": {
+     "label": "FX PAD 4",
+     "does": "FX pad 4 (deck 1)",
+     "midi": {
+      "ch": 1,
+      "kind": "note",
+      "id": 12
+     },
+     "shift_midi": null
+    },
+    "sampler": {
+     "label": "SAMPLER PAD 4",
+     "does": "SAMPLER pad 4 (deck 1)",
+     "midi": null,
+     "shift_midi": null
+    },
+    "beat_loop": {
+     "label": "LOOP PAD 4",
+     "does": "LOOP pad 4 (deck 1)",
+     "midi": {
+      "ch": 1,
+      "kind": "note",
+      "id": 28
+     },
+     "shift_midi": {
+      "ch": 1,
+      "kind": "note",
+      "id": 32
+     }
+    }
+   }
+  },
+  {
+   "id": "d2-jog",
+   "fig": "JOG",
+   "type": "jog",
+   "label": "JOG",
+   "does": "Scratch or nudge; shifted jog is browse (deck 2)",
+   "x": 272.5,
+   "y": 25.5,
+   "w": 61.0,
+   "h": 54.0,
+   "section": "deck",
+   "midi": {
+    "ch": 1,
+    "kind": "cc",
+    "id": 49
+   },
+   "shift_midi": {
+    "ch": 1,
+    "kind": "cc",
+    "id": 56
+   }
+  },
+  {
+   "id": "d2-sync-toggle",
+   "fig": "SYNC",
+   "type": "button",
+   "label": "SYNC",
+   "does": "Beat sync on/off (deck 2)",
+   "x": 329.0,
+   "y": 76.5,
+   "w": 5.0,
+   "h": 17.0,
+   "section": "deck",
+   "midi": {
+    "ch": 1,
+    "kind": "note",
+    "id": 83
+   },
+   "shift_midi": null
+  },
+  {
+   "id": "d2-cue",
+   "fig": "CUE",
+   "type": "button",
+   "label": "CUE",
+   "does": "Cue point (deck 2)",
+   "x": 311.5,
+   "y": 76.5,
+   "w": 17.0,
+   "h": 17.0,
+   "section": "deck",
+   "midi": {
+    "ch": 1,
+    "kind": "note",
+    "id": 82
+   },
+   "shift_midi": null
+  },
+  {
+   "id": "d2-play-toggle",
+   "fig": "PLAY",
+   "type": "button",
+   "label": "PLAY/PAUSE",
+   "does": "Start or pause (deck 2)",
+   "x": 294.5,
+   "y": 76.5,
+   "w": 17.0,
+   "h": 17.0,
+   "section": "deck",
+   "midi": {
+    "ch": 1,
+    "kind": "note",
+    "id": 81
+   },
+   "shift_midi": null
+  },
+  {
+   "id": "d2-pad-1",
+   "fig": "1",
+   "type": "pad",
+   "label": "PAD 1",
+   "does": "Performance pad 1 (deck 2; MODE selects CUE/FX/SAM/LOOP)",
+   "x": 221.0,
+   "y": 60.0,
+   "w": 10.0,
+   "h": 6.0,
+   "section": "performance",
+   "midi": {
+    "ch": 1,
+    "kind": "note",
+    "id": 49
+   },
+   "shift_midi": {
+    "ch": 1,
+    "kind": "note",
+    "id": 53
+   },
+   "pad_layer_group": "d2",
+   "pad_layers": {
+    "hot_cue": {
+     "label": "HOT CUE PAD 1",
+     "does": "HOT CUE pad 1 (deck 2)",
+     "midi": {
+      "ch": 1,
+      "kind": "note",
+      "id": 49
+     },
+     "shift_midi": {
+      "ch": 1,
+      "kind": "note",
+      "id": 53
+     }
+    },
+    "instant_fx": {
+     "label": "FX PAD 1",
+     "does": "FX pad 1 (deck 2)",
+     "midi": {
+      "ch": 1,
+      "kind": "note",
+      "id": 57
+     },
+     "shift_midi": null
+    },
+    "sampler": {
+     "label": "SAMPLER PAD 1",
+     "does": "SAMPLER pad 1 (deck 2)",
+     "midi": null,
+     "shift_midi": null
+    },
+    "beat_loop": {
+     "label": "LOOP PAD 1",
+     "does": "LOOP pad 1 (deck 2)",
+     "midi": {
+      "ch": 1,
+      "kind": "note",
+      "id": 73
+     },
+     "shift_midi": {
+      "ch": 1,
+      "kind": "note",
+      "id": 77
+     }
+    }
+   }
+  },
+  {
+   "id": "d2-pad-2",
+   "fig": "2",
+   "type": "pad",
+   "label": "PAD 2",
+   "does": "Performance pad 2 (deck 2; MODE selects CUE/FX/SAM/LOOP)",
+   "x": 233.5,
+   "y": 60.0,
+   "w": 13.0,
+   "h": 6.0,
+   "section": "performance",
+   "midi": {
+    "ch": 1,
+    "kind": "note",
+    "id": 50
+   },
+   "shift_midi": {
+    "ch": 1,
+    "kind": "note",
+    "id": 54
+   },
+   "pad_layer_group": "d2",
+   "pad_layers": {
+    "hot_cue": {
+     "label": "HOT CUE PAD 2",
+     "does": "HOT CUE pad 2 (deck 2)",
+     "midi": {
+      "ch": 1,
+      "kind": "note",
+      "id": 50
+     },
+     "shift_midi": {
+      "ch": 1,
+      "kind": "note",
+      "id": 54
+     }
+    },
+    "instant_fx": {
+     "label": "FX PAD 2",
+     "does": "FX pad 2 (deck 2)",
+     "midi": {
+      "ch": 1,
+      "kind": "note",
+      "id": 58
+     },
+     "shift_midi": null
+    },
+    "sampler": {
+     "label": "SAMPLER PAD 2",
+     "does": "SAMPLER pad 2 (deck 2)",
+     "midi": null,
+     "shift_midi": null
+    },
+    "beat_loop": {
+     "label": "LOOP PAD 2",
+     "does": "LOOP pad 2 (deck 2)",
+     "midi": {
+      "ch": 1,
+      "kind": "note",
+      "id": 74
+     },
+     "shift_midi": {
+      "ch": 1,
+      "kind": "note",
+      "id": 78
+     }
+    }
+   }
+  },
+  {
+   "id": "d2-pad-3",
+   "fig": "3",
+   "type": "pad",
+   "label": "PAD 3",
+   "does": "Performance pad 3 (deck 2; MODE selects CUE/FX/SAM/LOOP)",
+   "x": 219.5,
+   "y": 68.5,
+   "w": 13.0,
+   "h": 9.0,
+   "section": "performance",
+   "midi": {
+    "ch": 1,
+    "kind": "note",
+    "id": 51
+   },
+   "shift_midi": {
+    "ch": 1,
+    "kind": "note",
+    "id": 55
+   },
+   "pad_layer_group": "d2",
+   "pad_layers": {
+    "hot_cue": {
+     "label": "HOT CUE PAD 3",
+     "does": "HOT CUE pad 3 (deck 2)",
+     "midi": {
+      "ch": 1,
+      "kind": "note",
+      "id": 51
+     },
+     "shift_midi": {
+      "ch": 1,
+      "kind": "note",
+      "id": 55
+     }
+    },
+    "instant_fx": {
+     "label": "FX PAD 3",
+     "does": "FX pad 3 (deck 2)",
+     "midi": {
+      "ch": 1,
+      "kind": "note",
+      "id": 59
+     },
+     "shift_midi": null
+    },
+    "sampler": {
+     "label": "SAMPLER PAD 3",
+     "does": "SAMPLER pad 3 (deck 2)",
+     "midi": null,
+     "shift_midi": null
+    },
+    "beat_loop": {
+     "label": "LOOP PAD 3",
+     "does": "LOOP pad 3 (deck 2)",
+     "midi": {
+      "ch": 1,
+      "kind": "note",
+      "id": 75
+     },
+     "shift_midi": {
+      "ch": 1,
+      "kind": "note",
+      "id": 79
+     }
+    }
+   }
+  },
+  {
+   "id": "d2-pad-4",
+   "fig": "4",
+   "type": "pad",
+   "label": "PAD 4",
+   "does": "Performance pad 4 (deck 2; MODE selects CUE/FX/SAM/LOOP)",
+   "x": 233.5,
+   "y": 68.5,
+   "w": 13.0,
+   "h": 9.0,
+   "section": "performance",
+   "midi": {
+    "ch": 1,
+    "kind": "note",
+    "id": 52
+   },
+   "shift_midi": {
+    "ch": 1,
+    "kind": "note",
+    "id": 56
+   },
+   "pad_layer_group": "d2",
+   "pad_layers": {
+    "hot_cue": {
+     "label": "HOT CUE PAD 4",
+     "does": "HOT CUE pad 4 (deck 2)",
+     "midi": {
+      "ch": 1,
+      "kind": "note",
+      "id": 52
+     },
+     "shift_midi": {
+      "ch": 1,
+      "kind": "note",
+      "id": 56
+     }
+    },
+    "instant_fx": {
+     "label": "FX PAD 4",
+     "does": "FX pad 4 (deck 2)",
+     "midi": {
+      "ch": 1,
+      "kind": "note",
+      "id": 60
+     },
+     "shift_midi": null
+    },
+    "sampler": {
+     "label": "SAMPLER PAD 4",
+     "does": "SAMPLER pad 4 (deck 2)",
+     "midi": null,
+     "shift_midi": null
+    },
+    "beat_loop": {
+     "label": "LOOP PAD 4",
+     "does": "LOOP pad 4 (deck 2)",
+     "midi": {
+      "ch": 1,
+      "kind": "note",
+      "id": 76
+     },
+     "shift_midi": {
+      "ch": 1,
+      "kind": "note",
+      "id": 80
+     }
+    }
+   }
+  },
+  {
+   "id": "ch1-fader",
+   "fig": "VOL-DA",
+   "type": "knob",
+   "label": "VOL",
+   "does": "Deck A volume",
+   "x": 123.0,
+   "y": 6.0,
+   "w": 15.0,
+   "h": 17.0,
+   "section": "mixer",
+   "midi": {
+    "ch": 1,
+    "kind": "cc",
+    "id": 57
+   },
+   "shift_midi": null
+  },
+  {
+   "id": "ch2-fader",
+   "fig": "VOL-DB",
+   "type": "knob",
+   "label": "VOL",
+   "does": "Deck B volume",
+   "x": 201.5,
+   "y": 6.0,
+   "w": 15.0,
+   "h": 17.0,
+   "section": "mixer",
+   "midi": {
+    "ch": 1,
+    "kind": "cc",
+    "id": 61
+   },
+   "shift_midi": null
+  },
+  {
+   "id": "ch1-eq-mid",
+   "fig": "MEDIUM-DA",
+   "type": "knob",
+   "label": "MID",
+   "does": "Deck A mid EQ",
+   "x": 153.5,
+   "y": 15.0,
+   "w": 12.0,
+   "h": 14.0,
+   "section": "mixer",
+   "midi": {
+    "ch": 1,
+    "kind": "cc",
+    "id": 59
+   },
+   "shift_midi": null
+  },
+  {
+   "id": "ch1-eq-low",
+   "fig": "BASS-DA",
+   "type": "knob",
+   "label": "BASS",
+   "does": "Deck A bass EQ",
+   "x": 153.5,
+   "y": 39.0,
+   "w": 12.0,
+   "h": 14.0,
+   "section": "mixer",
+   "midi": {
+    "ch": 1,
+    "kind": "cc",
+    "id": 60
+   },
+   "shift_midi": null
+  },
+  {
+   "id": "ch2-eq-mid",
+   "fig": "MEDIUM-DB",
+   "type": "knob",
+   "label": "MID",
+   "does": "Deck B mid EQ",
+   "x": 174.5,
+   "y": 15.0,
+   "w": 12.0,
+   "h": 14.0,
+   "section": "mixer",
+   "midi": {
+    "ch": 1,
+    "kind": "cc",
+    "id": 63
+   },
+   "shift_midi": null
+  },
+  {
+   "id": "ch2-eq-low",
+   "fig": "BASS-DB",
+   "type": "knob",
+   "label": "BASS",
+   "does": "Deck B bass EQ",
+   "x": 174.5,
+   "y": 39.0,
+   "w": 12.0,
+   "h": 14.0,
+   "section": "mixer",
+   "midi": {
+    "ch": 1,
+    "kind": "cc",
+    "id": 64
+   },
+   "shift_midi": null
+  },
+  {
+   "id": "crossfader",
+   "fig": "XFADER",
+   "type": "crossfader",
+   "label": "CROSSFADER",
+   "does": "Blend decks",
+   "x": 147.5,
+   "y": 83.5,
+   "w": 33.0,
+   "h": 8.0,
+   "section": "mixer",
+   "midi": {
+    "ch": 1,
+    "kind": "cc",
+    "id": 54
+   },
+   "shift_midi": null
+  },
+  {
+   "id": "shift-modifier",
+   "fig": "SH",
+   "type": "button",
+   "label": "SHIFT",
+   "does": "Hardware shift; each pad and jog has a shifted twin on other notes",
+   "x": 255.5,
+   "y": 34.5,
+   "w": 8.0,
+   "h": 10.0,
+   "section": "deck",
+   "midi": {
+    "ch": 1,
+    "kind": "note",
+    "id": 47
+   },
+   "shift_midi": null
+  }
+ ]
+}

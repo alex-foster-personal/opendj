@@ -66,16 +66,26 @@ export function lookedAtPath(text: string): string | null {
  * after a colon-space, so a title like "7A - 6 - Glasswing" is not read as a code.
  */
 export function libraryFailureCodeInText(text: string): string | undefined {
+	let winner: string | undefined;
+	let winnerAt = -1;
 	for (const code of LIBRARY_LOAD_FAILURE_WORDS.keys()) {
-		const pattern = new RegExp(`(?:^|: )${code}: `);
-		if (pattern.test(text)) return code;
+		const pattern = new RegExp(`(?:^|: )${code}: `, 'g');
+		for (const match of text.matchAll(pattern)) {
+			const at = match.index ?? -1;
+			if (at > winnerAt) {
+				winnerAt = at;
+				winner = code;
+			}
+		}
 	}
-	return undefined;
+	return winner;
 }
 
 /** Title sitting before `: CODE: `, with a leading `Deck N load failed - ` removed. */
 export function trackTitleBeforeCode(text: string, code: string): string | null {
 	const marker = `: ${code}: `;
+	// First marker only: loadMessage and Error.message are often the same string;
+	// joining them duplicates the line, and lastIndexOf would swallow the code tail into the title.
 	const at = text.indexOf(marker);
 	if (at === -1) return null;
 	const title = text

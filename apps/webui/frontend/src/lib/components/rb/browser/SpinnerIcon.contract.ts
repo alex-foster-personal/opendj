@@ -1,4 +1,5 @@
 import { expect } from 'storybook/test';
+import { prefersReducedMotion } from '$lib/motion/reduced-motion';
 
 /**
  * SpinnerIcon UI contract, shared by the Svelte story (SpinnerIcon.stories.ts)
@@ -29,7 +30,7 @@ export const contracts = {
 			// Spinning, unless the viewer asked for reduced motion, which stops it.
 			// (Svelte hashes the keyframes name, so match on its suffix.)
 			const name = getComputedStyle(el).animationName;
-			if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) await expect(name).toBe('none');
+			if (prefersReducedMotion()) await expect(name).toBe('none');
 			else await expect(name).toMatch(/spinner-icon-spin$/);
 		}
 	},

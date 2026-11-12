@@ -170,7 +170,7 @@ def _stems_left(stems: Mapping[str, Any], decisions: Mapping[str, str]) -> bool:
     return stems["state"] in ("ask", "no_source", "failed") or bool(stems.get("failed"))
 
 
-def build_summary(
+def build_summary(  # noqa: PLR0913 -- optional ingest lane count maps stay separate for API clarity
     *,
     analysis: Mapping[str, Any] | None,
     analysis_error: str | None,
@@ -179,12 +179,17 @@ def build_summary(
     decisions: Mapping[str, str],
     warnings: Sequence[Mapping[str, str]] = (),
     artwork_suggestions: int = 0,
+    ingest_duplicates: int = 0,
     ingest_genre: Mapping[str, int] | None = None,
+    ingest_identify: Mapping[str, int] | None = None,
 ) -> dict[str, Any]:
     stems = stems_ask(coverage, decisions)
+    # identify proposals need a person; genre fill does not feed show (SETPREP-10646).
     show = (
         any(w.get("severity") == "blocking" for w in warnings)
         or artwork_suggestions > 0
+        or (ingest_identify or {}).get("proposals", 0) > 0
+        or ingest_duplicates > 0
         or _analysis_left(analysis)
         or _lyrics_left(coverage)
         or _stems_left(stems, decisions)
@@ -216,8 +221,10 @@ def build_summary(
         "warnings": [dict(w) for w in warnings],
         # LIBM-189: store covers found, saved only after the user says yes.
         "artwork_suggestions": artwork_suggestions,
+        "ingest_duplicates": max(0, int(ingest_duplicates)),
         # SETPREP-10646: genre fill counts from the latest ingest enrichment batch.
         "ingest_genre": None if ingest_genre is None else dict(ingest_genre),
+        "ingest_identify": None if ingest_identify is None else dict(ingest_identify),
     }
 
 

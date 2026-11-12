@@ -187,6 +187,9 @@ cryptography>=50.0.0,<51
 # B2B invite-code pairing (SPAKE2, apps/b2b_pairing): a core [project] dependency.
 # Missing here, CI's locked venv could not import apps.b2b_pairing.b2b_pairing.
 spake2>=0.9,<1
+# REMOTE-CTL QR entry (#10442): apps/webui/server/remote_control.py renders the
+# pairing QR as SVG with segno; a core [project] dependency. BSD-3-Clause.
+segno>=1.6.6
 # B2BNET-02..04: the internet B2B adapter imports websockets directly (sync
 # client to the relay); mirrors pyproject.toml. BSD-3-Clause.
 websockets>=16,<17

@@ -22,29 +22,48 @@ prefixes). Example paths (each also exists under ``/api/v1/sets``)::
         body {"format": "mp3", "bitrate_kbps": 192} (STREAM-11486)
     GET    /api/sets/recorder/stream-encoder       -> {"encoder": status or null}
     POST   /api/sets/recorder/{id}/stream-encoder/stop -> stop it
+    PUT    /api/sets/recorder/stream/rtmp          -> configure RTMP push (STREAM-11743)
+    GET    /api/sets/recorder/stream/rtmp          -> {"config": public dict or null}
+    POST   /api/sets/recorder/{id}/stream          -> start sink rtmp
+    GET    /api/sets/recorder/stream               -> {"stream": status or null}
+    POST   /api/sets/recorder/{id}/stream/stop     -> stop the stream sink
     GET    /api/sets/{session_id}/soundcloud-export -> metadata-only tracklist
     POST   /api/sets/{session_id}/soundcloud-export
         body {"acknowledge_rights": true}           -> paste-ready comment after ack
+    GET    /api/sets/{session_id}/share            -> metadata-only share link (SET-08)
+    POST   /api/sets/{session_id}/share
+        body {"confirm_metadata_only": true}       -> publish metadata-only share (SET-08)
+    POST   /api/sets/{session_id}/split
+        body {"out_dir": "/abs/path"}               -> per-track WAV files from the joined
+                                                       recording (built from WAV segments when absent)
+    GET    /api/sets/{session_id}/tracklist        -> tracklist JSON
+    GET    /api/sets/{session_id}/tracklist.{fmt}  -> tracklist export (txt, md, csv, …)
 """
 
 from __future__ import annotations
 
 import asyncio
 import json
+import logging
 import threading
-from collections.abc import AsyncIterator, Iterable
+from collections.abc import AsyncIterator, Iterable, Mapping, Sequence
 from contextlib import asynccontextmanager
 from dataclasses import asdict
 from pathlib import Path
-from typing import Any, Literal
+from typing import Annotated, Any, Literal
 
-from fastapi import APIRouter, HTTPException, Query, Request, Response
+from fastapi import APIRouter, Body, HTTPException, Query, Request, Response
 from fastapi import Path as FPath
 from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
 from pydantic import BaseModel, Field, model_validator
 from starlette.concurrency import run_in_threadpool
 
 from apps.shared.state.tracklist_hidden import HIDDEN_LABEL, hidden_stable_ids_at
+from apps.stream.config import (
+    DEFAULT_AUDIO_KBPS,
+    DEFAULT_VIDEO_SIZE,
+    RtmpConfigRefused,
+)
 from apps.stream.encoder import (
     DEFAULT_BITRATE_KBPS,
     MAX_BITRATE_KBPS,
@@ -53,8 +72,10 @@ from apps.stream.encoder import (
     EncoderUnavailable,
     StreamSourceNotMaster,
 )
+from apps.stream.service import StreamConflict, StreamSinkUnknown
 
 from . import paths as sets_paths
+from . import portable
 from .audio import (
     PathTraversalError,
     list_segments,
@@ -70,6 +91,7 @@ from .recorder_service import (
     RecorderConflict,
     RecorderRequestInvalid,
     RecorderService,
+    RecorderStartFailed,
     RecordSource,
     RememberedInputUnreadable,
 )
@@ -82,6 +104,7 @@ from .share import (
     share_url,
 )
 from .soundcloud_export import (
+    LICENSING_REMINDER,
     SessionNotFound,
     SoundcloudExport,
     build_soundcloud_export,
@@ -89,7 +112,20 @@ from .soundcloud_export import (
 from .sources.control_event_source import ControlEventIngestError, ControlEventSource
 from .sources.opendj_source import SOURCE_NAME as OPENDJ_SOURCE_NAME
 from .sources.opendj_source import DeckObservationError
+from .split_tracks import SplitRefused, split_recording
 from .state import SetsState
+from .tracklist_export import (
+    FILE_FORMATS,
+    LibraryTrack,
+    TracklistFormat,
+    TrackLookup,
+    build_tracklist,
+    render_tracklist,
+    tracklist_filename,
+    tracklist_media_type,
+)
+
+_LOG = logging.getLogger(__name__)
 
 _SHARE_TRACK_VALUE_FIELDS = ("title", "artist", "album")
 
@@ -293,11 +329,11 @@ class RecorderStatus(BaseModel):
         )
     )
     capture_error: str | None = Field(
-        default=None,
         description=(
-            "Why the capture failed, in the engine's words (for example microphone "
-            "access turned off at the macOS prompt), when capture is failed and the "
-            "engine said why; null otherwise (SET-11)."
+            "Always present: why the capture failed in the engine's words (for example "
+            "microphone access turned off at the macOS prompt) when capture is failed "
+            "and the engine said why; null for idle, external, and every non-failed "
+            "capture state (SET-11)."
         ),
     )
     capture_source: RecordSource | None = Field(
@@ -390,11 +426,51 @@ class SoundcloudExportAckRequest(BaseModel):
     acknowledge_rights: bool = False
 
 
+class TracklistRowModel(BaseModel):
+    position: int
+    start_s: float
+    start_label: str
+    artist: str | None
+    title: str | None
+    display_name: str
+    key: str | None
+    played_s: float | None
+    played_label: str | None
+    transition_label: str | None
+    hidden: bool
+    track_stable_id: str | None
+    source: str | None
+    deck: str | None
+    duration_ms: int | None
+
+
+class TracklistResponse(BaseModel):
+    session_id: str
+    rows: list[TracklistRowModel]
+
+
 class ControlEventsRequest(BaseModel):
     """A batch of control-event v2 rows, oldest (lowest seq) first."""
 
     session_id: str = Field(min_length=1, max_length=64)
     events: list[dict[str, Any]] = Field(min_length=1, max_length=600)
+
+
+class SplitRequest(BaseModel):
+    out_dir: str | None = None
+
+
+class TrackFileResponse(BaseModel):
+    name: str
+    path: str
+    start_t_s: float
+    duration_s: float
+    size_bytes: int
+
+
+class SplitResponse(BaseModel):
+    session_id: str
+    track_files: list[TrackFileResponse]
 
 
 class DeckObservationsRequest(BaseModel):
@@ -511,6 +587,63 @@ def _soundcloud_export_or_error(request: Request, session_id: str) -> Soundcloud
             sets_root=_sets_root(request),
             hidden_stable_ids=_hidden_stable_ids_for_request(request),
         )
+    except sets_paths.SessionPathError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except SessionNotFound as exc:
+        raise HTTPException(status_code=404, detail="session not found") from exc
+
+
+def _library_lookup(request: Request) -> TrackLookup | None:
+    backend = getattr(request.app.state, "backend", None)
+    bulk = getattr(backend, "get_tracks_bulk", None)
+    if not callable(bulk):
+        return None
+
+    def lookup(ids: Sequence[str]) -> Mapping[str, LibraryTrack]:
+        try:
+            raw = bulk(list(ids))
+        except (AttributeError, KeyError, OSError, RuntimeError, TypeError, ValueError) as exc:
+            _LOG.warning("tracklist library lookup failed: %s", exc)
+            return {}
+        out: dict[str, LibraryTrack] = {}
+        for stable_id, track in raw.items():
+            if not isinstance(stable_id, str):
+                continue
+            artist = getattr(track, "artist", None)
+            title = getattr(track, "title", None)
+            key = getattr(track, "key", None)
+            duration_ms = getattr(track, "duration_ms", None)
+            file_path = getattr(track, "file_path", None)
+            out[stable_id] = LibraryTrack(
+                artist=artist if isinstance(artist, str) else None,
+                title=title if isinstance(title, str) else None,
+                key=key if isinstance(key, str) else None,
+                duration_ms=duration_ms if isinstance(duration_ms, int) else None,
+                file_path=file_path if isinstance(file_path, str) else None,
+            )
+        return out
+
+    return lookup
+
+
+async def _tracklist_or_error(
+    request: Request,
+    session_id: str,
+    *,
+    with_library: bool,
+) -> Any:
+    _share_visible_session(request, session_id)
+    lookup = _library_lookup(request) if with_library else None
+
+    def _build() -> Any:
+        return build_tracklist(
+            session_id,
+            sets_root=_sets_root(request),
+            track_lookup=lookup,
+        )
+
+    try:
+        return await run_in_threadpool(_build)
     except sets_paths.SessionPathError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     except SessionNotFound as exc:
@@ -655,6 +788,8 @@ async def api_recorder_start(
         raise HTTPException(status_code=422, detail=str(exc)) from exc
     except CaptureUnavailable as exc:
         raise HTTPException(status_code=503, detail=str(exc)) from exc
+    except RecorderStartFailed as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
     if channel is None:
         return status
     session_id = status["session_id"]
@@ -773,6 +908,76 @@ async def api_stream_encoder_stop(request: Request, session_id: str) -> dict[str
         raise HTTPException(status_code=409, detail=str(exc)) from exc
 
 
+class StreamRtmpConfigRequest(BaseModel):
+    url: str
+    key: str
+    image: str | None = None
+    video_size: str = DEFAULT_VIDEO_SIZE
+    audio_kbps: int = DEFAULT_AUDIO_KBPS
+
+
+@router.put("/recorder/stream/rtmp")
+async def api_stream_rtmp_configure(request: Request, body: StreamRtmpConfigRequest) -> dict[str, Any]:
+    """Store RTMP URL, key and optional still image for the next push (STREAM-11743)."""
+    service = _recorder_service(request)
+    try:
+        return await run_in_threadpool(
+            service.stream.configure_rtmp,
+            url=body.url,
+            key=body.key,
+            image=body.image,
+            video_size=body.video_size,
+            audio_kbps=body.audio_kbps,
+        )
+    except RtmpConfigRefused as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    except StreamConflict as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+
+
+@router.get("/recorder/stream/rtmp")
+def api_stream_rtmp_config(request: Request) -> dict[str, Any]:
+    return {"config": _recorder_service(request).stream.rtmp_config()}
+
+
+class StreamStartRequest(BaseModel):
+    sink: Literal["rtmp"]
+
+
+@router.get("/recorder/stream")
+def api_stream_status(request: Request) -> dict[str, Any]:
+    return {"stream": _recorder_service(request).stream_status()}
+
+
+@router.post("/recorder/{session_id}/stream", status_code=201)
+async def api_stream_start(
+    request: Request, session_id: str, body: StreamStartRequest
+) -> dict[str, Any]:
+    """Tee a ``source: master`` recording into an RTMP push (STREAM-11743)."""
+    service = _recorder_service(request)
+    _validated_recorder_session_id(service, session_id)
+    try:
+        return await run_in_threadpool(service.start_stream, session_id, sink=body.sink)
+    except StreamSourceNotMaster as exc:
+        raise HTTPException(status_code=409, detail={"code": exc.code, "message": str(exc)}) from exc
+    except EncoderUnavailable as exc:
+        raise HTTPException(status_code=503, detail={"code": exc.code, "message": str(exc)}) from exc
+    except (RtmpConfigRefused, StreamSinkUnknown) as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    except (RecorderConflict, StreamConflict) as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+
+
+@router.post("/recorder/{session_id}/stream/stop")
+async def api_stream_stop(request: Request, session_id: str) -> dict[str, Any]:
+    service = _recorder_service(request)
+    _validated_recorder_session_id(service, session_id)
+    try:
+        return await run_in_threadpool(service.stop_stream)
+    except (RecorderConflict, StreamConflict) as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+
+
 @router.post("/recorder/{session_id}/stop", response_model=RecorderStatus)
 async def api_recorder_stop(request: Request, session_id: str) -> dict[str, Any]:
     service = _recorder_service(request)
@@ -845,18 +1050,19 @@ async def api_submit_deck_observations(
         # this can be caught: by the time the request arrives the client's own
         # check is already stale. 409 rather than 422 because the payload is
         # perfectly well formed -- it just belongs to a set that is over.
-        raise HTTPException(
-            status_code=409,
-            detail=(
-                f"snapshots were sampled under session {body.session_id!r} but "
-                f"{source.session_id!r} is recording now; discarded rather than "
-                "recorded against the wrong set"
-            ),
+        detail = (
+            f"snapshots were sampled under session {body.session_id!r} but "
+            f"{source.session_id!r} is recording now; discarded rather than "
+            "recorded against the wrong set"
         )
+        source.note_last_error(detail)
+        raise HTTPException(status_code=409, detail=detail)
     try:
         accepted = source.submit_many(body.snapshots)
     except DeckObservationError as exc:
-        raise HTTPException(status_code=422, detail=str(exc)) from exc
+        message = str(exc)
+        source.note_last_error(message)
+        raise HTTPException(status_code=422, detail=message) from exc
     return {"accepted": accepted, "status": source.status()}
 
 
@@ -864,6 +1070,102 @@ async def api_submit_deck_observations(
 async def api_deck_observation_status(request: Request) -> dict[str, Any]:
     """Why a row did or did not appear: per-deck dwell against the threshold."""
     return _opendj_source(request).status()
+
+
+class SetImportResponse(BaseModel):
+    session_id: str
+    requested_session_id: str
+    renamed: bool
+    event_count: int
+    message: str
+
+
+def _library_track_lookup(request: Request) -> portable.TrackLookup | None:
+    """Resolve artist/title/hidden from the library (#10337: tracklist_hidden)."""
+    backend = getattr(request.app.state, "backend", None)
+    if backend is None:
+        return None
+
+    def _lookup(ids: Sequence[str]) -> Mapping[str, portable.TrackInfo]:
+        tracks = backend.get_tracks_bulk(list(ids))
+        out: dict[str, portable.TrackInfo] = {}
+        for stable_id, track in tracks.items():
+            out[stable_id] = portable.TrackInfo(
+                artist=getattr(track, "artist", None),
+                title=getattr(track, "title", None),
+                hidden=bool(getattr(track, "tracklist_hidden", False)),
+            )
+        return out
+
+    return _lookup
+
+
+def _portable_error_response(exc: portable.SetDocumentError) -> JSONResponse:
+    detail: dict[str, Any] = {"code": exc.code, "message": exc.message}
+    if isinstance(exc, portable.SchemaVersionUnsupported):
+        detail["document_version"] = exc.document_version
+        detail["supported_version"] = exc.supported_version
+    elif isinstance(exc, portable.SetDocumentInvalid):
+        detail["path"] = exc.path
+    return JSONResponse(status_code=422, content={"detail": detail})
+
+
+@router.post("/import", status_code=201, response_model=SetImportResponse)
+async def api_import_set(
+    request: Request,
+    document: Annotated[dict[str, Any], Body()],
+) -> JSONResponse:
+    if getattr(request.state, "share_audience", "local") == "share":
+        raise HTTPException(status_code=403, detail="share audience cannot import sets")
+
+    def _work() -> dict[str, Any]:
+        try:
+            result = portable.import_set_document(document, sets_root=_sets_root(request))
+        except sets_paths.SessionPathError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        except portable.SetDocumentError:
+            raise
+        return {
+            "session_id": result.session_id,
+            "requested_session_id": result.requested_session_id,
+            "renamed": result.renamed,
+            "event_count": result.event_count,
+            "message": result.message,
+        }
+
+    try:
+        payload = await run_in_threadpool(_work)
+    except portable.SetDocumentError as exc:
+        return _portable_error_response(exc)
+    except HTTPException:
+        raise
+    return JSONResponse(payload, status_code=201)
+
+
+@router.get("/{session_id}/export")
+async def api_export_set(request: Request, session_id: str) -> JSONResponse:
+    if getattr(request.state, "share_audience", "local") == "share":
+        raise HTTPException(status_code=404, detail="session not found")
+    _session_or_not_found(request, session_id)
+
+    def _work() -> dict[str, Any]:
+        try:
+            return portable.build_set_document(
+                session_id,
+                sets_root=_sets_root(request),
+                track_lookup=_library_track_lookup(request),
+            )
+        except LookupError as exc:
+            raise HTTPException(status_code=404, detail="session not found") from exc
+        except portable.SessionRecording as exc:
+            raise HTTPException(
+                status_code=409,
+                detail={"code": exc.code, "message": exc.message},
+            ) from exc
+
+    document = await run_in_threadpool(_work)
+    headers = {"Content-Disposition": f'attachment; filename="{session_id}.set.json"'}
+    return JSONResponse(document, headers=headers)
 
 
 @router.get("")
@@ -940,6 +1242,51 @@ async def api_timeline_stream(request: Request, session_id: str) -> StreamingRes
     return StreamingResponse(_filtered_stream(), media_type="application/x-ndjson")
 
 
+@router.get("/{session_id}/tracklist", response_model=TracklistResponse)
+async def api_get_tracklist(request: Request, session_id: str) -> JSONResponse:
+    tracklist = await _tracklist_or_error(request, session_id, with_library=True)
+    return JSONResponse(tracklist.to_dict())
+
+
+@router.get(
+    "/{session_id}/tracklist.{fmt}",
+    response_class=Response,
+    responses={
+        200: {
+            "content": {
+                "text/plain": {},
+                "text/markdown": {},
+                "text/csv": {},
+                "application/x-cue": {},
+                "audio/x-mpegurl": {},
+            }
+        }
+    },
+)
+async def api_get_tracklist_export(
+    request: Request,
+    session_id: str,
+    fmt: TracklistFormat,
+    acknowledge_rights: bool = Query(False),
+) -> Response:
+    if fmt not in (*FILE_FORMATS, "txt", "md", "csv", "timestamped", "soundcloud"):
+        raise HTTPException(status_code=422, detail="unknown export format")
+    if fmt in FILE_FORMATS and getattr(request.state, "share_audience", "local") == "share":
+        raise HTTPException(status_code=404, detail="session not found")
+    if fmt == "soundcloud" and not acknowledge_rights:
+        raise HTTPException(status_code=400, detail=LICENSING_REMINDER)
+    with_library = fmt == "m3u8"
+    tracklist = await _tracklist_or_error(request, session_id, with_library=with_library)
+    body = render_tracklist(tracklist, fmt)
+    media = tracklist_media_type(fmt)
+    name = tracklist_filename(session_id, fmt).replace('"', "_")
+    return Response(
+        content=body,
+        media_type=f"{media}; charset=utf-8",
+        headers={"Content-Disposition": f'attachment; filename="{name}"'},
+    )
+
+
 @router.get(
     "/{session_id}/soundcloud-export",
     response_model=SoundcloudExportResponse,
@@ -964,6 +1311,45 @@ async def api_post_soundcloud_export(
     payload = export.to_dict(include_comment=True)
     payload["acknowledged"] = True
     return JSONResponse(payload)
+
+
+@router.post("/{session_id}/split", response_model=SplitResponse)
+async def api_split_tracks(
+    request: Request,
+    session_id: str,
+    body: SplitRequest | None = None,
+) -> SplitResponse:
+    _session_or_not_found(request, session_id)
+    out_dir: Path | None = None
+    if body is not None and body.out_dir is not None:
+        if "\x00" in body.out_dir:
+            raise HTTPException(status_code=422, detail="out_dir must be an absolute path")
+        candidate = Path(body.out_dir)
+        if not candidate.is_absolute():
+            raise HTTPException(status_code=422, detail="out_dir must be an absolute path")
+        out_dir = candidate
+    try:
+        files = await run_in_threadpool(
+            split_recording,
+            session_id,
+            sets_root=_sets_root(request),
+            out_dir=out_dir,
+        )
+    except sets_paths.SessionPathError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except SessionNotFound as exc:
+        raise HTTPException(status_code=404, detail="session not found") from exc
+    except SplitRefused as exc:
+        raise HTTPException(
+            status_code=409,
+            detail={"code": exc.code, "message": str(exc)},
+        ) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    return SplitResponse(
+        session_id=session_id,
+        track_files=[TrackFileResponse(**f.__dict__) for f in files],
+    )
 
 
 @router.get("/{session_id}/transitions")
@@ -1089,7 +1475,13 @@ __all__ = [
     "RecorderRecoveryRequest",
     "RecorderStartRequest",
     "RecorderStatus",
+    "SetImportResponse",
     "SoundcloudExportAckRequest",
     "SoundcloudExportResponse",
+    "SplitRequest",
+    "SplitResponse",
+    "TrackFileResponse",
+    "TracklistResponse",
+    "TracklistRowModel",
     "router",
 ]

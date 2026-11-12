@@ -105,7 +105,11 @@ test('each entry has the registry shape', () => {
 		if (live) {
 			assert.ok(map.bindings.length > 0, `${key} is live with no bindings`);
 		} else {
-			assert.equal(devices.PRACTICE_DEVICE_MAPS[key], map, `${key} is not live with no practice fragment`);
+			assert.equal(
+				devices.PRACTICE_DEVICE_MAPS[key],
+				map,
+				`${key} is not live with no practice fragment`
+			);
 			if ((map.hints ?? []).length === 0) {
 				const naming = committedPanels().filter((l) => l.device_map === key);
 				assert.ok(naming.length > 0, `${key} is not live with no hints and no panel`);

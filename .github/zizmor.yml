@@ -13,6 +13,9 @@ rules:
       # guard's pass and removed (RUN-COUNT round 3).
       - trunk-job-verdict.yml:24
       - trunk-red-alarm.yml:16
+      # ci-main-flake-rerun.yml (Thu 12 Nov 2026, #11377): same shape, no checkout, gh and jq
+      # only on the completed main run's id; it never runs the triggering run's code.
+      - ci-main-flake-rerun.yml:9
       # e2e.yml (Wed 4 Nov 2026, ADR-NEW-e2e-after-ci-gate): a pull request's E2E is a
       # workflow_run of CI so it starts only after `ci gate` is green. Unlike the two
       # above it DOES check out the triggering pull request's merge ref, as the old
@@ -33,7 +36,8 @@ rules:
       # and 2113) for the opt-in label, the hourly schedule (ADR-NEW-e2e-opt-in-by-label) and the skip of non-green workflow_run events (#10534).
       # Repinned Tue 10 Nov 2026 (were 962 and 2151): hygiene steps above the lane writer moved again (#11114).
       - e2e.yml:1007
-      - e2e.yml:2255
+      # Repinned Thu 12 Nov 2026 (was 2255): the second lane writer moved down two lines.
+      - e2e.yml:2257
   artipacked:
     ignore:
       # These checkouts keep credentials because a later step runs git fetch
@@ -42,4 +46,5 @@ rules:
       # None of these jobs uploads the checkout as an artifact.
       # Repinned Tue 10 Nov 2026 (were 127 and 1059): checkout pins moved with hygiene blocks (#11114).
       - debt-index-regen.yml:142
-      - periodic-checks.yml:1165
+      # Repinned Thu 12 Nov 2026 (was 1165): the preview-drift checkout moved with its hygiene block.
+      - periodic-checks.yml:1171

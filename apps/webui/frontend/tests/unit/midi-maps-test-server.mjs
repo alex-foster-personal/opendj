@@ -28,15 +28,22 @@
 import { spawn } from 'node:child_process';
 import { createInterface } from 'node:readline';
 
-export const MIDI_MAPS_SERVER_ARGS = Object.freeze([
-	'run',
-	'--no-sync',
-	'python',
-	'-m',
-	'scripts.testing.midi_maps_test_server',
-	'--port',
-	'0'
-]);
+import { fixtureServerLaunch } from '../../scripts/fixture-server.mjs';
+
+/**
+ * @param {string} repoRoot
+ * @param {readonly string[]} [extraArgs]
+ * @param {NodeJS.ProcessEnv} [env]
+ */
+export function midiMapsFixtureLaunch(repoRoot, extraArgs = [], env = {}) {
+	return fixtureServerLaunch({
+		repoRoot,
+		pythonTarget: 'scripts.testing.midi_maps_test_server',
+		pythonTargetIsModule: true,
+		extraArgs: ['--port', '0', ...extraArgs],
+		env
+	});
+}
 
 // Startup tolerance only, not a product latency contract. stallMs keeps the
 // 60 s that 53a531e27 measured as enough for the slowest single stage (the
@@ -69,12 +76,21 @@ function _tail(text, lines) {
  */
 export function startMidiMapsTestServer({
 	cwd,
-	command = 'uv',
-	args = MIDI_MAPS_SERVER_ARGS,
+	command,
+	args,
+	env,
 	stallMs = DEFAULT_BUDGET.stallMs,
 	totalMs = DEFAULT_BUDGET.totalMs,
 	probeMs = DEFAULT_BUDGET.probeMs
 }) {
+	const launch =
+		command !== undefined || args !== undefined
+			? { command, args: args ?? [], env: { ...process.env, ...env }, cwd }
+			: midiMapsFixtureLaunch(cwd, [], env);
+	const resolvedCommand = launch.command;
+	const resolvedArgs = launch.args;
+	const resolvedEnv = launch.env;
+	const resolvedCwd = launch.cwd;
 	return new Promise((resolveReady, reject) => {
 		const startedAt = Date.now();
 		const boot = [];
@@ -84,7 +100,11 @@ export function startMidiMapsTestServer({
 		let totalTimer = null;
 		let exitInfo = null;
 
-		const proc = spawn(command, [...args], { cwd, stdio: ['ignore', 'pipe', 'pipe'] });
+		const proc = spawn(resolvedCommand, resolvedArgs, {
+			cwd: resolvedCwd,
+			env: resolvedEnv,
+			stdio: ['ignore', 'pipe', 'pipe']
+		});
 		proc.stderr.on('data', (chunk) => {
 			stderr += String(chunk);
 		});
@@ -102,7 +122,7 @@ export function startMidiMapsTestServer({
 				`midi_maps_test_server not ready: ${reason}. ` +
 				`Waited ${waited}ms (stall budget ${stallMs}ms, ceiling ${totalMs}ms). ` +
 				`Boot stages reached: ${stages}. Process: ${process_}. ` +
-				`Command: ${command} ${args.join(' ')} (cwd ${cwd}).\n` +
+				`Command: ${resolvedCommand} ${resolvedArgs.join(' ')} (cwd ${resolvedCwd}).\n` +
 				`stderr tail (last ${STDERR_TAIL_LINES} lines):\n${tail}`
 			);
 		};

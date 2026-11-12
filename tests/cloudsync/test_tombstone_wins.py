@@ -1,6 +1,6 @@
 """CLOUDSYNC-29: a track tombstone outranks every edit that is not a restore.
 
-Contract: ``docs/decisions/ADR-NEW-deletes-stay-deleted.md`` (issue #4628).
+Contract: ``(private path)`` (issue #4628).
 Every scenario runs the real hub router and the real ``run_sync``; a sync that
 leaves the two sides different raises ``SyncDigestMismatch``, so a test that
 returns has also proven convergence.
@@ -327,3 +327,35 @@ def test_hard_deleting_a_track_is_refused_without_an_identity_remap(
 
 def _count(conn: sqlite3.Connection, stable_id: str) -> int:
     return int(conn.execute("SELECT COUNT(*) FROM tracks WHERE stable_id = ?", (stable_id,)).fetchone()[0])
+
+
+@pytest.mark.requirement("CLOUDSYNC-12622b")
+def test_removed_on_hub_captures_the_incoming_row_in_trash(tmp_path: Path) -> None:
+    """[if] a tombstone wins [then] the refused incoming row is in trash, [else stop]."""
+    import json
+
+    from apps.sync_hub import conflict_trash, engine
+    from tests.cloudsync.test_conflict_trash import _capture_fixture, _trash_keys
+    from tests.cloudsync.test_track_identity_collapse import _incoming_track
+
+    conn, cfg, s3, now = _capture_fixture(tmp_path)
+    try:
+        removed = _REMOVED_AT.isoformat(timespec="microseconds").replace("+00:00", "+00:00")
+        _insert_track(
+            conn,
+            "trk-1",
+            title="gone",
+            updated_at=removed,
+            origin=_DEV_A,
+            deleted_at=removed,
+        )
+        incoming = _incoming_track(conn, "trk-1", title="live again", updated_at=_T0)
+        with conflict_trash.capture_pass(conn, cfg, s3, clock=lambda: now):
+            result = engine.hub_apply(conn, [incoming])
+        assert result.rejected == 1
+        keys = _trash_keys(s3, cfg.state_bucket)
+        assert len(keys) == 1
+        body = json.loads(s3.store[(cfg.state_bucket, keys[0])][0])
+        assert body["reason"] == conflict_trash.REASON_TOMBSTONE
+    finally:
+        conn.close()

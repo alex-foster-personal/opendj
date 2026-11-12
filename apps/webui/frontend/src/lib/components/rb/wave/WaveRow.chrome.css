@@ -40,10 +40,8 @@
 	/* PERF-PAINT-10546: a bucketed wave canvas never shows outside the row. */
 	overflow: hidden;
 	/* No row divider (DECKUX-40, the maintainer Tue 6 Oct 2026: "Don't need row
-	   dividers"). Decks 1/2 and 3/4 still separate by their row fill. */
-	transition:
-		background 50ms ease-out,
-		box-shadow 50ms ease-out;
+	   dividers"). Decks 1/2 and 3/4 still separate by their row fill.
+	   Row chrome transitions live in WaveRow.svelte (scoped, reduce rules). */
 }
 .rb-waverow .wave-col {
 	display: flex;
@@ -95,3 +93,4 @@
 	outline: 2px solid var(--rb-focus-ring);
 	outline-offset: 2px;
 }
+

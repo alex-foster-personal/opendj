@@ -335,6 +335,15 @@ def test_start_requires_exactly_one_input_or_an_explicit_no_audio(picker_client,
     assert client.post("/api/sets/recorder/start", json=body).status_code == 422
 
 
+@pytest.mark.requirement("SET-12835")
+def test_start_without_source_field_leaves_recorder_inactive(picker_client) -> None:
+    """[if] POST start omits source [then] 422 and active stays false, [else stop]."""
+    client, _ = picker_client
+    response = client.post("/api/sets/recorder/start", json={"sources": []})
+    assert response.status_code == 422
+    assert client.get("/api/sets/recorder").json()["active"] is False
+
+
 def test_start_by_a_name_two_inputs_share_is_refused(tmp_path: Path):
     """[if] two inputs share the picked name [then] 503, never the first one silently."""
     twins = [capture.InputDevice(0, "USB Audio", False), capture.InputDevice(1, "USB Audio", False)]

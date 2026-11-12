@@ -85,7 +85,10 @@ function library(uuid, { tracks = [], playlists = [], history = [] } = {}) {
 			playlist_entries: playlists.reduce((n, p) => n + p.track_ids.length, 0),
 			history_playlists: history.length
 		},
-		read_ms: 12.5
+		read_ms: 12.5,
+		has_pdb: true,
+		has_onelibrary: false,
+		browse_source: 'export.pdb'
 	};
 }
 

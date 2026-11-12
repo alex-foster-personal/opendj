@@ -141,9 +141,9 @@ def _find_pqtz_tag(anlz: AnlzFile) -> PQTZAnlzTag | None:
     return None
 
 
-def build_minimal_dat(path: Path, seed_beats: Sequence[Mapping[str, object]]) -> None:
-    """Write a PMAI file containing only a PQTZ tag (test helper)."""
-    entries = _pqtz_entries(seed_beats)
+def build_minimal_dat_bytes(own_beats: Sequence[Mapping[str, object]]) -> bytes:
+    """A PMAI file containing only a PQTZ tag, as bytes (Open DJ own artifact)."""
+    entries = _pqtz_entries(own_beats)
     anlz = AnlzFile()
     anlz.file_header = Container(
         type="PMAI",
@@ -156,8 +156,33 @@ def build_minimal_dat(path: Path, seed_beats: Sequence[Mapping[str, object]]) ->
     )
     anlz.tags = [_make_pqtz_tag(entries)]
     anlz.update_len()
+    return anlz.build()
+
+
+def build_minimal_dat(path: Path, seed_beats: Sequence[Mapping[str, object]]) -> None:
+    """Write a PMAI file containing only a PQTZ tag (test helper)."""
     path.parent.mkdir(parents=True, exist_ok=True)
-    anlz.save(path)
+    path.write_bytes(build_minimal_dat_bytes(seed_beats))
+
+
+def refuse_dynamic_tempo_payload(payload: Mapping[str, object]) -> None:
+    if payload.get("tempo_changes"):
+        raise ValueError("multi-anchor tempo_changes are refused for fixed-tempo PQTZ (#1481)")
+
+
+def served_beats_from_pqtz_bytes(data: bytes) -> list[dict[str, float | int]]:
+    pqtz = AnlzFile.parse(data).get_tag("PQTZ")
+    if pqtz is None:
+        raise ValueError("PQTZ tag missing from artifact bytes")
+    return served_beats_from_pqtz_tag(pqtz)
+
+
+def quantize_time_to_served_beat(beats: Sequence[Mapping[str, object]], time_s: float) -> float:
+    """Snap a cue/seek time to the nearest read-back served beat ``t``."""
+    if not beats:
+        raise ValueError("no beats to quantize against")
+    best = min(beats, key=lambda b: (abs(float(b["t"]) - time_s), float(b["t"])))
+    return float(best["t"])
 
 
 def write_pqtz(dat_path: Path, own_beats: Sequence[Mapping[str, object]]) -> bool:
@@ -246,13 +271,17 @@ __all__ = [
     "SERVED_T_DECIMALS",
     "anchor_count",
     "build_minimal_dat",
+    "build_minimal_dat_bytes",
     "is_fixed_tempo_payload",
     "load_own_beatgrid",
     "pqtz_own_digest",
     "quantize_own_beat",
+    "quantize_time_to_served_beat",
+    "refuse_dynamic_tempo_payload",
     "resolve_analysis_dat_path",
     "restore_pqtz_dat",
     "served_beats_from_own",
+    "served_beats_from_pqtz_bytes",
     "served_beats_from_pqtz_tag",
     "snapshot_pqtz_dat",
     "verify_pqtz",

@@ -30,7 +30,7 @@ import type { TrackQuality } from './library-types';
 
 import type { TempoCurveData } from '$lib/components/rb/wave/tempo-marks';
 
-import { ApiError, api, unwrap } from '../api/client';
+import { ApiError, api, unwrap } from '../api/rb-http';
 
 // ----------------------------------------------------------- types
 
@@ -86,6 +86,8 @@ export interface SmartlistTrackRow {
 	is_remote?: boolean;
 	/** LIBUX-13: a recorded remote copy, including when local audio also exists. */
 	has_remote_copy?: boolean;
+	/** CHROME-03: remote stem bundle index membership. */
+	remote_stem_status?: 'ready' | 'not-run' | 'unknown';
 	/** LIBUX-13: present only while this engine process is moving real bytes. */
 	cloud_transfer?: CloudTransferWire | null;
 	spotify_pending: boolean;
@@ -110,6 +112,8 @@ export interface SmartlistTracks {
 	items: string[];
 	/** Hydrated rows in the same order as items. */
 	tracks: SmartlistTrackRow[];
+	/** Total tracks matching the rule (not capped by the request limit). */
+	total: number;
 }
 
 // ----------------------------------------------------------- _helpers

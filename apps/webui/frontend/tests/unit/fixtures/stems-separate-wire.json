@@ -10,9 +10,10 @@
       }
     },
     "response": {
-      "id": "197fbd99-aea3-4f7f-a20b-eb42feb12c02",
+      "id": "96585a89-8a44-4ddc-ae46-a2278bc25c42",
       "kind": "stems.separate",
       "payload": {
+        "data_dir": "/srv/opendj/data",
         "executor": "modal",
         "stable_ids": [
           "track-a"
@@ -24,16 +25,18 @@
       "message": null,
       "error": null,
       "attempt": 0,
-      "created_at": "2026-10-15T13:56:29.233+00:00",
+      "created_at": "2026-11-12T19:27:37.872+00:00",
       "started_at": null,
       "finished_at": null,
-      "owner_pid": 20775,
+      "owner_pid": 7249,
       "owner_boot_id": "boot-wire",
       "worker_pid": null,
       "worker_pgid": null,
       "worker_argv": null,
       "worker_started_at": null,
-      "external_ref": null
+      "external_ref": null,
+      "stderr_tail": null,
+      "outcome": null
     }
   },
   "enqueue_scope": {
@@ -45,11 +48,22 @@
       }
     },
     "response": {
-      "id": "0728f87b-0609-46b8-b22f-d20f19f00d2e",
+      "id": "61c48549-b83d-468d-b308-90bbb070ffbc",
       "kind": "stems.separate",
       "payload": {
+        "data_dir": "/srv/opendj/data",
         "executor": "modal",
-        "scope": "pending",
+        "resolved_from": {
+          "denominator": "present",
+          "done": 1,
+          "pending": 1,
+          "scope": "pending",
+          "songs": 2,
+          "unit": "songs"
+        },
+        "stable_ids": [
+          "track-a"
+        ],
         "tier": "M"
       },
       "status": "queued",
@@ -57,16 +71,18 @@
       "message": null,
       "error": null,
       "attempt": 0,
-      "created_at": "2026-10-15T13:56:29.266+00:00",
+      "created_at": "2026-11-12T19:27:37.879+00:00",
       "started_at": null,
       "finished_at": null,
-      "owner_pid": 20775,
+      "owner_pid": 7249,
       "owner_boot_id": "boot-wire",
       "worker_pid": null,
       "worker_pgid": null,
       "worker_argv": null,
       "worker_started_at": null,
-      "external_ref": null
+      "external_ref": null,
+      "stderr_tail": null,
+      "outcome": null
     }
   },
   "plan": {
@@ -80,10 +96,12 @@
       "tier": "M",
       "tier_name": "optimal",
       "executor": "modal",
+      "unit": "songs",
       "total": 2,
       "pending": 1,
       "ready": 1,
       "unavailable": 0,
+      "unreachable_rows": 0,
       "estimate_seconds": 2.7,
       "estimate_usd": 0.0017,
       "transport": "relay",
@@ -106,11 +124,12 @@
     "response": {
       "detail": {
         "code": "stems_job_active",
-        "message": "stems.separate job 197fbd99-aea3-4f7f-a20b-eb42feb12c02 is already queued for this work; not enqueued again",
+        "message": "stems.separate job 96585a89-8a44-4ddc-ae46-a2278bc25c42 is already queued for this work; not enqueued again",
         "job": {
-          "id": "197fbd99-aea3-4f7f-a20b-eb42feb12c02",
+          "id": "96585a89-8a44-4ddc-ae46-a2278bc25c42",
           "kind": "stems.separate",
           "payload": {
+            "data_dir": "/srv/opendj/data",
             "executor": "modal",
             "stable_ids": [
               "track-a"
@@ -122,16 +141,18 @@
           "message": null,
           "error": null,
           "attempt": 0,
-          "created_at": "2026-10-15T13:56:29.233+00:00",
+          "created_at": "2026-11-12T19:27:37.872+00:00",
           "started_at": null,
           "finished_at": null,
-          "owner_pid": 20775,
+          "owner_pid": 7249,
           "owner_boot_id": "boot-wire",
           "worker_pid": null,
           "worker_pgid": null,
           "worker_argv": null,
           "worker_started_at": null,
-          "external_ref": null
+          "external_ref": null,
+          "stderr_tail": null,
+          "outcome": null
         }
       }
     }

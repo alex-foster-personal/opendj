@@ -112,6 +112,20 @@ export interface DeckManualLoopCycleAction {
 	deck: DeckId;
 }
 
+/** Set the manual loop-in point at the playhead. A second press moves it,
+ * including while a loop is already playing. */
+export interface DeckLoopInAction {
+	type: 'deck_loop_in';
+	deck: DeckId;
+}
+
+/** Set the loop-out point and engage the pending-in-to-playhead loop.
+ * Without a pending in point this is a no-op; the learn log records why. */
+export interface DeckLoopOutAction {
+	type: 'deck_loop_out';
+	deck: DeckId;
+}
+
 /** Resize an engaged loop around its existing in point. */
 export interface DeckLoopScaleAction {
 	type: 'deck_loop_scale';
@@ -224,6 +238,18 @@ export interface ShiftModifierAction {
 	type: 'shift_modifier';
 }
 
+/** Four-deck Pioneer DECK SELECT (1 vs 3, 2 vs 4). Without `deck`, each
+ * press toggles which deck in the pair is selected; with `deck`, selects that
+ * deck in the pair (DDJ-1000-style wire on the target deck's channel). Other
+ * pair's selection is kept so two decks can stay selected at once. */
+export type MixerDeckPairId = '1-3' | '2-4';
+
+export interface MixerDeckPairSelectAction {
+	type: 'mixer_deck_pair_select';
+	pair: MixerDeckPairId;
+	deck?: DeckId;
+}
+
 /** Channel CUE / PFL. Press toggles; Pioneer and Mixtour send press/release
  * on one note, so there is no distinct "off" message. */
 export interface ChannelCueAction {
@@ -266,6 +292,8 @@ export type MidiAction =
 	| DeckLoopExitAction
 	| DeckSyncToggleAction
 	| DeckManualLoopCycleAction
+	| DeckLoopInAction
+	| DeckLoopOutAction
 	| DeckLoopScaleAction
 	| DeckKeySyncToggleAction
 	| DeckStemEqToggleAction
@@ -284,7 +312,8 @@ export type MidiAction =
 	| DeckPitchAction
 	| BrowseEncoderAction
 	| BrowseLoadAction
-	| ShiftModifierAction;
+	| ShiftModifierAction
+	| MixerDeckPairSelectAction;
 
 // ------------------------------------------------------------ input values
 
@@ -443,3 +472,9 @@ export interface LearnLogEntry {
 	 * traffic and for messages that decode but match no binding. */
 	action?: MidiAction | null;
 }
+
+/** One inbound message as input subscribers see it (#10251); `mapNameMatch` is the resolved
+ * map's nameMatch for the port, null when no map matched. */
+export type MidiInputMessage = Omit<LearnLogEntry, 'mapped' | 'note'> & {
+	mapNameMatch: string | null;
+};

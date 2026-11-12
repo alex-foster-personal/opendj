@@ -1,0 +1,9 @@
+{
+  "bytes": 1024,
+  "measured_main": 441006,
+  "measured_with_pr": 441446,
+  "sha": "08eabe3aa6",
+  "date": "Wed 11 Nov 2026",
+  "reason": "comment-pins custom element and feedback pin shell boot on the performance surface.",
+  "payback": "none planned; the growth is the change's own code on this surface"
+}

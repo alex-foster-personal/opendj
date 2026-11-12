@@ -41,7 +41,7 @@
 
 import type { components } from '../api-types';
 import { jobsRefusal } from '../api/capabilities.svelte';
-import { ApiError, api, unwrap } from '../api/client';
+import { ApiError, api, unwrap } from '../api/rb-http';
 import { bootScheduler, type BootScheduler } from './boot-scheduler';
 import {
 	TOPIC_JOBS_UPDATED,
@@ -80,6 +80,90 @@ export const TERMINAL_JOB_STATUSES: readonly JobStatus[] = [
 /** Matches DEFAULT_LIST_LIMIT in apps/engine_core/jobs/api.py. The server
  * refuses anything above MAX_LIST_LIMIT (1000) with a 422. */
 export const JOBS_LIST_LIMIT = 200;
+
+/** Engine job kinds shown on the Backstage farm-jobs panel (issue #11242). */
+export const FARM_ENGINE_JOB_KINDS = [
+	'stems.separate',
+	'cloud.hydrate',
+	'anlz.cache-rebuild'
+] as const;
+
+export type FarmEngineJobKind = (typeof FARM_ENGINE_JOB_KINDS)[number];
+
+export const FARM_JOB_KIND_LABELS: Record<FarmEngineJobKind, string> = {
+	'stems.separate': 'Demucs stems',
+	'cloud.hydrate': 'Cloud hydrate',
+	'anlz.cache-rebuild': 'ANLZ cache rebuild'
+};
+
+/** Queued, in-flight, or failed rows the farm-jobs panel lists per kind. */
+export const FARM_PANEL_ACTIVE_STATUSES = ['queued', 'running', 'cancelling', 'failed'] as const;
+
+export type FarmPanelActiveStatus = (typeof FARM_PANEL_ACTIVE_STATUSES)[number];
+
+export function isFarmEngineJobKind(kind: string): kind is FarmEngineJobKind {
+	return (FARM_ENGINE_JOB_KINDS as readonly string[]).includes(kind);
+}
+
+export function filterFarmEngineJobs(jobs: Job[]): Job[] {
+	return jobs.filter((row) => isFarmEngineJobKind(row.kind));
+}
+
+export function farmActiveJobs(jobs: Job[]): Job[] {
+	return filterFarmEngineJobs(jobs).filter((row) =>
+		(FARM_PANEL_ACTIVE_STATUSES as readonly string[]).includes(row.status)
+	);
+}
+
+/** Newest terminal row for one farm kind, or null when none finished yet. */
+export function lastFinishedFarmJob(jobs: Job[], kind: FarmEngineJobKind): Job | null {
+	const matches = filterFarmEngineJobs(jobs).filter(
+		(row) =>
+			row.kind === kind && isTerminal(row) && row.finished_at !== null && row.finished_at !== ''
+	);
+	if (matches.length === 0) return null;
+	return [...matches].sort(compareJobs)[0] ?? null;
+}
+
+export function jobRunDurationMs(job: Pick<Job, 'started_at' | 'finished_at'>): number | null {
+	if (job.started_at === null || job.started_at === undefined || job.started_at === '') {
+		return null;
+	}
+	if (job.finished_at === null || job.finished_at === undefined || job.finished_at === '') {
+		return null;
+	}
+	const start = Date.parse(job.started_at);
+	const end = Date.parse(job.finished_at);
+	if (!Number.isFinite(start) || !Number.isFinite(end)) return null;
+	return Math.max(0, end - start);
+}
+
+export function formatDurationMs(ms: number): string {
+	if (!Number.isFinite(ms) || ms < 0) return '';
+	if (ms < 1000) return `${Math.round(ms)} ms`;
+	const totalSeconds = Math.floor(ms / 1000);
+	if (totalSeconds < 60) return `${totalSeconds} s`;
+	const minutes = Math.floor(totalSeconds / 60);
+	const seconds = totalSeconds % 60;
+	if (minutes < 60) return seconds === 0 ? `${minutes} m` : `${minutes} m ${seconds} s`;
+	const hours = Math.floor(minutes / 60);
+	const remMinutes = minutes % 60;
+	return remMinutes === 0 ? `${hours} h` : `${hours} h ${remMinutes} m`;
+}
+
+export function succeededJobHasRunTimestamps(
+	job: Pick<Job, 'status' | 'started_at' | 'finished_at'>
+): boolean {
+	if (job.status !== 'succeeded') return true;
+	return (
+		job.started_at !== null &&
+		job.started_at !== undefined &&
+		job.started_at !== '' &&
+		job.finished_at !== null &&
+		job.finished_at !== undefined &&
+		job.finished_at !== ''
+	);
+}
 
 // ------------------------------------------------------------- predicates
 

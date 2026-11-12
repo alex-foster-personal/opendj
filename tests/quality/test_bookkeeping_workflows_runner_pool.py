@@ -31,7 +31,9 @@ def test_bookkeeping_workflows_pin_the_nucbox_runner() -> None:
     for name, (path, job_name) in WORKFLOWS.items():
         workflow = _workflow(path)
         job = workflow["jobs"][job_name]
-        assert job["runs-on"] == RUNS_ON_EXPR, f"{name} must stay on CI_RUNS_ON_UNPRIVILEGED_LINUX (nucbox), with no hosted fallback"
+        assert job["runs-on"] == RUNS_ON_EXPR, (
+            f"{name} must stay on CI_RUNS_ON_UNPRIVILEGED_LINUX (nucbox), with no hosted fallback"
+        )
 
 
 def test_bookkeeping_workflows_keep_cancel_in_progress_false() -> None:

@@ -166,27 +166,30 @@ test('the picker opens on MACHINE by default, the remembered choice while it can
 test('the live performance rail opens the in-app input picker instead of window.prompt', () => {
 	assert.doesNotMatch(iconRail, /recordings - future apps\/sets/);
 	assert.match(iconRail, /action: 'record'/);
-	assert.match(iconRail, /disabled=\{isInert \|\| \(isRecord && recordingBusy\)\}/);
+	assert.match(iconRail, /disabled=\{isInert \|\| \(isRecord && \(recordingBusy \|\| \(recording && !recordingStoppable\)\)\)\}/);
 	assert.match(iconRail, /isRecord \? onrecord : isUsb \? onusb : undefined/);
 	// Gig mounts the recording rail; Library mode passes recordable=false (no REC).
 	assert.match(browserPanel, /<PerformanceRecorderRail \{source\} onspotify=\{selectSpotifySource\} oncollection=\{selectCollectionSource\} recordable=\{library === null\} \/>/);
 	assert.doesNotMatch(performanceRecorderRail, /window\.prompt/);
-	assert.match(performanceRecorderRail, /async function togglePerformanceRecording\(\): Promise<void>/);
-	assert.match(performanceRecorderRail, /recorder = await getRecorderStatus\(\)/);
+	assert.match(performanceRecorderRail, /usePerformanceRecorderChrome/);
+	assert.match(performanceRecorderRail, /chrome\.togglePerformanceRecording/);
 	assert.match(recordInputPicker, /const status = await startPerformanceRecorder\(choice, mode\)/);
-	assert.match(performanceRecorderRail, /onstarted=\{\(status\) => \(setRecorder\(status\), \(RecordInputPicker = null\)\)\}/);
+	assert.match(performanceRecorderRail, /onstarted=\{\(status\) => chrome\.onPickerStarted\(status\)\}/);
 	assert.match(recordInputPicker, /getRememberedInput\(\)/);
 	assert.doesNotMatch(recordInputPicker, /localStorage/);
 	assert.match(recordInputPicker, /if \(remembered\.status === 'rejected'\) rememberError = reason\(remembered\.reason\)/);
 	assert.match(recordInputPicker, /data-testid="record-input-remember-error"/);
-	assert.match(performanceRecorderRail, /<RecordInputPicker/);
-	assert.match(performanceRecorderRail, /import\('.\/RecordInputPicker.svelte'\)/);
-	assert.match(performanceRecorderRail, /await stopMasterTap\(\);\s*setRecorder\(await stopPerformanceRecorder\(recorder\)\)/);
+	assert.match(performanceRecorderRail, /<chrome\.RecordInputPicker/);
+	const chrome = readFileSync(new URL('../../src/lib/sets/performance-recorder-chrome.svelte.ts', import.meta.url), 'utf8');
+	assert.match(chrome, /loadRecordInputPicker/);
+	assert.match(chrome, /await stopMasterTap\(\);\s*setRecorder\(await stopPerformanceRecorder\(recorder\)\)/);
+	assert.match(chrome, /if \(!recorder\.owned\) \{\s*return;\s*\}/);
 	// SET-12, found live: a status poll landing mid-stop attached a second tap.
-	assert.match(performanceRecorderRail, /if \(stopping \|\| tapSession === id/);
-	assert.match(performanceRecorderRail, /onrecord=\{\(\) => void togglePerformanceRecording\(\)\}/);
+	assert.match(chrome, /stopping\s*\|\|\s*tapSession === id/s);
+	assert.match(performanceRecorderRail, /onrecord=\{\(\) => void chrome\.togglePerformanceRecording\(\)\}/);
 	assert.match(recordInputPicker, /listRecorderDevices\(\)/);
 	assert.match(recordInputPicker, /Tracklist only \(no audio\)/);
+	assert.match(recordInputPicker, /variant\?: 'modal' \| 'popover'/);
 });
 
 test('REC lights only once audio is written, not while the macOS microphone prompt is up', () => {
@@ -205,26 +208,74 @@ test('REC lights only once audio is written, not while the macOS microphone prom
 	const stopped = recorder.recordRailState({ ...base, capture: 'stopped' });
 	assert.match(stopped.tip, /stopped recording; click to stop/);
 	// Controls: audio being written, and a tracklist-only recording, light REC.
-	for (const capture of ['recording', 'none', 'unknown']) {
+	for (const capture of ['recording', 'none']) {
 		const state = recorder.recordRailState({ ...base, capture });
-		assert.deepEqual([state.recording, state.waiting, state.tip], [true, false, null], capture);
+		assert.equal(state.recording, true);
+		assert.equal(state.stoppable, true);
 	}
 	// Codex P1 (PR #5164): a capture that is recording is still watched, so an
 	// input unplugged mid-set reaches 'failed' and unlights REC; one with no
 	// capture of ours (tracklist only, another process) is not polled.
 	assert.equal(recorder.recordRailState({ ...base, capture: 'recording' }).poll, 3000);
 	assert.equal(recorder.recordRailState({ ...base, capture: 'none' }).poll, null);
-	assert.equal(recorder.recordRailState({ ...base, capture: 'unknown' }).poll, null);
 	assert.equal(recorder.recordRailState({ ...base, active: false, capture: 'none' }).recording, false);
 	// SET-12: idle REC still re-reads, so an agent-started master recording gets its tap.
 	assert.equal(recorder.recordRailState({ ...base, active: false, capture: 'none' }).poll, recorder.IDLE_POLL_MS);
 });
 
+test('foreign-owned active recordings name the owner and are not stoppable (SETREC-20)', () => {
+	const foreign = {
+		active: true,
+		session_id: '2026-01-01T00-00-00',
+		pid: 42,
+		owned: false,
+		recoverable: false,
+		capture: 'unknown'
+	};
+	const state = recorder.recordRailState(foreign);
+	assert.equal(state.recording, true);
+	assert.equal(state.stoppable, false);
+	assert.equal(state.poll, null);
+	assert.match(state.tip, /process 42/i);
+	const recoverable = recorder.recordRailState({ ...foreign, recoverable: true });
+	assert.equal(recoverable.stoppable, false);
+	assert.match(recoverable.tip, /finalize on Sessions/i);
+	const idle = recorder.recordRailState({ ...foreign, active: false, capture: 'none' });
+	assert.equal(idle.recording, false);
+	assert.equal(idle.stoppable, false);
+	assert.equal(idle.poll, recorder.IDLE_POLL_MS);
+	const owned = recorder.recordRailState({
+		...foreign,
+		owned: true,
+		capture: 'recording'
+	});
+	assert.equal(owned.recording, true);
+	assert.equal(owned.stoppable, true);
+});
+
+test('stopPerformanceRecorder refuses foreign and recoverable owners with distinct errors', async () => {
+	const idle = { active: false, session_id: null, pid: null, owned: false, recoverable: false, capture: 'none' };
+	await assert.rejects(() => recorder.stopPerformanceRecorder(idle), /no active recording to stop/);
+	const live = {
+		active: true,
+		session_id: 's',
+		pid: 7,
+		owned: false,
+		recoverable: false,
+		capture: 'unknown'
+	};
+	await assert.rejects(() => recorder.stopPerformanceRecorder(live), /owned by process 7/);
+	const stale = { ...live, recoverable: true };
+	await assert.rejects(() => recorder.stopPerformanceRecorder(stale), /finalize on Sessions/i);
+});
+
 test('the rail lights REC from the capture state and polls while it is waiting', () => {
-	assert.match(performanceRecorderRail, /recording=\{rail\.recording\}/);
-	assert.match(performanceRecorderRail, /recordingWaiting=\{rail\.waiting\}/);
-	assert.match(performanceRecorderRail, /const after = rail\.poll;\s*if \(after === null \|\| !recordable\) return;/);
-	assert.match(performanceRecorderRail, /setTimeout\(\(\) => void refreshRecorderStatus\(\), after\)/);
+	const chrome = readFileSync(new URL('../../src/lib/sets/performance-recorder-chrome.svelte.ts', import.meta.url), 'utf8');
+	assert.match(performanceRecorderRail, /recording=\{chrome\.rail\.recording\}/);
+	assert.match(performanceRecorderRail, /recordingWaiting=\{chrome\.rail\.waiting\}/);
+	assert.match(chrome, /const after = rail\.poll;\s*if \(after === null \|\| !recordable\(\)\) return;/);
+	assert.match(chrome, /setTimeout\(\(\) => void refreshRecorderStatus\(\), after\)/);
+	assert.match(performanceRecorderRail, /recordingStoppable=\{chrome\.rail\.stoppable\}/);
 	assert.match(iconRail, /class:waiting=\{isRecord && recordingWaiting\}/);
 });
 
@@ -236,7 +287,8 @@ test('a capture that fails says why when the engine said, on both REC surfaces',
 	// Controls: no failure, no message.
 	assert.equal(recorder.captureFailureMessage({ ...base, capture: 'recording', capture_error: null }), null);
 	assert.equal(recorder.captureFailureMessage({ ...base, active: false, capture: 'none' }), null);
-	assert.match(performanceRecorderRail, /captureFailureMessage\(recorder\)/);
+	const chrome = readFileSync(new URL('../../src/lib/sets/performance-recorder-chrome.svelte.ts', import.meta.url), 'utf8');
+	assert.match(chrome, /captureFailureMessage\(recorder\)/);
 });
 
 test('the /sets panel reads the capture state, not just active, and polls it', () => {

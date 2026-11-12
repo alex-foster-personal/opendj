@@ -1,0 +1,495 @@
+{
+ "format": "opendj-panel-layout/1",
+ "device": "hercules-djcontrol-mix",
+ "units": "mm",
+ "measured": true,
+ "panel": {
+  "w": 340.0,
+  "d": 100.0
+ },
+ "trace": {
+  "source": "Hercules DJControl MIX user manual EN, page 5 (Technical features top-panel figure), rendered at 600 dpi with pdftoppm and cropped to the controller line art (3560 x 2860 px)",
+  "source_url": "https://ts.hercules.com/download/sound/manuals/DJC_Mix/User_Manuals/DJControl_Mix_user_manual_EN.pdf",
+  "source_pdf_sha256": "0473b97c00da4cae3eba1ac074e9c186f24ba6b2b0271396401ced4e88e1fa3d",
+  "source_image_sha256": "7f0b754c0e275cca3c034a4e40d3f25d02fd865bdd7edf5bdf48b55aac130eaa",
+  "provenance": "docs/controller/research/Hercules-DJControl-MIX-sources.md",
+  "image_px": [
+   3560,
+   2860
+  ],
+  "panel_px": {
+   "x0": 47,
+   "x1": 3511,
+   "y0": 300,
+   "y1": 2680
+  },
+  "mm_per_px": {
+   "x": 0.09812,
+   "y": 0.042
+  },
+  "calibration": "anisotropic: published 340 mm maps to the plate outline width (3465 px); published 100 mm depth maps to the drawn plate height (2381 px). Jog rings read square in pixels (533 x 533 on both decks) but the figure compresses vertical scale relative to width, so x and y scales differ.",
+  "method": "Ink-edge read on the page 5 crop: deck 1 and the left mixer half measured directly; deck 2 transport and pitch rows translate by 2488 px (jog centre separation); deck 2 pads and the right mixer strip mirror about plate centre x = 1779 px, checked on pads, channel faders and PFL buttons.",
+  "occluded": {
+   "d1-vinyl": "small button beside SHIFT; read at button body outline",
+   "ch1-bass": "narrow FILTER/BASS knob sits inside the printed scale ticks"
+  },
+  "repeat_pass": {
+   "d1-sync": [
+    303,
+    1773,
+    413,
+    1847
+   ],
+   "d1-cue": [
+    303,
+    1893,
+    413,
+    1967
+   ],
+   "d1-jog": [
+    274,
+    1156,
+    797,
+    1679
+   ],
+   "d1-pitch": [
+    190,
+    407,
+    224,
+    1960
+   ],
+   "ch1-fader": [
+    943,
+    967,
+    1023,
+    1990
+   ],
+   "crossfader": [
+    1193,
+    2543,
+    2365,
+    2635
+   ],
+   "d2-pad-3": [
+    2167,
+    1530,
+    2355,
+    1728
+   ],
+   "master": [
+    1710,
+    725,
+    1830,
+    845
+   ]
+  },
+  "repeat_spread_mm": 0.6,
+  "issue": "#10862",
+  "date": "Tue 10 Nov 2026"
+ },
+ "controls": [
+  {
+   "id": "d1-jog",
+   "px": [
+    269,
+    1151,
+    802,
+    1684
+   ],
+   "x": 21.8,
+   "y": 35.7,
+   "w": 52.4,
+   "h": 22.4
+  },
+  {
+   "id": "d1-pitch",
+   "px": [
+    185,
+    402,
+    219,
+    1965
+   ],
+   "x": 13.5,
+   "y": 4.3,
+   "w": 3.4,
+   "h": 65.7
+  },
+  {
+   "id": "d1-sync",
+   "px": [
+    298,
+    1768,
+    418,
+    1842
+   ],
+   "x": 24.6,
+   "y": 61.7,
+   "w": 11.9,
+   "h": 3.2
+  },
+  {
+   "id": "d1-cue",
+   "px": [
+    298,
+    1888,
+    418,
+    1962
+   ],
+   "x": 24.6,
+   "y": 66.7,
+   "w": 11.9,
+   "h": 3.2
+  },
+  {
+   "id": "d1-play",
+   "px": [
+    298,
+    2005,
+    418,
+    2079
+   ],
+   "x": 24.6,
+   "y": 71.6,
+   "w": 11.9,
+   "h": 3.2
+  },
+  {
+   "id": "d1-pad-1",
+   "px": [
+    1198,
+    1054,
+    1396,
+    1252
+   ],
+   "x": 112.9,
+   "y": 31.7,
+   "w": 19.5,
+   "h": 8.4
+  },
+  {
+   "id": "d1-pad-2",
+   "px": [
+    1442,
+    1054,
+    1640,
+    1252
+   ],
+   "x": 136.9,
+   "y": 31.7,
+   "w": 19.5,
+   "h": 8.4
+  },
+  {
+   "id": "d1-pad-3",
+   "px": [
+    1198,
+    1525,
+    1396,
+    1723
+   ],
+   "x": 112.9,
+   "y": 51.5,
+   "w": 19.5,
+   "h": 8.4
+  },
+  {
+   "id": "d1-pad-4",
+   "px": [
+    1442,
+    1525,
+    1640,
+    1723
+   ],
+   "x": 136.9,
+   "y": 51.5,
+   "w": 19.5,
+   "h": 8.4
+  },
+  {
+   "id": "d1-vinyl",
+   "px": [
+    439,
+    308,
+    519,
+    388
+   ],
+   "x": 38.5,
+   "y": 0.3,
+   "w": 7.9,
+   "h": 3.4
+  },
+  {
+   "id": "d2-jog",
+   "px": [
+    2757,
+    1151,
+    3290,
+    1684
+   ],
+   "x": 265.9,
+   "y": 35.7,
+   "w": 52.4,
+   "h": 22.4
+  },
+  {
+   "id": "d2-pitch",
+   "px": [
+    2673,
+    402,
+    2707,
+    1965
+   ],
+   "x": 257.7,
+   "y": 4.3,
+   "w": 3.4,
+   "h": 65.7
+  },
+  {
+   "id": "d2-sync",
+   "px": [
+    2786,
+    1768,
+    2906,
+    1842
+   ],
+   "x": 268.8,
+   "y": 61.7,
+   "w": 11.9,
+   "h": 3.2
+  },
+  {
+   "id": "d2-cue",
+   "px": [
+    2786,
+    1888,
+    2906,
+    1962
+   ],
+   "x": 268.8,
+   "y": 66.7,
+   "w": 11.9,
+   "h": 3.2
+  },
+  {
+   "id": "d2-play",
+   "px": [
+    2786,
+    2005,
+    2906,
+    2079
+   ],
+   "x": 268.8,
+   "y": 71.6,
+   "w": 11.9,
+   "h": 3.2
+  },
+  {
+   "id": "d2-pad-1",
+   "px": [
+    2162,
+    1054,
+    2360,
+    1252
+   ],
+   "x": 207.5,
+   "y": 31.7,
+   "w": 19.5,
+   "h": 8.4
+  },
+  {
+   "id": "d2-pad-2",
+   "px": [
+    1918,
+    1054,
+    2116,
+    1252
+   ],
+   "x": 183.6,
+   "y": 31.7,
+   "w": 19.5,
+   "h": 8.4
+  },
+  {
+   "id": "d2-pad-3",
+   "px": [
+    2162,
+    1525,
+    2360,
+    1723
+   ],
+   "x": 207.5,
+   "y": 51.5,
+   "w": 19.5,
+   "h": 8.4
+  },
+  {
+   "id": "d2-pad-4",
+   "px": [
+    1918,
+    1525,
+    2116,
+    1723
+   ],
+   "x": 183.6,
+   "y": 51.5,
+   "w": 19.5,
+   "h": 8.4
+  },
+  {
+   "id": "ch1-filter",
+   "px": [
+    1189,
+    1489,
+    1405,
+    1705
+   ],
+   "x": 112.1,
+   "y": 49.9,
+   "w": 21.3,
+   "h": 9.1
+  },
+  {
+   "id": "ch1-bass",
+   "px": [
+    1371,
+    1490,
+    1445,
+    1704
+   ],
+   "x": 129.9,
+   "y": 50.0,
+   "w": 7.4,
+   "h": 9.0
+  },
+  {
+   "id": "ch1-cue",
+   "px": [
+    287,
+    343,
+    358,
+    424
+   ],
+   "x": 23.5,
+   "y": 1.8,
+   "w": 7.1,
+   "h": 3.4
+  },
+  {
+   "id": "ch1-fader",
+   "px": [
+    938,
+    962,
+    1018,
+    1985
+   ],
+   "x": 87.4,
+   "y": 27.8,
+   "w": 7.9,
+   "h": 43.0
+  },
+  {
+   "id": "ch2-filter",
+   "px": [
+    2153,
+    1489,
+    2369,
+    1705
+   ],
+   "x": 206.6,
+   "y": 49.9,
+   "w": 21.3,
+   "h": 9.1
+  },
+  {
+   "id": "ch2-bass",
+   "px": [
+    2113,
+    1490,
+    2187,
+    1704
+   ],
+   "x": 202.7,
+   "y": 50.0,
+   "w": 7.4,
+   "h": 9.0
+  },
+  {
+   "id": "ch2-cue",
+   "px": [
+    3200,
+    343,
+    3271,
+    424
+   ],
+   "x": 309.4,
+   "y": 1.8,
+   "w": 7.1,
+   "h": 3.4
+  },
+  {
+   "id": "ch2-fader",
+   "px": [
+    2540,
+    962,
+    2620,
+    1985
+   ],
+   "x": 244.6,
+   "y": 27.8,
+   "w": 7.9,
+   "h": 43.0
+  },
+  {
+   "id": "shift",
+   "px": [
+    185,
+    315,
+    273,
+    422
+   ],
+   "x": 13.5,
+   "y": 0.6,
+   "w": 8.7,
+   "h": 4.5
+  },
+  {
+   "id": "master",
+   "px": [
+    1705,
+    720,
+    1825,
+    840
+   ],
+   "x": 162.7,
+   "y": 17.6,
+   "w": 11.9,
+   "h": 5.1
+  },
+  {
+   "id": "headphone",
+   "px": [
+    1920,
+    720,
+    2040,
+    840
+   ],
+   "x": 183.8,
+   "y": 17.6,
+   "w": 11.9,
+   "h": 5.1
+  },
+  {
+   "id": "crossfader",
+   "px": [
+    1188,
+    2538,
+    2370,
+    2630
+   ],
+   "x": 112.0,
+   "y": 94.0,
+   "w": 116.1,
+   "h": 3.9
+  }
+ ]
+}

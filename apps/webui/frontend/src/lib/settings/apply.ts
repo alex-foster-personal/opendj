@@ -5,7 +5,11 @@
 import { parseWaveHeight } from '$lib/rb/wave-height';
 import { parseWaveformDesignPref } from '$lib/rb/waveform-design';
 import { reportSettingSaveError } from '$lib/settings/setting-save-errors';
-import { artThumbnailsAvailable, setSidebarArt, sidebarArt } from '$lib/rb/library-sidebar-art.svelte';
+import {
+	artThumbnailsAvailable,
+	setSidebarArt,
+	sidebarArt
+} from '$lib/rb/library-sidebar-art.svelte';
 import {
 	compatibleFilterSettingPatch,
 	readCompatibleFilterSetting,
@@ -15,8 +19,14 @@ import { parseWavePalettePref } from '$lib/rb/wave-palette';
 import { UI_SKIN_CHOICES, parseUiSkin, parseWaveSplitMaster } from '$lib/rb/ui-skin';
 import { parseWavePlayheadMode, parseWaveZoom } from '$lib/rb/wave-zoom';
 import { parseSpeakerAutoRecover, SPEAKER_AUTO_RECOVER_PREFS } from '$lib/rb/speaker-link-prefs';
+import { isKeymapPresetId } from '$lib/keyboard/presets/index';
 import { parseTempoLaneScale } from '$lib/rb/tempo-lane-prefs';
 import { requireWaveGridLines } from '$lib/rb/wave-grid-lines';
+import {
+	requireSectionsMainStyle,
+	requireSectionsOverviewStyle,
+	requireSectionsUncertain
+} from '$lib/rb/section-overlay-prefs';
 import {
 	DECK_LAYOUT_DURATIONS_MS,
 	setAutoPlayEnabled,
@@ -43,12 +53,22 @@ import {
 	setJogRadialWaveform,
 	setShowDevUi,
 	setPinVisibleDays,
+	setReduceMotion,
 	setShowStems,
 	setWaveEqReflect,
 	setMixerStems,
+	setMixerPlacement,
+	isMixerPlacement,
 	setDeckHoverLink,
 	setCompactDecks,
 	setShowSections,
+	setSectionsMainStyle,
+	setSectionsStickyTitle,
+	setSectionsNextCountdown,
+	setSectionsOverviewStyle,
+	setSectionsLibraryStructureColumn,
+	setSectionsPreviewCursorLabel,
+	setSectionsUncertain,
 	setAutoAnalyzeGrid,
 	setAutoAnalyzeKey,
 	setAutoAnalyzeSections,
@@ -56,8 +76,12 @@ import {
 	setDeckNumberArt,
 	requireDeckNumberArt,
 	setSpeakerAutoRecover,
+	setKeyboardPreset,
 	setShowTempoLane,
 	setTempoLaneScale,
+	setShowHotCueMarkers,
+	setShowMemoryCueMarkers,
+	setShowLoopMarkers,
 	setShowVocalLane,
 	setWaveGridLines,
 	setWaveformDesign,
@@ -85,6 +109,8 @@ import {
 	setRemixesFilter,
 	setTechnicallyWorkingAnimate,
 	setTheme,
+	setUsbAutoOpenPanel,
+	setUsbToastEnabled,
 	setVocalsFilter,
 	uiPrefs,
 	patchCompatibleFilter,
@@ -105,11 +131,12 @@ import {
 	storedEngineChoice,
 	type EngineChoice
 } from '$lib/audio-engine/rust-mode.svelte';
+import { setWheelSensitivity, wheelSensitivity, type WheelInputKind } from '$lib/rb/wheel-adjust';
 import {
-	setWheelSensitivity,
-	wheelSensitivity,
-	type WheelInputKind
-} from '$lib/rb/wheel-adjust';
+	libraryListWheelSensitivity,
+	setLibraryListWheelSensitivity,
+	type LibraryListWheelKind
+} from '$lib/rb/library-wheel-scroll';
 // The leaf, not midi-ui-state: this module is on the library page's first-paint
 // path (SettingsOverlay), and midi-ui-state statically pulls in the WebMIDI
 // runtime, action glue and every device map (about 27 KB minified) that only
@@ -123,23 +150,19 @@ import {
 	setFeatureIconSingleClick
 } from '$lib/rb/feature-icon-cluster.svelte';
 import { syncDiskPrefs } from '$lib/rb/prefs-hydrate';
-import { autoGainPrefs, autoGainPrefsUnavailable, saveAutoGainPrefs } from '$lib/rb/auto-gain.svelte';
+import {
+	autoGainPrefs,
+	autoGainPrefsUnavailable,
+	saveAutoGainPrefs
+} from '$lib/rb/auto-gain.svelte';
 import { AUTO_GAIN_TARGET_MAX_LUFS, AUTO_GAIN_TARGET_MIN_LUFS } from '$lib/rb/auto-gain';
 import { dropModePrefFromSetting, dropModeSettingValue } from './confirm-drop-mode';
 import { isVariantSettingId, type VariantSettingId } from '$lib/settings/variant-setting';
 import { readVariant, setVariant } from '$lib/rb/prefs.svelte';
 
-// How a MIDI runtime load failure reaches the user. app-init wires the error
-// toast in at boot (toastMidiLoadFailure), so this first-paint module does not
-// import stores.svelte, the app's highest fan-in module (quality gate
-// frontend.max_fan_in). Until then the failure is still logged, never dropped.
-const _logMidiLoadFailure = (exc: unknown): void => console.error('[midi] MIDI could not load', exc);
-let _reportMidiLoadFailure = _logMidiLoadFailure;
+import { reportMidiLoadFailure } from './midi-load-failure-reporter';
 
-/** null restores the log-only default (app-init's teardown). */
-export function setMidiLoadFailureReporter(report: ((exc: unknown) => void) | null): void {
-	_reportMidiLoadFailure = report ?? _logMidiLoadFailure;
-}
+export { setMidiLoadFailureReporter } from './midi-load-failure-reporter';
 
 /** The rb.midi_enabled runtime half lives in midi-ui-state, which is loaded on
  * demand here rather than charging the MIDI runtime to first paint. It persists
@@ -148,7 +171,8 @@ export function setMidiLoadFailureReporter(report: ((exc: unknown) => void) | nu
  * Destructured so knip still sees which export is used. */
 async function _applyMidiEnabledChoice(enabled: boolean): Promise<void> {
 	try {
-		const { applyMidiEnabledSetting } = await import('$lib/components/rb/midi/midi-ui-state.svelte');
+		const { applyMidiEnabledSetting } =
+			await import('$lib/components/rb/midi/midi-ui-state.svelte');
 		await applyMidiEnabledSetting(enabled);
 	} catch (exc: unknown) {
 		// Nothing acted on the saved choice, so it must not read "on": restore
@@ -158,7 +182,7 @@ async function _applyMidiEnabledChoice(enabled: boolean): Promise<void> {
 		// the next page load, undoing an "off" the user just chose.
 		persistMidiEnabled(false);
 		void syncDiskPrefs({ midi_enabled: false });
-		_reportMidiLoadFailure(exc);
+		reportMidiLoadFailure(exc);
 	}
 }
 
@@ -168,6 +192,7 @@ export const ALLOWED_SETTING_KEYS = [
 	'library_sidebar_art',
 	'library_density',
 	'key_notation',
+	'keyboard_preset',
 	'beat_sync_max',
 	'deck_default_quantize',
 	'deck_needle_lock',
@@ -195,9 +220,17 @@ export const ALLOWED_SETTING_KEYS = [
 	'technically_working_animate',
 	'jog_radial_waveform',
 	'show_stems',
+	'reduce_motion',
 	'deck_hover_link',
 	'compact_decks',
 	'show_sections',
+	'sections_main_style',
+	'sections_sticky_title',
+	'sections_next_countdown',
+	'sections_overview_style',
+	'sections_library_structure_column',
+	'sections_preview_cursor_label',
+	'sections_uncertain',
 	'auto_analyze_grid',
 	'auto_analyze_key',
 	'auto_analyze_sections',
@@ -209,6 +242,9 @@ export const ALLOWED_SETTING_KEYS = [
 	'show_vocal_lane',
 	'wave_height',
 	'wave_grid_lines',
+	'show_hot_cue_markers',
+	'show_memory_cue_markers',
+	'show_loop_markers',
 	'waveform_design',
 	'wave_eq_reflect',
 	'wave_palette',
@@ -219,6 +255,7 @@ export const ALLOWED_SETTING_KEYS = [
 	'wave_zoom_linked',
 	'deck_layout',
 	'mixer_stems',
+	'mixer_placement',
 	'deck_layout_animate',
 	'deck_layout_duration_ms',
 	'deck_right_mirror',
@@ -233,6 +270,8 @@ export const ALLOWED_SETTING_KEYS = [
 	'confirm.playlist_drop_mode',
 	'wheel_sensitivity.mouse',
 	'wheel_sensitivity.trackpad',
+	'wheel_sensitivity.library_mouse',
+	'wheel_sensitivity.library_trackpad',
 	'drag_sensitivity.base',
 	'drag_sensitivity.falloff_px',
 	'layout_override.performance',
@@ -245,6 +284,8 @@ export const ALLOWED_SETTING_KEYS = [
 	'auto_gain.enabled',
 	'auto_gain.target_lufs',
 	'gig_helper',
+	'usb_toast_enabled',
+	'usb_auto_open_panel',
 	'audio_engine'
 ] as const;
 
@@ -264,7 +305,9 @@ export type SettingValue = boolean | string;
  * The overlay prints it under the row instead of passing a fallback off as read. */
 export function settingUnavailable(key: string): string | null {
 	if (key === 'library_sidebar_art') {
-		return artThumbnailsAvailable() ? null : 'Playlist art is turned off by the library.art_thumbnails flag.';
+		return artThumbnailsAvailable()
+			? null
+			: 'Playlist art is turned off by the library.art_thumbnails flag.';
 	}
 	if (key !== 'auto_gain.enabled' && key !== 'auto_gain.target_lufs') return null;
 	const why = autoGainPrefsUnavailable();
@@ -299,7 +342,9 @@ const _LIBRARY_UI_PREF_KEYS = [
 	'lyrics_deck_line',
 	'hide_todo_settings',
 	'show_dev_ui',
-	'technically_working_animate'
+	'technically_working_animate',
+	'usb_toast_enabled',
+	'usb_auto_open_panel'
 ] as const satisfies readonly AllowedSettingKey[];
 
 type _LibraryUiPrefKey = (typeof _LIBRARY_UI_PREF_KEYS)[number];
@@ -354,6 +399,10 @@ function _readLibraryUiPref(key: _LibraryUiPrefKey): SettingValue {
 			return uiPrefs.hide_todo_settings;
 		case 'show_dev_ui':
 			return uiPrefs.show_dev_ui;
+		case 'usb_toast_enabled':
+			return uiPrefs.usb_toast_enabled;
+		case 'usb_auto_open_panel':
+			return uiPrefs.usb_auto_open_panel;
 		case 'technically_working_animate':
 			return uiPrefs.technically_working_animate;
 		case 'preview_beat_sync':
@@ -398,16 +447,28 @@ function _readAnalysisAutoPref(key: _AnalysisAutoPrefKey): SettingValue {
 const _APPEARANCE_AND_DECK_UI_PREF_KEYS = [
 	'jog_radial_waveform',
 	'show_stems',
+	'reduce_motion',
 	'deck_hover_link',
 	'compact_decks',
 	'show_sections',
+	'sections_main_style',
+	'sections_sticky_title',
+	'sections_next_countdown',
+	'sections_overview_style',
+	'sections_library_structure_column',
+	'sections_preview_cursor_label',
+	'sections_uncertain',
 	'deck_number_art',
 	'speaker_auto_recover',
+	'keyboard_preset',
 	'show_tempo_lane',
 	'tempo_lane_scale',
 	'show_vocal_lane',
 	'wave_height',
 	'wave_grid_lines',
+	'show_hot_cue_markers',
+	'show_memory_cue_markers',
+	'show_loop_markers',
 	'waveform_design',
 	'wave_eq_reflect',
 	'wave_palette',
@@ -418,6 +479,7 @@ const _APPEARANCE_AND_DECK_UI_PREF_KEYS = [
 	'wave_zoom_linked',
 	'deck_layout',
 	'mixer_stems',
+	'mixer_placement',
 	'deck_layout_animate',
 	'deck_right_mirror',
 	'deck_left_mirror',
@@ -444,16 +506,34 @@ function _readAppearanceAndDeckUiPref(key: _AppearanceAndDeckUiPrefKey): Setting
 			return uiPrefs.jog_radial_waveform;
 		case 'show_stems':
 			return uiPrefs.show_stems;
+		case 'reduce_motion':
+			return uiPrefs.reduce_motion;
 		case 'deck_hover_link':
 			return uiPrefs.deck_hover_link;
 		case 'compact_decks':
 			return uiPrefs.compact_decks;
 		case 'show_sections':
 			return uiPrefs.show_sections;
+		case 'sections_main_style':
+			return uiPrefs.sections_main_style;
+		case 'sections_sticky_title':
+			return uiPrefs.sections_sticky_title;
+		case 'sections_next_countdown':
+			return uiPrefs.sections_next_countdown;
+		case 'sections_overview_style':
+			return uiPrefs.sections_overview_style;
+		case 'sections_library_structure_column':
+			return uiPrefs.sections_library_structure_column;
+		case 'sections_preview_cursor_label':
+			return uiPrefs.sections_preview_cursor_label;
+		case 'sections_uncertain':
+			return uiPrefs.sections_uncertain;
 		case 'deck_number_art':
 			return uiPrefs.deck_number_art;
 		case 'speaker_auto_recover':
 			return uiPrefs.speaker_auto_recover;
+		case 'keyboard_preset':
+			return uiPrefs.keyboard.preset;
 		case 'show_tempo_lane':
 			return uiPrefs.show_tempo_lane;
 		case 'show_vocal_lane':
@@ -464,6 +544,12 @@ function _readAppearanceAndDeckUiPref(key: _AppearanceAndDeckUiPrefKey): Setting
 			return uiPrefs.wave_height;
 		case 'wave_grid_lines':
 			return uiPrefs.wave_grid_lines;
+		case 'show_hot_cue_markers':
+			return uiPrefs.show_hot_cue_markers;
+		case 'show_memory_cue_markers':
+			return uiPrefs.show_memory_cue_markers;
+		case 'show_loop_markers':
+			return uiPrefs.show_loop_markers;
 		case 'waveform_design':
 			return uiPrefs.waveform_design;
 		case 'wave_eq_reflect':
@@ -484,6 +570,8 @@ function _readAppearanceAndDeckUiPref(key: _AppearanceAndDeckUiPrefKey): Setting
 			return uiPrefs.deck_layout;
 		case 'mixer_stems':
 			return uiPrefs.mixer_stems;
+		case 'mixer_placement':
+			return uiPrefs.mixer_placement;
 		case 'deck_layout_animate':
 			return uiPrefs.deck_layout_animate;
 		case 'deck_right_mirror':
@@ -566,6 +654,10 @@ function _readNumericAndExternalSetting(key: _NumericAndExternalSettingKey): Set
 			return String(wheelSensitivity().mouse);
 		case 'wheel_sensitivity.trackpad':
 			return String(wheelSensitivity().trackpad);
+		case 'wheel_sensitivity.library_mouse':
+			return String(libraryListWheelSensitivity().mouse);
+		case 'wheel_sensitivity.library_trackpad':
+			return String(libraryListWheelSensitivity().trackpad);
 		case 'drag_sensitivity.base':
 			return String(uiPrefs.drag_sensitivity.base);
 		case 'drag_sensitivity.falloff_px':
@@ -601,7 +693,10 @@ export function readSettingValue(key: AllowedSettingKey | VariantSettingId): Set
 
 /** KEYSHIFT-01..05: validates synchronously (a bad value throws at the call),
  * then saves through the verified disk write. */
-function _applyCompatibleFilterSetting(key: CompatibleFilterSettingKey, value: boolean | string): void {
+function _applyCompatibleFilterSetting(
+	key: CompatibleFilterSettingKey,
+	value: boolean | string
+): void {
 	const patch = compatibleFilterSettingPatch(key, value);
 	patchCompatibleFilter(patch).catch((err: unknown) =>
 		reportSettingSaveError(`Compatible filter setting not saved: ${err}`, err)
@@ -631,7 +726,9 @@ export function applySettingChange(key: string, value: SettingValue): void {
 			setHideBrokenLinks(_asBool(value, key));
 			return;
 		case 'library_sidebar_art':
-			void setSidebarArt(_asBool(value, key)).catch((exc: unknown) => reportSettingSaveError(`Playlist art setting not saved: ${String(exc)}`, exc));
+			void setSidebarArt(_asBool(value, key)).catch((exc: unknown) =>
+				reportSettingSaveError(`Playlist art setting not saved: ${String(exc)}`, exc)
+			);
 			return;
 		case 'library_density': {
 			if (value !== 'compact' && value !== 'cosy') {
@@ -719,11 +816,20 @@ export function applySettingChange(key: string, value: SettingValue): void {
 		case 'technically_working_animate':
 			setTechnicallyWorkingAnimate(_asBool(value, key));
 			return;
+		case 'usb_toast_enabled':
+			setUsbToastEnabled(_asBool(value, key));
+			return;
+		case 'usb_auto_open_panel':
+			setUsbAutoOpenPanel(_asBool(value, key));
+			return;
 		case 'jog_radial_waveform':
 			setJogRadialWaveform(_asBool(value, key));
 			return;
 		case 'show_stems':
 			setShowStems(_asBool(value, key));
+			return;
+		case 'reduce_motion':
+			setReduceMotion(_asBool(value, key));
 			return;
 		case 'wave_eq_reflect':
 			setWaveEqReflect(_asBool(value, key));
@@ -736,6 +842,27 @@ export function applySettingChange(key: string, value: SettingValue): void {
 			return;
 		case 'show_sections':
 			setShowSections(_asBool(value, key));
+			return;
+		case 'sections_main_style':
+			setSectionsMainStyle(requireSectionsMainStyle(value, key));
+			return;
+		case 'sections_sticky_title':
+			setSectionsStickyTitle(_asBool(value, key));
+			return;
+		case 'sections_next_countdown':
+			setSectionsNextCountdown(_asBool(value, key));
+			return;
+		case 'sections_overview_style':
+			setSectionsOverviewStyle(requireSectionsOverviewStyle(value, key));
+			return;
+		case 'sections_library_structure_column':
+			setSectionsLibraryStructureColumn(_asBool(value, key));
+			return;
+		case 'sections_preview_cursor_label':
+			setSectionsPreviewCursorLabel(_asBool(value, key));
+			return;
+		case 'sections_uncertain':
+			setSectionsUncertain(requireSectionsUncertain(value, key));
 			return;
 		case 'auto_analyze_grid':
 			setAutoAnalyzeGrid(_asBool(value, key));
@@ -755,9 +882,18 @@ export function applySettingChange(key: string, value: SettingValue): void {
 		case 'speaker_auto_recover': {
 			const pref = parseSpeakerAutoRecover(value);
 			if (pref === undefined) {
-				throw new Error(`speaker_auto_recover must be ${SPEAKER_AUTO_RECOVER_PREFS.join('|')}, got ${String(value)}`);
+				throw new Error(
+					`speaker_auto_recover must be ${SPEAKER_AUTO_RECOVER_PREFS.join('|')}, got ${String(value)}`
+				);
 			}
 			setSpeakerAutoRecover(pref);
+			return;
+		}
+		case 'keyboard_preset': {
+			if (!isKeymapPresetId(value)) {
+				throw new Error(`keyboard_preset must be opendj|rekordbox|serato, got ${String(value)}`);
+			}
+			setKeyboardPreset(value);
 			return;
 		}
 		case 'show_tempo_lane':
@@ -768,7 +904,8 @@ export function applySettingChange(key: string, value: SettingValue): void {
 			return;
 		case 'tempo_lane_scale': {
 			const scale = parseTempoLaneScale(value);
-			if (scale === undefined) throw new Error(`tempo_lane_scale must be fixed_10|relative, got ${String(value)}`);
+			if (scale === undefined)
+				throw new Error(`tempo_lane_scale must be fixed_10|relative, got ${String(value)}`);
 			setTempoLaneScale(scale);
 			return;
 		}
@@ -781,10 +918,21 @@ export function applySettingChange(key: string, value: SettingValue): void {
 		case 'wave_grid_lines':
 			setWaveGridLines(requireWaveGridLines(value, key));
 			return;
+		case 'show_hot_cue_markers':
+			setShowHotCueMarkers(_asBool(value, key));
+			return;
+		case 'show_memory_cue_markers':
+			setShowMemoryCueMarkers(_asBool(value, key));
+			return;
+		case 'show_loop_markers':
+			setShowLoopMarkers(_asBool(value, key));
+			return;
 		case 'waveform_design': {
 			const design = parseWaveformDesignPref(value);
 			if (design === undefined) {
-				throw new Error(`waveform_design must be auto|tri-band|mono|line|blocks|rgb, got ${String(value)}`);
+				throw new Error(
+					`waveform_design must be auto|tri-band|mono|line|blocks|rgb, got ${String(value)}`
+				);
 			}
 			setWaveformDesign(design);
 			return;
@@ -799,19 +947,22 @@ export function applySettingChange(key: string, value: SettingValue): void {
 		}
 		case 'ui_skin': {
 			const skin = parseUiSkin(value);
-			if (skin === undefined) throw new Error(`ui_skin must be ${UI_SKIN_CHOICES.join('|')}, got ${String(value)}`);
+			if (skin === undefined)
+				throw new Error(`ui_skin must be ${UI_SKIN_CHOICES.join('|')}, got ${String(value)}`);
 			setUiSkin(skin);
 			return;
 		}
 		case 'wave_zoom': {
 			const zoom = parseWaveZoom(value);
-			if (zoom === undefined) throw new Error(`wave_zoom must be 4|8|16|32|64|whole, got ${String(value)}`);
+			if (zoom === undefined)
+				throw new Error(`wave_zoom must be 4|8|16|32|64|whole, got ${String(value)}`);
 			setWaveZoom(zoom);
 			return;
 		}
 		case 'wave_zoom_playhead': {
 			const mode = parseWavePlayheadMode(value);
-			if (mode === undefined) throw new Error(`wave_zoom_playhead must be elastic|center, got ${String(value)}`);
+			if (mode === undefined)
+				throw new Error(`wave_zoom_playhead must be elastic|center, got ${String(value)}`);
 			setWaveZoomPlayhead(mode);
 			return;
 		}
@@ -820,7 +971,8 @@ export function applySettingChange(key: string, value: SettingValue): void {
 			return;
 		case 'wave_split_master': {
 			const mode = parseWaveSplitMaster(value);
-			if (mode === undefined) throw new Error(`wave_split_master must be auto|on|off, got ${String(value)}`);
+			if (mode === undefined)
+				throw new Error(`wave_split_master must be auto|on|off, got ${String(value)}`);
 			setWaveSplitMaster(mode);
 			return;
 		}
@@ -834,6 +986,11 @@ export function applySettingChange(key: string, value: SettingValue): void {
 		case 'mixer_stems':
 			setMixerStems(_asBool(value, key));
 			return;
+		case 'mixer_placement': {
+			if (!isMixerPlacement(value)) throw new Error(`mixer_placement must be center|sides, got ${String(value)}`);
+			setMixerPlacement(value);
+			return;
+		}
 		case 'deck_layout_animate':
 			setDeckLayoutAnimate(_asBool(value, key));
 			return;
@@ -898,7 +1055,9 @@ export function applySettingChange(key: string, value: SettingValue): void {
 		case 'auto_gain.target_lufs': {
 			const target = _asFactor(value, key);
 			if (target < AUTO_GAIN_TARGET_MIN_LUFS || target > AUTO_GAIN_TARGET_MAX_LUFS) {
-				throw new RangeError(`${key} must be ${AUTO_GAIN_TARGET_MIN_LUFS}..${AUTO_GAIN_TARGET_MAX_LUFS} LUFS, got ${target}`);
+				throw new RangeError(
+					`${key} must be ${AUTO_GAIN_TARGET_MIN_LUFS}..${AUTO_GAIN_TARGET_MAX_LUFS} LUFS, got ${target}`
+				);
 			}
 			void saveAutoGainPrefs({ target_lufs: target });
 			return;
@@ -910,6 +1069,12 @@ export function applySettingChange(key: string, value: SettingValue): void {
 			// control's string into a number, or refuse loudly.
 			const kind = key.slice('wheel_sensitivity.'.length) as WheelInputKind;
 			setWheelSensitivity(kind, _asFactor(value, key));
+			return;
+		}
+		case 'wheel_sensitivity.library_mouse':
+		case 'wheel_sensitivity.library_trackpad': {
+			const tail = key.slice('wheel_sensitivity.library_'.length) as LibraryListWheelKind;
+			setLibraryListWheelSensitivity(tail, _asFactor(value, key));
 			return;
 		}
 		case 'drag_sensitivity.base':
@@ -929,7 +1094,9 @@ export function applySettingChange(key: string, value: SettingValue): void {
 		}
 		case 'crossfade_curve': {
 			if (value !== 'magic') {
-				throw new Error(`crossfade_curve must be magic until curves are built, got ${String(value)}`);
+				throw new Error(
+					`crossfade_curve must be magic until curves are built, got ${String(value)}`
+				);
 			}
 			setCrossfadeCurve('magic');
 			return;
@@ -949,12 +1116,7 @@ export function applySettingChange(key: string, value: SettingValue): void {
 			return;
 		}
 		case 'perf_tier': {
-			if (
-				value !== 'auto' &&
-				value !== 'low' &&
-				value !== 'standard' &&
-				value !== 'high'
-			) {
+			if (value !== 'auto' && value !== 'low' && value !== 'standard' && value !== 'high') {
 				throw new Error(`perf_tier must be auto|low|standard|high, got ${String(value)}`);
 			}
 			setPerfTier(value as PerfTierPref);

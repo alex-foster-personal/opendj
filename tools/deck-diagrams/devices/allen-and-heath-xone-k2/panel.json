@@ -1,0 +1,1067 @@
+{
+ "format": "opendj-panel-layout/1",
+ "device": "allen-and-heath-xone-k2",
+ "display_name": "2-deck MIDI controller",
+ "units": "mm",
+ "panel": {
+  "w": 358.0,
+  "d": 135.0
+ },
+ "device_map": "XONE_K2_MAP",
+ "sources": {
+  "panel_size": "Allen & Heath XONE:K2 User Guide AP8509 Issue 3, Specifications (page 29): Width 358 mm, Depth 135 mm",
+  "wire": "apps/webui/frontend/src/lib/rb/midi/maps/allen-and-heath-xone-k2.ts",
+  "positions": "measured trace of the AP8509 page 9 schematic; reference in panel.reference.json"
+ },
+ "out_of_scope": [
+  "Latching layer colours and setup mode UI",
+  "Vendor wordmarks on the AP8509 drawing (not reproduced in the replica skin)",
+  "X:LINK RJ45 ports on the rear panel"
+ ],
+ "controls": [
+  {
+   "id": "d1-jog",
+   "fig": "1",
+   "type": "encoder",
+   "label": "DECK 1 JOG",
+   "does": "Nudge or scratch deck 1 (relative encoder)",
+   "x": 28.5,
+   "y": 10.5,
+   "w": 19.0,
+   "h": 5.0,
+   "section": "deck",
+   "midi": {
+    "ch": 15,
+    "kind": "cc",
+    "id": 0
+   },
+   "shift_midi": null
+  },
+  {
+   "id": "d1-pitch",
+   "fig": "4",
+   "type": "fader",
+   "label": "DECK 1 PITCH",
+   "does": "Tempo / pitch slider for deck 1",
+   "x": 33.0,
+   "y": 74.0,
+   "w": 10.0,
+   "h": 30.0,
+   "section": "deck",
+   "midi": {
+    "ch": 15,
+    "kind": "cc",
+    "id": 16
+   },
+   "shift_midi": null
+  },
+  {
+   "id": "d2-jog",
+   "fig": "1",
+   "type": "encoder",
+   "label": "DECK 2 JOG",
+   "does": "Nudge or scratch deck 2 (relative encoder)",
+   "x": 309.0,
+   "y": 10.5,
+   "w": 19.0,
+   "h": 5.0,
+   "section": "deck",
+   "midi": {
+    "ch": 15,
+    "kind": "cc",
+    "id": 3
+   },
+   "shift_midi": null
+  },
+  {
+   "id": "d2-pitch",
+   "fig": "4",
+   "type": "fader",
+   "label": "DECK 2 PITCH",
+   "does": "Tempo / pitch slider for deck 2",
+   "x": 310.0,
+   "y": 79.5,
+   "w": 10.0,
+   "h": 30.0,
+   "section": "deck",
+   "midi": {
+    "ch": 15,
+    "kind": "cc",
+    "id": 19
+   },
+   "shift_midi": null
+  },
+  {
+   "id": "ch1-trim",
+   "fig": "2",
+   "type": "knob",
+   "label": "TRIM",
+   "does": "Channel 1 input gain",
+   "x": 29.5,
+   "y": 27.0,
+   "w": 17.0,
+   "h": 4.0,
+   "section": "mixer",
+   "midi": {
+    "ch": 15,
+    "kind": "cc",
+    "id": 4
+   },
+   "shift_midi": null
+  },
+  {
+   "id": "ch1-filter",
+   "fig": "2",
+   "type": "knob",
+   "label": "FILTER",
+   "does": "Deck 1 color FX filter",
+   "x": 29.5,
+   "y": 43.5,
+   "w": 17.0,
+   "h": 4.0,
+   "section": "mixer",
+   "midi": {
+    "ch": 15,
+    "kind": "cc",
+    "id": 8
+   },
+   "shift_midi": null
+  },
+  {
+   "id": "ch1-eq-high",
+   "fig": "2",
+   "type": "knob",
+   "label": "EQ HIGH",
+   "does": "Channel 1 high EQ",
+   "x": 126.5,
+   "y": 27.0,
+   "w": 17.0,
+   "h": 4.0,
+   "section": "mixer",
+   "midi": {
+    "ch": 15,
+    "kind": "cc",
+    "id": 5
+   },
+   "shift_midi": null
+  },
+  {
+   "id": "ch1-eq-mid",
+   "fig": "2",
+   "type": "knob",
+   "label": "EQ MID",
+   "does": "Channel 1 mid EQ",
+   "x": 126.5,
+   "y": 43.5,
+   "w": 17.0,
+   "h": 4.0,
+   "section": "mixer",
+   "midi": {
+    "ch": 15,
+    "kind": "cc",
+    "id": 9
+   },
+   "shift_midi": null
+  },
+  {
+   "id": "ch1-eq-low",
+   "fig": "2",
+   "type": "knob",
+   "label": "EQ LOW",
+   "does": "Channel 1 low EQ",
+   "x": 126.5,
+   "y": 60.0,
+   "w": 17.0,
+   "h": 4.0,
+   "section": "mixer",
+   "midi": {
+    "ch": 15,
+    "kind": "cc",
+    "id": 13
+   },
+   "shift_midi": null
+  },
+  {
+   "id": "ch1-fader",
+   "fig": "4",
+   "type": "fader",
+   "label": "CH FADER",
+   "does": "Channel 1 level",
+   "x": 130.0,
+   "y": 74.0,
+   "w": 10.0,
+   "h": 30.0,
+   "section": "mixer",
+   "midi": {
+    "ch": 15,
+    "kind": "cc",
+    "id": 17
+   },
+   "shift_midi": null
+  },
+  {
+   "id": "ch1-ch-cue",
+   "fig": "3",
+   "type": "button",
+   "label": "PFL",
+   "does": "Channel 1 headphone cue",
+   "x": 120.5,
+   "y": 69.5,
+   "w": 13.0,
+   "h": 2.0,
+   "section": "mixer",
+   "midi": {
+    "ch": 15,
+    "kind": "note",
+    "id": 41
+   },
+   "shift_midi": null
+  },
+  {
+   "id": "ch2-trim",
+   "fig": "2",
+   "type": "knob",
+   "label": "TRIM",
+   "does": "Channel 2 input gain",
+   "x": 310.0,
+   "y": 27.0,
+   "w": 17.0,
+   "h": 4.0,
+   "section": "mixer",
+   "midi": {
+    "ch": 15,
+    "kind": "cc",
+    "id": 7
+   },
+   "shift_midi": null
+  },
+  {
+   "id": "ch2-filter",
+   "fig": "2",
+   "type": "knob",
+   "label": "FILTER",
+   "does": "Deck 2 color FX filter",
+   "x": 306.5,
+   "y": 43.5,
+   "w": 17.0,
+   "h": 4.0,
+   "section": "mixer",
+   "midi": {
+    "ch": 15,
+    "kind": "cc",
+    "id": 11
+   },
+   "shift_midi": null
+  },
+  {
+   "id": "ch2-eq-high",
+   "fig": "2",
+   "type": "knob",
+   "label": "EQ HIGH",
+   "does": "Channel 2 high EQ",
+   "x": 221.0,
+   "y": 27.0,
+   "w": 17.0,
+   "h": 4.0,
+   "section": "mixer",
+   "midi": {
+    "ch": 15,
+    "kind": "cc",
+    "id": 6
+   },
+   "shift_midi": null
+  },
+  {
+   "id": "ch2-eq-mid",
+   "fig": "2",
+   "type": "knob",
+   "label": "EQ MID",
+   "does": "Channel 2 mid EQ",
+   "x": 221.0,
+   "y": 43.5,
+   "w": 17.0,
+   "h": 4.0,
+   "section": "mixer",
+   "midi": {
+    "ch": 15,
+    "kind": "cc",
+    "id": 10
+   },
+   "shift_midi": null
+  },
+  {
+   "id": "ch2-eq-low",
+   "fig": "2",
+   "type": "knob",
+   "label": "EQ LOW",
+   "does": "Channel 2 low EQ",
+   "x": 221.0,
+   "y": 60.0,
+   "w": 17.0,
+   "h": 4.0,
+   "section": "mixer",
+   "midi": {
+    "ch": 15,
+    "kind": "cc",
+    "id": 14
+   },
+   "shift_midi": null
+  },
+  {
+   "id": "ch2-fader",
+   "fig": "4",
+   "type": "fader",
+   "label": "CH FADER",
+   "does": "Channel 2 level",
+   "x": 220.5,
+   "y": 76.5,
+   "w": 10.0,
+   "h": 30.0,
+   "section": "mixer",
+   "midi": {
+    "ch": 15,
+    "kind": "cc",
+    "id": 18
+   },
+   "shift_midi": null
+  },
+  {
+   "id": "ch2-ch-cue",
+   "fig": "3",
+   "type": "button",
+   "label": "PFL",
+   "does": "Channel 2 headphone cue",
+   "x": 215.5,
+   "y": 69.5,
+   "w": 13.0,
+   "h": 2.0,
+   "section": "mixer",
+   "midi": {
+    "ch": 15,
+    "kind": "note",
+    "id": 42
+   },
+   "shift_midi": null
+  },
+  {
+   "id": "crossfader",
+   "fig": "2",
+   "type": "knob",
+   "label": "CROSSFADER",
+   "does": "Rotary crossfader (column 1)",
+   "x": 29.5,
+   "y": 60.0,
+   "w": 17.0,
+   "h": 4.0,
+   "section": "mixer",
+   "midi": {
+    "ch": 15,
+    "kind": "cc",
+    "id": 12
+   },
+   "shift_midi": null
+  },
+  {
+   "id": "master",
+   "fig": "2",
+   "type": "knob",
+   "label": "MASTER",
+   "does": "Master output level",
+   "x": 306.5,
+   "y": 60.0,
+   "w": 17.0,
+   "h": 4.0,
+   "section": "mixer",
+   "midi": {
+    "ch": 15,
+    "kind": "cc",
+    "id": 15
+   },
+   "shift_midi": null
+  },
+  {
+   "id": "browse-encoder",
+   "fig": "6",
+   "type": "encoder",
+   "label": "SCROLL",
+   "does": "Browse library (relative)",
+   "x": 271.5,
+   "y": 129.5,
+   "w": 19.0,
+   "h": 5.0,
+   "section": "browse",
+   "midi": {
+    "ch": 15,
+    "kind": "cc",
+    "id": 21
+   },
+   "shift_midi": null
+  },
+  {
+   "id": "d1-hot-cue-a",
+   "fig": "5",
+   "type": "pad",
+   "label": "HOT CUE A",
+   "does": "Deck 1 hot cue A",
+   "x": 36.0,
+   "y": 114.5,
+   "w": 14.0,
+   "h": 2.0,
+   "section": "deck",
+   "midi": {
+    "ch": 15,
+    "kind": "note",
+    "id": 36
+   },
+   "shift_midi": null
+  },
+  {
+   "id": "d1-hot-cue-b",
+   "fig": "5",
+   "type": "pad",
+   "label": "HOT CUE B",
+   "does": "Deck 1 hot cue B",
+   "x": 112.5,
+   "y": 114.5,
+   "w": 14.0,
+   "h": 2.0,
+   "section": "deck",
+   "midi": {
+    "ch": 15,
+    "kind": "note",
+    "id": 37
+   },
+   "shift_midi": null
+  },
+  {
+   "id": "d1-hot-cue-c",
+   "fig": "5",
+   "type": "pad",
+   "label": "HOT CUE C",
+   "does": "Deck 1 hot cue C",
+   "x": 36.0,
+   "y": 118.5,
+   "w": 14.0,
+   "h": 2.0,
+   "section": "deck",
+   "midi": {
+    "ch": 15,
+    "kind": "note",
+    "id": 32
+   },
+   "shift_midi": null
+  },
+  {
+   "id": "d1-hot-cue-d",
+   "fig": "5",
+   "type": "pad",
+   "label": "HOT CUE D",
+   "does": "Deck 1 hot cue D",
+   "x": 112.5,
+   "y": 118.5,
+   "w": 14.0,
+   "h": 2.0,
+   "section": "deck",
+   "midi": {
+    "ch": 15,
+    "kind": "note",
+    "id": 33
+   },
+   "shift_midi": null
+  },
+  {
+   "id": "d2-hot-cue-a",
+   "fig": "5",
+   "type": "pad",
+   "label": "HOT CUE A",
+   "does": "Deck 2 hot cue A",
+   "x": 212.0,
+   "y": 114.5,
+   "w": 14.0,
+   "h": 2.0,
+   "section": "deck",
+   "midi": {
+    "ch": 15,
+    "kind": "note",
+    "id": 38
+   },
+   "shift_midi": null
+  },
+  {
+   "id": "d2-hot-cue-b",
+   "fig": "5",
+   "type": "pad",
+   "label": "HOT CUE B",
+   "does": "Deck 2 hot cue B",
+   "x": 308.0,
+   "y": 114.5,
+   "w": 14.0,
+   "h": 2.0,
+   "section": "deck",
+   "midi": {
+    "ch": 15,
+    "kind": "note",
+    "id": 39
+   },
+   "shift_midi": null
+  },
+  {
+   "id": "d2-hot-cue-c",
+   "fig": "5",
+   "type": "pad",
+   "label": "HOT CUE C",
+   "does": "Deck 2 hot cue C",
+   "x": 212.0,
+   "y": 118.5,
+   "w": 14.0,
+   "h": 2.0,
+   "section": "deck",
+   "midi": {
+    "ch": 15,
+    "kind": "note",
+    "id": 34
+   },
+   "shift_midi": null
+  },
+  {
+   "id": "d2-hot-cue-d",
+   "fig": "5",
+   "type": "pad",
+   "label": "HOT CUE D",
+   "does": "Deck 2 hot cue D",
+   "x": 308.0,
+   "y": 118.5,
+   "w": 14.0,
+   "h": 2.0,
+   "section": "deck",
+   "midi": {
+    "ch": 15,
+    "kind": "note",
+    "id": 35
+   },
+   "shift_midi": null
+  },
+  {
+   "id": "d1-load-1",
+   "fig": "5",
+   "type": "button",
+   "label": "LOAD",
+   "does": "Load selected track to deck 1",
+   "x": 36.0,
+   "y": 122.5,
+   "w": 14.0,
+   "h": 2.0,
+   "section": "browse",
+   "midi": {
+    "ch": 15,
+    "kind": "note",
+    "id": 28
+   },
+   "shift_midi": null
+  },
+  {
+   "id": "d2-load-2",
+   "fig": "5",
+   "type": "button",
+   "label": "LOAD",
+   "does": "Load selected track to deck 2",
+   "x": 212.0,
+   "y": 122.5,
+   "w": 14.0,
+   "h": 2.0,
+   "section": "browse",
+   "midi": {
+    "ch": 15,
+    "kind": "note",
+    "id": 30
+   },
+   "shift_midi": null
+  },
+  {
+   "id": "d1-sync-toggle",
+   "fig": "5",
+   "type": "button",
+   "label": "SYNC",
+   "does": "Toggle deck 1 sync",
+   "x": 112.5,
+   "y": 122.5,
+   "w": 14.0,
+   "h": 2.0,
+   "section": "deck",
+   "midi": {
+    "ch": 15,
+    "kind": "note",
+    "id": 29
+   },
+   "shift_midi": null
+  },
+  {
+   "id": "d2-sync-toggle",
+   "fig": "5",
+   "type": "button",
+   "label": "SYNC",
+   "does": "Toggle deck 2 sync",
+   "x": 308.0,
+   "y": 122.5,
+   "w": 14.0,
+   "h": 2.0,
+   "section": "deck",
+   "midi": {
+    "ch": 15,
+    "kind": "note",
+    "id": 31
+   },
+   "shift_midi": null
+  },
+  {
+   "id": "d1-cue",
+   "fig": "5",
+   "type": "button",
+   "label": "CUE",
+   "does": "Deck 1 cue / preview",
+   "x": 25.0,
+   "y": 127.5,
+   "w": 14.0,
+   "h": 2.0,
+   "section": "deck",
+   "midi": {
+    "ch": 15,
+    "kind": "note",
+    "id": 24
+   },
+   "shift_midi": null
+  },
+  {
+   "id": "d1-play-toggle",
+   "fig": "5",
+   "type": "button",
+   "label": "PLAY",
+   "does": "Deck 1 play / pause",
+   "x": 118.0,
+   "y": 127.5,
+   "w": 14.0,
+   "h": 2.0,
+   "section": "deck",
+   "midi": {
+    "ch": 15,
+    "kind": "note",
+    "id": 25
+   },
+   "shift_midi": null
+  },
+  {
+   "id": "d2-cue",
+   "fig": "5",
+   "type": "button",
+   "label": "CUE",
+   "does": "Deck 2 cue / preview",
+   "x": 215.0,
+   "y": 127.5,
+   "w": 14.0,
+   "h": 2.0,
+   "section": "deck",
+   "midi": {
+    "ch": 15,
+    "kind": "note",
+    "id": 26
+   },
+   "shift_midi": null
+  },
+  {
+   "id": "d2-play-toggle",
+   "fig": "5",
+   "type": "button",
+   "label": "PLAY",
+   "does": "Deck 2 play / pause",
+   "x": 308.0,
+   "y": 127.5,
+   "w": 14.0,
+   "h": 2.0,
+   "section": "deck",
+   "midi": {
+    "ch": 15,
+    "kind": "note",
+    "id": 27
+   },
+   "shift_midi": null
+  },
+  {
+   "id": "hint-enc2-turn",
+   "fig": "1",
+   "type": "encoder",
+   "label": "ENCODER 2",
+   "does": "Column 2 top encoder turn (hint only)",
+   "x": 125.5,
+   "y": 10.5,
+   "w": 19.0,
+   "h": 5.0,
+   "section": "performance",
+   "midi": {
+    "ch": 15,
+    "kind": "cc",
+    "id": 1
+   },
+   "shift_midi": null
+  },
+  {
+   "id": "hint-enc3-turn",
+   "fig": "1",
+   "type": "encoder",
+   "label": "ENCODER 3",
+   "does": "Column 3 top encoder turn (hint only)",
+   "x": 220.0,
+   "y": 10.5,
+   "w": 19.0,
+   "h": 5.0,
+   "section": "performance",
+   "midi": {
+    "ch": 15,
+    "kind": "cc",
+    "id": 2
+   },
+   "shift_midi": null
+  },
+  {
+   "id": "hint-enc-push-col1",
+   "fig": "1",
+   "type": "button",
+   "label": "ENC 1 PUSH",
+   "does": "Column 1 encoder push switch",
+   "x": 31.5,
+   "y": 21.5,
+   "w": 13.0,
+   "h": 2.0,
+   "section": "performance",
+   "midi": {
+    "ch": 15,
+    "kind": "note",
+    "id": 52
+   },
+   "shift_midi": null
+  },
+  {
+   "id": "hint-enc-push-col2",
+   "fig": "1",
+   "type": "button",
+   "label": "ENC 2 PUSH",
+   "does": "Column 2 encoder push switch",
+   "x": 124.0,
+   "y": 21.5,
+   "w": 13.0,
+   "h": 2.0,
+   "section": "performance",
+   "midi": {
+    "ch": 15,
+    "kind": "note",
+    "id": 53
+   },
+   "shift_midi": null
+  },
+  {
+   "id": "hint-enc-push-col3",
+   "fig": "1",
+   "type": "button",
+   "label": "ENC 3 PUSH",
+   "does": "Column 3 encoder push switch",
+   "x": 219.0,
+   "y": 21.5,
+   "w": 13.0,
+   "h": 2.0,
+   "section": "performance",
+   "midi": {
+    "ch": 15,
+    "kind": "note",
+    "id": 54
+   },
+   "shift_midi": null
+  },
+  {
+   "id": "hint-enc-push-col4",
+   "fig": "1",
+   "type": "button",
+   "label": "ENC 4 PUSH",
+   "does": "Column 4 encoder push switch",
+   "x": 319.5,
+   "y": 21.5,
+   "w": 13.0,
+   "h": 2.0,
+   "section": "performance",
+   "midi": {
+    "ch": 15,
+    "kind": "note",
+    "id": 55
+   },
+   "shift_midi": null
+  },
+  {
+   "id": "hint-sw1-col1",
+   "fig": "3",
+   "type": "button",
+   "label": "SW ROW 1",
+   "does": "Switch under pot row 1 column 1",
+   "x": 27.5,
+   "y": 37.0,
+   "w": 13.0,
+   "h": 2.0,
+   "section": "performance",
+   "midi": {
+    "ch": 15,
+    "kind": "note",
+    "id": 48
+   },
+   "shift_midi": null
+  },
+  {
+   "id": "hint-sw1-col2",
+   "fig": "3",
+   "type": "button",
+   "label": "SW ROW 1",
+   "does": "Switch under pot row 1 column 2",
+   "x": 124.0,
+   "y": 37.0,
+   "w": 13.0,
+   "h": 2.0,
+   "section": "performance",
+   "midi": {
+    "ch": 15,
+    "kind": "note",
+    "id": 49
+   },
+   "shift_midi": null
+  },
+  {
+   "id": "hint-sw1-col3",
+   "fig": "3",
+   "type": "button",
+   "label": "SW ROW 1",
+   "does": "Switch under pot row 1 column 3",
+   "x": 215.5,
+   "y": 37.0,
+   "w": 13.0,
+   "h": 2.0,
+   "section": "performance",
+   "midi": {
+    "ch": 15,
+    "kind": "note",
+    "id": 50
+   },
+   "shift_midi": null
+  },
+  {
+   "id": "hint-sw1-col4",
+   "fig": "3",
+   "type": "button",
+   "label": "SW ROW 1",
+   "does": "Switch under pot row 1 column 4",
+   "x": 319.5,
+   "y": 34.5,
+   "w": 13.0,
+   "h": 2.0,
+   "section": "performance",
+   "midi": {
+    "ch": 15,
+    "kind": "note",
+    "id": 51
+   },
+   "shift_midi": null
+  },
+  {
+   "id": "hint-sw2-col1",
+   "fig": "3",
+   "type": "button",
+   "label": "SW ROW 2",
+   "does": "Switch under pot row 2 column 1",
+   "x": 27.5,
+   "y": 53.0,
+   "w": 13.0,
+   "h": 2.0,
+   "section": "performance",
+   "midi": {
+    "ch": 15,
+    "kind": "note",
+    "id": 44
+   },
+   "shift_midi": null
+  },
+  {
+   "id": "hint-sw2-col2",
+   "fig": "3",
+   "type": "button",
+   "label": "SW ROW 2",
+   "does": "Switch under pot row 2 column 2",
+   "x": 124.0,
+   "y": 53.0,
+   "w": 13.0,
+   "h": 2.0,
+   "section": "performance",
+   "midi": {
+    "ch": 15,
+    "kind": "note",
+    "id": 45
+   },
+   "shift_midi": null
+  },
+  {
+   "id": "hint-sw2-col3",
+   "fig": "3",
+   "type": "button",
+   "label": "SW ROW 2",
+   "does": "Switch under pot row 2 column 3",
+   "x": 219.0,
+   "y": 53.0,
+   "w": 13.0,
+   "h": 2.0,
+   "section": "performance",
+   "midi": {
+    "ch": 15,
+    "kind": "note",
+    "id": 46
+   },
+   "shift_midi": null
+  },
+  {
+   "id": "hint-sw2-col4",
+   "fig": "3",
+   "type": "button",
+   "label": "SW ROW 2",
+   "does": "Switch under pot row 2 column 4",
+   "x": 308.5,
+   "y": 53.0,
+   "w": 13.0,
+   "h": 2.0,
+   "section": "performance",
+   "midi": {
+    "ch": 15,
+    "kind": "note",
+    "id": 47
+   },
+   "shift_midi": null
+  },
+  {
+   "id": "hint-sw3-col1",
+   "fig": "3",
+   "type": "button",
+   "label": "SW ROW 3",
+   "does": "Switch under pot row 3 column 1",
+   "x": 23.5,
+   "y": 69.5,
+   "w": 13.0,
+   "h": 2.0,
+   "section": "performance",
+   "midi": {
+    "ch": 15,
+    "kind": "note",
+    "id": 40
+   },
+   "shift_midi": null
+  },
+  {
+   "id": "hint-sw3-col4",
+   "fig": "3",
+   "type": "button",
+   "label": "SW ROW 3",
+   "does": "Switch under pot row 3 column 4",
+   "x": 308.5,
+   "y": 69.5,
+   "w": 13.0,
+   "h": 2.0,
+   "section": "performance",
+   "midi": {
+    "ch": 15,
+    "kind": "note",
+    "id": 43
+   },
+   "shift_midi": null
+  },
+  {
+   "id": "hint-layer",
+   "fig": "6",
+   "type": "button",
+   "label": "LAYER",
+   "does": "Latching layer toggle (hint only)",
+   "x": 24.5,
+   "y": 130.0,
+   "w": 15.0,
+   "h": 4.0,
+   "section": "performance",
+   "midi": {
+    "ch": 15,
+    "kind": "note",
+    "id": 12
+   },
+   "shift_midi": null
+  },
+  {
+   "id": "hint-setup-push",
+   "fig": "6",
+   "type": "button",
+   "label": "SETUP PUSH",
+   "does": "Bottom-left encoder push",
+   "x": 117.5,
+   "y": 129.5,
+   "w": 19.0,
+   "h": 5.0,
+   "section": "performance",
+   "midi": {
+    "ch": 15,
+    "kind": "note",
+    "id": 13
+   },
+   "shift_midi": null
+  },
+  {
+   "id": "hint-setup-turn",
+   "fig": "6",
+   "type": "encoder",
+   "label": "SETUP",
+   "does": "Bottom-left encoder turn (hint only)",
+   "x": 117.5,
+   "y": 129.5,
+   "w": 19.0,
+   "h": 5.0,
+   "section": "performance",
+   "midi": {
+    "ch": 15,
+    "kind": "cc",
+    "id": 20
+   },
+   "shift_midi": null
+  },
+  {
+   "id": "hint-scroll-push",
+   "fig": "6",
+   "type": "button",
+   "label": "SEL",
+   "does": "Scroll encoder push",
+   "x": 271.5,
+   "y": 129.5,
+   "w": 19.0,
+   "h": 5.0,
+   "section": "browse",
+   "midi": {
+    "ch": 15,
+    "kind": "note",
+    "id": 14
+   },
+   "shift_midi": null
+  },
+  {
+   "id": "hint-shift",
+   "fig": "6",
+   "type": "button",
+   "label": "SHIFT",
+   "does": "Shift modifier (hint only)",
+   "x": 307.5,
+   "y": 130.0,
+   "w": 15.0,
+   "h": 4.0,
+   "section": "performance",
+   "midi": {
+    "ch": 15,
+    "kind": "note",
+    "id": 15
+   },
+   "shift_midi": null
+  }
+ ]
+}

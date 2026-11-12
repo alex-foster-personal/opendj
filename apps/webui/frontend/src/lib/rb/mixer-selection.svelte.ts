@@ -5,6 +5,17 @@
 import type { DeckId } from './deck-slots';
 import { singleSelectedDeck } from './focused-deck';
 import { noteRecentDeck } from './recent-deck';
+import type { MixerDeckPairId } from './midi/midi-types';
+
+const PAIR_DECKS: Record<MixerDeckPairId, readonly [DeckId, DeckId]> = {
+	'1-3': [1, 3],
+	'2-4': [2, 4]
+};
+
+const OTHER_PAIR: Record<MixerDeckPairId, readonly DeckId[]> = {
+	'1-3': [2, 4],
+	'2-4': [1, 3]
+};
 
 /** `clickedDeck` is the one deck the last click left selected, null before any
  * click or after a click that left several. Only `clickSelect` writes it: deck
@@ -77,6 +88,33 @@ export function clearSelection(): void {
 /** Deck load resets multi-select back to the loading deck only. */
 export function onDeckLoadStart(deck: DeckId): void {
 	resetToSingle(deck);
+}
+
+/** FLX10-style deck pair select from MIDI: toggle or pick one deck in the
+ * pair while keeping the other pair's selection (pin a675881be6c8). */
+export function midiSelectDeckPair(pair: MixerDeckPairId, deck?: DeckId): void {
+	const [a, b] = PAIR_DECKS[pair];
+	const other = OTHER_PAIR[pair];
+	const kept = mixerSelection.selected.filter((d) => other.includes(d));
+	let next: DeckId;
+	if (deck !== undefined) {
+		if (deck !== a && deck !== b) {
+			throw new Error(`midiSelectDeckPair: deck ${deck} is not in pair ${pair}`);
+		}
+		next = deck;
+	} else {
+		const active = mixerSelection.selected.find((d) => d === a || d === b);
+		next = active === a ? b : a;
+	}
+	mixerSelection.selected = [...kept, next].sort((x, y) => x - y);
+	mixerSelection.clickedDeck = singleSelectedDeck(mixerSelection.selected);
+	noteRecentDeck(next);
+}
+
+/** Test isolation for mixer selection module state. */
+export function resetMixerSelectionForTests(): void {
+	mixerSelection.selected = [1];
+	mixerSelection.clickedDeck = null;
 }
 
 /** True when a click target is inside library, deck, or mixer performance chrome. */

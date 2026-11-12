@@ -13,7 +13,8 @@ contract first, so it is a follow-up (``(private path)``), and the list below on
 
 from __future__ import annotations
 
-from . import title_fix
+from . import identify, title_fix
+from .identify import IdentifyDeferred, IdentifyError, IdentifyProposal
 from .title_fix import CFG as FIXER_CFG
 from .title_fix import (
     Track,
@@ -32,6 +33,7 @@ from .title_fix_store import (
     BatchRow,
     ConfigError,
     FenceExitError,
+    IdentifyItem,
     KeyStatus,
     ProposalFilter,
     ProposalRow,
@@ -60,6 +62,10 @@ __all__ = [
     "BatchRow",
     "ConfigError",
     "FenceExitError",
+    "IdentifyDeferred",
+    "IdentifyError",
+    "IdentifyItem",
+    "IdentifyProposal",
     "KeyStatus",
     "ProposalFilter",
     "ProposalRow",
@@ -76,6 +82,7 @@ __all__ = [
     "chunked",
     "clear_user_key",
     "fix_tracks",
+    "identify",
     "load_config",
     "needs_person_selection",
     "project_rules",

@@ -48,8 +48,8 @@ CURVE_SEGMENTS = 8
 # ----- style parameters (AGENT-34) -------------------------------------------
 #: Fade laws. Equal power is the default, mimicked from Mixxx's constant-power crossfader curve (each deck at -3 dB,
 #: 0.707, mid-fade); ``smooth`` is equal power on cubic ease ``s = 3t^2 - 2t^3`` (Spotify Smooth); linear (-6 dB, 0.5,
-#: mid-fade) stays available.
-FADE_SHAPES = ("equal_power", "linear", "smooth")
+#: mid-fade) stays available; ``dipped`` is Melt / spec 01 s1 -- deliberate ~-3 dB power at overlap center (x=0.5).
+FADE_SHAPES = ("equal_power", "linear", "smooth", "dipped")
 #: The fade every built-in blend uses (AGENT-34 round 4): the old hand-built blends too, not only parameter points.
 DEFAULT_FADE_SHAPE = "equal_power"
 #: Volume lanes, named as docs/glossary.md "Transitions and mixing" (Spotify's Volume options). Under D11 a lane only
@@ -102,6 +102,8 @@ _LANE_HIT = {"crossfade": 0.25, "overlap": 0.75, "fade_in_fade_out": 0.5}
 HIT_ON_START = "start"  # a cut: the incoming enters on its bass, the outgoing goes on bar 0
 HIT_GATED = "gated"  # a blend: nothing on the outgoing before the hit, the body fades from it to the handover
 HIT_ON_HANDOVER = "handover"  # lull_then_drop: the outgoing holds to the handover, where the incoming drop lands
+#: double_drop: both tracks build for 16 bars and land their drops together on the handover (no outgoing-lull gate).
+HIT_ON_ALIGNED_DROP = "aligned_drop"
 #: echo_out and noise_build: the incoming enters on its bass at the exit bar E, where the outgoing dry closes (echo
 #: out) or the noise riser cuts on the drop (noise build).
 HIT_ON_EXIT = "exit"
@@ -186,6 +188,10 @@ class Style:
                 raise ValueError(f"style {self.name!r} gives way on bar 0, so its incoming bass must land there")
             if self.hit == HIT_ON_HANDOVER and hit_bar != float(clamped):
                 raise ValueError(f"style {self.name!r} lands the incoming drop on the handover, bar {clamped}")
+            if self.hit == HIT_ON_ALIGNED_DROP and hit_bar != float(clamped):
+                raise ValueError(
+                    f"style {self.name!r} lands the aligned incoming drop on the handover, bar {clamped}"
+                )
             if self.hit == HIT_ON_EXIT and hit_bar != exit_bar(clamped):
                 raise ValueError(
                     f"style {self.name!r} lands the incoming bass on its exit bar, bar {exit_bar(clamped):g}"
@@ -312,6 +318,19 @@ def _drop_swap(bars: int, out_deck: int, in_deck: int, _hit_bar: float | None = 
     return _cut(bars, out_deck, in_deck)
 
 
+def _double_drop(bars: int, out_deck: int, in_deck: int, hit_bar: float | None = None, /) -> list[Event]:
+    """Both decks build from plan bar 0; outgoing plays through until both drops smash on the handover."""
+    if hit_bar is not None and hit_bar != float(bars):
+        raise ValueError(f"double_drop lands both drops on the handover, bar {bars}, not {hit_bar}")
+    return [
+        _set(0, in_deck, "fader", 1.0),
+        _set(0, in_deck, "eq_low", KILL),
+        _do(0, in_deck, "play"),
+        _set(bars, in_deck, "eq_low", FLAT),
+        *_handover(bars, out_deck, in_deck),
+    ]
+
+
 @dataclass(frozen=True)
 class StyleParams:
     """One point in the style space: the parameters a parametric style is built from."""
@@ -353,6 +372,41 @@ class StyleParams:
         }
 
 
+_DIPPED_OUT_END = 0.75
+_DIPPED_IN_START = 0.25
+
+
+def _dipped_pair(x: float) -> tuple[float, float]:
+    """Nominal Melt pair on abstract progress ``x`` in [0, 1]: out on [0, 0.75], in on [0.25, 1].
+
+    Equal-power within each leg; at ``x == 0.5`` both faders are ~0.5 and power ~0.5 (~-3 dB).
+    """
+    if x <= 0.0:
+        f_out = 1.0
+    elif x < _DIPPED_OUT_END:
+        f_out = math.cos(math.pi / 2 * (x / _DIPPED_OUT_END))
+    else:
+        f_out = 0.0
+    if x < _DIPPED_IN_START:
+        f_in = 0.0
+    elif x <= 1.0:
+        f_in = math.sin(math.pi / 2 * ((x - _DIPPED_IN_START) / (1.0 - _DIPPED_IN_START)))
+    else:
+        f_in = 1.0
+    return f_out, f_in
+
+
+def _dipped_body_faders(t_body: float) -> tuple[float, float]:
+    """Body progress ``t_body`` in [0, 1] after the hit: gated warp of the dipped law (AGENT-41).
+
+    Mid-body keeps the spec dip (~0.5 / ~0.5); the outgoing leg stretches to silence at handover only.
+    """
+    x = 0.5 + t_body * 0.5
+    f_out = 0.5 * math.cos(math.pi / 2 * t_body)
+    f_in = _dipped_pair(x)[1]
+    return f_out, f_in
+
+
 def _smooth_ease(t: float) -> float:
     """Cubic S-curve progress 0..1: s = 3t^2 - 2t^3."""
     t = min(1.0, max(0.0, t))
@@ -365,6 +419,12 @@ def _gain(shape: str, t: float, rising: bool) -> float:
         return math.sin(t * math.pi / 2) if rising else math.cos(t * math.pi / 2)
     if shape == "linear":
         return t if rising else 1.0 - t
+    if shape == "dipped":
+        if rising:
+            # Pre-hit ends at nominal x=0.5 with incoming at unity; the -3 dB dip is mid-body, not on the hit.
+            x = _DIPPED_IN_START + t * (0.5 - _DIPPED_IN_START)
+            return _dipped_pair(x)[1] / 0.5
+        return _dipped_pair(t * _DIPPED_OUT_END)[0]
     if shape == "smooth":
         s = _smooth_ease(t)
         return math.sin(s * math.pi / 2) if rising else math.cos(s * math.pi / 2)
@@ -391,6 +451,10 @@ def _body_fade(shape: str, pre: float) -> list[tuple[float, float]]:
             points.append((math.cos(theta), math.sin(theta)))
         elif shape == "linear":
             points.append((1.0 - t, pre + (1.0 - pre) * t))
+        elif shape == "dipped":
+            f_out, f_in = _dipped_body_faders(t)
+            f_in = pre + (f_in - 0.5) * ((1.0 - pre) / 0.5)
+            points.append((f_out, f_in))
         elif shape == "smooth":
             s = _smooth_ease(t)
             theta0 = math.asin(pre)
@@ -446,6 +510,8 @@ def _out_fader_at(bar: float, span: float, edge: float, pre: float, shape: str) 
     if shape == "equal_power":
         theta0 = math.asin(pre)
         return math.cos(theta0 + t * (math.pi / 2 - theta0))
+    if shape == "dipped":
+        return _dipped_body_faders(t)[0]
     if shape == "smooth":
         s = _smooth_ease(t)
         theta0 = math.asin(pre)
@@ -475,8 +541,23 @@ def _after_hit(
         grid += [cross + tail * k / (2 * CURVE_SEGMENTS) for k in range(1, 2 * CURVE_SEGMENTS + 1)]
     f_outs, f_ins, out_lows, in_lows, bands = [], [], [], [], []
     for bar in grid:
-        f_out = _out_fader_at(bar, span, edge, pre, shape)
-        f_in, in_amp, planned = (1.0, 1.0, 0.0) if swap else _crossover_at(bar, cross, tail, pre)
+        t_body = bar / span if span > 1e-9 else 0.0
+        if shape == "dipped":
+            f_out = _dipped_body_faders(t_body)[0]
+            if swap:
+                f_in, in_amp, planned = 1.0, 1.0, 0.0
+            else:
+                cross_f_in, in_amp, planned = _crossover_at(bar, cross, tail, pre)
+                if bar <= cross:
+                    f_in = cross_f_in
+                else:
+                    f_in_spec = _dipped_body_faders(t_body)[1]
+                    dipped_in = pre + (f_in_spec - 0.5) * ((1.0 - pre) / 0.5)
+                    u = (bar - cross) / max(tail, 1e-9)
+                    f_in = cross_f_in + (dipped_in - cross_f_in) * u
+        else:
+            f_out = _out_fader_at(bar, span, edge, pre, shape)
+            f_in, in_amp, planned = (1.0, 1.0, 0.0) if swap else _crossover_at(bar, cross, tail, pre)
         band = _out_band(f_in, f_out)
         f_in = min(f_in, math.sqrt(max(0.0, BODY_POWER - (f_out * band) ** 2)))
         if not swap and bar <= cross:
@@ -553,6 +634,8 @@ def body_start(shape: str, pre: float) -> float:
         return math.sqrt(1.0 - pre * pre)
     if shape == "linear":
         return 1.0
+    if shape == "dipped":
+        return math.sqrt(max(0.0, 0.5 - pre * pre))
     raise ValueError(f"unknown fade shape {shape!r}")
 
 
@@ -663,8 +746,8 @@ def parametric_builder(params: StyleParams) -> Builder:
     if params.swap_position == "end":
         return _lull_then_drop(params.pre_hit_db)
     in_filter, out_filter = (None, None) if params.filter is None else _FILTER_ENDS[params.filter]
-    # A highpassed incoming (melt's hp_both) is a filtered entry: its lows stay killed until the hit (D14).
-    killed_entry = in_filter == HIGHPASS_SWEEP
+    # Both LP and HP incoming entries keep lows killed until the hit: an LP still passes bass (D14).
+    killed_entry = in_filter is not None
     return _gated_blend(
         _Blend(
             volume=params.volume,
@@ -843,6 +926,21 @@ _STYLES: tuple[Style, ...] = (
         tempo_mode="none",
     ),
     Style(
+        name="double_drop",
+        summary=(
+            "Both tracks run 16-bar builds from plan bar 0 and land their drops together on the handover"
+            " (DnB double drop)."
+        ),
+        min_bars=16,
+        max_bars=16,
+        default_bars=16,
+        needs_beatmatch=True,
+        controls=("fader", "play", "master", "eq_low"),
+        when="Both tracks are 160-180 BPM with identifiable drops and 16 bars of run-up before each.",
+        builder=_double_drop,
+        hit=HIT_ON_ALIGNED_DROP,
+    ),
+    Style(
         name="filter_sweep",
         summary="The incoming track comes in under the outgoing one, which highpasses away over the body fade after the"
         " incoming bass lands.",
@@ -912,7 +1010,7 @@ _STYLES: tuple[Style, ...] = (
         "Fade in then fade out, both decks high-passed (the outgoing after the bass hit), the incoming lows killed until"
         " it (a filtered entry) (Spotify Melt).",
         "Airy handovers; thins both tracks so their lows never meet.",
-        StyleParams(volume="fade_in_fade_out", filter="hp_both"),
+        StyleParams(volume="fade_in_fade_out", filter="hp_both", fade_shape="dipped"),
         "Melt",
         (_MIN_BLEND_BARS, 32, 16),
     ),

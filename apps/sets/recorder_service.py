@@ -11,12 +11,14 @@ import json
 import logging
 import os
 import threading
+import wave
 from collections.abc import Callable, Mapping
 from pathlib import Path
 from typing import Any, Literal
 
 from apps.shared.process_liveness import pid_is_alive
 from apps.stream.encoder import MasterMixEncoder, require_master_source
+from apps.stream.service import StreamService
 
 from . import capture as capture_mod
 from . import paths as sets_paths
@@ -67,6 +69,10 @@ class RecorderRequestInvalid(ValueError):
     """A start that names its source and its input inconsistently (SET-12)."""
 
 
+class RecorderStartFailed(RuntimeError):
+    """Raised when REC start cannot complete and the attempt was torn down."""
+
+
 class RecorderService:
     """Own one live recorder from start through stop or daemon shutdown."""
 
@@ -91,6 +97,8 @@ class RecorderService:
         self._recorder: record_mod.Recorder | None = None
         self._source: RecordSource | None = None
         self._encoder: MasterMixEncoder | None = None
+        self._stream = StreamService()
+        self._stream_tee: Any = None
         # Recordings this daemon stopped cleanly, newest last, so a chunk the
         # page had in flight at the stop is told apart from a lost one (SET-12).
         self._cleanly_stopped: list[str] = []
@@ -117,6 +125,7 @@ class RecorderService:
             "owned": False,
             "recoverable": False,
             "capture": "none",
+            "capture_error": None,
             "capture_source": None,
             "recordings_dir": str(self.sets_root),
             **_NO_LEVELS,
@@ -154,6 +163,7 @@ class RecorderService:
             "recoverable": not _pid_is_running(int(external["pid"])),
             # Another process owns that recording; its capture is not visible here.
             "capture": "unknown",
+            "capture_error": None,
             "capture_source": None,
             "recordings_dir": str(self.sets_root),
             **_NO_LEVELS,
@@ -215,16 +225,29 @@ class RecorderService:
                     state=state,
                 )
                 recorder.start_threads()
-            except Exception:
-                if recorder is not None:
-                    record_mod.stop(recorder)
-                elif state.get_session(resolved_id):
-                    record_mod.finalize(
-                        resolved_id,
-                        sets_root=self.sets_root,
-                        state=state,
-                    )
-                raise
+            except Exception as startup_exc:
+                cleanup_exc: BaseException | None = None
+                try:
+                    if recorder is not None:
+                        record_mod.stop(recorder)
+                    elif state.get_session(resolved_id):
+                        record_mod.finalize(
+                            resolved_id,
+                            sets_root=self.sets_root,
+                            state=state,
+                        )
+                except Exception as exc:  # noqa: BLE001 -- best-effort REC teardown may raise anything
+                    cleanup_exc = exc
+                if isinstance(
+                    startup_exc,
+                    (capture_mod.CaptureUnavailable, RecorderConflict, RecorderRequestInvalid),
+                ):
+                    raise
+                if cleanup_exc is not None:
+                    raise RecorderStartFailed(
+                        f"REC start failed: {startup_exc}; cleanup failed: {cleanup_exc}"
+                    ) from cleanup_exc
+                raise RecorderStartFailed(f"REC start failed: {startup_exc}") from startup_exc
             self._recorder = recorder
             self._source = source
             if source in ("master", "none"):
@@ -444,6 +467,58 @@ class RecorderService:
                 writer.remove_tee(encoder.tee)
         return encoder.stop().to_dict()
 
+    @property
+    def stream(self) -> StreamService:
+        return self._stream
+
+    def start_stream(self, session_id: str, *, sink: str) -> dict[str, Any]:
+        """Tee the live master recording into an RTMP push (STREAM-11743)."""
+        with self._lock:
+            recorder = self._recorder
+            if recorder is None or recorder.session_id != session_id:
+                active = "nothing" if recorder is None else f"session {recorder.session_id}"
+                raise RecorderConflict(f"{active} is recording here, not {session_id}")
+            require_master_source(self._source)
+            status = self._stream.status()
+            if status is not None and status.get("state") == "running":
+                raise RecorderConflict(f"a stream sink is already running for session {session_id}")
+            writer = recorder._master
+            if writer is None:
+                raise RecorderConflict(f"session {session_id} has no master-mix writer")
+            rate = writer.sample_rate
+            if rate is None:
+                raise RecorderConflict(
+                    "no master-mix audio has arrived yet, so its sample rate is unknown; "
+                    "start the stream once the recording is capturing"
+                )
+        push = self._stream.start(sink, sample_rate=rate)
+        writer.add_tee(push.tee)
+        with self._lock:
+            self._stream_tee = push.tee
+        return push.status().to_dict()
+
+    def stream_status(self) -> dict[str, Any] | None:
+        return self._stream.status()
+
+    def stop_stream(self) -> dict[str, Any]:
+        with self._lock:
+            writer = None if self._recorder is None else self._recorder._master
+            tee = self._stream_tee
+            if writer is not None and tee is not None:
+                with contextlib.suppress(ValueError):
+                    writer.remove_tee(tee)
+            self._stream_tee = None
+        return self._stream.stop()
+
+    def _stop_stream_locked(self) -> dict[str, Any]:
+        writer = None if self._recorder is None else self._recorder._master
+        tee = self._stream_tee
+        if writer is not None and tee is not None:
+            with contextlib.suppress(ValueError):
+                writer.remove_tee(tee)
+        self._stream_tee = None
+        return self._stream.stop()
+
     def active_source(self, name: str) -> Any:
         """Return the named source attached to the owned recorder.
 
@@ -486,6 +561,9 @@ class RecorderService:
                 )
             if self._encoder is not None:
                 self._stop_encoder_locked()
+            stream_status = self._stream.status()
+            if stream_status is not None and stream_status.get("state") == "running":
+                self._stop_stream_locked()
             recorder = self._recorder
             manifest = record_mod.stop(recorder)
             status = self._idle_status()
@@ -532,6 +610,9 @@ class RecorderService:
                 return
             if self._encoder is not None:
                 self._stop_encoder_locked()
+            stream_status = self._stream.status()
+            if stream_status is not None and stream_status.get("state") == "running":
+                self._stop_stream_locked()
             record_mod.stop(self._recorder)
             self._recorder = None
             self._source = None
@@ -541,6 +622,36 @@ def _pid_is_running(pid: int) -> bool:
     return pid > 0 and pid_is_alive(pid)
 
 
+def wav_pcm_duration_s(path: Path) -> float:
+    """Return the PCM duration of one 16-bit WAV segment (SETREC-11802)."""
+    with wave.open(str(path), "rb") as handle:
+        rate = handle.getframerate()
+        if rate <= 0:
+            raise ValueError(f"{path.name} has non-positive sample rate {rate}")
+        return handle.getnframes() / float(rate)
+
+
+def session_wav_duration_s(session_dir: Path) -> float:
+    """Sum every ``audio_*.wav`` segment under ``session_dir``."""
+    total = 0.0
+    for segment in sorted(session_dir.glob("audio_*.wav")):
+        total += wav_pcm_duration_s(segment)
+    return total
+
+
+def recorded_duration_within(
+    session_dir: Path,
+    *,
+    expected_s: float,
+    tolerance_s: float = 0.1,
+) -> bool:
+    """True when recorded WAV duration is within ``tolerance_s`` of ``expected_s``."""
+    if expected_s < 0 or tolerance_s < 0:
+        raise ValueError("expected_s and tolerance_s must be non-negative")
+    actual = session_wav_duration_s(session_dir)
+    return abs(actual - expected_s) <= tolerance_s
+
+
 __all__ = [
     "LATE_CHUNK_CANARY",
     "RECORD_SOURCES",
@@ -548,5 +659,9 @@ __all__ = [
     "RecorderConflict",
     "RecorderRequestInvalid",
     "RecorderService",
+    "RecorderStartFailed",
     "RememberedInputUnreadable",
+    "recorded_duration_within",
+    "session_wav_duration_s",
+    "wav_pcm_duration_s",
 ]

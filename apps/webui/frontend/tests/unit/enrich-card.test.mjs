@@ -82,6 +82,13 @@ test('stems: asked, impossible, declined and unknown each have their own wording
 	assert.match(card.stemsText({ state: 'unknown', pending: null, reason: 'read failed' }), /unknown: read failed/);
 });
 
+test('import duplicate count links to dedup when above zero', () => {
+	const line = card.importDuplicateLine({ ingest_duplicates: 2 });
+	assert.equal(line?.href, '/dedup');
+	assert.match(line?.text ?? '', /2 imported files duplicate tracks already in the library/);
+	assert.equal(card.importDuplicateLine({ ingest_duplicates: 0 }), null);
+});
+
 test('an unarmed drain is said, never shown as complete', () => {
 	const s = summary({}, { analysis: null, analysis_error: 'drain not running' });
 	assert.deepEqual(card.analysisLines(s).map((l) => l.tone), ['unavailable']);
@@ -577,4 +584,18 @@ test('ingest genre fill reads filled and need-a-look counts (SETPREP-10646)', ()
 	assert.equal(line.text, 'Genre: 12 of 40 filled, 28 need a look');
 	assert.equal(line.tone, 'working');
 	assert.equal(card.ingestGenreLine(summary({}, { ingest_genre: { total: 10, done: 10, needs_review: 0 } })).tone, 'ready');
+});
+
+test('ingest identify line (SETPREP-12099)', () => {
+	assert.equal(
+		card.ingestIdentifyLine(summary({}, { ingest_identify: { total: 9, proposals: 7 } })).text,
+		'Identify: 7 proposals to review'
+	);
+	assert.equal(card.ingestIdentifyLine(summary({}, { ingest_identify: { total: 1, proposals: 1 } })).text, 'Identify: 1 proposal to review');
+	assert.equal(card.ingestIdentifyLine(summary({}, { ingest_identify: { total: 5, proposals: 0 } })), null);
+	assert.equal(
+		card.ingestIdentifyLine(summary({}, { ingest_identify: { total: 3, proposals: 1, deferred: 2 } })).text,
+		'Identify: 1 proposal to review, 2 deferred'
+	);
+	assert.equal(card.TITLE_FIX_HREF, '/admin?tab=title-fix');
 });

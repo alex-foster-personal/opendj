@@ -1,0 +1,9 @@
+{
+  "bytes": 2048,
+  "measured_main": 503650,
+  "measured_with_pr": 504901,
+  "sha": "de2c029618",
+  "date": "Tue 10 Nov 2026",
+  "reason": "PR #10351 (KEYB-11488) adds Settings > Keyboard layout row, KeyboardPresetUnbound and keyboard prefs hydration. Local build vs merge-base 3834d2d0ab, +1251 B gzip on other-lazy; ceiled to KiB.",
+  "payback": "none planned; settings UI for the preset picker lives on the lazy settings overlay"
+}

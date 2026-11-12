@@ -1023,3 +1023,28 @@ test('quantizeToNearestGridBeat(8) selects every other real bar downbeat (0, 2, 
 	// gridBeats:4 has no such restriction - bar 1 and bar 3 are reachable.
 	assert.equal(math.quantizeToNearestGridBeat(FOUR_BAR_GRID, 1.9, 4), 1.88);
 });
+
+test('beat_loop still accepts fractional beats independent of roll validation', () => {
+	assert.deepEqual(ipc.parsePerformanceCommandForTest({ type: 'beat_loop', deck: 1, beats: 0.25 }), {
+		type: 'beat_loop',
+		deck: 1,
+		beats: 0.25
+	});
+});
+
+test('malformed roll payloads are rejected before the engine is touched', async () => {
+	globalThis.window = {};
+	const uninstall = ipc.installPerformanceBrowserIpc();
+	try {
+		await assert.rejects(
+			() => ipc.dispatchPerformanceCommand({ type: 'roll', deck: 1, beats: 0.3 }),
+			/1\/32/
+		);
+		await assert.rejects(
+			() => ipc.dispatchPerformanceCommand({ type: 'roll', deck: 1, beats: 0.25 }),
+			/no track loaded/i
+		);
+	} finally {
+		uninstall();
+	}
+});

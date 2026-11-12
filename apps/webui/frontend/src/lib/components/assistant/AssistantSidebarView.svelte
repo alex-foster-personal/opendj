@@ -7,6 +7,7 @@
 	 */
 	import type { AssistantPanelMode, AssistantStatus, ChatMessage } from '$lib/assistant/assistant-api';
 	import { AGENT_DETAILS_LABEL, humanAssistantStatusError } from '$lib/setup/present';
+	import OjGlass from './OjGlass.svelte';
 	import {
 		ojFillLevel,
 		ojFillShowsBubbles,
@@ -86,7 +87,10 @@
 			</div>
 		{/if}
 		<header>
-			<h2>OJ</h2>
+			<span class="title">
+				<OjGlass state={streaming !== null ? 'think' : 'idle'} bubbles={streaming !== null && fillMode === 'animated'} size={28} />
+				<h2>OJ</h2>
+			</span>
 			{#if status}
 				<span class="model" title="The model answering these questions">
 					OJ is ready
@@ -242,9 +246,14 @@
 	}
 	header {
 		display: flex;
-		align-items: baseline;
+		align-items: center;
 		justify-content: space-between;
 		gap: 0.5rem;
+	}
+	.title {
+		display: inline-flex;
+		align-items: center;
+		gap: 0.4rem;
 	}
 	h2 {
 		margin: 0;

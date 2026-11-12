@@ -31,13 +31,49 @@ from __future__ import annotations
 import logging
 from collections import Counter
 from collections.abc import Iterator
+from dataclasses import dataclass
 from io import BytesIO
 from pathlib import Path, PurePosixPath
-from typing import Any
+from typing import Any, Literal
 
 from kaitaistruct import KaitaiStream
 
 from ._vendor.rekordbox_pdb import RekordboxPdb
+
+StickBrowseSource = Literal["export.pdb"]
+
+_EXPORT_PDB_PARTS = ("PIONEER", "rekordbox", "export.pdb")
+_ONELIBRARY_PARTS = ("PIONEER", "rekordbox", "exportLibrary.db")
+
+
+@dataclass(frozen=True, slots=True)
+class RekordboxStickExports:
+    """Which rekordbox export files exist at a stick root (stat only, no SQLCipher)."""
+
+    has_pdb: bool
+    has_onelibrary: bool
+    browse_source: StickBrowseSource | None
+
+
+def rekordbox_stick_exports(mount: Path) -> RekordboxStickExports:
+    """Detect ``export.pdb`` and ``exportLibrary.db`` under ``PIONEER/rekordbox``.
+
+    Play from USB browses ``export.pdb`` whenever it is present; this never
+    opens OneLibrary. Paths are relative to the volume mount (the same layout
+    :mod:`apps.sync.usb.stick_library` binds and parses), not
+    :func:`_resolve_pioneer_root`, so a stick whose volume name is ``PIONEER``
+    still resolves ``PIONEER/rekordbox/export.pdb`` under that mount.
+    """
+    root = mount.resolve()
+    has_pdb = root.joinpath(*_EXPORT_PDB_PARTS).is_file()
+    has_onelibrary = root.joinpath(*_ONELIBRARY_PARTS).is_file()
+    browse_source: StickBrowseSource | None = "export.pdb" if has_pdb else None
+    return RekordboxStickExports(
+        has_pdb=has_pdb,
+        has_onelibrary=has_onelibrary,
+        browse_source=browse_source,
+    )
+
 
 log = logging.getLogger(__name__)
 

@@ -1,0 +1,9 @@
+{
+  "bytes": 1024,
+  "measured_main": 350709,
+  "measured_with_pr": 350897,
+  "sha": "08eabe3aa6",
+  "date": "Wed 11 Nov 2026",
+  "reason": "comment-pins package and feedback store wiring on the shared library shell.",
+  "payback": "none planned; the growth is the change's own code on this surface"
+}

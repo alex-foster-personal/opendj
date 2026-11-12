@@ -34,7 +34,7 @@ decides what earns a history item. Each source then emits one
 For Open DJ we ARE the upstream, so the judgement would be ours -- and
 this source deliberately declines to make it at capture time.
 
-``docs/product/set-dwell-threshold-analysis.md`` measured 3678 real
+``(private path)`` measured 3678 real
 dwell gaps across 127 rekordbox sessions and found the distribution has
 **no trough**: a flat, thin shelf below 60s that climbs monotonically
 into a broad mode at 120-240s, with every sub-60s bucket inside about
@@ -90,7 +90,7 @@ import logging
 import threading
 from collections.abc import Callable
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import UTC, datetime
 from typing import Any
 
 from ..state import Event, SetsState
@@ -114,7 +114,7 @@ SOURCE_NAME = "opendj_decks"
 #: a set records which filter default was current when it was captured.
 #:
 #: 60s rather than the original 30s on the measured evidence in
-#: docs/product/set-dwell-threshold-analysis.md: it is where the flat
+#: (private path): it is where the flat
 #: sub-60s shelf gives way to the mix mode, and it sits below p10 (77s)
 #: so it stays clear of the main distribution. It is a shoulder, not a
 #: trough, so it is an adjustable default and never a calibrated constant.
@@ -202,6 +202,8 @@ class OpenDjDeckSource:
         self._pending: list[DeckSnapshot] = []
         self._decks: dict[str, _DeckAccumulator] = {}
         self._last_submitted_at: datetime | None = None
+        self._last_received_at: datetime | None = None
+        self._last_error: str | None = None
         self._last_recorded_deck: str | None = None
         self._last_recorded_stable_id: str | None = None
         self._accepted = 0
@@ -223,9 +225,16 @@ class OpenDjDeckSource:
                     f"than the last one at {self._last_submitted_at.isoformat()}"
                 )
             self._last_submitted_at = snapshot.observed_at
+            self._last_received_at = datetime.now(UTC)
+            self._last_error = None
             self._pending.append(snapshot)
             self._accepted += 1
         return snapshot
+
+    def note_last_error(self, message: str) -> None:
+        """Record the last refused POST so GET status can surface it."""
+        with self._lock:
+            self._last_error = message
 
     def submit_many(self, payloads: list[Any]) -> int:
         """Validate and enqueue a batch, in order. Raises on the first bad one."""
@@ -328,7 +337,7 @@ class OpenDjDeckSource:
             "note": (
                 "Open DJ own deck. Row written on first audible second; "
                 "audible_s/played_fraction are VALUES, not a gate. Filter "
-                "at read time -- see docs/product/"
+                "at read time -- see (private path)/"
                 "set-dwell-threshold-analysis.md"
             ),
         }
@@ -406,6 +415,10 @@ class OpenDjDeckSource:
         return {
             "source": SOURCE_NAME,
             "session_id": self.session_id,
+            "last_received_at": (
+                iso_utc(self._last_received_at) if self._last_received_at is not None else None
+            ),
+            "last_error": self._last_error,
             "advisory_dwell_s": self.advisory_dwell_s,
             "gates_capture": False,
             "max_snapshot_gap_s": self.max_snapshot_gap_s,

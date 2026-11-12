@@ -57,6 +57,12 @@ RUNTIME_LOAD_ALLOWLIST: dict[str, str] = {
         "apps/diagnostics/probe_native_metrics.py behind a platform.system() == 'Darwin' "
         "guard; it ships in the dyld shared cache of every macOS install."
     ),
+    "app/apps/diagnostics/probe_native_metrics.py:85": (
+        "_bind_dylib_function's CDLL(path) runs only inside DarwinProcessMetrics."
+        "__init__, which raises before any load when platform.system() != "
+        "'Darwin'. The only callers pass /usr/lib/libproc.dylib and "
+        "/usr/lib/libSystem.B.dylib (see the matching absolute-path allowlist entries)."
+    ),
     "AudioToolbox": (
         "an OS framework under /System/Library, loaded by audioread's macOS "
         "decoder (librosa's fallback when soundfile cannot read a file)."

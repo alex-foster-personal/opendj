@@ -1,0 +1,9 @@
+{
+ "map_name": "MIX[\\s_-]*101",
+ "map_const": "DJ_TECH_MIX_101_MAP",
+ "map_ts": "apps/webui/frontend/src/lib/rb/midi/maps/dj-tech-mix-101.ts",
+ "panel_w": 210.0,
+ "panel_d": 73.5,
+ "panel_size_source": "DJ-Tech MIX-101 product datasheet: Dimension 210 x 140 x 73.5 mm (W x H x D); top panel W x D = 210 x 73.5 mm",
+ "display_name": "2-channel compact USB MIDI controller"
+}

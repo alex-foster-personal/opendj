@@ -4,6 +4,7 @@
  * All of it goes through the same routes as `opendj work`, so nothing here can
  * do what an agent cannot. Writes carry this app session's undo stack.
  */
+import { isPageGoingAway } from '$lib/api/lifecycle-abort';
 import { API_BASE } from '$lib/api';
 import { subscribe } from '$lib/api/events-bus';
 import { pushToast } from '$lib/stores.svelte';
@@ -196,6 +197,7 @@ export function refreshSuggestionFlags(stableIds: readonly string[]): void {
 /** Start following the library. Returns the unsubscribe. */
 export function startWorksOverlay(): () => void {
 	const fail = (exc: unknown): void => {
+		if (isPageGoingAway()) return;
 		pushToast(`works did not load: ${String(exc)}`, 'error');
 	};
 	void loadOverlay().catch(fail);

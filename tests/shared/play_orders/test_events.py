@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import sqlite3
 from pathlib import Path
 
 import pytest
@@ -76,13 +77,11 @@ def test_emit_fans_out_on_shared_event_bus(tmp_path: Path) -> None:
 
 
 def test_emit_is_best_effort_when_events_table_missing(tmp_path: Path) -> None:
-    """Caller that opens a bare sqlite3 file without Phase 5 migrations
-    should not see the call raise."""
+    """[if] the connection has no events table [then] emit drops without raising, [else stop]."""
     import sqlite3
 
     conn = sqlite3.connect(str(tmp_path / "bare.db"))
     try:
-        # No 'events' table -- expected drop + one-time log.
         po_events.emit_play_order_changed(
             conn,
             playlist_id="PL-003",
@@ -91,3 +90,27 @@ def test_emit_is_best_effort_when_events_table_missing(tmp_path: Path) -> None:
         )
     finally:
         conn.close()
+
+
+@pytest.mark.requirement("STATE-12743")
+def test_emit_has_no_private_events_insert() -> None:
+    """[if] emit_play_order_changed runs [then] events.py never INSERTs into events, [else stop]."""
+    import inspect
+
+    source = inspect.getsource(po_events.emit_play_order_changed)
+    assert "INSERT INTO events" not in source.upper()
+
+
+@pytest.mark.requirement("STATE-12743")
+def test_override_emit_writes_durable_row(po_conn_with_events: sqlite3.Connection) -> None:
+    """[if] dj_copilot overrides call emit [then] a durable events row lands, [else stop]."""
+    from apps.dj_copilot.overrides import set_override
+    from apps.shared.play_orders import add_entry, create_play_order
+
+    conn = po_conn_with_events
+    po_id = create_play_order(conn, "pl-pl", "order-a")
+    add_entry(conn, po_id, "t-0", 0)
+    before = conn.execute("SELECT COUNT(*) FROM events WHERE kind='play_order_changed'").fetchone()[0]
+    set_override(conn, po_id, 0, target_key="8A")
+    after = conn.execute("SELECT COUNT(*) FROM events WHERE kind='play_order_changed'").fetchone()[0]
+    assert after == before + 1

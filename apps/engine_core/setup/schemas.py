@@ -220,7 +220,9 @@ class SetupImportIn(BaseModel):
     source: str | None = Field(
         default=None,
         description=(
-            "explicit rekordbox database to read; omit to auto-detect"
+            "explicit rekordbox database to read; omit to auto-detect, "
+            "which skips a master.plain.db older than the live rekordbox "
+            "database and re-decrypts from a fresh snapshot instead"
         ),
     )
     limit: int | None = Field(

@@ -106,6 +106,10 @@ export function syncSnapshotBody(
 				`deck ${side} position_ms must be finite and >= 0, got ${deck.position_ms}`
 			);
 		}
+		const stable = deck.stable_id?.trim() ?? '';
+		if (stable === '') {
+			throw new RangeError(`deck ${side} stable_id is required`);
+		}
 	}
 	return {
 		stable_a: a.stable_id,

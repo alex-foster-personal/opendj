@@ -8,7 +8,7 @@
  *   the browser never re-lays-out row heights frame by frame. height, top and
  *   margin never animate.
  * - It snaps with no animation when the block holds more than 200 rows or
- *   the OS asks for reduced motion.
+ *   reduced motion is on (OS or Appearance, `./reduced-motion`).
  *
  * Usage: the element carrying `in:collapse out:collapse` must be `display: grid`
  * with ONE child that has `min-height: 0; overflow: hidden` (the `.collapse`
@@ -17,6 +17,7 @@
  * notice row rendered inside the block counts too (sol review P1, PR #7600).
  */
 import type { TransitionConfig } from 'svelte/transition';
+import { prefersReducedMotion } from './reduced-motion';
 
 export const COLLAPSE_MS = 100;
 
@@ -41,10 +42,6 @@ function _easeOutCubic(t: number): number {
 	return 1 - (1 - t) ** 3;
 }
 
-function _prefersReducedMotion(): boolean {
-	return window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-}
-
 /** The rows a collapse block renders: the direct children of its one clipping
  * child. Anything else is a misuse of the transition, so it throws. */
 export function collapseRowCount(node: Pick<Element, 'children'>): number {
@@ -63,7 +60,7 @@ export function collapseRowCount(node: Pick<Element, 'children'>): number {
  * directives call this again when the close begins (sol review P1, PR #7600). */
 export function collapse(node: Element): TransitionConfig {
 	return {
-		duration: collapseDuration(collapseRowCount(node), _prefersReducedMotion()),
+		duration: collapseDuration(collapseRowCount(node), prefersReducedMotion()),
 		easing: _easeOutCubic,
 		css: collapseCss
 	};

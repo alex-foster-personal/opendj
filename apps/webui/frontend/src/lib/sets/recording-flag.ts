@@ -15,3 +15,8 @@ export function setRecordingEnabled(): boolean {
 	void buildFlags.load();
 	return recordingEnabledIn(buildFlags.flags);
 }
+
+/** [if] the library source tabs are shown [then] the Recordings tab appears when the build allows set recording. */
+export function libraryRecordingsTabEnabled(): boolean {
+	return setRecordingEnabled();
+}

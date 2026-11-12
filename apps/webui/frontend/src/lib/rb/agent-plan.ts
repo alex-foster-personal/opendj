@@ -80,6 +80,9 @@ const SCHEDULABLE_STEP_TYPES: ReadonlySet<string> = new Set(['fader', 'eq']);
 /** How long the finished/aborted plan stays on the mirror, for an agent to read. */
 export const PLAN_MIRROR_KEEP_MS = 5 * 60_000;
 
+/** Mixer neutral / bypass for EQ bands and filter; matches `FLAT` in apps/autodj/styles.py. */
+const MIXER_FLAT = 0.5;
+
 interface PlanCommandEvent {
 	at_bar: number;
 	command: Record<string, unknown>;
@@ -904,6 +907,29 @@ export function createPlanRunner(deps: PlanDeps): PlanRunner {
 		return _incomingEarlyStart(state) ?? _incomingStopped(state) ?? clockStopped;
 	}
 
+	/** On plan_amend abort: immediate plain EQ and filter at neutral on both plan decks before status becomes aborted. */
+	async function _abortFlattenBothDecks(why: string): Promise<string> {
+		const plan = order!;
+		const decks = [plan.clock.deck, ...(plan.incoming === null ? [] : [plan.incoming.deck])];
+		const bands = ['low', 'mid', 'high'] as const;
+		let note = why;
+		for (const deck of decks) {
+			for (const band of bands) {
+				try {
+					await _dispatch({ type: 'eq', deck, band, value: MIXER_FLAT });
+				} catch (error) {
+					note = `${note}; eq ${band} on deck ${deck} could not flatten: ${error instanceof Error ? error.message : String(error)}`;
+				}
+			}
+			try {
+				await _dispatch({ type: 'filter', deck, value: MIXER_FLAT });
+			} catch (error) {
+				note = `${note}; filter on deck ${deck} could not flatten: ${error instanceof Error ? error.message : String(error)}`;
+			}
+		}
+		return note;
+	}
+
 	/** End the plan and cancel an incoming launch it committed, so nothing starts after it ends. */
 	async function _end(next: 'failed' | 'aborted', why: string): Promise<void> {
 		_stop(next, why);
@@ -1673,7 +1699,9 @@ export function createPlanRunner(deps: PlanDeps): PlanRunner {
 		if (rejudge.length > 0) await _revokeOffTimeline(rejudge);
 		if (!active()) throw new Error(`plan_failed: ${reason ?? status}`);
 		if (action === 'abort') {
-			await _end('aborted', 'aborted by request');
+			let why = 'aborted by request';
+			why = await _abortFlattenBothDecks(why);
+			await _end('aborted', why);
 		} else if (action === 'finish_now') {
 			const lost = _lostTrack(deps.query());
 			if (lost !== null) {

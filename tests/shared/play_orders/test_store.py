@@ -162,3 +162,39 @@ def test_event_missing_is_silent(po_conn: sqlite3.Connection) -> None:
     """When the events table is absent, create still succeeds."""
     po_id = create_play_order(po_conn, "pl1", "x")
     assert po_id > 0
+
+
+@pytest.mark.requirement("STATE-12743")
+def test_create_appends_via_state_writer_append_event(
+    po_conn_with_events: sqlite3.Connection,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """[if] create_play_order persists [then] StateWriter._append_event writes the row, [else stop]."""
+    from apps.shared.state.writer import StateWriter
+
+    seen: list[str] = []
+    original = StateWriter._append_event
+
+    def tracking_append(self, **kwargs: object) -> object:
+        seen.append(str(kwargs.get("kind")))
+        return original(self, **kwargs)  # type: ignore[arg-type]
+
+    monkeypatch.setattr(StateWriter, "_append_event", tracking_append)
+    create_play_order(po_conn_with_events, "pl1", "named")
+    assert seen == ["play_order_changed"]
+
+
+@pytest.mark.requirement("STATE-12743")
+def test_update_delete_events_visible_for_replay(po_conn_with_events: sqlite3.Connection) -> None:
+    """[if] a play-order is updated or deleted [then] replay sees play_order_changed, [else stop]."""
+    conn = po_conn_with_events
+    po_id = create_play_order(conn, "pl1", "warmup")
+    add_entry(conn, po_id, "t-1", 0)
+    delete_play_order(conn, "pl1", "warmup")
+    actions = [
+        row[0]
+        for row in conn.execute(
+            "SELECT json_extract(payload_json, '$.action') FROM events WHERE kind='play_order_changed' ORDER BY id ASC"
+        ).fetchall()
+    ]
+    assert actions == ["created", "updated", "deleted"]

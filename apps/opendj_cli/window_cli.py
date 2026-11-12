@@ -1,17 +1,19 @@
-"""``opendj window``: saved shell geometry (WINSTATE-01) and extra windows.
+"""``opendj window``: saved shell geometry (WINSTATE-01, SECONDSCREEN-11715) and extra windows.
 
-    opendj window state     print every monitor's saved geometry
+    opendj window state     print each window's saved geometry, per monitor
     opendj window reset     forget it; the next launch opens at the default size
     opendj window open|close|focus second-screen
                             post a window command on the order bus and
                             confirm the order result
 
 The Tauri shell writes ``<app data dir>/window-state.json`` on every move or
-resize (``apps/desktop/src-tauri/src/window_state.rs``). ``state`` and
-``reset`` read that file directly, so they work whether or not the app is
-running. ``reset`` while the app is open is undone by the next move or resize
-of its window; quit the app first. The data dir is the one beside the engine
-lock: ``--lock``, else ``$OPENDJ_LIVE_LOCK_PATH``, else the packaged app's.
+resize (``apps/desktop/src-tauri/src/window_state.rs``), keyed by window label
+(``main`` and ``second-screen``) and then by monitor. A version 1 file holds
+only the main window and is reported under ``main``. This verb reads the
+file directly, so it works whether or not the app is running. ``reset`` while
+the app is open is undone by the next move or resize of its window; quit the
+app first. The data dir is the one beside the engine lock: ``--lock``, else
+``$OPENDJ_LIVE_LOCK_PATH``, else the packaged app's.
 
 ``open``, ``close`` and ``focus`` go through the performance page, which talks
 to the desktop shell. A browser tab refuses them with a reason that names the
@@ -44,6 +46,7 @@ from apps.shared.engine_data_dir import EngineDataDirError
 from apps.shared.engine_origin import LOCK_PATH_ENV, default_lock_path
 
 WINDOW_STATE_FILE = "window-state.json"
+WINDOW_LABELS = ("main", "second-screen")
 USAGE = "usage: opendj window state | reset | open|close|focus <label>"
 WINDOW_ACTIONS = ("open", "close", "focus")
 KNOWN_LABELS = ("second-screen",)
@@ -58,10 +61,16 @@ def window_state_path(lock: Path | None) -> Path:
 
 def read_state(path: Path) -> dict[str, Any]:
     """The saved document, or an empty one marked ``saved: false`` before the first save."""
+    windows: dict[str, Any] = {label: {"last_monitor": None, "monitors": {}} for label in WINDOW_LABELS}
     if not path.exists():
-        return {"path": str(path), "saved": False, "last_monitor": None, "monitors": {}}
+        return {"path": str(path), "saved": False, "version": None, "windows": windows}
     document = json.loads(path.read_text(encoding="utf-8"))
-    return {"path": str(path), "saved": True, **document}
+    if "windows" in document:
+        for label, state in document["windows"].items():
+            windows[label] = {"last_monitor": state.get("last_monitor"), "monitors": state.get("monitors", {})}
+    else:
+        windows["main"] = {"last_monitor": document.get("last_monitor"), "monitors": document.get("monitors", {})}
+    return {"path": str(path), "saved": True, "version": document.get("version"), "windows": windows}
 
 
 def reset_state(path: Path) -> dict[str, Any]:
@@ -80,13 +89,17 @@ def _text(payload: dict[str, Any]) -> str:
     if "action" in payload:
         return f"{payload['action']} {payload['label']}"
     lines = [f"{payload['path']}{'' if payload['saved'] else ' (nothing saved yet)'}"]
-    for key, geometry in payload["monitors"].items():
-        marker = "*" if key == payload["last_monitor"] else " "
-        lines.append(
-            f"{marker} {key}: {geometry['width_pt']:.0f}x{geometry['height_pt']:.0f} pt at "
-            f"+{geometry['x_offset_pt']:.0f}+{geometry['y_offset_pt']:.0f}"
-            f"{' maximized' if geometry['maximized'] else ''}"
-        )
+    for label, state in payload["windows"].items():
+        lines.append(f"{label}:")
+        if not state["monitors"]:
+            lines.append("  (nothing saved)")
+        for key, geometry in state["monitors"].items():
+            marker = "*" if key == state["last_monitor"] else " "
+            lines.append(
+                f"  {marker} {key}: {geometry['width_pt']:.0f}x{geometry['height_pt']:.0f} pt at "
+                f"+{geometry['x_offset_pt']:.0f}+{geometry['y_offset_pt']:.0f}"
+                f"{' maximized' if geometry['maximized'] else ''}"
+            )
     return "\n".join(lines)
 
 

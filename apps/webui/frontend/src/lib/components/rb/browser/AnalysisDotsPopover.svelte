@@ -95,6 +95,7 @@
 	import type { GridFlag } from '$lib/rb/analysis-issues';
 	import type { SourceFlag } from '$lib/rb/library-types';
 	import AnalysisDots from './AnalysisDots.svelte';
+	import ReanalyzeGridItem from './ReanalyzeGridItem.svelte';
 
 	let {
 		badge = {},
@@ -452,7 +453,14 @@
 					{/if}
 				</div>
 			{/if}
-			{#if stableId === null}
+			{#if stableId !== null}
+				{@const sid = stableId}
+				<ReanalyzeGridItem
+					stableId={sid}
+					upsertJob={(phase) => jobProgress.upsert({ stable_id: sid, kind: 'beatgrid', phase })}
+					toast={pushToast}
+				/>
+			{:else}
 				<div class="pop-note">No track for this row - ordering is unavailable.</div>
 			{/if}
 		</div>

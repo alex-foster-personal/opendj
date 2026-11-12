@@ -1,0 +1,9 @@
+{
+  "bytes": 1024,
+  "measured_main": 35135,
+  "measured_with_pr": 36107,
+  "sha": "5bc0b76c63",
+  "date": "Thu 12 Nov 2026",
+  "reason": "branch af--cloud-10928--skins-hercules-hercules-dj-control-steel grows the practice-replica surface; measured +972 B gzip over main; ceiled to KiB.",
+  "payback": "none planned; the growth is the change's own code on this surface"
+}

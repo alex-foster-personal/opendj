@@ -600,6 +600,136 @@ def previous(conn: sqlite3.Connection, stable_id: str) -> UndoStep | None:
         cursor = target_stamp
 
 
+# ---------- warp map (issue #11199, parent #425) ----------------------------
+
+
+WARP_MAP_FIELD: Final = "warp_map"
+WARP_MAP_BLOB_VERSION: Final = 1
+WarpAnchorKind = Literal["analyzed", "locked", "creative"]
+WARP_ANCHOR_KINDS: Final[tuple[WarpAnchorKind, ...]] = ("analyzed", "locked", "creative")
+WARP_MAP_MIN_ANCHORS: Final = 2
+WARP_SOURCE_DECIMALS: Final = 3
+WARP_BEAT_DECIMALS: Final = 3
+
+
+class WarpMapError(ValueError):
+    """Refused warp-map document or schedule commit."""
+
+
+@dataclass(frozen=True)
+class WarpAnchor:
+    source_s: float
+    beat: float
+    kind: WarpAnchorKind
+
+    def as_dict(self) -> dict[str, float | str]:
+        return {"source_s": self.source_s, "beat": self.beat, "kind": self.kind}
+
+
+@dataclass(frozen=True)
+class WarpMapDocument:
+    anchors: tuple[WarpAnchor, ...]
+
+    def as_dict(self) -> dict[str, Any]:
+        return {
+            "v": WARP_MAP_BLOB_VERSION,
+            "anchors": [anchor.as_dict() for anchor in self.anchors],
+        }
+
+
+def _finite_non_negative(name: str, value: object) -> float:
+    if isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(value) or value < 0:
+        raise WarpMapError(f"{name} must be a finite number >= 0, got {value!r}")
+    return float(value)
+
+
+def _checked_warp_anchor(source_s: float, beat: float, kind: str) -> WarpAnchor:
+    if kind not in WARP_ANCHOR_KINDS:
+        raise WarpMapError(f"warp anchor kind must be one of {WARP_ANCHOR_KINDS}, got {kind!r}")
+    return WarpAnchor(
+        source_s=round(_finite_non_negative("source_s", source_s), WARP_SOURCE_DECIMALS) + 0.0,
+        beat=round(_finite_non_negative("beat", beat), WARP_BEAT_DECIMALS) + 0.0,
+        kind=kind,  # type: ignore[arg-type]
+    )
+
+
+def _walk_pqtz_for_warp(beats: Sequence[Mapping[str, Any]]) -> None:
+    """The same runtime rules beat-sync-math enforces before warp import."""
+    if len(beats) < 2:
+        raise WarpMapError(f"beat grid must contain at least 2 beats, got {len(beats)}")
+    previous_time = -1.0
+    for index, beat in enumerate(beats):
+        if not isinstance(beat, Mapping):
+            raise WarpMapError(f"beat[{index}] must be an object")
+        n = beat.get("n")
+        bpm = beat.get("bpm")
+        t = beat.get("t")
+        if not isinstance(n, int) or not 1 <= n <= 4:
+            raise WarpMapError(f"beat[{index}].n must be an integer within 1..4, got {n!r}")
+        if not isinstance(bpm, (int, float)) or not math.isfinite(bpm) or bpm <= 0:
+            raise WarpMapError(f"beat[{index}].bpm must be finite and > 0, got {bpm!r}")
+        if not isinstance(t, (int, float)) or not math.isfinite(t) or t < 0:
+            raise WarpMapError(f"beat[{index}].t must be finite and >= 0, got {t!r}")
+        if index > 0 and float(t) <= previous_time:
+            raise WarpMapError("beat grid times must be strictly increasing")
+        if index > 0:
+            prev_n = int(beats[index - 1]["n"])
+            expected = 1 if prev_n == 4 else prev_n + 1
+            if int(n) != expected:
+                raise WarpMapError("beat grid n cadence must cycle 1,2,3,4")
+        previous_time = float(t)
+
+
+def validate_warp_map(doc: WarpMapDocument) -> None:
+    """Fail closed before a processor schedule would be committed."""
+    if len(doc.anchors) < WARP_MAP_MIN_ANCHORS:
+        raise WarpMapError(f"a warp map needs at least {WARP_MAP_MIN_ANCHORS} anchors")
+    prev_source = -math.inf
+    prev_beat = -math.inf
+    for index, anchor in enumerate(doc.anchors):
+        if anchor.source_s <= prev_source:
+            raise WarpMapError(f"source_s must be strictly increasing at anchor[{index}]")
+        if anchor.beat <= prev_beat:
+            raise WarpMapError(f"beat must be strictly increasing at anchor[{index}]")
+        prev_source = anchor.source_s
+        prev_beat = anchor.beat
+
+
+def build_warp_map_from_pqtz(beats: Sequence[Mapping[str, Any]]) -> WarpMapDocument:
+    """Analyzed anchors from real PQTZ; never synthesizes a fallback grid."""
+    _walk_pqtz_for_warp(beats)
+    anchors = tuple(
+        _checked_warp_anchor(float(beat["t"]), float(index), "analyzed") for index, beat in enumerate(beats)
+    )
+    doc = WarpMapDocument(anchors=anchors)
+    validate_warp_map(doc)
+    return doc
+
+
+def _parse_warp_anchor(where: str, raw: object, index: int) -> WarpAnchor:
+    if not isinstance(raw, dict) or set(raw) != {"source_s", "beat", "kind"}:
+        raise WarpMapError(f"{where} anchor[{index}] is malformed: {raw!r}")
+    return _checked_warp_anchor(raw["source_s"], raw["beat"], str(raw["kind"]))
+
+
+def parse_warp_map_blob(raw: str | Mapping[str, Any]) -> WarpMapDocument:
+    """Strict stored warp map; corruption raises, never reads as empty."""
+    value = json.loads(raw) if isinstance(raw, str) else raw
+    if not isinstance(value, dict) or value.get("v") != WARP_MAP_BLOB_VERSION:
+        raise WarpMapError(f"warp_map blob is not v{WARP_MAP_BLOB_VERSION}: {value!r}")
+    anchors_raw = value.get("anchors")
+    if not isinstance(anchors_raw, list) or len(anchors_raw) < WARP_MAP_MIN_ANCHORS:
+        raise WarpMapError("warp_map anchors must be a list with at least two entries")
+    anchors = tuple(_parse_warp_anchor("warp_map", item, i) for i, item in enumerate(anchors_raw))
+    doc = WarpMapDocument(anchors=anchors)
+    validate_warp_map(doc)
+    return doc
+
+
+def warp_map_blob(doc: WarpMapDocument) -> dict[str, Any]:
+    return doc.as_dict()
+
+
 __all__ = [
     "BEATS_PER_BAR",
     "BLOB_VERSION",
@@ -631,4 +761,14 @@ __all__ = [
     "with_anchor",
     "with_edit",
     "without_anchor",
+    "WARP_MAP_BLOB_VERSION",
+    "WARP_MAP_FIELD",
+    "WARP_MAP_MIN_ANCHORS",
+    "WarpAnchor",
+    "WarpMapDocument",
+    "WarpMapError",
+    "build_warp_map_from_pqtz",
+    "parse_warp_map_blob",
+    "validate_warp_map",
+    "warp_map_blob",
 ]

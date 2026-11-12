@@ -176,6 +176,12 @@ class UsbStickLibraryOut(BaseModel):
     read_ms: float
     #: True when the export.pdb parse came from cache (pdb size+mtime unchanged).
     cache_hit: bool
+    #: Whether ``PIONEER/rekordbox/export.pdb`` was on the stick at bind time.
+    has_pdb: bool
+    #: Whether ``PIONEER/rekordbox/exportLibrary.db`` was on the stick at bind time.
+    has_onelibrary: bool
+    #: Which export file this response was built from (today always export.pdb).
+    browse_source: Literal["export.pdb"]
 
 
 def _error_doc(description: str) -> dict[str, object]:
@@ -353,6 +359,9 @@ def get_usb_stick_library(volume_id: str, request: Request) -> UsbStickLibraryOu
         ),
         read_ms=(time.perf_counter() - started) * 1000.0,
         cache_hit=opened.cache_hit,
+        has_pdb=opened.exports.has_pdb,
+        has_onelibrary=opened.exports.has_onelibrary,
+        browse_source=opened.exports.browse_source or "export.pdb",
     )
 
 

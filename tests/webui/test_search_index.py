@@ -49,20 +49,28 @@ def fixture_db(tmp_path: Path) -> Path:
     writer = StateWriter(conn, bus=bus, actor="test")
     try:
         tracks = [
-            ("s1", "Levitating", ["Dua Lipa"], "deep-house", "great opener", ["banger"]),
-            ("s2", "Blinding Lights", ["The Weeknd"], "synthwave", "peak time", ["retro"]),
-            ("s3", "Bad Guy", ["Billie Eilish"], "pop", "moody", ["dark-pop"]),
-            ("s4", "Weekend Vibes", ["Nobody"], "lofi", "chill background", []),
-            ("s5", "Strobe", ["deadmau5"], "progressive-house", "closer track", ["classic"]),
-            ("s6", "House Anthem", ["DJ House"], "trance", "banger opener", []),
+            ("s1", "Levitating", ["Dua Lipa"], "Future Nostalgia", "deep-house", "great opener", ["banger"]),
+            ("s2", "Blinding Lights", ["The Weeknd"], "After Hours", "synthwave", "peak time", ["retro"]),
+            ("s3", "Bad Guy", ["Billie Eilish"], "When We All Fall Asleep", "pop", "moody", ["dark-pop"]),
+            ("s4", "Weekend Vibes", ["Nobody"], "Lo-Fi Sundays", "lofi", "chill background", []),
+            (
+                "s5",
+                "Strobe",
+                ["deadmau5"],
+                "For Lack of a Better Name",
+                "progressive-house",
+                "closer track",
+                ["classic"],
+            ),
+            ("s6", "House Anthem", ["DJ House"], "Club Cuts", "trance", "banger opener", []),
         ]
-        for sid, title, artists, genre, comments, tags in tracks:
+        for sid, title, artists, album, genre, comments, tags in tracks:
             writer.upsert_track(
                 stable_id=sid,
                 stable_id_tier="inferred",
                 title=title,
                 artists=artists,
-                album=None,
+                album=album,
                 isrc=None,
                 duration_ms=200_000,
                 file_path=f"/music/{sid}.mp3",
@@ -97,6 +105,30 @@ def test_build_fts_query_nul_only_returns_none() -> None:
 def test_build_fts_query_strips_nul_without_sqlite_error(fixture_db: Path) -> None:
     assert search_index.build_fts_query("a\x00b") is not None
     search_index.search(fixture_db, "a\x00b", limit=10)
+
+
+@pytest.mark.requirement("LIBUX-10721")
+def test_search_indexes_album_and_rebuilds_stale_schema_version(fixture_db: Path) -> None:
+    """[if] stale fts schema [then] rebuild indexes album with quoted context, [else stop]."""
+    index_path = search_index.ensure_index(fixture_db)
+    conn = sqlite3.connect(index_path)
+    try:
+        conn.execute("UPDATE search_meta SET schema = 4 WHERE id = 1")
+        conn.commit()
+    finally:
+        conn.close()
+
+    hits, total = search_index.search(fixture_db, "nostalgia", limit=10)
+    assert total == 1
+    assert hits[0][0] == "s1"
+    assert "nostalgia" in hits[0][1].lower()
+
+    conn = sqlite3.connect(index_path)
+    try:
+        schema = int(conn.execute("SELECT schema FROM search_meta WHERE id = 1").fetchone()[0])
+    finally:
+        conn.close()
+    assert schema == 5
 
 
 def test_search_matches_title_prefix(fixture_db: Path) -> None:

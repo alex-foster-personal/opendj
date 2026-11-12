@@ -10,6 +10,8 @@
 		getSession,
 		getSoundcloudExport,
 		getTimeline,
+		getTracklist,
+		getTracklistText,
 		getTransitions,
 		listSessions,
 		publishMetadataShare,
@@ -21,8 +23,13 @@
 		type SessionDetail,
 		type SessionSummary,
 		type TimelineEvent,
-		type Transition
+		type Tracklist,
+		type Transition,
+		type TracklistCopyFormat,
+		type TracklistFileFormat
 	} from './sets-api';
+	import SetTracklist from './SetTracklist.svelte';
+	import { copyTracklistAs, downloadTracklist } from './set-tracklist';
 	import { captureFailureMessage, clipSuffix, recordRailState, recorderHeadline } from '$lib/sets/performance-recorder';
 	import {
 		REC_STATUS_UNREACHABLE_GROUP,
@@ -40,7 +47,8 @@
 		pid: null,
 		owned: false,
 		recoverable: false,
-		capture: 'none'
+		capture: 'none',
+		capture_error: null
 	});
 	let sessions = $state<SessionSummary[]>([]);
 	let selected = $state<SessionView | null>(null);
@@ -54,6 +62,7 @@
 	let exportReminder = $state('');
 	let exportComment = $state('');
 	let exportTrackCount = $state(0);
+	let tracklist = $state<Tracklist | null>(null);
 
 	function resetSoundcloudExport(): void {
 		exportBusy = false;
@@ -90,6 +99,7 @@
 	async function selectSession(sessionId: string): Promise<void> {
 		const requestId = ++selectionRequest;
 		resetSoundcloudExport();
+		tracklist = null;
 		try {
 			const [nextSession, nextTimeline, nextTransitions] = await Promise.all([
 				getSession(sessionId),
@@ -103,10 +113,44 @@
 				if (nextSession.summary.share_state === 'shared_cloud') {
 					void loadExistingShare(sessionId, requestId);
 				}
+				void loadTracklist(sessionId, requestId);
 			}
 		} catch (error) {
 			pushToast(`Failed to open session: ${error}`, 'error');
 		}
+	}
+
+	async function loadTracklist(sessionId: string, requestId: number): Promise<void> {
+		try {
+			const nextTracklist = await getTracklist(sessionId);
+			if (requestId === selectionRequest) {
+				tracklist = nextTracklist;
+			}
+		} catch (error) {
+			if (requestId === selectionRequest) {
+				tracklist = null;
+				pushToast(`Failed to load tracklist: ${error}`, 'error');
+			}
+		}
+	}
+
+	async function copyTracklist(format: TracklistCopyFormat): Promise<void> {
+		if (!selected) return;
+		await copyTracklistAs(selected.summary.session_id, format, {
+			fetchText: getTracklistText,
+			writeClipboard: (text) =>
+				writeToastReport(
+					text,
+					typeof navigator === 'undefined' ? undefined : navigator.clipboard,
+					typeof window === 'undefined' ? false : window.isSecureContext
+				),
+			notify: pushToast
+		});
+	}
+
+	function downloadTracklistFile(format: TracklistFileFormat): void {
+		if (!selected) return;
+		downloadTracklist(selected.summary.session_id, format);
 	}
 
 	async function loadExistingShare(sessionId: string, requestId: number): Promise<void> {
@@ -388,6 +432,16 @@
 					</div>
 				{/if}
 			</section>
+
+			{#if tracklist}
+				<SetTracklist
+					sessionId={selected.summary.session_id}
+					rows={tracklist.rows}
+					soundcloudReady={exportAcknowledged}
+					oncopy={copyTracklist}
+					ondownload={downloadTracklistFile}
+				/>
+			{/if}
 
 			<section class="share-panel" aria-label="Metadata-only sharing">
 				<div>

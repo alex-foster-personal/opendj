@@ -110,3 +110,66 @@ def test_cli_chromaprint_missing_exit_2(tmp_path: Path, tmp_fixture_tree, monkey
 
     rc = scan_mod.main(["--root", str(tmp_fixture_tree), "--db", str(tmp_path / "cli.sqlite"), "--quiet"])
     assert rc == 2
+
+
+# ------------------------------------------------------ library scan basis
+
+
+@pytest.fixture
+def library_state_db(tmp_path: Path) -> Path:
+    from apps.shared.state import db as state_db
+
+    db = tmp_path / "state.db"
+    state_db.open_rw(db, apply_schema=True).close()
+    return db
+
+
+@pytest.mark.requirement("SETPREP-10643")
+def test_tags_only_scan_never_calls_fingerprint_engine(library_state_db: Path, tmp_path: Path, monkeypatch) -> None:
+    """[if] basis tags runs [then] compute is never invoked, [else stop]."""
+    from unittest.mock import MagicMock
+
+    from apps.dedup import library_scan
+
+    compute = MagicMock(side_effect=AssertionError("fingerprint engine must not run"))
+    monkeypatch.setattr(library_scan, "compute", compute)
+    db = tmp_path / "dedup.sqlite"
+    rows = [("s" * 40, Path("/music/x.mp3")) for _ in range(1000)]
+    monkeypatch.setattr(library_scan, "library_tracks", lambda _state: rows)
+    monkeypatch.setattr(
+        library_scan.tag_clusters,
+        "run_tag_clusters",
+        lambda **_: library_scan.tag_clusters.TagClusterStats(written=0, precision=None),
+    )
+    prog = library_scan.run_library_scan(state_db=library_state_db, db_path=db, basis="tags")
+    assert prog.basis == "tags"
+    assert prog.clusters_fingerprint == 0
+    compute.assert_not_called()
+
+
+@pytest.mark.requirement("SETPREP-10643")
+def test_both_basis_runs_tag_pass_after_fingerprints(library_state_db: Path, tmp_path: Path, monkeypatch) -> None:
+    """[if] basis is both [then] tag clustering runs after fingerprints, [else stop]."""
+    from apps.dedup import library_scan
+
+    order: list[str] = []
+
+    def fake_find_clusters(**_kwargs):
+        order.append("fingerprint")
+        return []
+
+    def fake_tag_clusters(**_kwargs):
+        order.append("tags")
+        return library_scan.tag_clusters.TagClusterStats(written=2, precision=None)
+
+    monkeypatch.setattr(library_scan.find_clusters, "run_find_clusters", fake_find_clusters)
+    monkeypatch.setattr(library_scan.tag_clusters, "run_tag_clusters", fake_tag_clusters)
+    monkeypatch.setattr(library_scan, "_tag_precision", lambda *_args: None)
+    monkeypatch.setattr(library_scan, "library_tracks", lambda _state: [])
+    prog = library_scan.run_library_scan(
+        state_db=library_state_db,
+        db_path=tmp_path / "dedup.sqlite",
+        basis="both",
+    )
+    assert order == ["fingerprint", "tags"]
+    assert prog.clusters_tags == 2

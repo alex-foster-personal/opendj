@@ -22,6 +22,11 @@ is REMOVED when the source is rekordbox rather than merely left unwritten, so a
 cache entry written while own was selected cannot keep serving segments under a
 rekordbox selection.
 
+KEY-10229: the one scalar exception is the user's own key edit (the library
+key cell, ``/key-edit``). It is source-independent, so `apply_key_edit` sets
+`key` and `key_source: "edit"` on both the rekordbox and own branches, and
+pops both when there is no edit, so a cached payload never keeps a cleared one.
+
 -Claude
 """
 from __future__ import annotations
@@ -32,6 +37,7 @@ from typing import Any
 
 from apps.analysis.byte_siblings import canonical_result_or_same_bytes_sibling
 from apps.analysis.canonical import key_lane_stale_but_unpromoted
+from apps.shared.state import key_edit
 
 from .own_lane_store import (
     SOURCE_OWN,
@@ -127,6 +133,22 @@ def _set_dynamic_key_hint(payload: dict[str, Any], *, present: bool) -> None:
         payload.pop("performance_hints", None)
 
 
+def apply_key_edit(payload: dict[str, Any], stable_id: str, state_db_path: Path | None = None) -> dict[str, Any]:
+    """Serve the user's stored key edit as `key` / `key_source: "edit"` (KEY-10229). Mutates `payload`."""
+    conn = state_conn_ro(state_db_path)
+    try:
+        edit = key_edit.read(conn, stable_id) if conn is not None else None
+    finally:
+        if conn is not None:
+            conn.close()
+    if edit is None:
+        payload.pop("key", None)
+        payload.pop("key_source", None)
+    else:
+        payload["key"], payload["key_source"] = edit, "edit"
+    return payload
+
+
 def apply_own_key_segments(
     payload: dict[str, Any],
     stable_id: str,
@@ -142,7 +164,9 @@ def apply_own_key_segments(
     makes the same argument for `dynamic_tempo`).
 
     ``state_db_path`` is forwarded to `state_conn_ro`; see its docstring.
+    The user's key edit is applied on every branch (`apply_key_edit`).
     """
+    apply_key_edit(payload, stable_id, state_db_path)
     conn = state_conn_ro(state_db_path)
     try:
         if (
@@ -192,5 +216,6 @@ __all__ = [
     "NO_TONAL_CENTER",
     "OWN_KEY_LANE",
     "OWN_KEY_MISSING_REASON",
+    "apply_key_edit",
     "apply_own_key_segments",
 ]

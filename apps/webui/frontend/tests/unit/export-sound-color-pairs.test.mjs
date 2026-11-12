@@ -224,8 +224,19 @@ test('the CLI fails fast without --out', () => {
 	assert.match(res.stderr, /^\[ERROR\].*--out/);
 });
 
-// Holds only while the #9774 harness and #9803-#9805 kernels are absent on main; rewrite it
-// when the harness adapter lands in resolveRealRenderer.
+/** Issues still blocking calibration (kernel files on disk vs harness adapter wired). */
+function unresolvedCalibrationIssues() {
+	try {
+		resolveRealRenderer();
+		return [];
+	} catch (err) {
+		assert.ok(err instanceof UnavailableError);
+		return err.missing.map((d) => d.issue);
+	}
+}
+
+// Holds until the #9774 harness adapter is wired in resolveRealRenderer; #9804 may be on-disk
+// before the export path can call it.
 test('the CLI reports UNAVAILABLE and writes nothing while the real render path is missing', () => {
 	const out = join(freshDir(), 'round1');
 	const res = spawnSync(process.execPath, [fileURLToPath(SCRIPT_URL), '--out', out], {
@@ -233,19 +244,28 @@ test('the CLI reports UNAVAILABLE and writes nothing while the real render path 
 	});
 	assert.equal(res.status, 2);
 	assert.match(res.stderr, /^\[UNAVAILABLE\]/);
-	for (const issue of ['#9774', '#9803', '#9804', '#9805'])
-		assert.ok(res.stderr.includes(issue), issue);
+	const issues = unresolvedCalibrationIssues();
+	if (issues.length > 0) {
+		for (const issue of issues) assert.ok(res.stderr.includes(issue), issue);
+	} else {
+		assert.match(res.stderr, /no adapter|#9774/);
+	}
+	assert.equal(res.stderr.includes('#9805'), false, 'CRUSH is on main');
 	assert.equal(existsSync(out), false);
 });
 
 test('resolveRealRenderer names every missing dependency', () => {
+	const repoRoot = fileURLToPath(new URL('../../../../../', import.meta.url));
+	const expectedMissing = REAL_PATH_DEPENDENCIES.filter(
+		(d) => !existsSync(join(repoRoot, d.path))
+	).map((d) => d.issue);
 	assert.throws(
-		() => resolveRealRenderer(freshDir()),
+		() => resolveRealRenderer(repoRoot),
 		(err) => {
 			assert.ok(err instanceof UnavailableError);
 			assert.deepEqual(
 				err.missing.map((d) => d.issue),
-				['#9774', '#9803', '#9804', '#9805']
+				expectedMissing
 			);
 			return true;
 		}

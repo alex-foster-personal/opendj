@@ -128,3 +128,11 @@ def test_rekey_is_idempotent_for_identical_bytes():
     legacy = r2_keys.legacy_stem_key("htdemucs", "ab12" * 10, "vocals.flac")
     digest = _sha(b"identical bytes")
     assert r2_keys.rekey_legacy_stem_key(legacy, digest) == (r2_keys.rekey_legacy_stem_key(legacy, digest))
+
+
+@pytest.mark.requirement("CLOUDSYNC-12622b")
+def test_trash_namespace_is_registered_beside_assets():
+    """[if] r2_keys is imported [then] trash/ is registered beside assets/, [else stop]."""
+    assert r2_keys.TRASH_PREFIX == "trash"
+    assert r2_keys.TRASH_KEY_TEMPLATE.startswith("trash/")
+    assert r2_keys.ASSET_PREFIX == "assets"

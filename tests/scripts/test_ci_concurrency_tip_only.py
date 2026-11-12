@@ -9,6 +9,12 @@ Single-line intent:
   - [if] push runs keep a per-SHA group [then] every merge queues a full run and the pool saturates, [else stop].
   - [if] push runs cancel the running run [then] merges faster than a run leave main with no completed run, [else stop].
   - [if] pull requests stop cancelling in progress [then] a new head waits behind its stale run, [else stop].
+  - [if] a push rerun shares the tip group [then] the next merge cancels it and erases a red, [else stop].
+
+Rerun group (CIPAR-12893, Thu 12 Nov 2026). ci-main-flake-rerun.yml reruns a failed main run's shard;
+in the tip group that rerun sat pending, then the next merge cancelled it, so run 43116562363's
+`ci gate` failure read `cancelled` and the checkpoint went 54 min without a verdict. A rerun
+attempt now gets a group keyed by its own run id: nothing cancels it and it bumps no tip run.
 """
 
 from __future__ import annotations
@@ -28,10 +34,16 @@ def test_push_runs_share_one_group_without_a_sha() -> None:
     """[if] push runs keep a per-SHA group [then] every merge queues a full run, [else stop]."""
     group = " ".join(str(_concurrency()["group"]).split())
     assert "github.sha" not in group
-    assert "github.event_name == 'push' && 'main-push'" in group
+    assert "github.event_name == 'push' && (github.run_attempt == '1' && 'main-push'" in group
     assert group.endswith("|| 'shared' }}")
 
 
 def test_push_runs_never_cancel_the_running_run_and_prs_still_do() -> None:
     """[if] a push cancels in progress, or a PR stops cancelling, [then] fail, [else stop]."""
     assert _concurrency()["cancel-in-progress"] == "${{ github.event_name != 'push' }}"
+
+
+def test_push_rerun_attempts_get_their_own_group() -> None:
+    """[if] a push rerun shares the tip group [then] the next merge cancels it and erases a red, [else stop]."""
+    group = " ".join(str(_concurrency()["group"]).split())
+    assert "format('main-push-rerun-{0}', github.run_id)" in group

@@ -110,14 +110,22 @@ export const LIBRARY_SCREEN: CustomiseScreenDef = {
 				{ kind: 'setting', id: 'hide_broken_links' }
 			]
 		},
-		{ id: 'columns', label: 'Columns', rows: [{ kind: 'setting', id: 'lyrics_library_col' }] },
+		{
+			id: 'columns',
+			label: 'Columns',
+			rows: [
+				{ kind: 'setting', id: 'lyrics_library_col' },
+				{ kind: 'setting', id: 'sections_library_structure_column' }
+			]
+		},
 		{
 			id: 'preview',
 			label: 'Preview strip',
 			rows: [
 				{ kind: 'setting', id: 'lyrics_hover_scrub' },
 				{ kind: 'setting', id: 'lyrics_load_strategy' },
-				{ kind: 'setting', id: 'preview_beat_sync' }
+				{ kind: 'setting', id: 'preview_beat_sync' },
+				{ kind: 'setting', id: 'sections_preview_cursor_label' }
 			]
 		},
 		{
@@ -140,6 +148,14 @@ export const LIBRARY_SCREEN: CustomiseScreenDef = {
 			rows: [
 				{ kind: 'setting', id: 'library_sidebar_art' },
 				{ kind: 'setting', id: 'playlist_tree_view' }
+			]
+		},
+		{
+			id: 'usb',
+			label: 'USB',
+			rows: [
+				{ kind: 'setting', id: 'usb_toast_enabled' },
+				{ kind: 'setting', id: 'usb_auto_open_panel' }
 			]
 		}
 	]
@@ -196,7 +212,35 @@ export function layoutScreenDef(catalog: readonly SettingDef[]): CustomiseScreen
 
 export const LAYOUT_SCREEN: CustomiseScreenDef = layoutScreenDef(SETTINGS_CATALOG);
 
-const CUSTOMISE_SCREEN_DEFS = [DECKS_SCREEN, LIBRARY_SCREEN, LAYOUT_SCREEN] as const;
+
+/** The side-mixer placement key (#9434, epic #9371); listed only once the catalog has it. */
+export const MIXER_PLACEMENT_SETTING_ID = 'mixer_placement';
+
+/**
+ * Mixer screen (#9442): the stem dials, the crossfader curve, and `mixer_placement` when
+ * `catalog` holds that key (#9434 lands it), so this screen does not wait for it. Data only.
+ */
+export function mixerScreenDef(catalog: readonly SettingDef[]): CustomiseScreenDef {
+	const placement = catalog.some((entry) => entry.id === MIXER_PLACEMENT_SETTING_ID)
+		? [{ kind: 'setting', id: MIXER_PLACEMENT_SETTING_ID } as const]
+		: [];
+	return {
+		id: 'mixer',
+		label: 'Mixer',
+		groups: [
+			{
+				id: 'channels',
+				label: 'Channels',
+				rows: [{ kind: 'setting', id: 'mixer_stems' }, ...placement]
+			},
+			{ id: 'crossfader', label: 'Crossfader', rows: [{ kind: 'setting', id: 'crossfade_curve' }] }
+		]
+	};
+}
+
+export const MIXER_SCREEN: CustomiseScreenDef = mixerScreenDef(SETTINGS_CATALOG);
+
+const CUSTOMISE_SCREEN_DEFS = [DECKS_SCREEN, LIBRARY_SCREEN, LAYOUT_SCREEN, MIXER_SCREEN] as const;
 
 /** A catalog id that no customisation screen shows, with the one-line reason (spike #9438 §3, §4 (a)). */
 export interface SettingsOnlyRow {
@@ -233,6 +277,10 @@ export const SETTINGS_ONLY: ReadonlyArray<SettingsOnlyRow> = [
 		reason: 'Master switch for every lyric overlay, so it belongs on no single screen.'
 	},
 	{ id: 'technically_working_animate', reason: 'Cross-surface banner animation.' },
+	{
+		id: 'reduce_motion',
+		reason: 'App-wide motion policy; lives in Settings Appearance until a Colours screen lands.'
+	},
 	// Not a boolean/enum row: customise rows refuse other control kinds.
 	{
 		id: 'library_watcher_folders',
@@ -254,6 +302,11 @@ export const SETTINGS_ONLY: ReadonlyArray<SettingsOnlyRow> = [
 			'Added by #9767 after the spike. It changes how the overview strip responds to clicks, not what a screen displays; no screen placement decided yet.'
 	},
 	{
+		id: 'keyboard_preset',
+		reason:
+			'Added by #10351 after the spike. Performance keyboard layout preset in Settings only, with no customise screen yet.'
+	},
+	{
 		id: 'auto_analyze_grid',
 		reason:
 			'Added by #10259. Analyze-on-import lane toggle in the Settings Analysis group; no customise screen yet.'
@@ -273,6 +326,31 @@ export const SETTINGS_ONLY: ReadonlyArray<SettingsOnlyRow> = [
 		reason:
 			'Added by #10259. Analyze-on-import lane toggle in the Settings Analysis group; no customise screen yet.'
 	},
+	{
+		id: 'sections_main_style',
+		reason:
+			'Added by #12787 (segment display). Waveform section styling; awaiting the Waveform screen (#9439), not in the WAVE_QS_GROUPS stand-in.'
+	},
+	{
+		id: 'sections_sticky_title',
+		reason:
+			'Added by #12787 (segment display). Waveform section styling; awaiting the Waveform screen (#9439), not in the WAVE_QS_GROUPS stand-in.'
+	},
+	{
+		id: 'sections_next_countdown',
+		reason:
+			'Added by #12787 (segment display). Waveform section styling; awaiting the Waveform screen (#9439), not in the WAVE_QS_GROUPS stand-in.'
+	},
+	{
+		id: 'sections_overview_style',
+		reason:
+			'Added by #12787 (segment display). Waveform section styling; awaiting the Waveform screen (#9439), not in the WAVE_QS_GROUPS stand-in.'
+	},
+	{
+		id: 'sections_uncertain',
+		reason:
+			'Added by #12787 (segment display). Waveform section styling; awaiting the Waveform screen (#9439), not in the WAVE_QS_GROUPS stand-in.'
+	},
 	// Awaiting a screen: move the row onto that screen when its definition lands.
 	{
 		id: 'wave_eq_reflect',
@@ -286,13 +364,19 @@ export const SETTINGS_ONLY: ReadonlyArray<SettingsOnlyRow> = [
 		id: 'tempo_lane_scale',
 		reason: 'Awaiting the Waveform screen (#9439, spike §2.3); not in the WAVE_QS_GROUPS stand-in.'
 	},
-	{ id: 'crossfade_curve', reason: 'Awaiting the Mixer screen (spike §2.5).' },
 	{ id: 'horizontal_wheel_knob', reason: 'Awaiting the Mixer screen (spike §2.5).' },
-	{ id: 'mixer_stems', reason: 'Awaiting the Mixer screen (spike §2.5).' },
 	{ id: 'auto_gain.enabled', reason: 'Awaiting the Mixer screen (spike §2.5).' },
 	{ id: 'auto_gain.target_lufs', reason: 'Awaiting the Mixer screen (spike §2.5).' },
 	{ id: 'wheel_sensitivity.mouse', reason: 'Awaiting the Mixer screen (spike §2.5).' },
 	{ id: 'wheel_sensitivity.trackpad', reason: 'Awaiting the Mixer screen (spike §2.5).' },
+	{
+		id: 'wheel_sensitivity.library_mouse',
+		reason: 'Library list scroll distance; Settings sliders until Library customise supports numeric rows (LIBM-12633).'
+	},
+	{
+		id: 'wheel_sensitivity.library_trackpad',
+		reason: 'Library list scroll distance; Settings sliders until Library customise supports numeric rows (LIBM-12633).'
+	},
 	{ id: 'drag_sensitivity.base', reason: 'Awaiting the Mixer screen (spike §2.5).' },
 	{ id: 'drag_sensitivity.falloff_px', reason: 'Awaiting the Mixer screen (spike §2.5).' },
 	{ id: 'feature_icon_single_click', reason: 'Awaiting the Layout screen (spike §2.7).' },

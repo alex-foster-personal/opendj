@@ -43,8 +43,10 @@
 		runPairTracks,
 		runReanalyze,
 		runRevealTracks,
+		runPlaylistShuffle,
 		runSetRating,
-		runSetTracklistHidden
+		runSetTracklistHidden,
+		type PlaylistShuffleDeps
 	} from './track-context-menu';
 	import { runPerformanceCommandFromUi } from '$lib/rb/performance-ipc.svelte';
 	import type { TrackEditModalKind } from './track-edit-menu';
@@ -71,7 +73,9 @@
 		readOnly = false,
 		onshowinplaylists,
 		onrelocate,
-		oneditcomment = undefined
+		oneditcomment = undefined,
+		onplaylistshuffle = undefined,
+		shuffleDeps = null
 	}: {
 		selectedIds: string[];
 		selectedOrders: number[];
@@ -91,6 +95,9 @@
 		onrelocate: (row: BrowserRow, x: number, y: number) => void;
 		/** LIBUX-56: open the row's Comment cell editor. */
 		oneditcomment?: ((row: BrowserRow) => void) | undefined;
+		/** Issue #11325: Shuffle playlist from the # column header menu. */
+		onplaylistshuffle?: (() => void) | undefined;
+		shuffleDeps?: PlaylistShuffleDeps | null;
 	} = $props();
 
 	onMount(ensureTagsLoaded);
@@ -129,11 +136,22 @@
 
 	/** LIBUX-54: the header's column chooser, one of the table's right-click menus. */
 	let chooserAt = $state<{ x: number; y: number; prefs: ColumnChooserPrefs } | null>(null);
+	let orderHeaderAt = $state<{ x: number; y: number } | null>(null);
 
 	export function openColumnChooser(event: MouseEvent, prefs: ColumnChooserPrefs): void {
 		event.preventDefault();
 		menu = null;
+		orderHeaderAt = null;
 		chooserAt = { x: event.clientX, y: event.clientY, prefs };
+	}
+
+	/** Right-click the # column header (pin 3b217ec7698c, issue #11325). */
+	export function openOrderHeaderMenu(event: MouseEvent): void {
+		event.preventDefault();
+		event.stopPropagation();
+		menu = null;
+		chooserAt = null;
+		orderHeaderAt = { x: event.clientX, y: event.clientY };
 	}
 
 	/** `lead` items sit above the row's menu: a tempo or key cell adds its Edit there, so a
@@ -247,6 +265,30 @@
 {/if}
 {#if chooserAt !== null}
 	<ColumnChooserMenu x={chooserAt.x} y={chooserAt.y} prefs={chooserAt.prefs} onclose={() => (chooserAt = null)} />
+{/if}
+{#if orderHeaderAt !== null}
+	<ContextMenu
+		items={[
+			{
+				id: 'playlist-shuffle',
+				label: 'Shuffle',
+				title:
+					shuffleDeps === null || shuffleDeps.allowed
+						? 'Reshuffle playlist membership; recently played tracks in Open DJ are weighted lower'
+						: (shuffleDeps?.blockedReason ?? 'Shuffle is unavailable'),
+				run:
+					shuffleDeps !== null && shuffleDeps.allowed
+						? () => {
+								if (onplaylistshuffle) onplaylistshuffle();
+								else void runPlaylistShuffle(shuffleDeps);
+							}
+						: undefined
+			}
+		]}
+		x={orderHeaderAt.x}
+		y={orderHeaderAt.y}
+		onclose={() => (orderHeaderAt = null)}
+	/>
 {/if}
 {#if menu !== null && menuRegistry() !== null}
 	<ContextMenu

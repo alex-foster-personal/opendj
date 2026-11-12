@@ -42,5 +42,6 @@ export function loadSettingsOverlay(
 }
 
 export function prefetchSettingsOverlay(reportLoadFailure: (error: unknown) => void): void {
+	// Warm the overlay chunk after boot; panel-offset loads on first open via overlay.svelte.ts.
 	bootScheduler.defer('settings-overlay:prefetch', () => void loadSettingsOverlay(reportLoadFailure));
 }

@@ -15,26 +15,65 @@ import { viteUrlSuffixPlugin } from './vite-url-suffix-plugin.mjs';
 const FRONTEND_ROOT = fileURLToPath(new URL('../..', import.meta.url));
 const LIB_ROOT = fileURLToPath(new URL('../../src/lib', import.meta.url));
 
+/** Map a resolved absolute lib path back to the $lib/ import key used in dependency stubs. */
+function libImportKey(path) {
+	if (path.startsWith('$lib/')) return path;
+	if (path.startsWith(LIB_ROOT)) {
+		const tail = path.slice(LIB_ROOT.length).replace(/^\//, '');
+		return tail ? `$lib/${tail}` : null;
+	}
+	return null;
+}
+
 /** @type {Map<string, Promise<Record<string, unknown>>>} */
 const _bundles = new Map();
+
+/** Stub recorder picker load for nested esbuild passes inside client bundles. */
+function recorderPickerTestStubsPlugin() {
+	return {
+		name: 'recorder-picker-test-stubs',
+		setup(b) {
+			b.onResolve({ filter: /record-input-picker-loader/ }, () => ({
+				path: 'record-input-picker-loader-stub',
+				namespace: 'recorder-picker-test-stub'
+			}));
+			b.onResolve({ filter: /RecordInputPicker\.svelte$/ }, (args) => ({
+				path: args.path,
+				namespace: 'recorder-picker-test-stub'
+			}));
+			b.onLoad({ filter: /.*/, namespace: 'recorder-picker-test-stub' }, (args) => {
+				const contents = args.path.includes('loader')
+					? 'export async function loadRecordInputPicker() { return null; }'
+					: 'export default function RecordInputPicker() { return null; }';
+				return { contents, loader: 'js' };
+			});
+		}
+	};
+}
 
 function svelteClientBundlePlugin() {
 	return {
 		name: 'mount-svelte-client',
 		setup(b) {
 			b.onResolve({ filter: /\.svelte$/ }, (args) => {
-				const base = args.path.startsWith('$lib/')
-					? join(LIB_ROOT, args.path.slice('$lib/'.length))
-					: resolve(args.resolveDir, args.path);
+				const base = args.path.startsWith('$fixtures/')
+					? join(FRONTEND_ROOT, 'tests/unit/fixtures', args.path.slice('$fixtures/'.length))
+					: args.path.startsWith('$lib/')
+						? join(LIB_ROOT, args.path.slice('$lib/'.length))
+						: resolve(args.resolveDir, args.path);
 				if (existsSync(`${base}.ts`) && !existsSync(base)) {
 					return { path: `${base}.ts`, namespace: 'svelte-rune-client' };
 				}
 				return undefined;
 			});
-			b.onResolve({ filter: /\.svelte\.ts$/ }, (args) => ({
-				path: args.path,
-				namespace: 'svelte-rune-client'
-			}));
+			b.onResolve({ filter: /\.svelte\.ts$/ }, (args) => {
+				const path = args.path.startsWith('$fixtures/')
+					? join(FRONTEND_ROOT, 'tests/unit/fixtures', args.path.slice('$fixtures/'.length))
+					: args.path.startsWith('$lib/')
+						? join(LIB_ROOT, args.path.slice('$lib/'.length))
+						: args.path;
+				return { path, namespace: 'svelte-rune-client' };
+			});
 			b.onLoad({ filter: /\.ts$/, namespace: 'svelte-rune-client' }, async (args) => {
 				const source = readFileSync(args.path, 'utf8');
 				const typed = await build({
@@ -51,7 +90,7 @@ function svelteClientBundlePlugin() {
 					format: 'esm',
 					logLevel: 'silent',
 					platform: 'browser',
-					plugins: [viteUrlSuffixPlugin],
+					plugins: [viteUrlSuffixPlugin, recorderPickerTestStubsPlugin()],
 					target: 'es2022',
 					write: false
 				});
@@ -173,14 +212,28 @@ throw new Error('unexpected USB export'); }`
 		],
 		['$lib/sets/recording-flag', 'export function setRecordingEnabled() { return true; }'],
 		[
+			'$lib/sets/record-input-picker-loader.ts',
+			`export async function loadRecordInputPicker() { return null; }
+export type RecordInputPickerComponent = null;`
+		],
+		[
 			'$lib/sets/master-mix-capture',
 			`export class MasterMixCancelled extends Error {}
 export function ensureMasterMixCapture() { throw new Error('unexpected master capture'); }
 export function stopMasterMixCapture() { throw new Error('unexpected master stop'); }`
 		],
 		['./IconRail.svelte', '<div></div>'],
-		['./RecordInputPicker.svelte', '<div></div>']
+		['./RecordInputPicker.svelte', '<div></div>'],
+		['$lib/components/rb/browser/RecordInputPicker.svelte', '<div></div>']
 	]);
+	const dependencyContents = (path) => {
+		const keys = [path, libImportKey(path)].filter(Boolean);
+		for (const key of keys) {
+			if (dependencies.has(key)) return dependencies.get(key);
+		}
+		if (path.endsWith('RecordInputPicker.svelte')) return '<div></div>';
+		return undefined;
+	};
 	const result = await build({
 		stdin: {
 			contents: `export { mount, unmount, flushSync } from 'svelte';
@@ -201,20 +254,25 @@ export { toastCalls } from '$lib/stores.svelte';`,
 		platform: 'browser',
 		conditions: ['browser'],
 		plugins: [
+			recorderPickerTestStubsPlugin(),
 			{
 				name: 'recorder-unrelated-dependencies',
 				setup(b) {
-					b.onResolve({ filter: /.*/ }, ({ path }) =>
-						dependencies.has(path) ? { path, namespace: 'recorder-dependency' } : undefined
-					);
-					b.onLoad({ filter: /.*/, namespace: 'recorder-dependency' }, ({ path }) => ({
-						contents:
-							path.endsWith('.svelte') && path.startsWith('./')
-								? compile(dependencies.get(path), { generate: 'client' }).js.code
-								: dependencies.get(path),
-						loader: 'js',
-						resolveDir: FRONTEND_ROOT
-					}));
+					b.onResolve({ filter: /.*/ }, ({ path }) => {
+						const contents = dependencyContents(path);
+						return contents !== undefined ? { path, namespace: 'recorder-dependency' } : undefined;
+					});
+					b.onLoad({ filter: /.*/, namespace: 'recorder-dependency' }, ({ path }) => {
+						const contents = dependencyContents(path);
+						return {
+							contents:
+								contents?.startsWith('<') && path.endsWith('.svelte')
+									? compile(contents, { generate: 'client' }).js.code
+									: contents,
+							loader: 'js',
+							resolveDir: FRONTEND_ROOT
+						};
+					});
 				}
 			},
 			svelteClientBundlePlugin()

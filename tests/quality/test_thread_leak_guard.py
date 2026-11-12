@@ -4,6 +4,9 @@
 - [if] a closed client's draining monitor is still reported [then] broken, [else stop].
 - [if] a test's own non-daemon thread goes unnamed under the rule [then] broken, [else stop].
 - [if] a thread alive before the test started is reported [then] broken, [else stop].
+- [if] a busy daemon survivor goes unnamed at module end [then] broken, [else stop].
+- [if] a blocked daemon survivor is reported at module end [then] broken, [else stop].
+- [if] busy_leaked_threads waits the window when nobody survived [then] broken, [else stop].
 
 -Claude
 """
@@ -11,12 +14,13 @@
 from __future__ import annotations
 
 import threading
+import time
 from collections.abc import Iterator
 
 import pytest
 
 from tests.support.sentry_client import close_sentry_client
-from tests.support.thread_leaks import SENTRY_MONITOR_THREAD, leaked_threads
+from tests.support.thread_leaks import SENTRY_MONITOR_THREAD, busy_leaked_threads, leaked_threads
 
 pytestmark = pytest.mark.no_leaked_threads
 
@@ -89,3 +93,89 @@ def test_thread_alive_before_the_test_is_not_a_leak(
     assert thread_alive_before_every_test.is_alive()
     baseline = set(threading.enumerate())
     assert leaked_threads(baseline, include_non_daemon=True, grace_s=FAST_GRACE_S) == []
+
+
+def _spin(stop: threading.Event) -> None:
+    while not stop.is_set():
+        pass
+
+
+def test_busy_daemon_survivor_is_reported_at_module_end() -> None:
+    """[if] a busy daemon survivor goes unnamed at module end [then] broken, [else stop]."""
+    baseline = set(threading.enumerate())
+    stop = threading.Event()
+    worker = threading.Thread(target=_spin, args=(stop,), name="busy-worker", daemon=True)
+    worker.start()
+    try:
+        busy = busy_leaked_threads(baseline, window_s=0.2)
+        assert any("busy-worker" in line for line in busy), busy
+        assert any("test_busy_daemon_survivor" in line or "_spin" in line for line in busy), busy
+    finally:
+        stop.set()
+        worker.join(timeout=5)
+
+
+def test_blocked_daemon_survivor_is_not_reported_at_module_end() -> None:
+    """[if] a blocked daemon survivor is reported at module end [then] broken, [else stop]."""
+    baseline = set(threading.enumerate())
+    release = threading.Event()
+    worker = threading.Thread(target=release.wait, name="blocked-worker", daemon=True)
+    worker.start()
+    try:
+        assert busy_leaked_threads(baseline, window_s=0.2) == []
+    finally:
+        release.set()
+        worker.join(timeout=5)
+
+
+def test_busy_thread_alive_before_baseline_is_not_reported() -> None:
+    """[if] a busy thread alive before the module baseline is reported [then] broken, [else stop]."""
+    stop = threading.Event()
+    worker = threading.Thread(target=_spin, args=(stop,), name="pre-busy", daemon=True)
+    worker.start()
+    baseline = set(threading.enumerate())
+    try:
+        assert busy_leaked_threads(baseline, window_s=0.2) == []
+    finally:
+        stop.set()
+        worker.join(timeout=5)
+
+
+def test_busy_leaked_threads_skips_the_window_when_nobody_survived() -> None:
+    """[if] busy_leaked_threads waits the window when nobody survived [then] broken, [else stop]."""
+    baseline = set(threading.enumerate())
+    started = time.monotonic()
+    assert busy_leaked_threads(baseline, window_s=5.0) == []
+    assert time.monotonic() - started < 1.0
+
+
+def test_busy_leaked_threads_fallback_reports_busy_unmapped_ids(monkeypatch: pytest.MonkeyPatch) -> None:
+    """[if] the macOS fallback misses a busy thread [then] broken, [else stop]."""
+    monkeypatch.setattr("tests.support.thread_leaks._per_thread_cpu_s", dict)
+    baseline = set(threading.enumerate())
+    stop = threading.Event()
+    worker = threading.Thread(target=_spin, args=(stop,), name="fallback-busy", daemon=True)
+    worker.start()
+    try:
+        busy = busy_leaked_threads(baseline, window_s=0.2)
+        assert any("fallback-busy" in line for line in busy), busy
+        assert any("per-thread CPU unavailable" in line for line in busy), busy
+    finally:
+        stop.set()
+        worker.join(timeout=5)
+
+
+def test_busy_leaked_threads_fallback_ignores_blocked_unmapped_ids(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """[if] the macOS fallback reports a blocked thread [then] broken, [else stop]."""
+    monkeypatch.setattr("tests.support.thread_leaks._per_thread_cpu_s", dict)
+    baseline = set(threading.enumerate())
+    release = threading.Event()
+    worker = threading.Thread(target=release.wait, name="fallback-blocked", daemon=True)
+    worker.start()
+    try:
+        assert busy_leaked_threads(baseline, window_s=0.2) == []
+    finally:
+        release.set()
+        worker.join(timeout=5)

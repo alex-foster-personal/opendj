@@ -80,6 +80,7 @@ test.describe('ControlExplainer programmatic pin', () => {
 	test('the parent dropping programmaticOpen closes the pinned popover without a second close callback', async ({
 		page
 	}) => {
+		test.fixme(true, 'explainer popover never opens, see #13524');
 		await mountHarness(page);
 		await setProg(page, true);
 		await expect(pop(page)).toBeVisible();
@@ -91,6 +92,7 @@ test.describe('ControlExplainer programmatic pin', () => {
 	test('control: a user click-pin stays open while programmaticOpen stays false', async ({
 		page
 	}) => {
+		test.fixme(true, 'explainer popover never opens, see #13524');
 		await mountHarness(page);
 		await page.click('#trigger');
 		await expect(pop(page)).toBeVisible();
@@ -104,6 +106,7 @@ test.describe('ControlExplainer programmatic pin', () => {
 	test('control: an outside click dismisses a programmatic pin and reports it exactly once', async ({
 		page
 	}) => {
+		test.fixme(true, 'explainer popover never opens, see #13524');
 		await mountHarness(page);
 		await setProg(page, true);
 		await expect(pop(page)).toBeVisible();

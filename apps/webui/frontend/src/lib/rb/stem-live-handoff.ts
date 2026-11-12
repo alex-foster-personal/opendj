@@ -40,6 +40,7 @@ import {
 import type { _ClockSegment } from '$lib/player/transport/schedule-math';
 import type { LoopState } from '$lib/rb/deck-state-types';
 import type { StretchScheduleChange } from '$lib/rb/stretch-adapter';
+import { connectStemFxSend } from '$lib/rb/stem-graph';
 import { scheduleStemEngageCrossfade, type CrossfadeParam } from '$lib/rb/stem-neutral-bypass';
 
 /** The transport segment the deck will be in at the handoff instant. */
@@ -231,7 +232,7 @@ export interface StemLandingProcessor {
  * runtime object; nothing here is copied, so every read is live. */
 export interface StemLandingRuntime {
 	readonly processor: StemLandingProcessor | null;
-	readonly nodes: { analyser: AudioNode } | null;
+	readonly nodes: { analyser: AudioNode; stemFxSend?: GainNode } | null;
 	readonly latencySec: number;
 	readonly durationSec: number;
 	readonly controlActive: boolean;
@@ -350,10 +351,12 @@ export function stemLandingDeps(
 			scheduleStemEngageCrossfade(fadeIn.gain, fadeOut?.gain ?? null, when, port.crossfadeSec);
 			port.incoming.connect(fadeIn as unknown as AudioNode);
 			fadeIn.connect(rt.nodes.analyser);
+			connectStemFxSend(port.incoming, rt.nodes);
 			if (mix !== null && fadeOut !== null) {
 				mix.disconnect();
 				mix.connect(fadeOut as unknown as AudioNode);
 				fadeOut.connect(rt.nodes.analyser);
+				connectStemFxSend(mix, rt.nodes);
 				outgoingFade = fadeOut;
 			}
 		},

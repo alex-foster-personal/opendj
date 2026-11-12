@@ -4,7 +4,7 @@
 import { RbApiError } from './api-rb-error';
 import type { SmartlistTrackRow } from './api-smartlists';
 import type { AutolistSelection } from '$lib/smartlists/autolist-rule';
-import { ApiError, api, unwrap } from '../api/client';
+import { ApiError, api, unwrap } from '../api/rb-http';
 
 export interface AutolistGroup {
 	id: string;

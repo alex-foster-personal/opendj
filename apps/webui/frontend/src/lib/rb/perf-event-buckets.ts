@@ -30,6 +30,8 @@ export interface PerfEvent {
 	severity?: 'info' | 'warn' | 'error';
 	/** Present for timing rows (ms per stage). */
 	stages?: Record<string, number>;
+	/** Non-ms numeric facts (bytes, flags) beside `stages`. */
+	facts?: Record<string, number>;
 	/**
 	 * Non-numeric facts about the row, e.g. which stem layout a deck load
 	 * actually played. Optional and additive: rows written before this field
@@ -118,6 +120,8 @@ const EQ_APPLY_BUDGET = 16;
  * tail of one gesture, same size as eq-apply.
  */
 const MIXER_APPLY_BUDGET = 16;
+/** RBPERF (#11143): discrete seek gestures, low volume. */
+const SEEK_PRESENTED_BUDGET = 16;
 
 type PerfBucket =
 	| 'deck-load'
@@ -125,6 +129,7 @@ type PerfBucket =
 	| 'transport-schedule-press'
 	| 'eq-apply'
 	| 'mixer-apply'
+	| 'seek-presented'
 	| 'deck-state'
 	| 'audio-health'
 	| 'other';
@@ -135,6 +140,7 @@ const BUDGETS: Record<PerfBucket, number> = {
 	'transport-schedule-press': TRANSPORT_PRESS_BUDGET,
 	'eq-apply': EQ_APPLY_BUDGET,
 	'mixer-apply': MIXER_APPLY_BUDGET,
+	'seek-presented': SEEK_PRESENTED_BUDGET,
 	'deck-state': DECK_STATE_BUDGET,
 	'audio-health': AUDIO_HEALTH_BUDGET,
 	other: OTHER_BUDGET
@@ -219,6 +225,7 @@ function _bucketOf(event: PerfEvent): PerfBucket {
 	) {
 		return 'mixer-apply';
 	}
+	if (kind === 'seek-presented' || kind.startsWith('seek-presented-')) return 'seek-presented';
 	if (kind.startsWith('deck-state') || kind === 'deck-unload') return 'deck-state';
 	return 'other';
 }
@@ -238,6 +245,7 @@ export function withinBudgets(events: readonly PerfEvent[]): PerfEvent[] {
 		'transport-schedule-press': 0,
 		'eq-apply': 0,
 		'mixer-apply': 0,
+		'seek-presented': 0,
 		'deck-state': 0,
 		'audio-health': 0,
 		other: 0

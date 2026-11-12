@@ -121,6 +121,29 @@ html[data-skin='light'] {
   box-sizing: border-box;
 }
 
+/* A11Y-11811: one reduced-motion policy (WCAG 2.3.3). Shorten durations to 0.01ms (one iteration),
+ * not animation:none, so fill-mode end states survive and end events still fire. `.motion-essential`
+ * opts progress bars, meters and the playhead out. Mirrored under the OS media query and
+ * html[data-reduce-motion] (Appearance toggle or agent PUT). */
+@media (prefers-reduced-motion: reduce) {
+  *:not(.motion-essential),
+  *:not(.motion-essential)::before,
+  *:not(.motion-essential)::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+html[data-reduce-motion] *:not(.motion-essential),
+html[data-reduce-motion] *:not(.motion-essential)::before,
+html[data-reduce-motion] *:not(.motion-essential)::after {
+  animation-duration: 0.01ms !important;
+  animation-iteration-count: 1 !important;
+  transition-duration: 0.01ms !important;
+  scroll-behavior: auto !important;
+}
+
 /* A11Y-11403: one keyboard-focus ring app-wide (WCAG 2.4.7 / 2.4.13, VS Code focusBorder look).
  * :focus-visible, not :focus, so a mouse click on a button, knob or fader shows no ring. */
 :focus-visible {

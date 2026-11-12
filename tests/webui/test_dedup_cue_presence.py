@@ -13,6 +13,7 @@ from pathlib import Path
 import pytest
 
 from apps.adapters.rekordbox import config as rb_config
+from apps.shared import platform_paths
 from apps.shared.state import db as state_db
 from apps.shared.state.events import FakeEventBus
 from apps.shared.state.writer import StateWriter
@@ -200,7 +201,12 @@ def seeded_backend() -> InMemoryBackend:
 
 @pytest.fixture
 def dedup_db(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
-    db_path = tmp_path / "phase7.sqlite"
+    # dedup_db_path() reads MDT_DATA_DIR on every call (PR #10626), so the route only sees this
+    # throwaway DB when the data dir points here.
+    data_dir = tmp_path / "data"
+    db_path = data_dir / "dedup" / "phase7.sqlite"
+    db_path.parent.mkdir(parents=True, exist_ok=True)
+    monkeypatch.setenv(platform_paths.DATA_DIR_ENV, str(data_dir))
     decisions_path = tmp_path / "review-decisions.json"
     monkeypatch.setattr(dedup_review.dedup_paths, "DEDUP_FALLBACK_DB", db_path)
     monkeypatch.setattr(dedup_review, "DECISIONS_FILE", decisions_path)

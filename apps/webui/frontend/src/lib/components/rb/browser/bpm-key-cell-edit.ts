@@ -1,5 +1,7 @@
 /**
  * Tempo / key cell editor (pin a720a02ecf92).
+ * The key the cell commits is re-canonicalized server-side (canonical_key_text,
+ * KEY-10229) and the server's answer is what the cell keeps.
  * Tap tempo is the mean gap between taps. A gap over TAP_GAP_RESET_MS, or a
  * clock that jumps backwards, starts a new run. One tap is not a tempo.
  */

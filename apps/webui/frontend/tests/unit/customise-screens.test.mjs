@@ -226,7 +226,8 @@ test('registry: screen ids (waveform prepends when #9439 lands)', () => {
 	assert.deepEqual(customiseScreens.CUSTOMISE_SCREENS.map((s) => s.id), [
 		'decks',
 		'library',
-		'layout'
+		'layout',
+		'mixer'
 	]);
 });
 
@@ -411,12 +412,12 @@ test('library: every screen row maps to SETTINGS_CATALOG and allowed keys', () =
 	}
 });
 
-test('library group catalog coverage (18 entries; two non-boolean/enum omitted)', () => {
+test('library group catalog coverage (22 entries; two non-boolean/enum omitted)', () => {
 	const screen = customiseScreens.customiseScreen('library');
 	const rowIds = new Set(allScreenRowIds(screen));
 
 	const lib = catalog.SETTINGS_CATALOG.filter((e) => e.group === 'library');
-	assert.equal(lib.length, 18);
+	assert.equal(lib.length, 22);
 
 	for (const e of lib) {
 		if (e.control.kind === 'boolean' || e.control.kind === 'enum') {
@@ -445,7 +446,7 @@ test('library: group layout and unique row ids', () => {
 	const screen = customiseScreens.customiseScreen('library');
 	assert.deepEqual(
 		screen.groups.map((g) => g.id),
-		['table', 'columns', 'preview', 'filters', 'sidebar']
+		['table', 'columns', 'preview', 'filters', 'sidebar', 'usb']
 	);
 	const table = screen.groups.find((g) => g.id === 'table');
 	assert.ok(table);
@@ -456,7 +457,7 @@ test('library: group layout and unique row ids', () => {
 
 	const ids = allScreenRowIds(screen);
 	assert.equal(new Set(ids).size, ids.length);
-	assert.equal(ids.length, 17);
+	assert.equal(ids.length, 21);
 });
 
 test('library_density is compact|cosy enum only; no row-px settings in catalog', () => {
@@ -660,6 +661,60 @@ test('layout: with look variants in a stub catalog the Look group appears', () =
 		def.groups.find((g) => g.id === 'look').rows.map((r) => r.id),
 		[...customiseScreens.LAYOUT_LOOK_VARIANT_IDS]
 	);
+});
+
+// requirement: CUSTSCR-10267 (#9442): the Mixer screen.
+test('mixer: every row maps to SETTINGS_CATALOG and allowed keys', () => {
+	const allowed = allowedSettingKeys();
+	const ids = customiseScreens.customiseSettingIds(customiseScreens.customiseScreenDef('mixer'));
+	assert.ok(ids.includes('mixer_stems') && ids.includes('crossfade_curve'), `mixer rows: ${ids}`);
+	for (const id of ids) {
+		assert.ok(
+			catalog.SETTINGS_CATALOG.find((e) => e.id === id),
+			`${id} missing from SETTINGS_CATALOG`
+		);
+		assert.ok(allowed.has(id), `${id} missing from ALLOWED_SETTING_KEYS`);
+		customiseScreens.resolveCustomiseSetting(catalog.SETTINGS_CATALOG, 'mixer', id);
+	}
+	const hasPlacement = catalog.SETTINGS_CATALOG.some((e) => e.id === 'mixer_placement');
+	assert.equal(
+		ids.includes('mixer_placement'),
+		hasPlacement,
+		'mixer_placement is listed exactly when the catalog has it'
+	);
+});
+
+test('mixer: with mixer_placement absent from a stub catalog the screen still resolves', () => {
+	const stub = catalog.SETTINGS_CATALOG.filter((e) => e.id !== 'mixer_placement');
+	const def = customiseScreens.mixerScreenDef(stub);
+	assert.deepEqual(customiseScreens.customiseSettingIds(def), ['mixer_stems', 'crossfade_curve']);
+	const [resolved] = customiseScreens.defineCustomiseScreens(stub, [def]);
+	assert.equal(resolved.id, 'mixer');
+	assert.deepEqual(allScreenRowIds(resolved), ['mixer_stems', 'crossfade_curve']);
+});
+
+test('mixer: with mixer_placement in a stub catalog it is listed after the stem dials', () => {
+	const stems = catalog.SETTINGS_CATALOG.find((e) => e.id === 'mixer_stems');
+	const stub = [
+		...catalog.SETTINGS_CATALOG.filter((e) => e.id !== 'mixer_placement'),
+		{ ...stems, id: 'mixer_placement', label: 'Mixer placement' }
+	];
+	const def = customiseScreens.mixerScreenDef(stub);
+	assert.deepEqual(customiseScreens.customiseSettingIds(def), [
+		'mixer_stems',
+		'mixer_placement',
+		'crossfade_curve'
+	]);
+});
+
+test('mixer: CustomiseScreen SSR renders the mixer rows', async () => {
+	const { render } = await import('svelte/server');
+	const html = render(ssr.CustomiseScreen, {
+		props: { def: customiseScreens.customiseScreenDef('mixer') }
+	}).body;
+	assert.match(html, /data-customise-screen="mixer"/);
+	for (const id of ['mixer_stems', 'crossfade_curve'])
+		assert.match(html, new RegExp(`data-customise-row="${id}"`));
 });
 
 test('CUSTSCR-10206 every implemented catalog id is in exactly one screen or SETTINGS_ONLY', () => {

@@ -65,7 +65,7 @@ test('WaveRow evaluates the blink per painted frame and repaints on a phase chan
 	);
 	assert.match(
 		src,
-		/const visualInputs = \[[\s\S]*?ghost\.blinkPhase[\s\S]*?\] as const;/,
+		/writeVisualInputs\(\s*_paintScheduleState,[\s\S]*?ghost\.blinkPhase[\s\S]*?\);/,
 		'the blink phase must be a repaint input so a still waveform repaints on the toggle'
 	);
 });

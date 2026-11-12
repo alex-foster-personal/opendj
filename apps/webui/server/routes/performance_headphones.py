@@ -24,6 +24,9 @@ HEADPHONE_IPC_ROUTES: dict[str, tuple[str, str]] = {
     "headphone_mix": ("POST", "/api/v1/performance/headphones/mix"),
     "headphone_level": ("POST", "/api/v1/performance/headphones/level"),
     "headphone_booth_level": ("POST", "/api/v1/performance/headphones/booth-level"),
+    "booth_level": ("POST", "/api/v1/performance/headphones/booth/level"),
+    "booth_select": ("POST", "/api/v1/performance/headphones/booth/outputs/select"),
+    "booth_signal_mode": ("POST", "/api/v1/performance/headphones/booth/signal-mode"),
     "channel_cue": ("POST", "/api/v1/performance/headphones/channel-cue"),
     "output_mode": ("POST", "/api/v1/performance/headphones/output-mode"),
     "head_delay_ms": ("POST", "/api/v1/performance/headphones/head-delay"),
@@ -44,6 +47,7 @@ HEADPHONE_IPC_ROUTES: dict[str, tuple[str, str]] = {
 }
 
 HEADPHONE_ALIGNMENT_MODES = ("headphones_only", "delay_all", "hybrid")
+BOOTH_SIGNAL_MODES = ("off", "follows_master", "independent")
 # keep in sync with apps/webui/frontend/src/lib/player/constants.ts HEADPHONE_OUTPUT_MODES
 # and apps/opendj_cli/catalog.py OUTPUT_MODE_VALUES (parity test in test_performance_headphones).
 HEADPHONE_OUTPUT_MODES = ("practice", "two_outputs", "split_cable")
@@ -120,17 +124,31 @@ class IoDeviceAccessOut(BaseModel):
     notices: list[str]
 
 
+class BoothRouteHealthOut(BaseModel):
+    state: str
+    selected: bool
+
+
+class BoothStateOut(BaseModel):
+    """Serializable booth monitor read model (#11257)."""
+
+    level: float
+    selected_output_device_id: str | None
+    signal_mode: str
+    route: BoothRouteHealthOut
+    reporting_client_id: str | None = None
+    report_age_ms: float | None = None
+
+
 class HeadphoneStateOut(BaseModel):
     mix: float
     level: float
-    booth_level: float = 0.5
     head_delay_ms: float
     alignment_mode: str
     master_delay_ms: float
     calibration: HeadphoneCalibrationOut
     selected_output_device_id: str | None
     selected_master_output_device_id: str | None
-    selected_booth_output_device_id: str | None = None
     selected_input_device_id: str | None
     output_mode: str
     # CUEOUT-26: "same_device" while split cue runs because MAIN and CUE are one
@@ -160,6 +178,37 @@ class HeadphoneStateOut(BaseModel):
 def _require_page(request: Request) -> None:
     if not page_is_open(request):
         raise HTTPException(status_code=503, detail=_PAGE_REQUIRED)
+
+
+def _booth_from_mirror(request: Request) -> dict[str, Any]:
+    mirror = getattr(request.app.state, "ui_mirror", None)
+    if not isinstance(mirror, dict):
+        raise HTTPException(status_code=503, detail=_PAGE_REQUIRED)
+    mixer = mirror.get("mixer")
+    if not isinstance(mixer, dict):
+        raise HTTPException(status_code=503, detail=_PAGE_REQUIRED)
+    booth = mixer.get("booth")
+    if not isinstance(booth, dict):
+        raise HTTPException(status_code=503, detail=_PAGE_REQUIRED)
+    return booth
+
+
+def _booth_state_out(request: Request) -> BoothStateOut:
+    return BoothStateOut.model_validate(deepcopy(_booth_from_mirror(request)))
+
+
+def _best_booth_state_out(request: Request) -> BoothStateOut:
+    reports = headphone_reports(request.app)
+    report = reports.best()
+    if report is None or not isinstance(report.booth, dict) or not report.booth:
+        return _booth_state_out(request)
+    return BoothStateOut.model_validate(
+        {
+            **deepcopy(report.booth),
+            "reporting_client_id": report.client_id,
+            "report_age_ms": round(reports.age_ms(report), 1),
+        }
+    )
 
 
 def _headphones_from_mirror(request: Request) -> dict[str, Any]:
@@ -209,9 +258,13 @@ def _merge_mirror_delta(request: Request, result: dict[str, Any]) -> None:
     # The delta lands on the same client's report the mirror document came
     # from, so a read straight after a command sees it (CUEOUT-18).
     mixer = changed.get("mixer")
-    headphones = mixer.get("headphones") if isinstance(mixer, dict) else None
-    if isinstance(headphones, dict):
-        headphone_reports(request.app).merge(client_id_of(mirror), headphones)
+    if isinstance(mixer, dict):
+        headphones = mixer.get("headphones")
+        if isinstance(headphones, dict):
+            headphone_reports(request.app).merge(client_id_of(mirror), headphones)
+        booth = mixer.get("booth")
+        if isinstance(booth, dict):
+            headphone_reports(request.app).merge_booth(client_id_of(mirror), booth)
 
 
 def _validate_unit(value: object) -> float:
@@ -313,10 +366,35 @@ def _validate_stable_id(stable_id: object) -> str:
     return stable_id
 
 
+def _validate_booth_signal_mode(mode: object) -> str:
+    if mode not in BOOTH_SIGNAL_MODES:
+        raise HTTPException(
+            status_code=400,
+            detail=f"booth signal_mode must be off, follows_master, or independent; got {mode}",
+        )
+    return str(mode)
+
+
 def _validate_device_id(device_id: object) -> str:
     if not isinstance(device_id, str) or device_id.strip() == "":
         raise HTTPException(status_code=400, detail="device_id must be a non-empty string")
     return device_id
+
+
+async def _submit_booth_command(request: Request, command: dict[str, Any]) -> BoothStateOut:
+    _require_page(request)
+    result = await submit_single_command(request, command)
+    steps = result.get("steps")
+    if isinstance(steps, list) and steps:
+        first = steps[0]
+        if isinstance(first, dict) and first.get("status") == "failed":
+            error = first.get("error")
+            raise HTTPException(
+                status_code=400,
+                detail=str(error) if error is not None else "command failed",
+            )
+    _merge_mirror_delta(request, result)
+    return _booth_state_out(request)
 
 
 async def _submit_headphone_command(request: Request, command: dict[str, Any]) -> HeadphoneStateOut:
@@ -333,6 +411,59 @@ async def _submit_headphone_command(request: Request, command: dict[str, Any]) -
             )
     _merge_mirror_delta(request, result)
     return _headphone_state_out(request)
+
+
+@router.get("/booth", response_model=BoothStateOut, tags=["performance-booth"])
+async def get_booth(request: Request) -> BoothStateOut:
+    """Return the live booth monitor state beside the headphone routes (#11257)."""
+    _require_page(request)
+    return _best_booth_state_out(request)
+
+
+@router.post(
+    "/booth/level",
+    response_model=BoothStateOut,
+    tags=["performance-booth"],
+    response_description="Booth state after setting BOOTH level",
+)
+async def post_booth_level_route(
+    request: Request,
+    body: Annotated[dict[str, Any], Body(..., title="BoothLevelBody")],
+) -> BoothStateOut:
+    value = _validate_unit(body.get("value"))
+    return await _submit_booth_command(request, {"type": "booth_level", "value": value})
+
+
+@router.post(
+    "/booth/outputs/select",
+    response_model=BoothStateOut,
+    tags=["performance-booth"],
+    response_description="Booth state after selecting or clearing the BOOTH sink",
+)
+async def post_booth_select_route(
+    request: Request,
+    body: Annotated[dict[str, Any], Body(..., title="BoothOutputBody")],
+) -> BoothStateOut:
+    raw = body.get("device_id")
+    if not isinstance(raw, str) or (raw != "" and raw.strip() == ""):
+        raise HTTPException(
+            status_code=400, detail="device_id must be empty or a non-blank string"
+        )
+    return await _submit_booth_command(request, {"type": "booth_select", "device_id": raw})
+
+
+@router.post(
+    "/booth/signal-mode",
+    response_model=BoothStateOut,
+    tags=["performance-booth"],
+    response_description="Booth state after setting off / follows_master / independent",
+)
+async def post_booth_signal_mode_route(
+    request: Request,
+    body: Annotated[dict[str, Any], Body(..., title="BoothSignalModeBody")],
+) -> BoothStateOut:
+    mode = _validate_booth_signal_mode(body.get("mode"))
+    return await _submit_booth_command(request, {"type": "booth_signal_mode", "mode": mode})
 
 
 @router.get("", response_model=HeadphoneStateOut)

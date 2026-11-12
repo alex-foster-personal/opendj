@@ -6,6 +6,7 @@
     opendj eq 2 low 0.2 --over 4beats
     opendj do "load 1 <stable-id>" then "play 1" and "play 2"
     opendj api GET /api/v1/smartlists
+    opendj [--json] [--lock PATH] rec remembered-input
     opendj [--json] [--lock PATH] density [compact|cosy]
     opendj api POST /api/v1/smartlists --json '{"name":"...","rule":{...}}'
     opendj --list-verbs [--json]
@@ -44,6 +45,7 @@ from apps.opendj_cli import (
     EXIT_TIMEOUT,
     EXIT_UNCONFIRMED,
     api_cli,
+    rec_cli,
     status_cli,
 )
 from apps.opendj_cli.animate import ANIMATE_COMMAND, parse_animate_tokens
@@ -86,6 +88,7 @@ from apps.opendj_cli.refusal import fail as _fail
 from apps.opendj_cli.verbs import (
     DURATION_ANCHORS,
     InvocationError,
+    fold_verb_flags,
     parse_duration,
     parse_invocation,
 )
@@ -101,9 +104,11 @@ _OPEN_USAGE = "usage: opendj open performance | opendj open browser"
 _SCRIPT_COMMAND = "do"
 _TRACK_COMMAND = "track"
 _HISTORY_COMMAND = "history"
+_NOW_PLAYING_COMMAND = "now-playing"
 _AUDIO_OUTPUT_HEALTH_COMMAND = "audio_output_health"
 _AUDIO_SWITCH_OUTPUT_COMMAND = "audio_switch_output"
 _AUDIO_RECONNECT_SPEAKER_COMMAND = "audio_reconnect_speaker"
+_REC_COMMAND = "rec"
 _FEEDBACK_COMMAND = "feedback"
 _CLIENT_ERRORS_COMMAND = "client_errors"
 _ENRICHMENT_COMMAND = "enrichment"
@@ -119,9 +124,11 @@ _PRACTICE_COMMAND = "practice"
 _PLAYLIST_COMMAND = "playlist"
 _OFFLOAD_COMMAND = "offload"
 _SET_COMMAND = "set"
+_REC_COMMAND = "rec"
 _REPLAY_COMMAND = "replay"
 _API_COMMAND = "api"
 _DENSITY_COMMAND = "density"
+_SEGMENT_DISPLAY_COMMAND = "set-segment-display"
 _INSTALL_COMMAND = "install-cli"
 _MCP_COMMAND = "mcp"
 _UPDATE_COMMAND = "update"
@@ -754,16 +761,20 @@ _STANDALONE_COMMANDS = frozenset(
         _PLAYLIST_COMMAND,
         _OFFLOAD_COMMAND,
         _SET_COMMAND,
+        _REC_COMMAND,
         _REPLAY_COMMAND,
         _AUDIO_OUTPUT_HEALTH_COMMAND,
         _AUDIO_SWITCH_OUTPUT_COMMAND,
         _AUDIO_RECONNECT_SPEAKER_COMMAND,
+        _REC_COMMAND,
     }
 )
 
 
 def _run_standalone(head: str, rest: list[str], args: argparse.Namespace) -> int:
     """Run a subcommand whose own module parses ``rest``; keeps ``main`` under its branch cap."""
+    if head == _REC_COMMAND:
+        return rec_cli.run(rest, as_json=args.json, lock=args.lock)
     if head in {_TRACK_COMMAND, _HISTORY_COMMAND}:
         from apps.opendj_cli import track_cli
 
@@ -785,6 +796,10 @@ def _run_standalone(head: str, rest: list[str], args: argparse.Namespace) -> int
         from apps.opendj_cli import enrichment_cli
 
         return enrichment_cli.run(rest, as_json=args.json, lock=args.lock)
+    if head == _PLAYLIST_COMMAND:
+        from apps.opendj_cli import playlist_cli
+
+        return playlist_cli.run(rest, as_json=args.json, lock=args.lock)
     if head == _OFFLOAD_COMMAND:
         from apps.opendj_cli import offload_cli
 
@@ -862,6 +877,8 @@ def _run_early(tokens: Sequence[str]) -> int | None:
     """Subcommands that parse their own flags, tried before the global parser; None = not one of them."""
     for runner in (
         _run_density,
+        _run_mytag,
+        _run_set_segment_display,
         _run_client_errors,
         _run_practice,
         _run_lighting,
@@ -889,6 +906,39 @@ def _run_density(tokens: Sequence[str]) -> int | None:
         return EXIT_CONFIRMED
     return api_cli.run_density(tokens[position + 1 :], as_json=args.json, lock=args.lock)
 
+
+def _run_mytag(tokens: Sequence[str]) -> int | None:
+    """Only tag mutations own their local flags; leave other track parsing unchanged."""
+    position = _command_position(tokens)
+    if position is None or tokens[position] != _TRACK_COMMAND:
+        return None
+    from apps.opendj_cli import track_cli
+
+    rest = list(tokens[position + 1:])
+    if not rest or rest[0] not in (track_cli.MYTAG_RENAME_VERB, track_cli.MYTAG_DELETE_VERB):
+        return None
+    global_tokens = list(tokens[:position])
+    args = _parser(as_json="--json" in global_tokens).parse_args([*global_tokens, _TRACK_COMMAND])
+    if args.list_verbs:
+        print_verbs(args.json)
+        return EXIT_CONFIRMED
+    return track_cli.run(rest, as_json=args.json, state_db=args.state_db, lock=args.lock)
+
+
+def _run_set_segment_display(tokens: Sequence[str]) -> int | None:
+    position = _command_position(tokens)
+    if position is None or tokens[position] != _SEGMENT_DISPLAY_COMMAND:
+        return None
+    global_tokens = list(tokens[:position])
+    args = _parser(as_json="--json" in global_tokens).parse_args(
+        [*global_tokens, _SEGMENT_DISPLAY_COMMAND]
+    )
+    if args.list_verbs:
+        print_verbs(args.json)
+        return EXIT_CONFIRMED
+    return api_cli.run_set_segment_display(
+        tokens[position + 1 :], as_json=args.json, lock=args.lock
+    )
 
 
 def _run_requests(tokens: Sequence[str]) -> int | None:
@@ -936,7 +986,7 @@ def _run_lighting(tokens: Sequence[str]) -> int | None:
     args = _parser(as_json="--json" in global_tokens).parse_args([*global_tokens, _LIGHTING_COMMAND])
     from apps.opendj_cli import lighting_cli
 
-    return lighting_cli.run(rest, as_json=args.json)
+    return lighting_cli.run(rest, as_json=args.json, lock=args.lock)
 
 
 def _run_midi(tokens: Sequence[str]) -> int | None:
@@ -1006,6 +1056,15 @@ def main(argv: Sequence[str] | None = None) -> int:
         from apps.opendj_cli import update_cli
 
         return update_cli.run(update_tokens, as_json=args.json, lock=args.lock)
+    now_playing_split = _split_subcommand(tokens, _NOW_PLAYING_COMMAND)
+    if now_playing_split is not None:
+        global_tokens, now_playing_tokens = now_playing_split
+        args = _parser(as_json="--json" in global_tokens).parse_args(
+            [*global_tokens, _NOW_PLAYING_COMMAND]
+        )
+        from apps.opendj_cli import now_playing_cli
+
+        return now_playing_cli.run(now_playing_tokens, as_json=args.json)
     dj_split = _split_subcommand(tokens, _DJ_COMMAND)
     if dj_split is not None:
         global_tokens, dj_tokens = dj_split
@@ -1025,6 +1084,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         from apps.opendj_cli import api_cli
 
         return api_cli.run(api_tokens, as_json=args.json, lock=args.lock)
+    tokens = fold_verb_flags(tokens)
     args = _parser(as_json="--json" in tokens).parse_args(tokens)
     if args.list_verbs:
         print_verbs(args.json)

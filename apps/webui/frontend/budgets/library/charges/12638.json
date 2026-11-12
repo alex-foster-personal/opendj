@@ -1,0 +1,9 @@
+{
+  "bytes": 1024,
+  "measured_main": 352960,
+  "measured_with_pr": 353100,
+  "sha": "989ca8e9d4",
+  "date": "Thu 12 Nov 2026",
+  "reason": "mixer_deck_pair_select MidiAction, mixer-selection, and MIDI map glue on shared library chunks.",
+  "payback": "none planned; types live in shared RB modules loaded on / and /performance."
+}

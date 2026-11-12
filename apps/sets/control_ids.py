@@ -1,5 +1,11 @@
 """Stable control-event ids shared by engine, page and replay (SETREC-03/05).
 
+The engine (`apps/audio-engine/src/engine.rs`) and page each log v2 rows for
+controls they own. Mixer ids captured on the engine path are listed in
+`ENGINE_MIXER_CONTROL_IDS`; the page must not emit v2 rows for those ids when
+the command reaches the engine (SETREC-05). Loop and cue ids are split by owner
+the same way (SETREC-07).
+
 Regenerate the page module with ``uv run python -m apps.sets.control_ids --write``.
 """
 
@@ -187,6 +193,75 @@ SCRIPTED_STEM_CONTROL_IDS: Final[tuple[str, ...]] = tuple(
     stem_mute_id(2, "vocal"),
     stem_gain_id(2, "instrumental"),
 )
+
+# ---------------------------------------------------------------------------
+# Loop and cue family (SETREC-07): engine-owned loop/quantize/beat ids; page-owned hot cues.
+# ---------------------------------------------------------------------------
+
+HOT_CUE_SLOTS: Final[tuple[str, ...]] = ("A", "B", "C", "D", "E", "F", "G", "H")
+
+
+def loop_id(deck: int) -> str:
+    if deck not in range(1, 5):
+        raise ValueError(f"loop id needs deck 1..4, got {deck!r}")
+    return f"deck.{deck}.loop"
+
+
+def beat_loop_id(deck: int) -> str:
+    if deck not in range(1, 5):
+        raise ValueError(f"beat_loop id needs deck 1..4, got {deck!r}")
+    return f"deck.{deck}.beat_loop"
+
+
+def beat_jump_id(deck: int) -> str:
+    if deck not in range(1, 5):
+        raise ValueError(f"beat_jump id needs deck 1..4, got {deck!r}")
+    return f"deck.{deck}.beat_jump"
+
+
+def quantize_id(deck: int) -> str:
+    if deck not in range(1, 5):
+        raise ValueError(f"quantize id needs deck 1..4, got {deck!r}")
+    return f"deck.{deck}.quantize"
+
+
+def hot_cue_id(deck: int, slot: str) -> str:
+    if deck not in range(1, 5) or slot not in HOT_CUE_SLOTS:
+        raise ValueError(f"hot_cue id needs deck 1..4 and slot in {HOT_CUE_SLOTS}, got {deck!r} {slot!r}")
+    return f"deck.{deck}.hot_cue.{slot}"
+
+
+ENGINE_LOOP_CUE_CONTROL_IDS: Final[frozenset[str]] = frozenset(
+    {loop_id(d) for d in range(1, 5)}
+    | {beat_loop_id(d) for d in range(1, 5)}
+    | {beat_jump_id(d) for d in range(1, 5)}
+    | {quantize_id(d) for d in range(1, 5)}
+)
+
+PAGE_LOOP_CUE_CONTROL_IDS: Final[frozenset[str]] = frozenset(
+    hot_cue_id(d, s) for d in range(1, 5) for s in HOT_CUE_SLOTS
+)
+
+LOOP_CUE_TRIGGER_IDS: Final[frozenset[str]] = frozenset(
+    {beat_loop_id(d) for d in range(1, 5)} | {beat_jump_id(d) for d in range(1, 5)} | PAGE_LOOP_CUE_CONTROL_IDS
+)
+
+SCRIPTED_LOOP_CUE_CONTROL_IDS: Final[tuple[str, ...]] = (
+    tuple(sorted(ENGINE_LOOP_CUE_CONTROL_IDS)) + tuple(hot_cue_id(1, s) for s in HOT_CUE_SLOTS) + (hot_cue_id(2, "A"),)
+)
+
+
+def assert_engine_page_loop_cue_disjoint() -> None:
+    """Fail when any loop/cue id would be logged by both engine and page."""
+    overlap = ENGINE_LOOP_CUE_CONTROL_IDS & PAGE_LOOP_CUE_CONTROL_IDS
+    if overlap:
+        raise AssertionError(f"loop/cue control ids claimed by both engine and page: {sorted(overlap)}")
+    mixer = ENGINE_LOOP_CUE_CONTROL_IDS & ENGINE_MIXER_CONTROL_IDS
+    if mixer:
+        raise AssertionError(f"loop/cue ids overlap mixer engine ids: {sorted(mixer)}")
+    stem = ENGINE_LOOP_CUE_CONTROL_IDS & STEM_SET_IDS
+    if stem:
+        raise AssertionError(f"loop/cue ids overlap stem ids: {sorted(stem)}")
 
 
 def render_typescript() -> str:

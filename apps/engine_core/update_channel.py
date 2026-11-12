@@ -190,7 +190,10 @@ from apps.shared import platform_paths
 from apps.shared.semver import Semver as _Version
 from apps.shared.semver import parse_semver as _parse_semver
 from apps.webui.server.shell_commands import (
+    ShellBrokerInvalidError,
+    ShellBrokerUnavailableError,
     ShellCommandConflictError,
+    install_shell_command_broker,
     shell_broker,
 )
 
@@ -229,6 +232,8 @@ __all__ = [
     "BuildInfoUnavailable",
     "CheckOutcome",
     "EngineNotRunning",
+    "ShellBrokerInvalidError",
+    "ShellBrokerUnavailableError",
     "ShellCommandConflictError",
     "UpdateApplyAccepted",
     "UpdateApplyRefused",
@@ -277,6 +282,7 @@ __all__ = [
     "compare_versions",
     "facade",
     "httpx",
+    "install_shell_command_broker",
     "main",
     "parse_version",
     "platform_key",

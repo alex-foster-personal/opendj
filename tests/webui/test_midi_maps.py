@@ -678,8 +678,11 @@ def test_catalog_counts_are_reported_so_coverage_is_never_guessed(
     # Re-measured Mon 21 Sep 2026: 14 bootstrap-stub after #3736 added
     # reloop-mixtour-pro, whose midi.json source is prose that does not end in
     # .pdf, so the grader grades it down rather than up (#3744).
-    assert body["counts"]["bootstrap-stub"] == 14
-    assert body["counts"]["vendor-pdf"] + body["counts"]["mixxx"] == 94
+    # Re-measured Thu 12 Nov 2026: vendor-pdf 7 on main; bootstrap-stub 15 after
+    # the DDJ-FLX10 map (#12638) and xdj-az prose source (#10286).
+    assert body["counts"]["bootstrap-stub"] == 15
+    assert body["counts"]["vendor-pdf"] == 7
+    assert body["counts"]["vendor-pdf"] + body["counts"]["mixxx"] == 95
 
 
 @pytest.mark.requirement("CTRL-11712")
@@ -719,6 +722,8 @@ _EVERY_PAGE_ACTION: list[dict[str, Any]] = [
     {"source": {"ch": 1, "kind": "note", "id": 6}, "action": {"type": "deck_loop_exit", "deck": 1}},
     {"source": {"ch": 1, "kind": "note", "id": 7}, "action": {"type": "deck_sync_toggle", "deck": 1}},
     {"source": {"ch": 1, "kind": "note", "id": 8}, "action": {"type": "deck_manual_loop_cycle", "deck": 1}},
+    {"source": {"ch": 1, "kind": "note", "id": 29}, "action": {"type": "deck_loop_in", "deck": 1}},
+    {"source": {"ch": 1, "kind": "note", "id": 30}, "action": {"type": "deck_loop_out", "deck": 1}},
     {"source": {"ch": 1, "kind": "note", "id": 9}, "action": {"type": "deck_loop_scale", "deck": 1, "factor": 2}},
     {"source": {"ch": 1, "kind": "note", "id": 10}, "action": {"type": "deck_key_sync_toggle", "deck": 1}},
     {"source": {"ch": 1, "kind": "note", "id": 11}, "action": {"type": "deck_stem_eq_toggle", "deck": 1}},
@@ -740,12 +745,14 @@ _EVERY_PAGE_ACTION: list[dict[str, Any]] = [
     {"source": {"ch": 1, "kind": "cc", "id": 25}, "ccButton": True, "action": {"type": "master_cue", "mode": "hold"}},
     {"source": {"ch": 1, "kind": "note", "id": 26}, "action": {"type": "shift_modifier"}},
     {"source": {"ch": 1, "kind": "note", "id": 28}, "action": {"type": "color_fx", "deck": 1, "effect": "filter"}},
+    {"source": {"ch": 3, "kind": "note", "id": 114},
+     "action": {"type": "mixer_deck_pair_select", "pair": "1-3"}},
 ]
 
 
 def test_every_page_action_type_installs_and_reads_back(midi_client: TestClient) -> None:
     bindings = [{**b, "provenance": _cite()} for b in _EVERY_PAGE_ACTION]
-    assert len({b["action"]["type"] for b in bindings}) == 28
+    assert len({b["action"]["type"] for b in bindings}) == 31
     r = midi_client.put("/api/v1/midi/maps/test-device", json=_doc(bindings=bindings))
     assert r.status_code == 200, r.text
     back = midi_client.get("/api/v1/midi/maps/test-device").json()["bindings"]
@@ -1010,3 +1017,73 @@ def test_flags_default_false_when_absent(midi_client: TestClient) -> None:
     for b in midi_client.get("/api/v1/midi/maps/test-device").json()["bindings"]:
         for flag in ("relativeCentered", "relativeUnit", "ccButton"):
             assert b.get(flag, False) is False, flag
+
+
+# ----- shipped engine export: Hercules DJ Control Instinct (#13104) -----------
+
+_DEVICE_MAPS_JSON = _REPO_ROOT / "apps/audio-engine/maps/device-maps.json"
+_INSTINCT_NAME_MATCH = (
+    r"DJ Control Instinct(?:$|\S|\s+(?:$|[^\sP]|P(?:$|[^8])|P8\w))"
+)
+_INSTINCT_PDF_CITE = (
+    "https://ts.hercules.com/download/sound/manuals/DJ_Instinct/QSG/"
+    "DJCInstinct_Technical_specifications.pdf MIDI input table"
+)
+_INSTINCT_EXPORT_BINDING_COUNT = 48
+
+
+def _instinct_vendor_pdf_provenance() -> dict[str, Any]:
+    return {"tier": "vendor-pdf", "cite": _INSTINCT_PDF_CITE, "verified": True}
+
+
+def _shipped_hercules_instinct_export() -> dict[str, Any]:
+    maps = [
+        m
+        for m in json.loads(_DEVICE_MAPS_JSON.read_text(encoding="utf-8"))["maps"]
+        if m.get("nameMatch") == _INSTINCT_NAME_MATCH
+    ]
+    assert len(maps) == 1, "expected exactly one shipped Instinct export slice"
+    return maps[0]
+
+
+def _installable_doc_from_instinct_export(export: dict[str, Any]) -> dict[str, Any]:
+    cite = _instinct_vendor_pdf_provenance()
+    bindings: list[dict[str, Any]] = []
+    for row in export["bindings"]:
+        binding = {k: v for k, v in row.items() if k != "label"}
+        binding["provenance"] = cite
+        bindings.append(binding)
+    leds = [{**rule, "provenance": cite} for rule in export.get("leds", [])]
+    init: list[dict[str, Any]] = []
+    for entry in export.get("init", []):
+        if isinstance(entry, list):
+            init.append({"message": entry, "provenance": cite})
+        else:
+            init.append({**entry, "provenance": cite})
+    return {
+        "schemaVersion": 1,
+        "id": "hercules-dj-control-instinct-verify",
+        "vendor": export["vendor"],
+        "model": "Hercules DJ Control Instinct",
+        "nameMatch": export["nameMatch"],
+        "bindings": bindings,
+        "leds": leds,
+        "init": init,
+    }
+
+
+@pytest.mark.requirement("MIDI-13602")
+def test_shipped_hercules_instinct_round_trips_install_api(midi_client: TestClient) -> None:
+    """[if] Instinct export is converted to MidiMapDoc [then] PUT and GET succeed, [else stop]."""
+    export = _shipped_hercules_instinct_export()
+    assert len(export["bindings"]) == _INSTINCT_EXPORT_BINDING_COUNT
+    doc = _installable_doc_from_instinct_export(export)
+    map_id = doc["id"]
+    put = midi_client.put(f"/api/v1/midi/maps/{map_id}", json=doc)
+    assert put.status_code == 200, put.text
+    got = midi_client.get(f"/api/v1/midi/maps/{map_id}")
+    assert got.status_code == 200
+    body = got.json()
+    assert len(body["bindings"]) == _INSTINCT_EXPORT_BINDING_COUNT
+    assert body["nameMatch"] == export["nameMatch"]
+    assert body["leds"] and len(body["leds"]) == len(export.get("leds", []))

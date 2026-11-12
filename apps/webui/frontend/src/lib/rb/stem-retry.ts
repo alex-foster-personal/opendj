@@ -3,7 +3,9 @@
  * Its own module, imported on first use through stem-hydrate-wait.ts, so a
  * decision that only ever runs from a click or a command stays out of the
  * library page's first paint (scripts/check-bundle-size.sh). */
+import { apiErrorFrom } from '$lib/api/errors';
 import { RB_API_BASE } from '$lib/rb/api-rb';
+import { RbApiError } from '$lib/rb/api-rb-error';
 import { releaseEagerStemDecodeNow } from '$lib/rb/stem-decode-shed';
 import type { StemDeckState } from '$lib/rb/stem-types';
 import { refuseStickRead } from '$lib/rb/track-source';
@@ -11,7 +13,7 @@ import { refuseStickRead } from '$lib/rb/track-source';
 /** STEM-46: ask the engine to fetch (or re-fetch) this track's cloud bundle,
  * clearing a recorded failure first. The manifest GET alone cannot do that: a
  * failed fetch answers 502 there until something asks again. Rejects on any
- * non-2xx, naming the status; never silent. */
+ * non-2xx as `RbApiError` with backend `detail`; never silent. */
 export async function requestStemHydration(
 	stableId: string,
 	fetcher: typeof fetch = fetch
@@ -20,7 +22,10 @@ export async function requestStemHydration(
 	refuseStickRead(stableId, 'stem hydrate');
 	const path = `/api/v1/tracks/${encodeURIComponent(stableId)}/stems/hydrate`;
 	const response = await fetcher(`${RB_API_BASE}${path}`, { method: 'POST' });
-	if (!response.ok) throw new Error(`stem hydrate request failed: HTTP ${response.status} ${path}`);
+	if (!response.ok) {
+		const apiErr = await apiErrorFrom(response);
+		throw new RbApiError(apiErr.status, apiErr.code, apiErr.message, apiErr.body);
+	}
 }
 
 /** What the deck engine hands a stem retry (STEM-46/47). */

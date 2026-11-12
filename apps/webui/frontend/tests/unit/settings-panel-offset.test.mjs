@@ -76,7 +76,7 @@ test('the bridge outlives the panel: closed calls throw the closed-panel error, 
 });
 
 // requirement: MIXGRP-09
-test('the overlay re-places the panel on window resize while open (issue #9321)', () => {
+test('the overlay re-places the panel on window resize while open (issues #9321, #13171)', () => {
 	assert.match(OVERLAY, /window\.addEventListener\('resize',\s*onResize\)/);
 	assert.match(OVERLAY, /placePanel\(\{ dx: panelDx, dy: panelDy \}\)/);
 	assert.match(OVERLAY, /removeEventListener\('resize',\s*onResize\)/);
@@ -84,11 +84,20 @@ test('the overlay re-places the panel on window resize while open (issue #9321)'
 });
 
 // requirement: MIXGRP-09
-test('clampPanelOffset replays a larger-viewport offset at a smaller viewport (issue #9321)', () => {
+test('clampPanelOffset replays a larger-viewport offset at a smaller viewport (issues #9321, #13171)', () => {
 	const want = { dx: 600, dy: 600 };
 	const smallView = { width: 700, height: 500 };
 	const out = m.clampPanelOffset(want, BASE, smallView);
 	assert.deepEqual(out, { dx: 336, dy: 336 });
 	assert.ok(smallView.width - (BASE.left + out.dx) >= m.PANEL_KEEP_PX);
 	assert.ok(smallView.height - (BASE.top + out.dy) >= m.PANEL_KEEP_PX);
+});
+
+// requirement: MIXGRP-09
+test('clampPanelOffset keeps a shrink-clamped offset when the viewport expands again (issue #13171)', () => {
+	const clamped = { dx: 336, dy: 336 };
+	const out = m.clampPanelOffset(clamped, BASE, VIEW);
+	assert.deepEqual(out, clamped);
+	assert.ok(VIEW.width - (BASE.left + out.dx) >= m.PANEL_KEEP_PX);
+	assert.ok(VIEW.height - (BASE.top + out.dy) >= m.PANEL_KEEP_PX);
 });

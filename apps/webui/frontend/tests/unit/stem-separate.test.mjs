@@ -113,7 +113,16 @@ function rowFrom(captured, { stableIds, status = 'queued', error = null, kind } 
 	};
 }
 const trackRow = (stableId, opts = {}) => rowFrom(WIRE.enqueue_track.response, { ...opts, stableIds: [stableId] });
-const scopeRow = (opts = {}) => rowFrom(WIRE.enqueue_scope.response, opts);
+/** A library-wide row as the engine wrote it before STEM-58 (#5839): payload
+ * scope 'pending' and no stable_ids. The engine now resolves scope at enqueue
+ * (WIRE.enqueue_scope.response names the songs and keeps the scope under
+ * resolved_from), but rows written before that change still sit in jobs.db and
+ * the store still reads them as scope jobs, so these tests keep that shape. */
+const LEGACY_SCOPE_ROW = {
+	...WIRE.enqueue_scope.response,
+	payload: { executor: WIRE.enqueue_scope.response.payload.executor, scope: 'pending', tier: WIRE.enqueue_scope.response.payload.tier }
+};
+const scopeRow = (opts = {}) => rowFrom(LEGACY_SCOPE_ROW, opts);
 
 /** The engine edge: the captured routes, checked request by request. */
 function serveEngine() {

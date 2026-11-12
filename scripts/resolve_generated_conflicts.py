@@ -107,7 +107,10 @@ def _git(repo: Path, *args: str) -> subprocess.CompletedProcess[str]:
 
 
 def _conflicted_paths(repo: Path) -> list[str]:
-    out = _git(repo, "diff", "--name-only", "--diff-filter=U", "-z")
+    try:
+        out = _git(repo, "diff", "--name-only", "--diff-filter=U", "-z")
+    except UnicodeDecodeError as exc:
+        raise GeneratorFailed(f"a conflicted path is not valid UTF-8: {exc}") from exc
     if out.returncode != 0:
         err = (out.stderr or out.stdout or "git diff failed").strip()
         raise GeneratorFailed(err)
@@ -391,13 +394,16 @@ def _format_report(outcome: Outcome, remaining: list[str]) -> str:
 
 
 def _repo_root_from_cwd() -> Path:
-    out = subprocess.run(
-        ["git", "rev-parse", "--show-toplevel"],
-        check=False,
-        capture_output=True,
-        text=True,
-        encoding="utf-8",
-    )
+    try:
+        out = subprocess.run(
+            ["git", "rev-parse", "--show-toplevel"],
+            check=False,
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+        )
+    except UnicodeDecodeError as exc:
+        raise GeneratorFailed(f"repository path is not valid UTF-8: {exc}") from exc
     if out.returncode != 0 or not out.stdout.strip():
         raise GeneratorFailed("not inside a git repository")
     return Path(out.stdout.strip())

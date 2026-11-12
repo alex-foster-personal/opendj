@@ -25,6 +25,8 @@ function source(relativePath) {
 
 const CLUSTER = source('../../src/lib/components/rb/mixer/HeadphoneCluster.svelte');
 const EXPLAINER = source('../../src/lib/components/rb/deck/ControlExplainer.svelte');
+const COPY = source('../../src/lib/components/rb/mixer/headphone-io-copy.ts');
+const PANEL_CSS = source('../../src/lib/components/rb/mixer/HeadphoneCluster.io-panel.css');
 
 let dismiss;
 let io;
@@ -46,6 +48,14 @@ function ioPanel() {
 	assert.ok(start > 0, 'the Audio I/O panel block must exist');
 	const end = CLUSTER.indexOf('{#snippet outputMenu()}', start);
 	assert.ok(end > start, 'the panel block ends before the output menu snippet');
+	return CLUSTER.slice(start, end);
+}
+
+function outputMenuSource() {
+	const startMarker = '{#snippet outputMenu()}';
+	const start = CLUSTER.indexOf(startMarker);
+	assert.ok(start >= 0, 'missing outputMenu snippet');
+	const end = CLUSTER.indexOf('{/snippet}', start);
 	return CLUSTER.slice(start, end);
 }
 
@@ -113,11 +123,39 @@ test('the I/O hover is the compact instant-dismiss summary; the click opens the 
 	assert.match(tag, /compact=\{true\}/);
 	assert.match(tag, /disabled=\{ioSurface\.open\}/);
 	assert.match(tag, /bullets=\{ioBullets\}/);
+	assert.match(tag, /tooltip=\{TOOLTIP_INFREQUENT\}/);
 	assert.doesNotMatch(tag, /pinOnClick/);
 	assert.match(
 		CLUSTER,
 		/const ioBullets = \$derived\(\[ioSummary\.sentence, \.\.\.ioSummary\.devices, ioSummary\.cta\]\)/
 	);
+});
+
+// ---- IOPIN-03 (#11311): panel dismiss hint and WIP outputs above live pickers ----
+
+test('the persistent I/O panel names Esc or X dismissal and styles the hint dimmer', () => {
+	assert.match(CLUSTER, /data-audio-io-panel/);
+	assert.match(CLUSTER, /aria-label="Close audio I\/O settings"/);
+	assert.match(CLUSTER, /Esc or X to dismiss/);
+	assert.doesNotMatch(CLUSTER, /Two clicks outside, Esc, or X to dismiss/);
+	assert.match(PANEL_CSS, /\.hp-panel-dismiss-hint/);
+	assert.match(PANEL_CSS, /opacity: 0\.72/);
+});
+
+test('future outputs are greyed WIP rows above MASTER, CUE and AUDIO IN pickers', () => {
+	const menu = outputMenuSource();
+	assert.equal(
+		[...menu.matchAll(/aria-label="(master|headphone|audio input|booth)/gi)].length,
+		3,
+		'only the three live device selectors stay in the menu'
+	);
+	assert.match(CLUSTER, /data-io-wip-output/);
+	assert.match(CLUSTER, /BOOTH \/ MONITOR/);
+	assert.match(CLUSTER, /WIP · Coming soon/);
+	const menuStart = CLUSTER.indexOf('{@render outputMenu()}');
+	const wip = CLUSTER.slice(0, menuStart);
+	assert.ok(wip.includes('hp-future-stack'), 'WIP stack must render before outputMenu');
+	assert.doesNotMatch(menu, /data-add-booth|Add booth/);
 });
 
 // ---- compact hover content ----

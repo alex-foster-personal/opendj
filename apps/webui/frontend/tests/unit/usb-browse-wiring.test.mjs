@@ -171,8 +171,9 @@ test('stick rows are read only and skip rb-meta hydration', () => {
 	const panel = source('src/lib/components/rb/BrowserPanel.svelte');
 	const rate = between(panel, 'function rateRow(', 'void _patchRating(row, next);');
 	assert.match(rate, /stable_id\.startsWith\('usb-'\)[\s\S]*read only[\s\S]*return;/);
-	const hydrate = between(panel, 'row.rb_meta !== null', '_inflight.add(row.stable_id);');
-	assert.match(hydrate, /row\.stable_id\.startsWith\('usb-'\)/);
+	// PR #12724 hydrates by stable_id from the pane's seed row.
+	const hydrate = between(panel, 'seed.rb_meta !== null', '_inflight.add(stable_id);');
+	assert.match(hydrate, /\bstable_id\.startsWith\('usb-'\)/);
 });
 
 test('every numeric readout in the stick tree carries a hover title', () => {

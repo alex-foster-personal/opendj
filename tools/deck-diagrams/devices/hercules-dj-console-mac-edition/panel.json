@@ -1,0 +1,834 @@
+{
+ "format": "opendj-panel-layout/1",
+ "device": "hercules-dj-console-mac-edition",
+ "display_name": "2-channel USB DJ controller",
+ "units": "mm",
+ "panel": {
+  "w": 235.0,
+  "d": 200.0
+ },
+ "device_map": "HERCULES_DJ_CONSOLE_MAC_EDITION_MAP",
+ "sources": {
+  "panel_size": "Hercules DJ Console Mac Edition retail spec: 235.0 x 200.0 x 65.0 mm (W x D x H)",
+  "wire": "apps/webui/frontend/src/lib/rb/midi/maps/hercules-dj-console-mac-edition.ts (Hercules MIDI table section 7)",
+  "positions": "measured trace of the official top-face schematic, normalised for the renderer; reference: devices/hercules-dj-console-mac-edition/panel.reference.json (ADR-0137)"
+ },
+ "out_of_scope": [
+  "Headphone Split and Headphone Mix: rear / UI-only on this map, no top-face fig callout",
+  "Mode LEDs (fig 5): indicators only",
+  "Vendor wordmark in the manual art: not drawn on the practice replica",
+  "Pitch knobs are hints (speed-encoded CC), not deck_pitch faders"
+ ],
+ "controls": [
+  {
+   "id": "ch1-eq-high",
+   "fig": "1",
+   "type": "knob",
+   "label": "TREBLE",
+   "does": "Deck 1 high EQ",
+   "x": 14.0,
+   "y": 15.0,
+   "w": 12.0,
+   "h": 14.0,
+   "section": "mixer",
+   "midi": {
+    "ch": 1,
+    "kind": "cc",
+    "id": 48
+   },
+   "shift_midi": null
+  },
+  {
+   "id": "ch1-eq-mid",
+   "fig": "1",
+   "type": "knob",
+   "label": "MEDIUM",
+   "does": "Deck 1 mid EQ",
+   "x": 14.0,
+   "y": 35.0,
+   "w": 12.0,
+   "h": 14.0,
+   "section": "mixer",
+   "midi": {
+    "ch": 1,
+    "kind": "cc",
+    "id": 47
+   },
+   "shift_midi": null
+  },
+  {
+   "id": "ch1-eq-low",
+   "fig": "1",
+   "type": "knob",
+   "label": "BASS",
+   "does": "Deck 1 low EQ",
+   "x": 14.0,
+   "y": 55.0,
+   "w": 12.0,
+   "h": 14.0,
+   "section": "mixer",
+   "midi": {
+    "ch": 1,
+    "kind": "cc",
+    "id": 46
+   },
+   "shift_midi": null
+  },
+  {
+   "id": "d1-pitch",
+   "fig": "2",
+   "type": "knob",
+   "label": "PITCH",
+   "does": "Deck 1 pitch knob (speed-encoded)",
+   "x": 30.5,
+   "y": 15.0,
+   "w": 12.0,
+   "h": 14.0,
+   "section": "deck",
+   "midi": {
+    "ch": 1,
+    "kind": "cc",
+    "id": 52
+   },
+   "shift_midi": null
+  },
+  {
+   "id": "d1-pitch-bend-up",
+   "fig": "7",
+   "type": "button",
+   "label": "PITCH +",
+   "does": "Deck 1 pitch bend up",
+   "x": 32.0,
+   "y": 57.5,
+   "w": 9.0,
+   "h": 9.0,
+   "section": "deck",
+   "midi": {
+    "ch": 1,
+    "kind": "cc",
+    "id": 19
+   },
+   "shift_midi": null
+  },
+  {
+   "id": "d1-pitch-bend-down",
+   "fig": "7",
+   "type": "button",
+   "label": "PITCH -",
+   "does": "Deck 1 pitch bend down",
+   "x": 32.0,
+   "y": 43.5,
+   "w": 9.0,
+   "h": 9.0,
+   "section": "deck",
+   "midi": {
+    "ch": 1,
+    "kind": "cc",
+    "id": 20
+   },
+   "shift_midi": null
+  },
+  {
+   "id": "d1-prev",
+   "fig": "8",
+   "type": "button",
+   "label": "PREV",
+   "does": "Deck 1 previous track",
+   "x": 21.5,
+   "y": 76.0,
+   "w": 11.0,
+   "h": 8.0,
+   "section": "deck",
+   "midi": {
+    "ch": 1,
+    "kind": "cc",
+    "id": 11
+   },
+   "shift_midi": null
+  },
+  {
+   "id": "d1-next",
+   "fig": "8",
+   "type": "button",
+   "label": "NEXT",
+   "does": "Deck 1 next track",
+   "x": 21.5,
+   "y": 88.0,
+   "w": 11.0,
+   "h": 8.0,
+   "section": "deck",
+   "midi": {
+    "ch": 1,
+    "kind": "cc",
+    "id": 12
+   },
+   "shift_midi": null
+  },
+  {
+   "id": "d1-fx-select",
+   "fig": "3",
+   "type": "button",
+   "label": "FX SEL",
+   "does": "Deck 1 FX select",
+   "x": 74.0,
+   "y": 8.5,
+   "w": 9.0,
+   "h": 7.0,
+   "section": "effect",
+   "midi": {
+    "ch": 1,
+    "kind": "cc",
+    "id": 7
+   },
+   "shift_midi": null
+  },
+  {
+   "id": "d1-fx-1",
+   "fig": "3",
+   "type": "button",
+   "label": "FX 1",
+   "does": "Deck 1 FX slot 1",
+   "x": 67.0,
+   "y": 18.0,
+   "w": 9.0,
+   "h": 8.0,
+   "section": "effect",
+   "midi": {
+    "ch": 1,
+    "kind": "cc",
+    "id": 15
+   },
+   "shift_midi": null
+  },
+  {
+   "id": "d1-fx-2",
+   "fig": "3",
+   "type": "button",
+   "label": "FX 2",
+   "does": "Deck 1 FX slot 2",
+   "x": 76.5,
+   "y": 18.0,
+   "w": 9.0,
+   "h": 8.0,
+   "section": "effect",
+   "midi": {
+    "ch": 1,
+    "kind": "cc",
+    "id": 14
+   },
+   "shift_midi": null
+  },
+  {
+   "id": "d1-fx-3",
+   "fig": "3",
+   "type": "button",
+   "label": "FX 3",
+   "does": "Deck 1 FX slot 3",
+   "x": 86.0,
+   "y": 18.0,
+   "w": 9.0,
+   "h": 8.0,
+   "section": "effect",
+   "midi": {
+    "ch": 1,
+    "kind": "cc",
+    "id": 13
+   },
+   "shift_midi": null
+  },
+  {
+   "id": "d1-audio-source",
+   "fig": "6",
+   "type": "button",
+   "label": "SOURCE",
+   "does": "Deck 1 audio source",
+   "x": 40.0,
+   "y": 8.5,
+   "w": 12.0,
+   "h": 7.0,
+   "section": "deck",
+   "midi": {
+    "ch": 1,
+    "kind": "cc",
+    "id": 29
+   },
+   "shift_midi": null
+  },
+  {
+   "id": "d1-key-sync",
+   "fig": "2",
+   "type": "button",
+   "label": "KEY",
+   "does": "Deck 1 master tempo / key sync",
+   "x": 40.5,
+   "y": 30.5,
+   "w": 11.0,
+   "h": 7.0,
+   "section": "deck",
+   "midi": {
+    "ch": 1,
+    "kind": "cc",
+    "id": 22
+   },
+   "shift_midi": null
+  },
+  {
+   "id": "d1-ch-fader",
+   "fig": "2",
+   "type": "fader",
+   "label": "VOLUME",
+   "does": "Deck 1 channel fader",
+   "x": 83.0,
+   "y": 60.0,
+   "w": 5.0,
+   "h": 72.0,
+   "section": "mixer",
+   "midi": {
+    "ch": 1,
+    "kind": "cc",
+    "id": 50
+   },
+   "shift_midi": null
+  },
+  {
+   "id": "d1-jog",
+   "fig": "9",
+   "type": "jog",
+   "label": "JOG",
+   "does": "Deck 1 jog wheel",
+   "x": 26.0,
+   "y": 90.0,
+   "w": 49.0,
+   "h": 52.0,
+   "section": "deck",
+   "midi": {
+    "ch": 1,
+    "kind": "cc",
+    "id": 54
+   },
+   "shift_midi": null
+  },
+  {
+   "id": "d1-sync",
+   "fig": "11",
+   "type": "button",
+   "label": "AUTO BEAT",
+   "does": "Deck 1 beat sync",
+   "x": 61.0,
+   "y": 128.0,
+   "w": 12.0,
+   "h": 8.0,
+   "section": "deck",
+   "midi": {
+    "ch": 1,
+    "kind": "cc",
+    "id": 10
+   },
+   "shift_midi": null
+  },
+  {
+   "id": "d1-play-pause",
+   "fig": "12",
+   "type": "button",
+   "label": "PLAY",
+   "does": "Deck 1 play/pause",
+   "x": 57.0,
+   "y": 150.5,
+   "w": 15.0,
+   "h": 11.0,
+   "section": "deck",
+   "midi": {
+    "ch": 1,
+    "kind": "cc",
+    "id": 8
+   },
+   "shift_midi": null
+  },
+  {
+   "id": "d1-cue",
+   "fig": "12",
+   "type": "button",
+   "label": "CUE",
+   "does": "Deck 1 cue",
+   "x": 38.5,
+   "y": 150.5,
+   "w": 15.0,
+   "h": 11.0,
+   "section": "deck",
+   "midi": {
+    "ch": 1,
+    "kind": "cc",
+    "id": 9
+   },
+   "shift_midi": null
+  },
+  {
+   "id": "d1-ch-cue",
+   "fig": "",
+   "type": "button",
+   "label": "PFL",
+   "does": "Deck 1 headphone cue",
+   "x": 80.0,
+   "y": 68.0,
+   "w": 11.0,
+   "h": 8.0,
+   "section": "mixer",
+   "midi": {
+    "ch": 1,
+    "kind": "cc",
+    "id": 33
+   },
+   "shift_midi": null
+  },
+  {
+   "id": "d1-mouse",
+   "fig": "4",
+   "type": "button",
+   "label": "MOUSE",
+   "does": "Deck 1 mouse button",
+   "x": 105.0,
+   "y": 24.5,
+   "w": 8.0,
+   "h": 7.0,
+   "section": "deck",
+   "midi": {
+    "ch": 1,
+    "kind": "cc",
+    "id": 27
+   },
+   "shift_midi": null
+  },
+  {
+   "id": "ch2-eq-high",
+   "fig": "1",
+   "type": "knob",
+   "label": "TREBLE",
+   "does": "Deck 2 high EQ",
+   "x": 209.0,
+   "y": 15.0,
+   "w": 12.0,
+   "h": 14.0,
+   "section": "mixer",
+   "midi": {
+    "ch": 1,
+    "kind": "cc",
+    "id": 45
+   },
+   "shift_midi": null
+  },
+  {
+   "id": "ch2-eq-mid",
+   "fig": "1",
+   "type": "knob",
+   "label": "MEDIUM",
+   "does": "Deck 2 mid EQ",
+   "x": 209.0,
+   "y": 35.0,
+   "w": 12.0,
+   "h": 14.0,
+   "section": "mixer",
+   "midi": {
+    "ch": 1,
+    "kind": "cc",
+    "id": 44
+   },
+   "shift_midi": null
+  },
+  {
+   "id": "ch2-eq-low",
+   "fig": "1",
+   "type": "knob",
+   "label": "BASS",
+   "does": "Deck 2 low EQ",
+   "x": 209.0,
+   "y": 55.0,
+   "w": 12.0,
+   "h": 14.0,
+   "section": "mixer",
+   "midi": {
+    "ch": 1,
+    "kind": "cc",
+    "id": 43
+   },
+   "shift_midi": null
+  },
+  {
+   "id": "d2-pitch",
+   "fig": "2",
+   "type": "knob",
+   "label": "PITCH",
+   "does": "Deck 2 pitch knob",
+   "x": 192.5,
+   "y": 15.0,
+   "w": 12.0,
+   "h": 14.0,
+   "section": "deck",
+   "midi": {
+    "ch": 1,
+    "kind": "cc",
+    "id": 53
+   },
+   "shift_midi": null
+  },
+  {
+   "id": "d2-pitch-bend-up",
+   "fig": "7",
+   "type": "button",
+   "label": "PITCH +",
+   "does": "Deck 2 pitch bend up",
+   "x": 194.0,
+   "y": 57.5,
+   "w": 9.0,
+   "h": 9.0,
+   "section": "deck",
+   "midi": {
+    "ch": 1,
+    "kind": "cc",
+    "id": 23
+   },
+   "shift_midi": null
+  },
+  {
+   "id": "d2-pitch-bend-down",
+   "fig": "7",
+   "type": "button",
+   "label": "PITCH -",
+   "does": "Deck 2 pitch bend down",
+   "x": 194.0,
+   "y": 43.5,
+   "w": 9.0,
+   "h": 9.0,
+   "section": "deck",
+   "midi": {
+    "ch": 1,
+    "kind": "cc",
+    "id": 24
+   },
+   "shift_midi": null
+  },
+  {
+   "id": "d2-prev",
+   "fig": "8",
+   "type": "button",
+   "label": "PREV",
+   "does": "Deck 2 previous track",
+   "x": 202.5,
+   "y": 76.0,
+   "w": 11.0,
+   "h": 8.0,
+   "section": "deck",
+   "midi": {
+    "ch": 1,
+    "kind": "cc",
+    "id": 5
+   },
+   "shift_midi": null
+  },
+  {
+   "id": "d2-next",
+   "fig": "8",
+   "type": "button",
+   "label": "NEXT",
+   "does": "Deck 2 next track",
+   "x": 202.5,
+   "y": 88.0,
+   "w": 11.0,
+   "h": 8.0,
+   "section": "deck",
+   "midi": {
+    "ch": 1,
+    "kind": "cc",
+    "id": 6
+   },
+   "shift_midi": null
+  },
+  {
+   "id": "d2-fx-select",
+   "fig": "3",
+   "type": "button",
+   "label": "FX SEL",
+   "does": "Deck 2 FX select",
+   "x": 151.5,
+   "y": 8.5,
+   "w": 9.0,
+   "h": 7.0,
+   "section": "effect",
+   "midi": {
+    "ch": 1,
+    "kind": "cc",
+    "id": 1
+   },
+   "shift_midi": null
+  },
+  {
+   "id": "d2-fx-1",
+   "fig": "3",
+   "type": "button",
+   "label": "FX 1",
+   "does": "Deck 2 FX slot 1",
+   "x": 158.5,
+   "y": 18.0,
+   "w": 9.0,
+   "h": 8.0,
+   "section": "effect",
+   "midi": {
+    "ch": 1,
+    "kind": "cc",
+    "id": 16
+   },
+   "shift_midi": null
+  },
+  {
+   "id": "d2-fx-2",
+   "fig": "3",
+   "type": "button",
+   "label": "FX 2",
+   "does": "Deck 2 FX slot 2",
+   "x": 149.5,
+   "y": 18.0,
+   "w": 9.0,
+   "h": 8.0,
+   "section": "effect",
+   "midi": {
+    "ch": 1,
+    "kind": "cc",
+    "id": 17
+   },
+   "shift_midi": null
+  },
+  {
+   "id": "d2-fx-3",
+   "fig": "3",
+   "type": "button",
+   "label": "FX 3",
+   "does": "Deck 2 FX slot 3",
+   "x": 140.0,
+   "y": 18.0,
+   "w": 9.0,
+   "h": 8.0,
+   "section": "effect",
+   "midi": {
+    "ch": 1,
+    "kind": "cc",
+    "id": 18
+   },
+   "shift_midi": null
+  },
+  {
+   "id": "d2-audio-source",
+   "fig": "6",
+   "type": "button",
+   "label": "SOURCE",
+   "does": "Deck 2 audio source",
+   "x": 183.0,
+   "y": 8.5,
+   "w": 12.0,
+   "h": 7.0,
+   "section": "deck",
+   "midi": {
+    "ch": 1,
+    "kind": "cc",
+    "id": 30
+   },
+   "shift_midi": null
+  },
+  {
+   "id": "d2-key-sync",
+   "fig": "2",
+   "type": "button",
+   "label": "KEY",
+   "does": "Deck 2 master tempo / key sync",
+   "x": 183.5,
+   "y": 30.5,
+   "w": 11.0,
+   "h": 7.0,
+   "section": "deck",
+   "midi": {
+    "ch": 1,
+    "kind": "cc",
+    "id": 26
+   },
+   "shift_midi": null
+  },
+  {
+   "id": "d2-ch-fader",
+   "fig": "2",
+   "type": "fader",
+   "label": "VOLUME",
+   "does": "Deck 2 channel fader",
+   "x": 146.5,
+   "y": 60.0,
+   "w": 5.0,
+   "h": 72.0,
+   "section": "mixer",
+   "midi": {
+    "ch": 1,
+    "kind": "cc",
+    "id": 51
+   },
+   "shift_midi": null
+  },
+  {
+   "id": "d2-jog",
+   "fig": "9",
+   "type": "jog",
+   "label": "JOG",
+   "does": "Deck 2 jog wheel",
+   "x": 160.0,
+   "y": 90.0,
+   "w": 49.0,
+   "h": 52.0,
+   "section": "deck",
+   "midi": {
+    "ch": 1,
+    "kind": "cc",
+    "id": 55
+   },
+   "shift_midi": null
+  },
+  {
+   "id": "d2-sync",
+   "fig": "11",
+   "type": "button",
+   "label": "AUTO BEAT",
+   "does": "Deck 2 beat sync",
+   "x": 162.0,
+   "y": 128.0,
+   "w": 12.0,
+   "h": 8.0,
+   "section": "deck",
+   "midi": {
+    "ch": 1,
+    "kind": "cc",
+    "id": 4
+   },
+   "shift_midi": null
+  },
+  {
+   "id": "d2-play-pause",
+   "fig": "12",
+   "type": "button",
+   "label": "PLAY",
+   "does": "Deck 2 play/pause",
+   "x": 162.5,
+   "y": 150.5,
+   "w": 15.0,
+   "h": 11.0,
+   "section": "deck",
+   "midi": {
+    "ch": 1,
+    "kind": "cc",
+    "id": 2
+   },
+   "shift_midi": null
+  },
+  {
+   "id": "d2-cue",
+   "fig": "12",
+   "type": "button",
+   "label": "CUE",
+   "does": "Deck 2 cue",
+   "x": 181.5,
+   "y": 150.5,
+   "w": 15.0,
+   "h": 11.0,
+   "section": "deck",
+   "midi": {
+    "ch": 1,
+    "kind": "cc",
+    "id": 3
+   },
+   "shift_midi": null
+  },
+  {
+   "id": "d2-ch-cue",
+   "fig": "",
+   "type": "button",
+   "label": "PFL",
+   "does": "Deck 2 headphone cue",
+   "x": 143.5,
+   "y": 68.0,
+   "w": 11.0,
+   "h": 8.0,
+   "section": "mixer",
+   "midi": {
+    "ch": 1,
+    "kind": "cc",
+    "id": 34
+   },
+   "shift_midi": null
+  },
+  {
+   "id": "d2-mouse",
+   "fig": "4",
+   "type": "button",
+   "label": "MOUSE",
+   "does": "Deck 2 mouse button",
+   "x": 121.5,
+   "y": 24.5,
+   "w": 8.0,
+   "h": 7.0,
+   "section": "deck",
+   "midi": {
+    "ch": 1,
+    "kind": "cc",
+    "id": 28
+   },
+   "shift_midi": null
+  },
+  {
+   "id": "ministick-x",
+   "fig": "4",
+   "type": "encoder",
+   "label": "MINI X",
+   "does": "Ministick horizontal",
+   "x": 113.0,
+   "y": 19.0,
+   "w": 9.0,
+   "h": 10.0,
+   "section": "browse",
+   "midi": {
+    "ch": 1,
+    "kind": "cc",
+    "id": 40
+   },
+   "shift_midi": null
+  },
+  {
+   "id": "ministick-y",
+   "fig": "4",
+   "type": "encoder",
+   "label": "MINI Y",
+   "does": "Ministick vertical",
+   "x": 113.0,
+   "y": 31.0,
+   "w": 9.0,
+   "h": 10.0,
+   "section": "browse",
+   "midi": {
+    "ch": 1,
+    "kind": "cc",
+    "id": 57
+   },
+   "shift_midi": null
+  },
+  {
+   "id": "crossfader",
+   "fig": "10",
+   "type": "crossfader",
+   "label": "CROSSFADER",
+   "does": "Blend deck 1 and deck 2",
+   "x": 82.5,
+   "y": 175.5,
+   "w": 70.0,
+   "h": 9.0,
+   "section": "mixer",
+   "midi": {
+    "ch": 1,
+    "kind": "cc",
+    "id": 49
+   },
+   "shift_midi": null
+  }
+ ]
+}

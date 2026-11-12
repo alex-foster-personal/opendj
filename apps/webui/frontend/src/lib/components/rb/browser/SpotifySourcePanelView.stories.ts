@@ -16,15 +16,22 @@ type Props = ComponentProps<typeof SpotifySourcePanelView>;
 type Playlist = Props['playlists'][number];
 type Pending = NonNullable<Props['pendingTracks']>[number];
 
-const playlist = (playlist_id: string, name: string, track_count: number): Playlist => ({
-	playlist_id,
-	name,
-	track_count,
-	available_count: track_count,
-	forbid_duplicates: false,
-	updated_at: '2026-10-10T12:00:00Z',
-	vendor: 'spotify'
-});
+const playlist = (
+	playlist_id: string,
+	name: string,
+	track_count: number,
+	vendor_pl_id?: string
+): Playlist =>
+	({
+		playlist_id,
+		name,
+		track_count,
+		available_count: track_count,
+		forbid_duplicates: false,
+		updated_at: '2026-10-10T12:00:00Z',
+		vendor: 'spotify',
+		...(vendor_pl_id !== undefined ? { vendor_pl_id } : {})
+	}) as Playlist;
 
 const pending = (
 	pending_id: number,
@@ -118,7 +125,9 @@ const meta = {
 		onimportlogins: fn(),
 		onshrinkchange: fn(),
 		onsaveclientid: fn(async () => true),
-		onopenexternal: fn()
+		onopenexternal: fn(),
+		onimport: fn(),
+		onopendesktop: fn()
 	},
 	parameters: { layout: 'fullscreen' }
 } satisfies Meta<typeof SpotifySourcePanelView>;
@@ -191,5 +200,58 @@ export const AccountNoClientId: Story = {
 			message: 'No Spotify Client ID.',
 			playlists: []
 		}
+	}
+};
+
+/** Issue #317: Import on an account playlist not yet in state.db. */
+export const ImportOnAccountRow: Story = {
+	args: {
+		playlists: [],
+		account: {
+			connected: true,
+			user_id: 'invented-dj',
+			display_name: 'Invented DJ',
+			total_reported: 1,
+			playlists: [accountPlaylist('0InventedPlaylistA', 'Sunrise Set Ideas', 21)]
+		}
+	}
+};
+
+const reimportSpotifyId = '0InventedPlaylistA';
+
+/** Issue #317: Re-import when the account row is already imported. */
+export const ReimportOnImportedRow: Story = {
+	args: {
+		playlists: [
+			playlist(`spotify:playlist:${reimportSpotifyId}`, 'Sunrise Set Ideas', 21, reimportSpotifyId)
+		],
+		account: {
+			connected: true,
+			user_id: 'invented-dj',
+			display_name: 'Invented DJ',
+			total_reported: 1,
+			playlists: [accountPlaylist(reimportSpotifyId, 'Sunrise Set Ideas', 21)]
+		}
+	}
+};
+
+/** Issue #317: Already owned tracks for the selected playlist. */
+export const OwnedList: Story = {
+	args: {
+		selectedId: 'sp-1',
+		ownedTracks: [
+			{ title: 'Glass Harbor', artist: 'Example Artist', album: 'Harbor EP' },
+			{ title: 'Night Drive', artist: 'Lumen Fields', album: null }
+		],
+		pendingTracks: [pending(1, 'Still Missing', 'Other Artist', null)]
+	}
+};
+
+/** Issue #317: selected playlist with no owned matches yet. */
+export const OwnedListEmpty: Story = {
+	args: {
+		selectedId: 'sp-1',
+		ownedTracks: [],
+		pendingTracks: [pending(1, 'Night Drive (Extended Mix)', 'Lumen Fields', 'Night Drive EP')]
 	}
 };

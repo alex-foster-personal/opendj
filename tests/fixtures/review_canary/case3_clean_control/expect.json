@@ -1,0 +1,28 @@
+{
+  "schema": 1,
+  "case": "case3_clean_control",
+  "blocking_false_positives_max": 0,
+  "must_flag": [],
+  "must_not_flag": [
+    {
+      "path": "(private path)",
+      "line_range": [8, 8],
+      "class": "attribution_name"
+    },
+    {
+      "path": "(private path)",
+      "line_range": [12, 12],
+      "class": "machine_nickname"
+    },
+    {
+      "path": "(private path)",
+      "line_range": [13, 13],
+      "class": "placeholder_home_path"
+    },
+    {
+      "path": "(private path)",
+      "line_range": [4, 4],
+      "class": "correct_weekday"
+    }
+  ]
+}

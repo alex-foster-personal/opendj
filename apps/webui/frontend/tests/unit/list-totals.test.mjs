@@ -42,8 +42,8 @@ test('[if] 10k rows are summarized [then] one pass finishes under 75 ms, [else s
 	const rows = Array.from({ length: 10_000 }, (_, i) => ({
 		duration_ms: i % 17 === 0 ? null : 180_000 + (i % 1000)
 	}));
-	// Warm up after a long parallel suite so JIT cost is not measured (agentbox CI).
-	mod.summarizeListTotals(rows.slice(0, 64));
+	// Warm up on the full row count after a long parallel suite so JIT cost is not measured.
+	mod.summarizeListTotals(rows);
 	const started = performance.now();
 	const totals = mod.summarizeListTotals(rows);
 	// 5 ms holds on a quiet host; the unit lane runs with concurrency so CI runners need headroom.

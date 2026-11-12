@@ -235,6 +235,11 @@ test('the truncated flag on .tt-root is driven by the real provider read', () =>
 		/\{#if provider\.truncated\}/,
 		'the .truncated-note markup must stay gated on provider.truncated'
 	);
+	assert.match(
+		source,
+		/list truncated - the source fetch hit its safety cap before completing/,
+		'whole-collection search truncation must keep the generic cap string'
+	);
 });
 
 // PR #1007 discussion r3921443899 (P2/BLOCKING): the floor above is ABSOLUTE,

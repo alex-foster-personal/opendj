@@ -31,13 +31,30 @@ import { loadTypeScriptModule } from './load-typescript.mjs';
  *   load
  * - if a refusal is silent then a load that lost its 1.7x looks like a slow
  *   machine instead of saying so
+ *
+ * This file also hosts the PERFBATCH-06 contract that a fresh precomputed stem
+ * bundle wins before any live-generation fallback (`resolveStemLoadPolicy` in
+ * stem-graph.ts).
  */
 
 let decode;
+let stemGraph;
 
 before(async () => {
 	decode = await loadTypeScriptModule('tests/live/stem-decode-harness-entry.ts');
+	stemGraph = await loadTypeScriptModule('src/lib/rb/stem-graph.ts');
 });
+
+function liveGenerationSpy() {
+	let calls = 0;
+	return {
+		fn: () => {
+			calls += 1;
+			return false;
+		},
+		callCount: () => calls
+	};
+}
 
 // The pool is module state by design (it holds real workers across loads), so
 // a case that inherited a previous case's parked decoders would be testing the
@@ -1551,3 +1568,45 @@ test(
 		assert.equal(labels.stem_decode_lane, undefined);
 	})
 );
+
+test('resolveStemLoadPolicy: ready precomputed bundle wins over live-generation', () => {
+	const fallback = liveGenerationSpy();
+	assert.equal(
+		stemGraph.resolveStemLoadPolicy({ status: 'ready' }, fallback.fn),
+		'use-precomputed'
+	);
+	assert.equal(fallback.callCount(), 0);
+});
+
+test('resolveStemLoadPolicy: hydrating cloud bundle awaits precomputed without fallback', () => {
+	const fallback = liveGenerationSpy();
+	assert.equal(
+		stemGraph.resolveStemLoadPolicy({ status: 'hydrating' }, fallback.fn),
+		'await-precomputed'
+	);
+	assert.equal(fallback.callCount(), 0);
+});
+
+test('resolveStemLoadPolicy: unavailable may invoke live-generation fallback once', () => {
+	const fallback = liveGenerationSpy();
+	assert.equal(
+		stemGraph.resolveStemLoadPolicy({ status: 'unavailable', error: 'no bundle' }, fallback.fn),
+		'consider-live-generation-fallback'
+	);
+	assert.equal(fallback.callCount(), 1);
+});
+
+test('resolveStemLoadPolicy: invalid bundle rejects without fallback', () => {
+	const fallback = liveGenerationSpy();
+	assert.equal(
+		stemGraph.resolveStemLoadPolicy({ status: 'invalid', error: 'bad manifest' }, fallback.fn),
+		'reject-loud'
+	);
+	assert.equal(fallback.callCount(), 0);
+});
+
+test('resolveStemLoadPolicy: stale deck load (null probe) aborts without fallback', () => {
+	const fallback = liveGenerationSpy();
+	assert.equal(stemGraph.resolveStemLoadPolicy(null, fallback.fn), 'aborted-stale');
+	assert.equal(fallback.callCount(), 0);
+});

@@ -325,6 +325,91 @@ test('toggleSpotifyPinned add then remove', async () => {
 	assert.deepEqual(JSON.parse(store.get(STORAGE_KEY)).spotify_library.pinned_ids, []);
 });
 
+test('#9685: old-form Spotify keys migrate once at load and nothing is dropped', async () => {
+	const recentIds = [
+		'spotify-account:bbb',
+		'spotify:bbb',
+		'r1',
+		'r2',
+		'r3',
+		'r4',
+		'r5',
+		'r6',
+		'r7',
+		'r8',
+		'r9',
+		'r10',
+		'r11'
+	];
+	const store = _fakeWindow(
+		JSON.stringify({
+			hide_broken_links: false,
+			spotify_library: {
+				pinned_ids: ['spotify-account:aaa', 'pl-local'],
+				recent_ids: recentIds
+			}
+		})
+	);
+	const prefs = await _loadPrefs();
+	assert.deepEqual(prefs.uiPrefs.spotify_library.pinned_ids, ['spotify:aaa', 'pl-local']);
+	assert.deepEqual(prefs.uiPrefs.spotify_library.recent_ids, [
+		'spotify:bbb',
+		'r1',
+		'r2',
+		'r3',
+		'r4',
+		'r5',
+		'r6',
+		'r7',
+		'r8',
+		'r9',
+		'r10',
+		'r11'
+	]);
+	const stored = JSON.parse(store.get(STORAGE_KEY)).spotify_library;
+	assert.deepEqual(stored.pinned_ids, ['spotify:aaa', 'pl-local']);
+	assert.deepEqual(stored.recent_ids, [
+		'spotify:bbb',
+		'r1',
+		'r2',
+		'r3',
+		'r4',
+		'r5',
+		'r6',
+		'r7',
+		'r8',
+		'r9',
+		'r10',
+		'r11'
+	]);
+});
+
+test('a spotify_library already in canonical form is not rewritten at boot', async () => {
+	const store = _fakeWindow(
+		JSON.stringify({
+			hide_broken_links: false,
+			spotify_library: { pinned_ids: ['spotify:aaa'], recent_ids: ['pl-1'] }
+		})
+	);
+	await _loadPrefs();
+	const stored = JSON.parse(store.get(STORAGE_KEY)).spotify_library;
+	assert.deepEqual(stored.pinned_ids, ['spotify:aaa']);
+	assert.deepEqual(stored.recent_ids, ['pl-1']);
+});
+
+test('the setters store the preference key', async () => {
+	const store = _fakeWindow(JSON.stringify({ hide_broken_links: false }));
+	const prefs = await _loadPrefs();
+
+	prefs.rememberSpotifyRecent('spotify-account:aaa');
+	prefs.rememberSpotifyRecent('spotify:aaa');
+	assert.deepEqual(JSON.parse(store.get(STORAGE_KEY)).spotify_library.recent_ids, ['spotify:aaa']);
+
+	prefs.toggleSpotifyPinned('spotify-account:aaa');
+	prefs.toggleSpotifyPinned('spotify:aaa');
+	assert.deepEqual(JSON.parse(store.get(STORAGE_KEY)).spotify_library.pinned_ids, []);
+});
+
 // ------------------------------------- playlist deck-membership tints (2ac3a0)
 
 function _pane(overrides = {}) {

@@ -7,7 +7,7 @@ convention) - the BPM window is skipped, never divided by.
 
 - if a candidate has bpm=0.0 then filter_candidates raises -> broken.
 - if a zero-bpm candidate is silently BPM-dropped -> broken (unknown is
-  not "far"; ranking scores it 0.0 instead).
+  not "far"; ranking treats BPM as unscored instead).
 """
 
 from __future__ import annotations

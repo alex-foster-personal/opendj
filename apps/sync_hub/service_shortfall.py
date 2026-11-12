@@ -9,7 +9,7 @@ All three answer the SAME question for three endpoints: this response is
 short of what its caller asked for, and here is the reason and the repair.
 They return ``None`` when nothing was held back, so a caller reads
 "complete" as a value rather than as the absence of a message, and
-:func:`apps.sync_hub.service._refuse_unless_capable` turns a non-None answer
+:func:`apps.sync_hub.service_wiring._refuse_unless_capable` turns a non-None answer
 into either a partial 200 (for a peer that advertised it understands
 quarantine) or main's loud 422 (for a peer that did not).
 """

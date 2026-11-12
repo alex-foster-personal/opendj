@@ -333,6 +333,13 @@ export async function getStatus(): Promise<CloudSyncStatus> {
 	return unwrap(cloudSyncApi.GET('/api/v1/cloudsync/status', {}));
 }
 
+/** Scheduler last result on GET /api/v1/cloudsync/status (read-only admin panels). */
+export function schedulerLastResult(
+	status: CloudSyncStatus
+): NonNullable<CloudSyncStatus['last_result']> | null {
+	return status.last_result;
+}
+
 export async function getIdentityBacklog(): Promise<CloudSyncIdentityBacklog> {
 	return unwrap(cloudSyncApi.GET('/api/v1/cloudsync/identity-backlog', {}));
 }

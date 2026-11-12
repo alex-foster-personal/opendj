@@ -6,7 +6,8 @@ Composition:
             -> translate scores to rationale_tags -> top_n
 
 The optional ``explain=True`` path is synchronous in Phase 13: it calls
-the deterministic explainer inline. The documented event-bus contract
+the deterministic explainer inline. Missing key, BPM or energy terms are
+named in ``unscored``, not neutralised. The documented event-bus contract
 (``ai.explain_requested`` / ``ai.explain_response``) is shipped in
 ``(private path)`` for Phase 14 / Phase 17 consumers.
 """
@@ -16,7 +17,9 @@ from __future__ import annotations
 import sqlite3
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
+from typing import Any, Literal
 
+from apps.genre_infer import service as genre_service
 from apps.shared.harmonic import TrackFeature
 
 from .candidates import filter_candidates
@@ -35,6 +38,21 @@ class RankedSuggestion:
     rationale_numbers: dict[str, float] = field(default_factory=dict)
     explain_text: str | None = None
     candidate: TrackFeature | None = None
+    unscored: tuple[str, ...] = ()
+
+
+FindSimilarMode = Literal["generic", "specific", "niche"]
+
+
+def find_similar_tracks(
+    conn: sqlite3.Connection,
+    *,
+    stable_id: str,
+    mode: FindSimilarMode,
+    limit: int = 20,
+) -> dict[str, Any]:
+    """find-similar-tracks for one track; Generic ranks genre-vector cosine neighbours."""
+    return genre_service.find_similar_tracks(conn, stable_id, mode=mode, limit=limit)
 
 
 def _rationale_tags(sc: ScoredCandidate) -> list[str]:
@@ -139,6 +157,7 @@ def suggest_next(
                 rationale_numbers=dict(sc.rationale),
                 explain_text=explain_text,
                 candidate=sc.candidate,
+                unscored=sc.unscored,
             )
         )
     return out

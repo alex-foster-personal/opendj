@@ -87,7 +87,9 @@ import {
 	isMasterMuted,
 	masterMuteGainValue
 } from '$lib/player/master-mute.svelte';
+import { assertBoothSignalMode, effectiveBoothGain } from '$lib/player/booth-output';
 import { deckStates, mixerState } from '$lib/player/state.svelte';
+import type { BoothSignalMode } from '$lib/rb/mixer-types';
 import type { LivenessVerdict } from '$lib/rb/audio-output-liveness';
 // Types only: the monitor is imported when the cue output starts (see
 // _startHeadphoneLiveness), so it is not in the initial load of "/".
@@ -287,6 +289,26 @@ let _boothBridgeUnderrunCount = 0;
 /** Bumped by every teardown. An operation that started under an older
  * generation refuses to publish rather than resurrect a disposed monitor. */
 let _headphoneGeneration = 0;
+/** Signal meters: sampled on a 10 Hz timer, and only while a consumer (the
+ * I/O panel or the calibration modal) holds them. The always-on 60 Hz
+ * requestAnimationFrame loop this replaces kept Chromium producing a main
+ * frame every vsync at idle and wrote two ISO strings per frame. */
+export const SIGNAL_METER_INTERVAL_MS = 100;
+let _signalMeterTimer: ReturnType<typeof setInterval> | null = null;
+let _signalMeterConsumers = 0;
+/** Samples the live graph's analysers once; null while no graph exists. */
+let _signalSampler: ((reason: 'tick' | 'demand') => void) | null = null;
+/** A meter tick closer than this to the previous sample is skipped: the last
+ * reading is that fresh already, and the AudioContext clock may not have moved
+ * a render quantum yet, which the stall check below would misread as stalled.
+ * One 60 Hz frame, the cadence the stall check was written against. */
+const SIGNAL_MIN_SAMPLE_GAP_MS = 16;
+let _lastSignalSampleAt = -Infinity;
+/** A meter tick that landed inside SIGNAL_MIN_SAMPLE_GAP_MS of the previous
+ * sample (an on-demand read just before it) is not dropped: it is retried once
+ * the gap has passed, so a signal that appears right after a demand read still
+ * shows on that tick, not one interval later. */
+let _deferredSignalTick: ReturnType<typeof setTimeout> | null = null;
 /** Bumped by every master-device pick. An older pick must not publish or roll
  * the route back after a newer pick has started: that rollback is how a few
  * quick switches left MAIN failed and silent, and picking the menu's device
@@ -450,32 +472,90 @@ export function clearCalibrationInputSignal(): void {
 	_clearSignal('input', 'inactive');
 }
 
-function _stopSignalMeters(): void {
-	if (_signalMeterFrame !== null && typeof cancelAnimationFrame === 'function') {
-		cancelAnimationFrame(_signalMeterFrame);
+function _stopSignalTimer(): void {
+	if (_signalMeterTimer !== null) clearInterval(_signalMeterTimer);
+	_signalMeterTimer = null;
+	if (_deferredSignalTick !== null) clearTimeout(_deferredSignalTick);
+	_deferredSignalTick = null;
+}
+
+function _deferSignalTick(waitMs: number): void {
+	if (_deferredSignalTick !== null) return;
+	_deferredSignalTick = setTimeout(() => {
+		_deferredSignalTick = null;
+		if (_signalMeterTimer !== null) _signalSampler?.('tick');
+	}, Math.max(0, Math.ceil(waitMs)));
+}
+
+function _syncSignalTimer(): void {
+	const wanted = _signalSampler !== null && _signalMeterConsumers > 0 && typeof setInterval === 'function';
+	if (!wanted) {
+		_stopSignalTimer();
+		return;
 	}
-	_signalMeterFrame = null;
+	if (_signalMeterTimer !== null) return;
+	_signalSampler?.('tick');
+	_signalMeterTimer = setInterval(() => _signalSampler?.('tick'), SIGNAL_METER_INTERVAL_MS);
+}
+
+function _stopSignalMeters(): void {
+	_signalSampler = null;
+	_lastSignalSampleAt = -Infinity;
+	_stopSignalTimer();
 	_clearSignal('master', 'unavailable');
 	_clearSignal('cue', 'unavailable');
 	_clearSignal('input', 'inactive');
 }
 
-/** Sample actual AnalyserNode buffers only while the browser provides an
- * animation clock.  There is deliberately no timer-made level estimate. */
+/** Hold the signal meters live while a consumer is mounted (I/O panel,
+ * calibration modal). Returns the release. Reference counted. */
+export function acquireHeadphoneSignalMeters(): () => void {
+	_signalMeterConsumers += 1;
+	_syncSignalTimer();
+	let released = false;
+	return () => {
+		if (released) return;
+		released = true;
+		_signalMeterConsumers = Math.max(0, _signalMeterConsumers - 1);
+		_syncSignalTimer();
+	};
+}
+
+/** One on-demand sample for a non-reactive reader (the window IPC query, the
+ * ui-mirror publish), so their snapshot is fresh with no consumer mounted.
+ * Rate-limited to the meter interval. Never call this from a `$derived` or
+ * render path: it writes `$state`. */
+export function refreshHeadphoneSignals(): void {
+	_signalSampler?.('demand');
+}
+
+/** Sample actual AnalyserNode buffers. There is deliberately no timer-made
+ * level ESTIMATE: the timer only decides when to read the real analysers. */
 function _startSignalMeters(nodes: HeadphoneNodes): void {
 	_stopSignalMeters();
-	if (
-		nodes.masterSignalAnalyser === null ||
-		nodes.cueSignalAnalyser === null ||
-		typeof requestAnimationFrame !== 'function'
-	) {
+	if (nodes.masterSignalAnalyser === null || nodes.cueSignalAnalyser === null) {
 		return;
 	}
 	const master = new Float32Array(nodes.masterSignalAnalyser.fftSize);
 	const cue = new Float32Array(nodes.cueSignalAnalyser.fftSize);
 	let lastContextTime = -Infinity;
-	const sample = () => {
+	_signalSampler = (reason) => {
 		if (_headphoneNodes !== nodes) return;
+		const now = performance.now();
+		// A burst of on-demand reads inside one interval reuses the last sample.
+		// A meter tick always samples (so a signal that appears shows within one
+		// tick even right after an on-demand read); when the last sample is under
+		// one frame old, the tick is deferred to the end of that frame rather
+		// than dropped. Either way the gap is at least one 60 Hz frame, as under
+		// the old frame loop, so an unchanged currentTime below still means a
+		// stalled clock.
+		const minGap = reason === 'demand' ? SIGNAL_METER_INTERVAL_MS - 1 : SIGNAL_MIN_SAMPLE_GAP_MS;
+		const sinceLast = now - _lastSignalSampleAt;
+		if (sinceLast < minGap) {
+			if (reason === 'tick') _deferSignalTick(minGap - sinceLast);
+			return;
+		}
+		_lastSignalSampleAt = now;
 		const contextTime = nodes.level.context.currentTime;
 		if (
 			nodes.level.context.state !== 'running' ||
@@ -484,7 +564,6 @@ function _startSignalMeters(nodes: HeadphoneNodes): void {
 		) {
 			_clearSignal('master', 'inactive');
 			_clearSignal('cue', 'inactive');
-			_signalMeterFrame = requestAnimationFrame(sample);
 			return;
 		}
 		lastContextTime = contextTime;
@@ -492,9 +571,8 @@ function _startSignalMeters(nodes: HeadphoneNodes): void {
 		nodes.cueSignalAnalyser?.getFloatTimeDomainData(cue);
 		_publishSignal('master', master);
 		_publishSignal('cue', cue);
-		_signalMeterFrame = requestAnimationFrame(sample);
 	};
-	_signalMeterFrame = requestAnimationFrame(sample);
+	_syncSignalTimer();
 }
 
 /** Unit-interval guard for the mix knob. Deliberately a private leaf here
@@ -722,12 +800,27 @@ export function applyHeadphoneMix(): void {
 	);
 }
 
-/** CUEOUT-13: BOOTH gain is independent of MASTER and HEADPHONE CUE. */
+/** CUEOUT-13 / #11257: booth level lives on mixer.booth; graph gain honors signal_mode. */
 export function setBoothLevel(value: number): void {
 	_assertUnit('booth level', value);
-	mixerState.headphones.booth_level = value;
+	mixerState.booth.level = value;
+	_applyAudibleBoothGain();
+}
+
+export function setBoothSignalMode(mode: BoothSignalMode): void {
+	assertBoothSignalMode(mode);
+	mixerState.booth.signal_mode = mode;
+	_applyAudibleBoothGain();
+}
+
+/** Re-run after MASTER fader moves when `signal_mode` is `follows_master`. */
+export function reapplyBoothGainFromMaster(): void {
+	_applyAudibleBoothGain();
+}
+
+function _applyAudibleBoothGain(): void {
 	const nodes = _headphoneNodes;
-	if (nodes !== null) _setMonitorParam(nodes, nodes.boothGain.gain, value);
+	if (nodes !== null) _setMonitorParam(nodes, nodes.boothGain.gain, effectiveBoothGain());
 }
 
 export function setHeadDelayMs(value: unknown): void {
@@ -1567,6 +1660,8 @@ function _recordHeadphoneDiagnostic(
 	const now = Date.now();
 	if (now - _lastHeadphoneDiagnosticAt < HEADPHONE_DIAGNOSTIC_WINDOW_MS) return;
 	_lastHeadphoneDiagnosticAt = now;
+	// The meters no longer sample on their own with the I/O panel closed.
+	refreshHeadphoneSignals();
 	const hp = mixerState.headphones;
 	const fmt = (value: number | null) => (value === null ? 'na' : value.toFixed(3));
 	recordPerfEvent(
@@ -2000,7 +2095,7 @@ async function _ensureBoothBridge(mainContext: AudioContext, nodes: HeadphoneNod
 				},
 				onProcessorError: (side) => {
 					const message = `BOOTH bridge ${side} processor failed; BOOTH was silenced.`;
-					mixerState.headphones.routes.booth = { state: 'failed', selected: true };
+					mixerState.booth.route = { state: 'failed', selected: true };
 					mixerState.headphones.error = message;
 					recordPerfEvent('booth-bridge-processor-failed', message, null, 'error');
 					void boothContext.suspend().catch((error: unknown) => {
@@ -2623,16 +2718,16 @@ async function _reapplyPinnedSinks(
 			await withHeadphoneOperationTimeout('booth suspend after device vanished', nodes.boothContext.suspend());
 		}
 		if (nodes !== null) nodes.boothDeviceId = null;
-		mixerState.headphones.routes.booth = { state: 'default', selected: false };
+		mixerState.booth.route = { state: 'default', selected: false };
 	}
 	if (plan.applyBooth || plan.restoreBooth) {
-		const boothId = mixerState.headphones.selected_booth_output_device_id;
+		const boothId = mixerState.booth.selected_output_device_id;
 		if (boothId !== null) {
 			const { context, masterGain } = monitorSource();
 			const nodes = ensureHeadphoneGraph(context, masterGain);
 			await _ensureBoothBridge(context, nodes);
 			await _applyBoothSink(boothId, nodes);
-			mixerState.headphones.routes.booth = { state: 'selected', selected: true };
+			mixerState.booth.route = { state: 'selected', selected: true };
 		}
 	}
 }
@@ -2727,7 +2822,7 @@ export function ensureHeadphoneGraph(context: AudioContext, masterGain: GainNode
 	const bridgeInput = context.createGain();
 	bridgeInput.gain.value = 1;
 	const boothGain = context.createGain();
-	boothGain.gain.value = mixerState.headphones.booth_level;
+	boothGain.gain.value = effectiveBoothGain();
 	const boothMute = context.createGain();
 	boothMute.gain.value = masterMuteGainValue(isMasterMuted());
 	const boothDelay = context.createDelay(MASTER_DELAY_LINE_S);
@@ -3061,7 +3156,7 @@ export async function refreshHeadphoneOutputs(monitorSource?: MonitorSource): Pr
 	const shownMasterBefore = mixerState.headphones.selected_master_output_device_id;
 	const previousMasterId = mixerState.headphones.selected_master_output_device_id;
 	const previousCueId = mixerState.headphones.selected_output_device_id;
-	const previousBoothId = mixerState.headphones.selected_booth_output_device_id;
+	const previousBoothId = mixerState.booth.selected_output_device_id;
 	if (previousCueId !== null) _rememberedCueId = previousCueId;
 	if (previousBoothId !== null) _rememberedBoothId = previousBoothId;
 	const reconciled = reconcileHeadphoneOutputRefresh(
@@ -3075,7 +3170,7 @@ export async function refreshHeadphoneOutputs(monitorSource?: MonitorSource): Pr
 		outputs: mixerState.headphones.outputs,
 		selectedCueId: mixerState.headphones.selected_output_device_id,
 		selectedMasterId: mixerState.headphones.selected_master_output_device_id,
-		selectedBoothId: mixerState.headphones.selected_booth_output_device_id,
+		selectedBoothId: mixerState.booth.selected_output_device_id,
 		currentRoomId: _nativeCueSink === null ? undefined : _nativeRoomOutputId
 	});
 	// AUDFID-01: a CUE that now shares MAIN's output is dropped from the live
@@ -3085,7 +3180,7 @@ export async function refreshHeadphoneOutputs(monitorSource?: MonitorSource): Pr
 		mixerState.headphones.routes.cue = { state: 'default', selected: false };
 	}
 	mixerState.headphones.selected_master_output_device_id = assignment.masterId;
-	mixerState.headphones.selected_booth_output_device_id = assignment.boothId;
+	mixerState.booth.selected_output_device_id = assignment.boothId;
 	// A MAIN pick still in flight is retired: it must not republish, or
 	// fail, a MAIN this device change replaced. A sounding Test is cut too,
 	// even when nothing re-pins (MAIN cleared to the system default).
@@ -3128,7 +3223,7 @@ export async function refreshHeadphoneOutputs(monitorSource?: MonitorSource): Pr
 		mixerState.headphones.active = true;
 	}
 	if (plan.restoreBooth && _rememberedBoothId !== null) {
-		mixerState.headphones.selected_booth_output_device_id = _rememberedBoothId;
+		mixerState.booth.selected_output_device_id = _rememberedBoothId;
 	}
 	const inputStillPresent =
 		mixerState.headphones.selected_input_device_id !== null &&
@@ -3154,7 +3249,7 @@ export async function refreshHeadphoneOutputs(monitorSource?: MonitorSource): Pr
 				outputs: listing.outputs,
 				selectedMasterId: mixerState.headphones.selected_master_output_device_id,
 				selectedCueId: mixerState.headphones.selected_output_device_id,
-				selectedBoothId: mixerState.headphones.selected_booth_output_device_id
+				selectedBoothId: mixerState.booth.selected_output_device_id
 			})
 		);
 	}
@@ -3379,7 +3474,7 @@ async function _autoSelectSoleBluetoothCue(monitorSource: MonitorSource, generat
 /** AUDFID-01: throw the same-output refusal for a CUE pick that would land
  * on MAIN's output (the pinned MAIN, or in the Mac app the room's output). */
 function _assertCueNotOnMainOutput(cueId: string): void {
-	const boothId = mixerState.headphones.selected_booth_output_device_id;
+	const boothId = mixerState.booth.selected_output_device_id;
 	if (boothId !== null && sameOutputDevice(mixerState.headphones.outputs, boothId, cueId)) {
 		const label = mixerState.headphones.outputs.find((output) => output.id === boothId)?.label ?? boothId;
 		const refusal = sameDeviceBoothRefusalText('HEADPHONE CUE', label);
@@ -3407,8 +3502,8 @@ export async function selectBoothOutput(deviceId: string, monitorSource: Monitor
 			await withHeadphoneOperationTimeout('booth silence', ctx.suspend());
 		}
 		if (_headphoneNodes !== null) _headphoneNodes.boothDeviceId = null;
-		mixerState.headphones.selected_booth_output_device_id = null;
-		mixerState.headphones.routes.booth = { state: 'default', selected: false };
+		mixerState.booth.selected_output_device_id = null;
+		mixerState.booth.route = { state: 'default', selected: false };
 		_rememberedBoothId = null;
 		_boothClearedByOperator = true;
 		_rememberSavedOutput('booth', null);
@@ -3430,21 +3525,21 @@ export async function selectBoothOutput(deviceId: string, monitorSource: Monitor
 		recordPerfEvent('booth-refused-same-device', assignment.boothRefusal, null, 'warn');
 		throw new Error(assignment.boothRefusal);
 	}
-	const previous = mixerState.headphones.selected_booth_output_device_id;
+	const previous = mixerState.booth.selected_output_device_id;
 	const { context, masterGain } = monitorSource();
 	const nodes = ensureHeadphoneGraph(context, masterGain);
 	try {
 		await _ensureBoothBridge(context, nodes);
 		await _applyBoothSink(deviceId, nodes);
-		mixerState.headphones.selected_booth_output_device_id = deviceId;
-		mixerState.headphones.routes.booth = { state: 'selected', selected: true };
+		mixerState.booth.selected_output_device_id = deviceId;
+		mixerState.booth.route = { state: 'selected', selected: true };
 		_rememberedBoothId = deviceId;
 		_boothClearedByOperator = false;
 		_rememberSavedOutput('booth', deviceId);
 		_lastMonitorSource = monitorSource;
 	} catch (error) {
-		mixerState.headphones.selected_booth_output_device_id = previous;
-		mixerState.headphones.routes.booth = { state: 'failed', selected: previous !== null };
+		mixerState.booth.selected_output_device_id = previous;
+		mixerState.booth.route = { state: 'failed', selected: previous !== null };
 		throw _headphoneError('booth output selection failed', error);
 	}
 }
@@ -3652,7 +3747,7 @@ export async function selectMasterOutput(
 	// pick, so it takes no serial and supersedes nothing.
 	assertMasterCanSound(deviceId, mixerState.headphones.outputs);
 	const cueId = mixerState.headphones.selected_output_device_id;
-	const boothId = mixerState.headphones.selected_booth_output_device_id;
+	const boothId = mixerState.booth.selected_output_device_id;
 	if (boothId !== null && sameOutputDevice(mixerState.headphones.outputs, deviceId, boothId)) {
 		const label = mixerState.headphones.outputs.find((output) => output.id === boothId)?.label ?? boothId;
 		const refusal = sameDeviceBoothRefusalText('MAIN', label);

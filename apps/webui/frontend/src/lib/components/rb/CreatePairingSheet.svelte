@@ -63,6 +63,7 @@
 
 	async function _save(): Promise<void> {
 		if (busy || selected.length !== 2 || snapshot === null) return;
+		if (_loadedPair() === null) return;
 		busy = true;
 		try {
 			await dispatchPerformanceCommand({
